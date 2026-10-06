@@ -129,6 +129,64 @@ def check_search(page):
     assert page.locator("[data-game-card]:visible").count() == 15
 
 
+CANVAS_PAINT = """() => [...document.querySelectorAll('.game-art canvas')]
+  .filter(canvas => canvas.getBoundingClientRect().width > 0 && canvas.getBoundingClientRect().height > 0)
+  .map(canvas => {
+    if (!canvas.width || !canvas.height) return {id:canvas.id,opaque:0,colors:0};
+    const pixels=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;
+    const colors=new Set(); let opaque=0, samples=0;
+    for(let row=0;row<16;row++) for(let column=0;column<16;column++) {
+      const x=Math.min(canvas.width-1,Math.floor((column+.5)*canvas.width/16));
+      const y=Math.min(canvas.height-1,Math.floor((row+.5)*canvas.height/16));
+      const offset=(y*canvas.width+x)*4;
+      if(pixels[offset+3]>0) opaque++;
+      colors.add(`${pixels[offset]},${pixels[offset+1]},${pixels[offset+2]},${pixels[offset+3]}`);
+      samples++;
+    }
+    return {id:canvas.id,width:canvas.width,height:canvas.height,opaque:opaque/samples,colors:colors.size};
+  })"""
+
+
+def painted_previews(page, expected):
+    # ResizeObserver callbacks clear the old canvas after layout. Wait through
+    # their redraw frames so stale pixels cannot satisfy a show/resize check.
+    page.wait_for_timeout(120)
+    page.wait_for_function(f"() => {{const paint=({CANVAS_PAINT})(); return paint.length==={expected} && paint.every(canvas=>canvas.opaque>.9 && canvas.colors>=4);}}", timeout=3000)
+    return page.evaluate(CANVAS_PAINT)
+
+
+def check_previews(page):
+    """Showing a shelf card must repaint a canvas cleared by its resize observer."""
+    assert len(painted_previews(page, 4)) == 4
+    page.locator('[data-filter="solo"]').click()
+    painted_previews(page, 0)
+    page.locator('[data-filter="all"]').click()
+    painted_previews(page, 4)
+    page.locator('[data-filter="action"]').click()
+    painted_previews(page, 3)
+    page.locator('[data-filter="friends"]').click()
+    painted_previews(page, 4)
+    page.locator('[data-filter="all"]').click()
+    search=page.locator("#game-search")
+    search.fill("vector")
+    painted_previews(page, 0)
+    search.fill("relic")
+    assert painted_previews(page, 1)[0]["id"] == "preview-duel"
+    search.fill("afterimage")
+    assert painted_previews(page, 1)[0]["id"] == "preview-afterimage"
+    search.fill("")
+    painted_previews(page, 4)
+    for width,height in ((390,844),(320,844),(1440,1000)):
+        page.set_viewport_size({"width":width,"height":height})
+        no_overflow(page)
+        painted_previews(page, 4)
+        page.locator('[data-filter="solo"]').click()
+        painted_previews(page, 0)
+        page.locator('[data-filter="all"]').click()
+        painted_previews(page, 4)
+    print("  Shelf previews: opaque, varied pixels survive physical filter/search hide-show and desktop/390/320px resizing", flush=True)
+
+
 def native_help(page, game):
     disclosure = page.locator("#solo-how-to")
     assert disclosure.get_attribute("open") is None, "Long help should begin collapsed"
@@ -601,6 +659,7 @@ def run(url):
                     page.wait_for_function("document.querySelector('#host-status').textContent === 'Host is online'")
                     check_catalog(page)
                     check_search(page)
+                    check_previews(page)
                     if game == "prism-shift":
                         screenshot(page, "fireside-skill-hub.png", full_page=False)
                         screenshot(page, "fireside-skill-hub-full.png")

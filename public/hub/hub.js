@@ -102,7 +102,7 @@ async function drawPreviews() {
       const [{ createState }, { ArenaRenderer }] = await Promise.all([import('../engine.js'), import('../renderer.js')]);
       const canvas = $('preview-afterimage'), renderer = new ArenaRenderer(canvas); renderers.push(renderer);
       const state = createState(); state.fighters[0].x = 445; state.fighters[1].x = 755;
-      const draw = () => renderer.render(state, { time: 1600, camera: 'crop' }); draw(); return draw;
+      const draw = () => { if (canvas.getBoundingClientRect().width > 0) renderer.render(state, { time: 1600, camera: 'crop' }); }; draw(); return draw;
     })(),
     (async () => {
       const [engine, { TopdownRenderer }] = await Promise.all([import('../topdown-engine.js'), import('../topdown-renderer.js')]);
@@ -111,7 +111,7 @@ async function drawPreviews() {
         const renderer = new TopdownRenderer($(id)); renderers.push(renderer);
         const state = engine.createState(mode); engine.startMatch(state);
         for (let i = 0; i < 361; i++) engine.step(state, [engine.emptyInput(), engine.emptyInput()]);
-        const draw = () => renderer.render(state, { time: 1200 }); draw(); draws.push(draw);
+        const draw = () => { if (renderer.canvas.getBoundingClientRect().width > 0) renderer.render(state, { time: 1200 }); }; draw(); draws.push(draw);
       }
       return () => draws.forEach(draw => draw());
     })(),
@@ -120,6 +120,7 @@ async function drawPreviews() {
   const drawBoard = () => {
     const canvas = $('preview-checkers'), ctx = canvas.getContext('2d');
     const dpr = Math.min(devicePixelRatio || 1, 2), rect = canvas.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
     canvas.width = rect.width * dpr; canvas.height = rect.height * dpr;
     ctx.setTransform(canvas.width / 900, 0, 0, canvas.height / 600, 0, 0);
     const background = ctx.createLinearGradient(0, 0, 900, 600); background.addColorStop(0, '#d7c39b'); background.addColorStop(1, '#ac956e');
@@ -138,6 +139,20 @@ async function drawPreviews() {
     ctx.restore();
   };
   drawBoard(); draws.push(drawBoard);
-  window.addEventListener('resize', () => { renderers.forEach(r => r.resize()); draws.forEach(draw => draw()); });
+  let redrawFrame = null;
+  const scheduleRedraw = () => {
+    if (redrawFrame !== null) return;
+    redrawFrame = requestAnimationFrame(() => {
+      redrawFrame = null;
+      renderers.forEach(renderer => renderer.resize());
+      draws.forEach(draw => draw());
+    });
+  };
+  // Filtering and searching resize thumbnails without a window resize.
+  // Draw after the game renderers have resized (which clears their canvases).
+  const previewObserver = new ResizeObserver(scheduleRedraw);
+  document.querySelectorAll('.game-art canvas').forEach(canvas => previewObserver.observe(canvas));
+  window.addEventListener('resize', scheduleRedraw);
+  scheduleRedraw();
 }
 drawPreviews();
