@@ -3,16 +3,18 @@ const ACTION_SCOPES = ['default', 'veteran', 'nightmare'];
 const tierScopes = scopes => [...scopes, ...['veteran', 'nightmare'].flatMap(tier => scopes.map(scope => `${tier}-${scope}`))];
 const RACE_SCOPES = tierScopes(['three-laps', 'harbor-ring-three-laps', 'rain-pass-three-laps', 'championship']);
 const PRISM_SCOPES = tierScopes(['marathon', 'sprint', 'dig']);
+const PARIS_SURVIVAL_SCOPES = ['standard', 'veteran', 'nightmare'].map(tier => `${tier}-survival-v1`);
 const GAME_INFO = {
   'paris-pedal': {
-    title: 'Paris Pedal', category: 'DRIVING / PARIS E-BIKE COURIER', description: 'Busy boulevards. Narrow gaps. One more delivery.',
-    module: '/solo/paris-view.js', ruleTitle: 'Read the street.',
-    recordPolicy: { scopes: ['standard-delivery', 'veteran-delivery', 'nightmare-delivery', 'standard-rush', 'veteran-rush', 'nightmare-rush'], variants: {
+    title: 'Paris Pedal', category: 'DRIVING / PARIS E-BIKE SURVIVAL', description: 'The longer you last, the faster Paris flies past.',
+    module: '/solo/paris-view.js', ruleTitle: 'Last one more second.',
+    recordPolicy: { scopes: [...PARIS_SURVIVAL_SCOPES, 'standard-delivery', 'veteran-delivery', 'nightmare-delivery', 'standard-rush', 'veteran-rush', 'nightmare-rush'], variants: {
+      ...Object.fromEntries(PARIS_SURVIVAL_SCOPES.map(scope => [scope, { onlyCrashed: true, unit: 'duration-ms' }])),
       'standard-delivery': { onlyWon: true }, 'veteran-delivery': { onlyWon: true }, 'nightmare-delivery': { onlyWon: true },
     } },
     controls: [[['A', 'D', '←', '→'], 'Steer'], [['W', '↑'], 'Pedal'], [['S', '↓'], 'Brake'], [['Space'], 'Motor assist'], [['B'], 'Ring bell']],
-    touch: 'Hold the steering, pedal, brake, and assist buttons below the street. Tap the bell to warn nearby cyclists.',
-    rules: ['Ride through five Paris-inspired districts in Delivery, or keep weaving through the city in Rush.', 'Your e-bike fits between cars. Look ahead and brake before committing to a narrow gap.', 'Buses signal before pulling out, cyclists warn before veering, and parked car doors flash before opening.', 'Motor assist spends battery. Coast or brake to recover charge, and save assist for clear stretches.', 'The bell warns nearby cyclists when it is ready. Cars, buses, and doors still need a clear escape route.', 'Veteran starts by default with delivery deadlines and limited recovery. Standard practice and Nightmare are selectable.', 'Three impacts end the ride. Only a full Delivery finish sets a record; Rush and each difficulty keep separate scores.'],
+    touch: 'Your e-bike moves automatically. Hold the steering and brake buttons to find gaps; use pedal and assist for bursts. Tap the bell to warn cyclists.',
+    rules: ['Survival starts by default. Stay alive as long as possible while the streets cycle endlessly through five Paris-inspired districts.', 'Your e-bike moves automatically and its pace keeps rising with time alive. Braking trims speed but cannot stop the ride.', 'Thread between cars. Buses signal before pulling out, cyclists warn before veering, and parked doors flash before opening.', 'Motor assist spends battery; braking recovers charge. The bell warns nearby cyclists, while buses and cars still need a clear escape route.', 'Three impacts end a Survival run. District changes never repair the rider. Pause time does not count toward your record.', 'Your longest completed survival time stays in this browser, separately for Standard, Veteran and Nightmare.', 'Five deliveries is an alternate route with checkpoint deadlines on Veteran and Nightmare. Its points records require all five districts and stay separate from Survival.'],
   },
   'ember-delve': {
     recordPolicy: { scopes: ACTION_SCOPES },
@@ -98,7 +100,7 @@ function validRecord(value) {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0;
 }
 
-/** Completed timed events compete on lowest time; ongoing runs cannot replace them. */
+/** Each game qualifies its own records: finished races, survival deaths, or growing scores. */
 export function recordDetails(gameId, update) {
   const base = GAME_INFO[gameId]?.recordPolicy || {};
   const scopes = base.scopes || ['default'];
@@ -108,14 +110,17 @@ export function recordDetails(gameId, update) {
   return {
     scope,
     direction: policy.direction === 'min' ? 'min' : 'max',
-    candidate: !knownScope ? null : policy.onlyWon ? (update.phase === 'won' ? update.record : null) : (update.record ?? update.score),
+    candidate: !knownScope ? null : policy.onlyCrashed ? (update.phase === 'lost' && update.result === 'crashed' ? update.record : null) : policy.onlyWon ? (update.phase === 'won' ? update.record : null) : (update.record ?? update.score),
     unit: policy.unit || '', digits: policy.digits,
   };
 }
 
 function recordNote(gameId, scope, direction) {
   const tier = scope.startsWith('nightmare') ? 'Nightmare' : scope.startsWith('veteran') ? 'Veteran' : 'Standard';
-  if (gameId === 'paris-pedal') return scope.endsWith('-delivery') ? `${tier} Delivery records require all five districts and stay separate from Rush.` : `${tier} Rush best scores are saved separately from other difficulties and Delivery.`;
+  if (gameId === 'paris-pedal') {
+    if (scope.endsWith('-survival-v1')) return `${tier} longest survival counts active riding time until the third impact. Pauses do not count; other difficulties and points records stay separate.`;
+    return scope.endsWith('-delivery') ? `${tier} Delivery records require all five districts and stay separate from Survival.` : `${tier} historical Rush points stay separate from Survival and Delivery.`;
+  }
   if (gameId === 'minesweeper') return `Best ${scope} time stays in this browser, on this host.`;
   if (gameId === 'apex-circuit') return `${tier} completed times are saved separately for each track and championship.`;
   if (gameId === 'night-drive' && scope.endsWith('-tour')) return `${tier} Tour records require a full five-district finish and stay separate from Endless.`;
@@ -124,7 +129,11 @@ function recordNote(gameId, scope, direction) {
   return 'Best scores are saved separately for each mode in this browser, on this host.';
 }
 
-function formatValue(value, digits, unit = '') {
+export function formatValue(value, digits, unit = '') {
+  if (unit === 'duration-ms') {
+    const hundredths = Math.floor(value / 10);
+    return `${Math.floor(hundredths / 6000)}:${String(Math.floor(hundredths / 100) % 60).padStart(2, '0')}.${String(hundredths % 100).padStart(2, '0')}`;
+  }
   return `${Number.isInteger(digits) && digits >= 0 && digits <= 3 ? value.toFixed(digits) : String(value)}${unit}`;
 }
 
@@ -218,11 +227,12 @@ async function startSolo() {
     const finished = phase === 'won' || phase === 'lost';
     if ($('solo-app').dataset.phase !== phase) $('solo-app').dataset.phase = phase;
     setText($('solo-status-label'), { playing: 'IN PLAY', paused: 'PAUSED', won: 'YOU DID IT', lost: 'RUN COMPLETE' }[phase]);
-    setText($('solo-score'), formatValue(validRecord(update.score) ? update.score : 0, update.scoreDigits ?? info.scoreDigits, update.scoreUnit ?? info.scoreUnit));
+    const { scope, direction, candidate, unit, digits } = recordDetails(gameId, update);
+    const scoreUnit = update.scoreUnit ?? (gameId === 'paris-pedal' && unit === 'duration-ms' ? unit : info.scoreUnit);
+    setText($('solo-score'), formatValue(validRecord(update.score) ? update.score : 0, update.scoreDigits ?? info.scoreDigits, scoreUnit));
     setText($('solo-score-label'), update.scoreLabel || 'SCORE');
     setText($('solo-record-label'), update.recordLabel || (gameId === 'minesweeper' ? 'BEST TIME' : 'BEST SCORE'));
     setText($('solo-detail'), update.detail || (phase === 'paused' ? 'Take your time. Resume when you are ready.' : 'A new personal best is only a game away.'));
-    const { scope, direction, candidate, unit, digits } = recordDetails(gameId, update);
     const best = validRecord(candidate) ? records.update(gameId, candidate, { scope, direction }) : records.read(gameId, scope);
     setText($('solo-record'), best === null ? '—' : formatValue(best, digits, unit));
     setText($('solo-record-scope'), recordNote(gameId, scope, direction));

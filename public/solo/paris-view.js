@@ -1,6 +1,6 @@
 import {
   FIXED_DT, DISTRICTS, DIFFICULTIES,
-  createState, step, togglePause as pauseState, getDistrict, getDifficulty, recordScope,
+  createState, step, togglePause as pauseState, getDistrict, getDifficulty, getSurvivalPace, recordScope,
 } from './paris-engine.js';
 import { createParisPerspective } from '../art/paris-perspective.js';
 import { createParisRenderer } from './paris-renderer.js';
@@ -22,9 +22,13 @@ function node(tag, className, text) {
 }
 function setText(target, value) { if (target.textContent !== value) target.textContent = value; }
 function setAttr(target, key, value) { if (target.getAttribute(key) !== value) target.setAttribute(key, value); }
+function formatAlive(milliseconds) {
+  const hundredths = Math.floor(Math.max(0, milliseconds) / 10);
+  return `${Math.floor(hundredths / 6000)}:${String(Math.floor(hundredths / 100) % 60).padStart(2, '0')}.${String(hundredths % 100).padStart(2, '0')}`;
+}
 
 export function mount(container, { onUpdate = () => {} } = {}) {
-  let state = createState({ mode: 'delivery', difficulty: 'veteran' });
+  let state = createState({ mode: 'survival', difficulty: 'veteran' });
   const sprites = createParisPerspective();
   const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
   const desktop = window.matchMedia?.('(min-width:951px) and (pointer:fine)');
@@ -38,7 +42,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   const choices = node('div', 'paris-choices');
   const modes = node('div', 'paris-modes');
   modes.setAttribute('role', 'group'); modes.setAttribute('aria-label', 'Choose ride mode');
-  for (const [id, title] of [['delivery', 'Five deliveries'], ['rush', 'City Rush']]) {
+  for (const [id, title] of [['survival', 'Survival'], ['delivery', 'Five deliveries']]) {
     const button = node('button', 'paris-choice', title);
     button.type = 'button'; button.dataset.mode = id;
     button.title = 'Changing mode starts a fresh ride with the same seed.';
@@ -79,12 +83,15 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   const mobileHud = node('div', 'paris-mobile-hud');
   const mobileSpeed = node('strong', ''), mobileBattery = node('strong', ''),
     mobileHealth = node('strong', ''), mobileCombo = node('strong', '');
-  for (const [label, value] of [['KM/H', mobileSpeed], ['BATTERY', mobileBattery], ['RIDER', mobileHealth], ['COMBO', mobileCombo]]) {
-    const item = node('div', ''); item.append(node('span', '', label), value); mobileHud.append(item);
+  const mobileFourthLabel = node('span', '', 'BRAKE');
+  for (const [label, value] of [['KM/H', mobileSpeed], ['BATTERY', mobileBattery], ['RIDER', mobileHealth], [mobileFourthLabel, mobileCombo]]) {
+    const item = node('div', ''); item.append(typeof label === 'string' ? node('span', '', label) : label, value); mobileHud.append(item);
   }
   board.append(canvas, mobileHud, overlay);
   const footer = node('div', 'paris-footer');
   const controls = node('div', 'paris-controls');
+  const brakeMeter = node('span', 'paris-brake-meter'), brakeFill = node('i', '');
+  brakeMeter.setAttribute('aria-hidden', 'true'); brakeMeter.append(brakeFill);
   controls.setAttribute('role', 'group'); controls.setAttribute('aria-label', 'Hold to ride');
   for (const [control, symbol, title] of [
     ['left', '←', 'Left'], ['right', '→', 'Right'], ['brake', '↓', 'Brake'],
@@ -95,6 +102,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     button.setAttribute('aria-label', control === 'bell' ? 'Ring bell' : `Hold to ${title.toLowerCase()}`);
     button.setAttribute('aria-pressed', 'false');
     button.append(node('b', '', symbol), node('span', '', title.toUpperCase()));
+    if (control === 'brake') button.append(brakeMeter);
     buttons.set(control, button); controls.append(button);
   }
   const hint = node('p', 'paris-hint', '← → steer · ↑ pedal · ↓ brake · Space assist · B bell. Amber arrows show a merge; red stripes warn of a door.');
@@ -129,6 +137,10 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   }
   function details() {
     if (state.phase === 'paused') return 'Ride paused. Press P or Resume to continue.';
+    if (state.mode === 'survival') {
+      if (state.phase === 'lost') return `Survived ${formatAlive(Math.floor((state.finishTime ?? state.elapsed) * 1000))}. Three impacts ended your ${(state.distance / 1000).toFixed(2)} km ride.`;
+      return 'Stay alive as Paris gets faster. Read the signals, use short brake bursts, and leave an escape gap.';
+    }
     if (state.phase === 'won') return `Five deliveries across Paris. ${state.totalCrashes === 0 ? 'A clean ride.' : `${state.totalCrashes} impacts.`} ${Math.round(state.score)} points.`;
     if (state.phase === 'lost') return state.result === 'delivery-late'
       ? 'Delivery missed. Carry speed through open gaps and save assist for the next clear stretch.'
@@ -139,34 +151,54 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     if (!force && state.elapsed - lastPublished < 0.1 && state.phase === lastPhase) return;
     lastPublished = state.elapsed; lastPhase = state.phase;
     const district = getDistrict(state);
+    const survival = state.mode === 'survival';
+    const elapsedMs = Math.floor(state.elapsed * 1000);
+    const pace = Math.round(getSurvivalPace(state) * 3.6);
     const complete = state.phase === 'won';
     const portion = complete ? 100 : clamp(state.stageDistance / district.length * 100, 0, 100);
     setText(location, `${String((state.stageIndex % DISTRICTS.length) + 1).padStart(2, '0')} / ${district.title}`);
-    setText(routeDetail, complete ? 'ALL FIVE DELIVERED' : `${Math.max(0, Math.ceil(district.length - state.stageDistance))} m to ${state.mode === 'delivery' ? 'delivery' : 'next quartier'}`);
-    setText(clock, complete ? 'MERCI !' : state.timeLeft === null || state.timeLeft === undefined ? 'NO DEADLINE' : `${Math.max(0, state.timeLeft).toFixed(1)} s`);
+    const remaining = Math.max(0, Math.ceil(district.length - state.stageDistance));
+    setText(routeDetail, survival ? `PACE ${pace} KM/H · ${remaining} m ahead` : complete ? 'ALL FIVE DELIVERED' : `${remaining} m to ${state.mode === 'delivery' ? 'delivery' : 'next quartier'}`);
+    setText(clock, survival ? formatAlive(elapsedMs) : complete ? 'MERCI !' : state.timeLeft === null || state.timeLeft === undefined ? 'NO DEADLINE' : `${Math.max(0, state.timeLeft).toFixed(1)} s`);
+    setAttr(clock, 'aria-label', survival ? `Time alive ${formatAlive(elapsedMs)}` : 'Delivery clock');
+    setAttr(progress, 'aria-label', survival ? 'Current quartier progress' : 'Current delivery progress');
     stage.dataset.urgent = String(state.timeLeft !== null && state.timeLeft <= 6);
+    stage.dataset.mode = state.mode;
     setText(mobileSpeed, String(Math.round(state.speed * 3.6)));
     setText(mobileBattery, `${Math.round(state.battery * 100)}%`);
     setText(mobileHealth, `${state.health}/3`);
-    setText(mobileCombo, `${Math.max(1, state.combo)}×`);
+    setText(mobileFourthLabel, survival ? 'BRAKE' : 'COMBO');
+    setText(mobileCombo, survival ? state.brakeLocked ? 'WAIT' : `${Math.round(state.brakeCharge * 100)}%` : `${Math.max(1, state.combo)}×`);
+    brakeMeter.hidden = !survival;
+    brakeFill.style.width = `${Math.round(clamp(state.brakeCharge ?? 1, 0, 1) * 100)}%`;
+    const brakeButton = buttons.get('brake');
+    brakeButton.dataset.recharging = String(survival && state.brakeLocked);
+    brakeButton.title = survival ? 'Short brake burst. Release to recharge; braking cannot stop the bike.' : 'Hold to brake.';
+    setText(hint, survival
+      ? '← → steer · ↑ pedal · Space assist · B bell. Speed rises automatically. ↓ is a short brake burst; release it to recharge.'
+      : '← → steer · ↑ pedal · ↓ brake · Space assist · B bell. Amber arrows show a merge; red stripes warn of a door.');
     progressFill.style.width = `${portion}%`;
     setAttr(progress, 'aria-valuenow', String(Math.round(portion)));
     for (const button of modes.children) setAttr(button, 'aria-pressed', String(button.dataset.mode === state.mode));
     for (const button of difficulties.children) setAttr(button, 'aria-pressed', String(button.dataset.difficulty === state.difficulty));
-    view.dataset.phase = state.phase; view.dataset.rideDifficulty = state.difficulty;
+    view.dataset.phase = state.phase; view.dataset.rideDifficulty = state.difficulty; view.dataset.mode = state.mode;
     overlay.hidden = state.phase === 'playing';
     if (!overlay.hidden) {
-      setText(overlayEyebrow, state.phase === 'paused' ? 'UN PETIT MOMENT' : 'PARIS / FIN DE COURSE');
-      setText(overlayTitle, state.phase === 'paused' ? 'Take a breather.' : state.phase === 'won' ? 'Livraison réussie.' : 'End of the ride.');
-      setText(overlayDetail, state.phase === 'paused' ? 'Press P or Resume when you are ready.' : `${(state.distance / 1000).toFixed(2)} KM · ${Math.round(state.score)} POINTS · ${getDifficulty(state).title.toUpperCase()}`);
+      setText(overlayEyebrow, state.phase === 'paused' ? 'UN PETIT MOMENT' : survival ? 'PARIS / SURVIVAL' : 'PARIS / FIN DE COURSE');
+      setText(overlayTitle, state.phase === 'paused' ? 'Take a breather.' : survival ? `Survived ${formatAlive(Math.floor((state.finishTime ?? state.elapsed) * 1000))}.` : state.phase === 'won' ? 'Livraison réussie.' : 'End of the ride.');
+      setText(overlayDetail, state.phase === 'paused' ? 'Press P or Resume when you are ready.' : survival
+        ? `THREE IMPACTS · ${(state.distance / 1000).toFixed(2)} KM · ${Math.round(state.speed * 3.6)} KM/H · ${getDifficulty(state).title.toUpperCase()}`
+        : `${(state.distance / 1000).toFixed(2)} KM · ${Math.round(state.score)} POINTS · ${getDifficulty(state).title.toUpperCase()}`);
       replay.hidden = state.phase === 'paused';
     }
     // Announce meaningful phase changes only; the fast HUD is deliberately not live.
     setText(status, details());
-    onUpdate({ phase: state.phase, score: Math.round(state.score),
-      record: state.mode === 'rush' || state.phase === 'won' ? Math.round(state.score) : null,
-      recordKey: recordScope(state), recordLabel: state.mode === 'delivery' ? 'BEST DELIVERY' : 'BEST RIDE',
-      scoreLabel: 'SCORE', detail: details() });
+    onUpdate({ phase: state.phase, result: state.result, score: survival ? elapsedMs : Math.round(state.score),
+      record: survival ? state.phase === 'lost' && state.result === 'crashed' && Number.isFinite(state.finishTime)
+        ? Math.floor(state.finishTime * 1000) : null
+        : state.mode === 'rush' || state.phase === 'won' ? Math.round(state.score) : null,
+      recordKey: recordScope(state), recordLabel: survival ? 'LONGEST SURVIVAL' : state.mode === 'delivery' ? 'BEST DELIVERY' : 'BEST RIDE',
+      scoreLabel: survival ? 'TIME ALIVE' : 'SCORE', detail: details() });
   }
   function rect(x, y, width, height, color) {
     ctx.fillStyle = color;
@@ -179,10 +211,17 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   function hud() {
     // Keep instruments above the horizon so the rider and close gaps stay clear.
     rect(14, 14, 140, 73, '#214b4be8'); rect(17, 17, 134, 2, '#83bbaa');
-    text('VÉLO ÉLECTRIQUE', 25, 32, 9, '#b5d4c3');
-    text(String(Math.round(state.speed * 3.6)).padStart(2, '0'), 25, 63, 29, '#faf1cf');
-    text('KM/H', 73, 61, 10, '#b5d4c3');
-    text(state.assistActive ? 'ASSIST ON' : 'PACE YOURSELF', 25, 77, 9, state.assistActive ? '#e9d48d' : '#b5d4c3');
+    const survival = state.mode === 'survival';
+    text(survival ? 'TIME ALIVE' : 'VÉLO ÉLECTRIQUE', 25, 32, 9, '#b5d4c3');
+    if (survival) {
+      const time = formatAlive(Math.floor(state.elapsed * 1000));
+      text(time, 25, 62, Math.min(23, 120 / (time.length * 0.61)), '#faf1cf');
+      text(`${Math.round(state.speed * 3.6)} KM/H${state.assistActive ? ' · ASSIST' : ''}`, 25, 77, 9, state.assistActive ? '#e9d48d' : '#b5d4c3');
+    } else {
+      text(String(Math.round(state.speed * 3.6)).padStart(2, '0'), 25, 63, 29, '#faf1cf');
+      text('KM/H', 73, 61, 10, '#b5d4c3');
+      text(state.assistActive ? 'ASSIST ON' : 'PACE YOURSELF', 25, 77, 9, state.assistActive ? '#e9d48d' : '#b5d4c3');
+    }
     rect(W - 154, 14, 140, 73, '#214b4be8'); rect(W - 151, 17, 134, 2, '#83bbaa');
     text('BATTERY', W - 143, 32, 9, '#b5d4c3');
     text(`${Math.round(state.battery * 100)}%`, W - 25, 32, 10, '#faf1cf', 'right');
@@ -195,7 +234,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     }
     rect(W / 2 - 78, 14, 156, 57, '#214b4be8');
     text(`${(state.distance / 1000).toFixed(2)} KM`, W / 2, 40, 18, '#faf1cf', 'center');
-    text(`${Math.max(1, state.combo)}× CLEAN COMBO`, W / 2, 58, 9, '#b5d4c3', 'center');
+    text(survival ? `PACE ${Math.round(getSurvivalPace(state) * 3.6)} KM/H` : `${Math.max(1, state.combo)}× CLEAN COMBO`, W / 2, 58, 9, '#b5d4c3', 'center');
   }
   function drawMessage() {
     if (message && state.elapsed < message.until) {
@@ -217,7 +256,11 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       if (event.id <= lastEventId) continue;
       lastEventId = event.id;
       if (event.type === 'bell') bellPulseUntil = state.elapsed + 0.65;
-      if (['delivery', 'district-clear', 'checkpoint', 'delivery-complete'].includes(event.type))
+      if (state.mode === 'survival' && ['district', 'delivery', 'checkpoint'].includes(event.type))
+        message = { text: `NEXT QUARTIER${event.district ? ` / ${event.district.toUpperCase()}` : ''}`, until: state.elapsed + 1.4 };
+      else if (state.mode === 'survival' && event.type === 'pace')
+        message = { text: 'FASTER STREETS / STAY SHARP', until: state.elapsed + 1.2 };
+      else if (['delivery', 'district-clear', 'checkpoint', 'delivery-complete'].includes(event.type))
         message = { text: 'LIVRÉ ! / KEEP RIDING', until: state.elapsed + 1.4 };
       else if (event.type === 'near-pass') message = { text: 'A TIGHT, CLEAN PASS', until: state.elapsed + 0.9 };
       else if (event.type === 'crash') message = { text: 'FIND THE NEXT GAP', until: state.elapsed + 1.2 };

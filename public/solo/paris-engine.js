@@ -13,9 +13,9 @@ export const DISTRICTS = Object.freeze([
   Object.freeze({ id: 'montmartre', title: 'Montmartre', length: 540, description: 'The climb drains momentum. Save assist for your last delivery.', color: '#e7d6d0', accent: '#9d6470', trafficSpeed: 1.3 }),
 ]);
 export const DIFFICULTIES = Object.freeze([
-  Object.freeze({ id: 'standard', title: 'Standard', description: 'Untimed practice; generous gaps and battery.', deadlines: null, gap: 40, warning: 1.8, drain: 0.095, checkpointBattery: 0.30, startingBattery: 1 }),
-  Object.freeze({ id: 'veteran', title: 'Veteran', description: 'Five timed deliveries. Read signals and carry your speed.', deadlines: Object.freeze([46, 47, 50, 43, 49]), gap: 34, warning: 1.55, drain: 0.13, checkpointBattery: 0.22, startingBattery: 0.85 }),
-  Object.freeze({ id: 'nightmare', title: 'Nightmare', description: 'Tight delivery windows, busier streets, fewer reserves.', deadlines: Object.freeze([42, 44, 47.5, 41, 48]), gap: 31, warning: 1.4, drain: 0.15, checkpointBattery: 0.18, startingBattery: 0.75 }),
+  Object.freeze({ id: 'standard', title: 'Standard', description: 'A gentler start and slower survival acceleration.', deadlines: null, gap: 40, warning: 1.8, drain: 0.095, checkpointBattery: 0.30, startingBattery: 1, survivalStart: 9, survivalRamp: 7, transitionSeconds: 1.7 }),
+  Object.freeze({ id: 'veteran', title: 'Veteran', description: 'Increasing traffic pace. Read signals and plan your gaps.', deadlines: Object.freeze([46, 47, 50, 43, 49]), gap: 34, warning: 1.55, drain: 0.13, checkpointBattery: 0.22, startingBattery: 0.85, survivalStart: 10.5, survivalRamp: 9, transitionSeconds: 1.35 }),
+  Object.freeze({ id: 'nightmare', title: 'Nightmare', description: 'A faster start, stronger acceleration, and fewer reserves.', deadlines: Object.freeze([42, 44, 47.5, 41, 48]), gap: 31, warning: 1.4, drain: 0.15, checkpointBattery: 0.18, startingBattery: 0.75, survivalStart: 12, survivalRamp: 11, transitionSeconds: 1.2 }),
 ]);
 const LANES = [-3.5, -1.75, 0, 1.75, 3.5];
 const COLORS = ['#dfb668', '#bf6b5a', '#85a5a4', '#d5d6ce', '#888f9c', '#a58799'];
@@ -26,7 +26,13 @@ export function getDifficulty(value = 'veteran') {
   return DIFFICULTIES.find((d) => d.id === id) || DIFFICULTIES[1];
 }
 export function getDistrict(state) { return DISTRICTS[state.stageIndex % DISTRICTS.length]; }
-export function recordScope(state) { return `${state.difficulty}-${state.mode}`; }
+export function recordScope(state) { return `${state.difficulty}-${state.mode}${state.mode === 'survival' ? '-v1' : ''}`; }
+/** Smooth, unbounded acceleration with a gradually slowing growth rate. Active seconds only. */
+export function getSurvivalPace(value = 0, difficulty = 'veteran') {
+  const elapsed = typeof value === 'object' && value !== null ? value.elapsed : value;
+  const profile = getDifficulty(typeof value === 'object' && value !== null ? value : difficulty);
+  return profile.survivalStart + profile.survivalRamp * (Math.sqrt(1 + Math.max(0, elapsed) / 60) - 1);
+}
 function random(state) {
   state.rng = (Math.imul(state.rng, 1664525) + 1013904223) >>> 0;
   return state.rng / 4294967296;
@@ -75,24 +81,33 @@ function spawnRow(state, z) {
 }
 function fillTraffic(state) {
   const profile = getDifficulty(state);
-  const gap = Math.max(29, profile.gap - Math.min(3, state.stageIndex * 0.6) - Math.min(2, Math.floor(state.stageIndex / 5)));
-  while (state.nextRowZ < state.distance + HORIZON && state.traffic.length <= MAX_TRAFFIC - 4) {
+  const normalGap = Math.max(29, profile.gap - Math.min(3, state.stageIndex * 0.6) - Math.min(2, Math.floor(state.stageIndex / 5)));
+  // Preserve physical steering time between the complete bus/stagger envelopes.
+  // The extra speed budget covers assist and pace gained before the next row arrives.
+  const gap = state.mode === 'survival' ? Math.max(normalGap, (state.survivalPace + 3.5) * 1.08 * profile.transitionSeconds + 16) : normalGap;
+  state.rowGap = gap;
+  state.warningDistance = state.mode === 'survival' ? Math.max(36, (state.survivalPace + 3.5) * (profile.warning + 0.8) + 10) : 36;
+  state.lookAheadDistance = state.mode === 'survival' ? Math.max(HORIZON, state.warningDistance + gap + 10, gap * 3) : HORIZON;
+  while (state.nextRowZ < state.distance + state.lookAheadDistance && state.traffic.length <= MAX_TRAFFIC - 4) {
     spawnRow(state, state.nextRowZ);
     state.nextRowZ += gap + random(state) * 4;
   }
 }
-export function createState({ seed = 73129, mode = 'delivery', difficulty = 'veteran' } = {}) {
-  if (!['delivery', 'rush'].includes(mode)) throw new RangeError('Choose delivery or rush.');
+export function createState({ seed = 73129, mode = 'survival', difficulty = 'veteran' } = {}) {
+  if (!['survival', 'delivery', 'rush'].includes(mode)) throw new RangeError('Choose survival, delivery or rush.');
   if (!DIFFICULTIES.some((d) => d.id === difficulty)) throw new RangeError('Choose an available difficulty.');
   if (!Number.isFinite(Number(seed))) throw new TypeError('Seed must be a finite number.');
   const normalizedSeed = Number(seed) >>> 0, profile = getDifficulty(difficulty);
   const state = { gameId: 'paris-pedal', seed: normalizedSeed, rng: normalizedSeed, mode, difficulty, phase: 'playing',
-    elapsed: 0, tick: 0, distance: 0, speed: 8, x: 0, vx: 0, lean: 0, battery: profile.startingBattery,
+    elapsed: 0, tick: 0, distance: 0, speed: mode === 'survival' ? profile.survivalStart : 8,
+    survivalPace: mode === 'survival' ? profile.survivalStart : null,
+    x: 0, vx: 0, lean: 0, battery: profile.startingBattery,
     health: 3, score: 0, passPoints: 0, checkpointPoints: 0, combo: 0, comboTimer: 0, totalCrashes: 0,
     stageIndex: 0, stageDistance: 0, stageTotalDistance: DISTRICTS[0].length, stageStartedAt: 0,
     stageCrashes: 0, timeLeft: mode === 'delivery' && profile.deadlines ? profile.deadlines[0] : null,
     deliveries: 0, districtResults: [], traffic: [], trafficId: 0, rowId: 0, lastSafeLane: 2, nextRowZ: 48,
-    assistActive: false, assistLocked: false, bellCooldown: 0, bellHeld: false, crashCooldown: 0,
+    assistActive: false, assistLocked: false, brakeCharge: 1, brakeActive: false, brakeLocked: false,
+    bellCooldown: 0, bellHeld: false, crashCooldown: 0,
     slipstream: false, shoulder: false, eventId: 0, lastEvent: null, events: [], finishTime: null, result: null };
   fillTraffic(state);
   return state;
@@ -136,7 +151,7 @@ function moveTraffic(state, oldDistance, oldBikeX, dt) {
     const oldX = item.x, oldZ = item.z, oldWidth = item.width;
     const moving = Math.abs(item.targetX - item.x) > 0.001 || item.targetWidth > item.width + 0.001;
     const ahead = item.z - state.distance;
-    if (moving && !item.passed && !item.alerted && item.warningTimer === null && ahead < 36) {
+    if (moving && !item.passed && !item.alerted && item.warningTimer === null && ahead < state.warningDistance) {
       item.warningTimer = profile.warning;
       item.warningActive = true;
       emit(state, `${item.kind}-warning`, { actorId: item.id, x: item.x, z: item.z, targetX: item.targetX });
@@ -164,7 +179,11 @@ function moveTraffic(state, oldDistance, oldBikeX, dt) {
         state.speed = Math.max(3, state.speed * 0.5); state.combo = 0; state.comboTimer = 0;
         state.assistActive = false;
         emit(state, 'crash', { actorId: item.id, kind: item.kind, x: item.x, z: item.z, health: state.health });
-        if (state.health <= 0) { state.phase = 'lost'; state.result = 'crashed'; return; }
+        if (state.health <= 0) {
+          state.phase = 'lost'; state.result = 'crashed'; state.assistActive = false; state.brakeActive = false;
+          if (state.mode === 'survival') state.finishTime = state.elapsed;
+          return;
+        }
       }
     }
     // Reward only a completed clearance of the full actor length, never its midpoint.
@@ -190,7 +209,7 @@ function updateStage(state) {
     if (state.districtResults.length > 10) state.districtResults.shift();
     emit(state, 'delivery', { district: district.title, clean, delivery: state.deliveries });
     state.battery = Math.min(1, state.battery + profile.checkpointBattery);
-    if (profile.id === 'standard' && clean) state.health = Math.min(3, state.health + 1);
+    if (profile.id === 'standard' && clean && state.mode !== 'survival') state.health = Math.min(3, state.health + 1);
     if (state.mode === 'delivery' && state.deliveries === DISTRICTS.length) {
       state.distance = DISTRICTS.reduce((sum, district) => sum + district.length, 0);
       state.stageDistance = length; state.phase = 'won'; state.finishTime = state.elapsed;
@@ -208,6 +227,19 @@ function integrate(state, input, dt) {
   const profile = getDifficulty(state), district = getDistrict(state);
   const oldX = state.x, oldDistance = state.distance;
   state.elapsed += dt; state.tick++;
+  if (state.mode === 'survival') {
+    state.survivalPace = getSurvivalPace(state);
+    // Holding the brake can buy one short reaction window, never a slower run.
+    if (input.brake !== true) {
+      state.brakeCharge = Math.min(1, state.brakeCharge + dt * 0.4);
+      if (state.brakeCharge >= 0.35) state.brakeLocked = false;
+    }
+    state.brakeActive = input.brake === true && !state.brakeLocked && state.brakeCharge > 0;
+    if (state.brakeActive) {
+      state.brakeCharge = Math.max(0, state.brakeCharge - dt * 1.6);
+      if (state.brakeCharge === 0) state.brakeLocked = true;
+    }
+  }
   state.crashCooldown = Math.max(0, state.crashCooldown - dt);
   state.bellCooldown = Math.max(0, state.bellCooldown - dt);
   state.comboTimer = Math.max(0, state.comboTimer - dt); if (!state.comboTimer) state.combo = 0;
@@ -227,19 +259,28 @@ function integrate(state, input, dt) {
     state.battery = Math.max(0, state.battery - profile.drain * dt);
     if (state.battery === 0) state.assistLocked = true;
   } else {
-    const regen = input.brake === true ? 0.05 : input.throttle !== true ? 0.028 : state.slipstream ? 0.009 : 0.002;
+    const regen = state.mode === 'survival'
+      ? state.brakeActive ? 0.05 : state.slipstream ? 0.009 : 0.006
+      : input.brake === true ? 0.05 : input.throttle !== true ? 0.028 : state.slipstream ? 0.009 : 0.002;
     state.battery = Math.min(1, state.battery + regen * dt);
   }
   const hill = district.id === 'montmartre' ? 0.65 : 0;
   const cruise = input.throttle === true ? 11.5 - hill : 7.4 - hill;
-  const targetSpeed = state.shoulder ? 5.4 : input.brake === true ? 2.2 : state.assistActive ? 16 - hill : cruise + (state.slipstream ? 0.5 : 0);
-  state.speed = approach(state.speed, targetSpeed, (targetSpeed < state.speed ? input.brake === true ? 9 : 3.5 : state.assistActive ? 5 : 3) * dt);
+  const targetSpeed = state.mode === 'survival'
+    ? state.brakeActive ? state.survivalPace * 0.78 : state.survivalPace + (state.assistActive ? 3.5 : input.throttle === true ? 0.65 : 0)
+    : state.shoulder ? 5.4 : input.brake === true ? 2.2 : state.assistActive ? 16 - hill : cruise + (state.slipstream ? 0.5 : 0);
+  const speedRate = state.mode === 'survival'
+    ? targetSpeed < state.speed
+      ? state.brakeActive ? Math.max(9, state.survivalPace * 0.8) : Math.max(3.5, state.survivalPace * 0.35)
+      : Math.max(5.5, state.survivalPace * 0.55)
+    : targetSpeed < state.speed ? input.brake === true ? 9 : 3.5 : state.assistActive ? 5 : 3;
+  state.speed = approach(state.speed, targetSpeed, speedRate * dt);
   const travel = state.speed * dt; state.distance += travel; state.stageDistance += travel;
   // New rows belong to the same slowly moving queue as existing rows. Keeping
   // the spawn anchor in road coordinates avoids new traffic appearing inside it.
   state.nextRowZ += district.trafficSpeed * dt;
   moveTraffic(state, oldDistance, oldX, dt);
-  if (state.phase !== 'playing') { state.score = Math.floor(state.distance) + state.passPoints + state.checkpointPoints; return; }
+  if (state.phase !== 'playing') { state.score = state.mode === 'survival' ? Math.floor(state.elapsed * 1000) : Math.floor(state.distance) + state.passPoints + state.checkpointPoints; return; }
   if (state.timeLeft !== null) state.timeLeft = Math.max(0, profile.deadlines[state.stageIndex % DISTRICTS.length] - (state.elapsed - state.stageStartedAt));
   // Finishing a checkpoint exactly at the deadline is a valid delivery.
   if (state.timeLeft === 0 && state.stageDistance < district.length) {
@@ -247,7 +288,7 @@ function integrate(state, input, dt) {
     emit(state, 'deadline');
   } else updateStage(state);
   fillTraffic(state);
-  state.score = Math.floor(state.distance) + state.passPoints + state.checkpointPoints;
+  state.score = state.mode === 'survival' ? Math.floor(state.elapsed * 1000) : Math.floor(state.distance) + state.passPoints + state.checkpointPoints;
 }
 /** Larger frames are split into fixed-size collision steps; no elapsed time is simulated while paused. */
 export function step(state, input = {}, dt = FIXED_DT) {

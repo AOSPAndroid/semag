@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createBestStore, recordDetails } from '../public/solo/solo.js';
+import { createBestStore, recordDetails, formatValue } from '../public/solo/solo.js';
 
 function browserStorage() {
   const values = new Map();
@@ -262,4 +262,44 @@ test('Paris Pedal saves finished deliveries and keeps Rush and difficulty record
   }
   const invalid = recordDetails('paris-pedal', { recordKey: 'veteran-delivery-typo', phase: 'won', score: 99999 });
   assert.equal(invalid.candidate, null);
+});
+
+test('Paris Survival qualifies collision-ending time and preserves the longest across reloads and tiers', () => {
+  const storage = browserStorage();
+  const store = createBestStore(storage);
+  for (const [index, tier] of ['standard', 'veteran', 'nightmare'].entries()) {
+    const scope = `${tier}-survival-v1`;
+    store.update('paris-pedal', 999999, { scope: `${tier}-rush` });
+    store.update('paris-pedal', 888888, { scope: `${tier}-delivery` });
+    for (const phase of ['playing', 'paused', 'won']) {
+      const policy = recordDetails('paris-pedal', { recordKey: scope, phase, result: 'crashed', record: 999000, score: 999000 });
+      assert.equal(policy.candidate, null);
+      assert.equal(store.update('paris-pedal', policy.candidate, policy), null);
+    }
+    for (const result of [null, 'delivery-late', 'deliveries-complete']) {
+      assert.equal(recordDetails('paris-pedal', { recordKey: scope, phase: 'lost', result, record: 999000 }).candidate, null);
+    }
+    assert.equal(recordDetails('paris-pedal', { recordKey: scope, phase: 'lost', result: 'crashed', score: 999999 }).candidate, undefined, 'Points cannot substitute for an explicit survival time');
+    const longest = 65420 + index * 30000;
+    for (const time of [longest, longest - 1000]) {
+      const policy = recordDetails('paris-pedal', { recordKey: scope, phase: 'lost', result: 'crashed', record: time, score: 999999 });
+      assert.equal(policy.scope, scope);
+      assert.equal(policy.direction, 'max');
+      assert.equal(policy.unit, 'duration-ms');
+      assert.equal(store.update('paris-pedal', policy.candidate, policy), longest);
+    }
+    const reload = createBestStore(storage);
+    assert.equal(reload.read('paris-pedal', scope), longest);
+    assert.equal(reload.read('paris-pedal', `${tier}-rush`), 999999);
+    assert.equal(reload.read('paris-pedal', `${tier}-delivery`), 888888);
+  }
+  assert.equal(recordDetails('paris-pedal', { recordKey: 'veteran-survival', phase: 'lost', result: 'crashed', record: 999999 }).candidate, null);
+});
+
+test('Survival milliseconds display as elapsed time without rounding into the next second', () => {
+  for (const [milliseconds, displayed] of [[0, '0:00.00'], [5429, '0:05.42'], [59999, '0:59.99'], [60000, '1:00.00'], [65420, '1:05.42'], [3600000, '60:00.00']]) {
+    assert.equal(formatValue(milliseconds, undefined, 'duration-ms'), displayed);
+  }
+  assert.equal(formatValue(87.25, 2, 's'), '87.25s');
+  assert.equal(formatValue(9210), '9210');
 });

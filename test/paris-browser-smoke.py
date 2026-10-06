@@ -23,6 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SHOTS = Path(os.environ.get("FIRESIDE_SCREENSHOT_DIR", ROOT / "test-results" / "paris"))
 GAME = "paris-pedal"
 SURFACE = "window.firesideSolo"
+VIEWPORTS = [(1440, 1000), (1366, 768), (390, 900), (320, 900)]
 
 
 def state(page):
@@ -48,6 +49,12 @@ def restart(page):
 
 def record(page, scope):
     return page.evaluate("scope => JSON.parse(localStorage.getItem(`fireside-solo-best:paris-pedal:${scope}`))", scope)
+
+
+def duration_text(milliseconds):
+    minutes, remainder = divmod(milliseconds, 60000)
+    seconds, remainder = divmod(remainder, 1000)
+    return f"{minutes}:{seconds:02d}.{remainder // 10:02d}"
 
 
 def room_ids(url):
@@ -88,21 +95,9 @@ def catalog(page):
     assert "room=" not in page.url
 
 
-def native_selection_and_layout(page):
-    initial = state(page)
-    assert initial["difficulty"] == "veteran" and initial["mode"] == "delivery", initial
-    native_button(page, "#solo-pause")
-    wait_phase(page, "paused")
-    paused = state(page)
-    page.wait_for_timeout(250)
-    assert state(page) == paused, "Paused ride advanced"
-    # Help is a native disclosure. Space/Enter must never reach the rider.
-    page.locator("#solo-how-to summary").focus()
-    page.keyboard.press("Space", delay=20)
-    assert page.locator("#solo-how-to").evaluate("element => element.open")
-    assert state(page) == paused, "Help key leaked into gameplay"
-    page.keyboard.press("Enter", delay=20)
-    for width, height in [(1440, 1000), (1366, 768), (390, 900), (320, 900)]:
+def layout_checks(page, mode):
+    assert state(page)["phase"] == "paused" and state(page)["mode"] == mode
+    for width, height in VIEWPORTS:
         page.set_viewport_size({"width": width, "height": height})
         page.wait_for_timeout(100)
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth"), (width, "horizontal overflow")
@@ -119,35 +114,57 @@ def native_selection_and_layout(page):
         for button in page.locator(".paris-controls button").all():
             box = button.bounding_box()
             assert box and box["width"] >= 44 and box["height"] >= 44, (width, "small touch control", box)
-        page.screenshot(path=str(SHOTS / f"paris-layout-{width}.png"), full_page=True, animations="disabled")
+        page.screenshot(path=str(SHOTS / f"paris-{mode}-layout-{width}.png"), full_page=True, animations="disabled")
     page.set_viewport_size({"width": 1440, "height": 1000})
+
+
+def native_selection_and_layout(page):
+    initial = state(page)
+    assert initial["difficulty"] == "veteran" and initial["mode"] == "survival", initial
+    assert initial["timeLeft"] is None, "Survival launched a delivery clock"
+    assert page.locator('.paris-modes [data-mode="rush"]').count() == 0
+    assert page.locator('.paris-modes [data-mode="survival"]').count() == 1
+    native_button(page, "#solo-pause")
+    wait_phase(page, "paused")
+    paused = state(page)
+    page.wait_for_timeout(250)
+    assert state(page) == paused, "Paused ride advanced"
+    # Help is a native disclosure. Space/Enter must never reach the rider.
+    page.locator("#solo-how-to summary").focus()
+    page.keyboard.press("Space", delay=20)
+    assert page.locator("#solo-how-to").evaluate("element => element.open")
+    assert state(page) == paused, "Help key leaked into gameplay"
+    page.keyboard.press("Enter", delay=20)
+    layout_checks(page, "survival")
     native_button(page, "#solo-pause")
     for difficulty in ["nightmare", "standard", "veteran"]:
         native_button(page, f'.paris-difficulties [data-difficulty="{difficulty}"]')
         current = state(page)
-        assert current["difficulty"] == difficulty and current["mode"] == "delivery"
+        assert current["difficulty"] == difficulty and current["mode"] == "survival"
         assert page.locator(f'.paris-difficulties [data-difficulty="{difficulty}"]').evaluate("element => element === document.activeElement"), "Native tier selection lost keyboard focus"
         assert current["distance"] < 2, "Selecting difficulty retained earlier route progress"
         assert not current["assistActive"], "Native difficulty Space leaked into electric assist"
         if difficulty == "standard":
-            assert "999999" in page.locator("#solo-record").inner_text(), "Standard record disappeared from its own tier"
+            assert record(page, "standard-survival-v1") == 1200, "Standard duration disappeared from its own tier"
+            assert page.locator("#solo-record").inner_text() == "0:01.20"
+        elif difficulty == "nightmare":
+            assert record(page, "nightmare-survival-v1") == 2500
+            assert page.locator("#solo-record").inner_text() == "0:02.50"
         restart(page)
         assert state(page)["difficulty"] == difficulty
-    native_button(page, '.paris-modes [data-mode="rush"]')
-    assert state(page)["mode"] == "rush"
-    assert "888888" in page.locator("#solo-record").inner_text(), "Rush did not select its own record"
-    restart(page)
-    assert state(page)["mode"] == "rush" and state(page)["difficulty"] == "veteran"
     native_button(page, '.paris-modes [data-mode="delivery"]')
     assert state(page)["mode"] == "delivery" and not state(page)["assistActive"]
     restart(page)
     assert record(page, "veteran-delivery") is None, "Unfinished ride saved a delivery score"
+    native_button(page, "#solo-pause")
+    layout_checks(page, "delivery")
+    native_button(page, "#solo-pause")
     page.locator("#solo-how-to summary").focus()
     page.keyboard.press("Space", delay=40)
     page.wait_for_timeout(60)
     assert not state(page)["assistActive"], "Live help key leaked into motor assist"
     page.keyboard.press("Enter", delay=20)
-    print("  Native selection/restart/help, desktop/laptop/390/320px layouts and 44px controls passed", flush=True)
+    print("  Survival default, native selection/restart/help, both-mode desktop/laptop/390/320px layouts and 44px controls passed", flush=True)
 
 
 def touch_input(page, context, control, duration=500, cancel=True):
@@ -171,6 +188,7 @@ def touch_input(page, context, control, duration=500, cancel=True):
 
 
 def physical_controls(page, context):
+    native_button(page, '.paris-modes [data-mode="delivery"]')
     keyboard = Keyboard(page)
     restart(page)
     before = state(page)
@@ -254,13 +272,115 @@ def physical_controls(page, context):
     print("  Real throttle/steer/brake/assist/bell, focused holds, touch release/cancel, pause and tab blur passed", flush=True)
 
 
+def survival_checks(page, context):
+    native_button(page, '.paris-modes [data-mode="survival"]')
+    restart(page)
+    keyboard = Keyboard(page)
+    initial = state(page)
+    assert initial["mode"] == "survival" and initial["difficulty"] == "veteran"
+    assert initial["timeLeft"] is None
+    assert record(page, "veteran-survival-v1") is None
+    samples = [initial]
+    # No throttle: the street itself forces motion and a steadily rising pace.
+    for _ in range(5):
+        page.wait_for_timeout(220)
+        samples.append(state(page))
+    assert samples[-1]["distance"] > initial["distance"] + 7, "Survival stalled without a pedal input"
+    assert all(b["survivalPace"] > a["survivalPace"] for a, b in zip(samples, samples[1:])), "Forced pace did not rise with active time"
+    assert all(s["score"] == int(s["elapsed"] * 1000) for s in samples), "Primary Survival score is not active milliseconds"
+    assert record(page, "veteran-survival-v1") is None, "An unfinished Survival set a longest-time record"
+    before_brake = state(page)
+    keyboard.set({"ArrowDown"})
+    page.wait_for_timeout(1800)
+    braking = state(page)
+    keyboard.release()
+    assert braking["phase"] == "playing" and braking["health"] == 3
+    assert braking["survivalPace"] > before_brake["survivalPace"]
+    assert braking["speed"] >= braking["survivalPace"] * .75 and braking["distance"] > before_brake["distance"] + 10, "Holding brake stopped or indefinitely slowed Survival"
+    assert not braking["brakeActive"], "A long held brake stayed continuously effective"
+    page.screenshot(path=str(SHOTS / "paris-survival-gameplay.png"), full_page=True)
+    native_button(page, "#solo-pause")
+    wait_phase(page, "paused")
+    paused = state(page)
+    best = record(page, "veteran-survival-v1")
+    page.wait_for_timeout(500)
+    assert state(page) == paused, "Paused elapsed time, forced pace or resources advanced"
+    assert record(page, "veteran-survival-v1") == best
+    native_button(page, "#solo-pause")
+    page.locator(".paris-canvas").focus()
+    page.keyboard.press("b", delay=40)
+    assert state(page)["bellCooldown"] > 0
+    # Survival shares accessible steering controls and cancellation behavior.
+    for key in ("Space", "Enter"):
+        restart(page)
+        button = page.locator('.paris-controls [data-control="left"]')
+        button.focus()
+        x = state(page)["x"]
+        page.keyboard.down(key)
+        page.wait_for_timeout(180)
+        assert button.get_attribute("aria-pressed") == "true" and state(page)["x"] < x - .1
+        page.keyboard.up(key)
+        assert button.get_attribute("aria-pressed") == "false"
+    restart(page)
+    before, held, released = touch_input(page, context, "left", duration=220, cancel=True)
+    assert held["x"] < before["x"] - .1
+    assert abs(released["vx"]) < .3, "Cancelled Survival touch steering stayed held"
+    restart(page)
+    keyboard.release()
+    crashes, crash_times = 0, []
+    end = time.monotonic() + 65
+    while time.monotonic() < end:
+        # State and record share one browser task so a terminal animation frame
+        # cannot occur between a playing snapshot and its storage assertion.
+        snapshot = page.evaluate("({state:window.firesideSolo.getState(), record:JSON.parse(localStorage.getItem('fireside-solo-best:paris-pedal:veteran-survival-v1'))})")
+        current = snapshot["state"]
+        if current["phase"] != "playing":
+            break
+        if current["totalCrashes"] > crashes:
+            crashes = current["totalCrashes"]
+            crash_times.append(current["elapsed"])
+        assert snapshot["record"] is None, "A nonterminal collision stored a Survival record"
+        # Deliberately steer into an actual visible traffic body. No damage,
+        # time or terminal result is injected into the game.
+        hazards = [a for a in current["traffic"] if not a["passed"] and a["z"] + a["length"] / 2 + 1 > current["distance"]]
+        target = min(hazards, key=lambda a: a["z"] - a["length"] / 2)["x"] if hazards else 0
+        error = target - current["x"] - current["vx"] * .08
+        keyboard.set({"ArrowLeft"} if error < -.08 else {"ArrowRight"} if error > .08 else set())
+        page.wait_for_timeout(60)
+    keyboard.release()
+    terminal = state(page)
+    assert terminal["phase"] == "lost" and terminal["result"] == "crashed", terminal
+    assert terminal["totalCrashes"] == 3 and terminal["health"] == 0
+    assert terminal["finishTime"] == terminal["elapsed"] and terminal["timeLeft"] is None
+    assert terminal["score"] == int(terminal["elapsed"] * 1000)
+    best = record(page, "veteran-survival-v1")
+    assert best == terminal["score"] and best > 1000, "Third impact did not store the active-time score"
+    assert page.locator("#solo-record").inner_text() == duration_text(best)
+    assert record(page, "standard-survival-v1") == 1200 and record(page, "nightmare-survival-v1") == 2500
+    assert record(page, "standard-delivery") == 999999 and record(page, "veteran-rush") == 888888
+    page.wait_for_timeout(300)
+    assert state(page) == terminal, "Terminal Survival kept accumulating time"
+    (SHOTS / "survival-result.json").write_text(json.dumps({"samples": samples, "held_brake": braking, "crash_times": crash_times, "terminal": terminal, "best_ms": best}, indent=2))
+    page.screenshot(path=str(SHOTS / "paris-survival-terminal.png"), full_page=True)
+    restart(page)
+    assert state(page)["mode"] == "survival" and record(page, "veteran-survival-v1") == best
+    native_button(page, "#solo-pause")
+    page.reload()
+    page.wait_for_function(f"{SURFACE}?.gameId === 'paris-pedal'")
+    assert state(page)["difficulty"] == "veteran" and state(page)["mode"] == "survival"
+    assert record(page, "veteran-survival-v1") == best
+    assert page.locator("#solo-record").inner_text() == duration_text(best)
+    print(f"  Survival: automatic rising pace, finite brake, pause/native controls, three legal impacts at {terminal['elapsed']:.2f}s, completed-only persistent duration and tier/legacy isolation passed", flush=True)
+    return best
+
+
 def capture_road(page, keyboard, name, all_sizes=False):
     """Export actual rendered frames at frozen, physically reached positions."""
     keyboard.release()
     native_button(page, "#solo-pause")
     wait_phase(page, "paused")
     frozen = state(page)
-    sizes = [(1440, 1000), (1366, 768), (390, 900), (320, 900)] if all_sizes else [(1440, 1000)]
+    sizes = VIEWPORTS if all_sizes else [(1440, 1000)]
     for width, height in sizes:
         page.set_viewport_size({"width": width, "height": height})
         page.wait_for_timeout(100)
@@ -276,8 +396,9 @@ def capture_road(page, keyboard, name, all_sizes=False):
     page.locator(".paris-canvas").focus()
 
 
-def ride_delivery(page):
+def ride_delivery(page, survival_best):
     """Read visible actors, choose a broad corridor, then press actual keys."""
+    native_button(page, '.paris-modes [data-mode="delivery"]')
     restart(page)
     keyboard = Keyboard(page)
     types, warnings, events, checkpoints = set(), set(), set(), []
@@ -380,12 +501,14 @@ def ride_delivery(page):
     assert finished["finishTime"] > 100 and finished["score"] > finished["distance"]
     assert record(page, "veteran-delivery") == finished["score"]
     assert record(page, "standard-delivery") == 999999 and record(page, "veteran-rush") == 888888
+    assert record(page, "veteran-survival-v1") == survival_best, "Delivery points replaced Survival time"
     page.wait_for_timeout(350)
     assert state(page) == finished, "Finished route continued simulating"
     page.screenshot(path=str(SHOTS / "paris-delivery-complete.png"), full_page=True)
     best = finished["score"]
     restart(page)
     assert record(page, "veteran-delivery") == best
+    assert record(page, "veteran-survival-v1") == survival_best
     native_button(page, '.paris-difficulties [data-difficulty="nightmare"]')
     assert record(page, "nightmare-delivery") is None and "999999" not in page.locator("#solo-record").inner_text()
     native_button(page, '.paris-difficulties [data-difficulty="veteran"]')
@@ -401,7 +524,7 @@ def ride_delivery(page):
     page.screenshot(path=str(SHOTS / "paris-idle-failure.png"), full_page=True)
     page.reload()
     page.wait_for_function(f"{SURFACE}?.gameId === 'paris-pedal'")
-    assert state(page)["difficulty"] == "veteran" and state(page)["mode"] == "delivery"
+    assert state(page)["difficulty"] == "veteran" and state(page)["mode"] == "survival"
     assert record(page, "veteran-delivery") == best
     print(f"  Full five-district Veteran route won in {finished['finishTime']:.2f}s; visible traffic/warnings, scoring, qualifying-only records and idle failure passed", flush=True)
 
@@ -416,8 +539,8 @@ def run(url):
             options["executable_path"] = "/usr/bin/chromium"
         browser = playwright.chromium.launch(**options)
         context = browser.new_context(viewport={"width": 1440, "height": 1000})
-        # Seed only easier/mode record storage; no gameplay state is changed.
-        context.add_init_script("localStorage.setItem('fireside-solo-best:paris-pedal:standard-delivery','999999'); localStorage.setItem('fireside-solo-best:paris-pedal:veteran-rush','888888');")
+        # Seed only historical points and other-tier durations, never gameplay.
+        context.add_init_script("for (const [scope,value] of [['standard-delivery',999999],['veteran-rush',888888],['veteran-survival',777777],['standard-survival-v1',1200],['nightmare-survival-v1',2500]]) { const key=`fireside-solo-best:paris-pedal:${scope}`; if(localStorage.getItem(key)===null)localStorage.setItem(key,JSON.stringify(value)); }")
         page = context.new_page()
         page.on("pageerror", lambda error: errors.append(str(error)))
         page.on("console", lambda message: errors.append(message.text) if message.type == "error" else None)
@@ -427,16 +550,17 @@ def run(url):
         try:
             page.goto(url + "/")
             catalog(page)
-            assert "999999" not in page.locator("#solo-record").inner_text() and "888888" not in page.locator("#solo-record").inner_text()
+            assert page.locator("#solo-record").inner_text() == "—", "Legacy points leaked into the new duration best"
             native_selection_and_layout(page)
             physical_controls(page, context)
-            ride_delivery(page)
+            survival_best = survival_checks(page, context)
+            ride_delivery(page, survival_best)
             assert room_ids(url) == before_rooms, "Solo game changed multiplayer rooms"
             assert not errors, errors
             assert not resources, resources
             assert not mutations, mutations
             assert not sockets, sockets
-            print("PASS Paris Pedal: real full Veteran delivery, native controls, records, idle failure, desktop/mobile layouts and solo network isolation", flush=True)
+            print("PASS Paris Pedal: real Survival pacing/three-impact time record and full Veteran delivery, native controls, records, idle failure, desktop/mobile layouts and solo network isolation", flush=True)
             print(json.dumps({"game": GAME, "errors": errors, "failed_resources": resources, "room_mutations": mutations, "websockets": sockets, "screenshots": str(SHOTS)}), flush=True)
         finally:
             context.close()

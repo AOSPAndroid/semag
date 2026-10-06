@@ -12,11 +12,12 @@ const WALL_COLORS = ['#decdb1', '#e4d1b9', '#d7c6ac', '#d9d1ba', '#ddc6be'];
 export function createParisRenderer(ctx, { sprites, reducedMotion = false } = {}) {
   // Reused bounded lists; continuous positions never become sprite cache keys.
   const actors = [], warnings = [];
+  const warningLabels = Array.from({ length: 4 }, () => ({ x: 0, y: 0, width: 0 }));
   const sky = ctx.createLinearGradient(0, 0, 0, HORIZON_Y + 45);
   sky.addColorStop(0, '#93c5ce'); sky.addColorStop(0.68, '#c9dbd4'); sky.addColorStop(1, '#efe4cb');
   const asphalt = ctx.createLinearGradient(0, HORIZON_Y, 0, H);
   asphalt.addColorStop(0, '#969a8a'); asphalt.addColorStop(0.35, '#737b71'); asphalt.addColorStop(1, '#596560');
-  let state = null;
+  let state = null, actorFar = FAR, warningFar = 45, survival = false;
 
   const scale = z => DEPTH / (DEPTH + Math.max(NEAR, z));
   const py = z => HORIZON_Y + (RIDER_Y - HORIZON_Y) * scale(z);
@@ -178,17 +179,22 @@ export function createParisRenderer(ctx, { sprites, reducedMotion = false } = {}
   }
 
   function footprint(actor, color = '#203b3442', inset = 0) {
+    if (!actorVisible(actor)) return;
     const z = actor.z - state.distance, rear = Math.max(NEAR, z - actor.length / 2), front = Math.max(NEAR, z + actor.length / 2);
     const half = Math.max(0.02, actor.width / 2 - inset);
     strip(actor.x - half, actor.x + half, rear, front, color);
   }
   function actorDepth(actor) { return actor.z - actor.length / 2; }
+  function actorVisible(actor) {
+    const relative = actor.z - state.distance;
+    return relative + actor.length / 2 >= NEAR && relative - actor.length / 2 <= actorFar;
+  }
   function actorBody(actor) {
     const z = actor.z - state.distance, actualRear = z - actor.length / 2, front = z + actor.length / 2;
     // A bus can extend from below the canvas to several metres ahead. Clip its
     // visible roof/side at the bottom plane instead of dropping the whole bus.
     const rear = Math.max(NEAR, actualRear);
-    if (actualRear > FAR || front < NEAR) return;
+    if (!actorVisible(actor)) return;
     const p = scale(rear), x = px(actor.x, rear), ground = py(rear), width = actor.width * METRE * p;
     const variant = Math.max(0, COLORS.indexOf(actor.color));
     if (actor.crashed) ctx.globalAlpha = 0.58;
@@ -264,13 +270,13 @@ export function createParisRenderer(ctx, { sprites, reducedMotion = false } = {}
 
   function intent(actor, index) {
     const relative = actor.z - state.distance, rear = relative - actor.length / 2;
-    if (relative < -2 || rear > 45) return;
+    if (!actorVisible(actor) || relative < -2 || rear > warningFar) return;
     const door = actor.kind === 'door', color = door ? '#ffad69' : '#f9d581';
     const targetX = Number.isFinite(actor.targetX) ? actor.targetX : actor.x;
     const futureWidth = door ? Math.max(actor.width, actor.targetWidth || actor.width) : actor.width;
     const envelopeLeft = Math.min(actor.x - actor.width / 2, targetX - futureWidth / 2);
     const envelopeRight = Math.max(actor.x + actor.width / 2, targetX + futureWidth / 2);
-    const near = Math.max(NEAR, rear), far = Math.min(FAR, relative + actor.length / 2);
+    const near = Math.max(NEAR, rear), far = Math.min(actorFar, relative + actor.length / 2);
     ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = Math.max(1.5, 2.6 * scale(near));
     ctx.setLineDash([4, 4]); ctx.beginPath();
     ctx.moveTo(px(envelopeLeft, near), py(near)); ctx.lineTo(px(envelopeRight, near), py(near));
@@ -287,7 +293,32 @@ export function createParisRenderer(ctx, { sprites, reducedMotion = false } = {}
     // Final overlay pass keeps the warning readable beside a bus or roof.
     const actorHeight = actor.kind === 'bus' ? 2.7 : actor.kind === 'cyclist' ? 1.73 : 1.45;
     const labelY = clamp(py(Math.max(NEAR, rear)) - vertical(actorHeight, Math.max(NEAR, rear)) - 11 - (index % 2) * 2, 178, 475);
-    label(door ? 'DOOR' : actor.kind === 'cyclist' ? 'DRIFT' : 'MERGE', clamp(px(actor.x, baseZ), 48, W - 48), labelY, color, Math.max(9, Math.min(11, 11 * scale(baseZ) + 3)));
+    const position = warningLabels[index];
+    label(door ? 'DOOR' : actor.kind === 'cyclist' ? 'DRIFT' : 'MERGE', survival ? position.x : clamp(px(actor.x, baseZ), 48, W - 48), survival ? position.y : labelY, color, Math.max(9, Math.min(11, 11 * scale(baseZ) + 3)));
+  }
+  function layoutWarningLabels() {
+    for (let i = 0; i < warnings.length; i++) {
+      const actor = warnings[i], relative = actor.z - state.distance, rear = relative - actor.length / 2;
+      const height = actor.kind === 'bus' ? 2.7 : actor.kind === 'cyclist' ? 1.73 : 1.45;
+      const position = warningLabels[i];
+      position.x = clamp(px(actor.x, Math.max(0, relative)), 48, W - 48);
+      position.y = clamp(py(Math.max(NEAR, rear)) - vertical(height, Math.max(NEAR, rear)) - 11 - (i % 2) * 2, 178, 475);
+      ctx.font = `bold ${Math.max(9, Math.min(11, 11 * scale(Math.max(0, relative)) + 3))}px ui-monospace, monospace`;
+      position.width = ctx.measureText(actor.kind === 'door' ? 'DOOR' : actor.kind === 'cyclist' ? 'DRIFT' : 'MERGE').width + 12;
+      // At high pace several signalled actors converge near the horizon. Give
+      // the nearest label its usual anchor and only shift overlapping distant
+      // labels, using the same four reused slots as the warning cap.
+      if (rear <= 45) continue;
+      for (let attempt = 0; attempt < 4; attempt++) {
+        let nextY = position.y;
+        for (let j = 0; j < i; j++) {
+          const previous = warningLabels[j];
+          if (Math.abs(position.x - previous.x) < (position.width + previous.width) / 2 + 2 && Math.abs(position.y - previous.y) < 20) nextY = Math.max(nextY, previous.y + 20);
+        }
+        if (nextY === position.y) break;
+        position.y = nextY;
+      }
+    }
   }
   function rider(bellPulseUntil) {
     const ground = py(-BIKE_LENGTH / 2), x = px(state.x, -BIKE_LENGTH / 2);
@@ -327,6 +358,9 @@ export function createParisRenderer(ctx, { sprites, reducedMotion = false } = {}
     draw(nextState, { bellPulseUntil = 0 } = {}) {
       state = nextState;
       if (!state) return;
+      survival = state.mode === 'survival';
+      warningFar = survival && Number.isFinite(state.warningDistance) ? Math.max(45, state.warningDistance) : 45;
+      actorFar = survival ? Math.max(FAR, warningFar, Number.isFinite(state.lookAheadDistance) ? state.lookAheadDistance : FAR) : FAR;
       ctx.save(); ctx.imageSmoothingEnabled = false;
       const district = mod(state.stageIndex || 0, DISTRICTS.length);
       background(district); road(district); scenery(district);
@@ -334,10 +368,10 @@ export function createParisRenderer(ctx, { sprites, reducedMotion = false } = {}
       for (const actor of state.traffic || []) {
         if (actors.length >= MAX_TRAFFIC) break;
         const relative = actor.z - state.distance;
-        if (relative + actor.length / 2 < NEAR || relative - actor.length / 2 > FAR) continue;
+        if (!actorVisible(actor)) continue;
         actors.push(actor);
-        if (!actor.passed && relative >= -2 && relative - actor.length / 2 <= 45 &&
-          (actor.warningActive || actor.turnSignal || actor.kind === 'door' && actor.maneuverStarted)) warnings.push(actor);
+        if (!actor.passed && relative >= -2 && relative - actor.length / 2 <= warningFar &&
+          (actor.warningActive || !survival && actor.turnSignal || actor.kind === 'door' && actor.maneuverStarted)) warnings.push(actor);
       }
       actors.sort((a, b) => actorDepth(b) - actorDepth(a) || a.id - b.id);
       for (const actor of actors) footprint(actor);
@@ -349,6 +383,7 @@ export function createParisRenderer(ctx, { sprites, reducedMotion = false } = {}
       if (!riderDrawn) rider(bellPulseUntil);
       warnings.sort((a, b) => actorDepth(a) - actorDepth(b));
       if (warnings.length > 4) warnings.length = 4;
+      if (survival) layoutWarningLabels();
       for (let i = warnings.length - 1; i >= 0; i--) intent(warnings[i], i);
       ctx.restore();
     },

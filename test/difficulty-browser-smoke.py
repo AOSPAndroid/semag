@@ -18,7 +18,7 @@ from playwright.sync_api import sync_playwright
 ROOT = Path(__file__).resolve().parents[1]
 SHOTS = Path(os.environ.get("FIRESIDE_SCREENSHOT_DIR", ROOT / "test-results" / "difficulty"))
 CASES = [
-    ("paris-pedal", "difficulty", "veteran", "standard-delivery"),
+    ("paris-pedal", "difficulty", "veteran", "standard-survival-v1"),
     ("ember-delve", "difficulty", "veteran", "default"),
     ("night-drive", "difficulty", "veteran", "default"),
     ("deckbound", "difficulty", "veteran", "default"),
@@ -88,6 +88,9 @@ def run(url):
                     initial = state(page)
                     assert initial[field] == default, (game, initial)
                     pause_if_running(page)
+                    if game == "paris-pedal":
+                        assert initial["mode"] == "survival" and initial["timeLeft"] is None
+                        assert page.locator("#solo-record").inner_text() == "—", "An easier survival time leaked into Veteran"
                     assert "999999" not in page.locator("#solo-record").inner_text(), f"{game}: easier best leaked into challenge"
                     before = state(page)
                     page.wait_for_timeout(250)
@@ -140,6 +143,9 @@ def run(url):
                     page.wait_for_function("game => window.firesideSolo?.gameId === game", arg=game)
                     assert state(page)[field] == default
                     pause_if_running(page)
+                    if game == "paris-pedal":
+                        assert state(page)["mode"] == "survival"
+                        assert page.locator("#solo-record").inner_text() == "—"
                     assert "999999" not in page.locator("#solo-record").inner_text()
                     results.append({"game": game, "default": default, "selection_restart_pause_layout": "passed"})
                     print(f"PASS {game}: challenge hub launch, records, native selection, restart, pause, desktop/laptop/390/320px", flush=True)
