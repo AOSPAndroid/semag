@@ -62,17 +62,17 @@ def stored_record(page, game):
 
 def check_catalog(page):
     assert page.locator("[data-create-game]").count() == 9
-    assert page.locator("[data-play-solo]").count() == 9
+    assert page.locator("[data-play-solo]").count() == 10
     assert page.locator("[data-create-game]:visible").count() == 9
-    assert page.locator("[data-play-solo]:visible").count() == 9
+    assert page.locator("[data-play-solo]:visible").count() == 10
     page.locator('[data-filter="driving"]').click()
     assert page.locator("[data-create-game]:visible").count() == 0
-    assert page.locator("[data-play-solo]:visible").count() == 2
+    assert page.locator("[data-play-solo]:visible").count() == 3
     assert page.locator('[data-play-solo="apex-circuit"]:visible').count() == 1
     assert page.locator('[data-play-solo="night-drive"]:visible').count() == 1
     page.locator('[data-filter="solo"]').click()
     assert page.locator("[data-create-game]:visible").count() == 0
-    assert page.locator("[data-play-solo]:visible").count() == 9
+    assert page.locator("[data-play-solo]:visible").count() == 10
     page.locator('[data-filter="friends"]').click()
     assert page.locator("[data-create-game]:visible").count() == 9
     assert page.locator("[data-play-solo]:visible").count() == 0

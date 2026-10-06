@@ -233,3 +233,33 @@ test('Night Drive challenge tours save only completed scores and endless remains
     assert.equal(store.read('night-drive', `${tier}-tour`), 9000);
   }
 });
+
+
+test('Paris Pedal saves finished deliveries and keeps Rush and difficulty records separate', () => {
+  const storage = browserStorage();
+  const store = createBestStore(storage);
+  for (const [index, tier] of ['standard', 'veteran', 'nightmare'].entries()) {
+    const routeScope = `${tier}-delivery`;
+    for (const phase of ['playing', 'paused', 'lost']) {
+      const policy = recordDetails('paris-pedal', { recordKey: routeScope, phase, score: 9000, record: 9000 });
+      assert.equal(policy.scope, routeScope);
+      assert.equal(policy.candidate, null);
+      assert.equal(store.update('paris-pedal', policy.candidate, policy), null);
+    }
+    const score = 2000 + index * 100;
+    const complete = recordDetails('paris-pedal', { recordKey: routeScope, phase: 'won', score, record: score });
+    assert.equal(complete.direction, 'max');
+    assert.equal(store.update('paris-pedal', complete.candidate, complete), score);
+    const rushScope = `${tier}-rush`;
+    for (const [phase, value] of [['playing', 300], ['lost', 500], ['playing', 0]]) {
+      const rush = recordDetails('paris-pedal', { recordKey: rushScope, phase, score: value });
+      assert.equal(rush.scope, rushScope);
+      assert.equal(rush.candidate, value);
+      store.update('paris-pedal', rush.candidate, rush);
+    }
+    assert.equal(createBestStore(storage).read('paris-pedal', routeScope), score);
+    assert.equal(createBestStore(storage).read('paris-pedal', rushScope), 500);
+  }
+  const invalid = recordDetails('paris-pedal', { recordKey: 'veteran-delivery-typo', phase: 'won', score: 99999 });
+  assert.equal(invalid.candidate, null);
+});

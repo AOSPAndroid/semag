@@ -18,6 +18,7 @@ from playwright.sync_api import sync_playwright
 ROOT = Path(__file__).resolve().parents[1]
 SHOTS = Path(os.environ.get("FIRESIDE_SCREENSHOT_DIR", ROOT / "test-results" / "difficulty"))
 CASES = [
+    ("paris-pedal", "difficulty", "veteran", "standard-delivery"),
     ("ember-delve", "difficulty", "veteran", "default"),
     ("night-drive", "difficulty", "veteran", "default"),
     ("deckbound", "difficulty", "veteran", "default"),
@@ -99,11 +100,11 @@ def run(url):
                     for width, height in [(1440, 1000), (1366, 768), (390, 900), (320, 900)]:
                         page.set_viewport_size({"width": width, "height": height})
                         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth"), (game, width, "overflow")
-                        if width >= 951 and game in ["ember-delve", "night-drive", "rift-survivor", "apex-circuit", "prism-shift"]:
+                        if width >= 951 and game in ["ember-delve", "night-drive", "rift-survivor", "apex-circuit", "prism-shift", "paris-pedal"]:
                             page.wait_for_function("height => { const r=document.querySelector('#solo-game canvas[tabindex]').getBoundingClientRect(); return r.bottom<=height; }", arg=height, timeout=3000)
                             canvas = page.locator("#solo-game canvas[tabindex]").first.bounding_box()
                             assert canvas and canvas["y"] + canvas["height"] <= height, (game, "playfield extends below the first screen", canvas)
-                            if game in ["night-drive", "apex-circuit"]:
+                            if game in ["night-drive", "apex-circuit", "paris-pedal"]:
                                 assert canvas["width"] >= 300, (game, "driving scene too small to read", canvas)
                         page.screenshot(path=str(SHOTS / f"{game}-{width}.png"), full_page=True, animations="disabled")
                     page.set_viewport_size({"width": 1440, "height": 1000})

@@ -73,8 +73,8 @@ def native_help(page):
 
 def catalog(page):
     assert page.locator("[data-create-game]").count() == 9
-    assert page.locator("[data-play-solo]").count() == 9
-    for name, friends, solos in [("all", 9, 9), ("friends", 9, 0), ("solo", 0, 9), ("roguelike", 0, 3), ("driving", 0, 2)]:
+    assert page.locator("[data-play-solo]").count() == 10
+    for name, friends, solos in [("all", 9, 10), ("friends", 9, 0), ("solo", 0, 10), ("roguelike", 0, 3), ("driving", 0, 3)]:
         page.locator(f'[data-filter="{name}"]').click()
         assert page.locator("[data-create-game]:visible").count() == friends
         assert page.locator("[data-play-solo]:visible").count() == solos

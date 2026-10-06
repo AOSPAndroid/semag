@@ -1,6 +1,6 @@
 {
   "name": "fireside-game-hub",
-  "version": "3.2.0",
+  "version": "3.3.0",
   "private": true,
   "type": "module",
   "description": "A self-hosted game hub with platform brawling, action and deckbuilding roguelikes, driving championships, and classic games.",

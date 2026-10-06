@@ -1,4 +1,5 @@
 export const GAMES = {
+  'paris-pedal': { title: 'Paris Pedal', category: 'DRIVING / E-BIKE COURIER', kind: 'solo', genre: 'driving', icon: '⌁', description: 'Thread Paris traffic. Read the bus signals. Make the delivery.', color: '#488d87' },
   'ember-delve': { title: 'Ember Delve', category: 'ACTION ROGUELIKE', kind: 'solo', genre: 'action', roguelike: true, icon: '♨', description: 'Read the windup. Break the pursuit. Earn your descent.', color: '#a07151' },
   'deckbound': { title: 'Deckbound', category: 'DECKBUILDING ROGUELIKE', kind: 'solo', genre: 'cards', roguelike: true, icon: '♧', description: 'Read their intent. Commit to battles. Build for the bosses.', color: '#8e815b' },
   'oddstock-rumble': { title: 'Oddstock Rumble', category: 'BONUS PLATFORM BRAWLER', kind: 'duel', genre: 'action', icon: '★', description: 'Six unlikely heroes. Three stages. One glorious send-off.', color: '#927aa1' },

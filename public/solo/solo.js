@@ -4,6 +4,16 @@ const tierScopes = scopes => [...scopes, ...['veteran', 'nightmare'].flatMap(tie
 const RACE_SCOPES = tierScopes(['three-laps', 'harbor-ring-three-laps', 'rain-pass-three-laps', 'championship']);
 const PRISM_SCOPES = tierScopes(['marathon', 'sprint', 'dig']);
 const GAME_INFO = {
+  'paris-pedal': {
+    title: 'Paris Pedal', category: 'DRIVING / PARIS E-BIKE COURIER', description: 'Busy boulevards. Narrow gaps. One more delivery.',
+    module: '/solo/paris-view.js', ruleTitle: 'Read the street.',
+    recordPolicy: { scopes: ['standard-delivery', 'veteran-delivery', 'nightmare-delivery', 'standard-rush', 'veteran-rush', 'nightmare-rush'], variants: {
+      'standard-delivery': { onlyWon: true }, 'veteran-delivery': { onlyWon: true }, 'nightmare-delivery': { onlyWon: true },
+    } },
+    controls: [[['A', 'D', '←', '→'], 'Steer'], [['W', '↑'], 'Pedal'], [['S', '↓'], 'Brake'], [['Space'], 'Motor assist'], [['B'], 'Ring bell']],
+    touch: 'Hold the steering, pedal, brake, and assist buttons below the street. Tap the bell to warn nearby cyclists.',
+    rules: ['Ride through five Paris-inspired districts in Delivery, or keep weaving through the city in Rush.', 'Your e-bike fits between cars. Look ahead and brake before committing to a narrow gap.', 'Buses signal before pulling out, cyclists warn before veering, and parked car doors flash before opening.', 'Motor assist spends battery. Coast or brake to recover charge, and save assist for clear stretches.', 'The bell warns nearby cyclists when it is ready. Cars, buses, and doors still need a clear escape route.', 'Veteran starts by default with delivery deadlines and limited recovery. Standard practice and Nightmare are selectable.', 'Three impacts end the ride. Only a full Delivery finish sets a record; Rush and each difficulty keep separate scores.'],
+  },
   'ember-delve': {
     recordPolicy: { scopes: ACTION_SCOPES },
     title: 'Ember Delve', category: 'ACTION ROGUELIKE / THREE ACTS', description: 'Read the windup. Break the pursuit. Earn your descent.',
@@ -105,6 +115,7 @@ export function recordDetails(gameId, update) {
 
 function recordNote(gameId, scope, direction) {
   const tier = scope.startsWith('nightmare') ? 'Nightmare' : scope.startsWith('veteran') ? 'Veteran' : 'Standard';
+  if (gameId === 'paris-pedal') return scope.endsWith('-delivery') ? `${tier} Delivery records require all five districts and stay separate from Rush.` : `${tier} Rush best scores are saved separately from other difficulties and Delivery.`;
   if (gameId === 'minesweeper') return `Best ${scope} time stays in this browser, on this host.`;
   if (gameId === 'apex-circuit') return `${tier} completed times are saved separately for each track and championship.`;
   if (gameId === 'night-drive' && scope.endsWith('-tour')) return `${tier} Tour records require a full five-district finish and stay separate from Endless.`;
