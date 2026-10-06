@@ -107,7 +107,7 @@ with sync_playwright() as playwright:
                     watch(page, f"{game_id}/{role}")
                 first.goto(URL)
                 first.wait_for_function("document.querySelector('#host-status').textContent === 'Host is online'")
-                assert first.locator("[data-create-game]").count() == 4
+                assert first.locator("[data-create-game]").count() == 7
                 name_in_hub(first, "Mina QA")
                 first.locator(f'[data-create-game="{game_id}"]').click()
                 first.wait_for_url("**/*room=*")

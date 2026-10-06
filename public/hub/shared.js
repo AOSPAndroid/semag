@@ -3,6 +3,9 @@ export const GAMES = {
   'checkers': { title: 'Checkers', category: 'THE CLASSIC', kind: 'board', icon: '◉', description: 'Every move is a conversation.', color: '#a88e62' },
   'dungeon-run': { title: 'Dungeon Run', category: 'CO-OP ADVENTURE', kind: 'coop', icon: '✦', description: 'Two adventurers. One way through.', color: '#748766' },
   'afterimage': { title: 'Afterimage', category: 'SWORD FIGHTER', kind: 'duel', icon: '〃', description: 'A duel above the city.', color: '#667d7a' },
+  'crazy-eights': { title: 'Crazy Eights', category: 'CARD CLASSIC', kind: 'cards', icon: '♠', description: 'Match the suit. Change the game.', color: '#577e68' },
+  'twenty-one': { title: '21 Duel', category: 'BLACKJACK-STYLE DUEL', kind: 'cards', icon: '♦', description: 'Push your luck. Know when to stand.', color: '#b17b57' },
+  'memory': { title: 'Memory Match', category: 'CARD MEMORY GAME', kind: 'cards', icon: '♣', description: 'Remember a face. Find its match.', color: '#79898d' },
 };
 export function roomUrl(room) {
   return room.gameId === 'afterimage' ? `/afterimage.html?room=${encodeURIComponent(room.id)}` : `/play.html?room=${encodeURIComponent(room.id)}&game=${encodeURIComponent(room.gameId)}`;

@@ -1,7 +1,9 @@
 import * as topdown from '../topdown-engine.js';
 import * as checkers from '../checkers-engine.js';
+import * as cards from '../cards-engine.js';
 import { TopdownRenderer } from '../topdown-renderer.js';
 import { CheckersView } from '../checkers-view.js';
+import { CardsView } from '../cards-view.js';
 import { GameAudio } from '../audio.js';
 import { GAMES, roomUrl, getName, saveName, hostInfo, copyText } from './shared.js';
 
@@ -10,9 +12,11 @@ const params = new URLSearchParams(location.search);
 const roomId = (params.get('room') || '').toUpperCase();
 const gameId = GAMES[params.get('game')] ? params.get('game') : 'relic-duel';
 const game = GAMES[gameId], boardMode = gameId === 'checkers', coop = gameId === 'dungeon-run';
-const engine = boardMode ? checkers : topdown;
+const cardMode = ['crazy-eights', 'twenty-one', 'memory'].includes(gameId), realtimeMode = !boardMode && !cardMode;
+const engine = boardMode ? checkers : cardMode ? cards : topdown;
 const emptyInput = topdown.emptyInput, clone = state => JSON.parse(JSON.stringify(state));
-let authoritative = boardMode ? checkers.createState() : topdown.createState(coop ? 'coop' : 'duel');
+const initialState = () => boardMode ? checkers.createState() : cardMode ? cards.viewForPlayer(cards.createState(gameId), 0) : topdown.createState(coop ? 'coop' : 'duel');
+let authoritative = initialState();
 let predicted = clone(authoritative), players = [null, null], localId = null;
 let socket, connected = false, permanentlyClosed = false, intentionalClose = false, attempts = 0, reconnectTimer;
 let sequence = 0, pending = [], snapshots = [], keys = emptyInput(), correction = { x: 0, y: 0 };
@@ -20,8 +24,9 @@ let playerName = getName(), invite = location.href, ping = null, lastSnapshotAt 
 let previousPhase = 'lobby', flashUntil = 0, countdownLast = null, toastTimer, focusLost = false;
 const audio = new GameAudio();
 const canvas = $('arena');
-const renderer = boardMode ? null : new TopdownRenderer(canvas);
+const renderer = realtimeMode ? new TopdownRenderer(canvas) : null;
 const board = boardMode ? new CheckersView($('checkers-board'), { onMove: (from, to) => send({ type: 'move', from, to }) }) : null;
+const cardTable = cardMode ? new CardsView($('cards-table'), { onAction: action => send({ type: 'card-action', action }) }) : null;
 const held = new Set();
 const safeName = (name, fallback) => typeof name === 'string' && name.trim() ? name.trim().slice(0, 24) : fallback;
 
@@ -32,12 +37,23 @@ $('game-description').textContent = game.description;
 $('room-code-label').textContent = roomId || '—';
 $('player-name').value = playerName;
 $('room-app').classList.toggle('board-mode', boardMode);
-$('checkers-board').hidden = !boardMode; canvas.hidden = boardMode;
-$('controls-panel').hidden = boardMode; $('board-instructions').hidden = !boardMode;
+$('room-app').classList.toggle('card-mode', cardMode);
+$('checkers-board').hidden = !boardMode; $('cards-table').hidden = !cardMode; canvas.hidden = !realtimeMode;
+$('controls-panel').hidden = !realtimeMode; $('board-instructions').hidden = !boardMode; $('card-instructions').hidden = !cardMode;
 $('party-title').textContent = coop ? 'Your party' : 'Your room';
-$('footer-mode').textContent = coop ? 'TWO-PLAYER CO-OP' : boardMode ? 'AMERICAN CHECKERS' : 'REAL-TIME 1V1';
+$('footer-mode').textContent = coop ? 'TWO-PLAYER CO-OP' : boardMode ? 'AMERICAN CHECKERS' : cardMode ? 'TWO-PLAYER CARD TABLE' : 'REAL-TIME 1V1';
 $('stage-label').textContent = coop ? 'THE RUINS / TWO ADVENTURERS' : 'THE MOSS GARDEN / 120 HZ';
 if (coop) $('combat-tip').textContent = 'Clear three waves, then defeat the Warden. Hold guard near a fallen ally for 1.5 seconds to revive them. No friendly fire.';
+if (cardMode) {
+  const rules = {
+    'crazy-eights': { title: 'Empty your hand.', intro: 'Take turns matching the top discard by rank or suit.', steps: ['Play an eight on any card, then choose the next suit.', 'If you cannot play, draw one card. Play it if it fits, or pass.', 'The first player with no cards wins.'], keyboard: 'Tab to a card or action, then press Enter or Space.' },
+    'twenty-one': { title: 'Know when to hold.', intro: 'A five-round head-to-head game. Get closer to 21 than your friend.', steps: ['Hit to take a card, or stand to keep your hand.', 'Aces count as 1 or 11. Picture cards count as 10.', 'Go over 21 and you bust. Both hands reveal after both players finish.', 'Win a round for one point. The most points after five rounds wins.'], keyboard: 'Use Tab and Enter for Hit or Stand. There is no dealer or betting.' },
+    memory: { title: 'Remember the faces.', intro: 'Take turns flipping two cards and finding identical rank-and-suit pairs.', steps: ['Choose two face-down cards on your turn.', 'Keep a matching pair and take another turn.', 'A miss stays visible for a moment, then your friend takes a turn.', 'The most pairs when the table is clear wins.'], keyboard: 'Tab to the cards. Arrow keys move; Enter or Space flips.' },
+  }[gameId];
+  $('card-rules-title').textContent = rules.title; $('card-rules-intro').textContent = rules.intro;
+  $('card-rules-list').replaceChildren(...rules.steps.map(text => { const li = document.createElement('li'); li.textContent = text; return li; }));
+  $('card-rules-keyboard').textContent = rules.keyboard;
+}
 
 function error(message) { $('error-banner').textContent = message || ''; $('error-banner').hidden = !message; }
 function toast(message) { $('toast').textContent = message; $('toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { $('toast').hidden = true; }, 2700); }
@@ -50,11 +66,11 @@ function updateConnection() {
 }
 function receiveState(message) {
   const state = message.state;
-  if (!state || (boardMode ? !state.board : !state.fighters)) return;
+  if (!state || (boardMode ? !state.board : cardMode ? state.gameId !== gameId : !state.fighters)) return;
   lastSnapshotAt = performance.now(); players = message.players || players;
-  const old = !boardMode && localId != null ? { x: predicted.fighters[localId].x, y: predicted.fighters[localId].y } : null;
+  const old = realtimeMode && localId != null ? { x: predicted.fighters[localId].x, y: predicted.fighters[localId].y } : null;
   const phase = authoritative.phase; authoritative = state;
-  if (!boardMode) {
+  if (realtimeMode) {
     pending = pending.filter(frame => frame.seq > (message.acks?.[localId] ?? -1));
     predicted = clone(state);
     if (localId != null && state.phase === 'fight') {
@@ -71,13 +87,13 @@ function receiveState(message) {
     } else correction = { x: 0, y: 0 };
     snapshots.push({ time: lastSnapshotAt, state: clone(state) }); if (snapshots.length > 12) snapshots.shift();
     audio.playEvents(state.events || []);
-  } else if (state.lastMove && state.lastMove.tick !== receiveState.lastMoveTick) {
+  } else if (boardMode && state.lastMove && state.lastMove.tick !== receiveState.lastMoveTick) {
     receiveState.lastMoveTick = state.lastMove.tick;
     audio.playEvents([{ id: state.moves * 1000 + state.lastMove.tick, type: state.lastMove.capture == null ? 'block' : 'hit', x: 0, y: 0 }]);
   }
   if (state.phase !== previousPhase) {
-    if (state.phase === 'fight') { flashUntil = performance.now() + 550; audio.fight(); }
-    if (state.phase === 'lobby') { releaseKeys(); countdownLast = null; board?.resetSelection(); }
+    if (state.phase === 'fight' && realtimeMode) { flashUntil = performance.now() + 550; audio.fight(); }
+    if (state.phase === 'lobby') { releaseKeys(); countdownLast = null; board?.resetSelection(); cardTable?.resetSelection(); }
     previousPhase = state.phase;
   }
 }
@@ -99,14 +115,14 @@ function connect() {
     } else if (message.type === 'state') receiveState(message);
     else if (message.type === 'pong') { ping = Math.max(0, Math.round(performance.now() - message.time)); updateConnection(); }
     else if (message.type === 'error') {
-      error(message.message || 'The host could not accept that action.'); board?.resetSelection();
+      error(message.message || 'The host could not accept that action.'); board?.resetSelection(); cardTable?.resetSelection();
       if (/full|two players|occupied|not found|expired|unknown room/i.test(message.message || '')) permanentlyClosed = true;
     }
   });
   ws.addEventListener('close', () => {
     connected = false; localId = null; ping = null; pending = []; snapshots = []; held.clear(); keys = emptyInput();
-    authoritative = boardMode ? engine.createState() : engine.createState(coop ? 'coop' : 'duel'); predicted = clone(authoritative);
-    players = [null, null]; board?.resetSelection(); renderer?.resetEffects(); updateConnection();
+    authoritative = initialState(); predicted = clone(authoritative);
+    players = [null, null]; board?.resetSelection(); cardTable?.resetSelection(); renderer?.resetEffects(); updateConnection();
     if (!permanentlyClosed && !intentionalClose) {
       error('Connection to the host was lost. Reconnecting automatically…');
       reconnectTimer = setTimeout(connect, Math.min(5000, 750 * 2 ** attempts++));
@@ -125,16 +141,16 @@ function typing(target) { return target instanceof HTMLElement && (['INPUT', 'TE
 function refreshKeys() { keys = emptyInput(); for (const code of held) if (keyMap.has(code)) keys[keyMap.get(code)] = true; }
 function releaseKeys() {
   held.clear(); keys = emptyInput();
-  if (!boardMode && connected && localId != null) {
+  if (realtimeMode && connected && localId != null) {
     const frame = { type: 'input', seq: ++sequence, buttons: { ...keys } }; pending.push(frame); send(frame);
   }
 }
 document.addEventListener('keydown', event => {
   if (typing(event.target) || event.metaKey || event.ctrlKey || event.altKey) return;
   if (event.code === 'KeyR' && !event.repeat) { event.preventDefault(); $('ready-button').click(); }
-  if (!boardMode && keyMap.has(event.code)) { event.preventDefault(); held.add(event.code); refreshKeys(); focusLost = false; }
+  if (realtimeMode && keyMap.has(event.code)) { event.preventDefault(); held.add(event.code); refreshKeys(); focusLost = false; }
 });
-document.addEventListener('keyup', event => { if (!boardMode && keyMap.has(event.code)) { held.delete(event.code); refreshKeys(); if (!typing(event.target)) event.preventDefault(); } });
+document.addEventListener('keyup', event => { if (realtimeMode && keyMap.has(event.code)) { held.delete(event.code); refreshKeys(); if (!typing(event.target)) event.preventDefault(); } });
 window.addEventListener('blur', () => { releaseKeys(); focusLost = true; });
 document.addEventListener('visibilitychange', () => { if (document.hidden) releaseKeys(); });
 canvas.addEventListener('pointerdown', () => { canvas.focus(); focusLost = false; });
@@ -145,7 +161,7 @@ $('ready-button').addEventListener('click', () => {
   if (!connected || localId == null) return;
   if (authoritative.phase === 'fight' || authoritative.phase === 'roundEnd') return;
   send(authoritative.phase === 'matchEnd' ? { type: 'rematch' } : { type: 'ready', ready: !players[localId]?.ready });
-  $('player-name').blur(); if (!boardMode) canvas.focus();
+  $('player-name').blur(); if (realtimeMode) canvas.focus();
 });
 $('copy-code').addEventListener('click', async () => { try { await copyText(roomId); toast('Room code copied.'); } catch (e) { toast(e.message); } });
 $('copy-invite').addEventListener('click', async () => { try { await copyText(invite); toast('Invite copied. Your friend has a seat.'); } catch (e) { toast(e.message); } });
@@ -159,7 +175,7 @@ $('sound-button').addEventListener('click', async () => {
 $('fullscreen-button').addEventListener('click', async () => { try { if (document.fullscreenElement) await document.exitFullscreen(); else await $('room-app').requestFullscreen(); } catch { toast('Fullscreen is unavailable in this browser.'); } });
 
 function inputTick() {
-  if (boardMode || !connected || localId == null) return;
+  if (!realtimeMode || !connected || localId == null) return;
   const frame = { type: 'input', seq: ++sequence, buttons: { ...keys } }; pending.push(frame); send(frame);
   if (pending.length > 180) pending.shift();
   if (predicted.phase === 'fight') {
@@ -183,6 +199,17 @@ function displayState(now) {
   }
   return state;
 }
+function cardObjective(state, names) {
+  if (state.phase === 'matchEnd') return state.winner == null ? 'A draw. Ready for another game?' : `${names[state.winner]} wins. Ready for a rematch?`;
+  if (state.phase === 'roundEnd') {
+    const outcome = state.roundWinner == null ? 'Round drawn' : `${names[state.roundWinner]} takes the round`;
+    return `${outcome}. Next hand in ${Math.max(1, Math.ceil(state.phaseTicks / 120))}s.`;
+  }
+  if (state.phase !== 'fight') return 'Both players must ready up to begin.';
+  if (gameId === 'twenty-one') return 'Hit or stand. Both players finish before the hands reveal.';
+  if (gameId === 'memory') return state.mismatchTicks > 0 ? 'Remember these two cards before they turn over.' : `${names[state.turn]}'s turn. Match identical cards to keep your turn.`;
+  return `${names[state.turn]}'s turn. Match the rank or suit, or play an eight.`;
+}
 function updateHUD(now) {
   const state = authoritative, phase = state.phase;
   const names = players.map((p, i) => safeName(p?.name, `Player ${i + 1}`));
@@ -198,6 +225,9 @@ function updateHUD(now) {
       const pieces = state.board.filter(p => p?.owner === i).length, kings = state.board.filter(p => p?.owner === i && p.king).length;
       $(prefix + '-score').textContent = pieces;
       $(prefix + '-detail').textContent = `${pieces} PIECES / ${kings} KINGS`;
+    } else if (cardMode) {
+      $(prefix + '-score').textContent = gameId === 'crazy-eights' ? state.handCounts[i] : state.scores[i];
+      $(prefix + '-detail').textContent = gameId === 'crazy-eights' ? 'CARDS IN HAND' : gameId === 'memory' ? 'PAIRS FOUND' : `${state.scores[i]} POINTS / ${state.totals[i] == null ? 'HIDDEN HAND' : state.totals[i] > 21 ? 'BUST' : `${state.totals[i]} IN HAND`}`;
     } else {
       const fighter = state.fighters[i];
       $(prefix + '-health').style.width = `${Math.max(0, fighter.hp)}%`;
@@ -213,6 +243,14 @@ function updateHUD(now) {
     $('objective').textContent = phase === 'fight' ? state.forcedFrom != null ? 'Finish your capture chain with the same piece.' : `${names[state.turn]}'s turn. Captures are required when available.` : phase === 'matchEnd' ? state.result === 'draw' ? 'Draw. Ready for another game?' : `${names[state.winner]} wins. Ready for a rematch?` : 'Both players must ready up to begin.';
     $('objective-detail').textContent = 'AMERICAN CHECKERS';
     board.render(state, { localId });
+  } else if (cardMode) {
+    const twentyOne = gameId === 'twenty-one';
+    $('round-label').textContent = twentyOne ? `ROUND ${state.round} / ${state.maxRounds}` : gameId === 'memory' ? 'MEMORY MATCH' : 'CRAZY EIGHTS';
+    $('timer').textContent = twentyOne ? '21' : phase === 'fight' ? state.turn === localId ? 'YOU' : 'THEM' : '1V1';
+    $('hud-caption').textContent = twentyOne ? 'CLOSEST WINS' : phase === 'fight' ? gameId === 'memory' ? 'TO FLIP' : 'TO PLAY' : 'TAKE YOUR SEATS';
+    $('objective').textContent = cardObjective(state, names);
+    $('objective-detail').textContent = twentyOne ? 'FIVE ROUNDS / NO BETTING' : gameId === 'memory' ? `${state.pairsRemaining} PAIRS LEFT` : `${state.deckCount} IN DECK`;
+    cardTable.render(state, { localId, players });
   } else if (coop) {
     $('round-label').textContent = 'DUNGEON RUN'; $('timer').textContent = `${Math.max(1, state.wave)} / ${state.maxWaves}`; $('hud-caption').textContent = 'WAVES';
     $('objective').textContent = phase === 'fight' ? state.objective : phase === 'matchEnd' ? state.result === 'victory' ? 'The ruins are clear. You made it home together.' : 'The party fell. Ready for another run?' : 'Both adventurers must ready up to begin.';
@@ -228,8 +266,8 @@ function updateHUD(now) {
   button.querySelector('span').textContent = phase === 'matchEnd' ? 'Play again' : phase === 'fight' || phase === 'roundEnd' || !boardMode && phase === 'countdown' && state.round > 1 ? 'Game in progress' : mine?.ready ? 'Cancel ready' : 'Ready up';
   button.disabled = !connected || localId == null || phase === 'fight' || phase === 'roundEnd' || !boardMode && phase === 'countdown' && state.round > 1;
   button.classList.toggle('is-ready', !!mine?.ready);
-  $('ready-note').textContent = phase === 'matchEnd' ? 'Both players must ready up for another game.' : phase === 'fight' ? 'Make it a good one.' : mine?.ready ? 'Waiting for your friend to ready up.' : 'The game starts when both players are ready.';
-  $('focus-note').hidden = boardMode || !focusLost || phase !== 'fight';
+  $('ready-note').textContent = phase === 'matchEnd' ? 'Both players must ready up for another game.' : phase === 'roundEnd' && cardMode ? 'The next hand starts shortly.' : phase === 'fight' ? 'Make it a good one.' : phase === 'countdown' ? 'Both players are ready. Starting shortly.' : mine?.ready ? 'Waiting for your friend to ready up.' : 'The game starts when both players are ready.';
+  $('focus-note').hidden = !realtimeMode || !focusLost || phase !== 'fight';
   updateOverlay(now, names);
 }
 function updateOverlay(now, names) {
@@ -249,8 +287,11 @@ function updateOverlay(now, names) {
     kicker = coop ? 'STAY TOGETHER' : 'MAKE YOUR NEXT MOVE COUNT'; title = number; subtitle = coop ? 'Keep an eye on your friend.' : 'Good luck. Have fun.'; overlay.classList.add('countdown');
     if (number !== countdownLast) { audio.countdown(number); countdownLast = number; }
   } else if (phase === 'fight') {
-    if (!boardMode && now < flashUntil) { kicker = coop ? 'YOUR ADVENTURE STARTS HERE' : 'FIND YOUR OPENING'; title = coop ? 'LET’S GO' : 'DUEL'; subtitle = ''; overlay.classList.add('fight'); }
+    if (realtimeMode && now < flashUntil) { kicker = coop ? 'YOUR ADVENTURE STARTS HERE' : 'FIND YOUR OPENING'; title = coop ? 'LET’S GO' : 'DUEL'; subtitle = ''; overlay.classList.add('fight'); }
     else overlay.hidden = true;
+  } else if (cardMode) {
+    // Keep showdown hands and memory pairs visible; results live above the table.
+    overlay.hidden = true;
   } else if (coop) {
     kicker = state.result === 'victory' ? 'YOU MADE IT TOGETHER' : 'THE RUINS WILL BE WAITING'; title = state.result === 'victory' ? 'Adventure complete.' : 'The party fell.';
     subtitle = 'Ready up for another run, or choose another game.';

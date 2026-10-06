@@ -1,5 +1,7 @@
 import { GAMES, roomUrl, getName, saveName, hostInfo, copyText } from './shared.js';
 const $ = (id) => document.getElementById(id);
+$('nav-game-count').textContent = String(Object.keys(GAMES).length).padStart(2, '0');
+$('library-game-count').textContent = Object.keys(GAMES).length;
 let name = getName(), origin = location.origin, rooms = [], toastTimer, creating = false;
 $('hub-name').value = name; $('name-avatar').textContent = name[0].toUpperCase();
 const emptyRooms = $('rooms-list').innerHTML;
@@ -64,7 +66,7 @@ $('copy-hub').addEventListener('click', async () => { try { await copyText(origi
 hostInfo().then(info => { origin = info.origin; $('hub-address').textContent = origin; $('hub-download').hidden = !info.downloadAvailable; }).catch(() => { $('hub-address').textContent = origin; });
 refreshRooms(); setInterval(refreshRooms, 2000);
 
-// Cards show the games' own renderers; no remote images or asset downloads.
+// Action and board previews use the games' own renderers.
 async function drawPreviews() {
   const renderers = [];
   const requests = await Promise.allSettled([

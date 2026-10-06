@@ -10,6 +10,7 @@ import { WebSocket, WebSocketServer } from 'ws';
 import * as Afterimage from './public/engine.js';
 import * as Checkers from './public/checkers-engine.js';
 import * as Topdown from './public/topdown-engine.js';
+import * as Cards from './public/cards-engine.js';
 
 const TICK_RATE = 120;
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -26,6 +27,9 @@ const GAMES = {
   checkers: { title: 'Checkers', engine: Checkers, makeState: () => Checkers.createState(), inputKeys: [] },
   'relic-duel': { title: 'Relic Duel', engine: Topdown, makeState: () => Topdown.createState('duel'), inputKeys: Topdown.INPUT_KEYS },
   'dungeon-run': { title: 'Dungeon Run', engine: Topdown, makeState: () => Topdown.createState('coop'), inputKeys: Topdown.INPUT_KEYS },
+  'crazy-eights': { title: 'Crazy Eights', engine: Cards, makeState: () => Cards.createState('crazy-eights'), inputKeys: [], viewForPlayer: Cards.viewForPlayer },
+  'twenty-one': { title: '21 Duel', engine: Cards, makeState: () => Cards.createState('twenty-one'), inputKeys: [], viewForPlayer: Cards.viewForPlayer },
+  memory: { title: 'Memory Match', engine: Cards, makeState: () => Cards.createState('memory'), inputKeys: [], viewForPlayer: Cards.viewForPlayer },
 };
 const cleanName = (name, maximum) => name.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, maximum);
 const freshInput = room => Object.fromEntries(room.adapter.inputKeys.map(key => [key, false]));
@@ -111,6 +115,7 @@ export function createServer(options = {}) {
       id, gameId, name: cleanName(name || adapter.title, 48) || adapter.title,
       adapter, createdAt, emptySince: createdAt, hadPlayers: false, sessionId: randomUUID(),
       state: adapter.makeState(), players: [null, null], slots: [null, null], acks: [-1, -1],
+      lastBroadcastTick: -12, lastBroadcastRevision: -1,
     };
   }
   const legacyRoom = makeRoom(null, 'afterimage', 'Afterimage Duel');
@@ -193,12 +198,18 @@ export function createServer(options = {}) {
   function broadcast(selectedRoom) {
     for (const room of selectedRoom ? [selectedRoom] : allRooms()) {
       if (!room.slots.some(Boolean)) continue;
-      const message = JSON.stringify({ type: 'state', roomId: room.id, gameId: room.gameId, state: room.state, players: room.players, acks: room.acks });
+      const envelope = { type: 'state', roomId: room.id, gameId: room.gameId, players: room.players, acks: room.acks };
+      // Hidden-information games never share their internal state, even in the lobby.
+      const message = room.adapter.viewForPlayer ? null : JSON.stringify({ ...envelope, state: room.state });
       for (const slot of room.slots) {
         if (!slot || slot.ws.readyState !== WebSocket.OPEN) continue;
         if (slot.ws.bufferedAmount > 1024 * 1024) { slot.ws.terminate(); continue; }
-        if (slot.ws.bufferedAmount < 128 * 1024) send(slot.ws, message);
+        if (slot.ws.bufferedAmount < 128 * 1024) {
+          send(slot.ws, message ?? { ...envelope, state: room.adapter.viewForPlayer(room.state, slot.id) });
+        }
       }
+      room.lastBroadcastTick = room.state.tick;
+      room.lastBroadcastRevision = room.state.revision;
     }
   }
   function resetInputs(room) {
@@ -229,10 +240,13 @@ export function createServer(options = {}) {
       });
       const previousPhase = room.state.phase;
       room.adapter.engine.step(room.state, inputs);
-      if (previousPhase === 'countdown' && room.state.phase === 'fight') {
+      if (previousPhase === 'countdown' && ['fight', 'roundEnd', 'matchEnd'].includes(room.state.phase)) {
         for (const player of room.players) if (player) player.ready = false;
       }
-      if (room.state.tick % 2 === 0) broadcast(room);
+      // Card actions broadcast immediately; a 10 Hz heartbeat keeps idle tables alive.
+      if (room.adapter.viewForPlayer) {
+        if (room.state.revision !== room.lastBroadcastRevision || room.state.tick - room.lastBroadcastTick >= 12) broadcast(room);
+      } else if (room.state.tick % 2 === 0) broadcast(room);
     }
   }
   function pump() {
@@ -336,8 +350,16 @@ export function createServer(options = {}) {
         const result = room.adapter.engine.applyMove(state, id, data.from, data.to);
         if (!result.ok) error(ws, result.error || 'That move is not legal.');
         else broadcast(room);
+      } else if (data.type === 'card-action') {
+        if (!room.adapter.viewForPlayer) { error(ws, 'Card actions are only available at card tables.'); return; }
+        if (!data.action || typeof data.action !== 'object' || Array.isArray(data.action) || typeof data.action.kind !== 'string') {
+          error(ws, 'Choose a valid card action.'); return;
+        }
+        const result = room.adapter.engine.applyAction(state, id, data.action);
+        if (!result.ok) error(ws, result.error || 'That card action is not legal.');
+        else broadcast(room);
       } else if (data.type === 'input') {
-        if (room.gameId === 'checkers') { error(ws, 'Checkers uses board moves instead of realtime controls.'); return; }
+        if (!room.adapter.inputKeys.length) { error(ws, room.gameId === 'checkers' ? 'Checkers uses board moves instead of realtime controls.' : 'Card games use card actions instead of realtime controls.'); return; }
         if (!Number.isSafeInteger(data.seq) || data.seq < 0 || data.seq > 1_000_000_000) { error(ws, 'Invalid input sequence.'); return; }
         if (!data.buttons || typeof data.buttons !== 'object' || Array.isArray(data.buttons) ||
             Object.keys(data.buttons).some(key => !room.adapter.inputKeys.includes(key) || typeof data.buttons[key] !== 'boolean')) {

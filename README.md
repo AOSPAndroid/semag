@@ -10,8 +10,11 @@ A self-hosted browser game hub for two players. Pick a game, create a room, and 
 | Checkers | Turn-based 1v1 | Capture every opposing piece or leave your opponent without a legal move. |
 | Relic Duel | 1v1 top-down arena | Win two rounds with sword attacks, arrows, guarding, and timed rolls. |
 | Dungeon Run | Two-player co-op | Survive the dungeon waves together and defeat the final boss. |
+| Crazy Eights | Turn-based card duel | Match the rank or suit, choose a new suit with an eight, and empty your hand first. |
+| 21 Duel | Blackjack-style card duel | Get closest to 21 without going over; win more of five hands than your rival. |
+| Memory Match | Turn-based card memory game | Find more pairs on a shared board of 32 cards. |
 
-The action games are original compact implementations. Checkers follows American checkers rules.
+The action games are original compact implementations. Checkers follows American checkers rules. All card games use the same two-seat rooms, ready countdown, and rematch flow.
 
 ## Run on your PC
 
@@ -68,6 +71,12 @@ In both competitive action games, the first player to win two rounds takes the m
 
 For Checkers, click a piece and then a highlighted destination. Captures are mandatory; continue jumping with the same piece when another capture is available. Men move and capture forward, kings move and capture in both directions, and reaching the opposite edge crowns a man and ends that turn. Three repetitions of a position or 80 turns without a capture or a man moving produce a draw.
 
+**Crazy Eights:** each player starts with seven cards. Play a card matching the top card's rank or the active suit. An eight is wild: choose a suit when you play it. When you have no legal card, draw one; play if you can or pass after drawing. The discard pile is recycled when the draw pile runs out. Empty your hand to win. If neither player can continue, the lower remaining hand value wins (eights count 50, face cards 10, aces 1, other cards their rank); equal values draw.
+
+**21 Duel:** a head-to-head variation inspired by blackjack. Each player starts with two cards and chooses **Hit** or **Stand** independently. Aces count 1 or 11, face cards count 10; 21 and busts automatically stand. Opponent cards stay hidden until both hands settle. The player nearest to 21 without busting wins the hand; equal totals or two busts draw. Five hands decide the match by number of hands won. The next hand starts automatically after the reveal. There is no dealer or betting.
+
+**Memory Match:** flip two cards on your turn. Matching rank and suit earns a pair and another turn. A mismatch stays visible briefly, then turns over and passes the turn. Sixteen pairs are hidden in the shared board. The player with more pairs wins; eight pairs each draws. All card actions support mouse, touch, and keyboard buttons.
+
 Leaving a room resets that room's match and readiness. Rooms and matches live in memory and disappear when the server stops. An empty room is eventually removed; create another room if an old invitation has expired.
 
 ## Development
@@ -76,7 +85,9 @@ Leaving a room resets that room's match and readiness. Rooms and matches live in
 npm test
 ```
 
-The action games use authoritative combat at 120 ticks per second with snapshots at 60 Hz. Browsers predict local movement for responsiveness; the server decides hits and validates Checkers moves. Network latency and jitter still affect online play.
+Optional browser checks require Python Playwright and Chromium. Run `python test/cards-browser-smoke.py` to start an isolated local server and exercise all three card games in two browser sessions. To check the original four games, run `python test/hub-browser-smoke.py http://127.0.0.1:3000` against a running host.
+
+The action games use authoritative combat at 120 ticks per second with snapshots at 60 Hz. Browsers predict local movement for responsiveness; the server decides hits and validates board and card actions. Card snapshots are prepared separately for each seat: opposing hands, the draw order, and hidden memory cards are not sent to a player's browser. Network latency and jitter still affect online play.
 
 The default port is 3000. To choose a different port:
 
