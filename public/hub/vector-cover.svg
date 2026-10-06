@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 320" role="img" aria-labelledby="title desc">
+  <title id="title">Vector Arena</title>
+  <desc id="desc">Two armored duelists exchange precision shots across the reclaimed research garden's six stone and metal cover blocks.</desc>
+  <defs>
+    <pattern id="slate" width="96" height="96" patternUnits="userSpaceOnUse">
+      <path fill="#263c34" d="M0 0h96v96H0z"/>
+      <path fill="#2e4139" d="M1 1h46v46H1zM49 49h46v46H49z"/>
+      <path fill="#2a3e36" d="M49 1h46v46H49zM1 49h46v46H1z"/>
+      <path stroke="#a5b08e" stroke-opacity=".1" d="M2 1h44m4 0h44M2 49h44m4 0h44"/>
+      <path stroke="#132c24" stroke-opacity=".5" d="M47 2v44m48-44v44M47 50v44m48-44v44"/>
+      <path fill="#91a183" fill-opacity=".06" d="M12 13h21v2H12zm47 49h22v2H59z"/>
+      <path stroke="#142d24" stroke-opacity=".3" fill="none" d="m37 49-5 13 7 7"/>
+    </pattern>
+    <g id="cover-tall" shape-rendering="crispEdges">
+      <path fill="#0a211c" fill-opacity=".4" d="M5 7h91v115H5z"/>
+      <path fill="#112b23" d="M0 0h88v112H0z"/>
+      <path fill="#819276" d="M2 2h84v108H2z"/>
+      <path fill="#b5b89a" d="M2 2h84v4H2z"/>
+      <path fill="#a0aa88" d="M2 6h5v98H2z"/>
+      <path fill="#334d39" d="M81 6h5v104h-5zM7 104h74v6H7z"/>
+      <path fill="#536e52" d="M11 11h66v87H11z"/>
+      <path fill="#647d5d" d="M12 12h64v84H12z"/>
+      <path fill="#334c39" d="M22 22h44v4H22zm0 10h44v4H22zm0 10h44v4H22zm0 10h44v4H22zm0 10h44v4H22zm0 10h44v4H22zm0 10h44v4H22z"/>
+      <path fill="#435d45" d="M32 44h24v24H32z"/>
+      <path fill="none" stroke="#c0c69e" stroke-width="2" d="m44 48 8 8-8 8-8-8z"/>
+      <path fill="#d8d9ac" d="M42 54h4v4h-4zM6 8h3v2H6zm73 0h3v2h-3zM6 100h3v2H6zm73 0h3v2h-3z"/>
+      <path fill="#caa475" d="M11 105h16v2H11z"/>
+      <path fill="#6c8951" d="M69 6h11v4H69zm8 3h6v7h-6z"/>
+      <path fill="#97a86c" d="M72 6h6v2h-6z"/>
+    </g>
+    <g id="cover-wide" shape-rendering="crispEdges">
+      <path fill="#0a211c" fill-opacity=".4" d="M5 7h115v50H5z"/>
+      <path fill="#112b23" d="M0 0h112v48H0z"/>
+      <path fill="#819276" d="M2 2h108v44H2z"/>
+      <path fill="#b5b89a" d="M2 2h108v4H2z"/>
+      <path fill="#a0aa88" d="M2 6h5v35H2z"/>
+      <path fill="#334d39" d="M105 6h5v40h-5zM7 40h98v6H7z"/>
+      <path fill="#526c52" d="M11 11h90v23H11z"/>
+      <path fill="#314a3b" d="M22 17h5v12h-5zm12 0h5v12h-5zm12 0h5v12h-5zm12 0h5v12h-5zm12 0h5v12h-5zm12 0h5v12h-5z"/>
+      <path fill="#425c45" d="M44 12h24v24H44z"/>
+      <path fill="none" stroke="#c0c69e" stroke-width="2" d="m56 16 8 8-8 8-8-8z"/>
+      <path fill="#d8d9ac" d="M54 22h4v4h-4zM6 8h3v2H6zm97 0h3v2h-3zM6 36h3v2H6zm97 0h3v2h-3z"/>
+      <path fill="#caa475" d="M11 41h16v2H11z"/>
+      <path fill="#6c8951" d="M93 6h11v4H93zm8 3h6v7h-6z"/>
+    </g>
+    <g id="runner" shape-rendering="crispEdges">
+      <ellipse cx="2" cy="4" rx="17" ry="14" fill="#081e19" fill-opacity=".65"/>
+      <path fill="#101f1c" d="M-11-11h9v6h-9zm0 16h9v6h-9z"/>
+      <path fill="#11261f" d="m-14-6 6-7H7l7 7V6l-7 7H-8l-6-7z"/>
+      <path fill="var(--suit)" d="M-12-7h22V7h-22z"/>
+      <path fill="var(--dark)" d="M-8-12H7v5H-8zm0 19H7v5H-8z"/>
+      <path fill="var(--main)" d="M-7-12H4v3H-7zm0 20H4v3H-7zM-4-8H9V8H-4z"/>
+      <path fill="var(--light)" d="M-3-8H7v2H-3z"/>
+      <path fill="#243a2d" d="M-12-6h6V6h-6z"/>
+      <path fill="#8c9a7c" d="M-11-5h3V5h-3z"/>
+      <path fill="#102e28" d="M3-6h8V6H3z"/>
+      <path fill="#355b51" d="M5-5h5V5H5z"/>
+      <path fill="#deebd8" d="M8-4h2v8H8zM5-5h5v1H5z"/>
+      <path fill="var(--dark)" d="M9-8h5v4H9zm0 12h5v4H9z"/>
+      <path fill="#102721" d="M8-3h17v6H8z"/>
+      <path fill="#9bab9b" d="M11-3h11v2H11z"/>
+      <path fill="#c4d1bd" d="M23-2h2v4h-2z"/>
+    </g>
+    <g id="fern">
+      <path fill="#1a3d29" d="m0 0 10-7 22 2 11 12-3 17-15 8-18-4-11-10z"/>
+      <path fill="#355c36" d="m5 2 13-5 15 7 1 12-12 8-14-4-6-8z"/>
+      <path fill="#527543" d="m7 2 13-3 10 7-11-1-11 4z"/>
+      <path stroke="#8eaa67" stroke-width="2" stroke-opacity=".6" fill="none" d="m13 2 8 20m-7-17 12 1m-10 5 13 2m-11 4 10 2M15 9l-8 4m10 2-7 5"/>
+    </g>
+  </defs>
+  <path fill="#172e27" d="M0 0h600v320H0z"/>
+  <g transform="translate(22 -15) scale(.58)">
+    <path fill="url(#slate)" d="M32 32h896v576H32z"/>
+    <path stroke="#162c25" stroke-width="5" fill="none" d="M80 124h98V78h220v71M80 516h98v46h220v-71M880 124h-98V78H562v71M880 516h-98v46H562v-71"/>
+    <path stroke="#a79570" stroke-opacity=".4" fill="none" d="M80 124h98V78h220v71M80 516h98v46h220v-71M880 124h-98V78H562v71M880 516h-98v46H562v-71"/>
+    <path fill="#3e5b43" d="M0 0h32v640H0zM928 0h32v640h-32z"/>
+    <path stroke="#b0bd8b" stroke-opacity=".3" stroke-width="2" d="M5 0v640M933 0v640"/>
+    <circle cx="480" cy="320" r="65" fill="#34483d" stroke="#7b8663" stroke-opacity=".4" stroke-width="2"/>
+    <circle cx="480" cy="320" r="57" fill="none" stroke="#a9a581" stroke-opacity=".2"/>
+    <path fill="#243c32" stroke="#a4ac81" stroke-opacity=".6" stroke-width="2" d="m480 296 24 24-24 24-24-24z"/>
+    <path fill="#6e8563" fill-opacity=".6" d="m480 307 12 13-12 13-12-13z"/>
+    <circle cx="154" cy="320" r="34" fill="none" stroke="#dc9e72" stroke-opacity=".4"/>
+    <circle cx="806" cy="320" r="34" fill="none" stroke="#91c6a9" stroke-opacity=".4"/>
+    <use href="#cover-tall" x="248" y="136"/><use href="#cover-tall" x="624" y="136"/>
+    <use href="#cover-tall" x="248" y="392"/><use href="#cover-tall" x="624" y="392"/>
+    <use href="#cover-wide" x="424" y="88"/><use href="#cover-wide" x="424" y="504"/>
+    <g opacity=".13" style="--main:#eaae79;--light:#ffe2b3;--dark:#905e44;--suit:#4c433b"><use href="#runner" transform="translate(219 344) rotate(-5)"/></g>
+    <g style="--main:#eaae79;--light:#ffe2b3;--dark:#905e44;--suit:#4c433b"><use href="#runner" transform="translate(259 338) rotate(-5)"/></g>
+    <g style="--main:#8fc9b0;--light:#e0f4d6;--dark:#497c6a;--suit:#354b48"><use href="#runner" transform="translate(806 290) rotate(175)"/></g>
+    <g stroke-linecap="square">
+      <path stroke="#132620" stroke-width="5" d="m394 326 22-2m194-15 22-2m121-11 22-2"/>
+      <path stroke="#eaae79" stroke-opacity=".65" stroke-width="2" d="m394 326 22-2m194-15 22-2m121-11 22-2"/>
+      <path stroke="#ffe2b3" stroke-width="4" d="m412 324 5-.5m216-17 5-.5m145-12 5-.5"/>
+    </g>
+    <path stroke="#eaae79" fill="none" d="m808 270 1 8m0 26 1 8m-26-18 8-1m27-2 8-1"/>
+    <use href="#fern" transform="translate(0 40) scale(1.4)"/><use href="#fern" transform="translate(942 47) scale(-1.4 1.4)"/>
+    <use href="#fern" transform="translate(0 551) scale(1.4)"/><use href="#fern" transform="translate(946 548) scale(-1.4 1.4)"/>
+  </g>
+  <g fill="#162e24" opacity=".8"><path d="M0 0h600v14H0zM0 307h600v13H0z"/></g>
+  <path fill="#bbca99" d="M17 19h3v3h-3zM580 296h3v3h-3z"/>
+  <text x="30" y="23" fill="#d0d6b9" font-family="Consolas,monospace" font-size="8" letter-spacing="1.5">FIELD 04 / RECLAIMED GRID</text>
+  <text x="578" y="301" text-anchor="end" fill="#b8c5a4" font-family="Consolas,monospace" font-size="8" letter-spacing="1.5">CONTROL THE ANGLE</text>
+</svg>

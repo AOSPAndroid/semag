@@ -40,8 +40,9 @@ def phase(page, value, solo=True, timeout=12000):
     page.wait_for_function(f"phase => window.{surface}?.getState()?.phase === phase", arg=value, timeout=timeout)
 
 
-def screenshot(page, filename):
-    page.screenshot(path=str(SCREENSHOTS / filename), full_page=True)
+def screenshot(page, filename, full_page=True):
+    polished = filename.replace("fireside-", "fireside-polished-", 1)
+    page.screenshot(path=str(SCREENSHOTS / polished), full_page=full_page, animations="disabled")
 
 
 def no_overflow(page):
@@ -55,7 +56,7 @@ def mobile_layout(page, game):
         page.wait_for_timeout(90)
         no_overflow(page)
         screenshot(page, f"fireside-{game}-mobile-{width}.png")
-    page.set_viewport_size({"width": 1440, "height": 1100})
+    page.set_viewport_size({"width": 1440, "height": 1000})
 
 
 def room_ids(url):
@@ -86,6 +87,8 @@ class Keyboard:
 def check_catalog(page):
     assert page.locator("[data-create-game]").count() == 8
     assert page.locator("[data-play-solo]").count() == 7
+    for selector in ('[data-create-game="vector-arena"]', '[data-play-solo="prism-shift"]', '[data-play-solo="rift-survivor"]'):
+        assert page.locator(selector).bounding_box()["height"] >= 44
     page.locator('[data-filter="action"]').click()
     assert page.locator("[data-create-game]:visible").count() == 4
     assert page.locator("[data-play-solo]:visible").count() == 1
@@ -96,6 +99,66 @@ def check_catalog(page):
     assert page.locator("[data-play-solo]:visible").count() == 7
     assert page.locator("[data-create-game]:visible").count() == 0
     page.locator('[data-filter="all"]').click()
+
+
+def check_search(page):
+    search = page.locator("#game-search")
+    search.fill("vEcToR")
+    assert page.locator("[data-game-card]:visible").count() == 1
+    assert page.locator('[data-game-card="vector-arena"]').is_visible()
+    search.fill("falling")
+    assert page.locator("[data-game-card]:visible").count() == 1
+    assert page.locator('[data-game-card="prism-shift"]').is_visible()
+    page.locator('[data-filter="friends"]').click()
+    assert page.locator("[data-game-card]:visible").count() == 0
+    assert page.locator("#shelf-empty").is_visible()
+    page.locator('[data-filter="solo"]').click()
+    assert page.locator('[data-game-card="prism-shift"]').is_visible()
+    search.fill("driving")
+    assert page.locator("[data-game-card]:visible").count() == 2
+    page.locator('[data-filter="action"]').click()
+    assert page.locator("[data-game-card]:visible").count() == 0
+    search.fill("not-a-game-qa")
+    assert page.locator("#shelf-empty").is_visible()
+    search.focus()
+    page.keyboard.press("ControlOrMeta+a")
+    page.keyboard.press("Backspace")
+    assert page.locator("[data-game-card]:visible").count() == 5
+    assert page.locator("#shelf-empty").is_hidden()
+    page.locator('[data-filter="all"]').click()
+    assert page.locator("[data-game-card]:visible").count() == 15
+
+
+def native_help(page, game):
+    disclosure = page.locator("#solo-how-to")
+    assert disclosure.get_attribute("open") is None, "Long help should begin collapsed"
+    summary = disclosure.locator("summary")
+    before = state(page)
+    summary.focus()
+    page.keyboard.press("Space", delay=40)
+    assert disclosure.get_attribute("open") is not None, "Space did not activate native help"
+    assert page.locator("#solo-rules").is_visible()
+    page.keyboard.press("Enter", delay=40)
+    assert disclosure.get_attribute("open") is None, "Enter did not close native help"
+    after = state(page)
+    if game == "prism-shift":
+        assert after["piecesLocked"] == before["piecesLocked"], "Opening help also hard-dropped a piece"
+    else:
+        assert after["player"]["stamina"] >= before["player"]["stamina"] - .01, "Opening help also dashed"
+        assert after["player"]["dashTime"] == 0 and after["player"]["heat"] <= before["player"]["heat"], "Native help leaked combat input"
+    page.locator("[data-solo-focus]").focus()
+
+
+def desktop_play_layout(page, game):
+    no_overflow(page)
+    assert page.evaluate("matchMedia('(pointer:fine)').matches"), "Desktop QA must use a fine pointer"
+    controls = ".prism-controls" if game == "prism-shift" else ".rift-controls"
+    assert page.locator(controls).is_hidden(), "Touch hardware crowds the desktop playfield"
+    canvas = page.locator(".prism-canvas" if game == "prism-shift" else ".rift-canvas").bounding_box()
+    assert canvas and canvas["y"] + canvas["height"] <= 1000, f"Desktop playfield extends below the first screen: {canvas}"
+    for action in ("#solo-pause", "#solo-restart"):
+        button = page.locator(action).bounding_box()
+        assert button and button["y"] < canvas["y"] and button["height"] >= 36, "Session controls should be usable above the board"
 
 
 def pause_and_blur(page, context, keyboard):
@@ -151,9 +214,11 @@ def touch_hold(page, context, selector, milliseconds=350, offset=(0, 0), cancel=
     target.scroll_into_view_if_needed()
     box = target.bounding_box()
     assert box, selector
+    assert box["height"] >= 44 and box["width"] >= 44, f"Touch target is too small: {selector}: {box}"
     touch = {"x": box["x"] + box["width"] * (.5 + offset[0]), "y": box["y"] + box["height"] * (.5 + offset[1]), "id": 1}
     session = context.new_cdp_session(page)
     try:
+        session.send("Emulation.setTouchEmulationEnabled", {"enabled": True, "maxTouchPoints": 5})
         before = state(page, solo)
         session.send("Input.dispatchTouchEvent", {"type": "touchStart", "touchPoints": [touch]})
         page.wait_for_timeout(milliseconds)
@@ -165,6 +230,7 @@ def touch_hold(page, context, selector, milliseconds=350, offset=(0, 0), cancel=
         assert target.get_attribute("aria-pressed") != "true", f"Touch held after release: {selector}"
         return before, held, released
     finally:
+        session.send("Emulation.setTouchEmulationEnabled", {"enabled": False})
         session.detach()
 
 
@@ -284,7 +350,11 @@ def prism(page, context):
     assert released["active"]["x"] == held["active"]["x"]
     before, held, released = touch_hold(page, context, '.prism-control[data-action="hardDrop"]', cancel=False)
     assert held["piecesLocked"] == before["piecesLocked"] + 1 and released["piecesLocked"] == held["piecesLocked"]
-    page.set_viewport_size({"width": 1440, "height": 1100})
+    page.set_viewport_size({"width": 320, "height": 844})
+    before, held, released = touch_hold(page, context, '.prism-control[data-action="right"]')
+    assert held["active"]["x"] > before["active"]["x"]
+    assert released["active"]["x"] == held["active"]["x"]
+    page.set_viewport_size({"width": 1440, "height": 1000})
     page.locator('[data-mode="marathon"]').click()
     assert record(page, "prism-shift", "marathon") == best
     page.reload()
@@ -382,7 +452,12 @@ def rift(page, context):
     assert held["player"]["stamina"] < before["player"]["stamina"] - 20
     before, held, released = touch_hold(page, context, '[data-control="fire"]', milliseconds=300)
     assert held["player"]["heat"] > before["player"]["heat"]
-    page.set_viewport_size({"width": 1440, "height": 1100})
+    page.set_viewport_size({"width": 320, "height": 844})
+    before, held, released = touch_hold(page, context, '[data-stick="move"]', offset=(-.3, 0))
+    assert held["player"]["x"] < before["player"]["x"] - 20
+    page.wait_for_timeout(180)
+    assert abs(state(page)["player"]["x"] - released["player"]["x"]) < 1
+    page.set_viewport_size({"width": 1440, "height": 1000})
     # Let real enemies reach the unarmed player and verify an actual terminal run.
     page.locator("#solo-restart").click()
     phase(page, "lost", timeout=40000)
@@ -400,7 +475,7 @@ def rift(page, context):
 
 
 def vector(browser, url):
-    contexts = [browser.new_context(viewport={"width": 1440, "height": 1100}, has_touch=True) for _ in range(2)]
+    contexts = [browser.new_context(viewport={"width": 1440, "height": 1000}, has_touch=False) for _ in range(2)]
     first, second = [context.new_page() for context in contexts]
     keyboard = Keyboard(first)
     try:
@@ -490,6 +565,10 @@ def vector(browser, url):
         before, held, released = touch_hold(first, contexts[0], '[data-vector-action="fire"]', solo=False)
         assert held["fighters"][0]["ammo"] < before["fighters"][0]["ammo"]
         assert not released["fighters"][0]["previousInput"]["fire"]
+        first.set_viewport_size({"width": 320, "height": 844})
+        before, held, released = touch_hold(first, contexts[0], '[data-vector-action="focus"]', solo=False)
+        assert held["fighters"][0]["previousInput"]["focus"]
+        assert not released["fighters"][0]["previousInput"]["focus"]
         second.close()
         phase(first, "lobby", False)
         assert all(f["hp"] == 100 and f["wins"] == 0 for f in state(first, False)["fighters"])
@@ -513,7 +592,7 @@ def run(url):
                 if game not in selected:
                     continue
                 before_rooms = room_ids(url)
-                context = browser.new_context(viewport={"width": 1440, "height": 1100}, has_touch=True)
+                context = browser.new_context(viewport={"width": 1440, "height": 1000}, has_touch=False)
                 context.add_init_script("window.addEventListener('pageshow', event => {window.__qaPageShowPersisted = event.persisted;});")
                 page = context.new_page()
                 watch(page, game, solo=True)
@@ -521,13 +600,17 @@ def run(url):
                     page.goto(url)
                     page.wait_for_function("document.querySelector('#host-status').textContent === 'Host is online'")
                     check_catalog(page)
+                    check_search(page)
                     if game == "prism-shift":
-                        screenshot(page, "fireside-skill-hub.png")
+                        screenshot(page, "fireside-skill-hub.png", full_page=False)
+                        screenshot(page, "fireside-skill-hub-full.png")
                         mobile_layout(page, "skill-hub")
                     page.locator(f'[data-play-solo="{game}"]').click()
                     page.wait_for_url(f"**/solo.html?game={game}")
                     page.wait_for_function("game => window.firesideSolo?.gameId === game", arg=game)
                     phase(page, "playing")
+                    native_help(page, game)
+                    desktop_play_layout(page, game)
                     exercise(page, context)
                     browser_back(page, url, game)
                     assert room_ids(url) == before_rooms, "Solo game altered multiplayer rooms"

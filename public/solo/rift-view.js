@@ -11,6 +11,26 @@ const KEY_CONTROLS = {
 };
 const isForm = target => target instanceof Element && Boolean(target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"])'));
 const copy = value => JSON.parse(JSON.stringify(value));
+const UPGRADE_ART = {
+  repair: { category: 'RECOVERY', path: 'M13 6h6v7h7v6h-7v7h-6v-7H6v-6h7z' },
+  damage: { category: 'FIREPOWER', path: 'M13 4h6v3h3v17h-3v4h-6v-4h-3V7h3zM7 10H4v12h3zm21 0h-3v12h3z' },
+  cooling: { category: 'HEAT CONTROL', path: 'M14 4h4v7l6-4 2 4-6 4 6 4-2 4-6-4v9h-4v-9l-6 4-2-4 6-4-6-4 2-4 6 4z' },
+  mobility: { category: 'MOVEMENT', path: 'M11 6h11v12h5v8H7v-5h4zm-5 5H2v3h4zm0 7H1v3h5z' },
+  battery: { category: 'STAMINA', path: 'M13 3h6v4h7v22H6V7h7zm3 7-5 9h5l-1 7 6-10h-5z' },
+  plating: { category: 'DEFENSE', path: 'M6 6h20v14l-4 5-6 4-6-4-4-5zm5 4v9l5 5 5-5v-9z' },
+};
+function upgradeIcon(id) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 32 32');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('shape-rendering', 'crispEdges');
+  const path = document.createElementNS(svg.namespaceURI, 'path');
+  path.setAttribute('d', UPGRADE_ART[id]?.path || UPGRADE_ART.plating.path);
+  path.setAttribute('fill', 'currentColor');
+  path.setAttribute('fill-rule', 'evenodd');
+  svg.append(path);
+  return svg;
+}
 function node(tag, className, text) {
   const element = document.createElement(tag);
   element.className = className;
@@ -30,11 +50,17 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   let effectTime = 0;
   let particles = [];
   let ghosts = [];
+  let rings = [];
+  let hitMarkers = [];
   let upgradeSignature = '';
   let aimPoint = null;
   let aimVector = { x: 1, y: 0 };
   let dashQueued = false;
   let fireQueued = false;
+  let gait = 0;
+  let walking = false;
+  let previousPlayer = { x: state.player.x, y: state.player.y };
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
   const keys = new Map();
   const pointers = new Map();
   const stickValues = { move: { x: 0, y: 0 }, aim: { x: 0, y: 0 } };
@@ -43,7 +69,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   const topline = node('div', 'rift-topline');
   const waveLabel = node('span', '', `WAVE 01 / ${TOTAL_WAVES}`);
   const enemyLabel = node('span', 'rift-enemy-count', 'CLEAR THE RIFT');
-  topline.append(waveLabel, enemyLabel);
+  const sector = node('span', 'rift-sector', 'SECTOR 07');
+  topline.append(sector, waveLabel, enemyLabel);
   const meters = node('div', 'rift-meters');
   const meterNodes = {};
   for (const [id, label] of [['health', 'HEALTH'], ['stamina', 'DASH'], ['heat', 'HEAT']]) {
@@ -82,7 +109,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   upgradePanel.hidden = true;
   upgradePanel.setAttribute('aria-label', 'Choose one upgrade for the next wave');
   const upgradeHeading = node('div', 'rift-upgrade-heading');
-  upgradeHeading.append(node('strong', '', 'Shape your next wave.'), node('span', '', 'CHOOSE ONE'));
+  upgradeHeading.append(node('strong', '', 'A choice that changes your run.'), node('span', '', 'TAKE ONE'));
   const upgradeChoices = node('div', 'rift-upgrade-choices');
   upgradePanel.append(upgradeHeading, upgradeChoices);
   const build = node('div', 'rift-build');
@@ -91,7 +118,12 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   status.setAttribute('role', 'status');
   status.setAttribute('aria-live', 'polite');
   status.setAttribute('aria-atomic', 'true');
-  const hint = node('p', 'rift-hint', 'WASD moves · pointer aims · hold click / J fires · Space / Shift dashes. Read the windups and use cover.');
+  const hint = node('p', 'rift-hint');
+  for (const [key, label] of [['WASD', 'Move'], ['Mouse', 'Aim'], ['Click / J', 'Fire'], ['Space', 'Dash']]) {
+    const item = node('span', '');
+    item.append(node('kbd', '', key), document.createTextNode(label));
+    hint.append(item);
+  }
   const controls = node('div', 'rift-controls');
   controls.setAttribute('role', 'group');
   controls.setAttribute('aria-label', 'Touch arena controls');
@@ -124,7 +156,10 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   controls.insertBefore(actions, controls.lastChild);
   view.append(topline, meters, board, upgradePanel, build, status, hint, controls);
   container.append(view);
-  const ctx = canvas.getContext('2d');
+  const displayContext = canvas.getContext('2d');
+  let ctx = displayContext;
+  const floorLayer = document.createElement('canvas');
+  floorLayer.width = W; floorLayer.height = H;
 
   function input() {
     const result = { up: false, down: false, left: false, right: false, fire: fireQueued, dash: dashQueued };
@@ -199,7 +234,9 @@ export function mount(container, { onUpdate = () => {} } = {}) {
         const button = node('button', 'rift-upgrade');
         button.type = 'button';
         button.dataset.upgrade = id;
-        button.append(node('span', 'rift-upgrade-kicker', id === 'repair' ? 'RECOVER' : 'BUILD'), node('strong', '', choice.name || choice.title || id), node('span', 'rift-upgrade-description', choice.description || choice.detail || ''), node('b', '', 'Choose ↗'));
+        const mark = node('span', 'rift-upgrade-mark');
+        mark.append(upgradeIcon(id));
+        button.append(mark, node('span', 'rift-upgrade-kicker', UPGRADE_ART[id]?.category || 'BUILD'), node('strong', '', choice.name || choice.title || id), node('span', 'rift-upgrade-description', choice.description || choice.detail || ''), node('b', '', 'Take this upgrade ↗'));
         upgradeChoices.append(button);
       }
     }
@@ -221,7 +258,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     view.dataset.wave = String(state.wave);
     view.dataset.health = String(Math.round(state.player.hp));
     waveLabel.textContent = `WAVE ${String(state.wave).padStart(2, '0')} / ${TOTAL_WAVES}`;
-    enemyLabel.textContent = state.phase === 'upgrade' ? 'WAVE CLEARED' : `${state.enemies.length} HOSTILES · ${state.kills} CLEARED`;
+    enemyLabel.textContent = state.phase === 'upgrade' ? 'ALL CLEAR' : `${state.enemies.length} HOSTILES`;
     const values = {
       health: [state.player.hp, state.player.maxHp, `${Math.ceil(state.player.hp)} / ${state.player.maxHp}`],
       stamina: [state.player.stamina, state.player.maxStamina, `${Math.round(state.player.stamina)} / ${state.player.maxStamina}`],
@@ -269,52 +306,117 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     ctx.closePath(); ctx.fill();
   }
   function floor() {
-    rect(0, 0, W, H, '#172d34');
-    rect(16, 16, W - 32, H - 32, '#243c42');
-    for (let y = 28; y < H - 20; y += 40) {
-      for (let x = 28; x < W - 20; x += 40) {
-        const hash = ((x / 4 | 0) * 17 + (y / 4 | 0) * 7) % 9;
-        rect(x, y, 37, 37, hash < 3 ? '#2a4146' : '#273e44');
-        if (hash === 0) rect(x + 8, y + 12, 4, 2, '#354b4e');
+    rect(0, 0, W, H, '#10262c');
+    rect(20, 20, W - 40, H - 40, '#233b3e');
+    const stone = ['#2a4042', '#263e40', '#2c4344', '#284043', '#253d40'];
+    for (let y = 25, row = 0; y < H - 20; y += 52, row += 1) {
+      for (let x = 24 - row % 2 * 42; x < W - 20; x += 84) {
+        const hash = Math.abs((x * 17 + y * 7) % 31);
+        const left = Math.max(21, x); const right = Math.min(W - 21, x + 81);
+        if (right <= left) continue;
+        rect(left, y, right - left, Math.min(49, H - 21 - y), stone[hash % stone.length]);
+        rect(left + 2, y + 1, Math.max(0, right - left - 4), 1, '#354b4c');
+        if (hash < 8) {
+          rect(left + 10, y + 31, 16, 2, '#344b4b');
+          rect(left + 25, y + 33, 8, 1, '#1f3539');
+        }
+        if (hash % 9 === 0) {
+          line(left + 39, y + 6, left + 35, y + 16, '#20383c', 2);
+          line(left + 35, y + 16, left + 43, y + 24, '#20383c', 2);
+        }
       }
     }
-    // The broken rift is a floor landmark, never a threat or an obstacle.
+    // Inlaid floor conduits and broken stone stay below the contrast of threats.
+    for (const x of [187, W - 191]) {
+      rect(x, 82, 7, H - 164, '#1b3338'); rect(x + 2, 84, 2, H - 168, '#45605b');
+      for (let y = 105; y < H - 95; y += 69) rect(x - 2, y, 11, 4, '#536d60');
+    }
+    for (const y of [96, H - 100]) {
+      rect(189, y, W - 378, 5, '#1b3338'); rect(191, y + 1, W - 382, 1, '#45605b');
+      for (let x = 246; x < W - 190; x += 88) rect(x, y - 3, 4, 11, '#536d60');
+    }
+    for (const [x, y] of [[38, 38], [W - 147, 38], [38, H - 81], [W - 147, H - 81]]) {
+      rect(x, y, 109, 43, '#1c3337'); rect(x + 3, y + 3, 103, 37, '#43584f');
+      rect(x + 6, y + 6, 97, 30, '#1b3337');
+      for (let gx = x + 10; gx < x + 101; gx += 11) rect(gx, y + 7, 3, 28, '#526457');
+      rect(x + 5, y + 5, 99, 2, '#8b9272');
+      rect(x + 8, y + 38, 93, 2, '#142c31');
+    }
+    // This seal is painted flush with the floor, so its geometry remains walkable.
     ctx.save(); ctx.translate(W / 2, H / 2);
-    ctx.strokeStyle = '#45605c'; ctx.lineWidth = 3; ctx.setLineDash([9, 12]);
-    ctx.beginPath(); ctx.arc(0, 0, 102, 0, Math.PI * 2); ctx.stroke();
-    ctx.setLineDash([]);
-    polygon([[-41, -4], [-10, -24], [7, -8], [43, -31], [20, 11], [4, 18], [-18, 34]], '#3c5854');
-    line(-28, 9, -6, -9, '#79ad91', 3); line(-6, -9, 6, 5, '#79ad91', 3); line(6, 5, 28, -13, '#79ad91', 3);
+    const seal = Array.from({ length: 12 }, (_, index) => {
+      const angle = index * Math.PI / 6 + Math.PI / 12;
+      return [Math.cos(angle) * 110, Math.sin(angle) * 110];
+    });
+    polygon(seal, '#1d3538');
+    const inner = seal.map(([x, y]) => [x * .92, y * .92]);
+    polygon(inner, '#304d48');
+    polygon(inner.map(([x, y]) => [x * .95, y * .95]), '#233e3e');
+    circle(0, 0, 75, '#3d5b51', true, 2);
+    circle(0, 0, 63, '#385247', true, 1);
+    for (let index = 0; index < 8; index += 1) {
+      const angle = index * Math.PI / 4;
+      ctx.save(); ctx.rotate(angle);
+      rect(81, -4, 10, 7, '#6e8064'); rect(93, -2, 8, 3, '#536b58');
+      ctx.restore();
+    }
+    polygon([[-54, -3], [-28, -18], [-9, -43], [2, -10], [33, -27], [49, -48], [38, -7], [14, 6], [24, 32], [-6, 22], [-29, 44], [-16, 12]], '#152f34');
+    line(-38, 0, -14, -17, '#547d68', 4); line(-14, -17, -7, -33, '#547d68', 4);
+    line(-14, -17, 0, 5, '#547d68', 4); line(0, 5, 26, -13, '#547d68', 4);
+    line(26, -13, 37, -31, '#547d68', 3); line(0, 5, -19, 28, '#547d68', 3);
+    rect(-12, -15, 3, 12, '#7ea687'); rect(13, -6, 9, 2, '#7ea687');
     ctx.restore();
-    const corners = [[29, 29], [W - 68, 29], [29, H - 68], [W - 68, H - 68]];
-    for (const [x, y] of corners) {
-      rect(x, y, 39, 4, '#839a82'); rect(x, y, 4, 39, '#839a82');
-      rect(x + 8, y + 8, 17, 2, '#476d62'); rect(x + 8, y + 8, 2, 17, '#476d62');
+    // Thick outer stonework frames the arena without adding collision objects.
+    rect(0, 0, W, 14, '#0c2028'); rect(0, H - 14, W, 14, '#0c2028');
+    rect(0, 0, 14, H, '#0c2028'); rect(W - 14, 0, 14, H, '#0c2028');
+    rect(14, 14, W - 28, 3, '#65806d'); rect(14, H - 17, W - 28, 3, '#314c47');
+    rect(14, 17, 3, H - 34, '#516e60'); rect(W - 17, 17, 3, H - 34, '#314c47');
+    for (let x = 52; x < W - 25; x += 68) {
+      rect(x, 2, 36, 8, '#263f42'); rect(x + 4, 3, 28, 2, '#607862');
+      rect(x, H - 10, 36, 8, '#263f42'); rect(x + 4, H - 7, 28, 2, '#496655');
     }
-    for (let x = 97; x < W - 70; x += 80) {
-      rect(x, 7, 29, 4, '#6a947a'); rect(x, H - 11, 29, 4, '#6a947a');
+    for (let y = 88; y < H - 25; y += 72) {
+      rect(2, y, 8, 40, '#263f42'); rect(W - 10, y, 8, 40, '#263f42');
+      rect(4, y + 4, 2, 32, '#607862'); rect(W - 7, y + 4, 2, 32, '#496655');
     }
-    for (let y = 98; y < H - 70; y += 80) {
-      rect(7, y, 4, 26, '#6a947a'); rect(W - 11, y, 4, 26, '#6a947a');
+    for (const [x, y] of [[32, 108], [W - 47, 108], [32, H - 128], [W - 47, H - 128]]) {
+      rect(x - 5, y - 5, 23, 26, '#1a3236');
+      rect(x, y, 13, 18, '#678971'); rect(x + 3, y + 2, 7, 14, '#aad0a3');
+      rect(x + 4, y + 3, 5, 4, '#e3dcac'); rect(x + 3, y + 19, 7, 3, '#152f33');
+      rect(x - 13, y + 4, 5, 11, '#2e4944'); rect(x + 20, y + 4, 5, 11, '#2e4944');
     }
+    ctx.font = 'bold 13px ui-monospace, monospace'; ctx.fillStyle = '#627967';
+    ctx.textAlign = 'center'; ctx.fillText('07', W / 2, 58);
+    ctx.font = '9px ui-monospace, monospace'; ctx.fillStyle = '#667e6b';
+    ctx.fillText('CONTAINMENT CHAMBER', W / 2, H - 34); ctx.textAlign = 'left';
   }
   function cover() {
     for (const obstacle of OBSTACLES) {
       const { x, y, width, height } = obstacle;
-      rect(x + 5, y + 6, width + 1, height, '#152a30');
-      rect(x, y, width, height, '#60796b');
-      rect(x + 4, y + 4, width - 8, height - 8, '#405950');
-      rect(x + 4, y + 4, width - 8, 5, '#82947a');
-      rect(x + 4, y + height - 10, width - 8, 6, '#304c43');
-      rect(x + 9, y + 13, Math.max(8, width - 18), 2, '#6e8570');
-      for (const ox of [9, width - 12]) for (const oy of [10, height - 12]) rect(x + ox, y + oy, 3, 3, '#b5b78b');
-      if (height > 55) rect(x + width / 2 - 2, y + 24, 4, height - 43, '#6a7e69');
+      rect(x + 7, y + 8, width + 1, height + 2, '#132c31');
+      rect(x, y, width, height, '#7c8971');
+      rect(x + 3, y + 3, width - 6, height - 6, '#3b554b');
+      rect(x + 4, y + 4, width - 8, height - 18, '#586f5d');
+      rect(x + 4, y + height - 14, width - 8, 10, '#29463e');
+      rect(x + 4, y + height - 14, width - 8, 2, '#70856b');
+      rect(x + 5, y + 4, width - 10, 3, '#a9ad88');
+      rect(x + 7, y + 10, width - 14, 1, '#7e9273');
+      rect(x + 11, y + 15, width - 22, height - 40, '#3e594e');
+      rect(x + 13, y + 17, width - 26, height - 44, '#4c6656');
+      line(x + 17, y + 20, x + width - 17, y + height - 28, '#7c8d6f', 3);
+      line(x + width - 17, y + 20, x + 17, y + height - 28, '#7c8d6f', 3);
+      rect(x + width / 2 - 7, y + height / 2 - 8, 14, 10, '#29483e');
+      rect(x + width / 2 - 4, y + height / 2 - 6, 8, 5, '#b4b68a');
+      for (const ox of [7, width - 10]) for (const oy of [8, height - 10]) {
+        rect(x + ox, y + oy, 4, 4, '#c8bd87'); rect(x + ox + 1, y + oy + 1, 2, 2, '#6a7358');
+      }
+      for (let stripe = 0; stripe < 4; stripe += 1) rect(x + 12 + stripe * 18, y + height - 9, 9, 3, '#7f8160');
     }
   }
   function telegraph(enemy) {
     if (enemy.phase !== 'windup') return;
     const angle = Math.atan2(enemy.aimY, enemy.aimX);
-    const flash = .55 + .12 * Math.sin(state.elapsed * 18);
+    const flash = reducedMotion.matches ? .7 : .62 + .1 * Math.sin(state.elapsed * 12);
     ctx.save(); ctx.globalAlpha = flash;
     if (enemy.type === 'brute') {
       const maximumReach = (350 + state.wave * 4) * .65;
@@ -354,29 +456,73 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   function enemySprite(enemy) {
     const x = Math.round(enemy.x); const y = Math.round(enemy.y);
     const r = enemy.radius;
-    circle(x + 3, y + 5, r + 1, '#162d31');
+    circle(x + 4, y + 6, r + 2, '#10282d');
     const winding = enemy.phase === 'windup';
     if (enemy.type === 'boss') {
-      const body = winding ? '#eaa7ae' : '#b56b87';
-      polygon([[x - r, y - r * .55], [x - r * .6, y - r], [x + r * .6, y - r], [x + r, y - r * .55], [x + r, y + r * .6], [x + r * .45, y + r], [x - r * .45, y + r], [x - r, y + r * .6]], body);
-      rect(x - r + 4, y - r - 12, 8, 15, '#d9c5a0'); rect(x + r - 12, y - r - 12, 8, 15, '#d9c5a0');
-      rect(x - r * .64, y - r * .55, r * 1.28, r * 1.08, '#573f59');
-      rect(x - 18, y - 9, 12, 5, '#f8dab0'); rect(x + 6, y - 9, 12, 5, '#f8dab0');
-      polygon([[x, y - 1], [x + 11, y + 12], [x, y + 25], [x - 11, y + 12]], '#de939f');
+      const sovereign = state.wave === 10;
+      const armor = winding ? '#e4bad0' : sovereign ? '#a698cb' : '#c88898';
+      const highlight = sovereign ? '#d7c6e4' : '#efbfaa';
+      if (sovereign) {
+        polygon([[x - 30, y - 24], [x - 18, y - 36], [x, y - 26], [x + 18, y - 36], [x + 30, y - 24], [x + 24, y + 23], [x, y + 33], [x - 24, y + 23]], '#4c4266');
+        for (const sign of [-1, 1]) {
+          polygon([[x + sign * 15, y - 23], [x + sign * 27, y - 39], [x + sign * 29, y - 8]], highlight);
+          polygon([[x + sign * 15, y - 13], [x + sign * 31, y - 22], [x + sign * 27, y + 25], [x + sign * 16, y + 17]], armor);
+        }
+        polygon([[x, y - 31], [x + 16, y - 9], [x + 10, y + 25], [x, y + 31], [x - 10, y + 25], [x - 16, y - 9]], '#665781');
+        rect(x - 10, y - 15, 20, 5, '#d8cae8'); rect(x - 8, y - 10, 16, 6, '#253847');
+        rect(x - 5, y - 8, 10, 3, '#f0c7e0');
+        polygon([[x, y], [x + 9, y + 11], [x, y + 23], [x - 9, y + 11]], '#c1d9c4');
+        polygon([[x, y + 4], [x + 4, y + 11], [x, y + 17], [x - 4, y + 11]], '#e8efcb');
+      } else {
+        polygon([[x - 29, y - 20], [x - 18, y - 31], [x + 18, y - 31], [x + 29, y - 20], [x + 29, y + 19], [x + 17, y + 30], [x - 17, y + 30], [x - 29, y + 19]], '#593d4f');
+        for (const sign of [-1, 1]) {
+          rect(x + sign * 21 - 4, y - 36, 8, 20, '#ccb59b');
+          rect(x + sign * 21 - 2, y - 38, 5, 8, '#ece0bc');
+          rect(x + sign * 25 - 6, y - 17, 12, 29, armor);
+          rect(x + sign * 25 - 5, y - 16, 10, 4, highlight);
+          rect(x + sign * 21 - 5, y + 14, 10, 14, '#987481');
+        }
+        rect(x - 18, y - 23, 36, 45, armor); rect(x - 15, y - 23, 30, 4, highlight);
+        rect(x - 13, y - 16, 26, 29, '#6a4a59');
+        rect(x - 13, y - 15, 26, 4, '#3b3342'); rect(x - 10, y - 13, 7, 3, '#ffe4ba'); rect(x + 3, y - 13, 7, 3, '#ffe4ba');
+        polygon([[x, y - 3], [x + 10, y + 9], [x, y + 21], [x - 10, y + 9]], '#e1a5a9');
+        rect(x - 3, y + 5, 6, 9, '#f6d6bc');
+      }
     } else if (enemy.type === 'brute') {
-      rect(x - r, y - r, r * 2, r * 2, winding ? '#e1ba79' : '#b79b65');
-      rect(x - r + 4, y - r + 4, r * 2 - 8, r * 2 - 8, '#645f49');
-      rect(x - r - 4, y - 9, 7, 18, '#d7b678'); rect(x + r - 3, y - 9, 7, 18, '#d7b678');
-      rect(x - 9, y - 6, 18, 5, '#f2d597'); rect(x - 5, y + 4, 10, 5, '#b2a16e');
+      ctx.save(); ctx.translate(x, y);
+      ctx.rotate(Math.atan2(enemy.aimY, enemy.aimX));
+      rect(-20, -18, 10, 36, '#b4905d'); rect(-20, -18, 4, 36, '#ddbd7a');
+      rect(-12, -20, 27, 40, '#665c44'); rect(-12, -20, 27, 4, '#d0ac6c');
+      rect(-9, -15, 22, 30, winding ? '#c1a577' : '#9c8358');
+      rect(-16, -24, 11, 12, '#c3a16d'); rect(-16, 12, 11, 12, '#c3a16d');
+      rect(-14, -24, 7, 3, '#e0c690'); rect(-14, 12, 7, 3, '#e0c690');
+      rect(-7, -9, 22, 18, '#485145'); rect(7, -7, 9, 14, '#d9ba7e');
+      rect(12, -4, 5, 8, winding ? '#fff0c3' : '#f0cd93');
+      rect(-6, -13, 4, 5, '#c9b47d'); rect(-6, 8, 4, 5, '#c9b47d');
+      ctx.restore();
     } else if (enemy.type === 'ranged') {
-      polygon([[x, y - r - 5], [x + r + 3, y], [x, y + r + 5], [x - r - 3, y]], winding ? '#d5b9e0' : '#9e8cb5');
-      polygon([[x, y - r + 2], [x + r - 4, y], [x, y + r - 2], [x - r + 4, y]], '#4d485e');
-      rect(x - 6, y - 3, 12, 6, '#efc1d7');
+      polygon([[x, y - 19], [x + 11, y - 9], [x + 15, y + 11], [x + 8, y + 18], [x + 2, y + 11], [x - 4, y + 18], [x - 15, y + 11], [x - 11, y - 9]], '#655879');
+      polygon([[x, y - 18], [x + 8, y - 9], [x + 11, y + 7], [x - 11, y + 7], [x - 8, y - 9]], winding ? '#c4b9df' : '#a092ba');
+      rect(x - 8, y - 8, 16, 11, '#35404e'); rect(x - 4, y - 6, 8, 4, '#f0c5df');
+      rect(x - 11, y + 7, 5, 8, '#9185a8'); rect(x + 6, y + 7, 5, 8, '#9185a8');
+      rect(x - 3, y + 5, 6, 12, '#726681');
+      circle(x + enemy.aimX * 16, y + enemy.aimY * 16, 5, '#edd1e3');
+      circle(x + enemy.aimX * 16, y + enemy.aimY * 16, 2, '#fff2d8');
     } else {
-      rect(x - r + 3, y - r, r * 2 - 6, 5, '#d3a58c');
-      rect(x - r, y - r + 5, r * 2, r * 2 - 10, winding ? '#e8b497' : '#b77e6b');
-      rect(x - r + 3, y + r - 5, r * 2 - 6, 5, '#8b5c50');
-      rect(x - 8, y - 5, 16, 7, '#593e3d'); rect(x - 5, y - 3, 3, 3, '#f8d19a'); rect(x + 2, y - 3, 3, 3, '#f8d19a');
+      ctx.save(); ctx.translate(x, y);
+      const facing = winding ? Math.atan2(enemy.aimY, enemy.aimX) : Math.atan2(state.player.y - y, state.player.x - x);
+      ctx.rotate(facing);
+      const stride = reducedMotion.matches || enemy.phase !== 'seeking' ? 0 : Math.sin(state.elapsed * 15 + enemy.id) * 2;
+      for (const sign of [-1, 1]) {
+        rect(-10 + sign * stride, sign * 10 - 2, 5, 8, '#855454');
+        rect(-4 - sign * stride, sign * 12 - 2, 5, 7, '#c98b78');
+      }
+      polygon([[-14, -7], [-8, -13], [6, -12], [14, -5], [14, 5], [6, 12], [-8, 13], [-14, 7]], '#72484b');
+      rect(-9, -10, 15, 20, winding ? '#e5b39b' : '#c58a79');
+      rect(-9, -10, 4, 20, '#995e59'); rect(-5, -10, 11, 3, '#e6b7a0');
+      polygon([[1, -8], [13, -7], [17, -2], [17, 2], [13, 7], [1, 8]], '#dfab91');
+      rect(7, -5, 8, 10, '#593b42'); rect(12, -3, 3, 6, '#ffe2aa');
+      rect(-13, -5, 5, 10, '#a66559'); ctx.restore();
     }
     if (enemy.hp < enemy.maxHp || enemy.type === 'boss') {
       const barWidth = enemy.type === 'boss' ? 90 : Math.max(28, r * 2);
@@ -389,28 +535,43 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     const x = Math.round(player.x); const y = Math.round(player.y);
     const angle = Math.atan2(player.aimY, player.aimX);
     const immune = player.invulnerable > 0 || player.damageCooldown > 0;
-    const color = immune && Math.floor(state.elapsed * 15) % 2 ? '#ffe5ae' : '#efad72';
-    circle(x + 3, y + 5, 14, '#172f34');
-    rect(x - 9, y - 14, 18, 5, '#ffc38a'); rect(x - 13, y - 9, 26, 18, color); rect(x - 9, y + 9, 18, 5, '#c88354');
-    rect(x - 9, y - 5, 18, 8, '#644738'); rect(x - 6, y - 3, 12, 3, '#fff0b7');
-    rect(x - 10, y + 10, 7, 5, '#2a3633'); rect(x + 3, y + 10, 7, 5, '#2a3633');
+    const color = immune && (reducedMotion.matches || Math.floor(state.elapsed * 10) % 2) ? '#ffddb0' : '#ecab70';
+    circle(x + 4, y + 6, 14, '#112b30');
+    if (alpha === 1) circle(x, y, 16, '#d4c89a', true, 1);
     ctx.translate(x, y); ctx.rotate(angle);
-    rect(9, -4, 17, 8, '#c3ccb0'); rect(20, -3, 9, 6, '#e8dfb3'); rect(11, -4, 4, 8, '#687d68');
-    if (player.fireCooldown > player.fireInterval * .65) polygon([[29, -6], [38, -2], [33, 0], [38, 2], [29, 6]], '#ffdfa0');
+    const stride = walking && !reducedMotion.matches ? Math.sin(gait) * 3 : 0;
+    rect(-13 - stride, -10, 8, 6, '#182f32'); rect(-13 + stride, 4, 8, 6, '#182f32');
+    rect(-10, -12, 12, 24, '#a86d49'); rect(-9, -12, 3, 24, '#eaba85');
+    rect(-7, -10, 17, 20, color); rect(-7, -10, 17, 3, '#ffcea0');
+    rect(-5, -5, 6, 10, '#bf784c'); rect(-4, -4, 4, 8, '#dc9b63');
+    rect(1, -12, 8, 5, '#ffc28c'); rect(1, 7, 8, 5, '#c58255');
+    rect(4, -8, 13, 16, '#f2bb82'); rect(5, -7, 11, 3, '#ffe0ad');
+    rect(12, -5, 5, 10, '#394f4b'); rect(14, -3, 3, 6, '#dce4ba');
+    rect(5, 3, 9, 3, '#cf8f60');
+    rect(13, -4, 12, 8, '#c7c9a4'); rect(16, -3, 15, 6, '#e2d6a7');
+    rect(18, -3, 4, 6, '#667966'); rect(29, -4, 4, 8, '#adbfa0');
+    if (player.fireCooldown > player.fireInterval * .65) polygon([[34, -6], [42, -3], [37, 0], [42, 3], [34, 6]], '#ffe3a0');
     ctx.restore();
     if (alpha === 1 && player.dashTime > 0) circle(x, y, 22, '#a5e2bc', true, 2);
   }
   function draw() {
     if (!ctx || destroyed) return;
     ctx.imageSmoothingEnabled = false;
-    floor();
+    ctx.drawImage(floorLayer, 0, 0);
     for (const enemy of state.enemies) telegraph(enemy);
     cover();
     for (const ghost of ghosts) playerSprite(ghost, Math.max(0, ghost.life / .17) * .38);
+    for (const ring of rings) {
+      const progress = 1 - ring.life / ring.maxLife;
+      ctx.globalAlpha = Math.max(0, 1 - progress) * .55;
+      circle(ring.x, ring.y, ring.radius + progress * ring.growth, ring.color, true, 2);
+    }
+    ctx.globalAlpha = 1;
     for (const projectile of state.projectiles) {
       const speed = Math.hypot(projectile.vx, projectile.vy) || 1;
-      const trail = projectile.owner === 'player' ? 16 : 9;
-      line(projectile.x - projectile.vx / speed * trail, projectile.y - projectile.vy / speed * trail, projectile.x, projectile.y, projectile.owner === 'player' ? '#e5b579' : '#db92b4', projectile.owner === 'player' ? 3 : 4);
+      const trail = projectile.owner === 'player' ? 22 : 12;
+      line(projectile.x - projectile.vx / speed * trail, projectile.y - projectile.vy / speed * trail, projectile.x, projectile.y, projectile.owner === 'player' ? '#b99966' : '#a56b99', projectile.owner === 'player' ? 3 : 4);
+      if (projectile.owner === 'enemy') circle(projectile.x, projectile.y, projectile.radius + 2, '#6a3e67', true, 2);
       circle(projectile.x, projectile.y, Math.max(3, projectile.radius), projectile.owner === 'player' ? '#ffe7a1' : '#f3bdd4');
       if (projectile.owner === 'enemy') circle(projectile.x, projectile.y, Math.max(1.5, projectile.radius - 2), '#fff0dc');
     }
@@ -419,6 +580,13 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     for (const particle of particles) {
       ctx.globalAlpha = clamp(particle.life / particle.maxLife, 0, 1);
       rect(particle.x, particle.y, particle.size, particle.size, particle.color);
+    }
+    ctx.globalAlpha = 1;
+    for (const marker of hitMarkers) {
+      ctx.globalAlpha = marker.life / marker.maxLife;
+      const gap = marker.kill ? 6 : 3;
+      const size = marker.kill ? 12 : 7;
+      for (const sx of [-1, 1]) for (const sy of [-1, 1]) line(marker.x + sx * gap, marker.y + sy * gap, marker.x + sx * size, marker.y + sy * size, marker.kill ? '#f9deb0' : '#eed6a5', 2);
     }
     ctx.globalAlpha = 1;
     const aim = input();
@@ -431,35 +599,43 @@ export function mount(container, { onUpdate = () => {} } = {}) {
         line(crosshair.x, crosshair.y + sign * 12, crosshair.x, crosshair.y + sign * 5, '#ffe1a1', 2);
       }
     }
-    if (state.player.damageCooldown > .32) {
+    if (!reducedMotion.matches && state.player.damageCooldown > .32) {
       ctx.globalAlpha = Math.min(.1, (state.player.damageCooldown - .32) * .43);
       rect(0, 0, W, H, '#d47d70'); ctx.globalAlpha = 1;
     }
-    ctx.font = 'bold 11px ui-monospace, monospace'; ctx.fillStyle = '#779b8a'; ctx.textAlign = 'left';
-    ctx.fillText('RIFT // CONTAINMENT FIELD', 28, H - 30);
-    ctx.textAlign = 'right'; ctx.fillStyle = '#bad0a4';
-    ctx.fillText(state.enemies.some(enemy => enemy.type === 'boss') ? 'GUARDIAN DETECTED' : 'COVER IS YOUR ADVANTAGE', W - 28, H - 30);
+    ctx.font = 'bold 11px ui-monospace, monospace'; ctx.fillStyle = '#829c7f'; ctx.textAlign = 'left';
+    ctx.fillText(`${String(state.kills).padStart(2, '0')} CLEARED`, 38, H - 30);
+    ctx.textAlign = 'right'; ctx.fillStyle = '#c6b9a0';
+    if (state.enemies.some(enemy => enemy.type === 'boss')) ctx.fillText(state.wave === 10 ? 'RIFT SOVEREIGN' : 'THE GATEWARDEN', W - 38, H - 30);
     ctx.textAlign = 'left';
   }
   function effects(dt) {
     effectTime += dt;
+    const traveled = Math.hypot(state.player.x - previousPlayer.x, state.player.y - previousPlayer.y);
+    walking = traveled > .01;
+    gait += traveled * .13;
+    previousPlayer = { x: state.player.x, y: state.player.y };
     for (const event of state.events) {
       if (event.id <= lastEvent) continue;
       lastEvent = event.id;
       const isKill = event.type === 'kill' || event.type === 'enemy-killed';
       if (isKill || event.type === 'hurt' || event.type === 'hit') {
-        for (let i = 0; i < (isKill ? 11 : 5); i += 1) {
+        hitMarkers.push({ x: event.x ?? state.player.x, y: event.y ?? state.player.y, kill: isKill, life: isKill ? .22 : .1, maxLife: isKill ? .22 : .1 });
+        for (let i = 0; i < (reducedMotion.matches ? 0 : isKill ? 14 : 6); i += 1) {
           const a = i * 2.399 + event.id;
           const speed = 38 + i * 7;
-          particles.push({ x: event.x ?? state.player.x, y: event.y ?? state.player.y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, size: 3 + i % 2, life: .25 + i % 3 * .04, maxLife: .33, color: isKill ? '#d1bd92' : '#f0b986' });
+          particles.push({ x: event.x ?? state.player.x, y: event.y ?? state.player.y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, size: 2 + i % 3, life: .25 + i % 3 * .04, maxLife: .33, color: isKill ? i % 3 ? '#ca9e89' : '#ecd2a2' : '#f0b986' });
         }
       }
+      if (!reducedMotion.matches && (isKill || event.type === 'dash')) rings.push({ x: event.x, y: event.y, radius: isKill ? 7 : 13, growth: isKill ? 24 : 17, life: .24, maxLife: .24, color: isKill ? '#b9ae88' : '#a4d6b2' });
     }
-    if (state.player.dashTime > 0 && effectTime > .025) {
+    if (!reducedMotion.matches && state.player.dashTime > 0 && effectTime > .025) {
       ghosts.push({ ...state.player, life: .17 }); effectTime = 0;
     }
     particles = particles.filter(particle => { particle.life -= dt; particle.x += particle.vx * dt; particle.y += particle.vy * dt; return particle.life > 0; }).slice(-160);
     ghosts = ghosts.filter(ghost => { ghost.life -= dt; return ghost.life > 0; }).slice(-12);
+    rings = rings.filter(ring => { ring.life -= dt; return ring.life > 0; }).slice(-24);
+    hitMarkers = hitMarkers.filter(marker => { marker.life -= dt; return marker.life > 0; }).slice(-20);
   }
   function frame(time) {
     if (destroyed) return;
@@ -494,7 +670,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     releaseControls();
     state = createState(); previousFrame = null; accumulator = 0;
     lastEvent = -1; lastPublished = -Infinity; lastPhase = null;
-    particles = []; ghosts = []; effectTime = 0; upgradeSignature = '';
+    particles = []; ghosts = []; rings = []; hitMarkers = []; effectTime = 0; upgradeSignature = '';
+    gait = 0; walking = false; previousPlayer = { x: state.player.x, y: state.player.y };
     aimPoint = null; aimVector = { x: 1, y: 0 };
     publish(true); draw(); canvas.focus({ preventScroll: true });
   }
@@ -592,6 +769,9 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   view.addEventListener('lostpointercapture', pointerEnd);
   upgradeChoices.addEventListener('click', upgradeClick);
   replay.addEventListener('click', restart);
+  ctx = floorLayer.getContext('2d');
+  floor();
+  ctx = displayContext;
   publish(true); draw();
   raf = requestAnimationFrame(frame);
   return {

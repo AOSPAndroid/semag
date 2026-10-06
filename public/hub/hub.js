@@ -16,14 +16,26 @@ document.querySelectorAll('[data-play-solo]').forEach(button => button.addEventL
   updateName(); location.href = soloUrl(gameId);
 }));
 const matchesFilter = (game, filter) => filter === 'all' || (['driving', 'action'].includes(filter) ? game?.genre === filter : (game?.kind === 'solo') === (filter === 'solo'));
+let activeFilter = 'all';
+function filterShelf() {
+  const query = $('game-search').value.trim().toLowerCase();
+  let visible = 0;
+  document.querySelectorAll('[data-game-card]').forEach(card => {
+    const game = GAMES[card.dataset.gameCard];
+    const matches = matchesFilter(game, activeFilter) && `${game.title} ${game.category} ${game.description}`.toLowerCase().includes(query);
+    card.hidden = !matches;
+    if (matches) visible++;
+  });
+  $('shelf-empty').hidden = visible > 0;
+}
+$('game-search').addEventListener('input', filterShelf);
 document.querySelectorAll('[data-filter]').forEach(button => {
   const filter = button.dataset.filter;
   button.querySelector('span').textContent = Object.values(GAMES).filter(game => matchesFilter(game, filter)).length;
   button.addEventListener('click', () => {
+    activeFilter = filter;
     document.querySelectorAll('[data-filter]').forEach(choice => choice.setAttribute('aria-pressed', String(choice === button)));
-    document.querySelectorAll('[data-game-card]').forEach(card => {
-      card.hidden = !matchesFilter(GAMES[card.dataset.gameCard], filter);
-    });
+    filterShelf();
   });
 });
 document.querySelectorAll('[data-create-game]').forEach(button => button.addEventListener('click', async () => {

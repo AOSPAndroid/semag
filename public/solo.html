@@ -7,6 +7,7 @@
   <title>Solo games — Fireside</title>
   <link rel="icon" href="/hub/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/solo/solo.css">
+  <link rel="stylesheet" href="/hub/theme.css">
   <link rel="stylesheet" href="/solo/snake.css">
   <link rel="stylesheet" href="/solo/minesweeper.css">
   <link rel="stylesheet" href="/solo/2048.css">
@@ -35,32 +36,30 @@
           <div class="solo-score"><span id="solo-score-label">SCORE</span><strong id="solo-score">0</strong></div>
           <div class="solo-play-status"><span class="solo-status-dot" aria-hidden="true"></span><span id="solo-status-label" role="status" aria-live="polite">LOADING</span></div>
           <div class="solo-score solo-best"><span id="solo-record-label">BEST SCORE</span><strong id="solo-record">—</strong></div>
+          <div class="solo-session-actions" aria-label="Game session controls">
+            <button class="solo-secondary" id="solo-pause" type="button" disabled aria-pressed="false" title="Pause or resume (P)"><span>Pause</span><b aria-hidden="true">Ⅱ</b></button>
+            <button class="solo-primary" id="solo-restart" type="button" disabled title="Start a new game (R)"><span>New game</span><b aria-hidden="true">↻</b></button>
+          </div>
         </div>
         <div class="solo-game" id="solo-game" tabindex="0" aria-label="Game controls"></div>
         <div class="solo-objective"><i aria-hidden="true"></i><span id="solo-detail">Your game is loading…</span></div>
       </section>
 
       <aside class="solo-sidebar">
-        <section class="solo-session-panel">
-          <div class="solo-panel-heading"><h2>Your little session</h2><span>SOLO</span></div>
-          <p id="solo-session-note">Start straight away. There is no room to join.</p>
-          <button class="solo-primary" id="solo-restart" type="button" disabled><span>New game</span><b aria-hidden="true">↻</b></button>
-          <button class="solo-secondary" id="solo-pause" type="button" disabled aria-pressed="false"><span>Pause</span><b aria-hidden="true">Ⅱ</b></button>
-          <p class="solo-shortcuts"><kbd>R</kbd> New game <span>·</span> <kbd>P</kbd> Pause / resume</p>
-          <div class="solo-record-note"><span class="eyebrow">A RECORD OF YOUR OWN</span><p id="solo-record-scope">Best scores stay in this browser.</p></div>
-        </section>
-
         <section class="solo-controls-panel">
-          <h2>The essentials</h2>
+          <h2>Quick controls</h2>
           <div id="solo-controls-list"></div>
+          <p class="solo-shortcuts"><kbd>P</kbd> Pause / resume <span>·</span> <kbd>R</kbd> New game</p>
           <p id="solo-touch-help"></p>
         </section>
 
-        <section class="solo-rules-panel">
+        <details class="solo-rules-panel" id="solo-how-to">
+          <summary><span>How to play</span><span class="help-toggle" aria-hidden="true">+</span></summary>
           <h2 id="solo-rules-title">Make your move.</h2>
           <ol id="solo-rules"></ol>
           <small>Leaving the tab pauses your game. Resume when you are ready.</small>
-        </section>
+        </details>
+        <div class="solo-record-note"><span class="eyebrow">YOUR PERSONAL BEST</span><p id="solo-record-scope">Best scores stay in this browser.</p></div>
       </aside>
     </div>
     <footer class="solo-footer"><a href="/">← A different game?</a><span>FIRESIDE / SOLO PLAY</span><span>A MOMENT WELL SPENT.</span></footer>

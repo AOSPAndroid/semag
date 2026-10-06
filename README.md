@@ -22,7 +22,7 @@ A self-hosted browser game hub with solo games and two-player multiplayer. Pick 
 | Prism Shift | Solo falling blocks | Master wall kicks, holds, T-spins, and combos in Marathon or a timed 40-line Sprint. |
 | Rift Survivor | Solo survival arena | Read enemy attack patterns, choose upgrades, and defeat the bosses across ten waves. |
 
-The action games are original implementations. Checkers follows American checkers rules. All multiplayer card games use the same two-seat rooms, ready countdown, and rematch flow. The shelf filters show **All games**, **With a friend**, **Solo**, **Driving**, or **Action**.
+The action games are original implementations. Checkers follows American checkers rules. All multiplayer card games use the same two-seat rooms, ready countdown, and rematch flow. The shelf filters show **All games**, **With a friend**, **Solo**, **Driving**, or **Action**. Search narrows the selected shelf by title, category, or description. Room joining and invitations sit above the game shelf.
 
 ## Run on your PC
 
@@ -101,7 +101,7 @@ For Checkers, click a piece and then a highlighted destination. Captures are man
 
 **Rift Survivor:** move with WASD / arrows, aim with the mouse, hold click or J to fire, and dash with Space / Shift. On touch screens, use the left pad to move and the right pad to aim and fire. Sustained fire overheats your weapon; release to cool down. Watch the warnings before charging brutes or ranged attacks strike, and use cover to break firing lines. After each wave, choose one of three upgrades to shape your damage, cooling, movement, stamina, or recovery. Health carries between waves. Defeat the bosses on waves five and ten to finish the run.
 
-Solo games have pause and new-game controls. P pauses and R restarts; leaving the page or switching tabs pauses real-time solo games, including a pending Rift upgrade choice. Best scores and completed timed records are saved in the current browser when browser storage is available. Minesweeper records are separate by difficulty; Prism records are separate by mode. Starting a new game resets the run; best records remain.
+Solo games have pause and new-game controls beside the score display. P pauses and R restarts; leaving the page or switching tabs pauses real-time solo games, including a pending Rift upgrade choice. Open **How to play** for the rules. Touch controls appear on smaller screens or touch devices; Prism's on-screen controls are also available from its desktop disclosure. Best scores and completed timed records are saved in the current browser when browser storage is available. Minesweeper records are separate by difficulty; Prism records are separate by mode. Starting a new game resets the run; best records remain.
 
 Leaving a room resets that room's match and readiness. Rooms and matches live in memory and disappear when the server stops. An empty room is eventually removed; create another room if an old invitation has expired.
 

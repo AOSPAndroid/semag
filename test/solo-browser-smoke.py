@@ -406,7 +406,10 @@ def run(url):
                     page.wait_for_function(f"game => {SURFACE}?.gameId === game", arg=game)
                     wait_phase(page, "playing")
                     assert page.locator("#solo-controls-list").is_visible()
+                    assert not page.locator("#solo-rules").is_visible()
+                    page.locator("#solo-how-to > summary").click()
                     assert page.locator("#solo-rules").is_visible()
+                    page.locator("#solo-how-to > summary").click()
                     assert "room=" not in page.url
                     if game == "snake":
                         page.locator("#solo-pause").click()

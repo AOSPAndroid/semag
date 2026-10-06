@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 320" role="img" aria-labelledby="title desc">
+<title id="title">Prism Shift</title><desc id="desc">A precision falling block game with a luminous blue playfield, colored blocks, a landing ghost, and ordered next pieces.</desc>
+<defs>
+<radialGradient id="glow"><stop stop-color="#49776e" stop-opacity=".65"/><stop offset="1" stop-color="#162c38" stop-opacity="0"/></radialGradient>
+<linearGradient id="back" x2="1" y2="1"><stop stop-color="#253e48"/><stop offset="1" stop-color="#102432"/></linearGradient>
+<pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse"><rect x="2" y="2" width="1" height="1" fill="#9bb7ac" opacity=".17"/></pattern>
+<pattern id="grid" width="16" height="16" patternUnits="userSpaceOnUse"><rect width="16" height="16" fill="#122b35"/><path d="M16 0H0V16" fill="none" stroke="#2b4651" stroke-width=".5"/></pattern>
+<clipPath id="field"><rect x="206" y="37" width="160" height="320"/></clipPath>
+<g id="tile-I" shape-rendering="crispEdges"><rect x="1" y="1" width="14" height="14" fill="#347f91"/><rect x="2" y="2" width="12" height="11" fill="#70ced7"/><path d="M2 2h12v2H2zM2 4h1v8H2z" fill="#c4f3f3"/><rect x="5" y="5" width="6" height="5" fill="#c4f3f3" opacity=".2"/><rect x="5" y="10" width="6" height="1" fill="#347f91" opacity=".45"/></g>
+<g id="tile-J" shape-rendering="crispEdges"><rect x="1" y="1" width="14" height="14" fill="#435f9e"/><rect x="2" y="2" width="12" height="11" fill="#82a5ec"/><path d="M2 2h12v2H2zM2 4h1v8H2z" fill="#ccdcff"/><rect x="5" y="5" width="6" height="5" fill="#ccdcff" opacity=".2"/><rect x="5" y="10" width="6" height="1" fill="#435f9e" opacity=".45"/></g>
+<g id="tile-L" shape-rendering="crispEdges"><rect x="1" y="1" width="14" height="14" fill="#a66340"/><rect x="2" y="2" width="12" height="11" fill="#edac79"/><path d="M2 2h12v2H2zM2 4h1v8H2z" fill="#ffe0b5"/><rect x="5" y="5" width="6" height="5" fill="#ffe0b5" opacity=".2"/><rect x="5" y="10" width="6" height="1" fill="#a66340" opacity=".45"/></g>
+<g id="tile-O" shape-rendering="crispEdges"><rect x="1" y="1" width="14" height="14" fill="#9b813b"/><rect x="2" y="2" width="12" height="11" fill="#e9cf77"/><path d="M2 2h12v2H2zM2 4h1v8H2z" fill="#fff1ba"/><rect x="5" y="5" width="6" height="5" fill="#fff1ba" opacity=".2"/><rect x="5" y="10" width="6" height="1" fill="#9b813b" opacity=".45"/></g>
+<g id="tile-S" shape-rendering="crispEdges"><rect x="1" y="1" width="14" height="14" fill="#5a905c"/><rect x="2" y="2" width="12" height="11" fill="#9bcf95"/><path d="M2 2h12v2H2zM2 4h1v8H2z" fill="#d6efbf"/><rect x="5" y="5" width="6" height="5" fill="#d6efbf" opacity=".2"/><rect x="5" y="10" width="6" height="1" fill="#5a905c" opacity=".45"/></g>
+<g id="tile-T" shape-rendering="crispEdges"><rect x="1" y="1" width="14" height="14" fill="#705792"/><rect x="2" y="2" width="12" height="11" fill="#b295e0"/><path d="M2 2h12v2H2zM2 4h1v8H2z" fill="#e5d0ff"/><rect x="5" y="5" width="6" height="5" fill="#e5d0ff" opacity=".2"/><rect x="5" y="10" width="6" height="1" fill="#705792" opacity=".45"/></g>
+<g id="tile-Z" shape-rendering="crispEdges"><rect x="1" y="1" width="14" height="14" fill="#a85868"/><rect x="2" y="2" width="12" height="11" fill="#e09398"/><path d="M2 2h12v2H2zM2 4h1v8H2z" fill="#ffd0d0"/><rect x="5" y="5" width="6" height="5" fill="#ffd0d0" opacity=".2"/><rect x="5" y="10" width="6" height="1" fill="#a85868" opacity=".45"/></g>
+</defs>
+<rect width="600" height="320" fill="url(#back)"/><ellipse cx="327" cy="95" rx="300" ry="245" fill="url(#glow)"/><rect width="600" height="320" fill="url(#dots)"/>
+<path d="M22 22h34M22 22v22M578 22h-34M578 22v22M22 298h34M22 298v-22M578 298h-34M578 298v-22" fill="none" stroke="#759b93" stroke-opacity=".35"/>
+<g font-family="ui-monospace,Consolas,monospace">
+<text x="37" y="49" fill="#aec4bf" font-size="8" letter-spacing="1.4">FALLING BLOCKS / 01</text>
+<text x="34" y="89" fill="#f1ebd5" font-size="32" font-weight="700" letter-spacing="-1.8">PRISM</text>
+<text x="34" y="122" fill="#a9d1ce" font-size="32" font-weight="700" letter-spacing="-1.8">SHIFT</text>
+<path d="M37 138h107" stroke="#60847d"/><path d="M37 138h29" stroke="#e5c987" stroke-width="2"/>
+<text x="37" y="166" fill="#eed69c" font-size="14">CHAIN ×4</text><text x="37" y="183" fill="#c7afdf" font-size="8" letter-spacing="1">BACK TO BACK</text>
+<text x="37" y="283" fill="#bacbbc" font-size="8" letter-spacing="1.2">PLAN. PLACE. CLEAR.</text>
+</g>
+<g opacity=".12"><rect x="69" y="216" width="54" height="33" fill="#d9c4f0"/><rect x="85" y="200" width="22" height="18" fill="#d9c4f0"/></g>
+<g transform="translate(60 206) scale(1.65)"><use href="#tile-T" x="16"/><use href="#tile-T" y="16"/><use href="#tile-T" x="16" y="16"/><use href="#tile-T" x="32" y="16"/></g>
+<rect x="190" y="17" width="192" height="342" rx="5" fill="#0b1f2b" opacity=".48"/>
+<rect x="195" y="10" width="182" height="350" rx="3" fill="#142b37" stroke="#778f86"/>
+<path d="M195 11h182" stroke="#c3d0b6" opacity=".6"/><rect x="201" y="32" width="170" height="328" fill="#091f2a" stroke="#49656a"/>
+<text x="207" y="25" fill="#c4d3c6" font-size="8" font-family="ui-monospace,Consolas,monospace" letter-spacing=".7">PLAYFIELD</text><text x="326" y="25" fill="#e7cc97" font-size="8" font-family="ui-monospace,Consolas,monospace">LV 04</text>
+<g clip-path="url(#field)"><rect x="206" y="37" width="160" height="320" fill="url(#grid)"/>
+<use href="#tile-T" x="270" y="229"/>
+<use href="#tile-T" x="254" y="245"/>
+<use href="#tile-T" x="270" y="245"/>
+<use href="#tile-T" x="286" y="245"/>
+<use href="#tile-S" x="206" y="261"/>
+<use href="#tile-S" x="222" y="261"/>
+<use href="#tile-J" x="286" y="261"/>
+<use href="#tile-J" x="302" y="261"/>
+<use href="#tile-O" x="334" y="261"/>
+<use href="#tile-O" x="350" y="261"/>
+<use href="#tile-S" x="222" y="277"/>
+<use href="#tile-S" x="238" y="277"/>
+<use href="#tile-J" x="302" y="277"/>
+<use href="#tile-O" x="334" y="277"/>
+<use href="#tile-O" x="350" y="277"/>
+<use href="#tile-Z" x="206" y="293"/>
+<use href="#tile-Z" x="222" y="293"/>
+<use href="#tile-L" x="238" y="293"/>
+<use href="#tile-L" x="254" y="293"/>
+<use href="#tile-L" x="270" y="293"/>
+<use href="#tile-J" x="302" y="293"/>
+<use href="#tile-S" x="334" y="293"/>
+<use href="#tile-S" x="350" y="293"/>
+<use href="#tile-Z" x="222" y="309"/>
+<use href="#tile-Z" x="238" y="309"/>
+<use href="#tile-L" x="270" y="309"/>
+<use href="#tile-S" x="318" y="309"/>
+<use href="#tile-S" x="334" y="309"/>
+<use href="#tile-J" x="206" y="325"/>
+<use href="#tile-J" x="222" y="325"/>
+<use href="#tile-J" x="238" y="325"/>
+<use href="#tile-T" x="254" y="325"/>
+<use href="#tile-T" x="270" y="325"/>
+<use href="#tile-T" x="286" y="325"/>
+<use href="#tile-L" x="318" y="325"/>
+<use href="#tile-L" x="334" y="325"/>
+<use href="#tile-L" x="350" y="325"/>
+<use href="#tile-J" x="206" y="341"/>
+<use href="#tile-T" x="270" y="341"/>
+<use href="#tile-Z" x="302" y="341"/>
+<use href="#tile-Z" x="318" y="341"/>
+<use href="#tile-L" x="350" y="341"/>
+<use href="#tile-I" x="318" y="85"/>
+<use href="#tile-I" x="318" y="101"/>
+<use href="#tile-I" x="318" y="117"/>
+<use href="#tile-I" x="318" y="133"/>
+<rect x="319.5" y="294.5" width="13" height="13" fill="#70ced7" fill-opacity=".08" stroke="#91dce0" stroke-opacity=".65"/>
+<rect x="319.5" y="310.5" width="13" height="13" fill="#70ced7" fill-opacity=".08" stroke="#91dce0" stroke-opacity=".65"/>
+<rect x="319.5" y="326.5" width="13" height="13" fill="#70ced7" fill-opacity=".08" stroke="#91dce0" stroke-opacity=".65"/>
+<rect x="319.5" y="342.5" width="13" height="13" fill="#70ced7" fill-opacity=".08" stroke="#91dce0" stroke-opacity=".65"/>
+<path d="M322 158v131M329 158v131" stroke="#70ced7" stroke-opacity=".12"/>
+<rect x="206" y="324" width="160" height="2" fill="#cbe1cc" opacity=".9"/>
+</g>
+<g font-family="ui-monospace,Consolas,monospace">
+<rect x="399" y="36" width="155" height="74" rx="3" fill="#102a35" stroke="#49656a"/>
+<text x="411" y="53" fill="#bfd0c2" font-size="8" letter-spacing=".8">HOLD / RESERVE</text><text x="539" y="53" fill="#a9c4b3" font-size="8">C</text>
+</g>
+<g transform="translate(449 62)"><use href="#tile-T" x="16"/><use href="#tile-T" y="16"/><use href="#tile-T" x="16" y="16"/><use href="#tile-T" x="32" y="16"/></g>
+<rect x="399" y="124" width="155" height="131" rx="3" fill="#102a35" stroke="#49656a"/>
+<g font-family="ui-monospace,Consolas,monospace" font-size="8"><text x="411" y="141" fill="#bfd0c2" letter-spacing=".8">NEXT / PLAN AHEAD</text><text x="540" y="141" fill="#9db8b8">05</text>
+<path d="M400 151h153M400 188h153M400 221h153" stroke="#3d5760"/>
+<rect x="400" y="152" width="3" height="35" fill="#9fc9b8"/>
+<text x="411" y="174" fill="#a8c0c2">01</text><text x="411" y="207" fill="#a8c0c2">02</text><text x="411" y="240" fill="#a8c0c2">03</text></g>
+<g transform="translate(452 157) scale(.8)"><use href="#tile-L" x="32"/><use href="#tile-L" y="16"/><use href="#tile-L" x="16" y="16"/><use href="#tile-L" x="32" y="16"/></g>
+<g transform="translate(458 191) scale(.8)"><use href="#tile-O"/><use href="#tile-O" x="16"/><use href="#tile-O" y="16"/><use href="#tile-O" x="16" y="16"/></g>
+<g transform="translate(452 224) scale(.8)"><use href="#tile-S" x="16"/><use href="#tile-S" x="32"/><use href="#tile-S" y="16"/><use href="#tile-S" x="16" y="16"/></g>
+<text x="399" y="275" fill="#b8c9c1" font-size="8" font-family="ui-monospace,Consolas,monospace" letter-spacing=".7">NEXT LEVEL</text><text x="529" y="275" fill="#e9d39a" font-size="8" font-family="ui-monospace,Consolas,monospace">6/10</text>
+<rect x="399" y="285" width="155" height="4" fill="#0c2430" stroke="#405b61"/><rect x="400" y="286" width="92" height="2" fill="#a9cfae"/>
+</svg>

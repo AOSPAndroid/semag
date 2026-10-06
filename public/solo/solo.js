@@ -126,10 +126,12 @@ async function startSolo() {
   const restart = $('solo-restart');
   const pause = $('solo-pause');
   const container = $('solo-game');
+  const help = $('solo-how-to');
   let game = null;
   let destroyed = false;
 
   document.title = `${info.title} — Fireside`;
+  $('solo-app').dataset.game = gameId;
   $('solo-title').textContent = info.title;
   $('solo-category').textContent = info.category;
   $('solo-description').textContent = info.description;
@@ -179,7 +181,6 @@ async function startSolo() {
     pause.setAttribute('aria-pressed', String(phase === 'paused'));
     pause.querySelector('span').textContent = phase === 'paused' ? 'Resume' : 'Pause';
     pause.querySelector('b').textContent = phase === 'paused' ? '▷' : 'Ⅱ';
-    $('solo-session-note').textContent = phase === 'paused' ? 'A breather is part of the game. Pick up where you left off.' : finished ? 'A new game is one click away. Your best is yours to keep.' : 'One player. Start straight away and play at your own pace.';
   }
 
   function focusGame() {
@@ -211,11 +212,16 @@ async function startSolo() {
     if (key === 'r') { event.preventDefault(); newGame(); }
     else if (key === 'p') { event.preventDefault(); togglePause(); }
   }
+  function helpKeydown(event) {
+    // Keep native disclosure activation from also triggering a game action.
+    if (['Space', 'Enter'].includes(event.code) && event.target instanceof Element && event.target.closest('summary')) event.stopPropagation();
+  }
   function cleanup() {
     if (destroyed) return;
     destroyed = true;
     restart.removeEventListener('click', newGame);
     pause.removeEventListener('click', togglePause);
+    help.removeEventListener('keydown', helpKeydown);
     window.removeEventListener('keydown', keydown);
     window.removeEventListener('blur', autoPause);
     window.removeEventListener('pagehide', pageHidden);
@@ -231,6 +237,7 @@ async function startSolo() {
     restart.disabled = false;
     restart.addEventListener('click', newGame);
     pause.addEventListener('click', togglePause);
+    help.addEventListener('keydown', helpKeydown);
     window.addEventListener('keydown', keydown);
     window.addEventListener('blur', autoPause);
     window.addEventListener('pagehide', pageHidden);
