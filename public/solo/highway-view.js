@@ -8,6 +8,7 @@ import {
   getDistrict,
   recordScope,
 } from './highway-engine.js';
+import { createDrivingSprites } from '../art/driving-sprites.js';
 
 const W = 720;
 const H = 520;
@@ -45,6 +46,7 @@ function node(tag, className, text) {
 
 export function mount(container, { onUpdate = () => {} } = {}) {
   let state = createState();
+  const sprites = createDrivingSprites();
   const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
   let destroyed = false;
   let raf = null;
@@ -146,6 +148,16 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   view.append(topline, modeChoices, stagePanel, board, footer);
   container.append(view);
   const ctx = canvas.getContext('2d');
+  const skylines = new Map(
+    DISTRICTS.map((district) => {
+      const image = new Image();
+      image.onload = () => {
+        if (!destroyed) draw();
+      };
+      image.src = `/art/night-${district.id}.svg`;
+      return [district.id, image];
+    }),
+  );
 
   function input() {
     const result = { left: false, right: false, throttle: false, brake: false, boost: false };
@@ -274,6 +286,12 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   }
   function sky() {
     const district = getDistrict(state);
+    const skyline = skylines.get(district.id);
+    if (skyline?.complete && skyline.naturalWidth) {
+      rect(0, 0, W, HORIZON, district.sky);
+      ctx.drawImage(skyline, -8 - state.x * 4, 0, W + 16, HORIZON);
+      return;
+    }
     rect(0, 0, W, HORIZON, district.sky);
     rect(0, 78, W, 44, '#1a333c');
     rect(0, 122, W, 34, '#234249');
@@ -430,6 +448,39 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       roadStrip(nearest, close, -0.337, -0.323, '#bfcbb8');
       roadStrip(nearest, close, 0.323, 0.337, '#bfcbb8');
     }
+    const wet = getDistrict(state).weather === 'rain';
+    for (let i = 0; i < 22; i++) {
+      const z = mod(i * 13 - state.distance, 230) + 2,
+        p = projection(z);
+      const lane = mod(i * 17, 9) / 5 - 0.8;
+      rect(
+        p.x + p.half * lane,
+        p.y,
+        Math.max(1, p.p * 12),
+        Math.max(1, p.p * 1.5),
+        wet ? '#aac6ca25' : '#9fbbad13',
+      );
+    }
+    const playerX = W / 2 + state.x * ROAD_HALF,
+      beamEnd = projection(27);
+    polygon(
+      [
+        [playerX - 36, CAR_Y - 86],
+        [playerX - 15, CAR_Y - 86],
+        [beamEnd.x + state.x * beamEnd.half + 48, beamEnd.y],
+        [beamEnd.x + state.x * beamEnd.half - 63, beamEnd.y],
+      ],
+      wet ? '#c8e1c218' : '#c8e1c210',
+    );
+    polygon(
+      [
+        [playerX + 15, CAR_Y - 86],
+        [playerX + 36, CAR_Y - 86],
+        [beamEnd.x + state.x * beamEnd.half + 63, beamEnd.y],
+        [beamEnd.x + state.x * beamEnd.half - 48, beamEnd.y],
+      ],
+      wet ? '#c8e1c218' : '#c8e1c210',
+    );
   }
   function lamp(z, side) {
     const point = projection(z);
@@ -452,32 +503,17 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   }
   function car(x, y, width, color, player = false) {
     const height = width * 1.17;
-    const unit = width / 24;
     const top = y - height;
-    const r = (rx, ry, rw, rh, paint) =>
-      rect(x + (rx - 12) * unit, top + ry * unit, rw * unit, rh * unit, paint);
-    ctx.globalAlpha = 0.35;
-    r(-1, 25, 26, 5, '#0b2128');
-    ctx.globalAlpha = 1;
-    r(1, 9, 4, 18, '#14282d');
-    r(19, 9, 4, 18, '#14282d');
-    r(5, 1, 14, 3, color);
-    r(3, 4, 18, 23, color);
-    r(1, 11, 22, 14, color);
-    r(5, 5, 14, 8, player ? '#c3dcc5' : '#719da0');
-    r(6, 5, 12, 2, player ? '#f1e7c6' : '#97b8b1');
-    r(6, 9, 12, 3, '#29494c');
-    r(3, 13, 18, 2, player ? '#ffd29a' : '#abc0b4');
-    r(5, 16, 14, 7, color);
-    if (player) {
-      r(11, 15, 2, 8, '#f8e8c0');
-      r(2, 19, 3, 5, '#bf6947');
-      r(19, 19, 3, 5, '#bf6947');
+    rect(x - width * 0.48, y - height * 0.09, width * 0.96, height * 0.13, '#10263066');
+    if (getDistrict(state).weather === 'rain') {
+      rect(x - width * 0.32, y + width * 0.05, width * 0.16, width * 0.05, '#d89c7744');
+      rect(x + width * 0.16, y + width * 0.05, width * 0.16, width * 0.05, '#d89c7744');
     }
-    r(2, 24, 5, 2, player && input().brake ? '#ff7768' : '#eeb16d');
-    r(17, 24, 5, 2, player && input().brake ? '#ff7768' : '#eeb16d');
-    r(8, 25, 8, 2, '#e9dfbd');
-    r(2, 27, 20, 1, '#244347');
+    ctx.drawImage(sprites.rearCar(color, player), x - width / 2, top, width, height);
+    if (player && input().brake) {
+      rect(x - width * 0.38, top + height * 0.74, width * 0.17, height * 0.04, '#ffe2ac');
+      rect(x + width * 0.21, top + height * 0.74, width * 0.17, height * 0.04, '#ffe2ac');
+    }
   }
   function hud() {
     ctx.globalAlpha = 0.83;
@@ -538,6 +574,16 @@ export function mount(container, { onUpdate = () => {} } = {}) {
         draw: () => {
           lamp(z, -1);
           lamp(z, 1);
+          if (Math.floor((z + state.distance) / 25) % 2 === 0) {
+            for (const side of [-1, 1]) {
+              const p = projection(z),
+                art = sprites.roadside(getDistrict(state).id);
+              const width = 96 * p.p,
+                height = 160 * p.p,
+                x = p.x + side * p.half * 1.6;
+              ctx.drawImage(art, x - width / 2, p.y - height, width, height);
+            }
+          }
         },
       });
     }
@@ -555,6 +601,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
               rect(x - width / 2 + (i * width) / 5, p.y - width * 0.42, width / 10, width * 0.26, '#493d3f');
             rect(x - width * 0.37, p.y - width * 0.16, width * 0.1, width * 0.18, '#cbc8b2');
             rect(x + width * 0.27, p.y - width * 0.16, width * 0.1, width * 0.18, '#cbc8b2');
+            rect(x - width * 0.45, p.y - width * 0.44, width * 0.9, Math.max(1, width * 0.035), '#efd6a1');
+            rect(x - width * 0.05, p.y - width * 0.55, width * 0.1, width * 0.09, '#ffe09a');
           } else car(x, p.y, width, traffic.crashed ? '#819084' : traffic.color);
           if (traffic.signal) {
             ctx.textAlign = 'center';
@@ -574,18 +622,20 @@ export function mount(container, { onUpdate = () => {} } = {}) {
             x = p.x + pickup.x * p.half,
             size = Math.max(3, p.p * 22);
           rect(x - size / 2, p.y - size, size, size, '#a4e6bc');
-          rect(x - size * 0.24, p.y - size * 0.72, size * 0.48, size * 0.44, '#285e55');
+          rect(x - size * 0.35, p.y - size * 0.88, size * 0.7, size * 0.68, '#295b57');
+          rect(x - size * 0.12, p.y - size * 0.78, size * 0.24, size * 0.47, '#cfe9ad');
+          rect(x - size * 0.32, p.y - size * 0.18, size * 0.64, Math.max(1, size * 0.08), '#e5edbc');
         },
       });
     }
     scenery.sort((a, b) => b.z - a.z).forEach((item) => item.draw());
     const playerX = W / 2 + state.x * ROAD_HALF;
-    for (const particle of particles) {
+    for (const particle of reducedMotion?.matches ? [] : particles) {
       ctx.globalAlpha = clamp(particle.life / particle.maxLife, 0, 1);
       rect(particle.x, particle.y, particle.size, particle.size, particle.color);
     }
     ctx.globalAlpha = 1;
-    if (state.boosting) {
+    if (state.boosting && !reducedMotion?.matches) {
       const pulse = Math.floor(state.elapsed * 24) % 2;
       polygon(
         [
@@ -605,15 +655,15 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       );
     }
     // Flash only the body during damage immunity; its position stays readable.
-    const immune = state.crashCooldown > 0 && Math.floor(state.elapsed * 12) % 2;
+    const immune = !reducedMotion?.matches && state.crashCooldown > 0 && Math.floor(state.elapsed * 12) % 2;
     car(playerX, CAR_Y, CAR_WIDTH * ROAD_HALF, immune ? '#f7d5a0' : COLORS.orange, true);
-    if (state.crashCooldown > 1.1) {
+    if (state.crashCooldown > 1.1 && !reducedMotion?.matches) {
       ctx.globalAlpha = Math.min(0.18, (state.crashCooldown - 1.1) * 0.18);
       rect(0, 0, W, H, '#ed815f');
       ctx.globalAlpha = 1;
     }
     // Fast streaks stay on the shoulder, where they cannot obscure traffic.
-    if (state.speed > 160) {
+    if (state.speed > 160 && !reducedMotion?.matches) {
       ctx.globalAlpha = (state.speed - 160) / 300;
       for (let i = 0; i < 10; i += 1) {
         const side = i % 2 ? 1 : -1;
@@ -660,7 +710,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
         };
       else if (event.type === 'crash') {
         message = { text: 'KEEP YOUR COOL', color: '#ffd8ac', until: state.elapsed + 1.2 };
-        for (let i = 0; i < 16; i += 1)
+        for (let i = 0; !reducedMotion?.matches && i < 16; i += 1)
           particles.push({
             x: W / 2 + state.x * ROAD_HALF,
             y: CAR_Y - 28,
@@ -674,7 +724,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       }
     }
     exhaustTime += dt;
-    if (state.boosting && exhaustTime > 0.035) {
+    if (state.boosting && exhaustTime > 0.035 && !reducedMotion?.matches) {
       exhaustTime = 0;
       for (const side of [-1, 1])
         particles.push({
@@ -811,6 +861,9 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     togglePause,
     destroy() {
       if (destroyed) return;
+      sprites.clear();
+      for (const image of skylines.values()) image.onload = null;
+      skylines.clear();
       destroyed = true;
       cancelAnimationFrame(raf);
       releaseControls();

@@ -17,6 +17,9 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   let mode = 'classic';
   let state = createState({ mode });
   let timer = null;
+  let animationFrame = null;
+  let lastPaint = 0;
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
   let destroyed = false;
   const view = element('section', 'snake-view');
   view.setAttribute('aria-label', 'Snake game');
@@ -83,33 +86,72 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     };
     ctx.imageSmoothingEnabled = false;
     for (let y = 0; y < state.height; y += 1) {
-      for (let x = 0; x < state.width; x += 1) rect(x, y, 1, 1, (x + y) % 2 ? '#234535' : '#264a39');
+        for (let x = 0; x < state.width; x += 1) rect(x, y, 1, 1, (x + y) % 2 ? '#284f3e' : '#2d5743');
     }
-    // Small garden flecks add texture without hiding the grid or obstacles.
-    for (let y = 1; y < state.height; y += 4) {
-      for (let x = 2; x < state.width; x += 5) rect(x + .25, y + .7, .12, .12, '#30583e');
+    ctx.save();
+    ctx.scale(cell, cell);
+    const oval = (x, y, rx, ry, color) => { ctx.fillStyle = color; ctx.beginPath(); ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2); ctx.fill(); };
+    const rounded = (x, y, width, height, radius, color) => { ctx.fillStyle = color; ctx.beginPath(); ctx.roundRect(x, y, width, height, radius); ctx.fill(); };
+    // Little tufts belong to the floor; fruit remains the only bright red object.
+    for (let y = 1; y < state.height; y += 3) for (let x = (y % 4) + 1; x < state.width; x += 4) {
+      ctx.strokeStyle = '#427255'; ctx.lineWidth = .045; ctx.beginPath();
+      ctx.moveTo(x + .25, y + .82); ctx.lineTo(x + .19, y + .63);
+      ctx.moveTo(x + .27, y + .82); ctx.lineTo(x + .33, y + .57);
+      ctx.moveTo(x + .31, y + .83); ctx.lineTo(x + .43, y + .68); ctx.stroke();
+      oval(x + .7, y + .21, .06, .025, '#3d654b');
     }
-    for (const { x, y } of state.obstacles) { rect(x + .04, y + .04, .92, .92, '#64765a'); rect(x + .1, y + .1, .8, .15, '#9aaa7c'); rect(x + .1, y + .76, .8, .15, '#415940'); rect(x + .46, y + .28, .08, .43, '#52694a'); }
+    for (const { x, y } of state.obstacles) {
+      rounded(x + .02, y + .12, .96, .85, .13, '#163b2b');
+      rounded(x + .04, y + .04, .92, .83, .12, '#708567');
+      rounded(x + .1, y + .08, .8, .15, .07, '#a4b48b');
+      rounded(x + .08, y + .69, .84, .11, .04, '#4b654b');
+      ctx.strokeStyle = '#465f47'; ctx.lineWidth = .035; ctx.beginPath();
+      ctx.moveTo(x + .57, y + .24); ctx.lineTo(x + .48, y + .41); ctx.lineTo(x + .61, y + .58); ctx.stroke();
+      oval(x + .2, y + .65, .15, .06, '#89a260');
+    }
+    const now = performance.now();
     if (state.food) {
       const { x, y } = state.food;
-      rect(x + .15, y + .2, .7, .6, '#dc8953');
-      rect(x + .3, y + .08, .42, .75, '#edab71');
-      rect(x + .53, y + .05, .16, .14, '#8dc477');
-      rect(x + .27, y + .3, .12, .16, '#f3ca99');
+      const pulse = reducedMotion.matches || state.phase !== 'playing' ? 0 : Math.sin(now / 210) * .025;
+      oval(x + .51, y + .83, .33, .11, '#123b2aaa');
+      ctx.save(); ctx.translate(x + .5, y + .51); ctx.scale(1 + pulse, 1 + pulse);
+      ctx.fillStyle = '#b8433c'; ctx.beginPath(); ctx.moveTo(0, -.25);
+      ctx.bezierCurveTo(-.5, -.57, -.49, .31, -.13, .37);
+      ctx.bezierCurveTo(-.04, .33, .05, .33, .14, .37);
+      ctx.bezierCurveTo(.48, .29, .51, -.57, 0, -.25); ctx.fill();
+      oval(-.09, -.08, .21, .24, '#e97851');
+      oval(-.15, -.16, .06, .095, '#ffd5a1');
+      ctx.strokeStyle = '#a9aa64'; ctx.lineWidth = .07; ctx.beginPath(); ctx.moveTo(0, -.22); ctx.quadraticCurveTo(-.02, -.4, .11, -.47); ctx.stroke();
+      ctx.fillStyle = '#97c875'; ctx.beginPath(); ctx.moveTo(.02, -.33); ctx.quadraticCurveTo(.31, -.64, .35, -.36); ctx.quadraticCurveTo(.16, -.19, .02, -.33); ctx.fill();
+      ctx.restore();
     }
-    [...state.snake].reverse().forEach((segment, index) => {
-      const head = index === state.snake.length - 1;
-      const { x, y } = segment;
-      rect(x + .08, y + .08, .84, .84, head ? '#d4ed90' : '#90c56b');
-      if (!head) rect(x + .16, y + .16, .68, .17, '#b0d782');
-      else {
-        const eyes = {
-          right: [[.65, .24], [.65, .65]], left: [[.2, .24], [.2, .65]],
-          up: [[.24, .2], [.65, .2]], down: [[.24, .65], [.65, .65]],
-        }[state.direction];
-        eyes.forEach(([ex, ey]) => rect(x + ex, y + ey, .13, .13, '#234535'));
-      }
+    const trail = [...state.snake].reverse();
+    const trace = offset => { ctx.beginPath(); trail.forEach(({ x, y }, index) => index ? ctx.lineTo(x + .5, y + .5 + offset) : ctx.moveTo(x + .5, y + .5 + offset)); };
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    trace(.11); ctx.lineWidth = .79; ctx.strokeStyle = '#123a2b'; ctx.stroke();
+    trace(0); ctx.lineWidth = .77; ctx.strokeStyle = '#467543'; ctx.stroke();
+    trace(-.035); ctx.lineWidth = .62;
+    const bodyGradient = ctx.createLinearGradient(0, 0, 0, state.height);
+    bodyGradient.addColorStop(0, '#b7d577'); bodyGradient.addColorStop(1, '#85b66a');
+    ctx.strokeStyle = bodyGradient; ctx.stroke();
+    trail.slice(0, -1).forEach(({ x, y }, index) => {
+      oval(x + .44, y + .32, .18, .08, '#d2e99a66');
+      ctx.fillStyle = index % 2 ? '#609459' : '#709f5d'; ctx.beginPath();
+      ctx.moveTo(x + .5, y + .4); ctx.lineTo(x + .64, y + .51); ctx.lineTo(x + .5, y + .64); ctx.lineTo(x + .36, y + .51); ctx.fill();
     });
+    const head = state.snake[0];
+    ctx.save(); ctx.translate(head.x + .5, head.y + .5);
+    ctx.rotate({ right: 0, down: Math.PI / 2, left: Math.PI, up: -Math.PI / 2 }[state.direction]);
+    rounded(-.42, -.41, .9, .83, .24, '#cbe28b');
+    rounded(-.32, -.34, .69, .65, .2, '#dbeaa2');
+    if (!reducedMotion.matches && state.phase === 'playing' && now % 2800 < 220) {
+      ctx.strokeStyle = '#ed9975'; ctx.lineWidth = .045; ctx.beginPath();
+      ctx.moveTo(.42, .01); ctx.lineTo(.61, .01); ctx.lineTo(.68, -.05);
+      ctx.moveTo(.61, .01); ctx.lineTo(.68, .07); ctx.stroke();
+    }
+    for (const y of [-.23, .23]) { oval(.19, y, .15, .14, '#f4f5d3'); oval(.23, y, .075, .09, '#234f36'); oval(.25, y - .025, .025, .028, '#fff'); }
+    oval(.36, -.07, .025, .025, '#719656'); oval(.36, .07, .025, .025, '#719656');
+    ctx.restore(); ctx.restore();
     if (state.phase !== 'playing') {
       ctx.fillStyle = '#183b32c9';
       ctx.fillRect(0, 0, pixelSize, pixelSize);
@@ -124,6 +166,13 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       ctx.fillText(state.phase === 'paused' ? 'PRESS SPACE OR RESUME' : state.phase === 'levelClear' ? 'THE NEXT GARDEN OPENS SOON' : `${state.score} POINTS · START A NEW RUN`, pixelSize / 2, pixelSize * .55);
     }
   }
+  function animate() {
+    animationFrame = null;
+    if (destroyed || reducedMotion.matches || state.phase !== 'playing') return;
+    const now = performance.now();
+    if (now - lastPaint >= 40) { draw(); lastPaint = now; }
+    animationFrame = window.requestAnimationFrame(animate);
+  }
   function publish() {
     const message = detail();
     if (status.textContent !== message) status.textContent = message;
@@ -136,6 +185,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     canvas.setAttribute('aria-label', `Snake board. ${state.snake.length} tiles long. Score ${state.score}. ${message} Use arrow keys or W A S D to steer. Space pauses.`);
     onUpdate({ phase: state.phase === 'levelClear' ? 'playing' : state.phase, recordKey: mode === 'gardens' ? 'gardens' : 'default', score: state.score, record: state.score, recordLabel: 'BEST SCORE', scoreLabel: 'SCORE', detail: message });
     draw();
+    if (state.phase === 'playing' && !reducedMotion.matches && animationFrame === null) animationFrame = window.requestAnimationFrame(animate);
   }
   function schedule() {
     if (timer !== null) window.clearTimeout(timer);
@@ -205,6 +255,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       if (destroyed) return;
       destroyed = true;
       if (timer !== null) window.clearTimeout(timer);
+      if (animationFrame !== null) window.cancelAnimationFrame(animationFrame);
       timer = null;
       resizeObserver?.disconnect();
       window.removeEventListener('keydown', keydown);

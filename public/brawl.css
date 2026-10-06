@@ -6,3 +6,20 @@
 @media(prefers-reduced-motion:reduce){.brawl-controls button{transform:none!important;transition:none}}
 
 @media(min-width:801px){.room-app.brawl-mode:not(.board-mode):not(.card-mode):not(:fullscreen){max-width:min(1460px,calc((100dvh - 365px)*1.666667 + 380px))}.brawl-mode:not(.brawl-lobby-open) .game-viewport{max-height:max(240px,calc(100dvh - 340px))}}
+
+/* The fighter portraits and stage postcards share the live arena artwork. */
+.brawl-choice{border-color:#bec9b0;background:linear-gradient(145deg,#fffdf5,#f8f7ea);box-shadow:0 2px 0 #c2ccb5,inset 0 1px 0 #fffef7}
+.brawl-choice canvas{box-shadow:inset 0 0 0 1px #9eaf8c;outline:1px solid #bfc9b1;outline-offset:-1px;border-radius:2px}
+.brawl-choice small{color:#586c4f}
+.brawl-choice[aria-pressed=true]{border-color:#688349;background:linear-gradient(135deg,#e8eed7,#dae6c5);box-shadow:inset 0 0 0 1px #849b64,0 2px 0 #aebf96}
+.brawl-choice[aria-pressed=true]:after{font-size:8px;letter-spacing:.3px;background:#f5f4df;padding:2px 4px;border-radius:2px}
+.brawl-stage{box-shadow:0 2px 0 #c2ccb5}
+.brawl-stage canvas{border-bottom:1px solid #b8c5ab}
+.brawl-stage>span{background:linear-gradient(145deg,#fffdf5,#f1f2e3)}
+.brawl-stage small{color:#506b42}
+.brawl-stage[aria-pressed=true]>span{background:#e5eccf}
+.brawl-choice:focus-visible,.brawl-stage:focus-visible{outline:2px solid #345c44;outline-offset:3px}
+.brawl-move-card{box-shadow:inset 3px 0 0 #becbac;background:linear-gradient(135deg,#faf8ec,#f3f3e4)}
+.brawl-controls button{box-shadow:0 2px 0 #b5c5a4,inset 0 1px 0 #ffffff8c}
+@media(hover:hover){.brawl-choice:hover:enabled,.brawl-stage:hover:enabled{border-color:#789060}}
+@media(max-width:480px){.brawl-choice[aria-pressed=true]:after{font-size:8px;right:4px;top:4px}.brawl-stage small{font-size:8px}}

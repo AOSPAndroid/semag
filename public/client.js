@@ -332,7 +332,8 @@ function updateHUD(now) {
     const active = practice || players[i]?.connected;
     const ready = practice || players[i]?.ready;
     $(`slot${i + 1}-dot`).className = active ? ready ? 'ready' : 'connected' : '';
-    $(`slot${i + 1}-status`).textContent = practice ? `${names[i]} · ${i ? 'Practice AI' : 'You'}` : active ? `${names[i]} · ${ready ? 'Ready' : 'Not ready'}` : `Waiting for ${i === localId ? 'connection' : 'opponent'}`;
+    const cornerStatus = state.phase === 'fight' || state.phase === 'roundEnd' ? 'In the game' : ready ? 'Ready' : 'Not ready';
+    $(`slot${i + 1}-status`).textContent = practice ? `${names[i]} · ${i ? 'Practice AI' : 'You'}` : active ? `${names[i]} · ${cornerStatus}` : `Waiting for ${i === localId ? 'connection' : 'opponent'}`;
   }
   $('round-label').textContent = `ROUND ${String(state.round || 1).padStart(2, '0')}`;
   const seconds = Math.max(0, Math.ceil((state.roundTicks ?? 90 * TICK_RATE) / TICK_RATE));

@@ -11,6 +11,7 @@ import {
   nearestTrack as projectTrack,
   trackInfo as courseInfo,
 } from './circuit-engine.js';
+import { createDrivingSprites } from '../art/driving-sprites.js';
 
 const STEP = 1 / 120;
 const KEY_INPUTS = {
@@ -45,6 +46,7 @@ function element(tag, className, text) {
 
 export function mount(container, { onUpdate = () => {} } = {}) {
   let state = createState();
+  const sprites = createDrivingSprites();
   let course = getTrack(state),
     TRACK = course.points,
     TRACK_LENGTH = course.length,
@@ -212,12 +214,80 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     context.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
   }
   function drawTree(x, y, size) {
-    rect(terrainCtx, x + 4, y + size * 0.55, 6, size * 0.7, '#66745a');
-    rect(terrainCtx, x - size * 0.5 + 5, y + 8, size, size * 0.6, '#637d54');
-    rect(terrainCtx, x - size * 0.5, y, size, size * 0.6, '#385b43');
-    rect(terrainCtx, x - size * 0.35, y - size * 0.2, size * 0.7, size * 0.45, '#42684a');
-    rect(terrainCtx, x - size * 0.2, y - size * 0.32, size * 0.4, size * 0.3, '#537954');
-    rect(terrainCtx, x - size * 0.32, y + 4, size * 0.23, 4, '#678b5c');
+    rect(terrainCtx, x - size * 0.36 + 7, y + size * 0.52, size * 0.8, size * 0.36, '#50684c55');
+    rect(terrainCtx, x - 2, y + size * 0.15, 5, size * 0.64, '#716c4c');
+    rect(terrainCtx, x - 1, y + size * 0.2, 2, size * 0.5, '#b09c65');
+    if (course.surface === 'coastal') {
+      terrainCtx.fillStyle = '#4f7867';
+      terrainCtx.beginPath();
+      terrainCtx.moveTo(x, y);
+      for (const [dx, dy] of [
+        [-size * 0.7, -size * 0.2],
+        [-size * 0.3, -size * 0.32],
+        [-size * 0.1, -size * 0.1],
+        [-size * 0.3, -size * 0.65],
+        [size * 0.05, -size * 0.38],
+        [size * 0.15, -size * 0.12],
+        [size * 0.6, -size * 0.32],
+        [size * 0.72, -size * 0.05],
+        [size * 0.12, size * 0.08],
+      ])
+        terrainCtx.lineTo(x + dx, y + dy);
+      terrainCtx.fill();
+      rect(terrainCtx, x - size * 0.26, y - size * 0.29, size * 0.39, 3, '#88a97a');
+      return;
+    }
+    const dark = course.surface === 'rain' ? '#36594c' : '#375d45',
+      mid = course.surface === 'rain' ? '#507263' : '#4c784f';
+    rect(terrainCtx, x - size * 0.48, y, size * 0.96, size * 0.44, dark);
+    rect(terrainCtx, x - size * 0.37, y - size * 0.18, size * 0.74, size * 0.55, mid);
+    rect(terrainCtx, x - size * 0.2, y - size * 0.31, size * 0.42, size * 0.33, '#6d9467');
+    rect(terrainCtx, x - size * 0.36, y + size * 0.08, size * 0.19, size * 0.12, '#85a572');
+    rect(terrainCtx, x + size * 0.1, y - size * 0.12, size * 0.15, size * 0.11, '#78985f');
+    rect(terrainCtx, x - size * 0.21, y + size * 0.31, size * 0.5, 3, '#294e3c');
+  }
+  function drawPaddock() {
+    const c = terrainCtx;
+    rect(c, 319, 285, 227, 141, '#77866b');
+    rect(c, 326, 292, 213, 126, '#9ba18a');
+    rect(c, 327, 352, 211, 4, '#c9c7aa');
+    for (let x = 337; x < 532; x += 31) {
+      rect(c, x, 365, 2, 40, '#d1ccb0');
+      rect(c, x, 404, 25, 2, '#d1ccb0');
+    }
+    rect(c, 338, 311, 160, 36, '#65725e');
+    rect(c, 333, 299, 166, 36, '#c2c8ae');
+    rect(c, 333, 296, 166, 6, '#e0d9b7');
+    for (let x = 345; x < 493; x += 28) {
+      rect(c, x, 319, 20, 26, '#344f44');
+      rect(c, x + 2, 321, 16, 3, '#8ca18a');
+      rect(c, x + 4, 329, 12, 3, '#657f6b');
+    }
+    rect(c, 343, 303, 150, 3, '#98aa8f');
+    rect(c, 345, 308, 25, 4, '#e9d6a2');
+    rect(c, 476, 301, 12, 8, '#8d9c80');
+    for (let i = 0; i < 5; i++) {
+      c.save();
+      c.translate(349 + i * 36, 387);
+      c.rotate(-Math.PI / 2);
+      c.drawImage(
+        sprites.raceCar(['#d5b57d', '#93aeb0', '#b39baf', '#dda577', '#a7ba87'][i]),
+        -15,
+        -10,
+        30,
+        20,
+      );
+      c.restore();
+    }
+    rect(c, 515, 295, 13, 46, '#526750');
+    rect(c, 511, 289, 22, 12, '#e9d8aa');
+    rect(c, 550, 314, 48, 37, '#657c5b');
+    rect(c, 550, 302, 48, 30, '#d7ba8d');
+    for (let x = 553; x < 596; x += 11) rect(c, x, 302, 5, 30, '#e6d6ab');
+    rect(c, 554, 326, 40, 6, '#688776');
+    for (let i = 0; i < 7; i++) {
+      rect(c, 560 + i * 4, 344 + (i % 2) * 3, 3, 4, i % 2 ? '#d4a76f' : '#3e6654');
+    }
   }
   function drawTerrain() {
     if (!terrainCtx) return;
@@ -242,30 +312,75 @@ export function mount(container, { onUpdate = () => {} } = {}) {
         }
       }
     }
+    for (let i = 0; i < 260; i++) {
+      const x = (i * 137 + 31) % WORLD.width,
+        y = (i * 73 + 57) % WORLD.height;
+      if (nearestTrack(x, y).distance < ROAD_WIDTH / 2 + 25) continue;
+      rect(terrainCtx, x, y, 3, 1, course.surface === 'rain' ? '#a4b0a055' : '#d4c98b66');
+      if (i % 5 === 0) rect(terrainCtx, x + 2, y - 2, 1, 2, '#55754f');
+    }
     if (course.surface === 'coastal') {
       rect(terrainCtx, 300, 300, 390, 136, '#537f88');
       for (let y = 311; y < 427; y += 17)
         for (let x = 311; x < 676; x += 43) rect(terrainCtx, x + (y % 3) * 5, y, 21, 3, '#79a6ab');
       rect(terrainCtx, 370, 429, 230, 14, '#a89b7b');
       for (let x = 385; x < 594; x += 18) rect(terrainCtx, x, 429, 3, 14, '#887e67');
+      for (let i = 0; i < 9; i++) {
+        rect(terrainCtx, 328 + i * 36, 325 + (i % 3) * 24, 27, 2, '#bed0bb44');
+      }
+      rect(terrainCtx, 465, 350, 46, 12, '#d8d0ae');
+      rect(terrainCtx, 473, 346, 22, 8, '#a5b9aa');
+      rect(terrainCtx, 480, 348, 8, 4, '#577b80');
+      rect(terrainCtx, 703, 346, 64, 26, '#768d84');
+      rect(terrainCtx, 703, 341, 64, 22, '#b9a987');
+      for (let x = 709; x < 765; x += 9) rect(terrainCtx, x, 343, 2, 18, '#847c68');
+      rect(terrainCtx, 711, 380, 56, 29, '#536f6c');
+      rect(terrainCtx, 711, 376, 56, 25, '#6d958d');
+      for (let x = 718; x < 763; x += 9) rect(terrainCtx, x, 378, 2, 21, '#9db3a2');
     } else if (course.surface === 'rain') {
       for (let i = 0; i < 7; i += 1) {
         const x = 340 + i * 40;
         rect(terrainCtx, x, 320 + (i % 2) * 22, 29, 48, '#546e68');
         rect(terrainCtx, x + 6, 310 + (i % 2) * 22, 17, 22, '#78918a');
+        rect(terrainCtx, x + 8, 312 + (i % 2) * 22, 12, 3, '#a4b6a4');
+        rect(terrainCtx, x + 3, 338 + (i % 2) * 22, 4, 18, '#3d5c54');
       }
+      rect(terrainCtx, 685, 364, 83, 49, '#546c62');
+      rect(terrainCtx, 679, 350, 91, 31, '#91a18a');
+      rect(terrainCtx, 687, 352, 75, 4, '#bec6a7');
+      rect(terrainCtx, 696, 385, 18, 24, '#35534e');
+      rect(terrainCtx, 731, 384, 22, 13, '#b3c9b3');
+    } else {
+      drawPaddock();
     }
     terrainCtx.lineJoin = 'round';
     terrainCtx.lineCap = 'round';
     pathTrack(terrainCtx);
     terrainCtx.lineWidth = ROAD_WIDTH + 25;
-    terrainCtx.strokeStyle = '#657b5c';
+    terrainCtx.strokeStyle = course.surface === 'rain' ? '#4c675c' : '#617651';
     terrainCtx.stroke();
     terrainCtx.lineWidth = ROAD_WIDTH + 10;
     terrainCtx.strokeStyle = '#e2ddc6';
     terrainCtx.stroke();
     terrainCtx.lineWidth = ROAD_WIDTH;
-    terrainCtx.strokeStyle = COLORS.road;
+    terrainCtx.strokeStyle = course.surface === 'rain' ? '#4f6367' : '#515f59';
+    terrainCtx.stroke();
+    for (let s = 0; s < TRACK_LENGTH; s += 8) {
+      const p = trackInfo(s);
+      for (let offset = -ROAD_WIDTH / 2 + 10; offset < ROAD_WIDTH / 2 - 8; offset += 11) {
+        rect(
+          terrainCtx,
+          p.x - p.ty * offset,
+          p.y + p.tx * offset,
+          2 + (Math.floor(s) % 3),
+          1,
+          Math.floor(s + offset) % 3 ? '#bdc5ab13' : '#203d381c',
+        );
+      }
+    }
+    pathTrack(terrainCtx);
+    terrainCtx.lineWidth = ROAD_WIDTH * 0.42;
+    terrainCtx.strokeStyle = '#273b3612';
     terrainCtx.stroke();
     if (course.surface === 'rain') {
       terrainCtx.strokeStyle = '#74949a';
@@ -345,7 +460,12 @@ export function mount(container, { onUpdate = () => {} } = {}) {
         const dx = ((x * 13 + y * 3) % 29) - 14;
         const dy = ((x * 7 + y * 11) % 21) - 10;
         const point = nearestTrack(x + dx, y + dy);
-        if (point.distance > ROAD_WIDTH / 2 + 48 && (x + y) % 5 < 3)
+        if (
+          point.distance > ROAD_WIDTH / 2 + 48 &&
+          (x + y) % 5 < 3 &&
+          !(course.surface === 'dry' && x > 290 && x < 625 && y > 263 && y < 450) &&
+          !(course.surface === 'coastal' && x > 280 && x < 790 && y > 280 && y < 450)
+        )
           drawTree(x + dx, y + dy, 19 + ((x + y) % 13));
       }
     }
@@ -525,6 +645,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       state.phase === 'playing' &&
       state.startDelay <= 0 &&
       !state.onRoad &&
+      !reducedMotion?.matches &&
       Math.abs(car.speed) > 30 &&
       effectClock > 0.055
     ) {
@@ -569,7 +690,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       ctx.lineTo(mark.b.x, mark.b.y);
       ctx.stroke();
     }
-    for (const particle of dust) {
+    for (const particle of reducedMotion?.matches ? [] : dust) {
       ctx.globalAlpha = Math.min(0.6, particle.life);
       rect(ctx, particle.x, particle.y, 4, 4, '#d9cfaa');
     }
@@ -609,6 +730,15 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     ctx.save();
     ctx.translate(car.x, car.y);
     ctx.rotate(car.heading);
+    if (course.surface === 'rain') {
+      ctx.fillStyle = '#e1eac713';
+      ctx.beginPath();
+      ctx.moveTo(12, -4);
+      ctx.lineTo(57, -20);
+      ctx.lineTo(57, 20);
+      ctx.lineTo(12, 4);
+      ctx.fill();
+    }
     const steering = held('left') === held('right') ? 0 : held('left') ? -0.3 : 0.3;
     for (const x of [-8, 8]) {
       for (const side of [-1, 1]) {
@@ -619,20 +749,14 @@ export function mount(container, { onUpdate = () => {} } = {}) {
         ctx.restore();
       }
     }
-    rect(ctx, -13, -6, 25, 12, '#b96a36');
-    rect(ctx, -11, -7, 20, 14, COLORS.orange);
-    rect(ctx, 8, -5, 5, 10, '#f5b365');
-    rect(ctx, -7, -4, 11, 8, '#edbf72');
-    rect(ctx, 2, -5, 4, 10, '#355751');
-    rect(ctx, -7, -4, 3, 8, '#527164');
-    rect(ctx, -3, -4, 4, 8, '#f4cf88');
-    rect(ctx, -11, -5, 2, 10, '#e7ac62');
-    rect(ctx, 11, -5, 2, 3, '#f9f0c2');
-    rect(ctx, 11, 2, 2, 3, '#f9f0c2');
-    rect(ctx, -13, -5, 2, 3, '#a8583b');
-    rect(ctx, -13, 2, 2, 3, '#a8583b');
-    rect(ctx, -10, -8, 3, 2, '#f3d394');
-    rect(ctx, -10, 6, 3, 2, '#f3d394');
+    ctx.drawImage(sprites.raceCar(COLORS.orange), -14, -9, 28, 18);
+    if (held('brake') || held('handbrake')) {
+      rect(ctx, -13, -5, 2, 3, '#f7b078');
+      rect(ctx, -13, 2, 2, 3, '#f7b078');
+    }
+    ctx.strokeStyle = '#e5deb784';
+    ctx.lineWidth = 0.8;
+    ctx.strokeRect(-11, -6, 21, 12);
     ctx.restore();
   }
   function frame(now) {
@@ -829,6 +953,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     togglePause,
     destroy() {
       if (destroyed) return;
+      sprites.clear();
       destroyed = true;
       releaseHeld();
       window.cancelAnimationFrame(frameId);

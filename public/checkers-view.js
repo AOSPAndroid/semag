@@ -1,6 +1,7 @@
 import { legalMoves } from './checkers-engine.js';
 
-const crown = '<svg viewBox="0 0 32 26" aria-hidden="true"><path d="m4 7 6 6 6-10 6 10 6-6-3 14H7L4 7Z"/><path d="M8 24h16"/><circle cx="4" cy="5" r="2"/><circle cx="16" cy="2" r="2"/><circle cx="28" cy="5" r="2"/></svg>';
+const crown = '<svg viewBox="0 0 48 42" aria-hidden="true"><path d="M7 11 16 20 24 5 32 20 41 11 37 31H11Z"/><path d="M12 35H36M14 39H34" fill="none" stroke-width="2.5"/><circle cx="7" cy="8" r="3"/><circle cx="24" cy="3" r="3"/><circle cx="41" cy="8" r="3"/><path d="M20 27 24 22 28 27 24 31Z" class="checker-crown-jewel"/></svg>';
+const seal = '<svg class="checker-seal" viewBox="0 0 48 48" aria-hidden="true"><path d="M24 9 29 19 39 24 29 29 24 39 19 29 9 24 19 19Z" fill="none"/><path d="M24 15 33 24 24 33 15 24Z"/><circle cx="24" cy="24" r="3" class="checker-crown-jewel"/><path d="M8 15 12 11M36 11 40 15M40 33 36 37M12 37 8 33" fill="none" stroke-width="1.5"/></svg>';
 const coordinate = square => `${'abcdefgh'[square % 8]}${8 - Math.floor(square / 8)}`;
 const boardKey = state => `${state.phase}:${state.turn}:${state.forcedFrom}:${state.moves}:${state.board.map(piece => piece ? `${piece.owner}${piece.king ? 'k' : 'm'}` : '.').join('')}`;
 
@@ -229,6 +230,7 @@ export class CheckersView {
           else {
             const emblem = document.createElement('span');
             emblem.className = 'checker-piece-emblem';
+            emblem.innerHTML = seal;
             face.append(emblem);
           }
           token.append(face);

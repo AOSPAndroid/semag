@@ -210,3 +210,28 @@
 /* The room now uses a paper surface; keep the table annotations legible on it. */
 .checkers-toolbar{color:#69805b}.checkers-material-player{background:#f7f6e9;border-color:#d2d8bf;color:#6e885a}.checkers-material-player>strong{color:#9f814d}.checkers-material-1>strong{color:#54795e}.checkers-material-player>span{color:#7b8e68}.checkers-notice{color:#7d8e72}.is-your-turn .checkers-notice{color:#4f7448}.checkers-notice.is-capture,.is-your-turn .checkers-notice.is-capture{color:#a37d45}.checkers-legend{color:#7c906a}.checkers-legend>span:before{border-color:#839d69;background:#aeca8150}.checkers-legend>.checkers-key-capture:before{border-color:#b89153;background:#d8b36c30}.checkers-legend>.checkers-key-king:before{border-color:#a58b50;background:#d4b76c50}.checkers-history{background:#f3f3e6;border-color:#d1d9be;color:#687f54}.checkers-history-list>li{border-top-color:#dae0cb;color:#81936d}.checkers-history-list>li>strong{color:#9d814a}.checkers-recap{color:#81926e}
 .board-mode .game-viewport{max-height:none}
+
+/* Walnut rails, inlaid maple squares, and stamped playing pieces. */
+.checkers-frame{background-image:url('/art/checkers-grain.svg'),linear-gradient(115deg,#a2774f,#705039 45%,#9c704a 74%,#553d2a);background-size:320px 160px,auto;border-color:#60402b;border-radius:13px;box-shadow:inset 0 2px 1px #f4cf9b99,inset 0 -5px 0 #3c2b20,0 12px 25px #3a331c25,0 3px 0 #392f22}
+.checkers-frame::before{border-color:#d4a97088;box-shadow:inset 0 0 0 2px #573d2933}
+.checkers-grid{border:2px solid #352f24;box-shadow:0 0 0 2px #d4b174,0 0 0 4px #513d2b,0 5px 8px #30251966}
+.checker-square.is-light{background-image:url('/art/checkers-grain.svg'),linear-gradient(145deg,#f4e4c2,#d5bd91);background-size:220px 110px,auto;box-shadow:inset 0 0 0 1px #cfb99066}
+.checker-square.is-dark{background-image:url('/art/checkers-grain.svg'),linear-gradient(145deg,#487363,#254d40);background-size:220px 110px,auto;box-shadow:inset 0 0 0 1px #25433366}
+.checker-piece{width:77%;height:77%;padding:9%;background-origin:border-box}
+.checker-piece.is-ivory{background:radial-gradient(ellipse at 35% 20%,#fffdf0 0,#f4e2b9 50%,#d6b577 89%);border-color:#fff3d8;box-shadow:inset 0 2px 1px #fff, inset 0 -3px 2px #b9945366,0 3px 0 #ceb07d,0 5px 0 #a07c46,0 6px 0 #71552f,0 9px 8px #15261c70;color:#a47d40}
+.checker-piece.is-jade{background:radial-gradient(ellipse at 33% 15%,#88b993,#3f785e 58%,#23503e);border-color:#a4ceb0;box-shadow:inset 0 2px 1px #c4e4bd77,inset 0 -3px 2px #163b2d,0 3px 0 #37634c,0 5px 0 #204532,0 6px 0 #122e24,0 9px 8px #13271a80;color:#c1d9a7}
+.checker-piece-face{opacity:1;border-width:1.5px;box-shadow:inset 0 1px 2px #1d2d191c,0 1px 0 #fff3}
+.checker-piece-face::before{inset:8%;opacity:.28;border-style:dashed}
+.checker-piece-emblem{display:grid;place-items:center;width:88%;height:88%;border:0;border-radius:0;transform:none;background:none;box-shadow:none}
+.checker-piece-face .checker-seal{width:100%;height:100%;stroke-width:1.1}
+.checker-crown-jewel{fill:#fcf2d2;stroke:none}
+.is-jade .checker-crown-jewel{fill:#234d3b}
+.checker-piece.is-king{padding:8%;box-shadow:inset 0 2px 2px #fff5,0 3px 0 #ad8d55,0 5px 0 #6c562e,0 8px 0 #a58954,0 10px 0 #63512e,0 13px 10px #1e311977}
+.checker-piece.is-jade.is-king{box-shadow:inset 0 2px 2px #fff3,0 3px 0 #43694b,0 5px 0 #193e2d,0 8px 0 #3d6648,0 10px 0 #173b2c,0 13px 10px #13271a88}
+.checker-square.is-selected::before{background:#d7f2b225;box-shadow:inset 0 0 0 3px #f1dda0}
+.checker-square.is-destination::after{width:30%;background:#eaf3ba;border:2px solid #fcffe3;box-shadow:0 2px 0 #274b34,0 0 0 5px #d8f1b729}
+.checker-square.is-capture-destination::after{width:39%;background:#f5c57088;border:3px solid #ffe4a1;box-shadow:0 0 0 5px #ffe29a22,inset 0 0 0 3px #634c2733}
+.checkers-material-player{background:linear-gradient(140deg,#fffdf3,#ebe7d4);border-color:#d6ceb4;box-shadow:inset 0 1px 0 #fff,0 2px 0 #c8c6ab33;border-radius:7px}
+.checkers-material-player>strong::before{content:'';display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:7px;vertical-align:1px;background:#e5c891;border:1px solid #bfa26a;box-shadow:0 2px 0 #a1814e}
+.checkers-material-1>strong::before{background:#4c805f;border-color:#7cab81;box-shadow:0 2px 0 #28513c}
+@media(max-width:520px){.checker-piece.is-king{box-shadow:inset 0 1px 1px #fff5,0 2px 0 #b69a65,0 4px 0 #826839,0 6px 0 #ad945e,0 8px 0 #68512c,0 10px 5px #13271a66}.checker-piece.is-jade.is-king{box-shadow:inset 0 1px 1px #fff3,0 2px 0 #456e51,0 4px 0 #214632,0 6px 0 #406348,0 8px 0 #1b3e2c,0 10px 5px #13271a66}.checkers-material-player>strong::before{width:9px;height:9px;margin-right:5px}.checker-square.is-selected::before{box-shadow:inset 0 0 0 2px #f1dda0}}

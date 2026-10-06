@@ -21,11 +21,46 @@ const PIP_POSITIONS = {
   9: [[25,14],[75,14],[25,38],[75,38],[50,50],[25,62],[75,62],[25,86],[75,86]],
   10: [[25,10],[75,10],[50,28],[25,36],[75,36],[25,64],[75,64],[50,72],[25,90],[75,90]],
 };
-function royalArt(rank) {
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); svg.setAttribute('viewBox', '0 0 44 60'); svg.setAttribute('aria-hidden', 'true'); svg.setAttribute('class', 'card-court-art');
-  const hat = rank === 11 ? '<path d="m10 14 22-8 5 12H9z"/><path d="m30 7 4-7 5 3-5 8z" opacity=".5"/>' : '<path d="m10 6 7 6 5-9 5 9 7-6-3 13H13z"/>';
-  svg.innerHTML = `<path d="M4 2h36v56H4z" fill="none" stroke="currentColor" stroke-width="1" opacity=".25"/>${hat}<path d="M14 20h16v17H14z" opacity=".35"/><path d="M10 37h24l4 16H6z" opacity=".85"/><path d="m18 39 4 10 4-10" fill="#e6d5a6"/><path d="M17 25h3v3h-3zm8 0h3v3h-3z"/>${rank === 13 ? '<path d="m17 30 5 10 5-10z" opacity=".8"/>' : '<path d="M18 32h8v2h-8z"/>'}<path d="M7 49h30M22 51v5" fill="none" stroke="#d7bd79" stroke-width="2"/>`;
-  return svg;
+function royalArt(rank, suit = 0) {
+  const red = suit % 2; const robe = red ? '#aa6c60' : '#50786c'; const shadow = red ? '#75584c' : '#355b50';
+  const headwear = rank === 11 ? '<path d="M11 13q11-11 23 0l-3 6H12z" fill="'+robe+'"/><path d="M31 13q-2-10 7-12-1 10-7 12" fill="#c6b57e"/>' : '<path d="m12 7 6 5 4-9 5 9 6-5-3 11H14z" fill="#c9ab70" stroke="#a78b5b" stroke-width=".8"/><path d="M15 15h14" stroke="#e4cd96" stroke-width="1"/>';
+  const hair = rank === 12 ? '<path d="M13 20q-3 9 0 15l4-3v-9m13-3q4 10 0 15l-4-3v-9" fill="#947b50"/>' : '<path d="M13 20h18v6H13z" fill="'+shadow+'"/>';
+  const garment = '<path d="M10 36q12-6 24 0l3 17H7z" fill="'+robe+'" stroke="'+shadow+'" stroke-width="1"/><path d="m18 36 4 12 5-12" fill="#e9dbb5"/><path d="M13 38v11m18-11v11M9 52h26" stroke="#d3b47d" stroke-width="1"/><path d="m13 43 2 2-2 2-2-2m18-2 2 2-2 2-2-2" fill="#d2bd84"/>';
+  const prop = rank === 12 ? '<path d="M34 49V31m-4 5 4 3 4-3" stroke="#789265" stroke-width="1.2" fill="none"/><circle cx="34" cy="30" r="3" fill="#c59c78"/>' : '<path d="M10 49V26m-3 3h6m-4-4 1-7 2 7" stroke="#b69e6b" stroke-width="1.3" fill="none"/>';
+  const portrait = headwear+hair+'<path d="M15 19h14v14l-7 5-7-5z" fill="#d9bd95" stroke="#a48a6a" stroke-width=".7"/><path d="M17 25h3m5 0h3m-6 1v4" stroke="'+shadow+'" stroke-width=".9"/>'+ (rank === 13 ? '<path d="m16 31 6 9 6-9-6 3z" fill="'+shadow+'"/>' : '<path d="M19 32h6" stroke="#aa7e62" stroke-width=".8"/>')+garment+prop;
+  return cachedSvg(`court-${rank}-${suit}`,'<path d="M2 1h40v58H2z" fill="#eee4c4" stroke="#cbb680" stroke-width=".8"/><path d="M4 3h36v54H4z" fill="none" stroke="#d8c69d" stroke-width=".5"/>'+portrait+'<path d="M8 55h28" stroke="#c1a56e" stroke-width="1"/>','0 0 44 60','card-court-art');
+}
+const ART_CACHE = new Map();
+const MEMORY_SEALS = [
+ {name:'Crescent Moon',art:'<path d="M44 9C18 2 6 35 25 49c13 9 25 5 34-6-23 10-41-14-15-34z" fill="#7898a0"/><path d="M23 25q-9 14 3 23" fill="none" stroke="#d0d7b7" stroke-width="2"/><path d="m50 12 2 6 6 1-5 4 1 6-5-4-6 2 3-5-3-5 6 1z" fill="#c6a566"/>'},
+ {name:'Woodland Owl',art:'<path d="m16 18 5-10 11 9 11-9 5 10v21L32 55 16 39z" fill="#7d8f75"/><path d="M17 28q7-15 15-4 8-11 15 4-2 13-15 11-13 2-15-11" fill="#d4c896"/><circle cx="24" cy="28" r="4" fill="#426559"/><circle cx="40" cy="28" r="4" fill="#426559"/><path d="m28 38 4 6 4-6M25 48h14" fill="#b5985c" stroke="#c0ac73" stroke-width="2"/>'},
+ {name:'Silk Moth',art:'<path d="M29 29C9 3-1 34 22 44l9-6m4-9C55 3 65 34 42 44l-9-6M28 40c-17 1-13 21 0 12m8-12c17 1 13 21 0 12" fill="#b2937c" stroke="#7b7858" stroke-width="1.4"/><circle cx="16" cy="30" r="5" fill="#5b8275"/><circle cx="48" cy="30" r="5" fill="#5b8275"/><path d="M29 20h6v27h-6M30 19l-6-6m10 6 6-6" fill="#517b6b" stroke="#517b6b" stroke-width="2"/>'},
+ {name:'Silver Fir',art:'<path d="m32 6 17 22h-7l14 18H8l14-18h-7z" fill="#63886d"/><path d="M28 44h8v14h-8z" fill="#a88d62"/><path d="m24 23 8 6 8-6m-21 17 13 7 13-7M32 13v31" fill="none" stroke="#b7c89c" stroke-width="2"/>'},
+ {name:'Hearth Lantern',art:'<path d="M22 15q10-14 20 0M19 21h26v31H19zM16 18h32v6H16zm0 32h32v6H16z" fill="#607d67" stroke="#a89461" stroke-width="2"/><path d="M24 25h16v23H24z" fill="#dbb575"/><path d="m32 29 6 11-6 8-6-8z" fill="#b57b57"/><path d="M29 24v6m6 14v6" stroke="#ecd098" stroke-width="1"/>'},
+ {name:'Copper Fox',art:'<path d="m14 10 17 11 18-11-3 32-15 13-15-13z" fill="#be916c" stroke="#8f7557" stroke-width="1.5"/><path d="m16 25 15 15 16-15-3 18-13 10-13-10z" fill="#e0cfaa"/><path d="m20 27 7 3m10 0 7-3" stroke="#577868" stroke-width="3"/><path d="m28 41 3 4 4-4z" fill="#5e7055"/>'},
+ {name:'North Star',art:'<path d="m32 5 8 18 20 9-20 8-8 19-8-19-20-8 20-9z" fill="#c5a56b"/><path d="m32 16 5 12 12 4-12 5-5 12-5-12-12-5 12-4z" fill="#e3d09b"/><path d="M32 22v20M22 32h20" stroke="#789281" stroke-width="2"/>'},
+ {name:'Hollow Crown',art:'<path d="m10 17 13 10L32 9l10 18 13-10-7 32H17z" fill="#c5aa72" stroke="#9d8653" stroke-width="1.5"/><path d="M18 45h29v10H18z" fill="#dfc894"/><path d="m32 29 5 7-5 7-5-7z" fill="#708c77"/><path d="M21 51h23" stroke="#a79365" stroke-width="1"/>'},
+ {name:'Golden Sun',art:'<circle cx="32" cy="31" r="17" fill="#d3b177"/><circle cx="32" cy="31" r="12" fill="none" stroke="#f1d6a1" stroke-width="1.5"/><path d="M32 3v7m0 43v8M3 31h8m43 0h7M11 10l6 6m31 31 6 6M10 52l6-6m32-31 6-6" stroke="#b99766" stroke-width="3"/><path d="M25 29h3m9 0h3m-12 8h9" stroke="#927d57" stroke-width="2"/>'},
+ {name:'Wild Rose',art:'<path d="M32 24C10-2-1 25 21 34-4 50 22 64 32 43c10 21 36 7 11-9C65 25 54-2 32 24z" fill="#b58d89" stroke="#92766b" stroke-width="1.2"/><circle cx="32" cy="33" r="8" fill="#d4bb80"/><circle cx="32" cy="33" r="3" fill="#748469"/><path d="m27 23-3 4m16-4 3 4m-22 14 4-1m14 9-1-5" stroke="#e2b9a9" stroke-width="1.5"/>'},
+ {name:'Garden Bee',art:'<path d="M29 27C6 5 8 32 27 36m8-9c23-22 21 5 2 9" fill="#ccd9bd" stroke="#8eaa96" stroke-width="1.3"/><ellipse cx="32" cy="38" rx="11" ry="17" fill="#d0b47a"/><path d="M23 30h18m-21 9h22m-18 9h16" stroke="#758363" stroke-width="4"/><path d="M27 23 21 13m16 10 6-10" stroke="#738d76" stroke-width="2"/><path d="m29 54 3 5 3-5" fill="#758363"/>'},
+ {name:'River Leaf',art:'<path d="M13 48C-1 18 30 6 52 11c3 26-14 47-36 40z" fill="#8ba17c" stroke="#6d8c66" stroke-width="1.5"/><path d="M7 57 44 19M22 39l-1-17m10 9 14 1" stroke="#d0d0a1" stroke-width="2"/><path d="M39 40q-6 9 0 11 6-2 0-11z" fill="#d7e2bd"/>'},
+ {name:'Forest Mushroom',art:'<path d="M24 32h16l5 25H19z" fill="#d8cca6" stroke="#a6a181" stroke-width="1.5"/><path d="M7 32C11 0 53 0 57 32z" fill="#b3846b" stroke="#866f55" stroke-width="1.6"/><path d="M9 32h46" stroke="#d4b290" stroke-width="3"/><circle cx="23" cy="21" r="4" fill="#dfc99f"/><circle cx="39" cy="17" r="4" fill="#dfc99f"/><path d="M27 40v12m8-12v12" stroke="#bbad86" stroke-width="1"/>'},
+ {name:'Silver Fish',art:'<path d="M15 32C31 8 51 17 58 31 48 47 28 56 15 34L3 46V18z" fill="#83a29a" stroke="#66877b" stroke-width="1.5"/><path d="m25 24 11 8-11 9m7-20 10 11-10 12" fill="none" stroke="#c4d0ad" stroke-width="1.5"/><circle cx="47" cy="29" r="3" fill="#53786b"/><path d="M15 30h-7m7 5h-7m29-17 4-10" stroke="#a6bb9c" stroke-width="1.5"/>'},
+ {name:'Wayfinder Compass',art:'<circle cx="32" cy="32" r="24" fill="#d0c293" stroke="#a48b5f" stroke-width="2"/><circle cx="32" cy="32" r="18" fill="#e1d7b3" stroke="#c1ab76" stroke-width="1"/><path d="m32 12 8 20-8 20-8-20z" fill="#79937b"/><path d="m32 12 8 20h-8z" fill="#bd9672"/><circle cx="32" cy="32" r="3" fill="#d9bb7e"/><path d="M10 32h6m32 0h6M32 10v6m0 32v6" stroke="#ad925e" stroke-width="1.5"/>'},
+ {name:'Wind Feather',art:'<path d="M12 49C9 12 36-1 55 9c3 27-15 46-36 43z" fill="#b5bb9a" stroke="#859a7a" stroke-width="1.5"/><path d="M9 59 45 17M21 43l-2-22m12 12 15-2M37 24l-2-11" stroke="#e3dbb5" stroke-width="2"/><path d="M36 42h-7m14-8h-7" stroke="#879a79" stroke-width="1.5"/>'},
+];
+function cachedSvg(key, markup, box, className) {
+ let template = ART_CACHE.get(key);
+ if (!template) { template = document.createElementNS('http://www.w3.org/2000/svg','svg'); template.setAttribute('viewBox',box); template.setAttribute('aria-hidden','true'); template.innerHTML=markup; ART_CACHE.set(key,template); }
+ const copy = template.cloneNode(true); copy.setAttribute('class',className); return copy;
+}
+function memoryIdentity(card) { return MEMORY_SEALS[(card.suit ? 8 : 0)+(card.rank-1)%8]; }
+function memoryArt(card) {
+ const identity = memoryIdentity(card);
+ return cachedSvg(`memory-${card.suit}-${card.rank}`,`<circle cx="32" cy="32" r="29" fill="#efead6" stroke="#c5b583" stroke-width="1"/><circle cx="32" cy="32" r="26" fill="#e4e3ca"/>${identity.art}`,'0 0 64 64','card-memory-seal');
+}
+function backArt() {
+ return cachedSvg('card-back','<path d="M6 6h88v128H6z" fill="none" stroke="#c0b580" stroke-width=".8"/><path d="m10 19 9-9m62 0 9 9m-80 103 9 9m62 0 9-9" fill="none" stroke="#a9bb8b" stroke-width="2"/><circle cx="50" cy="70" r="31" fill="none" stroke="#a4b17e" stroke-width="1"/><circle cx="50" cy="70" r="26" fill="#2a523e" stroke="#ccbf83" stroke-width="1.2"/><path d="m50 47 8 16 15 7-15 7-8 16-8-16-15-7 15-7z" fill="#bdc28c"/><path d="m50 56 5 9 10 5-10 5-5 10-5-10-10-5 10-5z" fill="#e0d39d"/><path d="M50 23v13m0 69v13M20 36l9 9m42 50 9 9M20 104l9-9m42-50 9-9" stroke="#9dac7c" stroke-width="1.5"/><path d="M15 26q19-22 35-9 18-14 35 9M15 113q19 22 35 9 18 14 35-9" fill="none" stroke="#718f64" stroke-width="1"/>','0 0 100 140','card-back-art');
 }
 const TITLES = { 'crazy-eights': 'Crazy Eights', 'twenty-one': '21 Duel', memory: 'Memory Match' };
 const rankLabel = rank => ({ 1: 'A', 11: 'J', 12: 'Q', 13: 'K' })[rank] || String(rank);
@@ -215,7 +250,7 @@ export class CardsView {
     if (!card) {
       const pattern = element('span', 'card-back-pattern');
       pattern.setAttribute('aria-hidden', 'true');
-      pattern.append(element('span', 'card-back-emblem', '✦'));
+      pattern.append(backArt());
       node.append(pattern);
       return;
     }
@@ -225,7 +260,8 @@ export class CardsView {
     const bottom = top.cloneNode(true);
     bottom.classList.add('card-corner-bottom');
     const face = element('span', 'card-face');
-    if (card.rank > 10) face.append(royalArt(card.rank));
+    if (this.gameId === 'memory') face.append(memoryArt(card));
+    else if (card.rank > 10) face.append(royalArt(card.rank, card.suit));
     else for (const [x, y] of PIP_POSITIONS[card.rank] || [[50,50]]) { const pip = suitArt(card.suit, `card-pip${card.rank === 1 ? ' card-pip-ace' : ''}${y > 50 ? ' is-inverted' : ''}`); pip.style.left = `${x}%`; pip.style.top = `${y}%`; face.append(pip); }
     if (card.rank === 8 && this.gameId === 'crazy-eights') node.append(element('span', 'card-wild-label', 'WILD'));
     top.setAttribute('aria-hidden', 'true');
@@ -370,7 +406,7 @@ export class CardsView {
       node.classList.toggle('is-revealed', revealed.has(index));
       const canFlip = this.canAct() && !state.mismatchTicks && !claimed && !card && (state.revealed?.length || 0) < 2;
       node.setAttribute('aria-disabled', String(!canFlip));
-      node.setAttribute('aria-label', `Card ${index + 1}, ${card ? cardName(card) : 'face down'}${claimed ? `, matched by ${this.name(matched)}` : revealed.has(index) ? ', revealed' : canFlip ? ', flip to reveal' : ''}`);
+      node.setAttribute('aria-label', `Card ${index + 1}, ${card ? `${memoryIdentity(card).name}, ${cardName(card)}` : 'face down'}${claimed ? `, matched by ${this.name(matched)}` : revealed.has(index) ? ', revealed' : canFlip ? ', flip to reveal' : ''}`);
     });
     this.updateTabStops();
   }
@@ -389,7 +425,7 @@ export class CardsView {
     } else if (state.gameId === 'memory') {
       if (state.mismatchTicks > 0 && !previous.mismatchTicks) text = `Cards ${(state.revealed || []).map(index => index + 1).join(' + ')} did not match. The turn changes after the reveal.`;
       const claimed = state.matched?.findIndex((owner, index) => owner !== null && previous.matched?.[index] === null);
-      if (claimed >= 0 && state.cards[claimed]) text = `${this.name(state.matched[claimed])} claimed a pair of ${cardName(state.cards[claimed])}. Another turn earned.`;
+      if (claimed >= 0 && state.cards[claimed]) text = `${this.name(state.matched[claimed])} claimed the ${memoryIdentity(state.cards[claimed]).name} pair. Another turn earned.`;
     }
     if (text) { this.publicTrail.push(text); if (this.publicTrail.length > 4) this.publicTrail.shift(); }
   }
@@ -412,7 +448,7 @@ export class CardsView {
       const scores = state.scores || [0,0]; const difference = scores[0] - scores[1]; const title = element('div', 'cards-collection-heading');
       title.append(element('strong', '', 'Claimed pairs'), element('span', '', difference ? `${this.name(difference > 0 ? 0 : 1)} leads by ${Math.abs(difference)}` : 'LEVEL MATCH')); this.context.append(title);
       const gallery = element('div', 'cards-pair-gallery'); const seen = new Set();
-      (state.cards || []).forEach((card, index) => { const owner = state.matched?.[index]; if (!card || owner === null || owner === undefined) return; const key = `${card.rank}:${card.suit}`; if (seen.has(key)) return; seen.add(key); const item = element('span', `cards-claimed-pair claimed-by-${owner}`); item.append(element('b', '', rankLabel(card.rank)), suitArt(card.suit)); item.setAttribute('role', 'img'); item.setAttribute('aria-label', `${this.name(owner)}: pair of ${cardName(card)}`); item.title = `${this.name(owner)} · ${cardName(card)}`; gallery.append(item); });
+      (state.cards || []).forEach((card, index) => { const owner = state.matched?.[index]; if (!card || owner === null || owner === undefined) return; const key = `${card.rank}:${card.suit}`; if (seen.has(key)) return; seen.add(key); const identity = memoryIdentity(card); const item = element('span', `cards-claimed-pair claimed-by-${owner}`); item.append(memoryArt(card), element('span', '', identity.name)); item.setAttribute('role', 'img'); item.setAttribute('aria-label', `${this.name(owner)}: ${identity.name}, pair of ${cardName(card)}`); item.title = `${this.name(owner)} · ${identity.name}`; gallery.append(item); });
       if (!seen.size) gallery.append(element('span', 'cards-no-pairs', 'Find your first pair. Matched cards stay visible.')); this.context.append(gallery);
     } else {
       const own = state.hands?.[this.localId] || []; const legal = own.filter(card => playableCard(card, state));

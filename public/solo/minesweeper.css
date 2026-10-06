@@ -49,3 +49,25 @@
 @media(prefers-reduced-motion:reduce){.minesweeper-tile{transition:none}}
 
 .minesweeper-pan-hint{font:10px/1.6 var(--mono,Consolas,monospace);color:#7e8a73;margin:0 0 10px}.is-wide .minesweeper-board-wrap{overflow:auto;overscroll-behavior-x:contain;scrollbar-color:#8ca276 #dbe2ce}.is-wide .minesweeper-board{grid-template-columns:repeat(var(--mine-cols),30px);width:max-content;min-width:100%;gap:2px;padding:2px}.is-wide .minesweeper-tile{width:30px;height:30px;aspect-ratio:1;font-size:16px}.is-wide .minesweeper-pause{min-width:100%}.minesweeper-difficulty,.minesweeper-flag-mode{min-height:44px}@media(pointer:coarse),(max-width:600px){.is-wide .minesweeper-board{grid-template-columns:repeat(var(--mine-cols),44px)}.is-wide .minesweeper-tile{width:44px;height:44px;font-size:19px}.minesweeper-difficulty-label{width:100%;justify-content:space-between}.minesweeper-flag-mode{width:100%}}
+
+/* A field kit: enamel keys, engraved counters, and illustrated markers. */
+.minesweeper-frame{background:linear-gradient(145deg,#e9eddd,#cfd9c1);border-color:#a9b797;border-radius:10px;box-shadow:inset 0 2px 0 #fff8,inset 0 -4px 0 #a1b58a,0 5px 0 #7f946c33,0 16px 30px #364b2212}
+.minesweeper-board-wrap{border-color:#648465;border-radius:5px;background:#55745a;box-shadow:0 1px 0 #f6f4da,inset 0 2px 4px #36533999}
+.minesweeper-instruments>div{padding:8px 11px;border:1px solid #bcc9ad;border-radius:5px;background:linear-gradient(#f3f5e5,#dce5cf);box-shadow:inset 0 2px 3px #83957016,0 1px 0 #fff8;gap:5px}
+.minesweeper-instruments strong{color:#365e49;font-variant-numeric:tabular-nums;text-shadow:0 1px 0 #ffffed}
+.minesweeper-emblem{position:relative;width:31px;height:31px;clip-path:none;background:radial-gradient(circle,#82a164 0 12%,transparent 14% 30%,#a7b887 32% 35%,transparent 38% 52%,#78926a 54% 57%,transparent 60%);border:1px solid #92a57b;border-radius:50%;box-shadow:0 0 0 4px #bfd0a644}
+.minesweeper-emblem::after{content:'';position:absolute;inset:4px;border-bottom:1px solid #829963;border-left:1px solid #829963;transform:rotate(-45deg)}
+.minesweeper-tile{border-color:#fafced #91a680 #809573 #e9f1da;border-radius:3px;background:linear-gradient(145deg,#e1ebcf,#bed0ab);box-shadow:inset 0 1px 0 #fff7,0 2px 0 #3c614855;text-shadow:0 1px 0 #fff8}
+.minesweeper-tile:not(.is-open)::after{content:'';position:absolute;inset:23%;border:1px solid #9cb78833;border-radius:2px;pointer-events:none}
+.minesweeper-tile.is-open{background:linear-gradient(135deg,#f3f2df,#e9ead7);border-color:#bac9ad;border-radius:2px;box-shadow:inset 0 1px 2px #81936911}
+.minesweeper-tile.is-open[data-number="0"]{background:linear-gradient(135deg,#e6e9d5,#dde4cc);border-color:#b5c8a9}
+.minesweeper-tile.is-open[data-number="1"]{color:#386d89}.minesweeper-tile.is-open[data-number="2"]{color:#3d713e}.minesweeper-tile.is-open[data-number="3"]{color:#b1593d}.minesweeper-tile.is-open[data-number="4"]{color:#78537e}
+.minesweeper-tile.is-flagged{background:linear-gradient(145deg,#f5e6c8,#ddcea8);border-color:#fff3d5 #b49e72 #a99368 #f1e1ba}
+.minesweeper-flag,.minesweeper-mine{width:76%;height:82%;margin:0;border:0;background:none;box-shadow:none!important;display:grid;place-items:center}
+.minesweeper-flag:before,.minesweeper-flag:after,.minesweeper-mine:after{display:none}.minesweeper-flag svg,.minesweeper-mine svg{display:block;width:100%;height:100%;overflow:visible}
+.minesweeper-tile.is-mine{background:#c5d2b6;border-color:#9aaf89}.minesweeper-tile.is-exploded{background:radial-gradient(circle,#f6ce94,#db8c67);border-color:#c67a51;box-shadow:inset 0 0 0 2px #eec69c}
+.minesweeper-tile.is-exploded .minesweeper-mine{filter:drop-shadow(0 0 2px #983f2a)}
+.minesweeper-tile.is-wrong-flag{background:#eed2b6}.minesweeper-tile:focus-visible{outline:3px solid #ce804f;outline-offset:-3px;box-shadow:inset 0 0 0 4px #fff2c666}
+.minesweeper-view[data-phase="won"] .minesweeper-frame{border-color:#91ac62;box-shadow:inset 0 2px 0 #fff8,inset 0 -4px 0 #7e995e,0 0 0 3px #cbd6a755,0 12px 25px #364b2212}
+.minesweeper-flag-mode,.minesweeper-difficulty{border-radius:6px;box-shadow:inset 0 1px 0 #fff,0 2px 0 #a4b69533}
+@media(max-width:500px){.minesweeper-instruments>div{min-width:65px;padding:7px 8px}.minesweeper-instruments{gap:8px}.minesweeper-emblem{width:25px;height:25px}.minesweeper-instruments span{font-size:7px;letter-spacing:.7px}.minesweeper-tile{border-radius:2px}.minesweeper-flag,.minesweeper-mine{width:80%;height:86%}}

@@ -1,5 +1,5 @@
 .vector-mode #arena{cursor:crosshair;touch-action:none;image-rendering:pixelated}
-.vector-mode .game-viewport{background:#1a302a}
+.vector-mode .game-viewport{background:#1a302a;box-shadow:inset 0 0 0 1px #8b9c7966,0 3px 0 #1c35292b}
 .vector-mode .stage-label{display:none}
 .vector-mode .p1 .player-badge{background:#f4dbc2;color:#a16836}
 .vector-mode .p1 .health-track>div{background:#e9a36c}

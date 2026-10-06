@@ -27,6 +27,12 @@ A self-hosted browser hub with **18 games: nine solo and nine two-player games**
 
 The action games are original implementations. Checkers follows American checkers rules. All multiplayer card games use the same two-seat rooms, ready countdown, and rematch flow. The shelf filters show **All games**, **With a friend**, **Solo**, **Driving**, **Action**, or **Roguelike**. Search narrows the selected shelf by title, category, or description. Room joining and invitations sit above the game shelf.
 
+The graphics use original local artwork: illustrated cards and enemy portraits,
+expressive character sprites, textured arena materials, crafted board pieces,
+and detailed driving scenery. Static art is cached, gameplay effects stay
+readable, and the shelf artwork matches the games. Assets ship with the host;
+playing does not require an image service. The hub keeps its pixel logo.
+
 ## Run on your PC
 
 Install [Node.js 20 or newer](https://nodejs.org). Clone this repository, or extract the downloaded game folder:

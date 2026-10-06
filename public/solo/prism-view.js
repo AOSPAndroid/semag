@@ -256,52 +256,132 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   const motionPreference = window.matchMedia?.('(prefers-reduced-motion: reduce)');
   const reduceMotion = () => motionPreference?.matches === true;
 
-  function block(context, x, y, size, type, ghost = false) {
+  const tiles = new Map();
+  const boardArt = document.createElement('canvas');
+  function tileArt(type) {
+    if (tiles.has(type)) return tiles.get(type);
+    const tile = document.createElement('canvas');
+    tile.width = tile.height = 32;
+    const c = tile.getContext('2d'),
+      palette = COLORS[type] || COLORS.T;
+    const r = (x, y, w, h, color) => {
+      c.fillStyle = color;
+      c.fillRect(x, y, w, h);
+    };
+    r(2, 2, 28, 29, '#071a25');
+    r(1, 1, 30, 28, palette[2]);
+    r(3, 3, 26, 24, palette[0]);
+    const shine = c.createLinearGradient(3, 3, 26, 29);
+    shine.addColorStop(0, palette[1]);
+    shine.addColorStop(0.28, palette[0]);
+    shine.addColorStop(1, palette[2]);
+    r(4, 4, 24, 23, shine);
+    r(3, 3, 26, 2, palette[1]);
+    r(3, 5, 2, 21, palette[1]);
+    r(27, 6, 2, 23, palette[2]);
+    r(6, 27, 22, 2, palette[2]);
+    if (type === 'G') {
+      r(7, 8, 19, 17, '#91a094');
+      r(9, 9, 15, 14, '#788e84');
+      r(11, 10, 10, 2, '#b4bd9f');
+      r(20, 11, 2, 8, '#4b675e');
+      r(13, 17, 8, 2, '#4b675e');
+      r(11, 18, 2, 5, '#4b675e');
+      r(7, 23, 3, 2, '#b7c1a4');
+      r(24, 8, 2, 3, '#697b70');
+      r(14, 24, 9, 1, '#566f63');
+    } else {
+      c.fillStyle = palette[1];
+      c.globalAlpha = 0.32;
+      c.beginPath();
+      c.moveTo(7, 7);
+      c.lineTo(24, 7);
+      c.lineTo(7, 24);
+      c.fill();
+      c.globalAlpha = 1;
+      r(10, 10, 14, 14, palette[0]);
+      r(11, 11, 12, 2, palette[1]);
+      r(11, 13, 2, 9, `${palette[1]}88`);
+      r(22, 13, 2, 11, `${palette[2]}99`);
+      r(13, 22, 9, 2, palette[2]);
+      r(15, 15, 4, 4, `${palette[1]}66`);
+      r(5, 5, 3, 2, '#e7efd4');
+      r(7, 7, 2, 1, `${palette[1]}aa`);
+    }
+    tiles.set(type, tile);
+    return tile;
+  }
+  function block(context, x, y, size, type, ghost = false, active = false) {
     const palette = COLORS[type] || COLORS.T;
     const px = Math.round(x),
       py = Math.round(y),
-      edge = Math.max(1, Math.round(size));
-    const gap = Math.max(1, Math.round(size * 0.065));
+      edge = Math.max(1, Math.round(size)),
+      gap = Math.max(1, Math.round(size * 0.06));
     if (ghost) {
-      context.strokeStyle = `${palette[0]}b3`;
-      context.lineWidth = Math.max(1, size * 0.052);
-      context.strokeRect(px + gap + 0.5, py + gap + 0.5, edge - gap * 2 - 1, edge - gap * 2 - 1);
-      context.fillStyle = `${palette[0]}12`;
+      context.fillStyle = `${palette[0]}13`;
       context.fillRect(px + gap + 1, py + gap + 1, edge - gap * 2 - 2, edge - gap * 2 - 2);
+      context.strokeStyle = `${palette[1]}b8`;
+      context.lineWidth = Math.max(1, size * 0.045);
+      context.strokeRect(px + gap + 0.5, py + gap + 0.5, edge - gap * 2 - 1, edge - gap * 2 - 1);
+      const cap = Math.max(2, Math.round(size * 0.19));
+      context.fillStyle = `${palette[0]}a8`;
+      context.fillRect(px + gap, py + gap, cap, Math.max(1, gap));
+      context.fillRect(px + edge - gap - cap, py + edge - gap - 1, cap, Math.max(1, gap));
       return;
     }
-    context.fillStyle = '#0b1e2a';
-    context.fillRect(px + gap, py + gap + Math.max(1, edge * 0.05), edge - gap * 2, edge - gap * 2);
-    context.fillStyle = palette[2];
-    context.fillRect(px + gap, py + gap, edge - gap * 2, edge - gap * 2);
-    context.fillStyle = palette[0];
-    context.fillRect(
-      px + gap + 1,
-      py + gap + 1,
-      edge - gap * 2 - 2,
-      edge - gap * 2 - Math.max(2, edge * 0.14),
+    context.drawImage(
+      tileArt(type),
+      px + gap,
+      py + gap,
+      Math.max(1, edge - gap * 2),
+      Math.max(1, edge - gap * 2),
     );
-    context.fillStyle = palette[1];
-    context.fillRect(px + gap + 1, py + gap + 1, edge - gap * 2 - 2, Math.max(1, Math.round(size * 0.12)));
-    context.fillStyle = `${palette[1]}66`;
-    context.fillRect(px + gap + 1, py + gap + 1, Math.max(1, Math.round(size * 0.09)), edge - gap * 2 - 3);
-    if (size >= 17) {
-      context.fillStyle = `${palette[1]}38`;
-      context.fillRect(px + edge * 0.24, py + edge * 0.27, edge * 0.48, edge * 0.38);
-      context.fillStyle = `${palette[2]}70`;
-      context.fillRect(px + edge * 0.24, py + edge * 0.65, edge * 0.48, Math.max(1, edge * 0.05));
+    if (active) {
+      context.strokeStyle = `${palette[1]}a8`;
+      context.lineWidth = Math.max(1, size * 0.035);
+      context.strokeRect(px + gap + 1.5, py + gap + 1.5, edge - gap * 2 - 3, edge - gap * 2 - 3);
     }
-    if (type === 'G') {
-      context.fillStyle = palette[2];
-      context.fillRect(px + edge * 0.45, py + edge * 0.21, Math.max(1, edge * 0.07), edge * 0.23);
-      context.fillRect(px + edge * 0.27, py + edge * 0.44, edge * 0.25, Math.max(1, edge * 0.07));
-    }
+  }
+  function paintBoard(width, ratio) {
+    boardArt.width = width;
+    boardArt.height = width * 2;
+    const c = boardArt.getContext('2d'),
+      cell = width / WIDTH;
+    const back = c.createLinearGradient(0, 0, width, width * 2);
+    back.addColorStop(0, '#17343d');
+    back.addColorStop(1, '#102330');
+    c.fillStyle = back;
+    c.fillRect(0, 0, width, width * 2);
+    for (let y = 0; y < VISIBLE_HEIGHT; y++)
+      for (let x = 0; x < WIDTH; x++) {
+        const px = Math.round(x * cell),
+          py = Math.round(y * cell);
+        c.fillStyle = (x + y) % 2 ? '#23434b13' : '#071b2512';
+        c.fillRect(px + 1, py + 1, Math.round(cell) - 1, Math.round(cell) - 1);
+        c.strokeStyle = x === 5 ? '#6d8d8735' : '#526b681c';
+        c.lineWidth = Math.max(1, ratio * 0.55);
+        c.beginPath();
+        c.moveTo(px, py);
+        c.lineTo(px, py + cell);
+        c.moveTo(px, py);
+        c.lineTo(px + cell, py);
+        c.stroke();
+        if (x % 5 === 0 && y % 5 === 0) {
+          c.fillStyle = '#87a29735';
+          c.fillRect(px + 1, py + 1, Math.max(1, ratio), Math.max(1, ratio));
+        }
+      }
+    c.fillStyle = '#06182422';
+    c.fillRect(0, 0, cell * 0.12, width * 2);
+    c.fillRect(width - cell * 0.12, 0, cell * 0.12, width * 2);
   }
 
   function preview(target, type, dimmed = false) {
     const context = target.getContext('2d');
     if (!context) return;
     context.clearRect(0, 0, target.width, target.height);
+    context.fillStyle = '#a5cab017';
+    context.fillRect(14, target.height - 8, target.width - 28, 1);
     context.imageSmoothingEnabled = false;
     if (!type) {
       context.strokeStyle = '#50707a';
@@ -337,30 +417,13 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     }
     const cell = width / WIDTH;
     ctx.imageSmoothingEnabled = false;
-    ctx.fillStyle = '#112730';
-    ctx.fillRect(0, 0, width, width * 2);
-    for (let y = 0; y < VISIBLE_HEIGHT; y += 1) {
-      for (let x = 0; x < WIDTH; x += 1) {
-        ctx.fillStyle = (x + y) % 2 ? '#152d37' : '#142b34';
-        ctx.fillRect(
-          Math.round(x * cell) + 1,
-          Math.round(y * cell) + 1,
-          Math.round(cell) - 1,
-          Math.round(cell) - 1,
-        );
-        if (x % 5 === 0 && y % 5 === 0) {
-          ctx.fillStyle = '#2b4651';
-          ctx.fillRect(
-            Math.round(x * cell) + 1,
-            Math.round(y * cell) + 1,
-            Math.max(1, ratio),
-            Math.max(1, ratio),
-          );
-        }
+    if (boardArt.width !== width || boardArt.height !== width * 2) paintBoard(width, ratio);
+    ctx.drawImage(boardArt, 0, 0);
+    for (let y = 0; y < VISIBLE_HEIGHT; y++)
+      for (let x = 0; x < WIDTH; x++) {
         const type = state.board[y + HIDDEN_ROWS][x];
         if (type) block(ctx, x * cell, y * cell, cell, type);
       }
-    }
     if (dropEffect && !reduceMotion()) {
       const age = (now - dropEffect.time) / 170;
       if (age >= 1) dropEffect = null;
@@ -388,7 +451,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       }
       for (const part of pieceCells(state.active)) {
         if (part.y >= HIDDEN_ROWS)
-          block(ctx, part.x * cell, (part.y - HIDDEN_ROWS) * cell, cell, state.active.type);
+          block(ctx, part.x * cell, (part.y - HIDDEN_ROWS) * cell, cell, state.active.type, false, true);
       }
       if (state.lockElapsed > 0 && state.phase === 'playing') {
         const progress = Math.min(1, state.lockElapsed / 0.5);
@@ -405,9 +468,25 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       const progress = Math.max(0, 1 - (now - effect.time) / 230);
       if (!progress) effect = null;
       else if (effect.lines > 0) {
+        const tint = effect.spin ? '#d5b5ed' : '#c0e8e2';
         for (const row of effect.rows) {
           ctx.fillStyle = `rgba(192,232,226,${progress * 0.22})`;
           ctx.fillRect(0, (row - HIDDEN_ROWS) * cell, width, cell);
+          ctx.fillStyle = `${tint}${Math.round(progress * 120)
+            .toString(16)
+            .padStart(2, '0')}`;
+          ctx.fillRect(
+            (width * (1 - progress)) / 2,
+            (row - HIDDEN_ROWS) * cell + cell * 0.44,
+            width * progress,
+            Math.max(1, cell * 0.09),
+          );
+          for (let x = 0; x < WIDTH; x++) {
+            const size = Math.max(1, cell * 0.07 * progress),
+              px = (x + 0.5) * cell,
+              py = (row - HIDDEN_ROWS + 0.5) * cell - (1 - progress) * cell * (x % 2 ? 0.8 : 0.4);
+            ctx.fillRect(px, py, size, size);
+          }
         }
         ctx.strokeStyle = `rgba(192,232,226,${progress * 0.55})`;
         ctx.lineWidth = Math.max(2, ratio * 2);
@@ -597,6 +676,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       );
       const context = incomingPreview.getContext('2d');
       if (context) {
+        context.imageSmoothingEnabled = false;
         context.fillStyle = '#102b35';
         context.fillRect(0, 0, 100, 200);
         nextStage.board.slice(HIDDEN_ROWS).forEach((row, y) =>
@@ -655,20 +735,26 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       lines: state.lastClear?.lines || 0,
       cells: oldPiece ? pieceCells(oldPiece) : [],
       rows,
+      spin: state.lastClear?.spin,
     };
     publish();
+  }
+  function pendingClearRows(piece) {
+    if (!piece) return [];
+    const cells = pieceCells(piece);
+    return state.board.flatMap((row, y) =>
+      y >= HIDDEN_ROWS && row.every((type, x) => type || cells.some((cell) => cell.x === x && cell.y === y))
+        ? [y]
+        : [],
+    );
   }
 
   function act(action) {
     if (destroyed || state.phase !== 'playing') return;
     const oldPiece = state.active ? (action === 'hardDrop' ? ghostPiece(state) : { ...state.active }) : null;
-    const rows = [];
+    const rows = action === 'hardDrop' ? pendingClearRows(oldPiece) : [];
     if (action === 'hardDrop' && oldPiece) {
       const cells = pieceCells(oldPiece);
-      for (let y = HIDDEN_ROWS; y < state.height; y += 1) {
-        if (state.board[y].every((type, x) => type || cells.some((cell) => cell.x === x && cell.y === y)))
-          rows.push(y);
-      }
       if (!reduceMotion() && state.active.y !== oldPiece.y) {
         dropEffect = {
           time: performance.now(),
@@ -767,8 +853,9 @@ export function mount(container, { onUpdate = () => {} } = {}) {
           }
         }
         const oldPiece = state.active ? { ...state.active } : null;
+        const rows = state.lockElapsed > 0.47 ? pendingClearRows(oldPiece) : [];
         step(state, { softDrop: held('softDrop') }, interval);
-        noticeLock(oldPiece);
+        noticeLock(oldPiece, rows);
         accumulator -= interval;
         updateElapsed += interval;
       }
@@ -893,6 +980,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       if (destroyed) return;
       releaseInputs();
       destroyed = true;
+      tiles.clear();
       if (animationId !== null) window.cancelAnimationFrame(animationId);
       resizeObserver?.disconnect();
       window.removeEventListener('keydown', keydown);

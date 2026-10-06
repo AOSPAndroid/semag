@@ -516,6 +516,40 @@
 .circuit-hint {
   color: #52674b;
 }
+.circuit-board {
+  background: linear-gradient(130deg, #e0e3c9, #adbfa2);
+  box-shadow:
+    inset 0 1px #f6f1d6,
+    0 5px 0 #5a715a22,
+    0 13px 23px #304a3410;
+}
+.circuit-canvas {
+  border-color: #5a715c;
+  box-shadow: 0 0 0 1px #f4ecc433;
+}
+.circuit-hud {
+  background: linear-gradient(110deg, #263f3b, #426052);
+  box-shadow: inset 0 1px #7f97824a;
+}
+.circuit-hud .circuit-stat > span {
+  color: #c1d1b5;
+}
+.circuit-hud .circuit-stat > strong {
+  color: #f4e5b9;
+}
+.circuit-hud .circuit-best-lap > strong {
+  color: #eec38c;
+}
+.circuit-track[aria-pressed='true'] {
+  box-shadow:
+    inset 0 2px #c6d0a54a,
+    0 2px 0 #142c2622;
+}
+.circuit-control {
+  box-shadow:
+    inset 0 1px #f6f0d9,
+    0 2px 0 #a2b393;
+}
 @media (max-width: 550px) {
   .circuit-track-choices {
     gap: 5px;

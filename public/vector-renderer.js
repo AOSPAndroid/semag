@@ -1,4 +1,4 @@
-import { WORLD, COVERS, STAGES, WEAPON, DASH } from './vector-engine.js';
+import { WORLD, STAGES, WEAPON, DASH } from './vector-engine.js';
 
 const COLORS = [
   { main: '#eaae79', light: '#ffe2b3', dark: '#905e44', suit: '#4c433b', visor: '#deebd8' },
@@ -27,6 +27,7 @@ export class VectorRenderer {
   constructor(canvas) {
     this.canvas = canvas; this.ctx = canvas.getContext('2d', { alpha: false });
     this.backgrounds = new Map();
+    this.coverLayers = new Map();
     this.background = this.stageBackground('garden');
     this.motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
     this.reducedMotion = this.motionQuery.matches;
@@ -47,19 +48,85 @@ export class VectorRenderer {
   }
 
   resetEffects() {
-    this.particles = []; this.rings = []; this.ghosts = []; this.seen = new Set();
+    this.particles = []; this.rings = []; this.ghosts = []; this.impacts = []; this.seen = new Set();
     this.eventOrder = []; this.lastTick = -1; this.lastTime = 0; this.lastGhost = [-1, -1]; this.hitFlash = [0, 0];
   }
 
-  destroy() { this.observer.disconnect(); this.motionQuery.removeEventListener('change', this.motionChange); this.resetEffects(); this.backgrounds.clear(); }
+  destroy() { this.observer.disconnect(); this.motionQuery.removeEventListener('change', this.motionChange); this.resetEffects(); this.backgrounds.clear(); this.coverLayers.clear(); }
 
   stageBackground(id) {
     const stageId = Object.hasOwn(STAGES, id) ? id : 'garden';
     if (this.backgrounds.has(stageId)) return this.backgrounds.get(stageId);
     const layer = document.createElement('canvas'); layer.width = WORLD.width; layer.height = WORLD.height;
     this.paintBackground(layer.getContext('2d'), stageId);
+    this.paintArenaDetails(layer.getContext('2d'), stageId);
     this.backgrounds.set(stageId, layer);
     return layer;
+  }
+
+  stageCovers(id, obstacles) {
+    const stageId = Object.hasOwn(STAGES, id) ? id : 'garden';
+    const covers = obstacles || STAGES[stageId].covers;
+    const signature = `${stageId}:${covers.map(cover => [cover.x, cover.y, cover.w, cover.h].join(',')).join(';')}`;
+    if (this.coverLayers.has(signature)) return this.coverLayers.get(signature);
+    const layer = document.createElement('canvas'); layer.width = WORLD.width; layer.height = WORLD.height;
+    const ctx = layer.getContext('2d');
+    for (const cover of covers) this.paintCover(ctx, cover, stageId);
+    this.coverLayers.set(signature, layer);
+    if (this.coverLayers.size > 3) this.coverLayers.delete(this.coverLayers.keys().next().value);
+    return layer;
+  }
+
+  paintArenaDetails(ctx, stageId) {
+    // Flush service plates and painted markings enrich each arena without
+    // suggesting additional walls or concealing an opponent's position.
+    const palette = stageId === 'garden' ? ['#4e6849', '#81966a', '#152e25']
+      : stageId === 'relay' ? ['#516c6c', '#9faf9a', '#243b3e'] : ['#695f80', '#baacbc', '#2b334c'];
+    for (const mirror of [false, true]) {
+      ctx.save(); if (mirror) { ctx.translate(WORLD.width, 0); ctx.scale(-1, 1); }
+      for (const y of [57, 552]) {
+        ctx.fillStyle = '#0e24294d'; ctx.fillRect(62, y, 113, 31);
+        ctx.fillStyle = palette[0]; ctx.fillRect(64, y + 2, 109, 27);
+        ctx.fillStyle = palette[1]; ctx.fillRect(66, y + 3, 105, 1);
+        ctx.fillStyle = palette[2]; ctx.fillRect(70, y + 7, 72, 16);
+        for (let x = 75; x < 140; x += 9) { ctx.fillStyle = palette[0]; ctx.fillRect(x, y + 8, 3, 14); }
+        ctx.fillStyle = '#aeb790'; ctx.fillRect(151, y + 8, 13, 3);
+        ctx.fillStyle = '#adc69a66'; ctx.fillRect(151, y + 15, 6, 6);
+      }
+      if (stageId === 'garden') {
+        // Moss stays on the wall edge; isolated small leaves are flat litter.
+        for (const y of [164, 451]) for (let i = 0; i < 6; i += 1) {
+          const x = 19 + i % 3 * 6, py = y + Math.floor(i / 3) * 11;
+          polygon(ctx, [[x, py], [x + 8, py - 5], [x + 13, py], [x + 7, py + 5]], i % 2 ? '#668352' : '#456b44');
+          path(ctx, [[x + 2, py], [x + 10, py]], '#9bb47766');
+        }
+        ctx.globalAlpha = .2;
+        for (const [x, y] of [[211, 297], [376, 445], [155, 191]]) {
+          polygon(ctx, [[x, y], [x + 10, y - 6], [x + 17, y - 1], [x + 9, y + 3]], '#bdad7b');
+        }
+        ctx.globalAlpha = 1;
+      } else if (stageId === 'relay') {
+        for (let y = 101; y < 551; y += 74) {
+          path(ctx, [[37, y], [51, y]], '#d4b98688', 3);
+          path(ctx, [[37, y + 6], [46, y + 6]], '#172b32', 3);
+        }
+        ctx.globalAlpha = .35;
+        for (const y of [225, 400]) {
+          path(ctx, [[218, y], [365, y]], '#a0ada2', 2);
+          polygon(ctx, [[365, y - 5], [375, y], [365, y + 5]], '#a0ada2');
+        }
+        ctx.globalAlpha = 1;
+      } else {
+        for (const [x, y] of [[81, 132], [81, 508]]) {
+          ring(ctx, x, y, 17, '#ac9aad66'); ring(ctx, x, y, 12, '#c0b49444');
+          polygon(ctx, [[x, y - 7], [x + 7, y], [x, y + 7], [x - 7, y]], '#a0aba277');
+        }
+      }
+      ctx.restore();
+    }
+    // Directional numeral stencils are deliberately less bright than bullets.
+    ctx.save(); ctx.globalAlpha = .32; ctx.font = 'bold 17px Consolas, monospace'; ctx.textAlign = 'center';
+    ctx.fillStyle = palette[1]; ctx.fillText('01', 112, 321); ctx.fillText('02', 848, 321); ctx.restore();
   }
 
   paintBackground(ctx, stageId = 'garden') {
@@ -233,10 +300,18 @@ export class VectorRenderer {
         for (let offset = 18; offset < w - 18; offset += 12) { ctx.fillStyle = '#849987'; ctx.fillRect(x + offset, y + 16, 4, h - 35); }
         ctx.fillStyle = '#baaa76'; ctx.fillRect(x + 8, y + h - 11, w - 16, 3);
         for (const ox of [7, w - 10]) for (const oy of [8, h - 11]) { ctx.fillStyle = '#d4cfac'; ctx.fillRect(x + ox, y + oy, 3, 2); }
+        // The exact solid edge is brighter than its recessed cable grate.
+        for (let offset = 12; offset < w - 12; offset += 18) {
+          polygon(ctx, [[x + offset, y + h - 10], [x + offset + 6, y + h - 10], [x + offset + 3, y + h - 6], [x + offset - 3, y + h - 6]], '#253e43');
+        }
       } else {
         path(ctx, [[x + 13, y + h / 2], [x + w / 2, y + 14], [x + w - 13, y + h / 2], [x + w / 2, y + h - 14], [x + 13, y + h / 2]], '#b5ae98', 2);
         ring(ctx, x + w / 2, y + h / 2, Math.min(9, h / 5), '#9fbab3', 2);
         ctx.fillStyle = '#d6dab7'; ctx.fillRect(x + w / 2 - 2, y + h / 2 - 2, 4, 4);
+        for (const sign of [-1, 1]) {
+          path(ctx, [[x + w / 2 + sign * 8, y + 11], [x + w / 2 + sign * 15, y + 15]], '#d8c6b377', 2);
+          path(ctx, [[x + w / 2 + sign * 8, y + h - 11], [x + w / 2 + sign * 15, y + h - 15]], '#d8c6b377', 2);
+        }
       }
       return;
     }
@@ -275,6 +350,10 @@ export class VectorRenderer {
     path(ctx, [[x + w - 19, y + 8], [x + w - 22, y + 15], [x + w - 17, y + 22]], '#485f4199');
     ctx.fillStyle = '#6c8951'; ctx.fillRect(x + w - 19, y + 6, 11, 4); ctx.fillRect(x + w - 11, y + 9, 6, 7);
     ctx.fillStyle = '#96a56a'; ctx.fillRect(x + w - 16, y + 6, 6, 2);
+    for (const [px, py] of [[x + 8, y + h - 17], [x + w - 11, y + 19]]) {
+      polygon(ctx, [[px, py], [px + 6, py - 5], [px + 8, py + 3], [px + 2, py + 7]], '#5c814e');
+      path(ctx, [[px + 1, py + 2], [px + 6, py - 1]], '#a8b279', 1);
+    }
   }
 
   observeEvents(state) {
@@ -286,6 +365,11 @@ export class VectorRenderer {
       const color = COLORS[event.fighter ?? event.owner ?? 0]?.light || '#e1f1b9';
       if (event.type === 'dash') this.rings.push({ x: event.x, y: event.y, radius: 18, age: 0, life: this.reducedMotion ? .12 : .22, color });
       if (event.type === 'hit' && event.target != null) this.hitFlash[event.target] = .14;
+      if (['hit', 'cover'].includes(event.type)) this.impacts.push({ x: event.x, y: event.y, type: event.type, angle: event.id * .83, color, age: 0, life: this.reducedMotion ? .09 : .2 });
+      if (event.type === 'roundEnd') {
+        const fallen = state.fighters.find(fighter => fighter.hp <= 0);
+        if (fallen) this.rings.push({ x: fallen.x, y: fallen.y, radius: 11, age: 0, life: .3, color: COLORS[fallen.id].main });
+      }
       if (!['fire', 'hit', 'cover', 'reloaded'].includes(event.type) || !Number.isFinite(event.x + event.y)) continue;
       const count = this.reducedMotion ? 0 : event.type === 'hit' ? 8 : event.type === 'cover' ? 5 : 2;
       for (let i = 0; i < count; i++) {
@@ -295,6 +379,7 @@ export class VectorRenderer {
     }
     if (this.particles.length > 150) this.particles.splice(0, this.particles.length - 150);
     if (this.rings.length > 12) this.rings.splice(0, this.rings.length - 12);
+    if (this.impacts.length > 24) this.impacts.splice(0, this.impacts.length - 24);
   }
 
   paintFighter(ctx, fighter, time, ghost = false) {
@@ -316,37 +401,53 @@ export class VectorRenderer {
     if (ghost) ctx.globalAlpha *= .18;
     if (fighter.hp <= 0) ctx.globalAlpha *= .45;
     const stride = fighter.action === 'run' && !this.reducedMotion ? Math.sin(time / 85) * 2 : 0;
-    // Boots, shoulder plates, backpack and helmet make a directional runner.
-    // Every body block remains inside the engine's 16px radius; the gun is cosmetic.
+    // Pilot 01 wears a broad siege helmet; Pilot 02 has a narrow swept visor.
+    // Their colored torso cores stay inside the physical 16px body radius.
     ctx.fillStyle = '#101f1c'; ctx.fillRect(-9 - stride, -10, 8, 6); ctx.fillRect(-9 + stride, 4, 8, 6);
     ctx.fillStyle = '#667563'; ctx.fillRect(-8 - stride, -10, 5, 1); ctx.fillRect(-8 + stride, 4, 5, 1);
-    polygon(ctx, [[-14, -6], [-8, -13], [7, -13], [14, -6], [14, 6], [7, 13], [-8, 13], [-14, 6]], '#11261f');
+    polygon(ctx, [[-14, -5], [-7, -13], [7, -12], [14, -5], [14, 5], [7, 12], [-7, 13], [-14, 5]], '#11261f');
     ctx.fillStyle = color.suit; ctx.fillRect(-12, -7, 22, 14);
-    ctx.fillStyle = color.dark; ctx.fillRect(-8, -12, 15, 5); ctx.fillRect(-8, 7, 15, 5);
-    ctx.fillStyle = color.main; ctx.fillRect(-7, -12, 11, 3); ctx.fillRect(-7, 8, 11, 3);
-    // Harness and compact backpack sit behind the higher helmet plane.
-    ctx.fillStyle = '#243a2d'; ctx.fillRect(-12, -6, 6, 12);
-    ctx.fillStyle = '#768571'; ctx.fillRect(-11, -5, 3, 10);
-    ctx.fillStyle = '#a6ab82'; ctx.fillRect(-11, -4, 3, 2); ctx.fillRect(-11, 2, 3, 2);
-    ctx.fillStyle = color.main; ctx.fillRect(-4, -8, 13, 16);
-    ctx.fillStyle = color.light; ctx.fillRect(-3, -8, 10, 2);
-    ctx.fillStyle = color.dark; ctx.fillRect(-3, 5, 11, 3);
-    ctx.fillStyle = '#102e28'; ctx.fillRect(3, -6, 8, 12);
-    ctx.fillStyle = '#355b51'; ctx.fillRect(5, -5, 5, 10);
-    ctx.fillStyle = color.visor; ctx.fillRect(8, -4, 2, 8);
-    ctx.fillStyle = '#b2cab0'; ctx.fillRect(5, -5, 5, 1);
-    // Gloved hands bracket a steel barrel with a short copper sight rail.
-    ctx.fillStyle = color.dark; ctx.fillRect(9, -8, 5, 4); ctx.fillRect(9, 4, 5, 4);
-    ctx.fillStyle = '#102721'; ctx.fillRect(8, -3, 17, 6);
-    ctx.fillStyle = '#9bab9b'; ctx.fillRect(11, -3, 11, 2);
-    ctx.fillStyle = '#4a6b58'; ctx.fillRect(10, 1, 13, 2);
-    ctx.fillStyle = '#d6c39a'; ctx.fillRect(18, -2, 5, 1);
-    ctx.fillStyle = '#c4d1bd'; ctx.fillRect(23, -2, 2, 4);
+    for (const sign of [-1, 1]) {
+      polygon(ctx, [[-7, sign * 6], [-4, sign * 13], [6, sign * 11], [10, sign * 5]], color.dark);
+      polygon(ctx, [[-5, sign * 7], [-3, sign * 11], [5, sign * 9], [7, sign * 5]], color.main);
+      path(ctx, [[-2, sign * 10], [5, sign * 8]], color.light, 2);
+    }
+    ctx.fillStyle = '#203d35'; ctx.fillRect(-13, -5, 7, 10);
+    ctx.fillStyle = '#95a98b'; ctx.fillRect(-12, -4, 4, 2); ctx.fillRect(-12, 2, 4, 2);
+    ctx.fillStyle = '#e0cda0'; ctx.fillRect(-10, -1, 2, 2);
+    if (fighter.id === 0) {
+      polygon(ctx, [[-4, -8], [7, -9], [13, -3], [13, 3], [7, 9], [-4, 8]], color.main);
+      path(ctx, [[-3, -7], [7, -7], [11, -3]], color.light, 2);
+      polygon(ctx, [[2, -5], [10, -4], [12, 0], [10, 4], [2, 5]], '#25483f');
+      ctx.fillStyle = '#497366'; ctx.fillRect(5, -3, 5, 6);
+      path(ctx, [[7, -3], [10, -2], [10, 2]], color.visor, 2);
+      ctx.fillStyle = color.dark; ctx.fillRect(-1, 5, 5, 2);
+    } else {
+      polygon(ctx, [[-7, -6], [3, -10], [12, -4], [14, 0], [12, 4], [3, 10], [-7, 6]], color.main);
+      polygon(ctx, [[-3, -5], [6, -6], [12, 0], [6, 6], [-3, 5]], '#254a4b');
+      path(ctx, [[1, -4], [7, -3], [11, 0], [7, 3]], color.visor, 2);
+      path(ctx, [[-5, -6], [2, -8], [7, -5]], color.light, 2);
+      ctx.fillStyle = color.dark; ctx.fillRect(-5, 4, 5, 2);
+    }
+    // Reloading visibly opens the magazine hand; recoil changes only the pose.
+    const recoil = fighter.shotCooldown > WEAPON.shotTicks - 4 ? 2 : 0;
+    ctx.save(); if (fighter.reloadTicks > 0) ctx.rotate(.24);
+    ctx.fillStyle = color.dark; ctx.fillRect(8 - recoil, -7, 5, 4); ctx.fillRect(8 - recoil, 3, 5, 4);
+    ctx.fillStyle = '#102721'; ctx.fillRect(8 - recoil, -3, 17, 6);
+    ctx.fillStyle = '#aabbb0'; ctx.fillRect(10 - recoil, -3, 13, 2);
+    ctx.fillStyle = '#4a6b58'; ctx.fillRect(10 - recoil, 1, 13, 2);
+    ctx.fillStyle = '#e0d0a4'; ctx.fillRect(15 - recoil, -2, 5, 1);
+    ctx.fillStyle = '#c4d1bd'; ctx.fillRect(23 - recoil, -2, 2, 4);
+    if (fighter.reloadTicks > 0) {
+      ctx.fillStyle = '#31473e'; ctx.fillRect(10, 7, 7, 4);
+      ctx.fillStyle = color.main; ctx.fillRect(11, 7, 5, 2);
+    }
+    ctx.restore();
     if (!ghost && this.hitFlash[fighter.id] > 0) {
       ctx.strokeStyle = color.light; ctx.lineWidth = 1.5; ctx.strokeRect(-4, -8, 13, 16);
     }
     if (!ghost && fighter.shotCooldown > WEAPON.shotTicks - 4) {
-      polygon(ctx, [[26, -3], [34, 0], [26, 3], [28, 0]], color.light);
+      polygon(ctx, [[26, -4], [37, -1], [31, 0], [37, 1], [26, 4], [28, 0]], color.light);
     }
     ctx.restore();
     if (!ghost && fighter.hp < fighter.maxHp && fighter.hp > 0) {
@@ -367,15 +468,27 @@ export class VectorRenderer {
     if (this.ghosts.length > 12) this.ghosts.splice(0, this.ghosts.length - 12);
     this.ghosts = this.ghosts.filter(ghost => (ghost.age += dt) < .13);
     for (const ghost of this.ghosts) { ctx.save(); ctx.globalAlpha = 1 - ghost.age / .13; this.paintFighter(ctx, ghost.fighter, time, true); ctx.restore(); }
-    for (const cover of state.obstacles || COVERS) this.paintCover(ctx, cover, state.stageId);
+    ctx.drawImage(this.stageCovers(state.stageId, state.obstacles), 0, 0);
     for (const projectile of state.projectiles || []) {
       const color = COLORS[projectile.owner] || COLORS[0], speed = Math.hypot(projectile.vx, projectile.vy) || 1;
       path(ctx, [[projectile.x - projectile.vx / speed * 20, projectile.y - projectile.vy / speed * 20], [projectile.x, projectile.y]], '#0e211ecc', 5);
       path(ctx, [[projectile.x - projectile.vx / speed * 17, projectile.y - projectile.vy / speed * 17], [projectile.x, projectile.y]], color.main + 'a0', 2);
       path(ctx, [[projectile.x - projectile.vx / speed * 7, projectile.y - projectile.vy / speed * 7], [projectile.x, projectile.y]], color.light, 2);
       ctx.fillStyle = color.light; ctx.fillRect(projectile.x - 3, projectile.y - 3, 6, 6);
+      ctx.fillStyle = '#fff6db'; ctx.fillRect(projectile.x - 1, projectile.y - 1, 2, 2);
     }
     for (const fighter of state.fighters) this.paintFighter(ctx, fighter, time);
+    this.impacts = this.impacts.filter(effect => (effect.age += dt) < effect.life);
+    for (const impact of this.impacts) {
+      ctx.save(); ctx.translate(impact.x, impact.y); ctx.rotate(impact.angle); ctx.globalAlpha = 1 - impact.age / impact.life;
+      const outer = impact.type === 'hit' ? 15 : 10;
+      for (let i = 0; i < 4; i += 1) {
+        ctx.rotate(Math.PI / 2);
+        path(ctx, [[5, 0], [outer, 0]], '#17372c', 4);
+        path(ctx, [[5, 0], [outer, 0]], impact.color, 2);
+      }
+      ring(ctx, 0, 0, 4, impact.color, 1.5); ctx.restore();
+    }
     this.rings = this.rings.filter(effect => (effect.age += dt) < effect.life);
     for (const effect of this.rings) { ctx.save(); ctx.globalAlpha = 1 - effect.age / effect.life; ring(ctx, effect.x, effect.y, effect.radius + (this.reducedMotion ? 0 : effect.age * 65), effect.color, 2); ctx.restore(); }
     this.particles = this.particles.filter(particle => (particle.age += dt) < particle.life);

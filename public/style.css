@@ -3,3 +3,9 @@
 
 .training-panel{display:flex;align-items:center;gap:24px;padding:22px;border:1px solid #3c4b3b;background:#1b241e;border-radius:6px;margin-bottom:20px}.training-panel[hidden]{display:none}.training-panel label{font:10px var(--mono);color:var(--green);display:grid;gap:9px;min-width:220px}.training-panel select{min-height:44px;background:#111914;color:#ecf0e3;border:1px solid #54644c;border-radius:4px;padding:8px;font:13px var(--font);max-width:100%}.training-panel div{flex:1;min-width:0}.training-panel strong{font-size:15px;font-weight:600}.training-panel p{margin:8px 0 0;color:#b4c0ae;font-size:13px;line-height:1.5}.training-panel>span{font:11px var(--mono);color:var(--green)}@media(max-width:650px){.training-panel{align-items:stretch;flex-direction:column;gap:16px;padding:17px}.training-panel label{min-width:0}.training-panel select{width:100%}.training-panel>span{font-size:11px}}
 @media(max-width:650px){.lobby-actions{min-width:0;gap:8px}.lobby-actions>button{flex:1 1 0;min-width:0;min-height:48px;height:auto;padding:10px 11px;gap:9px;white-space:normal;font-size:12px;line-height:1.35}.lobby-actions>button svg{flex-shrink:0}.lobby-actions>button span{min-width:0}}
+@media(max-width:430px){
+  .topbar{gap:8px}.brand{font-size:14px;gap:5px;letter-spacing:.7px}
+  .brand>svg{width:23px;height:23px}.top-actions{gap:5px;flex-shrink:0}
+  .connection{font-size:8px;letter-spacing:.2px;gap:5px;margin-right:0}
+  .icon-button{width:30px;height:30px}
+}

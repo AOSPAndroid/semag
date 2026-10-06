@@ -117,12 +117,18 @@ async function drawPreviews() {
     })(),
   ]);
   const draws = requests.filter(r => r.status === 'fulfilled').map(r => r.value);
+  const boardArtwork = new Image();
+  boardArtwork.src = '/hub/checkers-cover.svg';
   const drawBoard = () => {
     const canvas = $('preview-checkers'), ctx = canvas.getContext('2d');
     const dpr = Math.min(devicePixelRatio || 1, 2), rect = canvas.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return;
     canvas.width = rect.width * dpr; canvas.height = rect.height * dpr;
     ctx.setTransform(canvas.width / 900, 0, 0, canvas.height / 600, 0, 0);
+    if (boardArtwork.complete && boardArtwork.naturalWidth) {
+      ctx.drawImage(boardArtwork, 0, 0, 900, 600);
+      return;
+    }
     const background = ctx.createLinearGradient(0, 0, 900, 600); background.addColorStop(0, '#d7c39b'); background.addColorStop(1, '#ac956e');
     ctx.fillStyle = background; ctx.fillRect(0, 0, 900, 600);
     ctx.save(); ctx.translate(450, 345); ctx.rotate(-.14); ctx.scale(1.05, .8); ctx.translate(-245, -245);
@@ -152,6 +158,7 @@ async function drawPreviews() {
   // Draw after the game renderers have resized (which clears their canvases).
   const previewObserver = new ResizeObserver(scheduleRedraw);
   document.querySelectorAll('.game-art canvas').forEach(canvas => previewObserver.observe(canvas));
+  boardArtwork.addEventListener('load', scheduleRedraw);
   window.addEventListener('resize', scheduleRedraw);
   scheduleRedraw();
 }

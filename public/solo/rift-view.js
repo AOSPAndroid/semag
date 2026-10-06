@@ -61,6 +61,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   let rings = [];
   let hitMarkers = [];
   let arcs = [];
+  let fragments = [];
+  let enemyFlashes = [];
   let upgradeSignature = '';
   let aimPoint = null;
   let aimVector = { x: 1, y: 0 };
@@ -189,6 +191,9 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   const displayContext = canvas.getContext('2d');
   let ctx = displayContext;
   const floorLayers = SECTORS.map(() => {
+    const layer = document.createElement('canvas'); layer.width = W; layer.height = H; return layer;
+  });
+  const coverLayers = SECTORS.map(() => {
     const layer = document.createElement('canvas'); layer.width = W; layer.height = H; return layer;
   });
 
@@ -469,32 +474,96 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       }
       ctx.globalAlpha = 1;
     }
+    // Recessed service equipment belongs to the floor, never to collision.
+    for (const sign of [-1, 1]) {
+      const x = sign < 0 ? 78 : W - 138;
+      for (const y of [244, 366]) {
+        rect(x, y, 60, 48, '#142d32'); rect(x + 2, y + 2, 56, 44, palette.tile);
+        rect(x + 5, y + 4, 50, 2, palette.edge);
+        for (let i = 0; i < 5; i += 1) rect(x + 8 + i * 9, y + 11, 4, 17, '#173438');
+        rect(x + 9, y + 35, 22, 2, palette.accent); rect(x + 42, y + 34, 6, 4, '#203c40');
+      }
+    }
+    ctx.globalAlpha = .3;
+    if (sectorIndex === 1) {
+      for (const sign of [-1, 1]) {
+        const x = sign < 0 ? 91 : W - 91;
+        polygon([[x - 33, 170], [x + 22, 143], [x + 44, 180], [x + 24, 205], [x - 22, 204]], '#7097a2');
+        line(x - 20, 176, x + 23, 181, '#b1ccd0', 2);
+      }
+      for (const y of [55, H - 55]) for (let x = 220; x < W - 180; x += 106) {
+        line(x, y, x + 41, y + 13, '#86b7bf', 2); line(x + 41, y + 13, x + 56, y + 9, '#86b7bf');
+      }
+    } else if (sectorIndex === 2) {
+      for (const sign of [-1, 1]) for (const y of [183, 482]) {
+        const x = sign < 0 ? 82 : W - 82;
+        for (let i = 0; i < 5; i += 1) {
+          const a = i * 1.26;
+          polygon([[x, y], [x + Math.cos(a) * 31, y + Math.sin(a) * 31], [x + Math.cos(a + .45) * 27, y + Math.sin(a + .45) * 27]], i % 2 ? '#7f9b67' : '#526f4d');
+        }
+        circle(x, y, 7, '#afb573');
+      }
+    } else if (sectorIndex === 3) {
+      for (const x of [107, W - 107]) for (const y of [179, 504]) {
+        circle(x, y, 31, '#a491b7', true); circle(x, y, 23, '#a491b7', true);
+        polygon([[x, y - 18], [x + 12, y], [x, y + 18], [x - 12, y]], '#a899b7');
+        line(x - 37, y, x + 37, y, '#a491b7');
+      }
+    } else {
+      for (const y of [154, H - 154]) {
+        line(212, y, 258, y, '#a3ae80', 2); line(W - 258, y, W - 212, y, '#a3ae80', 2);
+        rect(231, y - 4, 8, 8, '#859f7d'); rect(W - 239, y - 4, 8, 8, '#859f7d');
+      }
+    }
+    ctx.globalAlpha = 1;
     ctx.font = 'bold 13px ui-monospace, monospace'; ctx.fillStyle = palette.edge;
     ctx.textAlign = 'center'; ctx.fillText(String(sectorIndex + 1).padStart(2, '0'), W / 2, 58);
     ctx.font = '9px ui-monospace, monospace'; ctx.fillStyle = palette.edge;
     ctx.fillText(palette.name.toUpperCase(), W / 2, H - 34); ctx.textAlign = 'left';
   }
-  function cover() {
+  function cover(sectorIndex = 0) {
+    const materials = [
+      { frame: '#899680', light: '#d2cba0', panel: '#516b5b', inset: '#29443e', trim: '#ada174' },
+      { frame: '#82a2ad', light: '#d4e5dc', panel: '#4b727e', inset: '#294956', trim: '#9bd0d2' },
+      { frame: '#879271', light: '#c5c69a', panel: '#637351', inset: '#394b39', trim: '#b9b886' },
+      { frame: '#9e91b3', light: '#dfcbe0', panel: '#66597e', inset: '#3d3957', trim: '#c9b0d5' },
+    ];
+    const material = materials[sectorIndex];
     for (const obstacle of OBSTACLES) {
       const { x, y, width, height } = obstacle;
       rect(x + 7, y + 8, width + 1, height + 2, '#132c31');
-      rect(x, y, width, height, '#7c8971');
-      rect(x + 3, y + 3, width - 6, height - 6, '#3b554b');
-      rect(x + 4, y + 4, width - 8, height - 18, '#586f5d');
-      rect(x + 4, y + height - 14, width - 8, 10, '#29463e');
+      rect(x, y, width, height, material.frame);
+      rect(x + 3, y + 3, width - 6, height - 6, material.inset);
+      rect(x + 4, y + 4, width - 8, height - 18, material.panel);
+      rect(x + 4, y + height - 14, width - 8, 10, material.inset);
       rect(x + 4, y + height - 14, width - 8, 2, '#70856b');
-      rect(x + 5, y + 4, width - 10, 3, '#a9ad88');
+      rect(x + 5, y + 4, width - 10, 3, material.light);
       rect(x + 7, y + 10, width - 14, 1, '#7e9273');
-      rect(x + 11, y + 15, width - 22, height - 40, '#3e594e');
-      rect(x + 13, y + 17, width - 26, height - 44, '#4c6656');
-      line(x + 17, y + 20, x + width - 17, y + height - 28, '#7c8d6f', 3);
-      line(x + width - 17, y + 20, x + 17, y + height - 28, '#7c8d6f', 3);
+      rect(x + 11, y + 15, width - 22, height - 40, material.inset);
+      rect(x + 13, y + 17, width - 26, height - 44, material.panel);
+      if (sectorIndex === 0) {
+        for (let offset = 18; offset < width - 15; offset += 9) rect(x + offset, y + 20, 4, height - 43, '#203b36');
+      } else if (sectorIndex === 1) {
+        polygon([[x + 28, y + 20], [x + 46, y + 14], [x + 62, y + 28], [x + 48, y + 45], [x + 29, y + 38]], '#8cb4bf');
+        line(x + 46, y + 18, x + 42, y + 40, '#e0eeeb', 2);
+      } else if (sectorIndex === 2) {
+        line(x + 17, y + 20, x + width - 17, y + height - 28, '#97a170', 4);
+        line(x + width - 17, y + 20, x + 17, y + height - 28, '#77865c', 3);
+      } else {
+        polygon([[x + 45, y + 14], [x + 64, y + 30], [x + 45, y + 47], [x + 26, y + 30]], '#a291b4');
+        polygon([[x + 45, y + 20], [x + 57, y + 30], [x + 45, y + 41], [x + 33, y + 30]], '#4e486b');
+      }
       rect(x + width / 2 - 7, y + height / 2 - 8, 14, 10, '#29483e');
-      rect(x + width / 2 - 4, y + height / 2 - 6, 8, 5, '#b4b68a');
+      rect(x + width / 2 - 4, y + height / 2 - 6, 8, 5, material.light);
       for (const ox of [7, width - 10]) for (const oy of [8, height - 10]) {
         rect(x + ox, y + oy, 4, 4, '#c8bd87'); rect(x + ox + 1, y + oy + 1, 2, 2, '#6a7358');
       }
-      for (let stripe = 0; stripe < 4; stripe += 1) rect(x + 12 + stripe * 18, y + height - 9, 9, 3, '#7f8160');
+      for (let stripe = 0; stripe < 4; stripe += 1) rect(x + 12 + stripe * 18, y + height - 9, 9, 3, material.trim);
+      if (sectorIndex === 2) {
+        line(x + 8, y + 6, x + 18, y + 48, '#3b573d', 4);
+        polygon([[x + 12, y + 18], [x + 23, y + 13], [x + 18, y + 26]], '#a6b583');
+        polygon([[x + 17, y + 32], [x + 5, y + 31], [x + 12, y + 43]], '#7b9567');
+      }
     }
   }
   function telegraph(enemy) {
@@ -554,41 +623,79 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     }
     ctx.restore();
   }
+  function guardianSprite(enemy, x, y) {
+    const sectorIndex = enemy.bossSector;
+    const winding = enemy.phase === 'windup' || enemy.phase === 'burst';
+    const pulse = reducedMotion.matches ? 0 : Math.sin(state.elapsed * 4) * 1.5;
+    ctx.save(); ctx.translate(x, y);
+    const face = Math.atan2(enemy.aimY, enemy.aimX);
+    if (sectorIndex === 0) {
+      // The Warden: a compact horned siege suit with a split faceplate.
+      polygon([[-29, -16], [-19, -30], [19, -30], [29, -16], [29, 17], [17, 29], [-17, 29], [-29, 17]], '#422f41');
+      for (const sign of [-1, 1]) {
+        polygon([[sign * 14, -18], [sign * 22, -37], [sign * 29, -26], [sign * 24, -7]], '#cab49b');
+        polygon([[sign * 13, -17], [sign * 30, -11], [sign * 29, 14], [sign * 19, 22]], winding ? '#e3b4c4' : '#bf8195');
+        line(sign * 17, -13, sign * 26, -9, '#f0c6b0', 3);
+        rect(sign * 20 - 5, 17, 10, 13, '#735367');
+        rect(sign * 20 - 5, 17, 10, 3, '#dca6ad');
+      }
+      polygon([[-16, -23], [16, -23], [21, 11], [10, 24], [-10, 24], [-21, 11]], '#a97187');
+      polygon([[-13, -18], [13, -18], [14, 8], [0, 19], [-14, 8]], '#574052');
+      rect(-11, -15, 22, 5, '#251f34'); rect(-10, -14, 8, 2, '#ffe3b3'); rect(2, -14, 8, 2, '#ffe3b3');
+      polygon([[0, -2], [9, 8], [0, 20], [-9, 8]], winding ? '#ffe5bb' : '#e6abaf');
+      rect(-2, 3, 4, 9, '#fff0cd');
+    } else if (sectorIndex === 1) {
+      // The Archivist: an icy central prism between two mechanical folios.
+      for (const sign of [-1, 1]) {
+        polygon([[sign * 12, -21], [sign * 29, -28], [sign * 35, -9], [sign * 29, 22], [sign * 11, 12]], '#335565');
+        polygon([[sign * 14, -20], [sign * 27, -25], [sign * 31, -8], [sign * 26, 18], [sign * 14, 9]], winding ? '#d9eff1' : '#97c2d0');
+        for (let row = 0; row < 4; row += 1) line(sign * 17, -14 + row * 7, sign * 27, -17 + row * 7, '#466c80', 2);
+        polygon([[sign * 13, 20], [sign * 22, 28], [sign * 14, 33], [sign * 8, 23]], '#95b9cb');
+      }
+      polygon([[0, -34 - pulse], [14, -12], [11, 19], [0, 33 + pulse], [-11, 19], [-14, -12]], '#c6e6e5');
+      polygon([[0, -28], [8, -10], [5, 19], [0, 27], [-7, 11], [-8, -10]], '#5f8aa3');
+      polygon([[0, -23], [3, -6], [0, 20], [-4, 0]], winding ? '#fff7d8' : '#c5eff2');
+      rect(-8, -10, 16, 5, '#264958'); rect(-5, -9, 10, 2, '#e4fcf4');
+    } else if (sectorIndex === 2) {
+      // The Thorn Regent: a living seed pod with four hooked bark limbs.
+      for (let i = 0; i < 4; i += 1) {
+        ctx.save(); ctx.rotate(Math.PI / 4 + i * Math.PI / 2);
+        polygon([[12, -8], [32, -14], [37, -3], [25, 10], [14, 9]], '#48513a');
+        polygon([[14, -6], [29, -11], [31, -4], [22, 6], [14, 7]], winding ? '#d5d99e' : '#91a970');
+        polygon([[26, -9], [38, -15], [32, 0]], '#d5c594');
+        ctx.restore();
+      }
+      polygon([[0, -29], [20, -20], [27, 1], [15, 25], [0, 31], [-15, 25], [-27, 1], [-20, -20]], '#40533d');
+      polygon([[0, -26], [15, -16], [20, 2], [10, 21], [0, 26], [-13, 19], [-20, 0], [-15, -16]], '#9eac76');
+      polygon([[0, -19], [10, -8], [9, 15], [0, 23], [-9, 15], [-10, -8]], '#617d55');
+      polygon([[0, -10], [7, 2], [0, 16], [-7, 2]], winding ? '#ffedb3' : '#d9ca90');
+      for (const sign of [-1, 1]) line(sign * 5, -16, sign * 15, -21, '#e0d4a6', 3);
+      rect(-12, -10, 8, 3, '#253b32'); rect(4, -10, 8, 3, '#253b32');
+      rect(-10, -9, 5, 1, '#eff6bd'); rect(5, -9, 5, 1, '#eff6bd');
+    } else {
+      // The Crown of Glass: eight angular plates around a suspended star core.
+      for (let i = 0; i < 8; i += 1) {
+        ctx.save(); ctx.rotate(i * Math.PI / 4 + (reducedMotion.matches ? 0 : Math.sin(state.elapsed * .7) * .04));
+        polygon([[15, -6], [28, -11], [36 + pulse, 0], [28, 11], [15, 6]], '#65517f');
+        polygon([[18, -4], [28, -8], [32 + pulse, 0], [27, 6], [20, 4]], winding ? '#ead8ed' : i % 2 ? '#c3acd7' : '#a58abf');
+        line(25, -5, 30, 0, '#f2dae7', 2); ctx.restore();
+      }
+      polygon([[0, -25], [17, -17], [25, 0], [17, 17], [0, 25], [-17, 17], [-25, 0], [-17, -17]], '#3c355b');
+      polygon([[0, -20], [12, -12], [18, 0], [12, 12], [0, 20], [-12, 12], [-18, 0], [-12, -12]], '#997dac');
+      polygon([[0, -14], [5, -4], [15, 0], [5, 4], [0, 15], [-5, 4], [-15, 0], [-5, -4]], winding ? '#fff0db' : '#e7c2de');
+      circle(0, 0, 4, '#fbf1cd');
+    }
+    // The small face mark follows the actual locked attack direction.
+    ctx.rotate(face); polygon([[enemy.radius - 4, -3], [enemy.radius + 2, 0], [enemy.radius - 4, 3]], '#fff0bd');
+    ctx.restore();
+  }
   function enemySprite(enemy) {
     const x = Math.round(enemy.x); const y = Math.round(enemy.y);
     const r = enemy.radius;
     circle(x + 4, y + 6, r + 2, '#10282d');
     const winding = enemy.phase === 'windup';
     if (enemy.type === 'boss') {
-      const sovereign = enemy.bossSector % 2 === 1;
-      const armor = winding ? '#e4bad0' : ['#c88898', '#a4c2ce', '#a2b888', '#a698cb'][enemy.bossSector];
-      const highlight = ['#efbfaa', '#dcf1ec', '#d6dbaa', '#d7c6e4'][enemy.bossSector];
-      if (sovereign) {
-        polygon([[x - 30, y - 24], [x - 18, y - 36], [x, y - 26], [x + 18, y - 36], [x + 30, y - 24], [x + 24, y + 23], [x, y + 33], [x - 24, y + 23]], '#4c4266');
-        for (const sign of [-1, 1]) {
-          polygon([[x + sign * 15, y - 23], [x + sign * 27, y - 39], [x + sign * 29, y - 8]], highlight);
-          polygon([[x + sign * 15, y - 13], [x + sign * 31, y - 22], [x + sign * 27, y + 25], [x + sign * 16, y + 17]], armor);
-        }
-        polygon([[x, y - 31], [x + 16, y - 9], [x + 10, y + 25], [x, y + 31], [x - 10, y + 25], [x - 16, y - 9]], '#665781');
-        rect(x - 10, y - 15, 20, 5, '#d8cae8'); rect(x - 8, y - 10, 16, 6, '#253847');
-        rect(x - 5, y - 8, 10, 3, '#f0c7e0');
-        polygon([[x, y], [x + 9, y + 11], [x, y + 23], [x - 9, y + 11]], '#c1d9c4');
-        polygon([[x, y + 4], [x + 4, y + 11], [x, y + 17], [x - 4, y + 11]], '#e8efcb');
-      } else {
-        polygon([[x - 29, y - 20], [x - 18, y - 31], [x + 18, y - 31], [x + 29, y - 20], [x + 29, y + 19], [x + 17, y + 30], [x - 17, y + 30], [x - 29, y + 19]], '#593d4f');
-        for (const sign of [-1, 1]) {
-          rect(x + sign * 21 - 4, y - 36, 8, 20, '#ccb59b');
-          rect(x + sign * 21 - 2, y - 38, 5, 8, '#ece0bc');
-          rect(x + sign * 25 - 6, y - 17, 12, 29, armor);
-          rect(x + sign * 25 - 5, y - 16, 10, 4, highlight);
-          rect(x + sign * 21 - 5, y + 14, 10, 14, '#987481');
-        }
-        rect(x - 18, y - 23, 36, 45, armor); rect(x - 15, y - 23, 30, 4, highlight);
-        rect(x - 13, y - 16, 26, 29, '#6a4a59');
-        rect(x - 13, y - 15, 26, 4, '#3b3342'); rect(x - 10, y - 13, 7, 3, '#ffe4ba'); rect(x + 3, y - 13, 7, 3, '#ffe4ba');
-        polygon([[x, y - 3], [x + 10, y + 9], [x, y + 21], [x - 10, y + 9]], '#e1a5a9');
-        rect(x - 3, y + 5, 6, 9, '#f6d6bc');
-      }
+      guardianSprite(enemy, x, y);
     } else if (enemy.type === 'brute') {
       ctx.save(); ctx.translate(x, y);
       ctx.rotate(Math.atan2(enemy.aimY, enemy.aimX));
@@ -600,21 +707,35 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       rect(-7, -9, 22, 18, '#485145'); rect(7, -7, 9, 14, '#d9ba7e');
       rect(12, -4, 5, 8, winding ? '#fff0c3' : '#f0cd93');
       rect(-6, -13, 4, 5, '#c9b47d'); rect(-6, 8, 4, 5, '#c9b47d');
+      for (const sign of [-1, 1]) {
+        polygon([[9, sign * 9], [18, sign * 14], [24, sign * 7], [20, sign * 3]], '#ead19a');
+        rect(-17, sign * 18 - 2, 15, 4, '#293e3b');
+        for (let i = 0; i < 3; i += 1) rect(-15 + i * 5, sign * 18 - 1, 2, 2, '#d2b984');
+      }
+      rect(-10, -3, 13, 6, '#718067'); rect(-7, -1, 7, 2, '#e9d2a4');
       ctx.restore();
     } else if (enemy.type === 'weaver') {
       ctx.save(); ctx.translate(x, y); ctx.rotate(Math.atan2(enemy.aimY, enemy.aimX));
       polygon([[-17, -10], [-4, -13], [16, 0], [-4, 13], [-17, 10], [-10, 0]], winding ? '#bce4dc' : '#68a49b');
+      const wing = reducedMotion.matches ? 0 : Math.sin(state.elapsed * 9 + enemy.id) * 2;
+      for (const sign of [-1, 1]) {
+        polygon([[-9, sign * 8], [-20, sign * (16 + wing)], [-5, sign * (22 + wing)], [5, sign * 9]], '#386b70');
+        line(-14, sign * (15 + wing), -5, sign * (18 + wing), '#9ed9c7', 2);
+      }
       polygon([[-9, -6], [7, 0], [-9, 6]], '#314f54');
       rect(6, -3, 9, 6, '#e6dab5'); rect(-18, -13, 5, 5, '#8bc3ad'); rect(-18, 8, 5, 5, '#8bc3ad');
       ctx.restore();
     } else if (enemy.type === 'ranged') {
-      polygon([[x, y - 19], [x + 11, y - 9], [x + 15, y + 11], [x + 8, y + 18], [x + 2, y + 11], [x - 4, y + 18], [x - 15, y + 11], [x - 11, y - 9]], '#655879');
-      polygon([[x, y - 18], [x + 8, y - 9], [x + 11, y + 7], [x - 11, y + 7], [x - 8, y - 9]], winding ? '#c4b9df' : '#a092ba');
-      rect(x - 8, y - 8, 16, 11, '#35404e'); rect(x - 4, y - 6, 8, 4, '#f0c5df');
-      rect(x - 11, y + 7, 5, 8, '#9185a8'); rect(x + 6, y + 7, 5, 8, '#9185a8');
-      rect(x - 3, y + 5, 6, 12, '#726681');
-      circle(x + enemy.aimX * 16, y + enemy.aimY * 16, 5, '#edd1e3');
-      circle(x + enemy.aimX * 16, y + enemy.aimY * 16, 2, '#fff2d8');
+      ctx.save(); ctx.translate(x, y); ctx.rotate(Math.atan2(enemy.aimY, enemy.aimX));
+      polygon([[-16, -5], [-9, -16], [5, -11], [13, -7], [13, 7], [5, 11], [-9, 16], [-16, 5]], '#493f62');
+      polygon([[-13, -3], [-7, -13], [3, -8], [10, 0], [3, 8], [-7, 13], [-13, 3]], winding ? '#cfc2e0' : '#a497c1');
+      rect(-11, -5, 14, 10, '#55516f'); rect(-8, -4, 7, 8, '#d0b2cf');
+      polygon([[0, -6], [9, -5], [15, 0], [9, 5], [0, 6]], '#384251');
+      for (const offset of [-.16, 0, .16]) {
+        ctx.save(); ctx.rotate(offset); rect(10, -2, 10, 4, '#8c6c98'); rect(17, -2, 3, 4, winding ? '#fff1d9' : '#eed0e3'); ctx.restore();
+      }
+      line(-10, -11, -4, -9, '#e8d4da', 2); line(-10, 11, -4, 9, '#b19bc3', 2);
+      ctx.restore();
     } else {
       ctx.save(); ctx.translate(x, y);
       const facing = winding ? Math.atan2(enemy.aimY, enemy.aimX) : Math.atan2(state.player.y - y, state.player.x - x);
@@ -630,6 +751,12 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       polygon([[1, -8], [13, -7], [17, -2], [17, 2], [13, 7], [1, 8]], '#dfab91');
       rect(7, -5, 8, 10, '#593b42'); rect(12, -3, 3, 6, '#ffe2aa');
       rect(-13, -5, 5, 10, '#a66559'); ctx.restore();
+      ctx.save(); ctx.translate(x, y); ctx.rotate(facing);
+      for (const sign of [-1, 1]) {
+        polygon([[3, sign * 8], [12, sign * 15], [19, sign * 11], [11, sign * 10]], winding ? '#ffe0ba' : '#e6b294');
+        line(-9, sign * 10, -2, sign * 12, '#f0c5a8', 2);
+      }
+      ctx.restore();
     }
     if (enemy.elite) {
       const eliteColor = { swift: '#87d1cb', armored: '#f2cd87', volatile: '#ed9b8d' }[enemy.affix];
@@ -639,6 +766,11 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       ctx.fillText(symbol, x, y - r - 12); ctx.textAlign = 'left';
     }
     if (enemy.slowTime > 0) circle(x, y, r + 3, '#99dce0', true, 1.5);
+    const flash = enemyFlashes.find(item => item.id === enemy.id);
+    if (flash) {
+      ctx.save(); ctx.globalAlpha = flash.life / .1;
+      circle(x, y, Math.max(6, r * .55), '#ffebc3', true, 3); ctx.restore();
+    }
     if (enemy.hp < enemy.maxHp || enemy.type === 'boss') {
       const barWidth = enemy.type === 'boss' ? 90 : Math.max(28, r * 2);
       rect(x - barWidth / 2, y - r - (enemy.type === 'boss' ? 25 : 11), barWidth, 4, '#132b31');
@@ -652,20 +784,25 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     const immune = player.invulnerable > 0 || player.damageCooldown > 0;
     const color = immune && (reducedMotion.matches || Math.floor(state.elapsed * 10) % 2) ? '#ffddb0' : '#ecab70';
     circle(x + 4, y + 6, 14, '#112b30');
-    if (alpha === 1) circle(x, y, 16, '#d4c89a', true, 1);
+    if (alpha === 1) circle(x, y, player.radius, '#d4c89a55', true, 1);
     ctx.translate(x, y); ctx.rotate(angle);
     const stride = walking && !reducedMotion.matches ? Math.sin(gait) * 3 : 0;
     rect(-13 - stride, -10, 8, 6, '#182f32'); rect(-13 + stride, 4, 8, 6, '#182f32');
-    rect(-10, -12, 12, 24, '#a86d49'); rect(-9, -12, 3, 24, '#eaba85');
-    rect(-7, -10, 17, 20, color); rect(-7, -10, 17, 3, '#ffcea0');
-    rect(-5, -5, 6, 10, '#bf784c'); rect(-4, -4, 4, 8, '#dc9b63');
-    rect(1, -12, 8, 5, '#ffc28c'); rect(1, 7, 8, 5, '#c58255');
-    rect(4, -8, 13, 16, '#f2bb82'); rect(5, -7, 11, 3, '#ffe0ad');
-    rect(12, -5, 5, 10, '#394f4b'); rect(14, -3, 3, 6, '#dce4ba');
-    rect(5, 3, 9, 3, '#cf8f60');
-    rect(13, -4, 12, 8, '#c7c9a4'); rect(16, -3, 15, 6, '#e2d6a7');
-    rect(18, -3, 4, 6, '#667966'); rect(29, -4, 4, 8, '#adbfa0');
-    if (player.fireCooldown > player.fireInterval * .65) polygon([[34, -6], [42, -3], [37, 0], [42, 3], [34, 6]], '#ffe3a0');
+    polygon([[-13, -6], [-6, -12], [6, -11], [12, -5], [12, 5], [6, 11], [-6, 12], [-13, 6]], '#16333a');
+    rect(-12, -5, 7, 10, '#7a8b80'); rect(-11, -4, 4, 2, '#dee0b4'); rect(-11, 2, 4, 2, '#deac75');
+    for (const sign of [-1, 1]) {
+      polygon([[-6, sign * 7], [-1, sign * 12], [8, sign * 9], [7, sign * 5]], color);
+      line(-2, sign * 9, 6, sign * 7, '#ffe0ad', 2);
+    }
+    polygon([[-4, -8], [7, -7], [12, -3], [12, 3], [7, 7], [-4, 8]], color);
+    polygon([[2, -5], [10, -4], [12, 0], [10, 4], [2, 5]], '#284d54');
+    line(6, -3, 10, -2, '#a5d9cf', 2); line(10, -2, 10, 2, '#e8f3d5', 2);
+    rect(-2, -7, 6, 2, '#ffdda2'); rect(-2, 5, 6, 2, '#b37451');
+    const recoil = player.fireCooldown > player.fireInterval * .75 ? 2 : 0;
+    rect(8 - recoil, -4, 14, 8, '#284a4e'); rect(10 - recoil, -4, 11, 2, '#ecddb3');
+    rect(14 - recoil, -2, 4, 4, player.overheated ? '#e69674' : '#8ebdb0');
+    rect(21 - recoil, -3, 7, 6, '#9bac9c'); rect(25 - recoil, -4, 3, 8, '#e8dfb7');
+    if (player.fireCooldown > player.fireInterval * .78) polygon([[29, -5], [39, -2], [33, 0], [39, 2], [29, 5]], '#ffecb6');
     ctx.restore();
     if (alpha === 1 && player.dashTime > 0) circle(x, y, 22, '#a5e2bc', true, 2);
     if (alpha === 1 && player.focusReady) circle(x, y, 20, '#e9c493', true, 2);
@@ -700,9 +837,18 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     if (!ctx || destroyed) return;
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(floorLayers[state.sector], 0, 0);
+    for (const fragment of fragments) {
+      ctx.save(); ctx.translate(fragment.x, fragment.y); ctx.rotate(fragment.angle);
+      ctx.globalAlpha = Math.min(.55, fragment.life / .7);
+      for (let i = 0; i < 4; i += 1) {
+        ctx.rotate(Math.PI / 2);
+        polygon([[7, -2], [13, -4], [17, 1], [9, 3]], fragment.color);
+      }
+      circle(0, 0, 6, '#122c30'); ctx.restore();
+    }
     for (const enemy of state.enemies) telegraph(enemy);
     hazardMarks();
-    cover();
+    ctx.drawImage(coverLayers[state.sector], 0, 0);
     for (const arc of arcs) {
       ctx.globalAlpha = clamp(arc.life / .16, 0, 1);
       const midX = (arc.x + arc.toX) / 2 + 4;
@@ -715,16 +861,19 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     for (const ring of rings) {
       const progress = 1 - ring.life / ring.maxLife;
       ctx.globalAlpha = Math.max(0, 1 - progress) * .55;
-      circle(ring.x, ring.y, ring.radius + progress * ring.growth, ring.color, true, 2);
+      circle(ring.x, ring.y, ring.radius + (reducedMotion.matches ? 0 : progress * ring.growth), ring.color, true, 2);
     }
     ctx.globalAlpha = 1;
     for (const projectile of state.projectiles) {
       const speed = Math.hypot(projectile.vx, projectile.vy) || 1;
       const trail = projectile.owner === 'player' ? 22 : 12;
-      line(projectile.x - projectile.vx / speed * trail, projectile.y - projectile.vy / speed * trail, projectile.x, projectile.y, projectile.owner === 'player' ? '#b99966' : '#a56b99', projectile.owner === 'player' ? 3 : 4);
+      const hue = projectile.owner === 'player' ? state.player.frost ? '#a8e5df' : '#ffe7a1' : '#f3bdd4';
+      line(projectile.x - projectile.vx / speed * trail, projectile.y - projectile.vy / speed * trail, projectile.x, projectile.y, '#10272f', 6);
+      line(projectile.x - projectile.vx / speed * trail, projectile.y - projectile.vy / speed * trail, projectile.x, projectile.y, projectile.owner === 'player' ? '#c5ad7a' : '#ac78a8', projectile.owner === 'player' ? 2 : 3);
       if (projectile.owner === 'enemy') circle(projectile.x, projectile.y, projectile.radius + 2, '#6a3e67', true, 2);
-      circle(projectile.x, projectile.y, Math.max(3, projectile.radius), projectile.owner === 'player' ? '#ffe7a1' : '#f3bdd4');
+      circle(projectile.x, projectile.y, Math.max(3, projectile.radius), hue);
       if (projectile.owner === 'enemy') circle(projectile.x, projectile.y, Math.max(1.5, projectile.radius - 2), '#fff0dc');
+      else circle(projectile.x, projectile.y, 1.5, '#fff4d6');
     }
     for (const enemy of [...state.enemies].sort((a, b) => a.y - b.y)) enemySprite(enemy);
     playerSprite(state.player);
@@ -744,7 +893,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     const length = Math.hypot(aim.aimX, aim.aimY) || 1;
     const crosshair = aimPoint || { x: state.player.x + aim.aimX / length * 95, y: state.player.y + aim.aimY / length * 95 };
     if (state.phase === 'playing') {
-      circle(crosshair.x, crosshair.y, 9, '#e5d8a6', true, 1.5);
+      circle(crosshair.x, crosshair.y, 9, '#102832', true, 4);
+      circle(crosshair.x, crosshair.y, 9, state.player.overheated ? '#e8997e' : '#e5d8a6', true, 1.5);
       for (const sign of [-1, 1]) {
         line(crosshair.x + sign * 12, crosshair.y, crosshair.x + sign * 5, crosshair.y, '#ffe1a1', 2);
         line(crosshair.x, crosshair.y + sign * 12, crosshair.x, crosshair.y + sign * 5, '#ffe1a1', 2);
@@ -762,6 +912,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     ctx.textAlign = 'left';
   }
   function effects(dt) {
+    if (reducedMotion.matches) { particles = []; ghosts = []; }
     effectTime += dt;
     const traveled = Math.hypot(state.player.x - previousPlayer.x, state.player.y - previousPlayer.y);
     walking = traveled > .01;
@@ -771,8 +922,18 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       if (event.id <= lastEvent) continue;
       lastEvent = event.id;
       if (event.type === 'arc') arcs.push({ ...event, life: .16 });
-      if (event.type === 'pulse') rings.push({ x: event.x, y: event.y, radius: 0, growth: event.radius, life: .22, maxLife: .22, color: '#b0ded0' });
+      if (event.type === 'pulse') rings.push({ x: event.x, y: event.y, radius: reducedMotion.matches ? event.radius : 0, growth: reducedMotion.matches ? 0 : event.radius, life: .22, maxLife: .22, color: '#b0ded0' });
+      if (event.type === 'hit') enemyFlashes.push({ id: event.enemyId, life: .1 });
+      if (event.type === 'bounce') {
+        hitMarkers.push({ x: event.x, y: event.y, kill: false, life: .12, maxLife: .12 });
+        if (!reducedMotion.matches) for (let i = 0; i < 4; i += 1) {
+          const a = i * 1.57 + event.id;
+          particles.push({ x: event.x, y: event.y, vx: Math.cos(a) * 75, vy: Math.sin(a) * 75, size: 2, life: .12, maxLife: .12, color: '#b7e0db' });
+        }
+      }
       const isKill = event.type === 'kill' || event.type === 'enemy-killed';
+      if (isKill) fragments.push({ x: event.x, y: event.y, angle: event.id * .73, life: .9,
+        color: { chaser: '#bd8b79', ranged: '#a997b9', brute: '#c2a071', weaver: '#83b8a7', boss: '#d7b9c4' }[event.enemyType] || '#bd8b79' });
       if (isKill || event.type === 'hurt' || event.type === 'hit') {
         hitMarkers.push({ x: event.x ?? state.player.x, y: event.y ?? state.player.y, kill: isKill, life: isKill ? .22 : .1, maxLife: isKill ? .22 : .1 });
         for (let i = 0; i < (reducedMotion.matches ? 0 : isKill ? 14 : 6); i += 1) {
@@ -791,6 +952,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     rings = rings.filter(ring => { ring.life -= dt; return ring.life > 0; }).slice(-24);
     hitMarkers = hitMarkers.filter(marker => { marker.life -= dt; return marker.life > 0; }).slice(-20);
     arcs = arcs.filter(arc => { arc.life -= dt; return arc.life > 0; }).slice(-30);
+    fragments = fragments.filter(fragment => { fragment.life -= dt; return fragment.life > 0; }).slice(-16);
+    enemyFlashes = enemyFlashes.filter(flash => { flash.life -= dt; return flash.life > 0; }).slice(-30);
   }
   function frame(time) {
     if (destroyed) return;
@@ -825,7 +988,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     releaseControls();
     state = createState({ difficulty }); previousFrame = null; accumulator = 0;
     lastEvent = -1; lastPublished = -Infinity; lastPhase = null;
-    particles = []; ghosts = []; rings = []; hitMarkers = []; arcs = []; effectTime = 0; upgradeSignature = '';
+    particles = []; ghosts = []; rings = []; hitMarkers = []; arcs = []; fragments = []; enemyFlashes = []; effectTime = 0; upgradeSignature = '';
     gait = 0; walking = false; previousPlayer = { x: state.player.x, y: state.player.y };
     aimPoint = null; aimVector = { x: 1, y: 0 };
     publish(true); draw(); canvas.focus({ preventScroll: true });
@@ -927,6 +1090,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   replay.addEventListener('click', restart);
   tierSelect.addEventListener('change', changeTier);
   floorLayers.forEach((layer, index) => { ctx = layer.getContext('2d'); floor(index); });
+  coverLayers.forEach((layer, index) => { ctx = layer.getContext('2d'); cover(index); });
   ctx = displayContext;
   publish(true); draw();
   raf = requestAnimationFrame(frame);

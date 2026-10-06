@@ -92,6 +92,7 @@
 .prism-mode button:hover:not([aria-pressed='true']) {
   background: #c8d4c5;
 }
+
 .prism-metrics {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1056,4 +1057,39 @@
   .prism-continue {
     font-size: 10px;
   }
+}
+
+.prism-stage {
+  background-image: linear-gradient(135deg, #41645a18, transparent 60%), url('/art/prism-panel.svg');
+  background-size:
+    auto,
+    400px 400px;
+}
+.prism-preview-panel {
+  background: linear-gradient(140deg, #243f48, #132d38);
+  border-color: #4e696d;
+  box-shadow:
+    inset 0 1px #a9c0a526,
+    inset 1px 0 #91aea519;
+}
+.prism-next-slot {
+  background: linear-gradient(100deg, #1c3742, #172f3a);
+}
+.prism-next-slot:nth-child(2) {
+  background: linear-gradient(100deg, #33504f, #233f48);
+}
+.prism-board {
+  border-color: #a0b2a1;
+  box-shadow:
+    0 0 0 3px #122b35,
+    0 0 0 4px #536c70,
+    inset 0 1px #dae0bd55;
+}
+.prism-mode button[aria-pressed='true'] {
+  box-shadow:
+    inset 0 1px #819e8c70,
+    0 2px 4px #0d263c24;
+}
+.prism-view[data-prism-mode='dig'] .prism-progress-track > i {
+  transition: none;
 }

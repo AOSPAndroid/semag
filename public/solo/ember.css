@@ -2,3 +2,4 @@
 
 @media(max-width:360px){.ember-controls{grid-template-columns:62px minmax(84px,1fr) 62px;gap:7px}.ember-stick{width:60px;height:60px}.ember-meter-label{display:block;line-height:1.6}.ember-meter-label b{display:block}.ember-route-map{gap:5px}.ember-route-map li{gap:2px}.ember-route-map b{font-size:6px}.ember-route-map span{font-size:13px}}
 @media(min-width:1000px){.ember-board{width:min(100%,calc((100dvh - 440px)*1.5));min-width:min(100%,450px);max-width:810px;margin-inline:auto}}
+.ember-board{box-shadow:0 0 0 2px #f1e8ce44,inset 0 0 0 1px #172e2b}.ember-action-icon{display:grid;place-items:center;width:20px;height:20px}.ember-action-icon svg{width:20px;height:20px}.ember-stick-knob{display:grid;place-items:center}.ember-stick-knob svg{width:22px;height:22px}.ember-action[data-control=spell]{color:#977148}.ember-action[data-control=melee]{color:#65775b}.ember-action[data-control=dash]{color:#64868c}.ember-action[data-control=interact]{color:#8f7753}

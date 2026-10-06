@@ -28,3 +28,33 @@
  .deckbound-hand .deckbound-card-text{min-height:35px}
  .deckbound-piles{margin-top:10px}
 }
+/* Illustrated plates sit inside stained parchment and fine brass bindings. */
+.deckbound-view{background-image:radial-gradient(ellipse at 10% 0,#fcf9e8 0,transparent 48%),repeating-linear-gradient(0deg,#a1885205 0 1px,transparent 1px 4px)}
+.deckbound-card{--db-frame:#779080;--db-wash:#edf0df;border-color:var(--db-frame);background:radial-gradient(ellipse at 0 0,#fffdf0,transparent 75%),linear-gradient(130deg,#f9f1d8,var(--db-wash));box-shadow:inset 0 0 0 2px #f8f1d4,0 3px 0 #8e805447,0 6px 12px #68593d16}
+.deckbound-card[data-art-family=blade]{--db-frame:#75988f;--db-wash:#e1e9dd}
+.deckbound-card[data-art-family=root]{--db-frame:#879767;--db-wash:#e8ebcc}
+.deckbound-card[data-art-family=ember]{--db-frame:#b79570;--db-wash:#f0dfc4}
+.deckbound-card[data-art-family=arcane]{--db-frame:#9296a2;--db-wash:#e2e5e0}
+.deckbound-card-heading{margin-bottom:5px}
+.deckbound-card-cost{background:radial-gradient(circle at 35% 25%,#ecd49a,#bfa567);box-shadow:inset 0 0 0 2px #f3dfac66,0 1px 2px #7b6b4522}
+.deckbound-card-art{object-fit:cover;object-position:center;border-color:#af9d70;box-shadow:inset 0 0 0 1px #e9d4a0;background:#dce1ca}
+.deckbound-card>.deckbound-card-art{border:2px solid #b7a374;outline:1px solid #d7c9a3;outline-offset:1px}
+.deckbound-card.is-upgraded{border-color:#748c56;box-shadow:inset 0 0 0 2px #f8f1d4,inset 0 3px 0 #a6bb8166,0 3px 0 #8e805447,0 6px 12px #68593d16}
+.deckbound-card-type{color:#8f784d;text-shadow:0 1px #fff9e5}
+.deckbound-card-text{color:#617454}
+.deckbound-panorama,.deckbound-battle-stage,.deckbound-encounter-art{border:2px solid #a59870;box-shadow:0 0 0 2px #e4d8b5,inset 0 0 0 1px #faf3d0}
+.deckbound-battle-stage:after,.deckbound-panorama:after{content:"";position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 0 30px #1b3d3325}
+.deckbound-panorama{position:relative}
+.deckbound-enemy-art{object-fit:contain;filter:drop-shadow(0 6px 4px #253f352b)}
+.deckbound-enemy>strong{color:#f3efd5;text-shadow:0 1px 4px #193c31,0 0 5px #193c31}
+.deckbound-enemy-health{background:#edf0d7ef;border:1px solid #c5bc91}
+.deckbound-intent{background:linear-gradient(135deg,#fff6def7,#e8dbbdf7);box-shadow:inset 0 0 0 2px #f8edceaa,0 2px 5px #263e3530}
+.deckbound-enemy.is-target:after{background:#e8dfb5;border-color:#bda36c;color:#4b694f}
+.deckbound-path{box-shadow:inset 0 0 0 3px #faf0d6,0 3px 0 #b5a77d33,0 6px 14px #82754e12}
+.deckbound-path>.deckbound-card-art,.deckbound-shop-relic>.deckbound-card-art,.deckbound-decision>.deckbound-card-art{border:3px solid #c5ad78;box-shadow:0 0 0 1px #ad9e74,0 3px 6px #86765122}
+.deckbound-relic>.deckbound-card-art{border:0;box-shadow:none;border-radius:2px}
+.deckbound-encounter-art>.deckbound-card-art{object-fit:cover;border-radius:4px}
+.deckbound-shop-relic{box-shadow:inset 0 0 0 3px #fcf3d7,0 3px 0 #a2956925}
+.deckbound-pause{background:#f1eddaed}
+@media(min-width:1200px) and (max-height:950px){.deckbound-hand .deckbound-card-heading{margin-bottom:3px}.deckbound-hand .deckbound-card-art{height:60px}.deckbound-enemy-art{height:143px}}
+@media(prefers-reduced-motion:reduce){.deckbound-enemy:hover:not(:disabled) .deckbound-enemy-art{transform:none}}

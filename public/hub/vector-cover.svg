@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 320" role="img" aria-labelledby="title desc">
   <title id="title">Vector Arena</title>
-  <desc id="desc">Two armored duelists exchange precision shots across the reclaimed research garden's six stone and metal cover blocks.</desc>
+  <desc id="desc">Two distinct directional armored pilots dash and exchange bright precision shots across a detailed reclaimed garden with moss, copper floor inlays and six stone and metal bunkers.</desc>
   <defs>
     <pattern id="slate" width="96" height="96" patternUnits="userSpaceOnUse">
       <path fill="#263c34" d="M0 0h96v96H0z"/>
@@ -49,17 +49,17 @@
       <path fill="#11261f" d="m-14-6 6-7H7l7 7V6l-7 7H-8l-6-7z"/>
       <path fill="var(--suit)" d="M-12-7h22V7h-22z"/>
       <path fill="var(--dark)" d="M-8-12H7v5H-8zm0 19H7v5H-8z"/>
-      <path fill="var(--main)" d="M-7-12H4v3H-7zm0 20H4v3H-7zM-4-8H9V8H-4z"/>
-      <path fill="var(--light)" d="M-3-8H7v2H-3z"/>
+      <path fill="var(--main)" d="m-7-6 3-7 10 2 4 6zm0 12 3 7 10-2 4-6zM-4-8l11-1 6 6v6L7 9-4 8z"/>
+      <path fill="none" stroke="var(--light)" stroke-width="2" d="M-3-7H7l4 4m-13-7 7 2m-7 16 7-2"/>
       <path fill="#243a2d" d="M-12-6h6V6h-6z"/>
       <path fill="#8c9a7c" d="M-11-5h3V5h-3z"/>
-      <path fill="#102e28" d="M3-6h8V6H3z"/>
-      <path fill="#355b51" d="M5-5h5V5H5z"/>
-      <path fill="#deebd8" d="M8-4h2v8H8zM5-5h5v1H5z"/>
+      <path fill="#25483f" d="m2-5 8 1 2 4-2 4-8 1z"/>
+      <path fill="#497366" d="M5-3h5v6H5z"/>
+      <path fill="none" stroke="#deebd8" stroke-width="2" d="m7-3 3 1v4"/>
       <path fill="var(--dark)" d="M9-8h5v4H9zm0 12h5v4H9z"/>
       <path fill="#102721" d="M8-3h17v6H8z"/>
       <path fill="#9bab9b" d="M11-3h11v2H11z"/>
-      <path fill="#c4d1bd" d="M23-2h2v4h-2z"/>
+      <path fill="#c4d1bd" d="M23-2h2v4h-2z"/><path fill="var(--light)" d="m26-4 11 3-6 1 6 1-11 3 2-4z"/>
     </g>
     <g id="fern">
       <path fill="#1a3d29" d="m0 0 10-7 22 2 11 12-3 17-15 8-18-4-11-10z"/>

@@ -1,9 +1,11 @@
+import { paintRooftopDetails, drawRooftopLife, drawFighterHead, drawFighterInsignia } from './art/afterimage-art.js';
+
 const WIDTH = 1200;
 const HEIGHT = 600;
 const FLOOR = 470;
 const COLORS = [
-  { main: '#b6f36a', light: '#e2ffbd', dark: '#638748', suit: '#283c3a', shade: '#172a2b', accent: '#dfff9b' },
-  { main: '#bc9bff', light: '#e9ddff', dark: '#785d9e', suit: '#34354e', shade: '#21243b', accent: '#d9c4ff' },
+  { main: '#b6f36a', light: '#e2ffbd', dark: '#638748', suit: '#344e47', shade: '#1f3535', armor: '#597264', trim: '#bdac76', accent: '#dfff9b' },
+  { main: '#bc9bff', light: '#e9ddff', dark: '#785d9e', suit: '#504664', shade: '#302e48', armor: '#796884', trim: '#c4b7cf', accent: '#d9c4ff' },
 ];
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
 const mix = (a, b, t) => a + (b - a) * t;
@@ -49,6 +51,7 @@ export class ArenaRenderer {
     const bg = this.background.getContext('2d');
     bg.scale(2, 2);
     this.drawBackground(bg);
+    this.reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
     this.particles = [];
     this.rings = [];
     this.seenEvents = new Set();
@@ -229,6 +232,7 @@ export class ArenaRenderer {
       ctx.fillStyle = `rgba(151, 160, 138, ${rng() * 0.07})`;
       ctx.fillRect(rng() * WIDTH, 412 + rng() * 176, 1 + rng() * 25, 1);
     }
+    paintRooftopDetails(ctx);
     const vignette = ctx.createRadialGradient(600, 295, 200, 600, 290, 710);
     vignette.addColorStop(0, '#070e1600'); vignette.addColorStop(0.7, '#070e1610'); vignette.addColorStop(1, '#070e1682');
     ctx.fillStyle = vignette; ctx.fillRect(0, 0, WIDTH, HEIGHT);
@@ -293,6 +297,8 @@ export class ArenaRenderer {
         this.emitSparks(x, y, 10, '#b1d2ed', 0.6);
         this.rings.push({ x, y, life: 0.15, maxLife: 0.15, color: '#c7e0ec', radius: 20 });
         this.shake = Math.max(this.shake, 1.5);
+      } else if (type === 'cancel') {
+        this.rings.push({x, y, life:0.22, maxLife:0.22, color, radius:24});
       } else if (type === 'jump' || type === 'land' || type === 'dash') {
         this.emitDust(x, type === 'dash' ? FLOOR - 3 : Math.min(y, FLOOR - 2), type === 'dash' ? 10 : 6);
       }
@@ -333,8 +339,9 @@ export class ArenaRenderer {
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
     ctx.setTransform(scale, 0, 0, scale, offsetX, offsetY);
     ctx.drawImage(this.background, 0, 0, WIDTH, HEIGHT);
+    drawRooftopLife(ctx, time, this.reducedMotion?.matches || options.quality === 'reduced');
     ctx.save();
-    if (this.shake > 0.05 && options.quality !== 'reduced') {
+    if (this.shake > 0.05 && options.quality !== 'reduced' && !this.reducedMotion?.matches) {
       ctx.translate(Math.sin(time * 0.173) * this.shake, Math.cos(time * 0.137) * this.shake * 0.55);
     }
 
@@ -343,7 +350,7 @@ export class ArenaRenderer {
     ctx.globalAlpha = 0.026;
     ctx.fillStyle = '#d0f2d4';
     for (let i = 0; i < 5; i++) {
-      const x = ((time * 0.008 + i * 284) % 1560) - 260;
+      const x = (((this.reducedMotion?.matches ? 1600 : time) * 0.008 + i * 284) % 1560) - 260;
       ctx.beginPath(); ctx.ellipse(x, 436 + i % 2 * 7, 150, 6, 0, 0, Math.PI * 2); ctx.fill();
     }
     ctx.restore();
@@ -389,7 +396,7 @@ export class ArenaRenderer {
   pose(f, time) {
     const frame = f.actionFrame || 0;
     const action = f.action || 'idle';
-    const breath = Math.sin(time / 440 + f.id * 2) * 0.8;
+    const breath = this.reducedMotion?.matches ? 0 : Math.sin(time / 440 + f.id * 2) * 0.8;
     const p = {
       hip: [-4, -43 + breath], shoulder: [-5, -81 + breath], head: [-3, -101 + breath],
       frontKnee: [15, -23], frontFoot: [27, 0], backKnee: [-20, -25], backFoot: [-28, 0],
@@ -479,7 +486,7 @@ export class ArenaRenderer {
 
     const hip = p.hip, shoulder = p.shoulder, head = p.head;
     // Scarf, rear limbs, and sheathed blade establish depth behind the torso.
-    const flutter = Math.sin(time / 78 + (f.id || 0) * 3) * 3;
+    const flutter = this.reducedMotion?.matches ? 0 : Math.sin(time / 78 + (f.id || 0) * 3) * 3;
     polygon(ctx, [[shoulder[0] - 2, shoulder[1] - 6], [shoulder[0] - 19, shoulder[1] - 4], [shoulder[0] - 28 - p.scarf * 8, shoulder[1] + 4 + flutter], [shoulder[0] - 14 - p.scarf * 9, shoulder[1] + 14 + flutter], [shoulder[0] - 7, shoulder[1] + 1]], color.dark);
     line(ctx, [[shoulder[0] - 13, shoulder[1] - 1], [shoulder[0] - 27 - p.scarf * 5, shoulder[1] + 5 + flutter]], color.main, 2);
     segment(ctx, [hip[0] - 8, hip[1] - 7], [shoulder[0] - 23, shoulder[1] - 19], 5, 4, '#111e28', '#49616a');
@@ -492,10 +499,11 @@ export class ArenaRenderer {
 
     // Tapered body armor, fabric underlayer and asymmetric illuminated chest plate.
     polygon(ctx, [[shoulder[0] - 11, shoulder[1] - 2], [shoulder[0] + 11, shoulder[1] - 1], [hip[0] + 10, hip[1] - 1], [hip[0] - 11, hip[1] + 1]], color.suit, '#101d27', 1.5);
-    polygon(ctx, [[shoulder[0] - 9, shoulder[1] - 2], [shoulder[0] + 8, shoulder[1] - 2], [shoulder[0] + 12, shoulder[1] + 17], [hip[0] + 5, hip[1] - 12], [hip[0] - 8, hip[1] - 13]], '#45584f', '#728172', 1);
+    polygon(ctx, [[shoulder[0] - 9, shoulder[1] - 2], [shoulder[0] + 8, shoulder[1] - 2], [shoulder[0] + 12, shoulder[1] + 17], [hip[0] + 5, hip[1] - 12], [hip[0] - 8, hip[1] - 13]], color.armor, color.trim, 1);
     polygon(ctx, [[shoulder[0] + 1, shoulder[1]], [shoulder[0] + 9, shoulder[1] + 1], [shoulder[0] + 12, shoulder[1] + 15], [shoulder[0] + 4, shoulder[1] + 19]], color.main);
     line(ctx, [[shoulder[0] - 6, shoulder[1] + 3], [hip[0] + 6, hip[1] - 8]], '#101d28', 4);
     line(ctx, [[shoulder[0] - 7, shoulder[1] + 3], [hip[0] + 5, hip[1] - 8]], '#75817a', 1);
+    drawFighterInsignia(ctx, p, color, f.id ?? 0);
     line(ctx, [[hip[0] - 8, hip[1] - 13], [hip[0] + 8, hip[1] - 13]], '#6b7a6b', 2);
     segment(ctx, [hip[0] - 10, hip[1] - 2], [hip[0] + 12, hip[1] - 2], 7, 7, '#111f25', '#53665c');
     ctx.fillStyle = color.main; ctx.fillRect(hip[0] + 1, hip[1] - 6, 5, 4);
@@ -518,16 +526,10 @@ export class ArenaRenderer {
     ctx.fillStyle = '#223638'; ctx.strokeStyle = '#73866a'; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.arc(...p.frontHand, 4.3, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
 
-    // Head: neck gaiter, angular mask, metallic visor, swept hair silhouette.
-    segment(ctx, [shoulder[0], shoulder[1] - 3], [head[0], head[1] + 8], 11, 10, '#263c39');
-    polygon(ctx, [[head[0] - 11, head[1] - 10], [head[0] + 6, head[1] - 10], [head[0] + 13, head[1] - 2], [head[0] + 11, head[1] + 10], [head[0] + 3, head[1] + 15], [head[0] - 8, head[1] + 11], [head[0] - 13, head[1] + 1]], '#53675f', '#122029', 1.5);
-    polygon(ctx, [[head[0] - 10, head[1] + 2], [head[0] + 12, head[1] + 2], [head[0] + 10, head[1] + 12], [head[0] + 1, head[1] + 15], [head[0] - 9, head[1] + 10]], '#203239');
-    line(ctx, [[head[0] + 3, head[1] + 7], [head[0] + 9, head[1] + 7]], '#6e8275', 1);
-    polygon(ctx, [[head[0] - 12, head[1] - 3], [head[0] + 11, head[1] - 4], [head[0] + 14, head[1]], [head[0] + 11, head[1] + 3], [head[0] - 8, head[1] + 3]], '#121f2a');
-    ctx.save(); ctx.shadowColor = color.main; ctx.shadowBlur = ghost ? 0 : 7;
-    line(ctx, [[head[0] + 1, head[1] - 1], [head[0] + 10, head[1] - 1]], color.light, 2); ctx.restore();
-    polygon(ctx, [[head[0] - 12, head[1]], [head[0] - 15, head[1] - 7], [head[0] - 17, head[1] - 12], [head[0] - 6, head[1] - 10], [head[0] - 11, head[1] - 16], [head[0] + 1, head[1] - 13], [head[0] + 7, head[1] - 15], [head[0] + 10, head[1] - 7], [head[0] + 1, head[1] - 5]], '#17262e', '#50625a');
-    polygon(ctx, [[head[0] - 10, head[1] + 10], [head[0] + 8, head[1] + 12], [shoulder[0] + 8, shoulder[1] + 1], [shoulder[0] - 12, shoulder[1]]], color.main, '#405d41');
+    // Distinct hooded duelist and silk-masked swordswoman portraits.
+    segment(ctx, [shoulder[0], shoulder[1] - 3], [head[0], head[1] + 8], 11, 10, color.shade);
+    drawFighterHead(ctx, p, color, f.id ?? 0, this.reducedMotion?.matches ? 1600 : time, ghost, f.action);
+    polygon(ctx, [[head[0] - 10, head[1] + 10], [head[0] + 8, head[1] + 12], [shoulder[0] + 8, shoulder[1] + 1], [shoulder[0] - 12, shoulder[1]]], color.main, color.dark);
     line(ctx, [[head[0] - 8, head[1] + 12], [shoulder[0] + 4, shoulder[1] - 1]], color.light, 1);
 
     if (f.guardBroken > 0 && !ghost) {

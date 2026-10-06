@@ -1,6 +1,8 @@
 import { DIFFICULTIES, advanceTime, chord, cloneState, createState, flag, getStats, reveal, togglePause as pauseState } from './minesweeper-engine.js';
 
 const formatTime = elapsed => `${Math.floor(elapsed / 60)}:${String(Math.floor(elapsed % 60)).padStart(2, '0')}`;
+const flagArt = '<svg viewBox="0 0 40 44" aria-hidden="true"><path d="M10 37H29" fill="none" stroke="#456343" stroke-width="3" stroke-linecap="round"/><path d="M18 7V36" fill="none" stroke="#466544" stroke-width="3"/><path d="M19 7C26 3 27 11 35 7V25C27 29 26 20 19 24Z" fill="#d47d49" stroke="#a75836" stroke-width="1.5"/><path d="M22 9C26 8 29 13 32 11M22 12V19" fill="none" stroke="#f8c389" stroke-width="1.4"/><circle cx="18" cy="5" r="2.5" fill="#d8b16d"/></svg>';
+const mineArt = '<svg viewBox="0 0 44 44" aria-hidden="true"><g stroke="#405444" stroke-width="3" stroke-linecap="round"><path d="M22 4V40M4 22H40M9 9L35 35M9 35L35 9"/></g><circle cx="22" cy="23" r="12" fill="#304b3d" stroke="#758565" stroke-width="2"/><path d="M13 21A9 9 0 0 1 23 14" fill="none" stroke="#a7b589" stroke-width="2" stroke-linecap="round"/><circle cx="17" cy="18" r="2" fill="#d7ddba"/><path d="M28 26 26 29" stroke="#152f26" stroke-width="2" stroke-linecap="round"/></svg>';
 
 export function mount(container, { onUpdate = () => {} } = {}) {
   let difficulty = 'beginner';
@@ -108,6 +110,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
 
   function render() {
     syncPauseCover();
+    root.dataset.phase = state.phase;
     remaining.textContent = String(state.mines - state.flags).padStart(2, '0');
     clock.textContent = formatTime(state.elapsed);
     pauseOverlay.hidden = state.phase !== 'paused';
@@ -123,7 +126,13 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       tile.dataset.number = cell.revealed && !cell.mine ? String(cell.adjacent) : '';
       const mark = tile.firstElementChild;
       mark.className = showMine ? 'minesweeper-mine' : cell.flagged ? 'minesweeper-flag' : '';
-      mark.textContent = wrongFlag ? '×' : cell.revealed && !cell.mine && cell.adjacent ? String(cell.adjacent) : '';
+      const artKey = wrongFlag ? 'wrong' : showMine ? 'mine' : cell.flagged ? 'flag' : cell.revealed && !cell.mine ? `number-${cell.adjacent}` : 'covered';
+      if (mark.dataset.art !== artKey) {
+        mark.dataset.art = artKey;
+        if (showMine) mark.innerHTML = mineArt;
+        else if (cell.flagged && !wrongFlag) mark.innerHTML = flagArt;
+        else mark.textContent = wrongFlag ? '×' : cell.revealed && !cell.mine && cell.adjacent ? String(cell.adjacent) : '';
+      }
       const row = Math.floor(index / state.cols) + 1;
       const col = index % state.cols + 1;
       let description = showMine ? 'mine' : wrongFlag ? 'incorrect flag' : cell.flagged ? 'flagged' : cell.revealed ? cell.adjacent ? `${cell.adjacent} adjacent ${cell.adjacent === 1 ? 'mine' : 'mines'}` : 'empty' : 'covered';

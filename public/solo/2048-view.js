@@ -74,6 +74,12 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       value.className = 'tiles-2048-value';
       value.setAttribute('aria-hidden', 'true');
       cell.append(value);
+      const ornament = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      ornament.setAttribute('viewBox', '0 0 100 100');
+      ornament.setAttribute('aria-hidden', 'true');
+      ornament.classList.add('tiles-2048-ornament');
+      ornament.innerHTML = '<path d="M12 29V12H29M71 12H88V29M88 71V88H71M29 88H12V71" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M17 17Q29 16 26 25Q17 29 17 17M83 17Q84 29 75 26Q71 17 83 17M83 83Q71 84 74 75Q83 71 83 83M17 83Q16 71 25 74Q29 83 17 83" fill="currentColor"/><path d="M42 12H58M42 88H58" stroke="currentColor" stroke-width="1"/>';
+      cell.append(ornament);
       rowElement.append(cell);
       cells.push(cell);
     }

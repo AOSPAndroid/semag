@@ -334,6 +334,38 @@
 .highway-view[data-phase='won'] .highway-control {
   opacity: 0.6;
 }
+.highway-board {
+  background: linear-gradient(130deg, #8fa89b, #486766);
+  border-color: #728e81;
+  box-shadow:
+    inset 0 1px #d6dfb46b,
+    0 5px 0 #1e454522,
+    0 13px 23px #173b4314;
+}
+.highway-canvas {
+  border-color: #284c50;
+  box-shadow: 0 0 0 1px #b5c9ad55;
+}
+.highway-mode[aria-pressed='true'] {
+  box-shadow:
+    inset 0 2px #9cbca94a,
+    0 2px 0 #16383c33;
+}
+.highway-stage {
+  background: linear-gradient(120deg, #e9ead7, #d9e4d4);
+  box-shadow: inset 0 1px #fbf6e4;
+}
+.highway-progress {
+  border: 1px solid #afc4ac;
+}
+.highway-progress > i {
+  background: linear-gradient(90deg, #477f76, #80ae90);
+}
+.highway-control {
+  box-shadow:
+    inset 0 1px #faf5e3,
+    0 2px 0 #a9bea3;
+}
 @media (max-width: 500px) {
   .highway-stage {
     padding: 10px;
