@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#193b32">
+  <title>Solo games — Fireside</title>
+  <link rel="icon" href="/hub/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/solo/solo.css">
+  <link rel="stylesheet" href="/solo/snake.css">
+  <link rel="stylesheet" href="/solo/minesweeper.css">
+  <link rel="stylesheet" href="/solo/2048.css">
+</head>
+<body>
+  <main class="solo-app" id="solo-app" data-phase="playing">
+    <header class="solo-topbar">
+      <a class="solo-back" href="/" aria-label="Back to the Fireside game hub"><span aria-hidden="true">←</span><svg class="pixel-logo" viewBox="0 0 62 16" aria-hidden="true" focusable="false"><use href="/hub/logo.svg#brand" width="62" height="16"/></svg><b aria-hidden="true">/ BACK TO THE GAME SHELF</b></a>
+      <span class="solo-mode"><i aria-hidden="true"></i> SOLO / PLAY AT YOUR PACE</span>
+    </header>
+
+    <div class="solo-heading">
+      <div><span class="eyebrow" id="solo-category">ONE PLAYER</span><h1 id="solo-title">A little time for yourself.</h1><p id="solo-description">Pick up a game. Make it your own.</p></div>
+      <span class="solo-seat">01 <span>PLAYER</span></span>
+    </div>
+    <div class="solo-notice" id="solo-notice" role="status" hidden></div>
+    <div class="solo-error" id="solo-error" role="alert" hidden></div>
+
+    <div class="solo-layout">
+      <section class="solo-play-panel" aria-label="Solo game area">
+        <div class="solo-hud">
+          <div class="solo-score"><span id="solo-score-label">SCORE</span><strong id="solo-score">0</strong></div>
+          <div class="solo-play-status"><span class="solo-status-dot" aria-hidden="true"></span><span id="solo-status-label" role="status" aria-live="polite">LOADING</span></div>
+          <div class="solo-score solo-best"><span id="solo-record-label">BEST SCORE</span><strong id="solo-record">—</strong></div>
+        </div>
+        <div class="solo-game" id="solo-game" tabindex="0" aria-label="Game controls"></div>
+        <div class="solo-objective"><i aria-hidden="true"></i><span id="solo-detail">Your game is loading…</span></div>
+      </section>
+
+      <aside class="solo-sidebar">
+        <section class="solo-session-panel">
+          <div class="solo-panel-heading"><h2>Your little session</h2><span>SOLO</span></div>
+          <p id="solo-session-note">Start straight away. There is no room to join.</p>
+          <button class="solo-primary" id="solo-restart" type="button" disabled><span>New game</span><b aria-hidden="true">↻</b></button>
+          <button class="solo-secondary" id="solo-pause" type="button" disabled aria-pressed="false"><span>Pause</span><b aria-hidden="true">Ⅱ</b></button>
+          <p class="solo-shortcuts"><kbd>R</kbd> New game <span>·</span> <kbd>P</kbd> Pause / resume</p>
+          <div class="solo-record-note"><span class="eyebrow">A RECORD OF YOUR OWN</span><p id="solo-record-scope">Best scores stay in this browser.</p></div>
+        </section>
+
+        <section class="solo-controls-panel">
+          <h2>The essentials</h2>
+          <div id="solo-controls-list"></div>
+          <p id="solo-touch-help"></p>
+        </section>
+
+        <section class="solo-rules-panel">
+          <h2 id="solo-rules-title">Make your move.</h2>
+          <ol id="solo-rules"></ol>
+          <small>Leaving the tab pauses your game. Resume when you are ready.</small>
+        </section>
+      </aside>
+    </div>
+    <footer class="solo-footer"><a href="/">← A different game?</a><span>FIRESIDE / SOLO PLAY</span><span>A MOMENT WELL SPENT.</span></footer>
+  </main>
+  <script type="module" src="/solo/solo.js"></script>
+</body>
+</html>

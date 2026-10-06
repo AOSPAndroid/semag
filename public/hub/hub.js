@@ -1,4 +1,4 @@
-import { GAMES, roomUrl, getName, saveName, hostInfo, copyText } from './shared.js';
+import { GAMES, roomUrl, soloUrl, getName, saveName, hostInfo, copyText } from './shared.js';
 const $ = (id) => document.getElementById(id);
 $('nav-game-count').textContent = String(Object.keys(GAMES).length).padStart(2, '0');
 $('library-game-count').textContent = Object.keys(GAMES).length;
@@ -10,6 +10,22 @@ function toast(message) { $('hub-toast').textContent = message; $('hub-toast').h
 function updateName() { name = saveName($('hub-name').value); $('hub-name').value = name; $('name-avatar').textContent = name[0].toUpperCase(); }
 $('hub-name').addEventListener('change', updateName);
 $('hub-name').addEventListener('keydown', (event) => { if (event.key === 'Enter') event.target.blur(); });
+document.querySelectorAll('[data-play-solo]').forEach(button => button.addEventListener('click', () => {
+  const gameId = button.dataset.playSolo;
+  if (GAMES[gameId]?.kind !== 'solo') return;
+  updateName(); location.href = soloUrl(gameId);
+}));
+document.querySelectorAll('[data-filter]').forEach(button => {
+  const filter = button.dataset.filter;
+  button.querySelector('span').textContent = Object.values(GAMES).filter(game => filter === 'all' || (game.kind === 'solo') === (filter === 'solo')).length;
+  button.addEventListener('click', () => {
+    document.querySelectorAll('[data-filter]').forEach(choice => choice.setAttribute('aria-pressed', String(choice === button)));
+    document.querySelectorAll('[data-game-card]').forEach(card => {
+      const solo = GAMES[card.dataset.gameCard]?.kind === 'solo';
+      card.hidden = filter !== 'all' && solo !== (filter === 'solo');
+    });
+  });
+});
 document.querySelectorAll('[data-create-game]').forEach(button => button.addEventListener('click', async () => {
   if (creating) return;
   updateName(); creating = true; error('');

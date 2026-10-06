@@ -6,7 +6,13 @@ export const GAMES = {
   'crazy-eights': { title: 'Crazy Eights', category: 'CARD CLASSIC', kind: 'cards', icon: '♠', description: 'Match the suit. Change the game.', color: '#577e68' },
   'twenty-one': { title: '21 Duel', category: 'BLACKJACK-STYLE DUEL', kind: 'cards', icon: '♦', description: 'Push your luck. Know when to stand.', color: '#b17b57' },
   'memory': { title: 'Memory Match', category: 'CARD MEMORY GAME', kind: 'cards', icon: '♣', description: 'Remember a face. Find its match.', color: '#79898d' },
+  'snake': { title: 'Snake', category: 'SOLO ARCADE', kind: 'solo', icon: '〰', description: 'One more bite. One less way out.', color: '#658254' },
+  'minesweeper': { title: 'Minesweeper', category: 'SOLO PUZZLE', kind: 'solo', icon: '⚑', description: 'Read the numbers. Clear the field.', color: '#899282' },
+  '2048': { title: '2048', category: 'SOLO PUZZLE', kind: 'solo', icon: '▦', description: 'Slide, combine, and think ahead.', color: '#bf9764' },
 };
+export function soloUrl(gameId) {
+  return `/solo.html?game=${encodeURIComponent(gameId)}`;
+}
 export function roomUrl(room) {
   return room.gameId === 'afterimage' ? `/afterimage.html?room=${encodeURIComponent(room.id)}` : `/play.html?room=${encodeURIComponent(room.id)}&game=${encodeURIComponent(room.gameId)}`;
 }
