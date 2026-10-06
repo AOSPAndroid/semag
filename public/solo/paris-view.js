@@ -1,14 +1,11 @@
 import {
-  FIXED_DT, ROAD_HALF, BIKE_WIDTH, BIKE_LENGTH, DISTRICTS, DIFFICULTIES,
+  FIXED_DT, DISTRICTS, DIFFICULTIES,
   createState, step, togglePause as pauseState, getDistrict, getDifficulty, recordScope,
 } from './paris-engine.js';
-import { createParisSprites } from '../art/paris-sprites.js';
+import { createParisPerspective } from '../art/paris-perspective.js';
+import { createParisRenderer } from './paris-renderer.js';
 
-const W = 720, H = 520, RIDER_Y = 439;
-// A wider lateral scale makes the narrow gaps readable; distance remains linear.
-const X_SCALE = 34, Z_SCALE = 17;
-const ROAD_LEFT = W / 2 - ROAD_HALF * X_SCALE;
-const ROAD_RIGHT = W / 2 + ROAD_HALF * X_SCALE;
+const W = 720, H = 520;
 const KEY_CONTROLS = {
   ArrowLeft: 'left', a: 'left', A: 'left', ArrowRight: 'right', d: 'right', D: 'right',
   ArrowUp: 'throttle', w: 'throttle', W: 'throttle', ArrowDown: 'brake', s: 'brake', S: 'brake',
@@ -28,7 +25,7 @@ function setAttr(target, key, value) { if (target.getAttribute(key) !== value) t
 
 export function mount(container, { onUpdate = () => {} } = {}) {
   let state = createState({ mode: 'delivery', difficulty: 'veteran' });
-  const sprites = createParisSprites();
+  const sprites = createParisPerspective();
   const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
   const desktop = window.matchMedia?.('(min-width:951px) and (pointer:fine)');
   const mobile = window.matchMedia?.('(max-width:600px)');
@@ -72,7 +69,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   const canvas = node('canvas', 'paris-canvas');
   canvas.width = W; canvas.height = H; canvas.tabIndex = 0; canvas.dataset.soloFocus = '';
   canvas.setAttribute('role', 'img');
-  canvas.setAttribute('aria-label', 'Top-down Paris street. Arrow keys or W A S D to ride. Space for electric assist; B rings the bell. P pauses.');
+  canvas.setAttribute('aria-label', 'Forward-facing, 3D-style Paris street. Ride behind the e-bike courier. Arrow keys or W A S D to ride. Space for electric assist; B rings the bell. P pauses.');
   const overlay = node('div', 'paris-overlay'); overlay.hidden = true;
   const overlayEyebrow = node('span', 'paris-overlay-eyebrow');
   const overlayTitle = node('strong', 'paris-overlay-title');
@@ -106,6 +103,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   footer.append(controls, hint, status);
   view.append(choices, stage, board, footer); container.append(view);
   const ctx = canvas.getContext('2d');
+  const renderer = createParisRenderer(ctx, { sprites, reducedMotion });
   let backingRatio = 1;
 
   function input() {
@@ -178,127 +176,39 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     ctx.font = `bold ${size}px ui-monospace, monospace`; ctx.fillStyle = color;
     ctx.textAlign = align; ctx.textBaseline = 'alphabetic'; ctx.fillText(value, x, y);
   }
-  function projection(actor) { return { x: W / 2 + actor.x * X_SCALE, y: RIDER_Y - (actor.z - state.distance) * Z_SCALE }; }
-  function warning(actor, point, width, height) {
-    if (!actor.warningActive && !actor.turnSignal && !(actor.kind === 'door' && actor.maneuverStarted)) return;
-    const target = W / 2 + (Number.isFinite(actor.targetX) ? actor.targetX : actor.x) * X_SCALE;
-    const door = actor.kind === 'door';
-    const color = door ? '#e37c45' : '#f4c567';
-    ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = 3;
-    ctx.setLineDash([5, 5]);
-    ctx.strokeRect(point.x - width / 2 - 4, point.y - height / 2 - 4, width + 8, height + 8);
-    if (target !== point.x) {
-      ctx.beginPath(); ctx.moveTo(point.x, point.y); ctx.lineTo(target, point.y); ctx.stroke();
-      ctx.setLineDash([]);
-      const direction = target > point.x ? 1 : -1;
-      ctx.beginPath(); ctx.moveTo(target - direction * 9, point.y - 6); ctx.lineTo(target, point.y); ctx.lineTo(target - direction * 9, point.y + 6); ctx.stroke();
-    }
-    ctx.restore();
-    text(door ? 'DOOR' : actor.kind === 'cyclist' ? 'DRIFT' : 'MERGE', point.x, point.y - height / 2 - 12, 10, color, 'center');
-  }
-  function drawActor(actor) {
-    const point = projection(actor), width = actor.width * X_SCALE, height = actor.length * Z_SCALE;
-    if (point.y + height / 2 < -35 || point.y - height / 2 > H + 25) return;
-    if (actor.kind === 'door') {
-      const active = actor.maneuverStarted;
-      // Parked body and door are drawn in the engine's occupied footprint.
-      rect(point.x - width / 2, point.y - height / 2, width, height, active ? '#b6754d' : '#a99179');
-      rect(point.x - width / 2 + 3, point.y - height / 2 + 3, Math.max(3, width - 6), 7, '#bad0c9');
-      rect(point.x - width / 2 + 3, point.y + height / 2 - 10, Math.max(3, width - 6), 7, '#788f8f');
-      rect(point.x - width / 2 + 3, point.y - 2, Math.max(3, width - 6), 3, '#68574b');
-      if (active) {
-        ctx.save(); ctx.beginPath(); ctx.rect(point.x - width / 2, point.y - height / 2, width, height); ctx.clip();
-        ctx.strokeStyle = '#ffe2a3'; ctx.lineWidth = 2;
-        for (let offset = -height; offset < width + height; offset += 10) {
-          ctx.beginPath(); ctx.moveTo(point.x - width / 2 + offset, point.y + height / 2); ctx.lineTo(point.x - width / 2 + offset + height, point.y - height / 2); ctx.stroke();
-        }
-        ctx.restore();
-      }
-    } else if (actor.kind === 'barrier') {
-      rect(point.x - width / 2, point.y - height / 2, width, height, '#edbb64');
-      for (let i = 0; i < width; i += 12) rect(point.x - width / 2 + i, point.y - height / 2, 5, height, '#625442');
-      rect(point.x - width / 2 + 2, point.y - height / 2 - 3, 6, 6, '#f58a4d');
-      rect(point.x + width / 2 - 8, point.y - height / 2 - 3, 6, 6, '#f58a4d');
-    } else sprites.drawActor(ctx, actor, point.x, point.y, { width, height });
-    warning(actor, point, width, height);
-  }
-  function aheadMarkers() {
-    // Four nearest upcoming vehicles at most. Exact road x and text expose the
-    // intent before the compressed camera brings the full sprite into view.
-    const upcoming = state.traffic.filter(actor => !actor.passed && actor.z - state.distance < 55 &&
-      projection(actor).y + actor.length * Z_SCALE / 2 < 3).sort((a, b) => a.z - b.z);
-    const occupied = [];
-    for (const actor of upcoming) {
-      if (occupied.length >= 4) break;
-      const x = clamp(W / 2 + actor.x * X_SCALE, ROAD_LEFT + 29, ROAD_RIGHT - 29);
-      if (occupied.some(position => Math.abs(position - x) < 54)) continue;
-      occupied.push(x);
-      const warning = actor.warningActive || actor.turnSignal;
-      const type = actor.kind === 'cyclist' ? 'CYCLE' : actor.kind === 'barrier' ? 'WORKS' : actor.kind.toUpperCase();
-      rect(x - 27, 5, 54, 34, warning ? '#695744' : '#34534f');
-      rect(x - 27, 5, 54, 2, actor.kind === 'door' ? '#e98e54' : warning ? '#ecc374' : '#a8c4b3');
-      text(type, x, 19, 9, '#f4efd4', 'center');
-      const arrow = warning ? actor.turnSignal < 0 ? '← ' : actor.turnSignal > 0 ? '→ ' : '! ' : '';
-      text(`${arrow}${Math.ceil(actor.z - state.distance)}m`, x, 32, 10, warning ? '#f4cf81' : '#c7d9c4', 'center');
-    }
-  }
   function hud() {
-    // Instruments sit over the pavements, away from the next traffic gap.
-    rect(14, 16, 153, 97, '#214b4b'); rect(17, 19, 147, 3, '#83bbaa');
-    text('VÉLO ÉLECTRIQUE', 26, 37, 10, '#b5d4c3');
-    text(String(Math.round(state.speed * 3.6)).padStart(2, '0'), 25, 77, 36, '#faf1cf');
-    text('KM/H', 80, 73, 11, '#b5d4c3');
-    text(state.assistActive ? 'ASSIST ON' : 'PACE YOURSELF', 26, 99, 10, state.assistActive ? '#e9d48d' : '#b5d4c3');
-    rect(W - 167, 16, 153, 97, '#214b4b'); rect(W - 164, 19, 147, 3, '#83bbaa');
-    text('BATTERY', W - 155, 37, 10, '#b5d4c3');
-    rect(W - 155, 47, 124, 13, '#163c3d');
-    rect(W - 153, 49, 120 * clamp(state.battery, 0, 1), 9, state.assistActive ? '#f3cf78' : '#9cc99f');
-    text(`${Math.round(state.battery * 100)}%`, W - 155, 79, 13, '#faf1cf');
+    // Keep instruments above the horizon so the rider and close gaps stay clear.
+    rect(14, 14, 140, 73, '#214b4be8'); rect(17, 17, 134, 2, '#83bbaa');
+    text('VÉLO ÉLECTRIQUE', 25, 32, 9, '#b5d4c3');
+    text(String(Math.round(state.speed * 3.6)).padStart(2, '0'), 25, 63, 29, '#faf1cf');
+    text('KM/H', 73, 61, 10, '#b5d4c3');
+    text(state.assistActive ? 'ASSIST ON' : 'PACE YOURSELF', 25, 77, 9, state.assistActive ? '#e9d48d' : '#b5d4c3');
+    rect(W - 154, 14, 140, 73, '#214b4be8'); rect(W - 151, 17, 134, 2, '#83bbaa');
+    text('BATTERY', W - 143, 32, 9, '#b5d4c3');
+    text(`${Math.round(state.battery * 100)}%`, W - 25, 32, 10, '#faf1cf', 'right');
+    rect(W - 143, 41, 118, 11, '#163c3d');
+    rect(W - 141, 43, 114 * clamp(state.battery, 0, 1), 7, state.assistActive ? '#f3cf78' : '#9cc99f');
+    text('RIDER', W - 143, 74, 9, '#b5d4c3');
     for (let i = 0; i < 3; i++) {
-      rect(W - 86 + i * 18, 69, 12, 10, i < state.health ? '#efa776' : '#557575');
-      if (i < state.health) rect(W - 84 + i * 18, 67, 8, 3, '#efa776');
+      rect(W - 82 + i * 18, 63, 12, 10, i < state.health ? '#efa776' : '#557575');
+      if (i < state.health) rect(W - 80 + i * 18, 61, 8, 3, '#efa776');
     }
-    text('RIDER', W - 86, 99, 9, '#b5d4c3');
-    rect(14, H - 71, 153, 57, '#214b4be8');
-    text('DISTANCE', 26, H - 51, 9, '#b5d4c3');
-    text(`${(state.distance / 1000).toFixed(2)} KM`, 26, H - 29, 18, '#faf1cf');
-    rect(W - 167, H - 71, 153, 57, '#214b4be8');
-    text('CLEAN PASSES', W - 155, H - 51, 9, '#b5d4c3');
-    text(`${Math.max(1, state.combo)}× COMBO`, W - 155, H - 29, 18, '#faf1cf');
+    rect(W / 2 - 78, 14, 156, 57, '#214b4be8');
+    text(`${(state.distance / 1000).toFixed(2)} KM`, W / 2, 40, 18, '#faf1cf', 'center');
+    text(`${Math.max(1, state.combo)}× CLEAN COMBO`, W / 2, 58, 9, '#b5d4c3', 'center');
   }
   function drawMessage() {
     if (message && state.elapsed < message.until) {
       ctx.globalAlpha = Math.min(1, (message.until - state.elapsed) * 2);
-      rect(W / 2 - 118, 24, 236, 33, '#214b4be8');
-      text(message.text, W / 2, 46, 12, '#fff0ba', 'center'); ctx.globalAlpha = 1;
+      rect(W / 2 - 118, 94, 236, 29, '#214b4be8');
+      text(message.text, W / 2, 114, 11, '#fff0ba', 'center'); ctx.globalAlpha = 1;
     }
   }
   function draw() {
     if (destroyed || !ctx) return;
-    ctx.setTransform(backingRatio, 0, 0, backingRatio, 0, 0); ctx.imageSmoothingEnabled = false;
-    sprites.drawStreet(ctx, { width: W, height: H, distance: state.distance * Z_SCALE,
-      district: state.stageIndex % DISTRICTS.length, time: state.elapsed, roadLeft: ROAD_LEFT, roadRight: ROAD_RIGHT, laneCount: 4 });
-    for (const actor of state.traffic) drawActor(actor);
-    const playerX = W / 2 + state.x * X_SCALE;
-    if (state.assistActive && !reducedMotion?.matches) {
-      for (let i = 0; i < 3; i++) {
-        const y = RIDER_Y + 24 + i * 13;
-        rect(playerX - 9 + i, y, 3, 8, '#dcdb92'); rect(playerX + 6 - i, y, 3, 8, '#dcdb92');
-      }
-    }
-    sprites.drawRider(ctx, playerX, RIDER_Y, {
-      width: BIKE_WIDTH * X_SCALE, height: BIKE_LENGTH * Z_SCALE,
-      lean: state.lean || 0,
-      pedal: state.elapsed * Math.max(0, state.speed) * 0.25,
-      assist: state.assistActive,
-      damaged: state.crashCooldown > 0,
-    });
-    if (state.elapsed < bellPulseUntil) {
-      const duration = 0.65, progress = 1 - (bellPulseUntil - state.elapsed) / duration;
-      ctx.save(); ctx.strokeStyle = '#f8dc92'; ctx.globalAlpha = 1 - progress; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(playerX, RIDER_Y, 25 + progress * 45, Math.PI * 1.05, Math.PI * 1.95); ctx.stroke(); ctx.restore();
-    }
-    aheadMarkers();
+    ctx.setTransform(backingRatio, 0, 0, backingRatio, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    renderer.draw(state, { bellPulseUntil });
     if (!mobile?.matches) hud();
     drawMessage();
   }
@@ -411,7 +321,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     destroy() {
       if (destroyed) return;
       destroyed = true; if (raf !== null) cancelAnimationFrame(raf); raf = null;
-      releaseControls(); sprites.clear?.(); observer?.disconnect();
+      releaseControls(); renderer.clear(); sprites.clear?.(); observer?.disconnect();
       window.removeEventListener('keydown', keydown); window.removeEventListener('keyup', keyup);
       window.removeEventListener('blur', releaseControls); window.removeEventListener('resize', fitViewport);
       document.removeEventListener('visibilitychange', visibility);

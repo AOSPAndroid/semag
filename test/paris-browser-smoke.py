@@ -4,9 +4,12 @@ Requires Python Playwright and Chromium. With no URL an isolated local host
 is started and stopped. Every gameplay action uses actual keyboard or touch
 input; window.firesideSolo.getState() is only read. The route controller reads
 the same road actors and warnings a rider can see and steers into open gaps.
+Native pause freezes real road positions for perspective camera evidence;
+the canvas is exported unchanged, without its separate pause dialog.
 Set FIRESIDE_SCREENSHOT_DIR to select the artifact directory.
 """
 import json
+import base64
 import os
 from pathlib import Path
 import subprocess
@@ -108,8 +111,11 @@ def native_selection_and_layout(page):
             box = page.locator(".paris-canvas").bounding_box()
             assert box and box["width"] >= 300, (width, "road too small to read", box)
         else:
-            assert page.locator(".paris-mobile-hud").is_visible(), "Zoomed mobile street lost its instruments"
+            assert page.locator(".paris-mobile-hud").is_visible(), "Perspective mobile street lost its instruments"
             assert page.locator(".paris-mobile-hud > div").count() == 4
+            canvas = page.locator(".paris-canvas").bounding_box()
+            board = page.locator(".paris-board").bounding_box()
+            assert canvas and board and canvas["x"] >= board["x"] and canvas["x"] + canvas["width"] <= board["x"] + board["width"], (width, "mobile camera cropped the road", canvas, board)
         for button in page.locator(".paris-controls button").all():
             box = button.bounding_box()
             assert box and box["width"] >= 44 and box["height"] >= 44, (width, "small touch control", box)
@@ -248,12 +254,35 @@ def physical_controls(page, context):
     print("  Real throttle/steer/brake/assist/bell, focused holds, touch release/cancel, pause and tab blur passed", flush=True)
 
 
+def capture_road(page, keyboard, name, all_sizes=False):
+    """Export actual rendered frames at frozen, physically reached positions."""
+    keyboard.release()
+    native_button(page, "#solo-pause")
+    wait_phase(page, "paused")
+    frozen = state(page)
+    sizes = [(1440, 1000), (1366, 768), (390, 900), (320, 900)] if all_sizes else [(1440, 1000)]
+    for width, height in sizes:
+        page.set_viewport_size({"width": width, "height": height})
+        page.wait_for_timeout(100)
+        # The dialog is a DOM sibling, so reading canvas pixels captures the
+        # game frame exactly as drawn without removing UI or modifying state.
+        encoded = page.locator(".paris-canvas").evaluate("canvas => canvas.toDataURL('image/png')")
+        (SHOTS / f"{name}-{width}.png").write_bytes(base64.b64decode(encoded.split(",", 1)[1]))
+        assert state(page) == frozen, "Camera layout change advanced the paused route"
+    (SHOTS / f"{name}-state.json").write_text(json.dumps(frozen, indent=2))
+    page.set_viewport_size({"width": 1440, "height": 1000})
+    native_button(page, "#solo-pause")
+    wait_phase(page, "playing")
+    page.locator(".paris-canvas").focus()
+
+
 def ride_delivery(page):
     """Read visible actors, choose a broad corridor, then press actual keys."""
     restart(page)
     keyboard = Keyboard(page)
     types, warnings, events, checkpoints = set(), set(), set(), []
     captured = False
+    captured_scenes = set()
     selected_row, selected_target = None, None
     end = time.monotonic() + 280
     # The road is ten metres wide; leave room for the rider and kerb. These
@@ -321,15 +350,32 @@ def ride_delivery(page):
         if not captured and {"car", "cyclist", "bus"}.issubset(types) and current["distance"] > 200:
             page.screenshot(path=str(SHOTS / "paris-gameplay.png"), full_page=True)
             captured = True
+        # These frames support visual review of depth, scaled actor types,
+        # ground warning footprints and body occlusion near the rider. They
+        # are reached by the same legal route inputs used for the finish.
+        nearby = [actor for actor in actors if 5 < actor["z"] - current["distance"] < 17]
+        if abs(error) < .15 and abs(current["vx"]) < .4:
+            for kind in ("bus", "cyclist", "door"):
+                candidates = [actor for actor in nearby if actor["kind"] == kind]
+                if kind not in captured_scenes and candidates:
+                    capture_road(page, keyboard, f"paris-near-{kind}", all_sizes=kind == "bus")
+                    captured_scenes.add(kind)
+                    break
+            else:
+                late_bus = [actor for actor in actors if actor["kind"] == "bus" and -1 < actor["z"] - current["distance"] < .8]
+                if "bus-beside-rider" not in captured_scenes and late_bus:
+                    capture_road(page, keyboard, "paris-bus-beside-rider", all_sizes=True)
+                    captured_scenes.add("bus-beside-rider")
         page.wait_for_timeout(55)
     keyboard.release()
     finished = state(page)
     events.update(event["type"] for event in finished["events"])
-    (SHOTS / "delivery-result.json").write_text(json.dumps({"result": finished, "types_seen": sorted(types), "warnings_seen": sorted(warnings), "events_seen": sorted(events), "checkpoints": checkpoints}, indent=2))
+    (SHOTS / "delivery-result.json").write_text(json.dumps({"result": finished, "types_seen": sorted(types), "warnings_seen": sorted(warnings), "events_seen": sorted(events), "perspective_scenes": sorted(captured_scenes), "checkpoints": checkpoints}, indent=2))
     assert finished["phase"] == "won", f"Physical Veteran route did not finish: {finished}"
     assert finished["deliveries"] == 5 and len(finished["districtResults"]) == 5
     assert {"car", "cyclist", "bus"}.issubset(types), types
     assert {"cyclist", "bus", "door"}.issubset(warnings), warnings
+    assert {"bus", "cyclist", "door", "bus-beside-rider"}.issubset(captured_scenes), "Missing near-actor perspective evidence"
     assert "pass" in events and "near-pass" in events and finished["passPoints"] > 0
     assert finished["finishTime"] > 100 and finished["score"] > finished["distance"]
     assert record(page, "veteran-delivery") == finished["score"]

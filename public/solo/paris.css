@@ -43,9 +43,8 @@
   .paris-route-detail{display:block;margin-top:3px;font-size:9px}
   .paris-clock{font-size:13px}
   .paris-board{padding:6px}
-  /* Enlarge the street on a phone, cropping the decorative roofs at its sides. */
-  .paris-canvas{width:189.4737%;margin-left:-44.73685%;margin-right:0}
-  .paris-mobile-hud{position:absolute;z-index:1;bottom:9px;left:9px;right:9px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:3px;padding:6px;background:#214b4bf0;color:#fff0cf;pointer-events:none}
+  .paris-canvas{width:100%;margin-inline:auto}
+  .paris-mobile-hud{position:relative;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:3px;margin-top:6px;padding:7px 5px;background:#214b4b;color:#fff0cf;pointer-events:none;border-radius:2px}
   .paris-mobile-hud>div{min-width:0;text-align:center}
   .paris-mobile-hud span{display:block;font:8px var(--mono,monospace);color:#b8d0b8;letter-spacing:.3px}
   .paris-mobile-hud strong{display:block;margin-top:3px;font:600 13px var(--mono,monospace)}
