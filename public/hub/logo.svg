@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 66 20" width="264" height="80" role="img" aria-labelledby="logo-title" shape-rendering="crispEdges">
+  <title id="logo-title">Fireside pixel flame and wordmark</title>
+  <defs>
+    <symbol id="brand" viewBox="0 0 62 16">
+      <path fill="#edab71" d="M6 1h1v1h-1zM5 2h2v1h-2zM5 3h3v1h-3zM5 4h3v1h-3zM4 5h3v1h-3zM10 5h1v1h-1zM4 6h3v1h-3zM9 6h2v1h-2zM1 7h1v1h-1zM3 7h4v1h-4zM8 7h3v1h-3zM1 8h11v1h-11zM1 9h11v1h-11zM0 10h13v1h-13zM0 11h13v1h-13zM1 12h11v1h-11zM2 13h9v1h-9zM3 14h7v1h-7z"/>
+      <path fill="#f6f0db" d="M6 9h1v1h-1zM5 10h2v1h-2zM5 11h3v1h-3zM4 12h5v1h-5zM5 13h3v1h-3zM6 14h1v1h-1z"/>
+      <g fill="currentColor">
+        <!-- F -->
+        <path d="M18 3h5v1h-5zM18 4h1v1h-1zM18 5h1v1h-1zM18 6h1v1h-1zM18 7h4v1h-4zM18 8h1v1h-1zM18 9h1v1h-1zM18 10h1v1h-1zM18 11h1v1h-1z"/>
+        <!-- I -->
+        <path d="M24 3h3v1h-3zM25 4h1v1h-1zM25 5h1v1h-1zM25 6h1v1h-1zM25 7h1v1h-1zM25 8h1v1h-1zM25 9h1v1h-1zM25 10h1v1h-1zM24 11h3v1h-3z"/>
+        <!-- R -->
+        <path d="M28 3h4v1h-4zM28 4h1v1h-1zM32 4h1v1h-1zM28 5h1v1h-1zM32 5h1v1h-1zM28 6h1v1h-1zM32 6h1v1h-1zM28 7h4v1h-4zM28 8h1v1h-1zM30 8h1v1h-1zM28 9h1v1h-1zM31 9h1v1h-1zM28 10h1v1h-1zM32 10h1v1h-1zM28 11h1v1h-1zM32 11h1v1h-1z"/>
+        <!-- E -->
+        <path d="M34 3h5v1h-5zM34 4h1v1h-1zM34 5h1v1h-1zM34 6h1v1h-1zM34 7h4v1h-4zM34 8h1v1h-1zM34 9h1v1h-1zM34 10h1v1h-1zM34 11h5v1h-5z"/>
+        <!-- S -->
+        <path d="M41 3h4v1h-4zM40 4h1v1h-1zM40 5h1v1h-1zM40 6h1v1h-1zM41 7h3v1h-3zM44 8h1v1h-1zM44 9h1v1h-1zM44 10h1v1h-1zM40 11h4v1h-4z"/>
+        <!-- I -->
+        <path d="M46 3h3v1h-3zM47 4h1v1h-1zM47 5h1v1h-1zM47 6h1v1h-1zM47 7h1v1h-1zM47 8h1v1h-1zM47 9h1v1h-1zM47 10h1v1h-1zM46 11h3v1h-3z"/>
+        <!-- D -->
+        <path d="M50 3h4v1h-4zM50 4h1v1h-1zM54 4h1v1h-1zM50 5h1v1h-1zM54 5h1v1h-1zM50 6h1v1h-1zM54 6h1v1h-1zM50 7h1v1h-1zM54 7h1v1h-1zM50 8h1v1h-1zM54 8h1v1h-1zM50 9h1v1h-1zM54 9h1v1h-1zM50 10h1v1h-1zM54 10h1v1h-1zM50 11h4v1h-4z"/>
+        <!-- E -->
+        <path d="M56 3h5v1h-5zM56 4h1v1h-1zM56 5h1v1h-1zM56 6h1v1h-1zM56 7h4v1h-4zM56 8h1v1h-1zM56 9h1v1h-1zM56 10h1v1h-1zM56 11h5v1h-5z"/>
+      </g>
+    </symbol>
+  </defs>
+  <path fill="#f5f2ea" d="M1 0h64v1h1v18h-1v1H1v-1H0V1h1Z"/>
+  <use href="#brand" x="2" y="2" width="62" height="16" color="#193b32"/>
+</svg>

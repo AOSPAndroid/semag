@@ -1,0 +1,13 @@
+{
+  "name": "fireside-game-hub",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A self-hosted multiplayer hub with checkers, sword duels, and co-op adventures.",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": { "ws": "^8.18.0" }
+}

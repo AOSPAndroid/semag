@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#193b32">
+  <meta name="description" content="Fireside: your self-hosted game night. Checkers, sword duels, and co-op adventures with friends.">
+  <title>Fireside — Your game night</title>
+  <link rel="icon" type="image/svg+xml" href="/hub/favicon.svg"><link rel="stylesheet" href="/hub/hub.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <a class="hub-brand" href="/" aria-label="Fireside game hub"><svg class="pixel-logo" viewBox="0 0 62 16" aria-hidden="true" focusable="false"><use href="/hub/logo.svg#brand" width="62" height="16"/></svg><span class="brand-sub">YOUR GAME NIGHT</span></a>
+    <span class="sidebar-label">MAKE YOURSELF AT HOME</span>
+    <nav><a class="nav-link active" href="#games"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Game shelf <span>04</span></a><a class="nav-link" href="#open-rooms"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM2 21v-2a7 7 0 0 1 14 0v2m1-15a3 3 0 0 1 0 6m3 3a6 6 0 0 1 2 4v2"/></svg>Open rooms <span id="nav-room-count">0</span></a></nav>
+    <div class="sidebar-note"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="m24 5 17 10v19L24 44 7 34V15Z"/><path d="m7 15 17 10 17-10M24 25v19M16 10l17 10v10"/></svg><strong>Your PC.<br>Your little arcade.</strong><p>Share the hub address with a friend on your network.</p></div>
+    <div class="server-state"><i id="host-dot"></i><div><strong id="host-status">Finding your host</strong><span>SELF-HOSTED · NO ACCOUNTS</span></div></div>
+  </aside>
+  <main class="hub-main">
+    <header class="hub-topbar"><div class="breadcrumb">THE LIVING ROOM <span>/</span> GAME SHELF</div><label class="hub-identity"><span>PLAYING AS</span><input id="hub-name" maxlength="20" placeholder="Your name" value="Challenger" aria-label="Your player name"><i id="name-avatar">C</i></label></header>
+    <div class="library-heading" id="games"><div><span class="eyebrow">A SEAT FOR YOU AND A FRIEND</span><h1>The game shelf<span>.</span></h1><p>Pick a game, open a room, and settle the score.</p></div><span class="library-count"><i></i> 4 GAMES · ALWAYS OPEN</span></div>
+    <div class="hub-error" id="hub-error" role="alert" hidden></div>
+    <div class="library-layout">
+      <section class="game-grid" aria-label="Available games">
+        <article class="game-card" data-game-card="relic-duel"><div class="game-art forest-art"><canvas id="preview-duel" width="960" height="640" aria-label="Two adventurers face off in a mossy stone arena"></canvas><span class="art-badge">FRIENDLY RIVALRY</span><span class="art-number">01</span></div><div class="game-card-content"><div class="game-category"><span>TOP-DOWN ARENA</span><span><i></i> 2 PLAYERS</span></div><h2>Relic Duel</h2><p>Clash swords, dodge arrows, and outplay your rival.</p><div class="game-card-bottom"><span class="game-chip">REAL-TIME 1V1</span><button data-create-game="relic-duel">Create room <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 15 15 5M5 5h10v10"/></svg></button></div></div></article>
+        <article class="game-card" data-game-card="checkers"><div class="game-art checkers-art"><canvas id="preview-checkers" width="900" height="600" aria-label="An ivory and green checkers board"></canvas><span class="art-badge">THE CLASSIC</span><span class="art-number">02</span></div><div class="game-card-content"><div class="game-category"><span>BOARD GAME</span><span><i></i> 2 PLAYERS</span></div><h2>Checkers</h2><p>Make your move. Take a piece. Claim the crown.</p><div class="game-card-bottom"><span class="game-chip">TURN-BASED 1V1</span><button data-create-game="checkers">Create room <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 15 15 5M5 5h10v10"/></svg></button></div></div></article>
+        <article class="game-card" data-game-card="dungeon-run"><div class="game-art dungeon-art"><canvas id="preview-coop" width="960" height="640" aria-label="Two adventurers explore a dungeon together"></canvas><span class="art-badge">BETTER TOGETHER</span><span class="art-number">03</span></div><div class="game-card-content"><div class="game-category"><span>CO-OP ADVENTURE</span><span><i></i> 2 PLAYERS</span></div><h2>Dungeon Run</h2><p>Fight through the ruins together. Bring each other home.</p><div class="game-card-bottom"><span class="game-chip">REAL-TIME CO-OP</span><button data-create-game="dungeon-run">Create room <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 15 15 5M5 5h10v10"/></svg></button></div></div></article>
+        <article class="game-card" data-game-card="afterimage"><div class="game-art afterimage-art"><canvas id="preview-afterimage" width="1200" height="600" aria-label="Two sword fighters on a nighttime rooftop"></canvas><span class="art-badge">ONE MORE ROUND</span><span class="art-number">04</span></div><div class="game-card-content"><div class="game-category"><span>SWORD FIGHTER</span><span><i></i> 2 PLAYERS</span></div><h2>Afterimage</h2><p>Read the strike. Find the opening. Own the rooftop.</p><div class="game-card-bottom"><span class="game-chip">REAL-TIME 1V1</span><button data-create-game="afterimage">Create room <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 15 15 5M5 5h10v10"/></svg></button></div></div></article>
+      </section>
+      <aside class="rooms-column" id="open-rooms">
+        <section class="rooms-panel"><div class="panel-heading"><h2>Open rooms</h2><span class="live-label"><i></i> LIVE</span></div><p class="panel-description">A game is better with company.</p><div id="rooms-list" class="rooms-list"><div class="rooms-empty"><svg viewBox="0 0 50 50" aria-hidden="true"><path d="M10 35V16l15-9 15 9v19l-15 9-15-9Zm0-19 15 9 15-9M25 25v19"/><path d="M20 17h10m-5-5v10"/></svg><strong>Pull up a chair.</strong><p>No rooms yet. Create one<br>and invite a friend.</p></div></div><div class="room-legend"><i></i> Waiting for an opponent</div></section>
+        <section class="join-panel"><h2>Got a room code?</h2><p>Jump straight into your friend's game.</p><form id="join-form"><input id="room-code" aria-label="Room code or invite link" placeholder="e.g. J7K2M9" autocomplete="off" spellcheck="false"><button id="join-button" type="submit" aria-label="Join room">→</button></form><span id="join-error" class="join-error" role="alert" hidden></span></section>
+        <section class="share-panel"><span class="eyebrow">SEND AN OPEN INVITATION</span><strong>Bring a friend.</strong><p>One address. All the games.</p><code id="hub-address">Connecting…</code><button id="copy-hub">Copy hub address <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="7" y="7" width="9" height="10" rx="1"/><path d="M12 7V3H3v10h4"/></svg></button><small>Both computers need access to the host over LAN or VPN.</small></section>
+      </aside>
+    </div>
+    <footer class="hub-footer"><span>GOOD GAMES. GOOD COMPANY.</span><a id="hub-download" href="/download/fireside-hub.zip" download hidden>Download the PC host <span>↓</span></a><span>MADE FOR GAME NIGHT <i>✦</i></span></footer>
+  </main>
+  <div class="hub-toast" id="hub-toast" role="status" hidden></div>
+  <script type="module" src="/hub/hub.js"></script>
+</body>
+</html>
