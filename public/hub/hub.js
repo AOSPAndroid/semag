@@ -15,14 +15,14 @@ document.querySelectorAll('[data-play-solo]').forEach(button => button.addEventL
   if (GAMES[gameId]?.kind !== 'solo') return;
   updateName(); location.href = soloUrl(gameId);
 }));
+const matchesFilter = (game, filter) => filter === 'all' || (filter === 'driving' ? game?.genre === 'driving' : (game?.kind === 'solo') === (filter === 'solo'));
 document.querySelectorAll('[data-filter]').forEach(button => {
   const filter = button.dataset.filter;
-  button.querySelector('span').textContent = Object.values(GAMES).filter(game => filter === 'all' || (game.kind === 'solo') === (filter === 'solo')).length;
+  button.querySelector('span').textContent = Object.values(GAMES).filter(game => matchesFilter(game, filter)).length;
   button.addEventListener('click', () => {
     document.querySelectorAll('[data-filter]').forEach(choice => choice.setAttribute('aria-pressed', String(choice === button)));
     document.querySelectorAll('[data-game-card]').forEach(card => {
-      const solo = GAMES[card.dataset.gameCard]?.kind === 'solo';
-      card.hidden = filter !== 'all' && solo !== (filter === 'solo');
+      card.hidden = !matchesFilter(GAMES[card.dataset.gameCard], filter);
     });
   });
 });

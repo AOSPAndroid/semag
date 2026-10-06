@@ -1,0 +1,291 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  createState, step, togglePause, resetCar, nearestTrack, trackInfo,
+  WORLD, TRACK, TRACK_LENGTH, GATES, ROAD_WIDTH, MAX_SPEED, LAPS, FIXED_DT, RESET_PENALTY,
+} from '../public/solo/circuit-engine.js';
+
+const clone = value => JSON.parse(JSON.stringify(value));
+const near = (actual, expected, tolerance = 1e-6) => assert.ok(Math.abs(actual - expected) <= tolerance, `${actual} ~= ${expected}`);
+const angle = value => Math.atan2(Math.sin(value), Math.cos(value));
+const active = () => { const state = createState(); state.startDelay = 0; return state; };
+const ticks = (state, count, controls = {}) => { for (let i = 0; i < count; i += 1) step(state, controls); };
+
+function fixtureAtGate(index, { reverse = false, offset = 0, travel = TRACK_LENGTH / GATES.length } = {}) {
+  const state = active(), gate = GATES[index], direction = reverse ? -1 : 1;
+  state.nextGate = index;
+  Object.assign(state.car, {
+    x: gate.x - gate.tx * .3 * direction + gate.nx * offset,
+    y: gate.y - gate.ty * .3 * direction + gate.ny * offset,
+    vx: gate.tx * 100 * direction, vy: gate.ty * 100 * direction,
+    heading: Math.atan2(gate.ty, gate.tx), speed: 100 * direction,
+  });
+  state.course.previous = { x: state.car.x, y: state.car.y };
+  state.course.lastS = nearestTrack(state.car).s;
+  state.course.travel = travel;
+  return state;
+}
+
+function driver(state) {
+  const car = state.car, speed = Math.abs(car.speed), projection = nearestTrack(car);
+  const target = trackInfo(projection.s + Math.max(28, speed * .27));
+  const error = angle(Math.atan2(target.y - car.y, target.x - car.x) - car.heading);
+  const curve = Math.abs(angle(trackInfo(projection.s + 95).heading - trackInfo(projection.s + 25).heading));
+  const desired = Math.max(75, 205 - curve * 140);
+  return { throttle: speed < desired, brake: speed > desired + 10 && speed > 80,
+    left: error < -.03, right: error > .03 };
+}
+
+test('circuit centreline, wrapped positions, tangent gates, and starting car share one geometry', () => {
+  assert.ok(TRACK.length > 300);
+  assert.ok(TRACK_LENGTH > 2000 && TRACK_LENGTH < 2500);
+  assert.equal(GATES.length, 12);
+  for (const point of TRACK) {
+    assert.ok(point.x > ROAD_WIDTH / 2 && point.x < WORLD.width - ROAD_WIDTH / 2);
+    assert.ok(point.y > ROAD_WIDTH / 2 && point.y < WORLD.height - ROAD_WIDTH / 2);
+    near(Math.hypot(point.tx, point.ty), 1);
+    assert.ok(nearestTrack(point).distance < 1e-6);
+  }
+  for (const [index, gate] of GATES.entries()) {
+    assert.equal(gate.index, index);
+    near(gate.tx * gate.nx + gate.ty * gate.ny, 0);
+    near(gate.s, TRACK_LENGTH * index / GATES.length);
+  }
+  const wrapped = trackInfo(-18), same = trackInfo(TRACK_LENGTH - 18);
+  near(wrapped.x, same.x); near(wrapped.y, same.y);
+  const state = createState();
+  near(state.car.x, wrapped.x); near(state.car.y, wrapped.y); near(state.car.heading, wrapped.heading);
+  assert.ok(state.car.heading > -.1 && state.car.heading < .1, 'start faces right along the bottom straight');
+  assert.equal(nearestTrack(NaN, 2).distance, Infinity);
+});
+
+test('fresh state is serializable and independent, with three empty timed laps', () => {
+  const first = createState(), second = createState();
+  assert.deepEqual(first, clone(first));
+  assert.deepEqual(first, second);
+  assert.equal(first.gameId, 'apex-circuit');
+  assert.equal(first.phase, 'playing');
+  assert.equal(first.lap, 1);
+  assert.equal(first.lapsCompleted, 0);
+  assert.equal(first.nextGate, 1);
+  first.car.x += 4; first.lapTimes.push(1);
+  assert.notEqual(first.car.x, second.car.x);
+  assert.deepEqual(second.lapTimes, []);
+});
+
+test('countdown holds both car and clock; active driving begins after exactly one second', () => {
+  const state = createState(), before = clone(state.car);
+  ticks(state, 120, { throttle: true, right: true });
+  assert.deepEqual(state.car, before);
+  assert.equal(state.startDelay, 0);
+  assert.equal(state.elapsed, 0);
+  step(state, { throttle: true });
+  assert.ok(state.car.speed > 0);
+  near(state.elapsed, FIXED_DT);
+});
+
+test('throttle accelerates, brake sheds speed, and a held brake eventually reverses with a speed cap', () => {
+  const state = active();
+  ticks(state, 120, { throttle: true });
+  const speed = state.car.speed;
+  assert.ok(speed > 120 && speed < MAX_SPEED);
+  ticks(state, 30, { brake: true });
+  assert.ok(state.car.speed > 0 && state.car.speed < speed / 2);
+  ticks(state, 180, { brake: true });
+  near(state.car.speed, -65, .5);
+  assert.ok(Math.hypot(state.car.vx, state.car.vy) <= MAX_SPEED);
+  ticks(state, 120, { throttle: true });
+  assert.ok(state.car.speed > 40, 'throttle first slows reverse, then drives forward');
+});
+
+test('steering needs movement, opposing steer keys cancel, and reverse steering changes yaw direction', () => {
+  const parked = active(), heading = parked.car.heading;
+  ticks(parked, 240, { left: true });
+  near(parked.car.heading, heading);
+  const neutral = active(), cancelled = active();
+  ticks(neutral, 60, { throttle: true });
+  ticks(cancelled, 60, { throttle: true, left: true, right: true });
+  assert.deepEqual(cancelled, neutral);
+  const forward = active(), reverse = active();
+  for (const [state, sign] of [[forward, 1], [reverse, -1]]) {
+    state.car.vx = Math.cos(state.car.heading) * 60 * sign;
+    state.car.vy = Math.sin(state.car.heading) * 60 * sign;
+    ticks(state, 20, { left: true });
+  }
+  assert.ok(angle(forward.car.heading - heading) < 0);
+  assert.ok(angle(reverse.car.heading - heading) > 0);
+});
+
+test('released throttle coasts and then stops without an automatic direction or stale steering input', () => {
+  const state = active();
+  ticks(state, 90, { throttle: true });
+  const previousSpeed = state.car.speed, heading = state.car.heading;
+  step(state, {});
+  assert.ok(state.car.speed > 0 && state.car.speed < previousSpeed);
+  ticks(state, 1500);
+  near(state.car.speed, 0);
+  near(state.car.heading, heading);
+});
+
+test('handbrake relaxes lateral grip into a stronger slide and sacrifices speed', () => {
+  const grip = active(), drift = active();
+  for (const state of [grip, drift]) {
+    state.car.vx = 150 * Math.cos(state.car.heading);
+    state.car.vy = 150 * Math.sin(state.car.heading);
+  }
+  ticks(grip, 60, { throttle: true, right: true });
+  ticks(drift, 60, { throttle: true, right: true, handbrake: true });
+  assert.ok(Math.abs(drift.car.slip) > Math.abs(grip.car.slip) * 1.5);
+  assert.ok(drift.car.speed < grip.car.speed);
+  assert.ok(angle(drift.car.heading - grip.car.heading) > 0);
+});
+
+test('grass slows the car but still permits acceleration and steering back toward the track', () => {
+  const state = active();
+  Object.assign(state.car, { x: 500, y: 340, vx: 140, vy: 0, heading: 0 });
+  ticks(state, 120, { throttle: true });
+  assert.equal(state.onRoad, false);
+  assert.ok(state.car.speed > 45 && state.car.speed <= 75);
+  const heading = state.car.heading;
+  ticks(state, 60, { throttle: true, left: true });
+  assert.ok(Math.abs(angle(state.car.heading - heading)) > .4);
+  assert.ok(state.car.x > 500, 'grass is traversable rather than a permanent collision');
+});
+
+test('reset restores the last earned checkpoint, preserves progress, and adds a lap/race time penalty', () => {
+  const state = fixtureAtGate(3);
+  state.elapsed = 8;
+  step(state);
+  assert.equal(state.nextGate, 4);
+  assert.equal(state.lastCheckpoint, 3);
+  const elapsed = state.elapsed;
+  state.car.x = 500; state.car.y = 340;
+  assert.equal(togglePause(state), true);
+  assert.equal(resetCar(state), true);
+  assert.equal(state.phase, 'paused');
+  assert.equal(state.nextGate, 4);
+  assert.equal(state.gateProgress, 3);
+  assert.equal(state.penalty, RESET_PENALTY);
+  near(state.elapsed, elapsed + RESET_PENALTY);
+  near(state.lapElapsed, state.elapsed);
+  assert.equal(state.car.speed, 0);
+  assert.equal(state.onRoad, true);
+  assert.ok(nearestTrack(state.car).distance < 1e-6);
+  near(nearestTrack(state.car).s, GATES[3].s + 12, .001);
+  assert.equal(resetCar(createState()), false, 'countdown cannot be used to gain a rolling start');
+});
+
+test('only the expected forward gate counts: reverse, missed road, early finish and repeated finish are rejected', () => {
+  const valid = fixtureAtGate(1);
+  step(valid);
+  assert.equal(valid.nextGate, 2);
+  const backward = fixtureAtGate(1, { reverse: true });
+  step(backward);
+  assert.equal(backward.nextGate, 1);
+  assert.equal(backward.wrongWay, true);
+  const outside = fixtureAtGate(1, { offset: ROAD_WIDTH });
+  step(outside);
+  assert.equal(outside.nextGate, 1);
+  const earlyFinish = fixtureAtGate(0);
+  earlyFinish.nextGate = 1;
+  step(earlyFinish);
+  assert.equal(earlyFinish.lapsCompleted, 0);
+  const finish = fixtureAtGate(0);
+  step(finish);
+  assert.equal(finish.lapsCompleted, 1);
+  assert.equal(finish.nextGate, 1);
+  Object.assign(finish.car, { x: GATES[0].x - .3 * GATES[0].tx, y: GATES[0].y - .3 * GATES[0].ty });
+  step(finish);
+  assert.equal(finish.lapsCompleted, 1, 'recrossing finish cannot farm the remaining laps');
+});
+
+test('shortcut travel and a direct teleport to the next gate do not count checkpoint progress', () => {
+  const shortcut = fixtureAtGate(1, { travel: 10 });
+  step(shortcut);
+  assert.equal(shortcut.nextGate, 1);
+  const teleport = fixtureAtGate(1);
+  teleport.course.previous = { x: createState().car.x, y: createState().car.y };
+  teleport.course.lastS = TRACK_LENGTH - 18;
+  step(teleport);
+  assert.equal(teleport.nextGate, 1);
+  assert.equal(teleport.course.travel, 0);
+  const reversedFinish = fixtureAtGate(0, { reverse: true });
+  step(reversedFinish);
+  assert.equal(reversedFinish.lapsCompleted, 0);
+});
+
+test('a legal physics-only driver completes exactly three laps, with cumulative timing and frozen terminal state', () => {
+  const state = createState();
+  let gatesPassed = 0, maximumDeviation = 0;
+  for (let tick = 0; tick < 7200 && state.phase === 'playing'; tick += 1) {
+    const expected = state.nextGate;
+    step(state, driver(state));
+    if (state.nextGate !== expected) gatesPassed += 1;
+    maximumDeviation = Math.max(maximumDeviation, nearestTrack(state.car).distance);
+  }
+  assert.equal(state.phase, 'won');
+  assert.equal(state.result, 'finished');
+  assert.equal(state.lapsCompleted, LAPS);
+  assert.equal(state.lap, LAPS);
+  assert.equal(gatesPassed, GATES.length * LAPS);
+  assert.equal(state.lapTimes.length, LAPS);
+  assert.ok(state.raceTime > 35 && state.raceTime < 55);
+  assert.ok(maximumDeviation < ROAD_WIDTH / 2);
+  near(state.lapTimes.reduce((sum, time) => sum + time, 0), state.raceTime);
+  near(state.bestLap, Math.min(...state.lapTimes));
+  near(state.lapElapsed, state.lapTimes.at(-1));
+  assert.equal(state.score, state.raceTime);
+  const before = clone(state);
+  assert.equal(step(state, { throttle: true }), false);
+  assert.equal(togglePause(state), false);
+  assert.equal(resetCar(state), false);
+  assert.deepEqual(state, before);
+});
+
+test('pause freezes countdown, movement, checkpoint bookkeeping and race time until resumed', () => {
+  const countdown = createState();
+  togglePause(countdown);
+  const parked = clone(countdown);
+  step(countdown, { throttle: true }, .1);
+  assert.deepEqual(countdown, parked);
+  const state = active();
+  ticks(state, 45, { throttle: true, right: true });
+  assert.equal(togglePause(state), true);
+  const before = clone(state);
+  ticks(state, 100, { throttle: true, left: true });
+  assert.deepEqual(state, before);
+  assert.equal(togglePause(state), true);
+  step(state, { throttle: true });
+  assert.ok(state.elapsed > before.elapsed);
+});
+
+test('fixed substeps agree with individual steps and oversized frame deltas are bounded', () => {
+  const frame = active(), fixed = active();
+  const controls = { throttle: true, left: true };
+  step(frame, controls, .05);
+  ticks(fixed, 6, controls);
+  near(frame.car.x, fixed.car.x); near(frame.car.y, fixed.car.y);
+  near(frame.car.heading, fixed.car.heading); near(frame.elapsed, fixed.elapsed);
+  const bounded = active();
+  step(bounded, { throttle: true }, 400);
+  near(bounded.elapsed, .1);
+});
+
+test('non-boolean held controls and invalid deltas cannot poison the simulation', () => {
+  const neutral = active(), invalid = active();
+  ticks(neutral, 60);
+  ticks(invalid, 60, { throttle: 'true', brake: 1, left: {}, right: [], handbrake: Infinity });
+  assert.deepEqual(invalid, neutral);
+  step(invalid, null);
+  const before = clone(invalid);
+  for (const dt of [0, -1, NaN, Infinity, -Infinity]) assert.equal(step(invalid, { throttle: true }, dt), false);
+  assert.deepEqual(invalid, before);
+  for (let i = 0; i < 12000; i += 1) {
+    step(invalid, { throttle: i % 3 !== 0, brake: i % 7 === 0,
+      left: i % 221 < 92, right: i % 221 > 127, handbrake: i % 101 < 30 }, i % 17 === 0 ? .05 : FIXED_DT);
+    assert.ok(Object.values(invalid.car).every(Number.isFinite));
+    assert.ok(Math.hypot(invalid.car.vx, invalid.car.vy) <= MAX_SPEED + 1e-8);
+    assert.ok(invalid.car.x >= 12 && invalid.car.x <= WORLD.width - 12);
+    assert.ok(invalid.car.y >= 12 && invalid.car.y <= WORLD.height - 12);
+  }
+});

@@ -9,6 +9,8 @@ export const GAMES = {
   'snake': { title: 'Snake', category: 'SOLO ARCADE', kind: 'solo', icon: '〰', description: 'One more bite. One less way out.', color: '#658254' },
   'minesweeper': { title: 'Minesweeper', category: 'SOLO PUZZLE', kind: 'solo', icon: '⚑', description: 'Read the numbers. Clear the field.', color: '#899282' },
   '2048': { title: '2048', category: 'SOLO PUZZLE', kind: 'solo', icon: '▦', description: 'Slide, combine, and think ahead.', color: '#bf9764' },
+  'apex-circuit': { title: 'Apex Circuit', category: 'DRIVING / TIME TRIAL', kind: 'solo', genre: 'driving', icon: '◎', description: 'Find the line. Make every lap count.', color: '#82916b' },
+  'night-drive': { title: 'Night Drive', category: 'DRIVING / HIGHWAY', kind: 'solo', genre: 'driving', icon: '▰', description: 'The city is yours for one more mile.', color: '#637e81' },
 };
 export function soloUrl(gameId) {
   return `/solo.html?game=${encodeURIComponent(gameId)}`;

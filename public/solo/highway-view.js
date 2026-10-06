@@ -1,0 +1,495 @@
+import { createState, step, togglePause as pauseState, CAR_WIDTH } from './highway-engine.js';
+
+const W = 720;
+const H = 520;
+const HORIZON = 178;
+const ROAD_HALF = 268;
+const CAR_Y = 474;
+const COLORS = { cream: '#f8edcf', orange: '#f0a160', mint: '#77dfc9', ink: '#132c32' };
+const KEY_CONTROLS = {
+  ArrowLeft: 'left', a: 'left', A: 'left', ArrowRight: 'right', d: 'right', D: 'right',
+  ArrowUp: 'throttle', w: 'throttle', W: 'throttle', ArrowDown: 'brake', s: 'brake', S: 'brake',
+  ' ': 'boost', Space: 'boost',
+};
+const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
+const mod = (value, divisor) => ((value % divisor) + divisor) % divisor;
+const isForm = target => target instanceof Element
+  && Boolean(target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"])'));
+function node(tag, className, text) {
+  const result = document.createElement(tag);
+  result.className = className;
+  if (text !== undefined) result.textContent = text;
+  return result;
+}
+
+export function mount(container, { onUpdate = () => {} } = {}) {
+  let state = createState();
+  let destroyed = false;
+  let raf = null;
+  let previousFrame = null;
+  let accumulator = 0;
+  let lastPublished = -Infinity;
+  let lastPhase = null;
+  let lastEventId = -1;
+  let message = null;
+  let particles = [];
+  let exhaustTime = 0;
+  const keys = new Map();
+  const touches = new Map();
+  const view = node('section', 'highway-view');
+  view.setAttribute('aria-label', 'Night Drive highway game');
+  const topline = node('div', 'highway-topline');
+  topline.append(node('span', '', 'NIGHT DRIVE'), node('span', 'highway-location', 'CITY LOOP · ENDLESS HIGHWAY'));
+  const board = node('div', 'highway-board');
+  const canvas = node('canvas', 'highway-canvas');
+  canvas.width = W;
+  canvas.height = H;
+  canvas.tabIndex = 0;
+  canvas.dataset.soloFocus = '';
+  canvas.setAttribute('role', 'img');
+  canvas.setAttribute('aria-label', 'Night highway. Arrow keys or W A S D to drive, Space to boost, P to pause.');
+  const overlay = node('div', 'highway-overlay');
+  overlay.hidden = true;
+  const overlayEyebrow = node('span', 'highway-overlay-eyebrow');
+  const overlayTitle = node('strong', 'highway-overlay-title');
+  const overlayDetail = node('span', 'highway-overlay-detail');
+  const replay = node('button', 'highway-replay', 'Drive again ↗');
+  replay.type = 'button';
+  overlay.append(overlayEyebrow, overlayTitle, overlayDetail, replay);
+  board.append(canvas, overlay);
+  const footer = node('div', 'highway-footer');
+  const description = node('div', 'highway-description');
+  const status = node('p', 'highway-status');
+  status.setAttribute('role', 'status');
+  status.setAttribute('aria-live', 'polite');
+  status.setAttribute('aria-atomic', 'true');
+  const hint = node('p', 'highway-hint', 'A / D or ← / → steer · W accelerates · S brakes · Space boosts. Skim past traffic to build a combo.');
+  description.append(status, hint);
+  const controls = node('div', 'highway-controls');
+  controls.setAttribute('role', 'group');
+  controls.setAttribute('aria-label', 'Hold to drive');
+  const buttons = new Map();
+  for (const [control, symbol, label] of [
+    ['left', '←', 'Steer left'], ['right', '→', 'Steer right'], ['brake', '↓', 'Brake'],
+    ['throttle', '↑', 'Accelerate'], ['boost', '↗', 'Boost'],
+  ]) {
+    const button = node('button', `highway-control highway-control-${control}`);
+    button.type = 'button';
+    button.dataset.control = control;
+    button.setAttribute('aria-label', `Hold to ${label.toLowerCase()}`);
+    button.setAttribute('aria-pressed', 'false');
+    button.append(node('b', '', symbol), node('span', '', control === 'throttle' ? 'GAS' : label.toUpperCase().replace('STEER ', '')));
+    buttons.set(control, button);
+    controls.append(button);
+  }
+  footer.append(description, controls);
+  view.append(topline, board, footer);
+  container.append(view);
+  const ctx = canvas.getContext('2d');
+
+  function input() {
+    const result = { left: false, right: false, throttle: false, brake: false, boost: false };
+    for (const control of keys.values()) result[control] = true;
+    for (const control of touches.values()) result[control] = true;
+    return result;
+  }
+  function syncButtons() {
+    const held = input();
+    for (const [control, button] of buttons) {
+      button.dataset.held = String(held[control]);
+      button.setAttribute('aria-pressed', String(held[control]));
+    }
+  }
+  function releaseControls() {
+    keys.clear();
+    touches.clear();
+    for (const button of buttons.values()) {
+      // Releasing capture is optional: clearing the pointer map immediately
+      // prevents a held accelerator surviving a pause, tab change, or restart.
+      button.dataset.held = 'false';
+      button.setAttribute('aria-pressed', 'false');
+    }
+  }
+  function details() {
+    if (state.phase === 'paused') return 'Cruise paused. Resume when you are ready.';
+    if (state.phase === 'lost') return `${(state.distance / 1000).toFixed(2)} km on the night shift. Take another lap.`;
+    if (state.shoulder) return 'Ease back onto the road. The shoulder slows you down.';
+    if (state.crashCooldown > 0) return 'A close call. Find a gap while your car recovers.';
+    return 'Stay smooth. Clean overtakes score points; near misses build your combo.';
+  }
+  function publish(force = false) {
+    if (!force && state.elapsed - lastPublished < .1 && state.phase === lastPhase) return;
+    lastPublished = state.elapsed;
+    lastPhase = state.phase;
+    const detail = details();
+    if (status.textContent !== detail) status.textContent = detail;
+    view.dataset.phase = state.phase;
+    view.dataset.speed = String(Math.round(state.speed));
+    overlay.hidden = state.phase === 'playing';
+    if (!overlay.hidden) {
+      overlayEyebrow.textContent = state.phase === 'paused' ? 'PULL OVER FOR A MOMENT' : 'THE NIGHT IS YOURS';
+      overlayTitle.textContent = state.phase === 'paused' ? 'Take a breather.' : 'End of the road.';
+      overlayDetail.textContent = state.phase === 'paused' ? 'Press P or Resume to keep driving.' : `${(state.distance / 1000).toFixed(2)} KM  ·  ${state.score} POINTS`;
+      replay.hidden = state.phase === 'paused';
+    }
+    onUpdate({ phase: state.phase, score: state.score, record: state.score, recordLabel: 'BEST SCORE', scoreLabel: 'SCORE', detail });
+  }
+
+  function projection(z) {
+    const p = 16 / (Math.max(0, z) + 16);
+    return { p, x: W / 2 + state.curve * (1 - p) ** 2 * 142, y: HORIZON + (CAR_Y - HORIZON) * p, half: ROAD_HALF * p };
+  }
+  function rect(x, y, width, height, color) {
+    ctx.fillStyle = color;
+    ctx.fillRect(Math.round(x), Math.round(y), Math.max(1, Math.round(width)), Math.max(1, Math.round(height)));
+  }
+  function polygon(points, color) {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    points.forEach(([x, y], index) => index ? ctx.lineTo(Math.round(x), Math.round(y)) : ctx.moveTo(Math.round(x), Math.round(y)));
+    ctx.closePath();
+    ctx.fill();
+  }
+  function roadStrip(a, b, left, right, color) {
+    polygon([[a.x + a.half * left, a.y], [a.x + a.half * right, a.y], [b.x + b.half * right, b.y], [b.x + b.half * left, b.y]], color);
+  }
+  function sky() {
+    rect(0, 0, W, HORIZON, '#142932');
+    rect(0, 78, W, 44, '#1a333c');
+    rect(0, 122, W, 34, '#234249');
+    rect(0, 156, W, 24, '#30565a');
+    for (let i = 0; i < 48; i += 1) {
+      const x = mod(i * 137 + 43, W);
+      const y = mod(i * 71 + 23, 130) + 8;
+      rect(x, y, i % 9 ? 2 : 3, 2, i % 3 ? '#659895' : '#cfddba');
+    }
+    const mx = 480 - state.x * 5;
+    rect(mx + 12, 35, 28, 6, '#f2dcab');
+    rect(mx + 6, 41, 40, 6, '#f2dcab');
+    rect(mx, 47, 52, 28, '#f2dcab');
+    rect(mx + 6, 75, 40, 6, '#f2dcab');
+    rect(mx + 12, 81, 28, 6, '#f2dcab');
+    rect(mx + 29, 44, 13, 10, '#dac898');
+    rect(mx + 9, 66, 10, 8, '#dac898');
+    // Stable, hand-sized windows keep the city pixelated without flicker.
+    for (let layer = 0; layer < 2; layer += 1) {
+      for (let i = -1; i < 19; i += 1) {
+        const bw = 32 + mod(i * 13 + 70, 25);
+        const height = 25 + mod(i * 31 + 130 + layer * 19, layer ? 83 : 57);
+        const x = i * 43 - state.x * (layer ? 10 : 4);
+        const y = HORIZON - height;
+        rect(x, y, bw, height, layer ? '#15343a' : '#24494b');
+        if (i % 4 === 0) rect(x + bw * .5, y - 10, 2, 10, '#386465');
+        if (layer) {
+          for (let wy = y + 10; wy < HORIZON - 4; wy += 12) {
+            for (let wx = x + 7; wx < x + bw - 6; wx += 10) {
+              if (mod(Math.round(wx + wy * 3), 5) < 2) rect(wx, wy, 3, 5, mod(Math.round(wx), 3) ? '#549884' : '#bd9c63');
+            }
+          }
+        }
+      }
+    }
+    rect(0, HORIZON - 2, W, 5, '#67a28d');
+  }
+  function road() {
+    rect(0, HORIZON + 3, W, H - HORIZON, '#1b393c');
+    polygon([[W / 2 + state.curve * 142, HORIZON + 3], [W / 2 + ROAD_HALF, CAR_Y], [W / 2 - ROAD_HALF, CAR_Y]], '#33494c');
+    // The close road continues below the car; traffic z=0 lines up with its rear.
+    const nearest = projection(0);
+    polygon([[nearest.x - nearest.half, nearest.y], [nearest.x + nearest.half, nearest.y], [W / 2 + ROAD_HALF * 1.16, H], [W / 2 - ROAD_HALF * 1.16, H]], '#33484b');
+    roadStrip(nearest, { x: W / 2, y: H, half: ROAD_HALF * 1.16 }, -1.075, -1, '#597068');
+    roadStrip(nearest, { x: W / 2, y: H, half: ROAD_HALF * 1.16 }, 1, 1.075, '#597068');
+    for (let z = 400; z > 0; z -= 2) {
+      const far = projection(z);
+      const near = projection(Math.max(0, z - 2));
+      const world = z + state.distance;
+      roadStrip(far, near, -1.1, 1.1, mod(Math.floor(world / 5), 2) ? '#365750' : '#3b5d54');
+      roadStrip(far, near, -1, 1, mod(Math.floor(world / 12), 2) ? '#33494c' : '#354b4e');
+      const curb = mod(world, 8) < 4 ? '#d1c394' : '#487367';
+      roadStrip(far, near, -1.07, -1.02, curb);
+      roadStrip(far, near, 1.02, 1.07, curb);
+      roadStrip(far, near, -.985, -.976, '#8ba498');
+      roadStrip(far, near, .976, .985, '#8ba498');
+      if (mod(world, 12) < 5.5) {
+        roadStrip(far, near, -.337, -.323, '#bfcbb8');
+        roadStrip(far, near, .323, .337, '#bfcbb8');
+      }
+    }
+    // A few close lane lines continue beneath the bumper.
+    const close = { x: W / 2, y: H, half: ROAD_HALF * 1.16 };
+    if (mod(state.distance, 12) < 5.5) {
+      roadStrip(nearest, close, -.337, -.323, '#bfcbb8');
+      roadStrip(nearest, close, .323, .337, '#bfcbb8');
+    }
+  }
+  function lamp(z, side) {
+    const point = projection(z);
+    const x = point.x + side * point.half * 1.29;
+    const height = 175 * point.p;
+    const top = point.y - height;
+    rect(x, top, Math.max(1, 5 * point.p), height, '#49746b');
+    rect(x - side * 29 * point.p, top, 32 * point.p, Math.max(1, 4 * point.p), '#73aa96');
+    rect(x - side * 29 * point.p, top + 4 * point.p, 14 * point.p, Math.max(2, 5 * point.p), '#c5efc4');
+    ctx.globalAlpha = .09;
+    polygon([[x - side * 23 * point.p, top], [x - 32 * point.p, point.y], [x + 35 * point.p, point.y]], '#bceac0');
+    ctx.globalAlpha = 1;
+  }
+  function car(x, y, width, color, player = false) {
+    const height = width * 1.17;
+    const unit = width / 24;
+    const top = y - height;
+    const r = (rx, ry, rw, rh, paint) => rect(x + (rx - 12) * unit, top + ry * unit, rw * unit, rh * unit, paint);
+    ctx.globalAlpha = .35;
+    r(-1, 25, 26, 5, '#0b2128');
+    ctx.globalAlpha = 1;
+    r(1, 9, 4, 18, '#14282d');
+    r(19, 9, 4, 18, '#14282d');
+    r(5, 1, 14, 3, color);
+    r(3, 4, 18, 23, color);
+    r(1, 11, 22, 14, color);
+    r(5, 5, 14, 8, player ? '#c3dcc5' : '#719da0');
+    r(6, 5, 12, 2, player ? '#f1e7c6' : '#97b8b1');
+    r(6, 9, 12, 3, '#29494c');
+    r(3, 13, 18, 2, player ? '#ffd29a' : '#abc0b4');
+    r(5, 16, 14, 7, color);
+    if (player) {
+      r(11, 15, 2, 8, '#f8e8c0');
+      r(2, 19, 3, 5, '#bf6947');
+      r(19, 19, 3, 5, '#bf6947');
+    }
+    r(2, 24, 5, 2, player && input().brake ? '#ff7768' : '#eeb16d');
+    r(17, 24, 5, 2, player && input().brake ? '#ff7768' : '#eeb16d');
+    r(8, 25, 8, 2, '#e9dfbd');
+    r(2, 27, 20, 1, '#244347');
+  }
+  function hud() {
+    ctx.globalAlpha = .83;
+    rect(18, 18, 149, 61, '#142e33');
+    rect(W - 161, 18, 143, 61, '#142e33');
+    ctx.globalAlpha = 1;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+    ctx.font = 'bold 28px ui-monospace, monospace';
+    ctx.fillStyle = COLORS.cream;
+    ctx.fillText(String(Math.round(state.speed)).padStart(3, '0'), 30, 54);
+    ctx.font = 'bold 10px ui-monospace, monospace';
+    ctx.fillStyle = '#8fc2ad';
+    ctx.fillText('KM/H', 102, 52);
+    ctx.fillText('NIGHT SHIFT', 30, 68);
+    ctx.fillText('DISTANCE', W - 149, 36);
+    ctx.font = 'bold 21px ui-monospace, monospace';
+    ctx.fillStyle = COLORS.cream;
+    ctx.fillText(`${(state.distance / 1000).toFixed(2)} KM`, W - 149, 62);
+    ctx.font = 'bold 10px ui-monospace, monospace';
+    ctx.fillStyle = '#b2c7ad';
+    ctx.fillText('BODY', 22, H - 38);
+    for (let i = 0; i < 3; i += 1) {
+      rect(22 + i * 25, H - 27, 19, 9, i < state.health ? COLORS.orange : '#506465');
+      if (i < state.health) rect(24 + i * 25, H - 25, 15, 2, '#ffd9a0');
+    }
+    const bx = W - 207;
+    ctx.fillStyle = state.boosting ? '#b6f5db' : '#9ec0b0';
+    ctx.fillText(state.boosting ? 'BOOST ACTIVE' : 'BOOST · SPACE', bx, H - 38);
+    rect(bx, H - 27, 185, 9, '#294b4a');
+    rect(bx + 1, H - 26, 183 * clamp(state.boost, 0, 1), 7, state.boosting ? '#c5f6c9' : '#78bba2');
+    if (state.combo > 1) {
+      ctx.textAlign = 'center';
+      ctx.fillStyle = COLORS.cream;
+      ctx.font = 'bold 12px ui-monospace, monospace';
+      ctx.fillText(`${state.combo}× CLEAN STREAK`, W / 2, 29);
+    }
+    if (message && state.elapsed < message.until) {
+      const fade = clamp((message.until - state.elapsed) * 2, 0, 1);
+      ctx.globalAlpha = fade;
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 19px ui-monospace, monospace';
+      ctx.fillStyle = message.color;
+      ctx.fillText(message.text, W / 2, HORIZON + 49);
+      ctx.globalAlpha = 1;
+    }
+  }
+  function draw() {
+    if (destroyed || !ctx) return;
+    ctx.imageSmoothingEnabled = false;
+    sky();
+    road();
+    const scenery = [];
+    const offset = mod(state.distance, 25);
+    for (let z = 300 - offset; z > 1; z -= 25) {
+      scenery.push({ z, draw: () => { lamp(z, -1); lamp(z, 1); } });
+    }
+    for (const traffic of state.traffic) {
+      if (traffic.z < 0 || traffic.z > 220) continue;
+      scenery.push({ z: traffic.z, draw: () => {
+        const p = projection(traffic.z);
+        car(p.x + traffic.x * p.half, p.y, traffic.width * p.half, traffic.crashed ? '#819084' : traffic.color);
+      } });
+    }
+    scenery.sort((a, b) => b.z - a.z).forEach(item => item.draw());
+    const playerX = W / 2 + state.x * ROAD_HALF;
+    for (const particle of particles) {
+      ctx.globalAlpha = clamp(particle.life / particle.maxLife, 0, 1);
+      rect(particle.x, particle.y, particle.size, particle.size, particle.color);
+    }
+    ctx.globalAlpha = 1;
+    if (state.boosting) {
+      const pulse = Math.floor(state.elapsed * 24) % 2;
+      polygon([[playerX - 25, CAR_Y - 2], [playerX - 18, CAR_Y - 2], [playerX - 22, CAR_Y + 20 + pulse * 8]], '#a7e8c3');
+      polygon([[playerX + 18, CAR_Y - 2], [playerX + 25, CAR_Y - 2], [playerX + 22, CAR_Y + 20 + pulse * 8]], '#a7e8c3');
+    }
+    // Flash only the body during damage immunity; its position stays readable.
+    const immune = state.crashCooldown > 0 && Math.floor(state.elapsed * 12) % 2;
+    car(playerX, CAR_Y, CAR_WIDTH * ROAD_HALF, immune ? '#f7d5a0' : COLORS.orange, true);
+    if (state.crashCooldown > 1.1) {
+      ctx.globalAlpha = Math.min(.18, (state.crashCooldown - 1.1) * .18);
+      rect(0, 0, W, H, '#ed815f');
+      ctx.globalAlpha = 1;
+    }
+    // Fast streaks stay on the shoulder, where they cannot obscure traffic.
+    if (state.speed > 160) {
+      ctx.globalAlpha = (state.speed - 160) / 300;
+      for (let i = 0; i < 10; i += 1) {
+        const side = i % 2 ? 1 : -1;
+        const y = HORIZON + mod(i * 79 + state.distance * 5, H - HORIZON);
+        const spread = (y - HORIZON) / (H - HORIZON);
+        polygon([[W / 2 + side * (ROAD_HALF + 40) * spread, y], [W / 2 + side * (ROAD_HALF + 43) * spread, y], [W / 2 + side * (ROAD_HALF + 50) * (spread + .09), y + 26]], '#a8c8b0');
+      }
+      ctx.globalAlpha = 1;
+    }
+    hud();
+  }
+  function effects(dt) {
+    for (const event of state.events) {
+      if (event.id <= lastEventId) continue;
+      lastEventId = event.id;
+      if (event.type === 'near-miss') message = { text: `NEAR MISS${event.points ? ` +${event.points}` : ''}`, color: '#bdf4cd', until: state.elapsed + 1.3 };
+      else if (event.type === 'crash') {
+        message = { text: 'KEEP YOUR COOL', color: '#ffd8ac', until: state.elapsed + 1.2 };
+        for (let i = 0; i < 16; i += 1) particles.push({ x: W / 2 + state.x * ROAD_HALF, y: CAR_Y - 28, vx: (i - 7.5) * 25, vy: -110 + mod(i * 33, 150), life: .55, maxLife: .55, size: 3 + i % 3, color: i % 2 ? '#f7d49a' : '#e18d5c' });
+      }
+    }
+    exhaustTime += dt;
+    if (state.boosting && exhaustTime > .035) {
+      exhaustTime = 0;
+      for (const side of [-1, 1]) particles.push({ x: W / 2 + state.x * ROAD_HALF + side * 22, y: CAR_Y + 7, vx: side * 7, vy: 65, life: .28, maxLife: .28, size: 5, color: '#99d4ad' });
+    }
+    particles = particles.filter(particle => {
+      particle.life -= dt;
+      particle.x += particle.vx * dt;
+      particle.y += particle.vy * dt;
+      return particle.life > 0;
+    }).slice(-90);
+  }
+  function frame(time) {
+    if (destroyed) return;
+    const elapsed = previousFrame === null ? 0 : Math.min(.08, Math.max(0, (time - previousFrame) / 1000));
+    previousFrame = time;
+    if (state.phase === 'playing') {
+      accumulator += elapsed;
+      let steps = 0;
+      while (accumulator >= 1 / 120 && steps < 10 && state.phase === 'playing') {
+        step(state, input(), 1 / 120);
+        effects(1 / 120);
+        accumulator -= 1 / 120;
+        steps += 1;
+      }
+      if (state.phase !== 'playing') releaseControls();
+      publish();
+    } else accumulator = 0;
+    draw();
+    raf = requestAnimationFrame(frame);
+  }
+  function togglePause() {
+    if (destroyed) return;
+    releaseControls();
+    if (!pauseState(state)) return;
+    previousFrame = null;
+    accumulator = 0;
+    publish(true);
+    draw();
+  }
+  function restart() {
+    if (destroyed) return;
+    releaseControls();
+    state = createState();
+    previousFrame = null;
+    accumulator = 0;
+    lastEventId = -1;
+    lastPublished = -Infinity;
+    particles = [];
+    message = null;
+    exhaustTime = 0;
+    publish(true);
+    draw();
+    canvas.focus({ preventScroll: true });
+  }
+  function keydown(event) {
+    if (event.isComposing || event.altKey || event.ctrlKey || event.metaKey || isForm(event.target)) return;
+    const focused = event.target instanceof Element ? event.target.closest('button[data-control]') : null;
+    const activation = event.code === 'Space' || event.key === ' ' || event.key === 'Enter';
+    const focusedControl = activation && focused && controls.contains(focused) ? focused.dataset.control : null;
+    const control = focusedControl || KEY_CONTROLS[event.key] || KEY_CONTROLS[event.code];
+    if (!control || state.phase !== 'playing') return;
+    if (!focusedControl && control === 'boost' && event.target instanceof Element && event.target.closest('button,a')) return;
+    event.preventDefault();
+    if (event.repeat && !keys.has(event.code || event.key)) return;
+    keys.set(event.code || event.key, control);
+    syncButtons();
+  }
+  function keyup(event) {
+    if (!keys.has(event.code || event.key)) return;
+    keys.delete(event.code || event.key);
+    syncButtons();
+  }
+  function pointerdown(event) {
+    const button = event.target.closest('button[data-control]');
+    if (!button || !controls.contains(button) || state.phase !== 'playing') return;
+    if (event.button !== 0 && event.pointerType !== 'touch') return;
+    event.preventDefault();
+    touches.set(event.pointerId, button.dataset.control);
+    try { button.setPointerCapture?.(event.pointerId); } catch {}
+    syncButtons();
+  }
+  function pointerend(event) {
+    if (!touches.delete(event.pointerId)) return;
+    syncButtons();
+  }
+  const focus = () => canvas.focus({ preventScroll: true });
+  const visibility = () => { if (document.hidden) releaseControls(); };
+  window.addEventListener('keydown', keydown);
+  window.addEventListener('keyup', keyup);
+  window.addEventListener('blur', releaseControls);
+  document.addEventListener('visibilitychange', visibility);
+  controls.addEventListener('pointerdown', pointerdown);
+  window.addEventListener('pointerup', pointerend);
+  window.addEventListener('pointercancel', pointerend);
+  controls.addEventListener('lostpointercapture', pointerend);
+  canvas.addEventListener('pointerdown', focus);
+  replay.addEventListener('click', restart);
+  publish(true);
+  draw();
+  raf = requestAnimationFrame(frame);
+
+  return {
+    getState: () => JSON.parse(JSON.stringify(state)),
+    restart,
+    togglePause,
+    destroy() {
+      if (destroyed) return;
+      destroyed = true;
+      cancelAnimationFrame(raf);
+      releaseControls();
+      window.removeEventListener('keydown', keydown);
+      window.removeEventListener('keyup', keyup);
+      window.removeEventListener('blur', releaseControls);
+      document.removeEventListener('visibilitychange', visibility);
+      controls.removeEventListener('pointerdown', pointerdown);
+      window.removeEventListener('pointerup', pointerend);
+      window.removeEventListener('pointercancel', pointerend);
+      controls.removeEventListener('lostpointercapture', pointerend);
+      canvas.removeEventListener('pointerdown', focus);
+      replay.removeEventListener('click', restart);
+      view.remove();
+    },
+  };
+}

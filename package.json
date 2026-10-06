@@ -3,7 +3,7 @@
   "version": "2.0.0",
   "private": true,
   "type": "module",
-  "description": "A self-hosted hub with solo arcade and puzzle games, card games, checkers, sword duels, and co-op adventures.",
+  "description": "A self-hosted hub with driving, arcade, puzzle and card games, checkers, sword duels, and co-op adventures.",
   "scripts": {
     "start": "node server.js",
     "test": "node --test test/*.test.js"

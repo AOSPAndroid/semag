@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createBestStore } from '../public/solo/solo.js';
+import { createBestStore, recordDetails } from '../public/solo/solo.js';
 
 function browserStorage() {
   const values = new Map();
@@ -33,6 +33,41 @@ test('Minesweeper saves faster times separately for each difficulty', () => {
   assert.equal(records.update('minesweeper', 150, intermediate), 150);
   assert.equal(records.read('minesweeper', 'beginner'), 31);
   assert.equal(records.read('minesweeper', 'intermediate'), 150);
+});
+
+test('Apex Circuit records require a completed race and retain the fastest time after reload', () => {
+  const storage = browserStorage();
+  const records = createBestStore(storage);
+  const save = (update, store = records) => {
+    const { candidate, scope, direction } = recordDetails('apex-circuit', update);
+    return store.update('apex-circuit', candidate, { scope, direction });
+  };
+  for (const phase of ['playing', 'paused', 'lost']) {
+    assert.equal(save({ phase, score: 0, record: 0 }), null);
+  }
+  assert.equal(save({ phase: 'won', score: 49.27, record: 49.27 }), 49.27);
+  assert.equal(save({ phase: 'playing', score: 1, record: 1 }), 49.27);
+  assert.equal(save({ phase: 'won', score: 52.19, record: 52.19 }), 49.27);
+  assert.equal(save({ phase: 'won', score: 44.63, record: 44.63 }), 44.63);
+  const reloaded = createBestStore(storage);
+  assert.equal(reloaded.read('apex-circuit', 'three-laps'), 44.63);
+  assert.equal(save({ phase: 'playing', score: 0 }, reloaded), 44.63);
+});
+
+test('Night Drive saves a growing best score independently from timed games', () => {
+  const records = createBestStore(browserStorage());
+  const save = (gameId, update) => {
+    const { candidate, scope, direction } = recordDetails(gameId, update);
+    return records.update(gameId, candidate, { scope, direction });
+  };
+  assert.equal(save('night-drive', { phase: 'playing', score: 125 }), 125);
+  assert.equal(save('night-drive', { phase: 'lost', score: 480 }), 480);
+  assert.equal(save('night-drive', { phase: 'playing', score: 0 }), 480);
+  assert.equal(save('minesweeper', { phase: 'playing', recordKey: 'intermediate', record: 1 }), null);
+  assert.equal(save('minesweeper', { phase: 'won', recordKey: 'intermediate', record: 103 }), 103);
+  assert.equal(save('minesweeper', { phase: 'won', recordKey: 'intermediate', record: 88 }), 88);
+  assert.equal(records.read('night-drive'), 480);
+  assert.equal(records.read('minesweeper', 'intermediate'), 88);
 });
 
 test('invalid stored records do not poison future scores', () => {

@@ -9,6 +9,7 @@ const GAME_INFO = {
   minesweeper: {
     title: 'Minesweeper', category: 'A LITTLE DEDUCTION', description: 'A quiet board. A careful next step.',
     module: '/solo/minesweeper-view.js', ruleTitle: 'Read between the mines.',
+    recordPolicy: { direction: 'min', scopes: ['beginner', 'intermediate'], unit: 's', onlyWon: true },
     controls: [[['Click'], 'Reveal a tile'], [['Right click'], 'Place a flag'], [['↑', '←', '↓', '→'], 'Explore the board'], [['Enter'], 'Reveal'], [['F'], 'Flag']],
     touch: 'Switch Flag mode on to flag tiles with a tap. Pick Beginner or Intermediate for a fresh board.',
     rules: ['Numbers tell you how many mines touch a tile, including diagonals.', 'Reveal every safe tile to win. Flags help you keep track of suspected mines.', 'Your first reveal is safe. Your best time is saved separately for each difficulty.'],
@@ -20,10 +21,42 @@ const GAME_INFO = {
     touch: 'Swipe across the board to slide. Use Undo to take back your last move.',
     rules: ['Slide the board. Equal tiles merge into one tile with twice the value.', 'A new tile appears after each move that changes the board.', 'Reach 2048 to win, then keep playing if you wish. The run ends when no moves remain.'],
   },
+  'apex-circuit': {
+    title: 'Apex Circuit', category: 'DRIVING / TIME TRIAL', description: 'Three laps. One racing line. Your next personal best.',
+    module: '/solo/circuit-view.js', ruleTitle: 'Find your racing line.',
+    scoreDigits: 2, scoreUnit: 's',
+    recordPolicy: { direction: 'min', scopes: ['three-laps'], unit: 's', digits: 2, onlyWon: true },
+    controls: [[['W', '↑'], 'Accelerate'], [['S', '↓'], 'Brake / reverse'], [['A', 'D', '←', '→'], 'Steer'], [['Space'], 'Handbrake'], [['Q'], 'Reset car (+3s)']],
+    touch: 'Hold the pedal and steering buttons below the track. The handbrake helps rotate the car through a tight corner.',
+    rules: ['Complete three laps. Follow the direction arrows and pass each checkpoint in order.', 'Brake before a corner, then accelerate out. Grass slows you down.', 'Use Q or Reset car to recover at a checkpoint. Each reset adds three seconds.', 'The fastest completed three-lap race becomes your best time.'],
+  },
+  'night-drive': {
+    title: 'Night Drive', category: 'DRIVING / HIGHWAY', description: 'City lights. Open lanes. One more mile.',
+    module: '/solo/highway-view.js', ruleTitle: 'Keep a lane open.',
+    controls: [[['A', 'D', '←', '→'], 'Steer'], [['W', '↑'], 'Accelerate'], [['S', '↓'], 'Brake'], [['Space'], 'Boost']],
+    touch: 'Hold the steering, pedal, and boost buttons below the road. The car cruises automatically when you release the pedals.',
+    rules: ['Weave through traffic to build your distance and score.', 'Close, clean passes earn a near-miss bonus. Hitting traffic damages your car.', 'Boost uses charge, which recovers while you drive without boosting.', 'Three impacts end the run. Brake early and use clear lanes to recover.'],
+  },
 };
 
 function validRecord(value) {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
+/** Completed timed events compete on lowest time; ongoing runs cannot replace them. */
+export function recordDetails(gameId, update) {
+  const policy = GAME_INFO[gameId]?.recordPolicy || {};
+  const scopes = policy.scopes || ['default'];
+  return {
+    scope: scopes.includes(update.recordKey) ? update.recordKey : scopes[0],
+    direction: policy.direction === 'min' ? 'min' : 'max',
+    candidate: policy.onlyWon ? (update.phase === 'won' ? update.record : null) : (update.record ?? update.score),
+    unit: policy.unit || '', digits: policy.digits,
+  };
+}
+
+function formatValue(value, digits, unit = '') {
+  return `${Number.isInteger(digits) && digits >= 0 && digits <= 3 ? value.toFixed(digits) : String(value)}${unit}`;
 }
 
 // Records are local to this browser and origin. The memory mirror keeps play
@@ -114,21 +147,19 @@ async function startSolo() {
     const finished = phase === 'won' || phase === 'lost';
     $('solo-app').dataset.phase = phase;
     $('solo-status-label').textContent = { playing: 'IN PLAY', paused: 'PAUSED', won: 'YOU DID IT', lost: 'RUN COMPLETE' }[phase];
-    $('solo-score').textContent = validRecord(update.score) ? String(update.score) : '0';
+    $('solo-score').textContent = formatValue(validRecord(update.score) ? update.score : 0, info.scoreDigits, info.scoreUnit);
     $('solo-score-label').textContent = update.scoreLabel || 'SCORE';
     $('solo-record-label').textContent = update.recordLabel || (gameId === 'minesweeper' ? 'BEST TIME' : 'BEST SCORE');
     $('solo-detail').textContent = update.detail || (phase === 'paused' ? 'Take your time. Resume when you are ready.' : 'A new personal best is only a game away.');
-    const scope = gameId === 'minesweeper' && update.recordKey === 'intermediate' ? 'intermediate' : gameId === 'minesweeper' ? 'beginner' : 'default';
-    const direction = gameId === 'minesweeper' ? 'min' : 'max';
-    const candidate = gameId === 'minesweeper' ? (phase === 'won' ? update.record : null) : (update.record ?? update.score);
+    const { scope, direction, candidate, unit, digits } = recordDetails(gameId, update);
     const best = validRecord(candidate) ? records.update(gameId, candidate, { scope, direction }) : records.read(gameId, scope);
-    $('solo-record').textContent = best === null ? '—' : gameId === 'minesweeper' ? `${best}s` : String(best);
-    $('solo-record-scope').textContent = gameId === 'minesweeper' ? `Best ${scope} time stays in this browser, on this host.` : 'Best score stays in this browser, on this host.';
+    $('solo-record').textContent = best === null ? '—' : formatValue(best, digits, unit);
+    $('solo-record-scope').textContent = gameId === 'minesweeper' ? `Best ${scope} time stays in this browser, on this host.` : gameId === 'apex-circuit' ? 'Best three-lap time stays in this browser, on this host.' : 'Best score stays in this browser, on this host.';
     pause.disabled = finished;
     pause.setAttribute('aria-pressed', String(phase === 'paused'));
     pause.querySelector('span').textContent = phase === 'paused' ? 'Resume' : 'Pause';
     pause.querySelector('b').textContent = phase === 'paused' ? '▷' : 'Ⅱ';
-    $('solo-session-note').textContent = phase === 'paused' ? 'A breather is part of the game. Pick up where you left off.' : finished ? 'A fresh board is one click away. Your best is yours to keep.' : 'One player. Start straight away and play at your own pace.';
+    $('solo-session-note').textContent = phase === 'paused' ? 'A breather is part of the game. Pick up where you left off.' : finished ? 'A new game is one click away. Your best is yours to keep.' : 'One player. Start straight away and play at your own pace.';
   }
 
   function focusGame() {

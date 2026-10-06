@@ -1,0 +1,24 @@
+.highway-view{width:100%;max-width:760px;margin:0 auto;color:#193b32}
+.highway-topline{display:flex;justify-content:space-between;gap:16px;align-items:center;margin:0 0 12px;font:9px var(--mono,"SFMono-Regular",Consolas,monospace);letter-spacing:1.4px;color:#70856b}
+.highway-location{color:#88957e;text-align:right}
+.highway-board{position:relative;padding:10px;border:1px solid #aeb99c;border-radius:7px;background:#d5ddc1;box-shadow:0 4px 0 #6e826322;overflow:hidden}
+.highway-canvas{display:block;width:100%;height:auto;aspect-ratio:18/13;background:#142932;image-rendering:pixelated;touch-action:none;border:2px solid #345347;border-radius:2px;outline:none}
+.highway-canvas:focus-visible{outline:3px solid #e4ac73;outline-offset:2px}
+.highway-overlay{position:absolute;inset:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:15px;padding:24px;text-align:center;background:#142d33df;color:#f8edcf;backdrop-filter:blur(1px)}
+.highway-overlay[hidden]{display:none}
+.highway-overlay-eyebrow{font:9px var(--mono,"SFMono-Regular",Consolas,monospace);letter-spacing:2px;color:#9abdab}
+.highway-overlay-title{font:400 clamp(24px,4vw,37px) Georgia,"Times New Roman",serif;letter-spacing:-.7px}
+.highway-overlay-detail{font:10px var(--mono,"SFMono-Regular",Consolas,monospace);letter-spacing:.5px;line-height:1.8;color:#c8d6b8}
+.highway-replay{margin-top:6px;padding:12px 20px;border:1px solid #e1b481;border-radius:4px;background:#edbd86;color:#244136;font:12px var(--mono,"SFMono-Regular",Consolas,monospace);cursor:pointer;touch-action:manipulation}
+.highway-replay:hover{background:#f8d4a3}.highway-replay:focus-visible{outline:3px solid #f8edcf;outline-offset:4px}
+.highway-footer{display:flex;flex-direction:column;gap:17px;margin-top:17px}
+.highway-description{max-width:590px}.highway-status{margin:0;color:#49603e;font-size:13px;line-height:1.5}.highway-hint{margin:7px 0 0;color:#879278;font-size:11px;line-height:1.7}
+.highway-controls{display:flex;align-items:stretch;gap:7px;max-width:440px;width:100%}
+.highway-control{display:flex;flex-direction:column;justify-content:center;align-items:center;gap:4px;min-width:0;min-height:56px;flex:1;border:1px solid #c0cdb0;border-radius:4px;background:#e7edd9;color:#476242;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;cursor:pointer;padding:6px 5px}
+.highway-control b{font:18px var(--mono,"SFMono-Regular",Consolas,monospace);line-height:1}.highway-control span{font:8px var(--mono,"SFMono-Regular",Consolas,monospace);letter-spacing:1px}
+.highway-control:hover{background:#dae5c9}.highway-control[data-held=true],.highway-control:active{background:#bfd3aa;border-color:#90ad78;color:#29492d;transform:translateY(1px)}
+.highway-control:focus-visible{outline:2px solid #ad7345;outline-offset:3px}
+.highway-control-boost{background:#efd7af;border-color:#dac194;color:#8a663d;margin-left:5px}.highway-control-boost:hover{background:#ebcea0}.highway-control-boost[data-held=true],.highway-control-boost:active{background:#dfb675;border-color:#bc975b;color:#664719}
+.highway-view[data-phase=paused] .highway-control,.highway-view[data-phase=lost] .highway-control{opacity:.6}
+@media(min-width:950px){.highway-footer{flex-direction:row;align-items:center;gap:24px}.highway-description{flex:1}.highway-controls{max-width:320px;flex:1}.highway-control{min-height:52px}}
+@media(max-width:500px){.highway-board{padding:7px}.highway-overlay{inset:9px;gap:10px;padding:14px}.highway-topline{font-size:8px;letter-spacing:.9px;gap:10px;margin-bottom:10px}.highway-location{max-width:160px}.highway-overlay-eyebrow{font-size:8px;letter-spacing:1px}.highway-overlay-detail{font-size:9px}.highway-footer{gap:12px;margin-top:13px}.highway-status{font-size:12px}.highway-hint{font-size:10px}.highway-controls{gap:5px}.highway-control{min-height:53px}.highway-control span{font-size:7px;letter-spacing:.5px}.highway-control-boost{margin-left:3px}}

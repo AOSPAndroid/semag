@@ -2,7 +2,7 @@
 
 ![Fireside pixel-art logo](public/hub/logo.svg)
 
-A self-hosted browser game hub with solo games and two-player multiplayer. Pick **Play solo** for an instant arcade or puzzle game, or create a room and share your PC address or room link with a colleague. Both players press **Ready** before multiplayer play begins. Each room has two seats; the server can run several independent rooms at once.
+A self-hosted browser game hub with solo games and two-player multiplayer. Pick **Play solo** for an instant driving, arcade or puzzle game, or create a room and share your PC address or room link with a colleague. Both players press **Ready** before multiplayer play begins. Each room has two seats; the server can run several independent rooms at once.
 
 | Game | Mode | Goal |
 | --- | --- | --- |
@@ -16,8 +16,10 @@ A self-hosted browser game hub with solo games and two-player multiplayer. Pick 
 | Snake | Solo arcade | Eat fruit, grow longer, and survive as the snake gets faster. |
 | Minesweeper | Solo puzzle | Use numbered clues to reveal every safe tile without opening a mine. |
 | 2048 | Solo puzzle | Slide equal tiles together to reach 2048, then keep going if you like. |
+| Apex Circuit | Solo driving time trial | Race three laps with responsive steering, braking, and handbrake drifts. Beat your best completed race time. |
+| Night Drive | Solo highway driving | Weave through traffic, boost into clear lanes, and score clean overtakes and near misses. |
 
-The action games are original compact implementations. Checkers follows American checkers rules. All multiplayer card games use the same two-seat rooms, ready countdown, and rematch flow. The shelf filters show **All games**, **With a friend**, or **Solo**.
+The action games are original compact implementations. Checkers follows American checkers rules. All multiplayer card games use the same two-seat rooms, ready countdown, and rematch flow. The shelf filters show **All games**, **With a friend**, **Solo**, or **Driving**.
 
 ## Run on your PC
 
@@ -86,7 +88,11 @@ For Checkers, click a piece and then a highlighted destination. Captures are man
 
 **2048:** use arrow keys, WASD, swipes, or the direction buttons to slide the board. Equal tiles merge once per move, adding their combined value to your score. A new tile appears after a move changes the board. **Undo** restores one previous move. Reach 2048 to win, then choose **Keep going** to continue.
 
-Solo games have pause and new-game controls. Snake and 2048 best scores, plus Minesweeper best times for each difficulty, are saved in the current browser when browser storage is available. Starting a new game resets the board; best records remain.
+**Apex Circuit:** hold W / up to accelerate, S / down to brake or reverse, and A / D or left / right to steer. Space applies the handbrake for tighter rotation and drifts. Brake before a corner; grass reduces speed. Follow the arrows through every checkpoint in order and cross the finish in the forward direction to complete three laps. Q or **Reset car** returns you to your last checkpoint and adds a three-second penalty. Your fastest completed three-lap race is saved; unfinished attempts do not set a record.
+
+**Night Drive:** your car cruises automatically. Hold A / D or left / right to steer, W / up to accelerate, S / down to brake, and Space to boost. Boost uses charge that recovers when released. Clean overtakes earn points, with an extra bonus for a close near miss. Avoid the shoulder and traffic; three impacts end your run. Damage briefly protects you from repeated hits. Both driving games have hold buttons for touch screens and run their physics at 120 steps per second in the browser.
+
+Solo games have pause and new-game controls. P pauses and R restarts; leaving the page or switching tabs pauses a driving game. Snake, 2048 and Night Drive best scores, plus Minesweeper best times for each difficulty and Apex Circuit best race times, are saved in the current browser when browser storage is available. Starting a new game resets the run; best records remain.
 
 Leaving a room resets that room's match and readiness. Rooms and matches live in memory and disappear when the server stops. An empty room is eventually removed; create another room if an old invitation has expired.
 
@@ -96,7 +102,7 @@ Leaving a room resets that room's match and readiness. Rooms and matches live in
 npm test
 ```
 
-Optional browser checks require Python Playwright and Chromium. Run `python test/cards-browser-smoke.py` to start an isolated local server and exercise all three card games in two browser sessions. Run `python test/solo-browser-smoke.py` to check solo launch, controls, records, and mobile layouts on an isolated server. To check the original four games, run `python test/hub-browser-smoke.py http://127.0.0.1:3000` against a running host.
+Optional browser checks require Python Playwright and Chromium. Run `python test/cards-browser-smoke.py` to start an isolated local server and exercise all three card games in two browser sessions. Run `python test/solo-browser-smoke.py` to check the three arcade and puzzle games, records, and mobile layouts on an isolated server. Run `python test/driving-browser-smoke.py` to exercise driving controls, full laps, traffic, records, pause, and touch layouts on an isolated server. To check the original four games, run `python test/hub-browser-smoke.py http://127.0.0.1:3000` against a running host.
 
 The action games use authoritative combat at 120 ticks per second with snapshots at 60 Hz. Browsers predict local movement for responsiveness; the server decides hits and validates board and card actions. Card snapshots are prepared separately for each seat: opposing hands, the draw order, and hidden memory cards are not sent to a player's browser. Network latency and jitter still affect online play.
 
