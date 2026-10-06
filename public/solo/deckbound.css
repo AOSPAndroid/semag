@@ -29,6 +29,12 @@
  .deckbound-piles{margin-top:10px}
 }
 /* Illustrated plates sit inside stained parchment and fine brass bindings. */
+.deckbound-difficulty{display:flex;align-items:center;gap:7px;margin-left:auto;color:#8a815f;font:8px var(--mono)}
+.deckbound-difficulty-select{min-height:44px;max-width:136px;padding:7px 22px 7px 9px;border:1px solid #b9b08b;border-radius:4px;background:#f8f1dc;color:#526f4a;font:11px var(--mono);cursor:pointer}
+.deckbound-difficulty-select:focus-visible{outline:2px solid #74976a;outline-offset:3px}
+.deckbound-difficulty-select:disabled{opacity:.55;cursor:default}
+.deckbound-decision>.deckbound-route-pressure{font-size:11px;line-height:1.6;margin:0 auto 16px;max-width:650px;color:#788866}
+@media(max-width:580px){.deckbound-topline{flex-wrap:wrap}.deckbound-difficulty{width:100%;justify-content:flex-end;gap:8px}.deckbound-difficulty-select{min-width:120px}.deckbound-decision>.deckbound-route-pressure{font-size:10px;margin-bottom:12px}}
 .deckbound-view{background-image:radial-gradient(ellipse at 10% 0,#fcf9e8 0,transparent 48%),repeating-linear-gradient(0deg,#a1885205 0 1px,transparent 1px 4px)}
 .deckbound-card{--db-frame:#779080;--db-wash:#edf0df;border-color:var(--db-frame);background:radial-gradient(ellipse at 0 0,#fffdf0,transparent 75%),linear-gradient(130deg,#f9f1d8,var(--db-wash));box-shadow:inset 0 0 0 2px #f8f1d4,0 3px 0 #8e805447,0 6px 12px #68593d16}
 .deckbound-card[data-art-family=blade]{--db-frame:#75988f;--db-wash:#e1e9dd}

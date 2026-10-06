@@ -10,21 +10,35 @@ export const GARDENS = Object.freeze([
   { title: 'Stonewind Crossing', goal: 6, speed: 135, obstacles: [...block(5, 3, 3, 4), ...block(10, 8, 3, 4), ...block(15, 13, 2, 4)] },
   { title: 'The Walled Orchard', goal: 7, speed: 125, obstacles: [...block(4, 5, 12, 1).filter(c => [9, 10].every(x => c.x !== x)), ...block(4, 14, 12, 1).filter(c => [9, 10].every(x => c.x !== x)), ...block(5, 7, 1, 6).filter(c => c.y !== 10), ...block(14, 7, 1, 6).filter(c => c.y !== 10)] },
 ].map(g => Object.freeze({ ...g, obstacles: Object.freeze(g.obstacles.map(Object.freeze)) })));
+export const GAUNTLET = Object.freeze(GARDENS.map((garden, level) => Object.freeze({
+  ...garden, goal: 8 + level * 2, speed: 100 - level * 4,
+})));
+export const gardenLevels = mode => mode === 'gauntlet' ? GAUNTLET : GARDENS;
 
 const DIRECTIONS = {
   up: { x: 0, y: -1 }, down: { x: 0, y: 1 },
   left: { x: -1, y: 0 }, right: { x: 1, y: 0 },
 };
+const directionVectors = Object.values(DIRECTIONS);
 const OPPOSITE = { up: 'down', down: 'up', left: 'right', right: 'left' };
 const randomSources = new WeakMap();
 const sameCell = (a, b) => a.x === b.x && a.y === b.y;
 
 function placeFood(state) {
   const occupied = new Set([...state.snake, ...(state.obstacles || [])].map(cell => cell.y * state.width + cell.x));
+  const walls = new Set((state.obstacles || []).map(cell => cell.y * state.width + cell.x));
+  const reachable = new Set([state.snake[0].y * state.width + state.snake[0].x]);
+  const queue = [state.snake[0]];
+  // A tail moves out of the way; permanent hedges must never isolate the fruit.
+  for (const cell of queue) for (const { x: dx, y: dy } of directionVectors) {
+    const x = cell.x + dx, y = cell.y + dy, key = y * state.width + x;
+    if (x < 0 || x >= state.width || y < 0 || y >= state.height || walls.has(key) || reachable.has(key)) continue;
+    reachable.add(key); queue.push({ x, y });
+  }
   const available = [];
   for (let y = 0; y < state.height; y += 1) {
     for (let x = 0; x < state.width; x += 1) {
-      if (!occupied.has(y * state.width + x)) available.push({ x, y });
+      if (!occupied.has(y * state.width + x) && reachable.has(y * state.width + x)) available.push({ x, y });
     }
   }
   if (!available.length) return null;
@@ -39,13 +53,13 @@ function placeFood(state) {
 export function createState({ random = Math.random, mode = 'classic' } = {}) {
   if (typeof random !== 'function') throw new TypeError('random must be a function');
   const state = {
-    gameId: 'snake', phase: 'playing', mode: mode === 'gardens' ? 'gardens' : 'classic', level: 0, levelFoods: 0, gardensCleared: 0, pausedPhase: null, obstacles: [], width: GRID_SIZE, height: GRID_SIZE,
+    gameId: 'snake', phase: 'playing', mode: ['gardens', 'gauntlet'].includes(mode) ? mode : 'classic', level: 0, levelFoods: 0, gardensCleared: 0, pausedPhase: null, obstacles: [], width: GRID_SIZE, height: GRID_SIZE,
     snake: [{ x: 9, y: 10 }, { x: 8, y: 10 }, { x: 7, y: 10 }, { x: 6, y: 10 }],
     direction: 'right', queuedDirection: null, food: null,
     score: 0, foodsEaten: 0, stepMs: START_STEP_MS, ticks: 0, result: null,
   };
   randomSources.set(state, random);
-  if (state.mode === 'gardens') startGarden(state, 0);
+  if (state.mode !== 'classic') startGarden(state, 0);
   else state.food = placeFood(state);
   return state;
 }
@@ -55,10 +69,11 @@ function startGarden(state, level) {
   state.level = level; state.levelFoods = 0; state.phase = 'playing'; state.result = null;
   state.snake = [{ x: 3, y: 10 }, { x: 2, y: 10 }, { x: 1, y: 10 }, { x: 0, y: 10 }];
   state.direction = 'right'; state.queuedDirection = null;
-  state.obstacles = GARDENS[level].obstacles.map(c => ({ ...c })); state.stepMs = GARDENS[level].speed; state.food = placeFood(state);
+  const garden = gardenLevels(state.mode)[level];
+  state.obstacles = garden.obstacles.map(c => ({ ...c })); state.stepMs = garden.speed; state.food = placeFood(state);
 }
 export function advanceGarden(state) {
-  if (state.mode !== 'gardens' || state.phase !== 'levelClear' || state.level >= GARDENS.length - 1) return false;
+  if (state.mode === 'classic' || state.phase !== 'levelClear' || state.level >= gardenLevels(state.mode).length - 1) return false;
   startGarden(state, state.level + 1); return true;
 }
 
@@ -98,10 +113,11 @@ export function step(state) {
     state.foodsEaten += 1;
     state.score += 10;
     state.levelFoods += 1;
-    state.stepMs = state.mode === 'gardens' ? Math.max(95, GARDENS[state.level].speed - state.levelFoods * 3) : Math.max(MIN_STEP_MS, START_STEP_MS - state.foodsEaten * 5);
-    if (state.mode === 'gardens' && state.levelFoods >= GARDENS[state.level].goal) {
+    const garden = gardenLevels(state.mode)[state.level];
+    state.stepMs = state.mode === 'gauntlet' ? Math.max(64, garden.speed - state.levelFoods * 2) : state.mode === 'gardens' ? Math.max(95, garden.speed - state.levelFoods * 3) : Math.max(MIN_STEP_MS, START_STEP_MS - state.foodsEaten * 5);
+    if (state.mode !== 'classic' && state.levelFoods >= garden.goal) {
       state.gardensCleared += 1; state.score += 50 + state.level * 10; state.food = null;
-      state.phase = state.level === GARDENS.length - 1 ? 'won' : 'levelClear'; state.result = state.phase === 'won' ? 'gardens' : 'garden'; return true;
+      state.phase = state.level === gardenLevels(state.mode).length - 1 ? 'won' : 'levelClear'; state.result = state.phase === 'won' ? state.mode : 'garden'; return true;
     }
     state.food = placeFood(state);
     if (state.food === null) {

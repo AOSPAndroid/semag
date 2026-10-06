@@ -9,8 +9,12 @@ import {
   dispatch,
   step,
   togglePause as pauseState,
-  DIG_STAGES,
-  DIG_STAGE_COUNT,
+  PROFILES,
+  getProfile,
+  recordScope,
+  timeRemaining,
+  getDigStages,
+  getDigStageCount,
   getDigStage,
   advanceDigStage,
 } from './prism-engine.js';
@@ -106,6 +110,19 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     modes.append(button);
   }
   top.append(brand, modes);
+  const difficulty = element('div', 'prism-difficulty');
+  const profiles = element('div', 'prism-profile');
+  profiles.setAttribute('role', 'group');
+  profiles.setAttribute('aria-label', 'Choose difficulty. Changing difficulty starts a fresh game.');
+  for (const profile of Object.values(PROFILES)) {
+    const button = element('button', '', profile.name);
+    button.type = 'button';
+    button.dataset.profile = profile.id;
+    button.setAttribute('aria-pressed', String(profile.id === state.profile));
+    profiles.append(button);
+  }
+  const profileNote = element('p', 'prism-profile-note');
+  difficulty.append(profiles, profileNote);
 
   const metrics = element('div', 'prism-metrics');
   const metricNodes = {};
@@ -168,7 +185,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     element('span', 'prism-label-long', 'NEXT / QUEUE'),
     element('span', 'prism-label-short', 'NEXT'),
   );
-  nextHeading.append(nextTitle, element('span', 'prism-preview-count', '05'));
+  const previewCount = element('span', 'prism-preview-count', '05');
+  nextHeading.append(nextTitle, previewCount);
   nextPanel.append(nextHeading);
   const nextCanvases = [];
   for (let i = 0; i < 5; i += 1) {
@@ -257,7 +275,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   controlsToggle.setAttribute('aria-expanded', 'false');
   keyboardLegend.append(controlsToggle);
   footer.append(keyboardLegend, controls, status);
-  view.append(top, metrics, boardZone, incoming, footer);
+  view.append(top, difficulty, metrics, boardZone, incoming, footer);
   container.append(view);
   const ctx = canvas.getContext('2d');
   const motionPreference = window.matchMedia?.('(prefers-reduced-motion: reduce)');
@@ -489,7 +507,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
           block(ctx, part.x * cell, (part.y - HIDDEN_ROWS) * cell, cell, state.active.type, false, true);
       }
       if (state.lockElapsed > 0 && state.phase === 'playing') {
-        const progress = Math.min(1, state.lockElapsed / 0.5);
+        const progress = Math.min(1, state.lockElapsed / getProfile(state).lockDelay);
         ctx.fillStyle = '#b4ded9';
         ctx.fillRect(
           0,
@@ -553,7 +571,9 @@ export function mount(container, { onUpdate = () => {} } = {}) {
                 : '40 LINES'
               : state.result === 'piece-budget'
                 ? 'NO PIECES LEFT'
-                : 'STACK FILLED';
+                : state.result === 'time-budget'
+                  ? 'TIME EXPIRED'
+                  : 'STACK FILLED';
       ctx.fillText(title, width / 2, width * 0.89);
       ctx.fillStyle = '#b6d1d1';
       ctx.font = `${Math.max(8, Math.round(width * 0.044))}px ui-monospace, monospace`;
@@ -578,17 +598,21 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   }
 
   function detail() {
-    if (state.phase === 'paused') return 'Paused. Your next move can wait.';
+    if (state.phase === 'paused') return 'Paused. Gravity, lock timing, and the challenge clock are stopped.';
+    if (state.phase === 'lost' && state.result === 'time-budget')
+      return state.mode === 'dig'
+        ? 'The stage clock expired. Read the fixed queue, reserve the detour, and commit each placement.'
+        : 'The Sprint clock expired before forty lines. Build clean wells and use your previews to stay ahead.';
     if (state.mode === 'dig') {
       if (state.phase === 'won')
-        return `Eight excavation stages and sixty rows in ${state.elapsed.toFixed(2)} seconds. The shaft is clear.`;
+        return `${getDigStageCount(state)} excavation stages and ${getDigStages(state).reduce((sum, stage) => sum + stage.rows, 0)} rows in ${state.elapsed.toFixed(2)} seconds. The shaft is clear.`;
       if (state.phase === 'lost')
         return state.result === 'piece-budget'
           ? 'The piece budget ran out. Read the shaped openings and use your reserve before dropping.'
           : 'The shaft filled up. Restart the challenge and leave room to rotate.';
       if (state.phase === 'stage-clear')
         return `${getDigStage(state).title} cleared. Time is stopped. Review the next stack, then descend.`;
-      return `Stage ${state.dig.stageIndex + 1} of ${DIG_STAGE_COUNT}: ${getDigStage(state).title}. ${state.dig.remainingRows} garbage rows remain, ${state.dig.budget - state.dig.piecesUsed} pieces left. Fixed queue; hold resets each stage.`;
+      return `Stage ${state.dig.stageIndex + 1} of ${getDigStageCount(state)}: ${getDigStage(state).title}. ${state.dig.remainingRows} garbage rows remain, ${state.dig.budget - state.dig.piecesUsed} pieces left. Fixed queue; hold resets each stage.`;
     }
     if (state.phase === 'won')
       return `Forty lines in ${state.elapsed.toFixed(2)} seconds. Chase a cleaner, faster sprint.`;
@@ -603,13 +627,19 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     if (destroyed) return;
     const message = detail();
     const dig = state.mode === 'dig';
+    const profile = getProfile(state);
+    const remaining = timeRemaining(state);
+    setValue(view.dataset, 'prismProfile', state.profile);
+    setValue(profileNote, 'textContent', `${profile.description} · ${Math.round(profile.lockDelay * 1000)} ms lock`);
+    setValue(metricLabels.time, 'textContent', remaining === null ? 'TIME' : 'TIME LEFT');
+    setValue(metricNodes.time.dataset, 'urgent', String(remaining !== null && remaining <= 10));
     setValue(view.dataset, 'prismMode', state.mode);
     setValue(metricLabels.level, 'textContent', dig ? 'STAGE' : 'LEVEL');
     setValue(metricLabels.lines, 'textContent', dig ? 'ROWS LEFT' : 'LINES');
     setValue(
       metricNodes.level,
       'textContent',
-      dig ? `${state.dig.stageIndex + 1} / ${DIG_STAGE_COUNT}` : String(state.level),
+      dig ? `${state.dig.stageIndex + 1} / ${getDigStageCount(state)}` : String(state.level),
     );
     setValue(
       metricNodes.lines,
@@ -620,7 +650,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
           ? `${Math.min(state.lines, 40)} / 40`
           : String(state.lines),
     );
-    setValue(metricNodes.time, 'textContent', state.elapsed.toFixed(2));
+    setValue(metricNodes.time, 'textContent', (remaining ?? state.elapsed).toFixed(2));
     if (status.textContent !== message) setValue(status, 'textContent', message);
     const journey =
       state.level < 4 ? 'WARMUP' : state.level < 8 ? 'FLOW' : state.level < 13 ? 'PRESSURE' : 'OVERDRIVE';
@@ -667,7 +697,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       state.phase === 'paused'
         ? 'PAUSED'
         : state.lockElapsed > 0
-          ? `LOCK ${Math.min(100, Math.round((state.lockElapsed / 0.5) * 100))}%`
+          ? `LOCK ${Math.min(100, Math.round((state.lockElapsed / getProfile(state).lockDelay) * 100))}%`
           : 'GHOST ON',
     );
     setValue(
@@ -690,7 +720,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
           ? `${Math.min(state.lines, 40)} / 40`
           : maximumPace
             ? 'LEVEL 30'
-            : `${state.lines % 10} / 10`,
+            : `${state.lines % profile.linesPerLevel} / ${profile.linesPerLevel}`,
     );
     const progression = dig
       ? 1 - state.dig.remainingRows / state.dig.garbageRows
@@ -698,7 +728,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
         ? Math.min(1, state.lines / 40)
         : maximumPace
           ? 1
-          : (state.lines % 10) / 10;
+          : (state.lines % profile.linesPerLevel) / profile.linesPerLevel;
     setValue(progressFill.style, 'width', `${progression * 100}%`);
     setAttribute(progressTrack, 'role', 'progressbar');
     setAttribute(
@@ -716,7 +746,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     setAttribute(
       progressTrack,
       'aria-valuemax',
-      dig ? String(state.dig.garbageRows) : state.mode === 'sprint' ? '40' : '10',
+      dig ? String(state.dig.garbageRows) : state.mode === 'sprint' ? '40' : String(profile.linesPerLevel),
     );
     setAttribute(
       progressTrack,
@@ -727,22 +757,22 @@ export function mount(container, { onUpdate = () => {} } = {}) {
           : state.mode === 'sprint'
             ? Math.min(state.lines, 40)
             : maximumPace
-              ? 10
-              : state.lines % 10,
+              ? profile.linesPerLevel
+              : state.lines % profile.linesPerLevel,
       ),
     );
     setValue(incoming, 'hidden', !dig || state.phase !== 'stage-clear');
     if (!incoming.hidden) {
-      const nextStage = DIG_STAGES[state.dig.stageIndex + 1];
+      const nextStage = getDigStages(state)[state.dig.stageIndex + 1];
       setValue(
         incomingTitle,
         'textContent',
-        `NEXT ${state.dig.stageIndex + 2} / ${DIG_STAGE_COUNT} · ${nextStage.title}`,
+        `NEXT ${state.dig.stageIndex + 2} / ${getDigStageCount(state)} · ${nextStage.title}`,
       );
       setValue(
         incomingBrief,
         'textContent',
-        `${nextStage.rows} rows · ${nextStage.budget} pieces. ${nextStage.brief}`,
+        `${nextStage.rows} rows · ${nextStage.budget} pieces${nextStage.seconds ? ` · ${nextStage.seconds}s` : ''}. ${nextStage.brief}`,
       );
       setValue(incomingRules, 'textContent', `QUEUE ${nextStage.queue.join(' ')} · RESERVE RESETS`);
       setAttribute(
@@ -777,30 +807,37 @@ export function mount(container, { onUpdate = () => {} } = {}) {
         : 'No piece held. Press C to hold the active piece.',
     );
     preview(holdCanvas, state.hold, state.holdUsed);
+    setValue(previewCount, 'textContent', String(profile.previews).padStart(2, '0'));
     nextCanvases.forEach((target, i) => {
+      setValue(target.parentElement, 'hidden', i >= profile.previews);
+      if (i >= profile.previews) return;
       setAttribute(target, 'aria-label', `Next piece ${i + 1}: ${state.next[i] || 'empty'}`);
       preview(target, state.next[i]);
     });
     modes
       .querySelectorAll('button')
       .forEach((button) => setAttribute(button, 'aria-pressed', String(button.dataset.mode === state.mode)));
+    profiles.querySelectorAll('button').forEach(button =>
+      setAttribute(button, 'aria-pressed', String(button.dataset.profile === state.profile)));
+    setValue(modes.querySelector('[data-mode=dig]'), 'textContent', `Dig ${getDigStageCount(state)}`);
     setAttribute(
       canvas,
       'aria-label',
-      `Prism Shift ${state.mode}. ${state.lines} lines, level ${state.level}, ${state.score} points. ${message}`,
+      `Prism Shift ${profile.name} ${state.mode}. ${state.lines} lines, level ${state.level}, ${state.score} points. ${message}`,
     );
     const timed = state.mode === 'sprint' || dig;
     onUpdate({
       phase: state.phase === 'stage-clear' ? 'playing' : state.phase,
       mode: state.mode,
+      profile: state.profile,
       score: timed ? Number(state.elapsed.toFixed(2)) : state.score,
       scoreLabel: timed ? 'TIME' : 'SCORE',
       scoreDigits: timed ? 2 : 0,
       scoreUnit: timed ? 's' : '',
       record: timed ? (state.phase === 'won' ? state.elapsed : null) : state.score,
-      recordKey: state.mode,
+      recordKey: recordScope(state),
       recordDirection: timed ? 'min' : 'max',
-      recordLabel: dig ? 'BEST DIG 8' : timed ? 'BEST 40 LINES' : 'BEST SCORE',
+      recordLabel: `${state.profile === 'standard' ? '' : `${profile.name.toUpperCase()} · `}${dig ? `BEST DIG ${getDigStageCount(state)}` : timed ? 'BEST 40 LINES' : 'BEST SCORE'}`,
       detail: message,
     });
     updateElapsed = 0;
@@ -905,10 +942,10 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     if (state.phase === 'playing' || state.phase === 'stage-clear') togglePause();
   }
 
-  function restart(mode = state.mode) {
+  function restart(mode = state.mode, profile = state.profile) {
     if (destroyed) return;
     releaseInputs();
-    state = createState({ mode });
+    state = createState({ mode, profile });
     effect = null;
     dropEffect = null;
     observedLocks = state.piecesLocked;
@@ -936,7 +973,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
           }
         }
         const oldPiece = state.active ? { ...state.active } : null;
-        const rows = state.lockElapsed > 0.47 ? pendingClearRows(oldPiece) : [];
+        const rows = state.lockElapsed > getProfile(state).lockDelay - 0.03 ? pendingClearRows(oldPiece) : [];
         step(state, { softDrop: held('softDrop') }, interval);
         noticeLock(oldPiece, rows);
         accumulator -= interval;
@@ -1028,6 +1065,12 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     restart(button.dataset.mode);
     focusCanvas();
   }
+  function changeProfile(event) {
+    const button = event.target.closest('button[data-profile]');
+    if (!button || !profiles.contains(button) || button.dataset.profile === state.profile) return;
+    restart(state.mode, button.dataset.profile);
+    focusCanvas();
+  }
   function toggleControls() {
     const open = view.dataset.controlsOpen !== 'true';
     view.dataset.controlsOpen = String(open);
@@ -1062,6 +1105,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   controls.addEventListener('lostpointercapture', pointerend);
   controls.addEventListener('click', clickControl);
   modes.addEventListener('click', changeMode);
+  profiles.addEventListener('click', changeProfile);
   controlsToggle.addEventListener('click', toggleControls);
   continueButton.addEventListener('click', continueDig);
   const resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(resizeCanvas) : null;
@@ -1097,6 +1141,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       controls.removeEventListener('lostpointercapture', pointerend);
       controls.removeEventListener('click', clickControl);
       modes.removeEventListener('click', changeMode);
+      profiles.removeEventListener('click', changeProfile);
       controlsToggle.removeEventListener('click', toggleControls);
       continueButton.removeEventListener('click', continueDig);
       view.remove();

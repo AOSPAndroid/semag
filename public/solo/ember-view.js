@@ -1,4 +1,4 @@
-import { ARENA, ACT_NAMES, BOSSES, RELICS, createState, step, chooseRoute, chooseReward, chooseCamp, togglePause as pauseState } from './ember-engine.js';
+import { ARENA, ACT_NAMES, BOSSES, RELICS, DIFFICULTIES, getRelicInfo, createState, step, chooseRoute, chooseReward, chooseCamp, togglePause as pauseState } from './ember-engine.js';
 import { drawEmberActor, drawEmberProjectile, drawEmberBlade } from '../art/ember-sprites.js';
 const copy = s => JSON.parse(JSON.stringify(s));
 const node = (tag, cls, text) => { const n = document.createElement(tag); n.className = cls; if (text !== undefined) n.textContent = text; return n; };
@@ -11,7 +11,8 @@ function pixelIcon(id) {
 }
 export function mount(container, { onUpdate = () => {} } = {}) {
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
-  let state = createState(), raf = 0, dead = false, previous = null, accumulator = 0, lastUpdate = 0, lastPhase = '', roomId = '', choiceKey = '', lastEvent = 0, particles = [], roomProps = [], lastPosition = null;
+  let difficulty = 'veteran';
+  let state = createState({difficulty}), raf = 0, dead = false, previous = null, accumulator = 0, lastUpdate = 0, lastPhase = '', roomId = '', choiceKey = '', lastEvent = 0, particles = [], roomProps = [], lastPosition = null;
   let mapKey='',buildKey='';
   const textCache=new WeakMap(),mapMarks=[],gateImages=new Map();
   const text=(element,value)=>{if(textCache.get(element)!==value){textCache.set(element,value);element.textContent=value;}};
@@ -20,6 +21,10 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   const sticks = { move: { x: 0, y: 0 }, aim: { x: 0, y: 0 } };
   let aimPoint = null, aim = { x: 1, y: 0 };
   const view = node('section', 'ember-view'); view.setAttribute('aria-label', 'Ember Delve dungeon');
+  const difficultyBar=node('div','ember-difficulty'),difficultyLabel=node('label','','DESCENT'),difficultySelect=node('select',''),difficultyNote=node('p','',DIFFICULTIES[difficulty].description);
+  difficultySelect.setAttribute('aria-label','Descent difficulty; changing starts a fresh run with the same seed');
+  for(const[id,rules]of Object.entries(DIFFICULTIES)){const option=node('option','',rules.title);option.value=id;difficultySelect.append(option);}difficultySelect.value=difficulty;
+  difficultyLabel.append(difficultySelect);difficultyBar.append(difficultyLabel,difficultyNote);
   const heading = node('div', 'ember-topline'), actLabel = node('strong', '', ACT_NAMES[0]), roomLabel = node('span', '', 'GALLERY · 01 / 04'); heading.append(actLabel, roomLabel);
   const map = node('ol', 'ember-route-map'); map.setAttribute('aria-label', 'Three-act run progress');
   for (let a = 1; a <= 3; a++) { const li = node('li', ''); li.dataset.act = a; li.append(node('b', '', `ACT ${a}`)); for (let d = 1; d <= 4; d++) { const mark = node('span', '', d === 4 ? '♜' : '◇'); mark.dataset.depth = d; li.append(mark);mapMarks.push({mark,a,d}); } map.append(li); }
@@ -37,7 +42,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   for (const [id, title] of [['melee','BLADE'],['spell','BOLT'],['dash','DODGE'],['interact','USE']]) { const button = node('button','ember-action'); button.type = 'button'; button.dataset.control = id; button.setAttribute('aria-label',title === 'USE' ? 'Use nearby door, chest or camp' : title === 'DODGE' ? 'Tap to dodge' : `Hold to ${title === 'BLADE' ? 'swing your blade' : 'cast ember bolts'}`);const icon=node('b','ember-action-icon');icon.append(pixelIcon(id)); button.append(icon,node('span','',title)); actions.append(button); actionRefs[id] = button; }
   touch.insertBefore(actions,touch.lastChild);
   const seedBar = node('div','ember-seed'); const seedLabel = node('label','','RUN SEED'), seedInput = node('input',''), seedButton = node('button','','Replay seed'), newButton = node('button','','New seed'); seedInput.type = 'text'; seedInput.inputMode = 'numeric'; seedInput.value = state.seed; seedInput.maxLength = 10; seedInput.setAttribute('aria-label','Run seed, a number from 1 to 4294967295'); seedButton.type = newButton.type = 'button'; seedLabel.append(seedInput); seedBar.append(seedLabel,seedButton,newButton);
-  view.append(heading,map,meters,board,prompt,decisions,build,hints,touch,seedBar); container.append(view);
+  view.append(difficultyBar,heading,map,meters,board,prompt,decisions,build,hints,touch,seedBar); container.append(view);
   const ctx = canvas.getContext('2d'), floor = document.createElement('canvas'); floor.width = canvas.width; floor.height = canvas.height; const f = floor.getContext('2d');
   function rect(context,x,y,w,h,color) { context.fillStyle = color; context.fillRect(Math.round(x),Math.round(y),Math.round(w),Math.round(h)); }
   const biomeColors = [
@@ -123,10 +128,12 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     if(roomId!==state.room.id){roomId=state.room.id;background();lastPosition=null;}ctx.imageSmoothingEnabled=false;ctx.drawImage(floor,0,0);drawGate();
     for(const e of state.enemies)if(e.phase==='tell'){
       ctx.save();ctx.globalAlpha=.8;ctx.strokeStyle=e.tell==='summon'?'#bad9d0':'#efba81';ctx.lineWidth=2;ctx.setLineDash([8,6]);
-      if(e.tell==='charge'){ctx.beginPath();ctx.moveTo(e.x,e.y);ctx.lineTo(e.x+e.aimX*280,e.y+e.aimY*280);ctx.stroke();}
-      else if(e.tell==='fan'){const angle=Math.atan2(e.aimY,e.aimX),count=e.boss?7:3,spread=e.boss?.16:.14;for(let i=0;i<count;i++){const a=angle+(i-(count-1)/2)*spread;ctx.beginPath();ctx.moveTo(e.x,e.y);ctx.lineTo(e.x+Math.cos(a)*190,e.y+Math.sin(a)*190);ctx.stroke();}}
+      if(e.tell==='charge'){const reach=(e.chargeSpeed??450)*(e.chargeDuration??.42);ctx.beginPath();ctx.moveTo(e.x,e.y);ctx.lineTo(e.x+e.aimX*reach,e.y+e.aimY*reach);ctx.stroke();}
+      else if(e.tell==='fan'){const angle=Math.atan2(e.aimY,e.aimX),count=e.fanCount??(e.boss?7:3),spread=e.fanSpread??(e.boss?.16:.14);for(let i=0;i<count;i++){const a=angle+(i-(count-1)/2)*spread;ctx.beginPath();ctx.moveTo(e.x,e.y);ctx.lineTo(e.x+Math.cos(a)*230,e.y+Math.sin(a)*230);ctx.stroke();}}
+      else if(e.tell==='fault'||e.tell==='summon'){for(const target of e.targets||[]){ctx.beginPath();ctx.arc(target.x,target.y,target.radius,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=.1;ctx.fillStyle=e.tell==='fault'?'#f4bc82':'#bad9d0';ctx.fill();ctx.globalAlpha=.8;const progress=1-Math.max(0,e.timer)/(e.tellDuration||1);ctx.beginPath();ctx.arc(target.x,target.y,target.radius+5,-Math.PI/2,-Math.PI/2+Math.PI*2*progress);ctx.stroke();ctx.setLineDash([8,6]);}}
       else{const r=e.tell==='sweep'?(e.boss?150:80):e.tell==='ring'?62:40;ctx.beginPath();ctx.arc(e.x,e.y,r,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=.06;ctx.fillStyle='#f4bc82';ctx.fill();}ctx.restore();
     }
+    for(const fx of state.effects)if(fx.kind==='fault'){ctx.save();ctx.globalAlpha=.24+fx.life*.6;ctx.fillStyle='#e6a366';ctx.beginPath();ctx.arc(fx.x,fx.y,fx.radius,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#f9dba3';ctx.lineWidth=3;ctx.stroke();ctx.globalAlpha=.8;for(let i=0;i<5;i++){const a=i*Math.PI*2/5;pixelLine(ctx,[[fx.x+Math.cos(a)*12,fx.y+Math.sin(a)*12],[fx.x+Math.cos(a)*fx.radius*.55,fx.y+Math.sin(a)*fx.radius*.55],[fx.x+Math.cos(a+.12)*fx.radius,fx.y+Math.sin(a+.12)*fx.radius]],'#f6d49b',2);}ctx.restore();}
     const p=state.player,walking=!reducedMotion.matches&&lastPosition&&Math.hypot(p.x-lastPosition.x,p.y-lastPosition.y)>.1;lastPosition={x:p.x,y:p.y};
     const actors=[...roomProps,...state.enemies.map(e=>({y:e.y+20,draw:()=>{
       ctx.fillStyle='#102b28aa';ctx.beginPath();ctx.ellipse(e.x,e.y+22,e.boss?38:e.radius+9,e.boss?12:7,0,0,Math.PI*2);ctx.fill();drawEmberActor(ctx,e,state.act,artTime,!reducedMotion.matches&&e.phase==='seek');
@@ -140,9 +147,11 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     if(!reducedMotion.matches)for(const fx of particles){const age=state.elapsed-fx.spawn;ctx.save();ctx.globalAlpha=Math.max(0,1-age/.45);rect(ctx,fx.x+fx.vx*age,fx.y+fx.vy*age,fx.size,fx.size,fx.color);ctx.restore();}particles=particles.filter(fx=>state.elapsed-fx.spawn<.45);
     if(!['playing','won','lost','paused'].includes(state.phase)){ctx.fillStyle='rgba(16,34,26,.35)';ctx.fillRect(42,42,876,556);ctx.fillStyle='#f3dfb5';ctx.textAlign='center';ctx.font='bold 22px monospace';ctx.fillText(state.phase==='route'?'CHOOSE YOUR NEXT ROOM':state.phase==='camp'?'A MOMENT BY THE FIRE':'A RELIC FOR THE ROAD',480,310);}
   }
-  function emit() { onUpdate({phase:['route','reward','camp'].includes(state.phase)?'playing':state.phase,score:state.score,record:state.score,detail:`Act ${state.act}/3 · ${state.room.title} · ${state.gold} gold`}); }
+  function emit() { onUpdate({phase:['route','reward','camp'].includes(state.phase)?'playing':state.phase,score:state.score,record:state.score,recordKey:state.difficulty==='standard'?'default':state.difficulty,recordLabel:`${DIFFICULTIES[state.difficulty].title.toUpperCase()} BEST`,detail:`${DIFFICULTIES[state.difficulty].title} · Act ${state.act}/3 · ${state.room.title} · ${state.gold} gold`}); }
   function updateUI() {
     if(view.dataset.phase!==state.phase)view.dataset.phase=state.phase;
+    if(view.dataset.difficulty!==state.difficulty)view.dataset.difficulty=state.difficulty;
+    text(difficultyNote,DIFFICULTIES[state.difficulty].description);
     text(actLabel,`ACT ${state.act} · ${ACT_NAMES[state.act-1]}`);text(roomLabel,`${state.room.kind.toUpperCase()} · ${String(state.depth).padStart(2,'0')} / 04`);
     const nextMapKey=state.room.id+':'+state.routeHistory.length;
     if(nextMapKey!==mapKey){mapKey=nextMapKey;for(const{mark,a,d}of mapMarks){mark.dataset.state=a<state.act||a===state.act&&d<state.depth?'done':a===state.act&&d===state.depth?'current':'future';const history=state.routeHistory.find(r=>r.act===a&&r.depth===d);text(mark,d===4?'♜':history?.kind==='treasure'?'▣':history?.kind==='camp'?'♨':history?.kind==='elite'?'✦':'◇');mark.setAttribute('aria-label',`Act ${a} room ${d}${history?`, ${history.kind}`:''}`);}}
@@ -161,7 +170,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     const nearExit=Math.hypot(state.player.x-state.room.exit.x,state.player.y-state.room.exit.y)<70,nearShrine=Math.hypot(state.player.x-state.room.shrine.x,state.player.y-state.room.shrine.y)<70;
     text(prompt,decision?'Make your choice below.':state.phase==='paused'?'PAUSED':state.room.cleared?(nearExit?'F / USE · Step through the open gate.':'Room clear. Cross the cavern to the glowing gate →'):state.room.kind==='treasure'?(nearShrine?'F / USE · Open the reliquary.':'Find the reliquary chest.'):state.room.kind==='camp'?(nearShrine?'F / USE · Rest by the fire.':'Reach the sanctuary fire.'):state.enemies.some(e=>e.boss)?`${BOSSES[state.act-1]} · Read the amber tells. Dodge through danger; punish recovery.`:`${state.enemies.length} guards remain · Blade restores space; bolts spend mana.`);
     const nextBuildKey=JSON.stringify(state.relics);
-    if(nextBuildKey!==buildKey){buildKey=nextBuildKey;build.replaceChildren();if(!Object.keys(state.relics).length)build.append(node('span','ember-build-empty','NO RELICS YET · A build begins at the first gate.'));else for(const[id,count]of Object.entries(state.relics)){const chip=node('span','ember-relic',`${RELICS[id].title}${count>1?` ×${count}`:''}`);chip.title=RELICS[id].description;build.append(chip);}}
+    if(nextBuildKey!==buildKey){buildKey=nextBuildKey;build.replaceChildren();if(!Object.keys(state.relics).length)build.append(node('span','ember-build-empty','NO RELICS YET · A build begins at the first gate.'));else for(const[id,count]of Object.entries(state.relics)){const chip=node('span','ember-relic',`${RELICS[id].title}${count>1?` ×${count}`:''}`);chip.title=getRelicInfo(state,id).description;build.append(chip);}}
     for(const e of state.events){if(e.id<=lastEvent)continue;lastEvent=e.id;if(!reducedMotion.matches&&['hit','kill','dash','cast','perfect'].includes(e.type))for(let i=0;i<5;i++)particles.push({x:e.x,y:e.y,vx:Math.cos(i*1.25+e.id)*60,vy:Math.sin(i*1.25+e.id)*60,spawn:state.elapsed,size:i%2?3:5,color:e.type==='perfect'?'#bfd5bb':e.type==='dash'?'#8eae97':'#eac183'});}if(particles.length>120)particles.splice(0,particles.length-120);
     if(state.phase!==lastPhase){lastPhase=state.phase;if(state.phase!=='playing')release();emit();}
   }
@@ -170,7 +179,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   function schedule(){if(!dead&&state.phase==='playing'&&!raf)raf=requestAnimationFrame(frame);}
   function stopFrame(){if(raf)cancelAnimationFrame(raf);raf=0;previous=null;accumulator=0;}
   function select(id) {release();if(state.phase==='route')chooseRoute(state,id);else if(state.phase==='reward')chooseReward(state,id);else if(state.phase==='camp')chooseCamp(state,id);stopFrame();updateUI();draw();emit();canvas.focus({preventScroll:true});schedule();}
-  function restart(seed=Date.now()) {release();stopFrame();state=createState({seed});seedInput.value=state.seed;particles=[];lastEvent=0;roomId='';choiceKey='';mapKey='';buildKey='';updateUI();draw();emit();canvas.focus({preventScroll:true});schedule();}
+  function restart(seed=Date.now()) {release();stopFrame();state=createState({seed,difficulty});seedInput.value=state.seed;particles=[];lastEvent=0;roomId='';choiceKey='';mapKey='';buildKey='';updateUI();draw();emit();canvas.focus({preventScroll:true});schedule();}
   function togglePause() {release();stopFrame();pauseState(state);updateUI();draw();emit();schedule();}
   function frame(time) {
     raf=0;if(dead||state.phase!=='playing')return;
@@ -191,6 +200,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   function visibility(){if(document.hidden)blur();}
   window.addEventListener('keydown',keydown);window.addEventListener('keyup',keyup);window.addEventListener('blur',blur);document.addEventListener('visibilitychange',visibility);canvas.addEventListener('pointermove',aimMove);canvas.addEventListener('pointerdown',canvasDown);canvas.addEventListener('pointerup',pointerEnd);canvas.addEventListener('pointercancel',pointerEnd);canvas.addEventListener('lostpointercapture',pointerEnd);canvas.addEventListener('contextmenu',e=>e.preventDefault());
   replay.addEventListener('click',()=>restart());newButton.addEventListener('click',()=>restart());seedButton.addEventListener('click',()=>{const seed=Number(seedInput.value);if(Number.isInteger(seed)&&seed>0&&seed<=4294967295){restart(seed);seedInput.setCustomValidity('');}else{seedInput.setCustomValidity('Enter a whole number from 1 to 4294967295.');seedInput.reportValidity();}});
+  difficultySelect.addEventListener('change',()=>{difficulty=difficultySelect.value;restart(state.seed);difficultySelect.focus({preventScroll:true});});
   function motionChange(){particles=[];draw();}
   reducedMotion.addEventListener('change',motionChange);
   updateUI();draw();emit();schedule();

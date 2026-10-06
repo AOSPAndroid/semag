@@ -10,8 +10,15 @@ export const SECTORS = Object.freeze([
   { id: 'astral-core', name: 'Astral Core', boss: 'The Crown of Glass', patterns: ['rift-lanes', 'crown'], floor: '#3c3450', tile: '#483e5c', edge: '#b599c0', accent: '#deb6d5' },
 ].map(sector => Object.freeze({ ...sector, patterns: Object.freeze(sector.patterns) })));
 export const DIFFICULTIES = Object.freeze({
-  standard: Object.freeze({ title: 'Expedition', description: 'Twenty waves, four sectors, one evolving build.', enemySpeed: 1, damage: 1, score: 1 }),
-  veteran: Object.freeze({ title: 'Veteran', description: 'Faster enemies, heavier hits, 50% more points.', enemySpeed: 1.12, damage: 1.2, score: 1.5 }),
+  standard: Object.freeze({ title: 'Expedition', description: 'Twenty waves, four sectors, one evolving build.',
+    enemySpeed: 1, projectileSpeed: 1, cadence: 1, lead: 0, damage: 1, score: 1,
+    elites: 0, extras: Object.freeze([]), repair: 35, plating: 10, siphon: 1, healingBudget: null }),
+  veteran: Object.freeze({ title: 'Veteran', description: 'Leading shots, mixed attacks, limited healing · +50% points.',
+    enemySpeed: 1.18, projectileSpeed: 1.38, cadence: .72, lead: .8, damage: 1.2, score: 1.5,
+    elites: 1, extras: Object.freeze(['ranged', 'weaver']), repair: 24, plating: 7, siphon: .55, healingBudget: 8 }),
+  nightmare: Object.freeze({ title: 'Nightmare', description: 'Dense volleys, relentless elites, scarce healing · double points.',
+    enemySpeed: 1.32, projectileSpeed: 1.62, cadence: .55, lead: 1, damage: 1.35, score: 2,
+    elites: 2, extras: Object.freeze(['ranged', 'brute', 'weaver', 'ranged', 'weaver']), repair: 16, plating: 5, siphon: .35, healingBudget: 5 }),
 });
 export const OBSTACLES = Object.freeze([
   { x: 280, y: 200, width: 90, height: 70 },
@@ -119,7 +126,7 @@ function spawnEnemy(state, type) {
     : type === 'brute' ? 90 + scaling * 4 : type === 'ranged' ? 44 + scaling * 2 : type === 'weaver' ? 36 + scaling * 2 : 38 + scaling * 2;
   state.enemies.push({ id: ++state.enemyId, type, ...spawnPoint(state, radius), radius,
     hp, maxHp: hp, boss, speed: (boss ? 48 : type === 'brute' ? 64 : type === 'ranged' ? 100 : type === 'weaver' ? 140 : 94 + state.wave * 2) * DIFFICULTIES[state.difficulty].enemySpeed,
-    phase: 'seeking', timer: 0, attackTimer: boss ? 1.4 : .6 + random(state) * .8,
+    phase: 'seeking', timer: 0, attackTimer: boss ? 1.4 : .6 + random(state) * .8, volleyIndex: 0,
     aimX: 1, aimY: 0, pattern: 0, attackName: boss ? SECTORS[state.sector].patterns[0] : type,
     bossSector: state.sector, bossName: boss ? SECTORS[state.sector].boss : null,
     elite: false, affix: null, armor: 0, slowTime: 0, slowFactor: 1,
@@ -140,6 +147,7 @@ function startWave(state, wave) {
   state.sector = Math.floor((wave - 1) / 5);
   state.sectorName = SECTORS[state.sector].name;
   state.waveKills = 0;
+  state.waveHealing = 0;
   state.upgradeChoices = [];
   state.projectiles = [];
   state.hazards = [];
@@ -150,6 +158,7 @@ function startWave(state, wave) {
   state.player.fireCooldown = 0;
   state.player.stamina = state.player.maxStamina;
   state.player.focusReady = false;
+  state.player.vx = 0; state.player.vy = 0;
   const composition = [
     [4, 0, 0, 0], [5, 2, 0, 0], [5, 2, 1, 0], [5, 3, 2, 0], [3, 2, 1, 0],
     [5, 3, 2, 2], [5, 3, 2, 3], [5, 4, 2, 3], [5, 4, 3, 4], [3, 2, 2, 2],
@@ -162,20 +171,24 @@ function startWave(state, wave) {
   for (let index = 0; index < composition[3]; index += 1) spawnEnemy(state, 'weaver');
   if (wave % 5 === 0) spawnEnemy(state, 'boss');
   if (state.waveRisk) { spawnEnemy(state, 'weaver'); state.overcharges += 1; }
+  for (const type of DIFFICULTIES[state.difficulty].extras) {
+    if (state.enemies.length >= MAX_ENEMIES) break;
+    spawnEnemy(state, type);
+  }
   const normals = state.enemies.filter(enemy => !enemy.boss);
-  const eliteCount = Math.min(normals.length, state.sector + (state.waveRisk ? 2 : 0));
+  const eliteCount = Math.min(normals.length, state.sector + DIFFICULTIES[state.difficulty].elites + (state.waveRisk ? 2 : 0));
   for (let index = 0; index < eliteCount; index += 1) makeElite(state, normals[Math.floor(index * normals.length / Math.max(1, eliteCount))]);
   event(state, 'wave', { wave, sector: state.sector, enemies: state.enemies.length, risk: state.waveRisk });
 }
 
 export function createState({ random: source = Math.random, difficulty = 'standard' } = {}) {
   if (typeof source !== 'function') throw new TypeError('random must be a function');
-  if (!Object.hasOwn(DIFFICULTIES, difficulty)) throw new RangeError('Choose Expedition or Veteran difficulty.');
+  if (!Object.hasOwn(DIFFICULTIES, difficulty)) throw new RangeError('Choose Expedition, Veteran or Nightmare difficulty.');
   const state = {
     gameId: 'rift-survivor', phase: 'playing', pausedPhase: null, wave: 1, wavesCleared: 0,
-    waveKills: 0, kills: 0, score: 0, elapsed: 0, tick: 0, result: null,
+    waveKills: 0, waveHealing: 0, kills: 0, score: 0, elapsed: 0, tick: 0, result: null,
     difficulty, sector: 0, sectorName: SECTORS[0].name, waveRisk: false, overcharges: 0,
-    player: { x: ARENA.width / 2, y: ARENA.height / 2, radius: 12,
+    player: { x: ARENA.width / 2, y: ARENA.height / 2, radius: 12, vx: 0, vy: 0,
       hp: 100, maxHp: 100, stamina: 100, maxStamina: 100, aimX: 1, aimY: 0,
       heat: 0, maxHeat: 100, overheated: false, fireCooldown: 0, dashTime: 0,
       dashX: 1, dashY: 0, invulnerable: 0, damageCooldown: 0,
@@ -194,6 +207,7 @@ export function createState({ random: source = Math.random, difficulty = 'standa
 
 function projectile(state, owner, x, y, aimX, aimY, speed, damage, radius = 4, origin = null) {
   if (state.projectiles.length >= MAX_PROJECTILES) return;
+  if (owner === 'enemy') speed *= DIFFICULTIES[state.difficulty].projectileSpeed;
   let bounces = owner === 'player' ? state.player.ricochet : 0;
   if (origin) {
     const dx = x - origin.x; const dy = y - origin.y;
@@ -248,7 +262,17 @@ function hurtPlayer(state, damage, source) {
 }
 
 function beginTell(state, enemy, duration) {
-  const aim = unit(state.player.x - enemy.x, state.player.y - enemy.y);
+  const player = state.player;
+  const profile = DIFFICULTIES[state.difficulty];
+  // Predict only when committing to an attack. The visible line stays locked,
+  // so reversing direction after the tell defeats leading fire.
+  const moving = length(player.vx, player.vy);
+  const velocityScale = moving > player.moveSpeed ? player.moveSpeed / moving : 1;
+  const speed = enemy.type === 'weaver' ? 340 : enemy.type === 'ranged' ? 225 + state.wave * 4 : 255;
+  const horizon = enemy.type === 'brute' ? duration * .3
+    : ['ranged', 'weaver', 'boss'].includes(enemy.type) ? Math.min(1.2, duration + distance(player, enemy) / (speed * profile.projectileSpeed)) : 0;
+  const aim = unit(clamp(player.x + player.vx * velocityScale * horizon * profile.lead, player.radius, ARENA.width - player.radius) - enemy.x,
+    clamp(player.y + player.vy * velocityScale * horizon * profile.lead, player.radius, ARENA.height - player.radius) - enemy.y);
   enemy.aimX = aim.x;
   enemy.aimY = aim.y;
   enemy.phase = 'windup';
@@ -278,7 +302,12 @@ function damageEnemy(state, target, amount, chain = true) {
   if (target.hp === 0) {
     state.kills += 1; state.waveKills += 1;
     scorePoints(state, (target.boss ? 1500 : target.type === 'brute' ? 180 : target.type === 'ranged' ? 130 : target.type === 'weaver' ? 150 : 100) + (target.elite ? 100 : 0));
-    if (state.player.siphon) state.player.hp = Math.min(state.player.maxHp, state.player.hp + state.player.siphon);
+    if (state.player.siphon) {
+      const profile = DIFFICULTIES[state.difficulty];
+      const budget = profile.healingBudget === null ? Infinity : Math.max(0, profile.healingBudget - state.waveHealing);
+      const restored = Math.min(state.player.maxHp - state.player.hp, state.player.siphon * profile.siphon, budget);
+      state.player.hp += restored; state.waveHealing += restored;
+    }
     if (target.affix === 'volatile') addHazard(state, 'blast', target.x, target.y, { radius: 72, damage: 12, warning: .85 });
     event(state, 'kill', { x: target.x, y: target.y, enemyId: target.id, enemyType: target.type, elite: target.elite });
   }
@@ -341,7 +370,7 @@ function bossAttack(state, enemy) {
     addHazard(state, 'blast', state.player.x, state.player.y, { radius: 58, warning: 1.0, damage: 12 });
   }
   enemy.pattern += 1;
-  enemy.phase = 'recover'; enemy.timer = .5; enemy.attackTimer = 1.45;
+  enemy.phase = 'recover'; enemy.timer = .5; enemy.attackTimer = 1.45 * DIFFICULTIES[state.difficulty].cadence;
 }
 
 function lineClear(from, to, radius = 0) {
@@ -414,7 +443,16 @@ function pursuit(enemy, target, dt) {
   return unit(waypoint.x - enemy.x, waypoint.y - enemy.y);
 }
 
+/** Shared by combat and warnings, including the alternating higher-tier fan. */
+export function enemyShotPattern(state, enemy) {
+  const veteran = state.difficulty !== 'standard';
+  const wide = state.difficulty === 'nightmare' || veteran && (enemy.volleyIndex || 0) % 2 === 1;
+  return enemy.type === 'weaver' ? { count: wide ? 2 : 1, spread: wide ? .13 : 0, speed: 340, damage: 8 }
+    : { count: wide ? 5 : 3, spread: wide ? .13 : .16, speed: 225 + state.wave * 4, damage: 10 };
+}
+
 function updateEnemies(state, dt) {
+  const cadence = DIFFICULTIES[state.difficulty].cadence;
   for (const enemy of state.enemies) {
     if (enemy.hp <= 0 || state.phase !== 'playing') continue;
     enemy.attackTimer = Math.max(0, enemy.attackTimer - dt);
@@ -427,17 +465,18 @@ function updateEnemies(state, dt) {
       if (enemy.timer > 0) continue;
       if (enemy.type === 'chaser') {
         if (gap < 57) hurtPlayer(state, 12, 'melee');
-        enemy.phase = 'recover'; enemy.timer = .42; enemy.attackTimer = .5;
+        enemy.phase = 'recover'; enemy.timer = .42; enemy.attackTimer = .5 * cadence;
         event(state, 'swipe', { x: enemy.x, y: enemy.y, enemyId: enemy.id });
       } else if (enemy.type === 'brute') {
         enemy.phase = 'charge'; enemy.timer = .65;
         event(state, 'charge', { x: enemy.x, y: enemy.y, enemyId: enemy.id });
-      } else if (enemy.type === 'ranged') {
-        fireFan(state, enemy, 3, .16, 225 + state.wave * 4, 10);
-        enemy.phase = 'recover'; enemy.timer = .35; enemy.attackTimer = 2.0;
-      } else if (enemy.type === 'weaver') {
-        fireFan(state, enemy, 1, 0, 340, 8);
-        enemy.phase = 'recover'; enemy.timer = .2; enemy.attackTimer = 1.4; enemy.strafe *= -1;
+      } else if (enemy.type === 'ranged' || enemy.type === 'weaver') {
+        const shot = enemyShotPattern(state, enemy);
+        fireFan(state, enemy, shot.count, shot.spread, shot.speed, shot.damage);
+        enemy.volleyIndex = (enemy.volleyIndex || 0) + 1;
+        enemy.phase = 'recover'; enemy.timer = enemy.type === 'ranged' ? .35 : .2;
+        enemy.attackTimer = (enemy.type === 'ranged' ? 2 : 1.4) * cadence;
+        if (enemy.type === 'weaver') enemy.strafe *= -1;
       } else bossAttack(state, enemy);
     } else if (enemy.phase === 'burst') {
       enemy.timer -= dt;
@@ -447,7 +486,7 @@ function updateEnemies(state, dt) {
         enemy.aimX = Math.cos(angle); enemy.aimY = Math.sin(angle);
         fireFan(state, enemy, 10, Math.PI * 2 / 10, 240, 12);
         enemy.aimX = original.x; enemy.aimY = original.y;
-        enemy.pattern += 1; enemy.phase = 'recover'; enemy.timer = .5; enemy.attackTimer = 1.5;
+        enemy.pattern += 1; enemy.phase = 'recover'; enemy.timer = .5; enemy.attackTimer = 1.5 * cadence;
       }
     } else if (enemy.phase === 'charge') {
       const before = { x: enemy.x, y: enemy.y };
@@ -456,7 +495,7 @@ function updateEnemies(state, dt) {
       if (gap < enemy.radius + state.player.radius + 8) hurtPlayer(state, 18, 'charge');
       enemy.timer -= dt;
       if (enemy.timer <= 0 || distance(before, enemy) < charge * dt * .35) {
-        enemy.phase = 'recover'; enemy.timer = .7; enemy.attackTimer = 1.2;
+        enemy.phase = 'recover'; enemy.timer = .7; enemy.attackTimer = 1.2 * cadence;
       }
     } else if (enemy.phase === 'recover') {
       enemy.timer -= dt;
@@ -676,6 +715,7 @@ export function step(state, inputs = {}, dt = 1 / 120) {
       : { x: inputs.moveX, y: inputs.moveY };
   }
   const dash = inputs.dash === true;
+  const previousX = player.x; const previousY = player.y;
   if (dash && !player.dashHeld && player.dashTime <= 0 && player.stamina >= player.dashCost) {
     const direction = length(movement.x, movement.y) > .05
       ? unit(movement.x, movement.y) : { x: player.aimX, y: player.aimY };
@@ -698,6 +738,7 @@ export function step(state, inputs = {}, dt = 1 / 120) {
     moveBody(player, player.dashX * 620 * activeTime, player.dashY * 620 * activeTime);
     player.dashTime = Math.max(0, player.dashTime - dt);
   } else moveBody(player, movement.x * player.moveSpeed * dt, movement.y * player.moveSpeed * dt);
+  player.vx = (player.x - previousX) / dt; player.vy = (player.y - previousY) / dt;
   if (player.staminaDelay === 0) player.stamina = Math.min(player.maxStamina, player.stamina + player.staminaRegen * dt);
   if (inputs.fire === true && player.fireCooldown <= 0 && !player.overheated) {
     const focused = player.focusReady;
@@ -737,12 +778,12 @@ export function chooseUpgrade(state, id, options = {}) {
   if (state.phase !== 'upgrade') return { ok: false, error: 'Choose an upgrade between waves.' };
   if (!state.upgradeChoices.includes(id) || !upgradeAvailable(state, id)) return { ok: false, error: 'Choose one of the offered upgrades.' };
   const player = state.player;
-  if (id === 'repair') player.hp = Math.min(player.maxHp, player.hp + 35);
+  if (id === 'repair') player.hp = Math.min(player.maxHp, player.hp + DIFFICULTIES[state.difficulty].repair);
   if (id === 'damage') player.damage = Math.min(46, player.damage + 6);
   if (id === 'cooling') { player.cooling = Math.min(52, player.cooling + 8); player.heatPerShot = Math.max(7, player.heatPerShot - 1); }
   if (id === 'mobility') player.moveSpeed = Math.min(310, player.moveSpeed + 20);
   if (id === 'battery') { player.maxStamina = Math.min(145, player.maxStamina + 15); player.staminaRegen = Math.min(37, player.staminaRegen + 4); }
-  if (id === 'plating') { player.maxHp = Math.min(130, player.maxHp + 10); player.hp = Math.min(player.maxHp, player.hp + 10); }
+  if (id === 'plating') { player.maxHp = Math.min(130, player.maxHp + 10); player.hp = Math.min(player.maxHp, player.hp + DIFFICULTIES[state.difficulty].plating); }
   if (['ricochet', 'scatter'].includes(id)) player[id] = Math.min(2, player[id] + 1);
   if (['chain', 'siphon', 'frost', 'pulse', 'focus'].includes(id)) player[id] = Math.min(3, player[id] + 1);
   state.upgrades[id] = (state.upgrades[id] || 0) + 1;

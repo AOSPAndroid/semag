@@ -8,6 +8,9 @@ import {
   getTrack,
   advanceStage,
   recordScope,
+  DIFFICULTIES,
+  getDifficulty,
+  raceTargets,
   nearestTrack as projectTrack,
   trackInfo as courseInfo,
 } from './circuit-engine.js';
@@ -51,7 +54,7 @@ function element(tag, className, text) {
 }
 
 export function mount(container, { onUpdate = () => {} } = {}) {
-  let state = createState();
+  let state = createState({ difficulty: 'veteran' });
   const sprites = createDrivingSprites();
   let course = getTrack(state),
     TRACK = course.points,
@@ -61,6 +64,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   const trackInfo = (distance) => courseInfo(distance, state.trackId);
   const nearestTrack = (x, y) => projectTrack(x, y, state.trackId);
   const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+  const desktopLayout = window.matchMedia?.('(min-width: 951px) and (pointer: fine)');
   let destroyed = false;
   let frameId = null;
   let canvasCssWidth = WORLD.width;
@@ -81,6 +85,19 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   const courseName = element('span', 'circuit-course', 'MEADOW LOOP · 3 LAPS');
   topline.append(element('span', '', 'APEX CIRCUIT / TIME ATTACK'), courseName);
   const selection = element('div', 'circuit-selection');
+  const difficulties = element('div', 'circuit-difficulties');
+  difficulties.setAttribute('role', 'group');
+  difficulties.setAttribute('aria-label', 'Choose difficulty');
+  for (const difficulty of DIFFICULTIES) {
+    const button = element(
+      'button',
+      'circuit-difficulty',
+      difficulty.id === 'standard' ? 'Standard · practice' : difficulty.title,
+    );
+    button.type = 'button';
+    button.dataset.difficulty = difficulty.id;
+    difficulties.append(button);
+  }
   const modes = element('div', 'circuit-modes');
   modes.setAttribute('role', 'group');
   modes.setAttribute('aria-label', 'Choose race mode');
@@ -107,7 +124,11 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     trackChoices.append(button);
   }
   const courseBrief = element('p', 'circuit-brief');
-  selection.append(modes, trackChoices, courseBrief);
+  const challengePanel = element('div', 'circuit-challenge');
+  const challengeTime = element('strong', 'circuit-challenge-time');
+  const challengeLimits = element('span', 'circuit-challenge-limits');
+  challengePanel.append(challengeTime, challengeLimits);
+  selection.append(difficulties, modes, trackChoices, courseBrief, challengePanel);
   const hud = element('div', 'circuit-hud');
   const speedBox = element('div', 'circuit-stat circuit-speed');
   const speedValue = element('strong', '', '0');
@@ -517,6 +538,10 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     lastSkid = null;
   }
   function detail() {
+    if (state.phase === 'lost')
+      return state.result === 'time-limit'
+        ? 'Time target missed. Carry speed through the straights and brake before corners. Standard practice has no time limit.'
+        : 'Track limits exceeded. Keep the car on the asphalt; off-track time accumulates for this race. Standard practice lets you learn the line.';
     if (state.phase === 'stage-clear')
       return `${course.title} complete in ${seconds(state.elapsed)}. ${state.medal.toUpperCase()} medal. Continue to the next circuit.`;
     if (state.phase === 'won' && state.mode === 'championship')
@@ -537,11 +562,13 @@ export function mount(container, { onUpdate = () => {} } = {}) {
         ? 'stage-clear'
         : state.phase === 'won'
           ? 'won'
-          : state.phase === 'paused'
-            ? 'paused'
-            : state.startDelay > 0
-              ? 'ready'
-              : '';
+          : state.phase === 'lost'
+            ? 'lost'
+            : state.phase === 'paused'
+              ? 'paused'
+              : state.startDelay > 0
+                ? 'ready'
+                : '';
     setValue(overlay, 'hidden', !mode);
     setValue(overlay.dataset, 'mode', mode);
     setValue(continueRace, 'hidden', mode !== 'stage-clear');
@@ -563,6 +590,14 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       setValue(overlayEyebrow, 'textContent', 'PIT STOP');
       setValue(overlayTitle, 'textContent', 'RACE PAUSED');
       setValue(overlayDetail, 'textContent', 'P OR RESUME TO GET BACK ON TRACK');
+    } else if (mode === 'lost') {
+      setValue(overlayEyebrow, 'textContent', 'CHALLENGE OVER');
+      setValue(
+        overlayTitle,
+        'textContent',
+        state.result === 'time-limit' ? 'TIME TARGET MISSED' : 'TRACK LIMITS',
+      );
+      setValue(overlayDetail, 'textContent', 'NEW GAME TO TRY AGAIN · STANDARD TO PRACTISE');
     } else if (mode === 'ready') {
       setValue(overlayEyebrow, 'textContent', 'HOLD YOUR LINE');
       setValue(overlayTitle, 'textContent', String(Math.max(1, Math.ceil(state.startDelay))));
@@ -572,6 +607,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   function publish() {
     if (destroyed) return;
     const message = detail();
+    const targets = raceTargets(state.trackId, state.difficulty);
     setValue(
       courseName,
       'textContent',
@@ -580,10 +616,33 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     setValue(
       courseBrief,
       'textContent',
-      `${course.description} Gold ${seconds(course.targets[0])} · Silver ${seconds(course.targets[1])} · Bronze ${seconds(course.targets[2])}`,
+      `${course.description} Gold ${seconds(targets[0])} · Silver ${seconds(targets[1])} · Bronze ${seconds(targets[2])}`,
     );
     for (const button of modes.children)
       setAttribute(button, 'aria-pressed', String(button.dataset.mode === state.mode));
+    for (const button of difficulties.children)
+      setAttribute(button, 'aria-pressed', String(button.dataset.difficulty === state.difficulty));
+    setValue(view.dataset, 'driveDifficulty', state.difficulty);
+    setValue(challengePanel, 'hidden', !state.challenge);
+    if (state.challenge) {
+      setValue(
+        challengeTime,
+        'textContent',
+        `${state.challenge.remaining.toFixed(1)}s LEFT / ${state.challenge.limit}s TARGET`,
+      );
+      setValue(
+        challengeLimits,
+        'textContent',
+        `OFF TRACK ${state.challenge.offRoad.toFixed(1)} / ${state.challenge.offRoadLimit}s · RESETS ${state.challenge.resets} / ${state.challenge.resetLimit}`,
+      );
+      setValue(
+        challengePanel.dataset,
+        'urgent',
+        String(
+          state.challenge.remaining <= 10 || state.challenge.offRoadLimit - state.challenge.offRoad <= 0.5,
+        ),
+      );
+    }
     for (const button of trackChoices.children) {
       setAttribute(button, 'aria-pressed', String(button.dataset.track === state.trackId));
       setValue(button, 'disabled', state.mode === 'championship');
@@ -611,7 +670,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       'disabled',
       !['playing', 'paused'].includes(state.phase) ||
         state.pausedPhase === 'stage-clear' ||
-        state.startDelay > 0,
+        state.startDelay > 0 ||
+        Boolean(state.challenge && state.challenge.resets >= state.challenge.resetLimit),
     );
     for (const button of controlButtons.values()) setValue(button, 'disabled', state.phase !== 'playing');
     setValue(
@@ -836,6 +896,11 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     } else if (frameId === null) frameId = window.requestAnimationFrame(frame);
   }
   function resizeCanvas() {
+    const top = canvas.getBoundingClientRect().top;
+    const maximum = desktopLayout?.matches
+      ? `${Math.max(160, ((window.innerHeight - top - 18) * WORLD.width) / WORLD.height)}px`
+      : '';
+    setValue(canvas.style, 'maxWidth', maximum);
     canvasCssWidth = canvas.getBoundingClientRect().width || WORLD.width;
     draw();
   }
@@ -890,6 +955,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
         return;
       event.preventDefault();
       if (state.phase !== 'playing') return;
+      if (event.repeat && !keyHeld.has(event.code)) return;
       keyHeld.set(event.code, input);
       paintHeld();
     } else if (event.code === 'KeyQ' && !event.repeat) {
@@ -925,7 +991,9 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   };
   const resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(resizeCanvas) : null;
   if (resizeObserver) resizeObserver.observe(canvas);
+  resizeObserver?.observe(view);
   window.addEventListener('resize', resizeCanvas);
+  desktopLayout?.addEventListener('change', resizeCanvas);
   reducedMotion?.addEventListener('change', motionChanged);
   window.addEventListener('keydown', keydown);
   window.addEventListener('keyup', keyup);
@@ -937,12 +1005,13 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   controls.addEventListener('pointercancel', pointerend);
   controls.addEventListener('lostpointercapture', pointerend);
   function newSelection(event) {
-    const button = event.target.closest('button[data-track],button[data-mode]');
+    const button = event.target.closest('button[data-track],button[data-mode],button[data-difficulty]');
     if (!button || !selection.contains(button)) return;
     const mode = button.dataset.mode || state.mode,
-      trackId = button.dataset.track || state.trackId;
+      trackId = button.dataset.track || state.trackId,
+      difficulty = button.dataset.difficulty || state.difficulty;
     releaseHeld();
-    state = createState({ mode, trackId });
+    state = createState({ mode, trackId, difficulty });
     course = getTrack(state);
     TRACK = course.points;
     TRACK_LENGTH = course.length;
@@ -989,7 +1058,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     restart() {
       if (destroyed) return;
       releaseHeld();
-      state = createState({ trackId: state.trackId, mode: state.mode });
+      state = createState({ trackId: state.trackId, mode: state.mode, difficulty: state.difficulty });
       course = getTrack(state);
       TRACK = course.points;
       TRACK_LENGTH = course.length;
@@ -1016,6 +1085,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       window.cancelAnimationFrame(frameId);
       resizeObserver?.disconnect();
       window.removeEventListener('resize', resizeCanvas);
+      desktopLayout?.removeEventListener('change', resizeCanvas);
       reducedMotion?.removeEventListener('change', motionChanged);
       window.removeEventListener('keydown', keydown);
       window.removeEventListener('keyup', keyup);

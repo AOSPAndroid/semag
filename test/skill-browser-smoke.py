@@ -15,6 +15,7 @@ from urllib.parse import parse_qs, urlparse
 from urllib.request import urlopen
 
 from playwright.sync_api import sync_playwright
+from browser_profiles import standard_profile
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -263,6 +264,8 @@ def browser_back(page, url, game):
     if page.evaluate("window.__qaPageShowPersisted === true"):
         assert state(page) == before, "BFCache lost the paused session"
         assert page.locator("#solo-pause span").inner_text() == "Resume"
+    else:
+        standard_profile(page, game)
     page.locator("#solo-restart").click()
     phase(page, "playing")
 
@@ -417,6 +420,7 @@ def prism(page, context):
     assert record(page, "prism-shift", "marathon") == best
     page.reload()
     page.wait_for_function("window.firesideSolo?.gameId === 'prism-shift'")
+    standard_profile(page, 'prism-shift')
     assert record(page, "prism-shift", "marathon") == best
     assert state(page)["piecesLocked"] == 0 and state(page)["hold"] is None
     print("  Prism Shift: real rotation/hold, DAS/release, hard drops and four cleared rows, scoring, scoped Sprint time, native blur/pause, touch cancel/release and records", flush=True)
@@ -528,6 +532,7 @@ def rift(page, context):
     assert record(page, "rift-survivor") >= best
     page.reload()
     page.wait_for_function("window.firesideSolo?.gameId === 'rift-survivor'")
+    standard_profile(page, 'rift-survivor')
     assert record(page, "rift-survivor") >= best
     print("  Rift Survivor: physical aiming/kills and first wave upgrade, next wave, dash/heat/cooling, playing/upgrade pause, native blur, twin touchpads/buttons, natural defeat and persistent score", flush=True)
 
@@ -719,6 +724,7 @@ def run(url):
                     page.locator(f'[data-play-solo="{game}"]').click()
                     page.wait_for_url(f"**/solo.html?game={game}")
                     page.wait_for_function("game => window.firesideSolo?.gameId === game", arg=game)
+                    standard_profile(page, game)
                     phase(page, "playing")
                     native_help(page, game)
                     desktop_play_layout(page, game)

@@ -5,7 +5,7 @@ const flagArt = '<svg viewBox="0 0 40 44" aria-hidden="true"><path d="M10 37H29"
 const mineArt = '<svg viewBox="0 0 44 44" aria-hidden="true"><g stroke="#405444" stroke-width="3" stroke-linecap="round"><path d="M22 4V40M4 22H40M9 9L35 35M9 35L35 9"/></g><circle cx="22" cy="23" r="12" fill="#304b3d" stroke="#758565" stroke-width="2"/><path d="M13 21A9 9 0 0 1 23 14" fill="none" stroke="#a7b589" stroke-width="2" stroke-linecap="round"/><circle cx="17" cy="18" r="2" fill="#d7ddba"/><path d="M28 26 26 29" stroke="#152f26" stroke-width="2" stroke-linecap="round"/></svg>';
 
 export function mount(container, { onUpdate = () => {} } = {}) {
-  let difficulty = 'beginner';
+  let difficulty = 'expert';
   let state = createState(DIFFICULTIES[difficulty]);
   let flagMode = false;
   let focused = 0;
@@ -52,6 +52,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   container.replaceChildren(root);
   const board = root.querySelector('.minesweeper-board');
   const selector = root.querySelector('.minesweeper-difficulty');
+  selector.value = difficulty;
   const flagButton = root.querySelector('.minesweeper-flag-mode');
   const remaining = root.querySelector('.minesweeper-remaining');
   const clock = root.querySelector('.minesweeper-clock');

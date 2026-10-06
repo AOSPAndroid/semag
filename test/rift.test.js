@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createState, step, togglePause, chooseUpgrade, ARENA, OBSTACLES,
-  TOTAL_WAVES, UPGRADES, MAX_ENEMIES, MAX_PROJECTILES, SECTORS, DIFFICULTIES } from '../public/solo/rift-engine.js';
+  TOTAL_WAVES, UPGRADES, MAX_ENEMIES, MAX_PROJECTILES, SECTORS, DIFFICULTIES, enemyShotPattern, chargeSpeed } from '../public/solo/rift-engine.js';
 
 function seeded(seed = 7) {
   return () => { seed = Math.imul(seed, 1664525) + 1013904223 | 0; return (seed >>> 0) / 4294967296; };
@@ -491,15 +491,135 @@ test('floor hazards freeze when paused and moving out before their countdown avo
   advance(state, .3); assert.equal(state.player.hp, 82);
 });
 
-test('veteran is a distinct optional tier with faster enemies and heavier damage', () => {
+test('harder tiers open with mixed pressure and elites without inflating ordinary health', () => {
   const standard = createState({ random: seeded(3) });
   const veteran = createState({ random: seeded(3), difficulty: 'veteran' });
-  assert.equal(veteran.enemies[0].speed, standard.enemies[0].speed * 1.12);
+  assert.equal(veteran.enemies[0].speed, standard.enemies[0].speed * DIFFICULTIES.veteran.enemySpeed);
+  assert.equal(veteran.enemies.length, 6);
+  assert.deepEqual(veteran.enemies.map(e => e.type), ['chaser', 'chaser', 'chaser', 'chaser', 'ranged', 'weaver']);
+  assert.equal(veteran.enemies.filter(e => e.elite).length, 1);
+  const nightmare = createState({ random: seeded(3), difficulty: 'nightmare' });
+  assert.equal(nightmare.enemies.length, 9);
+  assert.equal(nightmare.enemies.filter(e => e.elite).length, 2);
+  assert.ok(nightmare.enemies.some(e => e.type === 'brute'));
+  for (const tier of [veteran, nightmare]) {
+    for (const e of tier.enemies) {
+      assert.ok(Math.hypot(e.x - tier.player.x, e.y - tier.player.y) > 220);
+      if (e.type === 'chaser' && e.affix !== 'armored') assert.equal(e.maxHp, standard.enemies[0].maxHp);
+    }
+  }
   veteran.player.invulnerable = 0;
   veteran.projectiles = [{ id: 1, owner: 'enemy', x: 500, y: 340, vx: 0, vy: 0, radius: 5, damage: 10, life: 1 }];
   step(veteran); assert.equal(veteran.player.hp, 88);
   assert.equal(DIFFICULTIES.veteran.score, 1.5);
+  assert.equal(DIFFICULTIES.nightmare.score, 2);
   assert.throws(() => createState({ difficulty: 'impossible' }), RangeError);
+});
+
+test('leading aim reads actual movement, locks throughout the tell, and offers time to reverse', () => {
+  const standard = quiet(createState({ random: seeded(3) }));
+  const veteran = quiet(createState({ random: seeded(3), difficulty: 'veteran' }));
+  for (const s of [standard, veteran]) s.enemies = [enemy({ type: 'ranged', x: 180, y: 340, attackTimer: 0 })];
+  step(standard, { up: true }); step(veteran, { up: true });
+  const foe = veteran.enemies[0];
+  assert.equal(foe.phase, 'windup');
+  assert.equal(foe.timer, .6);
+  assert.ok(foe.aimY < standard.enemies[0].aimY - .3);
+  const locked = { x: foe.aimX, y: foe.aimY };
+  const startY = veteran.player.y;
+  advance(veteran, .4, { down: true });
+  assert.equal(foe.aimX, locked.x); assert.equal(foe.aimY, locked.y);
+  assert.ok(veteran.player.y > startY + 80);
+  assert.equal(veteran.player.hp, 100);
+  advance(veteran, .21, { down: true });
+  assert.equal(veteran.projectiles.filter(b => b.owner === 'enemy').length, 3);
+  assert.ok(veteran.projectiles.every(b => b.vy < 0));
+  assert.ok(Math.abs(Math.hypot(veteran.projectiles[0].vx, veteran.projectiles[0].vy) - 229 * DIFFICULTIES.veteran.projectileSpeed) < 1e-8);
+});
+
+test('higher-tier fan warnings agree with emitted alternating volleys and their attack cadence', () => {
+  for (const difficulty of ['standard', 'veteran', 'nightmare']) {
+    const state = quiet(createState({ random: seeded(3), difficulty }));
+    const foe = enemy({ type: 'ranged', x: 180, y: 340, phase: 'windup', timer: .001, volleyIndex: 0 });
+    state.enemies = [foe];
+    const first = enemyShotPattern(state, foe);
+    step(state);
+    assert.equal(state.projectiles.length, first.count);
+    assert.equal(foe.attackTimer, 2 * DIFFICULTIES[difficulty].cadence);
+    const angle = Math.atan2(state.projectiles[0].vy, state.projectiles[0].vx);
+    assert.ok(Math.abs(angle + (first.count - 1) / 2 * first.spread) < 1e-8);
+    state.projectiles = [];
+    foe.phase = 'windup'; foe.timer = .001;
+    const second = enemyShotPattern(state, foe);
+    step(state);
+    assert.equal(state.projectiles.length, second.count);
+    assert.equal(second.count, difficulty === 'standard' ? 3 : 5);
+    assert.equal(enemyShotPattern(state, { type: 'weaver', volleyIndex: 1 }).count, difficulty === 'standard' ? 1 : 2);
+  }
+});
+
+test('higher-tier kill healing has a shared wave budget and repairs retain visible costs', () => {
+  for (const difficulty of ['veteran', 'nightmare']) {
+    const state = quiet(createState({ random: seeded(3), difficulty }));
+    state.player.hp = 40; state.player.siphon = 3;
+    for (let kill = 0; kill < 10; kill += 1) {
+      state.enemies = [enemy({ x: 560, y: 340, hp: 1 }), enemy({ id: 999 })];
+      state.player.fireCooldown = 0; state.player.heat = 0; state.player.overheated = false;
+      advance(state, .1, { fire: true, aimX: 1, aimY: 0 });
+    }
+    assert.equal(state.kills, 10);
+    const budget = DIFFICULTIES[difficulty].healingBudget;
+    assert.ok(Math.abs(state.player.hp - (40 + budget)) < 1e-8);
+    assert.ok(Math.abs(state.waveHealing - budget) < 1e-8);
+    clearToUpgrade(state); state.upgradeChoices = ['repair', 'plating'];
+    assert.equal(chooseUpgrade(state, 'repair').ok, true);
+    assert.ok(Math.abs(state.player.hp - (40 + budget + DIFFICULTIES[difficulty].repair)) < 1e-8);
+    assert.equal(state.waveHealing, 0);
+    clearToUpgrade(state); state.upgradeChoices = ['plating'];
+    const hp = state.player.hp;
+    assert.equal(chooseUpgrade(state, 'plating').ok, true);
+    assert.equal(state.player.maxHp, 110);
+    assert.equal(state.player.hp, hp + DIFFICULTIES[difficulty].plating);
+  }
+});
+
+test('chain kills cannot multiply the remaining healing budget or consume it while healthy', () => {
+  const state = quiet(createState({ random: seeded(3), difficulty: 'nightmare' }));
+  state.player.siphon = 3; state.player.chain = 3;
+  state.enemies = [enemy({ id: 500, x: 560, y: 340, hp: 1 }), enemy({ id: 501, x: 580, y: 350, hp: 1 }), enemy({ id: 999 })];
+  advance(state, .1, { fire: true, aimX: 1, aimY: 0 });
+  assert.equal(state.kills, 2);
+  assert.equal(state.waveHealing, 0);
+  state.player.hp = 50; state.waveHealing = 4.75;
+  state.enemies = [enemy({ id: 502, x: 560, y: 340, hp: 1 }), enemy({ id: 503, x: 580, y: 350, hp: 1 }), enemy({ id: 999 })];
+  state.player.fireCooldown = 0;
+  advance(state, .1, { fire: true, aimX: 1, aimY: 0 });
+  assert.equal(state.kills, 4);
+  assert.equal(state.player.hp, 50.25);
+  assert.equal(state.waveHealing, 5);
+});
+
+test('every tier preserves bounded safe waves, deterministic pressure and paused decision clocks', () => {
+  for (const difficulty of ['veteran', 'nightmare']) {
+    const a = createState({ difficulty, random: seeded(31) });
+    const b = createState({ difficulty, random: seeded(31) });
+    advance(a, 1, { up: true, fire: true, aimX: -1, aimY: -.4 });
+    advance(b, 1, { up: true, fire: true, aimX: -1, aimY: -.4 });
+    assert.deepEqual(a, b);
+    for (let wave = 1; wave < TOTAL_WAVES; wave += 1) {
+      clearToUpgrade(a);
+      togglePause(a); const snapshot = JSON.stringify(a);
+      advance(a, 1, { fire: true, dash: true });
+      assert.equal(JSON.stringify(a), snapshot);
+      assert.equal(chooseUpgrade(a, a.upgradeChoices[0]).ok, false);
+      togglePause(a);
+      assert.equal(chooseUpgrade(a, a.upgradeChoices[0], { risk: true }).ok, true);
+      assert.ok(a.enemies.length <= MAX_ENEMIES);
+      assert.ok(a.enemies.every(e => Math.hypot(e.x - a.player.x, e.y - a.player.y) > 220));
+      assert.equal(a.enemies.filter(e => e.boss).length, a.wave % 5 === 0 ? 1 : 0);
+      assert.ok(a.enemies.filter(e => e.elite).length >= DIFFICULTIES[difficulty].elites);
+    }
+  }
 });
 
 test('a legal-input expedition defeats all twenty waves, 259 enemies and four guardians', () => {
@@ -563,4 +683,141 @@ test('invalid frames, large finite inputs and invalid random sources cannot pois
   assert.throws(() => createState({ random: 'no' }), TypeError);
   assert.throws(() => createState({ random: () => 1 }), RangeError);
   assert.throws(() => createState({ random: () => NaN }), RangeError);
+});
+
+// A test pilot reacts to observable trajectories rather than modifying combat.
+const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+const path = [{ x: 500, y: 100 }, { x: 880, y: 100 }, { x: 880, y: 580 }, { x: 120, y: 580 }, { x: 120, y: 100 }];
+function hitRisk(px, py, vx, vy, bx, by, bvx, bvy, horizon, radius) {
+  const dx = bx - px; const dy = by - py; const rx = bvx - vx; const ry = bvy - vy;
+  const time = clamp(-(dx * rx + dy * ry) / (rx * rx + ry * ry || 1), 0, horizon);
+  const gap = Math.hypot(dx + rx * time, dy + ry * time);
+  return gap < radius ? (radius - gap) / radius * (1.2 - time / horizon) : 0;
+}
+function tacticalInput(state, memory) {
+  const player = state.player;
+  let target = path[memory.waypoint || 0];
+  if (Math.hypot(player.x - target.x, player.y - target.y) < 35) {
+    memory.waypoint = ((memory.waypoint || 0) + 1) % path.length;
+    target = path[memory.waypoint];
+  }
+  const intended = Math.atan2(target.y - player.y, target.x - player.x);
+  const speed = player.moveSpeed;
+  const bullets = state.projectiles.filter(b => b.owner === 'enemy');
+  const incoming = bullets.slice();
+  for (const enemy of state.enemies) if (enemy.phase === 'windup' && ['ranged', 'weaver'].includes(enemy.type)) {
+    const shot = enemyShotPattern(state, enemy);
+    const aim = Math.atan2(enemy.aimY, enemy.aimX);
+    const velocity = shot.speed * DIFFICULTIES[state.difficulty].projectileSpeed;
+    for (let index = 0; index < shot.count; index += 1) {
+      const angle = aim + (index - (shot.count - 1) / 2) * shot.spread;
+      incoming.push({ x: enemy.x + Math.cos(angle) * (enemy.radius + 6) - Math.cos(angle) * velocity * enemy.timer,
+        y: enemy.y + Math.sin(angle) * (enemy.radius + 6) - Math.sin(angle) * velocity * enemy.timer,
+        vx: Math.cos(angle) * velocity, vy: Math.sin(angle) * velocity });
+    }
+  }
+  let best = null;
+  for (let index = 0; index < 16; index += 1) {
+    const angle = intended + index * Math.PI / 8;
+    const x = Math.cos(angle); const y = Math.sin(angle); const vx = x * speed; const vy = y * speed;
+    let cost = (1 - Math.cos(angle - intended)) * .6;
+    for (const bullet of incoming) cost += hitRisk(player.x, player.y, vx, vy, bullet.x, bullet.y, bullet.vx, bullet.vy, .85, 38) * 25;
+    for (const enemy of state.enemies) {
+      if (enemy.type === 'chaser' || enemy.boss) {
+        const gap = Math.hypot(enemy.x - player.x - vx * .35, enemy.y - player.y - vy * .35);
+        if (gap < enemy.radius + 75) cost += (enemy.radius + 75 - gap) * .06;
+      }
+      if (enemy.type === 'brute' && ['charge', 'windup'].includes(enemy.phase)) {
+        const velocity = chargeSpeed(state, enemy);
+        const delay = enemy.phase === 'windup' ? enemy.timer : 0;
+        cost += hitRisk(player.x, player.y, vx, vy, enemy.x - enemy.aimX * velocity * delay,
+          enemy.y - enemy.aimY * velocity * delay, enemy.aimX * velocity, enemy.aimY * velocity, .85, 55) * 28;
+      }
+    }
+    for (const hazard of state.hazards) {
+      const time = Math.max(.06, hazard.warning);
+      const hx = player.x + vx * time; const hy = player.y + vy * time;
+      const gap = hazard.kind === 'vertical' ? Math.abs(hazard.x - hx) : hazard.kind === 'horizontal'
+        ? Math.abs(hazard.y - hy) : Math.hypot(hazard.x - hx, hazard.y - hy);
+      if (gap < (hazard.radius || hazard.width / 2) + 25) cost += 18;
+    }
+    for (const time of [.2, .5]) {
+      const px = player.x + vx * time; const py = player.y + vy * time;
+      if (px < 25 || px > 975 || py < 25 || py > 655) cost += 30;
+      for (const cover of OBSTACLES) if (Math.hypot(px - clamp(px, cover.x, cover.x + cover.width),
+        py - clamp(py, cover.y, cover.y + cover.height)) < player.radius + 5) cost += 30;
+    }
+    if (!best || cost < best.cost) best = { x, y, cost };
+  }
+  const closest = state.enemies.reduce((best, e) => !best || Math.hypot(e.x - player.x, e.y - player.y)
+    < Math.hypot(best.x - player.x, best.y - player.y) ? e : best, null);
+  const previous = memory.enemies?.get(closest.id);
+  const delta = memory.lastElapsed === undefined ? 0 : state.elapsed - memory.lastElapsed;
+  const vx = previous && delta > 0 ? clamp((closest.x - previous.x) / delta, -250, 250) : 0;
+  const vy = previous && delta > 0 ? clamp((closest.y - previous.y) / delta, -250, 250) : 0;
+  const travel = Math.hypot(closest.x - player.x, closest.y - player.y) / 780;
+  memory.enemies = new Map(state.enemies.map(e => [e.id, { x: e.x, y: e.y }]));
+  memory.lastElapsed = state.elapsed;
+  const urgent = bullets.some(b => hitRisk(player.x, player.y, best.x * speed, best.y * speed, b.x, b.y, b.vx, b.vy, .2, 27) > 0)
+    || state.enemies.some(e => e.phase === 'charge' && Math.hypot(e.x - player.x, e.y - player.y) < 100)
+    || state.hazards.some(h => h.warning < .12 && (h.kind === 'vertical' ? Math.abs(h.x - player.x) < 50
+      : h.kind === 'horizontal' ? Math.abs(h.y - player.y) < 50 : Math.hypot(h.x - player.x, h.y - player.y) < h.radius + 15));
+  return { moveX: best.x, moveY: best.y, aimX: closest.x + vx * travel - player.x, aimY: closest.y + vy * travel - player.y,
+    fire: true, dash: urgent && !player.dashHeld && player.stamina >= player.dashCost };
+}
+
+test('deliberate legal dodging and build choices can beat both demanding tiers', () => {
+  for (const difficulty of ['veteran', 'nightmare']) {
+    const state = createState({ difficulty, random: seeded(7) });
+    const memory = {}; let input = {}; let lastEvent = 0; let dashes = 0;
+    const bosses = [];
+    for (let tick = 0; tick < 120 * 600 && !['won', 'lost'].includes(state.phase); tick += 1) {
+      if (state.phase === 'upgrade') {
+        const priority = state.player.hp < 65
+          ? ['repair', 'plating', 'damage', 'chain', 'frost', 'scatter', 'cooling', 'mobility', 'focus', 'siphon', 'battery', 'pulse', 'ricochet']
+          : ['damage', 'chain', 'frost', 'scatter', 'cooling', 'mobility', 'focus', 'battery', 'plating', 'repair', 'siphon', 'pulse', 'ricochet'];
+        choose(state, priority); continue;
+      }
+      // Read visible committed warnings and moving shots at 30 Hz; submit only
+      // ordinary aim/move/fire/dash inputs to the fixed-step game.
+      if (tick % 4 === 0 || !input.aimX) input = tacticalInput(state, memory);
+      step(state, input);
+      for (const e of state.events) if (e.id > lastEvent) {
+        lastEvent = e.id;
+        if (e.type === 'dash') dashes += 1;
+        if (e.type === 'kill' && e.enemyType === 'boss') bosses.push(state.wave);
+      }
+      assert.ok(state.enemies.length <= MAX_ENEMIES);
+      assert.ok(state.projectiles.length <= MAX_PROJECTILES);
+      assert.ok(state.hazards.length <= 32 && state.events.length <= 32);
+    }
+    assert.equal(state.phase, 'won', `${difficulty}: wave ${state.wave}`);
+    assert.equal(state.wavesCleared, TOTAL_WAVES);
+    assert.deepEqual(bosses, [5, 10, 15, 20]);
+    assert.equal(state.kills, difficulty === 'veteran' ? 299 : 353);
+    assert.ok(state.player.hp > 0);
+    assert.ok(dashes > 0);
+    assert.ok(state.elapsed < 600);
+  }
+});
+
+test('a healing-first perimeter loop no longer cruises through Veteran', () => {
+  for (const seed of [7, 31]) {
+    const state = createState({ difficulty: 'veteran', random: seeded(seed) });
+    let waypoint = 0;
+    for (let tick = 0; tick < 120 * 180 && !['won', 'lost'].includes(state.phase); tick += 1) {
+      if (state.phase === 'upgrade') {
+        choose(state, ['repair', 'siphon', 'plating', 'damage', 'chain', 'cooling', 'scatter', 'focus', 'frost', 'pulse', 'mobility', 'battery', 'ricochet']); continue;
+      }
+      const p = state.player;
+      let goal = path[waypoint];
+      if (Math.hypot(p.x - goal.x, p.y - goal.y) < 25) { waypoint = (waypoint + 1) % path.length; goal = path[waypoint]; }
+      const dx = goal.x - p.x; const dy = goal.y - p.y; const magnitude = Math.hypot(dx, dy) || 1;
+      const foe = state.enemies.reduce((best, e) => !best || Math.hypot(e.x - p.x, e.y - p.y) < Math.hypot(best.x - p.x, best.y - p.y) ? e : best, null);
+      step(state, { moveX: dx / magnitude, moveY: dy / magnitude, aimX: foe.x - p.x, aimY: foe.y - p.y, fire: true });
+    }
+    assert.equal(state.phase, 'lost');
+    assert.ok(state.wave <= 8, `seed ${seed}: wave ${state.wave}`);
+    assert.ok(state.wave >= 3, 'Opening waves should give time to learn the warnings');
+  }
 });

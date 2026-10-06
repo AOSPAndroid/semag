@@ -1,4 +1,4 @@
-import { ARENA, OBSTACLES, TOTAL_WAVES, UPGRADES, SECTORS, DIFFICULTIES, chargeSpeed, createState, step, togglePause as pauseState, chooseUpgrade } from './rift-engine.js';
+import { ARENA, OBSTACLES, TOTAL_WAVES, UPGRADES, SECTORS, DIFFICULTIES, chargeSpeed, enemyShotPattern, createState, step, togglePause as pauseState, chooseUpgrade } from './rift-engine.js';
 
 const W = ARENA.width;
 const H = ARENA.height;
@@ -50,8 +50,8 @@ function node(tag, className, text) {
 }
 
 export function mount(container, { onUpdate = () => {} } = {}) {
-  let state = createState();
-  let difficulty = 'standard';
+  let difficulty = 'veteran';
+  let state = createState({ difficulty });
   let destroyed = false;
   let raf = null;
   let previousFrame = null;
@@ -100,6 +100,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   const tierSelect = node('select', 'rift-tier-select');
   tierSelect.setAttribute('aria-label', 'Difficulty for a new expedition');
   for (const [id, value] of Object.entries(DIFFICULTIES)) { const option = node('option', '', value.title); option.value = id; tierSelect.append(option); }
+  tierSelect.value = difficulty;
   tierLabel.append(tierSelect);
   const tierDetail = node('span', 'rift-tier-detail', '20 waves · 4 guardians · build synergies');
   tierBar.append(tierLabel, tierDetail);
@@ -278,9 +279,16 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     const guardian = state.enemies.find(enemy => enemy.boss);
     if (guardian) return `${guardian.bossName}: ${guardian.attackName.replaceAll('-', ' ')}. Read the windup and the marked floor.`;
     if (state.waveRisk) return 'Overcharged wave: heavier hits and extra elites. Clear it for 35% more points.';
+    const profile = DIFFICULTIES[state.difficulty];
+    if (state.player.siphon && profile.healingBudget !== null) return `Blood circuit: ${Math.max(0, profile.healingBudget - state.waveHealing).toFixed(1)} health left this wave. Reverse after the locked aim; preserve your dash.`;
+    if (profile.lead) return 'Shots lock ahead of your movement. Reverse after the windup; keep stamina for the next attack.';
     return 'Break line of sight with cover. Dash through danger; leave enough stamina for the next attack.';
   }
   function descriptor(id) {
+    const profile = DIFFICULTIES[state.difficulty];
+    if (id === 'repair') return { ...UPGRADES[id], description: `Restore ${profile.repair} health. Your scars carry between waves.` };
+    if (id === 'plating') return { ...UPGRADES[id], description: `+10 maximum health and restore ${profile.plating} health, up to 130.` };
+    if (id === 'siphon' && profile.healingBudget !== null) return { ...UPGRADES[id], description: `Kills restore ${profile.siphon} health per rank, up to ${profile.healingBudget} health per wave. Arcs and shocks share that limit.` };
     return UPGRADES[id] || { id, name: id, description: 'Improve your next wave.' };
   }
   function updateUpgrades() {
@@ -317,7 +325,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     if (state.player.focus) active.push('Afterimage · dash primes a cool, heavy first shot');
     if (state.player.scatter && state.player.chain) active.push('Triad storm · side rounds conduct arcs');
     if (state.player.ricochet && state.player.scatter) active.push('Mirror fan · side rounds bounce around cover');
-    if (state.player.siphon && (state.player.chain || state.player.pulse)) active.push('Blood circuit · every arc or shock kill heals');
+    if (state.player.siphon && (state.player.chain || state.player.pulse)) active.push(`Blood circuit · arcs and shocks heal${DIFFICULTIES[state.difficulty].healingBudget === null ? '' : ` · ${DIFFICULTIES[state.difficulty].healingBudget} per wave`}`);
     synergies.replaceChildren(...active.map(text => node('span', '', text)));
     synergies.hidden = !active.length;
   }
@@ -367,8 +375,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     }
     updateUpgrades();
     onUpdate({ phase: state.phase === 'upgrade' ? 'playing' : state.phase, score: state.score, record: state.score,
-      recordKey: state.difficulty === 'veteran' ? 'veteran' : 'default',
-      recordLabel: state.difficulty === 'veteran' ? 'VETERAN BEST' : 'EXPEDITION BEST', scoreLabel: 'SCORE', detail });
+      recordKey: { standard: 'default', veteran: 'veteran-v2', nightmare: 'nightmare' }[state.difficulty],
+      recordLabel: { standard: 'EXPEDITION BEST', veteran: 'VETERAN BEST', nightmare: 'NIGHTMARE BEST' }[state.difficulty], scoreLabel: 'SCORE', detail });
     if (changedPhase && state.phase === 'upgrade') upgradeChoices.querySelector('button')?.focus({ preventScroll: true });
   }
 
@@ -636,8 +644,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
         for (let i = 0; i < 3; i += 1) circle(enemy.x + (i - 1) * 38, enemy.y - 60, 9, '#e5a780', true, 3);
       }
     } else {
-      const spread = enemy.type === 'weaver' ? 0 : .16;
-      const count = enemy.type === 'weaver' ? 1 : 3;
+      const { count, spread } = enemyShotPattern(state, enemy);
       for (let i = 0; i < count; i += 1) {
         const a = angle + (i - (count - 1) / 2) * spread;
         line(enemy.x + Math.cos(a) * enemy.radius, enemy.y + Math.sin(a) * enemy.radius, enemy.x + Math.cos(a) * 190, enemy.y + Math.sin(a) * 190, '#f3aaca', i === Math.floor(count / 2) ? 3 : 2);

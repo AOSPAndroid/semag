@@ -16,6 +16,7 @@ import time
 from urllib.request import urlopen
 
 from playwright.sync_api import sync_playwright
+from browser_profiles import standard_profile
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -188,12 +189,14 @@ def focused_hold_controls(page, game, selector):
 def persistent_record(page, context, game, best):
     page.reload()
     page.wait_for_function(f"game => {SURFACE}?.gameId === game", arg=game)
+    standard_profile(page, game)
     assert stored_record(page, game) == best
     fresh = context.new_page()
     watch(fresh, f"{game}/fresh-page")
     try:
         fresh.goto(page.url)
         fresh.wait_for_function(f"game => {SURFACE}?.gameId === game", arg=game)
+        standard_profile(fresh, game)
         assert stored_record(fresh, game) == best, "Record was lost in a fresh same-origin page"
     finally:
         fresh.close()
@@ -215,6 +218,7 @@ def browser_back(page, url, game):
         page.locator("#solo-pause").click()
         wait_phase(page, "playing")
     else:
+        standard_profile(page, game)
         wait_phase(page, "playing")
     page.locator("#solo-restart").click()
     assert state(page)["phase"] == "playing", "Controls failed after browser Back"
@@ -500,6 +504,7 @@ def run(url):
                     page.locator(f'[data-play-solo="{game}"]').click()
                     page.wait_for_url(f"**/solo.html?game={game}")
                     page.wait_for_function(f"game => {SURFACE}?.gameId === game", arg=game)
+                    standard_profile(page, game)
                     wait_phase(page, "playing")
                     assert page.locator("#solo-controls-list").is_visible()
                     assert not page.locator("#solo-rules").is_visible()

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { advanceGarden, createState, turn, step, togglePause, GRID_SIZE, START_STEP_MS, MIN_STEP_MS } from '../public/solo/snake-engine.js';
+import { GARDENS, GAUNTLET, advanceGarden, createState, turn, step, togglePause, GRID_SIZE, START_STEP_MS, MIN_STEP_MS } from '../public/solo/snake-engine.js';
 
 function seeded(seed = 1) {
   return () => {
@@ -190,3 +190,60 @@ test('normal turn and step inputs complete all six gardens and finite fruit goal
   }
   assert.equal(s.phase, 'won'); assert.equal(s.result, 'gardens'); assert.equal(s.gardensCleared, 6); assert.equal(s.foodsEaten, 30); assert.ok(s.score >= 700);
 });
+
+test('gauntlet adds substantially faster, larger goals without moving the safe starting corridor', () => {
+  assert.equal(GAUNTLET.reduce((sum, garden) => sum + garden.goal, 0), 78);
+  for (let seed = 1; seed <= 32; seed++) {
+    const state = createState({ mode: 'gauntlet', random: seeded(seed) });
+    for (let level = 0; level < GAUNTLET.length; level++) {
+      assert.equal(state.level, level);
+      assert.ok(GAUNTLET[level].goal >= GARDENS[level].goal * 2);
+      assert.ok(state.stepMs <= GARDENS[level].speed * .65);
+      assert.ok(!state.obstacles.some(wall => state.snake.some(segment => wall.x === segment.x && wall.y === segment.y)));
+      assert.ok(foodPath(state).length > 0, `seed ${seed}, level ${level}: reachable fruit`);
+      const firstStep = { x: state.snake[0].x + 1, y: state.snake[0].y };
+      assert.ok(!state.obstacles.some(wall => wall.x === firstStep.x && wall.y === firstStep.y));
+      if (level < GAUNTLET.length - 1) { state.phase = 'levelClear'; assert.equal(advanceGarden(state), true); }
+    }
+  }
+});
+
+test('legal steering completes all 78 gauntlet fruit across multiple seeded runs', () => {
+  for (const seed of [1, 2, 3]) {
+    const state = createState({ mode: 'gauntlet', random: seeded(seed) });
+    let guard = 0;
+    while (!['won', 'lost'].includes(state.phase) && guard++ < 5000) {
+      if (state.phase === 'levelClear') { advanceGarden(state); continue; }
+      const route = foodPath(state);
+      assert.ok(route.length, `seed ${seed}, stage ${state.level + 1}, fruit ${state.levelFoods}`);
+      turn(state, route[0]); step(state);
+      assert.ok(state.stepMs >= 64);
+    }
+    assert.equal(state.phase, 'won'); assert.equal(state.result, 'gauntlet');
+    assert.equal(state.gardensCleared, 6); assert.equal(state.foodsEaten, 78);
+    assert.equal(state.score, 1230); assert.equal(state.stepMs, 64);
+  }
+});
+
+test('gauntlet pause and next-stage transition retain progress but reset the growing trail', () => {
+  const state = createState({ mode: 'gauntlet', random: seeded(6) });
+  const route = foodPath(state);
+  turn(state, route[0]); togglePause(state);
+  const paused = clone(state); assert.equal(step(state), false); assert.deepEqual(state, paused);
+  togglePause(state); step(state); assert.equal(state.phase, 'playing');
+  state.phase = 'levelClear'; state.score = 130; state.gardensCleared = 1;
+  assert.equal(advanceGarden(state), true); assert.equal(state.score, 130);
+  assert.equal(state.level, 1); assert.equal(state.stepMs, 96); assert.equal(state.snake.length, 4);
+  assert.equal(createState({ mode: 'classic' }).stepMs, START_STEP_MS);
+  assert.equal(createState({ mode: 'gardens' }).stepMs, GARDENS[0].speed);
+});
+
+test('food never spawns in a permanently disconnected hedge pocket', () => {
+  const state = createState({ mode: 'gauntlet', random: () => 1 - Number.EPSILON });
+  state.snake = [cell(1, 1), cell(0, 1)]; state.direction = 'right';
+  state.obstacles = Array.from({ length: 20 }, (_, y) => cell(10, y));
+  state.food = cell(2, 1); step(state);
+  assert.ok(state.food.x < 10, 'the fruit remains in the head’s permanent floor component');
+  assert.ok(!state.snake.some(segment => sameCellForTest(segment, state.food)));
+});
+const sameCellForTest = (a, b) => a.x === b.x && a.y === b.y;

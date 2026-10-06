@@ -35,6 +35,22 @@ test('Minesweeper starts with a covered board and no mines or timer until first 
   assert.equal(state.elapsed, 0);
 });
 
+test('Expert leaves substantially more deduction after the safe opening across seeded fields', () => {
+  const fractions = { beginner: 0, expert: 0 };
+  for (const difficulty of Object.keys(fractions)) for (let seed = 1; seed <= 64; seed++) {
+    const state = createState({ ...DIFFICULTIES[difficulty], random: seeded(seed) });
+    const first = Math.floor(state.rows / 2) * state.cols + Math.floor(state.cols / 2);
+    assert.equal(reveal(state, first).ok, true);
+    assert.ok([first, ...neighbors(state, first)].every(index => !state.cells[index].mine));
+    assert.equal(state.cells.filter(cell => cell.mine).length, DIFFICULTIES[difficulty].mines);
+    assert.equal(state.phase, 'playing');
+    fractions[difficulty] += state.opened / (state.cells.length - state.mines) / 64;
+  }
+  assert.ok(fractions.beginner > .5, 'the relaxed mode keeps its generous opening');
+  assert.ok(fractions.expert < .25, 'Expert leaves most safe tiles for actual deduction');
+  assert.ok(fractions.expert < fractions.beginner / 3);
+});
+
 test('both difficulties protect the first tile and all eight neighbors and place the exact mine count', () => {
   for (const settings of Object.values(DIFFICULTIES)) {
     const state = createState({ ...settings, random: seeded() });

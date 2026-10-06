@@ -67,11 +67,72 @@ export const DISTRICTS = Object.freeze([
   }),
 ]);
 export const TOUR_DISTANCE = DISTRICT_LENGTH * DISTRICTS.length;
+export const DIFFICULTIES = Object.freeze([
+  Object.freeze({
+    id: 'standard',
+    title: 'Standard',
+    rowGap: 1.35,
+    densityBonus: 0,
+    limits: null,
+    boostStart: 1,
+    boostDrain: 0.25,
+    boostRegen: 0.11,
+    nearBoost: 0.12,
+    passBoost: 0.01,
+    cellBoost: 0.3,
+    checkpointBoost: 0.3,
+    heal: true,
+    bonusTime: 0,
+    bonusCap: 0,
+    cellEvery: 3,
+  }),
+  Object.freeze({
+    id: 'veteran',
+    title: 'Veteran',
+    rowGap: 1.15,
+    densityBonus: 0.22,
+    limits: Object.freeze([21, 20, 20, 20, 20]),
+    boostStart: 0.65,
+    boostDrain: 0.3,
+    boostRegen: 0.022,
+    nearBoost: 0.07,
+    passBoost: 0.002,
+    cellBoost: 0.16,
+    checkpointBoost: 0.08,
+    heal: false,
+    bonusTime: 0.2,
+    bonusCap: 1.5,
+    cellEvery: 4,
+  }),
+  Object.freeze({
+    id: 'nightmare',
+    title: 'Nightmare',
+    rowGap: 1.02,
+    densityBonus: 0.35,
+    limits: Object.freeze([19, 18, 18, 18.5, 18]),
+    boostStart: 0.55,
+    boostDrain: 0.32,
+    boostRegen: 0.012,
+    nearBoost: 0.055,
+    passBoost: 0,
+    cellBoost: 0.12,
+    checkpointBoost: 0.04,
+    heal: false,
+    bonusTime: 0.15,
+    bonusCap: 1,
+    cellEvery: 5,
+  }),
+]);
+export function getDifficulty(value = 'standard') {
+  const id = typeof value === 'object' && value !== null ? value.difficulty : value;
+  return DIFFICULTIES.find((difficulty) => difficulty.id === id) || DIFFICULTIES[0];
+}
 export function getDistrict(state) {
   return DISTRICTS[state.districtIndex % DISTRICTS.length];
 }
 export function recordScope(state) {
-  return state.mode === 'tour' ? 'tour' : 'default';
+  const scope = state.mode === 'tour' ? 'tour' : 'default';
+  return getDifficulty(state).id === 'standard' ? scope : `${state.difficulty}-${scope}`;
 }
 
 const randomSources = new WeakMap();
@@ -96,20 +157,24 @@ function event(state, type, details = {}) {
 // At maximum boost this gives over one second between rows, enough to cross
 // both lanes. Every row leaves a full lane open. A shared traffic speed keeps
 // those openings from collapsing as the rows approach the driver.
-export function rowSpacing(speed, trafficSpeed = TRAFFIC_SPEED) {
-  return Math.max(36, ((Math.max(220, speed) - trafficSpeed) / 3.6) * 1.35 + 5);
+export function rowSpacing(speed, trafficSpeed = TRAFFIC_SPEED, difficulty = 'standard') {
+  return Math.max(36, ((Math.max(220, speed) - trafficSpeed) / 3.6) * getDifficulty(difficulty).rowGap + 5);
 }
 
 function spawnRow(state, z) {
   const district = getDistrict(state);
-  const safeLane =
+  const difficulty = getDifficulty(state);
+  let safeLane =
     district.pattern === 'zipper'
       ? (state.rowId + 1) % 3
       : district.pattern === 'barriers'
         ? (state.rowId + 2) % 3
         : Math.floor(random(state) * LANES.length);
+  if (difficulty.id !== 'standard' && safeLane === state.lastSafeLane)
+    safeLane = (safeLane + 1 + Math.floor(random(state) * 2)) % LANES.length;
+  state.lastSafeLane = safeLane;
   const candidates = [0, 1, 2].filter((lane) => lane !== safeLane);
-  const twoCars = random(state) < district.density;
+  const twoCars = random(state) < Math.min(1, district.density + difficulty.densityBonus);
   if (!twoCars) candidates.splice(Math.floor(random(state) * candidates.length), 1);
   const row = ++state.rowId;
   for (const lane of candidates) {
@@ -133,7 +198,7 @@ function spawnRow(state, z) {
       signal: false,
     });
   }
-  if (district.id !== 'city' && row % 3 === 0 && state.pickups.length < 5)
+  if (district.id !== 'city' && row % difficulty.cellEvery === 0 && state.pickups.length < 5)
     state.pickups.push({ id: ++state.pickupId, x: LANES[safeLane], z: z + 8, collected: false });
 }
 
@@ -141,21 +206,32 @@ function fillTraffic(state) {
   if (state.traffic.length >= 20) return;
   const district = getDistrict(state);
   let furthest = state.traffic.reduce((max, car) => Math.max(max, car.z), -Infinity);
-  if (!Number.isFinite(furthest)) furthest = HORIZON - rowSpacing(state.speed, district.trafficSpeed);
+  if (!Number.isFinite(furthest)) furthest = HORIZON - rowSpacing(state.speed, district.trafficSpeed, state);
   while (furthest < HORIZON && state.traffic.length < 19) {
-    furthest += rowSpacing(state.speed, district.trafficSpeed) + random(state) * 12;
+    furthest += rowSpacing(state.speed, district.trafficSpeed, state) + random(state) * 12;
     spawnRow(state, furthest);
   }
 }
 
 /** Mutable, serializable state; the random source itself stays outside it. */
-export function createState({ random: source = Math.random, mode = 'endless' } = {}) {
+export function createState({
+  random: source = Math.random,
+  mode = 'endless',
+  difficulty = 'standard',
+} = {}) {
   if (typeof source !== 'function') throw new TypeError('random must be a function');
   if (!['endless', 'tour'].includes(mode)) throw new RangeError('Choose endless or tour mode.');
+  if (!DIFFICULTIES.some((profile) => profile.id === difficulty))
+    throw new RangeError('Choose an available difficulty.');
+  const profile = getDifficulty(difficulty);
   const state = {
     gameId: 'night-drive',
     phase: 'playing',
     mode,
+    difficulty,
+    delivery: profile.limits
+      ? { limit: profile.limits[0], remaining: profile.limits[0], startedAt: 0, bonus: 0, warned: false }
+      : null,
     districtIndex: 0,
     districtId: 'city',
     districtProgress: 0,
@@ -174,7 +250,7 @@ export function createState({ random: source = Math.random, mode = 'endless' } =
     score: 0,
     overtakePoints: 0,
     health: MAX_HEALTH,
-    boost: 1,
+    boost: profile.boostStart,
     boosting: false,
     boostLocked: false,
     shoulder: false,
@@ -187,6 +263,7 @@ export function createState({ random: source = Math.random, mode = 'endless' } =
     traffic: [],
     trafficId: 0,
     rowId: 0,
+    lastSafeLane: null,
     events: [],
     eventId: 0,
     result: null,
@@ -207,12 +284,13 @@ export function createState({ random: source = Math.random, mode = 'endless' } =
     passed: false,
     crashed: false,
   });
-  spawnRow(state, 48 + rowSpacing(220));
+  spawnRow(state, 48 + rowSpacing(220, TRAFFIC_SPEED, state));
   fillTraffic(state);
   return state;
 }
 
 function advanceTraffic(state, distance, dt) {
+  const difficulty = getDifficulty(state);
   for (const car of state.traffic) {
     const previousZ = car.z;
     if (car.targetLane !== undefined && car.targetLane !== car.lane && !car.passed && !car.crashed) {
@@ -268,8 +346,10 @@ function advanceTraffic(state, distance, dt) {
         state.combo = Math.min(5, state.combo + 1);
         state.comboTimer = 8;
         points += 25 * state.combo;
-        state.boost = Math.min(1, state.boost + 0.12);
-      } else state.boost = Math.min(1, state.boost + 0.01);
+        state.boost = Math.min(1, state.boost + difficulty.nearBoost);
+        if (state.delivery && state.speed >= 165)
+          state.delivery.bonus = Math.min(difficulty.bonusCap, state.delivery.bonus + difficulty.bonusTime);
+      } else state.boost = Math.min(1, state.boost + difficulty.passBoost);
       state.overtakePoints += points;
       event(state, nearMiss ? 'near-miss' : 'pass', {
         x: car.x,
@@ -286,7 +366,7 @@ function advanceTraffic(state, distance, dt) {
     pickup.z -= distance;
     if (!pickup.collected && before > 0 && pickup.z <= 0 && Math.abs(state.x - pickup.x) < 0.23) {
       pickup.collected = true;
-      state.boost = Math.min(1, state.boost + 0.3);
+      state.boost = Math.min(1, state.boost + difficulty.cellBoost);
       state.overtakePoints += 35;
       event(state, 'pickup', { x: pickup.x, z: 0, points: 35 });
     }
@@ -297,7 +377,8 @@ function updateDistrict(state) {
   const reached = Math.floor(state.distance / DISTRICT_LENGTH);
   if (reached > state.districtIndex) {
     const clean = state.districtCrashes === 0,
-      district = getDistrict(state);
+      district = getDistrict(state),
+      difficulty = getDifficulty(state);
     const points = clean ? 600 : 300;
     state.checkpointPoints += points;
     state.districtResults.push({
@@ -306,10 +387,11 @@ function updateDistrict(state) {
       clean,
       points,
       time: state.elapsed,
+      timeLeft: state.delivery?.remaining ?? null,
     });
     if (state.districtResults.length > 10) state.districtResults.splice(0, state.districtResults.length - 10);
-    state.boost = Math.min(1, state.boost + 0.3);
-    if (clean) state.health = Math.min(MAX_HEALTH, state.health + 1);
+    state.boost = Math.min(1, state.boost + difficulty.checkpointBoost);
+    if (clean && difficulty.heal) state.health = Math.min(MAX_HEALTH, state.health + 1);
     event(state, 'district-clear', { district: district.title, clean, points });
     if (state.mode === 'tour' && reached >= DISTRICTS.length) {
       state.phase = 'won';
@@ -324,6 +406,10 @@ function updateDistrict(state) {
     state.districtIndex = reached;
     state.districtId = getDistrict(state).id;
     state.districtCrashes = 0;
+    if (state.delivery) {
+      const limit = difficulty.limits[reached % DISTRICTS.length];
+      state.delivery = { limit, remaining: limit, startedAt: state.elapsed, bonus: 0, warned: false };
+    }
     state.traffic = [];
     state.pickups = [];
     fillTraffic(state);
@@ -340,6 +426,7 @@ function updateDistrict(state) {
 /** The view runs fixed 120 Hz updates. Longer frames are bounded to 50 ms. */
 function integrate(state, inputs, dt) {
   const district = getDistrict(state);
+  const difficulty = getDifficulty(state);
   state.elapsed += dt;
   state.tick += 1;
   state.crashCooldown = Math.max(0, state.crashCooldown - dt);
@@ -374,10 +461,10 @@ function integrate(state, inputs, dt) {
     state.boost > 0 &&
     state.crashCooldown <= 0;
   if (state.boosting) {
-    state.boost = Math.max(0, state.boost - dt * 0.25);
+    state.boost = Math.max(0, state.boost - dt * difficulty.boostDrain);
     if (state.boost === 0) state.boostLocked = true;
   } else {
-    state.boost = Math.min(1, state.boost + dt * 0.11);
+    state.boost = Math.min(1, state.boost + dt * difficulty.boostRegen);
   }
   const target = state.shoulder
     ? 72
@@ -397,6 +484,22 @@ function integrate(state, inputs, dt) {
       (district.id === 'coast' ? 0.48 : 0.32) +
     Math.sin(state.distance / 970) * 0.16;
   advanceTraffic(state, distance, dt);
+  if (state.delivery && state.phase === 'playing') {
+    state.delivery.remaining = Math.max(
+      0,
+      state.delivery.limit + state.delivery.bonus - (state.elapsed - state.delivery.startedAt),
+    );
+    if (state.delivery.remaining <= 4 && !state.delivery.warned) {
+      state.delivery.warned = true;
+      event(state, 'deadline-warning');
+    }
+    if (state.elapsed - state.delivery.startedAt > state.delivery.limit + state.delivery.bonus + 1e-9) {
+      state.phase = 'lost';
+      state.result = 'delivery-missed';
+      state.boosting = false;
+      event(state, 'deadline-missed');
+    }
+  }
   if (state.phase === 'playing') updateDistrict(state);
   state.score = Math.floor(state.distance * 0.2) + state.overtakePoints + state.checkpointPoints;
   if (state.phase === 'playing') fillTraffic(state);

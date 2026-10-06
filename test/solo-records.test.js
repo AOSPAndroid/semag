@@ -156,3 +156,80 @@ test('Prism Excavation records require the full road and stay separate from Spri
  const policy=recordDetails('prism-shift',{recordKey:'dig',phase:'won',score:24.6,record:24.6});
  assert.equal(policy.scope,'dig');assert.equal(policy.direction,'min');assert.equal(policy.candidate,24.6);
 });
+
+test('challenge records never replace easier or historical bests', () => {
+  const games = [
+    ['ember-delve', ['default', 'veteran', 'nightmare']],
+    ['deckbound', ['default', 'veteran', 'nightmare']],
+    ['rift-survivor', ['default', 'veteran', 'veteran-v2', 'nightmare']],
+    ['snake', ['default', 'gardens', 'gauntlet']],
+    ['2048', ['default', 'puzzles', 'master']],
+    ['night-drive', ['default', 'tour', 'veteran-default', 'veteran-tour', 'nightmare-default', 'nightmare-tour']],
+    ['prism-shift', ['marathon', 'veteran-marathon', 'nightmare-marathon']],
+  ];
+  for (const [game, scopes] of games) {
+    const storage = browserStorage();
+    let records = createBestStore(storage);
+    for (const [index, scope] of scopes.entries()) {
+      const policy = recordDetails(game, { phase: 'won', recordKey: scope, score: 1000 - index * 100, record: 1000 - index * 100 });
+      assert.equal(policy.scope, scope, `${game}/${scope}`);
+      records.update(game, policy.candidate, policy);
+    }
+    records = createBestStore(storage);
+    for (const [index, scope] of scopes.entries()) assert.equal(records.read(game, scope), 1000 - index * 100, `${game}/${scope}`);
+  }
+});
+
+test('timed challenge records require qualifying finishes in every tier', () => {
+  const games = [
+    ['apex-circuit', ['three-laps', 'harbor-ring-three-laps', 'rain-pass-three-laps', 'championship']],
+    ['prism-shift', ['sprint', 'dig']],
+  ];
+  for (const [game, modes] of games) {
+    const storage = browserStorage();
+    const records = createBestStore(storage);
+    for (const tier of ['', 'veteran-', 'nightmare-']) {
+      for (const mode of modes) {
+        const scope = tier + mode;
+        for (const phase of ['playing', 'paused', 'lost', 'stage-clear']) {
+          const policy = recordDetails(game, { recordKey: scope, phase, record: 1, score: 1 });
+          assert.equal(policy.candidate, null, `${game}/${scope}/${phase}`);
+          assert.equal(records.update(game, policy.candidate, policy), null);
+        }
+        for (const elapsed of [110, 125, 95]) {
+          const policy = recordDetails(game, { recordKey: scope, phase: 'won', record: elapsed });
+          assert.equal(policy.scope, scope);
+          assert.equal(policy.direction, 'min');
+          assert.equal(policy.unit, 's');
+          records.update(game, policy.candidate, policy);
+        }
+        assert.equal(createBestStore(storage).read(game, scope), 95);
+      }
+    }
+  }
+});
+
+test('an unrecognized challenge scope cannot silently overwrite a standard record', () => {
+  const records = createBestStore();
+  records.update('ember-delve', 120);
+  const invalid = recordDetails('ember-delve', { recordKey: 'veteran-typo', phase: 'won', score: 99999 });
+  assert.equal(invalid.candidate, null);
+  assert.equal(records.update('ember-delve', invalid.candidate, invalid), 120);
+  assert.equal(recordDetails('ember-delve', { phase: 'playing', score: 100 }).candidate, 100);
+});
+
+test('Night Drive challenge tours save only completed scores and endless remains open', () => {
+  for (const tier of ['veteran', 'nightmare']) {
+    const store = createBestStore();
+    for (const phase of ['playing', 'paused', 'lost']) {
+      const policy = recordDetails('night-drive', { recordKey: `${tier}-tour`, phase, score: 5000, record: 5000 });
+      assert.equal(policy.candidate, null);
+      assert.equal(store.update('night-drive', policy.candidate, policy), null);
+    }
+    const finished = recordDetails('night-drive', { recordKey: `${tier}-tour`, phase: 'won', score: 9000, record: 9000 });
+    assert.equal(store.update('night-drive', finished.candidate, finished), 9000);
+    const endless = recordDetails('night-drive', { recordKey: `${tier}-default`, phase: 'lost', score: 500 });
+    assert.equal(store.update('night-drive', endless.candidate, endless), 500);
+    assert.equal(store.read('night-drive', `${tier}-tour`), 9000);
+  }
+});

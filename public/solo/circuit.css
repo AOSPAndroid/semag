@@ -19,6 +19,56 @@
   color: #869574;
   text-align: right;
 }
+.circuit-difficulties {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0 0 8px;
+}
+.circuit-difficulty {
+  min-height: 44px;
+  padding: 8px 6px;
+  border: 1px solid #afbea3;
+  border-radius: 4px;
+  background: #edf0df;
+  color: #355345;
+  font: 11px var(--circuit-mono);
+  cursor: pointer;
+}
+.circuit-difficulty[aria-pressed='true'] {
+  background: #294f43;
+  border-color: #294f43;
+  color: #f5ead0;
+}
+.circuit-difficulty:focus-visible {
+  outline: 2px solid #bd8b4e;
+  outline-offset: 2px;
+}
+.circuit-challenge {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 6px 12px;
+  padding: 10px 12px;
+  margin: 0 0 8px;
+  border: 1px solid #acbda1;
+  border-radius: 4px;
+  background: #e4ead7;
+  font: 11px var(--circuit-mono);
+  color: #405943;
+}
+.circuit-challenge[hidden] {
+  display: none;
+}
+.circuit-challenge-time {
+  color: #31573f;
+  font-size: 13px;
+}
+.circuit-challenge[data-urgent='true'] {
+  border-color: #c49659;
+  background: #f0e2c5;
+}
 .circuit-hud {
   display: grid;
   grid-template-columns: 1.1fr 1fr 1fr 1fr;
@@ -76,6 +126,7 @@
 .circuit-canvas {
   display: block;
   width: 100%;
+  margin-inline: auto;
   height: auto;
   aspect-ratio: 1000/680;
   image-rendering: pixelated;
@@ -83,6 +134,16 @@
   border: 1px solid #668258;
   outline: none;
   touch-action: none;
+}
+@media (min-width: 951px) and (pointer: fine) {
+  .circuit-selection {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0 8px;
+  }
+  .circuit-selection > :not(.circuit-difficulties):not(.circuit-modes) {
+    grid-column: 1 / -1;
+  }
 }
 .circuit-canvas:focus-visible {
   outline: 3px solid #e5b26d;

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PUZZLES, nextPuzzle, retryPuzzle, createState, move, undo, hasMoves, togglePause, continueGame } from '../public/solo/2048-engine.js';
+import { PUZZLES, MASTER_PUZZLES, nextPuzzle, retryPuzzle, createState, move, undo, hasMoves, togglePause, continueGame } from '../public/solo/2048-engine.js';
 
 function seeded(seed = 1) {
   return () => {
@@ -213,4 +213,63 @@ test('exhausting a puzzle move budget loses and retry resets only the current pu
 });
 test('puzzle pause blocks budget consumption and preserves board and campaign fields', () => {
   const s=createState({mode:'puzzles'});move(s,'left');togglePause(s);const before=structuredClone(s);assert.equal(move(s,'down').changed,false);assert.deepEqual(s,before);togglePause(s);assert.equal(s.phase,'playing');assert.equal(s.moves,1);
+});
+
+// Search the actual engine instead of maintaining a second merge implementation.
+const symmetries = Array.from({ length: 8 }, (_, transform) => Array.from({ length: 16 }, (_, index) => {
+  let x = index % 4, y = Math.floor(index / 4);
+  if (transform >= 4) x = 3 - x;
+  for (let turn = 0; turn < transform % 4; turn++) [x, y] = [3 - y, x];
+  return y * 4 + x;
+}));
+const puzzleKey = board => symmetries.map(indices => indices.map(index => board[index]).join(',')).sort()[0];
+function solveMaster(level) {
+  const start = MASTER_PUZZLES[level].board;
+  const queue = [{ board: start, path: [] }], seen = new Set([puzzleKey(start)]);
+  for (const current of queue) for (const direction of ['left', 'up', 'right', 'down']) {
+    const candidate = createState({ mode: 'master', random: () => { throw new Error('Master never deals random tiles'); } });
+    candidate.board = [...current.board]; candidate.level = level; candidate.moves = current.path.length;
+    const result = move(candidate, direction);
+    if (!result.changed) continue;
+    const path = [...current.path, direction];
+    if (candidate.phase === 'won') return path;
+    if (candidate.phase !== 'playing') continue;
+    const key = puzzleKey(candidate.board);
+    if (!seen.has(key)) { seen.add(key); queue.push({ board: candidate.board, path }); }
+    assert.ok(seen.size < 50_000, 'the fixed trial must have a tractable proof');
+  }
+  throw new Error(`Master trial ${level + 1} is unsolvable within its budget`);
+}
+
+test('every dense Master trial is solver-proven with progressively demanding optimal lengths', () => {
+  const optimal = [9, 11, 12, 13, 15, 17], state = createState({ mode: 'master' });
+  let previousScore = 0;
+  for (let level = 0; level < MASTER_PUZZLES.length; level++) {
+    const puzzle = MASTER_PUZZLES[level];
+    assert.equal(puzzle.board.length, 16); assert.ok(puzzle.board.every(value => value > 0));
+    assert.equal(puzzle.board.reduce((sum, value) => sum + value, 0), puzzle.target);
+    const solution = solveMaster(level);
+    assert.equal(solution.length, optimal[level]);
+    assert.equal(puzzle.budget, optimal[level] + (level === 0 ? 1 : 0));
+    for (const direction of solution) { const result = move(state, direction); assert.equal(result.changed, true); assert.equal(result.spawned, null); }
+    assert.equal(state.phase, 'won'); assert.ok(state.board.includes(puzzle.target));
+    assert.ok(state.score > previousScore); previousScore = state.score;
+    assert.equal(continueGame(state), false);
+    if (level < MASTER_PUZZLES.length - 1) { assert.equal(nextPuzzle(state), true); assert.equal(undo(state), false); }
+  }
+  assert.equal(state.totalMoves, 77); assert.equal(state.puzzlesCleared, 6); assert.equal(state.result, 'tour');
+  assert.equal(nextPuzzle(state), false);
+});
+
+test('Master budgets, loss undo, retry and pause preserve the exact fixed trial', () => {
+  const state = createState({ mode: 'master' });
+  move(state, 'left'); togglePause(state); const paused = structuredClone(state);
+  assert.equal(move(state, 'down').changed, false); assert.deepEqual(state, paused); togglePause(state);
+  while (state.phase === 'playing') move(state, state.moves % 2 ? 'right' : 'left');
+  assert.equal(state.result, 'budget'); assert.equal(state.moves, 10);
+  assert.equal(undo(state), true); assert.equal(state.phase, 'playing'); assert.equal(state.moves, 9);
+  move(state, 'right'); assert.equal(state.phase, 'lost');
+  assert.equal(retryPuzzle(state), true); assert.deepEqual(state.board, MASTER_PUZZLES[0].board);
+  assert.equal(state.moves, 0); assert.equal(state.score, 0); assert.equal(state.totalMoves, 0);
+  assert.equal(state.undoAvailable, false); assert.equal(state.mode, 'master');
 });

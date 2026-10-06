@@ -1,79 +1,86 @@
 import { setText, setAttribute, setDisabled, setHTML } from '../hub/dom.js';
+const ACTION_SCOPES = ['default', 'veteran', 'nightmare'];
+const tierScopes = scopes => [...scopes, ...['veteran', 'nightmare'].flatMap(tier => scopes.map(scope => `${tier}-${scope}`))];
+const RACE_SCOPES = tierScopes(['three-laps', 'harbor-ring-three-laps', 'rain-pass-three-laps', 'championship']);
+const PRISM_SCOPES = tierScopes(['marathon', 'sprint', 'dig']);
 const GAME_INFO = {
   'ember-delve': {
-    title: 'Ember Delve', category: 'ACTION ROGUELIKE / THREE ACTS', description: 'Twelve rooms. Three guardians. A different build on every descent.',
+    recordPolicy: { scopes: ACTION_SCOPES },
+    title: 'Ember Delve', category: 'ACTION ROGUELIKE / THREE ACTS', description: 'Read the windup. Break the pursuit. Earn your descent.',
     module: '/solo/ember-view.js', ruleTitle: 'Keep the flame alive.',
     controls: [[['W','A','S','D'], 'Move'], [['Mouse'], 'Aim'], [['Click','J'], 'Sword'], [['E','K'], 'Ember bolt'], [['Space','Shift'], 'Dodge'], [['F'], 'Interact']],
     touch: 'Use the left pad to move, the right pad to aim, and the action buttons to attack, cast, dodge, or interact.',
-    rules: ['Clear each chamber, then reach a glowing exit to choose a route.', 'Safe roads offer supplies and camps. Risky roads offer elite fights and richer rewards.', 'Choose relics to shape sword, spell, and dodge combinations. Health carries between rooms.', 'Read enemy windups, preserve stamina and mana, and learn each of the three bosses.', 'Save the run seed to revisit the same dungeon. A new run resets your build.'],
+    rules: ['Clear each chamber, then reach a glowing exit to choose a route.', 'Safe roads offer supplies and camps. Risky roads offer elite fights and richer rewards.', 'Choose relics to shape sword, spell, and dodge combinations. Health carries between rooms.', 'Veteran starts by default: enemies intercept, flank, and pressure your recovery. Watch their warnings and vary your movement.', 'Standard offers a gentler descent; Nightmare demands tighter resource management and dodges. Changing difficulty begins a fresh run.', 'Save the run seed to revisit the same dungeon at the same difficulty. A new run resets your build.'],
   },
   'deckbound': {
+    recordPolicy: { scopes: ACTION_SCOPES },
     title: 'Deckbound', category: 'DECKBUILDING ROGUELIKE / THREE ACTS', description: 'Read the enemy. Build a deck. Survive the long road.',
     module: '/solo/deckbound-view.js', ruleTitle: 'Make every card count.',
     controls: [[['Click','Tap'], 'Play cards and choose routes'], [['1–9'], 'Play a hand card'], [['E'], 'End turn']],
     touch: 'Tap a card to play it. Choose an enemy target when several foes are present. Route, reward, camp, and shop choices use buttons.',
-    rules: ['Complete eighteen encounters across three acts. Enemy intent shows the next attack.', 'Spend energy on damage, block, and status effects; unused block expires at your next turn.', 'Shape your deck with card rewards, upgrades, removal, shops, and relics.', 'Elite roads offer stronger rewards and tougher battles. Rest stops can heal or upgrade a card.', 'Defeat all three bosses. Death ends the expedition; replay its seed or begin a fresh route.'],
+    rules: ['Complete eighteen encounters across three acts. Enemy intent shows the next attack.', 'Spend energy on damage, block, and status effects; unused block expires at your next turn.', 'Shape your deck with card rewards, upgrades, removal, shops, and relics.', 'Elite roads offer stronger rewards and tougher battles. Rest stops can heal or upgrade a card.', 'Veteran is the default. Standard, Veteran, and Nightmare have separate records; changing difficulty begins a fresh expedition.', 'Defeat all three bosses. Death ends the expedition; replay its seed or begin a fresh route.'],
   },
   snake: {
-    recordPolicy: { scopes: ['default', 'gardens'] },
-    title: 'Snake', category: 'A QUICK SOLO CLASSIC', description: 'One more apple. One sharper turn.',
+    recordPolicy: { scopes: ['default', 'gardens', 'gauntlet'] },
+    title: 'Snake', category: 'SOLO ARCADE / SPEED & ROUTES', description: 'Classic runs or a faster, seventy-eight-fruit Gauntlet.',
     module: '/solo/snake-view.js', ruleTitle: 'Keep it growing.',
     controls: [[['↑', '←', '↓', '→'], 'Steer'], [['W', 'A', 'S', 'D'], 'Also steer']],
     touch: 'Use the direction buttons below the board on a phone or tablet.',
-    rules: ['Eat apples to grow your snake and build your score.', 'Plan your turns. Hitting a wall or your own tail ends the run.', 'You cannot reverse straight into yourself. Keep some room to turn.', 'Choose Six gardens to explore six obstacle layouts with fruit goals. Classic remains an endless score run.'],
+    rules: ['Eat apples to grow your snake and build your score.', 'Plan your turns. Hitting a wall or your own tail ends the run.', 'You cannot reverse straight into yourself. Keep some room to turn.', 'Gauntlet starts by default: six obstacle gardens with faster turns, longer tails, and bigger fruit goals.', 'Choose Classic for an endless score run or Six gardens for the original gentler road. Each mode keeps its own best score.'],
   },
   minesweeper: {
-    title: 'Minesweeper', category: 'A LITTLE DEDUCTION', description: 'A quiet board. A careful next step.',
+    title: 'Minesweeper', category: 'SOLO PUZZLE / THREE DIFFICULTIES', description: 'Three fields. Up to ninety-nine mines. Earn a clean sweep.',
     module: '/solo/minesweeper-view.js', ruleTitle: 'Read between the mines.',
     recordPolicy: { direction: 'min', scopes: ['beginner', 'intermediate', 'expert'], unit: 's', onlyWon: true },
     controls: [[['Click'], 'Reveal a tile'], [['Right click'], 'Place a flag'], [['↑', '←', '↓', '→'], 'Explore the board'], [['Enter'], 'Reveal'], [['F'], 'Flag']],
     touch: 'Switch Flag mode on to flag tiles with a tap. Pick Beginner, Intermediate, or Expert for a fresh board.',
-    rules: ['Numbers tell you how many mines touch a tile, including diagonals.', 'Reveal every safe tile to win. Flags help you keep track of suspected mines.', 'Your first reveal is safe. Expert adds a 30 × 16 board with 99 mines. Your best time is saved separately for each difficulty.'],
+    rules: ['Numbers tell you how many mines touch a tile, including diagonals.', 'Reveal every safe tile to win. Flags help you keep track of suspected mines.', 'Expert starts by default with a 30 × 16 board and 99 mines. Beginner and Intermediate remain available.', 'Your first reveal is safe. Best completed times are saved separately for each difficulty.'],
   },
   '2048': {
-    recordPolicy: { scopes: ['default', 'puzzles'] },
-    title: '2048', category: 'ONE MORE GOOD MOVE', description: 'Small numbers. Big possibilities.',
+    recordPolicy: { scopes: ['default', 'puzzles', 'master'] },
+    title: '2048', category: 'SOLO PUZZLE / CLASSIC & MASTER', description: 'Classic merges or six Master trials, reaching 4096.',
     module: '/solo/2048-view.js', ruleTitle: 'Leave room to grow.',
     controls: [[['↑', '←', '↓', '→'], 'Slide all tiles'], [['W', 'A', 'S', 'D'], 'Also slide']],
     touch: 'Swipe across the board to slide. Use Undo to take back your last move.',
-    rules: ['Slide the board. Equal tiles merge into one tile with twice the value.', 'In Classic, a new tile appears after each move that changes the board.', 'Reach 2048 to win, then keep playing if you wish. The run ends when no moves remain.', 'Choose Six puzzles for six preset boards with move budgets and tile goals. Puzzles add no new tiles; plan the whole sequence before sliding.'],
+    rules: ['Slide the board. Equal tiles merge into one tile with twice the value.', 'Master puzzles start by default: dense preset boards with tight move budgets and larger tile goals. Plan several moves ahead.', 'Puzzles add no random tiles. Every challenge has a valid solution; undo lets you rethink your last move.', 'Choose Classic for the familiar random-tile game: reach 2048, then keep going if you wish. Six puzzles retains the original easier road.', 'Classic, Six puzzles, and Master puzzles keep separate records.'],
   },
   'apex-circuit': {
-    title: 'Apex Circuit', category: 'DRIVING / TIME TRIAL', description: 'Three circuits. A full championship. Your next personal best.',
+    title: 'Apex Circuit', category: 'DRIVING / TIME TRIAL', description: 'Beat the deadline. Keep a clean line. Earn the championship.',
     module: '/solo/circuit-view.js', ruleTitle: 'Find your racing line.',
     scoreDigits: 2, scoreUnit: 's',
-    recordPolicy: { direction: 'min', scopes: ['three-laps', 'harbor-ring-three-laps', 'rain-pass-three-laps', 'championship'], unit: 's', digits: 2, onlyWon: true },
+    recordPolicy: { direction: 'min', scopes: RACE_SCOPES, unit: 's', digits: 2, onlyWon: true },
     controls: [[['W', '↑'], 'Accelerate'], [['S', '↓'], 'Brake / reverse'], [['A', 'D', '←', '→'], 'Steer'], [['Space'], 'Handbrake'], [['Q'], 'Reset car (+3s)']],
     touch: 'Hold the pedal and steering buttons below the track. The handbrake helps rotate the car through a tight corner.',
-    rules: ['Complete three laps. Follow the direction arrows and pass each checkpoint in order.', 'Brake before a corner, then accelerate out. Grass slows you down.', 'Use Q or Reset car to recover at a checkpoint. Each reset adds three seconds.', 'Select Meadow Loop, Harbor Ring, or Rain Pass. Slick zones and grip change the handling.', 'Championship links all three races. Best completed times are saved separately for each track and for the championship.'],
+    rules: ['Complete three laps. Follow the direction arrows and pass each checkpoint in order.', 'Veteran starts by default. Beat the track deadline and stay within the off-track and reset allowances.', 'Brake before a corner, then accelerate out. Grass slows you down. Use Q or Reset car to recover; each reset adds three seconds.', 'Select Meadow Loop, Harbor Ring, or Rain Pass. Slick zones and grip change the handling.', 'Standard practice has no qualifying deadline. Nightmare asks for a faster, cleaner racing line.', 'Championship links all three races. Only completed qualifying runs set records, separately for each track, championship, and difficulty.'],
   },
   'night-drive': {
-    recordPolicy: { scopes: ['default', 'tour'] },
-    title: 'Night Drive', category: 'DRIVING / HIGHWAY', description: 'City lights. Open lanes. One more mile.',
+    recordPolicy: { scopes: tierScopes(['default', 'tour']), variants: {
+      'veteran-tour': { onlyWon: true },
+      'nightmare-tour': { onlyWon: true },
+    } },
+    title: 'Night Drive', category: 'DRIVING / HIGHWAY', description: 'Five districts. A ticking clock. Leave yourself an escape lane.',
     module: '/solo/highway-view.js', ruleTitle: 'Keep a lane open.',
     controls: [[['A', 'D', '←', '→'], 'Steer'], [['W', '↑'], 'Accelerate'], [['S', '↓'], 'Brake'], [['Space'], 'Boost']],
     touch: 'Hold the steering, pedal, and boost buttons below the road. The car cruises automatically when you release the pedals.',
-    rules: ['Weave through traffic to build your distance and score.', 'Close, clean passes earn a near-miss bonus. Hitting traffic damages your car.', 'Boost uses charge, which recovers while you drive without boosting.', 'Three impacts end the run. Brake early and use clear lanes to recover.', 'Tour crosses five distinct districts over 4.5 km. Watch construction warnings and merging traffic; boost cells and clean checkpoints refill resources.'],
+    rules: ['Weave through traffic to build your distance and score.', 'Veteran starts by default: reach each district checkpoint before its clock runs out. Slow cruising will miss the delivery.', 'Close, clean passes earn a near-miss bonus. Hitting traffic damages your car; three impacts end the run.', 'Boost uses charge. Manage it for fast clear stretches, and brake early to leave a safe escape lane.', 'Tour crosses five districts over 4.5 km. Watch construction warnings and merging traffic. Harder checkpoints do not heal your car automatically.', 'Standard practice keeps the original untimed drive; Nightmare tightens the delivery windows. Tour challenge records require a full finish.'],
   },
   'prism-shift': {
-    title: 'Prism Shift', category: 'FALLING BLOCKS / TIME & SCORE', description: 'Fast hands. A clean stack. One more perfect placement.',
+    title: 'Prism Shift', category: 'FALLING BLOCKS / TIME & SCORE', description: 'Faster drops. Tighter placements. Keep your rhythm under pressure.',
     module: '/solo/prism-view.js', ruleTitle: 'Build with a plan.',
-    recordPolicy: { scopes: ['marathon', 'sprint', 'dig'], variants: {
-      marathon: { direction: 'max' },
-      sprint: { direction: 'min', digits: 2, unit: 's', onlyWon: true },
-      dig: { direction: 'min', digits: 2, unit: 's', onlyWon: true },
-    } },
+    recordPolicy: { scopes: PRISM_SCOPES, variants: Object.fromEntries(PRISM_SCOPES.map(scope => [scope,
+      scope.endsWith('marathon') ? { direction: 'max' } : { direction: 'min', digits: 2, unit: 's', onlyWon: true },
+    ])) },
     controls: [[['←', '→'], 'Move the piece'], [['↓'], 'Soft drop'], [['↑', 'X'], 'Rotate clockwise'], [['Z'], 'Rotate counterclockwise'], [['Space'], 'Hard drop'], [['C', 'Shift'], 'Hold the piece']],
-    touch: 'Use the buttons below the board. Hold a direction to move repeatedly. Choose Marathon, the 40-line Sprint, or Dig 8, the eight-stage Excavation road.',
-    rules: ['Fill a horizontal row to clear it. Use the ghost to plan where a piece will land.', 'Each bag contains all seven piece types. Hold saves one piece; you can swap once per placement.', 'Rotations can kick away from walls. The lock delay gives you a moment to finish a placement.', 'Keep your stack low as the pace increases. Build combos, four-line clears, and T-spins for extra points.', 'Marathon saves your best score. Sprint saves your fastest completed 40-line time.', 'Dig 8 (Excavation) has eight handcrafted garbage layouts, piece budgets, and fixed queues. Clear each stage to advance; the full completion time has its own record.'],
+    touch: 'Use the buttons below the board. Hold a direction to move repeatedly. Choose Marathon, the 40-line Sprint, or Excavation; its road grows with the difficulty.',
+    rules: ['Fill a horizontal row to clear it. Use the ghost to plan where a piece will land.', 'Each bag contains all seven piece types. Hold saves one piece; you can swap once per placement.', 'Rotations can kick away from walls. The lock delay gives you a moment to finish a placement.', 'Veteran starts at a faster tempo with less time to adjust a landed piece. Standard retains the original pace; Nightmare pushes speed and precision further.', 'Marathon saves your best score. Harder 40-line Sprints must finish within their time budgets to qualify.', 'Excavation uses handcrafted garbage layouts, piece budgets, and fixed queues. Clear each stage to advance; completed times stay separate by difficulty.'],
   },
   'rift-survivor': {
-    recordPolicy: { scopes: ['default', 'veteran'] },
+    recordPolicy: { scopes: ['default', 'veteran', 'veteran-v2', 'nightmare'] },
     title: 'Rift Survivor', category: 'SURVIVAL ARENA / FOUR SECTORS', description: 'Find your opening. Shape your build. Close the rift.',
     module: '/solo/rift-view.js', ruleTitle: 'Learn the patterns.',
     controls: [[['W', 'A', 'S', 'D'], 'Move'], [['Mouse'], 'Aim'], [['Click', 'J'], 'Fire'], [['Space', 'Shift'], 'Dash']],
     touch: 'Use the left pad to move and the right pad to aim and fire. Dash at the right moment to cross a dangerous gap.',
-    rules: ['Clear twenty waves across four sectors. Chasers, strafers, casters, charging brutes, and affixed elites demand different movement.', 'Watch the attack warnings, aim your shots, and use cover. Keep room to dodge.', 'Sustained fire heats your weapon. Release it to cool down; dash uses stamina.', 'Choose an upgrade after each cleared wave. Build around ricochet, chains, frost, dash attacks, and recovery. Overcharge a wave for extra risk and rewards.', 'Four guardians protect waves five, ten, fifteen, and twenty. Read their warning patterns and floor hazards.'],
+    rules: ['Clear twenty waves across four sectors. Chasers, strafers, casters, charging brutes, and affixed elites demand different movement.', 'Veteran starts with mixed threats and stronger pursuit. Change direction after an enemy locks its aim; use cover and keep room to dash.', 'Sustained fire heats your weapon. Release it to cool down; dash uses stamina.', 'Choose an upgrade after each cleared wave. Build around ricochet, chains, frost, dash attacks, and recovery. Overcharge a wave for extra risk and rewards.', 'Four guardians protect waves five, ten, fifteen, and twenty. Read their warning patterns and floor hazards.', 'Expedition (Standard) and Nightmare remain selectable. New Veteran records are separate from the earlier, gentler Veteran mode.'],
   },
 };
 
@@ -87,12 +94,23 @@ export function recordDetails(gameId, update) {
   const scopes = base.scopes || ['default'];
   const scope = scopes.includes(update.recordKey) ? update.recordKey : scopes[0];
   const policy = { ...base, ...base.variants?.[scope] };
+  const knownScope = update.recordKey === undefined || scopes.includes(update.recordKey);
   return {
     scope,
     direction: policy.direction === 'min' ? 'min' : 'max',
-    candidate: policy.onlyWon ? (update.phase === 'won' ? update.record : null) : (update.record ?? update.score),
+    candidate: !knownScope ? null : policy.onlyWon ? (update.phase === 'won' ? update.record : null) : (update.record ?? update.score),
     unit: policy.unit || '', digits: policy.digits,
   };
+}
+
+function recordNote(gameId, scope, direction) {
+  const tier = scope.startsWith('nightmare') ? 'Nightmare' : scope.startsWith('veteran') ? 'Veteran' : 'Standard';
+  if (gameId === 'minesweeper') return `Best ${scope} time stays in this browser, on this host.`;
+  if (gameId === 'apex-circuit') return `${tier} completed times are saved separately for each track and championship.`;
+  if (gameId === 'night-drive' && scope.endsWith('-tour')) return `${tier} Tour records require a full five-district finish and stay separate from Endless.`;
+  if (gameId === 'prism-shift' && direction === 'min') return `${tier} completed ${scope.endsWith('sprint') ? '40-line Sprint' : 'Excavation'} time stays in this browser, on this host.`;
+  if (['ember-delve', 'deckbound', 'rift-survivor', 'night-drive', 'prism-shift'].includes(gameId)) return `${tier} best scores are saved separately from other difficulties and modes.`;
+  return 'Best scores are saved separately for each mode in this browser, on this host.';
 }
 
 function formatValue(value, digits, unit = '') {
@@ -196,7 +214,7 @@ async function startSolo() {
     const { scope, direction, candidate, unit, digits } = recordDetails(gameId, update);
     const best = validRecord(candidate) ? records.update(gameId, candidate, { scope, direction }) : records.read(gameId, scope);
     setText($('solo-record'), best === null ? '—' : formatValue(best, digits, unit));
-    setText($('solo-record-scope'), gameId === 'minesweeper' ? `Best ${scope} time stays in this browser, on this host.` : gameId === 'apex-circuit' ? 'Best completed time is saved separately for each track and championship.' : gameId === 'prism-shift' && scope === 'sprint' ? 'Best completed 40-line time stays in this browser, on this host.' : gameId === 'prism-shift' && scope === 'dig' ? 'Best completed eight-stage Excavation time stays in this browser, on this host.' : 'Best score stays in this browser, on this host.');
+    setText($('solo-record-scope'), recordNote(gameId, scope, direction));
     setDisabled(pause, finished);
     setAttribute(pause, 'aria-pressed', String(phase === 'paused'));
     setText(pause.querySelector('span'), phase === 'paused' ? 'Resume' : 'Pause');

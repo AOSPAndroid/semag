@@ -4,6 +4,27 @@ export const MAX_SPEED = 220;
 export const LAPS = 3;
 export const FIXED_DT = 1 / 120;
 export const RESET_PENALTY = 3;
+export const DIFFICULTIES = Object.freeze([
+  Object.freeze({ id: 'standard', title: 'Standard', limits: null, offRoadLimit: null, resetLimit: null }),
+  Object.freeze({
+    id: 'veteran',
+    title: 'Veteran',
+    limits: Object.freeze([58, 72, 64]),
+    offRoadLimit: 2.5,
+    resetLimit: 1,
+  }),
+  Object.freeze({
+    id: 'nightmare',
+    title: 'Nightmare',
+    limits: Object.freeze([50, 65, 56]),
+    offRoadLimit: 0.75,
+    resetLimit: 0,
+  }),
+]);
+export function getDifficulty(value = 'standard') {
+  const id = typeof value === 'object' && value !== null ? value.difficulty : value;
+  return DIFFICULTIES.find((difficulty) => difficulty.id === id) || DIFFICULTIES[0];
+}
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const wrapAngle = (angle) => Math.atan2(Math.sin(angle), Math.cos(angle));
@@ -211,9 +232,20 @@ export function nearestTrack(x, y, track = 'meadow-loop') {
   const info = infoAt(course, (course.length * (best.index + best.portion)) / points.length);
   return { ...info, x: best.x, y: best.y, distance: Math.sqrt(bestSquared) };
 }
-export function medalForTime(time, track = 'meadow-loop') {
+export function raceTargets(track = 'meadow-loop', difficulty = 'standard') {
+  const profile = getDifficulty(difficulty),
+    course = getTrack(track);
+  if (!profile.limits) return course.targets;
+  const limit = profile.limits[TRACKS.indexOf(course)];
+  return [
+    limit * (profile.id === 'nightmare' ? 0.93 : 0.87),
+    limit * (profile.id === 'nightmare' ? 0.97 : 0.95),
+    limit,
+  ];
+}
+export function medalForTime(time, track = 'meadow-loop', difficulty = 'standard') {
   if (!Number.isFinite(time) || time <= 0) return null;
-  const targets = getTrack(track).targets;
+  const targets = raceTargets(track, difficulty);
   return time <= targets[0]
     ? 'gold'
     : time <= targets[1]
@@ -223,11 +255,13 @@ export function medalForTime(time, track = 'meadow-loop') {
         : 'finish';
 }
 export function recordScope(state) {
-  return state.mode === 'championship'
-    ? 'championship'
-    : state.trackId === 'meadow-loop'
-      ? 'three-laps'
-      : `${state.trackId}-three-laps`;
+  const scope =
+    state.mode === 'championship'
+      ? 'championship'
+      : state.trackId === 'meadow-loop'
+        ? 'three-laps'
+        : `${state.trackId}-three-laps`;
+  return getDifficulty(state).id === 'standard' ? scope : `${state.difficulty}-${scope}`;
 }
 
 function carAt(s, track) {
@@ -244,18 +278,33 @@ function carAt(s, track) {
   };
 }
 
-export function createState({ trackId = 'meadow-loop', mode = 'time-trial' } = {}) {
+export function createState({ trackId = 'meadow-loop', mode = 'time-trial', difficulty = 'standard' } = {}) {
   if (!TRACKS.some((track) => track.id === trackId)) throw new RangeError('Choose an available circuit.');
   if (!['time-trial', 'championship'].includes(mode))
     throw new RangeError('Choose time-trial or championship.');
+  if (!DIFFICULTIES.some((profile) => profile.id === difficulty))
+    throw new RangeError('Choose an available difficulty.');
   if (mode === 'championship') trackId = TRACKS[0].id;
   const track = getTrack(trackId),
-    car = carAt(-18, trackId);
+    car = carAt(-18, trackId),
+    profile = getDifficulty(difficulty),
+    limit = profile.limits?.[TRACKS.indexOf(track)];
   return {
     gameId: 'apex-circuit',
     phase: 'playing',
     startDelay: 1,
     mode,
+    difficulty,
+    challenge: profile.limits
+      ? {
+          limit,
+          remaining: limit,
+          offRoad: 0,
+          offRoadLimit: profile.offRoadLimit,
+          resets: 0,
+          resetLimit: profile.resetLimit,
+        }
+      : null,
     trackId,
     trackIndex: 0,
     pausedPhase: null,
@@ -332,7 +381,7 @@ function updateCourse(state, nearest, dt) {
       course.lapStart = state.elapsed;
       if (state.lapsCompleted === LAPS) {
         state.raceTime = state.elapsed;
-        state.medal = medalForTime(state.raceTime, state.trackId);
+        state.medal = medalForTime(state.raceTime, state.trackId, state.difficulty);
         if (state.mode === 'championship') {
           state.seriesTime += state.raceTime;
           state.seriesResults.push({ trackId: state.trackId, time: state.raceTime, medal: state.medal });
@@ -423,6 +472,21 @@ function integrate(state, controls, dt) {
   car.slip = -car.vx * newSin + car.vy * newCos;
   const after = nearestTrack(car.x, car.y, track.id);
   state.onRoad = after.distance <= track.roadWidth / 2;
+  if (state.challenge) {
+    const challenge = state.challenge;
+    challenge.remaining = Math.max(0, challenge.limit - state.elapsed);
+    if (!state.onRoad) challenge.offRoad += dt;
+    if (state.elapsed > challenge.limit + 1e-9 || challenge.offRoad > challenge.offRoadLimit + 1e-9) {
+      state.phase = 'lost';
+      state.result = state.elapsed > challenge.limit + 1e-9 ? 'time-limit' : 'track-limits';
+    }
+  }
+  if (state.phase !== 'playing') {
+    state.course.previous = { x: car.x, y: car.y };
+    state.course.lastS = after.s;
+    state.lapElapsed = state.elapsed - state.course.lapStart;
+    return;
+  }
   updateCourse(state, after, dt);
 }
 
@@ -464,7 +528,8 @@ export function togglePause(state) {
 export function resetCar(state) {
   if (
     !(state.phase === 'playing' || (state.phase === 'paused' && state.pausedPhase === 'playing')) ||
-    state.startDelay > 0
+    state.startDelay > 0 ||
+    (state.challenge && state.challenge.resets >= state.challenge.resetLimit)
   )
     return false;
   const gates = getTrack(state).gates;
@@ -479,6 +544,14 @@ export function resetCar(state) {
   state.course.previous = { x: state.car.x, y: state.car.y };
   state.course.lastS = trackInfo(s, state.trackId).s;
   state.course.travel = s < 0 ? 18 : 12;
+  if (state.challenge) {
+    state.challenge.resets += 1;
+    state.challenge.remaining = Math.max(0, state.challenge.limit - state.elapsed);
+    if (state.elapsed > state.challenge.limit + 1e-9) {
+      state.phase = 'lost';
+      state.result = 'time-limit';
+    }
+  }
   return true;
 }
 
@@ -489,7 +562,7 @@ export function advanceStage(state) {
   const trackIndex = state.trackIndex + 1,
     seriesTime = state.seriesTime,
     seriesResults = state.seriesResults;
-  const next = createState({ trackId: TRACKS[trackIndex].id });
+  const next = createState({ trackId: TRACKS[trackIndex].id, difficulty: state.difficulty });
   Object.assign(state, next, { mode: 'championship', trackIndex, seriesTime, seriesResults });
   return true;
 }

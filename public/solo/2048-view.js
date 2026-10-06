@@ -1,4 +1,4 @@
-import { PUZZLES, nextPuzzle, retryPuzzle, createState, move, undo, togglePause, continueGame } from './2048-engine.js';
+import { puzzleLevels, nextPuzzle, retryPuzzle, createState, move, undo, togglePause, continueGame } from './2048-engine.js';
 
 const keyDirections = {
   ArrowUp: 'up', ArrowRight: 'right', ArrowDown: 'down', ArrowLeft: 'left',
@@ -6,7 +6,7 @@ const keyDirections = {
 };
 
 export function mount(container, { onUpdate = () => {} } = {}) {
-  let mode = 'classic';
+  let mode = 'master';
   let state = createState({ mode });
   let destroyed = false;
   let animationTimer = null;
@@ -16,7 +16,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   element.className = 'tiles-2048';
   element.setAttribute('aria-label', '2048 game');
   element.innerHTML = `
-    <div class="tiles-2048-modes" aria-label="2048 game mode"><button type="button" data-mode="classic" aria-pressed="true">Classic</button><button type="button" data-mode="puzzles" aria-pressed="false">Six puzzles</button></div>
+    <div class="tiles-2048-modes" aria-label="2048 game mode"><button type="button" data-mode="master" aria-pressed="true">Master</button><button type="button" data-mode="classic" aria-pressed="false">Classic</button><button type="button" data-mode="puzzles" aria-pressed="false">Six puzzles</button></div>
     <div class="tiles-2048-challenge" hidden><div><span class="tiles-2048-puzzle-title"></span><b class="tiles-2048-budget"></b></div><p>No new tiles. Merge the entire board into its target before your moves run out.</p><div class="tiles-2048-puzzle-progress"></div></div>
     <p class="tiles-2048-hint">Move together. Make room. Go one tile further.</p>
     <div class="tiles-2048-frame">
@@ -49,6 +49,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   const continueButton = element.querySelector('[data-action="continue"]');
   const resumeButton = element.querySelector('[data-action="resume"]');
   const challengePanel = element.querySelector('.tiles-2048-challenge');
+  const challengeText = challengePanel.querySelector('p');
   const puzzleTitle = element.querySelector('.tiles-2048-puzzle-title');
   const budget = element.querySelector('.tiles-2048-budget');
   const progress = element.querySelector('.tiles-2048-puzzle-progress');
@@ -93,10 +94,11 @@ export function mount(container, { onUpdate = () => {} } = {}) {
 
   function emit() {
     const maximum = Math.max(...state.board);
+    const puzzle = puzzleLevels(mode)[state.level];
     onUpdate({
-      phase: state.phase, score: state.score, record: state.score, recordKey: mode === 'puzzles' ? 'puzzles' : 'default',
-      recordLabel: 'BEST SCORE', scoreLabel: 'SCORE',
-      detail: mode === 'puzzles' ? `Puzzle ${state.level + 1}/6 · Target ${PUZZLES[state.level].target} · ${state.moves}/${PUZZLES[state.level].budget} moves` : `${state.moves} ${state.moves === 1 ? 'move' : 'moves'} · Highest tile ${maximum}`,
+      phase: state.phase, score: state.score, record: state.score, recordKey: mode === 'classic' ? 'default' : mode,
+      recordLabel: mode === 'master' ? 'BEST MASTER' : 'BEST SCORE', scoreLabel: 'SCORE',
+      detail: mode !== 'classic' ? `${mode === 'master' ? 'Master' : 'Puzzle'} ${state.level + 1}/6 · Target ${puzzle.target} · ${state.moves}/${puzzle.budget} moves` : `${state.moves} ${state.moves === 1 ? 'move' : 'moves'} · Highest tile ${maximum}`,
     });
   }
 
@@ -104,12 +106,21 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     if (destroyed) return;
     clearTimeout(animationTimer);
     clearAnimation();
-    setHidden(challengePanel, mode !== 'puzzles');
-    setHidden(hint, mode === 'puzzles');
+    const levels = puzzleLevels(mode), puzzle = levels[state.level], challenge = mode !== 'classic';
+    setHidden(challengePanel, !challenge);
+    setHidden(hint, challenge);
     for (const button of modeButtons) { const value = String(button.dataset.mode === mode); if (button.getAttribute('aria-pressed') !== value) button.setAttribute('aria-pressed', value); }
-    if (mode === 'puzzles') { const puzzle = PUZZLES[state.level]; puzzleTitle.textContent = `${state.level + 1} / 6 · ${puzzle.title}`; budget.textContent = `TARGET ${puzzle.target} · ${Math.max(0, puzzle.budget - state.moves)} MOVES LEFT`; for (let i = 0; i < 6; i++) progress.children[i].dataset.state = i < state.level || state.phase === 'won' && i === state.level ? 'done' : i === state.level ? 'current' : 'future'; }
-    setHidden(nextButton, mode !== 'puzzles' || state.phase !== 'won' || state.level === PUZZLES.length - 1);
-    setHidden(retryButton, mode !== 'puzzles' || state.phase !== 'lost');
+    if (challenge) {
+      setText(puzzleTitle, `${mode === 'master' ? 'MASTER ' : ''}${state.level + 1} / 6 · ${puzzle.title}`);
+      setText(budget, `TARGET ${puzzle.target} · ${Math.max(0, puzzle.budget - state.moves)} MOVES LEFT`);
+      setText(challengeText, mode === 'master' ? 'Six dense trials. One spare move in the opener; optimal play after that. No new tiles. Merge every tile into the target before the budget runs out.' : 'A gentler six-puzzle tour. No new tiles. Merge the entire board into its target before your moves run out.');
+      for (let i = 0; i < 6; i++) {
+        const value = i < state.level || state.phase === 'won' && i === state.level ? 'done' : i === state.level ? 'current' : 'future';
+        if (progress.children[i].dataset.state !== value) progress.children[i].dataset.state = value;
+      }
+    }
+    setHidden(nextButton, !challenge || state.phase !== 'won' || state.level === levels.length - 1);
+    setHidden(retryButton, !challenge || state.phase !== 'lost');
     const dx = direction === 'left' ? '8px' : direction === 'right' ? '-8px' : '0px';
     const dy = direction === 'up' ? '8px' : direction === 'down' ? '-8px' : '0px';
     if (grid.style.getPropertyValue('--tile-move-x') !== dx) grid.style.setProperty('--tile-move-x', dx);
@@ -131,19 +142,19 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     moveButtons.forEach(button => { if (button.disabled !== (state.phase !== 'playing')) button.disabled = state.phase !== 'playing'; });
     if (element.dataset.phase !== state.phase) element.dataset.phase = state.phase;
     setHidden(overlay, state.phase === 'playing');
-    setHidden(continueButton, state.phase !== 'won' || mode === 'puzzles');
+    setHidden(continueButton, state.phase !== 'won' || challenge);
     setHidden(resumeButton, state.phase !== 'paused');
     if (state.phase === 'paused') {
       setText(title, 'A moment to think.');
       setText(description, 'Your board is waiting right here.');
       setText(notice, 'Game paused.');
     } else if (state.phase === 'won') {
-      title.textContent = mode === 'puzzles' ? state.level === PUZZLES.length - 1 ? 'Six puzzles. Solved.' : `Target ${PUZZLES[state.level].target}. Solved.` : '2048. Well played.';
-      description.textContent = mode === 'puzzles' ? state.level === PUZZLES.length - 1 ? `A complete puzzle tour in ${state.totalMoves} moves.` : `${state.moves} moves used. Your score carries to the next puzzle.` : 'Keep going and see how far you can reach.';
-      notice.textContent = mode === 'puzzles' ? state.level === PUZZLES.length - 1 ? 'All six challenges complete.' : 'Puzzle complete. Choose Next puzzle when you’re ready.' : 'You reached 2048! Choose Keep going to continue.';
+      title.textContent = challenge ? state.level === levels.length - 1 ? mode === 'master' ? 'Six master trials. Solved.' : 'Six puzzles. Solved.' : `Target ${puzzle.target}. Solved.` : '2048. Well played.';
+      description.textContent = challenge ? state.level === levels.length - 1 ? `A complete ${mode === 'master' ? 'master' : 'puzzle'} tour in ${state.totalMoves} moves.` : `${state.moves} moves used. Your score carries to the next puzzle.` : 'Keep going and see how far you can reach.';
+      notice.textContent = challenge ? state.level === levels.length - 1 ? 'All six challenges complete.' : 'Puzzle complete. Choose Next puzzle when you’re ready.' : 'You reached 2048! Choose Keep going to continue.';
     } else if (state.phase === 'lost') {
-      title.textContent = mode === 'puzzles' ? 'A different route awaits.' : 'A full board.';
-      description.textContent = mode === 'puzzles' ? state.result === 'budget' ? 'The move budget ran out. Undo once or retry this puzzle.' : 'These tiles cannot reach the target. Undo once or retry this puzzle.' : 'No more moves. Undo your last move or start a new game.';
+      title.textContent = challenge ? 'A different route awaits.' : 'A full board.';
+      description.textContent = challenge ? state.result === 'budget' ? 'The move budget ran out. Undo once or retry this puzzle.' : 'These tiles cannot reach the target. Undo once or retry this puzzle.' : 'No more moves. Undo your last move or start a new game.';
       notice.textContent = `No moves left. Final score ${state.score}.`;
     } else {
       notice.textContent = result?.gained ? `Merged for ${result.gained} points. Score ${state.score}.` : `${state.moves} moves. Score ${state.score}.`;

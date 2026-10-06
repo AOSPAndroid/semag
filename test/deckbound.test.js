@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ACTS, CARDS, RELICS, createState, dispatch, togglePause, cardInfo, intentDamage } from '../public/solo/deckbound-engine.js';
+import { ACTS, CARDS, RELICS, DIFFICULTIES, difficultyInfo, removalCost, relicInfo, createState, dispatch, togglePause, cardInfo, intentDamage, intentDamageAt } from '../public/solo/deckbound-engine.js';
 const copy = value => structuredClone(value);
 function battle(seed = 1) { const s = createState({ seed }); assert.equal(dispatch(s, 'choose-route', { id: 'path-0' }).ok, true); return s; }
 function hand(s, id, upgraded = false) { const c = { uid: 900 + s.hand.length, id, upgraded }; s.hand = [c]; return c; }
@@ -144,8 +144,8 @@ function legalTurn(s) {
   for (const payload of best.path) if (s.phase === 'battle') assert.equal(dispatch(s, 'play-card', payload).ok, true);
   if (s.phase === 'battle') assert.equal(dispatch(s, 'end-turn').ok, true);
 }
-function playRun(seed) {
-  const s = createState({ seed }); const visited = new Set(); const bosses = new Set(); let actions = 0;
+function playRun(seed, difficulty = "standard") {
+  const s = createState({ seed, difficulty }); const visited = new Set(); const bosses = new Set(); let actions = 0;
   const act = (name, payload) => { actions++; assert.equal(dispatch(s, name, payload).ok, true, `${name}: ${JSON.stringify(payload)}`); };
   while (!['won', 'lost'].includes(s.phase) && actions < 1500) {
     visited.add(s.phase);
@@ -153,12 +153,145 @@ function playRun(seed) {
     else if (s.phase === 'battle') { s.enemies.filter(e => e.id.startsWith('boss')).forEach(e => bosses.add(e.id)); legalTurn(s); actions++; }
     else if (s.phase === 'reward') { const id = [...s.rewardCards].sort((a, b) => (rank[b] || 0) - (rank[a] || 0))[0]; act('choose-reward', { id: s.deck.length < 18 || rank[id] > 8 ? id : 'skip' }); }
     else if (s.phase === 'relic') act('claim-relic', { id: s.relicChoices.find(id => id === 'tea') || s.relicChoices.find(id => id === 'emberglass') || s.relicChoices.find(id => id === 'buckle') || s.relicChoices[0] });
-    else if (s.phase === 'rest') { if (s.hp < s.maxHp - 17) act('rest', { kind: 'heal' }); else { const c = s.deck.filter(c => !c.upgraded).sort((a, b) => (rank[b.id] || 0) - (rank[a.id] || 0))[0]; act('rest', c ? { kind: 'upgrade', uid: c.uid } : { kind: 'heal' }); } }
-    else if (s.phase === 'shop') { for (const o of s.shopOffers) { if (o.kind === 'card' && (rank[o.cardId] || 0) >= 8 && s.gold >= o.cost) act('buy', { id: o.id }); if (o.kind === 'relic' && ['tea', 'emberglass', 'buckle'].includes(o.relicId) && s.gold >= o.cost) act('buy', { id: o.id }); } const c = s.deck.find(c => c.id === 'strike'); if (c && s.gold >= 40 && s.deck.length > 9) act('remove-card', { uid: c.uid }); act('leave-shop'); }
-    else if (s.phase === 'event') act('choose-event', { id: s.hp > 45 ? 'gift' : s.gold > 25 ? 'renew' : 'leave' });
+    else if (s.phase === 'rest') { if (s.hp < s.maxHp - difficultyInfo(s).restHeal + 4) act('rest', { kind: 'heal' }); else { const c = s.deck.filter(c => !c.upgraded).sort((a, b) => (rank[b.id] || 0) - (rank[a.id] || 0))[0]; act('rest', c ? { kind: 'upgrade', uid: c.uid } : { kind: 'heal' }); } }
+    else if (s.phase === 'shop') { for (const o of s.shopOffers) { if (o.kind === 'card' && (rank[o.cardId] || 0) >= 8 && s.gold >= o.cost) act('buy', { id: o.id }); if (o.kind === 'relic' && ['tea', 'emberglass', 'buckle'].includes(o.relicId) && s.gold >= o.cost) act('buy', { id: o.id }); } const c = s.deck.find(c => c.id === 'strike'); if (c && s.gold >= removalCost(s) && s.deck.length > 9) act('remove-card', { uid: c.uid }); act('leave-shop'); }
+    else if (s.phase === 'event') act('choose-event', { id: s.hp > 45 ? 'gift' : s.gold >= difficultyInfo(s).renewCost ? 'renew' : 'leave' });
   }
   return { s, actions, visited, bosses };
 }
 test('A complete three-act run is won from real legal choices through all three distinct bosses', () => {
   const { s, actions, visited, bosses } = playRun(1); assert.equal(s.phase, 'won'); assert.equal(s.path.length, 18); assert.deepEqual([...bosses], ['boss1', 'boss2', 'boss3']); assert.ok(visited.has('shop')); assert.ok(visited.has('relic')); assert.ok(actions > 70); assert.ok(s.score > 4000); assert.ok(s.hp > 0); assert.ok(s.deck.length > 10); assert.ok(s.relics.length >= 4);
+});
+
+test('Standard remains the engine default; every tier is seeded and invalid tiers safely fall back', () => {
+  assert.equal(createState({ seed: 1 }).difficulty, 'standard');
+  assert.equal(createState({ seed: 1, difficulty: 'unknown' }).difficulty, 'standard');
+  for (const difficulty of Object.keys(DIFFICULTIES)) {
+    const first = createState({ seed: 89, difficulty }), second = createState({ seed: 89, difficulty });
+    dispatch(first, 'choose-route', { id: 'path-0' }); dispatch(second, 'choose-route', { id: 'path-0' });
+    assert.deepEqual(first, second); assert.equal(first.difficulty, difficulty);
+    const before = copy(first); togglePause(first); assert.equal(dispatch(first, 'end-turn').ok, false); togglePause(first); assert.deepEqual(first, before);
+  }
+});
+test('Several zero-cost Quicksteps exhaust once each and cannot form a free reshuffle/block loop', () => {
+  const s = battle(); dummy(s, 1000);
+  const cards = Array.from({ length: 5 }, (_, i) => ({ uid: 1000 + i, id: 'quickstep', upgraded: true }));
+  s.hand = [cards[0]]; s.draw = cards.slice(1); s.discard = []; s.exhaust = [];
+  const energy = s.energy;
+  for (let i = 0; i < 5; i++) assert.equal(dispatch(s, 'play-card', { uid: s.hand[0].uid }).ok, true);
+  assert.equal(s.hand.length, 0); assert.equal(s.exhaust.length, 5); assert.equal(s.discard.length, 0); assert.equal(s.player.block, 25); assert.equal(s.energy, energy);
+  dispatch(s, 'end-turn'); assert.equal(s.hand.length, 0); assert.equal(s.player.block, 0);
+  const before = copy(s); assert.equal(dispatch(s, 'play-card', { uid: cards[0].uid }).ok, false); assert.deepEqual(s, before);
+});
+test('Avoiding every offered fight still requires two Veteran or three Nightmare road battles before the boss', () => {
+  for (const difficulty of ['standard', 'veteran', 'nightmare']) {
+    const s = createState({ seed: 7, difficulty }); let decisions = 0;
+    while (!(s.phase === 'route' && s.floor === 6) && decisions++ < 100) {
+      if (s.phase === 'route') { const road = s.routeOptions.find(o => !['combat', 'elite', 'boss'].includes(o.kind)) || s.routeOptions.find(o => o.kind === 'combat'); assert.ok(road); dispatch(s, 'choose-route', { id: road.id }); }
+      else if (s.phase === 'battle') legalTurn(s);
+      else if (s.phase === 'event') dispatch(s, 'choose-event', { id: 'leave' });
+      else if (s.phase === 'rest') dispatch(s, 'rest', { kind: 'heal' });
+      else if (s.phase === 'shop') dispatch(s, 'leave-shop');
+      else if (s.phase === 'reward') dispatch(s, 'choose-reward', { id: s.rewardCards.includes('kindle') ? 'kindle' : s.rewardCards[0] });
+      else if (s.phase === 'relic') dispatch(s, 'claim-relic', { id: s.relicChoices[0] });
+      else assert.fail(`Unexpected route phase ${s.phase}`);
+    }
+    assert.equal(s.floor, 6); assert.equal(s.roadBattles, difficultyInfo(s).roadBattles);
+    assert.equal(s.path.filter(p => ['combat', 'elite'].includes(p.kind)).length, difficultyInfo(s).roadBattles);
+    assert.deepEqual(s.routeOptions.map(o => o.kind), ['boss']);
+  }
+});
+test('Veteran tactical attack/block/target choices clear openings; passive shuffling loses on the same seeds', () => {
+  for (const seed of [1, 5, 12, 29]) {
+    const active = createState({ seed, difficulty: 'veteran' }); dispatch(active, 'choose-route', { id: 'path-0' });
+    const passive = copy(active); let turns = 0;
+    while (active.phase === 'battle' && turns++ < 25) legalTurn(active);
+    assert.equal(active.phase, 'reward'); assert.ok(active.hp > 0);
+    turns = 0;
+    while (passive.phase === 'battle' && turns++ < 80) {
+      for (const c of [...passive.hand]) if (['guard', 'quickstep', 'mend', 'insight', 'brace', 'fortress', 'salvage', 'windfall'].includes(c.id) && CARDS[c.id].cost <= passive.energy) dispatch(passive, 'play-card', { uid: c.uid });
+      dispatch(passive, 'end-turn');
+    }
+    assert.equal(passive.phase, 'lost'); assert.equal(passive.hp, 0);
+  }
+});
+test('Enemies gain announced strength on the tier’s exact prolonged-fight turns, without changing Standard', () => {
+  for (const difficulty of ['standard', 'veteran', 'nightmare']) {
+    const s = createState({ seed: 2, difficulty }); dispatch(s, 'choose-route', { id: 'path-0' });
+    dummy(s, 1000); const enemy = s.enemies[0]; s.hp = 1000; s.maxHp = 1000;
+    const initial = enemy.strength;
+    dispatch(s, 'end-turn'); assert.equal(s.turn, 2); assert.equal(enemy.strength, initial);
+    dispatch(s, 'end-turn'); assert.equal(enemy.strength, initial + (difficulty === 'nightmare' ? 1 : 0));
+    dispatch(s, 'end-turn'); assert.equal(s.turn, 4); assert.equal(enemy.strength, initial + (difficulty === 'standard' ? 0 : 1));
+    // This fixture is an imp, so its pattern never grants strength itself.
+    assert.equal(enemy.id, 'sprig');
+    dispatch(s, 'end-turn'); dispatch(s, 'end-turn');
+    assert.equal(enemy.strength, initial + (difficulty === 'standard' ? 0 : 2));
+  }
+});
+function bossFixture(difficulty, act) {
+  const s = createState({ seed: 1, difficulty }); s.act = act; s.floor = 6;
+  s.routeOptions = [{ id: 'boss', kind: 'boss', title: 'Gatekeeper fixture' }];
+  assert.equal(dispatch(s, 'choose-route', { id: 'boss' }).ok, true); return s;
+}
+test('Mosswarden visibly announces temporary thorns; block absorbs each hit and burn bypasses retaliation', () => {
+  const s = bossFixture('veteran', 1); s.player.block = 100; dispatch(s, 'end-turn');
+  assert.equal(s.enemies[0].intent.thorns, 2); dispatch(s, 'end-turn'); assert.equal(s.enemies[0].thorns, 2);
+  s.enemies[0].block = 0; s.player.block = 4; const hp = s.hp; cast(s, 'flurry'); assert.equal(s.hp, hp - 2); assert.equal(s.player.block, 0);
+  s.enemies[0].burn = 8; s.player.block = 100; dispatch(s, 'end-turn'); assert.equal(s.enemies[0].thorns, 0); assert.equal(s.hp, hp - 2);
+});
+test('Curator burn cleansing is telegraphed and occurs after burn damage, preserving burn as a viable build', () => {
+  const s = bossFixture('nightmare', 2), enemy = s.enemies[0]; assert.equal(enemy.intent.cleanseBurn, 6);
+  enemy.burn = 12; const hp = enemy.hp; dispatch(s, 'end-turn'); assert.equal(enemy.hp, hp - 12); assert.equal(enemy.burn, 5);
+  const standard = bossFixture('standard', 2); assert.equal(standard.enemies[0].intent.cleanseBurn, undefined);
+});
+test('Regent frail survives its application turn, reduces card and relic block, then decays', () => {
+  const s = bossFixture('veteran', 3); assert.equal(s.enemies[0].intent.frail, 2); s.relics.push('buckle');
+  dispatch(s, 'end-turn'); assert.equal(s.player.frail, 2); s.player.dexterity = 2;
+  cast(s, 'guard'); assert.equal(s.player.block, 8); // floor((6+2)*.75) + floor(3*.75)
+  dispatch(s, 'end-turn'); assert.equal(s.player.frail, 1); dispatch(s, 'end-turn'); assert.equal(s.player.frail, 0);
+});
+test('A lethal thorn counter cannot be reversed by Crimson Pact healing', () => {
+  const s = battle(); dummy(s); s.enemies[0].thorns = 5; s.hp = 1; cast(s, 'leech'); assert.equal(s.phase, 'lost'); assert.equal(s.hp, 0);
+});
+test('Later multihit and area attacks stop after a lethal thorn counter, without posthumous kill renown', () => {
+  const flurry = battle(); dummy(flurry, 7); flurry.enemies[0].thorns = 1; flurry.hp = 1; const score = flurry.score;
+  cast(flurry, 'flurry'); assert.equal(flurry.phase, 'lost'); assert.equal(flurry.enemies[0].hp, 4); assert.equal(flurry.score, score);
+  const area = battle(); dummy(area, 15); area.enemies[0].thorns = 1; area.enemies.push({ ...copy(area.enemies[0]), hp: 5 }); area.hp = 1;
+  cast(area, 'cleave'); assert.equal(area.phase, 'lost'); assert.deepEqual(area.enemies.map(e => e.hp), [6, 5]);
+});
+test('Displayed intent includes player vulnerability with the same two rounding steps as actual damage', () => {
+  const s = battle(); dummy(s); s.enemies[0].intent = { damage: 10, hits: 2 }; s.enemies[0].weak = 2; s.player.vulnerable = 2;
+  assert.equal(intentDamage(s.enemies[0]), 7); assert.equal(intentDamage(s.enemies[0], s.player), 10);
+  const hp = s.hp; dispatch(s, 'end-turn'); assert.equal(s.hp, hp - 20);
+});
+test('Later enemy intent anticipates earlier vulnerability, unless burn or retaliatory thorns prevents the debuff', () => {
+  const s = battle(); dummy(s); const first = s.enemies[0]; first.intent = { damage: 4, hits: 1, vulnerable: 2 };
+  s.enemies.push({ ...copy(first), intent: { damage: 6, hits: 1 } });
+  assert.deepEqual(s.enemies.map((_, i) => intentDamageAt(s, i)), [4, 9]);
+  const hp = s.hp; const actual = copy(s); dispatch(actual, 'end-turn'); assert.equal(actual.hp, hp - 13);
+  first.burn = first.hp; assert.equal(intentDamageAt(s, 1), 6);
+  first.burn = 0; s.player.thorns = first.hp; assert.equal(intentDamageAt(s, 1), 6);
+});
+test('Harder recovery and removal prices match their visible profile, including no-choice boss relic rewards', () => {
+  for (const difficulty of Object.keys(DIFFICULTIES)) {
+    const s = createState({ seed: 1, difficulty }), d = difficultyInfo(s);
+    assert.equal(relicInfo('tea', s).text, `Heal ${d.teaHeal} HP after every battle.`);
+    dispatch(s, 'choose-route', { id: 'path-2' }); s.hp = 40; const gold = s.gold;
+    assert.ok(s.event.choices[0].text.includes(`Lose ${d.giftHp} HP`));
+    dispatch(s, 'choose-event', { id: 'renew' }); assert.equal(s.hp, 40 + d.renewHeal); assert.equal(s.gold, gold - d.renewCost);
+    dispatch(s, 'choose-route', { id: 'path-1' }); s.hp = 20; dispatch(s, 'rest', { kind: 'heal' }); assert.equal(s.hp, 20 + d.restHeal);
+    s.phase = 'shop'; s.gold = 500; s.shopRemoved = false; const cost = removalCost(s);
+    dispatch(s, 'remove-card', { uid: s.deck[0].uid }); assert.equal(s.gold, 500 - cost); assert.equal(removalCost(s), cost + d.removalStep);
+    s.phase = 'reward'; s.encounter = 'boss'; s.floor = 6; s.hp = 20; s.relics = Object.keys(RELICS); s.roadBattles = d.roadBattles;
+    dispatch(s, 'choose-reward', { id: 'skip' }); assert.equal(s.hp, 20 + d.bossHeal); assert.equal(s.act, 2); assert.equal(s.roadBattles, 0);
+  }
+});
+test('Veteran and Nightmare both allow a complete legal three-boss run with meaningful deck growth and required battles', () => {
+  for (const difficulty of ['veteran', 'nightmare']) {
+    const { s, bosses, visited } = playRun(1, difficulty); assert.equal(s.phase, 'won'); assert.ok(s.hp > 0); assert.equal(s.path.length, 18);
+    assert.deepEqual([...bosses], ['boss1', 'boss2', 'boss3']); assert.ok(s.deck.length > 10); assert.ok(visited.has('shop')); assert.ok(s.relics.length >= 3);
+    for (let act = 1; act <= 3; act++) assert.ok(s.path.filter(p => p.act === act && ['combat', 'elite'].includes(p.kind)).length >= DIFFICULTIES[difficulty].roadBattles);
+    assert.equal(s.difficulty, difficulty);
+  }
 });

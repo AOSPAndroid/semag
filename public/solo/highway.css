@@ -18,6 +18,55 @@
   color: #88957e;
   text-align: right;
 }
+.highway-difficulties {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0 0 10px;
+}
+.highway-difficulty {
+  min-height: 44px;
+  padding: 8px 6px;
+  border: 1px solid #afbea3;
+  border-radius: 4px;
+  background: #edf0df;
+  color: #355345;
+  font: 11px var(--mono, monospace);
+  cursor: pointer;
+}
+.highway-difficulty[aria-pressed='true'] {
+  background: #294f50;
+  border-color: #294f50;
+  color: #f5ead0;
+}
+.highway-difficulty:focus-visible {
+  outline: 2px solid #bd8b4e;
+  outline-offset: 2px;
+}
+.highway-delivery {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 8px;
+  border-top: 1px solid #b1c2aa;
+}
+.highway-delivery[hidden] {
+  display: none;
+}
+.highway-delivery-clock {
+  flex-shrink: 0;
+  color: #244b45;
+  font: bold 15px var(--mono, monospace);
+}
+.highway-delivery-rules {
+  color: #425b48;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.highway-delivery[data-urgent='true'] .highway-delivery-clock {
+  color: #935329;
+}
 .highway-board {
   position: relative;
   padding: 10px;
@@ -30,6 +79,7 @@
 .highway-canvas {
   display: block;
   width: 100%;
+  margin-inline: auto;
   height: auto;
   aspect-ratio: 18/13;
   background: #142932;
@@ -38,6 +88,16 @@
   border: 2px solid #345347;
   border-radius: 2px;
   outline: none;
+}
+@media (min-width: 951px) and (pointer: fine) {
+  .highway-view {
+    display: grid;
+    grid-template-columns: 1fr 1.15fr;
+    column-gap: 8px;
+  }
+  .highway-view > :not(.highway-modes):not(.highway-difficulties) {
+    grid-column: 1 / -1;
+  }
 }
 .highway-canvas:focus-visible {
   outline: 3px solid #e4ac73;

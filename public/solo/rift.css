@@ -71,7 +71,7 @@
 @media(prefers-reduced-motion:reduce){.rift-view *{transition:none!important}}
 .rift-tier-bar{display:flex;align-items:center;justify-content:space-between;gap:15px;margin-bottom:13px;padding-bottom:12px;border-bottom:1px solid #345149}
 .rift-tier-label{display:flex;align-items:center;gap:9px;flex-shrink:0;color:#9fb29c;font:9px var(--mono,monospace);letter-spacing:.5px}
-.rift-tier-select{max-width:160px;padding:6px 25px 6px 8px;border:1px solid #657d68;border-radius:3px;color:#ede5c8;background:#27473f;font:11px var(--mono,monospace);letter-spacing:0;cursor:pointer}
+.rift-tier-select{max-width:160px;min-height:44px;padding:6px 25px 6px 8px;border:1px solid #657d68;border-radius:3px;color:#ede5c8;background:#27473f;font:11px var(--mono,monospace);letter-spacing:0;cursor:pointer}
 .rift-tier-select:focus-visible{outline:2px solid #e6c48b;outline-offset:3px}
 .rift-tier-detail{min-width:0;color:#9fb29c;font:10px/1.5 var(--mono,monospace);text-align:right;letter-spacing:0}
 .rift-journey{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin:0 0 14px}

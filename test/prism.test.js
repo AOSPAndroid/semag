@@ -23,6 +23,14 @@ import {
   getDigStage,
   garbageRows,
   advanceDigStage,
+  PROFILES,
+  DEFAULT_PROFILE,
+  DIG_LADDERS,
+  getProfile,
+  getDigStageCount,
+  getDigStages,
+  recordScope,
+  timeRemaining,
 } from '../public/solo/prism-engine.js';
 
 function seeded(seed = 1) {
@@ -47,8 +55,8 @@ function placeExcavationPiece(state, target) {
   assert.deepEqual(ghostPiece(state), target);
   act('hard-drop');
 }
-function fixture(type, rotation = 0, x = 3, y = 10) {
-  const state = createState({ random: seeded(7) });
+function fixture(type, rotation = 0, x = 3, y = 10, profile = 'standard') {
+  const state = createState({ profile, random: seeded(7) });
   state.active = { type, rotation, x, y };
   state.board = blank();
   state.gravityElapsed = 0;
@@ -93,8 +101,8 @@ test('Excavation provides eight distinct immutable shaped stacks with safe visib
       ),
     );
   }
-  const state = createState({ mode: 'dig', random: seeded(1) });
-  assert.deepEqual(state, createState({ mode: 'dig', random: seeded(999) }));
+  const state = createState({ profile: 'standard', mode: 'dig', random: seeded(1) });
+  assert.deepEqual(state, createState({ profile: 'standard', mode: 'dig', random: seeded(999) }));
   assert.equal(state.dig.remainingRows, 4);
   assert.equal(collides(state, state.active), false);
   state.board[HEIGHT - 1][0] = 'J';
@@ -102,7 +110,7 @@ test('Excavation provides eight distinct immutable shaped stacks with safe visib
 });
 
 test('normal move, rotation, hold and hard drop complete all eight Excavation stages and all sixty rows', () => {
-  const state = createState({ mode: 'dig', random: seeded(8) });
+  const state = createState({ profile: 'standard', mode: 'dig', random: seeded(8) });
   for (let stageIndex = 0; stageIndex < DIG_STAGE_COUNT; stageIndex += 1) {
     const stage = getDigStage(state);
     assert.equal(state.dig.stageIndex, stageIndex);
@@ -133,7 +141,7 @@ test('normal move, rotation, hold and hard drop complete all eight Excavation st
 });
 
 test('Excavation stage breaks are explicit, pause-safe and reset reserve and lock clocks on continuation', () => {
-  const state = createState({ mode: 'dig' });
+  const state = createState({ profile: 'standard', mode: 'dig' });
   assert.equal(advanceDigStage(state), false);
   placeExcavationPiece(state, getDigStage(state).placements[0]);
   assert.equal(state.phase, 'stage-clear');
@@ -154,11 +162,11 @@ test('Excavation stage breaks are explicit, pause-safe and reset reserve and loc
   assert.equal(state.dig.stageIndex, 1);
   assert.equal(state.dig.piecesUsed, 0);
   assert.equal(state.result, null);
-  assert.equal(advanceDigStage(createState()), false);
+  assert.equal(advanceDigStage(createState({ profile: 'standard' })), false);
 });
 
 test('Excavation consumes its piece budget on unsuccessful locks, freezes failure, and restarts the challenge cleanly', () => {
-  const state = createState({ mode: 'dig' });
+  const state = createState({ profile: 'standard', mode: 'dig' });
   for (let index = 0; index < getDigStage(state).budget; index += 1) {
     assert.equal(dispatch(state, 'hard-drop'), true);
   }
@@ -170,7 +178,7 @@ test('Excavation consumes its piece budget on unsuccessful locks, freezes failur
   step(state, {}, 0.1);
   assert.equal(advanceDigStage(state), false);
   assert.deepEqual(state, failed);
-  const restarted = createState({ mode: 'dig' });
+  const restarted = createState({ profile: 'standard', mode: 'dig' });
   assert.equal(restarted.dig.results.length, 0);
   assert.equal(restarted.elapsed, 0);
   assert.equal(restarted.lines, 0);
@@ -179,9 +187,9 @@ test('Excavation consumes its piece budget on unsuccessful locks, freezes failur
 });
 
 test('Prism starts serializable and seeded, with 20 visible rows, hidden spawn rows and safe active cells', () => {
-  const state = createState({ random: seeded(44) });
+  const state = createState({ profile: 'standard', random: seeded(44) });
   assert.deepEqual(state, clone(state));
-  assert.deepEqual(state, createState({ random: seeded(44) }));
+  assert.deepEqual(state, createState({ profile: 'standard', random: seeded(44) }));
   assert.equal(state.gameId, 'prism-shift');
   assert.equal(state.phase, 'playing');
   assert.equal(state.mode, 'marathon');
@@ -192,10 +200,10 @@ test('Prism starts serializable and seeded, with 20 visible rows, hidden spawn r
   assert.equal(state.score, 0);
   assert.equal(state.lines, 0);
   assert.equal(state.level, 1);
-  assert.throws(() => createState({ mode: 'unknown' }), /mode/);
-  assert.throws(() => createState({ random: 4 }), /random/);
+  assert.throws(() => createState({ profile: 'standard', mode: 'unknown' }), /mode/);
+  assert.throws(() => createState({ profile: 'standard', random: 4 }), /random/);
   for (const value of [-1, 1, NaN, Infinity])
-    assert.throws(() => createState({ random: () => value }), /random/);
+    assert.throws(() => createState({ profile: 'standard', random: () => value }), /random/);
 });
 
 test('every tetromino has four unique integer cells and a complete four-rotation cycle', () => {
@@ -237,7 +245,7 @@ test('every tetromino has four unique integer cells and a complete four-rotation
 });
 
 test('7-bag output contains every type exactly once per bag and limits drought to twelve pieces', () => {
-  const state = createState({ random: seeded(2) });
+  const state = createState({ profile: 'standard', random: seeded(2) });
   const sequence = [];
   for (let count = 0; count < 140; count += 1) {
     sequence.push(state.active.type);
@@ -557,7 +565,7 @@ test('pause freezes elapsed, gravity, lock delay, queue and every action until r
 });
 
 test('40-line sprint wins on its final clear, freezes final elapsed and rejects all further actions', () => {
-  const state = createState({ mode: 'sprint', random: seeded(8) });
+  const state = createState({ profile: 'standard', mode: 'sprint', random: seeded(8) });
   state.lines = 38;
   state.level = 4;
   state.elapsed = 52.42;
@@ -630,7 +638,7 @@ test('fixed and chunked gravity advance to the same geometry and clocks', () => 
 test('seeded legal action stress remains finite, respects settled geometry and terminates without unbounded queues', () => {
   for (let seed = 1; seed <= 12; seed += 1) {
     const random = seeded(seed);
-    const state = createState({ random: seeded(seed * 19) });
+    const state = createState({ profile: 'standard', random: seeded(seed * 19) });
     const actions = ['left', 'right', 'rotate-cw', 'rotate-ccw', 'hold', 'hard-drop', 'soft-drop'];
     for (let tick = 0; tick < 4000 && state.phase === 'playing'; tick += 1) {
       if (random() < 0.5) dispatch(state, actions[Math.floor(random() * actions.length)]);
@@ -656,4 +664,173 @@ test('seeded legal action stress remains finite, respects settled geometry and t
     }
     assert.equal(state.phase, 'lost');
   }
+});
+
+// Challenge ladders use only public actions on the authored board, never fixtures.
+// A 60 Hz action cadence leaves gravity and lock clocks running throughout.
+function placeChallengePiece(state, target, cadence = 1 / 60) {
+  const act = action => {
+    step(state, {}, cadence);
+    assert.equal(dispatch(state, action), true, `${getDigStage(state).id}: ${action}`);
+  };
+  if (state.active.type !== target.type) act('hold');
+  assert.equal(state.active.type, target.type);
+  while (state.active.rotation !== target.rotation) {
+    act((target.rotation - state.active.rotation + 4) % 4 === 3 ? 'rotate-ccw' : 'rotate-cw');
+  }
+  while (state.active.x !== target.x) act(state.active.x < target.x ? 'right' : 'left');
+  assert.equal(collides(state, ghostPiece(state)), false);
+  act('hard-drop');
+}
+
+test('fresh games default to Veteran; all tier/mode record scopes preserve original Standard results', () => {
+  assert.equal(DEFAULT_PROFILE, 'veteran');
+  assert.equal(createState().profile, 'veteran');
+  assert.throws(() => createState({ profile: 'easy' }), /profile/);
+  for (const profile of Object.keys(PROFILES)) {
+    for (const mode of ['marathon', 'sprint', 'dig']) {
+      const state = createState({ profile, mode, random: seeded(123) });
+      assert.equal(recordScope(state), profile === 'standard' ? mode : `${profile}-${mode}`);
+      assert.equal(getProfile(state), PROFILES[profile]);
+      assert.equal(collides(state, state.active), false);
+    }
+  }
+});
+
+test('tier choice changes actual gravity from the first second without changing the seeded seven-bag sequence', () => {
+  const states = ['standard', 'veteran', 'nightmare'].map(profile => createState({ profile, random: seeded(55) }));
+  assert.deepEqual(states.map(state => [state.active.type, ...state.next]), Array(3).fill([states[0].active.type, ...states[0].next]));
+  for (const state of states) for (let tick = 0; tick < 36; tick += 1) step(state, {}, 1 / 120);
+  assert.equal(states[0].active.y, 3);
+  assert.ok(states[1].active.y > states[0].active.y);
+  assert.ok(states[2].active.y > states[1].active.y);
+  assert.ok(gravitySeconds(states[0].level) > gravitySeconds(states[1].level) * 7);
+  assert.ok(gravitySeconds(states[1].level) > gravitySeconds(states[2].level) * 3);
+});
+
+for (const profile of ['veteran', 'nightmare']) {
+  test(`${profile} locks at its stricter deadline, bounds successful resets, and leaves blocked moves fair`, () => {
+    const rules = PROFILES[profile];
+    const state = fixture('O', 0, 3, HEIGHT - 2, profile);
+    step(state, {}, rules.lockDelay - .001);
+    assert.equal(state.piecesLocked, 0);
+    step(state, {}, .001);
+    assert.equal(state.piecesLocked, 1);
+    const capped = fixture('O', 0, 3, HEIGHT - 2, profile);
+    for (let reset = 0; reset < rules.lockResets; reset += 1) {
+      step(capped, {}, rules.lockDelay - .02);
+      assert.equal(dispatch(capped, reset % 2 ? 'left' : 'right'), true);
+      assert.equal(capped.lockElapsed, 0);
+    }
+    step(capped, {}, rules.lockDelay - .01);
+    assert.equal(dispatch(capped, capped.active.x === 3 ? 'right' : 'left'), true);
+    assert.equal(capped.lockResets, rules.lockResets);
+    assert.ok(Math.abs(capped.lockElapsed - (rules.lockDelay - .01)) < 1e-8);
+    step(capped, {}, .01);
+    assert.equal(capped.piecesLocked, 1);
+    const wall = fixture('O', 0, -1, HEIGHT - 2, profile);
+    step(wall, {}, rules.lockDelay - .01);
+    assert.equal(dispatch(wall, 'left'), false);
+    assert.equal(wall.lockResets, 0);
+    step(wall, {}, .01);
+    assert.equal(wall.piecesLocked, 1);
+  });
+
+  test(`${profile} level acceleration uses completed lines and preserves pre-clear scoring`, () => {
+    const rules = PROFILES[profile];
+    const state = clearFixture(1, fixture('I', 1, 2, HEIGHT - 4, profile));
+    state.lines = rules.linesPerLevel - 1;
+    dispatch(state, 'hard-drop');
+    assert.equal(state.level, rules.startLevel + 1);
+    assert.equal(state.lastClear.points, 100 * rules.startLevel);
+  });
+
+  test(`${profile} Sprint clock expires exactly, pause freezes it, and a boundary final clear wins`, () => {
+    const rules = PROFILES[profile];
+    const state = fixture('O', 0, 3, 3, profile);
+    state.mode = 'sprint';
+    state.timeLimit = rules.sprintSeconds;
+    state.elapsed = rules.sprintSeconds - .02;
+    const beforePause = clone(state);
+    togglePause(state);
+    for (let tick = 0; tick < 120; tick += 1) step(state, {}, 1 / 120);
+    assert.equal(state.elapsed, beforePause.elapsed);
+    assert.ok(Math.abs(timeRemaining(state) - .02) < 1e-8);
+    togglePause(state);
+    const fine = clone(state);
+    step(state, {}, .1);
+    for (let tick = 0; tick < 12; tick += 1) step(fine, {}, 1 / 120);
+    assert.ok(Math.abs(state.gravityElapsed - fine.gravityElapsed) < 1e-8);
+    assert.deepEqual({ ...state, gravityElapsed: 0 }, { ...fine, gravityElapsed: 0 });
+    assert.equal(state.phase, 'lost');
+    assert.equal(state.result, 'time-budget');
+    assert.equal(state.elapsed, rules.sprintSeconds);
+    assert.equal(state.active, null);
+    assert.equal(dispatch(state, 'hard-drop'), false);
+    const final = clearFixture(1, fixture('I', 1, 2, HEIGHT - 4, profile));
+    final.mode = 'sprint';
+    final.timeLimit = rules.sprintSeconds;
+    final.elapsed = rules.sprintSeconds - .01;
+    final.lines = 39;
+    final.lockElapsed = rules.lockDelay - .01;
+    step(final, {}, .05);
+    assert.equal(final.phase, 'won');
+    assert.equal(final.lines, 40);
+    assert.equal(final.elapsed, rules.sprintSeconds);
+  });
+
+  test(`${profile} entire multi-chamber Dig ladder is legally solvable at normal 60 Hz input cadence within all budgets`, () => {
+    const state = createState({ profile, mode: 'dig', random: seeded(999) });
+    const stages = getDigStages(state);
+    assert.equal(stages.length, profile === 'veteran' ? 10 : 12);
+    assert.equal(new Set(stages.map(stage => JSON.stringify(stage.board))).size, stages.length);
+    let firstDropRows;
+    for (const [index, stage] of stages.entries()) {
+      assert.equal(collides(state, state.active), false);
+      assert.ok(Object.isFrozen(stage.board) && Object.isFrozen(stage.groups));
+      assert.ok(stage.groups.some(group => group.length > 1));
+      assert.equal(state.hold, null);
+      assert.equal(timeRemaining(state), stage.seconds);
+      for (const [pieceIndex, target] of stage.placements.entries()) {
+        placeChallengePiece(state, target);
+        if (index === 0 && pieceIndex === 0) firstDropRows = state.dig.remainingRows;
+      }
+      assert.equal(state.hold, 'Z', 'the disclosed detour is reserved, rather than wasting a lock');
+      assert.equal(state.dig.piecesUsed, stage.placements.length);
+      assert.ok(state.dig.piecesUsed <= stage.budget);
+      assert.equal(state.dig.remainingRows, 0);
+      assert.ok(state.dig.results.at(-1).time > 0 && state.dig.results.at(-1).time < stage.seconds);
+      assert.equal(state.phase, index === stages.length - 1 ? 'won' : 'stage-clear');
+      const elapsed = state.elapsed;
+      for (let tick = 0; tick < 120; tick += 1) step(state, {}, 1 / 120);
+      assert.equal(state.elapsed, elapsed, 'reviewing the next puzzle does not consume its clock');
+      if (index < stages.length - 1) assert.equal(advanceDigStage(state), true);
+    }
+    assert.equal(firstDropRows, stages[0].rows, 'one fitting square alone does not complete the paired chamber');
+    assert.equal(state.lines, profile === 'veteran' ? 86 : 121);
+    assert.equal(state.piecesLocked, profile === 'veteran' ? 61 : 88);
+    assert.equal(state.result, 'excavated');
+    assert.equal(state.phase, 'won');
+  });
+}
+
+test('Dig stage deadlines are local to each stage and stop precisely without accepting late actions', () => {
+  const state = createState({ profile: 'nightmare', mode: 'dig' });
+  for (const target of getDigStage(state).placements) placeChallengePiece(state, target);
+  const firstElapsed = state.elapsed;
+  assert.equal(advanceDigStage(state), true);
+  assert.equal(state.dig.stageStart, firstElapsed);
+  const deadline = getDigStage(state).seconds;
+  // Only the elapsed-clock fixture is moved near expiry; the legally reached
+  // second-stage board and active piece remain untouched.
+  state.elapsed = state.dig.stageStart + deadline - .01;
+  step(state, {}, .5);
+  assert.equal(state.phase, 'lost');
+  assert.equal(state.result, 'time-budget');
+  assert.equal(state.elapsed, firstElapsed + deadline);
+  assert.equal(timeRemaining(state), 0);
+  const finished = clone(state);
+  step(state, {}, .5);
+  dispatch(state, 'hold');
+  assert.deepEqual(state, finished);
 });

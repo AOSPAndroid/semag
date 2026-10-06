@@ -8,6 +8,17 @@ export const MAX_LOCK_RESETS = 15;
 export const SOFT_DROP_SECONDS = 0.035;
 export const SPRINT_LINES = 40;
 export const TYPES = Object.freeze(['I', 'J', 'L', 'O', 'S', 'T', 'Z']);
+export const DEFAULT_PROFILE = 'veteran';
+export const PROFILES = Object.freeze(Object.fromEntries([
+  { id: 'standard', name: 'Standard', startLevel: 1, linesPerLevel: 10, lockDelay: .5, lockResets: 15, previews: 5, sprintSeconds: null, digLevel: 1, digLevelEvery: 2, digMaxLevel: 4, description: 'Original pace · open-ended Sprint · Dig 8' },
+  { id: 'veteran', name: 'Veteran', startLevel: 8, linesPerLevel: 8, lockDelay: .38, lockResets: 8, previews: 4, sprintSeconds: 90, digLevel: 8, digLevelEvery: 3, digMaxLevel: 12, description: 'Fast opening · 90-second Sprint · Dig 10' },
+  { id: 'nightmare', name: 'Nightmare', startLevel: 12, linesPerLevel: 6, lockDelay: .28, lockResets: 5, previews: 3, sprintSeconds: 60, digLevel: 10, digLevelEvery: 2, digMaxLevel: 15, description: 'High gravity · 60-second Sprint · Dig 12' },
+].map(profile => [profile.id, Object.freeze(profile)])));
+export const getProfile = state => PROFILES[state.profile] || PROFILES.standard;
+export const recordScope = state => state.profile === 'standard' ? state.mode : `${state.profile}-${state.mode}`;
+export function timeRemaining(state) {
+  return state.timeLimit == null ? null : Math.max(0, state.timeLimit - (state.elapsed - (state.mode === 'dig' ? state.dig.stageStart : 0)));
+}
 
 const SPAWN_SHAPES = {
   I: [
@@ -163,42 +174,77 @@ const DIG_DEFINITIONS = [
   },
 ];
 function buildDigStage(definition) {
-  const layers = definition.layers.map(([type, rotation, x]) => {
-    const cells = SHAPES[type][rotation],
-      minY = Math.min(...cells.map((c) => c.y)),
-      maxY = Math.max(...cells.map((c) => c.y));
+  const groups = (definition.groups || definition.layers.map(layer => [layer])).map(group => group.map(([type, rotation, x]) => {
+    const cells = SHAPES[type][rotation], minY = Math.min(...cells.map(c => c.y)), maxY = Math.max(...cells.map(c => c.y));
     return { type, rotation, x, minY, height: maxY - minY + 1 };
-  });
+  }));
+  const layers = groups.map(group => ({ group, height: Math.max(...group.map(piece => piece.height)) }));
   const rows = layers.reduce((sum, layer) => sum + layer.height, 0),
     board = Array.from({ length: HEIGHT }, () => Array(WIDTH).fill(null));
   let y = HEIGHT - rows;
   const placements = [];
   for (const layer of layers) {
     for (let row = y; row < y + layer.height; row += 1) board[row].fill('G');
-    const placement = { type: layer.type, rotation: layer.rotation, x: layer.x, y: y - layer.minY };
-    for (const cell of pieceCells(placement)) board[cell.y][cell.x] = null;
-    placements.push(Object.freeze(placement));
+    for (const piece of layer.group) {
+      const placement = { type: piece.type, rotation: piece.rotation, x: piece.x, y: y - piece.minY };
+      for (const cell of pieceCells(placement)) {
+        if (cell.x < 0 || cell.x >= WIDTH || board[cell.y][cell.x] === null) throw new Error(`Invalid Dig chamber: ${definition.id}`);
+        board[cell.y][cell.x] = null;
+      }
+      placements.push(Object.freeze(placement));
+    }
     y += layer.height;
   }
   return Object.freeze({
     ...definition,
     rows,
     placements: Object.freeze(placements),
-    layers: Object.freeze(definition.layers.map((layer) => Object.freeze([...layer]))),
+    layers: Object.freeze((definition.layers || definition.groups.flat()).map(layer => Object.freeze([...layer]))),
+    groups: Object.freeze(groups.map(group => Object.freeze(group.map(piece => Object.freeze(piece))))),
     board: Object.freeze(board.map((row) => Object.freeze(row))),
     queue: Object.freeze(definition.queue),
   });
 }
 export const DIG_STAGES = Object.freeze(DIG_DEFINITIONS.map(buildDigStage));
 export const DIG_STAGE_COUNT = DIG_STAGES.length;
+// Paired/triple chambers must be filled together. Unlike a single-shaped well,
+// one correct drop often clears nothing, so reserve and queue planning matter.
+const CHALLENGE_DIG = [
+  ['twin-vaults', 'Twin vaults', [[[ 'O', 0, 0], ['O', 0, 6]], [['I', 1, 2]]], 'Fill both square chambers, then turn into the central shaft.'],
+  ['forked-crowns', 'Forked crowns', [[['T', 2, 0], ['T', 2, 6]], [['J', 1, 2], ['L', 3, 6]]], 'Two crowns share a roof. The lower hooks face opposite walls.'],
+  ['crossing-shafts', 'Crossing shafts', [[['O', 0, 5], ['I', 1, -2]], [['O', 0, 0], ['I', 1, 5]]], 'Long and short chambers trade sides. Read what survives each clear.'],
+  ['crown-triplets', 'Crown triplets', [[['T', 2, 0], ['T', 2, 3], ['T', 2, 6]], [['L', 3, 0], ['J', 1, 6]]], 'Three crowns must fit before the roof falls. Leave your reserve free.'],
+  ['long-room', 'The long room', [[['I', 0, 0], ['I', 0, 6]], [['T', 2, 0], ['T', 2, 6]], [['I', 1, 2]]], 'Wide bridges give way to narrow wells. Plan the final orientation.'],
+  ['staggered-armory', 'Staggered armory', [[['J', 2, 0], ['L', 2, 6]], [['O', 0, 0], ['O', 0, 6]], [['I', 1, 2]]], 'Turn the hooks upside down, match the squares, then descend.'],
+  ['double-helix', 'Double helix', [[['L', 3, 0], ['J', 1, 6]], [['T', 2, 1], ['T', 2, 5]], [['O', 0, 0], ['O', 0, 6]], [['I', 1, 2]]], 'Seven placements, changing entrances. A spare drop costs space.'],
+  ['five-turn-gate', 'Five-turn gate', [[['O', 0, 5], ['I', 1, -2]], [['T', 2, 1], ['T', 2, 4]], [['J', 1, -1], ['L', 3, 6]], [['I', 0, 2]]], 'Track the short chamber after a partial clear. End with a bridge.'],
+  ['packed-vault', 'Packed vault', [[['T', 2, 0], ['T', 2, 3], ['T', 2, 6]], [['O', 0, 1], ['O', 0, 4], ['O', 0, 7]], [['O', 0, 5], ['I', 1, -2]], [['J', 1, 1], ['L', 3, 6]]], 'Ten exact placements. Repeated shapes hide a change in the queue.'],
+  ['deep-junction', 'Deep junction', [[['J', 1, 0], ['L', 3, 4]], [['O', 0, 5], ['I', 1, 7]], [['T', 2, 0], ['T', 2, 3], ['T', 2, 6]], [['O', 0, 1], ['I', 1, 7]], [['L', 2, 0], ['J', 2, 6]]], 'A fifteen-row junction. Every chamber counts; every piece has a place.'],
+  ['lost-plinths', 'Lost plinths', [[['L', 3, 0], ['J', 1, 4]], [['O', 0, 5], ['I', 1, 7]], [['T', 2, 0], ['T', 2, 3], ['T', 2, 6]], [['O', 0, 1], ['I', 1, 7]], [['J', 1, 1], ['L', 3, 6]], [['O', 0, 2], ['O', 0, 7]]], 'Eighteen rows. Prepare at spawn and keep the next chamber in mind.'],
+  ['last-vault', 'The last vault', [[['T', 2, 0], ['T', 2, 3], ['T', 2, 6]], [['O', 0, 1], ['I', 1, -2]], [['O', 0, 0], ['I', 1, 3]], [['L', 3, 0], ['J', 1, 7]], [['J', 2, 2], ['L', 2, 5]], [['O', 0, -1], ['O', 0, 1], ['O', 0, 5]]], 'Fourteen pieces, no spare locks. Finish the whole route under pressure.'],
+];
+function challengeLadder(profile) {
+  return Object.freeze(CHALLENGE_DIG.slice(0, profile === 'veteran' ? 10 : 12).map(([id, title, groups, brief], index) => {
+    const required = groups.flat().map(piece => piece[0]);
+    // One disclosed off-route piece requires hold, rather than an extra lock.
+    const queue = [required[0], 'Z', ...required.slice(1), 'S', 'I', 'T'];
+    return buildDigStage({ id: `${profile}-${id}`, title, groups, brief, queue,
+      budget: required.length + (profile === 'veteran' && index < 3 ? 1 : 0),
+      seconds: profile === 'veteran' ? 12 + required.length * 3 : 8 + required.length * 2,
+    });
+  }));
+}
+export const DIG_LADDERS = Object.freeze({ standard: DIG_STAGES, veteran: challengeLadder('veteran'), nightmare: challengeLadder('nightmare') });
+export const getDigStages = state => DIG_LADDERS[getProfile(state).id];
+export const getDigStageCount = state => getDigStages(state).length;
 export function getDigStage(state) {
-  return DIG_STAGES[state.dig?.stageIndex ?? 0];
+  return getDigStages(state)[state.dig?.stageIndex ?? 0];
 }
 export function garbageRows(state) {
   return state.board.filter((row) => row.includes('G')).length;
 }
 function beginDigStage(state, index) {
-  const stage = DIG_STAGES[index];
+  const stage = getDigStages(state)[index], profile = getProfile(state);
   state.phase = 'playing';
   state.pausedPhase = null;
   state.result = null;
@@ -208,7 +254,8 @@ function beginDigStage(state, index) {
   state.next = [...stage.queue];
   state.combo = -1;
   state.backToBack = false;
-  state.level = Math.min(4, 1 + Math.floor(index / 2));
+  state.level = Math.min(profile.digMaxLevel, profile.digLevel + Math.floor(index / profile.digLevelEvery));
+  state.timeLimit = stage.seconds ?? null;
   state.lastClear = null;
   state.dig.stageIndex = index;
   state.dig.piecesUsed = 0;
@@ -219,7 +266,7 @@ function beginDigStage(state, index) {
   spawnNext(state);
 }
 export function advanceDigStage(state) {
-  if (state.mode !== 'dig' || state.phase !== 'stage-clear' || state.dig.stageIndex >= DIG_STAGE_COUNT - 1)
+  if (state.mode !== 'dig' || state.phase !== 'stage-clear' || state.dig.stageIndex >= getDigStageCount(state) - 1)
     return false;
   beginDigStage(state, state.dig.stageIndex + 1);
   return true;
@@ -420,13 +467,15 @@ function spawnNext(state) {
   refillQueue(state);
   spawn(state, type);
 }
-export function createState({ mode = 'marathon', random = Math.random } = {}) {
+export function createState({ mode = 'marathon', profile = DEFAULT_PROFILE, random = Math.random } = {}) {
   if (!['marathon', 'sprint', 'dig'].includes(mode))
     throw new RangeError('mode must be marathon, sprint or dig');
   if (typeof random !== 'function') throw new TypeError('random must be a function');
+  if (!Object.hasOwn(PROFILES, profile)) throw new RangeError('profile must be standard, veteran or nightmare');
   const state = {
     gameId: 'prism-shift',
     mode,
+    profile,
     phase: 'playing',
     width: WIDTH,
     height: HEIGHT,
@@ -438,7 +487,8 @@ export function createState({ mode = 'marathon', random = Math.random } = {}) {
     next: [],
     score: 0,
     lines: 0,
-    level: 1,
+    level: PROFILES[profile].startLevel,
+    timeLimit: mode === 'sprint' ? PROFILES[profile].sprintSeconds : null,
     elapsed: 0,
     piecesLocked: 0,
     combo: -1,
@@ -470,7 +520,7 @@ export function createState({ mode = 'marathon', random = Math.random } = {}) {
   return state;
 }
 function resetLockAfterAction(state, wasGrounded) {
-  if (wasGrounded && state.lockResets < MAX_LOCK_RESETS) {
+  if (wasGrounded && state.lockResets < getProfile(state).lockResets) {
     state.lockElapsed = 0;
     state.lockResets += 1;
   }
@@ -541,10 +591,11 @@ function lockPiece(state) {
   if (difficult) state.backToBack = true;
   else if (cleared) state.backToBack = false;
   state.lines += cleared;
+  const profile = getProfile(state);
   state.level =
     state.mode === 'dig'
-      ? Math.min(4, 1 + Math.floor(state.dig.stageIndex / 2))
-      : 1 + Math.floor(state.lines / 10);
+      ? Math.min(profile.digMaxLevel, profile.digLevel + Math.floor(state.dig.stageIndex / profile.digLevelEvery))
+      : profile.startLevel + Math.floor(state.lines / profile.linesPerLevel);
   state.piecesLocked += 1;
   const lineLabels = ['', 'SINGLE', 'DOUBLE', 'TRIPLE', 'TETRIS'];
   const label = spin
@@ -570,7 +621,7 @@ function lockPiece(state) {
         pieces: state.dig.piecesUsed,
       });
       state.active = null;
-      if (state.dig.stageIndex === DIG_STAGE_COUNT - 1) {
+      if (state.dig.stageIndex === getDigStageCount(state) - 1) {
         state.phase = 'won';
         state.result = 'excavated';
       } else {
@@ -645,28 +696,34 @@ export function step(state, input = {}, dt = 1 / 120) {
   if (state.phase !== 'playing' || !state.active || !Number.isFinite(dt) || dt <= 0 || dt > 1) return false;
   let remaining = dt;
   const softDrop = input?.softDrop === true;
+  const lockDelay = getProfile(state).lockDelay;
   while (remaining > EPSILON && state.phase === 'playing') {
     const interval = softDrop
       ? Math.min(gravitySeconds(state.level), SOFT_DROP_SECONDS)
       : gravitySeconds(state.level);
     const grounded = isGrounded(state);
     const untilGravity = Math.max(0, interval - state.gravityElapsed);
-    const untilLock = grounded ? Math.max(0, LOCK_DELAY - state.lockElapsed) : Infinity;
-    const advance = Math.min(remaining, untilGravity, untilLock);
+    const untilLock = grounded ? Math.max(0, lockDelay - state.lockElapsed) : Infinity;
+    const untilDeadline = timeRemaining(state) ?? Infinity;
+    const advance = Math.min(remaining, untilGravity, untilLock, untilDeadline);
     state.elapsed += advance;
     state.gravityElapsed += advance;
     if (grounded) state.lockElapsed += advance;
     remaining -= advance;
-    if (grounded && state.lockElapsed >= LOCK_DELAY - EPSILON) {
+    if (grounded && state.lockElapsed >= lockDelay - EPSILON) {
       lockPiece(state);
       continue;
     }
+    if (timeRemaining(state) !== null && timeRemaining(state) <= EPSILON) break;
     if (state.gravityElapsed >= interval - EPSILON) {
       state.gravityElapsed = 0;
       move(state, 0, 1, { scoreDrop: softDrop });
       continue;
     }
     if (advance <= EPSILON) break;
+  }
+  if (state.phase === 'playing' && timeRemaining(state) !== null && timeRemaining(state) <= EPSILON) {
+    state.phase = 'lost'; state.result = 'time-budget'; state.active = null;
   }
   return true;
 }

@@ -7,6 +7,8 @@ import {
   DISTRICT_LENGTH,
   getDistrict,
   recordScope,
+  DIFFICULTIES,
+  getDifficulty,
 } from './highway-engine.js';
 import { createDrivingSprites } from '../art/driving-sprites.js';
 
@@ -51,9 +53,10 @@ function node(tag, className, text) {
 }
 
 export function mount(container, { onUpdate = () => {} } = {}) {
-  let state = createState();
+  let state = createState({ difficulty: 'veteran' });
   const sprites = createDrivingSprites();
   const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+  const desktopLayout = window.matchMedia?.('(min-width: 951px) and (pointer: fine)');
   let destroyed = false;
   let raf = null;
   let previousFrame = null;
@@ -83,6 +86,19 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     button.dataset.mode = mode;
     modeChoices.append(button);
   }
+  const difficultyChoices = node('div', 'highway-difficulties');
+  difficultyChoices.setAttribute('role', 'group');
+  difficultyChoices.setAttribute('aria-label', 'Choose difficulty');
+  for (const difficulty of DIFFICULTIES) {
+    const button = node(
+      'button',
+      'highway-difficulty',
+      difficulty.id === 'standard' ? 'Standard · practice' : difficulty.title,
+    );
+    button.type = 'button';
+    button.dataset.difficulty = difficulty.id;
+    difficultyChoices.append(button);
+  }
   const stagePanel = node('div', 'highway-stage');
   const stageLabel = node('span', 'highway-stage-label'),
     stageTitle = node('strong', 'highway-stage-title'),
@@ -94,7 +110,11 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   progress.setAttribute('aria-valuemin', '0');
   progress.setAttribute('aria-valuemax', '900');
   const stageDescription = node('p', 'highway-stage-description');
-  stagePanel.append(stageLabel, stageTitle, stageGoal, progress, stageDescription);
+  const delivery = node('div', 'highway-delivery');
+  const deliveryClock = node('strong', 'highway-delivery-clock');
+  const deliveryRules = node('span', 'highway-delivery-rules');
+  delivery.append(deliveryClock, deliveryRules);
+  stagePanel.append(stageLabel, stageTitle, stageGoal, progress, stageDescription, delivery);
   const board = node('div', 'highway-board');
   const canvas = node('canvas', 'highway-canvas');
   canvas.width = W;
@@ -151,7 +171,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     controls.append(button);
   }
   footer.append(description, controls);
-  view.append(topline, modeChoices, stagePanel, board, footer);
+  view.append(topline, modeChoices, difficultyChoices, stagePanel, board, footer);
   container.append(view);
   const ctx = canvas.getContext('2d');
   const skylines = new Map(
@@ -189,6 +209,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     }
   }
   function details() {
+    if (state.result === 'delivery-missed')
+      return 'Delivery missed. Carry more speed, read the next gap early, and save boost for recovery. Standard practice has no deadline.';
     if (state.phase === 'paused') return 'Cruise paused. Resume when you are ready.';
     if (state.phase === 'won')
       return `Five districts complete in ${state.finishTime.toFixed(1)}s. ${state.totalCrashes === 0 ? 'A flawless tour.' : 'Your car made it through.'} ${state.score} points.`;
@@ -207,7 +229,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     lastPublished = state.elapsed;
     lastPhase = state.phase;
     const detail = details(),
-      district = getDistrict(state);
+      district = getDistrict(state),
+      difficulty = getDifficulty(state);
     setValue(
       location,
       'textContent',
@@ -215,6 +238,19 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     );
     for (const button of modeChoices.children)
       setAttribute(button, 'aria-pressed', String(button.dataset.mode === state.mode));
+    for (const button of difficultyChoices.children)
+      setAttribute(button, 'aria-pressed', String(button.dataset.difficulty === state.difficulty));
+    setValue(view.dataset, 'driveDifficulty', state.difficulty);
+    setValue(delivery, 'hidden', !state.delivery);
+    if (state.delivery) {
+      setValue(deliveryClock, 'textContent', `${state.delivery.remaining.toFixed(1)}s LEFT`);
+      setValue(
+        deliveryRules,
+        'textContent',
+        `${difficulty.title} · ${state.delivery.limit}s / district · no repairs · fast near misses add time`,
+      );
+      setValue(delivery.dataset, 'urgent', String(state.delivery.remaining <= 4));
+    }
     setValue(stageLabel, 'textContent', `DISTRICT ${(state.districtIndex % DISTRICTS.length) + 1} / 5`);
     setValue(stageTitle, 'textContent', district.title);
     setValue(
@@ -255,7 +291,9 @@ export function mount(container, { onUpdate = () => {} } = {}) {
           ? 'Take a breather.'
           : state.phase === 'won'
             ? 'Tour complete.'
-            : 'End of the road.',
+            : state.result === 'delivery-missed'
+              ? 'Delivery missed.'
+              : 'End of the road.',
       );
       setValue(
         overlayDetail,
@@ -269,7 +307,10 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     onUpdate({
       phase: state.phase,
       score: state.score,
-      record: state.score,
+      record:
+        state.mode === 'tour' && state.difficulty !== 'standard' && state.phase !== 'won'
+          ? null
+          : state.score,
       recordKey: recordScope(state),
       recordLabel: state.mode === 'tour' ? 'BEST TOUR' : 'BEST SCORE',
       scoreLabel: 'SCORE',
@@ -566,6 +607,15 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     ctx.font = 'bold 21px ui-monospace, monospace';
     ctx.fillStyle = COLORS.cream;
     ctx.fillText(`${(state.distance / 1000).toFixed(2)} KM`, W - 149, 62);
+    if (state.delivery) {
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 17px ui-monospace, monospace';
+      ctx.fillStyle = state.delivery.remaining <= 4 ? '#ffd09a' : '#d4e9bc';
+      ctx.fillText(`${state.delivery.remaining.toFixed(1)}s`, W / 2, 54);
+      ctx.font = 'bold 9px ui-monospace, monospace';
+      ctx.fillText('DELIVERY CLOCK', W / 2, 69);
+      ctx.textAlign = 'left';
+    }
     ctx.font = 'bold 10px ui-monospace, monospace';
     ctx.fillStyle = '#b2c7ad';
     ctx.fillText('BODY', 22, H - 38);
@@ -741,6 +791,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
           color: '#bdf4cd',
           until: state.elapsed + 1.3,
         };
+      else if (event.type === 'deadline-warning')
+        message = { text: '4s TO CHECKPOINT', color: '#ffd8ac', until: state.elapsed + 1.3 };
       else if (event.type === 'crash') {
         message = { text: 'KEEP YOUR COOL', color: '#ffd8ac', until: state.elapsed + 1.2 };
         for (let i = 0; !reducedMotion?.matches && i < 16; i += 1)
@@ -809,6 +861,13 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   function motionChanged() {
     draw();
   }
+  function fitViewport() {
+    const top = canvas.getBoundingClientRect().top;
+    const maximum = desktopLayout?.matches
+      ? `${Math.max(160, ((window.innerHeight - top - 18) * W) / H)}px`
+      : '';
+    setValue(canvas.style, 'maxWidth', maximum);
+  }
   function togglePause() {
     if (destroyed) return;
     releaseControls();
@@ -822,7 +881,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   function restart() {
     if (destroyed) return;
     releaseControls();
-    state = createState({ mode: state.mode });
+    state = createState({ mode: state.mode, difficulty: state.difficulty });
     previousFrame = null;
     accumulator = 0;
     lastEventId = -1;
@@ -883,6 +942,10 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   window.addEventListener('keyup', keyup);
   window.addEventListener('blur', releaseControls);
   reducedMotion?.addEventListener('change', motionChanged);
+  desktopLayout?.addEventListener('change', fitViewport);
+  window.addEventListener('resize', fitViewport);
+  const resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(fitViewport) : null;
+  resizeObserver?.observe(view);
   document.addEventListener('visibilitychange', visibility);
   controls.addEventListener('pointerdown', pointerdown);
   window.addEventListener('pointerup', pointerend);
@@ -895,9 +958,18 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     state.mode = button.dataset.mode;
     restart();
   }
+  function chooseDifficulty(event) {
+    const button = event.target.closest('button[data-difficulty]');
+    if (!button || !difficultyChoices.contains(button) || button.dataset.difficulty === state.difficulty)
+      return;
+    state.difficulty = button.dataset.difficulty;
+    restart();
+  }
   modeChoices.addEventListener('click', chooseMode);
+  difficultyChoices.addEventListener('click', chooseDifficulty);
   replay.addEventListener('click', restart);
   publish(true);
+  fitViewport();
   draw();
   syncAnimation();
 
@@ -917,6 +989,9 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       window.removeEventListener('keyup', keyup);
       window.removeEventListener('blur', releaseControls);
       reducedMotion?.removeEventListener('change', motionChanged);
+      desktopLayout?.removeEventListener('change', fitViewport);
+      window.removeEventListener('resize', fitViewport);
+      resizeObserver?.disconnect();
       document.removeEventListener('visibilitychange', visibility);
       controls.removeEventListener('pointerdown', pointerdown);
       window.removeEventListener('pointerup', pointerend);
@@ -924,6 +999,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       controls.removeEventListener('lostpointercapture', pointerend);
       canvas.removeEventListener('pointerdown', focus);
       modeChoices.removeEventListener('click', chooseMode);
+      difficultyChoices.removeEventListener('click', chooseDifficulty);
       replay.removeEventListener('click', restart);
       view.remove();
     },

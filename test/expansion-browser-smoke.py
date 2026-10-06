@@ -15,6 +15,7 @@ import sys
 import time
 
 from playwright.sync_api import sync_playwright
+from browser_profiles import standard_profile
 
 ROOT = Path(__file__).resolve().parents[1]
 SHOTS = Path(os.environ.get("FIRESIDE_SCREENSHOT_DIR", ROOT / "test-results" / "expansion"))
@@ -311,6 +312,7 @@ def run(url):
                     catalog(page)
                 page.locator(f'[data-play-solo="{game}"]').click()
                 page.wait_for_function("game=>window.firesideSolo?.gameId===game", arg=game)
+                standard_profile(page, game)
                 exercise(page, context)
                 context.close()
                 assert qa.room_ids(url) == before, "Solo game changed multiplayer rooms"

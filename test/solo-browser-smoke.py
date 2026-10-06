@@ -14,6 +14,7 @@ from collections import deque
 from urllib.request import urlopen
 
 from playwright.sync_api import sync_playwright
+from browser_profiles import standard_profile
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -108,12 +109,14 @@ def key_on(page, selector, key):
 def verify_persistent_best(page, context, game, best):
     page.reload()
     page.wait_for_function(f"game => {SURFACE}?.gameId === game", arg=game)
+    standard_profile(page, game)
     assert number_text(page, "#solo-record") == best
     fresh = context.new_page()
     watch(fresh, f"{game}/fresh-page")
     try:
         fresh.goto(page.url)
         fresh.wait_for_function(f"game => {SURFACE}?.gameId === game", arg=game)
+        standard_profile(fresh, game)
         assert number_text(fresh, "#solo-record") == best, "Stored best was lost in a fresh same-origin page"
     finally:
         fresh.close()
@@ -142,6 +145,7 @@ def verify_browser_back(page, url, game):
         page.locator("#solo-pause").click()
         wait_phase(page, "playing")
     else:
+        standard_profile(page, game)
         assert state(page)["phase"] == "playing", "A fresh history navigation did not mount its game"
     page.locator("#solo-restart").click()
     assert state(page)["phase"] == "playing", "Game controls stopped working after browser Back"
@@ -404,6 +408,7 @@ def run(url):
                     page.locator(f'[data-play-solo="{game}"]').click()
                     page.wait_for_url(f"**/solo.html?game={game}")
                     page.wait_for_function(f"game => {SURFACE}?.gameId === game", arg=game)
+                    standard_profile(page, game)
                     wait_phase(page, "playing")
                     assert page.locator("#solo-controls-list").is_visible()
                     assert not page.locator("#solo-rules").is_visible()

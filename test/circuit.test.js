@@ -21,6 +21,9 @@ import {
   LAPS,
   FIXED_DT,
   RESET_PENALTY,
+  DIFFICULTIES,
+  getDifficulty,
+  raceTargets,
 } from '../public/solo/circuit-engine.js';
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
@@ -381,6 +384,141 @@ function courseDriver(state) {
   };
 }
 
+function challengeDriver(state, slow = false) {
+  const track = getTrack(state),
+    car = state.car,
+    speed = Math.abs(car.speed);
+  const projection = nearestTrack(car.x, car.y, track.id);
+  const target = trackInfo(
+    projection.s + Math.max(24, speed * (track.surface === 'coastal' ? 0.25 : 0.22)),
+    track.id,
+  );
+  const error = angle(Math.atan2(target.y - car.y, target.x - car.x) - car.heading);
+  const bend = Math.abs(
+    angle(trackInfo(projection.s + 90, track.id).heading - trackInfo(projection.s + 20, track.id).heading),
+  );
+  const desired = Math.max(45, (slow ? 130 : track.surface === 'coastal' ? 185 : 195) - bend * 125);
+  return {
+    throttle: speed < desired,
+    brake: speed > desired + 6 && speed > 45,
+    left: error < -0.025,
+    right: error > 0.025,
+  };
+}
+
+test('difficulty targets and clean limits are serializable, strict and isolated from practice records', () => {
+  assert.equal(createState().difficulty, 'standard');
+  assert.equal(createState().challenge, null);
+  assert.throws(() => createState({ difficulty: 'impossible' }), RangeError);
+  for (const profile of DIFFICULTIES)
+    for (const track of TRACKS) {
+      const state = createState({ difficulty: profile.id, trackId: track.id });
+      assert.equal(getDifficulty(state), profile);
+      const base = track.id === 'meadow-loop' ? 'three-laps' : `${track.id}-three-laps`;
+      assert.equal(recordScope(state), profile.id === 'standard' ? base : `${profile.id}-${base}`);
+      assert.deepEqual(state, clone(state));
+      if (state.challenge) {
+        assert.equal(state.challenge.limit, profile.limits[TRACKS.indexOf(track)]);
+        assert.ok(raceTargets(track.id, profile.id)[0] < raceTargets(track.id, profile.id)[1]);
+        assert.equal(raceTargets(track.id, profile.id)[2], state.challenge.limit);
+      }
+    }
+});
+
+test('slow legal circuit driving fails Veteran pace while the same inputs can finish Standard practice', () => {
+  const veteran = createState({ difficulty: 'veteran' });
+  for (let tick = 0; tick < 120 * 100 && veteran.phase === 'playing'; tick++)
+    step(veteran, challengeDriver(veteran, true));
+  assert.equal(veteran.phase, 'lost');
+  assert.equal(veteran.result, 'time-limit');
+  assert.ok(veteran.lapsCompleted < 3);
+  assert.equal(veteran.raceTime, null);
+  assert.equal(veteran.challenge.remaining, 0);
+  const before = clone(veteran);
+  assert.equal(step(veteran, { throttle: true }), false);
+  assert.equal(resetCar(veteran), false);
+  assert.deepEqual(veteran, before);
+  const practice = createState();
+  for (let tick = 0; tick < 120 * 130 && practice.phase === 'playing'; tick++)
+    step(practice, challengeDriver(practice, true));
+  assert.equal(practice.phase, 'won');
+  assert.ok(practice.raceTime > DIFFICULTIES[1].limits[0]);
+});
+
+test('all harder circuits can be completed with legal fast controls, three laps and every directed gate', () => {
+  for (const difficulty of ['veteran', 'nightmare'])
+    for (const track of TRACKS) {
+      const state = createState({ difficulty, trackId: track.id });
+      let gates = 0;
+      for (let tick = 0; tick < 120 * 100 && state.phase === 'playing'; tick++) {
+        const previous = state.nextGate;
+        step(state, challengeDriver(state));
+        if (state.nextGate !== previous) gates++;
+      }
+      assert.equal(state.phase, 'won', `${difficulty} ${track.id}`);
+      assert.equal(gates, 36);
+      assert.equal(state.lapsCompleted, 3);
+      assert.ok(state.raceTime < state.challenge.limit);
+      assert.ok(state.challenge.offRoad <= state.challenge.offRoadLimit);
+      assert.equal(state.challenge.resets, 0);
+      assert.equal(state.medal, medalForTime(state.raceTime, track.id, difficulty));
+    }
+});
+
+test('off-track allowance is cumulative and reset limits cannot restore challenge time or clean allowance', () => {
+  const state = createState({ difficulty: 'nightmare' });
+  state.startDelay = 0;
+  const outside = trackInfo(100);
+  Object.assign(state.car, { x: outside.x - outside.ty * 70, y: outside.y + outside.tx * 70 });
+  ticks(state, 40);
+  assert.equal(state.phase, 'playing');
+  const used = state.challenge.offRoad;
+  assert.ok(used > 0.3);
+  togglePause(state);
+  const paused = clone(state);
+  ticks(state, 120, { throttle: true });
+  assert.deepEqual(state, paused);
+  assert.equal(resetCar(state), false, 'Nightmare has no recovery resets');
+  togglePause(state);
+  ticks(state, 70);
+  assert.equal(state.phase, 'lost');
+  assert.equal(state.result, 'track-limits');
+  const veteran = createState({ difficulty: 'veteran' });
+  veteran.startDelay = 0;
+  veteran.challenge.offRoad = 0.5;
+  assert.equal(resetCar(veteran), true);
+  near(veteran.elapsed, RESET_PENALTY);
+  assert.equal(veteran.challenge.resets, 1);
+  assert.equal(veteran.challenge.offRoad, 0.5);
+  near(veteran.challenge.remaining, veteran.challenge.limit - RESET_PENALTY);
+  const exhausted = clone(veteran);
+  assert.equal(resetCar(veteran), false);
+  assert.deepEqual(veteran, exhausted);
+});
+
+test('harder championship keeps its profile and requires three qualifying races before the final record', () => {
+  const state = createState({ difficulty: 'veteran', mode: 'championship' });
+  assert.equal(recordScope(state), 'veteran-championship');
+  for (let race = 0; race < 3; race++) {
+    for (let tick = 0; tick < 120 * 100 && state.phase === 'playing'; tick++)
+      step(state, challengeDriver(state));
+    assert.equal(state.phase, race < 2 ? 'stage-clear' : 'won');
+    assert.equal(state.seriesResults.length, race + 1);
+    if (race < 2) {
+      assert.equal(advanceStage(state), true);
+      assert.equal(state.difficulty, 'veteran');
+      assert.equal(state.challenge.offRoad, 0);
+      assert.equal(state.challenge.resets, 0);
+      assert.equal(state.challenge.limit, DIFFICULTIES[1].limits[race + 1]);
+    }
+  }
+  assert.equal(state.result, 'champion');
+  near(
+    state.raceTime,
+    state.seriesResults.reduce((sum, race) => sum + race.time, 0),
+  );
+});
+
 test('three selectable courses have distinct safe geometry, gate tangents and record scopes', () => {
   assert.equal(TRACKS.length, 3);
   assert.equal(new Set(TRACKS.map((track) => track.length.toFixed(2))).size, 3);
@@ -447,7 +585,7 @@ test('championship requires all nine actual laps and explicit continuation, pres
     assert.equal(state.seriesResults[round].trackId, TRACKS[round].id);
     if (round < 2) {
       assert.equal(state.phase, 'stage-clear');
-      assert.equal(state.lapElapsed,state.lapTimes.at(-1), 'completed stage keeps the final lap on the HUD');
+      assert.equal(state.lapElapsed, state.lapTimes.at(-1), 'completed stage keeps the final lap on the HUD');
       const before = clone(state);
       assert.equal(step(state, { throttle: true }), false);
       assert.deepEqual(state, before);

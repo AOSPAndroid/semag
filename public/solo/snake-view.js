@@ -1,4 +1,4 @@
-import { GARDENS, advanceGarden, createState, step, turn, togglePause as pauseState } from './snake-engine.js';
+import { GARDENS, gardenLevels, advanceGarden, createState, step, turn, togglePause as pauseState } from './snake-engine.js';
 
 const KEY_DIRECTIONS = {
   ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
@@ -15,7 +15,7 @@ const isForm = target => target instanceof Element
 const setText = (node, text) => { if (node.textContent !== text) node.textContent = text; };
 
 export function mount(container, { onUpdate = () => {} } = {}) {
-  let mode = 'classic';
+  let mode = 'gauntlet';
   let state = createState({ mode });
   let timer = null;
   let animationFrame = null;
@@ -29,7 +29,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   const speed = element('span', 'snake-speed');
   topline.append(label, speed);
   const modes = element('div', 'snake-modes'); modes.setAttribute('aria-label', 'Snake game mode');
-  for (const [id, title] of [['classic', 'Classic'], ['gardens', 'Six gardens']]) { const button = element('button', '', title); button.type = 'button'; button.dataset.mode = id; button.setAttribute('aria-pressed', String(id === mode)); modes.append(button); }
+  for (const [id, title] of [['gauntlet', 'Gauntlet'], ['classic', 'Classic'], ['gardens', 'Six gardens']]) { const button = element('button', '', title); button.type = 'button'; button.dataset.mode = id; button.setAttribute('aria-pressed', String(id === mode)); modes.append(button); }
   const progress = element('div', 'snake-garden-progress'); progress.hidden = true;
   for (let i = 0; i < GARDENS.length; i++) { const dot = element('span', '', String(i + 1)); dot.dataset.level = i; progress.append(dot); }
   const board = element('div', 'snake-board');
@@ -67,11 +67,11 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   let gardenKey = null;
   let cssSize = Math.max(1, canvas.getBoundingClientRect().width || 600);
   const detail = () => ({
-    playing: state.mode === 'gardens' ? `${GARDENS[state.level].title}: ${state.levelFoods} / ${GARDENS[state.level].goal} fruit. Stone hedges end the run.` : 'Keep growing. The garden gets faster with every fruit.',
-    levelClear: `${GARDENS[state.level].title} cleared. The next garden opens in a moment.`,
+    playing: state.mode !== 'classic' ? `${state.mode === 'gauntlet' ? 'Gauntlet · ' : ''}${gardenLevels(state.mode)[state.level].title}: ${state.levelFoods} / ${gardenLevels(state.mode)[state.level].goal} fruit. Stone hedges end the run.` : 'Keep growing. The garden gets faster with every fruit.',
+    levelClear: `${gardenLevels(state.mode)[state.level].title} cleared. The next garden opens in a moment.`,
     paused: 'Paused. Resume when you are ready to keep growing.',
     lost: state.result === 'hedge' ? 'A stone hedge stopped your trail. Restart the garden tour.' : state.result === 'wall' ? 'You reached the garden wall. Start a new run.' : 'Your trail caught up with you. Start a new run.',
-    won: state.mode === 'gardens' ? 'All six gardens cleared. A complete orchard tour!' : 'Every tile is yours. A perfect garden!',
+    won: state.mode === 'gauntlet' ? 'All 78 fruit claimed. The six-garden gauntlet is complete!' : state.mode === 'gardens' ? 'All six gardens cleared. A complete orchard tour!' : 'Every tile is yours. A perfect garden!',
   })[state.phase];
 
   function paintGarden(pixelSize) {
@@ -179,7 +179,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       ctx.textBaseline = 'middle';
       ctx.fillStyle = '#eef1cf';
       ctx.font = `bold ${fontSize}px ui-monospace, monospace`;
-      ctx.fillText({ paused: 'TAKE A BREATHER', lost: 'GARDEN CLOSED', won: state.mode === 'gardens' ? 'SIX GARDENS COMPLETE' : 'PERFECT GARDEN', levelClear: 'GARDEN CLEAR' }[state.phase], pixelSize / 2, pixelSize * .47);
+      ctx.fillText({ paused: 'TAKE A BREATHER', lost: 'GARDEN CLOSED', won: state.mode !== 'classic' ? 'SIX GARDENS COMPLETE' : 'PERFECT GARDEN', levelClear: 'GARDEN CLEAR' }[state.phase], pixelSize / 2, pixelSize * .47);
       ctx.fillStyle = '#bed0a1';
       ctx.font = `${Math.round(pixelSize * .029)}px ui-monospace, monospace`;
       ctx.fillText(state.phase === 'paused' ? 'PRESS SPACE OR RESUME' : state.phase === 'levelClear' ? 'THE NEXT GARDEN OPENS SOON' : `${state.score} POINTS · START A NEW RUN`, pixelSize / 2, pixelSize * .55);
@@ -195,8 +195,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   function publish() {
     const message = detail();
     if (status.textContent !== message) status.textContent = message;
-    setText(label, state.mode === 'gardens' ? `GARDEN ${state.level + 1} / 6` : 'GARDEN SNAKE');
-    if (progress.hidden !== (state.mode !== 'gardens')) progress.hidden = state.mode !== 'gardens';
+    setText(label, state.mode === 'gauntlet' ? `GAUNTLET ${state.level + 1} / 6` : state.mode === 'gardens' ? `GARDEN ${state.level + 1} / 6` : 'GARDEN SNAKE');
+    if (progress.hidden !== (state.mode === 'classic')) progress.hidden = state.mode === 'classic';
     for (const dot of progress.children) {
       const value = Number(dot.dataset.level) < state.level || state.phase === 'won' ? 'done' : Number(dot.dataset.level) === state.level ? 'current' : 'future';
       if (dot.dataset.state !== value) dot.dataset.state = value;
@@ -205,11 +205,11 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       const value = String(button.dataset.mode === mode);
       if (button.getAttribute('aria-pressed') !== value) button.setAttribute('aria-pressed', value);
     }
-    setText(hint, state.mode === 'gardens' ? 'Six layouts. Reach each fruit goal to move on. A new garden gives you a short trail; score carries.' : 'Arrow keys or W A S D to steer. Space to pause. Eat the fruit, grow your trail, and keep room to turn.');
+    setText(hint, state.mode === 'gauntlet' ? '78 fruit across six fast gardens. Each fruit raises the pace. Clear the larger goals without hitting a hedge or your growing trail.' : state.mode === 'gardens' ? 'Six gentler layouts. Reach each fruit goal to move on. A new garden gives you a short trail; score carries.' : 'Arrow keys or W A S D to steer. Space to pause. Eat the fruit, grow your trail, and keep room to turn.');
     setText(speed, `SPEED ${Math.round(1000 / state.stepMs * 10) / 10}`);
     const description = `Snake board. ${state.snake.length} tiles long. Score ${state.score}. ${message} Use arrow keys or W A S D to steer. Space pauses.`;
     if (canvas.getAttribute('aria-label') !== description) canvas.setAttribute('aria-label', description);
-    onUpdate({ phase: state.phase === 'levelClear' ? 'playing' : state.phase, recordKey: mode === 'gardens' ? 'gardens' : 'default', score: state.score, record: state.score, recordLabel: 'BEST SCORE', scoreLabel: 'SCORE', detail: message });
+    onUpdate({ phase: state.phase === 'levelClear' ? 'playing' : state.phase, recordKey: mode === 'classic' ? 'default' : mode, score: state.score, record: state.score, recordLabel: mode === 'gauntlet' ? 'BEST GAUNTLET' : 'BEST SCORE', scoreLabel: 'SCORE', detail: message });
     draw();
     if (state.phase === 'playing' && !reducedMotion.matches && animationFrame === null) animationFrame = window.requestAnimationFrame(animate);
   }
