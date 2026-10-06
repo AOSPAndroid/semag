@@ -8,8 +8,12 @@ then has its own materials and palette: weathered stone for adventures,
 illustrated paper and felt for cards, cut glass for Prism, lit asphalt for driving,
 wood and enamel for classic boards, and distinct comic silhouettes for Oddstock.
 Paris Pedal has a daytime perspective street view, with Haussmann facades, cafe
-awnings, a courier seen from behind on an e-bike, buses, and cyclists. Cached
-facades, skyline art, and vehicle sprites ship with the host.
+awnings, a courier seen from behind on an e-bike, buses, and cyclists. Its stone
+walls and zinc roofs use separate materials, with straight floor bands and
+window bays mapped into the street perspective. Night Drive's roadside
+buildings face the road and meet the ground. Night Drive and Apex Circuit share
+painted car bodies, glass, tyres and rear lights. These cached materials,
+skyline art, and vehicle sprites ship with the host.
 
 Static environments and reusable portraits are cached by their renderers.
 Animated poses and effects follow the game state; artwork never changes movement,

@@ -470,6 +470,7 @@
   .circuit-control {
     flex-direction: column;
     gap: 5px;
+    min-width: 44px;
     min-height: 54px;
     padding: 7px 2px;
   }

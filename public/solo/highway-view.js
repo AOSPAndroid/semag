@@ -577,7 +577,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   }
   function car(x, y, width, color, player = false) {
     const height = width * 1.17;
-    const top = y - height;
+    const top = y - height * (73 / 76);
     rect(x - width * 0.48, y - height * 0.09, width * 0.96, height * 0.13, '#10263066');
     if (getDistrict(state).weather === 'rain') {
       rect(x - width * 0.32, y + width * 0.05, width * 0.16, width * 0.05, '#d89c7744');
@@ -585,8 +585,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     }
     ctx.drawImage(sprites.rearCar(color, player), x - width / 2, top, width, height);
     if (player && input().brake) {
-      rect(x - width * 0.38, top + height * 0.74, width * 0.17, height * 0.04, '#ffe2ac');
-      rect(x + width * 0.21, top + height * 0.74, width * 0.17, height * 0.04, '#ffe2ac');
+      rect(x - width * (23 / 64), top + height * (53 / 76), width * (11 / 64), height * (3 / 76), '#ffd4a7');
+      rect(x + width * (12 / 64), top + height * (53 / 76), width * (11 / 64), height * (3 / 76), '#ffd4a7');
     }
   }
   function hud() {
@@ -655,18 +655,19 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       scenery.push({
         z,
         draw: () => {
-          lamp(z, -1);
-          lamp(z, 1);
           if (Math.floor((z + state.distance) / 25) % 2 === 0) {
             for (const side of [-1, 1]) {
               const p = projection(z),
-                art = sprites.roadside(getDistrict(state).id);
+                art = sprites.roadside(getDistrict(state).id, side, Math.floor((z + state.distance) / 50));
               const width = 96 * p.p,
                 height = 160 * p.p,
                 x = p.x + side * p.half * 1.6;
-              ctx.drawImage(art, x - width / 2, p.y - height, width, height);
+              ctx.drawImage(art, x - width / 2, p.y - height * (154 / 160), width, height);
             }
           }
+          // Lamps stand nearer the road than the building foundation.
+          lamp(z, -1);
+          lamp(z, 1);
         },
       });
     }

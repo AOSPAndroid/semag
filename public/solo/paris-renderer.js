@@ -8,10 +8,35 @@ const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
 const mod = (n, d) => ((n % d) + d) % d;
 const COLORS = ['#dfb668', '#bf6b5a', '#85a5a4', '#d5d6ce', '#888f9c', '#a58799'];
 const WALL_COLORS = ['#decdb1', '#e4d1b9', '#d7c6ac', '#d9d1ba', '#ddc6be'];
+const BUILDING_LENGTH = 13, WALL_X = 7.45, RIDGE_X = 10.45, ROOF_RISE = 2.3;
+const MAX_ROOF_STRIPS = 32;
+const RASTER_WIDTH = 256;
+
+// Vertical walls have a constant world x. Inverting their projected x gives
+// exact depth and material U for a raster column, without affine triangle shear.
+// The renderer supplies its reusable output; independent geometry checks can
+// omit it. The unclipped world endpoint is deliberately part of this mapping.
+export function projectParisWallColumn(side, worldNear, distance, height, screenX, out = {}) {
+  const p = (screenX - W / 2) / (side * WALL_X * METRE);
+  out.z = DEPTH / p - DEPTH;
+  out.u = (distance + out.z - worldNear) / BUILDING_LENGTH;
+  out.top = HORIZON_Y + (RIDER_Y - HORIZON_Y - height * METRE) * p;
+  out.bottom = HORIZON_Y + (RIDER_Y - HORIZON_Y) * p;
+  return out;
+}
 
 export function createParisRenderer(ctx, { sprites, reducedMotion = false } = {}) {
   // Reused bounded lists; continuous positions never become sprite cache keys.
   const actors = [], warnings = [];
+  const wallColumn = { z: 0, u: 0, top: 0, bottom: 0 };
+  // One regional raster is reused for every building. Exact UVs are sampled
+  // into its pixels instead of hundreds of narrow image blits and roof clips.
+  const rasterCanvas = ctx.canvas?.ownerDocument?.createElement?.('canvas') || globalThis.document?.createElement?.('canvas');
+  if (rasterCanvas) { rasterCanvas.width = RASTER_WIDTH; rasterCanvas.height = H; }
+  const rasterCtx = rasterCanvas?.getContext('2d', { alpha: true, willReadFrequently: true });
+  const rasterData = rasterCtx?.createImageData(RASTER_WIDTH, H);
+  const rasterPixels = rasterData?.data ? new Uint32Array(rasterData.data.buffer, rasterData.data.byteOffset, rasterData.data.byteLength / 4) : null;
+  const materialPixels = new WeakMap();
   const warningLabels = Array.from({ length: 4 }, () => ({ x: 0, y: 0, width: 0 }));
   const sky = ctx.createLinearGradient(0, 0, 0, HORIZON_Y + 45);
   sky.addColorStop(0, '#93c5ce'); sky.addColorStop(0.68, '#c9dbd4'); sky.addColorStop(1, '#efe4cb');
@@ -103,40 +128,166 @@ export function createParisRenderer(ctx, { sprites, reducedMotion = false } = {}
     }
   }
 
-  // Map a facade into two triangles. This keeps its bottom and roof in the same
-  // projection as the pavement and avoids flat billboards along the roadway.
-  function texturedFacade(image, side, near, far, height) {
-    const x = side * 7.45;
-    const ax = px(x, near), ay = py(near) - vertical(height, near);
-    const bx = px(x, far), by = py(far) - vertical(height, far);
-    const cx = bx, cy = py(far), dx = ax, dy = py(near);
-    const iw = image.width, ih = image.height;
+  // Roof interpolation is accurate over a small depth interval. Each narrow
+  // strip keeps its original UV range when the camera plane clips the building.
+  function materialStrip(image, u0, u1, ax, ay, bx, by, cx, cy, dx, dy) {
+    if (!image || Math.max(ay, by, cy, dy) < 0 || Math.min(ay, by, cy, dy) > H ||
+      Math.max(ax, bx, cx, dx) < 0 || Math.min(ax, bx, cx, dx) > W) return;
+    const sourceX = u0 * image.width, sourceWidth = (u1 - u0) * image.width, ih = image.height;
+    if (sourceWidth <= 0) return;
     ctx.save(); ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.lineTo(dx, dy); ctx.closePath(); ctx.clip();
-    ctx.transform((bx - ax) / iw, (by - ay) / iw, (dx - ax) / ih, (dy - ay) / ih, ax, ay);
-    ctx.drawImage(image, 0, 0); ctx.restore();
+    ctx.transform((bx - ax) / sourceWidth, (by - ay) / sourceWidth, (dx - ax) / ih, (dy - ay) / ih, ax, ay);
+    ctx.drawImage(image, sourceX, 0, sourceWidth, ih, 0, 0, sourceWidth, ih); ctx.restore();
     ctx.save(); ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(cx, cy); ctx.lineTo(dx, dy); ctx.closePath(); ctx.clip();
-    const a = (cx - dx) / iw, b = (cy - dy) / iw, c = (cx - bx) / ih, d = (cy - by) / ih;
-    ctx.transform(a, b, c, d, bx - a * iw, by - b * iw); ctx.drawImage(image, 0, 0); ctx.restore();
-    // Cornice and the thin stone corner prevent neighboring walls blending.
-    ctx.strokeStyle = '#6d7361'; ctx.lineWidth = Math.max(1, 1.5 * scale(near));
-    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.lineTo(cx, cy); ctx.stroke();
+    const a = (cx - dx) / sourceWidth, b = (cy - dy) / sourceWidth, c = (cx - bx) / ih, d = (cy - by) / ih;
+    ctx.transform(a, b, c, d, bx - a * sourceWidth, by - b * sourceWidth);
+    ctx.drawImage(image, sourceX, 0, sourceWidth, ih, 0, 0, sourceWidth, ih); ctx.restore();
+  }
+  function wallMaterial(image, side, worldNear, height, near, far) {
+    if (!image) return;
+    const x1 = px(side * WALL_X, near), x2 = px(side * WALL_X, far);
+    const left = Math.max(0, Math.min(x1, x2)), right = Math.min(W, Math.max(x1, x2));
+    // Adjacent modules partition the visible wall, so both sides together use
+    // at most 720 full columns, plus bounded partial columns at module joins.
+    // One-pixel sampling bounds geometric error to 0.5px horizontally and 0.408px
+    // vertically. Floor rows never acquire a diagonal triangle seam.
+    for (let x = Math.floor(left); x < Math.ceil(right); x++) {
+      const start = Math.max(left, x), end = Math.min(right, x + 1);
+      if (start >= end) continue;
+      projectParisWallColumn(side, worldNear, state.distance, height, (start + end) / 2, wallColumn);
+      const sourceX = clamp(Math.floor(wallColumn.u * image.width), 0, image.width - 1);
+      ctx.drawImage(image, sourceX, 0, 1, image.height, start, wallColumn.top, end - start, wallColumn.bottom - wallColumn.top);
+    }
+  }
+  function pixelsFor(image) {
+    if (!image?.getContext) return null;
+    let material = materialPixels.get(image);
+    if (material) return material;
+    const data = image.getContext('2d')?.getImageData?.(0, 0, image.width, image.height)?.data;
+    if (!data) return null;
+    material = { width: image.width, height: image.height,
+      pixels: new Uint32Array(data.buffer, data.byteOffset, data.byteLength / 4) };
+    materialPixels.set(image, material); return material;
+  }
+  function rasterBuilding(side, worldNear, height, near, far, wall, roof) {
+    if (!rasterPixels) return false;
+    const wallImage = pixelsFor(wall), roofImage = pixelsFor(roof);
+    if (!wallImage || !roofImage) return false;
+    const wallNear = px(side * WALL_X, near), wallFar = px(side * WALL_X, far);
+    const ridgeNear = px(side * RIDGE_X, near), ridgeFar = px(side * RIDGE_X, far);
+    const eaveNear = py(near) - vertical(height, near), eaveFar = py(far) - vertical(height, far);
+    const ridgeNearY = py(near) - vertical(height + ROOF_RISE, near), ridgeFarY = py(far) - vertical(height + ROOF_RISE, far);
+    const left = Math.max(0, Math.floor(Math.min(wallNear, wallFar, ridgeNear, ridgeFar)));
+    const right = Math.min(W, Math.ceil(Math.max(wallNear, wallFar, ridgeNear, ridgeFar)));
+    const top = Math.max(0, Math.floor(Math.min(eaveNear, eaveFar, ridgeNearY, ridgeFarY)));
+    const bottom = Math.min(H, Math.ceil(Math.max(py(near), py(far))));
+    const width = right - left, rows = bottom - top, stride = RASTER_WIDTH;
+    if (width <= 0 || rows <= 0) return true;
+    if (width > stride) return false;
+    // The maximum visible 13m wall/roof module spans less than 192 pixels under
+    // this camera. A fixed 256-pixel buffer leaves room for clipped edge pixels.
+    for (let y = top; y < bottom; y++) rasterPixels.fill(0, y * stride, y * stride + width);
+    const wallLeft = Math.max(0, Math.min(wallNear, wallFar));
+    const wallRight = Math.min(W, Math.max(wallNear, wallFar));
+    for (let x = Math.floor(wallLeft); x < Math.ceil(wallRight); x++) {
+      projectParisWallColumn(side, worldNear, state.distance, height, x + 0.5, wallColumn);
+      // A typed pixel has one owner even when a module boundary crosses it.
+      // The same center ray selects its module, material U, and floor row.
+      if (wallColumn.z < near || wallColumn.z >= far) continue;
+      const sourceX = clamp(Math.floor(wallColumn.u * wallImage.width), 0, wallImage.width - 1);
+      const span = wallColumn.bottom - wallColumn.top;
+      const firstY = Math.max(0, Math.ceil(wallColumn.top - 0.5));
+      const lastY = Math.min(H, Math.ceil(wallColumn.bottom - 0.5));
+      const sourceStep = wallImage.height / span;
+      let sourceY = (firstY + 0.5 - wallColumn.top) * sourceStep;
+      let destination = firstY * stride + x - left;
+      for (let y = firstY; y < lastY; y++, destination += stride, sourceY += sourceStep)
+        rasterPixels[destination] = wallImage.pixels[clamp(Math.floor(sourceY), 0, wallImage.height - 1) * wallImage.width + sourceX];
+    }
+    // Ray/plane inversion gives the actual pitched-roof U and V at each pixel;
+    // no affine diagonal or near-plane remapping is involved.
+    const slope = ROOF_RISE / (RIDGE_X - WALL_X);
+    const denominator = RIDER_Y - HORIZON_Y - height * METRE + slope * WALL_X * METRE;
+    const roofBottom = Math.min(H, Math.ceil(Math.max(eaveNear, eaveFar, ridgeNearY, ridgeFarY)));
+    const originalNear = worldNear - state.distance;
+    for (let x = left; x < right; x++) {
+      const lateral = side * (x + 0.5 - W / 2);
+      const offset = slope * lateral;
+      const pMin = Math.max(scale(far), lateral / (RIDGE_X * METRE));
+      const pMax = Math.min(scale(near), lateral / (WALL_X * METRE));
+      const firstY = Math.max(top, Math.ceil(HORIZON_Y - offset + denominator * pMin - 0.5));
+      const lastY = Math.min(roofBottom, Math.ceil(HORIZON_Y - offset + denominator * pMax - 0.5));
+      for (let y = firstY; y < lastY; y++) {
+        const p = (y + 0.5 - HORIZON_Y + offset) / denominator;
+        if (p <= 0) continue;
+        const inverse = 1 / p, z = DEPTH * inverse - DEPTH;
+        if (z < near || z >= far) continue;
+        const v = (RIDGE_X - lateral * inverse / METRE) / (RIDGE_X - WALL_X);
+        if (v < 0 || v >= 1) continue;
+        const u = (z - originalNear) / BUILDING_LENGTH;
+        const sx = clamp(Math.floor(u * roofImage.width), 0, roofImage.width - 1);
+        const sy = clamp(Math.floor(v * roofImage.height), 0, roofImage.height - 1);
+        rasterPixels[y * stride + x - left] = roofImage.pixels[sy * roofImage.width + sx];
+      }
+    }
+    rasterCtx.putImageData(rasterData, 0, 0, 0, top, width, rows);
+    ctx.drawImage(rasterCanvas, 0, top, width, rows, left, top, width, rows);
+    return true;
+  }
+  function building(side, worldNear, height, wall, roof, color) {
+    const originalNear = worldNear - state.distance, originalFar = originalNear + BUILDING_LENGTH;
+    const near = Math.max(NEAR, originalNear), far = Math.min(121, originalFar);
+    if (near >= far) return;
+    const wallX = side * WALL_X, ridgeX = side * RIDGE_X;
+    const nearGround = py(near), farGround = py(far);
+    const nearEave = nearGround - vertical(height, near), farEave = farGround - vertical(height, far);
+    const nearRidge = nearGround - vertical(height + ROOF_RISE, near), farRidge = farGround - vertical(height + ROOF_RISE, far);
+    // Opaque adjoining geometry closes the old transparent sprite margins.
+    // Blocks share exact endpoints, eaves, floor heights, and a roof pitch.
+    quad(px(wallX, near), nearEave, px(wallX, far), farEave,
+      px(wallX, far), farGround, px(wallX, near), nearGround, color);
+    quad(px(ridgeX, near), nearRidge, px(ridgeX, far), farRidge,
+      px(wallX, far), farEave, px(wallX, near), nearEave, '#71858a');
+    if (!rasterBuilding(side, worldNear, height, near, far, wall, roof)) {
+      wallMaterial(wall, side, worldNear, height, near, far);
+      const span = Math.abs(px(wallX, near) - px(wallX, far));
+      const strips = clamp(Math.ceil(span / 2), 4, MAX_ROOF_STRIPS);
+      const depthStep = BUILDING_LENGTH / strips;
+      for (let i = 0; i < strips; i++) {
+        const a = Math.max(near, originalNear + i * depthStep);
+        const b = Math.min(far, originalNear + (i + 1) * depthStep);
+        if (a >= b) continue;
+        // UVs refer to the unclipped building. Its material therefore stays fixed
+        // to the street as the camera passes through the near clipping plane.
+        const u0 = clamp((a - originalNear) / BUILDING_LENGTH, 0, 1);
+        const u1 = clamp((b - originalNear) / BUILDING_LENGTH, 0, 1);
+        const ga = py(a), gb = py(b), ea = ga - vertical(height, a), eb = gb - vertical(height, b);
+        materialStrip(roof, u0, u1, px(ridgeX, a), ga - vertical(height + ROOF_RISE, a),
+          px(ridgeX, b), gb - vertical(height + ROOF_RISE, b), px(wallX, b), eb, px(wallX, a), ea);
+      }
+    }
+    // Continuous stone cornices use world heights rather than texture edges.
+    // Each straight band reaches the same endpoint as its neighboring block.
+    for (let floor = 1; floor <= 4; floor++) {
+      const h = height * floor / 4, band = floor === 4 ? 0.10 : 0.055;
+      quad(px(wallX, near), nearGround - vertical(h + band, near), px(wallX, far), farGround - vertical(h + band, far),
+        px(wallX, far), farGround - vertical(h, far), px(wallX, near), nearGround - vertical(h, near), '#f1dfbb');
+    }
   }
   function scenery(district) {
-    const base = Math.floor(state.distance / 13) * 13;
+    const base = Math.floor(state.distance / BUILDING_LENGTH) * BUILDING_LENGTH;
     for (let i = 8; i >= -1; i--) {
-      const near = base + i * 13 - state.distance, far = near + 12.8;
+      const worldNear = base + i * BUILDING_LENGTH;
+      const near = worldNear - state.distance, far = near + BUILDING_LENGTH;
       if (far < -1 || near > 108) continue;
       for (let side = -1; side <= 1; side += 2) {
-        const block = Math.floor((base + i * 13) / 13), variant = mod(block + (side > 0 ? 2 : 0), 4);
+        const block = Math.floor(worldNear / BUILDING_LENGTH), variant = mod(block + (side > 0 ? 2 : 0), 3);
         if (district !== 3) {
           const kind = mod(block + side, 5) === 0 ? 'cafe' : mod(block, 4) === 0 ? 'shop' : 'haussmann';
-          const facade = sprites?.facade?.(kind, variant);
-          const safeNear = Math.max(NEAR, near), safeFar = Math.max(safeNear + 0.1, far);
-          const height = district === 4 ? 8.0 + variant * 0.8 : 10.3 + variant * 0.55;
-          if (facade) texturedFacade(facade, side, safeNear, safeFar, height);
-          else quad(px(side * 7.45, safeNear), py(safeNear) - vertical(height, safeNear),
-            px(side * 7.45, safeFar), py(safeFar) - vertical(height, safeFar),
-            px(side * 7.45, safeFar), py(safeFar), px(side * 7.45, safeNear), py(safeNear), WALL_COLORS[district]);
+          const wall = sprites?.wall?.(kind, variant) || sprites?.facade?.(kind, variant);
+          const roof = sprites?.roof?.(variant);
+          const height = district === 4 ? 8.0 : 10.3;
+          building(side, worldNear, height, wall, roof, WALL_COLORS[district]);
         }
         const z = near + 8;
         if (z < 1 || z > 100) continue;

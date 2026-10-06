@@ -88,33 +88,70 @@ export function createParisPerspective() {
     for(const y of [16,101]){r(22,y,32,28,'#9fb1a1');r(24,y+2,28,3,'#e0e0be');r(25,y+10,26,15,'#6c9084');for(let dy=12;dy<25;dy+=4)r(26,y+dy,24,1,'#bdc9ae');}
     r(5,77,66,14,'#4d6260');for(let y=78;y<91;y+=3)r(7,y,62,1,'#a4aea0');r(18,54,40,10,'#9cb39f');r(18,145,40,10,'#9cb39f');
   });}
-  function facade(kind='haussmann',variant=0){
+  function stone(r,variant){
+    const colors=[['#e5d5b6','#d4c4a7','#f4e5c6'],['#ddd1b7','#cfc3ab','#efe4cb'],['#e7ceb0','#d7bfa0','#f6dfbf']][variant];
+    r(0,0,120,160,colors[0]);
+    // Quiet limestone courses continue to the image edges without a gutter.
+    for(let y=9;y<160;y+=10){r(0,y,120,1,colors[1]);for(let x=(y%20===9?10:0);x<120;x+=20)r(x,y-9,1,9,colors[1]);}
+    for(const y of [0,40,80,120]){r(0,y,120,2,colors[2]);r(0,y+2,120,1,colors[1]);r(0,y+3,120,1,colors[2]);}
+    return colors;
+  }
+  /** Flat, full-bleed wall: top/eaves y0, ground y160; four40px storeys. */
+  function wall(kind='haussmann',variant=0){
     kind=['cafe','shop'].includes(kind)?kind:'haussmann';variant=normalize(variant,3);
-    return asset(`facade:${kind}:${variant}`,120,190,(r,p)=>{
-      const wall=['#ead9b6','#ded0b2','#e6cfad'][variant];
-      r(6,31,109,159,C.ink);r(8,35,105,155,wall);r(11,39,100,4,'#fae9c5');r(9,39,4,145,'#fbebc6');r(107,39,6,151,'#b29f83');
-      p([[6,36],[15,12],[105,12],[114,36]],C.ink);p([[11,32],[20,15],[100,15],[109,32]],C.zinc);r(23,13,74,3,C.zincHi);r(14,29,92,3,'#8c9f9f');
-      for(const x of [25,54,83]){r(x,18,13,15,'#4b6470');r(x+2,17,9,12,'#d6cfb1');r(x+4,19,5,8,'#567980');r(x-1,30,15,3,'#b8bea6');r(x+1,17,11,2,'#ebdfbc');}
-      r(19,4,9,13,'#ac9980');r(18,3,11,3,'#ead7b2');r(23,5,4,6,'#675f52');r(91,6,8,11,'#ac9980');r(90,5,10,3,'#ead7b2');
+    return asset(`wall:${kind}:${variant}`,120,160,(r,p)=>{
+      const stoneColors=stone(r,variant),frame=stoneColors[2];
       for(let floor=0;floor<3;floor++){
-        const y=49+floor*31;r(11,y+24,96,3,'#b9a98d');r(11,y+22,96,2,'#f8e6bf');
-        for(const x of [21,51,81]){
-          r(x-2,y-2,20,25,'#c8b493');r(x,y,16,21,'#375864');r(x+2,y+2,6,16,'#92b2ad');r(x+9,y+2,5,16,'#668d90');r(x+7,y+1,2,20,'#e5d4b4');r(x+1,y+9,14,2,'#e5d4b4');r(x-2,y+20,20,3,'#f2e1be');
-          r(x-4,y+15,24,2,C.ink);r(x-4,y+21,24,2,C.ink);for(let bx=x-3;bx<x+19;bx+=5)r(bx,y+16,1,5,'#4c625f');r(x-3,y+21,22,1,'#839582');
+        const y=floor*40;
+        for(let bay=0;bay<6;bay++){
+          const x=bay*20+4,curtain=(bay+floor+variant)%4===0;
+          r(x,y+5,13,30,'#b6a88f');r(x+1,y+6,11,28,'#405e66');
+          r(x+2,y+7,4,25,curtain?'#c5c4aa':'#91b0aa');r(x+7,y+7,4,25,'#688f91');
+          r(x+6,y+6,1,28,frame);r(x+1,y+17,11,1,frame);r(x,y+4,13,1,frame);r(x-1,y+34,15,2,frame);
+          // Individual iron guards use straight pixel rows and slender posts.
+          if(floor!==1){r(x-2,y+28,17,1,'#364e50');r(x-2,y+35,17,1,'#364e50');for(let rail=x-2;rail<=x+14;rail+=4)r(rail,y+29,1,6,'#4a6260');r(x+2,y+30,1,3,'#789080');r(x+10,y+30,1,3,'#789080');}
         }
+        // The bel étage's continuous balcony stays on the same floor band.
+        if(floor===1){r(0,y+28,120,1,'#364e50');r(0,y+35,120,1,'#364e50');for(let x=1;x<120;x+=4)r(x,y+29,1,6,'#4a6260');r(0,y+36,120,1,'#a6b299');}
+        r(0,y+37,120,1,stoneColors[1]);r(0,y+38,120,2,frame);
       }
-      r(12,141,95,4,'#faf0d0');r(13,147,92,39,'#8a927e');r(51,149,24,37,'#345e60');r(55,153,16,27,'#76a5a1');r(60,153,2,27,'#cccfaf');r(68,167,2,4,'#d2ac64');
-      if(kind==='cafe'){
-        r(14,146,89,11,'#315e55');r(25,149,67,2,'#ded9ae');p([[12,158],[106,158],[112,172],[8,172]],'#c27757');
-        for(let x=14;x<106;x+=14)p([[x,158],[x+7,158],[x+10,172],[x,172]],'#f4deb3');r(9,171,102,4,'#814f3d');r(11,175,3,15,'#5d6254');r(105,175,3,15,'#5d6254');r(19,178,18,3,'#b0945d');r(25,181,3,9,'#716846');r(86,178,16,3,'#b0945d');r(92,181,3,9,'#716846');
-      }else if(kind==='shop'){
-        r(14,146,89,10,'#33736b');r(19,149,79,3,'#decf9c');r(16,159,28,24,'#324c54');r(19,162,22,12,'#91aca1');r(78,159,23,24,'#324c54');r(80,162,19,12,'#91aca1');r(19,176,22,4,'#d2a356');r(79,176,19,4,'#d2a356');
+      if(kind==='cafe'||kind==='shop'){
+        const trim=kind==='cafe'?'#356653':'#3d706b';
+        r(0,124,120,36,trim);r(2,125,116,8,'#31594f');r(18,127,84,1,'#dac89b');r(35,130,50,1,'#a8b792');
+        r(6,137,42,19,'#2d5055');r(9,139,36,13,'#91b0a4');r(11,140,32,2,'#c0ccb0');r(26,139,2,16,'#bbc7a9');
+        r(72,137,42,19,'#2d5055');r(75,139,36,13,'#91b0a4');r(77,140,32,2,'#c0ccb0');r(92,139,2,16,'#bbc7a9');
+        r(53,134,14,26,'#274e53');r(55,136,10,21,'#6f9c97');r(59,136,1,21,'#c5caab');r(64,146,1,3,'#dbb566');
+        if(kind==='cafe'){r(0,133,120,8,'#be7855');for(let x=0;x<120;x+=10)r(x,133,5,7,'#f1ddba');r(0,140,120,1,'#8c5d45');}
+        else{r(10,152,33,3,'#d5b374');r(77,152,31,3,'#d5b374');r(3,134,2,25,'#a4baa1');r(115,134,2,25,'#a4baa1');}
+        r(0,159,120,1,'#a9b59a');
       }else{
-        r(16,153,25,29,'#45636a');r(19,155,19,17,'#8da8a1');r(79,153,22,29,'#45636a');r(82,155,16,17,'#8da8a1');r(19,176,19,5,'#acbb9d');r(82,176,16,5,'#acbb9d');
+        r(49,128,22,32,'#b7a78d');p([[52,136],[55,129],[65,129],[68,136],[68,160],[52,160]],'#365b5f');
+        r(55,137,10,22,'#658f8d');r(59,136,1,23,'#c1c7a8');r(64,148,1,3,'#e0b975');
+        for(const x of [7,86]){r(x,128,27,27,'#afaa92');r(x+2,130,23,22,'#476970');r(x+4,132,19,15,'#91aca2');r(x+12,130,1,23,'#d3d2b3');r(x+2,149,23,3,'#bac5a5');r(x-1,155,29,1,frame);}
       }
-      r(7,187,108,3,'#687d73');r(11,185,96,2,'#dfcfab');
     });
   }
+  /** Opaque zinc material, mapped onto a separate pitched roof plane. */
+  function roof(variant=0){
+    variant=normalize(variant,3);
+    return asset(`roof:${variant}`,120,64,(r)=>{
+      const base=['#708891','#788c92','#6e8390'][variant];
+      r(0,0,120,64,base);
+      for(let x=0;x<120;x+=12){r(x,0,1,64,'#9aacad');r(x+1,0,1,64,'#59747f');r(x+3,0,7,64,(x/12+variant)%3===0?'#7c939a':base);}
+      for(let y=15;y<64;y+=16){r(0,y,120,1,'#5d7882');r(0,y+1,120,1,'#8fa4a6');for(let x=5;x<120;x+=12)r(x,y-1,1,1,'#bac1b4');}
+      // Flush glazed skylights are material detail, never a baked roof outline.
+      for(const x of [27,79]){r(x,22,14,22,'#b1b8aa');r(x+1,23,12,20,'#3b6170');r(x+2,24,10,7,'#a1bcb7');r(x+2,32,10,9,'#648a93');r(x+6,23,1,20,'#a9b6a8');r(x+1,31,12,1,'#a9b6a8');}
+    });
+  }
+  function endWall(variant=0){
+    variant=normalize(variant,3);
+    return asset(`end-wall:${variant}`,120,160,(r)=>{
+      const colors=stone(r,variant);
+      for(let floor=0;floor<3;floor++)for(const x of [28,80]){const y=floor*40+9;r(x,y,12,23,colors[1]);r(x+1,y+1,10,21,colors[0]);r(x-1,y+23,14,1,colors[2]);}
+      r(0,158,120,2,colors[1]);
+    });
+  }
+  const facade=wall;
   function tree(){return asset('tree',72,144,(r,p)=>{
     r(30,72,11,72,'#5e6750');r(32,78,4,62,'#9d9570');p([[33,91],[13,67],[17,63],[37,80],[54,57],[59,62],[39,95]],'#6b7052');
     p([[20,10],[50,10],[50,15],[61,15],[61,26],[67,26],[67,57],[61,57],[61,72],[48,72],[48,78],[17,78],[17,70],[7,70],[7,58],[2,58],[2,30],[9,30],[9,16],[20,16]],'#345e50');
@@ -151,7 +188,7 @@ export function createParisPerspective() {
     });
   }
   function rearCourier({pedal=0,assist=false,damaged=false}={}){return rider(true,Math.abs(Number(pedal)||0)%1>=.5?1:0,!!assist,!!damaged);}
-  return {rearCourier,rearRider:rearCourier,rearCar,rearBus,busSide,busRoof,facade,tree,metro,skyline,
+  return {rearCourier,rearRider:rearCourier,rearCar,rearBus,busSide,busRoof,facade,wall,roof,endWall,tree,metro,skyline,
     rearCyclist(variant=0){return rider(false,0,false,false,normalize(variant,4));},
     rearActor(actor={}){const kind=actor.kind??actor.type;return kind==='bus'?rearBus():kind==='cyclist'?rider(false,0,false,false,normalize(actor.variant??actor.id,4)):rearCar(actor.variant??actor.id);},
     clear(){cache.clear();},
