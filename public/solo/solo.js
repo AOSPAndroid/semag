@@ -37,6 +37,24 @@ const GAME_INFO = {
     touch: 'Hold the steering, pedal, and boost buttons below the road. The car cruises automatically when you release the pedals.',
     rules: ['Weave through traffic to build your distance and score.', 'Close, clean passes earn a near-miss bonus. Hitting traffic damages your car.', 'Boost uses charge, which recovers while you drive without boosting.', 'Three impacts end the run. Brake early and use clear lanes to recover.'],
   },
+  'prism-shift': {
+    title: 'Prism Shift', category: 'FALLING BLOCKS / TIME & SCORE', description: 'Fast hands. A clean stack. One more perfect placement.',
+    module: '/solo/prism-view.js', ruleTitle: 'Build with a plan.',
+    recordPolicy: { scopes: ['marathon', 'sprint'], variants: {
+      marathon: { direction: 'max' },
+      sprint: { direction: 'min', digits: 2, unit: 's', onlyWon: true },
+    } },
+    controls: [[['←', '→'], 'Move the piece'], [['↓'], 'Soft drop'], [['↑', 'X'], 'Rotate clockwise'], [['Z'], 'Rotate counterclockwise'], [['Space'], 'Hard drop'], [['C', 'Shift'], 'Hold the piece']],
+    touch: 'Use the buttons below the board. Hold a direction to move repeatedly. Switch between Marathon and the 40-line Sprint.',
+    rules: ['Fill a horizontal row to clear it. Use the ghost to plan where a piece will land.', 'Each bag contains all seven piece types. Hold saves one piece; you can swap once per placement.', 'Rotations can kick away from walls. The lock delay gives you a moment to finish a placement.', 'Keep your stack low as the pace increases. Build combos, four-line clears, and T-spins for extra points.', 'Marathon saves your best score. Sprint saves your fastest completed 40-line time.'],
+  },
+  'rift-survivor': {
+    title: 'Rift Survivor', category: 'SURVIVAL ARENA / TEN WAVES', description: 'Find your opening. Shape your build. Close the rift.',
+    module: '/solo/rift-view.js', ruleTitle: 'Learn the patterns.',
+    controls: [[['W', 'A', 'S', 'D'], 'Move'], [['Mouse'], 'Aim'], [['Click', 'J'], 'Fire'], [['Space', 'Shift'], 'Dash']],
+    touch: 'Use the left pad to move and the right pad to aim and fire. Dash at the right moment to cross a dangerous gap.',
+    rules: ['Clear ten waves. Chasers, ranged enemies, and charging brutes demand different movement.', 'Watch the attack warnings, aim your shots, and use cover. Keep room to dodge.', 'Sustained fire heats your weapon. Release it to cool down; dash uses stamina.', 'Choose an upgrade after each cleared wave. Balance damage, cooling, mobility, and recovery.', 'Bosses guard waves five and ten. Survive their patterns to close the rift.'],
+  },
 };
 
 function validRecord(value) {
@@ -45,10 +63,12 @@ function validRecord(value) {
 
 /** Completed timed events compete on lowest time; ongoing runs cannot replace them. */
 export function recordDetails(gameId, update) {
-  const policy = GAME_INFO[gameId]?.recordPolicy || {};
-  const scopes = policy.scopes || ['default'];
+  const base = GAME_INFO[gameId]?.recordPolicy || {};
+  const scopes = base.scopes || ['default'];
+  const scope = scopes.includes(update.recordKey) ? update.recordKey : scopes[0];
+  const policy = { ...base, ...base.variants?.[scope] };
   return {
-    scope: scopes.includes(update.recordKey) ? update.recordKey : scopes[0],
+    scope,
     direction: policy.direction === 'min' ? 'min' : 'max',
     candidate: policy.onlyWon ? (update.phase === 'won' ? update.record : null) : (update.record ?? update.score),
     unit: policy.unit || '', digits: policy.digits,
@@ -147,14 +167,14 @@ async function startSolo() {
     const finished = phase === 'won' || phase === 'lost';
     $('solo-app').dataset.phase = phase;
     $('solo-status-label').textContent = { playing: 'IN PLAY', paused: 'PAUSED', won: 'YOU DID IT', lost: 'RUN COMPLETE' }[phase];
-    $('solo-score').textContent = formatValue(validRecord(update.score) ? update.score : 0, info.scoreDigits, info.scoreUnit);
+    $('solo-score').textContent = formatValue(validRecord(update.score) ? update.score : 0, update.scoreDigits ?? info.scoreDigits, update.scoreUnit ?? info.scoreUnit);
     $('solo-score-label').textContent = update.scoreLabel || 'SCORE';
     $('solo-record-label').textContent = update.recordLabel || (gameId === 'minesweeper' ? 'BEST TIME' : 'BEST SCORE');
     $('solo-detail').textContent = update.detail || (phase === 'paused' ? 'Take your time. Resume when you are ready.' : 'A new personal best is only a game away.');
     const { scope, direction, candidate, unit, digits } = recordDetails(gameId, update);
     const best = validRecord(candidate) ? records.update(gameId, candidate, { scope, direction }) : records.read(gameId, scope);
     $('solo-record').textContent = best === null ? '—' : formatValue(best, digits, unit);
-    $('solo-record-scope').textContent = gameId === 'minesweeper' ? `Best ${scope} time stays in this browser, on this host.` : gameId === 'apex-circuit' ? 'Best three-lap time stays in this browser, on this host.' : 'Best score stays in this browser, on this host.';
+    $('solo-record-scope').textContent = gameId === 'minesweeper' ? `Best ${scope} time stays in this browser, on this host.` : gameId === 'apex-circuit' ? 'Best three-lap time stays in this browser, on this host.' : gameId === 'prism-shift' && scope === 'sprint' ? 'Best completed 40-line time stays in this browser, on this host.' : 'Best score stays in this browser, on this host.';
     pause.disabled = finished;
     pause.setAttribute('aria-pressed', String(phase === 'paused'));
     pause.querySelector('span').textContent = phase === 'paused' ? 'Resume' : 'Pause';
@@ -176,7 +196,7 @@ async function startSolo() {
     game.togglePause();
   }
   function autoPause() {
-    if (game && !destroyed && game.getState().phase === 'playing') game.togglePause();
+    if (game && !destroyed && ['playing', 'upgrade'].includes(game.getState().phase)) game.togglePause();
   }
   function visibilityChanged() { if (document.hidden) autoPause(); }
   function pageHidden(event) {

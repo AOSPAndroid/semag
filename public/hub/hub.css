@@ -49,6 +49,7 @@
 .solo-preview{display:flex;align-items:center;justify-content:center}
 .circuit-art{background:#809269}.highway-art{background:#203c4a}
 .driving-mini{display:block;width:100%;height:100%;object-fit:cover}
+.skill-mini{display:block;width:100%;height:100%;object-fit:cover}.vector-arena-art{background:#254747}.prism-shift-art{background:#716981}.rift-survivor-art{background:#3c404a}
 .snake-art{background:#749067}
 .snake-mini{display:block;width:270px;max-width:82%;height:auto;border:8px solid #3b6044;outline:1px solid #bdd39877;box-shadow:0 8px 22px #243b283b;transform:rotate(-7deg);shape-rendering:crispEdges}
 .mines-art{background:#a9b5a0}

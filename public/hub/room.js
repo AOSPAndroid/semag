@@ -1,9 +1,11 @@
 import * as topdown from '../topdown-engine.js';
 import * as checkers from '../checkers-engine.js';
 import * as cards from '../cards-engine.js';
+import * as vector from '../vector-engine.js';
 import { TopdownRenderer } from '../topdown-renderer.js';
 import { CheckersView } from '../checkers-view.js';
 import { CardsView } from '../cards-view.js';
+import { VectorRenderer } from '../vector-renderer.js';
 import { GameAudio } from '../audio.js';
 import { GAMES, roomUrl, getName, saveName, hostInfo, copyText } from './shared.js';
 
@@ -12,10 +14,11 @@ const params = new URLSearchParams(location.search);
 const roomId = (params.get('room') || '').toUpperCase();
 const gameId = GAMES[params.get('game')] ? params.get('game') : 'relic-duel';
 const game = GAMES[gameId], boardMode = gameId === 'checkers', coop = gameId === 'dungeon-run';
+const vectorMode = gameId === 'vector-arena';
 const cardMode = ['crazy-eights', 'twenty-one', 'memory'].includes(gameId), realtimeMode = !boardMode && !cardMode;
-const engine = boardMode ? checkers : cardMode ? cards : topdown;
-const emptyInput = topdown.emptyInput, clone = state => JSON.parse(JSON.stringify(state));
-const initialState = () => boardMode ? checkers.createState() : cardMode ? cards.viewForPlayer(cards.createState(gameId), 0) : topdown.createState(coop ? 'coop' : 'duel');
+const engine = boardMode ? checkers : cardMode ? cards : vectorMode ? vector : topdown;
+const emptyInput = vectorMode ? vector.emptyInput : topdown.emptyInput, clone = state => JSON.parse(JSON.stringify(state));
+const initialState = () => boardMode ? checkers.createState() : cardMode ? cards.viewForPlayer(cards.createState(gameId), 0) : vectorMode ? vector.createState() : topdown.createState(coop ? 'coop' : 'duel');
 let authoritative = initialState();
 let predicted = clone(authoritative), players = [null, null], localId = null;
 let socket, connected = false, permanentlyClosed = false, intentionalClose = false, attempts = 0, reconnectTimer;
@@ -24,7 +27,7 @@ let playerName = getName(), invite = location.href, ping = null, lastSnapshotAt 
 let previousPhase = 'lobby', flashUntil = 0, countdownLast = null, toastTimer, focusLost = false;
 const audio = new GameAudio();
 const canvas = $('arena');
-const renderer = realtimeMode ? new TopdownRenderer(canvas) : null;
+const renderer = realtimeMode ? vectorMode ? new VectorRenderer(canvas) : new TopdownRenderer(canvas) : null;
 const board = boardMode ? new CheckersView($('checkers-board'), { onMove: (from, to) => send({ type: 'move', from, to }) }) : null;
 const cardTable = cardMode ? new CardsView($('cards-table'), { onAction: action => send({ type: 'card-action', action }) }) : null;
 const held = new Set();
@@ -38,11 +41,17 @@ $('room-code-label').textContent = roomId || '—';
 $('player-name').value = playerName;
 $('room-app').classList.toggle('board-mode', boardMode);
 $('room-app').classList.toggle('card-mode', cardMode);
+$('room-app').classList.toggle('vector-mode', vectorMode);
 $('checkers-board').hidden = !boardMode; $('cards-table').hidden = !cardMode; canvas.hidden = !realtimeMode;
 $('controls-panel').hidden = !realtimeMode; $('board-instructions').hidden = !boardMode; $('card-instructions').hidden = !cardMode;
 $('party-title').textContent = coop ? 'Your party' : 'Your room';
 $('footer-mode').textContent = coop ? 'TWO-PLAYER CO-OP' : boardMode ? 'AMERICAN CHECKERS' : cardMode ? 'TWO-PLAYER CARD TABLE' : 'REAL-TIME 1V1';
 $('stage-label').textContent = coop ? 'THE RUINS / TWO ADVENTURERS' : 'THE MOSS GARDEN / 120 HZ';
+if (vectorMode) {
+  canvas.setAttribute('aria-label', 'Vector Arena. WASD or arrow keys move, mouse aims, left mouse or J fires, right mouse or I focuses, Space dashes, R reloads.');
+  $('stage-label').textContent = 'THE OVERGROWN GRID / 120 HZ';
+  $('controls-panel').innerHTML = `<h2>Keep your angles.</h2><div class="control-line"><span class="keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><span>Move</span></div><div class="control-line"><kbd class="wide-key">MOUSE</kbd><span>Aim</span></div><div class="control-line"><kbd class="wide-key">LMB / J</kbd><span>Hold to fire</span></div><div class="control-line"><kbd class="wide-key">RMB / I</kbd><span>Focus aim</span></div><div class="control-line"><kbd class="wide-key">SPACE</kbd><span>Dash / evade</span></div><div class="control-line"><kbd>R</kbd><span>Reload</span></div><p id="combat-tip">Focus slows your movement and removes recoil. Use cover, lead your shots, and dash after the four-frame startup. Dashing cancels a reload.</p><details><summary>Timing &amp; touch controls</summary><p>Six shots per magazine. Reload takes 1.1 seconds. Dash costs 28 stamina and evades bullets during frames 4–15. Shift also dashes. On touch screens, use the Move and Aim pads with the Fire, Focus, Dash, and Reload buttons.</p></details>`;
+}
 if (coop) $('combat-tip').textContent = 'Clear three waves, then defeat the Warden. Hold guard near a fallen ally for 1.5 seconds to revive them. No friendly fire.';
 if (cardMode) {
   const rules = {
@@ -111,7 +120,9 @@ function connect() {
     let message; try { message = JSON.parse(data); } catch { return; }
     if (message.type === 'welcome') {
       if (message.gameId !== gameId) { intentionalClose = true; location.replace(roomUrl({ id: roomId, gameId: message.gameId })); return; }
-      localId = message.playerId; updateConnection();
+      localId = message.playerId;
+      if (vectorMode) { vectorAim = { x: localId === 1 ? -1 : 1, y: 0 }; pointerTarget = null; refreshKeys(); }
+      updateConnection();
     } else if (message.type === 'state') receiveState(message);
     else if (message.type === 'pong') { ping = Math.max(0, Math.round(performance.now() - message.time)); updateConnection(); }
     else if (message.type === 'error') {
@@ -120,7 +131,7 @@ function connect() {
     }
   });
   ws.addEventListener('close', () => {
-    connected = false; localId = null; ping = null; pending = []; snapshots = []; held.clear(); keys = emptyInput();
+    connected = false; localId = null; ping = null; pending = []; snapshots = []; releaseKeys();
     authoritative = initialState(); predicted = clone(authoritative);
     players = [null, null]; board?.resetSelection(); cardTable?.resetSelection(); renderer?.resetEffects(); updateConnection();
     if (!permanentlyClosed && !intentionalClose) {
@@ -131,29 +142,156 @@ function connect() {
   ws.addEventListener('error', () => {});
 }
 
-const keyMap = new Map([
+const keyMap = new Map(vectorMode ? [
+  ['KeyA', 'left'], ['ArrowLeft', 'left'], ['KeyD', 'right'], ['ArrowRight', 'right'],
+  ['KeyW', 'up'], ['ArrowUp', 'up'], ['KeyS', 'down'], ['ArrowDown', 'down'],
+  ['KeyJ', 'fire'], ['Space', 'dash'], ['ShiftLeft', 'dash'], ['ShiftRight', 'dash'],
+  ['KeyR', 'reload'], ['KeyI', 'focus'],
+] : [
   ['KeyA', 'left'], ['ArrowLeft', 'left'], ['KeyD', 'right'], ['ArrowRight', 'right'],
   ['KeyW', 'up'], ['ArrowUp', 'up'], ['KeyS', 'down'], ['ArrowDown', 'down'],
   ['KeyJ', 'attack'], ['KeyK', 'shoot'], ['Space', 'roll'], ['ShiftLeft', 'roll'], ['ShiftRight', 'roll'],
   ['KeyI', 'block'], ['KeyL', 'block'],
 ]);
+let vectorAim = { x: 1, y: 0 }, pointerTarget = null;
+const pointerButtons = { fire: false, focus: false }, touchButtons = Object.create(null), touchPointers = new Map();
+const vectorPresses = new Set(), vectorButtonKeys = new Map();
 function typing(target) { return target instanceof HTMLElement && (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable); }
-function refreshKeys() { keys = emptyInput(); for (const code of held) if (keyMap.has(code)) keys[keyMap.get(code)] = true; }
+function refreshKeys() {
+  keys = emptyInput();
+  for (const code of held) if (keyMap.has(code)) keys[keyMap.get(code)] = true;
+  if (!vectorMode) return;
+  for (const [key, value] of Object.entries(touchButtons)) if (value) keys[key] = true;
+  for (const action of vectorButtonKeys.values()) keys[action] = true;
+  keys.fire ||= pointerButtons.fire; keys.focus ||= pointerButtons.focus;
+  if (pointerTarget && localId != null) {
+    const own = predicted.fighters[localId], dx = pointerTarget.x - own.x, dy = pointerTarget.y - own.y;
+    const length = Math.hypot(dx, dy);
+    if (length > 1) vectorAim = { x: dx / length, y: dy / length };
+  }
+  keys.aimX = vectorAim.x; keys.aimY = vectorAim.y;
+}
 function releaseKeys() {
-  held.clear(); keys = emptyInput();
+  held.clear(); vectorPresses.clear(); vectorButtonKeys.clear(); pointerButtons.fire = false; pointerButtons.focus = false;
+  for (const key of Object.keys(touchButtons)) delete touchButtons[key];
+  for (const [id, control] of touchPointers) {
+    control.classList.remove('is-held'); control.style.removeProperty('--pad-x'); control.style.removeProperty('--pad-y');
+    if (control.hasPointerCapture?.(id)) control.releasePointerCapture(id);
+  }
+  touchPointers.clear(); refreshKeys();
   if (realtimeMode && connected && localId != null) {
     const frame = { type: 'input', seq: ++sequence, buttons: { ...keys } }; pending.push(frame); send(frame);
   }
 }
 document.addEventListener('keydown', event => {
-  if (typing(event.target) || event.metaKey || event.ctrlKey || event.altKey) return;
-  if (event.code === 'KeyR' && !event.repeat) { event.preventDefault(); $('ready-button').click(); }
+  if (typing(event.target) || event.isComposing || event.metaKey || event.ctrlKey || event.altKey) return;
+  if (vectorMode) {
+    const interactive = event.target instanceof Element ? event.target.closest('button, a, summary') : null;
+    if (interactive && ['Space', 'Enter'].includes(event.code)) {
+      const action = interactive.dataset.vectorAction;
+      if (!action || event.repeat && !vectorButtonKeys.has(event.code)) return;
+      event.preventDefault();
+      if (!vectorButtonKeys.has(event.code) && ['fire', 'dash', 'reload'].includes(action)) vectorPresses.add(action);
+      vectorButtonKeys.set(event.code, action); refreshKeys(); focusLost = false; return;
+    }
+    if (event.repeat && !held.has(event.code)) return;
+    const action = keyMap.get(event.code);
+    if (!held.has(event.code) && ['fire', 'dash', 'reload'].includes(action)) vectorPresses.add(action);
+  }
+  if (!vectorMode && event.code === 'KeyR' && !event.repeat) { event.preventDefault(); $('ready-button').click(); }
   if (realtimeMode && keyMap.has(event.code)) { event.preventDefault(); held.add(event.code); refreshKeys(); focusLost = false; }
 });
-document.addEventListener('keyup', event => { if (realtimeMode && keyMap.has(event.code)) { held.delete(event.code); refreshKeys(); if (!typing(event.target)) event.preventDefault(); } });
+document.addEventListener('keyup', event => {
+  if (vectorMode && vectorButtonKeys.has(event.code)) { vectorButtonKeys.delete(event.code); refreshKeys(); event.preventDefault(); return; }
+  if (vectorMode && event.code === 'Space' && !held.has(event.code) && event.target instanceof Element && event.target.closest('button, a, summary')) return;
+  if (realtimeMode && keyMap.has(event.code)) { held.delete(event.code); refreshKeys(); if (!typing(event.target)) event.preventDefault(); }
+});
 window.addEventListener('blur', () => { releaseKeys(); focusLost = true; });
 document.addEventListener('visibilitychange', () => { if (document.hidden) releaseKeys(); });
-canvas.addEventListener('pointerdown', () => { canvas.focus(); focusLost = false; });
+canvas.addEventListener('pointerdown', event => {
+  canvas.focus(); focusLost = false;
+  if (!vectorMode) return;
+  event.preventDefault(); updatePointerAim(event);
+  if (event.pointerType === 'mouse' || event.pointerType === 'pen') {
+    pointerButtons.fire = !!(event.buttons & 1); pointerButtons.focus = !!(event.buttons & 2);
+    if (event.button === 0) vectorPresses.add('fire');
+  }
+  canvas.setPointerCapture(event.pointerId); refreshKeys();
+});
+function updatePointerAim(event) {
+  const rect = canvas.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return;
+  pointerTarget = {
+    x: Math.max(0, Math.min(vector.WORLD.width, (event.clientX - rect.left) * vector.WORLD.width / rect.width)),
+    y: Math.max(0, Math.min(vector.WORLD.height, (event.clientY - rect.top) * vector.WORLD.height / rect.height)),
+  };
+}
+canvas.addEventListener('pointermove', event => {
+  if (!vectorMode) return;
+  updatePointerAim(event);
+  if (event.pointerType === 'mouse' || event.pointerType === 'pen') {
+    pointerButtons.fire = !!(event.buttons & 1); pointerButtons.focus = !!(event.buttons & 2);
+  }
+  refreshKeys();
+});
+function releasePointer(event) {
+  if (!vectorMode || event.pointerType !== 'mouse' && event.pointerType !== 'pen') return;
+  pointerButtons.fire = event.type === 'pointerup' && !!(event.buttons & 1);
+  pointerButtons.focus = event.type === 'pointerup' && !!(event.buttons & 2);
+  if (event.type === 'pointercancel') vectorPresses.delete('fire');
+  refreshKeys();
+}
+window.addEventListener('pointerup', releasePointer);
+window.addEventListener('pointercancel', releasePointer);
+canvas.addEventListener('lostpointercapture', () => {
+  if (vectorMode) { if (pointerButtons.fire) vectorPresses.delete('fire'); pointerButtons.fire = false; pointerButtons.focus = false; refreshKeys(); }
+});
+canvas.addEventListener('contextmenu', event => { if (vectorMode) event.preventDefault(); });
+setupVectorTouch();
+function setupVectorTouch() {
+  const controls = $('vector-controls'); controls.hidden = !vectorMode;
+  if (!vectorMode) return;
+  const updatePad = (control, event) => {
+    const rect = control.getBoundingClientRect(), radius = Math.max(1, Math.min(rect.width, rect.height) * .36);
+    const dx = (event.clientX - rect.left - rect.width / 2) / radius;
+    const dy = (event.clientY - rect.top - rect.height / 2) / radius;
+    const length = Math.hypot(dx, dy), scale = Math.max(1, length);
+    control.style.setProperty('--pad-x', `${dx / scale * 25}px`);
+    control.style.setProperty('--pad-y', `${dy / scale * 25}px`);
+    if (control.dataset.vectorPad === 'move') {
+      touchButtons.left = dx < -.25; touchButtons.right = dx > .25;
+      touchButtons.up = dy < -.25; touchButtons.down = dy > .25;
+    } else if (length > .2) {
+      vectorAim = { x: dx / length, y: dy / length }; pointerTarget = null;
+    }
+    refreshKeys();
+  };
+  for (const control of controls.querySelectorAll('[data-vector-pad], [data-vector-action]')) {
+    const release = event => {
+      if (touchPointers.get(event.pointerId) !== control) return;
+      touchPointers.delete(event.pointerId); control.classList.remove('is-held');
+      control.style.removeProperty('--pad-x'); control.style.removeProperty('--pad-y');
+      if (control.dataset.vectorPad === 'move') for (const key of ['left', 'right', 'up', 'down']) touchButtons[key] = false;
+      if (control.dataset.vectorAction) touchButtons[control.dataset.vectorAction] = false;
+      if (event.type !== 'pointerup' && control.dataset.vectorAction) vectorPresses.delete(control.dataset.vectorAction);
+      refreshKeys();
+      if (control.hasPointerCapture(event.pointerId)) control.releasePointerCapture(event.pointerId);
+    };
+    control.addEventListener('pointerdown', event => {
+      if (event.button !== 0 || [...touchPointers.values()].includes(control)) return;
+      event.preventDefault(); canvas.focus(); focusLost = false;
+      touchPointers.set(event.pointerId, control); control.setPointerCapture(event.pointerId); control.classList.add('is-held');
+      if (control.dataset.vectorPad) updatePad(control, event);
+      else {
+        const action = control.dataset.vectorAction; touchButtons[action] = true;
+        if (['fire', 'dash', 'reload'].includes(action)) vectorPresses.add(action);
+        refreshKeys();
+      }
+    });
+    control.addEventListener('pointermove', event => { if (touchPointers.get(event.pointerId) === control && control.dataset.vectorPad) updatePad(control, event); });
+    for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) control.addEventListener(type, release);
+  }
+}
 $('player-name').addEventListener('focus', releaseKeys);
 $('player-name').addEventListener('change', () => { playerName = saveName($('player-name').value); $('player-name').value = playerName; send({ type: 'join', name: playerName }); });
 $('player-name').addEventListener('keydown', event => { if (event.key === 'Enter') event.target.blur(); });
@@ -176,7 +314,10 @@ $('fullscreen-button').addEventListener('click', async () => { try { if (documen
 
 function inputTick() {
   if (!realtimeMode || !connected || localId == null) return;
-  const frame = { type: 'input', seq: ++sequence, buttons: { ...keys } }; pending.push(frame); send(frame);
+  if (vectorMode) refreshKeys();
+  const buttons = { ...keys };
+  if (vectorMode) { for (const action of vectorPresses) buttons[action] = true; vectorPresses.clear(); }
+  const frame = { type: 'input', seq: ++sequence, buttons }; pending.push(frame); send(frame);
   if (pending.length > 180) pending.shift();
   if (predicted.phase === 'fight') {
     const inputs = [emptyInput(), emptyInput()]; inputs[localId] = frame.buttons;
@@ -233,7 +374,11 @@ function updateHUD(now) {
       $(prefix + '-health').style.width = `${Math.max(0, fighter.hp)}%`;
       $(prefix + '-stamina').style.width = `${Math.max(0, fighter.stamina)}%`;
       $(prefix + '-score').textContent = coop ? fighter.downed ? '↓' : `${Math.ceil(fighter.hp)}` : `${fighter.wins} / 2`;
-      $(prefix + '-detail').textContent = fighter.downed ? `REVIVE ${Math.round((fighter.reviveProgress || 0) / 180 * 100)}%` : fighter.guardBroken ? 'GUARD BROKEN' : fighter.action === 'block' ? 'GUARDING' : fighter.action === 'roll' ? 'EVADING' : 'STAMINA';
+      $(prefix + '-detail').textContent = vectorMode ? fighter.reloadTicks > 0 ? `RELOAD ${(fighter.reloadTicks / 120).toFixed(1)}s` : `${fighter.ammo} / 6 SHOTS` : fighter.downed ? `REVIVE ${Math.round((fighter.reviveProgress || 0) / 180 * 100)}%` : fighter.guardBroken ? 'GUARD BROKEN' : fighter.action === 'block' ? 'GUARDING' : fighter.action === 'roll' ? 'EVADING' : 'STAMINA';
+      if (vectorMode) {
+        $(prefix + '-health-track').setAttribute('aria-label', `${names[i]} health: ${Math.ceil(fighter.hp)} of 100`);
+        $(prefix + '-stamina-track').setAttribute('aria-label', `${names[i]} dash stamina: ${Math.round(fighter.stamina)} of 100`);
+      }
     }
   }
   if (boardMode) {
@@ -258,7 +403,7 @@ function updateHUD(now) {
   } else {
     $('round-label').textContent = `ROUND ${String(state.round).padStart(2, '0')}`;
     $('timer').textContent = String(Math.max(0, Math.ceil(state.roundTicks / 120))).padStart(2, '0'); $('hud-caption').textContent = 'FIRST TO TWO';
-    $('objective').textContent = phase === 'fight' ? 'Use the pillars as cover. Face your attacks and watch your stamina.' : phase === 'matchEnd' ? 'A winner. A rematch. Or a different game?' : 'Both players must ready up to begin.';
+    $('objective').textContent = phase === 'fight' ? vectorMode ? 'Control an angle. Focus your shots. Keep a dash in reserve.' : 'Use the pillars as cover. Face your attacks and watch your stamina.' : phase === 'matchEnd' ? 'A winner. A rematch. Or a different game?' : 'Both players must ready up to begin.';
     $('objective-detail').textContent = '90 SECOND ROUNDS';
   }
   $('player-name').disabled = active;
@@ -287,7 +432,7 @@ function updateOverlay(now, names) {
     kicker = coop ? 'STAY TOGETHER' : 'MAKE YOUR NEXT MOVE COUNT'; title = number; subtitle = coop ? 'Keep an eye on your friend.' : 'Good luck. Have fun.'; overlay.classList.add('countdown');
     if (number !== countdownLast) { audio.countdown(number); countdownLast = number; }
   } else if (phase === 'fight') {
-    if (realtimeMode && now < flashUntil) { kicker = coop ? 'YOUR ADVENTURE STARTS HERE' : 'FIND YOUR OPENING'; title = coop ? 'LET’S GO' : 'DUEL'; subtitle = ''; overlay.classList.add('fight'); }
+    if (realtimeMode && now < flashUntil) { kicker = coop ? 'YOUR ADVENTURE STARTS HERE' : vectorMode ? 'TAKE YOUR ANGLE' : 'FIND YOUR OPENING'; title = coop ? 'LET’S GO' : vectorMode ? 'ENGAGE' : 'DUEL'; subtitle = ''; overlay.classList.add('fight'); }
     else overlay.hidden = true;
   } else if (cardMode) {
     // Keep showdown hands and memory pairs visible; results live above the table.
@@ -308,7 +453,7 @@ let previousTime = performance.now(), accumulator = 0, lastHUD = 0;
 function animate(now) {
   accumulator += Math.min(65, now - previousTime); previousTime = now;
   let ticks = 0; while (accumulator >= 1000 / 120 && ticks++ < 8) { inputTick(); accumulator -= 1000 / 120; }
-  renderer?.render(displayState(now), { localId, time: now });
+  renderer?.render(displayState(now), { localId, time: now, aimTarget: vectorMode ? pointerTarget : null });
   if (now - lastHUD > 50) { updateHUD(now); lastHUD = now; }
   requestAnimationFrame(animate);
 }

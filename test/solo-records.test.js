@@ -70,6 +70,37 @@ test('Night Drive saves a growing best score independently from timed games', ()
   assert.equal(records.read('minesweeper', 'intermediate'), 88);
 });
 
+test('Prism marathon scores and completed sprint times compete under separate policies', () => {
+  const storage = browserStorage();
+  const records = createBestStore(storage);
+  const save = update => {
+    const policy = recordDetails('prism-shift', update);
+    return records.update('prism-shift', policy.candidate, policy);
+  };
+  assert.equal(save({ phase: 'playing', recordKey: 'marathon', score: 2400 }), 2400);
+  assert.equal(save({ phase: 'lost', recordKey: 'marathon', score: 1200 }), 2400);
+  assert.equal(save({ phase: 'playing', recordKey: 'sprint', score: 2, record: 2 }), null);
+  assert.equal(save({ phase: 'paused', recordKey: 'sprint', record: 1 }), null);
+  assert.equal(save({ phase: 'lost', recordKey: 'sprint', record: 1 }), null);
+  assert.equal(save({ phase: 'won', recordKey: 'sprint', record: 87.25 }), 87.25);
+  assert.equal(save({ phase: 'won', recordKey: 'sprint', record: 94.1 }), 87.25);
+  assert.equal(save({ phase: 'won', recordKey: 'sprint', record: 76.54 }), 76.54);
+  const reloaded = createBestStore(storage);
+  assert.equal(reloaded.read('prism-shift', 'marathon'), 2400);
+  assert.equal(reloaded.read('prism-shift', 'sprint'), 76.54);
+  assert.equal(recordDetails('prism-shift', { recordKey: 'sprint' }).unit, 's');
+});
+
+test('Rift Survivor records persist across waves and upgrades without replacing other games', () => {
+  const records = createBestStore(browserStorage());
+  for (const [phase, score] of [['playing', 50], ['upgrade', 400], ['lost', 400], ['playing', 0]]) {
+    const policy = recordDetails('rift-survivor', { phase, score });
+    records.update('rift-survivor', policy.candidate, policy);
+  }
+  assert.equal(records.read('rift-survivor'), 400);
+  assert.equal(records.read('prism-shift', 'marathon'), null);
+});
+
 test('invalid stored records do not poison future scores', () => {
   const storage = browserStorage();
   const key = 'fireside-solo-best:snake:default';

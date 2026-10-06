@@ -18,8 +18,11 @@ A self-hosted browser game hub with solo games and two-player multiplayer. Pick 
 | 2048 | Solo puzzle | Slide equal tiles together to reach 2048, then keep going if you like. |
 | Apex Circuit | Solo driving time trial | Race three laps with responsive steering, braking, and handbrake drifts. Beat your best completed race time. |
 | Night Drive | Solo highway driving | Weave through traffic, boost into clear lanes, and score clean overtakes and near misses. |
+| Vector Arena | Real-time 1v1 shooter | Lead aimed projectiles, control cover, and manage dashes, ammunition, and reload windows. |
+| Prism Shift | Solo falling blocks | Master wall kicks, holds, T-spins, and combos in Marathon or a timed 40-line Sprint. |
+| Rift Survivor | Solo survival arena | Read enemy attack patterns, choose upgrades, and defeat the bosses across ten waves. |
 
-The action games are original compact implementations. Checkers follows American checkers rules. All multiplayer card games use the same two-seat rooms, ready countdown, and rematch flow. The shelf filters show **All games**, **With a friend**, **Solo**, or **Driving**.
+The action games are original implementations. Checkers follows American checkers rules. All multiplayer card games use the same two-seat rooms, ready countdown, and rematch flow. The shelf filters show **All games**, **With a friend**, **Solo**, **Driving**, or **Action**.
 
 ## Run on your PC
 
@@ -72,7 +75,9 @@ Relic Duel and Dungeon Run:
 
 Attacks, arrows, and rolls require fresh keypresses. Manage stamina and use the environment to approach safely. In Dungeon Run, protect each other; if both heroes fall, the run ends. Hold guard next to a fallen ally to revive them.
 
-In both competitive action games, the first player to win two rounds takes the match. Rounds last 90 seconds; a timeout awards the round to the player with more health, while a tie awards no win. Both players must agree to a rematch.
+In competitive action games, the first player to win two rounds takes the match. Rounds last 90 seconds; a timeout awards the round to the player with more health, while a tie awards no win. Both players must agree to a rematch.
+
+**Vector Arena:** use WASD or arrow keys to move, the mouse to aim, and hold the left mouse button or J to fire. Space / Shift dashes; R reloads your six-shot magazine. Hold the right mouse button or I to focus for more precise fire at a slower movement speed. Shots take time to travel and stop at cover, so aim ahead of moving targets and change your angle to open a shot. Dash has a vulnerable startup and costs stamina. A reload creates an opening for your opponent. Touch screens offer separate movement and aim pads, plus fire, focus, dash, and reload controls. Both players ready up; the first to win two rounds wins the duel.
 
 For Checkers, click a piece and then a highlighted destination. Captures are mandatory; continue jumping with the same piece when another capture is available. Men move and capture forward, kings move and capture in both directions, and reaching the opposite edge crowns a man and ends that turn. Three repetitions of a position or 80 turns without a capture or a man moving produce a draw.
 
@@ -92,7 +97,11 @@ For Checkers, click a piece and then a highlighted destination. Captures are man
 
 **Night Drive:** your car cruises automatically. Hold A / D or left / right to steer, W / up to accelerate, S / down to brake, and Space to boost. Boost uses charge that recovers when released. Clean overtakes earn points, with an extra bonus for a close near miss. Avoid the shoulder and traffic; three impacts end your run. Damage briefly protects you from repeated hits. Both driving games have hold buttons for touch screens and run their physics at 120 steps per second in the browser.
 
-Solo games have pause and new-game controls. P pauses and R restarts; leaving the page or switching tabs pauses a driving game. Snake, 2048 and Night Drive best scores, plus Minesweeper best times for each difficulty and Apex Circuit best race times, are saved in the current browser when browser storage is available. Starting a new game resets the run; best records remain.
+**Prism Shift:** left / right moves a piece, down soft-drops, up / X rotates clockwise, Z rotates counterclockwise, Space hard-drops, and C / Shift holds. Held directions repeat after a short delay. Each bag contains all seven pieces; the ghost shows your landing position and the next queue shows five upcoming pieces. You can hold once per placement. Rotations use wall kicks, and a half-second lock delay allows up to fifteen movement or rotation resets. Clear consecutive placements for combos; consecutive four-line clears or T-spins build a back-to-back bonus. Marathon increases the pace as you clear lines and saves your best score. Sprint ends at forty cleared lines and saves your fastest completed time separately.
+
+**Rift Survivor:** move with WASD / arrows, aim with the mouse, hold click or J to fire, and dash with Space / Shift. On touch screens, use the left pad to move and the right pad to aim and fire. Sustained fire overheats your weapon; release to cool down. Watch the warnings before charging brutes or ranged attacks strike, and use cover to break firing lines. After each wave, choose one of three upgrades to shape your damage, cooling, movement, stamina, or recovery. Health carries between waves. Defeat the bosses on waves five and ten to finish the run.
+
+Solo games have pause and new-game controls. P pauses and R restarts; leaving the page or switching tabs pauses real-time solo games, including a pending Rift upgrade choice. Best scores and completed timed records are saved in the current browser when browser storage is available. Minesweeper records are separate by difficulty; Prism records are separate by mode. Starting a new game resets the run; best records remain.
 
 Leaving a room resets that room's match and readiness. Rooms and matches live in memory and disappear when the server stops. An empty room is eventually removed; create another room if an old invitation has expired.
 
@@ -102,7 +111,7 @@ Leaving a room resets that room's match and readiness. Rooms and matches live in
 npm test
 ```
 
-Optional browser checks require Python Playwright and Chromium. Run `python test/cards-browser-smoke.py` to start an isolated local server and exercise all three card games in two browser sessions. Run `python test/solo-browser-smoke.py` to check the three arcade and puzzle games, records, and mobile layouts on an isolated server. Run `python test/driving-browser-smoke.py` to exercise driving controls, full laps, traffic, records, pause, and touch layouts on an isolated server. To check the original four games, run `python test/hub-browser-smoke.py http://127.0.0.1:3000` against a running host.
+Optional browser checks require Python Playwright and Chromium. Run `python test/cards-browser-smoke.py` to start an isolated local server and exercise all three card games in two browser sessions. Run `python test/solo-browser-smoke.py` to check the three arcade and puzzle games, records, and mobile layouts on an isolated server. Run `python test/driving-browser-smoke.py` to exercise driving controls, full laps, traffic, records, pause, and touch layouts on an isolated server. Run `python test/skill-browser-smoke.py` for Vector Arena's two-player combat, Prism Shift's controls and modes, and Rift Survivor's combat and upgrades. To check the original four games, run `python test/hub-browser-smoke.py http://127.0.0.1:3000` against a running host.
 
 The action games use authoritative combat at 120 ticks per second with snapshots at 60 Hz. Browsers predict local movement for responsiveness; the server decides hits and validates board and card actions. Card snapshots are prepared separately for each seat: opposing hands, the draw order, and hidden memory cards are not sent to a player's browser. Network latency and jitter still affect online play.
 

@@ -227,10 +227,10 @@ test('Memory routes flips by player and only reveals selected or matched cards',
   assert.ok(hidden.state.cards.every(card => card === null));
 });
 
-test('idle card tables broadcast a 10 Hz heartbeat and health lists all seven games', async t => {
+test('idle card tables broadcast a 10 Hz heartbeat and health lists all multiplayer games', async t => {
   const game = await table(t, 'memory');
   const health = await (await fetch(`${game.origin}/health`)).json();
-  assert.deepEqual(new Set(health.games), new Set(['afterimage', 'checkers', 'relic-duel', 'dungeon-run', ...GAME_IDS]));
+  assert.deepEqual(new Set(health.games), new Set(['afterimage', 'checkers', 'relic-duel', 'dungeon-run', 'vector-arena', ...GAME_IDS]));
   const after = game.first.peer.messages.length;
   for (let tick = 0; tick < 120; tick++) game.app.tick();
   await flushPeer(game.first.peer);

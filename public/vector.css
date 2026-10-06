@@ -1,0 +1,25 @@
+.vector-mode #arena{cursor:crosshair;touch-action:none;image-rendering:pixelated}
+.vector-mode .game-viewport{background:#18392e}
+.vector-mode .p1 .player-badge{background:#f4dbc2;color:#a16836}
+.vector-mode .p1 .health-track>div{background:#e9a36c}
+.vector-mode .p2 .player-badge{background:#ddebdc;color:#557c64}
+.vector-mode .p2 .health-track>div{background:#85c29a}
+.vector-mode .p1 .stamina-track>div{background:#edc69d}
+.vector-mode .p2 .stamina-track>div{background:#b7d0ad}
+.vector-mode .score{color:#997044;white-space:nowrap;flex-shrink:0}
+.vector-mode .p2 .score{color:#658c71}
+.vector-mode .control-line .wide-key{min-width:48px;font-size:8px}
+.vector-controls{display:none;align-items:center;justify-content:space-between;gap:9px;padding:13px 15px;background:#ecefdf;border-top:1px solid #d5ddcb;touch-action:none;user-select:none;-webkit-user-select:none}
+.vector-pad{--pad-x:0px;--pad-y:0px;position:relative;display:grid;place-items:center;width:88px;height:88px;flex:0 0 88px;border:1px solid #bacbb2;background:radial-gradient(circle,#dae2cf 0 36%,#e5ead9 37% 59%,#d9e1ce 60%);border-radius:50%;touch-action:none;cursor:grab}
+.vector-pad span{position:absolute;top:8px;font:7px var(--mono);letter-spacing:1px;color:#61785c}
+.vector-pad i{width:28px;height:28px;background:#b6c7a7;border:1px solid #94aa82;box-shadow:0 2px 0 #829773;border-radius:50%;transform:translate(var(--pad-x),var(--pad-y));pointer-events:none}
+.vector-pad b{position:absolute;bottom:6px;color:#96a88c;font:12px var(--mono);pointer-events:none}
+.vector-pad.is-held i{background:#aac18f}
+.vector-touch-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;max-width:225px;flex:1}
+.vector-touch-actions button{min-width:0;min-height:35px;border:1px solid #adbea0;border-radius:4px;background:#f7f7eb;color:#5b7451;padding:8px 6px;font:8px var(--mono);letter-spacing:.2px;touch-action:none;user-select:none}
+.vector-touch-actions button[data-vector-action=fire]{background:#edbd91;border-color:#d89b64;color:#775336}
+.vector-touch-actions button.is-held{background:#b2c49e;border-color:#7f9970;color:#2d482a;transform:translateY(1px)}
+.vector-mode .room-overlay.fight h2{color:#f2bf8a;font-size:42px}
+@media(pointer:coarse),(max-width:800px){.vector-mode .vector-controls{display:flex}}
+@media(max-width:480px){.vector-controls{padding:10px 8px;gap:6px}.vector-pad{width:78px;height:78px;flex-basis:78px}.vector-touch-actions{gap:5px}.vector-touch-actions button{min-height:32px;font-size:7px;padding:7px 3px}.vector-mode .player-detail{gap:4px}.vector-mode .player-detail>span{letter-spacing:0;font-size:6px}.vector-mode .stamina-track{min-width:12px}.vector-mode .stage-label{font-size:5px;bottom:7px}}
+@media(max-width:350px){.vector-pad{width:68px;height:68px;flex-basis:68px}.vector-pad span{top:6px;font-size:6px}.vector-pad i{width:25px;height:25px}.vector-pad b{bottom:4px}.vector-mode .player-heading{gap:3px}.vector-mode .score{font-size:10px}}

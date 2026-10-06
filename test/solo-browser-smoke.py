@@ -58,19 +58,19 @@ def number_text(page, selector):
 
 
 def check_catalog(page):
-    assert page.locator("[data-create-game]").count() == 7
-    assert page.locator("[data-play-solo]").count() == 5
-    assert page.locator("[data-create-game]:visible").count() == 7
-    assert page.locator("[data-play-solo]:visible").count() == 5
+    assert page.locator("[data-create-game]").count() == 8
+    assert page.locator("[data-play-solo]").count() == 7
+    assert page.locator("[data-create-game]:visible").count() == 8
+    assert page.locator("[data-play-solo]:visible").count() == 7
     page.locator('[data-filter="friends"]').click()
-    assert page.locator("[data-create-game]:visible").count() == 7
+    assert page.locator("[data-create-game]:visible").count() == 8
     assert page.locator("[data-play-solo]:visible").count() == 0
     page.locator('[data-filter="solo"]').click()
     assert page.locator("[data-create-game]:visible").count() == 0
-    assert page.locator("[data-play-solo]:visible").count() == 5
+    assert page.locator("[data-play-solo]:visible").count() == 7
     page.locator('[data-filter="all"]').click()
-    assert page.locator("[data-create-game]:visible").count() == 7
-    assert page.locator("[data-play-solo]:visible").count() == 5
+    assert page.locator("[data-create-game]:visible").count() == 8
+    assert page.locator("[data-play-solo]:visible").count() == 7
 
 
 def preview_mobile(page, game):
@@ -121,8 +121,14 @@ def verify_persistent_best(page, context, game, best):
 
 
 def verify_browser_back(page, url, game):
+    # Real-time games may finish while a fresh-tab record check is in progress.
+    # Start a real new run so history restoration exercises active pause controls.
+    if state(page)["phase"] in ("won", "lost"):
+        page.locator("#solo-restart").click()
+        wait_phase(page, "playing")
     if state(page)["phase"] == "playing":
         page.locator("#solo-pause").click()
+        wait_phase(page, "paused")
     before = state(page)
     page.locator(".solo-back").click()
     page.wait_for_url(url + "/")

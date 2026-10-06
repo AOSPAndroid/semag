@@ -11,6 +11,7 @@ import * as Afterimage from './public/engine.js';
 import * as Checkers from './public/checkers-engine.js';
 import * as Topdown from './public/topdown-engine.js';
 import * as Cards from './public/cards-engine.js';
+import * as Vector from './public/vector-engine.js';
 
 const TICK_RATE = 120;
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -30,9 +31,22 @@ const GAMES = {
   'crazy-eights': { title: 'Crazy Eights', engine: Cards, makeState: () => Cards.createState('crazy-eights'), inputKeys: [], viewForPlayer: Cards.viewForPlayer },
   'twenty-one': { title: '21 Duel', engine: Cards, makeState: () => Cards.createState('twenty-one'), inputKeys: [], viewForPlayer: Cards.viewForPlayer },
   memory: { title: 'Memory Match', engine: Cards, makeState: () => Cards.createState('memory'), inputKeys: [], viewForPlayer: Cards.viewForPlayer },
+  'vector-arena': {
+    title: 'Vector Arena', engine: Vector, makeState: () => Vector.createState(), inputKeys: Vector.INPUT_KEYS,
+    numericControls: { aimX: { min: -1, max: 1, default: 1 }, aimY: { min: -1, max: 1, default: 0 } },
+  },
 };
 const cleanName = (name, maximum) => name.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, maximum);
-const freshInput = room => Object.fromEntries(room.adapter.inputKeys.map(key => [key, false]));
+const freshInput = room => ({
+  ...Object.fromEntries(room.adapter.inputKeys.map(key => [key, false])),
+  ...Object.fromEntries(Object.entries(room.adapter.numericControls || {}).map(([key, limits]) => [key, limits.default])),
+});
+function validControl(adapter, key, value) {
+  if (adapter.inputKeys.includes(key)) return typeof value === 'boolean';
+  if (!Object.hasOwn(adapter.numericControls || {}, key)) return false;
+  const limits = adapter.numericControls[key];
+  return typeof value === 'number' && Number.isFinite(value) && value >= limits.min && value <= limits.max;
+}
 const isFile = filename => stat(filename).then(info => info.isFile(), () => false);
 
 function json(res, status, data, head = false) {
@@ -362,14 +376,17 @@ export function createServer(options = {}) {
         if (!room.adapter.inputKeys.length) { error(ws, room.gameId === 'checkers' ? 'Checkers uses board moves instead of realtime controls.' : 'Card games use card actions instead of realtime controls.'); return; }
         if (!Number.isSafeInteger(data.seq) || data.seq < 0 || data.seq > 1_000_000_000) { error(ws, 'Invalid input sequence.'); return; }
         if (!data.buttons || typeof data.buttons !== 'object' || Array.isArray(data.buttons) ||
-            Object.keys(data.buttons).some(key => !room.adapter.inputKeys.includes(key) || typeof data.buttons[key] !== 'boolean')) {
-          error(ws, 'Input buttons must contain only valid boolean controls for this game.'); return;
+            Object.keys(data.buttons).some(key => !validControl(room.adapter, key, data.buttons[key]))) {
+          error(ws, room.adapter.numericControls ? 'Use boolean controls and finite aim components between -1 and 1.' : 'Input buttons must contain only valid boolean controls for this game.'); return;
         }
         if (data.seq <= slot.lastAccepted) return;
         if (data.seq - slot.lastAccepted > 600) { error(ws, 'Input sequence is too far ahead.'); return; }
         if (slot.queue.length >= 60) { error(ws, 'Input queue is full.'); return; }
         const buttons = freshInput(room);
         for (const key of room.adapter.inputKeys) buttons[key] = data.buttons[key] === true;
+        for (const key of Object.keys(room.adapter.numericControls || {})) {
+          if (Object.hasOwn(data.buttons, key)) buttons[key] = data.buttons[key];
+        }
         slot.queue.push({ seq: data.seq, buttons }); slot.lastAccepted = data.seq; slot.lastInputTime = now;
       } else error(ws, 'Unknown message type.');
     });

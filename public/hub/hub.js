@@ -15,7 +15,7 @@ document.querySelectorAll('[data-play-solo]').forEach(button => button.addEventL
   if (GAMES[gameId]?.kind !== 'solo') return;
   updateName(); location.href = soloUrl(gameId);
 }));
-const matchesFilter = (game, filter) => filter === 'all' || (filter === 'driving' ? game?.genre === 'driving' : (game?.kind === 'solo') === (filter === 'solo'));
+const matchesFilter = (game, filter) => filter === 'all' || (['driving', 'action'].includes(filter) ? game?.genre === filter : (game?.kind === 'solo') === (filter === 'solo'));
 document.querySelectorAll('[data-filter]').forEach(button => {
   const filter = button.dataset.filter;
   button.querySelector('span').textContent = Object.values(GAMES).filter(game => matchesFilter(game, filter)).length;

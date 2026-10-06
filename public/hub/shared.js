@@ -1,8 +1,8 @@
 export const GAMES = {
-  'relic-duel': { title: 'Relic Duel', category: 'TOP-DOWN ARENA', kind: 'duel', icon: '⚔', description: 'Sword, shield, and a little quick thinking.', color: '#779868' },
+  'relic-duel': { title: 'Relic Duel', category: 'TOP-DOWN ARENA', kind: 'duel', genre: 'action', icon: '⚔', description: 'Sword, shield, and a little quick thinking.', color: '#779868' },
   'checkers': { title: 'Checkers', category: 'THE CLASSIC', kind: 'board', icon: '◉', description: 'Every move is a conversation.', color: '#a88e62' },
-  'dungeon-run': { title: 'Dungeon Run', category: 'CO-OP ADVENTURE', kind: 'coop', icon: '✦', description: 'Two adventurers. One way through.', color: '#748766' },
-  'afterimage': { title: 'Afterimage', category: 'SWORD FIGHTER', kind: 'duel', icon: '〃', description: 'A duel above the city.', color: '#667d7a' },
+  'dungeon-run': { title: 'Dungeon Run', category: 'CO-OP ADVENTURE', kind: 'coop', genre: 'action', icon: '✦', description: 'Two adventurers. One way through.', color: '#748766' },
+  'afterimage': { title: 'Afterimage', category: 'SWORD FIGHTER', kind: 'duel', genre: 'action', icon: '〃', description: 'A duel above the city.', color: '#667d7a' },
   'crazy-eights': { title: 'Crazy Eights', category: 'CARD CLASSIC', kind: 'cards', icon: '♠', description: 'Match the suit. Change the game.', color: '#577e68' },
   'twenty-one': { title: '21 Duel', category: 'BLACKJACK-STYLE DUEL', kind: 'cards', icon: '♦', description: 'Push your luck. Know when to stand.', color: '#b17b57' },
   'memory': { title: 'Memory Match', category: 'CARD MEMORY GAME', kind: 'cards', icon: '♣', description: 'Remember a face. Find its match.', color: '#79898d' },
@@ -11,6 +11,9 @@ export const GAMES = {
   '2048': { title: '2048', category: 'SOLO PUZZLE', kind: 'solo', icon: '▦', description: 'Slide, combine, and think ahead.', color: '#bf9764' },
   'apex-circuit': { title: 'Apex Circuit', category: 'DRIVING / TIME TRIAL', kind: 'solo', genre: 'driving', icon: '◎', description: 'Find the line. Make every lap count.', color: '#82916b' },
   'night-drive': { title: 'Night Drive', category: 'DRIVING / HIGHWAY', kind: 'solo', genre: 'driving', icon: '▰', description: 'The city is yours for one more mile.', color: '#637e81' },
+  'vector-arena': { title: 'Vector Arena', category: 'PRECISION SHOOTER', kind: 'duel', genre: 'action', icon: '⌖', description: 'Lead the shot. Control the angle. Win the duel.', color: '#5b827c' },
+  'prism-shift': { title: 'Prism Shift', category: 'FALLING BLOCKS', kind: 'solo', genre: 'puzzle', icon: '▥', description: 'Build the stack. Find the spin. Keep your rhythm.', color: '#8c7e9c' },
+  'rift-survivor': { title: 'Rift Survivor', category: 'SURVIVAL ARENA', kind: 'solo', genre: 'action', icon: '✧', description: 'Read the pattern. Choose your build. Survive the rift.', color: '#7c7975' },
 };
 export function soloUrl(gameId) {
   return `/solo.html?game=${encodeURIComponent(gameId)}`;
