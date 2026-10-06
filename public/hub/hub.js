@@ -1,4 +1,5 @@
 import { GAMES, roomUrl, soloUrl, getName, saveName, hostInfo, copyText } from './shared.js';
+import { setText, toggleClass } from './dom.js';
 const $ = (id) => document.getElementById(id);
 $('nav-game-count').textContent = String(Object.keys(GAMES).length).padStart(2, '0');
 $('library-game-count').textContent = Object.keys(GAMES).length;
@@ -50,8 +51,12 @@ document.querySelectorAll('[data-create-game]').forEach(button => button.addEven
     location.href = roomUrl(data.room);
   } catch (e) { error(e.message || 'Could not reach your host.'); creating = false; button.firstChild.textContent = 'Create room '; document.querySelectorAll('[data-create-game]').forEach(b => { b.disabled = false; }); }
 }));
+let roomSignature = null;
 function renderRooms() {
-  $('nav-room-count').textContent = rooms.length;
+  const signature = JSON.stringify(rooms);
+  if (signature === roomSignature) return;
+  roomSignature = signature;
+  setText($('nav-room-count'), rooms.length);
   const list = $('rooms-list');
   if (!rooms.length) { list.innerHTML = emptyRooms; return; }
   list.replaceChildren();
@@ -69,12 +74,18 @@ function renderRooms() {
     row.append(icon, description, join); list.append(row);
   }
 }
-async function refreshRooms() {
-  try {
-    const response = await fetch('/api/rooms'); if (!response.ok) throw new Error();
-    const data = await response.json(); rooms = data.rooms || []; renderRooms();
-    $('host-status').textContent = 'Host is online'; $('host-dot').classList.add('online');
-  } catch { $('host-status').textContent = 'Host unavailable'; $('host-dot').classList.remove('online'); }
+let roomRequest = null;
+function refreshRooms() {
+  if (roomRequest) return roomRequest;
+  roomRequest = (async () => {
+    try {
+      const response = await fetch('/api/rooms'); if (!response.ok) throw new Error();
+      const data = await response.json(); rooms = data.rooms || []; renderRooms();
+      setText($('host-status'), 'Host is online'); toggleClass($('host-dot'), 'online', true);
+    } catch { setText($('host-status'), 'Host unavailable'); toggleClass($('host-dot'), 'online', false); }
+    finally { roomRequest = null; }
+  })();
+  return roomRequest;
 }
 $('join-form').addEventListener('submit', async (event) => {
   event.preventDefault(); updateName(); $('join-error').hidden = true;
@@ -92,7 +103,8 @@ $('join-form').addEventListener('submit', async (event) => {
 });
 $('copy-hub').addEventListener('click', async () => { try { await copyText(origin); toast('Hub address copied. Bring a friend.'); } catch (e) { toast(e.message); } });
 hostInfo().then(info => { origin = info.origin; $('hub-address').textContent = origin; $('hub-download').hidden = !info.downloadAvailable; }).catch(() => { $('hub-address').textContent = origin; });
-refreshRooms(); setInterval(refreshRooms, 2000);
+refreshRooms(); setInterval(() => { if (!document.hidden) refreshRooms(); }, 2000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshRooms(); });
 
 // Action and board previews use the games' own renderers.
 async function drawPreviews() {

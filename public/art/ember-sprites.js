@@ -2,10 +2,19 @@
 const INK = '#162b2b';
 const GOLD = '#e4b778';
 const CREAM = '#ffe4ad';
+const pixelPaths=new Map();
+const MAX_PIXEL_PATHS=512;
+let batchActorPixels=false;
 function block(ctx, x, y, w, h, color) {
   ctx.fillStyle = color; ctx.fillRect(Math.round(x / 2) * 2, Math.round(y / 2) * 2, Math.max(2, Math.round(w / 2) * 2), Math.max(2, Math.round(h / 2) * 2));
 }
 function shape(ctx, points, color) {
+  // Actor coordinates are snapped to the same two-pixel grid as these rectangles.
+  // A cached compound path preserves that geometry while batching scanline fills.
+  const key=batchActorPixels?points.join(';'):null;
+  let path=key===null?null:pixelPaths.get(key);
+  if(path){pixelPaths.delete(key);pixelPaths.set(key,path);ctx.fillStyle=color;ctx.fill(path);return;}
+  if(key!==null)path=new Path2D();
   const min = Math.floor(Math.min(...points.map(p => p[1])) / 2) * 2, max = Math.ceil(Math.max(...points.map(p => p[1])) / 2) * 2;
   ctx.fillStyle = color;
   for (let y = min; y < max; y += 2) {
@@ -15,8 +24,12 @@ function shape(ctx, points, color) {
       if ((a[1] <= y + 1 && b[1] > y + 1) || (b[1] <= y + 1 && a[1] > y + 1)) hits.push(a[0] + (y + 1 - a[1]) * (b[0] - a[0]) / (b[1] - a[1]));
     }
     hits.sort((a, b) => a - b);
-    for (let i = 0; i + 1 < hits.length; i += 2) ctx.fillRect(Math.round(hits[i] / 2) * 2, y, Math.max(2, Math.round((hits[i + 1] - hits[i]) / 2) * 2), 2);
+    for (let i = 0; i + 1 < hits.length; i += 2) {
+      const x=Math.round(hits[i]/2)*2,width=Math.max(2,Math.round((hits[i+1]-hits[i])/2)*2);
+      if(path)path.rect(x,y,width,2);else ctx.fillRect(x,y,width,2);
+    }
   }
+  if(path){pixelPaths.set(key,path);if(pixelPaths.size>MAX_PIXEL_PATHS)pixelPaths.delete(pixelPaths.keys().next().value);ctx.fill(path);}
 }
 function seam(ctx, points, color, width = 2) {
   for (let i = 1; i < points.length; i++) {
@@ -107,11 +120,14 @@ function stag(ctx,a,t) {
   shape(ctx,[[-40,-10],[-27,-25],[12,-25],[32,-17],[41,5],[30,18],[-24,18],[-43,5]],INK);shape(ctx,[[-36,-8],[-25,-21],[10,-21],[28,-14],[36,4],[27,12],[-22,13],[-37,3]],'#789daf');
   shape(ctx,[[-28,-16],[-10,-20],[14,-18],[24,-10],[6,-7],[-18,-8]],'#b1ced0');seam(ctx,[[-26,-12],[-12,-5],[7,-8],[27,4]],'#4a738b',4);
   for(const[x,y]of[[-27,-21],[-10,-24],[9,-22],[25,-14]]){shape(ctx,[[x-6,y+5],[x-3,y-9],[x+3,y-18],[x+7,y-4],[x+4,y+6]],'#a8c9d1');seam(ctx,[[x+3,y-14],[x+2,y+1]],'#e2ece0',2);}
+  // Keep separately rasterized scanlines under the fractional head transform.
+  // A compound path changes edge antialiasing when this bob falls between pixels.
+  const previousHeadBatch=batchActorPixels;batchActorPixels=false;
   ctx.save();ctx.translate(dx*11,-4+bob);
   shape(ctx,[[-16,-21],[-10,-35],[12,-35],[19,-20],[13,-6],[0,2],[-13,-5]],INK);shape(ctx,[[-12,-21],[-8,-31],[9,-31],[14,-20],[10,-9],[0,-3],[-10,-8]],'#b9d1d0');
   shape(ctx,[[-10,-18],[0,-24],[12,-18],[8,-6],[0,-2],[-8,-6]],'#638b9e');eye(ctx,-9,-17,'#fff4c3');eye(ctx,6,-17,'#fff4c3');block(ctx,-4,-5,8,4,INK);
   for(const side of [-1,1]){seam(ctx,[[side*10,-28],[side*17,-45],[side*14,-61]],'#d0ded5',6);seam(ctx,[[side*17,-43],[side*28,-52],[side*31,-66]],'#bed8d7',4);seam(ctx,[[side*15,-53],[side*24,-60],[side*22,-72]],'#a3c6cb',4);seam(ctx,[[side*14,-61],[side*8,-67],[side*9,-76]],'#e3e9db',2);}
-  block(ctx,-3,-28,6,5,'#ffe3a5');ctx.restore();
+  block(ctx,-3,-28,6,5,'#ffe3a5');ctx.restore();batchActorPixels=previousHeadBatch;
   shape(ctx,[[-37,-11],[-48,-21],[-48,-8],[-39,1]],'#b6d3d0');
 }
 function queen(ctx,a,t) {
@@ -127,6 +143,8 @@ function queen(ctx,a,t) {
   shape(ctx,[[-13,-23],[0,-17],[13,-23],[8,-13],[-8,-13]],'#e5bd85');block(ctx,-3,-16,6,8,'#fff0bb');
 }
 export function drawEmberActor(ctx, actor, act, time, walking = false) {
+  const previousBatch=batchActorPixels;batchActorPixels=typeof Path2D!=='undefined';
+  try{
   ctx.save();ctx.translate(Math.round(actor.x/2)*2,Math.round(actor.y/2)*2);ctx.imageSmoothingEnabled=false;
   if(actor.type==='hero')adventurer(ctx,actor,time,walking);
   else if(actor.boss){if(act===1)warden(ctx,actor,time);else if(act===2)stag(ctx,actor,time);else queen(ctx,actor,time);}
@@ -134,6 +152,7 @@ export function drawEmberActor(ctx, actor, act, time, walking = false) {
   else if(actor.type==='archer')archer(ctx,actor,time);
   else armored(ctx,actor,time,actor.type==='sentinel');
   ctx.restore();
+  }finally{batchActorPixels=previousBatch;}
 }
 export function drawEmberProjectile(ctx, p, time) {
   const angle=Math.atan2(p.vy,p.vx),friendly=p.owner==='player';ctx.save();ctx.translate(p.x,p.y);ctx.rotate(angle);

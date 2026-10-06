@@ -11,6 +11,10 @@ const KEY_CONTROLS = {
 };
 const isForm = target => target instanceof Element && Boolean(target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"])'));
 const copy = value => JSON.parse(JSON.stringify(value));
+const textIfChanged = (element, value) => { if (element.textContent !== value) element.textContent = value; };
+const attrIfChanged = (element, name, value) => { if (element.getAttribute(name) !== value) element.setAttribute(name, value); };
+const dataIfChanged = (element, name, value) => { if (element.dataset[name] !== value) element.dataset[name] = value; };
+const propIfChanged = (element, name, value) => { if (element[name] !== value) element[name] = value; };
 const UPGRADE_ART = {
   repair: { category: 'RECOVERY', path: 'M13 6h6v7h7v6h-7v7h-6v-7H6v-6h7z' },
   damage: { category: 'FIREPOWER', path: 'M13 4h6v3h3v17h-3v4h-6v-4h-3V7h3zM7 10H4v12h3zm21 0h-3v12h3z' },
@@ -49,7 +53,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   let state = createState();
   let difficulty = 'standard';
   let destroyed = false;
-  let raf;
+  let raf = null;
   let previousFrame = null;
   let accumulator = 0;
   let lastPublished = -Infinity;
@@ -64,6 +68,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   let fragments = [];
   let enemyFlashes = [];
   let upgradeSignature = '';
+  let buildSignature = null;
   let aimPoint = null;
   let aimVector = { x: 1, y: 0 };
   let dashQueued = false;
@@ -171,7 +176,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     pad.append(node('i', 'rift-stick-axis rift-stick-axis-x'), node('i', 'rift-stick-axis rift-stick-axis-y'), knob);
     group.append(pad, node('b', '', label), node('small', '', subtitle));
     controls.append(group);
-    sticks.set(id, { pad, knob });
+      sticks.set(id, { pad, knob, travel: 0, transform: null });
   }
   const actions = node('div', 'rift-actions');
   const buttons = new Map();
@@ -196,6 +201,19 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   const coverLayers = SECTORS.map(() => {
     const layer = document.createElement('canvas'); layer.width = W; layer.height = H; return layer;
   });
+  // Integer gait positions keep the authored pixel poses while reusing their
+  // body paint: at most 20 enemy textures and two pilot armor textures.
+  const enemyBodyLayers = new Map();
+  const playerArmorLayers = new Map();
+  let enemyDrawOrder = [];
+  let enemyOrderDirty = true;
+  function bodyLayer(paint) {
+    const layer = document.createElement('canvas'); layer.width = 128; layer.height = 128;
+    const display = ctx;
+    ctx = layer.getContext('2d'); ctx.translate(64, 64); ctx.scale(2, 2);
+    paint(); ctx = display;
+    return layer;
+  }
 
   function input() {
     const result = { up: false, down: false, left: false, right: false, fire: fireQueued, dash: dashQueued };
@@ -223,16 +241,17 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   function syncControls() {
     const held = input();
     for (const [id, button] of buttons) {
-      button.dataset.held = String(held[id]);
-      button.setAttribute('aria-pressed', String(held[id]));
+      dataIfChanged(button, 'held', String(held[id]));
+      attrIfChanged(button, 'aria-pressed', String(held[id]));
     }
-    for (const [id, { pad, knob }] of sticks) {
+    for (const [id, stick] of sticks) {
+      const { pad, knob } = stick;
       const value = stickValues[id];
       const active = Math.hypot(value.x, value.y) > .16;
-      pad.dataset.held = String(active);
-      pad.setAttribute('aria-pressed', String(active));
-      const travel = pad.getBoundingClientRect().width * .24;
-      knob.style.transform = `translate(${value.x * travel}px, ${value.y * travel}px)`;
+      dataIfChanged(pad, 'held', String(active));
+      attrIfChanged(pad, 'aria-pressed', String(active));
+      const transform = `translate(${value.x * stick.travel}px, ${value.y * stick.travel}px)`;
+      if (transform !== stick.transform) { knob.style.transform = transform; stick.transform = transform; }
     }
   }
   function releaseControls() {
@@ -282,9 +301,12 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       }
     }
     const awaiting = state.phase === 'upgrade' || state.phase === 'paused' && state.pausedPhase === 'upgrade';
-    upgradePanel.hidden = !awaiting;
-    riskInput.disabled = state.phase !== 'upgrade';
-    for (const button of upgradeChoices.children) button.disabled = state.phase !== 'upgrade';
+    propIfChanged(upgradePanel, 'hidden', !awaiting);
+    propIfChanged(riskInput, 'disabled', state.phase !== 'upgrade');
+    for (const button of upgradeChoices.children) propIfChanged(button, 'disabled', state.phase !== 'upgrade');
+    const signatureBuild = Object.entries(state.upgrades).map(([id, count]) => `${id}:${count}`).join('|');
+    if (signatureBuild === buildSignature) return;
+    buildSignature = signatureBuild;
     build.replaceChildren(node('span', 'rift-build-label', `BUILD · ${Object.values(state.upgrades).reduce((sum, count) => sum + count, 0)} / 19`));
     const chosen = Object.entries(state.upgrades).filter(([, count]) => count > 0);
     if (!chosen.length) build.append(node('span', 'rift-build-empty', 'Make your first choice after wave 1.'));
@@ -305,21 +327,21 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     if (changedPhase) releaseControls();
     lastPublished = state.elapsed;
     lastPhase = state.phase;
-    view.dataset.phase = state.phase;
-    view.dataset.wave = String(state.wave);
-    view.dataset.health = String(Math.round(state.player.hp));
-    view.dataset.sector = String(state.sector);
-    view.dataset.difficulty = state.difficulty;
-    sector.textContent = `SECTOR ${String(state.sector + 1).padStart(2, '0')}`;
-    tierDetail.textContent = state.waveRisk ? 'OVERCHARGED · +35% points' : DIFFICULTIES[state.difficulty].description;
+    dataIfChanged(view, 'phase', state.phase);
+    dataIfChanged(view, 'wave', String(state.wave));
+    dataIfChanged(view, 'health', String(Math.round(state.player.hp)));
+    dataIfChanged(view, 'sector', String(state.sector));
+    dataIfChanged(view, 'difficulty', state.difficulty);
+    textIfChanged(sector, `SECTOR ${String(state.sector + 1).padStart(2, '0')}`);
+    textIfChanged(tierDetail, state.waveRisk ? 'OVERCHARGED · +35% points' : DIFFICULTIES[state.difficulty].description);
     sectorBadges.forEach((badge, index) => {
-      badge.dataset.current = String(index === state.sector);
-      badge.dataset.cleared = String(state.wavesCleared >= (index + 1) * 5);
-      badge.setAttribute('aria-label', `${SECTORS[index].name}: ${state.wavesCleared >= (index + 1) * 5 ? 'cleared' : index === state.sector ? 'current sector' : 'ahead'}`);
+      dataIfChanged(badge, 'current', String(index === state.sector));
+      dataIfChanged(badge, 'cleared', String(state.wavesCleared >= (index + 1) * 5));
+      attrIfChanged(badge, 'aria-label', `${SECTORS[index].name}: ${state.wavesCleared >= (index + 1) * 5 ? 'cleared' : index === state.sector ? 'current sector' : 'ahead'}`);
     });
-    waveLabel.textContent = `WAVE ${String(state.wave).padStart(2, '0')} / ${TOTAL_WAVES}`;
+    textIfChanged(waveLabel, `WAVE ${String(state.wave).padStart(2, '0')} / ${TOTAL_WAVES}`);
     const eliteCount = state.enemies.filter(enemy => enemy.elite).length;
-    enemyLabel.textContent = state.phase === 'upgrade' ? 'ALL CLEAR' : `${state.enemies.length} HOSTILES${eliteCount ? ` · ${eliteCount} ELITE` : ''}`;
+    textIfChanged(enemyLabel, state.phase === 'upgrade' ? 'ALL CLEAR' : `${state.enemies.length} HOSTILES${eliteCount ? ` · ${eliteCount} ELITE` : ''}`);
     const values = {
       health: [state.player.hp, state.player.maxHp, `${Math.ceil(state.player.hp)} / ${state.player.maxHp}`],
       stamina: [state.player.stamina, state.player.maxStamina, `${Math.round(state.player.stamina)} / ${state.player.maxStamina}`],
@@ -327,20 +349,21 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     };
     for (const [id, [value, max, label]] of Object.entries(values)) {
       const meter = meterNodes[id];
-      meter.value.textContent = label;
-      meter.fill.style.width = `${clamp(value / max, 0, 1) * 100}%`;
-      meter.rail.setAttribute('aria-valuemax', String(max));
-      meter.rail.setAttribute('aria-valuenow', String(Math.round(value)));
+      textIfChanged(meter.value, label);
+      const width = `${Math.round(clamp(value / max, 0, 1) * 10000) / 100}%`;
+      if (meter.fill.style.width !== width) meter.fill.style.width = width;
+      attrIfChanged(meter.rail, 'aria-valuemax', String(max));
+      attrIfChanged(meter.rail, 'aria-valuenow', String(Math.round(value)));
     }
-    meterNodes.heat.rail.dataset.hot = String(state.player.overheated);
+    dataIfChanged(meterNodes.heat.rail, 'hot', String(state.player.overheated));
     const detail = details();
     if (status.textContent !== detail) status.textContent = detail;
-    overlay.hidden = state.phase === 'playing';
+    propIfChanged(overlay, 'hidden', state.phase === 'playing');
     if (!overlay.hidden) {
-      overlayEyebrow.textContent = { paused: 'HOLD YOUR POSITION', upgrade: 'A MOMENT BETWEEN WAVES', won: 'THE RIFT IS SEALED', lost: 'ONE MORE RUN' }[state.phase];
-      overlayTitle.textContent = { paused: 'Take a breather.', upgrade: 'Wave cleared.', won: 'You held the line.', lost: 'The rift fought back.' }[state.phase];
-      overlayDetail.textContent = state.phase === 'paused' ? 'Press P or Resume to continue.' : state.phase === 'upgrade' ? 'Choose your next upgrade below.' : `${state.score} POINTS · ${state.kills} ENEMIES CLEARED`;
-      replay.hidden = state.phase === 'paused' || state.phase === 'upgrade';
+      textIfChanged(overlayEyebrow, { paused: 'HOLD YOUR POSITION', upgrade: 'A MOMENT BETWEEN WAVES', won: 'THE RIFT IS SEALED', lost: 'ONE MORE RUN' }[state.phase]);
+      textIfChanged(overlayTitle, { paused: 'Take a breather.', upgrade: 'Wave cleared.', won: 'You held the line.', lost: 'The rift fought back.' }[state.phase]);
+      textIfChanged(overlayDetail, state.phase === 'paused' ? 'Press P or Resume to continue.' : state.phase === 'upgrade' ? 'Choose your next upgrade below.' : `${state.score} POINTS · ${state.kills} ENEMIES CLEARED`);
+      propIfChanged(replay, 'hidden', state.phase === 'paused' || state.phase === 'upgrade');
     }
     updateUpgrades();
     onUpdate({ phase: state.phase === 'upgrade' ? 'playing' : state.phase, score: state.score, record: state.score,
@@ -689,10 +712,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     ctx.rotate(face); polygon([[enemy.radius - 4, -3], [enemy.radius + 2, 0], [enemy.radius - 4, 3]], '#fff0bd');
     ctx.restore();
   }
-  function enemySprite(enemy) {
-    const x = Math.round(enemy.x); const y = Math.round(enemy.y);
-    const r = enemy.radius;
-    circle(x + 4, y + 6, r + 2, '#10282d');
+  function paintEnemyBody(enemy, x, y) {
     const winding = enemy.phase === 'windup';
     if (enemy.type === 'boss') {
       guardianSprite(enemy, x, y);
@@ -717,7 +737,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     } else if (enemy.type === 'weaver') {
       ctx.save(); ctx.translate(x, y); ctx.rotate(Math.atan2(enemy.aimY, enemy.aimX));
       polygon([[-17, -10], [-4, -13], [16, 0], [-4, 13], [-17, 10], [-10, 0]], winding ? '#bce4dc' : '#68a49b');
-      const wing = reducedMotion.matches ? 0 : Math.sin(state.elapsed * 9 + enemy.id) * 2;
+      const wing = enemy.spritePose;
       for (const sign of [-1, 1]) {
         polygon([[-9, sign * 8], [-20, sign * (16 + wing)], [-5, sign * (22 + wing)], [5, sign * 9]], '#386b70');
         line(-14, sign * (15 + wing), -5, sign * (18 + wing), '#9ed9c7', 2);
@@ -738,9 +758,9 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       ctx.restore();
     } else {
       ctx.save(); ctx.translate(x, y);
-      const facing = winding ? Math.atan2(enemy.aimY, enemy.aimX) : Math.atan2(state.player.y - y, state.player.x - x);
+      const facing = 0;
       ctx.rotate(facing);
-      const stride = reducedMotion.matches || enemy.phase !== 'seeking' ? 0 : Math.sin(state.elapsed * 15 + enemy.id) * 2;
+      const stride = enemy.spritePose;
       for (const sign of [-1, 1]) {
         rect(-10 + sign * stride, sign * 10 - 2, 5, 8, '#855454');
         rect(-4 - sign * stride, sign * 12 - 2, 5, 7, '#c98b78');
@@ -757,6 +777,28 @@ export function mount(container, { onUpdate = () => {} } = {}) {
         line(-9, sign * 10, -2, sign * 12, '#f0c5a8', 2);
       }
       ctx.restore();
+    }
+  }
+  function enemySprite(enemy) {
+    const x = Math.round(enemy.x); const y = Math.round(enemy.y);
+    const r = enemy.radius;
+    circle(x + 4, y + 6, r + 2, '#10282d');
+    if (enemy.boss) guardianSprite(enemy, x, y);
+    else {
+      const winding = enemy.phase === 'windup';
+      const facing = enemy.type === 'chaser' && !winding
+        ? Math.atan2(state.player.y - y, state.player.x - x) : Math.atan2(enemy.aimY, enemy.aimX);
+      const pose = reducedMotion.matches ? 0 : enemy.type === 'weaver'
+        ? Math.round(Math.sin(state.elapsed * 9 + enemy.id) * 2)
+        : enemy.type === 'chaser' && enemy.phase === 'seeking' ? Math.round(Math.sin(state.elapsed * 15 + enemy.id) * 2) : 0;
+      const key = `${enemy.type}:${winding}:${pose}`;
+      let layer = enemyBodyLayers.get(key);
+      if (!layer) {
+        layer = bodyLayer(() => paintEnemyBody({ ...enemy, aimX: 1, aimY: 0, spritePose: pose }, 0, 0));
+        enemyBodyLayers.set(key, layer);
+      }
+      ctx.save(); ctx.translate(x, y); ctx.rotate(facing); ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(layer, -32, -32, 64, 64); ctx.restore();
     }
     if (enemy.elite) {
       const eliteColor = { swift: '#87d1cb', armored: '#f2cd87', volatile: '#ed9b8d' }[enemy.affix];
@@ -777,6 +819,18 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       rect(x - barWidth / 2, y - r - (enemy.type === 'boss' ? 25 : 11), barWidth * clamp(enemy.hp / enemy.maxHp, 0, 1), 4, enemy.type === 'boss' ? '#e7a5c0' : '#e2ac80');
     }
   }
+  function paintPlayerArmor(color) {
+    polygon([[-13, -6], [-6, -12], [6, -11], [12, -5], [12, 5], [6, 11], [-6, 12], [-13, 6]], '#16333a');
+    rect(-12, -5, 7, 10, '#7a8b80'); rect(-11, -4, 4, 2, '#dee0b4'); rect(-11, 2, 4, 2, '#deac75');
+    for (const sign of [-1, 1]) {
+      polygon([[-6, sign * 7], [-1, sign * 12], [8, sign * 9], [7, sign * 5]], color);
+      line(-2, sign * 9, 6, sign * 7, '#ffe0ad', 2);
+    }
+    polygon([[-4, -8], [7, -7], [12, -3], [12, 3], [7, 7], [-4, 8]], color);
+    polygon([[2, -5], [10, -4], [12, 0], [10, 4], [2, 5]], '#284d54');
+    line(6, -3, 10, -2, '#a5d9cf', 2); line(10, -2, 10, 2, '#e8f3d5', 2);
+    rect(-2, -7, 6, 2, '#ffdda2'); rect(-2, 5, 6, 2, '#b37451');
+  }
   function playerSprite(player, alpha = 1) {
     ctx.save(); ctx.globalAlpha = alpha;
     const x = Math.round(player.x); const y = Math.round(player.y);
@@ -788,16 +842,9 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     ctx.translate(x, y); ctx.rotate(angle);
     const stride = walking && !reducedMotion.matches ? Math.sin(gait) * 3 : 0;
     rect(-13 - stride, -10, 8, 6, '#182f32'); rect(-13 + stride, 4, 8, 6, '#182f32');
-    polygon([[-13, -6], [-6, -12], [6, -11], [12, -5], [12, 5], [6, 11], [-6, 12], [-13, 6]], '#16333a');
-    rect(-12, -5, 7, 10, '#7a8b80'); rect(-11, -4, 4, 2, '#dee0b4'); rect(-11, 2, 4, 2, '#deac75');
-    for (const sign of [-1, 1]) {
-      polygon([[-6, sign * 7], [-1, sign * 12], [8, sign * 9], [7, sign * 5]], color);
-      line(-2, sign * 9, 6, sign * 7, '#ffe0ad', 2);
-    }
-    polygon([[-4, -8], [7, -7], [12, -3], [12, 3], [7, 7], [-4, 8]], color);
-    polygon([[2, -5], [10, -4], [12, 0], [10, 4], [2, 5]], '#284d54');
-    line(6, -3, 10, -2, '#a5d9cf', 2); line(10, -2, 10, 2, '#e8f3d5', 2);
-    rect(-2, -7, 6, 2, '#ffdda2'); rect(-2, 5, 6, 2, '#b37451');
+    let armor = playerArmorLayers.get(color);
+    if (!armor) { armor = bodyLayer(() => paintPlayerArmor(color)); playerArmorLayers.set(color, armor); }
+    ctx.save(); ctx.imageSmoothingEnabled = true; ctx.drawImage(armor, -32, -32, 64, 64); ctx.restore();
     const recoil = player.fireCooldown > player.fireInterval * .75 ? 2 : 0;
     rect(8 - recoil, -4, 14, 8, '#284a4e'); rect(10 - recoil, -4, 11, 2, '#ecddb3');
     rect(14 - recoil, -2, 4, 4, player.overheated ? '#e69674' : '#8ebdb0');
@@ -875,7 +922,11 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       if (projectile.owner === 'enemy') circle(projectile.x, projectile.y, Math.max(1.5, projectile.radius - 2), '#fff0dc');
       else circle(projectile.x, projectile.y, 1.5, '#fff4d6');
     }
-    for (const enemy of [...state.enemies].sort((a, b) => a.y - b.y)) enemySprite(enemy);
+    if (enemyOrderDirty || enemyDrawOrder.length !== state.enemies.length) {
+      enemyDrawOrder = state.enemies.slice(); enemyOrderDirty = false;
+    }
+    enemyDrawOrder.sort((a, b) => a.y - b.y);
+    for (const enemy of enemyDrawOrder) enemySprite(enemy);
     playerSprite(state.player);
     for (const particle of particles) {
       ctx.globalAlpha = clamp(particle.life / particle.maxLife, 0, 1);
@@ -932,6 +983,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
         }
       }
       const isKill = event.type === 'kill' || event.type === 'enemy-killed';
+      if (isKill || event.type === 'wave') enemyOrderDirty = true;
       if (isKill) fragments.push({ x: event.x, y: event.y, angle: event.id * .73, life: .9,
         color: { chaser: '#bd8b79', ranged: '#a997b9', brute: '#c2a071', weaver: '#83b8a7', boss: '#d7b9c4' }[event.enemyType] || '#bd8b79' });
       if (isKill || event.type === 'hurt' || event.type === 'hit') {
@@ -947,16 +999,27 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     if (!reducedMotion.matches && state.player.dashTime > 0 && effectTime > .025) {
       ghosts.push({ ...state.player, life: .17 }); effectTime = 0;
     }
-    particles = particles.filter(particle => { particle.life -= dt; particle.x += particle.vx * dt; particle.y += particle.vy * dt; return particle.life > 0; }).slice(-160);
-    ghosts = ghosts.filter(ghost => { ghost.life -= dt; return ghost.life > 0; }).slice(-12);
-    rings = rings.filter(ring => { ring.life -= dt; return ring.life > 0; }).slice(-24);
-    hitMarkers = hitMarkers.filter(marker => { marker.life -= dt; return marker.life > 0; }).slice(-20);
-    arcs = arcs.filter(arc => { arc.life -= dt; return arc.life > 0; }).slice(-30);
-    fragments = fragments.filter(fragment => { fragment.life -= dt; return fragment.life > 0; }).slice(-16);
-    enemyFlashes = enemyFlashes.filter(flash => { flash.life -= dt; return flash.life > 0; }).slice(-30);
+    advanceEffects(particles, dt, 160, true);
+    advanceEffects(ghosts, dt, 12);
+    advanceEffects(rings, dt, 24);
+    advanceEffects(hitMarkers, dt, 20);
+    advanceEffects(arcs, dt, 30);
+    advanceEffects(fragments, dt, 16);
+    advanceEffects(enemyFlashes, dt, 30);
+  }
+  function advanceEffects(list, dt, maximum, moving = false) {
+    let write = 0;
+    for (const effect of list) {
+      effect.life -= dt;
+      if (moving) { effect.x += effect.vx * dt; effect.y += effect.vy * dt; }
+      if (effect.life > 0) list[write++] = effect;
+    }
+    list.length = write;
+    if (write > maximum) list.splice(0, write - maximum);
   }
   function frame(time) {
     if (destroyed) return;
+    raf = null;
     const dt = previousFrame === null ? 0 : clamp((time - previousFrame) / 1000, 0, .08);
     previousFrame = time;
     if (state.phase === 'playing') {
@@ -974,24 +1037,32 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     } else accumulator = 0;
     publish();
     draw();
-    raf = requestAnimationFrame(frame);
+    scheduleFrame();
+  }
+  function scheduleFrame() {
+    if (!destroyed && state.phase === 'playing' && raf === null) raf = requestAnimationFrame(frame);
+  }
+  function refresh() {
+    if (state.phase !== 'playing' && raf !== null) { cancelAnimationFrame(raf); raf = null; }
+    publish(true); draw(); scheduleFrame();
   }
   function togglePause() {
     if (destroyed) return;
     releaseControls();
     pauseState(state);
     previousFrame = null; accumulator = 0;
-    publish(true); draw();
+    refresh();
   }
   function restart() {
     if (destroyed) return;
     releaseControls();
     state = createState({ difficulty }); previousFrame = null; accumulator = 0;
+    enemyOrderDirty = true;
     lastEvent = -1; lastPublished = -Infinity; lastPhase = null;
-    particles = []; ghosts = []; rings = []; hitMarkers = []; arcs = []; fragments = []; enemyFlashes = []; effectTime = 0; upgradeSignature = '';
+    particles = []; ghosts = []; rings = []; hitMarkers = []; arcs = []; fragments = []; enemyFlashes = []; effectTime = 0; upgradeSignature = ''; buildSignature = null;
     gait = 0; walking = false; previousPlayer = { x: state.player.x, y: state.player.y };
     aimPoint = null; aimVector = { x: 1, y: 0 };
-    publish(true); draw(); canvas.focus({ preventScroll: true });
+    refresh(); canvas.focus({ preventScroll: true });
   }
   function keydown(event) {
     if (event.defaultPrevented || event.isComposing || event.ctrlKey || event.metaKey || event.altKey || isForm(event.target)) return;
@@ -1027,8 +1098,10 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     syncControls();
   }
   function stickPosition(event, id) {
-    const pad = sticks.get(id).pad;
+    const stick = sticks.get(id);
+    const pad = stick.pad;
     const box = pad.getBoundingClientRect();
+    stick.travel = box.width * .24;
     const radius = Math.max(1, box.width * .38);
     let x = (event.clientX - box.left - box.width / 2) / radius;
     let y = (event.clientY - box.top - box.height / 2) / radius;
@@ -1071,10 +1144,23 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     const result = chooseUpgrade(state, button.dataset.upgrade, { risk: riskInput.checked });
     if (!result.ok) return;
     previousFrame = null; accumulator = 0;
-    publish(true); draw(); canvas.focus({ preventScroll: true });
+    refresh(); canvas.focus({ preventScroll: true });
   }
   const visibility = () => { if (document.hidden) releaseControls(); };
   const changeTier = () => { difficulty = tierSelect.value; restart(); };
+  const controlResize = new ResizeObserver(entries => {
+    for (const entry of entries) {
+      const stick = sticks.get(entry.target.dataset.stick);
+      stick.travel = (entry.borderBoxSize?.[0]?.inlineSize ?? entry.contentRect.width + 2) * .24;
+    }
+    syncControls();
+  });
+  for (const { pad } of sticks.values()) controlResize.observe(pad);
+  const motionChange = () => {
+    if (reducedMotion.matches) { particles = []; ghosts = []; }
+    if (state.phase !== 'playing') draw();
+  };
+  reducedMotion.addEventListener('change', motionChange);
   window.addEventListener('keydown', keydown);
   window.addEventListener('keyup', keyup);
   window.addEventListener('blur', releaseControls);
@@ -1093,12 +1179,14 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   coverLayers.forEach((layer, index) => { ctx = layer.getContext('2d'); cover(index); });
   ctx = displayContext;
   publish(true); draw();
-  raf = requestAnimationFrame(frame);
+  scheduleFrame();
   return {
     getState: () => copy(state), restart, togglePause,
     destroy() {
       if (destroyed) return;
       destroyed = true; cancelAnimationFrame(raf); releaseControls();
+      controlResize.disconnect(); reducedMotion.removeEventListener('change', motionChange);
+      enemyBodyLayers.clear(); playerArmorLayers.clear(); enemyDrawOrder = [];
       window.removeEventListener('keydown', keydown);
       window.removeEventListener('keyup', keyup);
       window.removeEventListener('blur', releaseControls);

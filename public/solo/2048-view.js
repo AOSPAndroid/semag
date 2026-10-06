@@ -10,6 +10,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   let state = createState({ mode });
   let destroyed = false;
   let animationTimer = null;
+  const animatedCells = new Set();
   let pointer = null;
   const element = document.createElement('section');
   element.className = 'tiles-2048';
@@ -57,6 +58,10 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   const undoButton = element.querySelector('[data-action="undo"]');
   const moveButtons = [...element.querySelectorAll('[data-action^="move-"]')];
   const notice = element.querySelector('.tiles-2048-notice');
+  const hint = element.querySelector('.tiles-2048-hint');
+  const modeButtons = [...element.querySelectorAll('[data-mode]')];
+  const setText = (node, text) => { if (node.textContent !== text) node.textContent = text; };
+  const setHidden = (node, value) => { if (node.hidden !== value) node.hidden = value; };
   const cells = [];
   for (let row = 0; row < 4; row += 1) {
     const rowElement = document.createElement('div');
@@ -98,39 +103,40 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   function paint(result = null, direction = null) {
     if (destroyed) return;
     clearTimeout(animationTimer);
-    challengePanel.hidden = mode !== 'puzzles';
-    element.querySelector('.tiles-2048-hint').hidden = mode === 'puzzles';
-    for (const button of element.querySelectorAll('[data-mode]')) button.setAttribute('aria-pressed', String(button.dataset.mode === mode));
+    clearAnimation();
+    setHidden(challengePanel, mode !== 'puzzles');
+    setHidden(hint, mode === 'puzzles');
+    for (const button of modeButtons) { const value = String(button.dataset.mode === mode); if (button.getAttribute('aria-pressed') !== value) button.setAttribute('aria-pressed', value); }
     if (mode === 'puzzles') { const puzzle = PUZZLES[state.level]; puzzleTitle.textContent = `${state.level + 1} / 6 · ${puzzle.title}`; budget.textContent = `TARGET ${puzzle.target} · ${Math.max(0, puzzle.budget - state.moves)} MOVES LEFT`; for (let i = 0; i < 6; i++) progress.children[i].dataset.state = i < state.level || state.phase === 'won' && i === state.level ? 'done' : i === state.level ? 'current' : 'future'; }
-    nextButton.hidden = mode !== 'puzzles' || state.phase !== 'won' || state.level === PUZZLES.length - 1;
-    retryButton.hidden = mode !== 'puzzles' || state.phase !== 'lost';
+    setHidden(nextButton, mode !== 'puzzles' || state.phase !== 'won' || state.level === PUZZLES.length - 1);
+    setHidden(retryButton, mode !== 'puzzles' || state.phase !== 'lost');
     const dx = direction === 'left' ? '8px' : direction === 'right' ? '-8px' : '0px';
     const dy = direction === 'up' ? '8px' : direction === 'down' ? '-8px' : '0px';
-    grid.style.setProperty('--tile-move-x', dx);
-    grid.style.setProperty('--tile-move-y', dy);
+    if (grid.style.getPropertyValue('--tile-move-x') !== dx) grid.style.setProperty('--tile-move-x', dx);
+    if (grid.style.getPropertyValue('--tile-move-y') !== dy) grid.style.setProperty('--tile-move-y', dy);
     cells.forEach((cell, index) => {
       const value = state.board[index];
       const changed = cell.dataset.value !== String(value);
-      cell.classList.remove('is-merged', 'is-new', 'is-sliding');
-      cell.dataset.value = String(value);
-      cell.classList.toggle('is-large', value >= 10000);
-      cell.firstElementChild.textContent = value ? String(value) : '';
-      cell.setAttribute('aria-label', `Row ${Math.floor(index / 4) + 1}, column ${index % 4 + 1}: ${value || 'empty'}`);
-      if (result?.merged.includes(index)) cell.classList.add('is-merged');
-      else if (result?.spawned?.index === index) cell.classList.add('is-new');
-      else if (direction && changed && value) cell.classList.add('is-sliding');
+      if (changed) {
+        cell.dataset.value = String(value);
+        cell.classList.toggle('is-large', value >= 10000);
+        cell.firstElementChild.textContent = value ? String(value) : '';
+        cell.setAttribute('aria-label', `Row ${Math.floor(index / 4) + 1}, column ${index % 4 + 1}: ${value || 'empty'}`);
+      }
+      const animation = result?.merged.includes(index) ? 'is-merged' : result?.spawned?.index === index ? 'is-new' : direction && changed && value ? 'is-sliding' : null;
+      if (animation) { cell.classList.add(animation); animatedCells.add(cell); }
     });
-    if (result) animationTimer = setTimeout(() => cells.forEach(cell => cell.classList.remove('is-merged', 'is-new', 'is-sliding')), 220);
-    undoButton.disabled = !state.undoAvailable;
-    moveButtons.forEach(button => { button.disabled = state.phase !== 'playing'; });
-    element.dataset.phase = state.phase;
-    overlay.hidden = state.phase === 'playing';
-    continueButton.hidden = state.phase !== 'won' || mode === 'puzzles';
-    resumeButton.hidden = state.phase !== 'paused';
+    if (animatedCells.size) animationTimer = setTimeout(clearAnimation, 220);
+    if (undoButton.disabled !== !state.undoAvailable) undoButton.disabled = !state.undoAvailable;
+    moveButtons.forEach(button => { if (button.disabled !== (state.phase !== 'playing')) button.disabled = state.phase !== 'playing'; });
+    if (element.dataset.phase !== state.phase) element.dataset.phase = state.phase;
+    setHidden(overlay, state.phase === 'playing');
+    setHidden(continueButton, state.phase !== 'won' || mode === 'puzzles');
+    setHidden(resumeButton, state.phase !== 'paused');
     if (state.phase === 'paused') {
-      title.textContent = 'A moment to think.';
-      description.textContent = 'Your board is waiting right here.';
-      notice.textContent = 'Game paused.';
+      setText(title, 'A moment to think.');
+      setText(description, 'Your board is waiting right here.');
+      setText(notice, 'Game paused.');
     } else if (state.phase === 'won') {
       title.textContent = mode === 'puzzles' ? state.level === PUZZLES.length - 1 ? 'Six puzzles. Solved.' : `Target ${PUZZLES[state.level].target}. Solved.` : '2048. Well played.';
       description.textContent = mode === 'puzzles' ? state.level === PUZZLES.length - 1 ? `A complete puzzle tour in ${state.totalMoves} moves.` : `${state.moves} moves used. Your score carries to the next puzzle.` : 'Keep going and see how far you can reach.';
@@ -143,6 +149,12 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       notice.textContent = result?.gained ? `Merged for ${result.gained} points. Score ${state.score}.` : `${state.moves} moves. Score ${state.score}.`;
     }
     emit();
+  }
+
+  function clearAnimation() {
+    for (const cell of animatedCells) cell.classList.remove('is-merged', 'is-new', 'is-sliding');
+    animatedCells.clear();
+    animationTimer = null;
   }
 
   function slide(direction) {

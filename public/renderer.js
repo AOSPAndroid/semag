@@ -29,12 +29,15 @@ function segment(ctx, a, b, widthA, widthB, fill, edge) {
   const dx = b[0] - a[0], dy = b[1] - a[1];
   const length = Math.hypot(dx, dy) || 1;
   const nx = -dy / length, ny = dx / length;
-  polygon(ctx, [
-    [a[0] + nx * widthA / 2, a[1] + ny * widthA / 2],
-    [b[0] + nx * widthB / 2, b[1] + ny * widthB / 2],
-    [b[0] - nx * widthB / 2, b[1] - ny * widthB / 2],
-    [a[0] - nx * widthA / 2, a[1] - ny * widthA / 2],
-  ], fill, edge, 1);
+  // These joints move every frame; draw their exact vertices without building
+  // a nested point array for each limb.
+  ctx.beginPath();
+  ctx.moveTo(a[0] + nx * widthA / 2, a[1] + ny * widthA / 2);
+  ctx.lineTo(b[0] + nx * widthB / 2, b[1] + ny * widthB / 2);
+  ctx.lineTo(b[0] - nx * widthB / 2, b[1] - ny * widthB / 2);
+  ctx.lineTo(a[0] - nx * widthA / 2, a[1] - ny * widthA / 2);
+  ctx.closePath(); ctx.fillStyle = fill; ctx.fill();
+  if (edge) { ctx.strokeStyle = edge; ctx.lineWidth = 1; ctx.stroke(); }
 }
 function seeded(seed) {
   let value = seed >>> 0;
@@ -48,7 +51,8 @@ export class ArenaRenderer {
     this.background = document.createElement('canvas');
     this.background.width = WIDTH * 2;
     this.background.height = HEIGHT * 2;
-    const bg = this.background.getContext('2d');
+    // The stage fills the entire cache; expose its opacity to the compositor.
+    const bg = this.background.getContext('2d', { alpha: false });
     bg.scale(2, 2);
     this.drawBackground(bg);
     this.reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
@@ -335,8 +339,11 @@ export class ArenaRenderer {
     const offsetX = (this.canvas.width - WIDTH * scale) / 2;
     const offsetY = (this.canvas.height - HEIGHT * scale) / 2;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = '#101a22';
-    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    // The opaque stage replaces every pixel in crop mode; letterboxes still
+    // need clearing. Avoid a redundant full backing-store fill during combat.
+    if (offsetX > 0 || offsetY > 0) {
+      ctx.fillStyle = '#101a22'; ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    }
     ctx.setTransform(scale, 0, 0, scale, offsetX, offsetY);
     ctx.drawImage(this.background, 0, 0, WIDTH, HEIGHT);
     drawRooftopLife(ctx, time, this.reducedMotion?.matches || options.quality === 'reduced');
@@ -369,14 +376,16 @@ export class ArenaRenderer {
         this.ghostTick[id] = state.tick ?? 0;
       }
     }
-    this.ghosts = this.ghosts.filter(ghost => (ghost.life -= dt) > 0);
+    let liveGhosts = 0;
+    for (const ghost of this.ghosts) if ((ghost.life -= dt) > 0) this.ghosts[liveGhosts++] = ghost;
+    this.ghosts.length = liveGhosts;
     for (const ghost of this.ghosts) {
       ctx.save(); ctx.globalAlpha = ghost.life / ghost.maxLife * 0.18;
       this.drawFighter(ctx, ghost.fighter, time, true); ctx.restore();
     }
     for (let i = 0; i < fighters.length; i++) {
       const f = fighters[i];
-      this.drawFighter(ctx, { ...f, id: f.id ?? i }, time);
+      this.drawFighter(ctx, f.id == null ? { ...f, id: i } : f, time);
       if (options.localId === (f.id ?? i) && state.phase === 'lobby') {
         const color = COLORS[i % 2].main;
         ctx.fillStyle = color; ctx.globalAlpha = 0.7;
@@ -564,16 +573,17 @@ export class ArenaRenderer {
     const start = Math.max(from, end - (heavy ? 1.8 : 1.55));
     ctx.save(); ctx.translate(...center);
     ctx.globalCompositeOperation = 'screen';
-    const points = [];
+    ctx.beginPath();
     for (let i = 0; i <= 20; i++) {
       const t = i / 20, a = mix(start, end, t), r = radius - (1 - t) * 17;
-      points.push([Math.cos(a) * r, Math.sin(a) * r]);
+      const x = Math.cos(a) * r, y = Math.sin(a) * r;
+      i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
     }
     for (let i = 20; i >= 0; i--) {
       const t = i / 20, a = mix(start, end, t), r = radius - (heavy ? 35 : 24) * Math.sin(t * Math.PI / 2) - 18;
-      points.push([Math.cos(a) * r, Math.sin(a) * r]);
+      ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
     }
-    ctx.globalAlpha = 0.23 * fade; polygon(ctx, points, color.main);
+    ctx.closePath(); ctx.globalAlpha = 0.23 * fade; ctx.fillStyle = color.main; ctx.fill();
     ctx.globalAlpha = 0.85 * fade; ctx.strokeStyle = color.light; ctx.lineWidth = heavy ? 2.5 : 1.6;
     ctx.shadowColor = color.main; ctx.shadowBlur = 8;
     ctx.beginPath();
@@ -590,20 +600,24 @@ export class ArenaRenderer {
 
   drawEffects(ctx, dt) {
     ctx.save(); ctx.globalCompositeOperation = 'screen';
-    this.rings = this.rings.filter(ring => {
+    let liveRings = 0;
+    for (const ring of this.rings) {
       ring.life -= dt;
-      if (ring.life <= 0) return false;
+      if (ring.life <= 0) continue;
       const progress = 1 - ring.life / ring.maxLife;
       ctx.strokeStyle = ring.color; ctx.globalAlpha = (1 - progress) * 0.85; ctx.lineWidth = 1.5 - progress;
       ctx.beginPath(); ctx.arc(ring.x, ring.y, 5 + ring.radius * ease(progress), 0, Math.PI * 2); ctx.stroke();
-      return true;
-    });
-    this.particles = this.particles.filter(p => {
+      this.rings[liveRings++] = ring;
+    }
+    this.rings.length = liveRings;
+    let liveParticles = 0;
+    const sparkDrag = Math.exp(-dt * 2.8), dustDrag = Math.exp(-dt * 4);
+    for (const p of this.particles) {
       p.life -= dt;
-      if (p.life <= 0) return false;
+      if (p.life <= 0) continue;
       p.x += p.vx * dt; p.y += p.vy * dt;
       p.vy += (p.spark ? 245 : -12) * dt;
-      p.vx *= Math.exp(-dt * (p.spark ? 2.8 : 4));
+      p.vx *= p.spark ? sparkDrag : dustDrag;
       ctx.globalAlpha = clamp(p.life / p.maxLife * 1.4, 0, 1) * (p.spark ? 1 : 0.25);
       if (p.spark) {
         const speed = Math.hypot(p.vx, p.vy) || 1;
@@ -612,8 +626,9 @@ export class ArenaRenderer {
       } else {
         ctx.fillStyle = p.color; ctx.fillRect(p.x, p.y, p.size * (2 - p.life / p.maxLife), p.size * 0.4);
       }
-      return true;
-    });
+      this.particles[liveParticles++] = p;
+    }
+    this.particles.length = liveParticles;
     if (this.particles.length > 220) this.particles.splice(0, this.particles.length - 220);
     ctx.restore();
   }

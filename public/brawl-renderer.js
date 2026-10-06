@@ -3,8 +3,11 @@ import { INK, rect, poly, line, oval, comicPose, drawComicSprite, drawWrench, pa
 export { drawComicSprite } from './art/oddstock-art.js';
 const TEAMS = ['#edb076', '#93cbb0'];
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
-function star(c, x, y, radius, inner, fill, stroke) { const p = []; for (let i = 0; i < 16; i++) { const a = i * Math.PI / 8, r = i % 2 ? inner : radius; p.push([x + Math.cos(a) * r, y + Math.sin(a) * r]); } poly(c, p, fill, stroke, 1.5); }
-function badge(c, x, y, text, color, size = 10) { c.font = `bold ${size}px Consolas, monospace`; const w = Math.ceil(c.measureText(text).width) + 12; rect(c, x - w / 2, y - size, w, size + 7, INK); rect(c, x - w / 2 + 1, y - size + 1, w - 2, size + 5, color); c.fillStyle = INK; c.textAlign = 'center'; c.fillText(text, x, y + 1); }
+const STAR_X = Array.from({ length: 16 }, (_, i) => Math.cos(i * Math.PI / 8));
+const STAR_Y = Array.from({ length: 16 }, (_, i) => Math.sin(i * Math.PI / 8));
+const BADGE_WIDTHS = new Map();
+function star(c, x, y, radius, inner, fill, stroke) { c.beginPath(); for (let i = 0; i < 16; i++) { const r = i % 2 ? inner : radius, px = x + STAR_X[i] * r, py = y + STAR_Y[i] * r; i ? c.lineTo(px, py) : c.moveTo(px, py); } c.closePath(); if (fill) { c.fillStyle = fill; c.fill(); } if (stroke) { c.strokeStyle = stroke; c.lineWidth = 1.5; c.lineJoin = 'miter'; c.stroke(); } }
+function badge(c, x, y, text, color, size = 10) { c.font = `bold ${size}px Consolas, monospace`; const key = `${size}/${text}`; let w = BADGE_WIDTHS.get(key); if (w == null) { w = Math.ceil(c.measureText(text).width) + 12; BADGE_WIDTHS.set(key, w); if (BADGE_WIDTHS.size > 64) BADGE_WIDTHS.delete(BADGE_WIDTHS.keys().next().value); } rect(c, x - w / 2, y - size, w, size + 7, INK); rect(c, x - w / 2 + 1, y - size + 1, w - 2, size + 5, color); c.fillStyle = INK; c.textAlign = 'center'; c.fillText(text, x, y + 1); }
 export function drawFighterPortrait(canvas, characterId) {
   const c = canvas.getContext('2d'); c.setTransform(1, 0, 0, 1, 0, 0); c.imageSmoothingEnabled = false;
   rect(c, 0, 0, canvas.width, canvas.height, '#e9e9d6'); rect(c, 0, canvas.height - 22, canvas.width, 22, '#d0d7be');
@@ -17,20 +20,23 @@ export function drawStagePreview(canvas, stageId) { const c = canvas.getContext(
 
 export class BrawlRenderer {
   constructor(canvas) {
-    this.canvas = canvas; this.ctx = canvas.getContext('2d', { alpha: false }); this.backgrounds = new Map(); this.sprites = new Map();
+    this.canvas = canvas; this.ctx = canvas.getContext('2d', { alpha: false }); this.backgrounds = new Map(); this.sprites = new Map(); this.lastSprites = [null, null];
     // Static architecture is authored once. Live frames draw two cached sprites.
-    for (const id of Object.keys(STAGES)) { const bg = document.createElement('canvas'); bg.width = 1200; bg.height = 720; paintStage(bg.getContext('2d'), id); this.backgrounds.set(id, bg); }
+    for (const id of Object.keys(STAGES)) { const bg = document.createElement('canvas'); bg.width = 1200; bg.height = 720; paintStage(bg.getContext('2d', { alpha: false }), id); this.backgrounds.set(id, bg); }
     this.motion = window.matchMedia('(prefers-reduced-motion: reduce)'); this.resize = this.resize.bind(this); this.observer = new ResizeObserver(this.resize); this.observer.observe(canvas); this.resetEffects(); this.resize();
   }
   resize() { const r = this.canvas.getBoundingClientRect(), dpr = Math.min(window.devicePixelRatio || 1, 2); const w = Math.max(1, Math.round(r.width * dpr)), h = Math.max(1, Math.round(r.height * dpr)); if (this.canvas.width !== w) this.canvas.width = w; if (this.canvas.height !== h) this.canvas.height = h; }
   resetEffects() { this.effects = []; this.seen = new Set(); this.order = []; this.trails = [[], []]; this.lastTime = 0; this.lastTick = -1; this.zoom = 1; }
-  destroy() { this.observer.disconnect(); this.resetEffects(); this.sprites.clear(); this.backgrounds.clear(); }
+  destroy() { this.observer.disconnect(); this.resetEffects(); this.sprites.clear(); this.backgrounds.clear(); this.lastSprites.fill(null); }
   sprite(f, time, reduced) {
-    const pose = comicPose(f, time, reduced), key = `${reduced ? 'still' : 'motion'}/${pose.key}`; let sprite = this.sprites.get(key);
-    if (sprite) { this.sprites.delete(key); this.sprites.set(key, sprite); return sprite; }
+    const pose = comicPose(f, time, reduced), key = `${reduced ? 'still' : 'motion'}/${pose.key}`;
+    if (this.lastSprites[f.id]?.key === key) return this.lastSprites[f.id].sprite;
+    let sprite = this.sprites.get(key);
+    if (sprite) { this.sprites.delete(key); this.sprites.set(key, sprite); this.lastSprites[f.id] = { key, sprite }; return sprite; }
     sprite = document.createElement('canvas'); sprite.width = 128; sprite.height = 128; const c = sprite.getContext('2d'); c.translate(64, 64);
     drawComicSprite(c, { ...f, x: 0, y: 0, facing: 1 }, time, reduced); this.sprites.set(key, sprite);
     if (this.sprites.size > 128) this.sprites.delete(this.sprites.keys().next().value);
+    this.lastSprites[f.id] = { key, sprite };
     return sprite;
   }
   observe(state) {
@@ -43,12 +49,15 @@ export class BrawlRenderer {
   }
   render(state, { time = performance.now(), localId = null } = {}) {
     const c = this.ctx, reduced = this.motion.matches, dt = Math.min(.05, Math.max(0, (time - this.lastTime) / 1000)); this.lastTime = time; this.observe(state);
-    const actors = state.fighters.filter(f => f.stocks > 0 && f.respawnTicks === 0);
-    const extentX = Math.max(500, ...actors.map(f => Math.abs(f.x - 600) + 80)), extentY = Math.max(310, ...actors.map(f => Math.abs(f.y - 360) + 55));
+    let extentX = 500, extentY = 310;
+    for (const f of state.fighters) if (f.stocks > 0 && f.respawnTicks === 0) { extentX = Math.max(extentX, Math.abs(f.x - 600) + 80); extentY = Math.max(extentY, Math.abs(f.y - 360) + 55); }
     const targetZoom = Math.max(.55, Math.min(1, 570 / extentX, 335 / extentY)); this.zoom += (targetZoom - this.zoom) * (reduced ? 1 : .15);
-    c.setTransform(1, 0, 0, 1, 0, 0); rect(c, 0, 0, this.canvas.width, this.canvas.height, '#263b42');
     const scale = Math.min(this.canvas.width / 1200, this.canvas.height / 720);
-    c.setTransform(scale, 0, 0, scale, (this.canvas.width - 1200 * scale) / 2, (this.canvas.height - 720 * scale) / 2); rect(c, 0, 0, 1200, 720, state.stageId === 'foundry' ? '#56606a' : state.stageId === 'garden' ? '#91ae91' : '#8c93ab');
+    const offsetX = (this.canvas.width - 1200 * scale) / 2, offsetY = (this.canvas.height - 720 * scale) / 2;
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    if (offsetX > 0 || offsetY > 0 || this.zoom !== 1) rect(c, 0, 0, this.canvas.width, this.canvas.height, '#263b42');
+    c.setTransform(scale, 0, 0, scale, offsetX, offsetY);
+    if (this.zoom !== 1) rect(c, 0, 0, 1200, 720, state.stageId === 'foundry' ? '#56606a' : state.stageId === 'garden' ? '#91ae91' : '#8c93ab');
     c.save(); c.translate(600, 360); c.scale(this.zoom, this.zoom); c.translate(-600, -360); c.imageSmoothingEnabled = false;
     c.drawImage(this.backgrounds.get(state.stageId) || this.backgrounds.get('rooftop'), 0, 0);
     for (const h of state.hazards || []) this.hazard(c, h, time, reduced);
@@ -58,7 +67,9 @@ export class BrawlRenderer {
       this.shadow(c, f, state.platforms); const sprite = this.sprite(f, time, reduced);
       const trail = this.trails[f.id];
       if (!reduced && (f.action === 'dodge' || f.action === 'recovery')) { if (!trail.length || time - trail[trail.length - 1].time > 32) trail.push({ x: f.x, y: f.y, facing: f.facing, sprite, time }); while (trail.length > 3) trail.shift(); }
-      this.trails[f.id] = reduced ? [] : trail.filter(t => time - t.time < 130);
+      let liveTrail = 0;
+      if (!reduced) for (const sample of trail) if (time - sample.time < 130) trail[liveTrail++] = sample;
+      trail.length = liveTrail;
       for (const t of this.trails[f.id]) { c.save(); c.globalAlpha = .12 * (1 - (time - t.time) / 130); c.translate(Math.round(t.x), Math.round(t.y)); c.scale(t.facing, 1); c.drawImage(t.sprite, -64, -64); c.restore(); }
       if (f.action === 'shield') this.shield(c, f, time, reduced, false);
       c.save(); c.translate(Math.round(f.x), Math.round(f.y)); c.scale(f.facing, 1); c.drawImage(sprite, -64, -64); c.restore();
@@ -68,7 +79,10 @@ export class BrawlRenderer {
       const labelY = f.y - f.height / 2 - 15; badge(c, f.x, labelY, `P${f.id + 1}`, TEAMS[f.id], 9);
       if (f.id === localId) poly(c, [[f.x - 3, labelY - 17], [f.x + 3, labelY - 17], [f.x, labelY - 12]], '#fff2c8', INK);
     }
-    this.effects = this.effects.filter(e => (e.age += dt) < e.life); for (const e of this.effects) this.effect(c, e, reduced);
+    let liveEffects = 0;
+    for (const e of this.effects) if ((e.age += dt) < e.life) this.effects[liveEffects++] = e;
+    this.effects.length = liveEffects;
+    for (const e of this.effects) this.effect(c, e, reduced);
     c.restore();
     for (const f of state.fighters) if (f.respawnTicks > 0 && f.stocks > 0) badge(c, f.id === 0 ? 240 : 960, 53, `P${f.id + 1} / BACK IN ${(f.respawnTicks / 120).toFixed(1)}s`, TEAMS[f.id], 12);
     c.fillStyle = '#f8ead0'; c.font = '10px Consolas, monospace'; c.textAlign = 'left'; c.fillText(STAGES[state.stageId]?.name?.toUpperCase() || '', 26, 698);

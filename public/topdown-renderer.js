@@ -80,6 +80,9 @@ export class TopdownRenderer {
     this.ghosts = [];
     this.lastGhost = new Map();
     this.seenEvents = new Set();
+    this.lastConsumedEventId=null;
+    this.depthObjects=[];
+    this.depthPool=[];
     this.lastTick = -1;
     this.lastTime = 0;
     this.shake = 0;
@@ -316,7 +319,11 @@ export class TopdownRenderer {
   consumeEvents(state) {
     if ((state.tick ?? 0) < this.lastTick) this.resetEffects();
     this.lastTick = state.tick ?? 0;
-    for (const event of state.events || []) {
+    const events=state.events||[],latest=events[events.length-1];
+    // Authoritative events are append-only with monotonic IDs. Repeated display
+    // frames usually contain the same bounded event window as the previous one.
+    if(typeof latest?.id==='number'&&latest.id===this.lastConsumedEventId)return;
+    for (const event of events) {
       const key = event.id ?? `${event.tick}:${event.type}:${event.x}:${event.y}`;
       if (this.seenEvents.has(key)) continue;
       this.seenEvents.add(key);
@@ -346,6 +353,7 @@ export class TopdownRenderer {
         this.sparks(x, y, 4, '#d7ddbb', 0.35);
       }
     }
+    this.lastConsumedEventId=typeof latest?.id==='number'?latest.id:null;
   }
 
   sparks(x, y, count, color, speedScale = 1) {
@@ -407,13 +415,18 @@ export class TopdownRenderer {
       ctx.save(); ctx.globalAlpha = ghost.life / ghost.maxLife * 0.17;
       this.hero(ctx, ghost.f, time, true); ctx.restore();
     }
-    const objects = [
-      ...obstacles.map(obstacle => ({ y: obstacle.y + obstacle.h, draw: () => this.pillar(ctx, obstacle) })),
-      ...fighters.map((f, i) => ({ y: f.y + 13, draw: () => this.hero(ctx, { ...f, id: f.id ?? i }, time) })),
-      ...enemies.map(enemy => ({ y: enemy.y + (enemy.type === 'bat' ? -9 : 10), draw: () => this.enemy(ctx, enemy, time) })),
-    ];
+    const objects=this.depthObjects,pool=this.depthPool;let count=0;
+    const addObject=(kind,entity,y,index=0)=>{const entry=pool[count]||(pool[count]={});entry.kind=kind;entry.entity=entity;entry.y=y;entry.index=index;objects[count++]=entry;};
+    for(const obstacle of obstacles)addObject(0,obstacle,obstacle.y+obstacle.h);
+    for(let i=0;i<fighters.length;i++)addObject(1,fighters[i],fighters[i].y+13,i);
+    for(const enemy of enemies)addObject(2,enemy,enemy.y+(enemy.type==='bat'?-9:10));
+    objects.length=count;
     objects.sort((a, b) => a.y - b.y);
-    for (const object of objects) object.draw();
+    for(const object of objects){
+      if(object.kind===0)this.pillar(ctx,object.entity);
+      else if(object.kind===1)this.hero(ctx,object.entity.id==null?{...object.entity,id:object.index}:object.entity,time);
+      else this.enemy(ctx,object.entity,time);
+    }
     for (const projectile of state?.projectiles || []) this.projectile(ctx, projectile, time);
     this.effects(ctx, dt);
     if(!this.reducedMotion.matches)this.motes(ctx, time);

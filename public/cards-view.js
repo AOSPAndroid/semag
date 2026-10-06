@@ -67,6 +67,9 @@ const rankLabel = rank => ({ 1: 'A', 11: 'J', 12: 'Q', 13: 'K' })[rank] || Strin
 const cardName = card => `${({ 1: 'Ace', 11: 'Jack', 12: 'Queen', 13: 'King' })[card.rank] || card.rank} of ${SUITS[card.suit]?.name || 'cards'}`;
 const playableCard = (card, state) => card && (card.rank === 8 || card.rank === state.topCard?.rank || card.suit === state.activeSuit);
 const setText = (node, value) => { const text = String(value); if (node.textContent !== text) node.textContent = text; };
+const setAttribute = (node, name, value) => { if (node.getAttribute(name) !== value) node.setAttribute(name, value); };
+const setDisabled = (node, value) => { if (node.disabled !== value) node.disabled = value; };
+const setHidden = (node, value) => { if (node.hidden !== value) node.hidden = value; };
 function element(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -326,13 +329,14 @@ export class CardsView {
         handView.nodes.set(key, node);
       }
       this.paintCard(node, card, inLobby);
-      if (card && own) node.dataset.cardId = card.id;
-      else delete node.dataset.cardId;
+      if (card && own) {
+        if (node.dataset.cardId !== String(card.id)) node.dataset.cardId = card.id;
+      } else if (node.dataset.cardId !== undefined) delete node.dataset.cardId;
       const playable = own && this.gameId === 'crazy-eights' && this.canAct() && card && playableCard(card, state);
       node.classList.toggle('is-playable', Boolean(playable));
       node.classList.toggle('is-selected', card?.id === this.selected);
-      node.setAttribute('aria-label', card ? `${cardName(card)}${playable ? ', playable' : ''}${card.id === this.selected ? ', choosing suit' : ''}` : inLobby ? 'Cards will be dealt when the game begins' : 'Concealed opponent card');
-      if (node.tagName === 'BUTTON') node.setAttribute('aria-disabled', String(!playable));
+      setAttribute(node, 'aria-label', card ? `${cardName(card)}${playable ? ', playable' : ''}${card.id === this.selected ? ', choosing suit' : ''}` : inLobby ? 'Cards will be dealt when the game begins' : 'Concealed opponent card');
+      if (node.tagName === 'BUTTON') setAttribute(node, 'aria-disabled', String(!playable));
       if (handView.cards.children[index] !== node) handView.cards.insertBefore(node, handView.cards.children[index] || null);
     });
     for (const [key, node] of handView.nodes) {
@@ -363,7 +367,7 @@ export class CardsView {
       this.paintHand(this.own, ownId, this.localId !== null);
       if (this.gameId === 'crazy-eights') {
         this.paintCard(this.discard, state.topCard, !state.topCard);
-        this.discard.setAttribute('aria-label', state.topCard ? `Top discard: ${cardName(state.topCard)}` : 'Discard pile. No cards dealt yet.');
+        setAttribute(this.discard, 'aria-label', state.topCard ? `Top discard: ${cardName(state.topCard)}` : 'Discard pile. No cards dealt yet.');
         setText(this.drawLabel, `DRAW · ${state.deckCount || 0}`);
         const suit = SUITS[state.activeSuit];
         if (suit) showSuit(this.activeSuitSymbol, state.activeSuit); else setText(this.activeSuitSymbol, '—');
@@ -371,15 +375,15 @@ export class CardsView {
         this.activeSuit.classList.toggle('is-red', Boolean(state.activeSuit % 2));
         const hand = state.hands?.[this.localId] || [];
         const legal = hand.some(card => playableCard(card, state));
-        this.drawButton.disabled = !this.canAct() || legal || Boolean(state.drawn?.[this.localId]);
-        this.drawButton.setAttribute('aria-label', `Draw one card, ${state.deckCount || 0} in deck${legal ? '. Play a matching card first.' : ''}`);
-        this.passButton.hidden = !state.drawn?.[this.localId];
-        this.passButton.disabled = !this.canAct();
-        this.suitPicker.hidden = !this.selected;
-        for (const choice of this.suitPicker.querySelectorAll('button[data-suit]')) choice.disabled = !this.canAct();
+        setDisabled(this.drawButton, !this.canAct() || legal || Boolean(state.drawn?.[this.localId]));
+        setAttribute(this.drawButton, 'aria-label', `Draw one card, ${state.deckCount || 0} in deck${legal ? '. Play a matching card first.' : ''}`);
+        setHidden(this.passButton, !state.drawn?.[this.localId]);
+        setDisabled(this.passButton, !this.canAct());
+        setHidden(this.suitPicker, !this.selected);
+        for (const choice of this.suitPicker.querySelectorAll('button[data-suit]')) setDisabled(choice, !this.canAct());
       } else {
-        this.hitButton.disabled = !this.canAct();
-        this.standButton.disabled = !this.canAct();
+        setDisabled(this.hitButton, !this.canAct());
+        setDisabled(this.standButton, !this.canAct());
       }
     }
     this.paintNotice();
@@ -405,8 +409,8 @@ export class CardsView {
       node.classList.toggle('matched-by-1', matched === 1);
       node.classList.toggle('is-revealed', revealed.has(index));
       const canFlip = this.canAct() && !state.mismatchTicks && !claimed && !card && (state.revealed?.length || 0) < 2;
-      node.setAttribute('aria-disabled', String(!canFlip));
-      node.setAttribute('aria-label', `Card ${index + 1}, ${card ? `${memoryIdentity(card).name}, ${cardName(card)}` : 'face down'}${claimed ? `, matched by ${this.name(matched)}` : revealed.has(index) ? ', revealed' : canFlip ? ', flip to reveal' : ''}`);
+      setAttribute(node, 'aria-disabled', String(!canFlip));
+      setAttribute(node, 'aria-label', `Card ${index + 1}, ${card ? `${memoryIdentity(card).name}, ${cardName(card)}` : 'face down'}${claimed ? `, matched by ${this.name(matched)}` : revealed.has(index) ? ', revealed' : canFlip ? ', flip to reveal' : ''}`);
     });
     this.updateTabStops();
   }
@@ -431,7 +435,17 @@ export class CardsView {
   }
 
   paintContext() {
-    const state = this.state; this.context.replaceChildren();
+    const state = this.state;
+    const own = state.hands?.[this.localId] || [];
+    // The guide and collection do not change when a selection or send lock changes.
+    // Use only the public information each panel displays, including revealed results.
+    const key = JSON.stringify([this.gameId, this.localId, [this.name(0), this.name(1)], this.publicTrail,
+      this.gameId === 'twenty-one' ? [state.phase === 'fight', state.totals?.[this.localId], state.scores, state.round, state.maxRounds, this.roundHistory]
+        : this.gameId === 'memory' ? [state.scores, (state.cards || []).flatMap((card, index) => state.matched?.[index] === 0 || state.matched?.[index] === 1 ? [[card?.rank, card?.suit, state.matched[index]]] : [])]
+          : [state.phase === 'fight', own.filter(card => playableCard(card, state)).length, own.filter(card => card?.rank === 8).length]]);
+    if (this.contextKey === key) return;
+    this.contextKey = key;
+    this.context.replaceChildren();
     if (this.gameId === 'twenty-one') {
       const score = element('div', 'cards-match-score');
       for (const id of [0,1]) { const side = element('span'); side.append(element('strong', '', this.name(id)), element('b', '', `${state.scores?.[id] || 0} hands`)); score.append(side); }
@@ -525,7 +539,10 @@ export class CardsView {
   }
 
   updateTabStops() {
-    this.memoryNodes.forEach((node, index) => { node.tabIndex = index === this.focused ? 0 : -1; });
+    this.memoryNodes.forEach((node, index) => {
+      const value = index === this.focused ? 0 : -1;
+      if (node.tabIndex !== value) node.tabIndex = value;
+    });
   }
 
   navigate(event) {

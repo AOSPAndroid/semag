@@ -51,6 +51,12 @@ const ENGINE_ACTIONS = {
 const isForm = (target) =>
   target instanceof Element &&
   Boolean(target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"])'));
+function setValue(target, key, value) {
+  if (target[key] !== value) target[key] = value;
+}
+function setAttribute(target, key, value) {
+  if (target.getAttribute(key) !== value) target.setAttribute(key, value);
+}
 const element = (tag, className, text) => {
   const node = document.createElement(tag);
   node.className = className;
@@ -71,6 +77,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   let observedLocks = state.piecesLocked;
   let effect = null;
   let dropEffect = null;
+  let canvasCssWidth = 300;
   const sources = new Map();
   const pointers = new Map();
 
@@ -257,7 +264,12 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   const reduceMotion = () => motionPreference?.matches === true;
 
   const tiles = new Map();
+  const previewStates = new WeakMap();
   const boardArt = document.createElement('canvas');
+  let paintedBoard = null;
+  let paintedLocks = -1;
+  let ghostCache = null;
+  let incomingStageId = null;
   function tileArt(type) {
     if (tiles.has(type)) return tiles.get(type);
     const tile = document.createElement('canvas');
@@ -347,6 +359,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     boardArt.height = width * 2;
     const c = boardArt.getContext('2d'),
       cell = width / WIDTH;
+    c.imageSmoothingEnabled = false;
     const back = c.createLinearGradient(0, 0, width, width * 2);
     back.addColorStop(0, '#17343d');
     back.addColorStop(1, '#102330');
@@ -374,9 +387,19 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     c.fillStyle = '#06182422';
     c.fillRect(0, 0, cell * 0.12, width * 2);
     c.fillRect(width - cell * 0.12, 0, cell * 0.12, width * 2);
+    for (let y = 0; y < VISIBLE_HEIGHT; y++)
+      for (let x = 0; x < WIDTH; x++) {
+        const type = state.board[y + HIDDEN_ROWS][x];
+        if (type) block(c, x * cell, y * cell, cell, type);
+      }
+    paintedBoard = state.board;
+    paintedLocks = state.piecesLocked;
   }
 
   function preview(target, type, dimmed = false) {
+    const previous = previewStates.get(target);
+    if (previous?.type === type && previous.dimmed === dimmed) return;
+    previewStates.set(target, { type, dimmed });
     const context = target.getContext('2d');
     if (!context) return;
     context.clearRect(0, 0, target.width, target.height);
@@ -408,7 +431,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   function draw(now = performance.now()) {
     if (destroyed || !ctx) return;
     if (typeof now !== 'number') now = performance.now();
-    const size = Math.max(1, canvas.getBoundingClientRect().width || 300);
+    const size = Math.max(1, canvasCssWidth);
     const ratio = Math.min(window.devicePixelRatio || 1, 3);
     const width = Math.max(10, Math.round(size * ratio));
     if (canvas.width !== width || canvas.height !== width * 2) {
@@ -417,13 +440,14 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     }
     const cell = width / WIDTH;
     ctx.imageSmoothingEnabled = false;
-    if (boardArt.width !== width || boardArt.height !== width * 2) paintBoard(width, ratio);
+    if (
+      boardArt.width !== width ||
+      boardArt.height !== width * 2 ||
+      paintedBoard !== state.board ||
+      paintedLocks !== state.piecesLocked
+    )
+      paintBoard(width, ratio);
     ctx.drawImage(boardArt, 0, 0);
-    for (let y = 0; y < VISIBLE_HEIGHT; y++)
-      for (let x = 0; x < WIDTH; x++) {
-        const type = state.board[y + HIDDEN_ROWS][x];
-        if (type) block(ctx, x * cell, y * cell, cell, type);
-      }
     if (dropEffect && !reduceMotion()) {
       const age = (now - dropEffect.time) / 170;
       if (age >= 1) dropEffect = null;
@@ -442,7 +466,18 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       }
     }
     if (state.active) {
-      const ghost = ghostPiece(state);
+      const active = state.active;
+      if (
+        !ghostCache ||
+        ghostCache.board !== state.board ||
+        ghostCache.locks !== state.piecesLocked ||
+        ghostCache.type !== active.type ||
+        ghostCache.rotation !== active.rotation ||
+        ghostCache.x !== active.x ||
+        ghostCache.y !== active.y
+      )
+        ghostCache = { ...active, board: state.board, locks: state.piecesLocked, piece: ghostPiece(state) };
+      const ghost = ghostCache.piece;
       if (ghost && (ghost.y !== state.active.y || ghost.x !== state.active.x)) {
         for (const part of pieceCells(ghost)) {
           if (part.y >= HIDDEN_ROWS)
@@ -568,66 +603,95 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     if (destroyed) return;
     const message = detail();
     const dig = state.mode === 'dig';
-    view.dataset.prismMode = state.mode;
-    metricLabels.level.textContent = dig ? 'STAGE' : 'LEVEL';
-    metricLabels.lines.textContent = dig ? 'ROWS LEFT' : 'LINES';
-    metricNodes.level.textContent = dig
-      ? `${state.dig.stageIndex + 1} / ${DIG_STAGE_COUNT}`
-      : String(state.level);
-    metricNodes.lines.textContent = dig
-      ? String(state.dig.remainingRows)
-      : state.mode === 'sprint'
-        ? `${Math.min(state.lines, 40)} / 40`
-        : String(state.lines);
-    metricNodes.time.textContent = state.elapsed.toFixed(2);
-    if (status.textContent !== message) status.textContent = message;
+    setValue(view.dataset, 'prismMode', state.mode);
+    setValue(metricLabels.level, 'textContent', dig ? 'STAGE' : 'LEVEL');
+    setValue(metricLabels.lines, 'textContent', dig ? 'ROWS LEFT' : 'LINES');
+    setValue(
+      metricNodes.level,
+      'textContent',
+      dig ? `${state.dig.stageIndex + 1} / ${DIG_STAGE_COUNT}` : String(state.level),
+    );
+    setValue(
+      metricNodes.lines,
+      'textContent',
+      dig
+        ? String(state.dig.remainingRows)
+        : state.mode === 'sprint'
+          ? `${Math.min(state.lines, 40)} / 40`
+          : String(state.lines),
+    );
+    setValue(metricNodes.time, 'textContent', state.elapsed.toFixed(2));
+    if (status.textContent !== message) setValue(status, 'textContent', message);
     const journey =
       state.level < 4 ? 'WARMUP' : state.level < 8 ? 'FLOW' : state.level < 13 ? 'PRESSURE' : 'OVERDRIVE';
     const maximumPace = state.mode === 'marathon' && state.level >= 30;
-    chainHeading.textContent = dig ? 'EXCAVATION' : 'CLEAR CHAIN';
-    combo.textContent = dig ? getDigStage(state).title : state.combo > 0 ? `×${state.combo + 1}` : '—';
-    b2b.textContent = dig
-      ? 'FIXED QUEUE · USE HOLD'
-      : state.backToBack
-        ? 'BACK TO BACK ×1.5'
-        : 'TETRIS / T-SPIN';
-    chain.dataset.active = String(state.backToBack || state.combo > 0);
+    setValue(chainHeading, 'textContent', dig ? 'EXCAVATION' : 'CLEAR CHAIN');
+    setValue(
+      combo,
+      'textContent',
+      dig ? getDigStage(state).title : state.combo > 0 ? `×${state.combo + 1}` : '—',
+    );
+    setValue(
+      b2b,
+      'textContent',
+      dig ? 'FIXED QUEUE · USE HOLD' : state.backToBack ? 'BACK TO BACK ×1.5' : 'TETRIS / T-SPIN',
+    );
+    setValue(chain.dataset, 'active', String(state.backToBack || state.combo > 0));
     const recentClear = state.lastClear && state.lastClear.label && state.elapsed - state.lastClear.time < 4;
-    chain.dataset.spin = String(Boolean(recentClear && state.lastClear.spin));
-    clearLabel.textContent = dig
-      ? `${state.dig.remainingRows} ROWS · ${state.dig.budget - state.dig.piecesUsed} PIECES LEFT`
-      : recentClear
-        ? `${state.lastClear.label}${state.lastClear.points ? ` +${state.lastClear.points}` : ''}`
-        : 'BUILD A CLEAN STACK';
+    setValue(chain.dataset, 'spin', String(Boolean(recentClear && state.lastClear.spin)));
+    setValue(
+      clearLabel,
+      'textContent',
+      dig
+        ? `${state.dig.remainingRows} ROWS · ${state.dig.budget - state.dig.piecesUsed} PIECES LEFT`
+        : recentClear
+          ? `${state.lastClear.label}${state.lastClear.points ? ` +${state.lastClear.points}` : ''}`
+          : 'BUILD A CLEAN STACK',
+    );
     const topRow = state.board.findIndex((row) => row.some(Boolean));
     const danger = topRow >= 0 && topRow < HIDDEN_ROWS + 5;
-    activeLabel.textContent = danger
-      ? 'HIGH STACK'
-      : state.active
-        ? `${state.active.type} / ACTIVE`
-        : 'COMPLETE';
-    activeLabel.dataset.danger = String(danger);
-    boardDimensions.textContent = dig ? `PIECES ${state.dig.piecesUsed} / ${state.dig.budget}` : '10 × 20';
-    lockLabel.textContent =
+    setValue(
+      activeLabel,
+      'textContent',
+      danger ? 'HIGH STACK' : state.active ? `${state.active.type} / ACTIVE` : 'COMPLETE',
+    );
+    setValue(activeLabel.dataset, 'danger', String(danger));
+    setValue(
+      boardDimensions,
+      'textContent',
+      dig ? `PIECES ${state.dig.piecesUsed} / ${state.dig.budget}` : '10 × 20',
+    );
+    setValue(
+      lockLabel,
+      'textContent',
       state.phase === 'paused'
         ? 'PAUSED'
         : state.lockElapsed > 0
           ? `LOCK ${Math.min(100, Math.round((state.lockElapsed / 0.5) * 100))}%`
-          : 'GHOST ON';
-    progressTitle.textContent = dig
-      ? 'ROWS EXCAVATED'
-      : state.mode === 'sprint'
-        ? 'SPRINT GOAL'
-        : maximumPace
-          ? 'MAXIMUM PACE'
-          : `${journey} → LV ${state.level + 1}`;
-    progressValue.textContent = dig
-      ? `${state.dig.garbageRows - state.dig.remainingRows} / ${state.dig.garbageRows}`
-      : state.mode === 'sprint'
-        ? `${Math.min(state.lines, 40)} / 40`
-        : maximumPace
-          ? 'LEVEL 30'
-          : `${state.lines % 10} / 10`;
+          : 'GHOST ON',
+    );
+    setValue(
+      progressTitle,
+      'textContent',
+      dig
+        ? 'ROWS EXCAVATED'
+        : state.mode === 'sprint'
+          ? 'SPRINT GOAL'
+          : maximumPace
+            ? 'MAXIMUM PACE'
+            : `${journey} → LV ${state.level + 1}`,
+    );
+    setValue(
+      progressValue,
+      'textContent',
+      dig
+        ? `${state.dig.garbageRows - state.dig.remainingRows} / ${state.dig.garbageRows}`
+        : state.mode === 'sprint'
+          ? `${Math.min(state.lines, 40)} / 40`
+          : maximumPace
+            ? 'LEVEL 30'
+            : `${state.lines % 10} / 10`,
+    );
     const progression = dig
       ? 1 - state.dig.remainingRows / state.dig.garbageRows
       : state.mode === 'sprint'
@@ -635,9 +699,10 @@ export function mount(container, { onUpdate = () => {} } = {}) {
         : maximumPace
           ? 1
           : (state.lines % 10) / 10;
-    progressFill.style.width = `${progression * 100}%`;
-    progressTrack.setAttribute('role', 'progressbar');
-    progressTrack.setAttribute(
+    setValue(progressFill.style, 'width', `${progression * 100}%`);
+    setAttribute(progressTrack, 'role', 'progressbar');
+    setAttribute(
+      progressTrack,
       'aria-label',
       dig
         ? 'Garbage rows excavated in this stage'
@@ -647,12 +712,14 @@ export function mount(container, { onUpdate = () => {} } = {}) {
             ? 'Maximum Marathon pace reached'
             : 'Progress to next level',
     );
-    progressTrack.setAttribute('aria-valuemin', '0');
-    progressTrack.setAttribute(
+    setAttribute(progressTrack, 'aria-valuemin', '0');
+    setAttribute(
+      progressTrack,
       'aria-valuemax',
       dig ? String(state.dig.garbageRows) : state.mode === 'sprint' ? '40' : '10',
     );
-    progressTrack.setAttribute(
+    setAttribute(
+      progressTrack,
       'aria-valuenow',
       String(
         dig
@@ -664,18 +731,28 @@ export function mount(container, { onUpdate = () => {} } = {}) {
               : state.lines % 10,
       ),
     );
-    incoming.hidden = !dig || state.phase !== 'stage-clear';
+    setValue(incoming, 'hidden', !dig || state.phase !== 'stage-clear');
     if (!incoming.hidden) {
       const nextStage = DIG_STAGES[state.dig.stageIndex + 1];
-      incomingTitle.textContent = `NEXT ${state.dig.stageIndex + 2} / ${DIG_STAGE_COUNT} · ${nextStage.title}`;
-      incomingBrief.textContent = `${nextStage.rows} rows · ${nextStage.budget} pieces. ${nextStage.brief}`;
-      incomingRules.textContent = `QUEUE ${nextStage.queue.join(' ')} · RESERVE RESETS`;
-      incomingPreview.setAttribute(
+      setValue(
+        incomingTitle,
+        'textContent',
+        `NEXT ${state.dig.stageIndex + 2} / ${DIG_STAGE_COUNT} · ${nextStage.title}`,
+      );
+      setValue(
+        incomingBrief,
+        'textContent',
+        `${nextStage.rows} rows · ${nextStage.budget} pieces. ${nextStage.brief}`,
+      );
+      setValue(incomingRules, 'textContent', `QUEUE ${nextStage.queue.join(' ')} · RESERVE RESETS`);
+      setAttribute(
+        incomingPreview,
         'aria-label',
         `Next stack: ${nextStage.rows} shaped garbage rows. ${nextStage.title}.`,
       );
       const context = incomingPreview.getContext('2d');
-      if (context) {
+      if (context && incomingStageId !== nextStage.id) {
+        incomingStageId = nextStage.id;
         context.imageSmoothingEnabled = false;
         context.fillStyle = '#102b35';
         context.fillRect(0, 0, 100, 200);
@@ -686,13 +763,14 @@ export function mount(container, { onUpdate = () => {} } = {}) {
         );
       }
     }
-    holdPanel.dataset.used = String(state.holdUsed);
-    holdNote.textContent = !state.hold
-      ? 'PRESS C TO RESERVE'
-      : state.holdUsed
-        ? 'READY AFTER NEXT LOCK'
-        : 'ONE SWAP PER PIECE';
-    holdCanvas.setAttribute(
+    setValue(holdPanel.dataset, 'used', String(state.holdUsed));
+    setValue(
+      holdNote,
+      'textContent',
+      !state.hold ? 'PRESS C TO RESERVE' : state.holdUsed ? 'READY AFTER NEXT LOCK' : 'ONE SWAP PER PIECE',
+    );
+    setAttribute(
+      holdCanvas,
       'aria-label',
       state.hold
         ? `Held ${state.hold} piece${state.holdUsed ? '. Available after your next lock.' : ''}`
@@ -700,13 +778,14 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     );
     preview(holdCanvas, state.hold, state.holdUsed);
     nextCanvases.forEach((target, i) => {
-      target.setAttribute('aria-label', `Next piece ${i + 1}: ${state.next[i] || 'empty'}`);
+      setAttribute(target, 'aria-label', `Next piece ${i + 1}: ${state.next[i] || 'empty'}`);
       preview(target, state.next[i]);
     });
     modes
       .querySelectorAll('button')
-      .forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.mode === state.mode)));
-    canvas.setAttribute(
+      .forEach((button) => setAttribute(button, 'aria-pressed', String(button.dataset.mode === state.mode)));
+    setAttribute(
+      canvas,
       'aria-label',
       `Prism Shift ${state.mode}. ${state.lines} lines, level ${state.level}, ${state.score} points. ${message}`,
     );
@@ -769,6 +848,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     if (state.phase !== 'playing') releaseInputs();
     publish();
     draw();
+    syncAnimation();
   }
 
   const held = (action) => [...sources.values()].includes(action);
@@ -817,6 +897,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     lastFrame = 0;
     publish();
     draw();
+    syncAnimation();
   }
 
   function autoPause() {
@@ -835,9 +916,11 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     accumulator = 0;
     publish();
     draw();
+    syncAnimation();
   }
 
   function frame(now) {
+    animationId = null;
     if (destroyed) return;
     const delta = lastFrame ? Math.min(0.05, Math.max(0, (now - lastFrame) / 1000)) : 0;
     lastFrame = now;
@@ -866,7 +949,22 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       } else if (updateElapsed >= 0.1) publish();
     }
     draw(now);
-    animationId = window.requestAnimationFrame(frame);
+    syncAnimation();
+  }
+  function syncAnimation() {
+    const finishingEffect = state.phase !== 'paused' && !reduceMotion() && Boolean(effect || dropEffect);
+    if (destroyed || (state.phase !== 'playing' && !finishingEffect)) {
+      if (animationId !== null) window.cancelAnimationFrame(animationId);
+      animationId = null;
+    } else if (animationId === null) animationId = window.requestAnimationFrame(frame);
+  }
+  function resizeCanvas() {
+    canvasCssWidth = canvas.getBoundingClientRect().width || 300;
+    draw();
+  }
+  function motionChanged() {
+    draw();
+    syncAnimation();
   }
 
   function keydown(event) {
@@ -945,6 +1043,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     accumulator = 0;
     publish();
     draw();
+    syncAnimation();
     focusCanvas();
   }
   const visibility = () => {
@@ -965,12 +1064,13 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   modes.addEventListener('click', changeMode);
   controlsToggle.addEventListener('click', toggleControls);
   continueButton.addEventListener('click', continueDig);
-  const resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(() => draw()) : null;
+  const resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(resizeCanvas) : null;
   if (resizeObserver) resizeObserver.observe(canvas);
-  else window.addEventListener('resize', draw);
+  window.addEventListener('resize', resizeCanvas);
+  motionPreference?.addEventListener('change', motionChanged);
   publish();
-  draw();
-  animationId = window.requestAnimationFrame(frame);
+  resizeCanvas();
+  syncAnimation();
 
   return {
     getState: () => JSON.parse(JSON.stringify(state)),
@@ -987,7 +1087,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       window.removeEventListener('keyup', keyup);
       window.removeEventListener('blur', autoPause);
       window.removeEventListener('pagehide', pageHidden);
-      window.removeEventListener('resize', draw);
+      window.removeEventListener('resize', resizeCanvas);
+      motionPreference?.removeEventListener('change', motionChanged);
       document.removeEventListener('visibilitychange', visibility);
       canvas.removeEventListener('pointerdown', focusCanvas);
       controls.removeEventListener('pointerdown', pointerdown);

@@ -37,6 +37,12 @@ const mod = (value, divisor) => ((value % divisor) + divisor) % divisor;
 const isForm = (target) =>
   target instanceof Element &&
   Boolean(target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"])'));
+function setValue(target, key, value) {
+  if (target[key] !== value) target[key] = value;
+}
+function setAttribute(target, key, value) {
+  if (target.getAttribute(key) !== value) target.setAttribute(key, value);
+}
 function node(tag, className, text) {
   const result = document.createElement(tag);
   result.className = className;
@@ -202,38 +208,63 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     lastPhase = state.phase;
     const detail = details(),
       district = getDistrict(state);
-    location.textContent = `${district.title.toUpperCase()} / ${state.mode === 'tour' ? 'TOUR' : 'ENDLESS'}`;
+    setValue(
+      location,
+      'textContent',
+      `${district.title.toUpperCase()} / ${state.mode === 'tour' ? 'TOUR' : 'ENDLESS'}`,
+    );
     for (const button of modeChoices.children)
-      button.setAttribute('aria-pressed', String(button.dataset.mode === state.mode));
-    stageLabel.textContent = `DISTRICT ${(state.districtIndex % DISTRICTS.length) + 1} / 5`;
-    stageTitle.textContent = district.title;
-    stageGoal.textContent =
+      setAttribute(button, 'aria-pressed', String(button.dataset.mode === state.mode));
+    setValue(stageLabel, 'textContent', `DISTRICT ${(state.districtIndex % DISTRICTS.length) + 1} / 5`);
+    setValue(stageTitle, 'textContent', district.title);
+    setValue(
+      stageGoal,
+      'textContent',
       state.phase === 'won'
         ? '4.5 KM TOUR COMPLETE'
-        : `${Math.ceil(DISTRICT_LENGTH - state.districtProgress)}m to checkpoint`;
-    stageDescription.textContent = state.districtWarning
-      ? `Ahead: ${DISTRICTS.find((d) => d.id === state.districtWarning).description}`
-      : district.description;
-    stagePanel.dataset.warning = String(Boolean(state.districtWarning));
-    progressFill.style.width = `${state.phase === 'won' ? 100 : (state.districtProgress / DISTRICT_LENGTH) * 100}%`;
-    progress.setAttribute('aria-valuenow', String(Math.round(state.districtProgress)));
-    if (status.textContent !== detail) status.textContent = detail;
-    view.dataset.phase = state.phase;
-    view.dataset.speed = String(Math.round(state.speed));
-    overlay.hidden = state.phase === 'playing';
+        : `${Math.ceil(DISTRICT_LENGTH - state.districtProgress)}m to checkpoint`,
+    );
+    setValue(
+      stageDescription,
+      'textContent',
+      state.districtWarning
+        ? `Ahead: ${DISTRICTS.find((d) => d.id === state.districtWarning).description}`
+        : district.description,
+    );
+    setValue(stagePanel.dataset, 'warning', String(Boolean(state.districtWarning)));
+    setValue(
+      progressFill.style,
+      'width',
+      `${state.phase === 'won' ? 100 : (state.districtProgress / DISTRICT_LENGTH) * 100}%`,
+    );
+    setAttribute(progress, 'aria-valuenow', String(Math.round(state.districtProgress)));
+    if (status.textContent !== detail) setValue(status, 'textContent', detail);
+    setValue(view.dataset, 'phase', state.phase);
+    setValue(view.dataset, 'speed', String(Math.round(state.speed)));
+    setValue(overlay, 'hidden', state.phase === 'playing');
     if (!overlay.hidden) {
-      overlayEyebrow.textContent = state.phase === 'paused' ? 'PULL OVER FOR A MOMENT' : 'THE NIGHT IS YOURS';
-      overlayTitle.textContent =
+      setValue(
+        overlayEyebrow,
+        'textContent',
+        state.phase === 'paused' ? 'PULL OVER FOR A MOMENT' : 'THE NIGHT IS YOURS',
+      );
+      setValue(
+        overlayTitle,
+        'textContent',
         state.phase === 'paused'
           ? 'Take a breather.'
           : state.phase === 'won'
             ? 'Tour complete.'
-            : 'End of the road.';
-      overlayDetail.textContent =
+            : 'End of the road.',
+      );
+      setValue(
+        overlayDetail,
+        'textContent',
         state.phase === 'paused'
           ? 'Press P or Resume to keep driving.'
-          : `${(state.distance / 1000).toFixed(2)} KM  ·  ${state.score} POINTS`;
-      replay.hidden = state.phase === 'paused';
+          : `${(state.distance / 1000).toFixed(2)} KM  ·  ${state.score} POINTS`,
+      );
+      setValue(replay, 'hidden', state.phase === 'paused');
     }
     onUpdate({
       phase: state.phase,
@@ -274,15 +305,14 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     ctx.fill();
   }
   function roadStrip(a, b, left, right, color) {
-    polygon(
-      [
-        [a.x + a.half * left, a.y],
-        [a.x + a.half * right, a.y],
-        [b.x + b.half * right, b.y],
-        [b.x + b.half * left, b.y],
-      ],
-      color,
-    );
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(Math.round(a.x + a.half * left), Math.round(a.y));
+    ctx.lineTo(Math.round(a.x + a.half * right), Math.round(a.y));
+    ctx.lineTo(Math.round(b.x + b.half * right), Math.round(b.y));
+    ctx.lineTo(Math.round(b.x + b.half * left), Math.round(b.y));
+    ctx.closePath();
+    ctx.fill();
   }
   function sky() {
     const district = getDistrict(state);
@@ -429,6 +459,9 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     for (let z = 400; z > 0; z -= 2) {
       const far = projection(z);
       const near = projection(Math.max(0, z - 2));
+      // Rounded vertices share one scanline in the distant slices: their
+      // polygons have no area, so submitting them cannot change a pixel.
+      if (Math.round(far.y) === Math.round(near.y)) continue;
       const world = z + state.distance;
       roadStrip(far, near, -1.1, 1.1, mod(Math.floor(world / 5), 2) ? '#365750' : '#3b5d54');
       roadStrip(far, near, -1, 1, mod(Math.floor(world / 12), 2) ? '#33494c' : '#354b4e');
@@ -748,6 +781,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       .slice(-90);
   }
   function frame(time) {
+    raf = null;
     if (destroyed) return;
     const elapsed = previousFrame === null ? 0 : Math.min(0.08, Math.max(0, (time - previousFrame) / 1000));
     previousFrame = time;
@@ -764,7 +798,16 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       publish();
     } else accumulator = 0;
     draw();
-    raf = requestAnimationFrame(frame);
+    syncAnimation();
+  }
+  function syncAnimation() {
+    if (destroyed || state.phase !== 'playing') {
+      if (raf !== null) cancelAnimationFrame(raf);
+      raf = null;
+    } else if (raf === null) raf = requestAnimationFrame(frame);
+  }
+  function motionChanged() {
+    draw();
   }
   function togglePause() {
     if (destroyed) return;
@@ -774,6 +817,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     accumulator = 0;
     publish(true);
     draw();
+    syncAnimation();
   }
   function restart() {
     if (destroyed) return;
@@ -788,6 +832,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     exhaustTime = 0;
     publish(true);
     draw();
+    syncAnimation();
     canvas.focus({ preventScroll: true });
   }
   function keydown(event) {
@@ -837,6 +882,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   window.addEventListener('keydown', keydown);
   window.addEventListener('keyup', keyup);
   window.addEventListener('blur', releaseControls);
+  reducedMotion?.addEventListener('change', motionChanged);
   document.addEventListener('visibilitychange', visibility);
   controls.addEventListener('pointerdown', pointerdown);
   window.addEventListener('pointerup', pointerend);
@@ -853,7 +899,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   replay.addEventListener('click', restart);
   publish(true);
   draw();
-  raf = requestAnimationFrame(frame);
+  syncAnimation();
 
   return {
     getState: () => JSON.parse(JSON.stringify(state)),
@@ -870,6 +916,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       window.removeEventListener('keydown', keydown);
       window.removeEventListener('keyup', keyup);
       window.removeEventListener('blur', releaseControls);
+      reducedMotion?.removeEventListener('change', motionChanged);
       document.removeEventListener('visibilitychange', visibility);
       controls.removeEventListener('pointerdown', pointerdown);
       window.removeEventListener('pointerup', pointerend);

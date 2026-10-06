@@ -43,8 +43,9 @@ export class VectorRenderer {
 
   resize() {
     const rect = this.canvas.getBoundingClientRect(), dpr = Math.min(window.devicePixelRatio || 1, 2);
-    this.canvas.width = Math.max(1, Math.round(rect.width * dpr));
-    this.canvas.height = Math.max(1, Math.round(rect.height * dpr));
+    const width = Math.max(1, Math.round(rect.width * dpr)), height = Math.max(1, Math.round(rect.height * dpr));
+    if (this.canvas.width !== width) this.canvas.width = width;
+    if (this.canvas.height !== height) this.canvas.height = height;
   }
 
   resetEffects() {
@@ -67,14 +68,34 @@ export class VectorRenderer {
   stageCovers(id, obstacles) {
     const stageId = Object.hasOwn(STAGES, id) ? id : 'garden';
     const covers = obstacles || STAGES[stageId].covers;
-    const signature = `${stageId}:${covers.map(cover => [cover.x, cover.y, cover.w, cover.h].join(',')).join(';')}`;
-    if (this.coverLayers.has(signature)) return this.coverLayers.get(signature);
+    let cached = this.coverLayers.get(stageId);
+    // Snapshots can contain fresh arrays with identical geometry. Compare the
+    // coordinates directly instead of allocating arrays and signature strings.
+    let same = cached?.geometry.length === covers.length * 4;
+    for (let i = 0; same && i < covers.length; i++) {
+      const c = covers[i], j = i * 4, g = cached.geometry;
+      same = g[j] === c.x && g[j + 1] === c.y && g[j + 2] === c.w && g[j + 3] === c.h;
+    }
+    if (same) return cached;
     const layer = document.createElement('canvas'); layer.width = WORLD.width; layer.height = WORLD.height;
     const ctx = layer.getContext('2d');
     for (const cover of covers) this.paintCover(ctx, cover, stageId);
-    this.coverLayers.set(signature, layer);
+    const geometry = new Float64Array(covers.length * 4);
+    for (let i = 0; i < covers.length; i++) { const c = covers[i], j = i * 4; geometry[j] = c.x; geometry[j + 1] = c.y; geometry[j + 2] = c.w; geometry[j + 3] = c.h; }
+    cached = { layer, geometry, scene: null };
+    this.coverLayers.set(stageId, cached);
     if (this.coverLayers.size > 3) this.coverLayers.delete(this.coverLayers.keys().next().value);
-    return layer;
+    return cached;
+  }
+
+  stageScene(stageId, covers) {
+    if (!covers.scene) {
+      const scene = document.createElement('canvas'); scene.width = WORLD.width; scene.height = WORLD.height;
+      const ctx = scene.getContext('2d', { alpha: false });
+      ctx.drawImage(this.stageBackground(stageId), 0, 0); ctx.drawImage(covers.layer, 0, 0);
+      covers.scene = scene;
+    }
+    return covers.scene;
   }
 
   paintArenaDetails(ctx, stageId) {
@@ -461,14 +482,21 @@ export class VectorRenderer {
     this.observeEvents(state);
     ctx.setTransform(this.canvas.width / WORLD.width, 0, 0, this.canvas.height / WORLD.height, 0, 0);
     this.background = this.stageBackground(state.stageId);
-    ctx.imageSmoothingEnabled = false; ctx.drawImage(this.background, 0, 0);
+    ctx.imageSmoothingEnabled = false;
     for (const fighter of state.fighters) if (!this.reducedMotion && fighter.dashTicks > 0 && fighter.dashFrame > DASH.invulnerableStart && state.tick - this.lastGhost[fighter.id] >= 4) {
       this.ghosts.push({ fighter: { ...fighter }, age: 0 }); this.lastGhost[fighter.id] = state.tick;
     }
     if (this.ghosts.length > 12) this.ghosts.splice(0, this.ghosts.length - 12);
-    this.ghosts = this.ghosts.filter(ghost => (ghost.age += dt) < .13);
-    for (const ghost of this.ghosts) { ctx.save(); ctx.globalAlpha = 1 - ghost.age / .13; this.paintFighter(ctx, ghost.fighter, time, true); ctx.restore(); }
-    ctx.drawImage(this.stageCovers(state.stageId, state.obstacles), 0, 0);
+    let liveGhosts = 0;
+    for (const ghost of this.ghosts) if ((ghost.age += dt) < .13) this.ghosts[liveGhosts++] = ghost;
+    this.ghosts.length = liveGhosts;
+    const covers = this.stageCovers(state.stageId, state.obstacles);
+    if (liveGhosts) {
+      // Dash silhouettes still pass behind the exact solid cover layer.
+      ctx.drawImage(this.background, 0, 0);
+      for (const ghost of this.ghosts) { ctx.save(); ctx.globalAlpha = 1 - ghost.age / .13; this.paintFighter(ctx, ghost.fighter, time, true); ctx.restore(); }
+      ctx.drawImage(covers.layer, 0, 0);
+    } else ctx.drawImage(this.stageScene(state.stageId, covers), 0, 0);
     for (const projectile of state.projectiles || []) {
       const color = COLORS[projectile.owner] || COLORS[0], speed = Math.hypot(projectile.vx, projectile.vy) || 1;
       path(ctx, [[projectile.x - projectile.vx / speed * 20, projectile.y - projectile.vy / speed * 20], [projectile.x, projectile.y]], '#0e211ecc', 5);
@@ -478,7 +506,9 @@ export class VectorRenderer {
       ctx.fillStyle = '#fff6db'; ctx.fillRect(projectile.x - 1, projectile.y - 1, 2, 2);
     }
     for (const fighter of state.fighters) this.paintFighter(ctx, fighter, time);
-    this.impacts = this.impacts.filter(effect => (effect.age += dt) < effect.life);
+    let liveImpacts = 0;
+    for (const effect of this.impacts) if ((effect.age += dt) < effect.life) this.impacts[liveImpacts++] = effect;
+    this.impacts.length = liveImpacts;
     for (const impact of this.impacts) {
       ctx.save(); ctx.translate(impact.x, impact.y); ctx.rotate(impact.angle); ctx.globalAlpha = 1 - impact.age / impact.life;
       const outer = impact.type === 'hit' ? 15 : 10;
@@ -489,14 +519,19 @@ export class VectorRenderer {
       }
       ring(ctx, 0, 0, 4, impact.color, 1.5); ctx.restore();
     }
-    this.rings = this.rings.filter(effect => (effect.age += dt) < effect.life);
+    let liveRings = 0;
+    for (const effect of this.rings) if ((effect.age += dt) < effect.life) this.rings[liveRings++] = effect;
+    this.rings.length = liveRings;
     for (const effect of this.rings) { ctx.save(); ctx.globalAlpha = 1 - effect.age / effect.life; ring(ctx, effect.x, effect.y, effect.radius + (this.reducedMotion ? 0 : effect.age * 65), effect.color, 2); ctx.restore(); }
-    this.particles = this.particles.filter(particle => (particle.age += dt) < particle.life);
+    let liveParticles = 0;
+    for (const particle of this.particles) if ((particle.age += dt) < particle.life) this.particles[liveParticles++] = particle;
+    this.particles.length = liveParticles;
     for (const particle of this.particles) {
       particle.x += particle.vx * dt; particle.y += particle.vy * dt;
       ctx.globalAlpha = 1 - particle.age / particle.life; ctx.fillStyle = particle.color; ctx.fillRect(particle.x - 1, particle.y - 1, 2, 2);
     }
-    ctx.globalAlpha = 1; this.hitFlash = this.hitFlash.map(value => Math.max(0, value - dt));
+    ctx.globalAlpha = 1;
+    for (let i = 0; i < this.hitFlash.length; i++) this.hitFlash[i] = Math.max(0, this.hitFlash[i] - dt);
     if (localId != null) this.paintLocalHUD(ctx, state.fighters[localId], aimTarget, state.phase);
     else {
       ctx.fillStyle = '#b9c7a0'; ctx.textAlign = 'center'; ctx.font = '9px Consolas, monospace';

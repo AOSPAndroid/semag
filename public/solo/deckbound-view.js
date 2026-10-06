@@ -45,7 +45,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   function render() {
     if (destroyed) return;
     const focused = view.contains(document.activeElement) ? document.activeElement : null;
-    const focusData = focused?.dataset?.action ? { action: focused.dataset.action, uid: focused.dataset.uid, id: focused.dataset.id } : null;
+    const focusData = focused?.dataset?.action ? { action: focused.dataset.action, uid: focused.dataset.uid, id: focused.dataset.id, target: focused.dataset.target } : null;
     view.replaceChildren(); view.dataset.phase = state.phase;
     const top = node('div', 'deckbound-topline'); top.append(node('span', '', `ACT ${String(Math.min(3, state.act)).padStart(2, '0')} / 03`), node('strong', '', ACTS[Math.min(2, state.act - 1)]), node('span', 'deckbound-seed', `SEED ${state.seed}`));
     view.append(top, resourceLine(), relicRow());
@@ -67,7 +67,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       for (const b of view.querySelectorAll('button')) b.disabled = true;
       const overlay = node('div', 'deckbound-pause'); overlay.append(node('small', '', 'YOUR ROAD WAITS'), node('strong', '', 'Take a breath.'), button('Resume this encounter →', 'resume', {}, 'deckbound-primary')); view.append(overlay);
     }
-    if (focusData) { const candidates = [...view.querySelectorAll('button:not(:disabled)')]; const same = candidates.find(b => b.dataset.action === focusData.action && b.dataset.uid === focusData.uid && b.dataset.id === focusData.id); (same || candidates.find(b => b.dataset.action === 'play-card'))?.focus({ preventScroll: true }); }
+    if (focusData) { const candidates = [...view.querySelectorAll('button:not(:disabled)')]; const same = candidates.find(b => b.dataset.action === focusData.action && b.dataset.uid === focusData.uid && b.dataset.id === focusData.id && b.dataset.target === focusData.target); (same || candidates.find(b => b.dataset.action === 'play-card'))?.focus({ preventScroll: true }); }
     publish();
   }
   function renderRoute() {
@@ -162,7 +162,15 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     if (action === 'replay-seed') { state = createState({ seed: state.seed }); target = 0; showDeck = false; choosingUpgrade = false; choosingRemoval = false; render(); return; }
     if (state.phase === 'paused') return;
     if (action === 'inspect') { showDeck = !showDeck; render(); return; }
-    if (action === 'target') { target = Number(b.dataset.target); render(); return; }
+    if (action === 'target') {
+      const next = Number(b.dataset.target);
+      if (next === target) return;
+      const previous = view.querySelector(`[data-action="target"][data-target="${target}"]`);
+      previous?.classList.remove('is-target'); previous?.setAttribute('aria-pressed', 'false');
+      target = next;
+      b.classList.add('is-target'); b.setAttribute('aria-pressed', 'true');
+      return;
+    }
     if (action === 'show-upgrades') { choosingUpgrade = !choosingUpgrade; render(); return; }
     if (action === 'show-removal') { choosingRemoval = !choosingRemoval; render(); return; }
     run(action, { id: b.dataset.id, uid: Number(b.dataset.uid), kind: b.dataset.kind, target });

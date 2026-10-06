@@ -1,9 +1,11 @@
+import { setText, setAttribute, setHidden, setDisabled, setClass, toggleClass, setStyle, setHTML } from './hub/dom.js';
 import { createState, step, startMatch, cloneState, emptyInput, TICK_RATE } from './engine.js';
 import { ArenaRenderer } from './renderer.js';
 import { botInput, TRAINING_STAGES } from './practice.js';
 import { GameAudio } from './audio.js';
 
-const $ = (id) => document.getElementById(id);
+const elements = new Map();
+const $ = id => { const node = elements.get(id) || document.getElementById(id); if (node) elements.set(id, node); return node; };
 const canvas = $('arena');
 const renderer = new ArenaRenderer(canvas);
 const audio = new GameAudio();
@@ -22,10 +24,10 @@ let keys = emptyInput(), correction = { x: 0, y: 0 }, practice = false;
 let trainingMode='open', trainingStage=0;
 const trainingProfile=()=>trainingMode==='ladder'?TRAINING_STAGES[trainingStage]:TRAINING_STAGES.find(stage=>stage.id===trainingMode);
 function trainingHUD(){
-  $('training-panel').hidden=!practice;const profile=trainingProfile();
-  $('training-title').textContent=profile?.name || 'Open sparring';
-  $('training-tip').textContent=profile?.tip || 'Practice the whole move set against a balanced sparring partner.';
-  $('training-progress').textContent=trainingMode==='ladder'?`${trainingStage+1} / 5 DUELS${practiceState?.phase==='matchEnd' && practiceState.winner===0?' · CLEARED':''}`:'';
+  setHidden($('training-panel'), !practice);const profile=trainingProfile();
+  setText($('training-title'), profile?.name || 'Open sparring');
+  setText($('training-tip'), profile?.tip || 'Practice the whole move set against a balanced sparring partner.');
+  setText($('training-progress'), trainingMode==='ladder'?`${trainingStage+1} / 5 DUELS${practiceState?.phase==='matchEnd' && practiceState.winner===0?' · CLEARED':''}`:'');
 }
 function restartPractice(){
   releaseKeys();audio.resetEvents();renderer.resetEffects?.();practiceState=createState();startMatch(practiceState);
@@ -56,15 +58,15 @@ function send(message) {
 }
 
 function connectedUI() {
-  $('connection-dot').classList.toggle('online', connected || practice);
-  $('connection-status').textContent = practice ? 'PRACTICE' : connected ? 'HOST CONNECTED' : fullRoom ? 'ROOM FULL' : 'RECONNECTING';
-  $('ping').textContent = practice ? 'LOCAL' : ping == null ? '— ms' : `${ping} ms`;
-  $('ready-button').disabled = !practice && (!connected || localId == null);
-  $('p1-you').hidden = (practice ? 0 : localId) !== 0;
-  $('p2-you').hidden = (practice ? 0 : localId) !== 1;
-  $('identity-number').textContent = (practice ? 0 : localId) === 1 ? '02' : '01';
-  $('corner-label').textContent = practice ? 'PRACTICE / YOUR CORNER' : 'YOUR CORNER';
-  document.querySelector('.name-field>span').style.color = !practice && localId === 1 ? 'var(--purple)' : 'var(--green)';
+  toggleClass($('connection-dot'), 'online', connected || practice);
+  setText($('connection-status'), practice ? 'PRACTICE' : connected ? 'HOST CONNECTED' : fullRoom ? 'ROOM FULL' : 'RECONNECTING');
+  setText($('ping'), practice ? 'LOCAL' : ping == null ? '— ms' : `${ping} ms`);
+  setDisabled($('ready-button'), !practice && (!connected || localId == null));
+  setHidden($('p1-you'), (practice ? 0 : localId) !== 0);
+  setHidden($('p2-you'), (practice ? 0 : localId) !== 1);
+  setText($('identity-number'), (practice ? 0 : localId) === 1 ? '02' : '01');
+  setText($('corner-label'), practice ? 'PRACTICE / YOUR CORNER' : 'YOUR CORNER');
+  setStyle(document.querySelector('.name-field>span'), 'color', !practice && localId === 1 ? 'var(--purple)' : 'var(--green)');
 }
 
 function receiveState(message) {
@@ -77,7 +79,8 @@ function receiveState(message) {
   const old = oldPosition ? { x: oldPosition.x, y: oldPosition.y } : null;
   const ack = message.acks?.[localId] ?? -1;
   pending = pending.filter((frame) => frame.seq > ack);
-  predicted = cloneState(state);
+  // Only combat prediction mutates state. Idle snapshots can be read directly.
+  predicted = state.phase === 'fight' ? cloneState(state) : state;
   if (localId != null && state.phase === 'fight') {
     const remoteInput = { ...emptyInput(), ...state.fighters[1 - localId].previousInput };
     for (const frame of pending) {
@@ -92,7 +95,7 @@ function receiveState(message) {
       correction.y = Math.max(-35, Math.min(35, old.y + correction.y - fighter.y));
     }
   } else correction = { x: 0, y: 0 };
-  snapshots.push({ time: lastSnapshotAt, state: cloneState(state) });
+  snapshots.push({ time: lastSnapshotAt, state });
   if (snapshots.length > 12) snapshots.shift();
   if (!practice) audio.playEvents(state.events || []);
   if (!practice && state.phase !== previousPhase) {
@@ -172,7 +175,10 @@ document.addEventListener('keyup', (event) => {
   if (keyMapping.has(event.code)) { heldCodes.delete(event.code); refreshKeys(); if (!isTyping(event.target) && !(event.target instanceof Element && event.target.closest('button,a,summary'))) event.preventDefault(); }
 });
 window.addEventListener('blur', () => { releaseKeys(); focusLost = true; });
-document.addEventListener('visibilitychange', () => { if (document.hidden) releaseKeys(); });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) releaseKeys();
+  previousTime = performance.now(); accumulator = 0;
+});
 $('player-name').addEventListener('focus', releaseKeys);
 canvas.tabIndex = 0;
 canvas.addEventListener('pointerdown', () => { canvas.focus(); focusLost = false; $('focus-note').hidden = true; });
@@ -276,8 +282,8 @@ function inputTick() {
       previousPhase = practiceState.phase;
     }
   }
-  if (connected && localId != null) {
-    const frame = { type: 'input', seq: ++sequence, buttons: practice ? emptyInput() : copyInput() };
+  if (!practice && authoritative.phase === 'fight' && connected && localId != null) {
+    const frame = { type: 'input', seq: ++sequence, buttons: copyInput() };
     send(frame);
     pending.push(frame);
     if (pending.length > 180) pending.shift();
@@ -320,77 +326,81 @@ function updateHUD(now) {
   const names = practice ? [playerName, trainingProfile()?.name.slice(5) || 'Sparring partner'] : players.map((p, i) => safeName(p?.name, `Challenger 0${i + 1}`));
   for (let i = 0; i < 2; i++) {
     const fighter = state.fighters[i], prefix = `p${i + 1}`;
-    $(prefix + '-name').textContent = names[i].toUpperCase();
+    setText($(prefix + '-name'), names[i].toUpperCase());
     const hp = Math.max(0, Math.min(100, fighter.hp));
-    $(prefix + '-health').style.width = `${hp}%`;
-    $(prefix + '-ghost').style.width = `${hp}%`;
-    $(prefix + '-stamina').style.width = `${Math.max(0, Math.min(100, fighter.stamina))}%`;
-    $(prefix + '-action').textContent = state.phase === 'lobby'
+    setStyle($(prefix + '-health'), 'width', `${hp}%`);
+    setStyle($(prefix + '-ghost'), 'width', `${hp}%`);
+    setStyle($(prefix + '-stamina'), 'width', `${Math.max(0, Math.min(100, fighter.stamina))}%`);
+    setText($(prefix + '-action'), state.phase === 'lobby'
       ? (players[i]?.connected ? players[i]?.ready ? 'READY TO DUEL' : 'IN THE ROOM' : 'WAITING FOR PLAYER')
-      : fighter.guardBroken > 0 ? 'GUARD BROKEN' : actionLabels[fighter.action] || 'FIGHTING';
-    $(prefix + '-wins').querySelectorAll('i').forEach((dot, j) => dot.classList.toggle('won', j < (fighter.wins || 0)));
+      : fighter.guardBroken > 0 ? 'GUARD BROKEN' : actionLabels[fighter.action] || 'FIGHTING');
+    $(prefix + '-wins').querySelectorAll('i').forEach((dot, j) => toggleClass(dot, 'won', j < (fighter.wins || 0)));
     const active = practice || players[i]?.connected;
     const ready = practice || players[i]?.ready;
-    $(`slot${i + 1}-dot`).className = active ? ready ? 'ready' : 'connected' : '';
+    setClass($(`slot${i + 1}-dot`), active ? ready ? 'ready' : 'connected' : '');
     const cornerStatus = state.phase === 'fight' || state.phase === 'roundEnd' ? 'In the game' : ready ? 'Ready' : 'Not ready';
-    $(`slot${i + 1}-status`).textContent = practice ? `${names[i]} · ${i ? 'Practice AI' : 'You'}` : active ? `${names[i]} · ${cornerStatus}` : `Waiting for ${i === localId ? 'connection' : 'opponent'}`;
+    setText($(`slot${i + 1}-status`), practice ? `${names[i]} · ${i ? 'Practice AI' : 'You'}` : active ? `${names[i]} · ${cornerStatus}` : `Waiting for ${i === localId ? 'connection' : 'opponent'}`);
   }
-  $('round-label').textContent = `ROUND ${String(state.round || 1).padStart(2, '0')}`;
+  setText($('round-label'), `ROUND ${String(state.round || 1).padStart(2, '0')}`);
   const seconds = Math.max(0, Math.ceil((state.roundTicks ?? 90 * TICK_RATE) / TICK_RATE));
-  $('timer').textContent = String(seconds).padStart(2, '0');
-  $('timer').style.color = seconds <= 10 && state.phase === 'fight' ? '#eea087' : '';
+  setText($('timer'), String(seconds).padStart(2, '0'));
+  setStyle($('timer'), 'color', seconds <= 10 && state.phase === 'fight' ? '#eea087' : '');
   const mine = players[localId];
   const button = $('ready-button');
-  button.classList.toggle('is-ready', !practice && !!mine?.ready);
-  button.querySelector('span').textContent = practice ? state.phase === 'matchEnd' ? trainingMode==='ladder' && state.winner===0 ? trainingStage===4 ? 'Ladder complete · Play again' : 'Next training duel' : 'Retry duel' : 'Restart practice' : state.phase === 'matchEnd' ? mine?.ready ? 'Rematch ready' : 'Rematch' : state.phase === 'fight' || state.phase === 'roundEnd' ? 'Match in progress' : mine?.ready ? 'Cancel ready' : 'Ready up';
-  button.disabled = !practice && (!connected || localId == null || state.phase === 'fight' || state.phase === 'roundEnd' || state.phase === 'countdown' && state.round > 1);
-  $('practice-button').disabled = !practice && ['fight', 'roundEnd', 'countdown'].includes(authoritative.phase);
-  $('player-name').disabled = inMatch;
-  document.querySelector('.game-shell').classList.toggle('in-fight', state.phase === 'fight');
-  $('focus-note').hidden = !(focusLost && state.phase === 'fight');
+  toggleClass(button, 'is-ready', !practice && !!mine?.ready);
+  setText(button.querySelector('span'), practice ? state.phase === 'matchEnd' ? trainingMode==='ladder' && state.winner===0 ? trainingStage===4 ? 'Ladder complete · Play again' : 'Next training duel' : 'Retry duel' : 'Restart practice' : state.phase === 'matchEnd' ? mine?.ready ? 'Rematch ready' : 'Rematch' : state.phase === 'fight' || state.phase === 'roundEnd' ? 'Match in progress' : mine?.ready ? 'Cancel ready' : 'Ready up');
+  setDisabled(button, !practice && (!connected || localId == null || state.phase === 'fight' || state.phase === 'roundEnd' || state.phase === 'countdown' && state.round > 1));
+  setDisabled($('practice-button'), !practice && ['fight', 'roundEnd', 'countdown'].includes(authoritative.phase));
+  setDisabled($('player-name'), inMatch);
+  toggleClass(document.querySelector('.game-shell'), 'in-fight', state.phase === 'fight');
+  setHidden($('focus-note'), !(focusLost && state.phase === 'fight'));
   if(practice)trainingHUD();
-  $('timer-caption').textContent = practice ? 'SPARRING SESSION' : 'BEST OF THREE';
+  setText($('timer-caption'), practice ? 'SPARRING SESSION' : 'BEST OF THREE');
   const overlay = $('game-overlay');
-  overlay.className = 'game-overlay';
-  overlay.hidden = false;
+  let overlayClass = 'game-overlay', overlayHidden = false;
   let kicker, title, subtitle;
   if (state.phase === 'lobby') {
     countdownLast = null;
     kicker = fullRoom ? 'TWO CORNERS. TWO FIGHTERS.' : !connected ? 'FINDING THE HOST' : mine?.ready ? 'CHALLENGE ACCEPTED' : 'THE ROOM IS OPEN';
     title = fullRoom ? 'Room occupied.' : !connected ? 'Reconnecting.' : mine?.ready ? 'Hold your ground.' : 'Your move.';
     subtitle = fullRoom ? 'Both player slots are in use. You can still train in practice.' : !connected ? 'Keep the host running. We’ll bring you back into the room.' : mine?.ready ? 'Waiting for your opponent to ready up.' : 'Ready up. Your opponent will meet you here.';
-    $('arena-status').innerHTML = '<i></i> WAITING FOR TWO FIGHTERS';
-    $('round-message').textContent = 'BOTH PLAYERS READY → FIGHT';
+    setHTML($('arena-status'), '<i></i> WAITING FOR TWO FIGHTERS');
+    setText($('round-message'), 'BOTH PLAYERS READY → FIGHT');
   } else if (state.phase === 'countdown') {
     const count = Math.max(1, Math.ceil(state.phaseTicks / TICK_RATE));
     kicker = `ROUND ${String(state.round).padStart(2, '0')} / GET READY`;
-    title = String(count); subtitle = 'Find your range.'; overlay.classList.add('countdown');
+    title = String(count); subtitle = 'Find your range.'; overlayClass += ' countdown';
     if (count !== countdownLast) { audio.countdown(count); countdownLast = count; }
-    $('arena-status').innerHTML = '<i></i> BOTH FIGHTERS READY';
-    $('round-message').textContent = 'THE DUEL STARTS NOW';
+    setHTML($('arena-status'), '<i></i> BOTH FIGHTERS READY');
+    setText($('round-message'), 'THE DUEL STARTS NOW');
   } else if (state.phase === 'fight') {
-    if (now < fightFlashUntil) { kicker = 'NO SECOND GUESSING'; title = 'FIGHT'; subtitle = ''; overlay.classList.add('fight-flash'); }
-    else overlay.hidden = true;
-    $('arena-status').innerHTML = `<i></i> ${practice ? 'SPARRING SESSION' : 'DUEL IN PROGRESS'}`;
-    $('round-message').textContent = 'READ. REACT. COMMIT.';
+    if (now < fightFlashUntil) { kicker = 'NO SECOND GUESSING'; title = 'FIGHT'; subtitle = ''; overlayClass += ' fight-flash'; }
+    else overlayHidden = true;
+    setHTML($('arena-status'), `<i></i> ${practice ? 'SPARRING SESSION' : 'DUEL IN PROGRESS'}`);
+    setText($('round-message'), 'READ. REACT. COMMIT.');
   } else {
     countdownLast = null;
     const winner = state.winner;
     kicker = state.phase === 'matchEnd' ? 'THE ROOFTOP HAS A WINNER' : `ROUND ${String(state.round).padStart(2, '0')} COMPLETE`;
     title = winner == null ? 'A perfect tie.' : `${winner === (practice ? 0 : localId) ? 'You' : names[winner]} ${winner === (practice ? 0 : localId) ? 'win' : 'wins'}.`;
     subtitle = state.phase === 'matchEnd' ? practice ? trainingMode==='ladder' && winner===0 ? trainingStage===4 ? 'All five opponents defeated. The rooftop is yours.' : 'Challenge cleared. Continue to your next opponent below.' : 'Study the matchup, then retry or choose another training opponent.' : 'Run it back. Both players must ready up for a rematch.' : 'Take a breath. Next round starts shortly.';
-    $('arena-status').innerHTML = `<i></i> ${state.phase === 'matchEnd' ? 'MATCH COMPLETE' : 'ROUND COMPLETE'}`;
-    $('round-message').textContent = state.phase === 'matchEnd' ? 'READY FOR A REMATCH?' : 'FIRST TO TWO ROUNDS';
+    setHTML($('arena-status'), `<i></i> ${state.phase === 'matchEnd' ? 'MATCH COMPLETE' : 'ROUND COMPLETE'}`);
+    setText($('round-message'), state.phase === 'matchEnd' ? 'READY FOR A REMATCH?' : 'FIRST TO TWO ROUNDS');
   }
-  if (!overlay.hidden) {
-    $('overlay-kicker').textContent = kicker;
-    $('overlay-title').textContent = title;
-    $('overlay-subtitle').textContent = subtitle;
+  setClass(overlay, overlayClass); setHidden(overlay, overlayHidden);
+  if (!overlayHidden) {
+    setText($('overlay-kicker'), kicker);
+    setText($('overlay-title'), title);
+    setText($('overlay-subtitle'), subtitle);
   }
 }
 
 let previousTime = performance.now(), accumulator = 0;
 function animate(now) {
+  if (document.hidden) {
+    previousTime = now; accumulator = 0;
+    requestAnimationFrame(animate); return;
+  }
   // Drop long browser stalls. Never flood the server with stale catch-up inputs.
   accumulator += Math.min(65, now - previousTime); previousTime = now;
   let ticks = 0;

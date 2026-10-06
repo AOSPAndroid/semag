@@ -21,7 +21,11 @@ export function comicPose(f, time = 0, reduced = false) {
   const walk = reduced ? 0 : Math.floor(time / 90) % 4;
   const stride = action === 'run' ? reduced ? 0 : [-3, 0, 3, 0][walk] : action === 'jump' ? 3 : 0;
   const stretch = moving ? phase === 'windup' ? -5 : phase === 'strike' ? 17 : Math.max(0, 13 - frame * 2) : 0;
-  return { action, moving, frame, phase, walk, stride, stretch, direction: m?.direction || 'side', rise: (f.vy || 0) < -1, hurt: action === 'hit', shield: action === 'shield', fired: !!m?.fired, key: [f.characterId, action, phase, frame, walk, m?.direction, m?.kind, !!m?.fired, (f.vy || 0) < -1].join('/') };
+  const direction = m?.direction || 'side', rise = (f.vy || 0) < -1, fired = !!m?.fired;
+  // Cache only features that change the drawing: idle mechanics do not need
+  // four duplicate walk frames, and only the moth flutters while standing.
+  const key = `${f.characterId}/${action}/${phase}/${stretch}/${stride}/${direction}/${f.characterId === 'moth' ? walk : 0}/${f.characterId === 'parcel' && fired}/${action === 'jump' && rise}`;
+  return { action, moving, frame, phase, walk, stride, stretch, direction, rise, hurt: action === 'hit', shield: action === 'shield', fired, key };
 }
 function hand(p, x = 22, y = 1) { if (!p.moving) return [x + (p.action === 'jump' ? 3 : 0), p.action === 'jump' && p.rise ? y - 12 : p.shield ? y - 5 : y]; if (p.direction === 'up' || p.action === 'recovery') return [x - 10, -24]; if (p.direction === 'down') return [x - 5, p.phase === 'windup' ? -24 : 17]; return [x + p.stretch, p.phase === 'windup' ? y - 5 : y]; }
 

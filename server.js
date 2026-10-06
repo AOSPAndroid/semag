@@ -1,11 +1,13 @@
 import http from 'node:http';
 import { createReadStream } from 'node:fs';
-import { stat } from 'node:fs/promises';
+import { stat, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
+import { promisify } from 'node:util';
+import { brotliCompress, gzip, constants as zlibConstants } from 'node:zlib';
 import { WebSocket, WebSocketServer } from 'ws';
 import * as Afterimage from './public/engine.js';
 import * as Checkers from './public/checkers-engine.js';
@@ -50,6 +52,50 @@ function validControl(adapter, key, value) {
   return typeof value === 'number' && Number.isFinite(value) && value >= limits.min && value <= limits.max;
 }
 const isFile = filename => stat(filename).then(info => info.isFile(), () => false);
+const compressBrotli = promisify(brotliCompress), compressGzip = promisify(gzip);
+const assetCache = new Map();
+const ASSET_CACHE_BYTES = 16 * 1024 * 1024;
+let assetCacheBytes = 0;
+
+function encodingFor(header = '') {
+  const accepted = new Map(String(header).toLowerCase().split(',').map(part => {
+    const [name, ...params] = part.trim().split(';');
+    const quality = params.find(param => param.trim().startsWith('q='));
+    return [name, quality === undefined ? 1 : Number(quality.trim().slice(2))];
+  }));
+  const quality = name => accepted.get(name) ?? accepted.get('*') ?? 0;
+  if (quality('br') > 0 && quality('br') >= quality('gzip')) return 'br';
+  return quality('gzip') > 0 ? 'gzip' : null;
+}
+
+async function encodedAsset(filename, info, encoding) {
+  const key = `${filename}:${info.size}:${info.mtimeMs}:${encoding}`;
+  let entry = assetCache.get(key);
+  if (entry) { assetCache.delete(key); assetCache.set(key, entry); return entry.promise; }
+  entry = { bytes: 0, promise: null };
+  entry.promise = (async () => {
+    const source = await readFile(filename);
+    const result = encoding === 'br'
+      ? await compressBrotli(source, { params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 4 } })
+      : await compressGzip(source);
+    // Evicted in-flight entries may finish after another request starts them.
+    if (assetCache.get(key) === entry) {
+      entry.bytes = result.length; assetCacheBytes += result.length;
+      while (assetCacheBytes > ASSET_CACHE_BYTES && assetCache.size) {
+        const oldest = assetCache.keys().next().value;
+        assetCacheBytes -= assetCache.get(oldest).bytes; assetCache.delete(oldest);
+      }
+    }
+    return result;
+  })().catch(error => { if (assetCache.get(key) === entry) assetCache.delete(key); throw error; });
+  assetCache.set(key, entry);
+  // Also bound in-flight entries and tiny files by count.
+  while (assetCache.size > 256) {
+    const oldest = assetCache.keys().next().value;
+    assetCacheBytes -= assetCache.get(oldest).bytes; assetCache.delete(oldest);
+  }
+  return entry.promise;
+}
 
 function json(res, status, data, head = false) {
   res.writeHead(status, { 'Content-Type': MIME['.json'], 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
@@ -101,8 +147,27 @@ async function serveFile(req, res, pathname) {
     const headers = {
       'Content-Type': MIME[path.extname(filename).toLowerCase()] || 'application/octet-stream',
       'Content-Length': info.size, 'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff',
+      ETag: `W/"${info.size.toString(16)}-${info.mtimeMs.toString(16)}"`,
+      'Last-Modified': info.mtime.toUTCString(),
     };
     if (download) headers['Content-Disposition'] = `attachment; filename="${path.basename(filename)}"`;
+    const compressible = !download && info.size >= 1024 && info.size <= 512 * 1024 && /\.(?:html|js|css|json|svg)$/i.test(filename);
+    if (compressible) headers.Vary = 'Accept-Encoding';
+    const validators = String(req.headers['if-none-match'] || '').split(',').map(value => value.trim());
+    // If-None-Match uses weak comparison even when a client sends a strong tag.
+    const weakTag = value => value.replace(/^W\//, '');
+    const notModified = req.headers['if-none-match'] !== undefined
+      ? validators.some(value => value === '*' || weakTag(value) === weakTag(headers.ETag))
+      : req.headers['if-modified-since'] !== undefined && Math.floor(info.mtimeMs / 1000) * 1000 <= Date.parse(req.headers['if-modified-since']);
+    if (notModified) {
+      delete headers['Content-Length']; res.writeHead(304, headers); res.end(); return;
+    }
+    const encoding = compressible ? encodingFor(req.headers['accept-encoding']) : null;
+    if (encoding) {
+      const content = await encodedAsset(filename, info, encoding);
+      headers['Content-Encoding'] = encoding; headers['Content-Length'] = content.length;
+      res.writeHead(200, headers); res.end(req.method === 'HEAD' ? undefined : content); return;
+    }
     res.writeHead(200, headers);
     if (req.method === 'HEAD') res.end();
     else createReadStream(filename).on('error', () => res.destroy()).pipe(res);
@@ -114,6 +179,7 @@ async function serveFile(req, res, pathname) {
 /** Creates a PC-hosted hub with independent authoritative, two-player rooms. */
 export function createServer(options = {}) {
   const rooms = new Map();
+  const occupiedRooms = new Set();
   const creationRates = new Map();
   const maxRooms = Math.max(1, Math.min(100, options.maxRooms ?? 100));
   const creationLimit = options.creationLimit ?? 20;
@@ -135,7 +201,6 @@ export function createServer(options = {}) {
     };
   }
   const legacyRoom = makeRoom(null, 'afterimage', 'Afterimage Duel');
-  const allRooms = () => [legacyRoom, ...rooms.values()];
   const summary = room => ({ id: room.id, gameId: room.gameId, name: room.name, players: room.players, phase: room.state.phase, createdAt: room.createdAt });
   function reapRooms(now = Date.now()) {
     for (const [id, room] of rooms) {
@@ -212,7 +277,7 @@ export function createServer(options = {}) {
   }
   function error(ws, message) { send(ws, { type: 'error', message }); }
   function broadcast(selectedRoom) {
-    for (const room of selectedRoom ? [selectedRoom] : allRooms()) {
+    for (const room of selectedRoom ? [selectedRoom] : occupiedRooms) {
       if (!room.slots.some(Boolean)) continue;
       const envelope = { type: 'state', roomId: room.id, gameId: room.gameId, players: room.players, acks: room.acks };
       // Hidden-information games never share their internal state, even in the lobby.
@@ -246,7 +311,7 @@ export function createServer(options = {}) {
   }
   function tick() {
     const now = performance.now();
-    for (const room of allRooms()) {
+    for (const room of occupiedRooms) {
       const inputs = room.slots.map((slot, index) => {
         if (!slot) return freshInput(room);
         if (slot.queue.length) {
@@ -262,7 +327,10 @@ export function createServer(options = {}) {
       // Card actions broadcast immediately; a 10 Hz heartbeat keeps idle tables alive.
       if (room.adapter.viewForPlayer) {
         if (room.state.revision !== room.lastBroadcastRevision || room.state.tick - room.lastBroadcastTick >= 12) broadcast(room);
-      } else if (room.state.tick % 2 === 0) broadcast(room);
+      } else {
+        const idle = room.state.phase === 'lobby' || room.state.phase === 'matchEnd' || !room.adapter.inputKeys.length && room.state.phase === 'fight';
+        if (room.state.tick - room.lastBroadcastTick >= (idle ? 12 : 2)) broadcast(room);
+      }
     }
   }
   function pump() {
@@ -275,11 +343,11 @@ export function createServer(options = {}) {
   }
   function startTicker() {
     if (!maintenance) maintenance = setInterval(reapRooms, 10_000);
-    if (ticker || options.autoTick === false) return;
+    if (ticker || options.autoTick === false || !occupiedRooms.size) return;
     lastTime = performance.now(); accumulator = 0;
     ticker = setInterval(pump, 4);
     heartbeat = setInterval(() => {
-      for (const room of allRooms()) for (const slot of room.slots) {
+      for (const room of occupiedRooms) for (const slot of room.slots) {
         if (!slot) continue;
         if (!slot.alive) { slot.ws.terminate(); continue; }
         slot.alive = false; slot.ws.ping();
@@ -323,6 +391,8 @@ export function createServer(options = {}) {
       lastInputTime: performance.now(), alive: true, rateWindow: performance.now(), messages: 0,
     };
     room.slots[id] = slot;
+    occupiedRooms.add(room);
+    startTicker();
     room.players[id] = { name: `Player ${id + 1}`, connected: true, ready: false };
     room.acks[id] = -1; room.hadPlayers = true; room.emptySince = null;
     send(ws, { type: 'welcome', playerId: id, roomId: room.id, gameId: room.gameId, sessionId: room.sessionId, tickRate: TICK_RATE });
@@ -411,7 +481,12 @@ export function createServer(options = {}) {
     ws.on('close', () => {
       if (room.slots[id] !== slot) return;
       room.slots[id] = null; room.players[id] = null; room.acks[id] = -1;
-      if (!room.slots.some(Boolean)) room.emptySince = Date.now();
+      if (!room.slots.some(Boolean)) {
+        room.emptySince = Date.now(); occupiedRooms.delete(room);
+        if (!occupiedRooms.size) {
+          clearInterval(ticker); clearInterval(heartbeat); ticker = heartbeat = null;
+        }
+      }
       returnToLobby(room);
       if (room.gameId === 'oddstock-rumble') Brawl.clearSelection(room.state, id);
       broadcast(room);

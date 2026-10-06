@@ -1,3 +1,4 @@
+import { setText, setAttribute, setHidden, setDisabled, setClass, toggleClass, setStyle, setHTML } from './dom.js';
 import * as topdown from '../topdown-engine.js';
 import * as checkers from '../checkers-engine.js';
 import * as cards from '../cards-engine.js';
@@ -11,7 +12,8 @@ import { BrawlRenderer, drawFighterPortrait, drawStagePreview } from '../brawl-r
 import { GameAudio } from '../audio.js';
 import { GAMES, roomUrl, getName, saveName, hostInfo, copyText } from './shared.js';
 
-const $ = id => document.getElementById(id);
+const elements = new Map();
+const $ = id => { const node = elements.get(id) || document.getElementById(id); if (node) elements.set(id, node); return node; };
 const params = new URLSearchParams(location.search);
 const roomId = (params.get('room') || '').toUpperCase();
 const gameId = GAMES[params.get('game')] ? params.get('game') : 'relic-duel';
@@ -73,10 +75,11 @@ function error(message) { $('error-banner').textContent = message || ''; $('erro
 function toast(message) { $('toast').textContent = message; $('toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { $('toast').hidden = true; }, 2700); }
 function send(message) { if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message)); }
 function updateConnection() {
-  $('connection-dot').classList.toggle('online', connected);
-  $('connection-status').textContent = connected ? 'HOST CONNECTED' : permanentlyClosed ? 'ROOM UNAVAILABLE' : 'RECONNECTING';
-  $('ping').textContent = ping == null ? '— ms' : `${ping} ms`;
-  $('p1-you').hidden = localId !== 0; $('p2-you').hidden = localId !== 1;
+  toggleClass($('connection-dot'), 'online', connected);
+  setText($('connection-status'), connected ? 'HOST CONNECTED' : permanentlyClosed ? 'ROOM UNAVAILABLE' : 'RECONNECTING');
+  setText($('ping'), ping == null ? '— ms' : `${ping} ms`);
+  setHidden($('p1-you'), localId !== 0); setHidden($('p2-you'), localId !== 1);
+  if (!realtimeMode) scheduleFrame();
 }
 function receiveState(message) {
   const state = message.state;
@@ -86,7 +89,9 @@ function receiveState(message) {
   const phase = authoritative.phase; authoritative = state;
   if (realtimeMode) {
     pending = pending.filter(frame => frame.seq > (message.acks?.[localId] ?? -1));
-    predicted = clone(state);
+    // Clone only the state that prediction will advance; received snapshots
+    // remain immutable and can also serve the interpolation history directly.
+    predicted = state.phase === 'fight' ? clone(state) : state;
     if (localId != null && state.phase === 'fight') {
       const remote = { ...emptyInput(), ...state.fighters[1 - localId].previousInput };
       for (const frame of pending) {
@@ -99,7 +104,7 @@ function receiveState(message) {
         correction.y = Math.max(-45, Math.min(45, old.y + correction.y - own.y));
       }
     } else correction = { x: 0, y: 0 };
-    snapshots.push({ time: lastSnapshotAt, state: clone(state) }); if (snapshots.length > 12) snapshots.shift();
+    snapshots.push({ time: lastSnapshotAt, state }); if (snapshots.length > 12) snapshots.shift();
     audio.playEvents(state.events || []);
   } else if (boardMode && state.lastMove && state.lastMove.tick !== receiveState.lastMoveTick) {
     receiveState.lastMoveTick = state.lastMove.tick;
@@ -110,6 +115,7 @@ function receiveState(message) {
     if (state.phase === 'lobby') { releaseKeys(); countdownLast = null; board?.resetSelection(); cardTable?.resetSelection(); }
     previousPhase = state.phase;
   }
+  if (!realtimeMode) scheduleFrame();
 }
 function connect() {
   clearTimeout(reconnectTimer);
@@ -354,23 +360,23 @@ function setupBrawl() {
 function updateBrawlLobby(state) {
   if (!brawlMode) return;
   const lobby = state.phase === 'lobby', own = localId == null ? null : state.fighters[localId];
-  $('room-app').classList.toggle('brawl-lobby-open', lobby); $('brawl-lobby').hidden = !lobby;
-  $('brawl-controls').hidden = lobby;
-  $('brawl-selection-status').textContent = own?.selected ? `${brawl.CHARACTERS[own.characterId]?.name || 'FIGHTER'} SELECTED` : 'PICK YOUR FIGHTER';
+  toggleClass($('room-app'), 'brawl-lobby-open', lobby); setHidden($('brawl-lobby'), !lobby);
+  setHidden($('brawl-controls'), lobby);
+  setText($('brawl-selection-status'), own?.selected ? `${brawl.CHARACTERS[own.characterId]?.name || 'FIGHTER'} SELECTED` : 'PICK YOUR FIGHTER');
   for (const button of $('brawl-roster').children) {
-    button.disabled = !connected || localId == null || !lobby;
-    button.setAttribute('aria-pressed', String(button.dataset.brawlCharacter === own?.characterId));
+    setDisabled(button, !connected || localId == null || !lobby);
+    setAttribute(button, 'aria-pressed', String(button.dataset.brawlCharacter === own?.characterId));
   }
   for (const button of $('brawl-stages').children) {
-    button.disabled = !connected || localId !== 0 || !lobby;
-    button.setAttribute('aria-pressed', String(state.stageSelected && button.dataset.brawlStage === state.stageId));
+    setDisabled(button, !connected || localId !== 0 || !lobby);
+    setAttribute(button, 'aria-pressed', String(state.stageSelected && button.dataset.brawlStage === state.stageId));
   }
-  $('brawl-stage-note').textContent = localId === 0 ? 'YOU HOST / CHOOSE THE STAGE' : state.stageSelected ? `HOST CHOSE ${brawl.STAGES[state.stageId]?.name?.toUpperCase()}` : 'WAITING FOR THE HOST TO CHOOSE';
+  setText($('brawl-stage-note'), localId === 0 ? 'YOU HOST / CHOOSE THE STAGE' : state.stageSelected ? `HOST CHOSE ${brawl.STAGES[state.stageId]?.name?.toUpperCase()}` : 'WAITING FOR THE HOST TO CHOOSE');
   const character = brawl.CHARACTERS[own?.characterId];
   if (updateBrawlLobby.character !== character?.id) {
     updateBrawlLobby.character = character?.id;
-    $('brawl-character-name').textContent = character?.name || 'Meet your fighter.';
-    $('brawl-character-description').textContent = character?.description || 'Choose a fighter to see their signature moves.';
+    setText($('brawl-character-name'), character?.name || 'Meet your fighter.');
+    setText($('brawl-character-description'), character?.description || 'Choose a fighter to see their signature moves.');
     $('brawl-moves').replaceChildren();
     if (character) for (const [label, detail] of [
       [character.specialName, 'K + side or neutral: your signature special.'],
@@ -405,6 +411,7 @@ $('fullscreen-button').addEventListener('click', async () => { try { if (documen
 
 function inputTick() {
   if (!realtimeMode || !connected || localId == null) return;
+  if (authoritative.phase !== 'fight') { pressIntents.clear(); return; }
   if (modernControls) refreshKeys();
   const buttons = { ...keys };
   if (modernControls) { for (const action of pressIntents) buttons[action] = true; pressIntents.clear(); }
@@ -471,84 +478,84 @@ function updateHUD(now) {
   const active = ['countdown', 'fight', 'roundEnd'].includes(phase);
   for (let i = 0; i < 2; i++) {
     const prefix = `p${i + 1}`, player = players[i];
-    $(prefix + '-name').textContent = names[i].toUpperCase();
-    $(`slot${i + 1}-name`).textContent = player?.connected ? names[i] : 'Waiting for a friend';
-    $(`slot${i + 1}-status`).textContent = player?.connected ? player.ready ? 'Ready to play' : active ? 'In the game' : 'Not ready yet' : 'Seat open';
-    $(`slot${i + 1}-dot`).className = `slot-dot ${player?.connected ? player.ready ? 'ready' : 'connected' : ''}`;
-    $(`slot${i + 1}-avatar`).textContent = player?.connected ? names[i].slice(0, 1).toUpperCase() : `0${i + 1}`;
+    setText($(prefix + '-name'), names[i].toUpperCase());
+    setText($(`slot${i + 1}-name`), player?.connected ? names[i] : 'Waiting for a friend');
+    setText($(`slot${i + 1}-status`), player?.connected ? player.ready ? 'Ready to play' : active ? 'In the game' : 'Not ready yet' : 'Seat open');
+    setClass($(`slot${i + 1}-dot`), `slot-dot ${player?.connected ? player.ready ? 'ready' : 'connected' : ''}`);
+    setText($(`slot${i + 1}-avatar`), player?.connected ? names[i].slice(0, 1).toUpperCase() : `0${i + 1}`);
     if (boardMode) {
       const pieces = state.board.filter(p => p?.owner === i).length, kings = state.board.filter(p => p?.owner === i && p.king).length;
-      $(prefix + '-score').textContent = pieces;
-      $(prefix + '-detail').textContent = `${pieces} PIECES / ${kings} KINGS`;
+      setText($(prefix + '-score'), pieces);
+      setText($(prefix + '-detail'), `${pieces} PIECES / ${kings} KINGS`);
     } else if (cardMode) {
-      $(prefix + '-score').textContent = gameId === 'crazy-eights' ? state.handCounts[i] : state.scores[i];
-      $(prefix + '-detail').textContent = gameId === 'crazy-eights' ? 'CARDS IN HAND' : gameId === 'memory' ? 'PAIRS FOUND' : `${state.scores[i]} POINTS / ${state.totals[i] == null ? 'HIDDEN HAND' : state.totals[i] > 21 ? 'BUST' : `${state.totals[i]} IN HAND`}`;
+      setText($(prefix + '-score'), gameId === 'crazy-eights' ? state.handCounts[i] : state.scores[i]);
+      setText($(prefix + '-detail'), gameId === 'crazy-eights' ? 'CARDS IN HAND' : gameId === 'memory' ? 'PAIRS FOUND' : `${state.scores[i]} POINTS / ${state.totals[i] == null ? 'HIDDEN HAND' : state.totals[i] > 21 ? 'BUST' : `${state.totals[i]} IN HAND`}`);
     } else if (brawlMode) {
       const fighter = state.fighters[i], character = brawl.CHARACTERS[fighter.characterId];
-      $(prefix + '-score').textContent = `${Math.round(fighter.damage)}%`;
-      $(prefix + '-detail').textContent = fighter.respawnTicks > 0 ? 'RETURNING…' : character?.name?.toUpperCase() || 'CHOOSE FIGHTER';
+      setText($(prefix + '-score'), `${Math.round(fighter.damage)}%`);
+      setText($(prefix + '-detail'), fighter.respawnTicks > 0 ? 'RETURNING…' : character?.name?.toUpperCase() || 'CHOOSE FIGHTER');
       let stocks = $(prefix + '-stocks');
-      if (!stocks) { stocks = document.createElement('span'); stocks.id = prefix + '-stocks'; stocks.className = 'brawl-stocks'; $(prefix + '-detail').parentElement.prepend(stocks); }
-      stocks.textContent = '●'.repeat(Math.max(0, fighter.stocks)) || 'OUT'; stocks.setAttribute('aria-label', `${fighter.stocks} stocks left`);
+      if (!stocks) { stocks = document.createElement('span'); stocks.id = prefix + '-stocks'; setClass(stocks, 'brawl-stocks'); $(prefix + '-detail').parentElement.prepend(stocks); }
+      setText(stocks, '●'.repeat(Math.max(0, fighter.stocks)) || 'OUT'); setAttribute(stocks, 'aria-label', `${fighter.stocks} stocks left`);
     } else {
       const fighter = state.fighters[i];
-      $(prefix + '-health').style.width = `${Math.min(100, Math.max(0, fighter.hp) / (fighter.maxHp || 100) * 100)}%`;
-      $(prefix + '-stamina').style.width = `${Math.max(0, fighter.stamina)}%`;
-      $(prefix + '-score').textContent = coop ? fighter.downed ? '↓' : `${Math.ceil(fighter.hp)}` : `${fighter.wins} / 2`;
-      $(prefix + '-detail').textContent = vectorMode ? fighter.reloadTicks > 0 ? `RELOAD ${(fighter.reloadTicks / 120).toFixed(1)}s` : `${fighter.ammo} / 6 SHOTS` : fighter.downed ? `REVIVE ${Math.round((fighter.reviveProgress || 0) / 180 * 100)}%` : fighter.guardBroken ? 'GUARD BROKEN' : fighter.action === 'block' ? 'GUARDING' : fighter.action === 'roll' ? 'EVADING' : 'STAMINA';
+      setStyle($(prefix + '-health'), 'width', `${Math.min(100, Math.max(0, fighter.hp) / (fighter.maxHp || 100) * 100)}%`);
+      setStyle($(prefix + '-stamina'), 'width', `${Math.max(0, fighter.stamina)}%`);
+      setText($(prefix + '-score'), coop ? fighter.downed ? '↓' : `${Math.ceil(fighter.hp)}` : `${fighter.wins} / 2`);
+      setText($(prefix + '-detail'), vectorMode ? fighter.reloadTicks > 0 ? `RELOAD ${(fighter.reloadTicks / 120).toFixed(1)}s` : `${fighter.ammo} / 6 SHOTS` : fighter.downed ? `REVIVE ${Math.round((fighter.reviveProgress || 0) / 180 * 100)}%` : fighter.guardBroken ? 'GUARD BROKEN' : fighter.action === 'block' ? 'GUARDING' : fighter.action === 'roll' ? 'EVADING' : 'STAMINA');
       if (vectorMode) {
-        $(prefix + '-health-track').setAttribute('aria-label', `${names[i]} health: ${Math.ceil(fighter.hp)} of 100`);
-        $(prefix + '-stamina-track').setAttribute('aria-label', `${names[i]} dash stamina: ${Math.round(fighter.stamina)} of 100`);
+        setAttribute($(prefix + '-health-track'), 'aria-label', `${names[i]} health: ${Math.ceil(fighter.hp)} of 100`);
+        setAttribute($(prefix + '-stamina-track'), 'aria-label', `${names[i]} dash stamina: ${Math.round(fighter.stamina)} of 100`);
       }
     }
   }
   if (boardMode) {
-    $('round-label').textContent = phase === 'fight' ? `TURN ${String(state.moves + 1).padStart(2, '0')}` : 'CHECKERS';
-    $('timer').textContent = phase === 'fight' ? state.turn === localId ? 'YOU' : 'THEM' : '1V1';
-    $('hud-caption').textContent = phase === 'fight' ? 'TO MOVE' : 'TAKE YOUR SEATS';
-    $('objective').textContent = phase === 'fight' ? state.forcedFrom != null ? 'Finish your capture chain with the same piece.' : `${names[state.turn]}'s turn. Captures are required when available.` : phase === 'matchEnd' ? state.result === 'draw' ? 'Draw. Ready for another game?' : `${names[state.winner]} wins. Ready for a rematch?` : 'Both players must ready up to begin.';
-    $('objective-detail').textContent = 'AMERICAN CHECKERS';
+    setText($('round-label'), phase === 'fight' ? `TURN ${String(state.moves + 1).padStart(2, '0')}` : 'CHECKERS');
+    setText($('timer'), phase === 'fight' ? state.turn === localId ? 'YOU' : 'THEM' : '1V1');
+    setText($('hud-caption'), phase === 'fight' ? 'TO MOVE' : 'TAKE YOUR SEATS');
+    setText($('objective'), phase === 'fight' ? state.forcedFrom != null ? 'Finish your capture chain with the same piece.' : `${names[state.turn]}'s turn. Captures are required when available.` : phase === 'matchEnd' ? state.result === 'draw' ? 'Draw. Ready for another game?' : `${names[state.winner]} wins. Ready for a rematch?` : 'Both players must ready up to begin.');
+    setText($('objective-detail'), 'AMERICAN CHECKERS');
     board.render(state, { localId });
   } else if (cardMode) {
     const twentyOne = gameId === 'twenty-one';
-    $('round-label').textContent = twentyOne ? `ROUND ${state.round} / ${state.maxRounds}` : gameId === 'memory' ? 'MEMORY MATCH' : 'CRAZY EIGHTS';
-    $('timer').textContent = twentyOne ? '21' : phase === 'fight' ? state.turn === localId ? 'YOU' : 'THEM' : '1V1';
-    $('hud-caption').textContent = twentyOne ? 'CLOSEST WINS' : phase === 'fight' ? gameId === 'memory' ? 'TO FLIP' : 'TO PLAY' : 'TAKE YOUR SEATS';
-    $('objective').textContent = cardObjective(state, names);
-    $('objective-detail').textContent = twentyOne ? 'FIVE ROUNDS / NO BETTING' : gameId === 'memory' ? `${state.pairsRemaining} PAIRS LEFT` : `${state.deckCount} IN DECK`;
+    setText($('round-label'), twentyOne ? `ROUND ${state.round} / ${state.maxRounds}` : gameId === 'memory' ? 'MEMORY MATCH' : 'CRAZY EIGHTS');
+    setText($('timer'), twentyOne ? '21' : phase === 'fight' ? state.turn === localId ? 'YOU' : 'THEM' : '1V1');
+    setText($('hud-caption'), twentyOne ? 'CLOSEST WINS' : phase === 'fight' ? gameId === 'memory' ? 'TO FLIP' : 'TO PLAY' : 'TAKE YOUR SEATS');
+    setText($('objective'), cardObjective(state, names));
+    setText($('objective-detail'), twentyOne ? 'FIVE ROUNDS / NO BETTING' : gameId === 'memory' ? `${state.pairsRemaining} PAIRS LEFT` : `${state.deckCount} IN DECK`);
     cardTable.render(state, { localId, players });
   } else if (brawlMode) {
-    $('round-label').textContent = '3 STOCKS'; $('timer').textContent = `${Math.floor(Math.max(0, state.roundTicks) / 7200)}:${String(Math.floor(Math.max(0, state.roundTicks) / 120) % 60).padStart(2, '0')}`; $('hud-caption').textContent = 'DAMAGE';
-    $('objective').textContent = phase === 'fight' ? 'Build damage. Launch your rival. Save a jump for the trip back.' : phase === 'matchEnd' ? state.winner == null ? 'A glorious draw. Ready for another rumble?' : `${names[state.winner]} takes the rumble.` : 'Choose a fighter and let the host pick a stage, then both ready up.';
-    $('objective-detail').textContent = brawl.STAGES[state.stageId]?.name?.toUpperCase() || 'THREE PLAYGROUNDS';
+    setText($('round-label'), '3 STOCKS'); setText($('timer'), `${Math.floor(Math.max(0, state.roundTicks) / 7200)}:${String(Math.floor(Math.max(0, state.roundTicks) / 120) % 60).padStart(2, '0')}`); setText($('hud-caption'), 'DAMAGE');
+    setText($('objective'), phase === 'fight' ? 'Build damage. Launch your rival. Save a jump for the trip back.' : phase === 'matchEnd' ? state.winner == null ? 'A glorious draw. Ready for another rumble?' : `${names[state.winner]} takes the rumble.` : 'Choose a fighter and let the host pick a stage, then both ready up.');
+    setText($('objective-detail'), brawl.STAGES[state.stageId]?.name?.toUpperCase() || 'THREE PLAYGROUNDS');
     updateBrawlLobby(state);
   } else if (coop) {
-    $('round-label').textContent = ({ garden: 'GARDEN', crypt: 'TIDE', ember: 'EMBER' })[state.biome?.id] || 'DUNGEON'; $('timer').textContent = `${Math.max(1, state.wave)}/${state.maxWaves}`; $('hud-caption').textContent = state.roomBreak ? 'BOON BREAK' : 'ROOMS';
-    $('objective').textContent = phase === 'fight' ? state.objective : phase === 'matchEnd' ? state.result === 'victory' ? 'The ruins are clear. You made it home together.' : 'The party fell. Ready for another run?' : 'Both adventurers must ready up to begin.';
-    $('objective-detail').textContent = state.roomBreak ? 'BOTH CHOOSE / GUARD AT SHRINE' : state.roomName || `${state.enemies.filter(e => e.hp > 0).length} ENEMIES`;
+    setText($('round-label'), ({ garden: 'GARDEN', crypt: 'TIDE', ember: 'EMBER' })[state.biome?.id] || 'DUNGEON'); setText($('timer'), `${Math.max(1, state.wave)}/${state.maxWaves}`); setText($('hud-caption'), state.roomBreak ? 'BOON BREAK' : 'ROOMS');
+    setText($('objective'), phase === 'fight' ? state.objective : phase === 'matchEnd' ? state.result === 'victory' ? 'The ruins are clear. You made it home together.' : 'The party fell. Ready for another run?' : 'Both adventurers must ready up to begin.');
+    setText($('objective-detail'), state.roomBreak ? 'BOTH CHOOSE / GUARD AT SHRINE' : state.roomName || `${state.enemies.filter(e => e.hp > 0).length} ENEMIES`);
     updateDungeonBuild(state);
   } else {
-    $('round-label').textContent = `ROUND ${String(state.round).padStart(2, '0')}`;
-    $('timer').textContent = String(Math.max(0, Math.ceil(state.roundTicks / 120))).padStart(2, '0'); $('hud-caption').textContent = vectorMode ? 'FIRST TO TWO' : 'FIRST TO 2';
-    $('objective').textContent = phase === 'fight' ? vectorMode ? `${state.stageName || 'Reclaimed Garden'} · Control an angle. Focus your shots. Keep a dash in reserve.` : state.objective || 'Use the pillars as cover. Face your attacks and watch your stamina.' : phase === 'matchEnd' ? 'A winner. A rematch. Or a different game?' : 'Both players must ready up to begin.';
-    $('objective-detail').textContent = (vectorMode ? state.stageName : state.roomName)?.toUpperCase() || '90 SECOND ROUNDS';
-    $('stage-label').textContent = `${vectorMode ? state.stageName || 'Reclaimed Garden' : state.roomName || 'Moss Courtyard'} / 120 HZ`.toUpperCase();
+    setText($('round-label'), `ROUND ${String(state.round).padStart(2, '0')}`);
+    setText($('timer'), String(Math.max(0, Math.ceil(state.roundTicks / 120))).padStart(2, '0')); setText($('hud-caption'), vectorMode ? 'FIRST TO TWO' : 'FIRST TO 2');
+    setText($('objective'), phase === 'fight' ? vectorMode ? `${state.stageName || 'Reclaimed Garden'} · Control an angle. Focus your shots. Keep a dash in reserve.` : state.objective || 'Use the pillars as cover. Face your attacks and watch your stamina.' : phase === 'matchEnd' ? 'A winner. A rematch. Or a different game?' : 'Both players must ready up to begin.');
+    setText($('objective-detail'), (vectorMode ? state.stageName : state.roomName)?.toUpperCase() || '90 SECOND ROUNDS');
+    setText($('stage-label'), `${vectorMode ? state.stageName || 'Reclaimed Garden' : state.roomName || 'Moss Courtyard'} / 120 HZ`.toUpperCase());
   }
-  $('player-name').disabled = active;
+  setDisabled($('player-name'), active);
   const mine = players[localId]; const button = $('ready-button');
-  button.querySelector('span').textContent = phase === 'matchEnd' ? 'Play again' : phase === 'fight' || phase === 'roundEnd' || !boardMode && phase === 'countdown' && state.round > 1 ? 'Game in progress' : mine?.ready ? 'Cancel ready' : 'Ready up';
-  button.disabled = !connected || localId == null || phase === 'fight' || phase === 'roundEnd' || !boardMode && phase === 'countdown' && state.round > 1;
-  button.classList.toggle('is-ready', !!mine?.ready);
-  $('ready-note').textContent = phase === 'matchEnd' ? 'Both players must ready up for another game.' : phase === 'roundEnd' && cardMode ? 'The next hand starts shortly.' : phase === 'fight' ? 'Make it a good one.' : phase === 'countdown' ? 'Both players are ready. Starting shortly.' : mine?.ready ? 'Waiting for your friend to ready up.' : 'The game starts when both players are ready.';
-  if (brawlMode && phase === 'lobby' && (!state.fighters[localId]?.selected || !state.stageSelected)) { button.disabled = true; $('ready-note').textContent = 'Choose your fighter and let the host choose a stage, then ready up.'; }
-  $('focus-note').hidden = !realtimeMode || !focusLost || phase !== 'fight';
+  const needsBrawlChoice = brawlMode && phase === 'lobby' && (!state.fighters[localId]?.selected || !state.stageSelected);
+  setText(button.querySelector('span'), phase === 'matchEnd' ? 'Play again' : phase === 'fight' || phase === 'roundEnd' || !boardMode && phase === 'countdown' && state.round > 1 ? 'Game in progress' : mine?.ready ? 'Cancel ready' : 'Ready up');
+  setDisabled(button, needsBrawlChoice || !connected || localId == null || phase === 'fight' || phase === 'roundEnd' || !boardMode && phase === 'countdown' && state.round > 1);
+  toggleClass(button, 'is-ready', !!mine?.ready);
+  setText($('ready-note'), needsBrawlChoice ? 'Choose your fighter and let the host choose a stage, then ready up.' : phase === 'matchEnd' ? 'Both players must ready up for another game.' : phase === 'roundEnd' && cardMode ? 'The next hand starts shortly.' : phase === 'fight' ? 'Make it a good one.' : phase === 'countdown' ? 'Both players are ready. Starting shortly.' : mine?.ready ? 'Waiting for your friend to ready up.' : 'The game starts when both players are ready.');
+  setHidden($('focus-note'), !realtimeMode || !focusLost || phase !== 'fight');
   updateOverlay(now, names);
 }
 function updateOverlay(now, names) {
   const state = authoritative, phase = state.phase, overlay = $('game-overlay');
-  overlay.hidden = false; overlay.className = 'room-overlay';
+  let overlayClass = 'room-overlay', overlayHidden = false;
   let kicker, title, subtitle;
-  if (brawlMode && connected && phase === 'lobby') { overlay.hidden = true; return; }
+  if (brawlMode && connected && phase === 'lobby') { setHidden(overlay, true); return; }
   if (!connected) {
     kicker = permanentlyClosed ? 'THIS SEAT IS UNAVAILABLE' : 'FINDING THE HOST';
     title = permanentlyClosed ? 'Try another room.' : 'Reconnecting…';
@@ -559,14 +566,14 @@ function updateOverlay(now, names) {
     subtitle = players.every(p => p?.connected) ? 'Both players ready up, then the game begins.' : 'Send the room code or invite link, then ready up.';
   } else if (phase === 'countdown') {
     const number = Math.max(1, Math.ceil(state.phaseTicks / 120));
-    kicker = coop ? 'STAY TOGETHER' : 'MAKE YOUR NEXT MOVE COUNT'; title = number; subtitle = coop ? 'Keep an eye on your friend.' : 'Good luck. Have fun.'; overlay.classList.add('countdown');
+    kicker = coop ? 'STAY TOGETHER' : 'MAKE YOUR NEXT MOVE COUNT'; title = number; subtitle = coop ? 'Keep an eye on your friend.' : 'Good luck. Have fun.'; overlayClass += ' countdown';
     if (number !== countdownLast) { audio.countdown(number); countdownLast = number; }
   } else if (phase === 'fight') {
-    if (realtimeMode && now < flashUntil) { kicker = coop ? 'YOUR ADVENTURE STARTS HERE' : vectorMode ? 'TAKE YOUR ANGLE' : 'FIND YOUR OPENING'; title = coop ? 'LET’S GO' : vectorMode ? 'ENGAGE' : brawlMode ? 'RUMBLE!' : 'DUEL'; subtitle = ''; overlay.classList.add('fight'); }
-    else overlay.hidden = true;
+    if (realtimeMode && now < flashUntil) { kicker = coop ? 'YOUR ADVENTURE STARTS HERE' : vectorMode ? 'TAKE YOUR ANGLE' : 'FIND YOUR OPENING'; title = coop ? 'LET’S GO' : vectorMode ? 'ENGAGE' : brawlMode ? 'RUMBLE!' : 'DUEL'; subtitle = ''; overlayClass += ' fight'; }
+    else overlayHidden = true;
   } else if (cardMode) {
     // Keep showdown hands and memory pairs visible; results live above the table.
-    overlay.hidden = true;
+    overlayHidden = true;
   } else if (coop) {
     kicker = state.result === 'victory' ? 'YOU MADE IT TOGETHER' : 'THE RUINS WILL BE WAITING'; title = state.result === 'victory' ? 'Adventure complete.' : 'The party fell.';
     subtitle = 'Ready up for another run, or choose another game.';
@@ -576,20 +583,31 @@ function updateOverlay(now, names) {
     subtitle = phase === 'roundEnd' ? 'Next round starts shortly.' : 'Both players ready up to play again.';
   }
   if (phase !== 'countdown') countdownLast = null;
-  if (!overlay.hidden) { $('overlay-kicker').textContent = kicker; $('overlay-title').textContent = title; $('overlay-subtitle').textContent = subtitle; }
+  setClass(overlay, overlayClass); setHidden(overlay, overlayHidden);
+  if (!overlayHidden) { setText($('overlay-kicker'), kicker); setText($('overlay-title'), title); setText($('overlay-subtitle'), subtitle); }
 }
 
-let previousTime = performance.now(), accumulator = 0, lastHUD = 0;
+let previousTime = performance.now(), accumulator = 0, lastHUD = 0, frameId = null;
+function scheduleFrame() {
+  if (frameId === null && !document.hidden) frameId = requestAnimationFrame(animate);
+}
 function animate(now) {
+  frameId = null;
+  if (document.hidden) { previousTime = now; accumulator = 0; return; }
   accumulator += Math.min(65, now - previousTime); previousTime = now;
   let ticks = 0; while (accumulator >= 1000 / 120 && ticks++ < 8) { inputTick(); accumulator -= 1000 / 120; }
   renderer?.render(displayState(now), { localId, time: now, aimTarget: vectorMode ? pointerTarget : null });
-  if (now - lastHUD > 50) { updateHUD(now); lastHUD = now; }
-  requestAnimationFrame(animate);
+  if (!realtimeMode || now - lastHUD > 50) { updateHUD(now); lastHUD = now; }
+  if (realtimeMode) scheduleFrame();
 }
+document.addEventListener('visibilitychange', () => {
+  previousTime = performance.now(); accumulator = 0;
+  if (document.hidden) { if (frameId !== null) cancelAnimationFrame(frameId); frameId = null; }
+  else scheduleFrame();
+});
 window.firesideRoom = { getState: () => clone(authoritative), get playerId() { return localId; }, get connected() { return connected; }, roomId, gameId };
 window.addEventListener('beforeunload', () => { intentionalClose = true; socket?.close(); });
 window.addEventListener('resize', () => renderer?.resize());
 setInterval(() => { if (connected) send({ type: 'ping', time: performance.now() }); }, 1000);
 setInterval(() => { if (connected && performance.now() - lastSnapshotAt > 3000) { error('The host stopped responding. Reconnecting…'); socket.close(); } }, 1500);
-connect(); updateConnection(); requestAnimationFrame(animate);
+connect(); updateConnection(); scheduleFrame();

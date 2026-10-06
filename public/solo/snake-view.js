@@ -12,6 +12,7 @@ function element(tag, className, text) {
 }
 const isForm = target => target instanceof Element
   && Boolean(target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"])'));
+const setText = (node, text) => { if (node.textContent !== text) node.textContent = text; };
 
 export function mount(container, { onUpdate = () => {} } = {}) {
   let mode = 'classic';
@@ -61,6 +62,10 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   view.append(modes, topline, progress, board, footer);
   container.append(view);
   const ctx = canvas.getContext('2d');
+  const garden = document.createElement('canvas');
+  const gardenContext = garden.getContext('2d');
+  let gardenKey = null;
+  let cssSize = Math.max(1, canvas.getBoundingClientRect().width || 600);
   const detail = () => ({
     playing: state.mode === 'gardens' ? `${GARDENS[state.level].title}: ${state.levelFoods} / ${GARDENS[state.level].goal} fruit. Stone hedges end the run.` : 'Keep growing. The garden gets faster with every fruit.',
     levelClear: `${GARDENS[state.level].title} cleared. The next garden opens in a moment.`,
@@ -69,15 +74,12 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     won: state.mode === 'gardens' ? 'All six gardens cleared. A complete orchard tour!' : 'Every tile is yours. A perfect garden!',
   })[state.phase];
 
-  function draw() {
-    if (destroyed || !ctx) return;
-    const cssSize = Math.max(1, canvas.getBoundingClientRect().width || 600);
-    const ratio = Math.min(window.devicePixelRatio || 1, 3);
-    const pixelSize = Math.round(cssSize * ratio);
-    if (canvas.width !== pixelSize || canvas.height !== pixelSize) {
-      canvas.width = pixelSize;
-      canvas.height = pixelSize;
-    }
+  function paintGarden(pixelSize) {
+    const key = `${pixelSize}:${state.width}:${state.height}:${state.mode}:${state.level}`;
+    if (gardenKey === key) return;
+    gardenKey = key;
+    garden.width = pixelSize; garden.height = pixelSize;
+    const ctx = gardenContext;
     // Integer boundaries keep the tiles sharp at every viewport size and DPR.
     const cell = pixelSize / state.width;
     const rect = (x, y, w, h, color) => {
@@ -109,6 +111,23 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       ctx.moveTo(x + .57, y + .24); ctx.lineTo(x + .48, y + .41); ctx.lineTo(x + .61, y + .58); ctx.stroke();
       oval(x + .2, y + .65, .15, .06, '#89a260');
     }
+    ctx.restore();
+  }
+
+  function draw() {
+    if (destroyed || !ctx || !gardenContext) return;
+    const pixelSize = Math.round(cssSize * Math.min(window.devicePixelRatio || 1, 3));
+    if (canvas.width !== pixelSize || canvas.height !== pixelSize) {
+      canvas.width = pixelSize; canvas.height = pixelSize;
+    }
+    // Grid, grass and stone hedges are static until the layout or size changes.
+    paintGarden(pixelSize);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(garden, 0, 0);
+    ctx.save();
+    ctx.scale(pixelSize / state.width, pixelSize / state.width);
+    const oval = (x, y, rx, ry, color) => { ctx.fillStyle = color; ctx.beginPath(); ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2); ctx.fill(); };
+    const rounded = (x, y, width, height, radius, color) => { ctx.fillStyle = color; ctx.beginPath(); ctx.roundRect(x, y, width, height, radius); ctx.fill(); };
     const now = performance.now();
     if (state.food) {
       const { x, y } = state.food;
@@ -176,13 +195,20 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   function publish() {
     const message = detail();
     if (status.textContent !== message) status.textContent = message;
-    label.textContent = state.mode === 'gardens' ? `GARDEN ${state.level + 1} / 6` : 'GARDEN SNAKE';
-    progress.hidden = state.mode !== 'gardens';
-    for (const dot of progress.children) dot.dataset.state = Number(dot.dataset.level) < state.level || state.phase === 'won' ? 'done' : Number(dot.dataset.level) === state.level ? 'current' : 'future';
-    for (const button of modes.children) button.setAttribute('aria-pressed', String(button.dataset.mode === mode));
-    hint.textContent = state.mode === 'gardens' ? 'Six layouts. Reach each fruit goal to move on. A new garden gives you a short trail; score carries.' : 'Arrow keys or W A S D to steer. Space to pause. Eat the fruit, grow your trail, and keep room to turn.';
-    speed.textContent = `SPEED ${Math.round(1000 / state.stepMs * 10) / 10}`;
-    canvas.setAttribute('aria-label', `Snake board. ${state.snake.length} tiles long. Score ${state.score}. ${message} Use arrow keys or W A S D to steer. Space pauses.`);
+    setText(label, state.mode === 'gardens' ? `GARDEN ${state.level + 1} / 6` : 'GARDEN SNAKE');
+    if (progress.hidden !== (state.mode !== 'gardens')) progress.hidden = state.mode !== 'gardens';
+    for (const dot of progress.children) {
+      const value = Number(dot.dataset.level) < state.level || state.phase === 'won' ? 'done' : Number(dot.dataset.level) === state.level ? 'current' : 'future';
+      if (dot.dataset.state !== value) dot.dataset.state = value;
+    }
+    for (const button of modes.children) {
+      const value = String(button.dataset.mode === mode);
+      if (button.getAttribute('aria-pressed') !== value) button.setAttribute('aria-pressed', value);
+    }
+    setText(hint, state.mode === 'gardens' ? 'Six layouts. Reach each fruit goal to move on. A new garden gives you a short trail; score carries.' : 'Arrow keys or W A S D to steer. Space to pause. Eat the fruit, grow your trail, and keep room to turn.');
+    setText(speed, `SPEED ${Math.round(1000 / state.stepMs * 10) / 10}`);
+    const description = `Snake board. ${state.snake.length} tiles long. Score ${state.score}. ${message} Use arrow keys or W A S D to steer. Space pauses.`;
+    if (canvas.getAttribute('aria-label') !== description) canvas.setAttribute('aria-label', description);
     onUpdate({ phase: state.phase === 'levelClear' ? 'playing' : state.phase, recordKey: mode === 'gardens' ? 'gardens' : 'default', score: state.score, record: state.score, recordLabel: 'BEST SCORE', scoreLabel: 'SCORE', detail: message });
     draw();
     if (state.phase === 'playing' && !reducedMotion.matches && animationFrame === null) animationFrame = window.requestAnimationFrame(animate);
@@ -236,9 +262,15 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   document.addEventListener('visibilitychange', visibility);
   canvas.addEventListener('pointerdown', focusCanvas);
   controls.addEventListener('click', clickDirection);
-  const resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(draw) : null;
+  function resize(entries) {
+    if (destroyed) return;
+    const width = Array.isArray(entries) ? entries[0]?.borderBoxSize?.[0]?.inlineSize || canvas.getBoundingClientRect().width : canvas.getBoundingClientRect().width;
+    cssSize = Math.max(1, width || 600);
+    draw();
+  }
+  const resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(resize) : null;
   if (resizeObserver) resizeObserver.observe(canvas);
-  else window.addEventListener('resize', draw);
+  window.addEventListener('resize', resize);
   publish();
   schedule();
 
@@ -260,7 +292,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       resizeObserver?.disconnect();
       window.removeEventListener('keydown', keydown);
       window.removeEventListener('blur', autoPause);
-      window.removeEventListener('resize', draw);
+      window.removeEventListener('resize', resize);
       document.removeEventListener('visibilitychange', visibility);
       canvas.removeEventListener('pointerdown', focusCanvas);
       controls.removeEventListener('click', clickDirection);

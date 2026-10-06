@@ -12,13 +12,17 @@ function pixelIcon(id) {
 export function mount(container, { onUpdate = () => {} } = {}) {
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
   let state = createState(), raf = 0, dead = false, previous = null, accumulator = 0, lastUpdate = 0, lastPhase = '', roomId = '', choiceKey = '', lastEvent = 0, particles = [], roomProps = [], lastPosition = null;
+  let mapKey='',buildKey='';
+  const textCache=new WeakMap(),mapMarks=[],gateImages=new Map();
+  const text=(element,value)=>{if(textCache.get(element)!==value){textCache.set(element,value);element.textContent=value;}};
+  const hidden=(element,value)=>{if(element.hidden!==value)element.hidden=value;};
   const held = new Map(), pointers = new Map(), queue = new Set();
   const sticks = { move: { x: 0, y: 0 }, aim: { x: 0, y: 0 } };
   let aimPoint = null, aim = { x: 1, y: 0 };
   const view = node('section', 'ember-view'); view.setAttribute('aria-label', 'Ember Delve dungeon');
   const heading = node('div', 'ember-topline'), actLabel = node('strong', '', ACT_NAMES[0]), roomLabel = node('span', '', 'GALLERY · 01 / 04'); heading.append(actLabel, roomLabel);
   const map = node('ol', 'ember-route-map'); map.setAttribute('aria-label', 'Three-act run progress');
-  for (let a = 1; a <= 3; a++) { const li = node('li', ''); li.dataset.act = a; li.append(node('b', '', `ACT ${a}`)); for (let d = 1; d <= 4; d++) { const mark = node('span', '', d === 4 ? '♜' : '◇'); mark.dataset.depth = d; li.append(mark); } map.append(li); }
+  for (let a = 1; a <= 3; a++) { const li = node('li', ''); li.dataset.act = a; li.append(node('b', '', `ACT ${a}`)); for (let d = 1; d <= 4; d++) { const mark = node('span', '', d === 4 ? '♜' : '◇'); mark.dataset.depth = d; li.append(mark);mapMarks.push({mark,a,d}); } map.append(li); }
   const meters = node('div', 'ember-meters'), meterRefs = {};
   for (const [key, title] of [['hp', 'HEALTH'], ['stamina', 'STAMINA'], ['mana', 'MANA']]) { const wrap = node('div', `ember-meter ember-meter-${key}`), label = node('div', 'ember-meter-label'), value = node('b', ''), rail = node('div', 'ember-meter-rail'), fill = node('i', ''); rail.setAttribute('role', 'progressbar'); rail.setAttribute('aria-label', title); rail.setAttribute('aria-valuemin', '0'); label.append(node('span', '', title), value); rail.append(fill); wrap.append(label, rail); meters.append(wrap); meterRefs[key] = { value, rail, fill }; }
   const board = node('div', 'ember-board'), canvas = node('canvas', 'ember-canvas'); canvas.width = ARENA.width; canvas.height = ARENA.height; canvas.tabIndex = 0; canvas.dataset.soloFocus = ''; canvas.setAttribute('role', 'img'); canvas.setAttribute('aria-label', 'Pixel cavern. WASD to move, pointer to aim, click or J to swing, right click or E to cast, Space to dodge, F to use doors or shrines.');
@@ -90,13 +94,18 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       return{y:o.y+o.height,draw:()=>ctx.drawImage(image,o.x-12,o.y-42)};
     });
   }
-  function drawGate() {
-    const open=state.room.cleared,c=biomeColors[state.act-1],t=state.room.shrine;
+  function paintExit(ctx,c,open) {
     rect(ctx,856,260,61,115,c.ink);rect(ctx,860,261,9,107,c.stone);rect(ctx,907,261,8,108,c.stone);rect(ctx,860,253,55,12,c.edge);rect(ctx,866,250,43,5,c.light);rect(ctx,860,368,55,7,c.edge);
     for(let i=0;i<4;i++){rect(ctx,861,272+i*23,7,2,c.edge);rect(ctx,908,272+i*23,7,2,c.edge);}
     if(open){const glow=ctx.createRadialGradient(889,320,8,889,320,74);glow.addColorStop(0,'#edca8638');glow.addColorStop(1,'#edca8600');ctx.fillStyle=glow;ctx.fillRect(815,246,148,148);rect(ctx,871,271,32,95,'#987e54');rect(ctx,877,273,20,91,'#dabb7d');rect(ctx,883,276,8,86,'#f2de9e');for(let i=0;i<7;i++)rect(ctx,876+i%3*7,282+i*11,3,3,'#ffeabe');}
     else{rect(ctx,870,271,35,95,'#3d4634');for(let x=871;x<904;x+=8){rect(ctx,x,272,4,93,'#8a7b55');rect(ctx,x,272,2,92,'#b39b66');}for(const y of[286,339]){rect(ctx,868,y,39,6,'#b29b65');for(let x=871;x<905;x+=9)rect(ctx,x,y+1,2,2,'#ddbf80');}rect(ctx,883,310,9,12,'#d5b67a');rect(ctx,886,313,3,5,'#485037');}
     ctx.font='bold 11px monospace';ctx.textAlign='center';ctx.fillStyle=open?'#f7dc9d':'#b2b89a';ctx.fillText(open?'EXIT · F':'SEALED',889,395);
+  }
+  function drawGate() {
+    const open=state.room.cleared,c=biomeColors[state.act-1],t=state.room.shrine,key=`${state.act}:${open}`;
+    if(!gateImages.has(key)){const image=document.createElement('canvas');image.width=148;image.height=167;const g=image.getContext('2d');g.translate(-815,-240);paintExit(g,c,open);gateImages.set(key,image);}
+    ctx.drawImage(gateImages.get(key),815,240);
+    ctx.font='bold 11px monospace';ctx.textAlign='center';
     if(['treasure','camp'].includes(state.room.kind)){
       ctx.fillStyle=c.ink+'99';ctx.beginPath();ctx.ellipse(t.x,t.y+21,43,12,0,0,Math.PI*2);ctx.fill();
       if(state.room.kind==='treasure'){
@@ -133,25 +142,42 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   }
   function emit() { onUpdate({phase:['route','reward','camp'].includes(state.phase)?'playing':state.phase,score:state.score,record:state.score,detail:`Act ${state.act}/3 · ${state.room.title} · ${state.gold} gold`}); }
   function updateUI() {
-    view.dataset.phase=state.phase;actLabel.textContent=`ACT ${state.act} · ${ACT_NAMES[state.act-1]}`;roomLabel.textContent=`${state.room.kind.toUpperCase()} · ${String(state.depth).padStart(2,'0')} / 04`;
-    for(const act of map.children) for(const mark of act.querySelectorAll('[data-depth]')) {const a=Number(act.dataset.act),d=Number(mark.dataset.depth);mark.dataset.state=a<state.act||a===state.act&&d<state.depth?'done':a===state.act&&d===state.depth?'current':'future';const history=state.routeHistory.find(r=>r.act===a&&r.depth===d);mark.textContent=d===4?'♜':history?.kind==='treasure'?'▣':history?.kind==='camp'?'♨':history?.kind==='elite'?'✦':'◇';mark.setAttribute('aria-label',`Act ${a} room ${d}${history?`, ${history.kind}`:''}`);}
-    for(const [key, refs] of Object.entries(meterRefs)){const max=state.player[key==='hp'?'maxHp':key==='mana'?'maxMana':'maxStamina'];refs.value.textContent=`${Math.ceil(state.player[key])} / ${max}`;refs.fill.style.width=`${clamp(state.player[key]/max*100,0,100)}%`;refs.rail.setAttribute('aria-valuemax',max);refs.rail.setAttribute('aria-valuenow',Math.ceil(state.player[key]));}
-    const decision=['route','reward','camp'].includes(state.phase);decisions.hidden=!decision;
-    const signature=state.phase+state.choices.map(c=>c.id).join()+state.gold;
+    if(view.dataset.phase!==state.phase)view.dataset.phase=state.phase;
+    text(actLabel,`ACT ${state.act} · ${ACT_NAMES[state.act-1]}`);text(roomLabel,`${state.room.kind.toUpperCase()} · ${String(state.depth).padStart(2,'0')} / 04`);
+    const nextMapKey=state.room.id+':'+state.routeHistory.length;
+    if(nextMapKey!==mapKey){mapKey=nextMapKey;for(const{mark,a,d}of mapMarks){mark.dataset.state=a<state.act||a===state.act&&d<state.depth?'done':a===state.act&&d===state.depth?'current':'future';const history=state.routeHistory.find(r=>r.act===a&&r.depth===d);text(mark,d===4?'♜':history?.kind==='treasure'?'▣':history?.kind==='camp'?'♨':history?.kind==='elite'?'✦':'◇');mark.setAttribute('aria-label',`Act ${a} room ${d}${history?`, ${history.kind}`:''}`);}}
+    for(const[key,refs]of Object.entries(meterRefs)){
+      const max=state.player[key==='hp'?'maxHp':key==='mana'?'maxMana':'maxStamina'],value=Math.ceil(state.player[key]),width=`${clamp(state.player[key]/max*100,0,100)}%`;
+      text(refs.value,`${value} / ${max}`);
+      if(refs.width!==width){refs.width=width;refs.fill.style.width=width;}
+      if(refs.max!==max){refs.max=max;refs.rail.setAttribute('aria-valuemax',max);}
+      if(refs.current!==value){refs.current=value;refs.rail.setAttribute('aria-valuenow',value);}
+    }
+    const decision=['route','reward','camp'].includes(state.phase);hidden(decisions,!decision);
+    const signature=decision?state.phase+state.choices.map(c=>c.id).join()+state.gold:'';
     if(decision&&signature!==choiceKey){choiceKey=signature;decisionTitle.textContent=state.phase==='route'?'Choose the road ahead.':state.phase==='camp'?'Tend the flame.':'Take one. Build a different run.';decisionNote.textContent=state.phase==='route'?'Health, mana, gold, and relics carry between rooms.':state.phase==='camp'?`${state.gold} GOLD · Recovery before the act keeper.`:'Relics stack. Coalbrand + Spark Coil rewards burning foes; Glassheart + blade rewards closing the gap.';decisionList.replaceChildren();for(const c of state.choices){const button=node('button','ember-choice');button.type='button';button.dataset.choice=c.id;button.append(node('span','ember-choice-category',''),node('strong','',c.title),node('p','',c.description));button.firstChild.textContent=c.risk|| (state.phase==='camp'?c.cost?`${c.cost} GOLD`:'FREE':`RELIC${state.relics[c.id]?` · OWNED ${state.relics[c.id]}`:''}`);if(c.cost>state.gold)button.disabled=true;button.addEventListener('click',()=>select(c.id));decisionList.append(button);}}
-    overlay.hidden=!['paused','won','lost'].includes(state.phase);replay.hidden=state.phase==='paused';overlayTitle.textContent=state.phase==='paused'?'The embers are waiting.':state.phase==='won'?'You silenced the Crown.':'Your flame went out.';overlayText.textContent=state.phase==='paused'?'Resume when you’re ready. Your room and decision stay intact.':`${state.kills} foes · ${state.score.toLocaleString()} score · seed ${state.seed}`;
+    const showOverlay=['paused','won','lost'].includes(state.phase);hidden(overlay,!showOverlay);hidden(replay,state.phase==='paused');
+    if(showOverlay){text(overlayTitle,state.phase==='paused'?'The embers are waiting.':state.phase==='won'?'You silenced the Crown.':'Your flame went out.');text(overlayText,state.phase==='paused'?'Resume when you’re ready. Your room and decision stay intact.':`${state.kills} foes · ${state.score.toLocaleString()} score · seed ${state.seed}`);}
     const nearExit=Math.hypot(state.player.x-state.room.exit.x,state.player.y-state.room.exit.y)<70,nearShrine=Math.hypot(state.player.x-state.room.shrine.x,state.player.y-state.room.shrine.y)<70;
-    prompt.textContent=decision?'Make your choice below.':state.phase==='paused'?'PAUSED':state.room.cleared?(nearExit?'F / USE · Step through the open gate.':'Room clear. Cross the cavern to the glowing gate →'):state.room.kind==='treasure'?(nearShrine?'F / USE · Open the reliquary.':'Find the reliquary chest.'):state.room.kind==='camp'?(nearShrine?'F / USE · Rest by the fire.':'Reach the sanctuary fire.'):state.enemies.some(e=>e.boss)?`${BOSSES[state.act-1]} · Read the amber tells. Dodge through danger; punish recovery.`:`${state.enemies.length} guards remain · Blade restores space; bolts spend mana.`;
-    build.replaceChildren();if(!Object.keys(state.relics).length)build.append(node('span','ember-build-empty','NO RELICS YET · A build begins at the first gate.'));else for(const [id,count] of Object.entries(state.relics)){const chip=node('span','ember-relic',`${RELICS[id].title}${count>1?` ×${count}`:''}`);chip.title=RELICS[id].description;build.append(chip);}
-    for(const e of state.events.filter(e=>e.id>lastEvent)){lastEvent=e.id;if(['hit','kill','dash','cast','perfect'].includes(e.type))for(let i=0;i<5;i++)particles.push({x:e.x,y:e.y,vx:Math.cos(i*1.25+e.id)*60,vy:Math.sin(i*1.25+e.id)*60,spawn:state.elapsed,size:i%2?3:5,color:e.type==='perfect'?'#bfd5bb':e.type==='dash'?'#8eae97':'#eac183'});}if(particles.length>120)particles.splice(0,particles.length-120);
+    text(prompt,decision?'Make your choice below.':state.phase==='paused'?'PAUSED':state.room.cleared?(nearExit?'F / USE · Step through the open gate.':'Room clear. Cross the cavern to the glowing gate →'):state.room.kind==='treasure'?(nearShrine?'F / USE · Open the reliquary.':'Find the reliquary chest.'):state.room.kind==='camp'?(nearShrine?'F / USE · Rest by the fire.':'Reach the sanctuary fire.'):state.enemies.some(e=>e.boss)?`${BOSSES[state.act-1]} · Read the amber tells. Dodge through danger; punish recovery.`:`${state.enemies.length} guards remain · Blade restores space; bolts spend mana.`);
+    const nextBuildKey=JSON.stringify(state.relics);
+    if(nextBuildKey!==buildKey){buildKey=nextBuildKey;build.replaceChildren();if(!Object.keys(state.relics).length)build.append(node('span','ember-build-empty','NO RELICS YET · A build begins at the first gate.'));else for(const[id,count]of Object.entries(state.relics)){const chip=node('span','ember-relic',`${RELICS[id].title}${count>1?` ×${count}`:''}`);chip.title=RELICS[id].description;build.append(chip);}}
+    for(const e of state.events){if(e.id<=lastEvent)continue;lastEvent=e.id;if(!reducedMotion.matches&&['hit','kill','dash','cast','perfect'].includes(e.type))for(let i=0;i<5;i++)particles.push({x:e.x,y:e.y,vx:Math.cos(i*1.25+e.id)*60,vy:Math.sin(i*1.25+e.id)*60,spawn:state.elapsed,size:i%2?3:5,color:e.type==='perfect'?'#bfd5bb':e.type==='dash'?'#8eae97':'#eac183'});}if(particles.length>120)particles.splice(0,particles.length-120);
     if(state.phase!==lastPhase){lastPhase=state.phase;if(state.phase!=='playing')release();emit();}
   }
   function input() { const result={};for(const control of held.values())result[control]=true;for(const p of pointers.values())if(p.control)result[p.control]=true;for(const c of queue)result[c]=true;const m=sticks.move;if(Math.hypot(m.x,m.y)>.16){result.moveX=m.x;result.moveY=m.y;}const a=sticks.aim;if(Math.hypot(a.x,a.y)>.16){aimPoint=null;aim={x:a.x,y:a.y};result.melee=true;result.spell=true;}if(aimPoint)aim={x:aimPoint.x-state.player.x,y:aimPoint.y-state.player.y};return {...result,aimX:aim.x,aimY:aim.y}; }
   function release() { held.clear();pointers.clear();queue.clear();for(const id of ['move','aim']){sticks[id]={x:0,y:0};pads[id].knob.style.transform='translate(0,0)';pads[id].pad.setAttribute('aria-pressed','false');}for(const b of Object.values(actionRefs))b.setAttribute('aria-pressed','false'); }
-  function select(id) {release();if(state.phase==='route')chooseRoute(state,id);else if(state.phase==='reward')chooseReward(state,id);else if(state.phase==='camp')chooseCamp(state,id);previous=null;accumulator=0;updateUI();emit();canvas.focus({preventScroll:true});}
-  function restart(seed=Date.now()) {release();state=createState({seed});seedInput.value=state.seed;particles=[];lastEvent=0;roomId='';choiceKey='';previous=null;accumulator=0;updateUI();draw();emit();canvas.focus({preventScroll:true});}
-  function togglePause() { release();pauseState(state);previous=null;accumulator=0;updateUI();draw();emit(); }
-  function frame(time) {if(dead)return;if(previous===null)previous=time;const delta=Math.min(.05,(time-previous)/1000);previous=time;if(state.phase==='playing'){accumulator+=delta;let count=0;while(accumulator>=1/120&&count<6){step(state,input());queue.clear();accumulator-=1/120;count++;}}else accumulator=0;updateUI();draw();if(time-lastUpdate>180){emit();lastUpdate=time;}raf=requestAnimationFrame(frame);}
+  function schedule(){if(!dead&&state.phase==='playing'&&!raf)raf=requestAnimationFrame(frame);}
+  function stopFrame(){if(raf)cancelAnimationFrame(raf);raf=0;previous=null;accumulator=0;}
+  function select(id) {release();if(state.phase==='route')chooseRoute(state,id);else if(state.phase==='reward')chooseReward(state,id);else if(state.phase==='camp')chooseCamp(state,id);stopFrame();updateUI();draw();emit();canvas.focus({preventScroll:true});schedule();}
+  function restart(seed=Date.now()) {release();stopFrame();state=createState({seed});seedInput.value=state.seed;particles=[];lastEvent=0;roomId='';choiceKey='';mapKey='';buildKey='';updateUI();draw();emit();canvas.focus({preventScroll:true});schedule();}
+  function togglePause() {release();stopFrame();pauseState(state);updateUI();draw();emit();schedule();}
+  function frame(time) {
+    raf=0;if(dead||state.phase!=='playing')return;
+    if(previous===null)previous=time;const delta=Math.min(.05,(time-previous)/1000);previous=time;accumulator+=delta;
+    let count=0;while(accumulator>=1/120&&count<6){step(state,input());queue.clear();accumulator-=1/120;count++;}
+    updateUI();draw();if(time-lastUpdate>180){emit();lastUpdate=time;}schedule();
+  }
   const native = target => target instanceof Element && Boolean(target.closest('input,textarea,select,[contenteditable],button,a,summary'));
   function keydown(e) {if(e.isComposing||e.metaKey||e.ctrlKey||e.altKey)return;if(native(e.target))return;const control=controls[e.key];if(!control)return;e.preventDefault();if(e.repeat)return;if(state.phase==='playing'){held.set(e.code,control);queue.add(control);}}
   function keyup(e) {held.delete(e.code);}
@@ -165,6 +191,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   function visibility(){if(document.hidden)blur();}
   window.addEventListener('keydown',keydown);window.addEventListener('keyup',keyup);window.addEventListener('blur',blur);document.addEventListener('visibilitychange',visibility);canvas.addEventListener('pointermove',aimMove);canvas.addEventListener('pointerdown',canvasDown);canvas.addEventListener('pointerup',pointerEnd);canvas.addEventListener('pointercancel',pointerEnd);canvas.addEventListener('lostpointercapture',pointerEnd);canvas.addEventListener('contextmenu',e=>e.preventDefault());
   replay.addEventListener('click',()=>restart());newButton.addEventListener('click',()=>restart());seedButton.addEventListener('click',()=>{const seed=Number(seedInput.value);if(Number.isInteger(seed)&&seed>0&&seed<=4294967295){restart(seed);seedInput.setCustomValidity('');}else{seedInput.setCustomValidity('Enter a whole number from 1 to 4294967295.');seedInput.reportValidity();}});
-  updateUI();draw();emit();raf=requestAnimationFrame(frame);
-  return {getState:()=>copy(state),restart:()=>restart(),togglePause,destroy(){dead=true;cancelAnimationFrame(raf);release();window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('blur',blur);document.removeEventListener('visibilitychange',visibility);view.remove();}};
+  function motionChange(){particles=[];draw();}
+  reducedMotion.addEventListener('change',motionChange);
+  updateUI();draw();emit();schedule();
+  return {getState:()=>copy(state),restart:()=>restart(),togglePause,destroy(){dead=true;stopFrame();release();reducedMotion.removeEventListener('change',motionChange);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('blur',blur);document.removeEventListener('visibilitychange',visibility);view.remove();}};
 }

@@ -4,6 +4,8 @@ const crown = '<svg viewBox="0 0 48 42" aria-hidden="true"><path d="M7 11 16 20 
 const seal = '<svg class="checker-seal" viewBox="0 0 48 48" aria-hidden="true"><path d="M24 9 29 19 39 24 29 29 24 39 19 29 9 24 19 19Z" fill="none"/><path d="M24 15 33 24 24 33 15 24Z"/><circle cx="24" cy="24" r="3" class="checker-crown-jewel"/><path d="M8 15 12 11M36 11 40 15M40 33 36 37M12 37 8 33" fill="none" stroke-width="1.5"/></svg>';
 const coordinate = square => `${'abcdefgh'[square % 8]}${8 - Math.floor(square / 8)}`;
 const boardKey = state => `${state.phase}:${state.turn}:${state.forcedFrom}:${state.moves}:${state.board.map(piece => piece ? `${piece.owner}${piece.king ? 'k' : 'm'}` : '.').join('')}`;
+const setAttribute = (node, name, value) => { if (node.getAttribute(name) !== value) node.setAttribute(name, value); };
+const setText = (node, text) => { if (node.textContent !== text) node.textContent = text; };
 
 /** Accessible board view. The server remains the only writer of game state. */
 export class CheckersView {
@@ -119,7 +121,10 @@ export class CheckersView {
   }
 
   updateTabStops() {
-    for (const [square, button] of this.buttons) button.tabIndex = square === this.focused ? 0 : -1;
+    for (const [square, button] of this.buttons) {
+      const value = square === this.focused ? 0 : -1;
+      if (button.tabIndex !== value) button.tabIndex = value;
+    }
   }
 
   navigate(event) {
@@ -186,7 +191,14 @@ export class CheckersView {
     if (!playable) this.selected = null;
     else if (state.forcedFrom !== null && state.forcedFrom !== undefined) this.selected = state.forcedFrom;
     else if (previous !== key && this.selected !== null && !legalMoves(state, localId).some(move => move.from === this.selected)) this.selected = null;
-    this.paint();
+    if (this.paintKey() !== this.lastPaintKey) this.paint();
+  }
+
+  paintKey() {
+    const state = this.state;
+    return JSON.stringify([boardKey(state), this.localId, this.selected, this.pending,
+      state.phase === 'countdown' ? Math.ceil(state.phaseTicks / 120) : null,
+      state.winner, state.result, state.reason, this.lastObservedMove]);
   }
 
   paint() {
@@ -212,10 +224,10 @@ export class CheckersView {
       button.classList.toggle('is-last-move', Boolean(last));
       button.classList.toggle('is-capture-victim', victims.has(square));
       button.classList.toggle('is-forced', playable && square === state.forcedFrom);
-      button.setAttribute('aria-selected', String(selected));
-      button.setAttribute('aria-disabled', String(!playable || (!available && !destination)));
+      setAttribute(button, 'aria-selected', String(selected));
+      setAttribute(button, 'aria-disabled', String(!playable || (!available && !destination)));
       const description = piece ? `${piece.owner === 0 ? 'Ivory' : 'Jade'} ${piece.king ? 'king' : 'piece'}` : 'empty';
-      button.setAttribute('aria-label', `${coordinate(square)}, ${description}${selected ? ', selected' : ''}${destination ? destination.capture !== null ? ', capture destination' : ', legal destination' : ''}${available && !selected ? ', selectable' : ''}`);
+      setAttribute(button, 'aria-label', `${coordinate(square)}, ${description}${selected ? ', selected' : ''}${destination ? destination.capture !== null ? ', capture destination' : ', legal destination' : ''}${available && !selected ? ', selectable' : ''}`);
       const tokenKey = piece ? `${piece.owner}:${piece.king}` : 'empty';
       if (button.dataset.token !== tokenKey) {
         button.dataset.token = tokenKey;
@@ -253,19 +265,27 @@ export class CheckersView {
     if (this.notice.textContent !== notice) this.notice.textContent = notice;
     this.paintContext(choices);
     this.updateTabStops();
+    this.lastPaintKey = this.paintKey();
   }
 
   paintContext(choices) {
     const state = this.state;
     const turn = state.phase === 'fight' ? state.turn === this.localId ? 'YOUR MOVE' : `${state.turn === 0 ? 'IVORY' : 'JADE'} TO MOVE` : state.phase === 'matchEnd' ? 'MATCH COMPLETE' : 'THE CHECKERS TABLE';
-    this.turnLabel.textContent = `${turn} · ${state.moves || 0} TURNS`;
-    this.material.replaceChildren();
-    for (const id of [0, 1]) {
-      const pieces = state.board.filter(p => p?.owner === id); const kings = pieces.filter(p => p.king).length;
-      const panel = document.createElement('span'); panel.className = `checkers-material-player checkers-material-${id}`;
-      const name = document.createElement('strong'); name.textContent = id === 0 ? 'Ivory' : 'Jade';
-      const detail = document.createElement('span'); detail.textContent = `${pieces.length} pieces · ${kings} kings · ${12 - pieces.length} lost`;
-      panel.append(name, detail); this.material.append(panel);
+    setText(this.turnLabel, `${turn} · ${state.moves || 0} TURNS`);
+    const counts = [0, 1].map(id => {
+      const pieces = state.board.filter(p => p?.owner === id);
+      return [pieces.length, pieces.filter(p => p.king).length];
+    });
+    const materialKey = JSON.stringify(counts);
+    if (this.materialKey !== materialKey) {
+      this.materialKey = materialKey;
+      this.material.replaceChildren();
+      for (const [id, [pieces, kings]] of counts.entries()) {
+        const panel = document.createElement('span'); panel.className = `checkers-material-player checkers-material-${id}`;
+        const name = document.createElement('strong'); name.textContent = id === 0 ? 'Ivory' : 'Jade';
+        const detail = document.createElement('span'); detail.textContent = `${pieces} pieces · ${kings} kings · ${12 - pieces} lost`;
+        panel.append(name, detail); this.material.append(panel);
+      }
     }
     const signature = JSON.stringify(this.history);
     if (this.historyList.dataset.signature !== signature) {
@@ -279,7 +299,7 @@ export class CheckersView {
       if (!this.history.length) { const line = document.createElement('li'); line.textContent = 'Moves will appear here as the game unfolds.'; this.historyList.append(line); }
     }
     const reasons = { 'no-legal-moves': 'The losing side has no legal move.', 'all-pieces-captured': 'Every opposing piece has been captured.', 'threefold-repetition': 'The same position appeared three times.', '80-half-moves': 'Eighty turns passed without a capture or a man moving.' };
-    this.recap.textContent = state.phase === 'matchEnd' ? reasons[state.reason] || 'The match has ended. Ready up for a new board.' : state.forcedFrom !== null ? `Continue from ${coordinate(state.forcedFrom)}. Every available jump in this chain is compulsory.` : choices.some(m => m.capture !== null) ? `${new Set(choices.map(m => m.from)).size} piece${new Set(choices.map(m => m.from)).size === 1 ? '' : 's'} can capture. Choose the strongest continuation.` : 'Men move forward. Kings move both ways. Captures take priority over ordinary moves.';
+    setText(this.recap, state.phase === 'matchEnd' ? reasons[state.reason] || 'The match has ended. Ready up for a new board.' : state.forcedFrom !== null ? `Continue from ${coordinate(state.forcedFrom)}. Every available jump in this chain is compulsory.` : choices.some(m => m.capture !== null) ? `${new Set(choices.map(m => m.from)).size} piece${new Set(choices.map(m => m.from)).size === 1 ? '' : 's'} can capture. Choose the strongest continuation.` : 'Men move forward. Kings move both ways. Captures take priority over ordinary moves.');
     if (state.phase === 'matchEnd') this.historyPanel.open = true;
   }
 

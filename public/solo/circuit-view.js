@@ -37,6 +37,12 @@ const isForm = (target) =>
   target instanceof Element &&
   Boolean(target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"])'));
 const seconds = (value) => `${Math.max(0, Number(value) || 0).toFixed(2)}s`;
+function setValue(target, key, value) {
+  if (target[key] !== value) target[key] = value;
+}
+function setAttribute(target, key, value) {
+  if (target.getAttribute(key) !== value) target.setAttribute(key, value);
+}
 function element(tag, className, text) {
   const node = document.createElement(tag);
   node.className = className;
@@ -56,7 +62,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   const nearestTrack = (x, y) => projectTrack(x, y, state.trackId);
   const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
   let destroyed = false;
-  let frameId = 0;
+  let frameId = null;
+  let canvasCssWidth = WORLD.width;
   let lastFrame = null;
   let accumulator = 0;
   let lastPublish = -Infinity;
@@ -535,67 +542,97 @@ export function mount(container, { onUpdate = () => {} } = {}) {
             : state.startDelay > 0
               ? 'ready'
               : '';
-    overlay.hidden = !mode;
-    overlay.dataset.mode = mode;
-    continueRace.hidden = mode !== 'stage-clear';
+    setValue(overlay, 'hidden', !mode);
+    setValue(overlay.dataset, 'mode', mode);
+    setValue(continueRace, 'hidden', mode !== 'stage-clear');
     if (mode === 'stage-clear') {
-      overlayEyebrow.textContent = `RACE ${state.trackIndex + 1} / 3 COMPLETE`;
-      overlayTitle.textContent = `${state.medal.toUpperCase()} · ${seconds(state.elapsed)}`;
-      overlayDetail.textContent = `CHAMPIONSHIP TOTAL ${seconds(state.seriesTime)}`;
+      setValue(overlayEyebrow, 'textContent', `RACE ${state.trackIndex + 1} / 3 COMPLETE`);
+      setValue(overlayTitle, 'textContent', `${state.medal.toUpperCase()} · ${seconds(state.elapsed)}`);
+      setValue(overlayDetail, 'textContent', `CHAMPIONSHIP TOTAL ${seconds(state.seriesTime)}`);
     } else if (mode === 'won') {
-      overlayEyebrow.textContent = 'CHEQUERED FLAG';
-      overlayTitle.textContent = seconds(state.raceTime);
-      overlayDetail.textContent =
+      setValue(overlayEyebrow, 'textContent', 'CHEQUERED FLAG');
+      setValue(overlayTitle, 'textContent', seconds(state.raceTime));
+      setValue(
+        overlayDetail,
+        'textContent',
         state.mode === 'championship'
           ? 'THREE CIRCUITS · NINE LAPS COMPLETE'
-          : `${state.medal.toUpperCase()} MEDAL · BEST LAP ${seconds(state.bestLap)}`;
+          : `${state.medal.toUpperCase()} MEDAL · BEST LAP ${seconds(state.bestLap)}`,
+      );
     } else if (mode === 'paused') {
-      overlayEyebrow.textContent = 'PIT STOP';
-      overlayTitle.textContent = 'RACE PAUSED';
-      overlayDetail.textContent = 'P OR RESUME TO GET BACK ON TRACK';
+      setValue(overlayEyebrow, 'textContent', 'PIT STOP');
+      setValue(overlayTitle, 'textContent', 'RACE PAUSED');
+      setValue(overlayDetail, 'textContent', 'P OR RESUME TO GET BACK ON TRACK');
     } else if (mode === 'ready') {
-      overlayEyebrow.textContent = 'HOLD YOUR LINE';
-      overlayTitle.textContent = String(Math.max(1, Math.ceil(state.startDelay)));
-      overlayDetail.textContent = 'LIGHTS OUT. THREE LAPS. MAKE THEM COUNT.';
+      setValue(overlayEyebrow, 'textContent', 'HOLD YOUR LINE');
+      setValue(overlayTitle, 'textContent', String(Math.max(1, Math.ceil(state.startDelay))));
+      setValue(overlayDetail, 'textContent', 'LIGHTS OUT. THREE LAPS. MAKE THEM COUNT.');
     }
   }
   function publish() {
     if (destroyed) return;
     const message = detail();
-    courseName.textContent = `${course.title.toUpperCase()} · ${state.mode === 'championship' ? `RACE ${state.trackIndex + 1}/3` : '3 LAPS'}`;
-    courseBrief.textContent = `${course.description} Gold ${seconds(course.targets[0])} · Silver ${seconds(course.targets[1])} · Bronze ${seconds(course.targets[2])}`;
+    setValue(
+      courseName,
+      'textContent',
+      `${course.title.toUpperCase()} · ${state.mode === 'championship' ? `RACE ${state.trackIndex + 1}/3` : '3 LAPS'}`,
+    );
+    setValue(
+      courseBrief,
+      'textContent',
+      `${course.description} Gold ${seconds(course.targets[0])} · Silver ${seconds(course.targets[1])} · Bronze ${seconds(course.targets[2])}`,
+    );
     for (const button of modes.children)
-      button.setAttribute('aria-pressed', String(button.dataset.mode === state.mode));
+      setAttribute(button, 'aria-pressed', String(button.dataset.mode === state.mode));
     for (const button of trackChoices.children) {
-      button.setAttribute('aria-pressed', String(button.dataset.track === state.trackId));
-      button.disabled = state.mode === 'championship';
+      setAttribute(button, 'aria-pressed', String(button.dataset.track === state.trackId));
+      setValue(button, 'disabled', state.mode === 'championship');
     }
-    speedValue.textContent = String(Math.round(Math.abs(state.car.speed) * 0.7));
-    lapValue.textContent = `${String(Math.min(3, state.lap)).padStart(2, '0')} / 03`;
-    lapTimeValue.textContent = seconds(state.lapElapsed);
-    bestLapValue.textContent = state.bestLap === null ? '—' : seconds(state.bestLap);
+    setValue(speedValue, 'textContent', String(Math.round(Math.abs(state.car.speed) * 0.7)));
+    setValue(lapValue, 'textContent', `${String(Math.min(3, state.lap)).padStart(2, '0')} / 03`);
+    setValue(lapTimeValue, 'textContent', seconds(state.lapElapsed));
+    setValue(bestLapValue, 'textContent', state.bestLap === null ? '—' : seconds(state.bestLap));
     const gateProgress = state.phase === 'won' ? GATES.length - 1 : state.gateProgress;
-    checkpointValue.textContent = `${Math.min(GATES.length - 1, gateProgress)} / ${GATES.length - 1}`;
+    setValue(
+      checkpointValue,
+      'textContent',
+      `${Math.min(GATES.length - 1, gateProgress)} / ${GATES.length - 1}`,
+    );
     for (const dot of checkpointNodes) {
       const index = Number(dot.dataset.gate);
-      dot.dataset.state = index <= gateProgress ? 'passed' : index === state.nextGate ? 'next' : 'waiting';
+      setValue(
+        dot.dataset,
+        'state',
+        index <= gateProgress ? 'passed' : index === state.nextGate ? 'next' : 'waiting',
+      );
     }
-    reset.disabled =
+    setValue(
+      reset,
+      'disabled',
       !['playing', 'paused'].includes(state.phase) ||
-      state.pausedPhase === 'stage-clear' ||
-      state.startDelay > 0;
-    for (const button of controlButtons.values()) button.disabled = state.phase !== 'playing';
-    warning.hidden = state.phase !== 'playing' || (!state.wrongWay && state.onRoad && !state.slick);
-    warning.textContent = state.wrongWay
-      ? '← WRONG WAY · FOLLOW THE ARROWS'
-      : !state.onRoad
-        ? 'OFF TRACK · EASE BACK ONTO THE ROAD'
-        : 'SLICK ZONE · GENTLE STEERING';
+        state.pausedPhase === 'stage-clear' ||
+        state.startDelay > 0,
+    );
+    for (const button of controlButtons.values()) setValue(button, 'disabled', state.phase !== 'playing');
+    setValue(
+      warning,
+      'hidden',
+      state.phase !== 'playing' || (!state.wrongWay && state.onRoad && !state.slick),
+    );
+    setValue(
+      warning,
+      'textContent',
+      state.wrongWay
+        ? '← WRONG WAY · FOLLOW THE ARROWS'
+        : !state.onRoad
+          ? 'OFF TRACK · EASE BACK ONTO THE ROAD'
+          : 'SLICK ZONE · GENTLE STEERING',
+    );
     if (announcement) {
-      status.textContent = announcement;
+      setValue(status, 'textContent', announcement);
       announcement = '';
-    } else if (status.dataset.message !== message) status.textContent = message;
-    status.dataset.message = message;
+    } else if (status.dataset.message !== message) setValue(status, 'textContent', message);
+    setValue(status.dataset, 'message', message);
     updateOverlay();
     onUpdate({
       phase: state.phase === 'stage-clear' ? 'playing' : state.phase,
@@ -670,9 +707,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   }
   function draw() {
     if (destroyed || !ctx) return;
-    const cssWidth = canvas.getBoundingClientRect().width || WORLD.width;
     const ratio = Math.min(window.devicePixelRatio || 1, 2);
-    const pixelWidth = Math.max(1, Math.round(cssWidth * ratio));
+    const pixelWidth = Math.max(1, Math.round(canvasCssWidth * ratio));
     const pixelHeight = Math.max(1, Math.round((pixelWidth * WORLD.height) / WORLD.width));
     if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
       canvas.width = pixelWidth;
@@ -760,6 +796,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     ctx.restore();
   }
   function frame(now) {
+    frameId = null;
     if (destroyed) return;
     const delta = lastFrame === null ? 0 : Math.min(0.1, Math.max(0, (now - lastFrame) / 1000));
     lastFrame = now;
@@ -789,7 +826,22 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       publish();
     }
     draw();
-    frameId = window.requestAnimationFrame(frame);
+    syncAnimation();
+  }
+  function syncAnimation() {
+    const finishingDust = state.phase !== 'paused' && !reducedMotion?.matches && dust.length > 0;
+    if (destroyed || (state.phase !== 'playing' && !finishingDust)) {
+      if (frameId !== null) window.cancelAnimationFrame(frameId);
+      frameId = null;
+    } else if (frameId === null) frameId = window.requestAnimationFrame(frame);
+  }
+  function resizeCanvas() {
+    canvasCssWidth = canvas.getBoundingClientRect().width || WORLD.width;
+    draw();
+  }
+  function motionChanged() {
+    draw();
+    syncAnimation();
   }
   function togglePause() {
     if (destroyed || !pauseState(state)) return;
@@ -798,6 +850,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     lastFrame = null;
     publish();
     draw();
+    syncAnimation();
   }
   function autoPause() {
     releaseHeld();
@@ -870,9 +923,10 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   const visibility = () => {
     if (document.hidden) autoPause();
   };
-  const resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(draw) : null;
+  const resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(resizeCanvas) : null;
   if (resizeObserver) resizeObserver.observe(canvas);
-  else window.addEventListener('resize', draw);
+  window.addEventListener('resize', resizeCanvas);
+  reducedMotion?.addEventListener('change', motionChanged);
   window.addEventListener('keydown', keydown);
   window.addEventListener('keyup', keyup);
   window.addEventListener('blur', autoPause);
@@ -902,6 +956,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     drawTerrain();
     publish();
     draw();
+    syncAnimation();
     canvas.focus({ preventScroll: true });
   }
   function nextRace() {
@@ -920,14 +975,15 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     drawTerrain();
     publish();
     draw();
+    syncAnimation();
     canvas.focus({ preventScroll: true });
   }
   selection.addEventListener('click', newSelection);
   continueRace.addEventListener('click', nextRace);
   reset.addEventListener('click', resetVehicle);
   publish();
-  draw();
-  frameId = window.requestAnimationFrame(frame);
+  resizeCanvas();
+  syncAnimation();
   return {
     getState: () => JSON.parse(JSON.stringify(state)),
     restart() {
@@ -949,6 +1005,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       announcement = '';
       publish();
       draw();
+      syncAnimation();
     },
     togglePause,
     destroy() {
@@ -958,7 +1015,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       releaseHeld();
       window.cancelAnimationFrame(frameId);
       resizeObserver?.disconnect();
-      window.removeEventListener('resize', draw);
+      window.removeEventListener('resize', resizeCanvas);
+      reducedMotion?.removeEventListener('change', motionChanged);
       window.removeEventListener('keydown', keydown);
       window.removeEventListener('keyup', keyup);
       window.removeEventListener('blur', autoPause);

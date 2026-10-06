@@ -12,8 +12,12 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   let destroyed = false;
   let lastClock = performance.now();
   let lastSecond = -1;
+  let clockTimer = null;
   let notice = '';
   let tiles = [];
+  let tileKeys = [];
+  const setText = (node, text) => { if (node.textContent !== text) node.textContent = text; };
+  const setAttribute = (node, name, value) => { if (node.getAttribute(name) !== value) node.setAttribute(name, value); };
 
   const root = document.createElement('section');
   root.className = 'minesweeper-view';
@@ -88,6 +92,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     root.classList.toggle('is-wide', difficulty !== 'beginner');
     panHint.hidden = difficulty === 'beginner';
     boardWrap.scrollLeft = 0;
+    tileKeys = [];
     tiles = state.cells.map((_, index) => {
       const button = document.createElement('button');
       button.type = 'button';
@@ -103,25 +108,31 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   }
 
   function syncPauseCover() {
-    pauseOverlay.style.left = `${boardWrap.scrollLeft}px`;
-    pauseOverlay.style.right = 'auto';
-    pauseOverlay.style.width = `${boardWrap.clientWidth}px`;
+    if (destroyed || state.phase !== 'paused') return;
+    const left = `${boardWrap.scrollLeft}px`, width = `${boardWrap.clientWidth}px`;
+    if (pauseOverlay.style.left !== left) pauseOverlay.style.left = left;
+    if (pauseOverlay.style.right !== 'auto') pauseOverlay.style.right = 'auto';
+    if (pauseOverlay.style.width !== width) pauseOverlay.style.width = width;
   }
 
   function render() {
     syncPauseCover();
-    root.dataset.phase = state.phase;
-    remaining.textContent = String(state.mines - state.flags).padStart(2, '0');
-    clock.textContent = formatTime(state.elapsed);
-    pauseOverlay.hidden = state.phase !== 'paused';
-    flagButton.setAttribute('aria-pressed', String(flagMode));
-    flagButton.textContent = `⚑ Flag mode: ${flagMode ? 'on' : 'off'}`;
-    flagButton.disabled = state.phase !== 'playing';
+    if (root.dataset.phase !== state.phase) root.dataset.phase = state.phase;
+    setText(remaining, String(state.mines - state.flags).padStart(2, '0'));
+    setText(clock, formatTime(state.elapsed));
+    if (pauseOverlay.hidden !== (state.phase !== 'paused')) pauseOverlay.hidden = state.phase !== 'paused';
+    setAttribute(flagButton, 'aria-pressed', String(flagMode));
+    setText(flagButton, `⚑ Flag mode: ${flagMode ? 'on' : 'off'}`);
+    if (flagButton.disabled !== (state.phase !== 'playing')) flagButton.disabled = state.phase !== 'playing';
     board.classList.toggle('is-paused', state.phase === 'paused');
     for (const [index, cell] of state.cells.entries()) {
       const tile = tiles[index];
       const wrongFlag = state.phase === 'lost' && cell.flagged && !cell.mine;
       const showMine = cell.mine && cell.revealed;
+      // Cache only visible tile properties; covered mines never enter a DOM key.
+      const key = `${cell.revealed}:${cell.flagged}:${showMine}:${wrongFlag}:${state.exploded === index}:${cell.revealed && !cell.mine ? cell.adjacent : ''}:${state.phase === 'playing'}`;
+      if (tileKeys[index] === key) continue;
+      tileKeys[index] = key;
       tile.className = `minesweeper-tile${cell.revealed ? ' is-open' : ''}${cell.flagged ? ' is-flagged' : ''}${showMine ? ' is-mine' : ''}${wrongFlag ? ' is-wrong-flag' : ''}${state.exploded === index ? ' is-exploded' : ''}`;
       tile.dataset.number = cell.revealed && !cell.mine ? String(cell.adjacent) : '';
       const mark = tile.firstElementChild;
@@ -137,18 +148,22 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       const col = index % state.cols + 1;
       let description = showMine ? 'mine' : wrongFlag ? 'incorrect flag' : cell.flagged ? 'flagged' : cell.revealed ? cell.adjacent ? `${cell.adjacent} adjacent ${cell.adjacent === 1 ? 'mine' : 'mines'}` : 'empty' : 'covered';
       if (state.phase === 'playing' && cell.revealed && cell.adjacent && !cell.mine) description += '. Select to open around this number';
-      tile.setAttribute('aria-label', `Row ${row}, column ${col}, ${description}`);
-      tile.setAttribute('aria-disabled', String(state.phase !== 'playing'));
-      tile.tabIndex = index === focused ? 0 : -1;
+      setAttribute(tile, 'aria-label', `Row ${row}, column ${col}, ${description}`);
+      setAttribute(tile, 'aria-disabled', String(state.phase !== 'playing'));
     }
-    status.textContent = notice || detail();
+    setText(status, notice || detail());
     lastSecond = Math.floor(state.elapsed);
+    scheduleClock();
     emit();
   }
 
   function focusTile(index, moveFocus = true) {
+    const previous = focused;
     focused = Math.max(0, Math.min(state.cells.length - 1, index));
-    for (const [other, tile] of tiles.entries()) tile.tabIndex = other === focused ? 0 : -1;
+    if (previous !== focused) {
+      tiles[previous].tabIndex = -1;
+      tiles[focused].tabIndex = 0;
+    }
     if (moveFocus) { tiles[focused].focus({ preventScroll: true }); tiles[focused].scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' }); }
   }
 
@@ -237,15 +252,26 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   flagButton.addEventListener('click', toggleFlagMode);
   buildBoard();
   render();
-  const interval = setInterval(() => {
-    if (destroyed) return;
-    syncTime();
-    if (lastSecond !== Math.floor(state.elapsed)) {
-      lastSecond = Math.floor(state.elapsed);
-      clock.textContent = formatTime(state.elapsed);
-      emit();
+  function scheduleClock() {
+    if (destroyed || state.phase !== 'playing' || !state.generated) {
+      if (clockTimer !== null) clearTimeout(clockTimer);
+      clockTimer = null;
+      return;
     }
-  }, 200);
+    if (clockTimer !== null) return;
+    // The clock changes once a second. Its timeout exists only during a live field.
+    clockTimer = setTimeout(() => {
+      clockTimer = null;
+      if (destroyed) return;
+      syncTime();
+      if (lastSecond !== Math.floor(state.elapsed)) {
+        lastSecond = Math.floor(state.elapsed);
+        setText(clock, formatTime(state.elapsed));
+        emit();
+      }
+      scheduleClock();
+    }, Math.max(16, Math.ceil((1 - state.elapsed % 1) * 1000)));
+  }
 
   return {
     getState() { syncTime(); return cloneState(state); },
@@ -259,7 +285,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     },
     destroy() {
       destroyed = true;
-      clearInterval(interval);
+      if (clockTimer !== null) clearTimeout(clockTimer);
+      clockTimer = null;
       pauseResize?.disconnect();
       boardWrap.removeEventListener('scroll', syncPauseCover);
       board.removeEventListener('click', click);

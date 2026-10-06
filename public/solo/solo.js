@@ -1,3 +1,4 @@
+import { setText, setAttribute, setDisabled, setHTML } from '../hub/dom.js';
 const GAME_INFO = {
   'ember-delve': {
     title: 'Ember Delve', category: 'ACTION ROGUELIKE / THREE ACTS', description: 'Twelve rooms. Three guardians. A different build on every descent.',
@@ -186,20 +187,20 @@ async function startSolo() {
     if (destroyed) return;
     const phase = ['playing', 'paused', 'won', 'lost'].includes(update.phase) ? update.phase : 'playing';
     const finished = phase === 'won' || phase === 'lost';
-    $('solo-app').dataset.phase = phase;
-    $('solo-status-label').textContent = { playing: 'IN PLAY', paused: 'PAUSED', won: 'YOU DID IT', lost: 'RUN COMPLETE' }[phase];
-    $('solo-score').textContent = formatValue(validRecord(update.score) ? update.score : 0, update.scoreDigits ?? info.scoreDigits, update.scoreUnit ?? info.scoreUnit);
-    $('solo-score-label').textContent = update.scoreLabel || 'SCORE';
-    $('solo-record-label').textContent = update.recordLabel || (gameId === 'minesweeper' ? 'BEST TIME' : 'BEST SCORE');
-    $('solo-detail').textContent = update.detail || (phase === 'paused' ? 'Take your time. Resume when you are ready.' : 'A new personal best is only a game away.');
+    if ($('solo-app').dataset.phase !== phase) $('solo-app').dataset.phase = phase;
+    setText($('solo-status-label'), { playing: 'IN PLAY', paused: 'PAUSED', won: 'YOU DID IT', lost: 'RUN COMPLETE' }[phase]);
+    setText($('solo-score'), formatValue(validRecord(update.score) ? update.score : 0, update.scoreDigits ?? info.scoreDigits, update.scoreUnit ?? info.scoreUnit));
+    setText($('solo-score-label'), update.scoreLabel || 'SCORE');
+    setText($('solo-record-label'), update.recordLabel || (gameId === 'minesweeper' ? 'BEST TIME' : 'BEST SCORE'));
+    setText($('solo-detail'), update.detail || (phase === 'paused' ? 'Take your time. Resume when you are ready.' : 'A new personal best is only a game away.'));
     const { scope, direction, candidate, unit, digits } = recordDetails(gameId, update);
     const best = validRecord(candidate) ? records.update(gameId, candidate, { scope, direction }) : records.read(gameId, scope);
-    $('solo-record').textContent = best === null ? '—' : formatValue(best, digits, unit);
-    $('solo-record-scope').textContent = gameId === 'minesweeper' ? `Best ${scope} time stays in this browser, on this host.` : gameId === 'apex-circuit' ? 'Best completed time is saved separately for each track and championship.' : gameId === 'prism-shift' && scope === 'sprint' ? 'Best completed 40-line time stays in this browser, on this host.' : gameId === 'prism-shift' && scope === 'dig' ? 'Best completed eight-stage Excavation time stays in this browser, on this host.' : 'Best score stays in this browser, on this host.';
-    pause.disabled = finished;
-    pause.setAttribute('aria-pressed', String(phase === 'paused'));
-    pause.querySelector('span').textContent = phase === 'paused' ? 'Resume' : 'Pause';
-    pause.querySelector('b').innerHTML = phase === 'paused' ? '<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="m4 2 10 6-10 6z"/></svg>' : '<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M3 2h3v12H3zm7 0h3v12h-3z"/></svg>';
+    setText($('solo-record'), best === null ? '—' : formatValue(best, digits, unit));
+    setText($('solo-record-scope'), gameId === 'minesweeper' ? `Best ${scope} time stays in this browser, on this host.` : gameId === 'apex-circuit' ? 'Best completed time is saved separately for each track and championship.' : gameId === 'prism-shift' && scope === 'sprint' ? 'Best completed 40-line time stays in this browser, on this host.' : gameId === 'prism-shift' && scope === 'dig' ? 'Best completed eight-stage Excavation time stays in this browser, on this host.' : 'Best score stays in this browser, on this host.');
+    setDisabled(pause, finished);
+    setAttribute(pause, 'aria-pressed', String(phase === 'paused'));
+    setText(pause.querySelector('span'), phase === 'paused' ? 'Resume' : 'Pause');
+    setHTML(pause.querySelector('b'), phase === 'paused' ? '<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="m4 2 10 6-10 6z"/></svg>' : '<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M3 2h3v12H3zm7 0h3v12h-3z"/></svg>');
   }
 
   function focusGame() {
