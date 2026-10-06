@@ -1,25 +1,56 @@
 import {
-  WIDTH, VISIBLE_HEIGHT, HIDDEN_ROWS, SHAPES, pieceCells, ghostPiece,
-  createState, dispatch, step, togglePause as pauseState,
+  WIDTH,
+  VISIBLE_HEIGHT,
+  HIDDEN_ROWS,
+  SHAPES,
+  pieceCells,
+  ghostPiece,
+  createState,
+  dispatch,
+  step,
+  togglePause as pauseState,
+  DIG_STAGES,
+  DIG_STAGE_COUNT,
+  getDigStage,
+  advanceDigStage,
 } from './prism-engine.js';
 
 const COLORS = {
-  I: ['#70ced7', '#c4f3f3', '#347f91'], J: ['#82a5ec', '#ccdcff', '#435f9e'],
-  L: ['#edac79', '#ffe0b5', '#a66340'], O: ['#e9cf77', '#fff1ba', '#9b813b'],
-  S: ['#9bcf95', '#d6efbf', '#5a905c'], T: ['#b295e0', '#e5d0ff', '#705792'],
+  I: ['#70ced7', '#c4f3f3', '#347f91'],
+  J: ['#82a5ec', '#ccdcff', '#435f9e'],
+  L: ['#edac79', '#ffe0b5', '#a66340'],
+  O: ['#e9cf77', '#fff1ba', '#9b813b'],
+  S: ['#9bcf95', '#d6efbf', '#5a905c'],
+  T: ['#b295e0', '#e5d0ff', '#705792'],
   Z: ['#e09398', '#ffd0d0', '#a85868'],
+  G: ['#7d8d86', '#bac3a8', '#4a615e'],
 };
 const KEY_ACTIONS = {
-  ArrowLeft: 'left', ArrowRight: 'right', ArrowDown: 'softDrop', ArrowUp: 'rotateCW',
-  x: 'rotateCW', X: 'rotateCW', z: 'rotateCCW', Z: 'rotateCCW',
-  c: 'hold', C: 'hold', Shift: 'hold', ' ': 'hardDrop',
+  ArrowLeft: 'left',
+  ArrowRight: 'right',
+  ArrowDown: 'softDrop',
+  ArrowUp: 'rotateCW',
+  x: 'rotateCW',
+  X: 'rotateCW',
+  z: 'rotateCCW',
+  Z: 'rotateCCW',
+  c: 'hold',
+  C: 'hold',
+  Shift: 'hold',
+  ' ': 'hardDrop',
 };
 const ENGINE_ACTIONS = {
-  left: 'left', right: 'right', softDrop: 'soft-drop', rotateCW: 'rotate-cw',
-  rotateCCW: 'rotate-ccw', hardDrop: 'hard-drop', hold: 'hold',
+  left: 'left',
+  right: 'right',
+  softDrop: 'soft-drop',
+  rotateCW: 'rotate-cw',
+  rotateCCW: 'rotate-ccw',
+  hardDrop: 'hard-drop',
+  hold: 'hold',
 };
-const isForm = target => target instanceof Element
-  && Boolean(target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"])'));
+const isForm = (target) =>
+  target instanceof Element &&
+  Boolean(target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"])'));
 const element = (tag, className, text) => {
   const node = document.createElement(tag);
   node.className = className;
@@ -36,7 +67,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   let updateElapsed = 0;
   let priority = null;
   let repeatElapsed = 0;
-  let repeatNext = .14;
+  let repeatNext = 0.14;
   let observedLocks = state.piecesLocked;
   let effect = null;
   let dropEffect = null;
@@ -56,7 +87,11 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   const modes = element('div', 'prism-mode');
   modes.setAttribute('role', 'group');
   modes.setAttribute('aria-label', 'Choose game mode. Changing mode starts a fresh game.');
-  for (const [mode, text] of [['marathon', 'Marathon'], ['sprint', 'Sprint 40']]) {
+  for (const [mode, text] of [
+    ['marathon', 'Marathon'],
+    ['sprint', 'Sprint 40'],
+    ['dig', 'Dig 8'],
+  ]) {
     const button = element('button', '', text);
     button.type = 'button';
     button.dataset.mode = mode;
@@ -67,12 +102,19 @@ export function mount(container, { onUpdate = () => {} } = {}) {
 
   const metrics = element('div', 'prism-metrics');
   const metricNodes = {};
-  for (const [name, label] of [['level', 'LEVEL'], ['lines', 'LINES'], ['time', 'TIME']]) {
+  const metricLabels = {};
+  for (const [name, label] of [
+    ['level', 'LEVEL'],
+    ['lines', 'LINES'],
+    ['time', 'TIME'],
+  ]) {
     const item = element('div', `prism-metric prism-${name}`);
     const value = element('strong', '', '0');
-    item.append(element('span', '', label), value);
+    const labelNode = element('span', '', label);
+    item.append(labelNode, value);
     metrics.append(item);
     metricNodes[name] = value;
+    metricLabels[name] = labelNode;
   }
   const boardZone = element('div', 'prism-stage');
   const board = element('div', 'prism-board');
@@ -85,10 +127,14 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   canvas.tabIndex = 0;
   canvas.dataset.soloFocus = '';
   canvas.setAttribute('role', 'img');
-  canvas.setAttribute('aria-label', 'Falling block board. Arrow keys move, up rotates, space drops, C holds.');
+  canvas.setAttribute(
+    'aria-label',
+    'Falling block board. Arrow keys move, up rotates, space drops, C holds.',
+  );
   const boardFoot = element('div', 'prism-board-foot');
+  const boardDimensions = element('span', '', '10 × 20');
   const lockLabel = element('span', '', 'FALLING');
-  boardFoot.append(element('span', '', '10 × 20'), lockLabel);
+  boardFoot.append(boardDimensions, lockLabel);
   board.append(boardHeading, canvas, boardFoot);
 
   const rail = element('aside', 'prism-rail');
@@ -96,7 +142,10 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   const holdPanel = element('div', 'prism-preview-panel prism-hold-panel');
   const holdHeading = element('div', 'prism-preview-heading');
   const holdTitle = element('span', '');
-  holdTitle.append(element('span', 'prism-label-long', 'HOLD / RESERVE'), element('span', 'prism-label-short', 'HOLD'));
+  holdTitle.append(
+    element('span', 'prism-label-long', 'HOLD / RESERVE'),
+    element('span', 'prism-label-short', 'HOLD'),
+  );
   holdHeading.append(holdTitle, element('kbd', '', 'C'));
   const holdCanvas = element('canvas', 'prism-hold-canvas');
   holdCanvas.width = 120;
@@ -108,7 +157,10 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   const nextPanel = element('div', 'prism-preview-panel prism-next-panel');
   const nextHeading = element('div', 'prism-preview-heading');
   const nextTitle = element('span', '');
-  nextTitle.append(element('span', 'prism-label-long', 'NEXT / QUEUE'), element('span', 'prism-label-short', 'NEXT'));
+  nextTitle.append(
+    element('span', 'prism-label-long', 'NEXT / QUEUE'),
+    element('span', 'prism-label-short', 'NEXT'),
+  );
   nextHeading.append(nextTitle, element('span', 'prism-preview-count', '05'));
   nextPanel.append(nextHeading);
   const nextCanvases = [];
@@ -123,10 +175,11 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     nextCanvases.push(preview);
   }
   const chain = element('div', 'prism-chain');
+  const chainHeading = element('span', 'prism-chain-heading', 'CLEAR CHAIN');
   const combo = element('strong', 'prism-combo', '—');
   const b2b = element('span', 'prism-b2b', 'TETRIS / T-SPIN');
   const clearLabel = element('p', 'prism-clear-label', 'BUILD A CLEAN STACK');
-  chain.append(element('span', 'prism-chain-heading', 'CLEAR CHAIN'), combo, b2b, clearLabel);
+  chain.append(chainHeading, combo, b2b, clearLabel);
   const progressPanel = element('div', 'prism-progress-panel');
   const progressHeading = element('div', 'prism-progress-heading');
   const progressTitle = element('span', '', 'NEXT LEVEL');
@@ -138,6 +191,20 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   progressPanel.append(progressHeading, progressTrack);
   const summary = element('div', 'prism-summary');
   summary.append(chain, progressPanel);
+  const incoming = element('div', 'prism-incoming');
+  incoming.hidden = true;
+  const incomingText = element('div', 'prism-incoming-text');
+  const incomingTitle = element('strong', '');
+  const incomingBrief = element('p', '');
+  const incomingRules = element('span', '', 'FIXED QUEUE · RESERVE RESETS EACH STAGE');
+  incomingText.append(incomingTitle, incomingBrief, incomingRules);
+  const incomingPreview = element('canvas', 'prism-incoming-preview');
+  incomingPreview.width = 100;
+  incomingPreview.height = 200;
+  incomingPreview.setAttribute('role', 'img');
+  const continueButton = element('button', 'prism-continue', 'Descend to next stage →');
+  continueButton.type = 'button';
+  incoming.append(incomingPreview, incomingText, continueButton);
   rail.append(holdPanel, nextPanel);
   boardZone.append(board, rail, summary);
 
@@ -150,15 +217,26 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   controls.setAttribute('role', 'group');
   controls.setAttribute('aria-label', 'Move, rotate, hold, and drop pieces');
   const controlsInfo = [
-    ['left', '←', 'Move left'], ['rotateCCW', '↶', 'Rotate counterclockwise'],
-    ['rotateCW', '↷', 'Rotate clockwise'], ['right', '→', 'Move right'],
-    ['hold', 'HOLD', 'Hold piece'], ['softDrop', '↓', 'Soft drop'],
+    ['left', '←', 'Move left'],
+    ['rotateCCW', '↶', 'Rotate counterclockwise'],
+    ['rotateCW', '↷', 'Rotate clockwise'],
+    ['right', '→', 'Move right'],
+    ['hold', 'HOLD', 'Hold piece'],
+    ['softDrop', '↓', 'Soft drop'],
     ['hardDrop', 'DROP', 'Hard drop'],
   ];
   for (const [action, text, label] of controlsInfo) {
     const button = element('button', 'prism-control');
     button.append(element('span', 'prism-control-icon', text));
-    const keyLabel = { left: '←', right: '→', rotateCCW: 'Z', rotateCW: 'X / ↑', hold: 'C', softDrop: '↓', hardDrop: 'SPACE' }[action];
+    const keyLabel = {
+      left: '←',
+      right: '→',
+      rotateCCW: 'Z',
+      rotateCW: 'X / ↑',
+      hold: 'C',
+      softDrop: '↓',
+      hardDrop: 'SPACE',
+    }[action];
     button.append(element('span', 'prism-control-key', keyLabel));
     button.type = 'button';
     button.dataset.action = action;
@@ -172,7 +250,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   controlsToggle.setAttribute('aria-expanded', 'false');
   keyboardLegend.append(controlsToggle);
   footer.append(keyboardLegend, controls, status);
-  view.append(top, metrics, boardZone, footer);
+  view.append(top, metrics, boardZone, incoming, footer);
   container.append(view);
   const ctx = canvas.getContext('2d');
   const motionPreference = window.matchMedia?.('(prefers-reduced-motion: reduce)');
@@ -180,31 +258,43 @@ export function mount(container, { onUpdate = () => {} } = {}) {
 
   function block(context, x, y, size, type, ghost = false) {
     const palette = COLORS[type] || COLORS.T;
-    const px = Math.round(x), py = Math.round(y), edge = Math.max(1, Math.round(size));
-    const gap = Math.max(1, Math.round(size * .065));
+    const px = Math.round(x),
+      py = Math.round(y),
+      edge = Math.max(1, Math.round(size));
+    const gap = Math.max(1, Math.round(size * 0.065));
     if (ghost) {
       context.strokeStyle = `${palette[0]}b3`;
-      context.lineWidth = Math.max(1, size * .052);
-      context.strokeRect(px + gap + .5, py + gap + .5, edge - gap * 2 - 1, edge - gap * 2 - 1);
+      context.lineWidth = Math.max(1, size * 0.052);
+      context.strokeRect(px + gap + 0.5, py + gap + 0.5, edge - gap * 2 - 1, edge - gap * 2 - 1);
       context.fillStyle = `${palette[0]}12`;
       context.fillRect(px + gap + 1, py + gap + 1, edge - gap * 2 - 2, edge - gap * 2 - 2);
       return;
     }
     context.fillStyle = '#0b1e2a';
-    context.fillRect(px + gap, py + gap + Math.max(1, edge * .05), edge - gap * 2, edge - gap * 2);
+    context.fillRect(px + gap, py + gap + Math.max(1, edge * 0.05), edge - gap * 2, edge - gap * 2);
     context.fillStyle = palette[2];
     context.fillRect(px + gap, py + gap, edge - gap * 2, edge - gap * 2);
     context.fillStyle = palette[0];
-    context.fillRect(px + gap + 1, py + gap + 1, edge - gap * 2 - 2, edge - gap * 2 - Math.max(2, edge * .14));
+    context.fillRect(
+      px + gap + 1,
+      py + gap + 1,
+      edge - gap * 2 - 2,
+      edge - gap * 2 - Math.max(2, edge * 0.14),
+    );
     context.fillStyle = palette[1];
-    context.fillRect(px + gap + 1, py + gap + 1, edge - gap * 2 - 2, Math.max(1, Math.round(size * .12)));
+    context.fillRect(px + gap + 1, py + gap + 1, edge - gap * 2 - 2, Math.max(1, Math.round(size * 0.12)));
     context.fillStyle = `${palette[1]}66`;
-    context.fillRect(px + gap + 1, py + gap + 1, Math.max(1, Math.round(size * .09)), edge - gap * 2 - 3);
+    context.fillRect(px + gap + 1, py + gap + 1, Math.max(1, Math.round(size * 0.09)), edge - gap * 2 - 3);
     if (size >= 17) {
       context.fillStyle = `${palette[1]}38`;
-      context.fillRect(px + edge * .24, py + edge * .27, edge * .48, edge * .38);
+      context.fillRect(px + edge * 0.24, py + edge * 0.27, edge * 0.48, edge * 0.38);
       context.fillStyle = `${palette[2]}70`;
-      context.fillRect(px + edge * .24, py + edge * .65, edge * .48, Math.max(1, edge * .05));
+      context.fillRect(px + edge * 0.24, py + edge * 0.65, edge * 0.48, Math.max(1, edge * 0.05));
+    }
+    if (type === 'G') {
+      context.fillStyle = palette[2];
+      context.fillRect(px + edge * 0.45, py + edge * 0.21, Math.max(1, edge * 0.07), edge * 0.23);
+      context.fillRect(px + edge * 0.27, py + edge * 0.44, edge * 0.25, Math.max(1, edge * 0.07));
     }
   }
 
@@ -222,13 +312,16 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       return;
     }
     const cells = SHAPES[type][0];
-    const minX = Math.min(...cells.map(cell => cell.x)), maxX = Math.max(...cells.map(cell => cell.x));
-    const minY = Math.min(...cells.map(cell => cell.y)), maxY = Math.max(...cells.map(cell => cell.y));
+    const minX = Math.min(...cells.map((cell) => cell.x)),
+      maxX = Math.max(...cells.map((cell) => cell.x));
+    const minY = Math.min(...cells.map((cell) => cell.y)),
+      maxY = Math.max(...cells.map((cell) => cell.y));
     const size = 19;
     const offsetX = (target.width - (maxX - minX + 1) * size) / 2;
     const offsetY = (target.height - (maxY - minY + 1) * size) / 2;
-    context.globalAlpha = dimmed ? .48 : 1;
-    for (const cell of cells) block(context, offsetX + (cell.x - minX) * size, offsetY + (cell.y - minY) * size, size, type);
+    context.globalAlpha = dimmed ? 0.48 : 1;
+    for (const cell of cells)
+      block(context, offsetX + (cell.x - minX) * size, offsetY + (cell.y - minY) * size, size, type);
     context.globalAlpha = 1;
   }
 
@@ -249,10 +342,20 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     for (let y = 0; y < VISIBLE_HEIGHT; y += 1) {
       for (let x = 0; x < WIDTH; x += 1) {
         ctx.fillStyle = (x + y) % 2 ? '#152d37' : '#142b34';
-        ctx.fillRect(Math.round(x * cell) + 1, Math.round(y * cell) + 1, Math.round(cell) - 1, Math.round(cell) - 1);
+        ctx.fillRect(
+          Math.round(x * cell) + 1,
+          Math.round(y * cell) + 1,
+          Math.round(cell) - 1,
+          Math.round(cell) - 1,
+        );
         if (x % 5 === 0 && y % 5 === 0) {
           ctx.fillStyle = '#2b4651';
-          ctx.fillRect(Math.round(x * cell) + 1, Math.round(y * cell) + 1, Math.max(1, ratio), Math.max(1, ratio));
+          ctx.fillRect(
+            Math.round(x * cell) + 1,
+            Math.round(y * cell) + 1,
+            Math.max(1, ratio),
+            Math.max(1, ratio),
+          );
         }
         const type = state.board[y + HIDDEN_ROWS][x];
         if (type) block(ctx, x * cell, y * cell, cell, type);
@@ -263,13 +366,15 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       if (age >= 1) dropEffect = null;
       else {
         const palette = COLORS[dropEffect.type] || COLORS.I;
-        ctx.fillStyle = `${palette[0]}${Math.round((1 - age) * 36).toString(16).padStart(2, '0')}`;
+        ctx.fillStyle = `${palette[0]}${Math.round((1 - age) * 36)
+          .toString(16)
+          .padStart(2, '0')}`;
         for (const part of dropEffect.from) {
-          const landing = dropEffect.to.find(cell => cell.x === part.x && cell.y >= part.y);
+          const landing = dropEffect.to.find((cell) => cell.x === part.x && cell.y >= part.y);
           if (!landing) continue;
           const topY = Math.max(0, part.y - HIDDEN_ROWS) * cell;
           const endY = (landing.y - HIDDEN_ROWS + 1) * cell;
-          ctx.fillRect(part.x * cell + cell * .24, topY, cell * .52, Math.max(0, endY - topY));
+          ctx.fillRect(part.x * cell + cell * 0.24, topY, cell * 0.52, Math.max(0, endY - topY));
         }
       }
     }
@@ -277,16 +382,23 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       const ghost = ghostPiece(state);
       if (ghost && (ghost.y !== state.active.y || ghost.x !== state.active.x)) {
         for (const part of pieceCells(ghost)) {
-          if (part.y >= HIDDEN_ROWS) block(ctx, part.x * cell, (part.y - HIDDEN_ROWS) * cell, cell, ghost.type, true);
+          if (part.y >= HIDDEN_ROWS)
+            block(ctx, part.x * cell, (part.y - HIDDEN_ROWS) * cell, cell, ghost.type, true);
         }
       }
       for (const part of pieceCells(state.active)) {
-        if (part.y >= HIDDEN_ROWS) block(ctx, part.x * cell, (part.y - HIDDEN_ROWS) * cell, cell, state.active.type);
+        if (part.y >= HIDDEN_ROWS)
+          block(ctx, part.x * cell, (part.y - HIDDEN_ROWS) * cell, cell, state.active.type);
       }
       if (state.lockElapsed > 0 && state.phase === 'playing') {
-        const progress = Math.min(1, state.lockElapsed / .5);
+        const progress = Math.min(1, state.lockElapsed / 0.5);
         ctx.fillStyle = '#b4ded9';
-        ctx.fillRect(0, canvas.height - Math.max(2, ratio * 2), canvas.width * progress, Math.max(2, ratio * 2));
+        ctx.fillRect(
+          0,
+          canvas.height - Math.max(2, ratio * 2),
+          canvas.width * progress,
+          Math.max(2, ratio * 2),
+        );
       }
     }
     if (effect && !reduceMotion()) {
@@ -294,16 +406,16 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       if (!progress) effect = null;
       else if (effect.lines > 0) {
         for (const row of effect.rows) {
-          ctx.fillStyle = `rgba(192,232,226,${progress * .22})`;
+          ctx.fillStyle = `rgba(192,232,226,${progress * 0.22})`;
           ctx.fillRect(0, (row - HIDDEN_ROWS) * cell, width, cell);
         }
-        ctx.strokeStyle = `rgba(192,232,226,${progress * .55})`;
+        ctx.strokeStyle = `rgba(192,232,226,${progress * 0.55})`;
         ctx.lineWidth = Math.max(2, ratio * 2);
         ctx.strokeRect(1, 1, width - 2, width * 2 - 2);
       } else {
         for (const part of effect.cells) {
           if (part.y < HIDDEN_ROWS) continue;
-          ctx.strokeStyle = `rgba(247,236,198,${progress * .7})`;
+          ctx.strokeStyle = `rgba(247,236,198,${progress * 0.7})`;
           ctx.lineWidth = Math.max(1, ratio);
           ctx.strokeRect(part.x * cell + 2, (part.y - HIDDEN_ROWS) * cell + 2, cell - 4, cell - 4);
         }
@@ -315,23 +427,59 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillStyle = '#f4ead0';
-      ctx.font = `bold ${Math.round(width * .079)}px ui-monospace, monospace`;
-      ctx.fillText({ paused: 'PAUSED', won: '40 LINES', lost: 'STACK FILLED' }[state.phase], width / 2, width * .89);
+      ctx.font = `bold ${Math.round(width * 0.079)}px ui-monospace, monospace`;
+      const title =
+        state.phase === 'paused'
+          ? 'PAUSED'
+          : state.phase === 'stage-clear'
+            ? 'LAYER CLEARED'
+            : state.phase === 'won'
+              ? state.mode === 'dig'
+                ? 'EXCAVATED'
+                : '40 LINES'
+              : state.result === 'piece-budget'
+                ? 'NO PIECES LEFT'
+                : 'STACK FILLED';
+      ctx.fillText(title, width / 2, width * 0.89);
       ctx.fillStyle = '#b6d1d1';
-      ctx.font = `${Math.max(8, Math.round(width * .044))}px ui-monospace, monospace`;
-      const line = state.phase === 'paused' ? 'P / RESUME' : state.phase === 'won' ? `${state.elapsed.toFixed(2)} SECONDS` : `${state.score.toLocaleString()} POINTS`;
+      ctx.font = `${Math.max(8, Math.round(width * 0.044))}px ui-monospace, monospace`;
+      const line =
+        state.phase === 'paused'
+          ? 'P / RESUME'
+          : state.phase === 'stage-clear'
+            ? `${getDigStage(state).title.toUpperCase()}`
+            : state.phase === 'won'
+              ? `${state.elapsed.toFixed(2)} SECONDS`
+              : `${state.score.toLocaleString()} POINTS`;
       ctx.fillText(line, width / 2, width * 1.02);
       if (state.phase !== 'paused') {
-        ctx.font = `${Math.max(7, Math.round(width * .033))}px ui-monospace, monospace`;
-        ctx.fillText('R / NEW GAME', width / 2, width * 1.13);
+        ctx.font = `${Math.max(7, Math.round(width * 0.033))}px ui-monospace, monospace`;
+        ctx.fillText(
+          state.phase === 'stage-clear' ? 'NEXT STACK BELOW' : 'R / NEW GAME',
+          width / 2,
+          width * 1.13,
+        );
       }
     }
   }
 
   function detail() {
     if (state.phase === 'paused') return 'Paused. Your next move can wait.';
-    if (state.phase === 'won') return `Forty lines in ${state.elapsed.toFixed(2)} seconds. Chase a cleaner, faster sprint.`;
-    if (state.phase === 'lost') return 'The stack reached the top. Start fresh and leave room for your next piece.';
+    if (state.mode === 'dig') {
+      if (state.phase === 'won')
+        return `Eight excavation stages and sixty rows in ${state.elapsed.toFixed(2)} seconds. The shaft is clear.`;
+      if (state.phase === 'lost')
+        return state.result === 'piece-budget'
+          ? 'The piece budget ran out. Read the shaped openings and use your reserve before dropping.'
+          : 'The shaft filled up. Restart the challenge and leave room to rotate.';
+      if (state.phase === 'stage-clear')
+        return `${getDigStage(state).title} cleared. Time is stopped. Review the next stack, then descend.`;
+      return `Stage ${state.dig.stageIndex + 1} of ${DIG_STAGE_COUNT}: ${getDigStage(state).title}. ${state.dig.remainingRows} garbage rows remain, ${state.dig.budget - state.dig.piecesUsed} pieces left. Fixed queue; hold resets each stage.`;
+    }
+    if (state.phase === 'won')
+      return `Forty lines in ${state.elapsed.toFixed(2)} seconds. Chase a cleaner, faster sprint.`;
+    if (state.phase === 'lost')
+      return 'The stack reached the top. Start fresh and leave room for your next piece.';
     return state.mode === 'sprint'
       ? `${Math.max(0, 40 - state.lines)} lines to go. Plan ahead, place quickly, and keep the stack clean.`
       : 'Build four-line clears and T-spins. Chain difficult clears for a bigger score.';
@@ -340,43 +488,161 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   function publish() {
     if (destroyed) return;
     const message = detail();
-    metricNodes.level.textContent = String(state.level);
-    metricNodes.lines.textContent = state.mode === 'sprint' ? `${Math.min(state.lines, 40)} / 40` : String(state.lines);
+    const dig = state.mode === 'dig';
+    view.dataset.prismMode = state.mode;
+    metricLabels.level.textContent = dig ? 'STAGE' : 'LEVEL';
+    metricLabels.lines.textContent = dig ? 'ROWS LEFT' : 'LINES';
+    metricNodes.level.textContent = dig
+      ? `${state.dig.stageIndex + 1} / ${DIG_STAGE_COUNT}`
+      : String(state.level);
+    metricNodes.lines.textContent = dig
+      ? String(state.dig.remainingRows)
+      : state.mode === 'sprint'
+        ? `${Math.min(state.lines, 40)} / 40`
+        : String(state.lines);
     metricNodes.time.textContent = state.elapsed.toFixed(2);
     if (status.textContent !== message) status.textContent = message;
-    combo.textContent = state.combo > 0 ? `×${state.combo + 1}` : '—';
-    b2b.textContent = state.backToBack ? 'BACK TO BACK' : 'TETRIS / T-SPIN';
+    const journey =
+      state.level < 4 ? 'WARMUP' : state.level < 8 ? 'FLOW' : state.level < 13 ? 'PRESSURE' : 'OVERDRIVE';
+    const maximumPace = state.mode === 'marathon' && state.level >= 30;
+    chainHeading.textContent = dig ? 'EXCAVATION' : 'CLEAR CHAIN';
+    combo.textContent = dig ? getDigStage(state).title : state.combo > 0 ? `×${state.combo + 1}` : '—';
+    b2b.textContent = dig
+      ? 'FIXED QUEUE · USE HOLD'
+      : state.backToBack
+        ? 'BACK TO BACK ×1.5'
+        : 'TETRIS / T-SPIN';
     chain.dataset.active = String(state.backToBack || state.combo > 0);
     const recentClear = state.lastClear && state.lastClear.label && state.elapsed - state.lastClear.time < 4;
-    clearLabel.textContent = recentClear ? `${state.lastClear.label}${state.lastClear.points ? ` +${state.lastClear.points}` : ''}` : 'BUILD A CLEAN STACK';
-    activeLabel.textContent = state.active ? `${state.active.type} / ACTIVE` : 'COMPLETE';
-    lockLabel.textContent = state.phase === 'paused' ? 'PAUSED' : state.lockElapsed > 0 ? `LOCK ${Math.min(100, Math.round(state.lockElapsed / .5 * 100))}%` : 'GHOST ON';
-    progressTitle.textContent = state.mode === 'sprint' ? 'SPRINT GOAL' : 'NEXT LEVEL';
-    progressValue.textContent = state.mode === 'sprint' ? `${Math.min(state.lines, 40)} / 40` : `${state.lines % 10} / 10`;
-    const progression = state.mode === 'sprint' ? Math.min(1, state.lines / 40) : state.lines % 10 / 10;
+    chain.dataset.spin = String(Boolean(recentClear && state.lastClear.spin));
+    clearLabel.textContent = dig
+      ? `${state.dig.remainingRows} ROWS · ${state.dig.budget - state.dig.piecesUsed} PIECES LEFT`
+      : recentClear
+        ? `${state.lastClear.label}${state.lastClear.points ? ` +${state.lastClear.points}` : ''}`
+        : 'BUILD A CLEAN STACK';
+    const topRow = state.board.findIndex((row) => row.some(Boolean));
+    const danger = topRow >= 0 && topRow < HIDDEN_ROWS + 5;
+    activeLabel.textContent = danger
+      ? 'HIGH STACK'
+      : state.active
+        ? `${state.active.type} / ACTIVE`
+        : 'COMPLETE';
+    activeLabel.dataset.danger = String(danger);
+    boardDimensions.textContent = dig ? `PIECES ${state.dig.piecesUsed} / ${state.dig.budget}` : '10 × 20';
+    lockLabel.textContent =
+      state.phase === 'paused'
+        ? 'PAUSED'
+        : state.lockElapsed > 0
+          ? `LOCK ${Math.min(100, Math.round((state.lockElapsed / 0.5) * 100))}%`
+          : 'GHOST ON';
+    progressTitle.textContent = dig
+      ? 'ROWS EXCAVATED'
+      : state.mode === 'sprint'
+        ? 'SPRINT GOAL'
+        : maximumPace
+          ? 'MAXIMUM PACE'
+          : `${journey} → LV ${state.level + 1}`;
+    progressValue.textContent = dig
+      ? `${state.dig.garbageRows - state.dig.remainingRows} / ${state.dig.garbageRows}`
+      : state.mode === 'sprint'
+        ? `${Math.min(state.lines, 40)} / 40`
+        : maximumPace
+          ? 'LEVEL 30'
+          : `${state.lines % 10} / 10`;
+    const progression = dig
+      ? 1 - state.dig.remainingRows / state.dig.garbageRows
+      : state.mode === 'sprint'
+        ? Math.min(1, state.lines / 40)
+        : maximumPace
+          ? 1
+          : (state.lines % 10) / 10;
     progressFill.style.width = `${progression * 100}%`;
     progressTrack.setAttribute('role', 'progressbar');
-    progressTrack.setAttribute('aria-label', state.mode === 'sprint' ? 'Sprint lines completed' : 'Progress to next level');
+    progressTrack.setAttribute(
+      'aria-label',
+      dig
+        ? 'Garbage rows excavated in this stage'
+        : state.mode === 'sprint'
+          ? 'Sprint lines completed'
+          : maximumPace
+            ? 'Maximum Marathon pace reached'
+            : 'Progress to next level',
+    );
     progressTrack.setAttribute('aria-valuemin', '0');
-    progressTrack.setAttribute('aria-valuemax', state.mode === 'sprint' ? '40' : '10');
-    progressTrack.setAttribute('aria-valuenow', String(state.mode === 'sprint' ? Math.min(state.lines, 40) : state.lines % 10));
+    progressTrack.setAttribute(
+      'aria-valuemax',
+      dig ? String(state.dig.garbageRows) : state.mode === 'sprint' ? '40' : '10',
+    );
+    progressTrack.setAttribute(
+      'aria-valuenow',
+      String(
+        dig
+          ? state.dig.garbageRows - state.dig.remainingRows
+          : state.mode === 'sprint'
+            ? Math.min(state.lines, 40)
+            : maximumPace
+              ? 10
+              : state.lines % 10,
+      ),
+    );
+    incoming.hidden = !dig || state.phase !== 'stage-clear';
+    if (!incoming.hidden) {
+      const nextStage = DIG_STAGES[state.dig.stageIndex + 1];
+      incomingTitle.textContent = `NEXT ${state.dig.stageIndex + 2} / ${DIG_STAGE_COUNT} · ${nextStage.title}`;
+      incomingBrief.textContent = `${nextStage.rows} rows · ${nextStage.budget} pieces. ${nextStage.brief}`;
+      incomingRules.textContent = `QUEUE ${nextStage.queue.join(' ')} · RESERVE RESETS`;
+      incomingPreview.setAttribute(
+        'aria-label',
+        `Next stack: ${nextStage.rows} shaped garbage rows. ${nextStage.title}.`,
+      );
+      const context = incomingPreview.getContext('2d');
+      if (context) {
+        context.fillStyle = '#102b35';
+        context.fillRect(0, 0, 100, 200);
+        nextStage.board.slice(HIDDEN_ROWS).forEach((row, y) =>
+          row.forEach((type, x) => {
+            if (type) block(context, x * 10, y * 10, 10, type);
+          }),
+        );
+      }
+    }
     holdPanel.dataset.used = String(state.holdUsed);
-    holdNote.textContent = !state.hold ? 'PRESS C TO RESERVE' : state.holdUsed ? 'READY AFTER NEXT LOCK' : 'ONE SWAP PER PIECE';
-    holdCanvas.setAttribute('aria-label', state.hold ? `Held ${state.hold} piece${state.holdUsed ? '. Available after your next lock.' : ''}` : 'No piece held. Press C to hold the active piece.');
+    holdNote.textContent = !state.hold
+      ? 'PRESS C TO RESERVE'
+      : state.holdUsed
+        ? 'READY AFTER NEXT LOCK'
+        : 'ONE SWAP PER PIECE';
+    holdCanvas.setAttribute(
+      'aria-label',
+      state.hold
+        ? `Held ${state.hold} piece${state.holdUsed ? '. Available after your next lock.' : ''}`
+        : 'No piece held. Press C to hold the active piece.',
+    );
     preview(holdCanvas, state.hold, state.holdUsed);
     nextCanvases.forEach((target, i) => {
       target.setAttribute('aria-label', `Next piece ${i + 1}: ${state.next[i] || 'empty'}`);
       preview(target, state.next[i]);
     });
-    modes.querySelectorAll('button').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.mode === state.mode)));
-    canvas.setAttribute('aria-label', `Prism Shift ${state.mode}. ${state.lines} lines, level ${state.level}, ${state.score} points. ${message}`);
-    const sprint = state.mode === 'sprint';
+    modes
+      .querySelectorAll('button')
+      .forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.mode === state.mode)));
+    canvas.setAttribute(
+      'aria-label',
+      `Prism Shift ${state.mode}. ${state.lines} lines, level ${state.level}, ${state.score} points. ${message}`,
+    );
+    const timed = state.mode === 'sprint' || dig;
     onUpdate({
-      phase: state.phase, mode: state.mode, score: sprint ? Number(state.elapsed.toFixed(2)) : state.score,
-      scoreLabel: sprint ? 'TIME' : 'SCORE', scoreDigits: sprint ? 2 : 0, scoreUnit: sprint ? 's' : '',
-      record: sprint ? (state.phase === 'won' ? state.elapsed : null) : state.score,
-      recordKey: state.mode, recordDirection: sprint ? 'min' : 'max',
-      recordLabel: sprint ? 'BEST 40 LINES' : 'BEST SCORE', detail: message,
+      phase: state.phase === 'stage-clear' ? 'playing' : state.phase,
+      mode: state.mode,
+      score: timed ? Number(state.elapsed.toFixed(2)) : state.score,
+      scoreLabel: timed ? 'TIME' : 'SCORE',
+      scoreDigits: timed ? 2 : 0,
+      scoreUnit: timed ? 's' : '',
+      record: timed ? (state.phase === 'won' ? state.elapsed : null) : state.score,
+      recordKey: state.mode,
+      recordDirection: timed ? 'min' : 'max',
+      recordLabel: dig ? 'BEST DIG 8' : timed ? 'BEST 40 LINES' : 'BEST SCORE',
+      detail: message,
     });
     updateElapsed = 0;
   }
@@ -384,7 +650,12 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   function noticeLock(oldPiece, rows = []) {
     if (state.piecesLocked === observedLocks) return;
     observedLocks = state.piecesLocked;
-    effect = { time: performance.now(), lines: state.lastClear?.lines || 0, cells: oldPiece ? pieceCells(oldPiece) : [], rows };
+    effect = {
+      time: performance.now(),
+      lines: state.lastClear?.lines || 0,
+      cells: oldPiece ? pieceCells(oldPiece) : [],
+      rows,
+    };
     publish();
   }
 
@@ -395,10 +666,16 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     if (action === 'hardDrop' && oldPiece) {
       const cells = pieceCells(oldPiece);
       for (let y = HIDDEN_ROWS; y < state.height; y += 1) {
-        if (state.board[y].every((type, x) => type || cells.some(cell => cell.x === x && cell.y === y))) rows.push(y);
+        if (state.board[y].every((type, x) => type || cells.some((cell) => cell.x === x && cell.y === y)))
+          rows.push(y);
       }
       if (!reduceMotion() && state.active.y !== oldPiece.y) {
-        dropEffect = { time: performance.now(), type: state.active.type, from: pieceCells(state.active), to: cells };
+        dropEffect = {
+          time: performance.now(),
+          type: state.active.type,
+          from: pieceCells(state.active),
+          to: cells,
+        };
       }
     }
     dispatch(state, ENGINE_ACTIONS[action]);
@@ -408,14 +685,14 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     draw();
   }
 
-  const held = action => [...sources.values()].includes(action);
+  const held = (action) => [...sources.values()].includes(action);
   function press(action, source) {
     if (destroyed || state.phase !== 'playing' || sources.has(source)) return;
     sources.set(source, action);
     if (action === 'left' || action === 'right') {
       priority = action;
       repeatElapsed = 0;
-      repeatNext = .14;
+      repeatNext = 0.14;
     }
     act(action);
   }
@@ -427,7 +704,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       const opposite = action === 'left' ? 'right' : 'left';
       priority = held(opposite) ? opposite : null;
       repeatElapsed = 0;
-      repeatNext = .14;
+      repeatNext = 0.14;
       if (priority && state.phase === 'playing') act(priority);
     }
   }
@@ -436,10 +713,12 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     sources.clear();
     priority = null;
     repeatElapsed = 0;
-    repeatNext = .14;
+    repeatNext = 0.14;
     for (const [pointerId, button] of pointers) {
       button.classList.remove('is-held');
-      try { if (button.hasPointerCapture(pointerId)) button.releasePointerCapture(pointerId); } catch {}
+      try {
+        if (button.hasPointerCapture(pointerId)) button.releasePointerCapture(pointerId);
+      } catch {}
     }
     pointers.clear();
   }
@@ -456,7 +735,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
 
   function autoPause() {
     releaseInputs();
-    if (state.phase === 'playing') togglePause();
+    if (state.phase === 'playing' || state.phase === 'stage-clear') togglePause();
   }
 
   function restart(mode = state.mode) {
@@ -474,7 +753,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
 
   function frame(now) {
     if (destroyed) return;
-    const delta = lastFrame ? Math.min(.05, Math.max(0, (now - lastFrame) / 1000)) : 0;
+    const delta = lastFrame ? Math.min(0.05, Math.max(0, (now - lastFrame) / 1000)) : 0;
     lastFrame = now;
     if (state.phase === 'playing') {
       accumulator += delta;
@@ -484,7 +763,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
           repeatElapsed += interval;
           while (repeatElapsed >= repeatNext) {
             dispatch(state, ENGINE_ACTIONS[priority]);
-            repeatNext += .03;
+            repeatNext += 0.03;
           }
         }
         const oldPiece = state.active ? { ...state.active } : null;
@@ -497,26 +776,38 @@ export function mount(container, { onUpdate = () => {} } = {}) {
         releaseInputs();
         accumulator = 0;
         publish();
-      } else if (updateElapsed >= .1) publish();
+      } else if (updateElapsed >= 0.1) publish();
     }
     draw(now);
     animationId = window.requestAnimationFrame(frame);
   }
 
   function keydown(event) {
-    if (event.defaultPrevented || event.isComposing || event.altKey || event.ctrlKey || event.metaKey || isForm(event.target)) return;
+    if (
+      event.defaultPrevented ||
+      event.isComposing ||
+      event.altKey ||
+      event.ctrlKey ||
+      event.metaKey ||
+      isForm(event.target)
+    )
+      return;
     const action = KEY_ACTIONS[event.key];
     if (event.key === 'Escape') {
       event.preventDefault();
       if (!event.repeat) togglePause();
       return;
     }
-    if (!action || (action === 'hardDrop' && event.target instanceof Element && event.target.closest('button,a'))) return;
+    if (
+      !action ||
+      (action === 'hardDrop' && event.target instanceof Element && event.target.closest('button,a'))
+    )
+      return;
     event.preventDefault();
     if (event.repeat) return;
     press(action, `key:${event.code || event.key}`);
   }
-  const keyup = event => release(`key:${event.code || event.key}`);
+  const keyup = (event) => release(`key:${event.code || event.key}`);
   const focusCanvas = () => canvas.focus({ preventScroll: true });
   function pointerdown(event) {
     const button = event.target.closest('.prism-control[data-action]');
@@ -524,7 +815,9 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     if (event.pointerType === 'mouse' && event.button !== 0) return;
     event.preventDefault();
     focusCanvas();
-    try { button.setPointerCapture(event.pointerId); } catch {}
+    try {
+      button.setPointerCapture(event.pointerId);
+    } catch {}
     pointers.set(event.pointerId, button);
     button.classList.add('is-held');
     press(button.dataset.action, `pointer:${event.pointerId}`);
@@ -535,7 +828,9 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     release(`pointer:${event.pointerId}`);
     pointers.delete(event.pointerId);
     if (![...pointers.values()].includes(button)) button.classList.remove('is-held');
-    try { if (button.hasPointerCapture(event.pointerId)) button.releasePointerCapture(event.pointerId); } catch {}
+    try {
+      if (button.hasPointerCapture(event.pointerId)) button.releasePointerCapture(event.pointerId);
+    } catch {}
   }
   function clickControl(event) {
     if (event.detail !== 0) return;
@@ -554,7 +849,20 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     controlsToggle.setAttribute('aria-expanded', String(open));
     controlsToggle.textContent = open ? 'On-screen controls −' : 'On-screen controls +';
   }
-  const visibility = () => { if (document.hidden) autoPause(); };
+  function continueDig() {
+    releaseInputs();
+    if (!advanceDigStage(state)) return;
+    effect = null;
+    dropEffect = null;
+    lastFrame = 0;
+    accumulator = 0;
+    publish();
+    draw();
+    focusCanvas();
+  }
+  const visibility = () => {
+    if (document.hidden) autoPause();
+  };
   const pageHidden = () => autoPause();
   window.addEventListener('keydown', keydown);
   window.addEventListener('keyup', keyup);
@@ -569,6 +877,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   controls.addEventListener('click', clickControl);
   modes.addEventListener('click', changeMode);
   controlsToggle.addEventListener('click', toggleControls);
+  continueButton.addEventListener('click', continueDig);
   const resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(() => draw()) : null;
   if (resizeObserver) resizeObserver.observe(canvas);
   else window.addEventListener('resize', draw);
@@ -578,7 +887,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
 
   return {
     getState: () => JSON.parse(JSON.stringify(state)),
-    restart: () => restart(), togglePause,
+    restart: () => restart(),
+    togglePause,
     destroy() {
       if (destroyed) return;
       releaseInputs();
@@ -599,6 +909,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       controls.removeEventListener('click', clickControl);
       modes.removeEventListener('click', changeMode);
       controlsToggle.removeEventListener('click', toggleControls);
+      continueButton.removeEventListener('click', continueDig);
       view.remove();
     },
   };

@@ -140,3 +140,19 @@ test('losing storage write access mid-run preserves the existing record and new 
   assert.equal(records.read('snake'), 60);
   assert.equal(records.update('snake', 20), 60);
 });
+
+
+test('expanded courses, challenge roads and tiers keep independent records',()=>{
+ for(const [game,keys] of [['snake',['default','gardens']],['2048',['default','puzzles']],['minesweeper',['beginner','intermediate','expert']],['apex-circuit',['three-laps','harbor-ring-three-laps','rain-pass-three-laps','championship']],['night-drive',['default','tour']],['rift-survivor',['default','veteran']]]){
+  const store=createBestStore();
+  keys.forEach((key,index)=>{const policy=recordDetails(game,{phase:'won',score:100+index,record:100+index,recordKey:key});assert.equal(policy.scope,key);store.update(game,policy.candidate,policy);});
+  keys.forEach((key,index)=>assert.equal(store.read(game,key),100+index));
+ }
+});
+
+
+test('Prism Excavation records require the full road and stay separate from Sprint',()=>{
+ for(const phase of ['playing','paused','lost'])assert.equal(recordDetails('prism-shift',{recordKey:'dig',phase,score:12,record:12}).candidate,null);
+ const policy=recordDetails('prism-shift',{recordKey:'dig',phase:'won',score:24.6,record:24.6});
+ assert.equal(policy.scope,'dig');assert.equal(policy.direction,'min');assert.equal(policy.candidate,24.6);
+});

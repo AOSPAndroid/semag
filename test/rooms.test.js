@@ -57,7 +57,7 @@ async function ready(first, second) {
 test('hub creates and lists every game type with unique room codes and correct welcomes', async t => {
   const game = await hub(t);
   const ids = new Set();
-  for (const gameId of ['afterimage', 'checkers', 'relic-duel', 'dungeon-run', 'crazy-eights', 'twenty-one', 'memory', 'vector-arena']) {
+  for (const gameId of ['afterimage', 'checkers', 'relic-duel', 'dungeon-run', 'crazy-eights', 'twenty-one', 'memory', 'vector-arena', 'oddstock-rumble']) {
     const room = await game.create(gameId, `${gameId} room`);
     assert.equal(room.name, `${gameId} room`);
     ids.add(room.id);
@@ -67,9 +67,9 @@ test('hub creates and lists every game type with unique room codes and correct w
     assert.equal(welcome.gameId, gameId);
     assert.equal(welcome.tickRate, 120);
   }
-  assert.equal(ids.size, 8);
+  assert.equal(ids.size, 9);
   const listed = await game.list();
-  assert.equal(listed.length, 8);
+  assert.equal(listed.length, 9);
   assert.deepEqual(new Set(listed.map(room => room.id)), ids);
   assert.ok(listed.every(room => room.players[0]?.connected && room.phase === 'lobby'));
   assert.ok(listed.every(room => Number.isFinite(room.createdAt)));

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createState, step, togglePause, chooseUpgrade, ARENA, OBSTACLES,
-  TOTAL_WAVES, UPGRADES, MAX_ENEMIES, MAX_PROJECTILES } from '../public/solo/rift-engine.js';
+  TOTAL_WAVES, UPGRADES, MAX_ENEMIES, MAX_PROJECTILES, SECTORS, DIFFICULTIES } from '../public/solo/rift-engine.js';
 
 function seeded(seed = 7) {
   return () => { seed = Math.imul(seed, 1664525) + 1013904223 | 0; return (seed >>> 0) / 4294967296; };
@@ -31,7 +31,7 @@ function clearToUpgrade(state) {
 }
 
 function choose(state, priority = ['damage', 'cooling', 'mobility', 'battery', 'plating', 'repair']) {
-  const id = priority.find(id => state.upgradeChoices.includes(id));
+  const id = priority.find(id => state.upgradeChoices.includes(id)) || state.upgradeChoices[0];
   assert.ok(id);
   assert.deepEqual(chooseUpgrade(state, id), { ok: true });
 }
@@ -51,7 +51,8 @@ test('an arena starts with safe finite spawns, four solid covers and readable co
     assert.doesNotThrow(() => JSON.stringify(state));
   }
   assert.equal(OBSTACLES.length, 4);
-  assert.equal(TOTAL_WAVES, 10);
+  assert.equal(TOTAL_WAVES, 20);
+  assert.equal(SECTORS.length, 4);
 });
 
 test('movement normalizes diagonals, supports analog precision and reacts on the first step', () => {
@@ -311,22 +312,25 @@ test('wave upgrades validate offered IDs, preserve pause phase and apply capped 
   assert.equal(state.enemies.length, 7);
 });
 
-test('progression has exactly ten finite waves, boss encounters and a final victory', () => {
+test('progression has twenty finite waves, four distinct sectors and a final victory', () => {
   const state = createState({ random: seeded() });
-  for (let wave = 1; wave <= 10; wave += 1) {
+  for (let wave = 1; wave <= TOTAL_WAVES; wave += 1) {
     assert.equal(state.wave, wave);
     assert.ok(state.enemies.length <= MAX_ENEMIES);
-    assert.equal(state.enemies.filter(e => e.boss).length, wave === 5 || wave === 10 ? 1 : 0);
+    assert.equal(state.sector, Math.floor((wave - 1) / 5));
+    assert.equal(state.sectorName, SECTORS[state.sector].name);
+    assert.equal(state.enemies.filter(e => e.boss).length, wave % 5 === 0 ? 1 : 0);
+    if (wave % 5 === 0) assert.equal(state.enemies.find(e => e.boss).bossName, SECTORS[state.sector].boss);
     state.enemies = [];
     step(state);
-    if (wave < 10) {
+    if (wave < TOTAL_WAVES) {
       assert.equal(state.phase, 'upgrade');
       assert.equal(state.upgradeChoices.length, 3);
       choose(state);
     }
   }
   assert.equal(state.phase, 'won');
-  assert.equal(state.wavesCleared, 10);
+  assert.equal(state.wavesCleared, TOTAL_WAVES);
   assert.equal(state.result, 'rift-sealed');
   const snapshot = JSON.stringify(state);
   assert.equal(togglePause(state), false);
@@ -358,13 +362,153 @@ test('each upgrade changes its intended resource and capped upgrades cannot cons
   assert.equal(JSON.stringify(capped), snapshot);
 });
 
-test('a real-input kiting and aiming run can defeat every enemy and both bosses', () => {
+test('mirror rounds really bank a shot from the arena wall into a target behind the shooter', () => {
+  for (const rank of [0, 1]) {
+    const state = quiet(); state.player.x = 920; state.player.y = 340; state.player.ricochet = rank;
+    state.enemies = [enemy({ x: 780, y: 340, hp: 100 })];
+    step(state, { fire: true, aimX: 1, aimY: 0 });
+    advance(state, .5);
+    assert.equal(state.enemies[0].hp, rank ? 78 : 100);
+    assert.equal(state.events.some(event => event.type === 'bounce'), Boolean(rank));
+  }
+  const touching = quiet(); touching.player.x = 268; touching.player.y = 235; touching.player.ricochet = 1;
+  step(touching, { fire: true, aimX: 1, aimY: 0 });
+  assert.equal(touching.projectiles.length, 1);
+  assert.ok(touching.projectiles[0].vx < 0);
+  assert.ok(touching.projectiles[0].x < 280);
+  assert.equal(touching.projectiles[0].bounces, 0);
+});
+
+test('arc, frost and siphon combine through actual aimed hits and chain kills', () => {
+  const state = quiet();
+  state.player.chain = 1; state.player.frost = 2; state.player.siphon = 1; state.player.hp = 50;
+  const first = enemy({ id: 1, x: 700, y: 340, hp: 22 });
+  const next = enemy({ id: 2, x: 760, y: 340, hp: 8.8 });
+  state.enemies = [first, next, enemy()];
+  step(state, { fire: true, aimX: 1, aimY: 0 }); advance(state, .35);
+  assert.equal(state.kills, 2);
+  assert.equal(state.player.hp, 52);
+  assert.equal(first.slowFactor, .7); assert.equal(next.slowFactor, .7);
+  assert.ok(state.events.some(event => event.type === 'arc' && event.toX === 760));
+  assert.equal(state.enemies.length, 1);
+});
+
+test('phase shock shatters frozen enemies and the afterimage lens primes one cool heavy shot', () => {
+  const state = quiet();
+  state.player.pulse = 1; state.player.focus = 1;
+  const chilled = enemy({ x: 570, y: 340, hp: 100, slowTime: 1, slowFactor: .7 });
+  state.enemies = [chilled, enemy()];
+  step(state, { dash: true, left: true, fire: true, aimX: -1, aimY: 0 });
+  assert.equal(chilled.hp, 76); // 16-point shock, amplified by the existing chill.
+  assert.ok(Math.abs(state.projectiles[0].damage - 29.7) < 1e-8);
+  assert.equal(state.player.heat, 5.5);
+  assert.equal(state.player.focusReady, false);
+  advance(state, .15);
+  step(state, { fire: true, aimX: -1, aimY: 0 });
+  assert.equal(state.projectiles.at(-1).damage, 22);
+});
+
+test('the triad chamber creates actual side rounds on its fourth trigger', () => {
+  const state = quiet(); state.player.scatter = 1;
+  advance(state, .38, { fire: true, aimX: -1, aimY: 0 });
+  assert.equal(state.player.shotsFired, 4);
+  assert.equal(state.projectileId, 6);
+  assert.equal(state.projectiles.filter(shot => Math.abs(shot.vy) > 1).length, 2);
+  assert.ok(state.projectiles.filter(shot => Math.abs(shot.vy) > 1).every(shot => Math.abs(shot.damage - 12.1) < 1e-8));
+});
+
+test('weavers strafe instead of merely following and their single shot has a readable windup', () => {
+  const state = quiet();
+  state.enemies = [enemy({ type: 'weaver', x: 750, y: 340, attackTimer: 1, speed: 140, strafe: 1 })];
+  advance(state, .2);
+  assert.ok(Math.abs(state.enemies[0].y - 340) > 15);
+  state.enemies[0].attackTimer = 0;
+  step(state);
+  assert.equal(state.enemies[0].phase, 'windup');
+  advance(state, .35);
+  assert.equal(state.projectiles.length, 0);
+  advance(state, .08);
+  assert.equal(state.projectiles.length, 1);
+  assert.equal(state.enemies[0].strafe, -1);
+});
+
+test('elites have distinct affixes and overcharge affects just the chosen next wave', () => {
+  const baseline = createState({ random: seeded(23) }); clearToUpgrade(baseline);
+  const risky = createState({ random: seeded(23) }); clearToUpgrade(risky);
+  const id = baseline.upgradeChoices[0];
+  chooseUpgrade(baseline, id); chooseUpgrade(risky, id, { risk: true });
+  assert.equal(risky.waveRisk, true); assert.equal(risky.overcharges, 1);
+  assert.equal(risky.enemies.length, baseline.enemies.length + 1);
+  assert.equal(risky.enemies.filter(e => e.elite).length, 2);
+  assert.ok(risky.enemies.filter(e => e.elite).every(e => ['swift', 'armored', 'volatile'].includes(e.affix)));
+  risky.player.invulnerable = 0;
+  risky.projectiles = [{ id: 991, owner: 'enemy', x: risky.player.x, y: risky.player.y, vx: 0, vy: 0, radius: 5, damage: 10, life: 1 }];
+  step(risky); assert.equal(risky.player.hp, 88.5);
+  clearToUpgrade(risky); assert.equal(risky.score, 1110); chooseUpgrade(risky, risky.upgradeChoices[0]);
+  assert.equal(risky.waveRisk, false); assert.equal(risky.overcharges, 1);
+});
+
+test('a volatile elite leaves a delayed floor warning instead of instant unavoidable damage', () => {
+  const state = quiet(); state.player.invulnerable = 0;
+  state.enemies = [enemy({ id: 1, x: 550, y: 340, hp: 22, elite: true, affix: 'volatile' }), enemy()];
+  step(state, { fire: true, aimX: 1, aimY: 0 }); advance(state, .1);
+  assert.equal(state.hazards.length, 1);
+  assert.equal(state.player.hp, 100);
+  advance(state, .5);
+  assert.equal(state.player.hp, 100);
+  advance(state, .5, { left: true });
+  assert.equal(state.player.hp, 100);
+});
+
+test('each guardian sector uses different patterns with delayed mines, staggered rings and lane escapes', () => {
+  for (let sector = 0; sector < 4; sector += 1) for (let pattern = 0; pattern < 2; pattern += 1) {
+    const state = quiet(); state.sector = sector; state.wave = (sector + 1) * 5;
+    state.enemies = [enemy({ type: 'boss', x: 100, y: 340, attackTimer: 0, bossSector: sector, pattern })];
+    step(state); assert.equal(state.enemies[0].attackName, SECTORS[sector].patterns[pattern]);
+    advance(state, .8); assert.equal(state.projectiles.length, 0); assert.equal(state.hazards.length, 0);
+    advance(state, .11);
+    if (sector === 1 && pattern === 0) {
+      assert.equal(state.hazards.length, 3); assert.ok(state.hazards.every(h => h.warning > .8));
+    } else if (sector === 1 && pattern === 1) {
+      assert.equal(state.projectiles.length, 10); assert.equal(state.enemies[0].phase, 'burst');
+      advance(state, .33); assert.ok(state.events.filter(e => e.type === 'volley').length >= 2);
+    } else if (sector === 3 && pattern === 0) {
+      assert.deepEqual(state.hazards.map(h => h.kind), ['vertical', 'horizontal']);
+      assert.ok(state.hazards.every(h => h.warning > .9));
+    } else if (sector === 2 && pattern === 1 || sector === 3 && pattern === 1) assert.equal(state.hazards.length, 1);
+    else assert.ok(state.projectiles.length > 0);
+  }
+});
+
+test('floor hazards freeze when paused and moving out before their countdown avoids damage', () => {
+  const state = quiet(); state.player.invulnerable = 0;
+  state.hazards = [{ id: 1, kind: 'vertical', x: 500, y: 340, width: 52, radius: 64, warning: .9, life: .25, damage: 18, struck: false }];
+  togglePause(state); const snapshot = JSON.stringify(state); advance(state, 4);
+  assert.equal(JSON.stringify(state), snapshot); togglePause(state);
+  advance(state, 1.2, { right: true });
+  assert.equal(state.player.hp, 100); assert.equal(state.hazards.length, 0);
+  state.hazards = [{ id: 2, kind: 'blast', x: state.player.x, y: state.player.y, radius: 64, warning: .1, life: .25, damage: 18, struck: false }];
+  advance(state, .3); assert.equal(state.player.hp, 82);
+});
+
+test('veteran is a distinct optional tier with faster enemies and heavier damage', () => {
+  const standard = createState({ random: seeded(3) });
+  const veteran = createState({ random: seeded(3), difficulty: 'veteran' });
+  assert.equal(veteran.enemies[0].speed, standard.enemies[0].speed * 1.12);
+  veteran.player.invulnerable = 0;
+  veteran.projectiles = [{ id: 1, owner: 'enemy', x: 500, y: 340, vx: 0, vy: 0, radius: 5, damage: 10, life: 1 }];
+  step(veteran); assert.equal(veteran.player.hp, 88);
+  assert.equal(DIFFICULTIES.veteran.score, 1.5);
+  assert.throws(() => createState({ difficulty: 'impossible' }), RangeError);
+});
+
+test('a legal-input expedition defeats all twenty waves, 259 enemies and four guardians', () => {
   const state = createState({ random: seeded(7) });
   const path = [{ x: 500, y: 100 }, { x: 880, y: 100 }, { x: 880, y: 580 }, { x: 120, y: 580 }, { x: 120, y: 100 }];
   let waypoint = 0;
   let observedBosses = new Set();
   for (let tick = 0; tick < 120 * 600 && state.phase !== 'won' && state.phase !== 'lost'; tick += 1) {
-    if (state.phase === 'upgrade') { choose(state, ['repair', 'plating', 'damage', 'cooling', 'mobility', 'battery']); continue; }
+    if (state.phase === 'upgrade') { choose(state, ['repair', 'siphon', 'plating', 'damage', 'chain', 'cooling', 'scatter', 'focus', 'frost', 'pulse', 'mobility', 'battery', 'ricochet']); continue; }
     const p = state.player;
     let target = path[waypoint];
     if (Math.hypot(p.x - target.x, p.y - target.y) < 25) { waypoint = (waypoint + 1) % path.length; target = path[waypoint]; }
@@ -374,20 +518,23 @@ test('a real-input kiting and aiming run can defeat every enemy and both bosses'
     const closest = state.enemies.reduce((best, e) => !best || Math.hypot(e.x - p.x, e.y - p.y) < Math.hypot(best.x - p.x, best.y - p.y) ? e : best, null);
     for (const e of state.enemies) if (e.boss) observedBosses.add(state.wave);
     const threat = state.enemies.some(e => Math.hypot(e.x - p.x, e.y - p.y) < 90)
-      || state.projectiles.some(b => b.owner === 'enemy' && Math.hypot(b.x - p.x, b.y - p.y) < 55);
+      || state.projectiles.some(b => b.owner === 'enemy' && Math.hypot(b.x - p.x, b.y - p.y) < 55)
+      || state.hazards.some(h => h.warning < .2 && (h.kind === 'vertical' ? Math.abs(h.x - p.x) < 45
+        : h.kind === 'horizontal' ? Math.abs(h.y - p.y) < 45 : Math.hypot(h.x - p.x, h.y - p.y) < h.radius + 25));
     step(state, { moveX: dx / magnitude, moveY: dy / magnitude, aimX: closest.x - p.x, aimY: closest.y - p.y,
       fire: true, dash: threat && tick % 60 === 0 });
     assert.ok(state.enemies.length <= MAX_ENEMIES);
     assert.ok(state.projectiles.length <= MAX_PROJECTILES);
     assert.ok(state.events.length <= 32);
+    assert.ok(state.hazards.length <= 32);
     assert.ok(Number.isFinite(state.player.x) && Number.isFinite(state.player.y));
   }
   assert.equal(state.phase, 'won');
-  assert.deepEqual([...observedBosses], [5, 10]);
-  assert.equal(state.kills, 100);
+  assert.deepEqual([...observedBosses], [5, 10, 15, 20]);
+  assert.equal(state.kills, 259);
   assert.ok(state.player.hp > 0);
-  assert.ok(state.score > 30000);
-  assert.ok(state.elapsed < 400);
+  assert.ok(state.score > 90000);
+  assert.ok(state.elapsed < 600);
 });
 
 test('seeded combat reproduces exactly and pause freezes every clock and held dash edge', () => {

@@ -2,11 +2,19 @@
 // so a state can be safely serialized by the shared solo-game shell.
 const internals = new WeakMap();
 const directions = new Set(['up', 'down', 'left', 'right']);
+export const PUZZLES = Object.freeze([
+  { title: 'The First Fold', target: 16, budget: 7, board: [0,0,0,0,0,0,0,0,0,0,0,2,4,2,8,0] },
+  { title: 'Corner Conversation', target: 32, budget: 8, board: [0,0,8,4,0,2,0,0,0,0,0,0,2,0,16,0] },
+  { title: 'Across the Grain', target: 64, budget: 11, board: [2,0,0,4,0,0,0,2,32,16,0,0,0,0,8,0] },
+  { title: 'A Longer Thread', target: 128, budget: 12, board: [8,2,0,64,0,0,0,0,32,16,0,0,0,0,2,4] },
+  { title: 'The Quiet Reservoir', target: 256, budget: 12, board: [0,0,4,2,128,64,16,0,0,0,8,0,0,0,32,2] },
+  { title: 'The Grand Merge', target: 512, budget: 15, board: [128,0,2,16,256,0,0,32,8,0,0,4,0,2,0,64] },
+].map(p => Object.freeze({ ...p, board: Object.freeze(p.board) })));
 
 function snapshot(state) {
   return {
     board: [...state.board], score: state.score, phase: state.phase,
-    won: state.won, continued: state.continued, moves: state.moves,
+    won: state.won, continued: state.continued, moves: state.moves, totalMoves: state.totalMoves, puzzlesCleared: state.puzzlesCleared, result: state.result,
   };
 }
 
@@ -20,15 +28,15 @@ function spawn(state) {
   return { index, value };
 }
 
-export function createState({ random = Math.random } = {}) {
+export function createState({ random = Math.random, mode = 'classic' } = {}) {
   if (typeof random !== 'function') throw new TypeError('random must be a function');
   const state = {
-    board: Array(16).fill(0), score: 0, phase: 'playing',
+    gameId: '2048', mode: mode === 'puzzles' ? 'puzzles' : 'classic', level: 0, totalMoves: 0, puzzlesCleared: 0, levelStartScore: 0, levelStartMoves: 0, result: null, board: Array(16).fill(0), score: 0, phase: 'playing',
     won: false, continued: false, undoAvailable: false, moves: 0,
   };
   internals.set(state, { random, previous: null });
-  spawn(state);
-  spawn(state);
+  if (state.mode === 'puzzles') state.board = [...PUZZLES[0].board];
+  else { spawn(state); spawn(state); }
   return state;
 }
 
@@ -78,10 +86,17 @@ export function move(state, direction) {
   data.previous = snapshot(state);
   state.board = next;
   state.score += gained;
-  state.moves += 1;
+  state.moves += 1; state.totalMoves += 1;
   state.undoAvailable = true;
-  const spawned = spawn(state);
-  state.won = state.won || state.board.some(value => value >= 2048);
+  const spawned = state.mode === 'puzzles' ? null : spawn(state);
+  const target = state.mode === 'puzzles' ? PUZZLES[state.level].target : 2048;
+  state.won = state.won || state.board.some(value => value >= target);
+  if (state.mode === 'puzzles') {
+    if (state.won) { state.phase = 'won'; state.puzzlesCleared++; state.score += 100 + Math.max(0, PUZZLES[state.level].budget - state.moves) * 25; state.result = state.level === PUZZLES.length - 1 ? 'tour' : 'puzzle'; }
+    else if (state.moves >= PUZZLES[state.level].budget) { state.phase = 'lost'; state.result = 'budget'; }
+    else if (!hasMoves(state)) { state.phase = 'lost'; state.result = 'blocked'; }
+    return { changed: true, score: state.score, phase: state.phase, gained, merged, spawned };
+  }
   if (state.won && !state.continued) state.phase = 'won';
   else if (!hasMoves(state)) state.phase = 'lost';
   return { changed: true, score: state.score, phase: state.phase, gained, merged, spawned };
@@ -103,8 +118,25 @@ export function togglePause(state) {
 }
 
 export function continueGame(state) {
-  if (state.phase !== 'won') return false;
+  if (state.phase !== 'won' || state.mode === 'puzzles') return false;
   state.continued = true;
   state.phase = hasMoves(state) ? 'playing' : 'lost';
   return true;
+}
+
+/** Move to the next fixed puzzle. Undo never crosses a level boundary. */
+export function nextPuzzle(state) {
+  if (state.mode !== 'puzzles' || state.phase !== 'won' || state.level >= PUZZLES.length - 1) return false;
+  state.levelStartScore = state.score; state.levelStartMoves = state.totalMoves;
+  state.level++; state.board = [...PUZZLES[state.level].board]; state.moves = 0;
+  state.won = false; state.continued = false; state.phase = 'playing'; state.result = null; state.undoAvailable = false;
+  internals.get(state).previous = null; return true;
+}
+
+export function retryPuzzle(state) {
+  if (state.mode !== 'puzzles' || state.phase !== 'lost') return false;
+  state.board = [...PUZZLES[state.level].board]; state.moves = 0;
+  state.score = state.levelStartScore; state.totalMoves = state.levelStartMoves;
+  state.won = false; state.phase = 'playing'; state.result = null; state.undoAvailable = false;
+  internals.get(state).previous = null; return true;
 }

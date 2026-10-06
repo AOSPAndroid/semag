@@ -6,3 +6,5 @@
 @media(max-width:800px){.solo-game{padding:16px}}
 @media(max-width:480px){.solo-game{padding:14px}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
+
+.solo-session-actions b{display:grid;place-items:center}.solo-session-actions b svg{display:block;width:14px;height:14px}

@@ -15,14 +15,14 @@ document.querySelectorAll('[data-play-solo]').forEach(button => button.addEventL
   if (GAMES[gameId]?.kind !== 'solo') return;
   updateName(); location.href = soloUrl(gameId);
 }));
-const matchesFilter = (game, filter) => filter === 'all' || (['driving', 'action'].includes(filter) ? game?.genre === filter : (game?.kind === 'solo') === (filter === 'solo'));
+const matchesFilter = (game, filter) => filter === 'all' || (filter === 'roguelike' ? game?.roguelike === true : ['driving', 'action'].includes(filter) ? game?.genre === filter : (game?.kind === 'solo') === (filter === 'solo'));
 let activeFilter = 'all';
 function filterShelf() {
   const query = $('game-search').value.trim().toLowerCase();
   let visible = 0;
   document.querySelectorAll('[data-game-card]').forEach(card => {
     const game = GAMES[card.dataset.gameCard];
-    const matches = matchesFilter(game, activeFilter) && `${game.title} ${game.category} ${game.description}`.toLowerCase().includes(query);
+    const matches = matchesFilter(game, activeFilter) && `${game.title} ${game.category} ${game.description} ${game.genre || ''} ${game.roguelike ? 'roguelike' : ''}`.toLowerCase().includes(query);
     card.hidden = !matches;
     if (matches) visible++;
   });

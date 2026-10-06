@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createState, turn, step, togglePause, GRID_SIZE, START_STEP_MS, MIN_STEP_MS } from '../public/solo/snake-engine.js';
+import { advanceGarden, createState, turn, step, togglePause, GRID_SIZE, START_STEP_MS, MIN_STEP_MS } from '../public/solo/snake-engine.js';
 
 function seeded(seed = 1) {
   return () => {
@@ -152,4 +152,41 @@ test('eating the last empty tile wins with no attempted random choice on a full 
   const won = clone(state);
   assert.equal(step(state), false);
   assert.deepEqual(state, won);
+});
+
+test('six garden layouts have different connected paths and safely placed fruit', () => {
+  const s = createState({ mode: 'gardens', random: () => .45 }); const layouts = [];
+  for (let level = 0; level < 6; level++) {
+    assert.equal(s.level, level); assert.ok(s.obstacles.length > 0); layouts.push(JSON.stringify(s.obstacles));
+    assert.ok(!s.obstacles.some(c => c.x === s.food.x && c.y === s.food.y));
+    const blocked = new Set(s.obstacles.map(c => `${c.x},${c.y}`)), seen = new Set(['3,10']), queue = [{ x: 3, y: 10 }];
+    for (const p of queue) for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) { const x = p.x + dx, y = p.y + dy, id = `${x},${y}`; if (x >= 0 && x < 20 && y >= 0 && y < 20 && !blocked.has(id) && !seen.has(id)) { seen.add(id); queue.push({ x,y }); } }
+    assert.equal(seen.size, 400 - s.obstacles.length);
+    if (level < 5) { s.phase = 'levelClear'; assert.equal(advanceGarden(s), true); }
+  }
+  assert.equal(new Set(layouts).size, 6);
+});
+test('stone hedges end a garden run and a fresh tour resets its resources', () => {
+  const s = createState({ mode: 'gardens', random: () => .3 }); s.snake = [{ x: 5, y: 4 }, { x: 4, y: 4 }, { x: 3, y: 4 }, { x: 2, y: 4 }]; s.direction = 'right'; step(s);
+  assert.equal(s.phase, 'lost'); assert.equal(s.result, 'hedge'); assert.equal(advanceGarden(s), false);
+  const fresh = createState({ mode: 'gardens' }); assert.equal(fresh.score, 0); assert.equal(fresh.gardensCleared, 0); assert.equal(fresh.level, 0);
+});
+test('cleared-garden transitions pause without resetting score or rushing the next layout', () => {
+  const s = createState({ mode: 'gardens', random: () => .2 }); s.phase = 'levelClear'; s.score = 80; s.gardensCleared = 1;
+  togglePause(s); const before = structuredClone(s); step(s); assert.deepEqual(s, before); assert.equal(advanceGarden(s), false); togglePause(s); assert.equal(s.phase, 'levelClear');
+  assert.equal(advanceGarden(s), true); assert.equal(s.level, 1); assert.equal(s.score, 80); assert.equal(s.snake.length, 4); assert.equal(s.gardensCleared, 1);
+});
+function foodPath(s) {
+  const blocked = new Set([...s.obstacles, ...s.snake.slice(1, -1)].map(c => `${c.x},${c.y}`)); const head = s.snake[0], start = `${head.x},${head.y}`, end = `${s.food.x},${s.food.y}`, q = [head], parents = new Map([[start, null]]);
+  for (const p of q) { const id = `${p.x},${p.y}`; if (id === end) break; for (const [direction, dx, dy] of [['right',1,0],['left',-1,0],['down',0,1],['up',0,-1]]) { const x = p.x + dx, y = p.y + dy, next = `${x},${y}`; if (x >= 0 && x < 20 && y >= 0 && y < 20 && !blocked.has(next) && !parents.has(next)) { parents.set(next, { previous: id, direction }); q.push({x,y}); } } }
+  if (!parents.has(end)) return [];
+  const out = []; for (let id = end; parents.get(id); id = parents.get(id).previous) out.unshift(parents.get(id).direction); return out;
+}
+test('normal turn and step inputs complete all six gardens and finite fruit goals', () => {
+  const s = createState({ mode: 'gardens', random: () => .29 }); let guard = 0;
+  while (!['won','lost'].includes(s.phase) && guard++ < 5000) {
+    if (s.phase === 'levelClear') { advanceGarden(s); continue; }
+    const path = foodPath(s); assert.ok(path.length > 0, `garden ${s.level}`); turn(s, path[0]); step(s);
+  }
+  assert.equal(s.phase, 'won'); assert.equal(s.result, 'gardens'); assert.equal(s.gardensCleared, 6); assert.equal(s.foodsEaten, 30); assert.ok(s.score >= 700);
 });

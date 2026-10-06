@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createState, step, startMatch, resetLobby, emptyInput, cloneState, WORLD, COVERS, WEAPON, DASH, TICK_RATE } from '../public/vector-engine.js';
+import { createState, step, startMatch, resetLobby, emptyInput, cloneState, WORLD, COVERS, STAGES, WEAPON, DASH, TICK_RATE } from '../public/vector-engine.js';
 
 function fighting() {
   const state = createState();
@@ -314,4 +314,83 @@ test('cloned simulations remain deterministic and finite through long varied inp
     if (tick % 1000 === 0) finite(a);
   }
   assert.deepEqual(a, b);
+});
+
+function arena(round) {
+  const state = createState(); startMatch(state); advance(state, TICK_RATE * 3);
+  for (let i = 1; i < round; i++) advance(state, WORLD.roundSeconds * TICK_RATE + TICK_RATE * 4);
+  assert.equal(state.phase, 'fight'); assert.equal(state.round, round);
+  return state;
+}
+
+test('three competitive arenas rotate after drawn rounds and every spawn is valid and symmetric', () => {
+  const state = createState();
+  assert.equal(state.stageId, 'garden'); assert.deepEqual(state.obstacles, COVERS);
+  const layouts = new Set();
+  for (const [index, stage] of Object.values(STAGES).entries()) {
+    const match = arena(index + 1);
+    assert.equal(match.stageId, stage.id); assert.equal(match.stageName, stage.name); assert.deepEqual(match.obstacles, stage.covers);
+    layouts.add(JSON.stringify(stage.covers.map(({ x, y, w, h }) => [x, y, w, h])));
+    assert.equal(stage.spawns[0].x + stage.spawns[1].x, WORLD.width);
+    assert.equal(stage.spawns[0].y + stage.spawns[1].y, WORLD.height);
+    for (const [id, spawn] of stage.spawns.entries()) {
+      assert.equal(match.fighters[id].x, spawn.x); assert.equal(match.fighters[id].y, spawn.y);
+      assert.ok(spawn.x >= WORLD.minX && spawn.x <= WORLD.maxX && spawn.y >= WORLD.minY && spawn.y <= WORLD.maxY);
+      for (const cover of stage.covers) {
+        const x = Math.max(cover.x, Math.min(spawn.x, cover.x + cover.w)), y = Math.max(cover.y, Math.min(spawn.y, cover.y + cover.h));
+        assert.ok(Math.hypot(spawn.x - x, spawn.y - y) > WORLD.fighterRadius);
+        assert.ok(stage.covers.some(other => other.x === WORLD.width - cover.x - cover.w && other.y === WORLD.height - cover.y - cover.h && other.w === cover.w && other.h === cover.h), 'cover has a fair opposite counterpart');
+      }
+    }
+    assert.deepEqual(match.fighters.map(f => f.wins), [0, 0], 'draws rotate the arena without awarding wins');
+  }
+  assert.equal(layouts.size, 3);
+  const fourth = arena(4); assert.equal(fourth.stageId, 'garden');
+  resetLobby(fourth); assert.equal(fourth.stageId, 'garden'); assert.deepEqual(fourth.obstacles, COVERS);
+});
+
+for (const [index, stage] of Object.values(STAGES).entries()) {
+  test(`${stage.name}: walking/dashing stop at cover and corner motion can flank it`, () => {
+    const state = arena(index + 1), f = state.fighters[0], cover = state.obstacles[0];
+    f.x = cover.x - 70; f.y = cover.y + cover.h / 2;
+    advance(state, 70, { right: true }); assert.equal(f.x, cover.x - f.radius);
+    step(state, [{ right: true, dash: true }]); advance(state, DASH.duration, { right: true, dash: true });
+    assert.equal(f.x, cover.x - f.radius);
+    advance(state, 85, { up: true, right: true });
+    assert.ok(f.x > cover.x, 'diagonal movement can pass around the cover');
+  });
+  test(`${stage.name}: swept shots respect cover and a muzzle beside its near edge`, () => {
+    const state = arena(index + 1), cover = state.obstacles[0], [f, target] = state.fighters;
+    f.x = cover.x - f.radius; f.y = cover.y + cover.h / 2;
+    target.x = cover.x + cover.w + 50; target.y = f.y;
+    step(state, [{ fire: true, focus: true, aimX: 1, aimY: 0 }]);
+    assert.equal(f.ammo, 5); assert.equal(state.projectiles.length, 0); assert.equal(target.hp, 100);
+    projectile(state, { x: cover.x - 40, y: f.y, vx: cover.w + 150 });
+    step(state); assert.equal(target.hp, 100); assert.equal(state.projectiles.length, 0);
+    assert.ok(state.events.some(event => event.type === 'cover'));
+  });
+}
+
+test('normal aim, movement and fire inputs complete a three-round match across all arenas', () => {
+  const state = createState(), visited = new Set(); startMatch(state);
+  const winners = [0, 1, 0];
+  for (let tick = 0; tick < TICK_RATE * 45 && state.phase !== 'matchEnd'; tick++) {
+    const inputs = [emptyInput(), emptyInput()];
+    if (state.phase === 'fight') {
+      visited.add(state.stageId);
+      const id = winners[state.round - 1], shooter = state.fighters[id], target = state.fighters[1 - id], controls = inputs[id];
+      if (state.round > 1 && shooter.y > (state.round === 2 ? 236 : 230)) controls.up = true;
+      else if (state.round === 2 && shooter.x > 400) controls.left = true;
+      else if (state.round === 3 && shooter.x < 560) controls.right = true;
+      else { controls.fire = true; controls.focus = true; }
+      const length = Math.hypot(target.x - shooter.x, target.y - shooter.y);
+      controls.aimX = (target.x - shooter.x) / length; controls.aimY = (target.y - shooter.y) / length;
+    }
+    step(state, inputs);
+  }
+  assert.equal(state.phase, 'matchEnd', `round ${state.round}, ${state.stageId}, ${JSON.stringify(state.fighters.map(({x,y,hp,ammo})=>({x,y,hp,ammo})))}`); assert.equal(state.winner, 0);
+  assert.deepEqual([...visited], ['garden', 'relay', 'vault']);
+  assert.deepEqual(state.fighters.map(f => f.wins), [2, 1]);
+  assert.equal(state.stageId, 'vault');
+  startMatch(state); assert.equal(state.stageId, 'garden'); assert.deepEqual(state.obstacles, COVERS);
 });

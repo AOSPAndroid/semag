@@ -47,6 +47,12 @@ export class TopdownRenderer {
     const bg = this.background.getContext('2d');
     bg.scale(2, 2);
     this.paintGarden(bg);
+    this.backgrounds = { garden: this.background };
+    for (const biome of ['crypt','ember']) {
+      const floor=document.createElement('canvas'); floor.width=WIDTH*2; floor.height=HEIGHT*2;
+      const context=floor.getContext('2d'); context.scale(2,2); this.paintDepths(context,biome);
+      this.backgrounds[biome]=floor;
+    }
     this.torches = [[111, 37], [480, 37], [849, 37], [24, 318], [936, 318], [111, 596], [480, 596], [849, 596]];
     this.resize = this.resize.bind(this);
     this.observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(this.resize) : null;
@@ -79,6 +85,29 @@ export class TopdownRenderer {
   destroy() {
     this.observer?.disconnect();
     this.resetEffects();
+  }
+
+  paintDepths(ctx,biome) {
+    const crypt=biome==='crypt', rng=rngFrom(crypt?1348:9359);
+    ctx.fillStyle=crypt?'#203d49':'#402c2b'; ctx.fillRect(0,0,WIDTH,HEIGHT);
+    for(let y=54;y<590;y+=36) for(let x=40;x<924;x+=48) {
+      ctx.fillStyle=(crypt?['#405862','#455e66','#374f5b']:['#65514a','#5c4640','#6c564a'])[Math.floor(rng()*3)];
+      ctx.fillRect(x+1,y+1,46,34); ctx.fillStyle=crypt?'#92b3b52c':'#dab38b22';ctx.fillRect(x+3,y+2,42,2);
+      if(rng()<0.25)path(ctx,[[x+8,y+12],[x+21,y+17],[x+18,y+26]],crypt?'#233e48':'#352d2b',1);
+    }
+    for(const [x,y,w,h] of [[0,0,960,54],[0,590,960,50],[0,54,40,536],[924,54,36,536]]) {
+      ctx.fillStyle=crypt?'#233c49':'#382728';ctx.fillRect(x,y,w,h);
+      ctx.strokeStyle=crypt?'#7197a0':'#977363';ctx.lineWidth=3;ctx.strokeRect(x+5,y+5,w-10,h-10);
+    }
+    for(let x=84;x<920;x+=110) {
+      poly(ctx,[[x,22],[x+8,14],[x+16,22],[x+8,30]],crypt?'#97c3c7':'#ddaf76');
+      path(ctx,[[x+8,31],[x+8,41]],crypt?'#597e8e':'#a46f4c',2);
+    }
+    ctx.save();ctx.globalAlpha=.18;ctx.strokeStyle=crypt?'#8cbcc9':'#d99b63';ctx.lineWidth=2;
+    for(const radius of [126,150,180]){ctx.beginPath();ctx.arc(480,318,radius,0,Math.PI*2);ctx.stroke();}
+    for(let i=0;i<12;i++){const a=i*Math.PI/6;path(ctx,[[480+Math.cos(a)*150,318+Math.sin(a)*150],[480+Math.cos(a)*176,318+Math.sin(a)*176]],ctx.strokeStyle,2);}
+    ctx.restore();
+    for(let i=0;i<18;i++)this.crystal(ctx,48+i*51,crypt?571:563,crypt?'#7dabb8':'#b87a55');
   }
 
   paintGarden(ctx) {
@@ -325,7 +354,7 @@ export class TopdownRenderer {
     const ox = (this.canvas.width - WIDTH * scale) / 2, oy = (this.canvas.height - HEIGHT * scale) / 2;
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = '#12231e'; ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
     ctx.setTransform(scale, 0, 0, scale, ox, oy);
-    ctx.drawImage(this.background, 0, 0, WIDTH, HEIGHT);
+    ctx.drawImage(this.backgrounds[state?.biome?.id || 'garden'] || this.background, 0, 0, WIDTH, HEIGHT);
     ctx.save();
     if (this.shake > 0.05) ctx.translate(Math.sin(time * 0.163) * this.shake, Math.cos(time * 0.137) * this.shake * 0.7);
     for (const torch of this.torches) this.torch(ctx, ...torch, time);
@@ -333,6 +362,8 @@ export class TopdownRenderer {
     const fighters = state?.fighters || [];
     const enemies = state?.enemies || [];
     const obstacles = state?.obstacles || DEFAULT_OBSTACLES;
+    for(const hazard of state?.hazards || []) this.floorHazard(ctx,hazard,time);
+    for(const shrine of state?.shrineChoices || []) this.shrine(ctx,shrine,state,time);
     for (const enemy of enemies) this.telegraph(ctx, enemy, time);
     for (const f of fighters) {
       const id = f.id ?? fighters.indexOf(f);
@@ -375,6 +406,33 @@ export class TopdownRenderer {
     poly(ctx, [[-4, -5], [-6, -11], [-2, -18 + flicker], [0, -13], [4, -21 - flicker], [5, -10], [3, -5]], '#e7a663');
     poly(ctx, [[-2, -5], [-3, -11], [0, -16 + flicker], [3, -10], [2, -5]], '#ffe6ad');
     ctx.shadowBlur = 0; ctx.restore();
+  }
+
+  floorHazard(ctx,h,time) {
+    ctx.save();
+    if(h.kind==='tide') {
+      ellipse(ctx,h.x,h.y,h.radius,h.radius*.78,'#1e6c7d77');
+      ctx.strokeStyle='#8bced080';ctx.lineWidth=1;
+      for(let i=0;i<3;i++){ctx.beginPath();ctx.ellipse(h.x,h.y,h.radius*(.5+i*.2),h.radius*(.35+i*.16),0,0,Math.PI*2);ctx.stroke();}
+    } else {
+      circle(ctx,h.x,h.y,h.radius,'#32252699');ctx.strokeStyle=h.active?'#ffc084':h.warning?'#edaa75':'#a07256';ctx.lineWidth=2;
+      ctx.beginPath();ctx.arc(h.x,h.y,h.radius,0,Math.PI*2);ctx.stroke();
+      for(let i=0;i<6;i++){const a=i*Math.PI/3;poly(ctx,[[h.x+Math.cos(a)*26,h.y+Math.sin(a)*26],[h.x+Math.cos(a+.13)*36,h.y+Math.sin(a+.13)*36],[h.x+Math.cos(a+.26)*26,h.y+Math.sin(a+.26)*26]],h.active?'#ffba67':'#b5816066');}
+      if(h.warning){ctx.strokeStyle='#ffe8a5';ctx.lineWidth=3;ctx.beginPath();ctx.arc(h.x,h.y,h.radius+4,-Math.PI/2,-Math.PI/2+h.progress*Math.PI*2);ctx.stroke();}
+      if(h.active)for(let i=0;i<7;i++){const x=h.x+Math.sin(i*5.7)*h.radius*.7,y=h.y+Math.cos(i*3)*h.radius*.6;poly(ctx,[[x-5,y+8],[x-3,y-5],[x,y-19-Math.sin(time/90+i)*6],[x+5,y-3],[x+5,y+8]],i%2?'#ed9866':'#ffcf85');}
+    }
+    ctx.restore();
+  }
+  shrine(ctx,s,state,time) {
+    ctx.save();ctx.translate(s.x,s.y);ellipse(ctx,0,18,37,12,'#142f2b66');
+    ctx.fillStyle='#5a6657';ctx.fillRect(-30,-7,60,26);ctx.fillStyle='#a5aa8a';ctx.fillRect(-33,-9,66,7);
+    const lift=Math.sin(time/500+s.x)*2;ctx.shadowColor=s.color;ctx.shadowBlur=14;
+    poly(ctx,[[0,-48+lift],[12,-34+lift],[0,-19+lift],[-12,-34+lift]],s.color,'#fff0c9');ctx.shadowBlur=0;
+    ctx.textAlign='center';ctx.font='bold 13px system-ui';ctx.fillStyle='#fbf0d0';ctx.fillText(s.name,0,43);
+    ctx.font='10px system-ui';ctx.fillStyle='#ece3c5';ctx.fillText(s.detail,0,58,152);
+    const owners=state.boonSelections.map((id,i)=>id===s.id?`P${i+1}`:null).filter(Boolean);
+    if(owners.length){ctx.font='bold 11px system-ui';ctx.fillStyle=s.color;ctx.fillText(owners.join(' + ')+' CHOSEN',0,75);}
+    ctx.restore();
   }
 
   hero(ctx, f, time, ghost = false) {
@@ -536,24 +594,40 @@ export class TopdownRenderer {
     if (enemy.action !== 'windup' && enemy.action !== 'attack') return;
     const radius = enemy.telegraphRadius || enemy.reach || (enemy.type === 'boss' ? 94 : 51);
     const facing = enemy.attackFacing ?? enemy.facing ?? 0;
-    const burst = enemy.attackKind === 'burst';
+    const burst = ['burst','crown'].includes(enemy.attackKind);
     const radial = enemy.telegraphRadius || burst;
-    const halfArc = enemy.type === 'knight' ? 1.25 : 0.95;
+    const halfArc = enemy.telegraphHalfArc ?? (enemy.type === 'knight' ? 1.25 : 0.95);
     const windup = enemy.action === 'windup';
     const progress = windup ? clamp((enemy.actionFrame || 0) / (enemy.windupTicks || 45), 0, 1) : 1;
     ctx.save(); ctx.translate(enemy.x, enemy.y);
     ctx.globalAlpha = (windup ? 0.15 + progress * 0.07 : 0.22) + Math.sin(time / 80) * 0.015;
     ctx.fillStyle = '#f1a17b'; ctx.strokeStyle = '#ffe1a7'; ctx.lineWidth = 1.5;
     ctx.beginPath();
-    if (radial) ctx.arc(0, 0, radius, 0, Math.PI * 2);
+    if (enemy.attackKind === 'charge') {
+      const length = enemy.telegraphLength || 270, width = enemy.reach || 64;
+      const cos = Math.cos(facing), sin = Math.sin(facing);
+      const corners = [[0,-width],[length,-width],[length,width],[0,width]].map(([x,y]) => [x*cos-y*sin,x*sin+y*cos]);
+      for (let i=0;i<corners.length;i++) i ? ctx.lineTo(...corners[i]) : ctx.moveTo(...corners[i]);
+      ctx.closePath();
+    } else if (radial) ctx.arc(0, 0, radius, 0, Math.PI * 2);
     else { ctx.moveTo(0, 0); ctx.arc(0, 0, radius, facing - halfArc, facing + halfArc); ctx.closePath(); }
     ctx.fill(); ctx.stroke();
     ctx.globalAlpha = 0.35; ctx.strokeStyle = '#fff0bd'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.arc(0, 0, radius * progress, radial ? 0 : facing - halfArc, radial ? Math.PI * 2 : facing + halfArc); ctx.stroke();
+    ctx.beginPath();
+    if (enemy.attackKind === 'charge') {
+      const length=(enemy.telegraphLength || 270)*progress;
+      ctx.moveTo(0,0);ctx.lineTo(Math.cos(facing)*length,Math.sin(facing)*length);
+    } else ctx.arc(0, 0, radius * progress, radial ? 0 : facing - halfArc, radial ? Math.PI * 2 : facing + halfArc);
+    ctx.stroke();
+    if (enemy.attackKind === 'fan') {
+      ctx.globalAlpha = .4;
+      for (let i=-2;i<=2;i++) { const angle=facing+i*.2; path(ctx,[[Math.cos(angle)*24,Math.sin(angle)*24],[Math.cos(angle)*radius,Math.sin(angle)*radius]],'#ffe0ad',1); }
+    }
     if (burst) {
       ctx.globalAlpha = 0.48;
-      for (let i = 0; i < 8; i++) {
-        const a = facing + i * Math.PI / 4;
+      const count = enemy.attackKind === 'crown' ? 12 : 8;
+      for (let i = 0; i < count; i++) {
+        const a = facing + i * Math.PI * 2 / count;
         path(ctx, [[Math.cos(a) * 35, Math.sin(a) * 35], [Math.cos(a) * radius, Math.sin(a) * radius]], '#ffe0ad', 1.5);
       }
     }
@@ -587,6 +661,8 @@ export class TopdownRenderer {
       poly(ctx, [[-7, -5], [-7, -14], [-1, -9], [3, -10], [9, -14], [8, -4], [7, 8], [0, 13], [-7, 8]], '#4d526b', '#28354b');
       ctx.fillStyle = '#e7c58c'; ctx.fillRect(-5, 0, 3, 2); ctx.fillRect(3, 0, 3, 2);
       ctx.fillStyle = '#e0dcc1'; ctx.fillRect(-3, 6, 2, 3); ctx.fillRect(2, 6, 2, 3);
+    } else if (type === 'caster') {
+      this.oracle(ctx,enemy,time,false);
     } else if (type === 'knight') {
       ellipse(ctx, 0, 15, 21, 6, '#23372c66');
       const stride = moving ? Math.sin(frame * 0.16) * 2.5 : 0;
@@ -604,7 +680,9 @@ export class TopdownRenderer {
       this.shield(ctx, -16, 3, -0.13, { main: '#d0b689', dark: '#645e47' }, false, true);
       if (enemy.action === 'attack') this.slash(ctx, facing - 1.0, facing + 1.1, enemy.reach || 65, '#ffc9a5', 0.55);
     } else {
-      this.guardian(ctx, enemy, time);
+      if(enemy.variant==='crypt')this.oracle(ctx,enemy,time,true);
+      else if(enemy.variant==='ember')this.regent(ctx,enemy,time);
+      else this.guardian(ctx, enemy, time);
     }
     if (enemy.action === 'hit') {
       ctx.save(); ctx.globalAlpha = 0.25; circle(ctx, 0, -5, type === 'boss' ? 33 : 16, '#fff0cb'); ctx.restore();
@@ -642,6 +720,31 @@ export class TopdownRenderer {
     poly(ctx, [[12, -50 + bob], [16, -57 + bob], [24, -54 + bob], [18, -46 + bob]], '#909b7d', '#405b45');
     ctx.fillStyle = '#719352'; ctx.fillRect(-17, -49 + bob, 11, 3); ctx.fillRect(-22, -55 + bob, 8, 4);
     path(ctx, [[18, -1], [14, 2], [16, 10]], '#c6be8c44', 1);
+  }
+
+  oracle(ctx,enemy,time,boss) {
+    ctx.save();ctx.scale(boss?1.65:1, boss?1.65:1);const bob=Math.sin(time/280+enemy.id)*1.5;
+    ellipse(ctx,0,18,22,6,'#102d3d66');
+    poly(ctx,[[-13,-21+bob],[12,-21+bob],[22,16],[-22,16]],'#567c96','#203c54');
+    poly(ctx,[[0,-37+bob],[18,-19+bob],[10,-5+bob],[-12,-5+bob],[-18,-19+bob]],'#7ea1b2','#25455a');
+    poly(ctx,[[-9,-22+bob],[8,-22+bob],[6,-11+bob],[-6,-11+bob]],'#20374c');
+    ctx.fillStyle='#b8f0ef';ctx.fillRect(-6,-18+bob,4,2);ctx.fillRect(3,-18+bob,4,2);
+    path(ctx,[[-10,-2],[-14,14]],'#b8d7cc',2);path(ctx,[[8,-2],[14,14]],'#b8d7cc',2);
+    path(ctx,[[20,17],[20,-34]],'#c4b596',3);circle(ctx,20,-38,6,'#8dd5e2');circle(ctx,19,-40,2,'#e0ffee');
+    if(boss){for(let i=-2;i<=2;i++)poly(ctx,[[i*7,-33],[i*8-3,-43],[i*8+3,-43]],'#c7d7ae');}
+    ctx.restore();
+  }
+  regent(ctx,enemy,time) {
+    const bob=Math.sin(time/310);ellipse(ctx,0,27,38,10,'#281e2466');
+    ctx.fillStyle='#8b5641';ctx.fillRect(-25,9,20,24);ctx.fillRect(6,9,20,24);
+    poly(ctx,[[-27,-32],[24,-32],[33,13],[-31,13]],'#a26749','#472e2b',2);
+    poly(ctx,[[-17,-26],[16,-26],[21,5],[-20,5]],'#503632','#ddb18a',2);
+    circle(ctx,0,-9,9,'#e4a364');circle(ctx,0,-11,4,'#ffe3a2');
+    poly(ctx,[[-21,-46+bob],[21,-46+bob],[17,-22],[-17,-22]],'#b28358','#4f352c');
+    ctx.fillStyle='#3b292d';ctx.fillRect(-14,-36,28,6);ctx.fillStyle='#ffdc98';ctx.fillRect(-10,-34,7,2);ctx.fillRect(5,-34,7,2);
+    for(let i=-2;i<=2;i++)poly(ctx,[[i*10-5,-46],[i*10,-62-(i===0?9:0)],[i*10+5,-46]],'#dcaa72','#674531');
+    poly(ctx,[[-34,-20],[-42,5],[-28,9],[-23,-18]],'#be7d52');poly(ctx,[[27,-19],[41,6],[28,10],[20,-18]],'#be7d52');
+    if(enemy.action==='windup')circle(ctx,0,-9,12+Math.sin(time/80)*2,'#ffd69b44');
   }
 
   arrow(ctx, x, y, angle, color = '#e9e0ba', length = 25) {

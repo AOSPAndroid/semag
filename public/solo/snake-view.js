@@ -1,4 +1,4 @@
-import { createState, step, turn, togglePause as pauseState } from './snake-engine.js';
+import { GARDENS, advanceGarden, createState, step, turn, togglePause as pauseState } from './snake-engine.js';
 
 const KEY_DIRECTIONS = {
   ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
@@ -14,7 +14,8 @@ const isForm = target => target instanceof Element
   && Boolean(target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"])'));
 
 export function mount(container, { onUpdate = () => {} } = {}) {
-  let state = createState();
+  let mode = 'classic';
+  let state = createState({ mode });
   let timer = null;
   let destroyed = false;
   const view = element('section', 'snake-view');
@@ -23,6 +24,10 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   const label = element('span', '', 'GARDEN SNAKE');
   const speed = element('span', 'snake-speed');
   topline.append(label, speed);
+  const modes = element('div', 'snake-modes'); modes.setAttribute('aria-label', 'Snake game mode');
+  for (const [id, title] of [['classic', 'Classic'], ['gardens', 'Six gardens']]) { const button = element('button', '', title); button.type = 'button'; button.dataset.mode = id; button.setAttribute('aria-pressed', String(id === mode)); modes.append(button); }
+  const progress = element('div', 'snake-garden-progress'); progress.hidden = true;
+  for (let i = 0; i < GARDENS.length; i++) { const dot = element('span', '', String(i + 1)); dot.dataset.level = i; progress.append(dot); }
   const board = element('div', 'snake-board');
   const canvas = element('canvas', 'snake-canvas');
   canvas.width = 600;
@@ -50,14 +55,15 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     controls.append(button);
   });
   footer.append(description, controls);
-  view.append(topline, board, footer);
+  view.append(modes, topline, progress, board, footer);
   container.append(view);
   const ctx = canvas.getContext('2d');
   const detail = () => ({
-    playing: 'Keep growing. The garden gets faster with every fruit.',
+    playing: state.mode === 'gardens' ? `${GARDENS[state.level].title}: ${state.levelFoods} / ${GARDENS[state.level].goal} fruit. Stone hedges end the run.` : 'Keep growing. The garden gets faster with every fruit.',
+    levelClear: `${GARDENS[state.level].title} cleared. The next garden opens in a moment.`,
     paused: 'Paused. Resume when you are ready to keep growing.',
-    lost: state.result === 'wall' ? 'You reached the garden wall. Start a new run.' : 'Your trail caught up with you. Start a new run.',
-    won: 'Every tile is yours. A perfect garden!',
+    lost: state.result === 'hedge' ? 'A stone hedge stopped your trail. Restart the garden tour.' : state.result === 'wall' ? 'You reached the garden wall. Start a new run.' : 'Your trail caught up with you. Start a new run.',
+    won: state.mode === 'gardens' ? 'All six gardens cleared. A complete orchard tour!' : 'Every tile is yours. A perfect garden!',
   })[state.phase];
 
   function draw() {
@@ -83,6 +89,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     for (let y = 1; y < state.height; y += 4) {
       for (let x = 2; x < state.width; x += 5) rect(x + .25, y + .7, .12, .12, '#30583e');
     }
+    for (const { x, y } of state.obstacles) { rect(x + .04, y + .04, .92, .92, '#64765a'); rect(x + .1, y + .1, .8, .15, '#9aaa7c'); rect(x + .1, y + .76, .8, .15, '#415940'); rect(x + .46, y + .28, .08, .43, '#52694a'); }
     if (state.food) {
       const { x, y } = state.food;
       rect(x + .15, y + .2, .7, .6, '#dc8953');
@@ -111,32 +118,37 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       ctx.textBaseline = 'middle';
       ctx.fillStyle = '#eef1cf';
       ctx.font = `bold ${fontSize}px ui-monospace, monospace`;
-      ctx.fillText({ paused: 'TAKE A BREATHER', lost: 'GARDEN CLOSED', won: 'PERFECT GARDEN' }[state.phase], pixelSize / 2, pixelSize * .47);
+      ctx.fillText({ paused: 'TAKE A BREATHER', lost: 'GARDEN CLOSED', won: state.mode === 'gardens' ? 'SIX GARDENS COMPLETE' : 'PERFECT GARDEN', levelClear: 'GARDEN CLEAR' }[state.phase], pixelSize / 2, pixelSize * .47);
       ctx.fillStyle = '#bed0a1';
       ctx.font = `${Math.round(pixelSize * .029)}px ui-monospace, monospace`;
-      ctx.fillText(state.phase === 'paused' ? 'PRESS SPACE OR RESUME' : `${state.score} POINTS · START A NEW RUN`, pixelSize / 2, pixelSize * .55);
+      ctx.fillText(state.phase === 'paused' ? 'PRESS SPACE OR RESUME' : state.phase === 'levelClear' ? 'THE NEXT GARDEN OPENS SOON' : `${state.score} POINTS · START A NEW RUN`, pixelSize / 2, pixelSize * .55);
     }
   }
   function publish() {
     const message = detail();
     if (status.textContent !== message) status.textContent = message;
+    label.textContent = state.mode === 'gardens' ? `GARDEN ${state.level + 1} / 6` : 'GARDEN SNAKE';
+    progress.hidden = state.mode !== 'gardens';
+    for (const dot of progress.children) dot.dataset.state = Number(dot.dataset.level) < state.level || state.phase === 'won' ? 'done' : Number(dot.dataset.level) === state.level ? 'current' : 'future';
+    for (const button of modes.children) button.setAttribute('aria-pressed', String(button.dataset.mode === mode));
+    hint.textContent = state.mode === 'gardens' ? 'Six layouts. Reach each fruit goal to move on. A new garden gives you a short trail; score carries.' : 'Arrow keys or W A S D to steer. Space to pause. Eat the fruit, grow your trail, and keep room to turn.';
     speed.textContent = `SPEED ${Math.round(1000 / state.stepMs * 10) / 10}`;
     canvas.setAttribute('aria-label', `Snake board. ${state.snake.length} tiles long. Score ${state.score}. ${message} Use arrow keys or W A S D to steer. Space pauses.`);
-    onUpdate({ phase: state.phase, score: state.score, record: state.score, recordLabel: 'BEST SCORE', scoreLabel: 'SCORE', detail: message });
+    onUpdate({ phase: state.phase === 'levelClear' ? 'playing' : state.phase, recordKey: mode === 'gardens' ? 'gardens' : 'default', score: state.score, record: state.score, recordLabel: 'BEST SCORE', scoreLabel: 'SCORE', detail: message });
     draw();
   }
   function schedule() {
     if (timer !== null) window.clearTimeout(timer);
     timer = null;
-    if (destroyed || state.phase !== 'playing') return;
+    if (destroyed || !['playing', 'levelClear'].includes(state.phase)) return;
     // One step per timeout; inactive tabs never cause a burst of catch-up moves.
     timer = window.setTimeout(() => {
       timer = null;
       if (destroyed) return;
-      step(state);
+      if (state.phase === 'levelClear') advanceGarden(state); else step(state);
       publish();
       schedule();
-    }, state.stepMs);
+    }, state.phase === 'levelClear' ? 1400 : state.stepMs);
   }
   function togglePause() {
     if (destroyed || !pauseState(state)) return;
@@ -144,7 +156,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     schedule();
   }
   function autoPause() {
-    if (state.phase === 'playing') togglePause();
+    if (['playing', 'levelClear'].includes(state.phase)) togglePause();
   }
   function steer(direction) {
     if (!destroyed && turn(state, direction)) publish();
@@ -152,7 +164,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   function keydown(event) {
     if (event.isComposing || event.altKey || event.ctrlKey || event.metaKey || isForm(event.target)) return;
     if (event.code === 'Space' || event.key === ' ') {
-      if (event.target instanceof Element && event.target.closest('button,a')) return;
+      if (event.target instanceof Element && event.target.closest('button,a,summary')) return;
       event.preventDefault();
       if (!event.repeat) togglePause();
     } else if (KEY_DIRECTIONS[event.key]) {
@@ -165,6 +177,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     if (!button || !controls.contains(button)) return;
     steer(button.dataset.direction);
   }
+  function changeMode(event) { const button = event.target.closest('button[data-mode]'); if (!button) return; mode = button.dataset.mode; state = createState({ mode }); publish(); schedule(); canvas.focus({ preventScroll: true }); }
+  modes.addEventListener('click', changeMode);
   const focusCanvas = () => canvas.focus({ preventScroll: true });
   const visibility = () => { if (document.hidden) autoPause(); };
   window.addEventListener('keydown', keydown);
@@ -182,7 +196,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     getState: () => JSON.parse(JSON.stringify(state)),
     restart() {
       if (destroyed) return;
-      state = createState();
+      state = createState({ mode });
       publish();
       schedule();
     },
@@ -199,6 +213,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       document.removeEventListener('visibilitychange', visibility);
       canvas.removeEventListener('pointerdown', focusCanvas);
       controls.removeEventListener('click', clickDirection);
+      modes.removeEventListener('click', changeMode);
       view.remove();
     },
   };

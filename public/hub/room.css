@@ -8,3 +8,8 @@
 @media(max-width:480px){.card-instructions{grid-column:1}.card-mode .player-detail>span{font-size:6px}.card-mode .game-hud{height:76px}}
 @media(min-width:801px){.room-app:not(.board-mode):not(.card-mode){max-width:min(1460px,calc((100dvh - 365px)*1.5 + 380px))}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
+
+/* Compact, readable telemetry for the two top-down adventures. */
+.room-app:not(.board-mode):not(.card-mode):not(.vector-mode):not(.brawl-mode) .center-hud>span{font-size:9px;letter-spacing:0;color:#637552}
+.room-app:not(.board-mode):not(.card-mode):not(.vector-mode):not(.brawl-mode) .player-detail>span{font-size:9px;letter-spacing:0;color:#637552}
+@media(max-width:480px){.room-app:not(.board-mode):not(.card-mode):not(.vector-mode):not(.brawl-mode) .center-hud>span{font-size:10px}.room-app:not(.board-mode):not(.card-mode):not(.vector-mode):not(.brawl-mode) .player-detail{gap:4px}.room-app:not(.board-mode):not(.card-mode):not(.vector-mode):not(.brawl-mode) .stamina-track{width:28%;flex-shrink:0}.room-app:not(.board-mode):not(.card-mode):not(.vector-mode):not(.brawl-mode) .player-detail>span{min-width:0;overflow:hidden;text-overflow:ellipsis}}

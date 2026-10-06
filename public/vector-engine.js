@@ -10,6 +10,23 @@ export const COVERS = Object.freeze([
   Object.freeze({ id: 'north-center', x: 424, y: 88, w: 112, h: 48 }),
   Object.freeze({ id: 'south-center', x: 424, y: 504, w: 112, h: 48 }),
 ]);
+const cover = (id, x, y, w, h) => Object.freeze({ id, x, y, w, h });
+const stage = (id, name, description, covers, spawns) => Object.freeze({ id, name, description, covers: Object.freeze(covers), spawns: Object.freeze(spawns.map(point => Object.freeze(point))) });
+export const STAGES = Object.freeze({
+  garden: stage('garden', 'Reclaimed Garden', 'Six stone bunkers, open center lanes, and broad flanking routes.', [...COVERS], [{ x: 154, y: 320 }, { x: 806, y: 320 }]),
+  relay: stage('relay', 'Steel Relay', 'A central relay blocks direct fire; cross the open channels to change your angle.', [
+    cover('relay-core', 444, 256, 72, 128),
+    cover('relay-north-west', 224, 154, 128, 54), cover('relay-north-east', 608, 154, 128, 54),
+    cover('relay-south-west', 224, 432, 128, 54), cover('relay-south-east', 608, 432, 128, 54),
+  ], [{ x: 154, y: 320 }, { x: 806, y: 320 }]),
+  vault: stage('vault', 'Observatory Vault', 'Opposite corner starts, long sightlines, and twin columns that divide the field.', [
+    cover('vault-west', 276, 250, 60, 140), cover('vault-east', 624, 250, 60, 140),
+    cover('vault-north', 420, 130, 120, 60), cover('vault-south', 420, 450, 120, 60),
+    cover('vault-north-west', 140, 110, 72, 56), cover('vault-north-east', 748, 110, 72, 56),
+    cover('vault-south-west', 140, 474, 72, 56), cover('vault-south-east', 748, 474, 72, 56),
+  ], [{ x: 154, y: 410 }, { x: 806, y: 230 }]),
+});
+const STAGE_ORDER = Object.freeze(Object.keys(STAGES));
 export const WEAPON = Object.freeze({ magazine: 6, damage: 18, shotTicks: 20, reloadTicks: 132, projectileSpeed: 8.8, focusSpeed: 10.2 });
 export const DASH = Object.freeze({ duration: 28, cost: 28, speed: 9.3, invulnerableStart: 4, invulnerableEnd: 15 });
 export const emptyInput = () => ({ ...Object.fromEntries(INPUT_KEYS.map(key => [key, false])), aimX: 1, aimY: 0 });
@@ -31,6 +48,7 @@ function fighter(id, wins = 0) {
 export function createState() {
   return {
     gameId: 'vector-arena', tick: 0, phase: 'lobby', phaseTicks: 0, round: 1,
+    stageId: 'garden', stageName: STAGES.garden.name,
     roundTicks: WORLD.roundSeconds * TICK_RATE, winner: null,
     fighters: [fighter(0), fighter(1)], obstacles: COVERS.map(cover => ({ ...cover })),
     projectiles: [], events: [], eventId: 0, projectileId: 0,
@@ -44,11 +62,21 @@ function emit(state, type, data = {}) {
 }
 
 function prepareRound(state, countdown = TICK_RATE * 2) {
+  const arena = STAGES[STAGE_ORDER[(state.round - 1) % STAGE_ORDER.length]];
+  state.stageId = arena.id; state.stageName = arena.name;
+  state.obstacles = arena.covers.map(rect => ({ ...rect }));
   state.fighters = state.fighters.map(f => fighter(f.id, f.wins));
+  for (const f of state.fighters) {
+    Object.assign(f, arena.spawns[f.id]);
+    const other = arena.spawns[1 - f.id], length = Math.hypot(other.x - f.x, other.y - f.y);
+    f.aimX = (other.x - f.x) / length; f.aimY = (other.y - f.y) / length;
+    f.facing = Math.atan2(f.aimY, f.aimX); f.previousInput.aimX = f.aimX; f.previousInput.aimY = f.aimY;
+  }
   state.projectiles = [];
   state.phase = 'countdown'; state.phaseTicks = countdown;
   state.roundTicks = WORLD.roundSeconds * TICK_RATE; state.winner = null;
-  emit(state, 'round', { round: state.round, x: 480, y: 320 });
+  state.objective = `${arena.name} · ${arena.description}`;
+  emit(state, 'round', { round: state.round, stageId: arena.id, stageName: arena.name, x: 480, y: 320 });
 }
 
 export function startMatch(state) {

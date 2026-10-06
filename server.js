@@ -12,6 +12,7 @@ import * as Checkers from './public/checkers-engine.js';
 import * as Topdown from './public/topdown-engine.js';
 import * as Cards from './public/cards-engine.js';
 import * as Vector from './public/vector-engine.js';
+import * as Brawl from './public/brawl-engine.js';
 
 const TICK_RATE = 120;
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -35,6 +36,7 @@ const GAMES = {
     title: 'Vector Arena', engine: Vector, makeState: () => Vector.createState(), inputKeys: Vector.INPUT_KEYS,
     numericControls: { aimX: { min: -1, max: 1, default: 1 }, aimY: { min: -1, max: 1, default: 0 } },
   },
+  'oddstock-rumble': { title: 'Oddstock Rumble', engine: Brawl, makeState: () => Brawl.createState(), inputKeys: Brawl.INPUT_KEYS, selectionComplete: Brawl.selectionComplete },
 };
 const cleanName = (name, maximum) => name.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, maximum);
 const freshInput = room => ({
@@ -238,7 +240,7 @@ export function createServer(options = {}) {
     for (const player of room.players) if (player) player.ready = false;
   }
   function maybeStart(room) {
-    if (room.state.phase === 'lobby' && room.players.every(p => p?.connected && p.ready)) {
+    if (room.state.phase === 'lobby' && room.players.every(p => p?.connected && p.ready) && (!room.adapter.selectionComplete || room.adapter.selectionComplete(room.state))) {
       resetInputs(room); room.adapter.engine.startMatch(room.state);
     }
   }
@@ -342,6 +344,9 @@ export function createServer(options = {}) {
         broadcast(room);
       } else if (data.type === 'ready') {
         if (typeof data.ready !== 'boolean') { error(ws, 'Ready must be true or false.'); return; }
+        if (data.ready && room.adapter.selectionComplete && (!state.fighters[id].selected || !state.stageSelected)) {
+          error(ws, 'Choose your comic and have player one confirm a stage before getting ready.'); return;
+        }
         if (state.phase !== 'lobby' && !(state.phase === 'countdown' && (state.round ?? 1) === 1)) {
           error(ws, 'Readiness can change in the lobby or before the first round.'); return;
         }
@@ -350,9 +355,22 @@ export function createServer(options = {}) {
         maybeStart(room); broadcast(room);
       } else if (data.type === 'rematch') {
         if (state.phase !== 'matchEnd' && state.phase !== 'lobby') { error(ws, 'Finish the current match before requesting a rematch.'); return; }
+        if (room.adapter.selectionComplete && (!state.fighters[id].selected || !state.stageSelected)) { error(ws, 'Choose your comic and confirm the host stage before a rematch.'); return; }
         if (state.phase === 'matchEnd') returnToLobby(room);
         room.players[id].ready = true;
         maybeStart(room); broadcast(room);
+      } else if (data.type === 'brawl-select') {
+        if (room.gameId !== 'oddstock-rumble') { error(ws, 'Comic selection is only available in Oddstock Rumble.'); return; }
+        if (Object.keys(data).some(key => !['type', 'character', 'stage'].includes(key)) || !Object.hasOwn(data, 'character') && !Object.hasOwn(data, 'stage')) {
+          error(ws, 'Choose only your comic or the host stage.'); return;
+        }
+        const choice = {};
+        for (const key of ['character', 'stage']) if (Object.hasOwn(data, key)) choice[key] = data[key];
+        const result = Brawl.select(state, id, choice);
+        if (!result.ok) { error(ws, result.error); return; }
+        if (result.changed) room.players[id].ready = false;
+        if (result.stageChanged) for (const player of room.players) if (player) player.ready = false;
+        broadcast(room);
       } else if (data.type === 'ping') {
         if (typeof data.time !== 'number' || !Number.isFinite(data.time)) { error(ws, 'Invalid ping timestamp.'); return; }
         send(ws, { type: 'pong', time: data.time });
@@ -394,7 +412,9 @@ export function createServer(options = {}) {
       if (room.slots[id] !== slot) return;
       room.slots[id] = null; room.players[id] = null; room.acks[id] = -1;
       if (!room.slots.some(Boolean)) room.emptySince = Date.now();
-      returnToLobby(room); broadcast(room);
+      returnToLobby(room);
+      if (room.gameId === 'oddstock-rumble') Brawl.clearSelection(room.state, id);
+      broadcast(room);
     });
   });
 

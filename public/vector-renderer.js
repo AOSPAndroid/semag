@@ -1,4 +1,4 @@
-import { WORLD, COVERS, WEAPON, DASH } from './vector-engine.js';
+import { WORLD, COVERS, STAGES, WEAPON, DASH } from './vector-engine.js';
 
 const COLORS = [
   { main: '#eaae79', light: '#ffe2b3', dark: '#905e44', suit: '#4c433b', visor: '#deebd8' },
@@ -26,9 +26,8 @@ function ring(ctx, x, y, radius, color, width = 1) {
 export class VectorRenderer {
   constructor(canvas) {
     this.canvas = canvas; this.ctx = canvas.getContext('2d', { alpha: false });
-    this.background = document.createElement('canvas');
-    this.background.width = WORLD.width; this.background.height = WORLD.height;
-    this.paintBackground(this.background.getContext('2d'));
+    this.backgrounds = new Map();
+    this.background = this.stageBackground('garden');
     this.motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
     this.reducedMotion = this.motionQuery.matches;
     this.motionChange = () => {
@@ -52,9 +51,19 @@ export class VectorRenderer {
     this.eventOrder = []; this.lastTick = -1; this.lastTime = 0; this.lastGhost = [-1, -1]; this.hitFlash = [0, 0];
   }
 
-  destroy() { this.observer.disconnect(); this.motionQuery.removeEventListener('change', this.motionChange); this.resetEffects(); }
+  destroy() { this.observer.disconnect(); this.motionQuery.removeEventListener('change', this.motionChange); this.resetEffects(); this.backgrounds.clear(); }
 
-  paintBackground(ctx) {
+  stageBackground(id) {
+    const stageId = Object.hasOwn(STAGES, id) ? id : 'garden';
+    if (this.backgrounds.has(stageId)) return this.backgrounds.get(stageId);
+    const layer = document.createElement('canvas'); layer.width = WORLD.width; layer.height = WORLD.height;
+    this.paintBackground(layer.getContext('2d'), stageId);
+    this.backgrounds.set(stageId, layer);
+    return layer;
+  }
+
+  paintBackground(ctx, stageId = 'garden') {
+    if (stageId !== 'garden') { this.paintStageBackground(ctx, STAGES[stageId]); return; }
     const random = rng(44108), { width, height, wall } = WORLD;
     ctx.fillStyle = '#0c211f'; ctx.fillRect(0, 0, width, height);
     ctx.fillStyle = '#253a35'; ctx.fillRect(wall, wall, width - wall * 2, height - wall * 2);
@@ -147,8 +156,90 @@ export class VectorRenderer {
     ctx.fillStyle = '#c59867'; ctx.fillRect(307, 14, 28, 3); ctx.fillStyle = '#80b096'; ctx.fillRect(625, 14, 28, 3);
   }
 
-  paintCover(ctx, cover) {
+  paintStageBackground(ctx, stage) {
+    const relay = stage.id === 'relay', { width, height, wall } = WORLD;
+    ctx.fillStyle = relay ? '#192628' : '#181f31'; ctx.fillRect(0, 0, width, height);
+    ctx.fillStyle = relay ? '#334246' : '#30394d'; ctx.fillRect(wall, wall, width - wall * 2, height - wall * 2);
+    if (relay) {
+      // Riveted steel sheets, cable ducts and recessed grates are flat floor detail.
+      for (let y = wall; y < height - wall; y += 64) for (let x = wall; x < width - wall; x += 64) {
+        ctx.fillStyle = (x + y) % 128 ? '#34464a' : '#304246'; ctx.fillRect(x + 1, y + 1, 62, 62);
+        ctx.fillStyle = '#65777a44'; ctx.fillRect(x + 2, y + 2, 59, 1);
+        for (const offset of [4, 57]) { ctx.fillStyle = '#162e32'; ctx.fillRect(x + offset, y + 4, 2, 2); ctx.fillRect(x + offset, y + 57, 2, 2); }
+        for (let offset = 9; offset < 54; offset += 11) path(ctx, [[x + offset, y + 25], [x + offset + 5, y + 20], [x + offset + 10, y + 25]], '#5d72721b');
+      }
+      for (const x of [386, 565]) {
+        ctx.fillStyle = '#1e353a'; ctx.fillRect(x, 64, 9, 512);
+        ctx.fillStyle = '#91a19444'; ctx.fillRect(x + 3, 65, 2, 510);
+        for (let y = 77; y < 569; y += 24) { ctx.fillStyle = '#758977'; ctx.fillRect(x + 1, y, 7, 2); }
+      }
+      for (const [x, y] of [[82, 232], [772, 232], [82, 363], [772, 363]]) {
+        ctx.fillStyle = '#1c3439'; ctx.fillRect(x, y, 106, 42);
+        for (let offset = 4; offset < 101; offset += 8) { ctx.fillStyle = '#536764'; ctx.fillRect(x + offset, y + 4, 3, 34); }
+        ctx.strokeStyle = '#82918355'; ctx.strokeRect(x + .5, y + .5, 106, 42);
+      }
+      // The long cross marks the open travel channel around the center relay.
+      path(ctx, [[70, 320], [405, 320]], '#a99c7255', 2); path(ctx, [[555, 320], [890, 320]], '#a99c7255', 2);
+      for (const cover of stage.covers) for (const [x, y] of [[cover.x - 7, cover.y - 7], [cover.x + cover.w + 3, cover.y + cover.h + 3]]) {
+        path(ctx, [[x, y + 7], [x + 7, y]], '#bda26d66', 3);
+      }
+    } else {
+      // Observatory tessellation: dark slate hexagons and engraved star charts.
+      for (let row = 0, y = 49; y < 603; y += 40, row++) for (let x = 50 + row % 2 * 34; x < 923; x += 68) {
+        const points = [[x - 30, y], [x - 15, y - 18], [x + 15, y - 18], [x + 30, y], [x + 15, y + 18], [x - 15, y + 18]];
+        polygon(ctx, points, row % 3 ? '#323e51' : '#344253');
+        path(ctx, [...points, points[0]], '#6e81901b');
+        ctx.fillStyle = '#90a59a24'; ctx.fillRect(x - 1, y - 1, 2, 2);
+      }
+      ring(ctx, 480, 320, 122, '#b6a78235', 2); ring(ctx, 480, 320, 113, '#819c9e35'); ring(ctx, 480, 320, 82, '#9faf962e');
+      for (let i = 0; i < 24; i++) {
+        const angle = i * Math.PI / 12;
+        path(ctx, [[480 + Math.cos(angle) * 116, 320 + Math.sin(angle) * 116], [480 + Math.cos(angle) * 121, 320 + Math.sin(angle) * 121]], '#c1b48755', i % 3 ? 1 : 2);
+      }
+      polygon(ctx, [[480, 280], [492, 308], [520, 320], [492, 332], [480, 360], [468, 332], [440, 320], [468, 308]], '#8c9f9633');
+      for (const [x, y] of [[83, 220], [877, 420], [363, 103], [597, 537]]) {
+        ring(ctx, x, y, 16, '#b7b58b55'); path(ctx, [[x - 21, y], [x + 21, y]], '#b7b58b55'); path(ctx, [[x, y - 21], [x, y + 21]], '#b7b58b55');
+      }
+      for (const cover of stage.covers) { ctx.strokeStyle = '#baa78333'; ctx.lineWidth = 1; ctx.strokeRect(cover.x - 6.5, cover.y - 6.5, cover.w + 13, cover.h + 13); }
+    }
+    // Material-specific wall panels keep the exact same playable outer boundary.
+    for (const y of [0, height - wall]) for (let x = 0; x < width; x += 64) {
+      ctx.fillStyle = relay ? '#536462' : '#625d68'; ctx.fillRect(x + 1, y + 2, 61, wall - 4);
+      ctx.fillStyle = relay ? '#9ea79566' : '#baad8e66'; ctx.fillRect(x + 2, y + 2, 59, 2);
+      ctx.fillStyle = relay ? '#283f42' : '#33394c'; ctx.fillRect(x + 3, y + wall - 7, 58, 5);
+    }
+    for (const x of [0, width - wall]) for (let y = wall; y < height - wall; y += 40) {
+      ctx.fillStyle = relay ? '#4b6060' : '#535d72'; ctx.fillRect(x + 2, y + 2, wall - 4, 37);
+      ctx.fillStyle = relay ? '#9ba78b44' : '#b5a99144'; ctx.fillRect(x + 3, y + 2, 2, 33);
+    }
+    stage.spawns.forEach((spawn, i) => { ring(ctx, spawn.x, spawn.y, 32, i ? '#91c6a966' : '#dc9e7266'); ring(ctx, spawn.x, spawn.y, 28, '#172f3944'); });
+    ctx.fillStyle = relay ? '#243b3b' : '#283447'; ctx.fillRect(278, 0, 404, wall);
+    ctx.fillStyle = '#ded7bf'; ctx.font = 'bold 11px Consolas, monospace'; ctx.textAlign = 'center'; ctx.fillText(stage.name.toUpperCase(), 480, 20);
+    ctx.fillStyle = '#a1b49f'; ctx.font = '8px Consolas, monospace'; ctx.textAlign = 'left'; ctx.fillText(relay ? 'FIELD / 05' : 'FIELD / 06', 60, 20);
+    ctx.textAlign = 'right'; ctx.fillText(relay ? 'HARDLINE EXCHANGE' : 'CELESTIAL SIGHTLINES', 900, 20);
+  }
+
+  paintCover(ctx, cover, stageId = 'garden') {
     const { x, y, w, h } = cover;
+    if (stageId === 'relay' || stageId === 'vault') {
+      const relay = stageId === 'relay';
+      ctx.fillStyle = '#0d1f2c55'; ctx.fillRect(x + 4, y + 6, w + 4, h + 3);
+      ctx.fillStyle = relay ? '#182e34' : '#242c42'; ctx.fillRect(x, y, w, h);
+      ctx.fillStyle = relay ? '#87948a' : '#9d9baa'; ctx.fillRect(x + 2, y + 2, w - 4, h - 4);
+      ctx.fillStyle = relay ? '#b5b99e' : '#c8bbaa'; ctx.fillRect(x + 2, y + 2, w - 4, 4);
+      ctx.fillStyle = relay ? '#445d5c' : '#505e78'; ctx.fillRect(x + 6, y + 7, w - 12, h - 13);
+      ctx.fillStyle = relay ? '#314d51' : '#34455f'; ctx.fillRect(x + 10, y + 11, w - 20, h - 22);
+      if (relay) {
+        for (let offset = 18; offset < w - 18; offset += 12) { ctx.fillStyle = '#849987'; ctx.fillRect(x + offset, y + 16, 4, h - 35); }
+        ctx.fillStyle = '#baaa76'; ctx.fillRect(x + 8, y + h - 11, w - 16, 3);
+        for (const ox of [7, w - 10]) for (const oy of [8, h - 11]) { ctx.fillStyle = '#d4cfac'; ctx.fillRect(x + ox, y + oy, 3, 2); }
+      } else {
+        path(ctx, [[x + 13, y + h / 2], [x + w / 2, y + 14], [x + w - 13, y + h / 2], [x + w / 2, y + h - 14], [x + 13, y + h / 2]], '#b5ae98', 2);
+        ring(ctx, x + w / 2, y + h / 2, Math.min(9, h / 5), '#9fbab3', 2);
+        ctx.fillStyle = '#d6dab7'; ctx.fillRect(x + w / 2 - 2, y + h / 2 - 2, 4, 4);
+      }
+      return;
+    }
     // A directional shadow gives depth without extending the solid footprint.
     ctx.fillStyle = '#0c211e44'; ctx.fillRect(x + 4, y + 6, w + 4, h + 3);
     ctx.fillStyle = '#112b23'; ctx.fillRect(x, y, w, h);
@@ -268,6 +359,7 @@ export class VectorRenderer {
     const ctx = this.ctx, dt = Math.min(.05, Math.max(0, (time - this.lastTime) / 1000)); this.lastTime = time;
     this.observeEvents(state);
     ctx.setTransform(this.canvas.width / WORLD.width, 0, 0, this.canvas.height / WORLD.height, 0, 0);
+    this.background = this.stageBackground(state.stageId);
     ctx.imageSmoothingEnabled = false; ctx.drawImage(this.background, 0, 0);
     for (const fighter of state.fighters) if (!this.reducedMotion && fighter.dashTicks > 0 && fighter.dashFrame > DASH.invulnerableStart && state.tick - this.lastGhost[fighter.id] >= 4) {
       this.ghosts.push({ fighter: { ...fighter }, age: 0 }); this.lastGhost[fighter.id] = state.tick;
@@ -275,7 +367,7 @@ export class VectorRenderer {
     if (this.ghosts.length > 12) this.ghosts.splice(0, this.ghosts.length - 12);
     this.ghosts = this.ghosts.filter(ghost => (ghost.age += dt) < .13);
     for (const ghost of this.ghosts) { ctx.save(); ctx.globalAlpha = 1 - ghost.age / .13; this.paintFighter(ctx, ghost.fighter, time, true); ctx.restore(); }
-    for (const cover of state.obstacles || COVERS) this.paintCover(ctx, cover);
+    for (const cover of state.obstacles || COVERS) this.paintCover(ctx, cover, state.stageId);
     for (const projectile of state.projectiles || []) {
       const color = COLORS[projectile.owner] || COLORS[0], speed = Math.hypot(projectile.vx, projectile.vy) || 1;
       path(ctx, [[projectile.x - projectile.vx / speed * 20, projectile.y - projectile.vy / speed * 20], [projectile.x, projectile.y]], '#0e211ecc', 5);

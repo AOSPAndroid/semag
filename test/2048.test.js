@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createState, move, undo, hasMoves, togglePause, continueGame } from '../public/solo/2048-engine.js';
+import { PUZZLES, nextPuzzle, retryPuzzle, createState, move, undo, hasMoves, togglePause, continueGame } from '../public/solo/2048-engine.js';
 
 function seeded(seed = 1) {
   return () => {
@@ -192,4 +192,25 @@ test('2048 detects a final full board after spawning and undo rescues the last m
   assert.equal(state.phase, 'playing');
   assert.deepEqual(state.board, initial);
   assert.equal(state.score, 55);
+});
+
+test('six fixed puzzles conserve their target mass and never deal random tiles', () => {
+  for (const puzzle of PUZZLES) { assert.equal(puzzle.board.reduce((a,b)=>a+b,0), puzzle.target); assert.equal(puzzle.board.length,16); }
+  const s=createState({mode:'puzzles',random:()=>{throw new Error('puzzles have no random deal');}});assert.equal(s.mode,'puzzles');assert.deepEqual(s.board,PUZZLES[0].board);const result=move(s,'left');assert.equal(result.spawned,null);assert.equal(s.board.reduce((a,b)=>a+b,0),16);
+});
+test('actual slide inputs solve every fixed puzzle within its budget and preserve campaign score', () => {
+  const solutions=[['left','up','left','up','left'],['right','up','right','up','left','up'],['left','up','right','up','left','down','left','up','up'],['down','right','up','left','down','left','down','left','up','left'],['up','left','down','right','up','left','up','up','left','left'],['down','left','down','right','up','left','down','right','down','left','down','left','up']];
+  const s=createState({mode:'puzzles'});let lastScore=0;
+  for(let level=0;level<6;level++) { assert.equal(s.level,level);for(const direction of solutions[level])assert.equal(move(s,direction).changed,true);assert.equal(s.phase,'won');assert.ok(s.board.includes(PUZZLES[level].target));assert.ok(s.moves<=PUZZLES[level].budget);assert.ok(s.score>lastScore);lastScore=s.score;assert.equal(continueGame(s),false);if(level<5){assert.equal(nextPuzzle(s),true);assert.equal(s.undoAvailable,false);assert.equal(undo(s),false);} }
+  assert.equal(s.result,'tour');assert.equal(s.puzzlesCleared,6);assert.equal(s.totalMoves,53);assert.equal(nextPuzzle(s),false);
+});
+test('puzzle undo restores the completion bonus, move budget, and clear count exactly', () => {
+  const s=createState({mode:'puzzles'});for(const d of ['left','up','left','up'])move(s,d);const before=structuredClone(s);move(s,'left');assert.equal(s.phase,'won');assert.equal(s.puzzlesCleared,1);assert.equal(undo(s),true);assert.deepEqual(s,{...before,undoAvailable:false});assert.equal(move(s,'left').phase,'won');
+});
+test('exhausting a puzzle move budget loses and retry resets only the current puzzle', () => {
+  const s=createState({mode:'puzzles'});for(const d of ['left','up','left','up','left'])move(s,d);nextPuzzle(s);const score=s.score,total=s.totalMoves;
+  for(let i=0;i<30&&s.phase==='playing';i++)move(s,['left','right'][i%2]);assert.equal(s.phase,'lost');assert.equal(s.result,'budget');assert.equal(s.moves,PUZZLES[1].budget);assert.equal(retryPuzzle(s),true);assert.equal(s.level,1);assert.equal(s.score,score);assert.equal(s.totalMoves,total);assert.equal(s.moves,0);assert.equal(s.puzzlesCleared,1);assert.deepEqual(s.board,PUZZLES[1].board);
+});
+test('puzzle pause blocks budget consumption and preserves board and campaign fields', () => {
+  const s=createState({mode:'puzzles'});move(s,'left');togglePause(s);const before=structuredClone(s);assert.equal(move(s,'down').changed,false);assert.deepEqual(s,before);togglePause(s);assert.equal(s.phase,'playing');assert.equal(s.moves,1);
 });

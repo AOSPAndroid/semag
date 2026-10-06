@@ -15,6 +15,8 @@
   <link rel="stylesheet" href="/solo/highway.css">
   <link rel="stylesheet" href="/solo/prism.css">
   <link rel="stylesheet" href="/solo/rift.css">
+  <link rel="stylesheet" href="/solo/ember.css">
+  <link rel="stylesheet" href="/solo/deckbound.css">
 </head>
 <body>
   <main class="solo-app" id="solo-app" data-phase="playing">
@@ -37,8 +39,8 @@
           <div class="solo-play-status"><span class="solo-status-dot" aria-hidden="true"></span><span id="solo-status-label" role="status" aria-live="polite">LOADING</span></div>
           <div class="solo-score solo-best"><span id="solo-record-label">BEST SCORE</span><strong id="solo-record">—</strong></div>
           <div class="solo-session-actions" aria-label="Game session controls">
-            <button class="solo-secondary" id="solo-pause" type="button" disabled aria-pressed="false" title="Pause or resume (P)"><span>Pause</span><b aria-hidden="true">Ⅱ</b></button>
-            <button class="solo-primary" id="solo-restart" type="button" disabled title="Start a new game (R)"><span>New game</span><b aria-hidden="true">↻</b></button>
+            <button class="solo-secondary" id="solo-pause" type="button" disabled aria-pressed="false" title="Pause or resume (P)"><span>Pause</span><b aria-hidden="true"><svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M3 2h3v12H3zm7 0h3v12h-3z"/></svg></b></button>
+            <button class="solo-primary" id="solo-restart" type="button" disabled title="Start a new game (R)"><span>New game</span><b aria-hidden="true"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13 6a5 5 0 1 0 0 5M13 2v4H9"/></svg></b></button>
           </div>
         </div>
         <div class="solo-game" id="solo-game" tabindex="0" aria-label="Game controls"></div>

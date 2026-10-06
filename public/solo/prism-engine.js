@@ -10,44 +10,337 @@ export const SPRINT_LINES = 40;
 export const TYPES = Object.freeze(['I', 'J', 'L', 'O', 'S', 'T', 'Z']);
 
 const SPAWN_SHAPES = {
-  I: [[0, 1], [1, 1], [2, 1], [3, 1]],
-  J: [[0, 0], [0, 1], [1, 1], [2, 1]],
-  L: [[2, 0], [0, 1], [1, 1], [2, 1]],
-  O: [[1, 0], [2, 0], [1, 1], [2, 1]],
-  S: [[1, 0], [2, 0], [0, 1], [1, 1]],
-  T: [[1, 0], [0, 1], [1, 1], [2, 1]],
-  Z: [[0, 0], [1, 0], [1, 1], [2, 1]],
+  I: [
+    [0, 1],
+    [1, 1],
+    [2, 1],
+    [3, 1],
+  ],
+  J: [
+    [0, 0],
+    [0, 1],
+    [1, 1],
+    [2, 1],
+  ],
+  L: [
+    [2, 0],
+    [0, 1],
+    [1, 1],
+    [2, 1],
+  ],
+  O: [
+    [1, 0],
+    [2, 0],
+    [1, 1],
+    [2, 1],
+  ],
+  S: [
+    [1, 0],
+    [2, 0],
+    [0, 1],
+    [1, 1],
+  ],
+  T: [
+    [1, 0],
+    [0, 1],
+    [1, 1],
+    [2, 1],
+  ],
+  Z: [
+    [0, 0],
+    [1, 0],
+    [1, 1],
+    [2, 1],
+  ],
 };
-export const SHAPES = Object.freeze(Object.fromEntries(TYPES.map(type => {
-  const rotations = [SPAWN_SHAPES[type].map(([x, y]) => ({ x, y }))];
-  for (let index = 1; index < 4; index += 1) {
-    const size = type === 'I' || type === 'O' ? 4 : 3;
-    rotations.push(type === 'O' ? rotations[0].map(cell => ({ ...cell }))
-      : rotations[index - 1].map(({ x, y }) => ({ x: size - 1 - y, y: x })));
+export const SHAPES = Object.freeze(
+  Object.fromEntries(
+    TYPES.map((type) => {
+      const rotations = [SPAWN_SHAPES[type].map(([x, y]) => ({ x, y }))];
+      for (let index = 1; index < 4; index += 1) {
+        const size = type === 'I' || type === 'O' ? 4 : 3;
+        rotations.push(
+          type === 'O'
+            ? rotations[0].map((cell) => ({ ...cell }))
+            : rotations[index - 1].map(({ x, y }) => ({ x: size - 1 - y, y: x })),
+        );
+      }
+      return [type, Object.freeze(rotations.map((rotation) => Object.freeze(rotation.map(Object.freeze))))];
+    }),
+  ),
+);
+
+/** Fixed excavation puzzles: each layer has a shaped entrance, rather than random single-hole garbage. */
+const DIG_DEFINITIONS = [
+  {
+    id: 'open-shaft',
+    title: 'Open shaft',
+    brief: 'A straight descent. Turn the long piece before committing.',
+    budget: 4,
+    queue: ['I', 'J', 'L', 'O', 'T', 'S', 'Z'],
+    layers: [['I', 1, 2]],
+  },
+  {
+    id: 'edge-well',
+    title: 'Edge well',
+    brief: 'The left wall is your guide. Reserve the piece that does not fit.',
+    budget: 4,
+    queue: ['T', 'I', 'L', 'O', 'S', 'Z', 'J'],
+    layers: [['I', 1, -2]],
+  },
+  {
+    id: 'split-shafts',
+    title: 'Split shafts',
+    brief: 'Two wells switch sides. Save space in hold for the detour.',
+    budget: 5,
+    queue: ['I', 'O', 'I', 'T', 'J', 'S', 'Z'],
+    layers: [
+      ['I', 1, 0],
+      ['I', 1, 5],
+    ],
+  },
+  {
+    id: 'square-chambers',
+    title: 'Square chambers',
+    brief: 'Clear the upper chamber to uncover the second one.',
+    budget: 5,
+    queue: ['O', 'L', 'O', 'S', 'J', 'T', 'Z'],
+    layers: [
+      ['O', 0, 5],
+      ['O', 0, 0],
+    ],
+  },
+  {
+    id: 'reverse-crowns',
+    title: 'Reverse crowns',
+    brief: 'Wide openings narrow below. Turn the crowns upside down.',
+    budget: 6,
+    queue: ['T', 'Z', 'T', 'T', 'I', 'O', 'J'],
+    layers: [
+      ['T', 2, 2],
+      ['T', 2, 5],
+      ['T', 2, 0],
+    ],
+  },
+  {
+    id: 'sawtooth',
+    title: 'Sawtooth',
+    brief: 'Mirror-shaped entrances reward deliberate rotation and reserve timing.',
+    budget: 6,
+    queue: ['L', 'S', 'J', 'L', 'O', 'I', 'T'],
+    layers: [
+      ['L', 3, 1],
+      ['J', 1, 5],
+      ['L', 3, 3],
+    ],
+  },
+  {
+    id: 'four-way',
+    title: 'Four-way junction',
+    brief: 'Four different layers. Preview every piece before dropping.',
+    budget: 7,
+    queue: ['L', 'T', 'S', 'O', 'I', 'J', 'Z'],
+    layers: [
+      ['L', 3, 0],
+      ['T', 2, 5],
+      ['O', 0, 1],
+      ['I', 1, 5],
+    ],
+  },
+  {
+    id: 'final-descent',
+    title: 'Final descent',
+    brief: 'Fourteen rows guard the exit. Plan the whole route and keep your reserve free.',
+    budget: 8,
+    queue: ['J', 'Z', 'L', 'T', 'O', 'I', 'S'],
+    layers: [
+      ['J', 1, 2],
+      ['L', 3, 6],
+      ['T', 2, 1],
+      ['O', 0, 6],
+      ['I', 1, -2],
+    ],
+  },
+];
+function buildDigStage(definition) {
+  const layers = definition.layers.map(([type, rotation, x]) => {
+    const cells = SHAPES[type][rotation],
+      minY = Math.min(...cells.map((c) => c.y)),
+      maxY = Math.max(...cells.map((c) => c.y));
+    return { type, rotation, x, minY, height: maxY - minY + 1 };
+  });
+  const rows = layers.reduce((sum, layer) => sum + layer.height, 0),
+    board = Array.from({ length: HEIGHT }, () => Array(WIDTH).fill(null));
+  let y = HEIGHT - rows;
+  const placements = [];
+  for (const layer of layers) {
+    for (let row = y; row < y + layer.height; row += 1) board[row].fill('G');
+    const placement = { type: layer.type, rotation: layer.rotation, x: layer.x, y: y - layer.minY };
+    for (const cell of pieceCells(placement)) board[cell.y][cell.x] = null;
+    placements.push(Object.freeze(placement));
+    y += layer.height;
   }
-  return [type, Object.freeze(rotations.map(rotation => Object.freeze(rotation.map(Object.freeze))))];
-})));
+  return Object.freeze({
+    ...definition,
+    rows,
+    placements: Object.freeze(placements),
+    layers: Object.freeze(definition.layers.map((layer) => Object.freeze([...layer]))),
+    board: Object.freeze(board.map((row) => Object.freeze(row))),
+    queue: Object.freeze(definition.queue),
+  });
+}
+export const DIG_STAGES = Object.freeze(DIG_DEFINITIONS.map(buildDigStage));
+export const DIG_STAGE_COUNT = DIG_STAGES.length;
+export function getDigStage(state) {
+  return DIG_STAGES[state.dig?.stageIndex ?? 0];
+}
+export function garbageRows(state) {
+  return state.board.filter((row) => row.includes('G')).length;
+}
+function beginDigStage(state, index) {
+  const stage = DIG_STAGES[index];
+  state.phase = 'playing';
+  state.pausedPhase = null;
+  state.result = null;
+  state.board = stage.board.map((row) => [...row]);
+  state.hold = null;
+  state.holdUsed = false;
+  state.next = [...stage.queue];
+  state.combo = -1;
+  state.backToBack = false;
+  state.level = Math.min(4, 1 + Math.floor(index / 2));
+  state.lastClear = null;
+  state.dig.stageIndex = index;
+  state.dig.piecesUsed = 0;
+  state.dig.budget = stage.budget;
+  state.dig.stageStart = state.elapsed;
+  state.dig.garbageRows = stage.rows;
+  state.dig.remainingRows = stage.rows;
+  spawnNext(state);
+}
+export function advanceDigStage(state) {
+  if (state.mode !== 'dig' || state.phase !== 'stage-clear' || state.dig.stageIndex >= DIG_STAGE_COUNT - 1)
+    return false;
+  beginDigStage(state, state.dig.stageIndex + 1);
+  return true;
+}
 
 // SRS offsets are defined with positive y pointing up; convert on application.
 const KICKS = {
-  '0>1': [[0, 0], [-1, 0], [-1, 1], [0, -2], [-1, -2]],
-  '1>0': [[0, 0], [1, 0], [1, -1], [0, 2], [1, 2]],
-  '1>2': [[0, 0], [1, 0], [1, -1], [0, 2], [1, 2]],
-  '2>1': [[0, 0], [-1, 0], [-1, 1], [0, -2], [-1, -2]],
-  '2>3': [[0, 0], [1, 0], [1, 1], [0, -2], [1, -2]],
-  '3>2': [[0, 0], [-1, 0], [-1, -1], [0, 2], [-1, 2]],
-  '3>0': [[0, 0], [-1, 0], [-1, -1], [0, 2], [-1, 2]],
-  '0>3': [[0, 0], [1, 0], [1, 1], [0, -2], [1, -2]],
+  '0>1': [
+    [0, 0],
+    [-1, 0],
+    [-1, 1],
+    [0, -2],
+    [-1, -2],
+  ],
+  '1>0': [
+    [0, 0],
+    [1, 0],
+    [1, -1],
+    [0, 2],
+    [1, 2],
+  ],
+  '1>2': [
+    [0, 0],
+    [1, 0],
+    [1, -1],
+    [0, 2],
+    [1, 2],
+  ],
+  '2>1': [
+    [0, 0],
+    [-1, 0],
+    [-1, 1],
+    [0, -2],
+    [-1, -2],
+  ],
+  '2>3': [
+    [0, 0],
+    [1, 0],
+    [1, 1],
+    [0, -2],
+    [1, -2],
+  ],
+  '3>2': [
+    [0, 0],
+    [-1, 0],
+    [-1, -1],
+    [0, 2],
+    [-1, 2],
+  ],
+  '3>0': [
+    [0, 0],
+    [-1, 0],
+    [-1, -1],
+    [0, 2],
+    [-1, 2],
+  ],
+  '0>3': [
+    [0, 0],
+    [1, 0],
+    [1, 1],
+    [0, -2],
+    [1, -2],
+  ],
 };
 const I_KICKS = {
-  '0>1': [[0, 0], [-2, 0], [1, 0], [-2, -1], [1, 2]],
-  '1>0': [[0, 0], [2, 0], [-1, 0], [2, 1], [-1, -2]],
-  '1>2': [[0, 0], [-1, 0], [2, 0], [-1, 2], [2, -1]],
-  '2>1': [[0, 0], [1, 0], [-2, 0], [1, -2], [-2, 1]],
-  '2>3': [[0, 0], [2, 0], [-1, 0], [2, 1], [-1, -2]],
-  '3>2': [[0, 0], [-2, 0], [1, 0], [-2, -1], [1, 2]],
-  '3>0': [[0, 0], [1, 0], [-2, 0], [1, -2], [-2, 1]],
-  '0>3': [[0, 0], [-1, 0], [2, 0], [-1, 2], [2, -1]],
+  '0>1': [
+    [0, 0],
+    [-2, 0],
+    [1, 0],
+    [-2, -1],
+    [1, 2],
+  ],
+  '1>0': [
+    [0, 0],
+    [2, 0],
+    [-1, 0],
+    [2, 1],
+    [-1, -2],
+  ],
+  '1>2': [
+    [0, 0],
+    [-1, 0],
+    [2, 0],
+    [-1, 2],
+    [2, -1],
+  ],
+  '2>1': [
+    [0, 0],
+    [1, 0],
+    [-2, 0],
+    [1, -2],
+    [-2, 1],
+  ],
+  '2>3': [
+    [0, 0],
+    [2, 0],
+    [-1, 0],
+    [2, 1],
+    [-1, -2],
+  ],
+  '3>2': [
+    [0, 0],
+    [-2, 0],
+    [1, 0],
+    [-2, -1],
+    [1, 2],
+  ],
+  '3>0': [
+    [0, 0],
+    [1, 0],
+    [-2, 0],
+    [1, -2],
+    [-2, 1],
+  ],
+  '0>3': [
+    [0, 0],
+    [-1, 0],
+    [2, 0],
+    [-1, 2],
+    [2, -1],
+  ],
 };
 const randomSources = new WeakMap();
 const EPSILON = 1e-10;
@@ -66,17 +359,34 @@ function shuffledBag(state) {
   return bag;
 }
 function refillQueue(state) {
-  while (state.next.length < 6) state.next.push(...shuffledBag(state));
+  while (state.next.length < 6) state.next.push(...(state.mode === 'dig' ? TYPES : shuffledBag(state)));
 }
 export function pieceCells(piece) {
-  if (!piece || !Object.hasOwn(SHAPES, piece.type) || !Number.isInteger(piece.rotation)
-    || piece.rotation < 0 || piece.rotation > 3) return [];
+  if (
+    !piece ||
+    !Object.hasOwn(SHAPES, piece.type) ||
+    !Number.isInteger(piece.rotation) ||
+    piece.rotation < 0 ||
+    piece.rotation > 3
+  )
+    return [];
   return SHAPES[piece.type][piece.rotation].map(({ x, y }) => ({ x: piece.x + x, y: piece.y + y }));
 }
 export function collides(state, piece) {
   const cells = pieceCells(piece);
-  return cells.length !== 4 || cells.some(({ x, y }) => !Number.isInteger(x) || !Number.isInteger(y)
-    || x < 0 || x >= WIDTH || y < 0 || y >= HEIGHT || state.board[y][x] !== null);
+  return (
+    cells.length !== 4 ||
+    cells.some(
+      ({ x, y }) =>
+        !Number.isInteger(x) ||
+        !Number.isInteger(y) ||
+        x < 0 ||
+        x >= WIDTH ||
+        y < 0 ||
+        y >= HEIGHT ||
+        state.board[y][x] !== null,
+    )
+  );
 }
 export function ghostPiece(state) {
   if (!state.active || collides(state, state.active)) return null;
@@ -111,19 +421,52 @@ function spawnNext(state) {
   spawn(state, type);
 }
 export function createState({ mode = 'marathon', random = Math.random } = {}) {
-  if (mode !== 'marathon' && mode !== 'sprint') throw new RangeError('mode must be marathon or sprint');
+  if (!['marathon', 'sprint', 'dig'].includes(mode))
+    throw new RangeError('mode must be marathon, sprint or dig');
   if (typeof random !== 'function') throw new TypeError('random must be a function');
   const state = {
-    gameId: 'prism-shift', mode, phase: 'playing', width: WIDTH, height: HEIGHT, hiddenRows: HIDDEN_ROWS,
+    gameId: 'prism-shift',
+    mode,
+    phase: 'playing',
+    width: WIDTH,
+    height: HEIGHT,
+    hiddenRows: HIDDEN_ROWS,
     board: Array.from({ length: HEIGHT }, () => Array(WIDTH).fill(null)),
-    active: null, hold: null, holdUsed: false, next: [],
-    score: 0, lines: 0, level: 1, elapsed: 0, piecesLocked: 0,
-    combo: -1, backToBack: false, lastClear: null,
-    gravityElapsed: 0, lockElapsed: 0, lockResets: 0,
-    lastMove: 'spawn', lastRotation: null, result: null,
+    active: null,
+    hold: null,
+    holdUsed: false,
+    next: [],
+    score: 0,
+    lines: 0,
+    level: 1,
+    elapsed: 0,
+    piecesLocked: 0,
+    combo: -1,
+    backToBack: false,
+    lastClear: null,
+    gravityElapsed: 0,
+    lockElapsed: 0,
+    lockResets: 0,
+    lastMove: 'spawn',
+    lastRotation: null,
+    result: null,
+    pausedPhase: null,
+    dig:
+      mode === 'dig'
+        ? {
+            stageIndex: 0,
+            piecesUsed: 0,
+            budget: 0,
+            stageStart: 0,
+            garbageRows: 0,
+            remainingRows: 0,
+            results: [],
+          }
+        : null,
   };
   randomSources.set(state, random);
-  spawnNext(state);
+  if (mode === 'dig') beginDigStage(state, 0);
+  else spawnNext(state);
   return state;
 }
 function resetLockAfterAction(state, wasGrounded) {
@@ -167,17 +510,21 @@ function spinKind(state) {
   const cy = state.active.y + 1;
   const occupied = (x, y) => x < 0 || x >= WIDTH || y < 0 || y >= HEIGHT || state.board[y][x] !== null;
   // Clockwise corners: top left, top right, bottom right, bottom left.
-  const corners = [occupied(cx - 1, cy - 1), occupied(cx + 1, cy - 1),
-    occupied(cx + 1, cy + 1), occupied(cx - 1, cy + 1)];
+  const corners = [
+    occupied(cx - 1, cy - 1),
+    occupied(cx + 1, cy - 1),
+    occupied(cx + 1, cy + 1),
+    occupied(cx - 1, cy + 1),
+  ];
   if (corners.filter(Boolean).length < 3) return null;
   const front = state.active.rotation;
-  return corners[front] && corners[(front + 1) % 4] || state.lastRotation.kickIndex === 4 ? 'full' : 'mini';
+  return (corners[front] && corners[(front + 1) % 4]) || state.lastRotation.kickIndex === 4 ? 'full' : 'mini';
 }
 function lockPiece(state) {
   const cells = pieceCells(state.active);
   const spin = spinKind(state);
   for (const { x, y } of cells) state.board[y][x] = state.active.type;
-  const keptRows = state.board.filter(row => row.some(value => value === null));
+  const keptRows = state.board.filter((row) => row.some((value) => value === null));
   const cleared = HEIGHT - keptRows.length;
   state.board = [...Array.from({ length: cleared }, () => Array(WIDTH).fill(null)), ...keptRows];
   const difficult = cleared > 0 && (cleared === 4 || spin !== null);
@@ -194,13 +541,51 @@ function lockPiece(state) {
   if (difficult) state.backToBack = true;
   else if (cleared) state.backToBack = false;
   state.lines += cleared;
-  state.level = 1 + Math.floor(state.lines / 10);
+  state.level =
+    state.mode === 'dig'
+      ? Math.min(4, 1 + Math.floor(state.dig.stageIndex / 2))
+      : 1 + Math.floor(state.lines / 10);
   state.piecesLocked += 1;
   const lineLabels = ['', 'SINGLE', 'DOUBLE', 'TRIPLE', 'TETRIS'];
-  const label = spin ? `T-SPIN${spin === 'mini' ? ' MINI' : ''}${cleared ? ` ${lineLabels[cleared]}` : ''}`
+  const label = spin
+    ? `T-SPIN${spin === 'mini' ? ' MINI' : ''}${cleared ? ` ${lineLabels[cleared]}` : ''}`
     : lineLabels[cleared] || '';
-  state.lastClear = { id: state.piecesLocked, lines: cleared, spin, label, points,
-    combo: state.combo, backToBack: chained, time: state.elapsed };
+  state.lastClear = {
+    id: state.piecesLocked,
+    lines: cleared,
+    spin,
+    label,
+    points,
+    combo: state.combo,
+    backToBack: chained,
+    time: state.elapsed,
+  };
+  if (state.mode === 'dig') {
+    state.dig.piecesUsed += 1;
+    state.dig.remainingRows = garbageRows(state);
+    if (state.dig.remainingRows === 0) {
+      state.dig.results.push({
+        id: getDigStage(state).id,
+        time: state.elapsed - state.dig.stageStart,
+        pieces: state.dig.piecesUsed,
+      });
+      state.active = null;
+      if (state.dig.stageIndex === DIG_STAGE_COUNT - 1) {
+        state.phase = 'won';
+        state.result = 'excavated';
+      } else {
+        state.phase = 'stage-clear';
+        state.result = 'layer-cleared';
+      }
+      return;
+    }
+    if (state.dig.piecesUsed >= state.dig.budget) {
+      state.phase = 'lost';
+      state.result = 'piece-budget';
+      state.active = null;
+      return;
+    }
+  }
   if (state.mode === 'sprint' && state.lines >= SPRINT_LINES) {
     state.phase = 'won';
     state.result = 'forty-lines';
@@ -219,17 +604,25 @@ function lockPiece(state) {
 export function dispatch(state, action) {
   if (state.phase !== 'playing' || !state.active || typeof action !== 'string') return false;
   switch (action) {
-    case 'left': return move(state, -1, 0, { resetLock: true });
-    case 'right': return move(state, 1, 0, { resetLock: true });
-    case 'rotate-cw': return rotate(state, 1);
-    case 'rotate-ccw': return rotate(state, -1);
-    case 'soft-drop': return move(state, 0, 1, { scoreDrop: true });
+    case 'left':
+      return move(state, -1, 0, { resetLock: true });
+    case 'right':
+      return move(state, 1, 0, { resetLock: true });
+    case 'rotate-cw':
+      return rotate(state, 1);
+    case 'rotate-ccw':
+      return rotate(state, -1);
+    case 'soft-drop':
+      return move(state, 0, 1, { scoreDrop: true });
     case 'hard-drop': {
       const ghost = ghostPiece(state);
       if (!ghost) return false;
       const distance = ghost.y - state.active.y;
       state.score += distance * 2;
-      if (distance) { state.lastMove = 'drop'; state.lastRotation = null; }
+      if (distance) {
+        state.lastMove = 'drop';
+        state.lastRotation = null;
+      }
       state.active = ghost;
       lockPiece(state);
       return true;
@@ -243,7 +636,8 @@ export function dispatch(state, action) {
       state.holdUsed = true;
       return true;
     }
-    default: return false;
+    default:
+      return false;
   }
 }
 /** Advance in seconds. Invalid deltas cannot change the state or gameplay clocks. */
@@ -252,7 +646,9 @@ export function step(state, input = {}, dt = 1 / 120) {
   let remaining = dt;
   const softDrop = input?.softDrop === true;
   while (remaining > EPSILON && state.phase === 'playing') {
-    const interval = softDrop ? Math.min(gravitySeconds(state.level), SOFT_DROP_SECONDS) : gravitySeconds(state.level);
+    const interval = softDrop
+      ? Math.min(gravitySeconds(state.level), SOFT_DROP_SECONDS)
+      : gravitySeconds(state.level);
     const grounded = isGrounded(state);
     const untilGravity = Math.max(0, interval - state.gravityElapsed);
     const untilLock = grounded ? Math.max(0, LOCK_DELAY - state.lockElapsed) : Infinity;
@@ -275,8 +671,12 @@ export function step(state, input = {}, dt = 1 / 120) {
   return true;
 }
 export function togglePause(state) {
-  if (state.phase === 'playing') state.phase = 'paused';
-  else if (state.phase === 'paused') state.phase = 'playing';
-  else return false;
+  if (['playing', 'stage-clear'].includes(state.phase)) {
+    state.pausedPhase = state.phase;
+    state.phase = 'paused';
+  } else if (state.phase === 'paused') {
+    state.phase = state.pausedPhase || 'playing';
+    state.pausedPhase = null;
+  } else return false;
   return true;
 }

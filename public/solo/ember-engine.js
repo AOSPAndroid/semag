@@ -1,0 +1,276 @@
+/** Ember Delve: a seeded, room-based action roguelike. */
+export const ARENA = Object.freeze({ width: 960, height: 640 });
+export const ACT_NAMES = Object.freeze(['The Coal Galleries', 'The Glass Burrows', 'The Crown Furnace']);
+export const BOSSES = Object.freeze(['Ash Warden', 'Mirror Stag', 'Cinder Queen']);
+export const RELICS = Object.freeze({
+  ember: { id: 'ember', title: 'Coalbrand', description: 'Sword strikes burn for 18 damage over time. Stacks add 10 burn damage.' },
+  coil: { id: 'coil', title: 'Spark Coil', description: 'Bolts pierce one more foe and deal +12 damage to burning targets.' },
+  duelist: { id: 'duelist', title: 'Duelist’s Seal', description: 'Dodging through an attack restores 20 mana and empowers your next sword strike.' },
+  chalice: { id: 'chalice', title: 'Sanguine Cup', description: 'Every kill restores 3 health. Stacks add 2 health per kill.' },
+  frost: { id: 'frost', title: 'Glassheart', description: 'Bolts slow enemies for 1.8 seconds. Slowed enemies take +10 sword damage.' },
+  fleet: { id: 'fleet', title: 'Wayfarer Boots', description: 'Dodge costs 8 less stamina and movement gains 12 speed.' },
+  vitality: { id: 'vitality', title: 'Living Cinder', description: 'Gain 20 maximum health and restore 30 health.' },
+  focus: { id: 'focus', title: 'Deep Reservoir', description: 'Gain 20 maximum mana and 2 mana regeneration per second.' },
+  blade: { id: 'blade', title: 'Honed Steel', description: 'Sword damage +8 and swing cooldown reduced by 0.02 seconds.' },
+});
+const layouts = [
+  [{ x: 250, y: 155, width: 100, height: 110 }, { x: 610, y: 375, width: 100, height: 110 }],
+  [{ x: 390, y: 110, width: 180, height: 100 }, { x: 390, y: 430, width: 180, height: 100 }],
+  [{ x: 255, y: 270, width: 110, height: 100 }, { x: 595, y: 270, width: 110, height: 100 }],
+  [{ x: 240, y: 145, width: 90, height: 85 }, { x: 630, y: 145, width: 90, height: 85 }, { x: 240, y: 410, width: 90, height: 85 }, { x: 630, y: 410, width: 90, height: 85 }],
+];
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+const unit = (x, y, fx = 1, fy = 0) => { const l = Math.hypot(x, y); return l > .001 ? { x: x / l, y: y / l } : { x: fx, y: fy }; };
+function rng(s) { let x = s.randomState; x ^= x << 13; x ^= x >>> 17; x ^= x << 5; s.randomState = x >>> 0 || 1; return s.randomState / 4294967296; }
+function event(s, type, extra = {}) { s.events.push({ id: ++s.eventId, type, time: s.elapsed, x: s.player.x, y: s.player.y, ...extra }); if (s.events.length > 40) s.events.shift(); }
+function solid(s, x, y, r) { return s.room.obstacles.some(o => Math.hypot(x - clamp(x, o.x, o.x + o.width), y - clamp(y, o.y, o.y + o.height)) < r); }
+function move(s, b, dx, dy) {
+  // Axis sliding resolves walls without allowing diagonal corner clipping.
+  const x = clamp(b.x + dx, 42 + b.radius, ARENA.width - 42 - b.radius);
+  if (!solid(s, x, b.y, b.radius)) b.x = x;
+  const y = clamp(b.y + dy, 42 + b.radius, ARENA.height - 42 - b.radius);
+  if (!solid(s, b.x, y, b.radius)) b.y = y;
+}
+function lineClear(s, a, b, r = 0) {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  return s.room.obstacles.every(o => {
+    let enter = 0, leave = 1;
+    for (const [origin, delta, low, high] of [[a.x, dx, o.x - r, o.x + o.width + r], [a.y, dy, o.y - r, o.y + o.height + r]]) {
+      if (Math.abs(delta) < .00001) { if (origin < low || origin > high) return true; }
+      else { const t1 = (low - origin) / delta, t2 = (high - origin) / delta; enter = Math.max(enter, Math.min(t1, t2)); leave = Math.min(leave, Math.max(t1, t2)); if (enter > leave) return true; }
+    }
+    return leave < 0 || enter > 1;
+  });
+}
+function steer(s, b, target) {
+  target = { ...target };
+  for (const o of s.room.obstacles) {
+    const m = b.radius + 5;
+    if (target.x > o.x - m && target.x < o.x + o.width + m && target.y > o.y - m && target.y < o.y + o.height + m) {
+      const sides = [{ x: o.x - m, y: target.y }, { x: o.x + o.width + m, y: target.y }, { x: target.x, y: o.y - m }, { x: target.x, y: o.y + o.height + m }];
+      target = sides.sort((a, c) => dist(a, target) - dist(c, target))[0];
+    }
+  }
+  if (lineClear(s, b, target, b.radius + 2)) return unit(target.x - b.x, target.y - b.y);
+  // Small visibility graph: every room uses rectangular, separated pillars.
+  const margin = b.radius + 6;
+  const nodes = [b, target, ...s.room.obstacles.flatMap(o => [
+    { x: o.x - margin, y: o.y - margin }, { x: o.x + o.width + margin, y: o.y - margin },
+    { x: o.x - margin, y: o.y + o.height + margin }, { x: o.x + o.width + margin, y: o.y + o.height + margin },
+  ])];
+  const costs = nodes.map(() => Infinity), parents = nodes.map(() => -1), visited = new Set(); costs[0] = 0;
+  for (let n = 0; n < nodes.length; n++) {
+    let k = -1; for (let i = 0; i < nodes.length; i++) if (!visited.has(i) && (k < 0 || costs[i] < costs[k])) k = i;
+    if (k < 0 || !Number.isFinite(costs[k]) || k === 1) break;
+    visited.add(k);
+    for (let i = 1; i < nodes.length; i++) if (!visited.has(i) && lineClear(s, nodes[k], nodes[i], b.radius + 2)) {
+      const c = costs[k] + dist(nodes[k], nodes[i]); if (c < costs[i]) { costs[i] = c; parents[i] = k; }
+    }
+  }
+  let index = 1; if (parents[index] < 0) return { x: 0, y: 0 };
+  while (parents[index] > 0) index = parents[index];
+  return unit(nodes[index].x - b.x, nodes[index].y - b.y);
+}
+function spawn(s, type, point = null) {
+  if (s.enemies.length >= 18) return;
+  const boss = type === 'boss'; const radius = boss ? 26 : type === 'sentinel' ? 18 : 14;
+  const spots = [{ x: 720, y: 315 }, { x: 650, y: 110 }, { x: 795, y: 500 }, { x: 510, y: 320 }, { x: 170, y: 500 }, { x: 790, y: 200 }];
+  const p = point || spots[s.enemyId % spots.length];
+  const hp = boss ? [290, 440, 620][s.act - 1] : ({ crawler: 42, archer: 48, charger: 64, sentinel: 88 }[type] + (s.act - 1) * 12) * (s.room.kind === 'elite' ? 1.28 : 1);
+  const e = { id: ++s.enemyId, type, boss, ...p, radius, hp, maxHp: hp, phase: 'seek', timer: .45 + rng(s) * .4, pattern: 0, aimX: -1, aimY: 0, burn: 0, burnDps: 0, slow: 0, attackId: 0 };
+  if (solid(s, e.x, e.y, radius)) { e.x = 780; e.y = 320; }
+  s.enemies.push(e);
+}
+function roomStart(s, kind) {
+  s.phase = 'playing'; s.choices = []; s.projectiles = []; s.enemies = []; s.effects = [];
+  const layout = kind === 'boss' ? 3 : (s.act + s.depth + s.roomsCleared) % 3;
+  s.room = { id: `${s.act}-${s.depth}-${kind}`, kind, title: kind === 'boss' ? BOSSES[s.act - 1] : `${['Ember', 'Crystal', 'Crown'][s.act - 1]} ${kind === 'elite' ? 'Crucible' : kind === 'treasure' ? 'Reliquary' : kind === 'camp' ? 'Sanctuary' : ['Gallery', 'Crossing', 'Vault'][layout]}`, obstacles: layouts[layout].map(o => ({ ...o })), exit: { x: 890, y: 320, radius: 42 }, shrine: { x: 570, y: 320, radius: 50 }, cleared: false, rewardTaken: false };
+  s.player.x = 105; s.player.y = 320; s.player.invulnerable = .6; s.player.dashTime = 0; s.player.attackTime = 0; s.player.attackCooldown = 0; s.player.spellCooldown = 0;
+  if (kind === 'boss') spawn(s, 'boss');
+  else if (kind === 'combat' || kind === 'elite') {
+    const types = ['crawler', 'archer', 'charger', 'sentinel'];
+    const count = kind === 'elite' ? 5 + s.act : 3 + s.act;
+    for (let i = 0; i < count; i++) spawn(s, types[(i + s.act + s.depth) % 4]);
+  }
+  event(s, 'room', { act: s.act, depth: s.depth, kind });
+}
+export function createState({ seed = Date.now() } = {}) {
+  const normalized = Number.isFinite(Number(seed)) ? Number(seed) >>> 0 : 1;
+  const s = { gameId: 'ember-delve', seed: normalized || 1, randomState: normalized || 1, phase: 'playing', pausedPhase: null, act: 1, depth: 1, roomsCleared: 0, kills: 0, score: 0, elapsed: 0, tick: 0, result: null, gold: 0, relics: {}, choices: [], routeHistory: [], enemies: [], enemyId: 0, projectiles: [], projectileId: 0, effects: [], events: [], eventId: 0, attackId: 0, pending: null,
+    player: { x: 105, y: 320, radius: 12, hp: 140, maxHp: 140, mana: 100, maxMana: 100, manaRegen: 10, stamina: 100, maxStamina: 100, staminaRegen: 32, moveSpeed: 245, swordDamage: 30, spellDamage: 28, aimX: 1, aimY: 0, attackCooldown: 0, attackTime: 0, spellCooldown: 0, dodgeCooldown: 0, dashTime: 0, dashX: 1, dashY: 0, invulnerable: 0, damageCooldown: 0, empowered: 0, dashHeld: false, interactHeld: false } };
+  roomStart(s, 'combat'); return s;
+}
+function choices(s, phase) {
+  s.phase = phase;
+  if (phase === 'reward') {
+    const ids = Object.keys(RELICS); for (let i = ids.length - 1; i > 0; i--) { const j = Math.floor(rng(s) * (i + 1)); [ids[i], ids[j]] = [ids[j], ids[i]]; }
+    s.choices = ids.slice(0, 3).map(id => ({ ...RELICS[id] }));
+  } else if (phase === 'route') {
+    s.choices = s.depth === 1 ? [
+      { id: 'combat', title: 'The Long Gallery', description: 'A guarded room. Earn gold, a relic, and combat score.', risk: 'STANDARD', kind: 'combat' },
+      { id: 'treasure', title: 'The Quiet Reliquary', description: 'A safe chest with one relic. Lower score, no combat gold.', risk: 'SAFE', kind: 'treasure' },
+    ] : s.depth === 2 ? [
+      { id: 'elite', title: 'The Crucible', description: 'More durable enemies. Double gold, better score, and a relic.', risk: 'HIGH RISK', kind: 'elite' },
+      { id: 'camp', title: 'The Warm Sanctuary', description: 'Spend gold to heal, or meditate for maximum mana.', risk: 'RECOVERY', kind: 'camp' },
+    ] : [{ id: 'boss', title: BOSSES[s.act - 1], description: `Defeat the keeper of ${ACT_NAMES[s.act - 1].toLowerCase()}.`, risk: 'ACT BOSS', kind: 'boss' }];
+  } else s.choices = [{ id: 'rest', title: 'Mend your wounds', description: 'Spend 20 gold to restore 55 health.', cost: 20 }, { id: 'meditate', title: 'Read the old embers', description: 'Restore all mana and gain 10 maximum mana. Free.', cost: 0 }];
+  event(s, phase);
+}
+function advance(s) {
+  if (s.depth === 4) { s.act++; s.depth = 1; roomStart(s, 'combat'); }
+  else choices(s, 'route');
+}
+export function chooseRoute(s, id) {
+  if (s.phase !== 'route' || !s.choices.some(c => c.id === id)) return false;
+  s.routeHistory.push({ act: s.act, depth: s.depth + 1, kind: id }); s.depth++; roomStart(s, id); return true;
+}
+export function chooseReward(s, id) {
+  if (s.phase !== 'reward' || !s.choices.some(c => c.id === id)) return false;
+  s.relics[id] = (s.relics[id] || 0) + 1; const p = s.player;
+  if (id === 'vitality') { p.maxHp += 20; p.hp = Math.min(p.maxHp, p.hp + 30); }
+  if (id === 'focus') { p.maxMana += 20; p.mana = Math.min(p.maxMana, p.mana + 30); p.manaRegen += 2; }
+  if (id === 'blade') p.swordDamage += 8;
+  if (id === 'fleet') p.moveSpeed += 12;
+  event(s, 'relic', { relic: id }); s.choices = [];
+  if (s.pending === 'advance') { s.pending = null; advance(s); }
+  else { s.phase = 'playing'; s.room.cleared = true; s.room.rewardTaken = true; s.roomsCleared++; }
+  return true;
+}
+export function chooseCamp(s, id) {
+  if (s.phase !== 'camp' || !s.choices.some(c => c.id === id)) return false;
+  if (id === 'rest') { if (s.gold < 20) return false; s.gold -= 20; s.player.hp = Math.min(s.player.maxHp, s.player.hp + 55); }
+  else { s.player.maxMana += 10; s.player.mana = s.player.maxMana; }
+  s.phase = 'playing'; s.room.cleared = true; s.room.rewardTaken = true; s.roomsCleared++; s.choices = []; event(s, 'camp', { choice: id }); return true;
+}
+export function togglePause(s) {
+  if (['playing', 'route', 'reward', 'camp'].includes(s.phase)) { s.pausedPhase = s.phase; s.phase = 'paused'; return true; }
+  if (s.phase === 'paused') { s.phase = s.pausedPhase || 'playing'; s.pausedPhase = null; return true; }
+  return false;
+}
+function hurt(s, damage, attackId = 0) {
+  const p = s.player;
+  if (p.invulnerable > 0) {
+    if (p.dashTime > 0 && s.relics.duelist && attackId !== s.lastParried) { s.lastParried = attackId; p.mana = Math.min(p.maxMana, p.mana + 20); p.empowered = 2; event(s, 'perfect'); }
+    return;
+  }
+  if (p.damageCooldown > 0) return;
+  p.hp = Math.max(0, p.hp - damage); p.damageCooldown = .65; event(s, 'hurt', { damage });
+  if (p.hp <= 0) { s.phase = 'lost'; s.result = 'The flame went out'; event(s, 'defeat'); }
+}
+function damageEnemy(s, e, damage, weapon) {
+  if (e.hp <= 0) return;
+  if (e.type === 'sentinel' && weapon === 'sword' && e.phase !== 'recover') {
+    const incoming = unit(s.player.x - e.x, s.player.y - e.y); if (incoming.x * e.aimX + incoming.y * e.aimY > .45) damage *= .35;
+  }
+  if (weapon === 'sword') {
+    if (s.relics.ember) { e.burn = 3; e.burnDps = (18 + 10 * (s.relics.ember - 1)) / 3; }
+    if (s.relics.frost && e.slow > 0) damage += 10 * s.relics.frost;
+  }
+  if (weapon === 'spell') {
+    if (s.relics.coil && e.burn > 0) damage += 12 * s.relics.coil;
+    if (s.relics.frost) e.slow = 1.8;
+  }
+  e.hp -= damage; event(s, 'hit', { x: e.x, y: e.y, damage: Math.round(damage), enemyId: e.id });
+}
+function shot(s, owner, x, y, angle, speed, damage, extra = {}) {
+  if (s.projectiles.length >= 160) return;
+  s.projectiles.push({ id: ++s.projectileId, owner, x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, radius: owner === 'player' ? 6 : 5, damage, life: 3, hits: [], pierce: owner === 'player' ? (s.relics.coil || 0) : 0, ...extra });
+}
+function fan(s, e, count, spread, speed = 190) {
+  const a = Math.atan2(e.aimY, e.aimX); for (let i = 0; i < count; i++) shot(s, 'enemy', e.x, e.y, a + (i - (count - 1) / 2) * spread, speed, 18 + s.act * 2, { attackId: e.attackId });
+}
+function tell(s, e, duration, kind) { const a = unit(s.player.x - e.x, s.player.y - e.y); e.aimX = a.x; e.aimY = a.y; e.phase = 'tell'; e.timer = duration; e.tell = kind; e.attackId = ++s.attackId; event(s, 'tell', { enemyId: e.id, x: e.x, y: e.y, kind }); }
+function enemyStep(s, e, dt) {
+  if (e.hp <= 0) return;
+  e.burn = Math.max(0, e.burn - dt); if (e.burn > 0) e.hp -= e.burnDps * dt;
+  // Damage-over-time deaths stop this actor before it can release a queued hit.
+  if (e.hp <= 0) return;
+  e.slow = Math.max(0, e.slow - dt); e.timer -= dt;
+  const p = s.player, gap = dist(e, p); const speed = (e.slow > 0 ? .55 : 1) * (e.type === 'crawler' ? 105 : e.type === 'sentinel' ? 65 : 85);
+  if (e.phase === 'tell') {
+    if (e.timer > 0) return;
+    if (e.tell === 'charge') { e.phase = 'charge'; e.timer = e.boss ? .55 : .42; }
+    else if (e.tell === 'sweep') { if (gap < (e.boss ? 150 : 80)) hurt(s, e.boss ? 30 : 20, e.attackId); e.phase = 'recover'; e.timer = .8; }
+    else if (e.tell === 'ring') {
+      const count = s.act === 3 ? 16 : 12; const rotation = e.pattern * .22;
+      for (let i = 0; i < count; i++) shot(s, 'enemy', e.x, e.y, i * Math.PI * 2 / count + rotation, s.act === 3 ? 170 : 150, 22, { attackId: e.attackId });
+      e.phase = 'recover'; e.timer = .8;
+    } else if (e.tell === 'summon') { spawn(s, 'crawler', { x: 160, y: 150 }); spawn(s, 'archer', { x: 800, y: 490 }); e.phase = 'recover'; e.timer = 1; }
+    else { fan(s, e, e.boss ? 7 : 3, e.boss ? .16 : .14); e.phase = 'recover'; e.timer = e.boss ? .8 : 1; }
+    return;
+  }
+  if (e.phase === 'charge') { move(s, e, e.aimX * 450 * dt, e.aimY * 450 * dt); if (gap < e.radius + p.radius + 10) hurt(s, e.boss ? 30 : 24, e.attackId); if (e.timer <= 0) { e.phase = 'recover'; e.timer = .9; } return; }
+  if (e.phase === 'recover') { if (e.timer <= 0) { e.phase = 'seek'; e.timer = e.boss ? .7 : .5; } return; }
+  if (e.boss) {
+    const toward = steer(s, e, p); if (gap > 230) move(s, e, toward.x * 70 * dt, toward.y * 70 * dt);
+    if (e.timer <= 0) {
+      e.pattern++;
+      const patterns = s.act === 1 ? ['charge', 'ring', 'sweep'] : s.act === 2 ? ['fan', 'charge', 'charge', 'ring'] : ['ring', 'fan', 'summon', 'ring'];
+      tell(s, e, e.pattern % patterns.length === 0 ? .95 : .7, patterns[(e.pattern - 1) % patterns.length]);
+    }
+    return;
+  }
+  const direction = steer(s, e, p); e.aimX = direction.x; e.aimY = direction.y;
+  if (e.type === 'archer') {
+    if (gap > 290 || !lineClear(s, e, p)) move(s, e, direction.x * speed * dt, direction.y * speed * dt);
+    else if (gap < 150) move(s, e, -direction.x * speed * dt, -direction.y * speed * dt);
+    if (e.timer <= 0 && lineClear(s, e, p)) tell(s, e, .7, 'fan');
+  } else if (e.type === 'charger') {
+    if (gap > 220) move(s, e, direction.x * speed * dt, direction.y * speed * dt);
+    if (e.timer <= 0 && gap < 330 && lineClear(s, e, p)) tell(s, e, .75, 'charge');
+  } else {
+    if (gap > 60) move(s, e, direction.x * speed * dt, direction.y * speed * dt);
+    if (gap < 80 && e.timer <= 0) tell(s, e, e.type === 'sentinel' ? .85 : .42, 'sweep');
+  }
+}
+function interaction(s) {
+  if (!s.room.cleared && s.room.kind === 'treasure' && dist(s.player, s.room.shrine) < 70) { s.pending = 'treasure'; choices(s, 'reward'); return; }
+  if (!s.room.cleared && s.room.kind === 'camp' && dist(s.player, s.room.shrine) < 70) { choices(s, 'camp'); return; }
+  if (!s.room.cleared || dist(s.player, s.room.exit) > 70) return;
+  if (s.act === 3 && s.depth === 4) { s.phase = 'won'; s.result = 'The Crown Furnace is quiet'; s.score += 1500; event(s, 'victory'); return; }
+  if (!s.room.rewardTaken && ['combat', 'elite', 'boss'].includes(s.room.kind)) { s.pending = 'advance'; choices(s, 'reward'); }
+  else advance(s);
+}
+export function step(s, input = {}, dt = 1 / 120) {
+  if (s.phase !== 'playing' || !Number.isFinite(dt) || dt <= 0) return;
+  dt = Math.min(dt, 1 / 30); s.tick++; s.elapsed += dt;
+  const p = s.player;
+  for (const key of ['attackCooldown', 'attackTime', 'spellCooldown', 'dodgeCooldown', 'dashTime', 'invulnerable', 'damageCooldown', 'empowered']) p[key] = Math.max(0, p[key] - dt);
+  p.mana = Math.min(p.maxMana, p.mana + p.manaRegen * dt); p.stamina = Math.min(p.maxStamina, p.stamina + p.staminaRegen * dt);
+  const aim = unit(Number.isFinite(input.aimX) ? input.aimX : p.aimX, Number.isFinite(input.aimY) ? input.aimY : p.aimY, p.aimX, p.aimY); p.aimX = aim.x; p.aimY = aim.y;
+  const rawX = Number.isFinite(input.moveX) ? clamp(input.moveX, -1, 1) : (input.right === true ? 1 : 0) - (input.left === true ? 1 : 0);
+  const rawY = Number.isFinite(input.moveY) ? clamp(input.moveY, -1, 1) : (input.down === true ? 1 : 0) - (input.up === true ? 1 : 0);
+  const movement = Math.hypot(rawX, rawY) > .05 ? unit(rawX, rawY) : { x: 0, y: 0 };
+  const dash = input.dash === true, dashCost = Math.max(14, 34 - (s.relics.fleet || 0) * 8);
+  if (dash && !p.dashHeld && p.stamina >= dashCost && p.dodgeCooldown <= 0) { p.stamina -= dashCost; p.dashTime = .18; p.invulnerable = .22; p.dodgeCooldown = .32; p.dashX = movement.x || movement.y ? movement.x : aim.x; p.dashY = movement.x || movement.y ? movement.y : aim.y; event(s, 'dash'); }
+  p.dashHeld = dash;
+  if (p.dashTime > 0) move(s, p, p.dashX * 660 * dt, p.dashY * 660 * dt);
+  else move(s, p, movement.x * p.moveSpeed * dt, movement.y * p.moveSpeed * dt);
+  if (input.melee === true && p.attackCooldown <= 0 && p.stamina >= 10 && p.dashTime <= 0) {
+    p.stamina -= 10; p.attackCooldown = Math.max(.18, .34 - (s.relics.blade || 0) * .02); p.attackTime = .15; event(s, 'swing');
+    for (const e of s.enemies) { const toward = unit(e.x - p.x, e.y - p.y); if (dist(p, e) < 96 + e.radius && toward.x * aim.x + toward.y * aim.y > .38 && lineClear(s, p, e)) damageEnemy(s, e, p.swordDamage * (p.empowered > 0 ? 1.75 : 1), 'sword'); }
+    p.empowered = 0;
+  }
+  if (input.spell === true && p.spellCooldown <= 0 && p.mana >= 12 && p.dashTime <= 0) {
+    p.mana -= 12; p.spellCooldown = .23; const muzzle = { x: p.x + aim.x * 22, y: p.y + aim.y * 22 };
+    if (lineClear(s, p, muzzle, 6)) shot(s, 'player', muzzle.x, muzzle.y, Math.atan2(aim.y, aim.x), 580, p.spellDamage);
+    event(s, 'cast');
+  }
+  for (const e of s.enemies) enemyStep(s, e, dt);
+  for (const b of s.projectiles) {
+    b.life -= dt; const x = b.x, y = b.y; const samples = Math.max(1, Math.ceil(Math.hypot(b.vx, b.vy) * dt / 4));
+    for (let i = 1; i <= samples && b.life > 0; i++) {
+      b.x = x + b.vx * dt * i / samples; b.y = y + b.vy * dt * i / samples;
+      if (b.x < 42 || b.x > 918 || b.y < 42 || b.y > 598 || solid(s, b.x, b.y, b.radius)) { b.life = 0; break; }
+      if (b.owner === 'enemy' && dist(b, p) < p.radius + b.radius) { hurt(s, b.damage, b.attackId); b.life = 0; }
+      if (b.owner === 'player') for (const e of s.enemies) if (e.hp > 0 && !b.hits.includes(e.id) && dist(b, e) < e.radius + b.radius) { damageEnemy(s, e, b.damage, 'spell'); b.hits.push(e.id); if (b.hits.length > b.pierce) { b.life = 0; break; } }
+    }
+  }
+  s.projectiles = s.projectiles.filter(b => b.life > 0);
+  const dead = s.enemies.filter(e => e.hp <= 0);
+  for (const e of dead) { s.kills++; const gain = e.boss ? 500 * s.act : s.room.kind === 'elite' ? 100 : 55; s.score += gain; s.gold += e.boss ? 40 : s.room.kind === 'elite' ? 8 : 4; if (s.relics.chalice) p.hp = Math.min(p.maxHp, p.hp + 3 + 2 * (s.relics.chalice - 1)); event(s, 'kill', { x: e.x, y: e.y, boss: e.boss }); }
+  s.enemies = s.enemies.filter(e => e.hp > 0);
+  if (!s.room.cleared && ['combat', 'elite', 'boss'].includes(s.room.kind) && s.enemies.length === 0 && s.phase === 'playing') { s.room.cleared = true; s.roomsCleared++; s.score += 120 * s.act; s.projectiles = []; event(s, 'clear'); }
+  const interact = input.interact === true; if (interact && !p.interactHeld && s.phase === 'playing') interaction(s); p.interactHeld = interact;
+}

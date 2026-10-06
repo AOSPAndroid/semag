@@ -1,13 +1,17 @@
 {
   "name": "fireside-game-hub",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "private": true,
   "type": "module",
-  "description": "A self-hosted hub with driving, arcade, puzzle and card games, checkers, sword duels, and co-op adventures.",
+  "description": "A self-hosted game hub with platform brawling, action and deckbuilding roguelikes, driving championships, and classic games.",
   "scripts": {
     "start": "node server.js",
     "test": "node --test test/*.test.js"
   },
-  "engines": { "node": ">=20" },
-  "dependencies": { "ws": "^8.18.0" }
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
 }

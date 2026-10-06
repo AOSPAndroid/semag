@@ -22,6 +22,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
         <select class="minesweeper-difficulty" aria-label="Minesweeper difficulty">
           <option value="beginner">Beginner · 9 × 9</option>
           <option value="intermediate">Intermediate · 16 × 16</option>
+          <option value="expert">Expert · 30 × 16 · 99 mines</option>
         </select>
       </label>
       <button type="button" class="minesweeper-flag-mode" aria-pressed="false">⚑ Flag mode: off</button>
@@ -32,6 +33,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
         <i class="minesweeper-emblem" aria-hidden="true"></i>
         <div><span>TIME</span><strong class="minesweeper-clock">0:00</strong></div>
       </div>
+      <p class="minesweeper-pan-hint" hidden>↔ Pan the field horizontally. Arrow-key focus keeps the selected tile in view.</p>
       <div class="minesweeper-board-wrap">
         <div class="minesweeper-board" role="group"></div>
         <div class="minesweeper-pause" hidden><strong>Paused</strong><span>Resume above to continue.</span></div>
@@ -49,6 +51,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   const clock = root.querySelector('.minesweeper-clock');
   const status = root.querySelector('.minesweeper-status');
   const pauseOverlay = root.querySelector('.minesweeper-pause');
+  const boardWrap = root.querySelector('.minesweeper-board-wrap');
+  const panHint = root.querySelector('.minesweeper-pan-hint');
 
   function syncTime() {
     const now = performance.now();
@@ -78,6 +82,10 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     board.style.setProperty('--mine-cols', String(state.cols));
     board.setAttribute('aria-label', `${state.rows} by ${state.cols} minefield. Use arrow keys to move, Enter to reveal, and F to flag.`);
     root.classList.toggle('is-intermediate', difficulty === 'intermediate');
+    root.classList.toggle('is-expert', difficulty === 'expert');
+    root.classList.toggle('is-wide', difficulty !== 'beginner');
+    panHint.hidden = difficulty === 'beginner';
+    boardWrap.scrollLeft = 0;
     tiles = state.cells.map((_, index) => {
       const button = document.createElement('button');
       button.type = 'button';
@@ -92,7 +100,14 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     });
   }
 
+  function syncPauseCover() {
+    pauseOverlay.style.left = `${boardWrap.scrollLeft}px`;
+    pauseOverlay.style.right = 'auto';
+    pauseOverlay.style.width = `${boardWrap.clientWidth}px`;
+  }
+
   function render() {
+    syncPauseCover();
     remaining.textContent = String(state.mines - state.flags).padStart(2, '0');
     clock.textContent = formatTime(state.elapsed);
     pauseOverlay.hidden = state.phase !== 'paused';
@@ -125,7 +140,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   function focusTile(index, moveFocus = true) {
     focused = Math.max(0, Math.min(state.cells.length - 1, index));
     for (const [other, tile] of tiles.entries()) tile.tabIndex = other === focused ? 0 : -1;
-    if (moveFocus) tiles[focused].focus({ preventScroll: true });
+    if (moveFocus) { tiles[focused].focus({ preventScroll: true }); tiles[focused].scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' }); }
   }
 
   function act(index, flagAction = false) {
@@ -203,6 +218,9 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     render();
   }
 
+  boardWrap.addEventListener('scroll', syncPauseCover, { passive: true });
+  const pauseResize = typeof ResizeObserver === 'function' ? new ResizeObserver(syncPauseCover) : null;
+  pauseResize?.observe(boardWrap);
   board.addEventListener('click', click);
   board.addEventListener('contextmenu', contextMenu);
   board.addEventListener('keydown', keydown);
@@ -233,6 +251,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     destroy() {
       destroyed = true;
       clearInterval(interval);
+      pauseResize?.disconnect();
+      boardWrap.removeEventListener('scroll', syncPauseCover);
       board.removeEventListener('click', click);
       board.removeEventListener('contextmenu', contextMenu);
       board.removeEventListener('keydown', keydown);

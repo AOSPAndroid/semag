@@ -2,6 +2,7 @@
 export const DIFFICULTIES = Object.freeze({
   beginner: Object.freeze({ rows: 9, cols: 9, mines: 10, label: 'Beginner' }),
   intermediate: Object.freeze({ rows: 16, cols: 16, mines: 40, label: 'Intermediate' }),
+  expert: Object.freeze({ rows: 16, cols: 30, mines: 99, label: 'Expert' }),
 });
 
 const randomSources = new WeakMap();

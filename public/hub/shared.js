@@ -1,4 +1,7 @@
 export const GAMES = {
+  'ember-delve': { title: 'Ember Delve', category: 'ACTION ROGUELIKE', kind: 'solo', genre: 'action', roguelike: true, icon: '♨', description: 'Choose a path. Forge a build. Rekindle the depths.', color: '#a07151' },
+  'deckbound': { title: 'Deckbound', category: 'DECKBUILDING ROGUELIKE', kind: 'solo', genre: 'cards', roguelike: true, icon: '♧', description: 'Read their intent. Shape your deck. Take the long road.', color: '#8e815b' },
+  'oddstock-rumble': { title: 'Oddstock Rumble', category: 'BONUS PLATFORM BRAWLER', kind: 'duel', genre: 'action', icon: '★', description: 'Six unlikely heroes. Three stages. One glorious send-off.', color: '#927aa1' },
   'relic-duel': { title: 'Relic Duel', category: 'TOP-DOWN ARENA', kind: 'duel', genre: 'action', icon: '⚔', description: 'Sword, shield, and a little quick thinking.', color: '#779868' },
   'checkers': { title: 'Checkers', category: 'THE CLASSIC', kind: 'board', icon: '◉', description: 'Every move is a conversation.', color: '#a88e62' },
   'dungeon-run': { title: 'Dungeon Run', category: 'CO-OP ADVENTURE', kind: 'coop', genre: 'action', icon: '✦', description: 'Two adventurers. One way through.', color: '#748766' },
@@ -6,14 +9,14 @@ export const GAMES = {
   'crazy-eights': { title: 'Crazy Eights', category: 'CARD CLASSIC', kind: 'cards', icon: '♠', description: 'Match the suit. Change the game.', color: '#577e68' },
   'twenty-one': { title: '21 Duel', category: 'BLACKJACK-STYLE DUEL', kind: 'cards', icon: '♦', description: 'Push your luck. Know when to stand.', color: '#b17b57' },
   'memory': { title: 'Memory Match', category: 'CARD MEMORY GAME', kind: 'cards', icon: '♣', description: 'Remember a face. Find its match.', color: '#79898d' },
-  'snake': { title: 'Snake', category: 'SOLO ARCADE', kind: 'solo', icon: '〰', description: 'One more bite. One less way out.', color: '#658254' },
+  'snake': { title: 'Snake', category: 'SOLO ARCADE', kind: 'solo', icon: '〰', description: 'An endless chase or six handcrafted gardens.', color: '#658254' },
   'minesweeper': { title: 'Minesweeper', category: 'SOLO PUZZLE', kind: 'solo', icon: '⚑', description: 'Read the numbers. Clear the field.', color: '#899282' },
-  '2048': { title: '2048', category: 'SOLO PUZZLE', kind: 'solo', icon: '▦', description: 'Slide, combine, and think ahead.', color: '#bf9764' },
-  'apex-circuit': { title: 'Apex Circuit', category: 'DRIVING / TIME TRIAL', kind: 'solo', genre: 'driving', icon: '◎', description: 'Find the line. Make every lap count.', color: '#82916b' },
-  'night-drive': { title: 'Night Drive', category: 'DRIVING / HIGHWAY', kind: 'solo', genre: 'driving', icon: '▰', description: 'The city is yours for one more mile.', color: '#637e81' },
+  '2048': { title: '2048', category: 'SOLO PUZZLE', kind: 'solo', icon: '▦', description: 'Classic merging or six puzzles. Think a move ahead.', color: '#bf9764' },
+  'apex-circuit': { title: 'Apex Circuit', category: 'DRIVING / TIME TRIAL', kind: 'solo', genre: 'driving', icon: '◎', description: 'Three circuits. A nine-lap championship. Find your line.', color: '#82916b' },
+  'night-drive': { title: 'Night Drive', category: 'DRIVING / HIGHWAY', kind: 'solo', genre: 'driving', icon: '▰', description: 'Five districts, open lanes, and one more clean pass.', color: '#637e81' },
   'vector-arena': { title: 'Vector Arena', category: 'PRECISION SHOOTER', kind: 'duel', genre: 'action', icon: '⌖', description: 'Lead the shot. Control the angle. Win the duel.', color: '#5b827c' },
   'prism-shift': { title: 'Prism Shift', category: 'FALLING BLOCKS', kind: 'solo', genre: 'puzzle', icon: '▥', description: 'Build the stack. Find the spin. Keep your rhythm.', color: '#8c7e9c' },
-  'rift-survivor': { title: 'Rift Survivor', category: 'SURVIVAL ARENA', kind: 'solo', genre: 'action', icon: '✧', description: 'Read the pattern. Choose your build. Survive the rift.', color: '#7c7975' },
+  'rift-survivor': { roguelike: true, title: 'Rift Survivor', category: 'SURVIVAL ARENA', kind: 'solo', genre: 'action', icon: '✧', description: 'Read the pattern. Choose your build. Survive the rift.', color: '#7c7975' },
 };
 export function soloUrl(gameId) {
   return `/solo.html?game=${encodeURIComponent(gameId)}`;

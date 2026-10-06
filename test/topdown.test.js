@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   ARENA, INPUT_KEYS, MOVES, TICK_RATE, cloneState, createState, emptyInput,
-  resetLobby, startMatch, step,
+  resetLobby, startMatch, step, chooseBoon, BOONS, BIOMES,
 } from '../public/topdown-engine.js';
 
 const input = values => ({ ...emptyInput(), ...values });
@@ -47,6 +47,9 @@ function downAlly(state) {
 function clearToNextWave(state) {
   for (const enemy of state.enemies) enemy.hp = 0;
   step(state);
+  assert.equal(state.roomBreak, true);
+  assert.equal(state.waveDelay, 0);
+  for (let seat=0;seat<2;seat++) chooseBoon(state,seat,state.shrineChoices[0].id);
   assert.equal(state.waveDelay, 3 * TICK_RATE);
   const wave = state.wave;
   advance(state, 3 * TICK_RATE - 1);
@@ -392,34 +395,28 @@ test('duel timeout awards greater health, while tied health and double knockout 
   }
 });
 
-test('co-op advances through three waves with a 360-tick break, healing and recovering a downed ally', () => {
-  const state = fight('coop');
-  assert.equal(state.wave, 1);
-  assert.equal(state.maxWaves, 4);
-  assert.deepEqual(state.enemies.map(enemy => enemy.type), ['slime', 'slime', 'slime', 'bat', 'bat']);
-  state.fighters[0].hp = 60;
-  downAlly(state);
-  clearToNextWave(state);
-  assert.deepEqual(state.fighters.map(f => f.hp), [82, 57]);
-  assert.equal(state.fighters[1].downed, false);
-  assert.deepEqual(state.fighters.map(f => f.stamina), [100, 100]);
-  assert.equal(state.enemies.length, 6);
-  state.fighters.forEach(f => { f.hp = 99; });
-  clearToNextWave(state);
-  assert.deepEqual(state.fighters.map(f => f.hp), [100, 100]);
-  assert.equal(state.enemies.length, 7);
-  clearToNextWave(state);
-  assert.equal(state.wave, 4);
-  assert.deepEqual(state.enemies.map(enemy => enemy.type), ['boss', 'bat', 'bat']);
-  assert.ok(state.objective.includes('Warden'));
-  assert.equal(state.events.filter(event => event.type === 'waveClear').length, 3);
+test('co-op explores nine distinct rooms, three biomes, and three guardians with chosen builds', () => {
+  const state=fight('coop'), layouts=new Set(), bosses=[];
+  assert.equal(state.maxWaves,9);
+  state.fighters[0].hp=60;downAlly(state);
+  for(let room=1;room<=9;room++) {
+    assert.equal(state.wave,room); assert.equal(state.biome.name,BIOMES[Math.floor((room-1)/3)].name);
+    layouts.add(JSON.stringify(state.obstacles.map(({x,y,w,h})=>[x,y,w,h])));
+    const boss=state.enemies.find(e=>e.type==='boss');if(boss)bosses.push(boss.name);
+    if(room<9)clearToNextWave(state);
+    if(room===1) { assert.deepEqual(state.fighters.map(f=>f.hp),[82,57]);assert.equal(state.fighters[1].downed,false); }
+  }
+  assert.equal(layouts.size,9);assert.deepEqual(bosses,BIOMES.map(b=>b.boss));
+  assert.equal(state.events.filter(event=>event.type==='waveClear').length,8);
+  assert.equal(Object.values(state.fighters[0].boons).reduce((a,b)=>a+b),8);
 });
 
-test('killing the Warden produces immediate victory with or without surviving bats', () => {
+test('killing the final guardian produces immediate victory with or without surviving adds', () => {
   for (const liveBats of [false, true]) {
     const state = fight('coop');
-    for (let wave = 1; wave < 4; wave++) clearToNextWave(state);
+    for (let wave = 1; wave < state.maxWaves; wave++) clearToNextWave(state);
     const boss = state.enemies.find(enemy => enemy.type === 'boss');
+    state.fighters.forEach(f=>{f.boons={};});
     if (!liveBats) for (const enemy of state.enemies) if (enemy !== boss) enemy.hp = 0;
     Object.assign(boss, { x: 490, y: 320, hp: MOVES.sword.damage, stun: 1000, vx: 0, vy: 0, action: 'hit' });
     Object.assign(state.fighters[0], { x: 430, y: 320, facing: 0, vx: 0, vy: 0 });
@@ -428,7 +425,7 @@ test('killing the Warden produces immediate victory with or without surviving ba
     step(state, [input({ attack: true }), emptyInput()]);
     advance(state, MOVES.sword.startup - 1);
     assert.equal(state.phase, 'fight');
-    if (liveBats) assert.ok(state.enemies.some(enemy => enemy.type === 'bat' && enemy.hp > 0));
+    if (liveBats) assert.ok(state.enemies.some(enemy => enemy.type !== 'boss' && enemy.hp > 0));
     step(state);
     assert.equal(boss.hp, 0);
     assert.equal(state.phase, 'matchEnd');
@@ -442,8 +439,9 @@ test('killing the Warden produces immediate victory with or without surviving ba
 
 test('swords and arrows damage the Warden without interrupting its attack warning', () => {
   const state = fight('coop');
-  for (let wave = 1; wave < 4; wave++) clearToNextWave(state);
+  for (let wave = 1; wave < 3; wave++) clearToNextWave(state);
   const boss = state.enemies.find(enemy => enemy.type === 'boss');
+    state.fighters.forEach(f=>{f.boons={};});
   state.enemies = [boss];
   Object.assign(boss, {
     x: 490, y: 320, vx: 0, vy: 0, stun: 0, action: 'windup', actionFrame: 20,
@@ -469,8 +467,9 @@ test('swords and arrows damage the Warden without interrupting its attack warnin
 test('a fresh shield parries the Warden melee attack, while its slam only permits a block', () => {
   for (const kind of ['melee', 'slam']) {
     const state = fight('coop');
-    for (let wave = 1; wave < 4; wave++) clearToNextWave(state);
+    for (let wave = 1; wave < 3; wave++) clearToNextWave(state);
     const boss = state.enemies.find(enemy => enemy.type === 'boss');
+    state.fighters.forEach(f=>{f.boons={};});
     state.enemies = [boss];
     Object.assign(boss, {
       x: 490, y: 320, vx: 0, vy: 0, stun: 0, action: 'attack', actionFrame: 0,
@@ -668,4 +667,60 @@ test('deterministic combat stress keeps health, stamina, geometry and event hist
     }
     assert.deepEqual(first, second);
   }
+});
+
+
+test('shrines require both heroes to choose once and accept guard only within reach', () => {
+ const state=fight('coop');state.enemies.forEach(e=>e.hp=0);step(state);
+ const shrine=state.shrineChoices.find(s=>s.id==='ward');
+ advance(state,600);assert.equal(state.wave,1);assert.equal(state.waveDelay,0);
+ state.fighters.forEach((f,i)=>Object.assign(f,{x:110+i*720,y:520}));
+ step(state,[input({block:true}),input({block:true})]);assert.deepEqual(state.boonSelections,[null,null]);
+ Object.assign(state.fighters[0],{x:shrine.x,y:shrine.y+20});
+ step(state,[input({block:true}),emptyInput()]);assert.equal(state.boonSelections[0],'ward');assert.equal(state.fighters[0].maxHp,112);
+ assert.equal(chooseBoon(state,0,'ward'),false);assert.equal(chooseBoon(state,1,'invalid'),false);
+ Object.assign(state.fighters[1],{x:shrine.x+24,y:shrine.y+12});step(state,[emptyInput(),input({block:true})]);
+ assert.equal(state.boonSelections[1],'ward');assert.equal(state.waveDelay,359);
+ advance(state,359);assert.equal(state.wave,2);assert.equal(state.roomBreak,false);
+ resetLobby(state);assert.deepEqual(state.fighters.map(f=>f.boons),[{},{}]);assert.deepEqual(state.fighters.map(f=>f.maxHp),[100,100]);
+});
+
+test('sword, lifesteal, arrow piercing and parry boons alter their actual combat mechanics', () => {
+ const state=quietCoop();state.fighters[0].boons={edge:2,leech:2};state.fighters[0].hp=50;
+ Object.assign(state.enemies[0],{x:490,y:320,hp:40,stun:1000,action:'hit'});
+ step(state,[input({attack:true}),emptyInput()]);advance(state,MOVES.sword.startup);
+ assert.equal(state.enemies[0].hp,21);assert.equal(state.fighters[0].hp,53);
+ const shots=quietCoop(), enemy=shots.enemies[0];
+ Object.assign(enemy,{x:490,y:320,hp:40});const second=structuredClone(enemy);second.id++;second.x=540;shots.enemies.push(second);
+ arrow(shots,{x:440,y:320,vx:110,pierce:1,damage:14});step(shots);
+ assert.deepEqual(shots.enemies.map(e=>e.hp),[26,26]);assert.equal(shots.projectiles.length,0);
+ const parry=quietCoop();parry.fighters[0].boons={riposte:1};parry.fighters[0].hp=60;
+ Object.assign(parry.enemies[0],{x:490,y:320,stun:0,hp:40,action:'attack',attackFacing:Math.PI,reach:80,hitTargets:[]});
+ step(parry,[input({block:true}),emptyInput()]);assert.equal(parry.fighters[0].hp,64);assert.equal(parry.enemies[0].hp,34);
+});
+
+test('crypt casters retreat and fire aimed fans; sanctuary fire is warned before damage', () => {
+ const state=fight('coop');for(let w=1;w<4;w++)clearToNextWave(state);
+ const caster=state.enemies.find(e=>e.type==='caster');state.enemies=[caster];
+ Object.assign(caster,{x:480,y:320,cooldown:0,action:'idle'});Object.assign(state.fighters[0],{x:480,y:470});Object.assign(state.fighters[1],{x:850,y:540});
+ step(state);assert.equal(caster.attackKind,'fan');advance(state,68);assert.equal(state.projectiles.length,5);
+ const fire=fight('coop');for(let w=1;w<7;w++)clearToNextWave(fire);
+ fire.enemies.forEach(e=>{e.stun=10000;});const h=fire.hazards[0];Object.assign(fire.fighters[0],{x:h.x,y:h.y,reviveShield:0,hp:100});
+ fire.elapsedTicks=209;step(fire);assert.equal(h.warning,true);assert.equal(fire.fighters[0].hp,100);
+ fire.elapsedTicks=299;step(fire);assert.equal(h.active,true);assert.equal(fire.fighters[0].hp,87);
+});
+
+
+test('Relic Duel rotates three fair arenas with distinct cover and valid spawns between rounds',()=>{
+ const state=fight('duel'), layouts=new Set(), names=[];
+ for(let round=1;round<=3;round++){
+  assert.equal(state.round,round);names.push(state.roomName);layouts.add(JSON.stringify(state.obstacles));
+  for(const f of state.fighters)for(const r of state.obstacles){
+   const x=Math.max(r.x,Math.min(f.x,r.x+r.w)),y=Math.max(r.y,Math.min(f.y,r.y+r.h));
+   assert.ok(Math.hypot(f.x-x,f.y-y)>=f.radius);
+  }
+  if(round<3){state.fighters[round-1].hp=0;step(state);advance(state,240);advance(state,240);}
+ }
+ assert.equal(layouts.size,3);assert.deepEqual(names,['Moss Courtyard','Tide Archive','Cinder Gallery']);
+ resetLobby(state);startMatch(state);advance(state,360);assert.equal(state.roomName,'Moss Courtyard');
 });

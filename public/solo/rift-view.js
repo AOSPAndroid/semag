@@ -1,4 +1,4 @@
-import { ARENA, OBSTACLES, TOTAL_WAVES, UPGRADES, createState, step, togglePause as pauseState, chooseUpgrade } from './rift-engine.js';
+import { ARENA, OBSTACLES, TOTAL_WAVES, UPGRADES, SECTORS, DIFFICULTIES, chargeSpeed, createState, step, togglePause as pauseState, chooseUpgrade } from './rift-engine.js';
 
 const W = ARENA.width;
 const H = ARENA.height;
@@ -18,6 +18,13 @@ const UPGRADE_ART = {
   mobility: { category: 'MOVEMENT', path: 'M11 6h11v12h5v8H7v-5h4zm-5 5H2v3h4zm0 7H1v3h5z' },
   battery: { category: 'STAMINA', path: 'M13 3h6v4h7v22H6V7h7zm3 7-5 9h5l-1 7 6-10h-5z' },
   plating: { category: 'DEFENSE', path: 'M6 6h20v14l-4 5-6 4-6-4-4-5zm5 4v9l5 5 5-5v-9z' },
+  ricochet: { category: 'TRICK SHOTS', path: 'M3 4h4v24H3zm7 19 10-10-5-5h13v13l-5-5-10 10z' },
+  chain: { category: 'ARC / FROST', path: 'm17 2-9 15h8l-1 13 10-18h-8zM3 8h4v4H3zm24 14h4v4h-4z' },
+  siphon: { category: 'KILL RECOVERY', path: 'm16 2 10 15v7l-5 5H11l-5-5v-7zm-2 13v5h-5v4h5v5h4v-5h5v-4h-5v-5z' },
+  frost: { category: 'CROWD CONTROL', path: 'M14 2h4v9l7-6 3 3-8 6h10v4H20l8 6-3 3-7-7v10h-4V20l-7 7-3-3 8-6H2v-4h10L4 8l3-3 7 6z' },
+  pulse: { category: 'DASH / FROST', path: 'M13 13h6v6h-6zM3 3h8v3H6v5H3zm18 0h8v8h-3V6h-5zM3 21h3v5h5v3H3zm23 0h3v8h-8v-3h5z' },
+  focus: { category: 'DASH / HEAT', path: 'M2 13h8v6H2zm20 0h8v6h-8zM13 2h6v8h-6zm0 20h6v8h-6zM12 12h8v8h-8z' },
+  scatter: { category: 'FIRE / ARC', path: 'M13 3h6v12h-6zM3 7h5v11H3zm21 0h5v11h-5zM13 20h6v9h-6zM5 23h5v6H5zm17 0h5v6h-5z' },
 };
 function upgradeIcon(id) {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -40,6 +47,7 @@ function node(tag, className, text) {
 
 export function mount(container, { onUpdate = () => {} } = {}) {
   let state = createState();
+  let difficulty = 'standard';
   let destroyed = false;
   let raf;
   let previousFrame = null;
@@ -52,6 +60,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   let ghosts = [];
   let rings = [];
   let hitMarkers = [];
+  let arcs = [];
   let upgradeSignature = '';
   let aimPoint = null;
   let aimVector = { x: 1, y: 0 };
@@ -69,8 +78,24 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   const topline = node('div', 'rift-topline');
   const waveLabel = node('span', '', `WAVE 01 / ${TOTAL_WAVES}`);
   const enemyLabel = node('span', 'rift-enemy-count', 'CLEAR THE RIFT');
-  const sector = node('span', 'rift-sector', 'SECTOR 07');
+  const sector = node('span', 'rift-sector', 'SECTOR 01');
   topline.append(sector, waveLabel, enemyLabel);
+  const journey = node('div', 'rift-journey');
+  journey.setAttribute('aria-label', 'Expedition sectors');
+  const sectorBadges = SECTORS.map((item, index) => {
+    const badge = node('span', 'rift-sector-badge');
+    badge.append(node('b', '', String(index + 1).padStart(2, '0')), node('span', 'rift-sector-name', item.name),
+      node('span', 'rift-sector-short', ['Contain', 'Foundry', 'Growth', 'Core'][index]));
+    journey.append(badge); return badge;
+  });
+  const tierBar = node('div', 'rift-tier-bar');
+  const tierLabel = node('label', 'rift-tier-label', 'NEW RUN');
+  const tierSelect = node('select', 'rift-tier-select');
+  tierSelect.setAttribute('aria-label', 'Difficulty for a new expedition');
+  for (const [id, value] of Object.entries(DIFFICULTIES)) { const option = node('option', '', value.title); option.value = id; tierSelect.append(option); }
+  tierLabel.append(tierSelect);
+  const tierDetail = node('span', 'rift-tier-detail', '20 waves · 4 guardians · build synergies');
+  tierBar.append(tierLabel, tierDetail);
   const meters = node('div', 'rift-meters');
   const meterNodes = {};
   for (const [id, label] of [['health', 'HEALTH'], ['stamina', 'DASH'], ['heat', 'HEAT']]) {
@@ -111,9 +136,14 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   const upgradeHeading = node('div', 'rift-upgrade-heading');
   upgradeHeading.append(node('strong', '', 'A choice that changes your run.'), node('span', '', 'TAKE ONE'));
   const upgradeChoices = node('div', 'rift-upgrade-choices');
-  upgradePanel.append(upgradeHeading, upgradeChoices);
+  const riskLabel = node('label', 'rift-risk');
+  const riskInput = node('input', ''); riskInput.type = 'checkbox'; riskInput.dataset.riftRisk = '';
+  riskLabel.append(riskInput, node('span', '', 'Overcharge the next wave'), node('small', '', '+1 weaver · +2 elites · 15% heavier hits · 35% more points'));
+  upgradePanel.append(upgradeHeading, upgradeChoices, riskLabel);
   const build = node('div', 'rift-build');
   build.setAttribute('aria-label', 'Your upgrade build');
+  const synergies = node('div', 'rift-synergies');
+  synergies.setAttribute('aria-label', 'Active upgrade synergies');
   const status = node('p', 'rift-status');
   status.setAttribute('role', 'status');
   status.setAttribute('aria-live', 'polite');
@@ -154,12 +184,13 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     buttons.set(id, button);
   }
   controls.insertBefore(actions, controls.lastChild);
-  view.append(topline, meters, board, upgradePanel, build, status, hint, controls);
+  view.append(tierBar, journey, topline, meters, board, upgradePanel, build, synergies, status, hint, controls);
   container.append(view);
   const displayContext = canvas.getContext('2d');
   let ctx = displayContext;
-  const floorLayer = document.createElement('canvas');
-  floorLayer.width = W; floorLayer.height = H;
+  const floorLayers = SECTORS.map(() => {
+    const layer = document.createElement('canvas'); layer.width = W; layer.height = H; return layer;
+  });
 
   function input() {
     const result = { up: false, down: false, left: false, right: false, fire: fireQueued, dash: dashQueued };
@@ -214,11 +245,15 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   }
   function details() {
     if (state.phase === 'paused') return state.pausedPhase === 'upgrade' ? 'Your upgrade is waiting. Resume to choose.' : 'The rift is paused. Resume when you are ready.';
-    if (state.phase === 'upgrade') return `Wave ${state.wavesCleared} cleared. Choose an upgrade below before the next wave.`;
+    if (state.phase === 'upgrade') return state.wave % 5 === 0
+      ? `${SECTORS[state.sector].boss} defeated. Choose your build for ${SECTORS[state.sector + 1]?.name || 'the final rift'}.`
+      : `Wave ${state.wavesCleared} cleared. Choose an upgrade, and decide whether to overcharge the next wave.`;
     if (state.phase === 'won') return `All ${TOTAL_WAVES} waves cleared. Your build held the rift.`;
     if (state.phase === 'lost') return `Reached wave ${state.wave}. Read the windups and try a new build.`;
     if (state.player.overheated) return 'Weapon overheated. Keep moving while it cools.';
-    if (state.enemies.some(enemy => enemy.type === 'boss')) return 'Rift guardian: dash through the gaps and watch for its next windup.';
+    const guardian = state.enemies.find(enemy => enemy.boss);
+    if (guardian) return `${guardian.bossName}: ${guardian.attackName.replaceAll('-', ' ')}. Read the windup and the marked floor.`;
+    if (state.waveRisk) return 'Overcharged wave: heavier hits and extra elites. Clear it for 35% more points.';
     return 'Break line of sight with cover. Dash through danger; leave enough stamina for the next attack.';
   }
   function descriptor(id) {
@@ -228,6 +263,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     const signature = state.upgradeChoices.join('|');
     if (signature !== upgradeSignature) {
       upgradeSignature = signature;
+      riskInput.checked = false;
       upgradeChoices.replaceChildren();
       for (const id of state.upgradeChoices) {
         const choice = descriptor(id);
@@ -242,11 +278,21 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     }
     const awaiting = state.phase === 'upgrade' || state.phase === 'paused' && state.pausedPhase === 'upgrade';
     upgradePanel.hidden = !awaiting;
+    riskInput.disabled = state.phase !== 'upgrade';
     for (const button of upgradeChoices.children) button.disabled = state.phase !== 'upgrade';
-    build.replaceChildren(node('span', 'rift-build-label', 'YOUR BUILD'));
+    build.replaceChildren(node('span', 'rift-build-label', `BUILD · ${Object.values(state.upgrades).reduce((sum, count) => sum + count, 0)} / 19`));
     const chosen = Object.entries(state.upgrades).filter(([, count]) => count > 0);
     if (!chosen.length) build.append(node('span', 'rift-build-empty', 'Make your first choice after wave 1.'));
     for (const [id, count] of chosen) build.append(node('span', 'rift-build-chip', `${descriptor(id).name || descriptor(id).title || id}${count > 1 ? ` ×${count}` : ''}`));
+    const active = [];
+    if (state.player.chain && state.player.frost) active.push('Cryo arcs · chained enemies inherit slow');
+    if (state.player.pulse && state.player.frost) active.push('Shatter dash · +50% shock damage to frozen foes');
+    if (state.player.focus) active.push('Afterimage · dash primes a cool, heavy first shot');
+    if (state.player.scatter && state.player.chain) active.push('Triad storm · side rounds conduct arcs');
+    if (state.player.ricochet && state.player.scatter) active.push('Mirror fan · side rounds bounce around cover');
+    if (state.player.siphon && (state.player.chain || state.player.pulse)) active.push('Blood circuit · every arc or shock kill heals');
+    synergies.replaceChildren(...active.map(text => node('span', '', text)));
+    synergies.hidden = !active.length;
   }
   function publish(force = false) {
     if (!force && state.elapsed - lastPublished < .1 && state.phase === lastPhase) return;
@@ -257,8 +303,18 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     view.dataset.phase = state.phase;
     view.dataset.wave = String(state.wave);
     view.dataset.health = String(Math.round(state.player.hp));
+    view.dataset.sector = String(state.sector);
+    view.dataset.difficulty = state.difficulty;
+    sector.textContent = `SECTOR ${String(state.sector + 1).padStart(2, '0')}`;
+    tierDetail.textContent = state.waveRisk ? 'OVERCHARGED · +35% points' : DIFFICULTIES[state.difficulty].description;
+    sectorBadges.forEach((badge, index) => {
+      badge.dataset.current = String(index === state.sector);
+      badge.dataset.cleared = String(state.wavesCleared >= (index + 1) * 5);
+      badge.setAttribute('aria-label', `${SECTORS[index].name}: ${state.wavesCleared >= (index + 1) * 5 ? 'cleared' : index === state.sector ? 'current sector' : 'ahead'}`);
+    });
     waveLabel.textContent = `WAVE ${String(state.wave).padStart(2, '0')} / ${TOTAL_WAVES}`;
-    enemyLabel.textContent = state.phase === 'upgrade' ? 'ALL CLEAR' : `${state.enemies.length} HOSTILES`;
+    const eliteCount = state.enemies.filter(enemy => enemy.elite).length;
+    enemyLabel.textContent = state.phase === 'upgrade' ? 'ALL CLEAR' : `${state.enemies.length} HOSTILES${eliteCount ? ` · ${eliteCount} ELITE` : ''}`;
     const values = {
       health: [state.player.hp, state.player.maxHp, `${Math.ceil(state.player.hp)} / ${state.player.maxHp}`],
       stamina: [state.player.stamina, state.player.maxStamina, `${Math.round(state.player.stamina)} / ${state.player.maxStamina}`],
@@ -282,7 +338,9 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       replay.hidden = state.phase === 'paused' || state.phase === 'upgrade';
     }
     updateUpgrades();
-    onUpdate({ phase: state.phase === 'upgrade' ? 'playing' : state.phase, score: state.score, record: state.score, recordLabel: 'BEST SCORE', scoreLabel: 'SCORE', detail });
+    onUpdate({ phase: state.phase === 'upgrade' ? 'playing' : state.phase, score: state.score, record: state.score,
+      recordKey: state.difficulty === 'veteran' ? 'veteran' : 'default',
+      recordLabel: state.difficulty === 'veteran' ? 'VETERAN BEST' : 'EXPEDITION BEST', scoreLabel: 'SCORE', detail });
     if (changedPhase && state.phase === 'upgrade') upgradeChoices.querySelector('button')?.focus({ preventScroll: true });
   }
 
@@ -305,10 +363,11 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     points.forEach(([x, y], i) => i ? ctx.lineTo(Math.round(x), Math.round(y)) : ctx.moveTo(Math.round(x), Math.round(y)));
     ctx.closePath(); ctx.fill();
   }
-  function floor() {
+  function floor(sectorIndex = 0) {
+    const palette = SECTORS[sectorIndex];
     rect(0, 0, W, H, '#10262c');
-    rect(20, 20, W - 40, H - 40, '#233b3e');
-    const stone = ['#2a4042', '#263e40', '#2c4344', '#284043', '#253d40'];
+    rect(20, 20, W - 40, H - 40, palette.floor);
+    const stone = [palette.tile, palette.floor, palette.tile, palette.floor, palette.floor];
     for (let y = 25, row = 0; y < H - 20; y += 52, row += 1) {
       for (let x = 24 - row % 2 * 42; x < W - 20; x += 84) {
         const hash = Math.abs((x * 17 + y * 7) % 31);
@@ -385,10 +444,35 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       rect(x + 4, y + 3, 5, 4, '#e3dcac'); rect(x + 3, y + 19, 7, 3, '#152f33');
       rect(x - 13, y + 4, 5, 11, '#2e4944'); rect(x + 20, y + 4, 5, 11, '#2e4944');
     }
-    ctx.font = 'bold 13px ui-monospace, monospace'; ctx.fillStyle = '#627967';
-    ctx.textAlign = 'center'; ctx.fillText('07', W / 2, 58);
-    ctx.font = '9px ui-monospace, monospace'; ctx.fillStyle = '#667e6b';
-    ctx.fillText('CONTAINMENT CHAMBER', W / 2, H - 34); ctx.textAlign = 'left';
+    if (sectorIndex > 0) {
+      ctx.globalAlpha = .12;
+      rect(20, 20, W - 40, H - 40, palette.accent);
+      ctx.globalAlpha = .4;
+      if (sectorIndex === 1) {
+        for (const [x, y] of [[78, 155], [900, 480], [68, 510], [910, 140]]) {
+          polygon([[x, y - 24], [x + 13, y - 4], [x + 7, y + 22], [x - 10, y + 15], [x - 15, y - 4]], '#99bcc9');
+          line(x, y - 18, x - 2, y + 16, '#d3e1d9', 2);
+        }
+      } else if (sectorIndex === 2) {
+        for (let y = 152; y < H - 105; y += 40) for (const x of [53, W - 60]) {
+          line(x, y, x + 10, y + 30, '#95a461', 4);
+          polygon([[x + 4, y + 8], [x - 9, y + 2], [x - 5, y + 18]], '#abb775');
+          polygon([[x + 7, y + 18], [x + 23, y + 12], [x + 15, y + 29]], '#7d995f');
+        }
+      } else {
+        for (let index = 0; index < 80; index += 1) {
+          const x = 60 + index * 97 % 880; const y = 90 + index * 71 % 485;
+          rect(x, y, index % 7 ? 2 : 4, index % 7 ? 2 : 4, '#d7b8d5');
+        }
+        circle(W / 2, H / 2, 146, '#b8a1c5', true, 1);
+        circle(W / 2, H / 2, 151, '#8973a8', true, 1);
+      }
+      ctx.globalAlpha = 1;
+    }
+    ctx.font = 'bold 13px ui-monospace, monospace'; ctx.fillStyle = palette.edge;
+    ctx.textAlign = 'center'; ctx.fillText(String(sectorIndex + 1).padStart(2, '0'), W / 2, 58);
+    ctx.font = '9px ui-monospace, monospace'; ctx.fillStyle = palette.edge;
+    ctx.fillText(palette.name.toUpperCase(), W / 2, H - 34); ctx.textAlign = 'left';
   }
   function cover() {
     for (const obstacle of OBSTACLES) {
@@ -419,7 +503,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     const flash = reducedMotion.matches ? .7 : .62 + .1 * Math.sin(state.elapsed * 12);
     ctx.save(); ctx.globalAlpha = flash;
     if (enemy.type === 'brute') {
-      const maximumReach = (350 + state.wave * 4) * .65;
+      const maximumReach = chargeSpeed(state, enemy) * .65;
       let reach = maximumReach;
       const half = enemy.radius + 7;
       const dx = Math.cos(angle); const dy = Math.sin(angle);
@@ -436,15 +520,32 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       circle(enemy.x, enemy.y, 57, '#ce7866');
       ctx.globalAlpha = .85;
       circle(enemy.x, enemy.y, 57, '#ffd29a', true, 3);
-    } else if (enemy.type === 'boss' && enemy.pattern % 2 === 0) {
-      circle(enemy.x, enemy.y, enemy.radius + 42, '#b97191', true, 6);
-      for (let i = 0; i < 12; i += 1) {
-        const a = angle + (i - 5.5) / 12 * Math.PI * 2;
-        line(enemy.x + Math.cos(a) * (enemy.radius + 12), enemy.y + Math.sin(a) * (enemy.radius + 12), enemy.x + Math.cos(a) * 122, enemy.y + Math.sin(a) * 122, '#f3aaca', 3);
+    } else if (enemy.boss) {
+      const name = enemy.attackName;
+      const spoke = (a, color = '#f3aaca', reach = 132) => line(enemy.x + Math.cos(a) * (enemy.radius + 10), enemy.y + Math.sin(a) * (enemy.radius + 10), enemy.x + Math.cos(a) * reach, enemy.y + Math.sin(a) * reach, color, 3);
+      circle(enemy.x, enemy.y, enemy.radius + 37, SECTORS[enemy.bossSector].accent, true, 5);
+      if (name === 'radial' || name === 'double-ring') {
+        const count = name === 'radial' ? 12 : 10;
+        for (let i = 0; i < count; i += 1) {
+          spoke(angle + (i - (count - 1) / 2) * Math.PI * 2 / count);
+          if (name === 'double-ring') spoke(angle + (i - (count - 1) / 2) * Math.PI * 2 / count + Math.PI / count, '#d3c0e3', 104);
+        }
+      } else if (name === 'crown') {
+        for (let i = 2; i < 17; i += 1) spoke(angle + i * Math.PI * 2 / 18);
+        spoke(angle - Math.PI / 6, '#b8e0b6', 150); spoke(angle + Math.PI / 6, '#b8e0b6', 150);
+      } else if (name === 'cross') {
+        for (let direction = 0; direction < 4; direction += 1) for (let i = -1; i <= 1; i += 1) spoke(angle + direction * Math.PI / 2 + i * .09, '#f3aaca', 160);
+      } else if (name === 'fan' || name === 'fan-mines' || name === 'rift-lanes') {
+        const count = name === 'fan-mines' ? 7 : 5;
+        const spread = name === 'fan' ? .14 : name === 'fan-mines' ? .13 : .2;
+        for (let i = 0; i < count; i += 1) spoke(angle + (i - (count - 1) / 2) * spread, '#f3aaca', 190);
+        if (name !== 'fan') circle(enemy.x, enemy.y, enemy.radius + 54, '#e5a780', true, 2);
+      } else {
+        for (let i = 0; i < 3; i += 1) circle(enemy.x + (i - 1) * 38, enemy.y - 60, 9, '#e5a780', true, 3);
       }
     } else {
-      const spread = enemy.type === 'boss' ? .14 : .16;
-      const count = enemy.type === 'boss' ? 5 : 3;
+      const spread = enemy.type === 'weaver' ? 0 : .16;
+      const count = enemy.type === 'weaver' ? 1 : 3;
       for (let i = 0; i < count; i += 1) {
         const a = angle + (i - (count - 1) / 2) * spread;
         line(enemy.x + Math.cos(a) * enemy.radius, enemy.y + Math.sin(a) * enemy.radius, enemy.x + Math.cos(a) * 190, enemy.y + Math.sin(a) * 190, '#f3aaca', i === Math.floor(count / 2) ? 3 : 2);
@@ -459,9 +560,9 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     circle(x + 4, y + 6, r + 2, '#10282d');
     const winding = enemy.phase === 'windup';
     if (enemy.type === 'boss') {
-      const sovereign = state.wave === 10;
-      const armor = winding ? '#e4bad0' : sovereign ? '#a698cb' : '#c88898';
-      const highlight = sovereign ? '#d7c6e4' : '#efbfaa';
+      const sovereign = enemy.bossSector % 2 === 1;
+      const armor = winding ? '#e4bad0' : ['#c88898', '#a4c2ce', '#a2b888', '#a698cb'][enemy.bossSector];
+      const highlight = ['#efbfaa', '#dcf1ec', '#d6dbaa', '#d7c6e4'][enemy.bossSector];
       if (sovereign) {
         polygon([[x - 30, y - 24], [x - 18, y - 36], [x, y - 26], [x + 18, y - 36], [x + 30, y - 24], [x + 24, y + 23], [x, y + 33], [x - 24, y + 23]], '#4c4266');
         for (const sign of [-1, 1]) {
@@ -500,6 +601,12 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       rect(12, -4, 5, 8, winding ? '#fff0c3' : '#f0cd93');
       rect(-6, -13, 4, 5, '#c9b47d'); rect(-6, 8, 4, 5, '#c9b47d');
       ctx.restore();
+    } else if (enemy.type === 'weaver') {
+      ctx.save(); ctx.translate(x, y); ctx.rotate(Math.atan2(enemy.aimY, enemy.aimX));
+      polygon([[-17, -10], [-4, -13], [16, 0], [-4, 13], [-17, 10], [-10, 0]], winding ? '#bce4dc' : '#68a49b');
+      polygon([[-9, -6], [7, 0], [-9, 6]], '#314f54');
+      rect(6, -3, 9, 6, '#e6dab5'); rect(-18, -13, 5, 5, '#8bc3ad'); rect(-18, 8, 5, 5, '#8bc3ad');
+      ctx.restore();
     } else if (enemy.type === 'ranged') {
       polygon([[x, y - 19], [x + 11, y - 9], [x + 15, y + 11], [x + 8, y + 18], [x + 2, y + 11], [x - 4, y + 18], [x - 15, y + 11], [x - 11, y - 9]], '#655879');
       polygon([[x, y - 18], [x + 8, y - 9], [x + 11, y + 7], [x - 11, y + 7], [x - 8, y - 9]], winding ? '#c4b9df' : '#a092ba');
@@ -524,6 +631,14 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       rect(7, -5, 8, 10, '#593b42'); rect(12, -3, 3, 6, '#ffe2aa');
       rect(-13, -5, 5, 10, '#a66559'); ctx.restore();
     }
+    if (enemy.elite) {
+      const eliteColor = { swift: '#87d1cb', armored: '#f2cd87', volatile: '#ed9b8d' }[enemy.affix];
+      circle(x, y, r + 7, eliteColor, true, 2);
+      const symbol = enemy.affix === 'swift' ? '»' : enemy.affix === 'armored' ? '▣' : '✦';
+      ctx.font = 'bold 12px ui-monospace, monospace'; ctx.fillStyle = eliteColor; ctx.textAlign = 'center';
+      ctx.fillText(symbol, x, y - r - 12); ctx.textAlign = 'left';
+    }
+    if (enemy.slowTime > 0) circle(x, y, r + 3, '#99dce0', true, 1.5);
     if (enemy.hp < enemy.maxHp || enemy.type === 'boss') {
       const barWidth = enemy.type === 'boss' ? 90 : Math.max(28, r * 2);
       rect(x - barWidth / 2, y - r - (enemy.type === 'boss' ? 25 : 11), barWidth, 4, '#132b31');
@@ -553,13 +668,49 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     if (player.fireCooldown > player.fireInterval * .65) polygon([[34, -6], [42, -3], [37, 0], [42, 3], [34, 6]], '#ffe3a0');
     ctx.restore();
     if (alpha === 1 && player.dashTime > 0) circle(x, y, 22, '#a5e2bc', true, 2);
+    if (alpha === 1 && player.focusReady) circle(x, y, 20, '#e9c493', true, 2);
+  }
+  function hazardMarks() {
+    for (const hazard of state.hazards) {
+      ctx.save();
+      const warning = hazard.warning > 0;
+      ctx.globalAlpha = warning ? .2 : .5;
+      if (hazard.kind === 'blast') circle(hazard.x, hazard.y, hazard.radius, '#df946f');
+      else if (hazard.kind === 'vertical') rect(hazard.x - hazard.width / 2, 0, hazard.width, H, '#ce89b3');
+      else rect(0, hazard.y - hazard.width / 2, W, hazard.width, '#ce89b3');
+      ctx.globalAlpha = warning ? .85 : 1;
+      ctx.setLineDash(warning ? [8, 6] : []);
+      if (hazard.kind === 'blast') {
+        circle(hazard.x, hazard.y, hazard.radius, '#ffd1a1', true, 2);
+        ctx.setLineDash([]);
+        circle(hazard.x, hazard.y, Math.max(3, hazard.radius * (1 - clamp(hazard.warning, 0, 1))), '#eec79b', true, 1);
+        line(hazard.x - 7, hazard.y, hazard.x + 7, hazard.y, '#ffe0b2', 2);
+        line(hazard.x, hazard.y - 7, hazard.x, hazard.y + 7, '#ffe0b2', 2);
+      } else if (hazard.kind === 'vertical') {
+        line(hazard.x - hazard.width / 2, 0, hazard.x - hazard.width / 2, H, '#f3c7dd', 2);
+        line(hazard.x + hazard.width / 2, 0, hazard.x + hazard.width / 2, H, '#f3c7dd', 2);
+      } else {
+        line(0, hazard.y - hazard.width / 2, W, hazard.y - hazard.width / 2, '#f3c7dd', 2);
+        line(0, hazard.y + hazard.width / 2, W, hazard.y + hazard.width / 2, '#f3c7dd', 2);
+      }
+      ctx.restore();
+    }
   }
   function draw() {
     if (!ctx || destroyed) return;
     ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(floorLayer, 0, 0);
+    ctx.drawImage(floorLayers[state.sector], 0, 0);
     for (const enemy of state.enemies) telegraph(enemy);
+    hazardMarks();
     cover();
+    for (const arc of arcs) {
+      ctx.globalAlpha = clamp(arc.life / .16, 0, 1);
+      const midX = (arc.x + arc.toX) / 2 + 4;
+      const midY = (arc.y + arc.toY) / 2 - 6;
+      line(arc.x, arc.y, midX, midY, '#c1ecdf', 3);
+      line(midX, midY, arc.toX, arc.toY, '#c1ecdf', 3);
+    }
+    ctx.globalAlpha = 1;
     for (const ghost of ghosts) playerSprite(ghost, Math.max(0, ghost.life / .17) * .38);
     for (const ring of rings) {
       const progress = 1 - ring.life / ring.maxLife;
@@ -606,7 +757,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     ctx.font = 'bold 11px ui-monospace, monospace'; ctx.fillStyle = '#829c7f'; ctx.textAlign = 'left';
     ctx.fillText(`${String(state.kills).padStart(2, '0')} CLEARED`, 38, H - 30);
     ctx.textAlign = 'right'; ctx.fillStyle = '#c6b9a0';
-    if (state.enemies.some(enemy => enemy.type === 'boss')) ctx.fillText(state.wave === 10 ? 'RIFT SOVEREIGN' : 'THE GATEWARDEN', W - 38, H - 30);
+    const boss = state.enemies.find(enemy => enemy.boss);
+    if (boss) ctx.fillText(boss.bossName.toUpperCase(), W - 38, H - 30);
     ctx.textAlign = 'left';
   }
   function effects(dt) {
@@ -618,6 +770,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     for (const event of state.events) {
       if (event.id <= lastEvent) continue;
       lastEvent = event.id;
+      if (event.type === 'arc') arcs.push({ ...event, life: .16 });
+      if (event.type === 'pulse') rings.push({ x: event.x, y: event.y, radius: 0, growth: event.radius, life: .22, maxLife: .22, color: '#b0ded0' });
       const isKill = event.type === 'kill' || event.type === 'enemy-killed';
       if (isKill || event.type === 'hurt' || event.type === 'hit') {
         hitMarkers.push({ x: event.x ?? state.player.x, y: event.y ?? state.player.y, kill: isKill, life: isKill ? .22 : .1, maxLife: isKill ? .22 : .1 });
@@ -636,6 +790,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     ghosts = ghosts.filter(ghost => { ghost.life -= dt; return ghost.life > 0; }).slice(-12);
     rings = rings.filter(ring => { ring.life -= dt; return ring.life > 0; }).slice(-24);
     hitMarkers = hitMarkers.filter(marker => { marker.life -= dt; return marker.life > 0; }).slice(-20);
+    arcs = arcs.filter(arc => { arc.life -= dt; return arc.life > 0; }).slice(-30);
   }
   function frame(time) {
     if (destroyed) return;
@@ -668,9 +823,9 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   function restart() {
     if (destroyed) return;
     releaseControls();
-    state = createState(); previousFrame = null; accumulator = 0;
+    state = createState({ difficulty }); previousFrame = null; accumulator = 0;
     lastEvent = -1; lastPublished = -Infinity; lastPhase = null;
-    particles = []; ghosts = []; rings = []; hitMarkers = []; effectTime = 0; upgradeSignature = '';
+    particles = []; ghosts = []; rings = []; hitMarkers = []; arcs = []; effectTime = 0; upgradeSignature = '';
     gait = 0; walking = false; previousPlayer = { x: state.player.x, y: state.player.y };
     aimPoint = null; aimVector = { x: 1, y: 0 };
     publish(true); draw(); canvas.focus({ preventScroll: true });
@@ -750,12 +905,13 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     const button = event.target instanceof Element ? event.target.closest('[data-upgrade]') : null;
     if (!button || !upgradeChoices.contains(button) || state.phase !== 'upgrade') return;
     releaseControls();
-    const result = chooseUpgrade(state, button.dataset.upgrade);
+    const result = chooseUpgrade(state, button.dataset.upgrade, { risk: riskInput.checked });
     if (!result.ok) return;
     previousFrame = null; accumulator = 0;
     publish(true); draw(); canvas.focus({ preventScroll: true });
   }
   const visibility = () => { if (document.hidden) releaseControls(); };
+  const changeTier = () => { difficulty = tierSelect.value; restart(); };
   window.addEventListener('keydown', keydown);
   window.addEventListener('keyup', keyup);
   window.addEventListener('blur', releaseControls);
@@ -769,8 +925,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   view.addEventListener('lostpointercapture', pointerEnd);
   upgradeChoices.addEventListener('click', upgradeClick);
   replay.addEventListener('click', restart);
-  ctx = floorLayer.getContext('2d');
-  floor();
+  tierSelect.addEventListener('change', changeTier);
+  floorLayers.forEach((layer, index) => { ctx = layer.getContext('2d'); floor(index); });
   ctx = displayContext;
   publish(true); draw();
   raf = requestAnimationFrame(frame);
@@ -792,6 +948,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       view.removeEventListener('lostpointercapture', pointerEnd);
       upgradeChoices.removeEventListener('click', upgradeClick);
       replay.removeEventListener('click', restart);
+      tierSelect.removeEventListener('change', changeTier);
       view.remove();
     },
   };

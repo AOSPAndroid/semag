@@ -58,19 +58,19 @@ def number_text(page, selector):
 
 
 def check_catalog(page):
-    assert page.locator("[data-create-game]").count() == 8
-    assert page.locator("[data-play-solo]").count() == 7
-    assert page.locator("[data-create-game]:visible").count() == 8
-    assert page.locator("[data-play-solo]:visible").count() == 7
+    assert page.locator("[data-create-game]").count() == 9
+    assert page.locator("[data-play-solo]").count() == 9
+    assert page.locator("[data-create-game]:visible").count() == 9
+    assert page.locator("[data-play-solo]:visible").count() == 9
     page.locator('[data-filter="friends"]').click()
-    assert page.locator("[data-create-game]:visible").count() == 8
+    assert page.locator("[data-create-game]:visible").count() == 9
     assert page.locator("[data-play-solo]:visible").count() == 0
     page.locator('[data-filter="solo"]').click()
     assert page.locator("[data-create-game]:visible").count() == 0
-    assert page.locator("[data-play-solo]:visible").count() == 7
+    assert page.locator("[data-play-solo]:visible").count() == 9
     page.locator('[data-filter="all"]').click()
-    assert page.locator("[data-create-game]:visible").count() == 8
-    assert page.locator("[data-play-solo]:visible").count() == 7
+    assert page.locator("[data-create-game]:visible").count() == 9
+    assert page.locator("[data-play-solo]:visible").count() == 9
 
 
 def preview_mobile(page, game):

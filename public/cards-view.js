@@ -2,6 +2,31 @@ const SUITS = [
   { symbol: '♠', name: 'spades' }, { symbol: '♥', name: 'hearts' },
   { symbol: '♣', name: 'clubs' }, { symbol: '♦', name: 'diamonds' },
 ];
+const SUIT_PATHS = [
+  '<path d="M16 2C10 9 2 13 2 21c0 9 10 11 14 4 4 7 14 5 14-4C30 13 22 9 16 2zm-3 23-3 9h12l-3-9z"/>',
+  '<path d="M16 32 4 19C-7 7 8-3 16 8 24-3 39 7 28 19z"/>',
+  '<circle cx="16" cy="9" r="8"/><circle cx="8" cy="21" r="8"/><circle cx="24" cy="21" r="8"/><path d="m13 23-3 11h12l-3-11z"/>',
+  '<path d="m16 1 15 17-15 17L1 18z"/>',
+];
+function suitArt(suit, className = '') {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); svg.setAttribute('viewBox', '0 0 32 36'); svg.setAttribute('aria-hidden', 'true'); svg.setAttribute('class', className); svg.innerHTML = SUIT_PATHS[suit] || SUIT_PATHS[0]; return svg;
+}
+function showSuit(node, suit) { const key = String(suit); if (node.dataset.suitArt === key) return; node.dataset.suitArt = key; node.replaceChildren(suitArt(suit)); }
+const PIP_POSITIONS = {
+  1: [[50,50]], 2: [[50,20],[50,80]], 3: [[50,18],[50,50],[50,82]],
+  4: [[25,20],[75,20],[25,80],[75,80]], 5: [[25,18],[75,18],[50,50],[25,82],[75,82]],
+  6: [[25,17],[75,17],[25,50],[75,50],[25,83],[75,83]],
+  7: [[25,17],[75,17],[50,33],[25,50],[75,50],[25,83],[75,83]],
+  8: [[25,15],[75,15],[50,34],[25,50],[75,50],[50,66],[25,85],[75,85]],
+  9: [[25,14],[75,14],[25,38],[75,38],[50,50],[25,62],[75,62],[25,86],[75,86]],
+  10: [[25,10],[75,10],[50,28],[25,36],[75,36],[25,64],[75,64],[50,72],[25,90],[75,90]],
+};
+function royalArt(rank) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); svg.setAttribute('viewBox', '0 0 44 60'); svg.setAttribute('aria-hidden', 'true'); svg.setAttribute('class', 'card-court-art');
+  const hat = rank === 11 ? '<path d="m10 14 22-8 5 12H9z"/><path d="m30 7 4-7 5 3-5 8z" opacity=".5"/>' : '<path d="m10 6 7 6 5-9 5 9 7-6-3 13H13z"/>';
+  svg.innerHTML = `<path d="M4 2h36v56H4z" fill="none" stroke="currentColor" stroke-width="1" opacity=".25"/>${hat}<path d="M14 20h16v17H14z" opacity=".35"/><path d="M10 37h24l4 16H6z" opacity=".85"/><path d="m18 39 4 10 4-10" fill="#e6d5a6"/><path d="M17 25h3v3h-3zm8 0h3v3h-3z"/>${rank === 13 ? '<path d="m17 30 5 10 5-10z" opacity=".8"/>' : '<path d="M18 32h8v2h-8z"/>'}<path d="M7 49h30M22 51v5" fill="none" stroke="#d7bd79" stroke-width="2"/>`;
+  return svg;
+}
 const TITLES = { 'crazy-eights': 'Crazy Eights', 'twenty-one': '21 Duel', memory: 'Memory Match' };
 const rankLabel = rank => ({ 1: 'A', 11: 'J', 12: 'Q', 13: 'K' })[rank] || String(rank);
 const cardName = card => `${({ 1: 'Ace', 11: 'Jack', 12: 'Queen', 13: 'King' })[card.rank] || card.rank} of ${SUITS[card.suit]?.name || 'cards'}`;
@@ -50,6 +75,9 @@ export class CardsView {
     this.selected = null;
     this.focused = 0;
     this.memoryNodes = [];
+    this.publicTrail = [];
+    this.roundHistory = [];
+    this.lastObservedRevision = null;
     this.element = element('section', 'cards-view');
     this.element.setAttribute('aria-label', 'Card table');
     this.topline = element('div', 'cards-topline');
@@ -62,7 +90,8 @@ export class CardsView {
     this.notice.setAttribute('aria-live', 'polite');
     this.notice.setAttribute('aria-atomic', 'true');
     this.hint = element('p', 'cards-hint');
-    this.element.append(this.topline, this.surface, this.notice, this.hint);
+    this.context = element('section', 'cards-context'); this.context.setAttribute('aria-label', 'Public match progress');
+    this.element.append(this.topline, this.surface, this.notice, this.hint, this.context);
     this.container.append(this.element);
     this.clickHandler = event => this.choose(event);
     this.keyHandler = event => this.navigate(event);
@@ -85,6 +114,7 @@ export class CardsView {
     this.suitPicker = null;
     this.selected = null;
     this.pending = null;
+    this.publicTrail = []; this.roundHistory = []; this.lastObservedRevision = null;
     if (gameId === 'memory') {
       this.memoryScores = element('div', 'memory-scores');
       this.scorePanels = [0, 1].map(id => {
@@ -138,7 +168,7 @@ export class CardsView {
         const choice = button(`suit-choice${id % 2 ? ' is-red' : ''}`);
         choice.dataset.suit = String(id);
         choice.setAttribute('aria-label', `Play eight and choose ${suit.name}`);
-        choice.append(element('span', 'suit-choice-symbol', suit.symbol), element('span', '', suit.name));
+        const symbol = element('span', 'suit-choice-symbol'); symbol.append(suitArt(id)); choice.append(symbol, element('span', '', suit.name));
         choices.append(choice);
       });
       this.cancelSuit = button('cards-text-button', 'Cancel', 'cancel');
@@ -191,13 +221,13 @@ export class CardsView {
     }
     const rank = rankLabel(card.rank), suit = SUITS[card.suit]?.symbol || '•';
     const top = element('span', 'card-corner');
-    top.append(element('b', '', rank), element('span', '', suit));
+    const cornerSuit = element('span'); cornerSuit.append(suitArt(card.suit)); top.append(element('b', '', rank), cornerSuit);
     const bottom = top.cloneNode(true);
     bottom.classList.add('card-corner-bottom');
     const face = element('span', 'card-face');
-    face.append(element('span', 'card-face-suit', suit));
-    if (card.rank > 10) face.append(element('b', 'card-royal', rank));
-    else if (card.rank === 8 && this.gameId === 'crazy-eights') face.append(element('span', 'card-wild-label', 'WILD'));
+    if (card.rank > 10) face.append(royalArt(card.rank));
+    else for (const [x, y] of PIP_POSITIONS[card.rank] || [[50,50]]) { const pip = suitArt(card.suit, `card-pip${card.rank === 1 ? ' card-pip-ace' : ''}${y > 50 ? ' is-inverted' : ''}`); pip.style.left = `${x}%`; pip.style.top = `${y}%`; face.append(pip); }
+    if (card.rank === 8 && this.gameId === 'crazy-eights') node.append(element('span', 'card-wild-label', 'WILD'));
     top.setAttribute('aria-hidden', 'true');
     bottom.setAttribute('aria-hidden', 'true');
     face.setAttribute('aria-hidden', 'true');
@@ -212,11 +242,13 @@ export class CardsView {
   render(state, { localId = null, players = [] } = {}) {
     if (!state || !TITLES[state.gameId]) return;
     const key = visibleKey(state, localId, players);
+    const previous = this.state;
     this.state = state;
     this.localId = localId;
     this.players = players;
     if (key === this.lastKey) return;
     if (this.gameId !== state.gameId) this.build(state.gameId);
+    this.observePublic(previous, state);
     if (this.pending !== null && (state.gameId === 'twenty-one'
       ? this.pending.ownHand !== ownHandKey(state, localId)
       : this.pending.revision !== state.revision)) this.pending = null;
@@ -236,7 +268,9 @@ export class CardsView {
     handView.section.classList.toggle('is-winner', showdown && state.roundWinner === id || state.phase === 'matchEnd' && state.winner === id);
     if (this.gameId === 'twenty-one') {
       const total = state.totals?.[id];
-      const totalText = total == null ? 'TOTAL HIDDEN' : total > 21 ? `${total} · BUST` : total === 21 ? '21 · PERFECT' : `${total} POINTS`;
+      const minimum = cards.reduce((sum, card) => sum + (card ? Math.min(card.rank, 10) : 0), 0);
+      const soft = total != null && cards.some(card => card?.rank === 1) && minimum + 10 === total;
+      const totalText = total == null ? 'TOTAL HIDDEN' : total > 21 ? `${total} · BUST` : total === 21 ? '21 · PERFECT' : `${total} POINTS${soft ? ' · SOFT ACE' : ''}`;
       setText(handView.badge, `${totalText}${state.stood?.[id] && state.phase === 'fight' ? ' · STOOD' : ''}`);
       handView.badge.classList.toggle('is-bust', total != null && total > 21);
     } else setText(handView.badge, `${count} CARD${count === 1 ? '' : 'S'}`);
@@ -296,7 +330,7 @@ export class CardsView {
         this.discard.setAttribute('aria-label', state.topCard ? `Top discard: ${cardName(state.topCard)}` : 'Discard pile. No cards dealt yet.');
         setText(this.drawLabel, `DRAW · ${state.deckCount || 0}`);
         const suit = SUITS[state.activeSuit];
-        setText(this.activeSuitSymbol, suit?.symbol || '✦');
+        if (suit) showSuit(this.activeSuitSymbol, state.activeSuit); else setText(this.activeSuitSymbol, '—');
         setText(this.activeSuitText, suit ? `${suit.name.toUpperCase()} IN PLAY` : 'YOUR NEXT GAME');
         this.activeSuit.classList.toggle('is-red', Boolean(state.activeSuit % 2));
         const hand = state.hands?.[this.localId] || [];
@@ -313,6 +347,7 @@ export class CardsView {
       }
     }
     this.paintNotice();
+    this.paintContext();
   }
 
   paintMemory() {
@@ -338,6 +373,52 @@ export class CardsView {
       node.setAttribute('aria-label', `Card ${index + 1}, ${card ? cardName(card) : 'face down'}${claimed ? `, matched by ${this.name(matched)}` : revealed.has(index) ? ', revealed' : canFlip ? ', flip to reveal' : ''}`);
     });
     this.updateTabStops();
+  }
+
+  observePublic(previous, state) {
+    if (['lobby', 'countdown'].includes(state.phase) && previous && !['lobby', 'countdown'].includes(previous.phase)) { this.publicTrail = []; this.roundHistory = []; this.lastObservedRevision = null; }
+    if (state.revision === this.lastObservedRevision) return;
+    this.lastObservedRevision = state.revision;
+    if (state.gameId === 'twenty-one' && ['roundEnd', 'matchEnd'].includes(state.phase) && state.totals?.every(total => typeof total === 'number') && !this.roundHistory.some(hand => hand.round === state.round)) this.roundHistory.push({ round: state.round, totals: [...state.totals], winner: state.roundWinner });
+    if (!previous || previous.gameId !== state.gameId || !['fight', 'matchEnd'].includes(state.phase) || previous.phase !== 'fight') return;
+    let text;
+    if (state.gameId === 'crazy-eights') {
+      const actor = previous.turn;
+      if (state.topCard?.id !== previous.topCard?.id) text = `${this.name(actor)} played ${cardName(state.topCard)}${state.topCard.rank === 8 ? ` · ${SUITS[state.activeSuit].name} chosen` : ''}.`;
+      else { const drawn = [0,1].find(id => state.handCounts[id] > previous.handCounts[id]); if (drawn !== undefined) text = `${this.name(drawn)} drew one card.`; else if (state.turn !== previous.turn) text = `${this.name(actor)} passed.`; }
+    } else if (state.gameId === 'memory') {
+      if (state.mismatchTicks > 0 && !previous.mismatchTicks) text = `Cards ${(state.revealed || []).map(index => index + 1).join(' + ')} did not match. The turn changes after the reveal.`;
+      const claimed = state.matched?.findIndex((owner, index) => owner !== null && previous.matched?.[index] === null);
+      if (claimed >= 0 && state.cards[claimed]) text = `${this.name(state.matched[claimed])} claimed a pair of ${cardName(state.cards[claimed])}. Another turn earned.`;
+    }
+    if (text) { this.publicTrail.push(text); if (this.publicTrail.length > 4) this.publicTrail.shift(); }
+  }
+
+  paintContext() {
+    const state = this.state; this.context.replaceChildren();
+    if (this.gameId === 'twenty-one') {
+      const score = element('div', 'cards-match-score');
+      for (const id of [0,1]) { const side = element('span'); side.append(element('strong', '', this.name(id)), element('b', '', `${state.scores?.[id] || 0} hands`)); score.append(side); }
+      this.context.append(score);
+      const own = state.totals?.[this.localId];
+      if (state.phase === 'fight' && typeof own === 'number') this.context.append(element('p', 'cards-decision-guide', own > 21 ? 'Your hand is over 21. The other player still completes their decision.' : own === 21 ? 'Exactly 21. Your hand stands automatically.' : `${21 - own} points of room before 21. A face card adds 10; an Ace adjusts to 1 or 11.`));
+      const ledger = element('div', 'cards-hand-ledger'); ledger.setAttribute('aria-label', 'Five-hand public results');
+      for (let i = 1; i <= (state.maxRounds || 5); i++) {
+        const hand = this.roundHistory.find(h => h.round === i); const entry = element('span', `cards-ledger-entry${i === state.round ? ' is-current' : ''}${hand ? ' is-complete' : ''}`);
+        entry.append(element('small', '', `HAND ${i}`), element('strong', '', hand ? `${hand.totals[0]} : ${hand.totals[1]}` : i === state.round && state.phase === 'fight' ? 'IN PLAY' : '—'), element('span', '', hand ? hand.winner === null ? 'DRAW' : `${this.name(hand.winner)} wins` : '')); ledger.append(entry);
+      }
+      this.context.append(ledger);
+    } else if (this.gameId === 'memory') {
+      const scores = state.scores || [0,0]; const difference = scores[0] - scores[1]; const title = element('div', 'cards-collection-heading');
+      title.append(element('strong', '', 'Claimed pairs'), element('span', '', difference ? `${this.name(difference > 0 ? 0 : 1)} leads by ${Math.abs(difference)}` : 'LEVEL MATCH')); this.context.append(title);
+      const gallery = element('div', 'cards-pair-gallery'); const seen = new Set();
+      (state.cards || []).forEach((card, index) => { const owner = state.matched?.[index]; if (!card || owner === null || owner === undefined) return; const key = `${card.rank}:${card.suit}`; if (seen.has(key)) return; seen.add(key); const item = element('span', `cards-claimed-pair claimed-by-${owner}`); item.append(element('b', '', rankLabel(card.rank)), suitArt(card.suit)); item.setAttribute('role', 'img'); item.setAttribute('aria-label', `${this.name(owner)}: pair of ${cardName(card)}`); item.title = `${this.name(owner)} · ${cardName(card)}`; gallery.append(item); });
+      if (!seen.size) gallery.append(element('span', 'cards-no-pairs', 'Find your first pair. Matched cards stay visible.')); this.context.append(gallery);
+    } else {
+      const own = state.hands?.[this.localId] || []; const legal = own.filter(card => playableCard(card, state));
+      if (state.phase === 'fight' && this.localId !== null) this.context.append(element('p', 'cards-decision-guide', `${legal.length} matching card${legal.length === 1 ? '' : 's'} in your hand. ${own.filter(c => c.rank === 8).length ? 'Save a wild eight to change the suit when it matters.' : 'Plan your next suit; keep your opponent’s hand count in mind.'}`));
+    }
+    if (this.publicTrail.length) { const list = element('ol', 'cards-public-trail'); for (const text of this.publicTrail.slice(-3).reverse()) list.append(element('li', '', text)); this.context.append(list); }
   }
 
   paintNotice() {

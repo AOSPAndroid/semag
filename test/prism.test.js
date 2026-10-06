@@ -1,9 +1,28 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  createState, dispatch, step, togglePause, pieceCells, ghostPiece, collides,
-  SHAPES, TYPES, WIDTH, HEIGHT, HIDDEN_ROWS, VISIBLE_HEIGHT,
-  LOCK_DELAY, MAX_LOCK_RESETS, gravitySeconds, isGrounded,
+  createState,
+  dispatch,
+  step,
+  togglePause,
+  pieceCells,
+  ghostPiece,
+  collides,
+  SHAPES,
+  TYPES,
+  WIDTH,
+  HEIGHT,
+  HIDDEN_ROWS,
+  VISIBLE_HEIGHT,
+  LOCK_DELAY,
+  MAX_LOCK_RESETS,
+  gravitySeconds,
+  isGrounded,
+  DIG_STAGES,
+  DIG_STAGE_COUNT,
+  getDigStage,
+  garbageRows,
+  advanceDigStage,
 } from '../public/solo/prism-engine.js';
 
 function seeded(seed = 1) {
@@ -12,8 +31,22 @@ function seeded(seed = 1) {
     return seed / 4294967296;
   };
 }
-const clone = value => JSON.parse(JSON.stringify(value));
+const clone = (value) => JSON.parse(JSON.stringify(value));
 const blank = () => Array.from({ length: HEIGHT }, () => Array(WIDTH).fill(null));
+
+// These drivers use the same actions as the browser. The preset board is never changed.
+function placeExcavationPiece(state, target) {
+  const act = (action) => {
+    step(state, {}, 1 / 120);
+    assert.equal(dispatch(state, action), true, `${getDigStage(state).id}: ${action}`);
+  };
+  if (state.active.type !== target.type) act('hold');
+  assert.equal(state.active.type, target.type);
+  while (state.active.rotation !== target.rotation) act('rotate-cw');
+  while (state.active.x !== target.x) act(state.active.x < target.x ? 'right' : 'left');
+  assert.deepEqual(ghostPiece(state), target);
+  act('hard-drop');
+}
 function fixture(type, rotation = 0, x = 3, y = 10) {
   const state = createState({ random: seeded(7) });
   state.active = { type, rotation, x, y };
@@ -31,7 +64,7 @@ function clearFixture(count, state = fixture('I', 1, 2, HEIGHT - 4)) {
   // Vertical I occupies column four. Completing only the lowest count rows
   // leaves any other I cells on the board, without cascade-style clearing.
   for (let y = HEIGHT - count; y < HEIGHT; y += 1) {
-    state.board[y] = Array.from({ length: WIDTH }, (_, x) => x === 4 ? null : 'J');
+    state.board[y] = Array.from({ length: WIDTH }, (_, x) => (x === 4 ? null : 'J'));
   }
   state.lastMove = 'spawn';
   state.lastRotation = null;
@@ -39,6 +72,111 @@ function clearFixture(count, state = fixture('I', 1, 2, HEIGHT - 4)) {
   state.lockElapsed = 0;
   return state;
 }
+
+test('Excavation provides eight distinct immutable shaped stacks with safe visible spawns and a disclosed fixed queue', () => {
+  assert.equal(DIG_STAGE_COUNT, 8);
+  assert.equal(new Set(DIG_STAGES.map((stage) => stage.id)).size, 8);
+  assert.equal(new Set(DIG_STAGES.map((stage) => JSON.stringify(stage.board))).size, 8);
+  assert.equal(
+    DIG_STAGES.reduce((sum, stage) => sum + stage.rows, 0),
+    60,
+  );
+  for (const stage of DIG_STAGES) {
+    assert.ok(Object.isFrozen(stage) && Object.isFrozen(stage.board) && Object.isFrozen(stage.queue));
+    assert.ok(stage.rows >= 4 && stage.rows <= 14);
+    assert.ok(stage.budget > stage.placements.length);
+    assert.ok(stage.board.slice(0, HIDDEN_ROWS).every((row) => row.every((cell) => cell === null)));
+    assert.equal(stage.board.filter((row) => row.includes('G')).length, stage.rows);
+    assert.ok(
+      stage.placements.every((piece) =>
+        pieceCells(piece).every(({ x, y }) => x >= 0 && x < WIDTH && y >= HIDDEN_ROWS && y < HEIGHT),
+      ),
+    );
+  }
+  const state = createState({ mode: 'dig', random: seeded(1) });
+  assert.deepEqual(state, createState({ mode: 'dig', random: seeded(999) }));
+  assert.equal(state.dig.remainingRows, 4);
+  assert.equal(collides(state, state.active), false);
+  state.board[HEIGHT - 1][0] = 'J';
+  assert.equal(DIG_STAGES[0].board[HEIGHT - 1][0], 'G');
+});
+
+test('normal move, rotation, hold and hard drop complete all eight Excavation stages and all sixty rows', () => {
+  const state = createState({ mode: 'dig', random: seeded(8) });
+  for (let stageIndex = 0; stageIndex < DIG_STAGE_COUNT; stageIndex += 1) {
+    const stage = getDigStage(state);
+    assert.equal(state.dig.stageIndex, stageIndex);
+    assert.equal(state.hold, null);
+    for (const target of stage.placements) placeExcavationPiece(state, target);
+    assert.equal(state.dig.piecesUsed, stage.placements.length);
+    assert.equal(state.dig.remainingRows, 0);
+    assert.equal(garbageRows(state), 0);
+    assert.equal(state.dig.results.length, stageIndex + 1);
+    assert.equal(state.active, null);
+    assert.ok(state.dig.results.at(-1).time > 0);
+    assert.equal(state.phase, stageIndex < DIG_STAGE_COUNT - 1 ? 'stage-clear' : 'won');
+    const frozen = clone(state);
+    assert.equal(step(state, { softDrop: true }, 0.1), false);
+    assert.equal(dispatch(state, 'hard-drop'), false);
+    assert.deepEqual(state, frozen);
+    if (stageIndex < DIG_STAGE_COUNT - 1) assert.equal(advanceDigStage(state), true);
+  }
+  assert.equal(state.lines, 60);
+  assert.equal(state.piecesLocked, 21);
+  assert.equal(state.result, 'excavated');
+  assert.equal(advanceDigStage(state), false);
+  assert.ok(state.elapsed > 0);
+  const finished = clone(state);
+  assert.equal(togglePause(state), false);
+  step(state, {}, 20);
+  assert.deepEqual(state, finished);
+});
+
+test('Excavation stage breaks are explicit, pause-safe and reset reserve and lock clocks on continuation', () => {
+  const state = createState({ mode: 'dig' });
+  assert.equal(advanceDigStage(state), false);
+  placeExcavationPiece(state, getDigStage(state).placements[0]);
+  assert.equal(state.phase, 'stage-clear');
+  const elapsed = state.elapsed;
+  assert.equal(togglePause(state), true);
+  assert.equal(state.pausedPhase, 'stage-clear');
+  assert.equal(advanceDigStage(state), false);
+  step(state, {}, 30);
+  assert.equal(state.elapsed, elapsed);
+  assert.equal(togglePause(state), true);
+  assert.equal(state.phase, 'stage-clear');
+  assert.equal(advanceDigStage(state), true);
+  assert.equal(state.elapsed, elapsed);
+  assert.equal(state.hold, null);
+  assert.equal(state.holdUsed, false);
+  assert.equal(state.lockElapsed, 0);
+  assert.equal(state.gravityElapsed, 0);
+  assert.equal(state.dig.stageIndex, 1);
+  assert.equal(state.dig.piecesUsed, 0);
+  assert.equal(state.result, null);
+  assert.equal(advanceDigStage(createState()), false);
+});
+
+test('Excavation consumes its piece budget on unsuccessful locks, freezes failure, and restarts the challenge cleanly', () => {
+  const state = createState({ mode: 'dig' });
+  for (let index = 0; index < getDigStage(state).budget; index += 1) {
+    assert.equal(dispatch(state, 'hard-drop'), true);
+  }
+  assert.equal(state.phase, 'lost');
+  assert.equal(state.result, 'piece-budget');
+  assert.equal(state.dig.piecesUsed, state.dig.budget);
+  assert.ok(state.dig.remainingRows > 0);
+  const failed = clone(state);
+  step(state, {}, 0.1);
+  assert.equal(advanceDigStage(state), false);
+  assert.deepEqual(state, failed);
+  const restarted = createState({ mode: 'dig' });
+  assert.equal(restarted.dig.results.length, 0);
+  assert.equal(restarted.elapsed, 0);
+  assert.equal(restarted.lines, 0);
+  assert.equal(restarted.dig.stageIndex, 0);
+  assert.equal(restarted.dig.remainingRows, 4);
+});
 
 test('Prism starts serializable and seeded, with 20 visible rows, hidden spawn rows and safe active cells', () => {
   const state = createState({ random: seeded(44) });
@@ -48,7 +186,7 @@ test('Prism starts serializable and seeded, with 20 visible rows, hidden spawn r
   assert.equal(state.phase, 'playing');
   assert.equal(state.mode, 'marathon');
   assert.equal(state.board.length, HIDDEN_ROWS + VISIBLE_HEIGHT);
-  assert.ok(state.board.every(row => row.length === WIDTH && row.every(cell => cell === null)));
+  assert.ok(state.board.every((row) => row.length === WIDTH && row.every((cell) => cell === null)));
   assert.ok(state.next.length >= 5);
   assert.equal(collides(state, state.active), false);
   assert.equal(state.score, 0);
@@ -56,7 +194,8 @@ test('Prism starts serializable and seeded, with 20 visible rows, hidden spawn r
   assert.equal(state.level, 1);
   assert.throws(() => createState({ mode: 'unknown' }), /mode/);
   assert.throws(() => createState({ random: 4 }), /random/);
-  for (const value of [-1, 1, NaN, Infinity]) assert.throws(() => createState({ random: () => value }), /random/);
+  for (const value of [-1, 1, NaN, Infinity])
+    assert.throws(() => createState({ random: () => value }), /random/);
 });
 
 test('every tetromino has four unique integer cells and a complete four-rotation cycle', () => {
@@ -77,8 +216,24 @@ test('every tetromino has four unique integer cells and a complete four-rotation
   }
   assert.deepEqual(pieceCells(null), []);
   assert.deepEqual(pieceCells({ type: 'bad', rotation: 0, x: 0, y: 0 }), []);
-  assert.deepEqual(SHAPES.I[0].map(({ x, y }) => [x, y]), [[0, 1], [1, 1], [2, 1], [3, 1]]);
-  assert.deepEqual(SHAPES.T[0].map(({ x, y }) => [x, y]), [[1, 0], [0, 1], [1, 1], [2, 1]]);
+  assert.deepEqual(
+    SHAPES.I[0].map(({ x, y }) => [x, y]),
+    [
+      [0, 1],
+      [1, 1],
+      [2, 1],
+      [3, 1],
+    ],
+  );
+  assert.deepEqual(
+    SHAPES.T[0].map(({ x, y }) => [x, y]),
+    [
+      [1, 0],
+      [0, 1],
+      [1, 1],
+      [2, 1],
+    ],
+  );
 });
 
 test('7-bag output contains every type exactly once per bag and limits drought to twelve pieces', () => {
@@ -94,8 +249,9 @@ test('7-bag output contains every type exactly once per bag and limits drought t
     assert.deepEqual([...sequence.slice(start, start + 7)].sort(), [...TYPES].sort());
   }
   for (const type of TYPES) {
-    const positions = sequence.flatMap((value, index) => value === type ? [index] : []);
-    for (let index = 1; index < positions.length; index += 1) assert.ok(positions[index] - positions[index - 1] <= 13);
+    const positions = sequence.flatMap((value, index) => (value === type ? [index] : []));
+    for (let index = 1; index < positions.length; index += 1)
+      assert.ok(positions[index] - positions[index - 1] <= 13);
   }
 });
 
@@ -225,7 +381,12 @@ test('soft drop scores one per descended cell while natural gravity never scores
 });
 
 test('single, double, triple and tetris compact rows without cascade and use their distinct base awards', () => {
-  for (const [count, award] of [[1, 100], [2, 300], [3, 500], [4, 800]]) {
+  for (const [count, award] of [
+    [1, 100],
+    [2, 300],
+    [3, 500],
+    [4, 800],
+  ]) {
     const state = clearFixture(count);
     state.board[8][2] = 'Z';
     dispatch(state, 'hard-drop');
@@ -233,7 +394,7 @@ test('single, double, triple and tetris compact rows without cascade and use the
     assert.equal(state.score, award);
     assert.equal(state.lastClear.lines, count);
     assert.equal(state.board[8 + count][2], 'Z');
-    assert.ok(state.board.slice(0, count).every(row => row.every(cell => cell === null)));
+    assert.ok(state.board.slice(0, count).every((row) => row.every((cell) => cell === null)));
     assert.equal(state.board.length, HEIGHT);
     assert.equal(state.combo, 0);
     assert.equal(state.backToBack, count === 4);
@@ -272,7 +433,7 @@ function tSpinFixture() {
   state.board[HEIGHT - 3][5] = 'J';
   state.board[HEIGHT - 1][3] = 'J';
   state.board[HEIGHT - 1][5] = 'J';
-  state.board[HEIGHT - 2] = Array.from({ length: WIDTH }, (_, x) => x >= 3 && x <= 5 ? null : 'J');
+  state.board[HEIGHT - 2] = Array.from({ length: WIDTH }, (_, x) => (x >= 3 && x <= 5 ? null : 'J'));
   return state;
 }
 
@@ -291,7 +452,7 @@ test('an actual final SRS rotation into a three-corner T slot scores a full T-sp
 
 test('full T-spin doubles and fifth-test SRS triples receive their own difficult-clear awards', () => {
   const double = tSpinFixture();
-  double.board[HEIGHT - 3] = Array.from({ length: WIDTH }, (_, x) => x === 4 ? null : 'J');
+  double.board[HEIGHT - 3] = Array.from({ length: WIDTH }, (_, x) => (x === 4 ? null : 'J'));
   assert.equal(dispatch(double, 'rotate-cw'), true);
   dispatch(double, 'hard-drop');
   assert.equal(double.lastClear.lines, 2);
@@ -299,9 +460,9 @@ test('full T-spin doubles and fifth-test SRS triples receive their own difficult
   assert.equal(double.lastClear.points, 1200);
   const triple = fixture('T', 0, 4, HEIGHT - 5);
   triple.board[HEIGHT - 5][4] = 'J';
-  triple.board[HEIGHT - 3] = Array.from({ length: WIDTH }, (_, x) => x === 4 ? null : 'J');
-  triple.board[HEIGHT - 2] = Array.from({ length: WIDTH }, (_, x) => x === 4 || x === 5 ? null : 'J');
-  triple.board[HEIGHT - 1] = Array.from({ length: WIDTH }, (_, x) => x === 4 ? null : 'J');
+  triple.board[HEIGHT - 3] = Array.from({ length: WIDTH }, (_, x) => (x === 4 ? null : 'J'));
+  triple.board[HEIGHT - 2] = Array.from({ length: WIDTH }, (_, x) => (x === 4 || x === 5 ? null : 'J'));
+  triple.board[HEIGHT - 1] = Array.from({ length: WIDTH }, (_, x) => (x === 4 ? null : 'J'));
   assert.equal(collides(triple, triple.active), false);
   assert.equal(dispatch(triple, 'rotate-cw'), true);
   assert.deepEqual(triple.active, { type: 'T', rotation: 1, x: 3, y: HEIGHT - 3 });
@@ -474,12 +635,23 @@ test('seeded legal action stress remains finite, respects settled geometry and t
     for (let tick = 0; tick < 4000 && state.phase === 'playing'; tick += 1) {
       if (random() < 0.5) dispatch(state, actions[Math.floor(random() * actions.length)]);
       step(state, { softDrop: random() > 0.7 }, 1 / 120);
-      for (const value of [state.elapsed, state.score, state.lines, state.level, state.lockElapsed, state.gravityElapsed]) {
+      for (const value of [
+        state.elapsed,
+        state.score,
+        state.lines,
+        state.level,
+        state.lockElapsed,
+        state.gravityElapsed,
+      ]) {
         assert.ok(Number.isFinite(value) && value >= 0);
       }
       assert.ok(state.next.length >= 5 && state.next.length <= 12);
       assert.ok(state.lockResets <= MAX_LOCK_RESETS);
-      assert.ok(state.board.every(row => row.length === WIDTH && row.every(cell => cell === null || TYPES.includes(cell))));
+      assert.ok(
+        state.board.every(
+          (row) => row.length === WIDTH && row.every((cell) => cell === null || TYPES.includes(cell)),
+        ),
+      );
       if (state.phase === 'playing') assert.equal(collides(state, state.active), false);
     }
     assert.equal(state.phase, 'lost');

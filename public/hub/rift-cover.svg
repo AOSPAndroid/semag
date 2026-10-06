@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 320" role="img" aria-labelledby="title desc" shape-rendering="crispEdges">
-  <title id="title">Rift Survivor containment chamber</title>
-  <desc id="desc">An orange armored survivor faces a horned guardian, crimson hunters and violet shades in a stone chamber.</desc>
+  <title id="title">Rift Survivor twenty-wave expedition</title>
+  <desc id="desc">An orange survivor conducts a cyan arc between foes beneath four sector runes, facing a horned guardian in a stone chamber.</desc>
   <defs>
     <pattern id="stone" width="80" height="48" patternUnits="userSpaceOnUse">
       <rect width="80" height="48" fill="#203a3e"/><path d="M1 1h78v45H1z" fill="#2b4446"/>
@@ -63,4 +63,11 @@
   <g fill="#e3b0d0" stroke="#855880" stroke-width="2"><circle cx="521" cy="213" r="5"/><circle cx="541" cy="168" r="5"/><circle cx="515" cy="105" r="5"/><circle cx="476" cy="82" r="5"/></g>
   <use href="#hero" transform="translate(312 188) rotate(-13) scale(1.4)"/>
   <g fill="#d7bf91"><path d="M443 140h3v3h-3zM446 137h2v2h-2zM441 147h2v2h-2z"/></g>
+  <path d="m339 174 29-17 9 8 38-15" fill="none" stroke="#b7e3d6" stroke-width="3"/>
+  <g transform="translate(246 22)">
+    <path d="M-4-4h116v21H-4z" fill="#112a31"/>
+    <path d="M0 0h17v13H0z" fill="#79ad91"/><path d="M30 0h17v13H30z" fill="#a2d5d6"/>
+    <path d="M60 0h17v13H60z" fill="#c0cf78"/><path d="M90 0h17v13H90z" fill="#deb6d5"/>
+    <path d="M4 3h9v7H4zM34 3h9v7h-9zM64 3h9v7h-9zM94 3h9v7h-9z" fill="#203b3c"/>
+  </g>
 </svg>

@@ -1,17 +1,41 @@
 import {
-  createState, step, togglePause as pauseState, resetCar,
-  WORLD, TRACK, TRACK_LENGTH, ROAD_WIDTH, GATES, nearestTrack, trackInfo,
+  createState,
+  step,
+  togglePause as pauseState,
+  resetCar,
+  WORLD,
+  TRACKS,
+  getTrack,
+  advanceStage,
+  recordScope,
+  nearestTrack as projectTrack,
+  trackInfo as courseInfo,
 } from './circuit-engine.js';
 
 const STEP = 1 / 120;
 const KEY_INPUTS = {
-  ArrowUp: 'throttle', KeyW: 'throttle', ArrowDown: 'brake', KeyS: 'brake',
-  ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', Space: 'handbrake',
+  ArrowUp: 'throttle',
+  KeyW: 'throttle',
+  ArrowDown: 'brake',
+  KeyS: 'brake',
+  ArrowLeft: 'left',
+  KeyA: 'left',
+  ArrowRight: 'right',
+  KeyD: 'right',
+  Space: 'handbrake',
 };
-const COLORS = { grass: '#879d71', darkGrass: '#798f65', paper: '#f0ead3', road: '#66716c', ink: '#243e31', orange: '#ed9b51' };
-const isForm = target => target instanceof Element
-  && Boolean(target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"])'));
-const seconds = value => `${Math.max(0, Number(value) || 0).toFixed(2)}s`;
+const COLORS = {
+  grass: '#879d71',
+  darkGrass: '#798f65',
+  paper: '#f0ead3',
+  road: '#66716c',
+  ink: '#243e31',
+  orange: '#ed9b51',
+};
+const isForm = (target) =>
+  target instanceof Element &&
+  Boolean(target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"])'));
+const seconds = (value) => `${Math.max(0, Number(value) || 0).toFixed(2)}s`;
 function element(tag, className, text) {
   const node = document.createElement(tag);
   node.className = className;
@@ -21,6 +45,14 @@ function element(tag, className, text) {
 
 export function mount(container, { onUpdate = () => {} } = {}) {
   let state = createState();
+  let course = getTrack(state),
+    TRACK = course.points,
+    TRACK_LENGTH = course.length,
+    ROAD_WIDTH = course.roadWidth,
+    GATES = course.gates;
+  const trackInfo = (distance) => courseInfo(distance, state.trackId);
+  const nearestTrack = (x, y) => projectTrack(x, y, state.trackId);
+  const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
   let destroyed = false;
   let frameId = 0;
   let lastFrame = null;
@@ -37,7 +69,36 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   const view = element('section', 'circuit-view');
   view.setAttribute('aria-label', 'Apex Circuit driving game');
   const topline = element('div', 'circuit-topline');
-  topline.append(element('span', '', 'APEX CIRCUIT / TIME ATTACK'), element('span', 'circuit-course', 'PINEWOOD · 3 LAPS'));
+  const courseName = element('span', 'circuit-course', 'MEADOW LOOP · 3 LAPS');
+  topline.append(element('span', '', 'APEX CIRCUIT / TIME ATTACK'), courseName);
+  const selection = element('div', 'circuit-selection');
+  const modes = element('div', 'circuit-modes');
+  modes.setAttribute('role', 'group');
+  modes.setAttribute('aria-label', 'Choose race mode');
+  for (const [mode, label] of [
+    ['time-trial', 'Time trial'],
+    ['championship', 'Championship'],
+  ]) {
+    const button = element('button', 'circuit-mode', label);
+    button.type = 'button';
+    button.dataset.mode = mode;
+    modes.append(button);
+  }
+  const trackChoices = element('div', 'circuit-track-choices');
+  trackChoices.setAttribute('role', 'group');
+  trackChoices.setAttribute('aria-label', 'Choose circuit');
+  for (const [index, track] of TRACKS.entries()) {
+    const button = element('button', 'circuit-track');
+    button.type = 'button';
+    button.dataset.track = track.id;
+    button.append(
+      element('span', '', `0${index + 1} / ${track.surface.toUpperCase()}`),
+      element('strong', '', track.title),
+    );
+    trackChoices.append(button);
+  }
+  const courseBrief = element('p', 'circuit-brief');
+  selection.append(modes, trackChoices, courseBrief);
   const hud = element('div', 'circuit-hud');
   const speedBox = element('div', 'circuit-stat circuit-speed');
   const speedValue = element('strong', '', '0');
@@ -59,7 +120,10 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   canvas.tabIndex = 0;
   canvas.dataset.soloFocus = '';
   canvas.setAttribute('role', 'img');
-  canvas.setAttribute('aria-label', 'Apex Circuit. Follow the track arrows. W or Up accelerates, S or Down brakes and reverses, A and D or Left and Right steer, Space is the handbrake. Q resets your car with a three-second penalty.');
+  canvas.setAttribute(
+    'aria-label',
+    'Apex Circuit. Follow the track arrows. W or Up accelerates, S or Down brakes and reverses, A and D or Left and Right steer, Space is the handbrake. Q resets your car with a three-second penalty.',
+  );
   const warning = element('div', 'circuit-warning');
   warning.hidden = true;
   const overlay = element('div', 'circuit-overlay');
@@ -67,14 +131,17 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   const overlayEyebrow = element('span', 'circuit-overlay-eyebrow');
   const overlayTitle = element('strong', 'circuit-overlay-title');
   const overlayDetail = element('span', 'circuit-overlay-detail');
-  overlayCard.append(overlayEyebrow, overlayTitle, overlayDetail);
+  const continueRace = element('button', 'circuit-continue', 'Next circuit →');
+  continueRace.type = 'button';
+  continueRace.hidden = true;
+  overlayCard.append(overlayEyebrow, overlayTitle, overlayDetail, continueRace);
   overlay.append(overlayCard);
   board.append(canvas, warning, overlay);
   const checkpoints = element('div', 'circuit-checkpoints');
   checkpoints.setAttribute('aria-label', 'Checkpoint progress this lap');
   const checkpointLabel = element('span', 'circuit-checkpoint-label', 'CHECKPOINTS');
   const checkpointDots = element('div', 'circuit-checkpoint-dots');
-  const checkpointNodes = GATES.slice(1).map(gate => {
+  const checkpointNodes = GATES.slice(1).map((gate) => {
     const dot = element('span', 'circuit-checkpoint-dot');
     dot.dataset.gate = String(gate.index);
     dot.setAttribute('aria-label', `Checkpoint ${gate.index}`);
@@ -89,20 +156,29 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   status.setAttribute('role', 'status');
   status.setAttribute('aria-live', 'polite');
   status.setAttribute('aria-atomic', 'true');
-  const hint = element('p', 'circuit-hint', 'Follow the arrows. Brake before a corner; tap the handbrake to rotate, then accelerate out. Keep every checkpoint in order.');
+  const hint = element(
+    'p',
+    'circuit-hint',
+    'Follow the arrows. Brake before a corner; tap the handbrake to rotate, then accelerate out. Keep every checkpoint in order.',
+  );
   description.append(status, hint);
   const reset = element('button', 'circuit-reset');
   reset.type = 'button';
   reset.dataset.action = 'reset-car';
   reset.append(element('span', '', '↺ Reset car'), element('b', '', '+3s · Q'));
-  reset.setAttribute('aria-label', 'Reset car to the last checkpoint. Adds three seconds to your race and lap time.');
+  reset.setAttribute(
+    'aria-label',
+    'Reset car to the last checkpoint. Adds three seconds to your race and lap time.',
+  );
   footer.append(description, reset);
   const controls = element('div', 'circuit-controls');
   controls.setAttribute('role', 'group');
   controls.setAttribute('aria-label', 'Driving controls. Hold a button to drive.');
   const controlDefinitions = [
-    ['left', '←', 'LEFT', 'Steer left'], ['right', '→', 'RIGHT', 'Steer right'],
-    ['handbrake', '◇', 'DRIFT', 'Handbrake'], ['brake', '↓', 'BRAKE', 'Brake and reverse'],
+    ['left', '←', 'LEFT', 'Steer left'],
+    ['right', '→', 'RIGHT', 'Steer right'],
+    ['handbrake', '◇', 'DRIFT', 'Handbrake'],
+    ['brake', '↓', 'BRAKE', 'Brake and reverse'],
     ['throttle', '↑', 'GAS', 'Accelerate'],
   ];
   const controlButtons = new Map();
@@ -118,7 +194,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     controlButtons.set(input, button);
     controls.append(button);
   }
-  view.append(topline, hud, board, checkpoints, footer, controls);
+  view.append(topline, selection, hud, board, checkpoints, footer, controls);
   container.append(view);
   const ctx = canvas.getContext('2d');
   const terrain = document.createElement('canvas');
@@ -128,7 +204,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
 
   function pathTrack(context) {
     context.beginPath();
-    TRACK.forEach((point, i) => i ? context.lineTo(point.x, point.y) : context.moveTo(point.x, point.y));
+    TRACK.forEach((point, i) => (i ? context.lineTo(point.x, point.y) : context.moveTo(point.x, point.y)));
     context.closePath();
   }
   function rect(context, x, y, w, h, color) {
@@ -136,24 +212,47 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     context.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
   }
   function drawTree(x, y, size) {
-    rect(terrainCtx, x + 4, y + size * .55, 6, size * .7, '#66745a');
-    rect(terrainCtx, x - size * .5 + 5, y + 8, size, size * .6, '#637d54');
-    rect(terrainCtx, x - size * .5, y, size, size * .6, '#385b43');
-    rect(terrainCtx, x - size * .35, y - size * .2, size * .7, size * .45, '#42684a');
-    rect(terrainCtx, x - size * .2, y - size * .32, size * .4, size * .3, '#537954');
-    rect(terrainCtx, x - size * .32, y + 4, size * .23, 4, '#678b5c');
+    rect(terrainCtx, x + 4, y + size * 0.55, 6, size * 0.7, '#66745a');
+    rect(terrainCtx, x - size * 0.5 + 5, y + 8, size, size * 0.6, '#637d54');
+    rect(terrainCtx, x - size * 0.5, y, size, size * 0.6, '#385b43');
+    rect(terrainCtx, x - size * 0.35, y - size * 0.2, size * 0.7, size * 0.45, '#42684a');
+    rect(terrainCtx, x - size * 0.2, y - size * 0.32, size * 0.4, size * 0.3, '#537954');
+    rect(terrainCtx, x - size * 0.32, y + 4, size * 0.23, 4, '#678b5c');
   }
   function drawTerrain() {
     if (!terrainCtx) return;
     terrainCtx.imageSmoothingEnabled = false;
-    rect(terrainCtx, 0, 0, WORLD.width, WORLD.height, COLORS.grass);
+    const terrainColor =
+      course.surface === 'coastal' ? '#8ba4a1' : course.surface === 'rain' ? '#738b80' : COLORS.grass;
+    rect(terrainCtx, 0, 0, WORLD.width, WORLD.height, terrainColor);
     for (let y = 0; y < WORLD.height; y += 28) {
       for (let x = 0; x < WORLD.width; x += 28) {
-        if ((x / 28 + y / 28) % 2 === 0) rect(terrainCtx, x, y, 28, 28, '#84996d');
+        if ((x / 28 + y / 28) % 2 === 0)
+          rect(
+            terrainCtx,
+            x,
+            y,
+            28,
+            28,
+            course.surface === 'coastal' ? '#849c98' : course.surface === 'rain' ? '#6d8579' : '#84996d',
+          );
         if ((x * 7 + y * 13) % 9 < 3) {
           rect(terrainCtx, x + 7, y + 15, 4, 2, '#9cae7f');
           rect(terrainCtx, x + 19, y + 8, 2, 4, '#758d60');
         }
+      }
+    }
+    if (course.surface === 'coastal') {
+      rect(terrainCtx, 300, 300, 390, 136, '#537f88');
+      for (let y = 311; y < 427; y += 17)
+        for (let x = 311; x < 676; x += 43) rect(terrainCtx, x + (y % 3) * 5, y, 21, 3, '#79a6ab');
+      rect(terrainCtx, 370, 429, 230, 14, '#a89b7b');
+      for (let x = 385; x < 594; x += 18) rect(terrainCtx, x, 429, 3, 14, '#887e67');
+    } else if (course.surface === 'rain') {
+      for (let i = 0; i < 7; i += 1) {
+        const x = 340 + i * 40;
+        rect(terrainCtx, x, 320 + (i % 2) * 22, 29, 48, '#546e68');
+        rect(terrainCtx, x + 6, 310 + (i % 2) * 22, 17, 22, '#78918a');
       }
     }
     terrainCtx.lineJoin = 'round';
@@ -168,6 +267,22 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     terrainCtx.lineWidth = ROAD_WIDTH;
     terrainCtx.strokeStyle = COLORS.road;
     terrainCtx.stroke();
+    if (course.surface === 'rain') {
+      terrainCtx.strokeStyle = '#74949a';
+      terrainCtx.lineWidth = ROAD_WIDTH - 12;
+      for (const [start, end] of [
+        [0.18, 0.32],
+        [0.61, 0.75],
+      ]) {
+        terrainCtx.beginPath();
+        for (let s = start * TRACK_LENGTH; s < end * TRACK_LENGTH; s += 6) {
+          const p = trackInfo(s);
+          if (s === start * TRACK_LENGTH) terrainCtx.moveTo(p.x, p.y);
+          else terrainCtx.lineTo(p.x, p.y);
+        }
+        terrainCtx.stroke();
+      }
+    }
     terrainCtx.lineCap = 'butt';
     // The alternating kerb follows the exact simulation centreline.
     for (let distance = 0; distance < TRACK_LENGTH; distance += 15) {
@@ -230,7 +345,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
         const dx = ((x * 13 + y * 3) % 29) - 14;
         const dy = ((x * 7 + y * 11) % 21) - 10;
         const point = nearestTrack(x + dx, y + dy);
-        if (point.distance > ROAD_WIDTH / 2 + 48 && (x + y) % 5 < 3) drawTree(x + dx, y + dy, 19 + (x + y) % 13);
+        if (point.distance > ROAD_WIDTH / 2 + 48 && (x + y) % 5 < 3)
+          drawTree(x + dx, y + dy, 19 + ((x + y) % 13));
       }
     }
     // Small orange cones make checkpoint gates readable from above.
@@ -249,10 +365,16 @@ export function mount(container, { onUpdate = () => {} } = {}) {
 
   function held(input) {
     if ([...keyHeld.values()].includes(input)) return true;
-    return [...pointers.values()].some(pointer => pointer.input === input);
+    return [...pointers.values()].some((pointer) => pointer.input === input);
   }
   function inputs() {
-    return { throttle: held('throttle'), brake: held('brake'), left: held('left'), right: held('right'), handbrake: held('handbrake') };
+    return {
+      throttle: held('throttle'),
+      brake: held('brake'),
+      left: held('left'),
+      right: held('right'),
+      handbrake: held('handbrake'),
+    };
   }
   function paintHeld() {
     for (const [input, button] of controlButtons) button.setAttribute('aria-pressed', String(held(input)));
@@ -268,21 +390,45 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     lastSkid = null;
   }
   function detail() {
-    if (state.phase === 'won') return `Three clean laps. Race ${seconds(state.raceTime)}, best lap ${seconds(state.bestLap)}. Start a new race to chase your record.`;
+    if (state.phase === 'stage-clear')
+      return `${course.title} complete in ${seconds(state.elapsed)}. ${state.medal.toUpperCase()} medal. Continue to the next circuit.`;
+    if (state.phase === 'won' && state.mode === 'championship')
+      return `Championship complete: ${seconds(state.raceTime)} across three circuits and nine laps.`;
+    if (state.phase === 'won')
+      return `Three clean laps. Race ${seconds(state.raceTime)}, best lap ${seconds(state.bestLap)}. Start a new race to chase your record.`;
     if (state.phase === 'paused') return 'Paused. Your race clock is stopped. Resume when you are ready.';
-    if (state.startDelay > 0) return 'Get ready. Three laps, every checkpoint in order. Accelerate when the lights go out.';
+    if (state.startDelay > 0)
+      return 'Get ready. Three laps, every checkpoint in order. Accelerate when the lights go out.';
     if (state.wrongWay) return 'Wrong way. Follow the track arrows and pass each checkpoint in order.';
-    if (!state.onRoad) return 'Grass slows you down. Ease back onto the circuit, or reset your car for a +3s penalty.';
+    if (!state.onRoad)
+      return 'Grass slows you down. Ease back onto the circuit, or reset your car for a +3s penalty.';
     return `Lap ${Math.min(3, state.lap)} of 3. ${state.nextGate === 0 ? 'All checkpoints clear — cross the finish line.' : `Follow the arrows to checkpoint ${state.nextGate}.`} Brake early, accelerate out.`;
   }
   function updateOverlay() {
-    const mode = state.phase === 'won' ? 'won' : state.phase === 'paused' ? 'paused' : state.startDelay > 0 ? 'ready' : '';
+    const mode =
+      state.phase === 'stage-clear'
+        ? 'stage-clear'
+        : state.phase === 'won'
+          ? 'won'
+          : state.phase === 'paused'
+            ? 'paused'
+            : state.startDelay > 0
+              ? 'ready'
+              : '';
     overlay.hidden = !mode;
     overlay.dataset.mode = mode;
-    if (mode === 'won') {
+    continueRace.hidden = mode !== 'stage-clear';
+    if (mode === 'stage-clear') {
+      overlayEyebrow.textContent = `RACE ${state.trackIndex + 1} / 3 COMPLETE`;
+      overlayTitle.textContent = `${state.medal.toUpperCase()} · ${seconds(state.elapsed)}`;
+      overlayDetail.textContent = `CHAMPIONSHIP TOTAL ${seconds(state.seriesTime)}`;
+    } else if (mode === 'won') {
       overlayEyebrow.textContent = 'CHEQUERED FLAG';
       overlayTitle.textContent = seconds(state.raceTime);
-      overlayDetail.textContent = `3 LAPS COMPLETE · BEST LAP ${seconds(state.bestLap)}`;
+      overlayDetail.textContent =
+        state.mode === 'championship'
+          ? 'THREE CIRCUITS · NINE LAPS COMPLETE'
+          : `${state.medal.toUpperCase()} MEDAL · BEST LAP ${seconds(state.bestLap)}`;
     } else if (mode === 'paused') {
       overlayEyebrow.textContent = 'PIT STOP';
       overlayTitle.textContent = 'RACE PAUSED';
@@ -296,7 +442,15 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   function publish() {
     if (destroyed) return;
     const message = detail();
-    speedValue.textContent = String(Math.round(Math.abs(state.car.speed) * .7));
+    courseName.textContent = `${course.title.toUpperCase()} · ${state.mode === 'championship' ? `RACE ${state.trackIndex + 1}/3` : '3 LAPS'}`;
+    courseBrief.textContent = `${course.description} Gold ${seconds(course.targets[0])} · Silver ${seconds(course.targets[1])} · Bronze ${seconds(course.targets[2])}`;
+    for (const button of modes.children)
+      button.setAttribute('aria-pressed', String(button.dataset.mode === state.mode));
+    for (const button of trackChoices.children) {
+      button.setAttribute('aria-pressed', String(button.dataset.track === state.trackId));
+      button.disabled = state.mode === 'championship';
+    }
+    speedValue.textContent = String(Math.round(Math.abs(state.car.speed) * 0.7));
     lapValue.textContent = `${String(Math.min(3, state.lap)).padStart(2, '0')} / 03`;
     lapTimeValue.textContent = seconds(state.lapElapsed);
     bestLapValue.textContent = state.bestLap === null ? '—' : seconds(state.bestLap);
@@ -306,10 +460,17 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       const index = Number(dot.dataset.gate);
       dot.dataset.state = index <= gateProgress ? 'passed' : index === state.nextGate ? 'next' : 'waiting';
     }
-    reset.disabled = state.phase === 'won' || state.startDelay > 0;
+    reset.disabled =
+      !['playing', 'paused'].includes(state.phase) ||
+      state.pausedPhase === 'stage-clear' ||
+      state.startDelay > 0;
     for (const button of controlButtons.values()) button.disabled = state.phase !== 'playing';
-    warning.hidden = state.phase !== 'playing' || (!state.wrongWay && state.onRoad);
-    warning.textContent = state.wrongWay ? '← WRONG WAY · FOLLOW THE ARROWS' : 'OFF TRACK · GRASS SLOWS YOU DOWN';
+    warning.hidden = state.phase !== 'playing' || (!state.wrongWay && state.onRoad && !state.slick);
+    warning.textContent = state.wrongWay
+      ? '← WRONG WAY · FOLLOW THE ARROWS'
+      : !state.onRoad
+        ? 'OFF TRACK · EASE BACK ONTO THE ROAD'
+        : 'SLICK ZONE · GENTLE STEERING';
     if (announcement) {
       status.textContent = announcement;
       announcement = '';
@@ -317,8 +478,23 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     status.dataset.message = message;
     updateOverlay();
     onUpdate({
-      phase: state.phase, score: Math.round(state.elapsed * 100) / 100, scoreLabel: 'RACE TIME', scoreDigits: 2,
-      record: state.phase === 'won' ? state.raceTime : null, recordDirection: 'min', recordKey: 'three-laps', recordLabel: 'BEST RACE', detail: message,
+      phase: state.phase === 'stage-clear' ? 'playing' : state.phase,
+      score:
+        Math.round(
+          (state.mode === 'championship'
+            ? state.seriesTime +
+              (['playing', 'paused'].includes(state.phase) && state.pausedPhase !== 'stage-clear'
+                ? state.elapsed
+                : 0)
+            : state.elapsed) * 100,
+        ) / 100,
+      scoreLabel: state.mode === 'championship' ? 'SERIES TIME' : 'RACE TIME',
+      scoreDigits: 2,
+      record: state.phase === 'won' ? state.raceTime : null,
+      recordDirection: 'min',
+      recordKey: recordScope(state),
+      recordLabel: state.mode === 'championship' ? 'BEST SERIES' : 'BEST RACE',
+      detail: message,
     });
   }
   function nextEffectRandom() {
@@ -328,9 +504,13 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   function updateEffects(delta) {
     const car = state.car;
     const lateral = -Math.sin(car.heading) * car.vx + Math.cos(car.heading) * car.vy;
-    const sliding = state.phase === 'playing' && state.startDelay <= 0 && Math.abs(car.speed) > 45 && (Math.abs(lateral) > 20 || held('handbrake'));
+    const sliding =
+      state.phase === 'playing' &&
+      state.startDelay <= 0 &&
+      Math.abs(car.speed) > 45 &&
+      (Math.abs(lateral) > 20 || held('handbrake'));
     if (sliding) {
-      const current = [-1, 1].map(side => ({
+      const current = [-1, 1].map((side) => ({
         x: car.x - Math.cos(car.heading) * 8 - Math.sin(car.heading) * side * 8,
         y: car.y - Math.sin(car.heading) * 8 + Math.cos(car.heading) * side * 8,
       }));
@@ -341,9 +521,21 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       lastSkid = current;
     } else lastSkid = null;
     effectClock += delta;
-    if (state.phase === 'playing' && state.startDelay <= 0 && !state.onRoad && Math.abs(car.speed) > 30 && effectClock > .055) {
+    if (
+      state.phase === 'playing' &&
+      state.startDelay <= 0 &&
+      !state.onRoad &&
+      Math.abs(car.speed) > 30 &&
+      effectClock > 0.055
+    ) {
       effectClock = 0;
-      dust.push({ x: car.x - Math.cos(car.heading) * 13, y: car.y - Math.sin(car.heading) * 13, life: .55, vx: (nextEffectRandom() - .5) * 18, vy: (nextEffectRandom() - .5) * 18 });
+      dust.push({
+        x: car.x - Math.cos(car.heading) * 13,
+        y: car.y - Math.sin(car.heading) * 13,
+        life: 0.55,
+        vx: (nextEffectRandom() - 0.5) * 18,
+        vy: (nextEffectRandom() - 0.5) * 18,
+      });
       if (dust.length > 24) dust.shift();
     }
     if (state.phase !== 'paused') {
@@ -360,8 +552,11 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     const cssWidth = canvas.getBoundingClientRect().width || WORLD.width;
     const ratio = Math.min(window.devicePixelRatio || 1, 2);
     const pixelWidth = Math.max(1, Math.round(cssWidth * ratio));
-    const pixelHeight = Math.max(1, Math.round(pixelWidth * WORLD.height / WORLD.width));
-    if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) { canvas.width = pixelWidth; canvas.height = pixelHeight; }
+    const pixelHeight = Math.max(1, Math.round((pixelWidth * WORLD.height) / WORLD.width));
+    if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+      canvas.width = pixelWidth;
+      canvas.height = pixelHeight;
+    }
     ctx.setTransform(pixelWidth / WORLD.width, 0, 0, pixelHeight / WORLD.height, 0, 0);
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(terrain, 0, 0);
@@ -375,11 +570,18 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       ctx.stroke();
     }
     for (const particle of dust) {
-      ctx.globalAlpha = Math.min(.6, particle.life);
+      ctx.globalAlpha = Math.min(0.6, particle.life);
       rect(ctx, particle.x, particle.y, 4, 4, '#d9cfaa');
     }
     ctx.globalAlpha = 1;
-    if (state.phase !== 'won') {
+    if (course.surface === 'rain' && !reducedMotion?.matches) {
+      for (let i = 0; i < 42; i += 1) {
+        const x = (i * 97 + state.elapsed * 38) % WORLD.width,
+          y = (i * 71 + state.elapsed * 95) % WORLD.height;
+        rect(ctx, x, y, 2, 7, '#c1d4cf66');
+      }
+    }
+    if (!['won', 'stage-clear'].includes(state.phase)) {
       const gate = GATES[state.nextGate];
       ctx.beginPath();
       ctx.moveTo(gate.x - gate.nx * (ROAD_WIDTH / 2 - 8), gate.y - gate.ny * (ROAD_WIDTH / 2 - 8));
@@ -407,7 +609,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     ctx.save();
     ctx.translate(car.x, car.y);
     ctx.rotate(car.heading);
-    const steering = held('left') === held('right') ? 0 : held('left') ? -.3 : .3;
+    const steering = held('left') === held('right') ? 0 : held('left') ? -0.3 : 0.3;
     for (const x of [-8, 8]) {
       for (const side of [-1, 1]) {
         ctx.save();
@@ -435,7 +637,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   }
   function frame(now) {
     if (destroyed) return;
-    const delta = lastFrame === null ? 0 : Math.min(.1, Math.max(0, (now - lastFrame) / 1000));
+    const delta = lastFrame === null ? 0 : Math.min(0.1, Math.max(0, (now - lastFrame) / 1000));
     lastFrame = now;
     const previousPhase = state.phase;
     const previousGate = state.nextGate;
@@ -452,7 +654,13 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     } else accumulator = 0;
     if (state.phase !== previousPhase) releaseHeld();
     updateEffects(delta);
-    if (now - lastPublish >= 100 || previousPhase !== state.phase || previousGate !== state.nextGate || previousLap !== state.lap || wasReady !== (state.startDelay > 0)) {
+    if (
+      now - lastPublish >= 100 ||
+      previousPhase !== state.phase ||
+      previousGate !== state.nextGate ||
+      previousLap !== state.lap ||
+      wasReady !== state.startDelay > 0
+    ) {
       lastPublish = now;
       publish();
     }
@@ -481,12 +689,28 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     draw();
   }
   function keydown(event) {
-    if (destroyed || event.isComposing || event.altKey || event.ctrlKey || event.metaKey || isForm(event.target)) return;
+    if (
+      destroyed ||
+      event.isComposing ||
+      event.altKey ||
+      event.ctrlKey ||
+      event.metaKey ||
+      isForm(event.target)
+    )
+      return;
     const control = event.target instanceof Element ? event.target.closest('button[data-input]') : null;
-    const input = control && controls.contains(control) && ['Space', 'Enter'].includes(event.code)
-      ? control.dataset.input : KEY_INPUTS[event.code];
+    const input =
+      control && controls.contains(control) && ['Space', 'Enter'].includes(event.code)
+        ? control.dataset.input
+        : KEY_INPUTS[event.code];
     if (input) {
-      if (!control && event.code === 'Space' && event.target instanceof Element && event.target.closest('button,a')) return;
+      if (
+        !control &&
+        event.code === 'Space' &&
+        event.target instanceof Element &&
+        event.target.closest('button,a')
+      )
+        return;
       event.preventDefault();
       if (state.phase !== 'playing') return;
       keyHeld.set(event.code, input);
@@ -514,11 +738,14 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     const pointer = pointers.get(event.pointerId);
     if (!pointer) return;
     pointers.delete(event.pointerId);
-    if (pointer.button.hasPointerCapture?.(event.pointerId)) pointer.button.releasePointerCapture(event.pointerId);
+    if (pointer.button.hasPointerCapture?.(event.pointerId))
+      pointer.button.releasePointerCapture(event.pointerId);
     paintHeld();
   }
   const focusCanvas = () => canvas.focus({ preventScroll: true });
-  const visibility = () => { if (document.hidden) autoPause(); };
+  const visibility = () => {
+    if (document.hidden) autoPause();
+  };
   const resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(draw) : null;
   if (resizeObserver) resizeObserver.observe(canvas);
   else window.addEventListener('resize', draw);
@@ -531,6 +758,48 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   controls.addEventListener('pointerup', pointerend);
   controls.addEventListener('pointercancel', pointerend);
   controls.addEventListener('lostpointercapture', pointerend);
+  function newSelection(event) {
+    const button = event.target.closest('button[data-track],button[data-mode]');
+    if (!button || !selection.contains(button)) return;
+    const mode = button.dataset.mode || state.mode,
+      trackId = button.dataset.track || state.trackId;
+    releaseHeld();
+    state = createState({ mode, trackId });
+    course = getTrack(state);
+    TRACK = course.points;
+    TRACK_LENGTH = course.length;
+    ROAD_WIDTH = course.roadWidth;
+    GATES = course.gates;
+    skidMarks.length = 0;
+    dust.length = 0;
+    lastFrame = null;
+    accumulator = 0;
+    lastPublish = -Infinity;
+    drawTerrain();
+    publish();
+    draw();
+    canvas.focus({ preventScroll: true });
+  }
+  function nextRace() {
+    if (!advanceStage(state)) return;
+    releaseHeld();
+    course = getTrack(state);
+    TRACK = course.points;
+    TRACK_LENGTH = course.length;
+    ROAD_WIDTH = course.roadWidth;
+    GATES = course.gates;
+    skidMarks.length = 0;
+    dust.length = 0;
+    lastFrame = null;
+    accumulator = 0;
+    lastPublish = -Infinity;
+    drawTerrain();
+    publish();
+    draw();
+    canvas.focus({ preventScroll: true });
+  }
+  selection.addEventListener('click', newSelection);
+  continueRace.addEventListener('click', nextRace);
   reset.addEventListener('click', resetVehicle);
   publish();
   draw();
@@ -540,7 +809,13 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     restart() {
       if (destroyed) return;
       releaseHeld();
-      state = createState();
+      state = createState({ trackId: state.trackId, mode: state.mode });
+      course = getTrack(state);
+      TRACK = course.points;
+      TRACK_LENGTH = course.length;
+      ROAD_WIDTH = course.roadWidth;
+      GATES = course.gates;
+      drawTerrain();
       skidMarks.length = 0;
       dust.length = 0;
       effectClock = 0;
@@ -568,6 +843,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       controls.removeEventListener('pointerup', pointerend);
       controls.removeEventListener('pointercancel', pointerend);
       controls.removeEventListener('lostpointercapture', pointerend);
+      selection.removeEventListener('click', newSelection);
+      continueRace.removeEventListener('click', nextRace);
       reset.removeEventListener('click', resetVehicle);
       view.remove();
     },

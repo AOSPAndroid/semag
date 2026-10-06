@@ -15,6 +15,34 @@ const PILLARS = Object.freeze([
   { id: 'p2', type: 'pillar', x: 285, y: 378, w: 54, h: 76 },
   { id: 'p3', type: 'pillar', x: 621, y: 378, w: 54, h: 76 },
 ]);
+export const BIOMES = Object.freeze([
+  { id: 'garden', name: 'Garden Ruins', boss: 'Ruin Warden' },
+  { id: 'crypt', name: 'Tide Crypt', boss: 'Tide Oracle' },
+  { id: 'ember', name: 'Ember Sanctum', boss: 'Cinder Regent' },
+]);
+export const BOONS = Object.freeze({
+  edge: { name: 'Honed Edge', detail: '+3 sword damage', color: '#dfbe70' },
+  ward: { name: 'Living Ward', detail: '+12 maximum health; heal 18', color: '#8caf8c' },
+  bow: { name: 'Starstring', detail: '+3 arrow damage; pierce one extra foe', color: '#91b6cc' },
+  vigor: { name: 'Second Wind', detail: 'Faster stamina recovery; cheaper rolls', color: '#98c7b8' },
+  leech: { name: 'Red Bloom', detail: 'Sword hits restore health', color: '#d79c99' },
+  riposte: { name: 'Mirror Sigil', detail: 'Timed parries heal and strike back', color: '#c0afd6' },
+});
+const ROOM_NAMES = ['Moss Gate', 'Broken Colonnade', 'The Warden’s Court', 'Tidal Crossing', 'Oracle’s Archive', 'The Drowned Chapel', 'Ash Causeway', 'Cinder Gallery', 'The Last Hearth'];
+function roomObstacles(wave) {
+  const layouts = [
+    [[285,186,54,76],[621,186,54,76],[285,378,54,76],[621,378,54,76]],
+    [[216,218,118,40],[626,218,118,40],[370,410,220,36]],
+    [[240,244,58,96],[662,244,58,96]],
+    [[224,174,42,166],[694,300,42,170],[416,216,128,42]],
+    [[236,220,88,54],[636,220,88,54],[236,410,88,54],[636,410,88,54]],
+    [[250,258,106,38],[604,258,106,38]],
+    [[200,228,146,42],[614,228,146,42],[436,410,88,58]],
+    [[242,180,46,150],[672,180,46,150],[340,436,280,34]],
+    [[232,238,64,112],[664,238,64,112]],
+  ];
+  return layouts[wave - 1].map(([x,y,w,h],index) => ({ id: `room${wave}-${index}`, type: 'pillar', x,y,w,h }));
+}
 const clamp = (n, low, high) => Math.max(low, Math.min(high, n));
 const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const angleTo = (a, b) => Math.atan2(b.y - a.y, b.x - a.x);
@@ -27,7 +55,7 @@ function fighter(id, mode, wins = 0) {
     id, x: mode === 'coop' ? (id === 0 ? 420 : 540) : (id === 0 ? 230 : 730),
     y: mode === 'coop' ? 514 : 320, vx: 0, vy: 0, radius: ARENA.fighterRadius,
     facing: mode === 'coop' ? -Math.PI / 2 : id === 0 ? 0 : Math.PI,
-    hp: 100, maxHp: 100, stamina: 100, guard: 100, wins,
+    hp: 100, maxHp: 100, stamina: 100, guard: 100, wins, boons: {},
     action: 'idle', actionFrame: 0, actionDuration: 0, attackKind: 'sword', attackFacing: 0,
     attackId: 0, hitTargets: [], landed: false, stun: 0, invulnerable: false,
     guardBroken: 0, blockPressTick: -1000, staminaDelay: 0,
@@ -44,8 +72,10 @@ export function createState(mode = 'duel') {
     roundTicks: ARENA.roundSeconds * TICK_RATE, winner: null, result: null,
     fighters: [fighter(0, mode), fighter(1, mode)], obstacles: PILLARS.map(p => ({ ...p })),
     enemies: [], projectiles: [], events: [], eventId: 0, projectileId: 0, enemyId: 100,
-    wave: 0, maxWaves: 4, waveDelay: 0, elapsedTicks: 0,
-    objective: mode === 'coop' ? 'Ready together. Clear the ruins and defeat the Warden.' : 'First to win two rounds.',
+    wave: 0, maxWaves: 9, waveDelay: 0, elapsedTicks: 0,
+    biome: { ...BIOMES[0], index: 0 }, roomName: mode === 'coop' ? ROOM_NAMES[0] : 'Moss Courtyard', roomBreak: false,
+    shrineChoices: [], boonSelections: [null, null], hazards: [],
+    objective: mode === 'coop' ? 'Nine rooms. Three guardians. Ready together to enter the ruins.' : 'First to win two rounds.',
   };
 }
 
@@ -60,6 +90,13 @@ function prepareRound(state, countdown = TICK_RATE * 2) {
   state.phase = 'countdown'; state.phaseTicks = countdown;
   state.roundTicks = ARENA.roundSeconds * TICK_RATE;
   state.winner = null;
+  if(state.mode === 'duel') {
+    const index=(state.round-1)%3;
+    state.biome={...BIOMES[index],index};
+    state.roomName=['Moss Courtyard','Tide Archive','Cinder Gallery'][index];
+    state.obstacles=index===0?PILLARS.map(p=>({...p})):roomObstacles(index===1?5:7);
+    state.objective=`${state.roomName} · First to win two rounds. Cover changes with each arena.`;
+  }
   emit(state, 'round', { round: state.round, x: 480, y: 320 });
 }
 
@@ -155,9 +192,10 @@ function recordInput(state, f, raw) {
 }
 
 function beginRoll(state, f) {
-  if (f.stamina < MOVES.roll.stamina) return false;
+  const cost = MOVES.roll.stamina - (f.boons.vigor || 0) * 2;
+  if (f.stamina < cost) return false;
   f.buffers.roll = 0;
-  f.stamina -= MOVES.roll.stamina; f.staminaDelay = 48;
+  f.stamina -= cost; f.staminaDelay = 48;
   f.rollFacing = f.facing; f.action = 'roll'; f.actionFrame = 0; f.actionDuration = MOVES.roll.total;
   f.invulnerable = false;
   emit(state, 'roll', { fighter: f.id, x: f.x, y: f.y, angle: f.rollFacing });
@@ -183,7 +221,8 @@ function spawnProjectile(state, owner, angle, { kind = 'arrow', damage = MOVES.s
     team: team ?? playerTeam(state, owner.id), kind,
     x: owner.x + Math.cos(angle) * offset, y: owner.y + Math.sin(angle) * offset,
     vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
-    angle, facing: angle, radius, damage, life: kind === 'orb' ? 210 : 140, reflected: false,
+    angle, facing: angle, radius, damage: damage + (kind === 'arrow' ? (owner.boons?.bow || 0) * 3 : 0),
+    pierce: kind === 'arrow' ? (owner.boons?.bow || 0) : 0, hitTargets: [], life: kind === 'orb' ? 210 : 140, reflected: false,
   };
   state.projectiles.push(projectile);
   emit(state, 'shoot', { fighter: owner.id, x: projectile.x, y: projectile.y, angle, move: kind });
@@ -236,7 +275,8 @@ function updateFighter(state, f, input) {
     } else if (f.buffers.attack > 0) beginAttack(state, f, 'sword');
     else if (f.buffers.shoot > 0) beginAttack(state, f, 'shoot');
   }
-  if (!f.staminaDelay && f.action !== 'attack' && f.action !== 'roll' && f.action !== 'block' && !f.stun) f.stamina = Math.min(100, f.stamina + 0.4);
+  if (!f.staminaDelay && f.action !== 'attack' && f.action !== 'roll' && f.action !== 'block' && !f.stun) f.stamina = Math.min(100, f.stamina + 0.4 + (f.boons.vigor || 0) * 0.12);
+  if (state.mode === 'coop' && f.action !== 'roll' && state.hazards.some(h => h.kind === 'tide' && distance(f,h) < h.radius)) { f.vx *= 0.64; f.vy *= 0.64; }
   f.guard = f.stamina;
   moveEntity(state, f);
 }
@@ -251,7 +291,9 @@ function damageEntity(state, target, source, damage, { guardDamage = 18, knockba
     if (!projectile && source.hp > 0) {
       source.stun = 38; source.action = 'hit'; source.actionFrame = 0;
       source.vx = Math.cos(angle) * 2.2; source.vy = Math.sin(angle) * 2.2;
+      if (state.mode === 'coop' && target.boons.riposte) damageEntity(state, source, target, target.boons.riposte * 6, { parryable: false, move: 'riposte' });
     }
+    if (state.mode === 'coop') target.hp = Math.min(target.maxHp, target.hp + (target.boons.riposte || 0) * 4);
     emit(state, 'parry', { fighter: target.id, target: source.id, x: target.x, y: target.y, move, angle });
     return 'parry';
   }
@@ -312,8 +354,9 @@ function resolveSwords(state) {
   }
   for (const { source, target } of contacts) {
     source.hitTargets.push(target.id);
-    const result = damageEntity(state, target, source, MOVES.sword.damage, { guardDamage: MOVES.sword.guardDamage });
+    const result = damageEntity(state, target, source, MOVES.sword.damage + (source.boons.edge || 0) * 3, { guardDamage: MOVES.sword.guardDamage });
     if (result === 'hit' || result === 'block') source.landed = true;
+    if (result === 'hit' && state.mode === 'coop') source.hp = Math.min(source.maxHp, source.hp + (source.boons.leech || 0) * 1.5);
   }
 }
 
@@ -339,7 +382,7 @@ function updateProjectiles(state) {
       : state.fighters.filter(f => playerTeam(state, f.id) !== projectile.team);
     let consumed = false;
     // Nearest contact wins when one segment touches more than one target.
-    const contacts = targets.filter(target => alive(target) && !target.invulnerable && projectileContact(old, projectile, target, projectile.radius)).sort((a, b) => distance(old, a) - distance(old, b));
+    const contacts = targets.filter(target => alive(target) && !target.invulnerable && !(projectile.hitTargets || []).includes(target.id) && projectileContact(old, projectile, target, projectile.radius)).sort((a, b) => distance(old, a) - distance(old, b));
     for (const target of contacts) {
       const source = { id: projectile.owner, x: old.x - projectile.vx * 2, y: old.y - projectile.vy * 2 };
       const result = damageEntity(state, target, source, projectile.damage, { guardDamage: projectile.kind === 'orb' ? 22 : 14, knockback: 2.5, hitstun: 18, move: projectile.kind, projectile: true });
@@ -351,8 +394,12 @@ function updateProjectiles(state) {
         projectile.x = target.x + Math.cos(target.facing) * (target.radius + projectile.radius + 4);
         projectile.y = target.y + Math.sin(target.facing) * (target.radius + projectile.radius + 4);
         projectile.damage = Math.min(24, projectile.damage + 4); projectile.life = 140;
-      } else consumed = result !== 'evade';
-      break;
+      } else if (result !== 'evade') {
+        (projectile.hitTargets ||= []).push(target.id);
+        if (result === 'hit' && projectile.pierce > 0) projectile.pierce -= 1;
+        else consumed = true;
+      }
+      if (consumed || result === 'parry') break;
     }
     if (!consumed) remaining.push(projectile);
   }
@@ -363,6 +410,7 @@ const ENEMY_STATS = Object.freeze({
   slime: { radius: 18, hp: 40, speed: 1.04, windup: 48, active: 22, recovery: 58, reach: 36, damage: 10 },
   bat: { radius: 13, hp: 26, speed: 1.65, windup: 36, active: 18, recovery: 50, reach: 26, damage: 7 },
   knight: { radius: 20, hp: 70, speed: 0.93, windup: 55, active: 14, recovery: 65, reach: 75, damage: 16 },
+  caster: { radius: 16, hp: 42, speed: 1.1, windup: 68, active: 12, recovery: 100, reach: 300, damage: 10 },
   boss: { radius: 34, hp: 340, speed: 0.78, windup: 72, active: 18, recovery: 75, reach: 112, damage: 21 },
 });
 
@@ -383,15 +431,82 @@ function spawnWave(state, wave) {
   const roster = [
     ['slime', 'slime', 'slime', 'bat', 'bat'],
     ['slime', 'slime', 'bat', 'bat', 'bat', 'knight'],
-    ['knight', 'knight', 'slime', 'slime', 'bat', 'bat', 'bat'],
     ['boss', 'bat', 'bat'],
+    ['slime', 'caster', 'bat', 'knight', 'caster'],
+    ['knight', 'caster', 'caster', 'bat', 'bat', 'knight'],
+    ['boss', 'caster', 'bat'],
+    ['knight', 'caster', 'slime', 'bat', 'caster', 'bat'],
+    ['caster', 'knight', 'knight', 'caster', 'bat', 'bat', 'slime'],
+    ['boss', 'caster', 'knight'],
   ][wave - 1];
   const positions = [{ x: 170, y: 145 }, { x: 790, y: 145 }, { x: 480, y: 150 }, { x: 160, y: 450 }, { x: 800, y: 450 }, { x: 430, y: 270 }, { x: 530, y: 270 }];
   state.wave = wave; state.round = wave; state.waveDelay = 0;
-  state.projectiles = [];
+  state.roomBreak = false; state.shrineChoices = []; state.boonSelections = [null, null];
+  state.biome = { ...BIOMES[Math.floor((wave - 1) / 3)], index: Math.floor((wave - 1) / 3) };
+  state.roomName = ROOM_NAMES[wave - 1]; state.obstacles = roomObstacles(wave);
+  state.projectiles = []; state.hazards = [];
   state.enemies = roster.map((type, index) => makeEnemy(state, type, type === 'boss' ? 480 : positions[index].x, type === 'boss' ? 165 : positions[index].y));
-  state.objective = wave === 4 ? 'Final room · Defeat the Ruin Warden.' : `Wave ${wave} of 4 · Clear the room. Guard beside a fallen ally to revive.`;
-  emit(state, 'wave', { wave, boss: wave === 4, x: 480, y: 240 });
+  for (const enemy of state.enemies) {
+    const bonus = state.biome.index * (enemy.type === 'boss' ? 55 : 8);
+    enemy.hp += bonus; enemy.maxHp = enemy.hp; enemy.variant = state.biome.id;
+    if (enemy.type === 'boss') enemy.name = state.biome.boss;
+    resolveWalls(state, enemy);
+  }
+  state.fighters.forEach(f => resolveWalls(state,f));
+  if (state.biome.id === 'crypt') state.hazards = [{kind:'tide',x:420,y:290,radius:56},{kind:'tide',x:560,y:420,radius:48}];
+  if (state.biome.id === 'ember') state.hazards = [{kind:'fire',x:410,y:286,radius:42,offset:0},{kind:'fire',x:552,y:390,radius:42,offset:160}];
+  state.objective = wave % 3 === 0 ? `${state.roomName} · Defeat the ${state.biome.boss}.` : `Room ${wave} of 9 · ${state.roomName}. Guard beside a fallen ally to revive.`;
+  emit(state, 'wave', { wave, boss: wave % 3 === 0, x: 480, y: 240 });
+}
+
+function enterShrineRoom(state) {
+  state.roomBreak = true; state.projectiles = []; state.hazards = [];
+  state.boonSelections = [null, null]; state.waveDelay = 0;
+  const ids = Object.keys(BOONS), offset = (state.wave - 1) % 2 * 3;
+  state.shrineChoices = ids.slice(offset,offset+3).map((id,index) => ({id,...BOONS[id],x:320+index*160,y:340}));
+  state.fighters.forEach(f => {
+    f.hp = Math.min(f.maxHp,(f.downed ? 35 : f.hp)+22); f.downed=false; f.reviveProgress=0;
+    f.stamina=100; f.guard=100; f.stun=0; f.guardBroken=0; f.action='idle'; f.actionFrame=0;
+    f.buffers={attack:0,roll:0,shoot:0}; f.reviveShield=75;
+  });
+  state.objective = 'Room clear · Each hero: walk to a shrine and hold Guard to choose a boon.';
+  emit(state,'waveClear',{wave:state.wave,x:480,y:320});
+}
+export function chooseBoon(state, fighterId, id) {
+  const f = state.fighters[fighterId], option=state.shrineChoices.find(choice => choice.id===id);
+  if (state.mode !== 'coop' || !state.roomBreak || !f || state.boonSelections[fighterId] || !option) return false;
+  f.boons[id] = (f.boons[id] || 0)+1;
+  if (id==='ward') { f.maxHp += 12; f.hp=Math.min(f.maxHp,f.hp+18); }
+  state.boonSelections[fighterId]=id;
+  emit(state,'boon',{fighter:fighterId,x:f.x,y:f.y,boon:id});
+  if (state.boonSelections.every(Boolean)) { state.waveDelay=TICK_RATE*3; state.objective=`Boons chosen · Next: ${ROOM_NAMES[state.wave]}.`; }
+  return true;
+}
+function updateShrines(state,inputs) {
+  state.fighters.forEach((f,index) => {
+    const peaceful={...inputs[index],attack:false,shoot:false};
+    f.buffers.attack=0; f.buffers.shoot=0; updateFighter(state,f,peaceful);
+    if (inputs[index].block && !state.boonSelections[index]) {
+      const choice=state.shrineChoices.find(option => distance(f,option)<54);
+      if (choice) chooseBoon(state,index,choice.id);
+    }
+  });
+  separate(state,...state.fighters);
+  if (state.waveDelay>0 && --state.waveDelay===0) spawnWave(state,state.wave+1);
+}
+
+function updateHazards(state) {
+  for (const hazard of state.hazards) {
+    if (hazard.kind !== 'fire') continue;
+    const cycle=(state.elapsedTicks+hazard.offset)%360;
+    hazard.active=cycle>=300; hazard.warning=cycle>=210 && cycle<300; hazard.progress=hazard.warning ? (cycle-210)/90 : 0;
+    if (cycle === 300) { hazard.hitTargets=[]; emit(state,'slam',{x:hazard.x,y:hazard.y}); }
+    if (!hazard.active) continue;
+    for (const f of state.fighters) if (alive(f) && !(hazard.hitTargets || []).includes(f.id) && distance(f,hazard)<hazard.radius+f.radius) {
+      const result=damageEntity(state,f,{id:-1,x:hazard.x,y:hazard.y},13,{parryable:false,move:'fire'});
+      if (result !== 'evade') (hazard.hitTargets ||= []).push(f.id);
+    }
+  }
 }
 
 // A small visibility graph keeps ground enemies from sticking behind pillars.
@@ -400,6 +515,18 @@ function pathWaypoint(state, entity, goal) {
   // radius would put an already-touching actor inside the navigation obstacle,
   // making every exit segment appear blocked after knockback or separation.
   const padding = Math.max(0, entity.radius - 0.1);
+  // A smaller hero may stand inside the larger enemy's inflated wall boundary.
+  // Route to a reachable adjacent point, while retaining the real hero for
+  // attack range and facing. Otherwise the graph has no edge to its goal.
+  goal = { x: goal.x, y: goal.y };
+  for (const rect of state.obstacles) {
+    const margin = padding + 1;
+    if (goal.x > rect.x-margin && goal.x < rect.x+rect.w+margin && goal.y > rect.y-margin && goal.y < rect.y+rect.h+margin) {
+      const sides = [{x:rect.x-margin,y:goal.y},{x:rect.x+rect.w+margin,y:goal.y},
+        {x:goal.x,y:rect.y-margin},{x:goal.x,y:rect.y+rect.h+margin}];
+      goal = sides.sort((a,b)=>distance(a,goal)-distance(b,goal))[0];
+    }
+  }
   if (clearLine(state, entity, goal, padding)) return goal;
   const nodes = [{ x: entity.x, y: entity.y }, { x: goal.x, y: goal.y }];
   for (const rect of state.obstacles) {
@@ -433,14 +560,27 @@ function beginEnemyAttack(state, enemy, target) {
   enemy.action = 'windup'; enemy.actionFrame = 0; enemy.attackId += 1;
   enemy.attackFacing = angleTo(enemy, target); enemy.facing = enemy.attackFacing;
   enemy.targetId = target.id; enemy.hitTargets = []; enemy.vx = 0; enemy.vy = 0; enemy.guarded = false;
-  enemy.attackKind = 'melee'; enemy.windupTicks = stats.windup; enemy.reach = stats.reach;
-  enemy.telegraphRadius = 0;
+  enemy.attackKind = enemy.type === 'caster' ? 'fan' : 'melee';
   if (enemy.type === 'boss') {
-    enemy.attackKind = enemy.attackId % 3 === 0 ? 'burst' : enemy.attackId % 3 === 1 ? 'slam' : 'melee';
-    enemy.windupTicks = enemy.attackKind === 'burst' ? 84 : 72;
-    enemy.telegraphRadius = enemy.attackKind === 'slam' ? 128 : 0;
-    enemy.reach = enemy.attackKind === 'slam' ? 128 : stats.reach;
+    const patterns = enemy.variant === 'crypt' ? ['fan', 'slam', 'burst']
+      : enemy.variant === 'ember' ? ['charge', 'slam', 'crown'] : ['slam', 'melee', 'burst'];
+    enemy.attackKind = patterns[(enemy.attackId - 1) % patterns.length];
   }
+  // Derive the warning and hit geometry after the biome chooses its pattern.
+  // A prior slam must never leave a radial warning on a later fan or charge.
+  enemy.windupTicks = stats.windup; enemy.activeTicks = stats.active;
+  enemy.reach = stats.reach; enemy.telegraphRadius = 0;
+  enemy.telegraphLength = 0; enemy.telegraphHalfArc = enemy.type === 'knight' ? 1.25 : .95;
+  if (enemy.attackKind === 'slam') {
+    enemy.reach = 128; enemy.telegraphRadius = 128; enemy.windupTicks = 72;
+  } else if (enemy.attackKind === 'charge') {
+    enemy.reach = 64; enemy.windupTicks = 90; enemy.activeTicks = 38;
+    enemy.telegraphLength = 5.4 * enemy.activeTicks + enemy.reach;
+  } else if (enemy.attackKind === 'fan') {
+    enemy.reach = 300; enemy.telegraphHalfArc = .4;
+    enemy.windupTicks = enemy.type === 'boss' ? 90 : stats.windup;
+  } else if (enemy.attackKind === 'crown') enemy.windupTicks = 90;
+  else if (enemy.attackKind === 'burst') enemy.windupTicks = 84;
   emit(state, 'telegraph', { fighter: enemy.id, x: enemy.x, y: enemy.y, angle: enemy.attackFacing, move: enemy.attackKind });
 }
 
@@ -472,9 +612,11 @@ function updateEnemy(state, enemy) {
       if (enemy.attackKind === 'burst') {
         for (let index = 0; index < 8; index++) spawnProjectile(state, enemy, enemy.attackFacing + index * Math.PI / 4, { kind: 'orb', damage: 14, speed: 3.4, team: 'enemies' });
       }
+      if (enemy.attackKind === 'fan') for (let index=-2;index<=2;index++) spawnProjectile(state,enemy,enemy.attackFacing+index*0.2,{kind:'orb',damage:enemy.type==='boss'?13:9,speed:3.7,team:'enemies'});
+      if (enemy.attackKind === 'crown') for (let index=0;index<12;index++) spawnProjectile(state,enemy,enemy.attackFacing+index*Math.PI/6,{kind:'orb',damage:15,speed:index%2?2.7:4.2,team:'enemies'});
     }
   } else if (enemy.action === 'attack') {
-    const speed = enemy.type === 'slime' ? 3.1 : enemy.type === 'bat' ? 4.7 : enemy.type === 'knight' ? 1.1 : 0;
+    const speed = enemy.attackKind === 'charge' ? 5.4 : enemy.type === 'slime' ? 3.1 : enemy.type === 'bat' ? 4.7 : enemy.type === 'knight' ? 1.1 : 0;
     enemy.vx = Math.cos(enemy.attackFacing) * speed; enemy.vy = Math.sin(enemy.attackFacing) * speed;
     if (enemy.actionFrame >= enemy.activeTicks) {
       enemy.action = 'recover'; enemy.actionFrame = 0; enemy.cooldown = stats.recovery;
@@ -484,7 +626,7 @@ function updateEnemy(state, enemy) {
     if (enemy.actionFrame >= 20) { enemy.action = 'idle'; enemy.actionFrame = 0; }
   } else {
     const gap = distance(enemy, target);
-    const engageDistance = enemy.type === 'boss' ? 144 : enemy.type === 'knight' ? 90 : enemy.type === 'bat' ? 118 : 98;
+    const engageDistance = enemy.type === 'caster' ? 310 : enemy.type === 'boss' ? enemy.variant==='garden'?144:300 : enemy.type === 'knight' ? 90 : enemy.type === 'bat' ? 118 : 98;
     if (!enemy.cooldown && gap < engageDistance && clearLine(state, enemy, target, 4)) beginEnemyAttack(state, enemy, target);
     else {
       if ((state.tick + enemy.id * 3) % 18 === 0 || distance(enemy, { x: enemy.navX, y: enemy.navY }) < 8) {
@@ -493,10 +635,11 @@ function updateEnemy(state, enemy) {
       }
       const navigation = angleTo(enemy, { x: enemy.navX, y: enemy.navY });
       enemy.facing = angleTo(enemy, target);
-      const approach = gap > 56 || enemy.type === 'boss' && gap > 102;
+      const approach = gap > (enemy.type==='caster'?235:56) || enemy.type === 'boss' && gap > 102;
       const orbit = enemy.type === 'bat' && enemy.cooldown > 10 && gap < 110;
-      enemy.vx = Math.cos(navigation + (orbit ? Math.PI / 2 : 0)) * stats.speed * (approach || orbit ? 1 : 0.15);
-      enemy.vy = Math.sin(navigation + (orbit ? Math.PI / 2 : 0)) * stats.speed * (approach || orbit ? 1 : 0.15);
+      const retreat=enemy.type==='caster' && gap<170 && clearLine(state,enemy,target,enemy.radius);
+      enemy.vx = Math.cos(retreat?enemy.facing+Math.PI:navigation + (orbit ? Math.PI / 2 : 0)) * stats.speed * (approach || orbit || retreat ? 1 : 0.15);
+      enemy.vy = Math.sin(retreat?enemy.facing+Math.PI:navigation + (orbit ? Math.PI / 2 : 0)) * stats.speed * (approach || orbit || retreat ? 1 : 0.15);
       enemy.action = 'run';
       enemy.guarded = enemy.type === 'knight' && !enemy.guardBroken && enemy.stamina > 0 && enemy.cooldown > 24;
     }
@@ -506,7 +649,7 @@ function updateEnemy(state, enemy) {
 
 function resolveEnemyAttacks(state) {
   for (const enemy of state.enemies) {
-    if (!alive(enemy) || enemy.action !== 'attack' || enemy.attackKind === 'burst') continue;
+    if (!alive(enemy) || enemy.action !== 'attack' || ['burst','fan','crown'].includes(enemy.attackKind)) continue;
     for (const target of state.fighters) {
       if (enemy.hitTargets.includes(target.id) || !alive(target)) continue;
       const connects = enemy.attackKind === 'slam'
@@ -554,7 +697,7 @@ function finishCoop(state, result) {
       emit(state, 'enemyDeath', { fighter: enemy.id, enemyType: enemy.type, x: enemy.x, y: enemy.y });
     }
   }
-  state.objective = result === 'victory' ? 'Victory · The Warden has fallen. The ruins are safe.' : 'Both adventurers have fallen. Ready up to try again.';
+  state.objective = result === 'victory' ? 'Victory · All nine rooms and three guardians defeated. The last hearth is rekindled.' : 'Both adventurers have fallen. Ready up to try again.';
   emit(state, 'matchEnd', { result, winner: null, x: 480, y: 320 });
 }
 
@@ -585,6 +728,7 @@ export function step(state, rawInputs = [emptyInput(), emptyInput()]) {
   }
 
   state.elapsedTicks += 1;
+  if (state.mode === 'coop' && state.roomBreak) { updateShrines(state,inputs); return state; }
   if (state.mode === 'duel') state.roundTicks = Math.max(0, state.roundTicks - 1);
   state.fighters.forEach((f, index) => updateFighter(state, f, inputs[index]));
   separate(state, ...state.fighters);
@@ -598,6 +742,7 @@ export function step(state, rawInputs = [emptyInput(), emptyInput()]) {
   resolveSwords(state);
   if (state.mode === 'coop') resolveEnemyAttacks(state);
   updateProjectiles(state);
+  if (state.mode === 'coop') updateHazards(state);
 
   if (state.mode === 'duel') {
     const down = state.fighters.filter(f => !alive(f));
@@ -612,23 +757,7 @@ export function step(state, rawInputs = [emptyInput(), emptyInput()]) {
     else if (state.wave === state.maxWaves && state.enemies.some(enemy => enemy.type === 'boss' && !alive(enemy))) finishCoop(state, 'victory');
     else if (!state.enemies.some(alive)) {
       if (state.wave >= state.maxWaves) finishCoop(state, 'victory');
-      else if (!state.waveDelay) {
-        state.waveDelay = TICK_RATE * 3;
-        state.projectiles = [];
-        state.objective = 'Room clear · Catch your breath. Health restores for the next wave.';
-        emit(state, 'waveClear', { wave: state.wave, x: 480, y: 320 });
-      } else {
-        state.waveDelay -= 1;
-        if (!state.waveDelay) {
-          state.fighters.forEach(f => {
-            f.hp = Math.min(100, (f.downed ? 35 : f.hp) + 22);
-            f.downed = false; f.reviveProgress = 0; f.stamina = 100; f.guard = 100;
-            f.stun = 0; f.action = 'idle'; f.actionFrame = 0; f.guardBroken = 0;
-            f.reviveShield = 75;
-          });
-          spawnWave(state, state.wave + 1);
-        }
-      }
+      else enterShrineRoom(state);
     }
   }
   return state;

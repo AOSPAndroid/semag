@@ -1,6 +1,6 @@
 import { createState, step, startMatch, cloneState, emptyInput, TICK_RATE } from './engine.js';
 import { ArenaRenderer } from './renderer.js';
-import { botInput } from './practice.js';
+import { botInput, TRAINING_STAGES } from './practice.js';
 import { GameAudio } from './audio.js';
 
 const $ = (id) => document.getElementById(id);
@@ -19,6 +19,20 @@ let socket, localId = null, connected = false, reconnectAttempts = 0, reconnectT
 let authoritative = createState(), predicted = cloneState(authoritative), practiceState = null;
 let players = [null, null], sequence = 0, pending = [], snapshots = [];
 let keys = emptyInput(), correction = { x: 0, y: 0 }, practice = false;
+let trainingMode='open', trainingStage=0;
+const trainingProfile=()=>trainingMode==='ladder'?TRAINING_STAGES[trainingStage]:TRAINING_STAGES.find(stage=>stage.id===trainingMode);
+function trainingHUD(){
+  $('training-panel').hidden=!practice;const profile=trainingProfile();
+  $('training-title').textContent=profile?.name || 'Open sparring';
+  $('training-tip').textContent=profile?.tip || 'Practice the whole move set against a balanced sparring partner.';
+  $('training-progress').textContent=trainingMode==='ladder'?`${trainingStage+1} / 5 DUELS${practiceState?.phase==='matchEnd' && practiceState.winner===0?' · CLEARED':''}`:'';
+}
+function restartPractice(){
+  releaseKeys();audio.resetEvents();renderer.resetEffects?.();practiceState=createState();startMatch(practiceState);
+  previousPhase=practiceState.phase;countdownLast=null;canvas.focus();trainingHUD();
+}
+$('training-mode').addEventListener('change',()=>{trainingMode=$('training-mode').value;trainingStage=0;if(practice)restartPractice();});
+$('training-mode').addEventListener('focus',releaseKeys);
 let fullRoom = false, intentionalClose = false, ping = null, lastSnapshotAt = 0;
 let inviteAddress = roomId ? location.href : location.origin + '/afterimage.html', focusLost = false, toastTimer;
 let previousPhase = 'lobby', fightFlashUntil = 0, countdownLast = null, lastHUD = 0;
@@ -148,14 +162,14 @@ function releaseKeys() {
 }
 function isTyping(target) { return target instanceof HTMLElement && (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable); }
 document.addEventListener('keydown', (event) => {
-  if (isTyping(event.target) || event.ctrlKey || event.metaKey || event.altKey) return;
+  if (isTyping(event.target) || event.target instanceof Element && event.target.closest('button,a,summary') || event.ctrlKey || event.metaKey || event.altKey) return;
   if (keyMapping.has(event.code)) {
     event.preventDefault(); heldCodes.add(event.code); refreshKeys(); focusLost = false;
     $('focus-note').hidden = true;
   } else if (event.code === 'KeyR' && !event.repeat) { event.preventDefault(); $('ready-button').click(); }
 });
 document.addEventListener('keyup', (event) => {
-  if (keyMapping.has(event.code)) { heldCodes.delete(event.code); refreshKeys(); if (!isTyping(event.target)) event.preventDefault(); }
+  if (keyMapping.has(event.code)) { heldCodes.delete(event.code); refreshKeys(); if (!isTyping(event.target) && !(event.target instanceof Element && event.target.closest('button,a,summary'))) event.preventDefault(); }
 });
 window.addEventListener('blur', () => { releaseKeys(); focusLost = true; });
 document.addEventListener('visibilitychange', () => { if (document.hidden) releaseKeys(); });
@@ -165,10 +179,8 @@ canvas.addEventListener('pointerdown', () => { canvas.focus(); focusLost = false
 
 function toggleReady() {
   if (practice) {
-    audio.resetEvents(); renderer.resetEffects?.();
-    practiceState = createState(); startMatch(practiceState); keys = emptyInput();
-    previousPhase = practiceState.phase; countdownLast = null; canvas.focus();
-    return;
+    if(trainingMode==='ladder' && practiceState.phase==='matchEnd' && practiceState.winner===0)trainingStage=(trainingStage+1)%TRAINING_STAGES.length;
+    restartPractice();return;
   }
   if (!connected || localId == null) return;
   const current = authoritative.phase;
@@ -191,14 +203,13 @@ $('practice-button').addEventListener('click', () => {
   releaseKeys(); correction = { x: 0, y: 0 }; countdownLast = null; fightFlashUntil = 0;
   if (practice) {
     send({ type: 'ready', ready: false });
-    practiceState = createState(); startMatch(practiceState);
-    previousPhase = practiceState.phase;
+    trainingStage=0;restartPractice();
     toast('Practice opponent joined. Make the first move.');
   } else { practiceState = null; previousPhase = authoritative.phase; toast('Back in the multiplayer room.'); }
   $('app').classList.toggle('is-practice', practice);
   $('practice-button').querySelector('span').textContent = practice ? 'Leave practice' : 'Practice';
   $('mode-tag').textContent = practice ? 'SPARRING SESSION' : 'PRIVATE 1V1';
-  connectedUI(); canvas.focus();
+  connectedUI(); trainingHUD(); canvas.focus();
 });
 
 $('sound-button').addEventListener('click', async () => {
@@ -258,7 +269,7 @@ async function setInvite() {
 function inputTick() {
   if (practice) {
     const phase = practiceState.phase;
-    step(practiceState, [copyInput(), botInput(practiceState, 1)]);
+    step(practiceState, [copyInput(), botInput(practiceState, 1, trainingProfile()?.id || 'open')]);
     audio.playEvents(practiceState.events || []);
     if (phase !== practiceState.phase) {
       if (practiceState.phase === 'fight') { fightFlashUntil = performance.now() + 650; audio.fight(); }
@@ -306,7 +317,7 @@ const actionLabels = { idle: 'HOLD YOUR GROUND', run: 'FINDING THE RANGE', jump:
 function updateHUD(now) {
   const state = practice ? practiceState : authoritative;
   const inMatch = ['countdown', 'fight', 'roundEnd', 'matchEnd'].includes(state.phase);
-  const names = practice ? [playerName, 'Sparring partner'] : players.map((p, i) => safeName(p?.name, `Challenger 0${i + 1}`));
+  const names = practice ? [playerName, trainingProfile()?.name.slice(5) || 'Sparring partner'] : players.map((p, i) => safeName(p?.name, `Challenger 0${i + 1}`));
   for (let i = 0; i < 2; i++) {
     const fighter = state.fighters[i], prefix = `p${i + 1}`;
     $(prefix + '-name').textContent = names[i].toUpperCase();
@@ -330,12 +341,13 @@ function updateHUD(now) {
   const mine = players[localId];
   const button = $('ready-button');
   button.classList.toggle('is-ready', !practice && !!mine?.ready);
-  button.querySelector('span').textContent = practice ? state.phase === 'matchEnd' ? 'Spar again' : 'Restart practice' : state.phase === 'matchEnd' ? mine?.ready ? 'Rematch ready' : 'Rematch' : state.phase === 'fight' || state.phase === 'roundEnd' ? 'Match in progress' : mine?.ready ? 'Cancel ready' : 'Ready up';
+  button.querySelector('span').textContent = practice ? state.phase === 'matchEnd' ? trainingMode==='ladder' && state.winner===0 ? trainingStage===4 ? 'Ladder complete · Play again' : 'Next training duel' : 'Retry duel' : 'Restart practice' : state.phase === 'matchEnd' ? mine?.ready ? 'Rematch ready' : 'Rematch' : state.phase === 'fight' || state.phase === 'roundEnd' ? 'Match in progress' : mine?.ready ? 'Cancel ready' : 'Ready up';
   button.disabled = !practice && (!connected || localId == null || state.phase === 'fight' || state.phase === 'roundEnd' || state.phase === 'countdown' && state.round > 1);
   $('practice-button').disabled = !practice && ['fight', 'roundEnd', 'countdown'].includes(authoritative.phase);
   $('player-name').disabled = inMatch;
   document.querySelector('.game-shell').classList.toggle('in-fight', state.phase === 'fight');
   $('focus-note').hidden = !(focusLost && state.phase === 'fight');
+  if(practice)trainingHUD();
   $('timer-caption').textContent = practice ? 'SPARRING SESSION' : 'BEST OF THREE';
   const overlay = $('game-overlay');
   overlay.className = 'game-overlay';
@@ -365,7 +377,7 @@ function updateHUD(now) {
     const winner = state.winner;
     kicker = state.phase === 'matchEnd' ? 'THE ROOFTOP HAS A WINNER' : `ROUND ${String(state.round).padStart(2, '0')} COMPLETE`;
     title = winner == null ? 'A perfect tie.' : `${winner === (practice ? 0 : localId) ? 'You' : names[winner]} ${winner === (practice ? 0 : localId) ? 'win' : 'wins'}.`;
-    subtitle = state.phase === 'matchEnd' ? practice ? 'Ready for another spar? Restart below.' : 'Run it back. Both players must ready up for a rematch.' : 'Take a breath. Next round starts shortly.';
+    subtitle = state.phase === 'matchEnd' ? practice ? trainingMode==='ladder' && winner===0 ? trainingStage===4 ? 'All five opponents defeated. The rooftop is yours.' : 'Challenge cleared. Continue to your next opponent below.' : 'Study the matchup, then retry or choose another training opponent.' : 'Run it back. Both players must ready up for a rematch.' : 'Take a breath. Next round starts shortly.';
     $('arena-status').innerHTML = `<i></i> ${state.phase === 'matchEnd' ? 'MATCH COMPLETE' : 'ROUND COMPLETE'}`;
     $('round-message').textContent = state.phase === 'matchEnd' ? 'READY FOR A REMATCH?' : 'FIRST TO TWO ROUNDS';
   }

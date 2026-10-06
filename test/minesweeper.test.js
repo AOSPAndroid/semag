@@ -208,3 +208,16 @@ test('invalid board definitions fail rather than creating impossible layouts', (
   }
   assert.throws(() => createState({ random: false }), TypeError);
 });
+
+test('Expert is a 30 by 16 field with 99 mines and a safe first neighborhood', () => {
+  const s = createState({ rows: 16, cols: 30, mines: 99, random: () => .4 });
+  assert.equal(s.difficulty, 'expert'); assert.equal(s.cells.length, 480);
+  assert.equal(reveal(s, 245).ok, true); assert.equal(s.cells.filter(c => c.mine).length, 99);
+  for (const i of [245, ...neighbors(s, 245)]) assert.equal(s.cells[i].mine, false);
+  assert.ok(s.opened > 0);
+});
+test('Expert normal reveals can complete all 381 safe tiles with a frozen final clock', () => {
+  const s = createState({ rows: 16, cols: 30, mines: 99, random: () => .73 }); reveal(s, 0); advanceTime(s, 17);
+  for (let i = 0; i < s.cells.length; i++) if (!s.cells[i].mine && !s.cells[i].revealed) reveal(s, i);
+  assert.equal(s.phase, 'won'); assert.equal(s.opened, 381); advanceTime(s, 30); assert.equal(s.elapsed, 17);
+});

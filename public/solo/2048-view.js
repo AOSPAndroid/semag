@@ -1,4 +1,4 @@
-import { createState, move, undo, togglePause, continueGame } from './2048-engine.js';
+import { PUZZLES, nextPuzzle, retryPuzzle, createState, move, undo, togglePause, continueGame } from './2048-engine.js';
 
 const keyDirections = {
   ArrowUp: 'up', ArrowRight: 'right', ArrowDown: 'down', ArrowLeft: 'left',
@@ -6,7 +6,8 @@ const keyDirections = {
 };
 
 export function mount(container, { onUpdate = () => {} } = {}) {
-  let state = createState();
+  let mode = 'classic';
+  let state = createState({ mode });
   let destroyed = false;
   let animationTimer = null;
   let pointer = null;
@@ -14,12 +15,16 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   element.className = 'tiles-2048';
   element.setAttribute('aria-label', '2048 game');
   element.innerHTML = `
+    <div class="tiles-2048-modes" aria-label="2048 game mode"><button type="button" data-mode="classic" aria-pressed="true">Classic</button><button type="button" data-mode="puzzles" aria-pressed="false">Six puzzles</button></div>
+    <div class="tiles-2048-challenge" hidden><div><span class="tiles-2048-puzzle-title"></span><b class="tiles-2048-budget"></b></div><p>No new tiles. Merge the entire board into its target before your moves run out.</p><div class="tiles-2048-puzzle-progress"></div></div>
     <p class="tiles-2048-hint">Move together. Make room. Go one tile further.</p>
     <div class="tiles-2048-frame">
       <div class="tiles-2048-grid" role="grid" aria-label="2048 board. Use arrow keys or W A S D to slide all tiles." aria-rowcount="4" aria-colcount="4" tabindex="0"></div>
       <div class="tiles-2048-overlay" hidden>
         <strong></strong><p></p>
         <button type="button" data-action="continue" hidden>Keep going <span aria-hidden="true">→</span></button>
+        <button type="button" data-action="next-puzzle" hidden>Next puzzle <span aria-hidden="true">→</span></button>
+        <button type="button" data-action="retry-puzzle" hidden>Retry this puzzle <span aria-hidden="true">↻</span></button>
         <button type="button" data-action="resume" hidden>Resume game <span aria-hidden="true">→</span></button>
       </div>
     </div>
@@ -42,6 +47,13 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   const description = overlay.querySelector('p');
   const continueButton = element.querySelector('[data-action="continue"]');
   const resumeButton = element.querySelector('[data-action="resume"]');
+  const challengePanel = element.querySelector('.tiles-2048-challenge');
+  const puzzleTitle = element.querySelector('.tiles-2048-puzzle-title');
+  const budget = element.querySelector('.tiles-2048-budget');
+  const progress = element.querySelector('.tiles-2048-puzzle-progress');
+  const nextButton = element.querySelector('[data-action=next-puzzle]');
+  const retryButton = element.querySelector('[data-action=retry-puzzle]');
+  for (let i = 0; i < 6; i++) { const dot = document.createElement('span'); dot.textContent = i + 1; progress.append(dot); }
   const undoButton = element.querySelector('[data-action="undo"]');
   const moveButtons = [...element.querySelectorAll('[data-action^="move-"]')];
   const notice = element.querySelector('.tiles-2048-notice');
@@ -71,15 +83,21 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   function emit() {
     const maximum = Math.max(...state.board);
     onUpdate({
-      phase: state.phase, score: state.score, record: state.score,
+      phase: state.phase, score: state.score, record: state.score, recordKey: mode === 'puzzles' ? 'puzzles' : 'default',
       recordLabel: 'BEST SCORE', scoreLabel: 'SCORE',
-      detail: `${state.moves} ${state.moves === 1 ? 'move' : 'moves'} · Highest tile ${maximum}`,
+      detail: mode === 'puzzles' ? `Puzzle ${state.level + 1}/6 · Target ${PUZZLES[state.level].target} · ${state.moves}/${PUZZLES[state.level].budget} moves` : `${state.moves} ${state.moves === 1 ? 'move' : 'moves'} · Highest tile ${maximum}`,
     });
   }
 
   function paint(result = null, direction = null) {
     if (destroyed) return;
     clearTimeout(animationTimer);
+    challengePanel.hidden = mode !== 'puzzles';
+    element.querySelector('.tiles-2048-hint').hidden = mode === 'puzzles';
+    for (const button of element.querySelectorAll('[data-mode]')) button.setAttribute('aria-pressed', String(button.dataset.mode === mode));
+    if (mode === 'puzzles') { const puzzle = PUZZLES[state.level]; puzzleTitle.textContent = `${state.level + 1} / 6 · ${puzzle.title}`; budget.textContent = `TARGET ${puzzle.target} · ${Math.max(0, puzzle.budget - state.moves)} MOVES LEFT`; for (let i = 0; i < 6; i++) progress.children[i].dataset.state = i < state.level || state.phase === 'won' && i === state.level ? 'done' : i === state.level ? 'current' : 'future'; }
+    nextButton.hidden = mode !== 'puzzles' || state.phase !== 'won' || state.level === PUZZLES.length - 1;
+    retryButton.hidden = mode !== 'puzzles' || state.phase !== 'lost';
     const dx = direction === 'left' ? '8px' : direction === 'right' ? '-8px' : '0px';
     const dy = direction === 'up' ? '8px' : direction === 'down' ? '-8px' : '0px';
     grid.style.setProperty('--tile-move-x', dx);
@@ -101,19 +119,19 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     moveButtons.forEach(button => { button.disabled = state.phase !== 'playing'; });
     element.dataset.phase = state.phase;
     overlay.hidden = state.phase === 'playing';
-    continueButton.hidden = state.phase !== 'won';
+    continueButton.hidden = state.phase !== 'won' || mode === 'puzzles';
     resumeButton.hidden = state.phase !== 'paused';
     if (state.phase === 'paused') {
       title.textContent = 'A moment to think.';
       description.textContent = 'Your board is waiting right here.';
       notice.textContent = 'Game paused.';
     } else if (state.phase === 'won') {
-      title.textContent = '2048. Well played.';
-      description.textContent = 'Keep going and see how far you can reach.';
-      notice.textContent = 'You reached 2048! Choose Keep going to continue.';
+      title.textContent = mode === 'puzzles' ? state.level === PUZZLES.length - 1 ? 'Six puzzles. Solved.' : `Target ${PUZZLES[state.level].target}. Solved.` : '2048. Well played.';
+      description.textContent = mode === 'puzzles' ? state.level === PUZZLES.length - 1 ? `A complete puzzle tour in ${state.totalMoves} moves.` : `${state.moves} moves used. Your score carries to the next puzzle.` : 'Keep going and see how far you can reach.';
+      notice.textContent = mode === 'puzzles' ? state.level === PUZZLES.length - 1 ? 'All six challenges complete.' : 'Puzzle complete. Choose Next puzzle when you’re ready.' : 'You reached 2048! Choose Keep going to continue.';
     } else if (state.phase === 'lost') {
-      title.textContent = 'A full board.';
-      description.textContent = 'No more moves. Undo your last move or start a new game.';
+      title.textContent = mode === 'puzzles' ? 'A different route awaits.' : 'A full board.';
+      description.textContent = mode === 'puzzles' ? state.result === 'budget' ? 'The move budget ran out. Undo once or retry this puzzle.' : 'These tiles cannot reach the target. Undo once or retry this puzzle.' : 'No more moves. Undo your last move or start a new game.';
       notice.textContent = `No moves left. Final score ${state.score}.`;
     } else {
       notice.textContent = result?.gained ? `Merged for ${result.gained} points. Score ${state.score}.` : `${state.moves} moves. Score ${state.score}.`;
@@ -140,12 +158,16 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   }
 
   function onClick(event) {
+    const modeButton = event.target.closest('button[data-mode]');
+    if (modeButton) { mode = modeButton.dataset.mode; pointer = null; state = createState({ mode }); paint(); focusBoard(); return; }
     const button = event.target.closest('button[data-action]');
     if (!button || !element.contains(button) || button.disabled) return;
     const action = button.dataset.action;
     if (action.startsWith('move-')) slide(action.slice(5));
     else if (action === 'undo' && undo(state)) paint();
     else if (action === 'continue' && continueGame(state)) paint();
+    else if (action === 'next-puzzle' && nextPuzzle(state)) paint();
+    else if (action === 'retry-puzzle' && retryPuzzle(state)) paint();
     else if (action === 'resume' && togglePause(state)) paint();
     focusBoard();
   }
@@ -179,7 +201,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     restart() {
       if (destroyed) return;
       pointer = null;
-      state = createState();
+      state = createState({ mode });
       paint();
       focusBoard();
     },

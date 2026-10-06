@@ -85,18 +85,18 @@ class Keyboard:
 
 
 def check_catalog(page):
-    assert page.locator("[data-create-game]").count() == 8
-    assert page.locator("[data-play-solo]").count() == 7
+    assert page.locator("[data-create-game]").count() == 9
+    assert page.locator("[data-play-solo]").count() == 9
     for selector in ('[data-create-game="vector-arena"]', '[data-play-solo="prism-shift"]', '[data-play-solo="rift-survivor"]'):
         assert page.locator(selector).bounding_box()["height"] >= 44
     page.locator('[data-filter="action"]').click()
-    assert page.locator("[data-create-game]:visible").count() == 4
-    assert page.locator("[data-play-solo]:visible").count() == 1
+    assert page.locator("[data-create-game]:visible").count() == 5
+    assert page.locator("[data-play-solo]:visible").count() == 2
     page.locator('[data-filter="driving"]').click()
     assert page.locator("[data-play-solo]:visible").count() == 2
     assert page.locator("[data-create-game]:visible").count() == 0
     page.locator('[data-filter="solo"]').click()
-    assert page.locator("[data-play-solo]:visible").count() == 7
+    assert page.locator("[data-play-solo]:visible").count() == 9
     assert page.locator("[data-create-game]:visible").count() == 0
     page.locator('[data-filter="all"]').click()
 
@@ -123,10 +123,10 @@ def check_search(page):
     search.focus()
     page.keyboard.press("ControlOrMeta+a")
     page.keyboard.press("Backspace")
-    assert page.locator("[data-game-card]:visible").count() == 5
+    assert page.locator("[data-game-card]:visible").count() == 7
     assert page.locator("#shelf-empty").is_hidden()
     page.locator('[data-filter="all"]').click()
-    assert page.locator("[data-game-card]:visible").count() == 15
+    assert page.locator("[data-game-card]:visible").count() == 18
 
 
 CANVAS_PAINT = """() => [...document.querySelectorAll('.game-art canvas')]
@@ -599,13 +599,65 @@ def vector(browser, url):
         assert state(first, False)["phase"] == "fight", "R triggered ready/rematch instead of reload"
         first.wait_for_function("window.firesideRoom.getState().fighters[0].ammo === 6 && window.firesideRoom.getState().fighters[0].reloadTicks === 0", timeout=2500)
         screenshot(first, "fireside-vector-arena.png")
-        keyboard.set({"i", "j"})
-        phase(first, "matchEnd", False, timeout=16000)
-        keyboard.release()
+        # Round 2's central relay deliberately blocks the old center-lane shot.
+        # Use actual movement to cross the safe upper flank, then alternate
+        # winners so the physical match also visits the third arena.
+        keyboards = [keyboard, Keyboard(second)]
+        routes = {
+            1: [],
+            2: [(806, 70), (100, 70), (100, 320)],
+            3: [(100, 410), (100, 70), (880, 70), (880, 230)],
+        }
+        visited, captured, waypoint, last_round = set(), set(), 0, 0
+        deadline = time.monotonic() + 45
+        while time.monotonic() < deadline:
+            current = state(first, False)
+            if current["phase"] == "matchEnd":
+                break
+            if current["phase"] != "fight":
+                for controls in keyboards:
+                    controls.release()
+                first.wait_for_timeout(40)
+                continue
+            round_number = current["round"]
+            if round_number != last_round:
+                for controls in keyboards:
+                    controls.release()
+                waypoint, last_round = 0, round_number
+                [first, second][1 if round_number == 2 else 0].locator("#arena").focus()
+            visited.add(current["stageId"])
+            for page in (first, second):
+                assert current["stageName"].upper() in page.locator("#stage-label").inner_text()
+            shooter_id = 1 if round_number == 2 else 0
+            page, controls = [first, second][shooter_id], keyboards[shooter_id]
+            fighter, target = current["fighters"][shooter_id], current["fighters"][1 - shooter_id]
+            desired = set()
+            route = routes[round_number]
+            if waypoint < len(route):
+                x, y = route[waypoint]
+                if abs(x - fighter["x"]) > 10:
+                    desired.add("d" if fighter["x"] < x else "a")
+                elif abs(y - fighter["y"]) > 10:
+                    desired.add("s" if fighter["y"] < y else "w")
+                else:
+                    waypoint += 1
+            else:
+                if current["stageId"] not in captured:
+                    screenshot(first, f"fireside-vector-{current['stageId']}.png")
+                    captured.add(current["stageId"])
+                aim_at(page, "#arena", target["x"], target["y"], 960, 640)
+                desired = {"i", "j"}
+            controls.set(desired)
+            first.wait_for_timeout(20)
+        for controls in keyboards:
+            controls.release()
+        phase(first, "matchEnd", False, timeout=1500)
         phase(second, "matchEnd", False)
+        assert visited == {"garden", "relay", "vault"}, visited
+        assert captured == visited, captured
         assert state(first, False)["winner"] == 0
-        assert [f["wins"] for f in state(first, False)["fighters"]] == [2, 0]
-        assert [f["wins"] for f in state(second, False)["fighters"]] == [2, 0]
+        assert [f["wins"] for f in state(first, False)["fighters"]] == [2, 1]
+        assert [f["wins"] for f in state(second, False)["fighters"]] == [2, 1]
         first.locator("#ready-button").click()
         first.wait_for_timeout(200)
         assert state(first, False)["phase"] == "lobby", "One player started a new match without peer agreement"
@@ -630,7 +682,7 @@ def vector(browser, url):
         second.close()
         phase(first, "lobby", False)
         assert all(f["hp"] == 100 and f["wins"] == 0 for f in state(first, False)["fighters"])
-        print("PASS vector-arena: real two-context room/code join, ready cancellation, movement/dash, synchronized shooting/reload, first-to-two match, both-agree rematch, touch pads/fire cancellation, disconnect reset and 390/320px layouts", flush=True)
+        print("PASS vector-arena: real two-context room/code join, ready cancellation, movement/dash, synchronized shooting/reload, all 3 arena names/backgrounds, cover flanks and first-to-two match, both-agree rematch, touch pads/fire cancellation, disconnect reset and 390/320px layouts", flush=True)
     finally:
         keyboard.release()
         for context in contexts:

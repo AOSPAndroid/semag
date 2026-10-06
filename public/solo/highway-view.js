@@ -1,4 +1,13 @@
-import { createState, step, togglePause as pauseState, CAR_WIDTH } from './highway-engine.js';
+import {
+  createState,
+  step,
+  togglePause as pauseState,
+  CAR_WIDTH,
+  DISTRICTS,
+  DISTRICT_LENGTH,
+  getDistrict,
+  recordScope,
+} from './highway-engine.js';
 
 const W = 720;
 const H = 520;
@@ -7,14 +16,26 @@ const ROAD_HALF = 268;
 const CAR_Y = 474;
 const COLORS = { cream: '#f8edcf', orange: '#f0a160', mint: '#77dfc9', ink: '#132c32' };
 const KEY_CONTROLS = {
-  ArrowLeft: 'left', a: 'left', A: 'left', ArrowRight: 'right', d: 'right', D: 'right',
-  ArrowUp: 'throttle', w: 'throttle', W: 'throttle', ArrowDown: 'brake', s: 'brake', S: 'brake',
-  ' ': 'boost', Space: 'boost',
+  ArrowLeft: 'left',
+  a: 'left',
+  A: 'left',
+  ArrowRight: 'right',
+  d: 'right',
+  D: 'right',
+  ArrowUp: 'throttle',
+  w: 'throttle',
+  W: 'throttle',
+  ArrowDown: 'brake',
+  s: 'brake',
+  S: 'brake',
+  ' ': 'boost',
+  Space: 'boost',
 };
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 const mod = (value, divisor) => ((value % divisor) + divisor) % divisor;
-const isForm = target => target instanceof Element
-  && Boolean(target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"])'));
+const isForm = (target) =>
+  target instanceof Element &&
+  Boolean(target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"])'));
 function node(tag, className, text) {
   const result = document.createElement(tag);
   result.className = className;
@@ -24,6 +45,7 @@ function node(tag, className, text) {
 
 export function mount(container, { onUpdate = () => {} } = {}) {
   let state = createState();
+  const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
   let destroyed = false;
   let raf = null;
   let previousFrame = null;
@@ -39,7 +61,32 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   const view = node('section', 'highway-view');
   view.setAttribute('aria-label', 'Night Drive highway game');
   const topline = node('div', 'highway-topline');
-  topline.append(node('span', '', 'NIGHT DRIVE'), node('span', 'highway-location', 'CITY LOOP · ENDLESS HIGHWAY'));
+  const location = node('span', 'highway-location', 'NEON CITY / ENDLESS');
+  topline.append(node('span', '', 'NIGHT DRIVE'), location);
+  const modeChoices = node('div', 'highway-modes');
+  modeChoices.setAttribute('role', 'group');
+  modeChoices.setAttribute('aria-label', 'Choose drive mode');
+  for (const [mode, label] of [
+    ['endless', 'Endless shift'],
+    ['tour', 'Five-district tour'],
+  ]) {
+    const button = node('button', 'highway-mode', label);
+    button.type = 'button';
+    button.dataset.mode = mode;
+    modeChoices.append(button);
+  }
+  const stagePanel = node('div', 'highway-stage');
+  const stageLabel = node('span', 'highway-stage-label'),
+    stageTitle = node('strong', 'highway-stage-title'),
+    stageGoal = node('span', 'highway-stage-goal');
+  const progress = node('div', 'highway-progress'),
+    progressFill = node('i', '');
+  progress.append(progressFill);
+  progress.setAttribute('role', 'progressbar');
+  progress.setAttribute('aria-valuemin', '0');
+  progress.setAttribute('aria-valuemax', '900');
+  const stageDescription = node('p', 'highway-stage-description');
+  stagePanel.append(stageLabel, stageTitle, stageGoal, progress, stageDescription);
   const board = node('div', 'highway-board');
   const canvas = node('canvas', 'highway-canvas');
   canvas.width = W;
@@ -47,7 +94,10 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   canvas.tabIndex = 0;
   canvas.dataset.soloFocus = '';
   canvas.setAttribute('role', 'img');
-  canvas.setAttribute('aria-label', 'Night highway. Arrow keys or W A S D to drive, Space to boost, P to pause.');
+  canvas.setAttribute(
+    'aria-label',
+    'Night highway. Arrow keys or W A S D to drive, Space to boost, P to pause.',
+  );
   const overlay = node('div', 'highway-overlay');
   overlay.hidden = true;
   const overlayEyebrow = node('span', 'highway-overlay-eyebrow');
@@ -63,27 +113,37 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   status.setAttribute('role', 'status');
   status.setAttribute('aria-live', 'polite');
   status.setAttribute('aria-atomic', 'true');
-  const hint = node('p', 'highway-hint', 'A / D or ← / → steer · W accelerates · S brakes · Space boosts. Skim past traffic to build a combo.');
+  const hint = node(
+    'p',
+    'highway-hint',
+    'A / D or ← / → steer · W accelerates · S brakes · Space boosts. Skim past traffic to build a combo.',
+  );
   description.append(status, hint);
   const controls = node('div', 'highway-controls');
   controls.setAttribute('role', 'group');
   controls.setAttribute('aria-label', 'Hold to drive');
   const buttons = new Map();
   for (const [control, symbol, label] of [
-    ['left', '←', 'Steer left'], ['right', '→', 'Steer right'], ['brake', '↓', 'Brake'],
-    ['throttle', '↑', 'Accelerate'], ['boost', '↗', 'Boost'],
+    ['left', '←', 'Steer left'],
+    ['right', '→', 'Steer right'],
+    ['brake', '↓', 'Brake'],
+    ['throttle', '↑', 'Accelerate'],
+    ['boost', '↗', 'Boost'],
   ]) {
     const button = node('button', `highway-control highway-control-${control}`);
     button.type = 'button';
     button.dataset.control = control;
     button.setAttribute('aria-label', `Hold to ${label.toLowerCase()}`);
     button.setAttribute('aria-pressed', 'false');
-    button.append(node('b', '', symbol), node('span', '', control === 'throttle' ? 'GAS' : label.toUpperCase().replace('STEER ', '')));
+    button.append(
+      node('b', '', symbol),
+      node('span', '', control === 'throttle' ? 'GAS' : label.toUpperCase().replace('STEER ', '')),
+    );
     buttons.set(control, button);
     controls.append(button);
   }
   footer.append(description, controls);
-  view.append(topline, board, footer);
+  view.append(topline, modeChoices, stagePanel, board, footer);
   container.append(view);
   const ctx = canvas.getContext('2d');
 
@@ -112,49 +172,109 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   }
   function details() {
     if (state.phase === 'paused') return 'Cruise paused. Resume when you are ready.';
-    if (state.phase === 'lost') return `${(state.distance / 1000).toFixed(2)} km on the night shift. Take another lap.`;
+    if (state.phase === 'won')
+      return `Five districts complete in ${state.finishTime.toFixed(1)}s. ${state.totalCrashes === 0 ? 'A flawless tour.' : 'Your car made it through.'} ${state.score} points.`;
+    if (state.districtWarning) {
+      const next = DISTRICTS.find((d) => d.id === state.districtWarning);
+      return `${next.title} ahead: ${next.description}`;
+    }
+    if (state.phase === 'lost')
+      return `${(state.distance / 1000).toFixed(2)} km on the night shift. Take another lap.`;
     if (state.shoulder) return 'Ease back onto the road. The shoulder slows you down.';
     if (state.crashCooldown > 0) return 'A close call. Find a gap while your car recovers.';
     return 'Stay smooth. Clean overtakes score points; near misses build your combo.';
   }
   function publish(force = false) {
-    if (!force && state.elapsed - lastPublished < .1 && state.phase === lastPhase) return;
+    if (!force && state.elapsed - lastPublished < 0.1 && state.phase === lastPhase) return;
     lastPublished = state.elapsed;
     lastPhase = state.phase;
-    const detail = details();
+    const detail = details(),
+      district = getDistrict(state);
+    location.textContent = `${district.title.toUpperCase()} / ${state.mode === 'tour' ? 'TOUR' : 'ENDLESS'}`;
+    for (const button of modeChoices.children)
+      button.setAttribute('aria-pressed', String(button.dataset.mode === state.mode));
+    stageLabel.textContent = `DISTRICT ${(state.districtIndex % DISTRICTS.length) + 1} / 5`;
+    stageTitle.textContent = district.title;
+    stageGoal.textContent =
+      state.phase === 'won'
+        ? '4.5 KM TOUR COMPLETE'
+        : `${Math.ceil(DISTRICT_LENGTH - state.districtProgress)}m to checkpoint`;
+    stageDescription.textContent = state.districtWarning
+      ? `Ahead: ${DISTRICTS.find((d) => d.id === state.districtWarning).description}`
+      : district.description;
+    stagePanel.dataset.warning = String(Boolean(state.districtWarning));
+    progressFill.style.width = `${state.phase === 'won' ? 100 : (state.districtProgress / DISTRICT_LENGTH) * 100}%`;
+    progress.setAttribute('aria-valuenow', String(Math.round(state.districtProgress)));
     if (status.textContent !== detail) status.textContent = detail;
     view.dataset.phase = state.phase;
     view.dataset.speed = String(Math.round(state.speed));
     overlay.hidden = state.phase === 'playing';
     if (!overlay.hidden) {
       overlayEyebrow.textContent = state.phase === 'paused' ? 'PULL OVER FOR A MOMENT' : 'THE NIGHT IS YOURS';
-      overlayTitle.textContent = state.phase === 'paused' ? 'Take a breather.' : 'End of the road.';
-      overlayDetail.textContent = state.phase === 'paused' ? 'Press P or Resume to keep driving.' : `${(state.distance / 1000).toFixed(2)} KM  ·  ${state.score} POINTS`;
+      overlayTitle.textContent =
+        state.phase === 'paused'
+          ? 'Take a breather.'
+          : state.phase === 'won'
+            ? 'Tour complete.'
+            : 'End of the road.';
+      overlayDetail.textContent =
+        state.phase === 'paused'
+          ? 'Press P or Resume to keep driving.'
+          : `${(state.distance / 1000).toFixed(2)} KM  ·  ${state.score} POINTS`;
       replay.hidden = state.phase === 'paused';
     }
-    onUpdate({ phase: state.phase, score: state.score, record: state.score, recordLabel: 'BEST SCORE', scoreLabel: 'SCORE', detail });
+    onUpdate({
+      phase: state.phase,
+      score: state.score,
+      record: state.score,
+      recordKey: recordScope(state),
+      recordLabel: state.mode === 'tour' ? 'BEST TOUR' : 'BEST SCORE',
+      scoreLabel: 'SCORE',
+      detail,
+    });
   }
 
   function projection(z) {
     const p = 16 / (Math.max(0, z) + 16);
-    return { p, x: W / 2 + state.curve * (1 - p) ** 2 * 142, y: HORIZON + (CAR_Y - HORIZON) * p, half: ROAD_HALF * p };
+    return {
+      p,
+      x: W / 2 + state.curve * (1 - p) ** 2 * 142,
+      y: HORIZON + (CAR_Y - HORIZON) * p,
+      half: ROAD_HALF * p,
+    };
   }
   function rect(x, y, width, height, color) {
     ctx.fillStyle = color;
-    ctx.fillRect(Math.round(x), Math.round(y), Math.max(1, Math.round(width)), Math.max(1, Math.round(height)));
+    ctx.fillRect(
+      Math.round(x),
+      Math.round(y),
+      Math.max(1, Math.round(width)),
+      Math.max(1, Math.round(height)),
+    );
   }
   function polygon(points, color) {
     ctx.fillStyle = color;
     ctx.beginPath();
-    points.forEach(([x, y], index) => index ? ctx.lineTo(Math.round(x), Math.round(y)) : ctx.moveTo(Math.round(x), Math.round(y)));
+    points.forEach(([x, y], index) =>
+      index ? ctx.lineTo(Math.round(x), Math.round(y)) : ctx.moveTo(Math.round(x), Math.round(y)),
+    );
     ctx.closePath();
     ctx.fill();
   }
   function roadStrip(a, b, left, right, color) {
-    polygon([[a.x + a.half * left, a.y], [a.x + a.half * right, a.y], [b.x + b.half * right, b.y], [b.x + b.half * left, b.y]], color);
+    polygon(
+      [
+        [a.x + a.half * left, a.y],
+        [a.x + a.half * right, a.y],
+        [b.x + b.half * right, b.y],
+        [b.x + b.half * left, b.y],
+      ],
+      color,
+    );
   }
   function sky() {
-    rect(0, 0, W, HORIZON, '#142932');
+    const district = getDistrict(state);
+    rect(0, 0, W, HORIZON, district.sky);
     rect(0, 78, W, 44, '#1a333c');
     rect(0, 122, W, 34, '#234249');
     rect(0, 156, W, 24, '#30565a');
@@ -171,6 +291,79 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     rect(mx + 12, 81, 28, 6, '#f2dcab');
     rect(mx + 29, 44, 13, 10, '#dac898');
     rect(mx + 9, 66, 10, 8, '#dac898');
+    if (district.id === 'coast') {
+      polygon(
+        [
+          [0, 130],
+          [120, 94],
+          [260, 116],
+          [400, 77],
+          [540, 123],
+          [720, 89],
+          [720, HORIZON],
+          [0, HORIZON],
+        ],
+        '#3e677d',
+      );
+      rect(0, HORIZON - 24, W, 24, '#4b8492');
+      for (let i = 0; i < 18; i += 1) rect(i * 45 + 9, HORIZON - 14 + (i % 3) * 3, 23, 2, '#78afb7');
+      return;
+    }
+    if (district.id === 'works') {
+      for (let i = 0; i < 7; i += 1) {
+        rect(i * 115 - 12, 130 - (i % 2) * 25, 90, 50, '#4f4554');
+        rect(i * 115 + 20, 62, 15, 90, '#675763');
+        rect(i * 115 + 25, 58, 19, 8, '#8b7a78');
+      }
+      rect(120, 63, 260, 7, '#aa997e');
+      rect(189, 63, 7, 99, '#aa997e');
+      rect(376, 63, 3, 48, '#b19b75');
+      return;
+    }
+    if (district.id === 'summit') {
+      polygon(
+        [
+          [0, HORIZON],
+          [110, 68],
+          [225, 131],
+          [365, 42],
+          [500, 136],
+          [623, 73],
+          [720, HORIZON],
+        ],
+        '#5e647e',
+      );
+      polygon(
+        [
+          [326, 72],
+          [365, 42],
+          [401, 74],
+          [375, 68],
+          [367, 82],
+          [354, 63],
+        ],
+        '#c8d7d0',
+      );
+      polygon(
+        [
+          [0, HORIZON],
+          [80, 120],
+          [190, 165],
+          [300, 117],
+          [475, 161],
+          [600, 128],
+          [720, HORIZON],
+        ],
+        '#354d61',
+      );
+      return;
+    }
+    if (district.id === 'storm') {
+      for (let i = 0; i < 12; i += 1) {
+        rect(i * 68 - 9, 30 + (i % 3) * 13, 93, 25, '#425468');
+        rect(i * 68 + 14, 21 + (i % 3) * 13, 58, 13, '#425468');
+      }
+    }
     // Stable, hand-sized windows keep the city pixelated without flicker.
     for (let layer = 0; layer < 2; layer += 1) {
       for (let i = -1; i < 19; i += 1) {
@@ -179,11 +372,12 @@ export function mount(container, { onUpdate = () => {} } = {}) {
         const x = i * 43 - state.x * (layer ? 10 : 4);
         const y = HORIZON - height;
         rect(x, y, bw, height, layer ? '#15343a' : '#24494b');
-        if (i % 4 === 0) rect(x + bw * .5, y - 10, 2, 10, '#386465');
+        if (i % 4 === 0) rect(x + bw * 0.5, y - 10, 2, 10, '#386465');
         if (layer) {
           for (let wy = y + 10; wy < HORIZON - 4; wy += 12) {
             for (let wx = x + 7; wx < x + bw - 6; wx += 10) {
-              if (mod(Math.round(wx + wy * 3), 5) < 2) rect(wx, wy, 3, 5, mod(Math.round(wx), 3) ? '#549884' : '#bd9c63');
+              if (mod(Math.round(wx + wy * 3), 5) < 2)
+                rect(wx, wy, 3, 5, mod(Math.round(wx), 3) ? '#549884' : '#bd9c63');
             }
           }
         }
@@ -192,11 +386,26 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     rect(0, HORIZON - 2, W, 5, '#67a28d');
   }
   function road() {
-    rect(0, HORIZON + 3, W, H - HORIZON, '#1b393c');
-    polygon([[W / 2 + state.curve * 142, HORIZON + 3], [W / 2 + ROAD_HALF, CAR_Y], [W / 2 - ROAD_HALF, CAR_Y]], '#33494c');
+    rect(0, HORIZON + 3, W, H - HORIZON, getDistrict(state).ground);
+    polygon(
+      [
+        [W / 2 + state.curve * 142, HORIZON + 3],
+        [W / 2 + ROAD_HALF, CAR_Y],
+        [W / 2 - ROAD_HALF, CAR_Y],
+      ],
+      '#33494c',
+    );
     // The close road continues below the car; traffic z=0 lines up with its rear.
     const nearest = projection(0);
-    polygon([[nearest.x - nearest.half, nearest.y], [nearest.x + nearest.half, nearest.y], [W / 2 + ROAD_HALF * 1.16, H], [W / 2 - ROAD_HALF * 1.16, H]], '#33484b');
+    polygon(
+      [
+        [nearest.x - nearest.half, nearest.y],
+        [nearest.x + nearest.half, nearest.y],
+        [W / 2 + ROAD_HALF * 1.16, H],
+        [W / 2 - ROAD_HALF * 1.16, H],
+      ],
+      '#33484b',
+    );
     roadStrip(nearest, { x: W / 2, y: H, half: ROAD_HALF * 1.16 }, -1.075, -1, '#597068');
     roadStrip(nearest, { x: W / 2, y: H, half: ROAD_HALF * 1.16 }, 1, 1.075, '#597068');
     for (let z = 400; z > 0; z -= 2) {
@@ -208,18 +417,18 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       const curb = mod(world, 8) < 4 ? '#d1c394' : '#487367';
       roadStrip(far, near, -1.07, -1.02, curb);
       roadStrip(far, near, 1.02, 1.07, curb);
-      roadStrip(far, near, -.985, -.976, '#8ba498');
-      roadStrip(far, near, .976, .985, '#8ba498');
+      roadStrip(far, near, -0.985, -0.976, '#8ba498');
+      roadStrip(far, near, 0.976, 0.985, '#8ba498');
       if (mod(world, 12) < 5.5) {
-        roadStrip(far, near, -.337, -.323, '#bfcbb8');
-        roadStrip(far, near, .323, .337, '#bfcbb8');
+        roadStrip(far, near, -0.337, -0.323, '#bfcbb8');
+        roadStrip(far, near, 0.323, 0.337, '#bfcbb8');
       }
     }
     // A few close lane lines continue beneath the bumper.
     const close = { x: W / 2, y: H, half: ROAD_HALF * 1.16 };
     if (mod(state.distance, 12) < 5.5) {
-      roadStrip(nearest, close, -.337, -.323, '#bfcbb8');
-      roadStrip(nearest, close, .323, .337, '#bfcbb8');
+      roadStrip(nearest, close, -0.337, -0.323, '#bfcbb8');
+      roadStrip(nearest, close, 0.323, 0.337, '#bfcbb8');
     }
   }
   function lamp(z, side) {
@@ -230,16 +439,24 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     rect(x, top, Math.max(1, 5 * point.p), height, '#49746b');
     rect(x - side * 29 * point.p, top, 32 * point.p, Math.max(1, 4 * point.p), '#73aa96');
     rect(x - side * 29 * point.p, top + 4 * point.p, 14 * point.p, Math.max(2, 5 * point.p), '#c5efc4');
-    ctx.globalAlpha = .09;
-    polygon([[x - side * 23 * point.p, top], [x - 32 * point.p, point.y], [x + 35 * point.p, point.y]], '#bceac0');
+    ctx.globalAlpha = 0.09;
+    polygon(
+      [
+        [x - side * 23 * point.p, top],
+        [x - 32 * point.p, point.y],
+        [x + 35 * point.p, point.y],
+      ],
+      '#bceac0',
+    );
     ctx.globalAlpha = 1;
   }
   function car(x, y, width, color, player = false) {
     const height = width * 1.17;
     const unit = width / 24;
     const top = y - height;
-    const r = (rx, ry, rw, rh, paint) => rect(x + (rx - 12) * unit, top + ry * unit, rw * unit, rh * unit, paint);
-    ctx.globalAlpha = .35;
+    const r = (rx, ry, rw, rh, paint) =>
+      rect(x + (rx - 12) * unit, top + ry * unit, rw * unit, rh * unit, paint);
+    ctx.globalAlpha = 0.35;
     r(-1, 25, 26, 5, '#0b2128');
     ctx.globalAlpha = 1;
     r(1, 9, 4, 18, '#14282d');
@@ -263,7 +480,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     r(2, 27, 20, 1, '#244347');
   }
   function hud() {
-    ctx.globalAlpha = .83;
+    ctx.globalAlpha = 0.83;
     rect(18, 18, 149, 61, '#142e33');
     rect(W - 161, 18, 143, 61, '#142e33');
     ctx.globalAlpha = 1;
@@ -316,16 +533,52 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     const scenery = [];
     const offset = mod(state.distance, 25);
     for (let z = 300 - offset; z > 1; z -= 25) {
-      scenery.push({ z, draw: () => { lamp(z, -1); lamp(z, 1); } });
+      scenery.push({
+        z,
+        draw: () => {
+          lamp(z, -1);
+          lamp(z, 1);
+        },
+      });
     }
     for (const traffic of state.traffic) {
       if (traffic.z < 0 || traffic.z > 220) continue;
-      scenery.push({ z: traffic.z, draw: () => {
-        const p = projection(traffic.z);
-        car(p.x + traffic.x * p.half, p.y, traffic.width * p.half, traffic.crashed ? '#819084' : traffic.color);
-      } });
+      scenery.push({
+        z: traffic.z,
+        draw: () => {
+          const p = projection(traffic.z);
+          const x = p.x + traffic.x * p.half,
+            width = traffic.width * p.half;
+          if (traffic.kind === 'barrier') {
+            rect(x - width / 2, p.y - width * 0.42, width, width * 0.26, '#d8ad67');
+            for (let i = 0; i < 5; i += 1)
+              rect(x - width / 2 + (i * width) / 5, p.y - width * 0.42, width / 10, width * 0.26, '#493d3f');
+            rect(x - width * 0.37, p.y - width * 0.16, width * 0.1, width * 0.18, '#cbc8b2');
+            rect(x + width * 0.27, p.y - width * 0.16, width * 0.1, width * 0.18, '#cbc8b2');
+          } else car(x, p.y, width, traffic.crashed ? '#819084' : traffic.color);
+          if (traffic.signal) {
+            ctx.textAlign = 'center';
+            ctx.font = `bold ${Math.max(9, Math.round(18 * p.p))}px monospace`;
+            ctx.fillStyle = '#ffe09d';
+            ctx.fillText(traffic.targetLane > traffic.lane ? '→' : '←', x, p.y - width * 1.7);
+          }
+        },
+      });
     }
-    scenery.sort((a, b) => b.z - a.z).forEach(item => item.draw());
+    for (const pickup of state.pickups) {
+      if (pickup.z < 0 || pickup.z > 220) continue;
+      scenery.push({
+        z: pickup.z,
+        draw: () => {
+          const p = projection(pickup.z),
+            x = p.x + pickup.x * p.half,
+            size = Math.max(3, p.p * 22);
+          rect(x - size / 2, p.y - size, size, size, '#a4e6bc');
+          rect(x - size * 0.24, p.y - size * 0.72, size * 0.48, size * 0.44, '#285e55');
+        },
+      });
+    }
+    scenery.sort((a, b) => b.z - a.z).forEach((item) => item.draw());
     const playerX = W / 2 + state.x * ROAD_HALF;
     for (const particle of particles) {
       ctx.globalAlpha = clamp(particle.life / particle.maxLife, 0, 1);
@@ -334,14 +587,28 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     ctx.globalAlpha = 1;
     if (state.boosting) {
       const pulse = Math.floor(state.elapsed * 24) % 2;
-      polygon([[playerX - 25, CAR_Y - 2], [playerX - 18, CAR_Y - 2], [playerX - 22, CAR_Y + 20 + pulse * 8]], '#a7e8c3');
-      polygon([[playerX + 18, CAR_Y - 2], [playerX + 25, CAR_Y - 2], [playerX + 22, CAR_Y + 20 + pulse * 8]], '#a7e8c3');
+      polygon(
+        [
+          [playerX - 25, CAR_Y - 2],
+          [playerX - 18, CAR_Y - 2],
+          [playerX - 22, CAR_Y + 20 + pulse * 8],
+        ],
+        '#a7e8c3',
+      );
+      polygon(
+        [
+          [playerX + 18, CAR_Y - 2],
+          [playerX + 25, CAR_Y - 2],
+          [playerX + 22, CAR_Y + 20 + pulse * 8],
+        ],
+        '#a7e8c3',
+      );
     }
     // Flash only the body during damage immunity; its position stays readable.
     const immune = state.crashCooldown > 0 && Math.floor(state.elapsed * 12) % 2;
     car(playerX, CAR_Y, CAR_WIDTH * ROAD_HALF, immune ? '#f7d5a0' : COLORS.orange, true);
     if (state.crashCooldown > 1.1) {
-      ctx.globalAlpha = Math.min(.18, (state.crashCooldown - 1.1) * .18);
+      ctx.globalAlpha = Math.min(0.18, (state.crashCooldown - 1.1) * 0.18);
       rect(0, 0, W, H, '#ed815f');
       ctx.globalAlpha = 1;
     }
@@ -352,8 +619,21 @@ export function mount(container, { onUpdate = () => {} } = {}) {
         const side = i % 2 ? 1 : -1;
         const y = HORIZON + mod(i * 79 + state.distance * 5, H - HORIZON);
         const spread = (y - HORIZON) / (H - HORIZON);
-        polygon([[W / 2 + side * (ROAD_HALF + 40) * spread, y], [W / 2 + side * (ROAD_HALF + 43) * spread, y], [W / 2 + side * (ROAD_HALF + 50) * (spread + .09), y + 26]], '#a8c8b0');
+        polygon(
+          [
+            [W / 2 + side * (ROAD_HALF + 40) * spread, y],
+            [W / 2 + side * (ROAD_HALF + 43) * spread, y],
+            [W / 2 + side * (ROAD_HALF + 50) * (spread + 0.09), y + 26],
+          ],
+          '#a8c8b0',
+        );
       }
+      ctx.globalAlpha = 1;
+    }
+    if (getDistrict(state).weather === 'rain' && !reducedMotion?.matches) {
+      ctx.globalAlpha = 0.45;
+      for (let i = 0; i < 34; i += 1)
+        rect(mod(i * 97 + state.elapsed * 45, W), mod(i * 59 + state.elapsed * 110, H), 2, 10, '#bcceda');
       ctx.globalAlpha = 1;
     }
     hud();
@@ -362,27 +642,64 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     for (const event of state.events) {
       if (event.id <= lastEventId) continue;
       lastEventId = event.id;
-      if (event.type === 'near-miss') message = { text: `NEAR MISS${event.points ? ` +${event.points}` : ''}`, color: '#bdf4cd', until: state.elapsed + 1.3 };
+      if (event.type === 'district')
+        message = { text: event.district.toUpperCase(), color: '#d7e6bf', until: state.elapsed + 2 };
+      else if (event.type === 'pickup')
+        message = { text: 'BOOST CELL +35', color: '#bdf4cd', until: state.elapsed + 1 };
+      else if (event.type === 'district-clear')
+        message = {
+          text: `${event.clean ? 'CLEAN CHECKPOINT' : 'CHECKPOINT'} +${event.points}`,
+          color: '#d7e6bf',
+          until: state.elapsed + 2,
+        };
+      else if (event.type === 'near-miss')
+        message = {
+          text: `NEAR MISS${event.points ? ` +${event.points}` : ''}`,
+          color: '#bdf4cd',
+          until: state.elapsed + 1.3,
+        };
       else if (event.type === 'crash') {
         message = { text: 'KEEP YOUR COOL', color: '#ffd8ac', until: state.elapsed + 1.2 };
-        for (let i = 0; i < 16; i += 1) particles.push({ x: W / 2 + state.x * ROAD_HALF, y: CAR_Y - 28, vx: (i - 7.5) * 25, vy: -110 + mod(i * 33, 150), life: .55, maxLife: .55, size: 3 + i % 3, color: i % 2 ? '#f7d49a' : '#e18d5c' });
+        for (let i = 0; i < 16; i += 1)
+          particles.push({
+            x: W / 2 + state.x * ROAD_HALF,
+            y: CAR_Y - 28,
+            vx: (i - 7.5) * 25,
+            vy: -110 + mod(i * 33, 150),
+            life: 0.55,
+            maxLife: 0.55,
+            size: 3 + (i % 3),
+            color: i % 2 ? '#f7d49a' : '#e18d5c',
+          });
       }
     }
     exhaustTime += dt;
-    if (state.boosting && exhaustTime > .035) {
+    if (state.boosting && exhaustTime > 0.035) {
       exhaustTime = 0;
-      for (const side of [-1, 1]) particles.push({ x: W / 2 + state.x * ROAD_HALF + side * 22, y: CAR_Y + 7, vx: side * 7, vy: 65, life: .28, maxLife: .28, size: 5, color: '#99d4ad' });
+      for (const side of [-1, 1])
+        particles.push({
+          x: W / 2 + state.x * ROAD_HALF + side * 22,
+          y: CAR_Y + 7,
+          vx: side * 7,
+          vy: 65,
+          life: 0.28,
+          maxLife: 0.28,
+          size: 5,
+          color: '#99d4ad',
+        });
     }
-    particles = particles.filter(particle => {
-      particle.life -= dt;
-      particle.x += particle.vx * dt;
-      particle.y += particle.vy * dt;
-      return particle.life > 0;
-    }).slice(-90);
+    particles = particles
+      .filter((particle) => {
+        particle.life -= dt;
+        particle.x += particle.vx * dt;
+        particle.y += particle.vy * dt;
+        return particle.life > 0;
+      })
+      .slice(-90);
   }
   function frame(time) {
     if (destroyed) return;
-    const elapsed = previousFrame === null ? 0 : Math.min(.08, Math.max(0, (time - previousFrame) / 1000));
+    const elapsed = previousFrame === null ? 0 : Math.min(0.08, Math.max(0, (time - previousFrame) / 1000));
     previousFrame = time;
     if (state.phase === 'playing') {
       accumulator += elapsed;
@@ -411,7 +728,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   function restart() {
     if (destroyed) return;
     releaseControls();
-    state = createState();
+    state = createState({ mode: state.mode });
     previousFrame = null;
     accumulator = 0;
     lastEventId = -1;
@@ -427,10 +744,17 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     if (event.isComposing || event.altKey || event.ctrlKey || event.metaKey || isForm(event.target)) return;
     const focused = event.target instanceof Element ? event.target.closest('button[data-control]') : null;
     const activation = event.code === 'Space' || event.key === ' ' || event.key === 'Enter';
-    const focusedControl = activation && focused && controls.contains(focused) ? focused.dataset.control : null;
+    const focusedControl =
+      activation && focused && controls.contains(focused) ? focused.dataset.control : null;
     const control = focusedControl || KEY_CONTROLS[event.key] || KEY_CONTROLS[event.code];
     if (!control || state.phase !== 'playing') return;
-    if (!focusedControl && control === 'boost' && event.target instanceof Element && event.target.closest('button,a')) return;
+    if (
+      !focusedControl &&
+      control === 'boost' &&
+      event.target instanceof Element &&
+      event.target.closest('button,a')
+    )
+      return;
     event.preventDefault();
     if (event.repeat && !keys.has(event.code || event.key)) return;
     keys.set(event.code || event.key, control);
@@ -447,7 +771,9 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     if (event.button !== 0 && event.pointerType !== 'touch') return;
     event.preventDefault();
     touches.set(event.pointerId, button.dataset.control);
-    try { button.setPointerCapture?.(event.pointerId); } catch {}
+    try {
+      button.setPointerCapture?.(event.pointerId);
+    } catch {}
     syncButtons();
   }
   function pointerend(event) {
@@ -455,7 +781,9 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     syncButtons();
   }
   const focus = () => canvas.focus({ preventScroll: true });
-  const visibility = () => { if (document.hidden) releaseControls(); };
+  const visibility = () => {
+    if (document.hidden) releaseControls();
+  };
   window.addEventListener('keydown', keydown);
   window.addEventListener('keyup', keyup);
   window.addEventListener('blur', releaseControls);
@@ -465,6 +793,13 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   window.addEventListener('pointercancel', pointerend);
   controls.addEventListener('lostpointercapture', pointerend);
   canvas.addEventListener('pointerdown', focus);
+  function chooseMode(event) {
+    const button = event.target.closest('button[data-mode]');
+    if (!button || !modeChoices.contains(button)) return;
+    state.mode = button.dataset.mode;
+    restart();
+  }
+  modeChoices.addEventListener('click', chooseMode);
   replay.addEventListener('click', restart);
   publish(true);
   draw();
@@ -488,6 +823,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       window.removeEventListener('pointercancel', pointerend);
       controls.removeEventListener('lostpointercapture', pointerend);
       canvas.removeEventListener('pointerdown', focus);
+      modeChoices.removeEventListener('click', chooseMode);
       replay.removeEventListener('click', restart);
       view.remove();
     },

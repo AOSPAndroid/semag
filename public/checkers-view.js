@@ -14,6 +14,8 @@ export class CheckersView {
     this.pending = null;
     this.state = null;
     this.localId = null;
+    this.history = [];
+    this.lastObservedMove = null;
     this.order = [];
     this.buttons = new Map();
     this.element = document.createElement('div');
@@ -35,8 +37,26 @@ export class CheckersView {
     this.notice.setAttribute('role', 'status');
     this.notice.setAttribute('aria-live', 'polite');
     this.notice.setAttribute('aria-atomic', 'true');
+    this.toolbar = document.createElement('div');
+    this.toolbar.className = 'checkers-toolbar';
+    this.turnLabel = document.createElement('strong');
+    this.material = document.createElement('div');
+    this.material.className = 'checkers-material';
+    this.zoom = document.createElement('button');
+    this.zoom.type = 'button'; this.zoom.className = 'checkers-zoom'; this.zoom.textContent = 'Larger board';
+    this.zoom.setAttribute('aria-pressed', 'false');
+    this.zoomHandler = () => { const enlarged = this.element.classList.toggle('is-enlarged'); this.zoom.setAttribute('aria-pressed', String(enlarged)); this.zoom.textContent = enlarged ? 'Fit board' : 'Larger board'; this.paint(); };
+    this.zoom.addEventListener('click', this.zoomHandler);
+    this.toolbar.append(this.turnLabel, this.zoom);
+    this.historyPanel = document.createElement('details'); this.historyPanel.className = 'checkers-history';
+    const historyTitle = document.createElement('summary'); historyTitle.textContent = 'Recent moves';
+    this.historyList = document.createElement('ol'); this.historyList.className = 'checkers-history-list';
+    this.recap = document.createElement('p'); this.recap.className = 'checkers-recap';
+    this.historyPanel.append(historyTitle, this.historyList, this.recap);
+    this.legend = document.createElement('div'); this.legend.className = 'checkers-legend';
+    for (const [kind, text] of [['move', 'Legal move'], ['capture', 'Required capture'], ['king', 'Crowned king']]) { const key = document.createElement('span'); key.className = `checkers-key-${kind}`; key.textContent = text; this.legend.append(key); }
     this.frame.append(this.ranks, this.grid, this.files);
-    this.element.append(this.frame, this.notice);
+    this.element.append(this.toolbar, this.material, this.frame, this.notice, this.legend, this.historyPanel);
     this.container.append(this.element);
     this.clickHandler = event => {
       const button = event.target.closest('button[data-square]');
@@ -146,6 +166,16 @@ export class CheckersView {
   render(state, { localId = null } = {}) {
     if (!state?.board || state.board.length !== 64) return;
     const previous = this.state ? boardKey(this.state) : null;
+    if (['lobby', 'countdown'].includes(state.phase) && this.state && !['lobby', 'countdown'].includes(this.state.phase)) { this.history = []; this.lastObservedMove = null; this.historyPanel.open = false; }
+    const move = state.lastMove;
+    if (move && ['fight', 'matchEnd'].includes(state.phase)) {
+      const moveKey = `${move.tick}:${move.from}:${move.to}:${move.capture}`;
+      if (moveKey !== this.lastObservedMove) {
+        this.lastObservedMove = moveKey;
+        this.history.push({ ...move, number: state.moves + (state.forcedFrom !== null ? 1 : 0), continuing: state.forcedFrom !== null });
+        if (this.history.length > 12) this.history.shift();
+      }
+    }
     this.state = state;
     this.localId = localId;
     if (this.flipped !== (localId === 1)) this.build(localId === 1);
@@ -165,6 +195,7 @@ export class CheckersView {
     const choices = playable ? legalMoves(state, this.localId) : [];
     const destinations = new Map(choices.filter(move => move.from === this.selected).map(move => [move.to, move]));
     const canCapture = choices.some(move => move.capture !== null);
+    const victims = new Set([...destinations.values()].filter(move => move.capture !== null).map(move => move.capture));
     this.element.classList.toggle('is-your-turn', playable);
     this.element.classList.toggle('has-selection', this.selected !== null);
     for (const [square, button] of this.buttons) {
@@ -178,6 +209,7 @@ export class CheckersView {
       button.classList.toggle('is-destination', Boolean(destination));
       button.classList.toggle('is-capture-destination', Boolean(destination && destination.capture !== null));
       button.classList.toggle('is-last-move', Boolean(last));
+      button.classList.toggle('is-capture-victim', victims.has(square));
       button.classList.toggle('is-forced', playable && square === state.forcedFrom);
       button.setAttribute('aria-selected', String(selected));
       button.setAttribute('aria-disabled', String(!playable || (!available && !destination)));
@@ -214,9 +246,39 @@ export class CheckersView {
       else if (this.selected !== null) notice = 'Choose a highlighted square to move.';
       else notice = 'Your turn. Select a piece to see its moves.';
     } else if (state.phase === 'matchEnd') notice = state.result === 'draw' ? 'A draw. Ready up for another game.' : `${state.winner === 0 ? 'Ivory' : 'Jade'} wins. Ready up for a rematch.`;
+    if (this.element.classList.contains('is-enlarged') && this.frame.scrollWidth > this.frame.clientWidth) notice += ' Swipe the board sideways to see every file.';
     this.notice.classList.toggle('is-capture', playable && canCapture);
     if (this.notice.textContent !== notice) this.notice.textContent = notice;
+    this.paintContext(choices);
     this.updateTabStops();
+  }
+
+  paintContext(choices) {
+    const state = this.state;
+    const turn = state.phase === 'fight' ? state.turn === this.localId ? 'YOUR MOVE' : `${state.turn === 0 ? 'IVORY' : 'JADE'} TO MOVE` : state.phase === 'matchEnd' ? 'MATCH COMPLETE' : 'THE CHECKERS TABLE';
+    this.turnLabel.textContent = `${turn} · ${state.moves || 0} TURNS`;
+    this.material.replaceChildren();
+    for (const id of [0, 1]) {
+      const pieces = state.board.filter(p => p?.owner === id); const kings = pieces.filter(p => p.king).length;
+      const panel = document.createElement('span'); panel.className = `checkers-material-player checkers-material-${id}`;
+      const name = document.createElement('strong'); name.textContent = id === 0 ? 'Ivory' : 'Jade';
+      const detail = document.createElement('span'); detail.textContent = `${pieces.length} pieces · ${kings} kings · ${12 - pieces.length} lost`;
+      panel.append(name, detail); this.material.append(panel);
+    }
+    const signature = JSON.stringify(this.history);
+    if (this.historyList.dataset.signature !== signature) {
+      this.historyList.dataset.signature = signature; this.historyList.replaceChildren();
+      for (const move of [...this.history].reverse()) {
+        const line = document.createElement('li');
+        const who = document.createElement('span'); who.textContent = `${move.number || 1}. ${move.playerId === 0 ? 'Ivory' : 'Jade'}`;
+        const path = document.createElement('strong'); path.textContent = `${coordinate(move.from)}${move.capture !== null ? ' × ' : ' → '}${coordinate(move.to)}${move.kinged ? ' · king' : move.continuing ? ' · continue' : ''}`;
+        line.append(who, path); this.historyList.append(line);
+      }
+      if (!this.history.length) { const line = document.createElement('li'); line.textContent = 'Moves will appear here as the game unfolds.'; this.historyList.append(line); }
+    }
+    const reasons = { 'no-legal-moves': 'The losing side has no legal move.', 'all-pieces-captured': 'Every opposing piece has been captured.', 'threefold-repetition': 'The same position appeared three times.', '80-half-moves': 'Eighty turns passed without a capture or a man moving.' };
+    this.recap.textContent = state.phase === 'matchEnd' ? reasons[state.reason] || 'The match has ended. Ready up for a new board.' : state.forcedFrom !== null ? `Continue from ${coordinate(state.forcedFrom)}. Every available jump in this chain is compulsory.` : choices.some(m => m.capture !== null) ? `${new Set(choices.map(m => m.from)).size} piece${new Set(choices.map(m => m.from)).size === 1 ? '' : 's'} can capture. Choose the strongest continuation.` : 'Men move forward. Kings move both ways. Captures take priority over ordinary moves.';
+    if (state.phase === 'matchEnd') this.historyPanel.open = true;
   }
 
   resetSelection() {
@@ -227,6 +289,7 @@ export class CheckersView {
   }
 
   destroy() {
+    this.zoom.removeEventListener('click', this.zoomHandler);
     this.grid.removeEventListener('click', this.clickHandler);
     this.grid.removeEventListener('keydown', this.keyHandler);
     this.grid.removeEventListener('focusin', this.focusHandler);
