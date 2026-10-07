@@ -1,4 +1,6 @@
 export const WORLD = Object.freeze({ width: 1000, height: 680 });
+// The rendered body plus tyres, before rotation; shadows are not solid.
+export const CAR_BODY = Object.freeze({ halfLength: 14, halfWidth: 10 });
 export const ROAD_WIDTH = 90;
 export const MAX_SPEED = 220;
 export const LAPS = 3;
@@ -398,7 +400,9 @@ function updateCourse(state, nearest, dt) {
   const gate = gates[state.nextGate];
   if (
     continuous &&
-    alongRoad &&
+    // Corner projections can jump while a car crosses the marked gate legally.
+    // The swept gate plane, road bounds and earned travel govern this contact.
+    state.onRoad &&
     course.travel >= (trackLength / gates.length) * 0.85 &&
     crossedGate(gate, before, after, track.roadWidth)
   ) {
@@ -499,13 +503,15 @@ function integrate(state, controls, dt) {
   }
   car.x += car.vx * dt;
   car.y += car.vy * dt;
-  if (car.x < 12 || car.x > WORLD.width - 12) {
-    car.x = clamp(car.x, 12, WORLD.width - 12);
-    car.vx *= -0.15;
+  const extentX = Math.abs(newCos) * CAR_BODY.halfLength + Math.abs(newSin) * CAR_BODY.halfWidth;
+  const extentY = Math.abs(newSin) * CAR_BODY.halfLength + Math.abs(newCos) * CAR_BODY.halfWidth;
+  if (car.x < extentX || car.x > WORLD.width - extentX) {
+    if ((car.x < extentX && car.vx < 0) || (car.x > WORLD.width - extentX && car.vx > 0)) car.vx *= -0.15;
+    car.x = clamp(car.x, extentX, WORLD.width - extentX);
   }
-  if (car.y < 12 || car.y > WORLD.height - 12) {
-    car.y = clamp(car.y, 12, WORLD.height - 12);
-    car.vy *= -0.15;
+  if (car.y < extentY || car.y > WORLD.height - extentY) {
+    if ((car.y < extentY && car.vy < 0) || (car.y > WORLD.height - extentY && car.vy > 0)) car.vy *= -0.15;
+    car.y = clamp(car.y, extentY, WORLD.height - extentY);
   }
   car.speed = car.vx * newCos + car.vy * newSin;
   car.slip = -car.vx * newSin + car.vy * newCos;

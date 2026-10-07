@@ -138,25 +138,118 @@ function contact(ax, ay, bx, by, rect, padding = 0) {
   return high < 0 || low > 1 ? null : low;
 }
 
+function circleContact(ax, ay, bx, by, rect, radius) {
+  // A circle expands a rectangle into rounded corners, not a larger square.
+  // The two edge strips and four corner circles form that exact outline.
+  let first = null;
+  for (const strip of [
+    { x: rect.x - radius, y: rect.y, w: rect.w + radius * 2, h: rect.h },
+    { x: rect.x, y: rect.y - radius, w: rect.w, h: rect.h + radius * 2 },
+  ]) {
+    const t = contact(ax, ay, bx, by, strip);
+    if (t !== null && (first === null || t < first)) first = t;
+  }
+  const dx = bx - ax, dy = by - ay, length = dx * dx + dy * dy;
+  for (const x of [rect.x, rect.x + rect.w]) for (const y of [rect.y, rect.y + rect.h]) {
+    const ox = ax - x, oy = ay - y, distance = ox * ox + oy * oy - radius * radius;
+    if (distance <= 0) return 0;
+    if (length < 1e-12) continue;
+    const along = ox * dx + oy * dy, discriminant = along * along - length * distance;
+    if (discriminant < 0) continue;
+    const t = (-along - Math.sqrt(discriminant)) / length;
+    if (t >= 0 && t <= 1 && (first === null || t < first)) first = t;
+  }
+  return first;
+}
+
+const body = f => ({ x: f.x - f.width / 2, y: f.y - f.height / 2, w: f.width, h: f.height });
+function circleTouchesBody(x, y, radius, f) {
+  return Math.hypot(x - clamp(x, f.x - f.width / 2, f.x + f.width / 2),
+    y - clamp(y, f.y - f.height / 2, f.y + f.height / 2)) <= radius;
+}
+
+function blastReachesBody(state, x, y, radius, f) {
+  if (!circleTouchesBody(x, y, radius, f)) return false;
+  const rect = body(f), covers = state.platforms.filter(platform => platform.solid);
+  const visible = (px, py) => Math.hypot(px - x, py - y) <= radius + 1e-8 &&
+    !covers.some(platform => contact(x, y, px, py, platform) !== null);
+  // Cover can hide the nearest point while leaving an arm or leg exposed.
+  // Split each body edge where the blast circle or a cover corner's shadow
+  // crosses it. Within each resulting interval visibility cannot change.
+  for (const [vertical, fixed, min, max] of [
+    [true, rect.x, rect.y, rect.y + rect.h], [true, rect.x + rect.w, rect.y, rect.y + rect.h],
+    [false, rect.y, rect.x, rect.x + rect.w], [false, rect.y + rect.h, rect.x, rect.x + rect.w],
+  ]) {
+    const origin = vertical ? x : y, other = vertical ? y : x;
+    const cuts = [min, max, clamp(other, min, max)];
+    const add = value => { if (value >= min && value <= max) cuts.push(value); };
+    const distance = Math.abs(fixed - origin);
+    if (distance <= radius) {
+      const span = Math.sqrt(radius * radius - distance * distance);
+      add(other - span); add(other + span);
+    }
+    for (const platform of covers) for (const cx of [platform.x, platform.x + platform.w]) for (const cy of [platform.y, platform.y + platform.h]) {
+      const direction = (vertical ? cx : cy) - origin;
+      if (Math.abs(direction) < 1e-9) continue;
+      const t = (fixed - origin) / direction;
+      if (t >= 0) add(other + ((vertical ? cy : cx) - other) * t);
+    }
+    cuts.sort((a, b) => a - b);
+    for (let index = 0; index < cuts.length; index++) {
+      const point = cuts[index];
+      if (visible(vertical ? fixed : point, vertical ? point : fixed)) return true;
+      if (index === 0) continue;
+      const midpoint = (cuts[index - 1] + point) / 2;
+      if (visible(vertical ? fixed : midpoint, vertical ? midpoint : fixed)) return true;
+    }
+  }
+  return false;
+}
+
+function platformContact(f, p, dx, dy) {
+  const minX = p.x - f.width / 2, maxX = p.x + p.w + f.width / 2;
+  const minY = p.y - f.height / 2, maxY = p.y + p.h + f.height / 2;
+  if (!p.solid) {
+    if (f.dropTicks > 0 || dy <= 0 || f.y > minY + 1e-8) return null;
+    const t = Math.max(0, (minY - f.y) / dy), x = f.x + dx * t;
+    return t <= 1 && x > minX && x < maxX ? { t, nx: 0, ny: -1 } : null;
+  }
+  let entry = -Infinity, exit = Infinity, nx = 0, ny = 0;
+  for (const [origin, delta, min, max, axis] of [[f.x, dx, minX, maxX, 'x'], [f.y, dy, minY, maxY, 'y']]) {
+    if (Math.abs(delta) < 1e-9) {
+      // Sliding along an edge must not count as entering its interior.
+      if (origin <= min || origin >= max) return null;
+      continue;
+    }
+    let near = (min - origin) / delta, far = (max - origin) / delta;
+    if (near > far) [near, far] = [far, near];
+    if (near >= entry) { entry = near; nx = axis === 'x' ? -Math.sign(delta) : 0; ny = axis === 'y' ? -Math.sign(delta) : 0; }
+    exit = Math.min(exit, far);
+  }
+  if (entry < -1e-8 || entry > 1 || entry > exit || exit <= 0) return null;
+  return { t: Math.max(0, entry), nx, ny };
+}
+
 function physics(state, f, controls) {
   const stats = CHARACTERS[f.characterId];
-  const oldX = f.x, oldY = f.y, oldFeet = oldY + f.height / 2;
   f.vy = Math.min(controls.down && !f.grounded && f.stun === 0 ? 19 : 13, f.vy + stats.gravity * (controls.down && f.vy > 0 && f.stun === 0 ? 2 : 1));
-  f.x += f.vx;
-  for (const p of state.platforms.filter(p => p.solid)) {
-    if (oldY + f.height / 2 <= p.y || oldY - f.height / 2 >= p.y + p.h) continue;
-    if (oldX + f.width / 2 <= p.x && f.x + f.width / 2 > p.x) { f.x = p.x - f.width / 2; f.vx = 0; }
-    if (oldX - f.width / 2 >= p.x + p.w && f.x - f.width / 2 < p.x + p.w) { f.x = p.x + p.w + f.width / 2; f.vx = 0; }
-  }
-  f.y += f.vy;
+  let dx = f.vx, dy = f.vy;
   f.grounded = false; f.onPlatform = null;
-  for (const p of state.platforms) {
-    if (f.x + f.width / 2 <= p.x || f.x - f.width / 2 >= p.x + p.w) continue;
-    if (f.vy >= 0 && oldFeet <= p.y + .001 && f.y + f.height / 2 >= p.y && !(f.dropTicks > 0 && p.drop)) {
-      f.y = p.y - f.height / 2; f.vy = 0; f.grounded = true; f.onPlatform = p.id;
-    } else if (p.solid && f.vy < 0 && oldY - f.height / 2 >= p.y + p.h && f.y - f.height / 2 < p.y + p.h) {
-      f.y = p.y + p.h + f.height / 2; f.vy = 0;
+  let ground = null;
+  for (let pass = 0; pass < 4 && (Math.abs(dx) > 1e-9 || Math.abs(dy) > 1e-9); pass++) {
+    let first = null;
+    for (const p of state.platforms) {
+      const collision = platformContact(f, p, dx, dy);
+      if (collision && (!first || collision.t < first.t)) first = { ...collision, platform: p };
     }
+    if (!first) { f.x += dx; f.y += dy; break; }
+    f.x += dx * first.t; f.y += dy * first.t;
+    dx *= 1 - first.t; dy *= 1 - first.t;
+    if (first.nx) { dx = 0; f.vx = 0; }
+    if (first.ny) { dy = 0; f.vy = 0; if (first.ny < 0) ground = first.platform; }
+  }
+  if (ground && f.x + f.width / 2 > ground.x && f.x - f.width / 2 < ground.x + ground.w) {
+    f.grounded = true; f.onPlatform = ground.id;
   }
   if (f.grounded) { f.jumpsLeft = stats.airJumps; f.recoveryUsed = false; f.airDodgeUsed = false; f.coyote = 8; }
 }
@@ -245,7 +338,7 @@ function hitsMelee(state, a, b) {
   if (a.actionFrame < move.startup || a.actionFrame >= move.startup + move.active) return false;
   const dx = (b.x - a.x) * a.facing, dy = b.y - a.y, reach = move.reach;
   if (state.platforms.some(p => p.solid && contact(a.x, a.y, b.x, b.y, p) !== null)) return false;
-  if (move.kind === 'burst' || move.kind === 'slam' || move.direction === 'neutral' && move.airborne) return Math.hypot(dx, dy) < reach + b.width / 2;
+  if (move.kind === 'burst' || move.kind === 'slam' || move.direction === 'neutral' && move.airborne) return circleTouchesBody(a.x, a.y, reach, b);
   if (move.direction === 'up') return Math.abs(dx) < reach * .65 + b.width / 2 && dy < 16 && dy > -reach - b.height / 2;
   if (move.direction === 'down' && move.airborne) return Math.abs(dx) < reach * .6 + b.width / 2 && dy > -10 && dy < reach + b.height / 2;
   return dx > -a.width / 2 && dx < reach + b.width / 2 && Math.abs(dy) < 28 + b.height / 2;
@@ -290,9 +383,10 @@ function spawnProjectiles(state) {
   }
 }
 
-function updateProjectiles(state) {
+function updateProjectiles(state, previousBodies, existingProjectileCount) {
   const remaining = [];
-  for (const p of state.projectiles) {
+  for (let index = 0; index < state.projectiles.length; index++) {
+    const p = state.projectiles[index];
     p.age += 1; p.life -= 1;
     if (p.kind === 'parcel') p.vy += .14;
     if (p.kind === 'wrench' && p.age > 45) {
@@ -303,17 +397,25 @@ function updateProjectiles(state) {
     const x = p.x + p.vx, y = p.y + p.vy;
     let first = null, target = null;
     for (const platform of state.platforms.filter(platform => platform.solid)) {
-      const t = contact(p.x, p.y, x, y, platform, p.radius);
+      const t = circleContact(p.x, p.y, x, y, platform, p.radius);
       if (t !== null && (first === null || t < first)) { first = t; target = null; }
     }
     const opponent = state.fighters[1 - p.owner];
     if (!p.hitTargets.includes(opponent.id) && opponent.stocks > 0 && !opponent.invulnerable && opponent.respawnTicks === 0) {
-      const t = contact(p.x, p.y, x, y, { x: opponent.x - opponent.width / 2, y: opponent.y - opponent.height / 2, w: opponent.width, h: opponent.height }, p.radius);
+      // Existing shots and fighters move during the same tick. Newly spawned
+      // shots begin after fighter movement, so only those use the final body.
+      const previous = index < existingProjectileCount ? previousBodies[opponent.id] : body(opponent);
+      const motionX = opponent.x - (previous.x + opponent.width / 2);
+      const motionY = opponent.y - (previous.y + opponent.height / 2);
+      const t = circleContact(p.x, p.y, x - motionX, y - motionY, previous, p.radius);
       if (t !== null && (first === null || t < first - 1e-8)) { first = t; target = opponent; }
     }
     p.x = first === null ? x : p.x + (x - p.x) * first; p.y = first === null ? y : p.y + (y - p.y) * first;
     if (p.kind === 'parcel' && (p.life === 0 || first !== null)) {
-      for (const f of state.fighters) if (f.id !== p.owner && Math.hypot(f.x - p.x, f.y - p.y) < 85 + f.width / 2) hit(state, f, p.owner, { damage: p.damage, kb: 5.5, scale: 10, angle: -Math.PI / 4 }, f.x >= p.x ? 1 : -1);
+      for (const f of state.fighters) {
+        if (f.id === p.owner || !blastReachesBody(state, p.x, p.y, 85, f)) continue;
+        hit(state, f, p.owner, { damage: p.damage, kb: 5.5, scale: 10, angle: -Math.PI / 4 }, f.x >= p.x ? 1 : -1);
+      }
       emit(state, 'explosion', { fighter: p.owner, x: p.x, y: p.y, radius: 85 }); continue;
     }
     if (target) { hit(state, target, p.owner, { damage: p.damage, kb: p.kind === 'wrench' ? 3.8 : 3.2, scale: 7.8, angle: -Math.PI / 8 }, p.vx >= 0 ? 1 : -1); p.hitTargets.push(target.id); }
@@ -370,11 +472,12 @@ export function step(state, inputs = []) {
     return state;
   }
   state.elapsedTicks += 1; state.roundTicks -= 1;
+  const previousBodies = state.fighters.map(body), existingProjectileCount = state.projectiles.length;
   for (const f of state.fighters) updateFighter(state, f, input(f, inputs[f.id]));
   const attacks = [];
   for (const a of state.fighters) { const b = state.fighters[1 - a.id]; if (hitsMelee(state, a, b)) { a.hitTargets.push(b.id); attacks.push({ source: a.id, target: b.id, move: { ...a.move }, direction: a.facing }); } }
   for (const attack of attacks) hit(state, state.fighters[attack.target], attack.source, attack.move, attack.direction);
-  spawnProjectiles(state); updateProjectiles(state); updateHazards(state);
+  spawnProjectiles(state); updateProjectiles(state, previousBodies, existingProjectileCount); updateHazards(state);
   for (const f of state.fighters) knockout(state, f);
   const [a, b] = state.fighters;
   if (a.stocks === 0 || b.stocks === 0) endMatch(state, a.stocks === 0 && b.stocks === 0 ? null : a.stocks > 0 ? 0 : 1, 'stocks');

@@ -265,7 +265,10 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       else if (['delivery', 'district-clear', 'checkpoint', 'delivery-complete'].includes(event.type))
         message = { text: 'LIVRÉ ! / KEEP RIDING', until: state.elapsed + 1.4 };
       else if (event.type === 'near-pass') message = { text: 'A TIGHT, CLEAN PASS', until: state.elapsed + 0.9 };
-      else if (event.type === 'crash') message = { text: 'FIND THE NEXT GAP', until: state.elapsed + 1.2 };
+      else if (event.type === 'crash') {
+        const obstacle = { door: 'OPEN DOOR', barrier: 'ROAD BARRIER', cyclist: 'CYCLIST', bus: 'BUS', car: 'CAR' }[event.kind] || 'TRAFFIC';
+        message = { text: `${obstacle} IMPACT / ${event.health} ${event.health === 1 ? 'HEART' : 'HEARTS'}`, until: state.elapsed + 1.2 };
+      }
     }
   }
   function frame(time) {

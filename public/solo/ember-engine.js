@@ -25,19 +25,175 @@ const layouts = [
   [{ x: 255, y: 270, width: 110, height: 100 }, { x: 595, y: 270, width: 110, height: 100 }],
   [{ x: 240, y: 145, width: 90, height: 85 }, { x: 630, y: 145, width: 90, height: 85 }, { x: 240, y: 410, width: 90, height: 85 }, { x: 630, y: 410, width: 90, height: 85 }],
 ];
+const motions = new WeakMap();
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const unit = (x, y, fx = 1, fy = 0) => { const l = Math.hypot(x, y); return l > .001 ? { x: x / l, y: y / l } : { x: fx, y: fy }; };
 function rng(s) { let x = s.randomState; x ^= x << 13; x ^= x >>> 17; x ^= x << 5; s.randomState = x >>> 0 || 1; return s.randomState / 4294967296; }
 function event(s, type, extra = {}) { s.events.push({ id: ++s.eventId, type, time: s.elapsed, x: s.player.x, y: s.player.y, ...extra }); if (s.events.length > 40) s.events.shift(); }
 function solid(s, x, y, r) { return s.room.obstacles.some(o => Math.hypot(x - clamp(x, o.x, o.x + o.width), y - clamp(y, o.y, o.y + o.height)) < r); }
-function move(s, b, dx, dy) {
-  // Axis sliding resolves walls without allowing diagonal corner clipping.
-  const x = clamp(b.x + dx, 42 + b.radius, ARENA.width - 42 - b.radius);
-  if (!solid(s, x, b.y, b.radius)) b.x = x;
-  const y = clamp(b.y + dy, 42 + b.radius, ARENA.height - 42 - b.radius);
-  if (!solid(s, b.x, y, b.radius)) b.y = y;
+/** Recover an embedded navigation goal or an old saved position first. */
+function separateCover(s, body) {
+  body.x = clamp(body.x, 42 + body.radius, ARENA.width - 42 - body.radius);
+  body.y = clamp(body.y, 42 + body.radius, ARENA.height - 42 - body.radius);
+  for (const rect of s.room.obstacles) {
+    const cx = clamp(body.x, rect.x, rect.x + rect.width);
+    const cy = clamp(body.y, rect.y, rect.y + rect.height);
+    const ox = body.x - cx;
+    const oy = body.y - cy;
+    const gap = Math.hypot(ox, oy);
+    if (gap >= body.radius) continue;
+    if (gap > .00001) {
+      body.x = cx + ox / gap * body.radius;
+      body.y = cy + oy / gap * body.radius;
+    } else {
+      const sides = [
+        { gap: body.x - (rect.x - body.radius), x: rect.x - body.radius, y: body.y },
+        { gap: rect.x + rect.width + body.radius - body.x, x: rect.x + rect.width + body.radius, y: body.y },
+        { gap: body.y - (rect.y - body.radius), x: body.x, y: rect.y - body.radius },
+        { gap: rect.y + rect.height + body.radius - body.y, x: body.x, y: rect.y + rect.height + body.radius },
+      ].sort((a, b) => a.gap - b.gap);
+      body.x = sides[0].x;
+      body.y = sides[0].y;
+    }
+  }
 }
+
+function stationary(body) {
+  return [{ t0: 0, t1: 1, x0: body.x, y0: body.y, x1: body.x, y1: body.y }];
+}
+
+/** Sweep to the exact rounded cover edge, then spend the remainder sliding. */
+function move(s, body, dx, dy, duration = 1) {
+  separateCover(s, body);
+  const path = [];
+  let time = 0;
+  for (let slide = 0; slide < 3 && time < duration; slide += 1) {
+    let first = 1, normal = null;
+    for (const rect of s.room.obstacles) {
+      const hit = coverHit(body.x, body.y, dx, dy, rect, body.radius);
+      if (hit === null || hit > first) continue;
+      const x = body.x + dx * hit, y = body.y + dy * hit;
+      const n = unit(x - clamp(x, rect.x, rect.x + rect.width), y - clamp(y, rect.y, rect.y + rect.height));
+      // A body touching cover must still be able to retreat or slide along it.
+      if (dx * n.x + dy * n.y >= -1e-8) continue;
+      first = hit; normal = n;
+    }
+    for (const [origin, delta, limit, nx, ny] of [
+      [body.x, dx, 42 + body.radius, 1, 0], [body.x, dx, ARENA.width - 42 - body.radius, -1, 0],
+      [body.y, dy, 42 + body.radius, 0, 1], [body.y, dy, ARENA.height - 42 - body.radius, 0, -1],
+    ]) {
+      if (delta * (nx || ny) >= -1e-8) continue;
+      const hit = (limit - origin) / delta;
+      if (hit >= 0 && hit <= first) { first = hit; normal = { x: nx, y: ny }; }
+    }
+    const end = time + (duration - time) * first;
+    const x = body.x + dx * first, y = body.y + dy * first;
+    if (end > time) path.push({ t0: time, t1: end, x0: body.x, y0: body.y, x1: x, y1: y });
+    body.x = x; body.y = y; time = end;
+    if (!normal) break;
+    dx *= 1 - first; dy *= 1 - first;
+    const into = dx * normal.x + dy * normal.y;
+    dx -= into * normal.x; dy -= into * normal.y;
+    if (Math.hypot(dx, dy) < 1e-8) break;
+  }
+  if (time < 1) path.push({ t0: time, t1: 1, x0: body.x, y0: body.y, x1: body.x, y1: body.y });
+  motions.set(body, path.length ? path : stationary(body));
+}
+
+function positionAt(segment, time) {
+  const fraction = (time - segment.t0) / (segment.t1 - segment.t0);
+  return { x: segment.x0 + (segment.x1 - segment.x0) * fraction,
+    y: segment.y0 + (segment.y1 - segment.y0) * fraction };
+}
+
+// Solve two path segments in relative coordinates without per-target vectors.
+function segmentHit(left, right, radius) {
+  const start = Math.max(left.t0, right.t0), end = Math.min(left.t1, right.t1);
+  if (end <= start) return null;
+  const lf = (start - left.t0) / (left.t1 - left.t0), rf = (start - right.t0) / (right.t1 - right.t0);
+  const lx = left.x1 - left.x0, ly = left.y1 - left.y0, rx = right.x1 - right.x0, ry = right.y1 - right.y0;
+  const ox = left.x0 + lx * lf - right.x0 - rx * rf, oy = left.y0 + ly * lf - right.y0 - ry * rf;
+  const dx = (lx / (left.t1 - left.t0) - rx / (right.t1 - right.t0)) * (end - start);
+  const dy = (ly / (left.t1 - left.t0) - ry / (right.t1 - right.t0)) * (end - start);
+  const c = ox * ox + oy * oy - radius * radius;
+  if (c <= 0) return start;
+  const a = dx * dx + dy * dy;
+  if (a === 0) return null;
+  const b = 2 * (ox * dx + oy * dy), discriminant = b * b - 4 * a * c;
+  if (discriminant < 0) return null;
+  const fraction = (-b - Math.sqrt(discriminant)) / (2 * a);
+  return fraction >= 0 && fraction <= 1 ? start + (end - start) * fraction : null;
+}
+
+/** Relative motion is essential: a final-position graze can be a clean dodge. */
+function pathHit(a, b, radius) {
+  let first = null;
+  for (const left of a) for (const right of b) {
+    const hit = segmentHit(left, right, radius);
+    if (hit !== null && (first === null || hit < first)) first = hit;
+  }
+  return first;
+}
+
+function movingHit(shotPath, body, radius, moving) {
+  const path = moving && motions.get(body);
+  if (!path) return circleHit(shotPath.x0, shotPath.y0, shotPath.x1 - shotPath.x0, shotPath.y1 - shotPath.y0, body, radius);
+  let first = null;
+  for (const segment of path) {
+    const hit = segmentHit(shotPath, segment, body.radius + radius);
+    if (hit !== null && (first === null || hit < first)) first = hit;
+  }
+  return first;
+}
+
+
+function circleHit(x, y, dx, dy, circle, radius) {
+  const ox = x - circle.x;
+  const oy = y - circle.y;
+  const r = circle.radius + radius;
+  const c = ox * ox + oy * oy - r * r;
+  if (c <= 0) return 0;
+  const a = dx * dx + dy * dy;
+  if (a === 0) return null;
+  const b = 2 * (ox * dx + oy * dy);
+  const discriminant = b * b - 4 * a * c;
+  if (discriminant < 0) return null;
+  const t = (-b - Math.sqrt(discriminant)) / (2 * a);
+  return t >= 0 && t <= 1 ? t : null;
+}
+
+function rectHit(x, y, dx, dy, rect, radius) {
+  let near = 0;
+  let far = 1;
+  for (const [origin, delta, low, high] of [
+    [x, dx, rect.x - radius, rect.x + rect.width + radius],
+    [y, dy, rect.y - radius, rect.y + rect.height + radius],
+  ]) {
+    if (Math.abs(delta) < .000001) { if (origin < low || origin > high) return null; }
+    else {
+      let a = (low - origin) / delta;
+      let b = (high - origin) / delta;
+      if (a > b) [a, b] = [b, a];
+      near = Math.max(near, a); far = Math.min(far, b);
+      if (near > far) return null;
+    }
+  }
+  return near;
+}
+
+function coverHit(x, y, dx, dy, rect, radius) {
+  if (!radius) return rectHit(x, y, dx, dy, rect, 0);
+  const hits = [
+    rectHit(x, y, dx, dy, { x: rect.x - radius, y: rect.y, width: rect.width + 2 * radius, height: rect.height }, 0),
+    rectHit(x, y, dx, dy, { x: rect.x, y: rect.y - radius, width: rect.width, height: rect.height + 2 * radius }, 0),
+    ...[[rect.x, rect.y], [rect.x + rect.width, rect.y], [rect.x + rect.width, rect.y + rect.height], [rect.x, rect.y + rect.height]]
+      .map(([cx, cy]) => circleHit(x, y, dx, dy, { x: cx, y: cy, radius: 0 }, radius)),
+  ].filter(hit => hit !== null);
+  return hits.length ? Math.min(...hits) : null;
+}
+
+
 function lineClear(s, a, b, r = 0) {
   const dx = b.x - a.x, dy = b.y - a.y;
   return s.room.obstacles.every(o => {
@@ -188,17 +344,18 @@ export function togglePause(s) {
   if (s.phase === 'paused') { s.phase = s.pausedPhase || 'playing'; s.pausedPhase = null; return true; }
   return false;
 }
-function hurt(s, damage, attackId = 0) {
+function hurt(s, damage, attackId = 0, contact = null) {
   const p = s.player;
+  if (s.phase !== 'playing') return;
   if (p.invulnerable > 0) {
     if (p.dashTime > 0 && s.relics.duelist && attackId !== s.lastParried) { s.lastParried = attackId; p.mana = Math.min(p.maxMana, p.mana + 20); p.empowered = 2; event(s, 'perfect'); }
     return;
   }
   if (p.damageCooldown > 0) return;
-  p.hp = Math.max(0, p.hp - damage); p.damageCooldown = .65; event(s, 'hurt', { damage });
+  p.hp = Math.max(0, p.hp - damage); p.damageCooldown = .65; event(s, 'hurt', { damage, ...contact });
   if (p.hp <= 0) { s.phase = 'lost'; s.result = 'The flame went out'; event(s, 'defeat'); }
 }
-function damageEnemy(s, e, damage, weapon) {
+function damageEnemy(s, e, damage, weapon, contact = null) {
   if (e.hp <= 0) return;
   if (e.type === 'sentinel' && weapon === 'sword' && e.phase !== 'recover') {
     const incoming = unit(s.player.x - e.x, s.player.y - e.y); if (incoming.x * e.aimX + incoming.y * e.aimY > .45) damage *= .35;
@@ -211,7 +368,7 @@ function damageEnemy(s, e, damage, weapon) {
     if (s.relics.coil && e.burn > 0) damage += 12 * s.relics.coil;
     if (s.relics.frost) e.slow = 1.8;
   }
-  e.hp -= damage; event(s, 'hit', { x: e.x, y: e.y, damage: Math.round(damage), enemyId: e.id });
+  e.hp -= damage; event(s, 'hit', { x: e.x, y: e.y, damage: Math.round(damage), enemyId: e.id, ...contact });
   if (weapon === 'sword' && s.difficulty !== 'standard') {
     const restored = Math.min(s.player.bladeManaRemaining, e.type === 'sentinel' && damage < s.player.swordDamage ? 1 : 4);
     s.player.mana = Math.min(s.player.maxMana, s.player.mana + restored); s.player.bladeManaRemaining -= restored;
@@ -276,7 +433,14 @@ function enemyStep(s, e, dt) {
     else { fan(s, e, e.fanCount ?? (e.boss ? 7 : 3), e.fanSpread ?? (e.boss ? .16 : .14), e.shotSpeed ?? 190); e.phase = 'recover'; e.timer = hard ? .65 : e.boss ? .8 : 1; }
     return;
   }
-  if (e.phase === 'charge') { move(s, e, e.aimX * (e.chargeSpeed ?? 450) * dt, e.aimY * (e.chargeSpeed ?? 450) * dt); if (gap < e.radius + p.radius + 10) hurt(s, e.boss ? 30 : 24, e.attackId); if (e.timer <= 0) { e.phase = 'recover'; e.timer = hard ? .65 : .9; } return; }
+  if (e.phase === 'charge') {
+    move(s, e, e.aimX * (e.chargeSpeed ?? 450) * dt, e.aimY * (e.chargeSpeed ?? 450) * dt);
+    const path = motions.get(p) || stationary(p);
+    const contact = pathHit(motions.get(e) || stationary(e), path, e.radius + p.radius + 10);
+    if (contact !== null) hurt(s, e.boss ? 30 : 24, e.attackId, positionAt(path.find(segment => contact >= segment.t0 && contact <= segment.t1), contact));
+    if (e.timer <= 0) { e.phase = 'recover'; e.timer = hard ? .65 : .9; }
+    return;
+  }
   if (e.phase === 'recover') { if (e.timer <= 0) { e.phase = 'seek'; e.timer = hard ? e.boss && e.hp < e.maxHp / 2 ? .16 : .3 : e.boss ? .7 : .5; } return; }
   if (e.boss) {
     const toward = steer(s, e, p); if (gap > (hard ? 175 : 230)) move(s, e, toward.x * (hard ? 125 + s.act * 10 : 70) * dt, toward.y * (hard ? 125 + s.act * 10 : 70) * dt);
@@ -320,6 +484,8 @@ export function step(s, input = {}, dt = 1 / 120) {
   if (s.phase !== 'playing' || !Number.isFinite(dt) || dt <= 0) return;
   dt = Math.min(dt, 1 / 30); s.tick++; s.elapsed += dt;
   const p = s.player;
+  const existing = new Set(s.projectiles);
+  for (const body of [p, ...s.enemies]) motions.set(body, stationary(body));
   for (const key of ['attackCooldown', 'attackTime', 'castTime', 'staminaDelay', 'spellCooldown', 'dodgeCooldown', 'dashTime', 'invulnerable', 'damageCooldown', 'empowered']) p[key] = Math.max(0, p[key] - dt);
   p.mana = Math.min(p.maxMana, p.mana + p.manaRegen * dt);
   if (s.difficulty === 'standard' || p.staminaDelay <= 0) p.stamina = Math.min(p.maxStamina, p.stamina + p.staminaRegen * dt);
@@ -354,13 +520,43 @@ export function step(s, input = {}, dt = 1 / 120) {
   }
   s.effects = s.effects.filter(fx => fx.life > 0);
   for (const b of s.projectiles) {
-    b.life -= dt; const x = b.x, y = b.y; const samples = Math.max(1, Math.ceil(Math.hypot(b.vx, b.vy) * dt / 4));
-    for (let i = 1; i <= samples && b.life > 0; i++) {
-      b.x = x + b.vx * dt * i / samples; b.y = y + b.vy * dt * i / samples;
-      if (b.x < 42 || b.x > 918 || b.y < 42 || b.y > 598 || solid(s, b.x, b.y, b.radius)) { b.life = 0; break; }
-      if (b.owner === 'enemy' && dist(b, p) < p.radius + b.radius) { hurt(s, b.damage, b.attackId); b.life = 0; }
-      if (b.owner === 'player') for (const e of s.enemies) if (e.hp > 0 && !b.hits.includes(e.id) && dist(b, e) < e.radius + b.radius) { damageEnemy(s, e, b.damage, 'spell'); b.hits.push(e.id); if (b.hits.length > b.pierce) { b.life = 0; break; } }
+    if (s.phase !== 'playing') break;
+    b.life -= dt;
+    if (b.life <= 0) continue;
+    const x = b.x, y = b.y, dx = b.vx * dt, dy = b.vy * dt;
+    const shotPath = { t0: 0, t1: 1, x0: x, y0: y, x1: x + dx, y1: y + dy };
+    let blocker = null, first = 2;
+    for (const o of s.room.obstacles) {
+      const hit = coverHit(x, y, dx, dy, o, b.radius);
+      if (hit !== null && hit < first) { first = hit; blocker = 'cover'; }
     }
+    for (const [origin, delta, limit, direction] of [
+      [x, dx, 42 + b.radius, 1], [x, dx, ARENA.width - 42 - b.radius, -1],
+      [y, dy, 42 + b.radius, 1], [y, dy, ARENA.height - 42 - b.radius, -1],
+    ]) {
+      if (delta * direction >= 0) continue;
+      const hit = (limit - origin) / delta;
+      if (hit >= 0 && hit <= 1 && hit < first) { first = hit; blocker = 'wall'; }
+    }
+    const targets = b.owner === 'enemy' ? [p] : s.enemies.filter(e => e.hp > 0 && !b.hits.includes(e.id));
+    const hits = targets.map(body => ({ body, time: movingHit(shotPath, body, b.radius, existing.has(b)) }))
+      .filter(hit => hit.time !== null && hit.time < first).sort((a, c) => a.time - c.time);
+    for (const hit of hits) {
+      if (b.life <= 0 || s.phase !== 'playing') break;
+      if (hit.body.hp <= 0) continue;
+      b.x = x + dx * hit.time; b.y = y + dy * hit.time;
+      const contact = { x: b.x, y: b.y };
+      if (b.owner === 'enemy') { hurt(s, b.damage, b.attackId, contact); b.life = 0; }
+      else {
+        damageEnemy(s, hit.body, b.damage, 'spell', contact); b.hits.push(hit.body.id);
+        if (b.hits.length > (b.pierce || 0)) b.life = 0;
+      }
+    }
+    if (b.life <= 0) continue;
+    if (blocker) {
+      b.x = x + dx * first; b.y = y + dy * first; b.life = 0;
+      event(s, 'impact', { x: b.x, y: b.y, owner: b.owner, kind: blocker });
+    } else { b.x = x + dx; b.y = y + dy; }
   }
   s.projectiles = s.projectiles.filter(b => b.life > 0);
   const dead = s.enemies.filter(e => e.hp <= 0);

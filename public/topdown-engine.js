@@ -133,6 +133,49 @@ function intersectsRect(a, b, rect, padding = 0) {
 }
 const clearLine = (state, a, b, padding = 0) => !state.obstacles.some(rect => intersectsRect(a, b, rect, padding));
 
+function circleContact(ax, ay, bx, by, radius) {
+  const dx = bx - ax, dy = by - ay;
+  const c = ax * ax + ay * ay - radius * radius;
+  if (c <= 0) return 0;
+  const a = dx * dx + dy * dy;
+  if (a < 1e-12) return null;
+  const b = 2 * (ax * dx + ay * dy), discriminant = b * b - 4 * a * c;
+  if (discriminant < 0) return null;
+  const t = (-b - Math.sqrt(discriminant)) / (2 * a);
+  return t >= 0 && t <= 1 ? t : null;
+}
+
+function rectContact(a, b, rect, radius = 0) {
+  const clip = (minX, minY, maxX, maxY) => {
+    let low = 0, high = 1;
+    for (const [origin, delta, min, max] of [[a.x, b.x - a.x, minX, maxX], [a.y, b.y - a.y, minY, maxY]]) {
+      if (Math.abs(delta) < 1e-9) {
+        if (origin < min || origin > max) return null;
+      } else {
+        let first = (min - origin) / delta, last = (max - origin) / delta;
+        if (first > last) [first, last] = [last, first];
+        low = Math.max(low, first); high = Math.min(high, last);
+        if (low > high) return null;
+      }
+    }
+    return low;
+  };
+  const right = rect.x + rect.w, bottom = rect.y + rect.h;
+  const broad = clip(rect.x - radius, rect.y - radius, right + radius, bottom + radius);
+  if (broad === null || radius <= 0) return broad;
+  const contactX = a.x + (b.x - a.x) * broad, contactY = a.y + (b.y - a.y) * broad;
+  if ((contactX >= rect.x && contactX <= right) || (contactY >= rect.y && contactY <= bottom)) return broad;
+  // A circular arrow/orb has rounded corner contact, not a square invisible rim.
+  let first = null;
+  const accept = t => { if (t !== null && (first === null || t < first)) first = t; };
+  accept(clip(rect.x - radius, rect.y, right + radius, bottom));
+  accept(clip(rect.x, rect.y - radius, right, bottom + radius));
+  for (const x of [rect.x, right]) for (const y of [rect.y, bottom]) {
+    accept(circleContact(a.x - x, a.y - y, b.x - x, b.y - y, radius));
+  }
+  return first;
+}
+
 function resolveWalls(state, entity) {
   const radius = entity.radius ?? ARENA.fighterRadius;
   // Centers use fighter bounds; larger creatures keep the same outer wall line.
@@ -173,10 +216,20 @@ function separate(state, a, b) {
   if (gap >= minimum) return;
   const nx = gap > 0.00001 ? dx / gap : a.id < b.id ? 1 : -1;
   const ny = gap > 0.00001 ? dy / gap : 0;
-  const amount = (minimum - gap) / 2;
+  const overlap = minimum - gap, amount = overlap / 2;
+  const ax = a.x, ay = a.y;
   a.x -= nx * amount; a.y -= ny * amount;
-  b.x += nx * amount; b.y += ny * amount;
-  resolveWalls(state, a); resolveWalls(state, b);
+  resolveWalls(state, a);
+  // Transfer displacement blocked by a wall to the free body instead of
+  // leaving a persistent overlap that lets an opponent stand inside it.
+  const moved = clamp((ax - a.x) * nx + (ay - a.y) * ny, 0, overlap);
+  b.x += nx * (overlap - moved); b.y += ny * (overlap - moved);
+  resolveWalls(state, b);
+  const remaining = minimum - distance(a, b);
+  if (remaining > 1e-7) {
+    a.x -= nx * remaining; a.y -= ny * remaining;
+    resolveWalls(state, a);
+  }
 }
 
 function recordInput(state, f, raw) {
@@ -222,8 +275,20 @@ function spawnProjectile(state, owner, angle, { kind = 'arrow', damage = MOVES.s
     x: owner.x + Math.cos(angle) * offset, y: owner.y + Math.sin(angle) * offset,
     vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
     angle, facing: angle, radius, damage: damage + (kind === 'arrow' ? (owner.boons?.bow || 0) * 3 : 0),
-    pierce: kind === 'arrow' ? (owner.boons?.bow || 0) : 0, hitTargets: [], life: kind === 'orb' ? 210 : 140, reflected: false,
+    pierce: kind === 'arrow' ? (owner.boons?.bow || 0) : 0, hitTargets: [], life: kind === 'orb' ? 210 : 140, reflected: false, bornTick: state.tick,
   };
+  let coverContact = null;
+  for (const obstacle of state.obstacles) {
+    const t = rectContact(owner, projectile, obstacle, radius);
+    if (t !== null && (coverContact === null || t < coverContact)) coverContact = t;
+  }
+  if (coverContact !== null) {
+    const x = owner.x + (projectile.x - owner.x) * coverContact;
+    const y = owner.y + (projectile.y - owner.y) * coverContact;
+    emit(state, 'shoot', { fighter: owner.id, x, y, angle, move: kind });
+    emit(state, 'arrowStop', { x, y, move: kind, reason: 'cover' });
+    return;
+  }
   state.projectiles.push(projectile);
   emit(state, 'shoot', { fighter: owner.id, x: projectile.x, y: projectile.y, angle, move: kind });
 }
@@ -360,33 +425,43 @@ function resolveSwords(state) {
   }
 }
 
-function projectileContact(a, b, target, radius) {
-  const dx = b.x - a.x, dy = b.y - a.y;
-  const lengthSquared = dx * dx + dy * dy;
-  const t = lengthSquared ? clamp(((target.x - a.x) * dx + (target.y - a.y) * dy) / lengthSquared, 0, 1) : 0;
-  return Math.hypot(a.x + dx * t - target.x, a.y + dy * t - target.y) <= target.radius + radius;
-}
-
-function updateProjectiles(state) {
+function updateProjectiles(state, previousPositions) {
   const remaining = [];
   for (const projectile of state.projectiles) {
     projectile.life -= 1;
     const old = { x: projectile.x, y: projectile.y };
     projectile.x += projectile.vx; projectile.y += projectile.vy;
-    if (projectile.life <= 0 || projectile.x < 38 || projectile.x > 922 || projectile.y < 54 || projectile.y > 586 || !clearLine(state, old, projectile, projectile.radius)) {
-      emit(state, 'arrowStop', { x: projectile.x, y: projectile.y, move: projectile.kind });
+    if (projectile.life <= 0) {
+      emit(state, 'arrowStop', { x: projectile.x, y: projectile.y, move: projectile.kind, reason: 'expired' });
       continue;
+    }
+    let stop = null, reason = 'cover';
+    for (const obstacle of state.obstacles) {
+      const t = rectContact(old, projectile, obstacle, projectile.radius);
+      if (t !== null && (stop === null || t < stop)) stop = t;
+    }
+    for (const [origin, end, min, max] of [[old.x, projectile.x, 38, 922], [old.y, projectile.y, 54, 586]]) {
+      const t = origin < min || origin > max ? 0 : end < min ? (min - origin) / (end - origin) : end > max ? (max - origin) / (end - origin) : null;
+      if (t !== null && (stop === null || t < stop)) { stop = t; reason = 'wall'; }
     }
     const targets = state.mode === 'coop'
       ? projectile.team === 'heroes' ? state.enemies : state.fighters
       : state.fighters.filter(f => playerTeam(state, f.id) !== projectile.team);
-    let consumed = false;
-    // Nearest contact wins when one segment touches more than one target.
-    const contacts = targets.filter(target => alive(target) && !target.invulnerable && !(projectile.hitTargets || []).includes(target.id) && projectileContact(old, projectile, target, projectile.radius)).sort((a, b) => distance(old, a) - distance(old, b));
-    for (const target of contacts) {
-      const source = { id: projectile.owner, x: old.x - projectile.vx * 2, y: old.y - projectile.vy * 2 };
+    let consumed = false, parried = false;
+    const contacts = [];
+    for (const target of targets) {
+      if (!alive(target) || target.invulnerable || (projectile.hitTargets || []).includes(target.id)) continue;
+      const previous = projectile.bornTick === state.tick ? target : previousPositions.get(target.id) || target;
+      const t = circleContact(old.x - previous.x, old.y - previous.y, projectile.x - target.x, projectile.y - target.y, target.radius + projectile.radius);
+      // Cover wins ties; bodies in front of it still receive the earlier hit.
+      if (t !== null && (stop === null || t < stop - 1e-8)) contacts.push({ target, t });
+    }
+    contacts.sort((a, b) => a.t - b.t || a.target.id - b.target.id);
+    for (const { target } of contacts) {
+      const source = { id: projectile.owner, x: target.x - projectile.vx * 2, y: target.y - projectile.vy * 2 };
       const result = damageEntity(state, target, source, projectile.damage, { guardDamage: projectile.kind === 'orb' ? 22 : 14, knockback: 2.5, hitstun: 18, move: projectile.kind, projectile: true });
       if (result === 'parry') {
+        parried = true;
         const speed = Math.hypot(projectile.vx, projectile.vy);
         projectile.owner = target.id; projectile.team = playerTeam(state, target.id); projectile.reflected = true;
         projectile.angle = target.facing; projectile.facing = target.facing;
@@ -401,7 +476,9 @@ function updateProjectiles(state) {
       }
       if (consumed || result === 'parry') break;
     }
-    if (!consumed) remaining.push(projectile);
+    if (!consumed && !parried && stop !== null) {
+      emit(state, 'arrowStop', { x: old.x + projectile.vx * stop, y: old.y + projectile.vy * stop, move: projectile.kind, reason });
+    } else if (!consumed) remaining.push(projectile);
   }
   state.projectiles = remaining;
 }
@@ -730,6 +807,7 @@ export function step(state, rawInputs = [emptyInput(), emptyInput()]) {
   state.elapsedTicks += 1;
   if (state.mode === 'coop' && state.roomBreak) { updateShrines(state,inputs); return state; }
   if (state.mode === 'duel') state.roundTicks = Math.max(0, state.roundTicks - 1);
+  const previousPositions = new Map([...state.fighters, ...state.enemies].map(entity => [entity.id, { x: entity.x, y: entity.y }]));
   state.fighters.forEach((f, index) => updateFighter(state, f, inputs[index]));
   separate(state, ...state.fighters);
   if (state.mode === 'coop') {
@@ -741,7 +819,7 @@ export function step(state, rawInputs = [emptyInput(), emptyInput()]) {
   }
   resolveSwords(state);
   if (state.mode === 'coop') resolveEnemyAttacks(state);
-  updateProjectiles(state);
+  updateProjectiles(state, previousPositions);
   if (state.mode === 'coop') updateHazards(state);
 
   if (state.mode === 'duel') {

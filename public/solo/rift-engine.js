@@ -44,6 +44,9 @@ export const UPGRADES = Object.freeze({
 
 const sources = new WeakMap();
 const coverGraphs = new Map();
+// Per-step swept paths stay private: saves, records and public snapshots do not
+// carry collision bookkeeping. Sliding paths have at most four segments.
+const motions = new WeakMap();
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const length = (x, y) => Math.hypot(x, y);
 /** The fixed-step clock excludes pause and upgrade decisions and spans waves. */
@@ -75,10 +78,10 @@ function overlapsCover(x, y, radius) {
     y - clamp(y, rect.y, rect.y + rect.height)) < radius);
 }
 
-/** Circle against solid covers, with sliding rather than sticky stops. */
-function moveBody(body, dx, dy) {
-  body.x = clamp(body.x + dx, body.radius, ARENA.width - body.radius);
-  body.y = clamp(body.y + dy, body.radius, ARENA.height - body.radius);
+/** Recover an embedded navigation goal or an old saved position first. */
+function separateCover(body) {
+  body.x = clamp(body.x, body.radius, ARENA.width - body.radius);
+  body.y = clamp(body.y, body.radius, ARENA.height - body.radius);
   for (const rect of OBSTACLES) {
     const cx = clamp(body.x, rect.x, rect.x + rect.width);
     const cy = clamp(body.y, rect.y, rect.y + rect.height);
@@ -101,6 +104,95 @@ function moveBody(body, dx, dy) {
     }
   }
 }
+
+function stationary(body) {
+  return [{ t0: 0, t1: 1, x0: body.x, y0: body.y, x1: body.x, y1: body.y }];
+}
+
+/** Sweep to the exact rounded cover edge, then spend the remainder sliding. */
+function moveBody(body, dx, dy, duration = 1) {
+  separateCover(body);
+  const path = [];
+  let time = 0;
+  for (let slide = 0; slide < 3 && time < duration; slide += 1) {
+    let first = 1, normal = null;
+    for (const rect of OBSTACLES) {
+      const hit = coverHit(body.x, body.y, dx, dy, rect, body.radius);
+      if (hit === null || hit > first) continue;
+      const x = body.x + dx * hit, y = body.y + dy * hit;
+      const n = unit(x - clamp(x, rect.x, rect.x + rect.width), y - clamp(y, rect.y, rect.y + rect.height));
+      // A body touching cover must still be able to retreat or slide along it.
+      if (dx * n.x + dy * n.y >= -1e-8) continue;
+      first = hit; normal = n;
+    }
+    for (const [origin, delta, limit, nx, ny] of [
+      [body.x, dx, body.radius, 1, 0], [body.x, dx, ARENA.width - body.radius, -1, 0],
+      [body.y, dy, body.radius, 0, 1], [body.y, dy, ARENA.height - body.radius, 0, -1],
+    ]) {
+      if (delta * (nx || ny) >= -1e-8) continue;
+      const hit = (limit - origin) / delta;
+      if (hit >= 0 && hit <= first) { first = hit; normal = { x: nx, y: ny }; }
+    }
+    const end = time + (duration - time) * first;
+    const x = body.x + dx * first, y = body.y + dy * first;
+    if (end > time) path.push({ t0: time, t1: end, x0: body.x, y0: body.y, x1: x, y1: y });
+    body.x = x; body.y = y; time = end;
+    if (!normal) break;
+    dx *= 1 - first; dy *= 1 - first;
+    const into = dx * normal.x + dy * normal.y;
+    dx -= into * normal.x; dy -= into * normal.y;
+    if (length(dx, dy) < 1e-8) break;
+  }
+  if (time < 1) path.push({ t0: time, t1: 1, x0: body.x, y0: body.y, x1: body.x, y1: body.y });
+  motions.set(body, path.length ? path : stationary(body));
+}
+
+function positionAt(segment, time) {
+  const fraction = (time - segment.t0) / (segment.t1 - segment.t0);
+  return { x: segment.x0 + (segment.x1 - segment.x0) * fraction,
+    y: segment.y0 + (segment.y1 - segment.y0) * fraction };
+}
+
+// Solve two path segments in relative coordinates without per-target vectors.
+function segmentHit(left, right, radius) {
+  const start = Math.max(left.t0, right.t0), end = Math.min(left.t1, right.t1);
+  if (end <= start) return null;
+  const lf = (start - left.t0) / (left.t1 - left.t0), rf = (start - right.t0) / (right.t1 - right.t0);
+  const lx = left.x1 - left.x0, ly = left.y1 - left.y0, rx = right.x1 - right.x0, ry = right.y1 - right.y0;
+  const ox = left.x0 + lx * lf - right.x0 - rx * rf, oy = left.y0 + ly * lf - right.y0 - ry * rf;
+  const dx = (lx / (left.t1 - left.t0) - rx / (right.t1 - right.t0)) * (end - start);
+  const dy = (ly / (left.t1 - left.t0) - ry / (right.t1 - right.t0)) * (end - start);
+  const c = ox * ox + oy * oy - radius * radius;
+  if (c <= 0) return start;
+  const a = dx * dx + dy * dy;
+  if (a === 0) return null;
+  const b = 2 * (ox * dx + oy * dy), discriminant = b * b - 4 * a * c;
+  if (discriminant < 0) return null;
+  const fraction = (-b - Math.sqrt(discriminant)) / (2 * a);
+  return fraction >= 0 && fraction <= 1 ? start + (end - start) * fraction : null;
+}
+
+/** Relative motion is essential: a final-position graze can be a clean dodge. */
+function pathHit(a, b, radius) {
+  let first = null;
+  for (const left of a) for (const right of b) {
+    const hit = segmentHit(left, right, radius);
+    if (hit !== null && (first === null || hit < first)) first = hit;
+  }
+  return first;
+}
+
+function movingHit(shotPath, body, radius, moving) {
+  const path = moving && motions.get(body);
+  if (!path) return circleHit(shotPath.x0, shotPath.y0, shotPath.x1 - shotPath.x0, shotPath.y1 - shotPath.y0, body, radius);
+  let first = null;
+  for (const segment of path) {
+    const hit = segmentHit(shotPath, segment, body.radius + radius);
+    if (hit !== null && (first === null || hit < first)) first = hit;
+  }
+  return first;
+}
+
 
 function spawnPoint(state, radius) {
   for (let attempt = 0; attempt < 100; attempt += 1) {
@@ -251,13 +343,13 @@ function fireFan(state, enemy, count, spread, speed, damage) {
   event(state, 'volley', { x: enemy.x, y: enemy.y, enemyId: enemy.id, pattern: enemy.pattern });
 }
 
-function hurtPlayer(state, damage, source) {
+function hurtPlayer(state, damage, source, contact = null) {
   const player = state.player;
   if (state.phase !== 'playing' || player.invulnerable > 0 || player.damageCooldown > 0) return false;
   damage *= DIFFICULTIES[state.difficulty].damage * (state.waveRisk ? 1.15 : 1);
   player.hp = Math.max(0, player.hp - damage);
   player.damageCooldown = .55;
-  event(state, 'hurt', { damage, source, hp: player.hp });
+  event(state, 'hurt', { damage, source, hp: player.hp, ...contact });
   if (player.hp === 0) {
     state.phase = 'lost';
     state.result = 'defeated';
@@ -303,7 +395,7 @@ function scorePoints(state, points) {
   state.score += Math.round(points * DIFFICULTIES[state.difficulty].score * (state.waveRisk ? 1.35 : 1));
 }
 
-function damageEnemy(state, target, amount, chain = true) {
+function damageEnemy(state, target, amount, chain = true, contact = null) {
   if (target.hp <= 0) return;
   const damage = amount * (1 - (target.armor || 0));
   target.hp = Math.max(0, target.hp - damage);
@@ -311,7 +403,7 @@ function damageEnemy(state, target, amount, chain = true) {
     target.slowTime = state.difficulty !== 'standard' && target.boss ? .8 : 1.2;
     target.slowFactor = Math.max(state.difficulty !== 'standard' && target.boss ? .8 : state.difficulty !== 'standard' && target.elite ? .65 : 0, 1 - .15 * state.player.frost);
   }
-  event(state, 'hit', { x: target.x, y: target.y, enemyId: target.id, damage });
+  event(state, 'hit', { x: target.x, y: target.y, enemyId: target.id, damage, ...contact });
   if (target.hp === 0) {
     state.kills += 1; state.waveKills += 1;
     scorePoints(state, (target.boss ? 1500 : target.type === 'brute' ? 180 : target.type === 'ranged' ? 130 : target.type === 'weaver' ? 150 : 100) + (target.elite ? 100 : 0));
@@ -516,7 +608,11 @@ function updateEnemies(state, dt) {
       const before = { x: enemy.x, y: enemy.y };
       const charge = chargeSpeed(state, enemy);
       moveBody(enemy, enemy.aimX * charge * dt, enemy.aimY * charge * dt);
-      if (gap < enemy.radius + state.player.radius + 8) hurtPlayer(state, 18, 'charge');
+      const contact = pathHit(motions.get(enemy) || stationary(enemy), motions.get(state.player) || stationary(state.player), enemy.radius + state.player.radius + 8);
+      if (contact !== null) {
+        const path = motions.get(state.player) || stationary(state.player);
+        hurtPlayer(state, 18, 'charge', positionAt(path.find(segment => contact >= segment.t0 && contact <= segment.t1), contact));
+      }
       enemy.timer -= dt;
       if (enemy.timer <= 0 || distance(before, enemy) < charge * dt * .35) {
         enemy.phase = 'recover'; enemy.timer = .7; enemy.attackTimer = 1.2 * cadence;
@@ -621,7 +717,7 @@ function coverHit(x, y, dx, dy, rect, radius) {
   return hits.length ? Math.min(...hits) : null;
 }
 
-function updateProjectiles(state, dt) {
+function updateProjectiles(state, dt, existing) {
   const remaining = [];
   for (const shot of state.projectiles) {
     if (state.phase !== 'playing') break;
@@ -629,6 +725,7 @@ function updateProjectiles(state, dt) {
     if (shot.life <= 0) continue;
     const dx = shot.vx * dt;
     const dy = shot.vy * dt;
+    const shotPath = { t0: 0, t1: 1, x0: shot.x, y0: shot.y, x1: shot.x + dx, y1: shot.y + dy };
     let first = 2;
     let target = null;
     let hitCover = null;
@@ -648,17 +745,17 @@ function updateProjectiles(state, dt) {
     if (shot.owner === 'player') {
       for (const enemy of state.enemies) {
         if (enemy.hp <= 0) continue;
-        const hit = circleHit(shot.x, shot.y, dx, dy, enemy, shot.radius);
+        const hit = movingHit(shotPath, enemy, shot.radius, existing.has(shot));
         if (hit !== null && hit < first) { first = hit; target = enemy; }
       }
     } else {
-      const hit = circleHit(shot.x, shot.y, dx, dy, state.player, shot.radius);
+      const hit = movingHit(shotPath, state.player, shot.radius, existing.has(shot));
       if (hit !== null && hit < first) { first = hit; target = 'player'; }
     }
     if (target) {
+      const contact = { x: shot.x + dx * first, y: shot.y + dy * first };
       if ((target === 'cover' || target === 'wall') && shot.owner === 'player' && shot.bounces > 0) {
-        const x = shot.x + dx * first;
-        const y = shot.y + dy * first;
+        const { x, y } = contact;
         if (hitCover) normal = unit(x - clamp(x, hitCover.x, hitCover.x + hitCover.width), y - clamp(y, hitCover.y, hitCover.y + hitCover.height));
         const dot = shot.vx * normal.x + shot.vy * normal.y;
         shot.vx -= 2 * dot * normal.x; shot.vy -= 2 * dot * normal.y;
@@ -666,8 +763,9 @@ function updateProjectiles(state, dt) {
         shot.bounces -= 1;
         remaining.push(shot);
         event(state, 'bounce', { x, y });
-      } else if (target === 'player') hurtPlayer(state, shot.damage, 'projectile');
-      else if (target !== 'cover' && target !== 'wall') damageEnemy(state, target, shot.damage);
+      } else if (target === 'player') hurtPlayer(state, shot.damage, 'projectile', contact);
+      else if (target !== 'cover' && target !== 'wall') damageEnemy(state, target, shot.damage, true, contact);
+      else event(state, 'impact', { ...contact, owner: shot.owner, kind: target });
       continue;
     }
     shot.x += dx; shot.y += dy;
@@ -721,6 +819,8 @@ export function step(state, inputs = {}, dt = 1 / 120) {
   dt = Math.min(dt, 1 / 30);
   state.elapsed += dt; state.tick += 1;
   const player = state.player;
+  const existing = new Set(state.projectiles);
+  for (const body of [player, ...state.enemies]) motions.set(body, stationary(body));
   player.fireCooldown = Math.max(0, player.fireCooldown - dt);
   player.invulnerable = Math.max(0, player.invulnerable - dt);
   player.damageCooldown = Math.max(0, player.damageCooldown - dt);
@@ -762,7 +862,7 @@ export function step(state, inputs = {}, dt = 1 / 120) {
   player.dashHeld = dash;
   if (player.dashTime > 0) {
     const activeTime = Math.min(dt, player.dashTime);
-    moveBody(player, player.dashX * 620 * activeTime, player.dashY * 620 * activeTime);
+    moveBody(player, player.dashX * 620 * activeTime, player.dashY * 620 * activeTime, activeTime / dt);
     player.dashTime = Math.max(0, player.dashTime - dt);
   } else moveBody(player, movement.x * player.moveSpeed * dt, movement.y * player.moveSpeed * dt);
   player.vx = (player.x - previousX) / dt; player.vy = (player.y - previousY) / dt;
@@ -786,7 +886,7 @@ export function step(state, inputs = {}, dt = 1 / 120) {
     if (player.heat >= player.maxHeat) { player.overheated = true; event(state, 'overheat'); }
   }
   updateEnemies(state, dt);
-  updateProjectiles(state, dt);
+  updateProjectiles(state, dt, existing);
   if (state.phase === 'playing') updateHazards(state, dt);
   if (state.phase === 'playing' && state.enemies.length === 0) clearWave(state);
   return true;

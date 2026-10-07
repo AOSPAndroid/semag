@@ -741,7 +741,9 @@ function tacticalInput(state, memory) {
         ? Math.abs(hazard.y - hy) : Math.hypot(hazard.x - hx, hazard.y - hy);
       if (gap < (hazard.radius || hazard.width / 2) + 25) cost += 18;
     }
-    for (const time of [.2, .5]) {
+    // Check the nearby route as well: a fast diagonal can pass a corner before
+    // the old first sample, so endpoint-only planning asks for a blocked dash.
+    for (const time of [.04, .08, .12, .2, .35, .5]) {
       const px = player.x + vx * time; const py = player.y + vy * time;
       if (px < 25 || px > 975 || py < 25 || py > 655) cost += 30;
       for (const cover of OBSTACLES) if (Math.hypot(px - clamp(px, cover.x, cover.x + cover.width),
@@ -753,8 +755,9 @@ function tacticalInput(state, memory) {
     < Math.hypot(best.x - player.x, best.y - player.y) ? e : best, null);
   const previous = memory.enemies?.get(closest.id);
   const delta = memory.lastElapsed === undefined ? 0 : state.elapsed - memory.lastElapsed;
-  const vx = previous && delta > 0 ? clamp((closest.x - previous.x) / delta, -250, 250) : 0;
-  const vy = previous && delta > 0 ? clamp((closest.y - previous.y) / delta, -250, 250) : 0;
+  // Aim from observed motion, including committed charges faster than walking.
+  const vx = previous && delta > 0 ? clamp((closest.x - previous.x) / delta, -800, 800) : 0;
+  const vy = previous && delta > 0 ? clamp((closest.y - previous.y) / delta, -800, 800) : 0;
   const travel = Math.hypot(closest.x - player.x, closest.y - player.y) / 780;
   memory.enemies = new Map(state.enemies.map(e => [e.id, { x: e.x, y: e.y }]));
   memory.lastElapsed = state.elapsed;

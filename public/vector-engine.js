@@ -92,23 +92,37 @@ export function resetLobby(state) {
   return state;
 }
 
-// First contact of a segment with an expanded rectangle, including the start point.
+// First circular contact with cover, including rounded corners and the start point.
 function rectContact(ax, ay, bx, by, rect, padding = 0) {
-  let low = 0, high = 1;
-  for (const [origin, delta, min, max] of [
-    [ax, bx - ax, rect.x - padding, rect.x + rect.w + padding],
-    [ay, by - ay, rect.y - padding, rect.y + rect.h + padding],
-  ]) {
-    if (Math.abs(delta) < 1e-9) {
-      if (origin < min || origin > max) return null;
-    } else {
-      let first = (min - origin) / delta, last = (max - origin) / delta;
-      if (first > last) [first, last] = [last, first];
-      low = Math.max(low, first); high = Math.min(high, last);
-      if (low > high) return null;
+  const clip = (x, y, w, h) => {
+    let low = 0, high = 1;
+    for (const [origin, delta, min, max] of [
+      [ax, bx - ax, x, x + w],
+      [ay, by - ay, y, y + h],
+    ]) {
+      if (Math.abs(delta) < 1e-9) {
+        if (origin < min || origin > max) return null;
+      } else {
+        let first = (min - origin) / delta, last = (max - origin) / delta;
+        if (first > last) [first, last] = [last, first];
+        low = Math.max(low, first); high = Math.min(high, last);
+        if (low > high) return null;
+      }
     }
+    return high < 0 || low > 1 ? null : low;
+  };
+  const broad = clip(rect.x - padding, rect.y - padding, rect.w + padding * 2, rect.h + padding * 2);
+  if (broad === null || padding <= 0) return broad;
+  const contactX = ax + (bx - ax) * broad, contactY = ay + (by - ay) * broad;
+  if ((contactX >= rect.x && contactX <= rect.x + rect.w) || (contactY >= rect.y && contactY <= rect.y + rect.h)) return broad;
+  let first = null;
+  const accept = t => { if (t !== null && (first === null || t < first)) first = t; };
+  accept(clip(rect.x - padding, rect.y, rect.w + padding * 2, rect.h));
+  accept(clip(rect.x, rect.y - padding, rect.w, rect.h + padding * 2));
+  for (const x of [rect.x, rect.x + rect.w]) for (const y of [rect.y, rect.y + rect.h]) {
+    accept(circleContact(ax - x, ay - y, bx - x, by - y, padding));
   }
-  return high < 0 || low > 1 ? null : low;
+  return first;
 }
 
 // Relative motion detects a fast bullet even when the target crosses its path.
@@ -128,16 +142,23 @@ function circleContact(ax, ay, bx, by, radius) {
 function moveFighter(state, f, dx, dy) {
   let x = clamp(f.x + dx, WORLD.minX, WORLD.maxX);
   for (const cover of state.obstacles) {
-    if (f.y <= cover.y - f.radius || f.y >= cover.y + cover.h + f.radius) continue;
-    if (dx > 0 && f.x <= cover.x - f.radius && x > cover.x - f.radius) x = Math.min(x, cover.x - f.radius);
-    if (dx < 0 && f.x >= cover.x + cover.w + f.radius && x < cover.x + cover.w + f.radius) x = Math.max(x, cover.x + cover.w + f.radius);
+    const gap = f.y - clamp(f.y, cover.y, cover.y + cover.h);
+    if (Math.abs(gap) >= f.radius) continue;
+    // The body is circular: narrow its footprint when sliding past a corner.
+    const extent = Math.sqrt(f.radius * f.radius - gap * gap);
+    const left = cover.x - extent, right = cover.x + cover.w + extent;
+    if (dx > 0 && f.x <= left && x > left) x = Math.min(x, left);
+    if (dx < 0 && f.x >= right && x < right) x = Math.max(x, right);
   }
   f.x = x;
   let y = clamp(f.y + dy, WORLD.minY, WORLD.maxY);
   for (const cover of state.obstacles) {
-    if (f.x <= cover.x - f.radius || f.x >= cover.x + cover.w + f.radius) continue;
-    if (dy > 0 && f.y <= cover.y - f.radius && y > cover.y - f.radius) y = Math.min(y, cover.y - f.radius);
-    if (dy < 0 && f.y >= cover.y + cover.h + f.radius && y < cover.y + cover.h + f.radius) y = Math.max(y, cover.y + cover.h + f.radius);
+    const gap = f.x - clamp(f.x, cover.x, cover.x + cover.w);
+    if (Math.abs(gap) >= f.radius) continue;
+    const extent = Math.sqrt(f.radius * f.radius - gap * gap);
+    const top = cover.y - extent, bottom = cover.y + cover.h + extent;
+    if (dy > 0 && f.y <= top && y > top) y = Math.min(y, top);
+    if (dy < 0 && f.y >= bottom && y < bottom) y = Math.max(y, bottom);
   }
   f.y = y;
 }

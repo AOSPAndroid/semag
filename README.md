@@ -2,7 +2,7 @@
 
 ![Semag pixel-art logo](public/hub/logo.svg)
 
-A self-hosted browser hub with **19 games: ten solo and nine two-player games**. Pick **Play solo** for an instant driving, arcade or puzzle game, or create a room and share your PC address or room link with a colleague. Both players press **Ready** before multiplayer play begins. Each room has two seats; the server can run several independent rooms at once.
+A self-hosted browser hub with **19 games: ten solo and nine two-player games**. Pick **Open game** to preview a solo game, then press **Start game** when ready, or create a room and share your PC address or room link with a colleague. Both players press **Ready** before multiplayer play begins. Each room has two seats; the server can run several independent rooms at once.
 
 | Game | Mode | Goal |
 | --- | --- | --- |
@@ -33,6 +33,8 @@ expressive character sprites, textured arena materials, crafted board pieces,
 and detailed driving scenery. Static art is cached, gameplay effects stay
 readable, and the shelf artwork matches the games. Assets ship with the host;
 playing does not require an image service. The hub uses its pixel SEMAG wordmark and S badge.
+
+Driving and action games use swept collision checks for moving bodies and projectiles. Cover stops shots at their first impact, vehicle depth shows occupied road space, and attack poses match active damage frames. Compact impact effects make solid contacts easier to read.
 
 Solo games open on their challenge settings: **Veteran** for the action,
 deckbuilding, driving, and falling-block games; **Gauntlet** for Snake;

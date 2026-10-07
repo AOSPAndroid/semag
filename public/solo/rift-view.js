@@ -800,7 +800,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   function enemySprite(enemy) {
     const x = Math.round(enemy.x); const y = Math.round(enemy.y);
     const r = enemy.radius;
-    circle(x + 4, y + 6, r + 2, '#10282d');
+    circle(x, y + 3, r + 1, '#10282d');
     if (enemy.boss) guardianSprite(enemy, x, y);
     else {
       const winding = enemy.phase === 'windup';
@@ -855,7 +855,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     const angle = Math.atan2(player.aimY, player.aimX);
     const immune = player.invulnerable > 0 || player.damageCooldown > 0;
     const color = immune && (reducedMotion.matches || Math.floor(state.elapsed * 10) % 2) ? '#ffddb0' : '#ecab70';
-    circle(x + 4, y + 6, 14, '#112b30');
+    circle(x, y + 3, 13, '#112b30');
     if (alpha === 1) circle(x, y, player.radius, '#d4c89a55', true, 1);
     ctx.translate(x, y); ctx.rotate(angle);
     const stride = walking && !reducedMotion.matches ? Math.sin(gait) * 3 : 0;
@@ -993,11 +993,11 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       if (event.type === 'arc') arcs.push({ ...event, life: .16 });
       if (event.type === 'pulse') rings.push({ x: event.x, y: event.y, radius: reducedMotion.matches ? event.radius : 0, growth: reducedMotion.matches ? 0 : event.radius, life: .22, maxLife: .22, color: '#b0ded0' });
       if (event.type === 'hit') enemyFlashes.push({ id: event.enemyId, life: .1 });
-      if (event.type === 'bounce') {
+      if (event.type === 'bounce' || event.type === 'impact') {
         hitMarkers.push({ x: event.x, y: event.y, kill: false, life: .12, maxLife: .12 });
         if (!reducedMotion.matches) for (let i = 0; i < 4; i += 1) {
           const a = i * 1.57 + event.id;
-          particles.push({ x: event.x, y: event.y, vx: Math.cos(a) * 75, vy: Math.sin(a) * 75, size: 2, life: .12, maxLife: .12, color: '#b7e0db' });
+          particles.push({ x: event.x, y: event.y, vx: Math.cos(a) * 75, vy: Math.sin(a) * 75, size: 2, life: .12, maxLife: .12, color: event.owner === 'enemy' ? '#efa98a' : '#b7e0db' });
         }
       }
       const isKill = event.type === 'kill' || event.type === 'enemy-killed';

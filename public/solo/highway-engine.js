@@ -341,10 +341,30 @@ export function createState({
   return state;
 }
 
-function advanceTraffic(state, distance, dt) {
+/** Both axes must overlap at the same instant, including moving lane changes. */
+function sweptTouches(oldX, oldZ, newX, newZ, halfX, halfZ) {
+  let enter = 0, exit = 1;
+  for (let axis = 0; axis < 2; axis++) {
+    const start = axis === 0 ? oldX : oldZ;
+    const end = axis === 0 ? newX : newZ;
+    const half = axis === 0 ? halfX : halfZ;
+    const delta = end - start;
+    if (Math.abs(delta) < 1e-12) {
+      if (Math.abs(start) >= half) return false;
+      continue;
+    }
+    const a = (-half - start) / delta, b = (half - start) / delta;
+    enter = Math.max(enter, Math.min(a, b));
+    exit = Math.min(exit, Math.max(a, b));
+    if (enter >= exit) return false;
+  }
+  return exit > 0 && enter < 1;
+}
+
+function advanceTraffic(state, distance, oldPlayerX, dt) {
   const difficulty = getDifficulty(state);
   for (const car of state.traffic) {
-    const previousZ = car.z;
+    const previousX = car.x, previousZ = car.z;
     if (car.targetLane !== undefined && car.targetLane !== car.lane && !car.passed && !car.crashed) {
       if (car.changeTimer === null && car.z < (usesEndlessPace(state) ? state.warningDistance : 90)) {
         car.changeTimer = 1.2;
@@ -367,10 +387,9 @@ function advanceTraffic(state, distance, dt) {
     const lateralGap = Math.abs(state.x - car.x);
     const collisionWidth = (CAR_WIDTH + car.width) / 2;
     const collisionLength = (CAR_LENGTH + car.length) / 2;
-    // A swept longitudinal check catches fast cars even on a slower frame.
-    const touches =
-      Math.min(previousZ, car.z) <= collisionLength && Math.max(previousZ, car.z) >= -collisionLength;
-    if (!car.crashed && !car.passed && lateralGap < collisionWidth && touches) {
+    const touches = sweptTouches(oldPlayerX - previousX, previousZ,
+      state.x - car.x, car.z, collisionWidth, collisionLength);
+    if (!car.crashed && !car.passed && touches) {
       car.crashed = true;
       car.passed = true; // A damaged car can never become an overtake reward.
       if (state.crashCooldown <= 0) {
@@ -382,7 +401,8 @@ function advanceTraffic(state, distance, dt) {
         state.boosting = false;
         state.combo = 0;
         state.comboTimer = 0;
-        event(state, 'crash', { x: car.x, z: car.z, trafficId: car.id, health: state.health });
+        event(state, 'crash', { x: car.x, z: car.z, trafficId: car.id,
+          kind: car.kind || 'car', health: state.health });
         if (state.health <= 0) {
           state.phase = 'lost';
           state.result = 'crashed';
@@ -480,6 +500,7 @@ function updateDistrict(state) {
 function integrate(state, inputs, dt) {
   const district = getDistrict(state);
   const difficulty = getDifficulty(state);
+  const oldPlayerX = state.x;
   state.elapsed += dt;
   state.tick += 1;
   const paced = usesEndlessPace(state);
@@ -565,7 +586,7 @@ function integrate(state, inputs, dt) {
     Math.sin(state.distance / (district.id === 'coast' ? 340 : 520)) *
       (district.id === 'coast' ? 0.48 : 0.32) +
     Math.sin(state.distance / 970) * 0.16;
-  advanceTraffic(state, distance, dt);
+  advanceTraffic(state, distance, oldPlayerX, dt);
   if (state.delivery && state.phase === 'playing') {
     state.delivery.remaining = Math.max(
       0,

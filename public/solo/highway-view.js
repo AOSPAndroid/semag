@@ -728,9 +728,20 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     for (const traffic of state.traffic) {
       if (!isHighwayTrafficVisible(traffic, state)) continue;
       scenery.push({
-        z: traffic.z,
+        z: traffic.z - traffic.length / 2,
         draw: () => {
-          const p = projection(traffic.z, true);
+          const rear = projection(traffic.z - traffic.length / 2, true);
+          const front = projection(traffic.z + traffic.length / 2, true);
+          const halfWidth = traffic.width / 2;
+          const leftRear = rear.x + (traffic.x - halfWidth) * rear.half;
+          const rightRear = rear.x + (traffic.x + halfWidth) * rear.half;
+          const leftFront = front.x + (traffic.x - halfWidth) * front.half;
+          const rightFront = front.x + (traffic.x + halfWidth) * front.half;
+          // Ground contact shows the full physical width/length, while the
+          // detailed pixel body stays anchored to its actual rear tire contact.
+          polygon([[leftRear, rear.y], [leftFront, front.y],
+            [rightFront, front.y], [rightRear, rear.y]], '#102c3040');
+          const p = rear;
           const x = p.x + traffic.x * p.half,
             width = traffic.width * p.half;
           if (traffic.kind === 'barrier') {
@@ -741,7 +752,10 @@ export function mount(container, { onUpdate = () => {} } = {}) {
             rect(x + width * 0.27, p.y - width * 0.16, width * 0.1, width * 0.18, '#cbc8b2');
             rect(x - width * 0.45, p.y - width * 0.44, width * 0.9, Math.max(1, width * 0.035), '#efd6a1');
             rect(x - width * 0.05, p.y - width * 0.55, width * 0.1, width * 0.09, '#ffe09a');
-          } else car(x, p.y, width, traffic.crashed ? '#819084' : traffic.color);
+          } else {
+            const color = traffic.crashed ? '#819084' : traffic.color;
+            car(x, p.y, width, color);
+          }
           if (traffic.signal) {
             ctx.textAlign = 'center';
             ctx.font = `bold ${Math.max(9, Math.round(18 * p.p))}px monospace`;
@@ -849,7 +863,9 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       else if (event.type === 'deadline-warning')
         message = { text: '4s TO CHECKPOINT', color: '#ffd8ac', until: state.elapsed + 1.3 };
       else if (event.type === 'crash') {
-        message = { text: 'KEEP YOUR COOL', color: '#ffd8ac', until: state.elapsed + 1.2 };
+        const obstacle = { car: 'CAR', barrier: 'ROAD BARRIER', shoulder: 'SHOULDER' }[event.kind] || 'TRAFFIC';
+        message = { text: `${obstacle} IMPACT / ${event.health} ${event.health === 1 ? 'HIT' : 'HITS'} LEFT`,
+          color: '#ffd8ac', until: state.elapsed + 1.2 };
         for (let i = 0; !reducedMotion?.matches && i < 16; i += 1)
           particles.push({
             x: W / 2 + state.x * ROAD_HALF,

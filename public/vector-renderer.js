@@ -502,7 +502,9 @@ export class VectorRenderer {
       path(ctx, [[projectile.x - projectile.vx / speed * 20, projectile.y - projectile.vy / speed * 20], [projectile.x, projectile.y]], '#0e211ecc', 5);
       path(ctx, [[projectile.x - projectile.vx / speed * 17, projectile.y - projectile.vy / speed * 17], [projectile.x, projectile.y]], color.main + 'a0', 2);
       path(ctx, [[projectile.x - projectile.vx / speed * 7, projectile.y - projectile.vy / speed * 7], [projectile.x, projectile.y]], color.light, 2);
-      ctx.fillStyle = color.light; ctx.fillRect(projectile.x - 3, projectile.y - 3, 6, 6);
+      const radius = projectile.radius ?? 3;
+      // The bright tip follows the same circular footprint used for contact.
+      ctx.fillStyle = color.light; ctx.beginPath(); ctx.arc(projectile.x, projectile.y, radius, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = '#fff6db'; ctx.fillRect(projectile.x - 1, projectile.y - 1, 2, 2);
     }
     for (const fighter of state.fighters) this.paintFighter(ctx, fighter, time);

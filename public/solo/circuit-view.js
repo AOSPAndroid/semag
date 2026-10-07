@@ -4,6 +4,7 @@ import {
   togglePause as pauseState,
   resetCar,
   WORLD,
+  CAR_BODY,
   TRACKS,
   getTrack,
   advanceStage,
@@ -812,8 +813,9 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     if (!['won', 'stage-clear'].includes(state.phase)) {
       const gate = GATES[state.nextGate];
       ctx.beginPath();
-      ctx.moveTo(gate.x - gate.nx * (ROAD_WIDTH / 2 - 8), gate.y - gate.ny * (ROAD_WIDTH / 2 - 8));
-      ctx.lineTo(gate.x + gate.nx * (ROAD_WIDTH / 2 - 8), gate.y + gate.ny * (ROAD_WIDTH / 2 - 8));
+      // Mark the full legal crossing plane, including the inside racing line.
+      ctx.moveTo(gate.x - gate.nx * ROAD_WIDTH / 2, gate.y - gate.ny * ROAD_WIDTH / 2);
+      ctx.lineTo(gate.x + gate.nx * ROAD_WIDTH / 2, gate.y + gate.ny * ROAD_WIDTH / 2);
       ctx.lineWidth = 4;
       ctx.setLineDash([7, 5]);
       ctx.strokeStyle = '#e5b76bc7';
@@ -856,7 +858,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
         ctx.restore();
       }
     }
-    ctx.drawImage(sprites.raceCar(COLORS.orange), -14, -9, 28, 18);
+    const { halfLength, halfWidth } = CAR_BODY;
+    ctx.drawImage(sprites.raceCar(COLORS.orange), -halfLength, 1 - halfWidth, halfLength * 2, (halfWidth - 1) * 2);
     if (held('brake') || held('handbrake')) {
       rect(ctx, -13, -5, 2, 3, '#f7b078');
       rect(ctx, -13, 2, 2, 3, '#f7b078');

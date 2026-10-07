@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createState, startMatch, step, emptyInput, TICK_RATE, chooseBoon } from '../public/topdown-engine.js';
+import { createState, startMatch, step, emptyInput, TICK_RATE, chooseBoon, MOVES } from '../public/topdown-engine.js';
 
 const gap = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 function blocked(state, a, b, padding = 14.9) {
@@ -44,6 +44,19 @@ function steer(controls, dx, dy) {
   controls.down = Math.sin(angle) > .3; controls.up = Math.sin(angle) < -.3;
 }
 
+function incomingProjectiles(state, fighter) {
+  // Distance alone also selects receding shots and gives no warning about
+  // vulnerable roll startup. Rank the actual incoming paths by contact time.
+  return state.projectiles.filter(p => p.team === 'enemies').map(projectile => {
+    const dx = projectile.x - fighter.x, dy = projectile.y - fighter.y;
+    const speed2 = projectile.vx ** 2 + projectile.vy ** 2;
+    const time = -(dx * projectile.vx + dy * projectile.vy) / speed2;
+    const miss = Math.hypot(dx + projectile.vx * time, dy + projectile.vy * time);
+    return { projectile, time, miss };
+  }).filter(({ projectile, time, miss }) => time >= 0 && time < 40 && miss < fighter.radius + projectile.radius + 8 && !blocked(state, fighter, projectile, 0))
+    .sort((a, b) => a.time - b.time);
+}
+
 function controller() {
   const routes = new Map(), lastAttacks = [-100, -100];
   return (state, f) => {
@@ -63,6 +76,19 @@ function controller() {
     if (ally.downed && gap(f, ally) < 58 && alive.every(enemy => gap(f, enemy) > 120)) { buttons.block = true; return buttons; }
     const enemy = [...alive].sort((a, b) => gap(f, a) - gap(f, b))[0];
     const distance = gap(f, enemy);
+    const danger = state.hazards.find(h => h.kind === 'fire' && (h.active || h.warning) && gap(f, h) < h.radius + 40);
+    if (danger) { steer(buttons, f.x - danger.x, f.y - danger.y); return buttons; }
+    const incoming = incomingProjectiles(state, f);
+    if (incoming.length && incoming[0].time < 18 && f.action !== 'attack') {
+      const { projectile, time } = incoming[0];
+      if (time < MOVES.roll.invulnerableStart + 2 || f.stamina < 36) {
+        steer(buttons, projectile.x - f.x, projectile.y - f.y); buttons.block = true;
+      } else {
+        steer(buttons, -projectile.vy, projectile.vx);
+        buttons.roll = !f.previousInput.roll;
+      }
+      return buttons;
+    }
     // Late projectile windups demand strafing instead of another greedy swing.
     const volley = alive.find(e => e.action === 'windup' && ['burst', 'fan', 'crown'].includes(e.attackKind) && gap(f,e)<340 && e.actionFrame>e.windupTicks-35);
     if (volley) {
@@ -70,7 +96,8 @@ function controller() {
       if (f.stamina>32 && !f.previousInput.roll && volley.actionFrame>volley.windupTicks-8) buttons.roll=true;
       return buttons;
     }
-    const threat = alive.find(e => ['windup', 'attack'].includes(e.action) && !['burst', 'fan', 'crown'].includes(e.attackKind) && gap(f, e) < e.reach + 65);
+    const threat = alive.filter(e => ['windup', 'attack'].includes(e.action) && !['burst', 'fan', 'crown'].includes(e.attackKind) && gap(f, e) < e.reach + 65)
+      .sort((a, b) => (a.action === 'attack' ? 0 : a.windupTicks - a.actionFrame) - (b.action === 'attack' ? 0 : b.windupTicks - b.actionFrame))[0];
     if (threat && (threat.action === 'attack' || threat.actionFrame > threat.windupTicks - 28)) {
       if (threat.attackKind !== 'slam' && threat.attackKind !== 'charge' && (threat.action === 'attack' || threat.actionFrame >= threat.windupTicks - 4) && f.action !== 'attack') {
         steer(buttons, threat.x - f.x, threat.y - f.y); buttons.block = true; return buttons;
@@ -79,12 +106,6 @@ function controller() {
       if (f.stamina > 32 && !f.previousInput.roll && (threat.action === 'attack' || threat.actionFrame >= threat.windupTicks - 8)) buttons.roll = true;
       return buttons;
     }
-    const danger = state.hazards.find(h => h.kind === 'fire' && (h.active || h.warning) && gap(f, h) < h.radius + 40);
-    if (danger) { steer(buttons, f.x - danger.x, f.y - danger.y); return buttons; }
-    const projectile = state.projectiles.find(p => p.team === 'enemies' && gap(f, p) < 65);
-    if (projectile && f.stamina > 36 && !f.previousInput.roll && f.action !== 'attack') {
-      steer(buttons, -projectile.vy, projectile.vx); buttons.roll = true; return buttons;
-    }
     if (f.stamina < 12 && f.action !== 'attack') { steer(buttons, f.x - enemy.x, f.y - enemy.y); return buttons; }
     let route = routes.get(f.id);
     if (!route || route.wave !== state.wave || route.enemy !== enemy.id || state.tick - route.tick > 12 || gap(f, route.target) < 12) {
@@ -92,9 +113,10 @@ function controller() {
     }
     if (distance > 57 || blocked(state, f, enemy, 2)) steer(buttons, route.target.x - f.x, route.target.y - f.y);
     else steer(buttons, enemy.x - f.x, enemy.y - f.y);
-    if (distance < 87 && !blocked(state, f, enemy, 2) && state.tick - lastAttacks[f.id] >= 66 && f.stamina >= 10 && !['attack', 'roll'].includes(f.action) && f.stun === 0) {
+    const canCommit = !incoming.length && !alive.some(e => e.action === 'windup' && e.windupTicks - e.actionFrame <= MOVES.sword.total && gap(f, e) < e.reach + 65);
+    if (canCommit && distance < 87 && !blocked(state, f, enemy, 2) && state.tick - lastAttacks[f.id] >= 66 && f.stamina >= 10 && !['attack', 'roll'].includes(f.action) && f.stun === 0) {
       buttons.attack = true; lastAttacks[f.id] = state.tick;
-    } else if (distance > 160 && distance < 320 && !blocked(state, f, enemy, 5) && state.tick - lastAttacks[f.id] >= 90 && f.stamina > 40 && !['attack', 'roll'].includes(f.action) && f.stun === 0) {
+    } else if (canCommit && distance > 160 && distance < 320 && !blocked(state, f, enemy, 5) && state.tick - lastAttacks[f.id] >= 90 && f.stamina > 40 && !['attack', 'roll'].includes(f.action) && f.stun === 0) {
       buttons.shoot = true; lastAttacks[f.id] = state.tick;
     }
     return buttons;

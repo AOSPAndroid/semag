@@ -1,4 +1,5 @@
 import { paintRooftopDetails, drawRooftopLife, drawFighterHead, drawFighterInsignia } from './art/afterimage-art.js';
+import { MOVES } from './engine.js';
 
 const WIDTH = 1200;
 const HEIGHT = 600;
@@ -433,14 +434,17 @@ export class ArenaRenderer {
       p.sword = -0.12; p.scarf = 3;
     } else if (action === 'light' || action === 'heavy') {
       const heavy = action === 'heavy';
-      const startup = heavy ? 28 : 12, active = heavy ? 11 : 8, total = heavy ? 78 : 44;
+      const { startup, active, total } = MOVES[action];
       const windup = clamp(frame / startup, 0, 1);
       const swing = clamp((frame - startup) / active, 0, 1);
       const recover = clamp((frame - startup - active) / (total - startup - active), 0, 1);
       const angleStart = heavy ? -2.22 : -2.48, angleEnd = heavy ? 0.46 : 0.62;
+      const contactAngle = -0.25;
       let angle;
       if (frame < startup) angle = mix(-0.5, angleStart, ease(windup));
-      else if (frame < startup + active) angle = mix(angleStart, angleEnd, ease(swing));
+      // The forward blade and its swept trail appear on the same frame that
+      // combat becomes active. Previously the first hit showed a backswing.
+      else if (frame < startup + active) angle = mix(contactAngle, angleEnd, ease(swing));
       else angle = mix(angleEnd, -0.5, ease(recover));
       const drive = frame < startup ? -windup * 5 : (1 - recover) * (heavy ? 14 : 10);
       p.hip = [drive * 0.30 - 4, -42]; p.shoulder = [drive - 4, -79]; p.head = [drive - 2, -99];

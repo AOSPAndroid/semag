@@ -351,6 +351,9 @@ export class TopdownRenderer {
         this.dust(x, y + 9, 6);
       } else if (event.type === 'shoot') {
         this.sparks(x, y, 4, '#d7ddbb', 0.35);
+      } else if (event.type === 'arrowStop' && event.reason !== 'expired') {
+        this.sparks(x, y, event.move === 'orb' ? 7 : 4, event.move === 'orb' ? '#e3c295' : '#d7ddbb', 0.4);
+        this.rings.push({ x, y, color: '#e7dfb8', life: 0.11, maxLife: 0.11, size: 7 });
       }
     }
     this.lastConsumedEventId=typeof latest?.id==='number'?latest.id:null;
@@ -852,7 +855,10 @@ export class TopdownRenderer {
     } else {
       ctx.save(); ctx.globalAlpha = 0.14;
       path(ctx, [[p.x - Math.cos(angle) * 30, p.y - Math.sin(angle) * 30], [p.x, p.y]], p.reflected ? '#c5f4b1' : '#fff0c0', 2);
-      ctx.restore(); this.arrow(ctx, p.x, p.y, angle, p.reflected ? '#c5f4b1' : '#e7dfb8');
+      // The arrow tip leads its physical center by its five-pixel radius;
+      // the decorative shaft trails behind instead of reaching through cover.
+      const offset = 14.5 - (p.radius ?? 5);
+      ctx.restore(); this.arrow(ctx, p.x - Math.cos(angle) * offset, p.y - Math.sin(angle) * offset, angle, p.reflected ? '#c5f4b1' : '#e7dfb8');
     }
   }
 

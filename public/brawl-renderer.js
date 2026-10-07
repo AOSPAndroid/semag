@@ -2,6 +2,7 @@ import { CHARACTERS, STAGES } from './brawl-engine.js';
 import { INK, rect, poly, line, oval, comicPose, drawComicSprite, drawWrench, paintStage } from './art/oddstock-art.js';
 export { drawComicSprite } from './art/oddstock-art.js';
 const TEAMS = ['#edb076', '#93cbb0'];
+const SPRITE_WIDTH = 160, SPRITE_HEIGHT = 128;
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
 const STAR_X = Array.from({ length: 16 }, (_, i) => Math.cos(i * Math.PI / 8));
 const STAR_Y = Array.from({ length: 16 }, (_, i) => Math.sin(i * Math.PI / 8));
@@ -33,7 +34,10 @@ export class BrawlRenderer {
     if (this.lastSprites[f.id]?.key === key) return this.lastSprites[f.id].sprite;
     let sprite = this.sprites.get(key);
     if (sprite) { this.sprites.delete(key); this.sprites.set(key, sprite); this.lastSprites[f.id] = { key, sprite }; return sprite; }
-    sprite = document.createElement('canvas'); sprite.width = 128; sprite.height = 128; const c = sprite.getContext('2d'); c.translate(64, 64);
+    // Sprout's extended leaf blade exceeds the old 64px half-width. Keep the
+    // complete weapon silhouette in the cache so visible reach stays readable.
+    sprite = document.createElement('canvas'); sprite.width = SPRITE_WIDTH; sprite.height = SPRITE_HEIGHT;
+    const c = sprite.getContext('2d'); c.translate(SPRITE_WIDTH / 2, SPRITE_HEIGHT / 2);
     drawComicSprite(c, { ...f, x: 0, y: 0, facing: 1 }, time, reduced); this.sprites.set(key, sprite);
     if (this.sprites.size > 128) this.sprites.delete(this.sprites.keys().next().value);
     this.lastSprites[f.id] = { key, sprite };
@@ -70,9 +74,9 @@ export class BrawlRenderer {
       let liveTrail = 0;
       if (!reduced) for (const sample of trail) if (time - sample.time < 130) trail[liveTrail++] = sample;
       trail.length = liveTrail;
-      for (const t of this.trails[f.id]) { c.save(); c.globalAlpha = .12 * (1 - (time - t.time) / 130); c.translate(Math.round(t.x), Math.round(t.y)); c.scale(t.facing, 1); c.drawImage(t.sprite, -64, -64); c.restore(); }
+      for (const t of this.trails[f.id]) { c.save(); c.globalAlpha = .12 * (1 - (time - t.time) / 130); c.translate(Math.round(t.x), Math.round(t.y)); c.scale(t.facing, 1); c.drawImage(t.sprite, -SPRITE_WIDTH / 2, -SPRITE_HEIGHT / 2); c.restore(); }
       if (f.action === 'shield') this.shield(c, f, time, reduced, false);
-      c.save(); c.translate(Math.round(f.x), Math.round(f.y)); c.scale(f.facing, 1); c.drawImage(sprite, -64, -64); c.restore();
+      c.save(); c.translate(Math.round(f.x), Math.round(f.y)); c.scale(f.facing, 1); c.drawImage(sprite, -SPRITE_WIDTH / 2, -SPRITE_HEIGHT / 2); c.restore();
       if (f.invulnerable) { c.strokeStyle = '#fff0bb'; c.lineWidth = 1.5; c.setLineDash([4, 5]); c.strokeRect(f.x - f.width / 2 - 4, f.y - f.height / 2 - 4, f.width + 8, f.height + 8); c.setLineDash([]); }
       this.move(c, f);
       if (f.action === 'shield') this.shield(c, f, time, reduced, true);

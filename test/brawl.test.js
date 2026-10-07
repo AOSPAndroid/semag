@@ -221,6 +221,45 @@ test('swept projectiles do not tunnel through bodies or solid platform cover', (
   assert.equal(covered.fighters[1].damage, 0); assert.equal(covered.projectiles.length, 0);
 });
 
+test('projectile circles allow real corner near misses while retaining glancing hits', () => {
+  for (const [offset, expectedDamage] of [[6, 0], [4, 12]]) {
+    const state = fighting(), target = state.fighters[1];
+    Object.assign(target, { x: 600, y: 100, vx: 0, vy: -CHARACTERS.bulk.gravity, grounded: false, stun: 10 });
+    state.projectiles.push({ id: 1, owner: 0, kind: 'spark', x: target.x - target.width / 2 - offset,
+      y: target.y - target.height / 2 - offset, vx: 0, vy: 0, radius: 7, damage: 12, life: 20, age: 0, hitTargets: [] });
+    step(state);
+    assert.equal(target.damage, expectedDamage, `corner clearance ${Math.hypot(offset, offset)}px`);
+  }
+});
+
+test('projectile contact follows a moving fighter rather than only its final position', () => {
+  const state = fighting(), target = state.fighters[1];
+  Object.assign(target, { x: 600, y: 100, vx: 25, vy: 12, grounded: false, stun: 10 });
+  state.projectiles.push({ id: 1, owner: 0, kind: 'spark', x: 630, y: 67,
+    vx: -9.5, vy: 0, radius: 7, damage: 12, life: 20, age: 0, hitTargets: [] });
+  step(state);
+  assert.equal(target.damage, 12, 'the shot catches the upper corner before the falling body moves below it');
+  assert.equal(state.projectiles.length, 0);
+});
+
+test('roof-edge collisions use crossing position and allow sliding off after an early landing', () => {
+  const departing = fighting('parcel'), f = departing.fighters[0], main = departing.platforms[0];
+  Object.assign(f, { x: main.x + 5, y: main.y - f.height / 2 - 1, vx: -25, vy: 12, grounded: false, stun: 10 });
+  step(departing);
+  assert.ok(f.x + f.width / 2 < main.x);
+  assert.equal(f.y + f.height / 2, main.y, 'the body meets the roof before crossing its edge');
+  assert.equal(f.grounded, false, 'sliding off must not restore grounded resources');
+  step(departing);
+  assert.ok(f.y + f.height / 2 > main.y);
+
+  const arriving = fighting('parcel'), a = arriving.fighters[0], roof = arriving.platforms[0];
+  Object.assign(a, { x: roof.x - 30, y: roof.y - a.height / 2 - 1, vx: 25, vy: 12, grounded: false, stun: 10 });
+  step(arriving);
+  assert.equal(a.grounded, false, 'crossing the edge after falling below the roof cannot teleport onto it');
+  assert.ok(a.y + a.height / 2 > roof.y);
+  assert.equal(a.x + a.width / 2, roof.x, 'the solid side catches the late arrival');
+});
+
 test('parcel detonations use a bounded radius and cannot damage their owner', () => {
   const state = fighting('parcel'); adjacent(state, 70);
   const target = state.fighters[1];
@@ -229,6 +268,32 @@ test('parcel detonations use a bounded radius and cannot damage their owner', ()
   assert.equal(target.damage, 18); assert.equal(state.fighters[0].damage, 0);
   assert.equal(state.projectiles.length, 0);
   assert.ok(state.events.some(e => e.type === 'explosion'));
+});
+
+test('parcel blasts respect solid rooftop cover and the nearest visible body edge', () => {
+  const covered = fighting('parcel'), protectedFighter = covered.fighters[1], main = covered.platforms[0];
+  Object.assign(protectedFighter, { x: 600, y: main.y + main.h + protectedFighter.height / 2 + 6, grounded: false });
+  covered.projectiles.push({ id: 1, owner: 0, kind: 'parcel', x: 600, y: main.y - 30,
+    vx: 0, vy: 0, radius: 11, damage: 18, life: 1, age: 79, hitTargets: [] });
+  step(covered);
+  assert.equal(protectedFighter.damage, 0);
+  assert.ok(covered.events.some(e => e.type === 'explosion'));
+
+  const glancing = fighting('parcel'), target = glancing.fighters[1];
+  Object.assign(target, { x: 600, y: 100, vy: -CHARACTERS.bulk.gravity, grounded: false, stun: 10 });
+  glancing.projectiles.push({ id: 1, owner: 0, kind: 'parcel', x: 680, y: 188,
+    vx: 0, vy: -.14, radius: 11, damage: 18, life: 1, age: 79, hitTargets: [] });
+  step(glancing);
+  assert.equal(target.damage, 18, 'the body edge inside the 85px blast counts even when its center is farther away');
+});
+
+test('parcel blasts hit an exposed body portion around a roof edge without penetrating full cover', () => {
+  const state = fighting('parcel'), target = state.fighters[1], main = state.platforms[0];
+  Object.assign(target, { x: main.x + 1, y: main.y + main.h + target.height / 2 + 1, grounded: false });
+  state.projectiles.push({ id: 1, owner: 0, kind: 'parcel', x: main.x + 1, y: main.y - 12,
+    vx: 0, vy: -.14, radius: 11, damage: 18, life: 1, age: 79, hitTargets: [] });
+  step(state);
+  assert.equal(target.damage, 18, 'the left shoulder is visible around the roof despite cover hiding the nearest body point');
 });
 
 test('stage hazards warn before activity, hit once per activation, and have deterministic cycling', () => {

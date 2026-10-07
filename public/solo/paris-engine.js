@@ -147,15 +147,23 @@ function bell(state, input) {
   }
   state.bellHeld = held;
 }
-// Continuous relative-motion slab test, including changing widths: no thin door tunnelling.
-function sweptTouches(oldX, oldZ, newX, newZ, halfX, halfZ) {
+// Intersect each occupied half-space in time. A door's width grows during the
+// sweep instead of retroactively occupying its final width for the whole tick.
+function sweptTouches(oldX, oldZ, newX, newZ, oldHalfX, newHalfX, halfZ) {
   let enter = 0, exit = 1;
-  for (const [start, end, half] of [[oldX, newX, halfX], [oldZ, newZ, halfZ]]) {
-    const delta = end - start;
-    if (Math.abs(delta) < 1e-12) { if (Math.abs(start) >= half) return false; continue; }
-    const a = (-half - start) / delta, b = (half - start) / delta;
-    enter = Math.max(enter, Math.min(a, b)); exit = Math.min(exit, Math.max(a, b));
-    if (enter >= exit) return false;
+  for (let axis = 0; axis < 2; axis++) {
+    const oldCenter = axis === 0 ? oldX : oldZ;
+    const newCenter = axis === 0 ? newX : newZ;
+    const oldHalf = axis === 0 ? oldHalfX : halfZ;
+    const newHalf = axis === 0 ? newHalfX : halfZ;
+    for (let side = -1; side <= 1; side += 2) {
+      const start = oldHalf + side * oldCenter;
+      const end = newHalf + side * newCenter;
+      if (start <= 0 && end <= 0) return false;
+      if (start <= 0) enter = Math.max(enter, start / (start - end));
+      else if (end <= 0) exit = Math.min(exit, start / (start - end));
+      if (enter >= exit) return false;
+    }
   }
   return exit > 0 && enter < 1;
 }
@@ -184,7 +192,7 @@ function moveTraffic(state, oldDistance, oldBikeX, dt) {
     }
     item.z += item.speed * dt;
     const collided = !item.crashed && !item.passed && sweptTouches(oldBikeX - oldX, oldZ - oldDistance,
-      state.x - item.x, item.z - state.distance, (BIKE_WIDTH + Math.max(item.width, oldWidth)) / 2,
+      state.x - item.x, item.z - state.distance, (BIKE_WIDTH + oldWidth) / 2, (BIKE_WIDTH + item.width) / 2,
       (BIKE_LENGTH + item.length) / 2);
     if (collided) {
       item.crashed = item.passed = true;

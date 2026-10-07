@@ -474,7 +474,8 @@ export function createParisRenderer(ctx, { sprites, reducedMotion = false } = {}
   function rider(bellPulseUntil) {
     const ground = py(-BIKE_LENGTH / 2), x = px(state.x, -BIKE_LENGTH / 2);
     const collisionWidth = BIKE_WIDTH * METRE * scale(-BIKE_LENGTH / 2);
-    strip(state.x - BIKE_WIDTH / 2, state.x + BIKE_WIDTH / 2, -BIKE_LENGTH / 2, BIKE_LENGTH / 2, '#25413655');
+    strip(state.x - BIKE_WIDTH / 2, state.x + BIKE_WIDTH / 2, -BIKE_LENGTH / 2, BIKE_LENGTH / 2,
+      state.crashCooldown > 0.8 ? '#cd805c66' : '#25413655');
     if (state.assistActive && !motionReduced()) {
       for (let i = 0; i < 3; i++) {
         const z = -1.4 - i * 0.4, y = py(z);
@@ -525,7 +526,16 @@ export function createParisRenderer(ctx, { sprites, reducedMotion = false } = {}
           (actor.warningActive || !survival && actor.turnSignal || actor.kind === 'door' && actor.maneuverStarted)) warnings.push(actor);
       }
       actors.sort((a, b) => actorDepth(b) - actorDepth(a) || a.id - b.id);
-      for (const actor of actors) footprint(actor);
+      let impactActorId = null;
+      for (let i = (state.events?.length || 0) - 1; i >= 0; i--) {
+        const event = state.events[i];
+        if (event.type === 'crash') {
+          if (state.elapsed - event.time < 0.3) impactActorId = event.actorId;
+          break;
+        }
+      }
+      for (const actor of actors)
+        footprint(actor, actor.id === impactActorId ? '#cd805c66' : '#203b3442');
       let riderDrawn = false;
       for (const actor of actors) {
         if (!riderDrawn && actorDepth(actor) - state.distance < -BIKE_LENGTH / 2) { rider(bellPulseUntil); riderDrawn = true; }
