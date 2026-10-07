@@ -68,9 +68,9 @@ def stored_record(page, game):
 
 
 def check_catalog(page):
-    assert page.locator("[data-create-game]").count() == 10
+    assert page.locator("[data-create-game]").count() == 11
     assert page.locator("[data-play-solo]").count() == 14
-    assert page.locator("[data-create-game]:visible").count() == 10
+    assert page.locator("[data-create-game]:visible").count() == 11
     assert page.locator("[data-play-solo]:visible").count() == 14
     page.locator('[data-filter="driving"]').click()
     assert page.locator("[data-create-game]:visible").count() == 0
@@ -81,7 +81,7 @@ def check_catalog(page):
     assert page.locator("[data-create-game]:visible").count() == 0
     assert page.locator("[data-play-solo]:visible").count() == 14
     page.locator('[data-filter="friends"]').click()
-    assert page.locator("[data-create-game]:visible").count() == 10
+    assert page.locator("[data-create-game]:visible").count() == 11
     assert page.locator("[data-play-solo]:visible").count() == 0
     page.locator('[data-filter="all"]').click()
 

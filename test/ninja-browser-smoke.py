@@ -262,8 +262,8 @@ def hub_check(browser,url,errors,resources):
     page=context.new_page();watch(page,'hub',errors,resources)
     try:
         page.goto(url+'/')
-        expected={'all':24,'solo':14,'friends':10,'action':11,'roguelike':4,'driving':3,'ninja':2}
-        assert page.locator('[data-game-card]').count()==24
+        expected={'all':25,'solo':14,'friends':11,'action':12,'roguelike':4,'driving':3,'ninja':2,'voxel':1}
+        assert page.locator('[data-game-card]').count()==25
         for category,count in expected.items():
             page.locator(f'[data-filter="{category}"]').click()
             assert page.locator('[data-game-card]:visible').count()==count, (category,count,page.locator('[data-game-card]:visible').count())

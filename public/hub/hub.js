@@ -1,5 +1,6 @@
 import { mountKeyboardLayoutPicker } from '../keyboard-layout.js';
-import { GAMES, roomUrl, soloUrl, getName, saveName, hostInfo, copyText } from './shared.js';
+import { GAMES, roomUrl, roomCapacity, soloUrl, getName, saveName, hostInfo, copyText } from './shared.js';
+import { chooseVoxelRoom } from './voxel-setup.js';
 import { setText, toggleClass } from './dom.js';
 const $ = (id) => document.getElementById(id);
 mountKeyboardLayoutPicker(document.querySelector('[data-keyboard-layout-picker]'));
@@ -18,7 +19,7 @@ document.querySelectorAll('[data-play-solo]').forEach(button => button.addEventL
   if (GAMES[gameId]?.kind !== 'solo') return;
   updateName(); location.href = soloUrl(gameId);
 }));
-const matchesFilter = (game, filter) => filter === 'all' || (filter === 'ninja' ? game?.theme === 'ninja' : filter === 'roguelike' ? game?.roguelike === true : ['driving', 'action'].includes(filter) ? game?.genre === filter : (game?.kind === 'solo') === (filter === 'solo'));
+const matchesFilter = (game, filter) => filter === 'all' || (['ninja', 'voxel'].includes(filter) ? game?.theme === filter : filter === 'roguelike' ? game?.roguelike === true : ['driving', 'action'].includes(filter) ? game?.genre === filter : (game?.kind === 'solo') === (filter === 'solo'));
 let activeFilter = 'all';
 function filterShelf() {
   const query = $('game-search').value.trim().toLowerCase();
@@ -43,11 +44,14 @@ document.querySelectorAll('[data-filter]').forEach(button => {
 });
 document.querySelectorAll('[data-create-game]').forEach(button => button.addEventListener('click', async () => {
   if (creating) return;
+  const gameId = button.dataset.createGame;
+  const settings = gameId === 'voxel-breach' ? await chooseVoxelRoom($('voxel-setup')) : {};
+  if (!settings || creating) return;
   updateName(); creating = true; error('');
   document.querySelectorAll('[data-create-game]').forEach(b => { b.disabled = true; });
   button.firstChild.textContent = 'Opening… ';
   try {
-    const response = await fetch('/api/rooms', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ gameId: button.dataset.createGame, name: `${name}'s room` }) });
+    const response = await fetch('/api/rooms', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ gameId, name: `${name}'s room`, ...settings }) });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'The room could not be opened.');
     location.href = roomUrl(data.room);
@@ -65,13 +69,14 @@ function renderRooms() {
   for (const room of rooms) {
     const game = GAMES[room.gameId]; if (!game) continue;
     const count = room.players.filter(p => p?.connected).length;
+    const capacity = roomCapacity(room);
     const row = document.createElement('div'); row.className = 'room-item'; row.dataset.roomId = room.id;
     const icon = document.createElement('div'); icon.className = 'room-icon'; icon.textContent = game.icon;
     const description = document.createElement('div');
     const title = document.createElement('strong'); title.textContent = room.players.find(p => p?.connected)?.name || room.name || game.title;
-    const subtitle = document.createElement('small'); subtitle.textContent = `${game.title} · ${count}/2 players`;
+    const subtitle = document.createElement('small'); subtitle.textContent = `${game.title}${room.gameId === 'voxel-breach' ? ` · ${capacity / 2}v${capacity / 2}` : ''} · ${count}/${capacity} players`;
     description.append(title, subtitle);
-    const join = document.createElement('button'); join.textContent = count >= 2 ? 'Full' : 'Join'; join.disabled = count >= 2;
+    const join = document.createElement('button'); join.textContent = count >= capacity ? 'Full' : 'Join'; join.disabled = count >= capacity;
     join.addEventListener('click', () => { updateName(); location.href = roomUrl(room); });
     row.append(icon, description, join); list.append(row);
   }
@@ -99,7 +104,7 @@ $('join-form').addEventListener('submit', async (event) => {
     await refreshRooms();
     const room = rooms.find(room => room.id === code);
     if (!room) throw new Error('Room not found. Check the code or ask your friend to create a new room.');
-    if (room.players.filter(p => p?.connected).length >= 2) throw new Error('Both seats are taken in that room.');
+    if (room.players.filter(p => p?.connected).length >= roomCapacity(room)) throw new Error('All seats are taken in that room.');
     location.href = roomUrl(room);
   } catch (e) { $('join-error').textContent = e.message; $('join-error').hidden = false; $('join-button').disabled = false; }
 });

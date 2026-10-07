@@ -1,4 +1,5 @@
 export const GAMES = {
+  'voxel-breach': { title: 'Voxel Breach', category: 'VOXEL / TACTICAL 3D FPS', kind: 'team', genre: 'action', theme: 'voxel', maxPlayers: 6, icon: '⌗', description: 'Hold an angle. Breach a site. Win together.', color: '#628b88' },
   'shadow-lantern': { title: 'Shadow Lantern', category: 'NINJA / STEALTH CAMPAIGN', kind: 'solo', genre: 'action', theme: 'ninja', icon: '☾', description: 'Watch the patrol. Take the seal. Leave no trail.', color: '#7b8198' },
   'shinobi-showdown': { title: 'Shinobi Showdown', category: 'NINJA / REAL-TIME DUEL', kind: 'duel', genre: 'action', theme: 'ninja', icon: '✣', description: 'Read the strike. Parry the kunai. Outplay your rival.', color: '#8e7b87' },
   'skyline-hook': { title: 'Skyline Hook', category: 'PRECISION GRAPPLING', kind: 'solo', genre: 'action', icon: '↗', description: 'Build momentum. Catch an anchor. Earn the next rooftop.', color: '#71958b' },
@@ -28,7 +29,12 @@ export function soloUrl(gameId) {
   return `/solo.html?game=${encodeURIComponent(gameId)}`;
 }
 export function roomUrl(room) {
+  if (room.gameId === 'voxel-breach') return `/voxel.html?room=${encodeURIComponent(room.id)}`;
   return room.gameId === 'afterimage' ? `/afterimage.html?room=${encodeURIComponent(room.id)}` : `/play.html?room=${encodeURIComponent(room.id)}&game=${encodeURIComponent(room.gameId)}`;
+}
+export function roomCapacity(room) {
+  if ([2, 4, 6].includes(room.capacity)) return room.capacity;
+  return [2, 4, 6].includes(room.players?.length) ? room.players.length : 2;
 }
 export function getName() { try { return localStorage.getItem('afterimage-name') || 'Challenger'; } catch { return 'Challenger'; } }
 export function saveName(name) { const safe = (name || '').trim().slice(0, 20) || 'Challenger'; try { localStorage.setItem('afterimage-name', safe); } catch {} return safe; }

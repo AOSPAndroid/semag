@@ -81,10 +81,10 @@ class Keyboard:
 
 
 def catalog(page):
-    assert page.locator("[data-create-game]").count() == 10
+    assert page.locator("[data-create-game]").count() == 11
     assert page.locator("[data-play-solo]").count() == 14
-    assert page.locator("[data-create-game]:visible").count() + page.locator("[data-play-solo]:visible").count() == 24
-    for category, multiplayer, solo in [("driving", 0, 3), ("solo", 0, 14), ("friends", 10, 0)]:
+    assert page.locator("[data-create-game]:visible").count() + page.locator("[data-play-solo]:visible").count() == 25
+    for category, multiplayer, solo in [("driving", 0, 3), ("solo", 0, 14), ("friends", 11, 0)]:
         page.locator(f'[data-filter="{category}"]').click()
         assert page.locator("[data-create-game]:visible").count() == multiplayer
         assert page.locator("[data-play-solo]:visible").count() == solo

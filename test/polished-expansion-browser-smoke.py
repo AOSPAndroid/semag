@@ -551,10 +551,10 @@ def hub_check(browser, url, errors, resources, mutations, sockets):
     page.on('websocket',lambda socket:sockets.append(f'{tag}: {socket.url}'))
     try:
         page.goto(url+'/')
-        assert page.locator('[data-game-card]').count()==24
+        assert page.locator('[data-game-card]').count()==25
         assert page.locator('[data-play-solo]').count()==14
-        assert page.locator('[data-create-game]').count()==10
-        expected={'all':24,'solo':14,'friends':10,'action':11,'roguelike':4,'driving':3,'ninja':2}
+        assert page.locator('[data-create-game]').count()==11
+        expected={'all':25,'solo':14,'friends':11,'action':12,'roguelike':4,'driving':3,'ninja':2,'voxel':1}
         for category,count in expected.items():
             page.locator(f'[data-filter="{category}"]').click()
             assert page.locator('[data-game-card]:visible').count()==count, (category,'Catalog count mismatch')
@@ -579,7 +579,7 @@ def hub_check(browser, url, errors, resources, mutations, sockets):
         page.locator('[data-play-solo="skyline-hook"]').click()
         wait(page,'window.firesideSolo?.gameId==="skyline-hook"')
         assert state(page) is None and page.locator('#solo-start').is_visible(), 'Shelf navigation skipped the solo ready gate'
-        print('PASS hub: 24 games / 14 solo, correct filters/search/covers, desktop/390/320 layouts, explicit solo gate',flush=True)
+        print('PASS hub: 25 games / 14 solo, correct filters/search/covers, desktop/390/320 layouts, explicit solo gate',flush=True)
         return {'counts':expected,'desktop':str(OUT/'polished-new-hub-desktop.png'),'mobile':mobile,'ready_gate_from_shelf':True}
     finally:
         context.close()

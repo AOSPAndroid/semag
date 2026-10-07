@@ -15,6 +15,7 @@ import * as Topdown from './public/topdown-engine.js';
 import * as Cards from './public/cards-engine.js';
 import * as Vector from './public/vector-engine.js';
 import * as Shinobi from './public/shinobi-engine.js';
+import * as Voxel from './public/voxel-engine.js';
 import * as Brawl from './public/brawl-engine.js';
 
 const TICK_RATE = 120;
@@ -43,13 +44,23 @@ const GAMES = {
     title: 'Shinobi Showdown', engine: Shinobi, makeState: () => Shinobi.createState(), inputKeys: Shinobi.INPUT_KEYS,
     numericControls: { aimX: { min: -1, max: 1, default: 1 }, aimY: { min: -1, max: 1, default: 0 } },
   },
+  'voxel-breach': {
+    title: 'Voxel Breach', engine: Voxel, makeState: settings => Voxel.createState(settings), inputKeys: Voxel.INPUT_KEYS,
+    numericControls: { yaw: { min: -Math.PI, max: Math.PI, default: 0 }, pitch: { min: -1.35, max: 1.35, default: 0 } },
+    latestInput: true, snapshotInterval: 4,
+    snapshotState: state => ({ ...state, fighters: undefined }),
+  },
   'oddstock-rumble': { title: 'Oddstock Rumble', engine: Brawl, makeState: () => Brawl.createState(), inputKeys: Brawl.INPUT_KEYS, selectionComplete: Brawl.selectionComplete },
 };
 const cleanName = (name, maximum) => name.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, maximum);
-const freshInput = room => ({
-  ...Object.fromEntries(room.adapter.inputKeys.map(key => [key, false])),
-  ...Object.fromEntries(Object.entries(room.adapter.numericControls || {}).map(([key, limits]) => [key, limits.default])),
-});
+function freshInput(room, playerId, previous) {
+  const input = Object.fromEntries(room.adapter.inputKeys.map(key => [key, false]));
+  for (const [key, limits] of Object.entries(room.adapter.numericControls || {})) {
+    const retained = room.adapter.latestInput ? previous?.[key] ?? room.state.players?.[playerId]?.[key] : undefined;
+    input[key] = validControl(room.adapter, key, retained) ? retained : limits.default;
+  }
+  return input;
+}
 function validControl(adapter, key, value) {
   if (adapter.inputKeys.includes(key)) return typeof value === 'boolean';
   if (!Object.hasOwn(adapter.numericControls || {}, key)) return false;
@@ -181,7 +192,7 @@ async function serveFile(req, res, pathname) {
   }
 }
 
-/** Creates a PC-hosted hub with independent authoritative, two-player rooms. */
+/** Creates a PC-hosted hub with independent authoritative game rooms. */
 export function createServer(options = {}) {
   const rooms = new Map();
   const occupiedRooms = new Set();
@@ -195,18 +206,23 @@ export function createServer(options = {}) {
   let accumulator = 0;
   let lastTime = performance.now();
 
-  function makeRoom(id, gameId, name) {
+  function makeRoom(id, gameId, name, settings = {}) {
     const adapter = GAMES[gameId];
     const createdAt = Date.now();
+    const teamSize = gameId === 'voxel-breach' ? settings.teamSize : 1;
+    const capacity = teamSize * 2;
+    const mapId = gameId === 'voxel-breach' ? settings.mapId : undefined;
     return {
       id, gameId, name: cleanName(name || adapter.title, 48) || adapter.title,
+      capacity, teamSize, mapId, mapName: mapId === undefined ? undefined : Voxel.MAPS[mapId].name,
       adapter, createdAt, emptySince: createdAt, hadPlayers: false, sessionId: randomUUID(),
-      state: adapter.makeState(), players: [null, null], slots: [null, null], acks: [-1, -1],
+      state: adapter.makeState({ teamSize, mapId }), players: Array(capacity).fill(null), slots: Array(capacity).fill(null), acks: Array(capacity).fill(-1),
       lastBroadcastTick: -12, lastBroadcastRevision: -1,
     };
   }
   const legacyRoom = makeRoom(null, 'afterimage', 'Afterimage Duel');
-  const summary = room => ({ id: room.id, gameId: room.gameId, name: room.name, players: room.players, phase: room.state.phase, createdAt: room.createdAt });
+  const roomSettings = room => ({ capacity: room.capacity, teamSize: room.teamSize, mapId: room.mapId, mapName: room.mapName });
+  const summary = room => ({ id: room.id, gameId: room.gameId, name: room.name, ...roomSettings(room), players: room.players, phase: room.state.phase, createdAt: room.createdAt });
   function reapRooms(now = Date.now()) {
     for (const [id, room] of rooms) {
       if (room.slots.some(Boolean)) continue;
@@ -216,14 +232,25 @@ export function createServer(options = {}) {
     }
     for (const [ip, rate] of creationRates) if (now - rate.startedAt > 120_000) creationRates.delete(ip);
   }
-  function createRoom(gameId, name) {
+  function createRoom(gameId, name, settings = {}) {
     if (!Object.hasOwn(GAMES, gameId)) throw Object.assign(new Error('Choose an available game.'), { status: 400 });
     if (name !== undefined && typeof name !== 'string') throw Object.assign(new Error('Room name must be text.'), { status: 400 });
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) throw Object.assign(new Error('Room settings must be an object.'), { status: 400 });
+    if (gameId === 'voxel-breach') {
+      if (Object.keys(settings).some(key => !['teamSize', 'mapId'].includes(key))) throw Object.assign(new Error('Choose only a team size and map for this room.'), { status: 400 });
+      const teamSize = Object.hasOwn(settings, 'teamSize') ? settings.teamSize : 1;
+      const mapId = Object.hasOwn(settings, 'mapId') ? settings.mapId : 'courtyard';
+      if (!Number.isInteger(teamSize) || ![1, 2, 3].includes(teamSize)) throw Object.assign(new Error('Choose 1v1, 2v2, or 3v3.'), { status: 400 });
+      if (typeof mapId !== 'string' || !Object.hasOwn(Voxel.MAPS, mapId)) throw Object.assign(new Error('Choose an available Voxel Breach map.'), { status: 400 });
+      settings = { teamSize, mapId };
+    } else if (Object.hasOwn(settings, 'teamSize') || Object.hasOwn(settings, 'mapId')) {
+      throw Object.assign(new Error('Team and map settings are only available in Voxel Breach.'), { status: 400 });
+    }
     reapRooms();
     if (rooms.size >= maxRooms) throw Object.assign(new Error('The hub has reached its room limit. Try again after an empty room closes.'), { status: 503 });
     let id;
     do { id = [...randomBytes(6)].map(byte => CODE_ALPHABET[byte % CODE_ALPHABET.length]).join(''); } while (rooms.has(id));
-    const room = makeRoom(id, gameId, name);
+    const room = makeRoom(id, gameId, name, settings);
     rooms.set(id, room);
     return room;
   }
@@ -252,7 +279,12 @@ export function createServer(options = {}) {
       try {
         const data = await readJSON(req);
         if (typeof data.gameId !== 'string') throw Object.assign(new Error('Choose an available game.'), { status: 400 });
-        const room = createRoom(data.gameId, data.name);
+        if (data.gameId === 'voxel-breach' && Object.keys(data).some(key => !['gameId', 'name', 'teamSize', 'mapId'].includes(key))) {
+          throw Object.assign(new Error('Choose only a room name, team size, and map.'), { status: 400 });
+        }
+        const settings = {};
+        for (const key of ['teamSize', 'mapId']) if (Object.hasOwn(data, key)) settings[key] = data[key];
+        const room = createRoom(data.gameId, data.name, settings);
         json(res, 201, { room: summary(room) });
       } catch (error) { if (!res.writableEnded) json(res, error.status || 400, { error: error.message }); }
       return;
@@ -284,9 +316,9 @@ export function createServer(options = {}) {
   function broadcast(selectedRoom) {
     for (const room of selectedRoom ? [selectedRoom] : occupiedRooms) {
       if (!room.slots.some(Boolean)) continue;
-      const envelope = { type: 'state', roomId: room.id, gameId: room.gameId, players: room.players, acks: room.acks };
+      const envelope = { type: 'state', roomId: room.id, gameId: room.gameId, ...roomSettings(room), players: room.players, acks: room.acks };
       // Hidden-information games never share their internal state, even in the lobby.
-      const message = room.adapter.viewForPlayer ? null : JSON.stringify({ ...envelope, state: room.state });
+      const message = room.adapter.viewForPlayer ? null : JSON.stringify({ ...envelope, state: room.adapter.snapshotState ? room.adapter.snapshotState(room.state) : room.state });
       for (const slot of room.slots) {
         if (!slot || slot.ws.readyState !== WebSocket.OPEN) continue;
         if (slot.ws.bufferedAmount > 1024 * 1024) { slot.ws.terminate(); continue; }
@@ -301,7 +333,7 @@ export function createServer(options = {}) {
   function resetInputs(room) {
     for (const slot of room.slots) {
       if (!slot) continue;
-      slot.queue.length = 0; slot.buttons = freshInput(room);
+      slot.queue.length = 0; slot.buttons = freshInput(room, slot.id);
       room.acks[slot.id] = slot.lastAccepted;
     }
   }
@@ -318,15 +350,21 @@ export function createServer(options = {}) {
     const now = performance.now();
     for (const room of occupiedRooms) {
       const inputs = room.slots.map((slot, index) => {
-        if (!slot) return freshInput(room);
+        if (!slot) return freshInput(room, index);
+        if (room.adapter.latestInput && now - slot.lastInputTime > 350) {
+          slot.buttons = freshInput(room, index, slot.queue.at(-1)?.buttons ?? slot.buttons);
+          slot.queue.length = 0;
+          room.acks[index] = slot.lastAccepted;
+          return slot.buttons;
+        }
         if (slot.queue.length) {
           const command = slot.queue.shift(); slot.buttons = command.buttons; room.acks[index] = command.seq;
-        } else if (now - slot.lastInputTime > 350) slot.buttons = freshInput(room);
+        } else if (now - slot.lastInputTime > 350) slot.buttons = freshInput(room, index, slot.buttons);
         return slot.buttons;
       });
       const previousPhase = room.state.phase;
       room.adapter.engine.step(room.state, inputs);
-      if (previousPhase === 'countdown' && ['fight', 'roundEnd', 'matchEnd'].includes(room.state.phase)) {
+      if (previousPhase === 'countdown' && ['buy', 'fight', 'roundEnd', 'matchEnd'].includes(room.state.phase)) {
         for (const player of room.players) if (player) player.ready = false;
       }
       // Card actions broadcast immediately; a 10 Hz heartbeat keeps idle tables alive.
@@ -334,7 +372,7 @@ export function createServer(options = {}) {
         if (room.state.revision !== room.lastBroadcastRevision || room.state.tick - room.lastBroadcastTick >= 12) broadcast(room);
       } else {
         const idle = room.state.phase === 'lobby' || room.state.phase === 'matchEnd' || !room.adapter.inputKeys.length && room.state.phase === 'fight';
-        if (room.state.tick - room.lastBroadcastTick >= (idle ? 12 : 2)) broadcast(room);
+        if (room.state.tick - room.lastBroadcastTick >= (idle ? 12 : room.adapter.snapshotInterval || 2)) broadcast(room);
       }
     }
   }
@@ -386,21 +424,23 @@ export function createServer(options = {}) {
         ws.close(4404, 'Room not found'); return;
       }
     }
-    const id = room.slots.findIndex(slot => slot === null);
+    let id = room.slots.findIndex(slot => slot === null);
     if (id === -1) {
-      error(ws, 'This room already has two players. Ask a player to disconnect before joining.');
+      error(ws, `This room already has ${room.capacity === 2 ? 'two' : room.capacity} players. Ask a player to disconnect before joining.`);
       ws.close(4403, 'Room full'); return;
     }
     const slot = {
-      id, ws, queue: [], buttons: freshInput(room), lastAccepted: -1,
+      id, ws, queue: [], buttons: freshInput(room, id), lastAccepted: -1,
       lastInputTime: performance.now(), alive: true, rateWindow: performance.now(), messages: 0,
     };
     room.slots[id] = slot;
     occupiedRooms.add(room);
     startTicker();
     room.players[id] = { name: `Player ${id + 1}`, connected: true, ready: false };
+    if (room.gameId === 'voxel-breach') room.players[id].team = id < room.teamSize ? 0 : 1;
     room.acks[id] = -1; room.hadPlayers = true; room.emptySince = null;
-    send(ws, { type: 'welcome', playerId: id, roomId: room.id, gameId: room.gameId, sessionId: room.sessionId, tickRate: TICK_RATE });
+    const welcome = () => send(ws, { type: 'welcome', playerId: id, roomId: room.id, gameId: room.gameId, ...roomSettings(room), sessionId: room.sessionId, tickRate: TICK_RATE });
+    welcome();
     broadcast(room);
     ws.on('pong', () => { slot.alive = true; });
     ws.on('message', (raw, isBinary) => {
@@ -446,6 +486,36 @@ export function createServer(options = {}) {
         if (result.changed) room.players[id].ready = false;
         if (result.stageChanged) for (const player of room.players) if (player) player.ready = false;
         broadcast(room);
+      } else if (data.type === 'fps-team') {
+        if (room.gameId !== 'voxel-breach') { error(ws, 'Team selection is only available in Voxel Breach.'); return; }
+        if (Object.keys(data).some(key => !['type', 'team'].includes(key)) || !Number.isInteger(data.team) || ![0, 1].includes(data.team)) {
+          error(ws, 'Choose the amber or cyan team.'); return;
+        }
+        if (state.phase !== 'lobby') { error(ws, 'Teams can change only in the lobby.'); return; }
+        if (room.players[id].team === data.team) { broadcast(room); return; }
+        const target = room.slots.findIndex((candidate, index) => candidate === null && (index < room.teamSize ? 0 : 1) === data.team);
+        if (target < 0) { error(ws, 'That team is full. Choose a team with an open seat.'); return; }
+        const weaponId = state.players[id].weapon;
+        const loadout = Voxel.selectLoadout(state, target, weaponId);
+        if (!loadout.ok) { error(ws, loadout.error || 'Could not move your loadout to that team.'); return; }
+        Voxel.selectLoadout(state, id, 'carbine');
+        room.slots[target] = slot; room.slots[id] = null;
+        room.players[target] = { ...room.players[id], team: data.team, ready: false }; room.players[id] = null;
+        room.acks[id] = -1;
+        id = target; slot.id = id; slot.lastAccepted = -1;
+        slot.lastInputTime = now;
+        for (const player of room.players) if (player) player.ready = false;
+        resetInputs(room);
+        welcome(); broadcast(room);
+      } else if (data.type === 'fps-loadout') {
+        if (room.gameId !== 'voxel-breach') { error(ws, 'Weapon selection is only available in Voxel Breach.'); return; }
+        if (Object.keys(data).some(key => !['type', 'weaponId'].includes(key)) || typeof data.weaponId !== 'string') {
+          error(ws, 'Choose a valid weapon loadout.'); return;
+        }
+        const result = Voxel.selectLoadout(state, id, data.weaponId);
+        if (!result.ok) { error(ws, result.error || 'That weapon loadout is not available.'); return; }
+        if (result.changed && state.phase === 'lobby') room.players[id].ready = false;
+        broadcast(room);
       } else if (data.type === 'ping') {
         if (typeof data.time !== 'number' || !Number.isFinite(data.time)) { error(ws, 'Invalid ping timestamp.'); return; }
         send(ws, { type: 'pong', time: data.time });
@@ -470,16 +540,17 @@ export function createServer(options = {}) {
         if (!Number.isSafeInteger(data.seq) || data.seq < 0 || data.seq > 1_000_000_000) { error(ws, 'Invalid input sequence.'); return; }
         if (!data.buttons || typeof data.buttons !== 'object' || Array.isArray(data.buttons) ||
             Object.keys(data.buttons).some(key => !validControl(room.adapter, key, data.buttons[key]))) {
-          error(ws, room.adapter.numericControls ? 'Use boolean controls and finite aim components between -1 and 1.' : 'Input buttons must contain only valid boolean controls for this game.'); return;
+          error(ws, room.gameId === 'voxel-breach' ? 'Use boolean controls, yaw between -π and π, and pitch between -1.35 and 1.35.' : room.adapter.numericControls ? 'Use boolean controls and finite aim components between -1 and 1.' : 'Input buttons must contain only valid boolean controls for this game.'); return;
         }
         if (data.seq <= slot.lastAccepted) return;
         if (data.seq - slot.lastAccepted > 600) { error(ws, 'Input sequence is too far ahead.'); return; }
         if (slot.queue.length >= 60) { error(ws, 'Input queue is full.'); return; }
-        const buttons = freshInput(room);
+        const buttons = freshInput(room, id, slot.queue.at(-1)?.buttons ?? slot.buttons);
         for (const key of room.adapter.inputKeys) buttons[key] = data.buttons[key] === true;
         for (const key of Object.keys(room.adapter.numericControls || {})) {
           if (Object.hasOwn(data.buttons, key)) buttons[key] = data.buttons[key];
         }
+        if (room.adapter.latestInput) slot.queue.length = 0;
         slot.queue.push({ seq: data.seq, buttons }); slot.lastAccepted = data.seq; slot.lastInputTime = now;
       } else error(ws, 'Unknown message type.');
     });
@@ -533,7 +604,7 @@ if (isMain) {
     for (const interfaces of Object.values(os.networkInterfaces())) for (const adapter of interfaces || []) {
       if (adapter.family === 'IPv4' && !adapter.internal) console.log(`Share LAN address: http://${adapter.address}:${port}`);
     }
-    console.log('Create a room, invite a colleague, and both mark ready. Ctrl+C stops the hub.\n');
+    console.log('Create a room, invite your players, and all mark ready. Ctrl+C stops the hub.\n');
   }).catch(error => { console.error(`Cannot start game hub: ${error.message}`); process.exitCode = 1; });
   let stopping = false;
   const stop = async () => { if (stopping) return; stopping = true; await game.close(); process.exitCode = 0; };

@@ -1,9 +1,9 @@
 {
   "name": "fireside-game-hub",
-  "version": "3.9.0",
+  "version": "3.10.0",
   "private": true,
   "type": "module",
-  "description": "A self-hosted game hub with ninja stealth and duels, platform brawling, roguelikes, driving, and classic games.",
+  "description": "A self-hosted game hub with voxel FPS teams, ninja games, platform brawling, roguelikes, driving, and classic games.",
   "scripts": {
     "start": "node server.js",
     "test": "node --test test/*.test.js"
