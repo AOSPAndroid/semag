@@ -14,10 +14,10 @@ export const GAMES = {
   'minesweeper': { title: 'Minesweeper', category: 'SOLO PUZZLE', kind: 'solo', icon: '⚑', description: 'Ninety mines. Overlapping clues. Six active minutes.', color: '#899282' },
   '2048': { title: '2048', category: 'SOLO PUZZLE', kind: 'solo', icon: '▦', description: 'Six exact Master trials. Two rewinds. Reach 16,384.', color: '#bf9764' },
   'apex-circuit': { title: 'Apex Circuit', category: 'DRIVING / TIME TRIAL', kind: 'solo', genre: 'driving', icon: '◎', description: 'Beat the deadline. Keep a clean line. Earn the championship.', color: '#82916b' },
-  'night-drive': { title: 'Night Drive', category: 'DRIVING / HIGHWAY', kind: 'solo', genre: 'driving', icon: '▰', description: 'Five districts. A ticking clock. Make every clean pass count.', color: '#637e81' },
+  'night-drive': { title: 'Night Drive', category: 'DRIVING / HIGHWAY', kind: 'solo', genre: 'driving', icon: '▰', description: 'Survive the traffic. The longer you last, the faster you drive.', color: '#637e81' },
   'vector-arena': { title: 'Vector Arena', category: 'PRECISION SHOOTER', kind: 'duel', genre: 'action', icon: '⌖', description: 'Lead the shot. Control the angle. Win the duel.', color: '#5b827c' },
   'prism-shift': { title: 'Prism Shift', category: 'FALLING BLOCKS', kind: 'solo', genre: 'puzzle', icon: '▥', description: 'Faster drops. Tighter placements. Master three challenge tiers.', color: '#8c7e9c' },
-  'rift-survivor': { roguelike: true, title: 'Rift Survivor', category: 'SURVIVAL ARENA', kind: 'solo', genre: 'action', icon: '✧', description: 'Burst fire. Break suppression. Survive two-phase guardians.', color: '#7c7975' },
+  'rift-survivor': { roguelike: true, title: 'Rift Survivor', category: 'SURVIVAL ARENA', kind: 'solo', genre: 'action', icon: '✧', description: 'The threat pace rises with time. Burst, dash, and survive.', color: '#7c7975' },
 };
 export function soloUrl(gameId) {
   return `/solo.html?game=${encodeURIComponent(gameId)}`;

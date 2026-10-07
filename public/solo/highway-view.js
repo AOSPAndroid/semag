@@ -9,6 +9,7 @@ import {
   recordScope,
   DIFFICULTIES,
   getDifficulty,
+  usesEndlessPace,
 } from './highway-engine.js';
 import { createDrivingSprites } from '../art/driving-sprites.js';
 
@@ -18,6 +19,30 @@ const HORIZON = 178;
 const ROAD_HALF = 268;
 const CAR_Y = 474;
 const COLORS = { cream: '#f8edcf', orange: '#f0a160', mint: '#77dfc9', ink: '#132c32' };
+/** Road depth remains nonnegative; passing car bodies use a bounded near plane. */
+export function highwayDepthScale(z, passingBody = false) {
+  return 16 / ((passingBody ? Math.max(-8, z) : Math.max(0, z)) + 16);
+}
+export function isHighwayTrafficVisible(traffic, state) {
+  const rearClearance = (state.car.length + traffic.length) / 2;
+  const reach = usesEndlessPace(state) ? state.lookAheadDistance : 220;
+  return traffic.z >= -rearClearance && traffic.z <= reach;
+}
+/** Extra distant road bands use screen scanlines, never an unbounded metre loop. */
+export function getDistantRoadDepths(reach, out = []) {
+  out.length = 0;
+  if (!Number.isFinite(reach) || reach <= 400) return out;
+  out.push(reach);
+  const farY = HORIZON + (CAR_Y - HORIZON) * 16 / (reach + 16);
+  const nearY = HORIZON + (CAR_Y - HORIZON) * 16 / 416;
+  for (let y = Math.max(HORIZON + 1, Math.ceil(farY)); y < nearY; y++) {
+    const z = 16 * (CAR_Y - HORIZON) / (y - HORIZON) - 16;
+    if (z < reach && z > 400) out.push(z);
+  }
+  out.push(400);
+  return out;
+}
+
 const KEY_CONTROLS = {
   ArrowLeft: 'left',
   a: 'left',
@@ -220,9 +245,13 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     }
     if (state.phase === 'lost')
       return `${(state.distance / 1000).toFixed(2)} km on the night shift. Take another lap.`;
-    if (state.shoulder) return 'Ease back onto the road. The shoulder slows you down.';
+    if (state.shoulder) return usesEndlessPace(state)
+      ? `Return to the road: ${(1.4 - state.shoulderExposure).toFixed(1)}s of shoulder grace left before damage.`
+      : 'Ease back onto the road. The shoulder slows you down.';
     if (state.crashCooldown > 0) return 'A close call. Find a gap while your car recovers.';
-    return 'Stay smooth. Clean overtakes score points; near misses build your combo.';
+    return usesEndlessPace(state)
+      ? 'Speed rises with every active second. Read the next gap and release short brake bursts to recharge.'
+      : 'Stay smooth. Clean overtakes score points; near misses build your combo.';
   }
   function publish(force = false) {
     if (!force && state.elapsed - lastPublished < 0.1 && state.phase === lastPhase) return;
@@ -230,7 +259,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     lastPhase = state.phase;
     const detail = details(),
       district = getDistrict(state),
-      difficulty = getDifficulty(state);
+      difficulty = getDifficulty(state),
+      paced = usesEndlessPace(state);
     setValue(
       location,
       'textContent',
@@ -247,10 +277,17 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       setValue(
         deliveryRules,
         'textContent',
-        `${difficulty.title} · ${state.delivery.limit.toFixed(1)}s / district · no repairs · fast near misses add time${state.mode === 'endless' && state.districtIndex >= 5 ? ' · lap pressure rising' : ''}`,
+        paced
+          ? `${difficulty.title} · PACE ${Math.round(state.endlessPace)} KM/H · BRAKE ${state.brakeLocked ? 'RELEASE TO CHARGE' : `${Math.round(state.brakeCharge * 100)}%`} · speed rises with active time · shoulders damage after 1.4s`
+          : `${difficulty.title} · ${state.delivery.limit.toFixed(1)}s / district · no repairs · fast near misses add time`,
       );
       setValue(delivery.dataset, 'urgent', String(state.delivery.remaining <= 4));
     }
+    setValue(hint, 'textContent', paced
+      ? 'A / D or ← / → steer · W adds speed · S is a short brake burst; release it to recharge · Space boosts. Pace keeps rising. Shoulder grace: 1.4s.'
+      : 'A / D or ← / → steer · W accelerates · S brakes · Space boosts. Skim past traffic to build a combo.');
+    setValue(buttons.get('brake'), 'title', paced ? 'Short brake burst. Release to recharge; holding brake cannot stop the pace.' : 'Hold to brake.');
+    setAttribute(buttons.get('brake'), 'data-recharging', String(paced && state.brakeLocked));
     setValue(stageLabel, 'textContent', `DISTRICT ${(state.districtIndex % DISTRICTS.length) + 1} / 5`);
     setValue(stageTitle, 'textContent', district.title);
     setValue(
@@ -318,8 +355,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     });
   }
 
-  function projection(z) {
-    const p = 16 / (Math.max(0, z) + 16);
+  function projection(z, passingBody = false) {
+    const p = highwayDepthScale(z, passingBody);
     return {
       p,
       x: W / 2 + state.curve * (1 - p) ** 2 * 142,
@@ -474,11 +511,27 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     }
     rect(0, HORIZON - 2, W, 5, '#67a28d');
   }
+  const distantRoadDepths = [];
+  function roadSlice(z, far, near) {
+    if (Math.round(far.y) === Math.round(near.y)) return;
+    const world = z + state.distance;
+    roadStrip(far, near, -1.1, 1.1, mod(Math.floor(world / 5), 2) ? '#365750' : '#3b5d54');
+    roadStrip(far, near, -1, 1, mod(Math.floor(world / 12), 2) ? '#33494c' : '#354b4e');
+    const curb = mod(world, 8) < 4 ? '#d1c394' : '#487367';
+    roadStrip(far, near, -1.07, -1.02, curb);
+    roadStrip(far, near, 1.02, 1.07, curb);
+    roadStrip(far, near, -0.985, -0.976, '#8ba498');
+    roadStrip(far, near, 0.976, 0.985, '#8ba498');
+    if (mod(world, 12) < 5.5) {
+      roadStrip(far, near, -0.337, -0.323, '#bfcbb8');
+      roadStrip(far, near, 0.323, 0.337, '#bfcbb8');
+    }
+  }
   function road() {
     rect(0, HORIZON + 3, W, H - HORIZON, getDistrict(state).ground);
     polygon(
       [
-        [W / 2 + state.curve * 142, HORIZON + 3],
+        [W / 2 + state.curve * 142, HORIZON + (usesEndlessPace(state) ? 0 : 3)],
         [W / 2 + ROAD_HALF, CAR_Y],
         [W / 2 - ROAD_HALF, CAR_Y],
       ],
@@ -497,25 +550,17 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     );
     roadStrip(nearest, { x: W / 2, y: H, half: ROAD_HALF * 1.16 }, -1.075, -1, '#597068');
     roadStrip(nearest, { x: W / 2, y: H, half: ROAD_HALF * 1.16 }, 1, 1.075, '#597068');
-    for (let z = 400; z > 0; z -= 2) {
-      const far = projection(z);
-      const near = projection(Math.max(0, z - 2));
-      // Rounded vertices share one scanline in the distant slices: their
-      // polygons have no area, so submitting them cannot change a pixel.
-      if (Math.round(far.y) === Math.round(near.y)) continue;
-      const world = z + state.distance;
-      roadStrip(far, near, -1.1, 1.1, mod(Math.floor(world / 5), 2) ? '#365750' : '#3b5d54');
-      roadStrip(far, near, -1, 1, mod(Math.floor(world / 12), 2) ? '#33494c' : '#354b4e');
-      const curb = mod(world, 8) < 4 ? '#d1c394' : '#487367';
-      roadStrip(far, near, -1.07, -1.02, curb);
-      roadStrip(far, near, 1.02, 1.07, curb);
-      roadStrip(far, near, -0.985, -0.976, '#8ba498');
-      roadStrip(far, near, 0.976, 0.985, '#8ba498');
-      if (mod(world, 12) < 5.5) {
-        roadStrip(far, near, -0.337, -0.323, '#bfcbb8');
-        roadStrip(far, near, 0.323, 0.337, '#bfcbb8');
+    if (usesEndlessPace(state)) {
+      getDistantRoadDepths(state.lookAheadDistance, distantRoadDepths);
+      for (let i = 0; i < distantRoadDepths.length - 1; i++) {
+        const z = distantRoadDepths[i];
+        roadSlice(z, projection(z), projection(distantRoadDepths[i + 1]));
       }
     }
+    // Nearby road retains its 2m detail. At most twelve coarse screen bands
+    // bridge its 400m edge to the same far reach used by visible traffic.
+    for (let z = 400; z > 0; z -= 2)
+      roadSlice(z, projection(z), projection(Math.max(0, z - 2)));
     // A few close lane lines continue beneath the bumper.
     const close = { x: W / 2, y: H, half: ROAD_HALF * 1.16 };
     if (mod(state.distance, 12) < 5.5) {
@@ -584,7 +629,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       rect(x + width * 0.16, y + width * 0.05, width * 0.16, width * 0.05, '#d89c7744');
     }
     ctx.drawImage(sprites.rearCar(color, player), x - width / 2, top, width, height);
-    if (player && input().brake) {
+    if (player && (usesEndlessPace(state) ? state.brakeActive : input().brake)) {
       rect(x - width * (23 / 64), top + height * (53 / 76), width * (11 / 64), height * (3 / 76), '#ffd4a7');
       rect(x + width * (12 / 64), top + height * (53 / 76), width * (11 / 64), height * (3 / 76), '#ffd4a7');
     }
@@ -602,7 +647,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     ctx.font = 'bold 10px ui-monospace, monospace';
     ctx.fillStyle = '#8fc2ad';
     ctx.fillText('KM/H', 102, 52);
-    ctx.fillText('NIGHT SHIFT', 30, 68);
+    ctx.fillText(usesEndlessPace(state) ? `PACE ${Math.round(state.endlessPace)} KM/H` : 'NIGHT SHIFT', 30, 68);
     ctx.fillText('DISTANCE', W - 149, 36);
     ctx.font = 'bold 21px ui-monospace, monospace';
     ctx.fillStyle = COLORS.cream;
@@ -628,6 +673,14 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     ctx.fillText(state.boosting ? 'BOOST ACTIVE' : 'BOOST · SPACE', bx, H - 38);
     rect(bx, H - 27, 185, 9, '#294b4a');
     rect(bx + 1, H - 26, 183 * clamp(state.boost, 0, 1), 7, state.boosting ? '#c5f6c9' : '#78bba2');
+    if (usesEndlessPace(state)) {
+      ctx.textAlign = 'center';
+      ctx.fillStyle = state.shoulder ? '#ffd09a' : '#b2c7ad';
+      ctx.fillText(state.shoulder ? 'RETURN TO ROAD' : state.brakeLocked ? 'BRAKE · RELEASE' : 'BRAKE BURST', W / 2, H - 38);
+      rect(W / 2 - 45, H - 27, 90, 9, '#294b4a');
+      rect(W / 2 - 44, H - 26, 88 * clamp(state.brakeCharge, 0, 1), 7, state.brakeActive ? '#ffd09a' : '#78bba2');
+      ctx.textAlign = 'left';
+    }
     if (state.combo > 1) {
       ctx.textAlign = 'center';
       ctx.fillStyle = COLORS.cream;
@@ -672,11 +725,11 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       });
     }
     for (const traffic of state.traffic) {
-      if (traffic.z < 0 || traffic.z > 220) continue;
+      if (!isHighwayTrafficVisible(traffic, state)) continue;
       scenery.push({
         z: traffic.z,
         draw: () => {
-          const p = projection(traffic.z);
+          const p = projection(traffic.z, true);
           const x = p.x + traffic.x * p.half,
             width = traffic.width * p.half;
           if (traffic.kind === 'barrier') {
@@ -698,7 +751,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       });
     }
     for (const pickup of state.pickups) {
-      if (pickup.z < 0 || pickup.z > 220) continue;
+      if (pickup.z < 0 || pickup.z > (usesEndlessPace(state) ? state.lookAheadDistance : 220)) continue;
       scenery.push({
         z: pickup.z,
         draw: () => {

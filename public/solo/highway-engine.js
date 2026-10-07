@@ -96,6 +96,8 @@ export const DIFFICULTIES = Object.freeze([
     wideWidth: 0.44,
     barrierWidth: 0.45,
     windScale: 1.6,
+    endlessStart: 180,
+    endlessRamp: 100,
     boostStart: 0.65,
     boostDrain: 0.3,
     boostRegen: 0.022,
@@ -118,6 +120,8 @@ export const DIFFICULTIES = Object.freeze([
     wideWidth: 0.46,
     barrierWidth: 0.48,
     windScale: 2.2,
+    endlessStart: 190,
+    endlessRamp: 120,
     boostStart: 0.55,
     boostDrain: 0.32,
     boostRegen: 0.012,
@@ -140,7 +144,7 @@ export function getDistrict(state) {
 }
 export function recordScope(state) {
   const scope = state.mode === 'tour' ? 'tour' : 'default';
-  return getDifficulty(state).id === 'standard' ? scope : `${state.difficulty}-${scope}-v3`;
+  return getDifficulty(state).id === 'standard' ? scope : `${state.difficulty}-${scope}-${state.mode === 'endless' ? 'v4' : 'v3'}`;
 }
 
 const randomSources = new WeakMap();
@@ -162,23 +166,45 @@ function event(state, type, details = {}) {
   if (state.events.length > 12) state.events.splice(0, state.events.length - 12);
 }
 
-// At maximum boost this gives over one second between rows, enough to cross
-// both lanes. Every row leaves a full lane open. A shared traffic speed keeps
-// those openings from collapsing as the rows approach the driver.
+/** Strict Endless keeps accelerating while active, independent of driving inputs. */
+export function usesEndlessPace(state) {
+  return state.mode === 'endless' && state.difficulty !== 'standard';
+}
+export function getEndlessPace(value = 0, difficulty = 'veteran') {
+  const elapsed = typeof value === 'object' && value !== null ? value.elapsed : value;
+  const profile = getDifficulty(typeof value === 'object' && value !== null ? value : difficulty);
+  return (profile.endlessStart ?? 130) + (profile.endlessRamp ?? 0) * (Math.sqrt(1 + Math.max(0, elapsed) / 60) - 1);
+}
 export function getEndlessPressure(state) {
-  if (state.mode !== 'endless' || state.difficulty === 'standard') return 0;
-  // Every complete five-district lap tightens the pace; growth stays bounded
-  // so the full two-lane steering corridor remains physically achievable.
-  return Math.min(5, Math.floor(state.districtIndex / DISTRICTS.length));
+  if (!usesEndlessPace(state)) return 0;
+  // Fractional time pressure changes within districts; the steering budget
+  // has a lower bound so a complete two-lane crossing remains achievable.
+  return Math.min(5, Math.max(0, state.elapsed) / 90);
 }
 export function getDeliveryLimit(state, index = state.districtIndex) {
   const limits = getDifficulty(state).limits;
   return limits ? limits[index % DISTRICTS.length] - getEndlessPressure(state) * (state.difficulty === 'nightmare' ? 0.15 : 0.2) : null;
 }
+function peakSpeed(state) {
+  // Include boost, pace gained while an approaching row is visible, and any
+  // transient speed carried from the previous district or an expiring boost.
+  return Math.max(state.speed, getEndlessPace(state.elapsed + 8, state.difficulty) + 40);
+}
 export function rowSpacing(speed, trafficSpeed = TRAFFIC_SPEED, difficulty = 'standard') {
   const pressure = typeof difficulty === 'object' ? getEndlessPressure(difficulty) : 0;
   const reaction = Math.max(0.91, getDifficulty(difficulty).rowGap - pressure * 0.02);
-  return Math.max(36, ((Math.max(220, speed) - trafficSpeed) / 3.6) * reaction + 5);
+  const budget = typeof difficulty === 'object' && usesEndlessPace(difficulty)
+    ? Math.max(220, speed, peakSpeed(difficulty)) : Math.max(220, speed);
+  return Math.max(36, ((budget - trafficSpeed) / 3.6) * reaction + 5);
+}
+function updateEndlessReach(state) {
+  if (!usesEndlessPace(state)) return;
+  state.endlessPace = getEndlessPace(state);
+  const district = getDistrict(state);
+  const relativeSpeed = (peakSpeed(state) - district.trafficSpeed) / 3.6;
+  state.rowGap = rowSpacing(state.speed, district.trafficSpeed, state);
+  state.warningDistance = Math.max(90, relativeSpeed * 2.2 + 10);
+  state.lookAheadDistance = Math.max(HORIZON, state.warningDistance + state.rowGap * 2 + 10);
 }
 
 function spawnRow(state, z) {
@@ -226,8 +252,9 @@ function fillTraffic(state) {
   if (state.traffic.length >= 20) return;
   const district = getDistrict(state);
   let furthest = state.traffic.reduce((max, car) => Math.max(max, car.z), -Infinity);
-  if (!Number.isFinite(furthest)) furthest = HORIZON - rowSpacing(state.speed, district.trafficSpeed, state);
-  while (furthest < HORIZON && state.traffic.length < 19) {
+  const horizon = usesEndlessPace(state) ? state.lookAheadDistance : HORIZON;
+  if (!Number.isFinite(furthest)) furthest = horizon - rowSpacing(state.speed, district.trafficSpeed, state);
+  while (furthest < horizon && state.traffic.length < 19) {
     furthest += rowSpacing(state.speed, district.trafficSpeed, state) + random(state) * 12;
     spawnRow(state, furthest);
   }
@@ -289,6 +316,11 @@ export function createState({
     result: null,
     car: { width: CAR_WIDTH, length: CAR_LENGTH },
   };
+  if (usesEndlessPace(state)) {
+    Object.assign(state, { endlessPace: getEndlessPace(state), brakeCharge: 1, brakeActive: false,
+      brakeLocked: false, shoulderExposure: 0, warningDistance: 90, lookAheadDistance: HORIZON, rowGap: 0 });
+    updateEndlessReach(state);
+  }
   randomSources.set(state, source);
   // An introductory single vehicle leaves either side immediately available.
   state.traffic.push({
@@ -314,7 +346,7 @@ function advanceTraffic(state, distance, dt) {
   for (const car of state.traffic) {
     const previousZ = car.z;
     if (car.targetLane !== undefined && car.targetLane !== car.lane && !car.passed && !car.crashed) {
-      if (car.changeTimer === null && car.z < 90) {
+      if (car.changeTimer === null && car.z < (usesEndlessPace(state) ? state.warningDistance : 90)) {
         car.changeTimer = 1.2;
         car.signal = true;
         event(state, 'merge-warning', { x: car.x, z: car.z, trafficId: car.id });
@@ -432,6 +464,7 @@ function updateDistrict(state) {
     }
     state.traffic = [];
     state.pickups = [];
+    updateEndlessReach(state);
     fillTraffic(state);
     event(state, 'district', { district: getDistrict(state).title, index: state.districtIndex });
   }
@@ -449,12 +482,25 @@ function integrate(state, inputs, dt) {
   const difficulty = getDifficulty(state);
   state.elapsed += dt;
   state.tick += 1;
+  const paced = usesEndlessPace(state);
+  if (paced) {
+    updateEndlessReach(state);
+    if (inputs.brake !== true) {
+      state.brakeCharge = Math.min(1, state.brakeCharge + dt * 0.4);
+      if (state.brakeCharge >= 0.35) state.brakeLocked = false;
+    }
+    state.brakeActive = inputs.brake === true && !state.brakeLocked && state.brakeCharge > 0;
+    if (state.brakeActive) {
+      state.brakeCharge = Math.max(0, state.brakeCharge - dt * 1.6);
+      if (state.brakeCharge === 0) state.brakeLocked = true;
+    }
+  }
   state.crashCooldown = Math.max(0, state.crashCooldown - dt);
   state.comboTimer = Math.max(0, state.comboTimer - dt);
   if (!state.comboTimer) state.combo = 0;
   const left = inputs.left === true;
   const right = inputs.right === true;
-  const brake = inputs.brake === true;
+  const brake = paced ? state.brakeActive : inputs.brake === true;
   const steer = Number(right) - Number(left);
   const steeringTarget = steer * (1.8 + 0.35 * clamp(state.speed / 180, 0, 1));
   state.steeringVelocity +=
@@ -472,10 +518,21 @@ function integrate(state, inputs, dt) {
   const wasShoulder = state.shoulder;
   state.shoulder = Math.abs(state.x) > 0.9;
   if (state.shoulder && !wasShoulder) event(state, 'shoulder');
+  if (paced) {
+    state.shoulderExposure = state.shoulder ? Math.min(1.4, state.shoulderExposure + dt) : 0;
+    if (state.shoulderExposure >= 1.4 && state.crashCooldown === 0) {
+      state.shoulderExposure = 0;
+      state.health--; state.totalCrashes++; state.districtCrashes++; state.crashCooldown = 1.2;
+      state.speed = Math.max(45, state.speed * 0.48); state.combo = 0; state.comboTimer = 0;
+      state.boosting = false;
+      event(state, 'crash', { kind: 'shoulder', health: state.health });
+      if (state.health <= 0) { state.phase = 'lost'; state.result = 'crashed'; state.brakeActive = false; }
+    }
+  }
   if (inputs.boost !== true) state.boostLocked = false;
   state.boosting =
     inputs.boost === true &&
-    !brake &&
+    inputs.brake !== true &&
     !state.shoulder &&
     !state.boostLocked &&
     state.boost > 0 &&
@@ -486,7 +543,9 @@ function integrate(state, inputs, dt) {
   } else {
     state.boost = Math.min(1, state.boost + dt * difficulty.boostRegen);
   }
-  const target = state.shoulder
+  const target = paced
+    ? state.brakeActive ? state.endlessPace * 0.78 : state.endlessPace + (state.boosting ? 40 : inputs.throttle === true ? 10 : 0)
+    : state.shoulder
     ? 72
     : brake
       ? 55
@@ -495,7 +554,10 @@ function integrate(state, inputs, dt) {
         : inputs.throttle === true
           ? 180
           : 130;
-  const acceleration = target < state.speed ? (brake || state.shoulder ? 105 : 45) : state.boosting ? 72 : 32;
+  const acceleration = paced
+    ? target < state.speed ? state.brakeActive ? Math.max(105, state.endlessPace * 0.8) : Math.max(45, state.endlessPace * 0.35)
+      : Math.max(state.boosting ? 72 : 60, state.endlessPace * 0.55)
+    : target < state.speed ? (brake || state.shoulder ? 105 : 45) : state.boosting ? 72 : 32;
   state.speed = approach(state.speed, target, acceleration * dt);
   const distance = (state.speed / 3.6) * dt;
   state.distance += distance;

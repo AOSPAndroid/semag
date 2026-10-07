@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createState, step, togglePause, chooseUpgrade, ARENA, OBSTACLES,
-  TOTAL_WAVES, UPGRADES, MAX_ENEMIES, MAX_PROJECTILES, SECTORS, DIFFICULTIES, enemyShotPattern, chargeSpeed } from '../public/solo/rift-engine.js';
+  TOTAL_WAVES, UPGRADES, MAX_ENEMIES, MAX_PROJECTILES, SECTORS, DIFFICULTIES, enemyShotPattern, threatPace, chargeSpeed } from '../public/solo/rift-engine.js';
 
 function seeded(seed = 7) {
   return () => { seed = Math.imul(seed, 1664525) + 1013904223 | 0; return (seed >>> 0) / 4294967296; };
@@ -534,7 +534,7 @@ test('leading aim reads actual movement, locks throughout the tell, and offers t
   advance(veteran, .21, { down: true });
   assert.equal(veteran.projectiles.filter(b => b.owner === 'enemy').length, 3);
   assert.ok(veteran.projectiles.every(b => b.vy < 0));
-  assert.ok(Math.abs(Math.hypot(veteran.projectiles[0].vx, veteran.projectiles[0].vy) - 229 * DIFFICULTIES.veteran.projectileSpeed) < 1e-8);
+  assert.ok(Math.abs(Math.hypot(veteran.projectiles[0].vx, veteran.projectiles[0].vy) - 229 * DIFFICULTIES.veteran.projectileSpeed * foe.attackPace) < 1e-8);
 });
 
 test('higher-tier fan warnings agree with emitted alternating volleys and their attack cadence', () => {
@@ -545,7 +545,7 @@ test('higher-tier fan warnings agree with emitted alternating volleys and their 
     const first = enemyShotPattern(state, foe);
     step(state);
     assert.equal(state.projectiles.length, first.count);
-    assert.equal(foe.attackTimer, 2 * DIFFICULTIES[difficulty].cadence);
+    assert.ok(Math.abs(foe.attackTimer - 2 * DIFFICULTIES[difficulty].cadence / threatPace(state)) < 1e-9);
     const angle = Math.atan2(state.projectiles[0].vy, state.projectiles[0].vx);
     assert.ok(Math.abs(angle + (first.count - 1) / 2 * first.spread) < 1e-8);
     state.projectiles = [];
@@ -708,7 +708,7 @@ function tacticalInput(state, memory) {
   for (const enemy of state.enemies) if (enemy.phase === 'windup' && ['ranged', 'weaver'].includes(enemy.type)) {
     const shot = enemyShotPattern(state, enemy);
     const aim = Math.atan2(enemy.aimY, enemy.aimX);
-    const velocity = shot.speed * DIFFICULTIES[state.difficulty].projectileSpeed;
+    const velocity = shot.speed * DIFFICULTIES[state.difficulty].projectileSpeed * (enemy.attackPace ?? threatPace(state));
     for (let index = 0; index < shot.count; index += 1) {
       const angle = aim + (index - (shot.count - 1) / 2) * shot.spread;
       incoming.push({ x: enemy.x + Math.cos(angle) * (enemy.radius + 6) - Math.cos(angle) * velocity * enemy.timer,
@@ -877,4 +877,68 @@ test('deep frost still controls ordinary foes while tough guardians resist being
   normal.enemies = [enemy({ x: 560, y: 340, hp: 1000 })]; guardian.enemies = [enemy({ type: 'boss', x: 560, y: 340, hp: 1000 })];
   advance(normal, .1, { fire: true, aimX: 1, aimY: 0 }); advance(guardian, .1, { fire: true, aimX: 1, aimY: 0 });
   assert.ok(normal.enemies[0].hp < 1000 && guardian.enemies[0].hp < 1000); assert.ok(guardian.enemies[0].slowFactor > normal.enemies[0].slowFactor); assert.ok(guardian.enemies[0].slowTime < normal.enemies[0].slowTime);
+});
+
+
+test('threat pace follows cumulative active combat time and freezes outside play', () => {
+  for (const difficulty of ['veteran', 'nightmare']) {
+    const s = quiet(createState({ random: seeded(51), difficulty })); assert.equal(threatPace(s), 1);
+    advance(s, 60); assert.ok(Math.abs(threatPace(s) - 1.05) < 1e-9);
+    togglePause(s); const paused = JSON.stringify(s); advance(s, 30, { fire: true, dash: true }); assert.equal(JSON.stringify(s), paused);
+    togglePause(s); advance(s, 30); assert.ok(Math.abs(threatPace(s) - 1.075) < 1e-9);
+    clearToUpgrade(s); const retained = threatPace(s), clock = s.elapsed; advance(s, 60, { fire: true }); assert.equal(s.elapsed, clock); assert.equal(threatPace(s), retained);
+    choose(s); assert.equal(threatPace(s), retained); assert.equal(s.wave, 2);
+    const fresh = createState({ random: seeded(51), difficulty }); assert.equal(fresh.elapsed, 0); assert.equal(threatPace(fresh), 1);
+  }
+});
+
+test('late pursuit is actually faster, with a stable cap and unchanged practice speed', () => {
+  for (const difficulty of ['standard', 'veteran', 'nightmare']) {
+    const early = quiet(createState({ random: seeded(52), difficulty })), late = quiet(createState({ random: seeded(52), difficulty }));
+    for (const s of [early, late]) s.enemies = [enemy({ x: 100, y: 340, speed: 100 })];
+    late.elapsed = 600; advance(early, .2); advance(late, .2);
+    const ordinary = early.enemies[0].x - 100, accelerated = late.enemies[0].x - 100;
+    if (difficulty === 'standard') { assert.equal(ordinary, accelerated); assert.equal(threatPace(late), 1); }
+    else { assert.ok(accelerated > ordinary * 1.2); assert.ok(accelerated <= ordinary * 1.25 + .001); assert.equal(threatPace(late), 1.25); late.elapsed = 100000; assert.equal(threatPace(late), 1.25); }
+  }
+});
+
+test('new attack cooldowns tighten with time while every warning remains readable and unchanged', () => {
+  for (const type of ['chaser', 'brute', 'ranged', 'weaver', 'boss']) {
+    const early = quiet(createState({ random: seeded(53), difficulty: 'veteran' })), late = quiet(createState({ random: seeded(53), difficulty: 'veteran' }));
+    for (const s of [early, late]) s.enemies = [enemy({ type, x: type === 'chaser' ? 535 : type === 'brute' ? 200 : 100, y: 340, attackTimer: 0 })];
+    late.elapsed = 300; step(early); step(late); const a = early.enemies[0], b = late.enemies[0];
+    assert.equal(a.phase, 'windup'); assert.equal(b.phase, 'windup'); assert.equal(a.timer, b.timer); assert.ok(a.timer >= .32);
+    if (type === 'brute') continue;
+    for (let tick = 0; tick < 150 && a.phase === 'windup'; tick++) step(early);
+    for (let tick = 0; tick < 150 && b.phase === 'windup'; tick++) step(late);
+    assert.ok(b.attackTimer < a.attackTimer * .9, `${type} should schedule a faster next attack`);
+  }
+});
+
+test('a ranged warning commits projectile speed and later shots cannot accelerate in flight', () => {
+  const s = quiet(createState({ random: seeded(54), difficulty: 'veteran' })); s.elapsed = 30;
+  const foe = enemy({ type: 'ranged', x: 100, y: 340, attackTimer: 0 }); s.enemies = [foe]; step(s);
+  const committed = foe.attackPace, aim = { x: foe.aimX, y: foe.aimY }; assert.equal(foe.phase, 'windup');
+  s.elapsed = 300; advance(s, .61); assert.deepEqual({ x: foe.aimX, y: foe.aimY }, aim);
+  const shots = s.projectiles.filter(b => b.owner === 'enemy'); assert.equal(shots.length, 3);
+  const speed = Math.hypot(shots[0].vx, shots[0].vy); assert.ok(Math.abs(speed - 229 * DIFFICULTIES.veteran.projectileSpeed * committed) < 1e-8);
+  const velocity = { x: shots[0].vx, y: shots[0].vy }; s.elapsed = 1000; step(s); assert.deepEqual({ x: shots[0].vx, y: shots[0].vy }, velocity);
+  s.projectiles = []; foe.phase = 'seeking'; foe.attackTimer = 0; step(s); assert.ok(foe.attackPace > committed); advance(s, .61);
+  assert.ok(Math.hypot(s.projectiles[0].vx, s.projectiles[0].vy) > speed * 1.2);
+});
+
+test('a brute commits the displayed charge speed through its warning, slowdown changes and the whole dash', () => {
+  const s = quiet(createState({ random: seeded(55), difficulty: 'veteran' })); s.elapsed = 30;
+  const foe = enemy({ type: 'brute', x: 200, y: 340, attackTimer: 0, speed: 64, slowTime: 2, slowFactor: .7 }); s.enemies = [foe]; step(s);
+  const committed = chargeSpeed(s, foe), aim = { x: foe.aimX, y: foe.aimY }; assert.ok(Number.isFinite(foe.committedChargeSpeed));
+  s.elapsed = 300; foe.slowTime = 0; assert.equal(chargeSpeed(s, foe), committed); advance(s, .81); assert.equal(foe.phase, 'charge');
+  const before = foe.x; step(s, {}, 1 / 30); assert.ok(Math.abs(foe.x - before - committed / 30) < 1e-8); assert.equal(chargeSpeed(s, foe), committed); assert.deepEqual({ x: foe.aimX, y: foe.aimY }, aim);
+  while (foe.phase === 'charge') step(s); foe.phase = 'seeking'; foe.attackTimer = 0; step(s); assert.ok(chargeSpeed(s, foe) > committed * 1.3);
+});
+
+test('timed threat preserves already scheduled cooldowns and terminal clocks', () => {
+  const s = quiet(createState({ random: seeded(56), difficulty: 'nightmare' })); s.enemies[0].attackTimer = 10; s.elapsed = 299;
+  step(s, {}, 1 / 30); assert.ok(Math.abs(s.enemies[0].attackTimer - (10 - 1 / 30)) < 1e-8);
+  for (const phase of ['won', 'lost']) { s.phase = phase; const snapshot = JSON.stringify(s); advance(s, 60); assert.equal(JSON.stringify(s), snapshot); }
 });

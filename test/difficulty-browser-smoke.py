@@ -9,6 +9,7 @@ native selection, pause, restart and small-screen controls.
 """
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -20,9 +21,9 @@ SHOTS = Path(os.environ.get("FIRESIDE_SCREENSHOT_DIR", ROOT / "test-results" / "
 CASES = [
     ("paris-pedal", "difficulty", "veteran", "standard-survival-v1", "veteran-survival-v3", "5:21.00"),
     ("ember-delve", "difficulty", "veteran", "default", "veteran-v3", "321"),
-    ("night-drive", "difficulty", "veteran", "default", "veteran-default-v3", "321"),
+    ("night-drive", "difficulty", "veteran", "default", "veteran-default-v4", "321"),
     ("deckbound", "difficulty", "veteran", "default", "veteran-v3", "321"),
-    ("rift-survivor", "difficulty", "veteran", "veteran", "veteran-v3", "321"),
+    ("rift-survivor", "difficulty", "veteran", "veteran", "veteran-v4", "321"),
     ("apex-circuit", "difficulty", "veteran", "three-laps", "veteran-three-laps-v3", "321.00s"),
     ("prism-shift", "profile", "veteran", "marathon", "veteran-marathon-v3", "321"),
     ("snake", "mode", "gauntlet", "gardens", "gauntlet-v3", "321"),
@@ -102,11 +103,13 @@ def run(url):
                 context = browser.new_context(viewport={"width": 1440, "height": 1000})
                 # Preserve easier/older records and seed the expected new scope
                 # to prove the actual view reads the recognized current policy.
-                historical = {legacy, scope.removesuffix("-v3")}
+                historical = {legacy, re.sub(r"-v\d+$", "", scope)}
                 practice_scope = "default" if game in ("rift-survivor", "snake", "2048") else legacy
                 historical.add(practice_scope)
                 if game == "paris-pedal": historical.add("veteran-survival-v1")
                 if game == "rift-survivor": historical.add("veteran-v2")
+                if game == "rift-survivor": historical.add("veteran-v3")
+                if game == "night-drive": historical.add("veteran-default-v3")
                 if game == "minesweeper": historical.add("expert")
                 record_value = 321000 if game == "paris-pedal" else 321
                 initial_records = {f"fireside-solo-best:{game}:{key}": 999999 for key in historical}

@@ -1,4 +1,4 @@
-import { ARENA, OBSTACLES, TOTAL_WAVES, UPGRADES, SECTORS, DIFFICULTIES, chargeSpeed, enemyShotPattern, createState, step, togglePause as pauseState, chooseUpgrade } from './rift-engine.js';
+import { ARENA, OBSTACLES, TOTAL_WAVES, UPGRADES, SECTORS, DIFFICULTIES, threatPace, chargeSpeed, enemyShotPattern, createState, step, togglePause as pauseState, chooseUpgrade } from './rift-engine.js';
 
 const W = ARENA.width;
 const H = ARENA.height;
@@ -83,9 +83,13 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   const view = node('section', 'rift-view');
   view.setAttribute('aria-label', 'Rift Survivor arena');
   const topline = node('div', 'rift-topline');
-  const waveLabel = node('span', '', `WAVE 01 / ${TOTAL_WAVES}`);
+  const waveLabel = node('span', '');
+  const waveCaption = node('span', '', `WAVE 01 / ${TOTAL_WAVES}`);
   const enemyLabel = node('span', 'rift-enemy-count', 'CLEAR THE RIFT');
   const sector = node('span', 'rift-sector', 'SECTOR 01');
+  const paceLabel = node('small', 'rift-threat-pace', 'THREAT 100%');
+  paceLabel.style.display = 'block'; paceLabel.style.marginTop = '3px';
+  waveLabel.append(waveCaption, paceLabel);
   topline.append(sector, waveLabel, enemyLabel);
   const journey = node('div', 'rift-journey');
   journey.setAttribute('aria-label', 'Expedition sectors');
@@ -344,12 +348,16 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     dataIfChanged(view, 'difficulty', state.difficulty);
     textIfChanged(sector, `SECTOR ${String(state.sector + 1).padStart(2, '0')}`);
     textIfChanged(tierDetail, state.waveRisk ? 'OVERCHARGED · +35% points' : DIFFICULTIES[state.difficulty].description);
+    propIfChanged(paceLabel, 'hidden', state.difficulty === 'standard');
+    if (paceLabel.style.display !== (state.difficulty === 'standard' ? 'none' : 'block')) paceLabel.style.display = state.difficulty === 'standard' ? 'none' : 'block';
+    textIfChanged(paceLabel, `THREAT ${Math.round(threatPace(state) * 100)}%`);
+    attrIfChanged(paceLabel, 'aria-label', `Threat speed ${Math.round(threatPace(state) * 100)} percent. Rises only during active combat, up to 125 percent.`);
     sectorBadges.forEach((badge, index) => {
       dataIfChanged(badge, 'current', String(index === state.sector));
       dataIfChanged(badge, 'cleared', String(state.wavesCleared >= (index + 1) * 5));
       attrIfChanged(badge, 'aria-label', `${SECTORS[index].name}: ${state.wavesCleared >= (index + 1) * 5 ? 'cleared' : index === state.sector ? 'current sector' : 'ahead'}`);
     });
-    textIfChanged(waveLabel, `WAVE ${String(state.wave).padStart(2, '0')} / ${TOTAL_WAVES}`);
+    textIfChanged(waveCaption, `WAVE ${String(state.wave).padStart(2, '0')} / ${TOTAL_WAVES}`);
     const eliteCount = state.enemies.filter(enemy => enemy.elite).length;
     textIfChanged(enemyLabel, state.phase === 'upgrade' ? 'ALL CLEAR' : `${state.enemies.length} HOSTILES${eliteCount ? ` · ${eliteCount} ELITE` : ''}`);
     const values = {
@@ -377,7 +385,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     }
     updateUpgrades();
     onUpdate({ phase: state.phase === 'upgrade' ? 'playing' : state.phase, score: state.score, record: state.score,
-      recordKey: { standard: 'default', veteran: 'veteran-v3', nightmare: 'nightmare-v3' }[state.difficulty],
+      recordKey: { standard: 'default', veteran: 'veteran-v4', nightmare: 'nightmare-v4' }[state.difficulty],
       recordLabel: { standard: 'EXPEDITION BEST', veteran: 'VETERAN BEST', nightmare: 'NIGHTMARE BEST' }[state.difficulty], scoreLabel: 'SCORE', detail });
     if (changedPhase && state.phase === 'upgrade') upgradeChoices.querySelector('button')?.focus({ preventScroll: true });
   }

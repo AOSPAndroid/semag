@@ -13,10 +13,10 @@ export const DIFFICULTIES = Object.freeze({
   standard: Object.freeze({ title: 'Expedition', description: 'Twenty waves, four sectors, one evolving build.',
     enemySpeed: 1, projectileSpeed: 1, cadence: 1, lead: 0, damage: 1, score: 1,
     elites: 0, extras: Object.freeze([]), repair: 35, plating: 10, siphon: 1, healingBudget: null }),
-  veteran: Object.freeze({ title: 'Veteran', description: 'Suppression marks, two-phase guardians, burst-fire heat control · +50% points.',
+  veteran: Object.freeze({ title: 'Veteran', description: 'Threat pace rises 5% per combat minute, up to 25%. Suppression marks, burst-fire heat control · +50% points.',
     enemySpeed: 1.18, projectileSpeed: 1.38, cadence: .72, lead: .8, damage: 1.2, score: 1.5,
     elites: 1, extras: Object.freeze(['ranged', 'weaver']), repair: 24, plating: 7, siphon: .55, healingBudget: 8, heldCooling: .6, heatUnlock: 28, staminaRegen: 22 }),
-  nightmare: Object.freeze({ title: 'Nightmare', description: 'Overlapping suppression, faster guardian second phases, scarce recovery · double points.',
+  nightmare: Object.freeze({ title: 'Nightmare', description: 'Threat pace rises 5% per combat minute, up to 25%. Overlapping suppression and scarce recovery · double points.',
     enemySpeed: 1.32, projectileSpeed: 1.62, cadence: .55, lead: 1, damage: 1.35, score: 2,
     elites: 2, extras: Object.freeze(['ranged', 'brute', 'weaver', 'ranged', 'weaver']), repair: 16, plating: 5, siphon: .35, healingBudget: 5, heldCooling: .5, heatUnlock: 22, staminaRegen: 20 }),
 });
@@ -46,6 +46,10 @@ const sources = new WeakMap();
 const coverGraphs = new Map();
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const length = (x, y) => Math.hypot(x, y);
+/** The fixed-step clock excludes pause and upgrade decisions and spans waves. */
+export function threatPace(state) {
+  return state.difficulty === 'standard' ? 1 : 1 + Math.min(.25, Math.max(0, state.elapsed) / 1200);
+}
 const distance = (a, b) => length(a.x - b.x, a.y - b.y);
 const unit = (x, y, fallbackX = 1, fallbackY = 0) => {
   const scale = Math.max(Math.abs(x), Math.abs(y));
@@ -126,7 +130,7 @@ function spawnEnemy(state, type) {
     : type === 'brute' ? 90 + scaling * 4 : type === 'ranged' ? 44 + scaling * 2 : type === 'weaver' ? 36 + scaling * 2 : 38 + scaling * 2;
   state.enemies.push({ id: ++state.enemyId, type, ...spawnPoint(state, radius), radius,
     hp, maxHp: hp, boss, speed: (boss ? 48 : type === 'brute' ? 64 : type === 'ranged' ? 100 : type === 'weaver' ? 140 : 94 + state.wave * 2) * DIFFICULTIES[state.difficulty].enemySpeed,
-    phase: 'seeking', timer: 0, attackTimer: boss ? 1.4 : .6 + random(state) * .8, volleyIndex: 0,
+    phase: 'seeking', timer: 0, attackTimer: (boss ? 1.4 : .6 + random(state) * .8) / threatPace(state), volleyIndex: 0, attackPace: threatPace(state),
     aimX: 1, aimY: 0, pattern: 0, attackName: boss ? SECTORS[state.sector].patterns[0] : type,
     bossSector: state.sector, bossName: boss ? SECTORS[state.sector].boss : null,
     elite: false, affix: null, armor: 0, slowTime: 0, slowFactor: 1,
@@ -208,7 +212,7 @@ export function createState({ random: source = Math.random, difficulty = 'standa
 
 function projectile(state, owner, x, y, aimX, aimY, speed, damage, radius = 4, origin = null) {
   if (state.projectiles.length >= MAX_PROJECTILES) return;
-  if (owner === 'enemy') speed *= DIFFICULTIES[state.difficulty].projectileSpeed;
+  if (owner === 'enemy') speed *= DIFFICULTIES[state.difficulty].projectileSpeed * (origin?.attackPace ?? threatPace(state));
   let bounces = owner === 'player' ? state.player.ricochet : 0;
   if (origin) {
     const dx = x - origin.x; const dy = y - origin.y;
@@ -265,13 +269,16 @@ function hurtPlayer(state, damage, source) {
 function beginTell(state, enemy, duration) {
   const player = state.player;
   const profile = DIFFICULTIES[state.difficulty];
+  enemy.attackPace = threatPace(state);
+  enemy.committedChargeSpeed = null;
+  if (state.difficulty !== 'standard' && enemy.type === 'brute') enemy.committedChargeSpeed = chargeSpeed(state, enemy);
   // Predict only when committing to an attack. The visible line stays locked,
   // so reversing direction after the tell defeats leading fire.
   const moving = length(player.vx, player.vy);
   const velocityScale = moving > player.moveSpeed ? player.moveSpeed / moving : 1;
   const speed = enemy.type === 'weaver' ? 340 : enemy.type === 'ranged' ? 225 + state.wave * 4 : 255;
   const horizon = enemy.type === 'brute' ? duration * .3
-    : ['ranged', 'weaver', 'boss'].includes(enemy.type) ? Math.min(1.2, duration + distance(player, enemy) / (speed * profile.projectileSpeed)) : 0;
+    : ['ranged', 'weaver', 'boss'].includes(enemy.type) ? Math.min(1.2, duration + distance(player, enemy) / (speed * profile.projectileSpeed * enemy.attackPace)) : 0;
   const aim = unit(clamp(player.x + player.vx * velocityScale * horizon * profile.lead, player.radius, ARENA.width - player.radius) - enemy.x,
     clamp(player.y + player.vy * velocityScale * horizon * profile.lead, player.radius, ARENA.height - player.radius) - enemy.y);
   enemy.aimX = aim.x;
@@ -384,7 +391,7 @@ function bossAttack(state, enemy) {
     addHazard(state, 'blast', state.player.x, state.player.y, { radius: 58, warning: 1.0, damage: 12 });
   }
   enemy.pattern += 1;
-  enemy.phase = 'recover'; enemy.timer = .5; enemy.attackTimer = 1.45 * DIFFICULTIES[state.difficulty].cadence * (state.difficulty !== 'standard' && enemy.hp < enemy.maxHp / 2 ? .8 : 1);
+  enemy.phase = 'recover'; enemy.timer = .5; enemy.attackTimer = 1.45 * DIFFICULTIES[state.difficulty].cadence / threatPace(state) * (state.difficulty !== 'standard' && enemy.hp < enemy.maxHp / 2 ? .8 : 1);
 }
 
 function lineClear(from, to, radius = 0) {
@@ -466,12 +473,12 @@ export function enemyShotPattern(state, enemy) {
 }
 
 function updateEnemies(state, dt) {
-  const cadence = DIFFICULTIES[state.difficulty].cadence;
+  const cadence = DIFFICULTIES[state.difficulty].cadence / threatPace(state);
   for (const enemy of state.enemies) {
     if (enemy.hp <= 0 || state.phase !== 'playing') continue;
     enemy.attackTimer = Math.max(0, enemy.attackTimer - dt);
     enemy.slowTime = Math.max(0, (enemy.slowTime || 0) - dt);
-    const speed = enemy.speed * (enemy.slowTime > 0 ? enemy.slowFactor : 1);
+    const speed = enemy.speed * threatPace(state) * (enemy.slowTime > 0 ? enemy.slowFactor : 1);
     const gap = distance(enemy, state.player);
     const chase = unit(state.player.x - enemy.x, state.player.y - enemy.y);
     if (enemy.phase === 'windup') {
@@ -550,7 +557,8 @@ function updateEnemies(state, dt) {
 }
 
 export function chargeSpeed(state, enemy) {
-  return (350 + Math.min(state.wave, 12) * 4) * DIFFICULTIES[state.difficulty].enemySpeed
+  if (['windup', 'charge'].includes(enemy.phase) && Number.isFinite(enemy.committedChargeSpeed)) return enemy.committedChargeSpeed;
+  return (350 + Math.min(state.wave, 12) * 4) * DIFFICULTIES[state.difficulty].enemySpeed * threatPace(state)
     * (enemy.affix === 'swift' ? 1.2 : 1) * (enemy.slowTime > 0 ? enemy.slowFactor : 1);
 }
 

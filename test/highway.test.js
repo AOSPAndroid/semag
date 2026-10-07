@@ -17,7 +17,10 @@ import {
   getDifficulty,
   getEndlessPressure,
   getDeliveryLimit,
+  getEndlessPace,
+  usesEndlessPace,
 } from '../public/solo/highway-engine.js';
+import { getDistantRoadDepths, highwayDepthScale, isHighwayTrafficVisible } from '../public/solo/highway-view.js';
 
 function seeded(seed = 37) {
   return () => {
@@ -517,7 +520,7 @@ test('difficulty profiles preserve standard records and separate every harder mo
       assert.equal(getDifficulty(state), difficulty);
       assert.equal(state.boost, difficulty.boostStart);
       const base = mode === 'tour' ? 'tour' : 'default';
-      assert.equal(recordScope(state), difficulty.id === 'standard' ? base : `${difficulty.id}-${base}-v3`);
+      assert.equal(recordScope(state), difficulty.id === 'standard' ? base : `${difficulty.id}-${base}-${mode === 'endless' ? 'v4' : 'v3'}`);
       assert.deepEqual(state, JSON.parse(JSON.stringify(state)));
     }
 });
@@ -598,7 +601,7 @@ test('harder resources recharge slowly, reward fast near misses once, cap time c
     assert.equal(state.districtIndex, 1);
     assert.equal(state.health, 2);
     assert.equal(state.delivery.bonus, 0);
-    assert.equal(state.delivery.limit, profile.limits[1]);
+    assert.equal(state.delivery.limit, getDeliveryLimit(state));
     assert.equal(state.delivery.startedAt, state.elapsed);
   }
   const slow = emptyRoad(createState({ difficulty: 'veteran' }));
@@ -678,29 +681,36 @@ test('steering into an uncleared rear half causes a crash instead of exploiting 
   assert.equal(state.overtakePoints, 0);
 });
 
-test('Night Drive endless laps tighten density, clocks and row spacing without collapsing the steering corridor', () => {
+test('Night Drive endless active time tightens density and steering pressure while visibility budgets every full car', () => {
   for (const difficulty of ['veteran', 'nightmare']) {
     const opening = createState({ difficulty, random: seeded(7) });
     const late = createState({ difficulty, random: seeded(7) });
-    late.districtIndex = 25;
+    late.elapsed = 450; late.districtIndex = 0;
     assert.equal(getEndlessPressure(opening), 0);
     assert.equal(getEndlessPressure(late), 5);
     assert.ok(getDeliveryLimit(late) < getDeliveryLimit(opening));
-    assert.ok(rowSpacing(220, 0, late) < rowSpacing(220, 0, opening));
-    for (const trafficSpeed of [0, 70, 80, 90, 95]) {
-      const free = (rowSpacing(220, trafficSpeed, late) - 5.3 - CAR_LENGTH) / ((220 - trafficSpeed) / 3.6);
-      // 1.24 road units at 2.15 units/s, plus dry/wet steering damping.
-      assert.ok(free > 1.24 / 2.15 + 0.13);
+    // Difficulty changes even before a checkpoint; pressure is not distance-driven.
+    late.elapsed = 12;
+    assert.ok(getEndlessPressure(late) > 0);
+    assert.ok(getEndlessPace(late) > getEndlessPace(opening));
+    for (const elapsed of [0, 60, 180, 450, 10800, 100000]) {
+      late.elapsed = elapsed;
+      const peak = getEndlessPace(elapsed + 8, difficulty) + 40;
+      for (const trafficSpeed of [0, 70, 80, 90, 95]) {
+        const free = (rowSpacing(peak, trafficSpeed, late) - 5.3 - CAR_LENGTH) / ((peak - trafficSpeed) / 3.6);
+        assert.ok(free > 1.24 / 2.15 + 0.13, `${difficulty} ${elapsed}: free steering=${free}`);
+      }
     }
-    late.districtIndex = 100;
-    assert.equal(getEndlessPressure(late), 5, 'late pressure is bounded');
-    const tour = createState({ mode: 'tour', difficulty });
-    tour.districtIndex = 25;
+    late.elapsed = 100000;
+    assert.equal(getEndlessPressure(late), 5, 'steering pressure is bounded while speed keeps growing');
+    const tour = createState({ mode: 'tour', difficulty }); tour.elapsed = 100000;
     assert.equal(getEndlessPressure(tour), 0, 'finite tours retain their published pace');
+    assert.equal(usesEndlessPace(tour), false);
   }
-  const practice = createState({ difficulty: 'standard' }); practice.districtIndex = 25;
+  const practice = createState({ difficulty: 'standard' }); practice.elapsed = 100000;
   assert.equal(getEndlessPressure(practice), 0);
   assert.equal(getDeliveryLimit(practice), null);
+  assert.equal(usesEndlessPace(practice), false);
 });
 
 test('midpoint-only route planning no longer completes strict tours but full-body planning does', () => {
@@ -717,26 +727,201 @@ test('midpoint-only route planning no longer completes strict tours but full-bod
 });
 
 
-test('fast precise passes sustain late Nightmare laps while safe center riding eventually misses their pace goal', () => {
-  for (const seed of [9, 37]) {
-    const centered = createState({ difficulty: 'nightmare', random: seeded(seed) });
-    const precise = createState({ difficulty: 'nightmare', random: seeded(seed) });
-    for (const [state, close] of [[centered, false], [precise, true]]) {
-      let input = {};
-      for (let tick = 0; tick < 120 * 600 && state.phase === 'playing'; tick++) {
-        if (tick % 8 === 0) input = districtDriver(state, { precise: close });
-        step(state, input);
+test('legal 15Hz routing survives continuously accelerating Endless while retaining health and bounded state', () => {
+  for (const difficulty of ['veteran', 'nightmare']) for (const seed of [9, 37, 81]) {
+    const state = createState({ difficulty, random: seeded(seed) });
+    let input = {}, firstPace = null, laterPace = null;
+    for (let tick = 0; tick < 120 * 300 && state.phase === 'playing'; tick++) {
+      if (tick % 8 === 0) input = districtDriver(state, { precise: true });
+      step(state, input);
+      if (tick === 120 * 60) firstPace = state.endlessPace;
+      if (tick === 120 * 180) laterPace = state.endlessPace;
+      if (tick % 120 === 0) {
+        assert.ok(state.traffic.length <= 20 && state.pickups.length <= 5 && state.events.length <= 12);
+        assert.ok(state.delivery.remaining > 0);
       }
     }
-    assert.equal(centered.phase, 'lost');
-    assert.equal(centered.result, 'delivery-missed');
-    assert.equal(centered.totalCrashes, 0, 'safe steering alone does not satisfy the later pace goal');
-    assert.ok(centered.elapsed < 240);
-    assert.equal(precise.phase, 'playing');
-    assert.equal(precise.totalCrashes, 0);
-    assert.ok(precise.districtIndex >= 30);
-    assert.equal(getEndlessPressure(precise), 5);
-    assert.ok(precise.delivery.remaining > 0);
-    assert.ok(precise.boost > 0);
+    assert.equal(state.phase, 'playing', `${difficulty} ${seed} failed at ${state.elapsed}: ${state.result}`);
+    assert.equal(state.totalCrashes, 0);
+    assert.ok(state.districtIndex >= 10);
+    assert.ok(firstPace < laterPace && laterPace < state.endlessPace);
+    assert.ok(state.boost >= 0 && state.boost <= 1);
   }
+});
+
+
+test('strict Endless pace rises continuously with active seconds and does not plateau at late times', () => {
+  for (const difficulty of ['veteran', 'nightmare']) {
+    let prior = getEndlessPace(0, difficulty);
+    for (const elapsed of [1, 12, 60, 180, 300, 600, 10800, 100000]) {
+      const pace = getEndlessPace(elapsed, difficulty);
+      assert.ok(pace > prior);
+      assert.equal(getEndlessPace({ elapsed, difficulty }), pace);
+      prior = pace;
+    }
+    const state = emptyRoad(createState({ difficulty }));
+    let priorPace = state.endlessPace, priorSpeed = state.speed;
+    for (let tick = 0; tick < 120 * 8; tick++) {
+      step(state);
+      assert.ok(state.endlessPace > priorPace, 'every active update advances baseline pace');
+      assert.ok(state.speed > priorSpeed, 'a player needs no throttle to keep accelerating');
+      priorPace = state.endlessPace; priorSpeed = state.speed;
+    }
+  }
+  assert.equal(getEndlessPace(0, 'veteran'), 180);
+  assert.ok(Math.abs(getEndlessPace(60, 'veteran') - 221.421356) < .00001);
+  assert.equal(getEndlessPace(180, 'veteran'), 280);
+  assert.ok(getEndlessPace(300, 'nightmare') > getEndlessPace(300, 'veteran'));
+});
+
+test('no throttle, held brake and exhausted boost cannot stall the Endless time ramp', () => {
+  for (const difficulty of ['veteran', 'nightmare']) for (const input of [{}, { brake: true }, { boost: true }]) {
+    const state = emptyRoad(createState({ difficulty }));
+    state.boost = 0; state.boostLocked = true;
+    drive(state, 10, input);
+    assert.equal(state.phase, 'playing');
+    assert.ok(state.endlessPace > getEndlessPace(0, difficulty));
+    assert.ok(Math.abs(state.speed - state.endlessPace) < .001);
+    assert.ok(state.distance > 480);
+    assert.ok(getEndlessPressure(state) > 0);
+    if (input.brake) {
+      assert.equal(state.brakeCharge, 0);
+      assert.equal(state.brakeLocked, true);
+      assert.equal(state.brakeActive, false);
+    }
+  }
+});
+
+test('Endless brake bursts buy a short reaction window and recharge only after release', () => {
+  const state = emptyRoad(createState({ difficulty: 'veteran' }));
+  drive(state, 2);
+  const before = state.speed;
+  drive(state, .35, { brake: true });
+  assert.equal(state.brakeActive, true);
+  assert.ok(state.speed < before - 25);
+  assert.ok(state.speed >= state.endlessPace * .77);
+  drive(state, 3, { brake: true });
+  assert.equal(state.brakeCharge, 0);
+  assert.equal(state.brakeLocked, true);
+  assert.ok(Math.abs(state.speed - state.endlessPace) < .001);
+  drive(state, 1);
+  assert.ok(state.brakeCharge >= .39);
+  assert.equal(state.brakeLocked, false);
+  step(state, { brake: true });
+  assert.equal(state.brakeActive, true);
+});
+
+test('short shoulder escapes remain legal but shoulder camping cannot bypass faster Endless traffic', () => {
+  for (const difficulty of ['veteran', 'nightmare']) {
+    const dodge = emptyRoad(createState({ difficulty }));
+    drive(dodge, .7, { right: true });
+    assert.equal(dodge.shoulder, true);
+    assert.equal(dodge.health, 3);
+    assert.ok(dodge.shoulderExposure > 0 && dodge.shoulderExposure < 1.4);
+    drive(dodge, .5, { left: true });
+    assert.equal(dodge.shoulder, false);
+    assert.equal(dodge.shoulderExposure, 0);
+    assert.equal(dodge.health, 3);
+    const camp = emptyRoad(createState({ difficulty }));
+    drive(camp, 7, { right: true, brake: true });
+    assert.equal(camp.phase, 'lost');
+    assert.equal(camp.result, 'crashed');
+    assert.equal(camp.health, 0);
+    assert.equal(camp.totalCrashes, 3);
+    assert.ok(camp.events.some((event) => event.type === 'shoulder'));
+    assert.ok(camp.events.filter((event) => event.type === 'crash').every((event) => event.kind === 'shoulder'));
+  }
+});
+
+test('Endless pace, pressure and controls freeze while paused or terminal and replay resets the ramp', () => {
+  const options = { difficulty: 'nightmare' };
+  const state = emptyRoad(createState({ ...options, random: seeded(17) }));
+  drive(state, 8);
+  togglePause(state);
+  const paused = structuredClone(state);
+  drive(state, 4, { throttle: true, brake: true, boost: true, left: true });
+  assert.deepEqual(state, paused);
+  for (const dt of [0, -1, NaN, Infinity]) step(state, {}, dt);
+  assert.deepEqual(state, paused);
+  togglePause(state); step(state);
+  assert.ok(state.endlessPace > paused.endlessPace);
+  state.phase = 'lost';
+  const terminal = structuredClone(state);
+  drive(state, 4, { boost: true }); togglePause(state);
+  assert.deepEqual(state, terminal);
+  const replay = createState({ ...options, random: seeded(17) });
+  assert.equal(replay.elapsed, 0);
+  assert.equal(replay.endlessPace, getEndlessPace(0, options.difficulty));
+  assert.equal(getEndlessPressure(replay), 0);
+  assert.equal(replay.brakeCharge, 1);
+  assert.equal(replay.shoulderExposure, 0);
+  assert.equal(replay.brakeLocked, false);
+});
+
+test('late Endless visibility contains full merge warnings and row gaps include peak boost and carried speed', () => {
+  for (const difficulty of ['veteran', 'nightmare']) for (const elapsed of [0, 60, 180, 600, 10800]) {
+    const state = createState({ difficulty, random: seeded(17) });
+    state.elapsed = elapsed; state.districtIndex = 1; state.distance = DISTRICT_LENGTH;
+    state.delivery.startedAt = elapsed;
+    state.speed = getEndlessPace(elapsed, difficulty) + 40;
+    state.traffic = [];
+    step(state, { throttle: true, boost: true });
+    const peak = Math.max(state.speed, getEndlessPace(state.elapsed + 8, difficulty) + 40);
+    const relative = (peak - getDistrict(state).trafficSpeed) / 3.6;
+    assert.ok(state.warningDistance / relative > 2.2);
+    assert.ok(state.lookAheadDistance >= state.warningDistance + state.rowGap * 2);
+    assert.ok(state.rowGap >= rowSpacing(peak, getDistrict(state).trafficSpeed, state) - .001);
+    assert.ok(state.traffic.length <= 20 && state.pickups.length <= 5);
+    // A transient carried speed is budgeted as well as the nominal motor pace.
+    state.speed += 200;
+    const gap = rowSpacing(state.speed, getDistrict(state).trafficSpeed, state);
+    assert.ok((gap - CAR_LENGTH - 5.3) / ((state.speed - getDistrict(state).trafficSpeed) / 3.6) > .70);
+    state.traffic = [vehicle({ lane: 0, x: -.62, z: state.warningDistance - 1,
+      targetLane: 1, changeTimer: null, signal: false })];
+    const originalX = state.traffic[0].x;
+    step(state);
+    assert.equal(state.traffic[0].signal, true);
+    assert.equal(state.traffic[0].x, originalX);
+    assert.ok(state.traffic[0].changeTimer >= 1.18);
+  }
+});
+
+
+test('distant Night road reaches visible traffic with bounded contiguous screen bands', () => {
+  const reused = [999];
+  for (const reach of [400, 401, 480, 1000, 10000, 1000000]) {
+    const depths = getDistantRoadDepths(reach, reused);
+    assert.equal(depths, reused);
+    if (reach === 400) { assert.deepEqual(depths, []); continue; }
+    assert.equal(depths[0], reach);
+    assert.equal(depths.at(-1), 400);
+    assert.ok(depths.length <= 13, 'at most 12 additional raster bands at any speed');
+    const y = (z) => 178 + 296 * 16 / (z + 16);
+    for (let i = 1; i < depths.length; i++) {
+      assert.ok(depths[i] < depths[i - 1]);
+      assert.ok(y(depths[i]) > y(depths[i - 1]));
+      assert.ok(y(depths[i]) - y(depths[i - 1]) <= 1.000001, 'far raster bands never skip a scanline');
+    }
+  }
+  assert.deepEqual(getDistantRoadDepths(Infinity), []);
+});
+
+
+test('rendered Night cars remain visible and move behind the player until their collidable rear body clears', () => {
+  const state = createState({ difficulty: 'veteran', random: seeded(9) });
+  const car = vehicle({ id: 3200, z: -2, speed: 160, length: 5.3 });
+  const clearance = (state.car.length + car.length) / 2;
+  assert.equal(isHighwayTrafficVisible(car, state), true, 'midpoint crossing cannot hide an overlapping body');
+  assert.equal(isHighwayTrafficVisible({ ...car, z: -clearance + .001 }, state), true);
+  assert.equal(isHighwayTrafficVisible({ ...car, z: -clearance - .001 }, state), false);
+  assert.equal(isHighwayTrafficVisible({ ...car, z: state.lookAheadDistance + .001 }, state), false);
+  assert.ok(highwayDepthScale(-clearance, true) > highwayDepthScale(-2, true));
+  assert.ok(highwayDepthScale(-2, true) > highwayDepthScale(0, true), 'passing bodies move through the near plane instead of stopping at midpoint');
+  assert.ok(highwayDepthScale(-1000, true) <= 2, 'near projection stays bounded');
+  for (const z of [0, 1, 16, 220, 1000])
+    assert.equal(highwayDepthScale(z, true), highwayDepthScale(z), 'positive-depth art keeps the published projection');
+  state.speed = 180; state.x = .62; state.traffic = [car];
+  drive(state, .3, { throttle: true, left: true });
+  assert.equal(state.totalCrashes, 1, 'the visible near body is still physically dangerous');
+  assert.equal(state.overtakePoints, 0);
 });

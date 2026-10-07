@@ -359,3 +359,29 @@ test('the new Master tour record requires all six trials, not an individual puzz
   assert.equal(recordDetails('2048', { recordKey: 'master-v3', phase: 'won', result: 'tour', record: 9000 }).candidate, 9000);
   assert.equal(recordDetails('2048', { recordKey: 'master', phase: 'playing', score: 999 }).candidate, 999, 'historical scope retains its original meaning');
 });
+
+test('accelerating survival records are recognized and isolated from earlier fixed-pace scores', () => {
+  for (const tier of ['veteran', 'nightmare']) {
+    for (const [game, previous, current] of [
+      ['night-drive', `${tier}-default-v3`, `${tier}-default-v4`],
+      ['rift-survivor', `${tier}-v3`, `${tier}-v4`],
+    ]) {
+      const storage = browserStorage(), store = createBestStore(storage);
+      const old = recordDetails(game, { recordKey: previous, phase: 'lost', score: 999999 });
+      assert.equal(old.scope, previous); assert.equal(old.candidate, 999999);
+      store.update(game, old.candidate, old);
+      for (const [phase, score] of [['playing', 120], ['lost', 480]]) {
+        const policy = recordDetails(game, { recordKey: current, phase, score });
+        assert.equal(policy.scope, current); assert.equal(policy.candidate, score);
+        assert.equal(policy.direction, 'max');
+        store.update(game, policy.candidate, policy);
+      }
+      const reloaded = createBestStore(storage);
+      assert.equal(reloaded.read(game, current), 480);
+      assert.equal(reloaded.read(game, previous), 999999);
+      assert.equal(recordDetails(game, { recordKey: current + '-typo', score: 1000000 }).candidate, null);
+    }
+    assert.equal(recordDetails('night-drive', { recordKey: `${tier}-tour-v3`, phase: 'lost', record: 8000 }).candidate, null);
+    assert.equal(recordDetails('night-drive', { recordKey: `${tier}-tour-v3`, phase: 'won', record: 8000 }).candidate, 8000);
+  }
+});
