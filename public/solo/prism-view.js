@@ -20,6 +20,7 @@ import {
   getDigStage,
   advanceDigStage,
 } from './prism-engine.js';
+import { gameKey, getKeyboardLayout, displayKey, subscribeKeyboardLayout } from '../keyboard-layout.js';
 
 const COLORS = {
   I: ['#70ced7', '#c4f3f3', '#347f91'],
@@ -36,6 +37,14 @@ const KEY_ACTIONS = {
   ArrowRight: 'right',
   ArrowDown: 'softDrop',
   ArrowUp: 'rotateCW',
+  a: 'left',
+  A: 'left',
+  d: 'right',
+  D: 'right',
+  s: 'softDrop',
+  S: 'softDrop',
+  w: 'rotateCW',
+  W: 'rotateCW',
   x: 'rotateCW',
   X: 'rotateCW',
   z: 'rotateCCW',
@@ -832,7 +841,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     setAttribute(
       canvas,
       'aria-label',
-      `Prism Shift ${profile.name} ${state.mode}. ${state.lines} lines, level ${state.level}, ${state.score} points. ${message}`,
+      `Prism Shift ${profile.name} ${state.mode}. ${state.lines} lines, level ${state.level}, ${state.score} points. ${message} Use arrows or ${displayKey('WASD')} to move and rotate clockwise. X also rotates clockwise, ${displayKey('Z')} rotates counterclockwise, Space drops, C or Shift holds.`,
     );
     const timed = state.mode === 'sprint' || dig;
     onUpdate({
@@ -1023,8 +1032,9 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       isForm(event.target)
     )
       return;
-    const action = KEY_ACTIONS[event.key];
-    if (event.key === 'Escape') {
+    const key = gameKey(event);
+    const action = KEY_ACTIONS[key];
+    if (key === 'Escape') {
       event.preventDefault();
       if (!event.repeat) togglePause();
       return;
@@ -1121,6 +1131,14 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   if (resizeObserver) resizeObserver.observe(canvas);
   window.addEventListener('resize', resizeCanvas);
   motionPreference?.addEventListener('change', motionChanged);
+  function updateKeyboardHints() {
+    view.dataset.keyboardLayout = getKeyboardLayout();
+    keyboardLegend.firstElementChild.textContent = `${displayKey('A / D')} / ← → move · X / ${displayKey('Z')} rotate · SPACE drop`;
+    const labels = { left: `${displayKey('A')} / ←`, right: 'D / →', rotateCCW: displayKey('Z'), rotateCW: `X / ${displayKey('W')} / ↑`, hold: 'C', softDrop: 'S / ↓', hardDrop: 'SPACE' };
+    for (const button of controls.children) button.querySelector('.prism-control-key').textContent = labels[button.dataset.action];
+  }
+  const unsubscribeKeyboardLayout = subscribeKeyboardLayout(() => { releaseInputs(); updateKeyboardHints(); publish(); });
+  updateKeyboardHints();
   publish();
   resizeCanvas();
   syncAnimation();
@@ -1131,6 +1149,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     togglePause,
     destroy() {
       if (destroyed) return;
+      unsubscribeKeyboardLayout();
       releaseInputs();
       destroyed = true;
       tiles.clear();

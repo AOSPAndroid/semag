@@ -1,4 +1,5 @@
 import { setText, setAttribute, setHidden, setDisabled, setClass, toggleClass, setStyle, setHTML } from './dom.js';
+import { gameCode, displayKey, formatKeyboardText, subscribeKeyboardLayout, mountKeyboardLayoutPicker } from '../keyboard-layout.js';
 import * as topdown from '../topdown-engine.js';
 import * as checkers from '../checkers-engine.js';
 import * as cards from '../cards-engine.js';
@@ -34,10 +35,10 @@ const canvas = $('arena');
 const renderer = realtimeMode ? vectorMode ? new VectorRenderer(canvas) : brawlMode ? new BrawlRenderer(canvas) : new TopdownRenderer(canvas) : null;
 const board = boardMode ? new CheckersView($('checkers-board'), { onMove: (from, to) => send({ type: 'move', from, to }) }) : null;
 const cardTable = cardMode ? new CardsView($('cards-table'), { onAction: action => send({ type: 'card-action', action }) }) : null;
-const held = new Set();
+const held = new Map();
 const safeName = (name, fallback) => typeof name === 'string' && name.trim() ? name.trim().slice(0, 24) : fallback;
 
-document.title = `${game.title} — Fireside`;
+document.title = `${game.title} — Semag`;
 $('game-title').textContent = game.title;
 $('game-category').textContent = game.category;
 $('game-description').textContent = game.description;
@@ -120,7 +121,7 @@ function receiveState(message) {
 function connect() {
   clearTimeout(reconnectTimer);
   if (permanentlyClosed || intentionalClose) return;
-  if (!/^[A-Z0-9]{6}$/.test(roomId)) { permanentlyClosed = true; error('This invite has no valid room code. Go back to Fireside and choose a game.'); updateConnection(); return; }
+  if (!/^[A-Z0-9]{6}$/.test(roomId)) { permanentlyClosed = true; error('This invite has no valid room code. Go back to Semag and choose a game.'); updateConnection(); return; }
   const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws?room=${encodeURIComponent(roomId)}`);
   socket = ws;
   ws.addEventListener('open', () => {
@@ -176,7 +177,7 @@ const latchedActions = new Set(vectorMode ? ['fire', 'dash', 'reload'] : brawlMo
 function typing(target) { return target instanceof HTMLElement && (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable); }
 function refreshKeys() {
   keys = emptyInput();
-  for (const code of held) if (keyMap.has(code)) keys[keyMap.get(code)] = true;
+  for (const code of held.values()) if (keyMap.has(code)) keys[keyMap.get(code)] = true;
   if (!modernControls) return;
   for (const [key, value] of Object.entries(touchButtons)) if (value) keys[key] = true;
   for (const action of actionButtonKeys.values()) keys[action] = true;
@@ -201,28 +202,34 @@ function releaseKeys() {
     const frame = { type: 'input', seq: ++sequence, buttons: { ...keys } }; pending.push(frame); send(frame);
   }
 }
+// Keep the binding chosen on keydown so a layout change or shifted keyup
+// cannot turn a held movement key into a different action.
+const keyboardIdentity = event => event.code || (event.key?.length === 1 ? event.key.toLowerCase() : event.key);
 document.addEventListener('keydown', event => {
   if (typing(event.target) || event.isComposing || event.metaKey || event.ctrlKey || event.altKey) return;
+  const identity = keyboardIdentity(event), code = gameCode(event);
   const interactive = event.target instanceof Element ? event.target.closest('button, a, summary') : null;
-  if (interactive && ['Space', 'Enter'].includes(event.code)) {
+  if (interactive && ['Space', 'Enter'].includes(code)) {
     const action = modernControls && (interactive.dataset.vectorAction || interactive.dataset.brawlAction);
-    if (!action || event.repeat && !actionButtonKeys.has(event.code)) return;
+    if (!action || event.repeat && !actionButtonKeys.has(identity)) return;
     event.preventDefault();
-    if (!actionButtonKeys.has(event.code) && latchedActions.has(action)) pressIntents.add(action);
-    actionButtonKeys.set(event.code, action); refreshKeys(); focusLost = false; return;
+    if (!actionButtonKeys.has(identity) && latchedActions.has(action)) pressIntents.add(action);
+    actionButtonKeys.set(identity, action); refreshKeys(); focusLost = false; return;
   }
+  if (event.repeat && !held.has(identity)) return;
   if (modernControls) {
-    if (event.repeat && !held.has(event.code)) return;
-    const action = keyMap.get(event.code);
-    if (!held.has(event.code) && latchedActions.has(action)) pressIntents.add(action);
+    const action = keyMap.get(code);
+    if (!held.has(identity) && latchedActions.has(action)) pressIntents.add(action);
   }
-  if (!vectorMode && event.code === 'KeyR' && !event.repeat) { event.preventDefault(); $('ready-button').click(); }
-  if (realtimeMode && keyMap.has(event.code)) { event.preventDefault(); held.add(event.code); refreshKeys(); focusLost = false; }
+  if (!vectorMode && code === 'KeyR' && !event.repeat) { event.preventDefault(); $('ready-button').click(); }
+  if (realtimeMode && keyMap.has(code)) { event.preventDefault(); held.set(identity, code); refreshKeys(); focusLost = false; }
 });
 document.addEventListener('keyup', event => {
-  if (modernControls && actionButtonKeys.has(event.code)) { actionButtonKeys.delete(event.code); refreshKeys(); event.preventDefault(); return; }
-  if (event.code === 'Space' && !held.has(event.code) && event.target instanceof Element && event.target.closest('button, a, summary')) return;
-  if (realtimeMode && keyMap.has(event.code)) { held.delete(event.code); refreshKeys(); if (!typing(event.target)) event.preventDefault(); }
+  const identity = keyboardIdentity(event), code = held.get(identity);
+  if (modernControls && actionButtonKeys.has(identity)) { actionButtonKeys.delete(identity); refreshKeys(); event.preventDefault(); return; }
+  if (!code) return;
+  held.delete(identity); refreshKeys();
+  if (!typing(event.target)) event.preventDefault();
 });
 window.addEventListener('blur', () => { releaseKeys(); focusLost = true; });
 document.addEventListener('visibilitychange', () => { if (document.hidden) releaseKeys(); });
@@ -267,6 +274,22 @@ canvas.addEventListener('lostpointercapture', () => {
 canvas.addEventListener('contextmenu', event => { if (vectorMode) event.preventDefault(); });
 setupVectorTouch();
 setupBrawl();
+// Brawl builds its own controls, so capture canonical copy after all game setup.
+const keyboardLabels = [...$('controls-panel').querySelectorAll('kbd')].map(node => ({ node, text: node.textContent }));
+const keyboardArenaLabel = brawlMode
+  ? 'Oddstock Rumble. {A} and {D} move, {W} and {S} choose move direction, Space jumps, {J} attacks, {K} uses a special, {I} shields, {L} or Shift dodges.'
+  : vectorMode
+    ? 'Vector Arena. {WASD} or arrow keys move, mouse aims, left mouse or {J} fires, right mouse or {I} focuses, Space dashes, {R} reloads.'
+    : 'Top-down adventure game. Use {WASD} to move, {J} to swing, {K} to shoot, Space to roll, {I} to guard.';
+function updateKeyboardHints() {
+  for (const { node, text } of keyboardLabels) setText(node, displayKey(text));
+  setAttribute(canvas, 'aria-label', formatKeyboardText(keyboardArenaLabel));
+}
+subscribeKeyboardLayout(() => { releaseKeys(); updateKeyboardHints(); });
+const keyboardPicker = document.querySelector('[data-keyboard-layout-picker]');
+if (keyboardPicker) mountKeyboardLayoutPicker(keyboardPicker);
+keyboardPicker?.addEventListener('focusin', releaseKeys);
+updateKeyboardHints();
 function setupVectorTouch() {
   const controls = $('vector-controls'); controls.hidden = !vectorMode;
   if (!vectorMode) return;

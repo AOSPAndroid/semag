@@ -1,3 +1,4 @@
+import { mountKeyboardLayoutPicker, subscribeKeyboardLayout, displayKey } from '../keyboard-layout.js';
 import { setText, setAttribute, setDisabled, setHTML } from '../hub/dom.js';
 const ACTION_SCOPES = ['default', 'veteran', 'nightmare', 'veteran-v3', 'nightmare-v3'];
 const tierScopes = scopes => [...scopes, ...['veteran', 'nightmare'].flatMap(tier => scopes.flatMap(scope => [`${tier}-${scope}`, `${tier}-${scope}-v3`]))];
@@ -196,7 +197,9 @@ async function startSolo() {
   let game = null;
   let destroyed = false;
 
-  document.title = `${info.title} — Fireside`;
+  document.title = `${info.title} — Semag`;
+  const keyboardPicker = mountKeyboardLayoutPicker(document.querySelector('[data-keyboard-layout-picker]'));
+  const keyCaps = [];
   $('solo-app').dataset.game = gameId;
   $('solo-title').textContent = info.title;
   $('solo-category').textContent = info.category;
@@ -215,7 +218,8 @@ async function startSolo() {
     keyGroup.className = 'solo-control-keys';
     for (const key of keys) {
       const cap = document.createElement('kbd');
-      cap.textContent = key;
+      cap.textContent = displayKey(key);
+      keyCaps.push([cap, key]);
       keyGroup.append(cap);
     }
     const text = document.createElement('span');
@@ -223,6 +227,9 @@ async function startSolo() {
     line.append(keyGroup, text);
     $('solo-controls-list').append(line);
   }
+  const unsubscribeLayout = subscribeKeyboardLayout(() => {
+    for (const [cap, key] of keyCaps) cap.textContent = displayKey(key);
+  });
   for (const rule of info.rules) {
     const item = document.createElement('li');
     item.textContent = rule;
@@ -286,6 +293,7 @@ async function startSolo() {
   function cleanup() {
     if (destroyed) return;
     destroyed = true;
+    unsubscribeLayout(); keyboardPicker.destroy();
     restart.removeEventListener('click', newGame);
     pause.removeEventListener('click', togglePause);
     help.removeEventListener('keydown', helpKeydown);

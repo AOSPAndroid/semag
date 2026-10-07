@@ -1,4 +1,5 @@
 import { setText, setAttribute, setHidden, setDisabled, setClass, toggleClass, setStyle, setHTML } from './hub/dom.js';
+import { gameCode, displayKey, formatKeyboardText, subscribeKeyboardLayout, mountKeyboardLayoutPicker } from './keyboard-layout.js';
 import { createState, step, startMatch, cloneState, emptyInput, TICK_RATE } from './engine.js';
 import { ArenaRenderer } from './renderer.js';
 import { botInput, TRAINING_STAGES } from './practice.js';
@@ -151,10 +152,10 @@ const keyMapping = new Map([
   ['KeyK', 'heavy'], ['KeyL', 'dash'], ['ShiftLeft', 'dash'], ['ShiftRight', 'dash'],
   ['KeyI', 'block'], ['KeyU', 'block'],
 ]);
-const heldCodes = new Set();
+const heldCodes = new Map();
 function refreshKeys() {
   keys = emptyInput();
-  for (const code of heldCodes) if (keyMapping.has(code)) keys[keyMapping.get(code)] = true;
+  for (const code of heldCodes.values()) if (keyMapping.has(code)) keys[keyMapping.get(code)] = true;
 }
 function releaseKeys() {
   heldCodes.clear(); keys = emptyInput();
@@ -164,16 +165,35 @@ function releaseKeys() {
   }
 }
 function isTyping(target) { return target instanceof HTMLElement && (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable); }
+const keyboardIdentity = event => event.code || (event.key?.length === 1 ? event.key.toLowerCase() : event.key);
 document.addEventListener('keydown', (event) => {
-  if (isTyping(event.target) || event.target instanceof Element && event.target.closest('button,a,summary') || event.ctrlKey || event.metaKey || event.altKey) return;
-  if (keyMapping.has(event.code)) {
-    event.preventDefault(); heldCodes.add(event.code); refreshKeys(); focusLost = false;
+  if (isTyping(event.target) || event.isComposing || event.target instanceof Element && event.target.closest('button,a,summary') || event.ctrlKey || event.metaKey || event.altKey) return;
+  const identity = keyboardIdentity(event), code = gameCode(event);
+  if (event.repeat && !heldCodes.has(identity)) return;
+  if (keyMapping.has(code)) {
+    event.preventDefault(); heldCodes.set(identity, code); refreshKeys(); focusLost = false;
     $('focus-note').hidden = true;
-  } else if (event.code === 'KeyR' && !event.repeat) { event.preventDefault(); $('ready-button').click(); }
+  } else if (code === 'KeyR' && !event.repeat) { event.preventDefault(); $('ready-button').click(); }
 });
 document.addEventListener('keyup', (event) => {
-  if (keyMapping.has(event.code)) { heldCodes.delete(event.code); refreshKeys(); if (!isTyping(event.target) && !(event.target instanceof Element && event.target.closest('button,a,summary'))) event.preventDefault(); }
+  const identity = keyboardIdentity(event);
+  if (!heldCodes.has(identity)) return;
+  heldCodes.delete(identity); refreshKeys();
+  if (!isTyping(event.target) && !(event.target instanceof Element && event.target.closest('button,a,summary'))) event.preventDefault();
 });
+const keyboardLabels = [...document.querySelectorAll('.controls-panel kbd')].map(node => ({ node, text: node.textContent }));
+const keyboardHints = [...document.querySelectorAll('.alternate-controls')].map(node => ({ node, text: node.textContent.replace('W to jump', '{W} to jump').replace('U to block', '{U} to block') }));
+const keyboardArenaLabel = 'Two sword fighters face each other on a nighttime rooftop. Use {A} and {D} to move, {W} or Space to jump, {J} for a quick strike, {K} for a heavy strike, {L} or Shift to dash, {I} or {U} to block.';
+function updateKeyboardHints() {
+  for (const { node, text } of keyboardLabels) setText(node, displayKey(text));
+  for (const { node, text } of keyboardHints) setText(node, formatKeyboardText(text));
+  setAttribute(canvas, 'aria-label', formatKeyboardText(keyboardArenaLabel));
+}
+subscribeKeyboardLayout(() => { releaseKeys(); updateKeyboardHints(); });
+const keyboardPicker = document.querySelector('[data-keyboard-layout-picker]');
+if (keyboardPicker) mountKeyboardLayoutPicker(keyboardPicker);
+keyboardPicker?.addEventListener('focusin', releaseKeys);
+updateKeyboardHints();
 window.addEventListener('blur', () => { releaseKeys(); focusLost = true; });
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) releaseKeys();

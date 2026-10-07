@@ -15,6 +15,7 @@ import {
   trackInfo as courseInfo,
 } from './circuit-engine.js';
 import { createDrivingSprites } from '../art/driving-sprites.js';
+import { gameCode, getKeyboardLayout, displayKey, subscribeKeyboardLayout } from '../keyboard-layout.js';
 
 const STEP = 1 / 120;
 const KEY_INPUTS = {
@@ -950,32 +951,34 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       isForm(event.target)
     )
       return;
+    const code = gameCode(event);
+    const keyId = event.code || event.key;
     const control = event.target instanceof Element ? event.target.closest('button[data-input]') : null;
     const input =
-      control && controls.contains(control) && ['Space', 'Enter'].includes(event.code)
+      control && controls.contains(control) && ['Space', 'Enter'].includes(code)
         ? control.dataset.input
-        : KEY_INPUTS[event.code];
+        : KEY_INPUTS[code];
     if (input) {
       if (
         !control &&
-        event.code === 'Space' &&
+        code === 'Space' &&
         event.target instanceof Element &&
         event.target.closest('button,a')
       )
         return;
       event.preventDefault();
       if (state.phase !== 'playing') return;
-      if (event.repeat && !keyHeld.has(event.code)) return;
-      keyHeld.set(event.code, input);
+      if (event.repeat && !keyHeld.has(keyId)) return;
+      keyHeld.set(keyId, input);
       paintHeld();
-    } else if (event.code === 'KeyQ' && !event.repeat) {
+    } else if (code === 'KeyQ' && !event.repeat) {
       event.preventDefault();
       resetVehicle();
     }
   }
   function keyup(event) {
-    if (!KEY_INPUTS[event.code] && !keyHeld.has(event.code)) return;
-    keyHeld.delete(event.code);
+    const keyId = event.code || event.key;
+    if (!keyHeld.delete(keyId)) return;
     paintHeld();
   }
   function pointerdown(event) {
@@ -1060,6 +1063,15 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   selection.addEventListener('click', newSelection);
   continueRace.addEventListener('click', nextRace);
   reset.addEventListener('click', resetVehicle);
+  function updateKeyboardHints() {
+    view.dataset.keyboardLayout = getKeyboardLayout();
+    canvas.setAttribute('aria-label', `Apex Circuit. Follow the track arrows. ${displayKey('W')} or Up accelerates, S or Down brakes and reverses, ${displayKey('A')} and D or Left and Right steer, Space is the handbrake. ${displayKey('Q')} resets your car with a three-second penalty.`);
+    reset.querySelector('b').textContent = `+3s · ${displayKey('Q')}`;
+    reset.setAttribute('aria-label', `Reset car to the last checkpoint with ${displayKey('Q')}. Adds three seconds to your race and lap time.`);
+    hint.textContent = `${displayKey('WASD')} or arrows drive · Space handbrake · ${displayKey('Q')} resets. Brake before tight corners: too much speed reduces steering grip. Tap the handbrake to rotate, then accelerate out. Keep every checkpoint in order.`;
+  }
+  const unsubscribeKeyboardLayout = subscribeKeyboardLayout(() => { releaseHeld(); updateKeyboardHints(); });
+  updateKeyboardHints();
   publish();
   resizeCanvas();
   syncAnimation();
@@ -1089,6 +1101,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     togglePause,
     destroy() {
       if (destroyed) return;
+      unsubscribeKeyboardLayout();
       sprites.clear();
       destroyed = true;
       releaseHeld();

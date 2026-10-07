@@ -1,5 +1,6 @@
 import { ARENA, ACT_NAMES, BOSSES, RELICS, DIFFICULTIES, getRelicInfo, createState, step, chooseRoute, chooseReward, chooseCamp, togglePause as pauseState } from './ember-engine.js';
 import { drawEmberActor, drawEmberProjectile, drawEmberBlade } from '../art/ember-sprites.js';
+import { gameKey, getKeyboardLayout, displayKey, subscribeKeyboardLayout } from '../keyboard-layout.js';
 const copy = s => JSON.parse(JSON.stringify(s));
 const node = (tag, cls, text) => { const n = document.createElement(tag); n.className = cls; if (text !== undefined) n.textContent = text; return n; };
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -188,8 +189,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     updateUI();draw();if(time-lastUpdate>180){emit();lastUpdate=time;}schedule();
   }
   const native = target => target instanceof Element && Boolean(target.closest('input,textarea,select,[contenteditable],button,a,summary'));
-  function keydown(e) {if(e.isComposing||e.metaKey||e.ctrlKey||e.altKey)return;if(native(e.target))return;const control=controls[e.key];if(!control)return;e.preventDefault();if(e.repeat)return;if(state.phase==='playing'){held.set(e.code,control);queue.add(control);}}
-  function keyup(e) {held.delete(e.code);}
+  function keydown(e) {if(e.defaultPrevented||e.isComposing||e.metaKey||e.ctrlKey||e.altKey)return;if(native(e.target))return;const control=controls[gameKey(e)];if(!control)return;e.preventDefault();if(e.repeat)return;if(state.phase==='playing'){held.set(e.code||e.key,control);queue.add(control);}}
+  function keyup(e) {held.delete(e.code||e.key);}
   const coordinate = e => {const r=canvas.getBoundingClientRect();return{x:(e.clientX-r.left)*960/r.width,y:(e.clientY-r.top)*640/r.height};};
   function aimMove(e){if(e.pointerType!=='touch')aimPoint=coordinate(e);}
   function canvasDown(e){if(e.pointerType==='touch'){aimPoint=coordinate(e);return;}if(![0,2].includes(e.button)||state.phase!=='playing')return;e.preventDefault();canvas.focus({preventScroll:true});aimPoint=coordinate(e);const control=e.button===2?'spell':'melee';pointers.set(e.pointerId,{control});queue.add(control);canvas.setPointerCapture(e.pointerId);}
@@ -203,6 +204,13 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   difficultySelect.addEventListener('change',()=>{difficulty=difficultySelect.value;restart(state.seed);difficultySelect.focus({preventScroll:true});});
   function motionChange(){particles=[];draw();}
   reducedMotion.addEventListener('change',motionChange);
+  function updateKeyboardHints() {
+    view.dataset.keyboardLayout=getKeyboardLayout();
+    hints.querySelector('kbd').textContent=displayKey('WASD');
+    canvas.setAttribute('aria-label',`Pixel cavern. ${displayKey('WASD')} or arrow keys to move, pointer to aim, click or J to swing, right click or E to cast, Space to dodge, F to use doors or shrines.`);
+  }
+  const unsubscribeKeyboardLayout=subscribeKeyboardLayout(()=>{release();updateKeyboardHints();});
+  updateKeyboardHints();
   updateUI();draw();emit();schedule();
-  return {getState:()=>copy(state),restart:()=>restart(),togglePause,destroy(){dead=true;stopFrame();release();reducedMotion.removeEventListener('change',motionChange);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('blur',blur);document.removeEventListener('visibilitychange',visibility);view.remove();}};
+  return {getState:()=>copy(state),restart:()=>restart(),togglePause,destroy(){dead=true;unsubscribeKeyboardLayout();stopFrame();release();reducedMotion.removeEventListener('change',motionChange);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('blur',blur);document.removeEventListener('visibilitychange',visibility);view.remove();}};
 }

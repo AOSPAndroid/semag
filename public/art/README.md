@@ -1,4 +1,4 @@
-# Fireside game artwork
+# Semag game artwork
 
 These local assets and drawing modules provide the hub's original game artwork.
 They are bundled with the host and work without an external image service.

@@ -522,7 +522,7 @@ if (isMain) {
   const game = createServer();
   game.listen().then(address => {
     const port = address.port;
-    console.log('\nFIRESIDE GAME HUB · your PC, your game night');
+    console.log('\nSEMAG GAME HUB · your PC, your game night');
     console.log(`Open the hub:      http://localhost:${port}`);
     console.log(`Share hostname:    http://${os.hostname()}:${port}`);
     for (const interfaces of Object.values(os.networkInterfaces())) for (const adapter of interfaces || []) {

@@ -1,4 +1,5 @@
 import { puzzleLevels, nextPuzzle, retryPuzzle, createState, move, undo, togglePause, continueGame } from './2048-engine.js';
+import { gameKey, getKeyboardLayout, displayKey, subscribeKeyboardLayout } from '../keyboard-layout.js';
 
 const keyDirections = {
   ArrowUp: 'up', ArrowRight: 'right', ArrowDown: 'down', ArrowLeft: 'left',
@@ -180,9 +181,10 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   function focusBoard() { grid.focus({ preventScroll: true }); }
 
   function onKey(event) {
-    if (destroyed || event.altKey || event.ctrlKey || event.metaKey || event.defaultPrevented) return;
-    if (event.target.closest('input, textarea, select, [contenteditable="true"]')) return;
-    const direction = keyDirections[event.key] || keyDirections[event.key.toLowerCase()];
+    if (destroyed || event.isComposing || event.altKey || event.ctrlKey || event.metaKey || event.defaultPrevented) return;
+    if (event.target instanceof Element && event.target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"])')) return;
+    const key = gameKey(event);
+    const direction = keyDirections[key] || keyDirections[key.toLowerCase()];
     if (!direction) return;
     // This listener is scoped to the game: page navigation keeps its normal keys.
     event.preventDefault();
@@ -221,6 +223,13 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   }
 
   function onPointerCancel() { pointer = null; }
+  function updateKeyboardHints() {
+    element.dataset.keyboardLayout = getKeyboardLayout();
+    grid.setAttribute('aria-label', `2048 board. Use arrow keys or ${displayKey('W A S D')} to slide all tiles.`);
+    element.querySelector('.tiles-2048-instructions').textContent = `Arrows / ${displayKey('WASD')} to move · Swipe on touch · Matching tiles merge once per move`;
+  }
+  const unsubscribeKeyboardLayout = subscribeKeyboardLayout(() => { onPointerCancel(); updateKeyboardHints(); });
+  updateKeyboardHints();
   container.addEventListener('keydown', onKey);
   element.addEventListener('click', onClick);
   grid.addEventListener('pointerdown', onPointerDown);
@@ -245,6 +254,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     },
     destroy() {
       destroyed = true;
+      unsubscribeKeyboardLayout();
       clearTimeout(animationTimer);
       pointer = null;
       container.removeEventListener('keydown', onKey);

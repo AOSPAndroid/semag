@@ -1,4 +1,4 @@
-/* Shared Fireside shell: warm paper, readable ink, and room for the game. */
+/* Shared Semag shell: warm paper, readable ink, and room for the game. */
 :root { --text-secondary: #61705e; --text-label: #64745e; }
 .eyebrow { color: var(--text-label); font-size: 10px; }
 .hub-topbar, .solo-topbar, .room-topbar { height: 68px; }

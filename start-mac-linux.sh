@@ -16,5 +16,5 @@ if [ ! -f node_modules/ws/package.json ]; then
   npm install
 fi
 
-echo "Starting FIRESIDE on this PC..."
+echo "Starting SEMAG on this PC..."
 npm start

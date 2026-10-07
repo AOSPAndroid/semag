@@ -14,7 +14,7 @@ if not exist "node_modules\ws\package.json" (
   if errorlevel 1 goto failed
 )
 
-echo Starting FIRESIDE on this PC...
+echo Starting SEMAG on this PC...
 call npm start
 if errorlevel 1 goto failed
 exit /b 0

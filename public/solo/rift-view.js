@@ -1,4 +1,5 @@
 import { ARENA, OBSTACLES, TOTAL_WAVES, UPGRADES, SECTORS, DIFFICULTIES, threatPace, chargeSpeed, enemyShotPattern, createState, step, togglePause as pauseState, chooseUpgrade } from './rift-engine.js';
+import { gameKey, getKeyboardLayout, displayKey, subscribeKeyboardLayout } from '../keyboard-layout.js';
 
 const W = ARENA.width;
 const H = ARENA.height;
@@ -1086,7 +1087,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     const focused = event.target instanceof Element ? event.target.closest('button[data-control]') : null;
     const activation = event.code === 'Space' || event.key === ' ' || event.key === 'Enter';
     const focusedControl = activation && focused && controls.contains(focused) ? focused.dataset.control : null;
-    const control = focusedControl || KEY_CONTROLS[event.key] || KEY_CONTROLS[event.code];
+    const control = focusedControl || KEY_CONTROLS[gameKey(event)];
     if (!control || state.phase !== 'playing') return;
     if (!focusedControl && activation && event.target instanceof Element && event.target.closest('button,a')) return;
     event.preventDefault();
@@ -1195,12 +1196,20 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   floorLayers.forEach((layer, index) => { ctx = layer.getContext('2d'); floor(index); });
   coverLayers.forEach((layer, index) => { ctx = layer.getContext('2d'); cover(index); });
   ctx = displayContext;
+  function updateKeyboardHints() {
+    view.dataset.keyboardLayout = getKeyboardLayout();
+    hint.querySelector('kbd').textContent = displayKey('WASD');
+    canvas.setAttribute('aria-label', `Rift arena. Move with ${displayKey('WASD')} or arrow keys, aim with the pointer, hold click or J to fire, Space or Shift to dash.`);
+  }
+  const unsubscribeKeyboardLayout = subscribeKeyboardLayout(() => { releaseControls(); updateKeyboardHints(); });
+  updateKeyboardHints();
   publish(true); draw();
   scheduleFrame();
   return {
     getState: () => copy(state), restart, togglePause,
     destroy() {
       if (destroyed) return;
+      unsubscribeKeyboardLayout();
       destroyed = true; cancelAnimationFrame(raf); releaseControls();
       controlResize.disconnect(); reducedMotion.removeEventListener('change', motionChange);
       enemyBodyLayers.clear(); playerArmorLayers.clear(); enemyDrawOrder = [];

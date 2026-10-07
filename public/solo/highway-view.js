@@ -12,6 +12,7 @@ import {
   usesEndlessPace,
 } from './highway-engine.js';
 import { createDrivingSprites } from '../art/driving-sprites.js';
+import { gameKey, getKeyboardLayout, displayKey, subscribeKeyboardLayout } from '../keyboard-layout.js';
 
 const W = 720;
 const H = 520;
@@ -284,8 +285,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       setValue(delivery.dataset, 'urgent', String(state.delivery.remaining <= 4));
     }
     setValue(hint, 'textContent', paced
-      ? 'A / D or ← / → steer · W adds speed · S is a short brake burst; release it to recharge · Space boosts. Pace keeps rising. Shoulder grace: 1.4s.'
-      : 'A / D or ← / → steer · W accelerates · S brakes · Space boosts. Skim past traffic to build a combo.');
+      ? `${displayKey('A / D')} or ← / → steer · ${displayKey('W')} adds speed · S is a short brake burst; release it to recharge · Space boosts. Pace keeps rising. Shoulder grace: 1.4s.`
+      : `${displayKey('A / D')} or ← / → steer · ${displayKey('W')} accelerates · S brakes · Space boosts. Skim past traffic to build a combo.`);
     setValue(buttons.get('brake'), 'title', paced ? 'Short brake burst. Release to recharge; holding brake cannot stop the pace.' : 'Hold to brake.');
     setAttribute(buttons.get('brake'), 'data-recharging', String(paced && state.brakeLocked));
     setValue(stageLabel, 'textContent', `DISTRICT ${(state.districtIndex % DISTRICTS.length) + 1} / 5`);
@@ -954,7 +955,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     const activation = event.code === 'Space' || event.key === ' ' || event.key === 'Enter';
     const focusedControl =
       activation && focused && controls.contains(focused) ? focused.dataset.control : null;
-    const control = focusedControl || KEY_CONTROLS[event.key] || KEY_CONTROLS[event.code];
+    const control = focusedControl || KEY_CONTROLS[gameKey(event)];
     if (!control || state.phase !== 'playing') return;
     if (
       !focusedControl &&
@@ -1022,6 +1023,12 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   modeChoices.addEventListener('click', chooseMode);
   difficultyChoices.addEventListener('click', chooseDifficulty);
   replay.addEventListener('click', restart);
+  function updateKeyboardHints() {
+    view.dataset.keyboardLayout = getKeyboardLayout();
+    canvas.setAttribute('aria-label', `Night highway. Arrow keys or ${displayKey('W A S D')} to drive, Space to boost, P to pause.`);
+  }
+  const unsubscribeKeyboardLayout = subscribeKeyboardLayout(() => { releaseControls(); updateKeyboardHints(); publish(true); });
+  updateKeyboardHints();
   publish(true);
   fitViewport();
   draw();
@@ -1033,6 +1040,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     togglePause,
     destroy() {
       if (destroyed) return;
+      unsubscribeKeyboardLayout();
       sprites.clear();
       for (const image of skylines.values()) image.onload = null;
       skylines.clear();

@@ -1,6 +1,8 @@
+import { mountKeyboardLayoutPicker } from '../keyboard-layout.js';
 import { GAMES, roomUrl, soloUrl, getName, saveName, hostInfo, copyText } from './shared.js';
 import { setText, toggleClass } from './dom.js';
 const $ = (id) => document.getElementById(id);
+mountKeyboardLayoutPicker(document.querySelector('[data-keyboard-layout-picker]'));
 $('nav-game-count').textContent = String(Object.keys(GAMES).length).padStart(2, '0');
 $('library-game-count').textContent = Object.keys(GAMES).length;
 let name = getName(), origin = location.origin, rooms = [], toastTimer, creating = false;

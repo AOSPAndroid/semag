@@ -4,6 +4,7 @@ import {
 } from './paris-engine.js';
 import { createParisPerspective } from '../art/paris-perspective.js';
 import { createParisRenderer } from './paris-renderer.js';
+import { gameKey, getKeyboardLayout, displayKey, subscribeKeyboardLayout } from '../keyboard-layout.js';
 
 const W = 720, H = 520;
 const KEY_CONTROLS = {
@@ -176,8 +177,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     brakeButton.dataset.recharging = String(automaticPace && state.brakeLocked);
     brakeButton.title = automaticPace ? 'Short brake burst. Release to recharge; braking cannot stop the bike.' : 'Hold to brake.';
     setText(hint, automaticPace
-      ? '← → steer · ↑ pedal · Space assist · B bell. Speed rises automatically. ↓ is a short brake burst; release it to recharge.'
-      : '← → steer · ↑ pedal · ↓ brake · Space assist · B bell. Amber arrows show a merge; red stripes warn of a door.');
+      ? `${displayKey('A / D')} / ← → steer · ${displayKey('W')} / ↑ pedal · Space assist · B bell. Speed rises automatically. S / ↓ is a short brake burst; release it to recharge.`
+      : `${displayKey('A / D')} / ← → steer · ${displayKey('W')} / ↑ pedal · S / ↓ brake · Space assist · B bell. Amber arrows show a merge; red stripes warn of a door.`);
     progressFill.style.width = `${portion}%`;
     setAttr(progress, 'aria-valuenow', String(Math.round(portion)));
     for (const button of modes.children) setAttr(button, 'aria-pressed', String(button.dataset.mode === state.mode));
@@ -321,7 +322,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     const activation = event.key === ' ' || event.code === 'Space' || event.key === 'Enter';
     const focusedControl = activation && focused && controls.contains(focused) ? focused.dataset.control : null;
     if (isInteractive(event.target) && !focusedControl) return;
-    const control = focusedControl || KEY_CONTROLS[event.key] || KEY_CONTROLS[event.code];
+    const control = focusedControl || KEY_CONTROLS[gameKey(event)];
     if (!control || state.phase !== 'playing') return;
     const key = event.code || event.key;
     if (event.repeat && !keys.has(key)) return;
@@ -359,11 +360,18 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   mobile?.addEventListener('change', fitViewport);
   const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(fitViewport) : null;
   observer?.observe(canvas); observer?.observe(view);
+  function updateKeyboardHints() {
+    view.dataset.keyboardLayout = getKeyboardLayout();
+    canvas.setAttribute('aria-label', `Forward-facing, 3D-style Paris street. Ride behind the e-bike courier. Arrow keys or ${displayKey('W A S D')} to ride. Space for electric assist; B rings the bell. P pauses.`);
+  }
+  const unsubscribeKeyboardLayout = subscribeKeyboardLayout(() => { releaseControls(); updateKeyboardHints(); publish(true); });
+  updateKeyboardHints();
   publish(true); fitViewport(); draw(); syncAnimation();
   return {
     getState: () => JSON.parse(JSON.stringify(state)), restart, togglePause,
     destroy() {
       if (destroyed) return;
+      unsubscribeKeyboardLayout();
       destroyed = true; if (raf !== null) cancelAnimationFrame(raf); raf = null;
       releaseControls(); renderer.clear(); sprites.clear?.(); observer?.disconnect();
       window.removeEventListener('keydown', keydown); window.removeEventListener('keyup', keyup);

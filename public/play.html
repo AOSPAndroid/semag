@@ -1,9 +1,10 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#193b32"><title>Game room — Fireside</title><link rel="icon" href="/hub/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/hub/room.css"><link rel="stylesheet" href="/hub/theme.css"><link rel="stylesheet" href="/checkers.css"><link rel="stylesheet" href="/cards.css"><link rel="stylesheet" href="/vector.css"><link rel="stylesheet" href="/brawl.css"></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#193b32"><title>Game room — Semag</title><link rel="icon" href="/hub/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/hub/room.css"><link rel="stylesheet" href="/hub/theme.css"><link rel="stylesheet" href="/checkers.css"><link rel="stylesheet" href="/cards.css"><link rel="stylesheet" href="/vector.css"><link rel="stylesheet" href="/brawl.css">  <link rel="stylesheet" href="/keyboard-layout.css">
+</head>
 <body>
   <main class="room-app" id="room-app">
-    <header class="room-topbar"><a class="back-link" href="/" aria-label="Back to the Fireside game hub"><span class="back-arrow" aria-hidden="true">←</span><svg class="pixel-logo" viewBox="0 0 62 16" aria-hidden="true" focusable="false"><use href="/hub/logo.svg#brand" width="62" height="16"/></svg><b aria-hidden="true">/ BACK TO THE GAME SHELF</b></a><div class="room-top-actions"><span class="connection"><i id="connection-dot"></i><span id="connection-status">CONNECTING</span><span id="ping">— ms</span></span><button id="sound-button" class="icon-button" aria-label="Enable sound" aria-pressed="false" title="Enable sound">♫</button><button id="fullscreen-button" class="icon-button" aria-label="Enter fullscreen" title="Enter fullscreen">⛶</button></div></header>
+    <header class="room-topbar"><a class="back-link" href="/" aria-label="Back to the Semag game hub"><span class="back-arrow" aria-hidden="true">←</span><svg class="pixel-logo" viewBox="0 0 62 16" aria-hidden="true" focusable="false"><use href="/hub/logo.svg#brand" width="62" height="16"/></svg><b aria-hidden="true">/ BACK TO THE GAME SHELF</b></a><div data-keyboard-layout-picker></div><div class="room-top-actions"><span class="connection"><i id="connection-dot"></i><span id="connection-status">CONNECTING</span><span id="ping">— ms</span></span><button id="sound-button" class="icon-button" aria-label="Enable sound" aria-pressed="false" title="Enable sound">♫</button><button id="fullscreen-button" class="icon-button" aria-label="Enter fullscreen" title="Enter fullscreen">⛶</button></div></header>
     <div class="room-heading"><div><span class="eyebrow" id="game-category">GAME ROOM</span><h1 id="game-title">Pull up a chair.</h1><p id="game-description">Connecting to your game room…</p></div><button class="room-code-button" id="copy-code" title="Copy the room code"><span>ROOM CODE</span><strong id="room-code-label">—</strong><i>⧉</i></button></div>
     <div id="error-banner" class="error-banner" role="alert" hidden></div>
     <div class="room-layout">
@@ -22,7 +23,7 @@
         <section class="card-instructions" id="card-instructions" hidden><h2 id="card-rules-title">At the card table.</h2><p id="card-rules-intro"></p><ol id="card-rules-list"></ol><small id="card-rules-keyboard"></small></section>
       </aside>
     </div>
-    <footer class="room-footer"><a href="/">← A different game?</a><span id="footer-mode">FIRESIDE / GAME NIGHT</span><span>GOOD GAMES. GOOD COMPANY.</span></footer>
+    <footer class="room-footer"><a href="/">← A different game?</a><span id="footer-mode">SEMAG / GAME NIGHT</span><span>GOOD GAMES. GOOD COMPANY.</span></footer>
   </main><div class="room-toast" id="toast" role="status" hidden></div>
   <script type="module" src="/hub/room.js"></script>
 </body>

@@ -1,6 +1,6 @@
-# semag — Fireside game hub
+# Semag game hub
 
-![Fireside pixel-art logo](public/hub/logo.svg)
+![Semag pixel-art logo](public/hub/logo.svg)
 
 A self-hosted browser hub with **19 games: ten solo and nine two-player games**. Pick **Play solo** for an instant driving, arcade or puzzle game, or create a room and share your PC address or room link with a colleague. Both players press **Ready** before multiplayer play begins. Each room has two seats; the server can run several independent rooms at once.
 
@@ -32,7 +32,7 @@ The graphics use original local artwork: illustrated cards and enemy portraits,
 expressive character sprites, textured arena materials, crafted board pieces,
 and detailed driving scenery. Static art is cached, gameplay effects stay
 readable, and the shelf artwork matches the games. Assets ship with the host;
-playing does not require an image service. The hub keeps its pixel logo.
+playing does not require an image service. The hub uses its pixel SEMAG wordmark and S badge.
 
 Solo games open on their challenge settings: **Veteran** for the action,
 deckbuilding, driving, and falling-block games; **Gauntlet** for Snake;
@@ -40,6 +40,10 @@ deckbuilding, driving, and falling-block games; **Gauntlet** for Snake;
 available in each game. Veteran and Nightmare demand stronger tactics, pace,
 or planning, and keep their records separate from easier runs. Revised challenge
 records stay separate from historical scores across all ten solo games.
+
+## Keyboard layout
+
+Choose **WASD** or **ZQSD · Français** from the **Keyboard** selector on the shelf or game header. Semag remembers the choice in your browser, and each player can choose independently. Movement keys, hints, and accessible controls update together; arrow keys and touch controls stay available. In ZQSD, Apex Circuit uses **A** to reset, and Prism Shift uses **W** to rotate counterclockwise so **Q** and **Z** can control movement. Switching layouts releases held controls without restarting the run. The game instructions below use the default WASD labels.
 
 ## Run on your PC
 

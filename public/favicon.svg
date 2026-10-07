@@ -1,1 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><rect width="40" height="40" rx="10" fill="#141916"/><path d="M22 6 7 33h6L28 6zM28 17l-9 16h6l9-16z" fill="#b6f36a"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="32" height="32" role="img" aria-labelledby="favicon-title" shape-rendering="crispEdges">
+  <title id="favicon-title">Semag pixel S</title>
+  <path fill="#edab71" d="M2 0h12v1h1v1h1v12h-1v1h-1v1H2v-1H1v-1H0V2h1V1h1Z"/>
+  <path fill="#193b32" d="M5 3h6v1h-6zM4 4h2v1h-2zM4 5h2v1h-2zM4 6h2v1h-2zM5 7h5v1h-5zM9 8h2v1h-2zM9 9h2v1h-2zM9 10h2v1h-2zM4 11h6v1h-6z"/>
+</svg>

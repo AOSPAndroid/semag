@@ -1,0 +1,24 @@
+.keyboard-layout-picker { display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; }
+.keyboard-layout-label { color: var(--text-secondary, var(--muted, #61705e)); font: 9px var(--mono, monospace); letter-spacing: .7px; text-transform: uppercase; }
+.keyboard-layout-select { min-height: 36px; max-width: 160px; padding: 7px 25px 7px 9px; border: 1px solid var(--line, #dddfd1); border-radius: 4px; background: var(--white, var(--surface, #fffdf8)); color: var(--ink, var(--text, #193b32)); font: 11px var(--mono, monospace); cursor: pointer; }
+.keyboard-layout-select:focus-visible { outline: 2px solid #a66536; outline-offset: 3px; }
+.hub-topbar { gap: 16px; }
+.solo-topbar > [data-keyboard-layout-picker] { margin-left: auto; }
+@media (max-width: 800px) {
+  .solo-topbar .solo-mode { display: none; }
+  .keyboard-layout-select { min-height: 40px; }
+  .room-topbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; height: auto; min-height: 68px; gap: 10px; padding: 10px 0; }
+  .room-topbar > [data-keyboard-layout-picker] { grid-column: 1 / -1; grid-row: 2; }
+  .room-topbar .keyboard-layout-picker { flex-direction: row; align-items: center; justify-content: space-between; }
+  .room-topbar .keyboard-layout-select { max-width: 170px; }
+  .topbar { height: auto; min-height: 80px; padding: 12px 0; gap: 12px; flex-wrap: wrap; }
+  .topbar .top-actions { width: 100%; justify-content: space-between; gap: 6px; flex-wrap: wrap; }
+  .topbar .top-actions > [data-keyboard-layout-picker] { width: 100%; }
+  .topbar .keyboard-layout-picker { flex-direction: row; align-items: center; justify-content: space-between; }
+  .topbar .keyboard-layout-select { max-width: 160px; }
+}
+@media (max-width: 700px) {
+  .hub-topbar .breadcrumb { display: none; }
+  .hub-topbar { justify-content: space-between; gap: 8px; }
+  .hub-topbar .hub-identity > span { display: none; }
+}

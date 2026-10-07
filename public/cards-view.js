@@ -119,7 +119,7 @@ export class CardsView {
     this.element = element('section', 'cards-view');
     this.element.setAttribute('aria-label', 'Card table');
     this.topline = element('div', 'cards-topline');
-    this.tableLabel = element('span', 'cards-table-label', 'FIRESIDE CARD ROOM');
+    this.tableLabel = element('span', 'cards-table-label', 'SEMAG CARD ROOM');
     this.progress = element('span', 'cards-progress');
     this.topline.append(this.tableLabel, this.progress);
     this.surface = element('div', 'cards-surface');

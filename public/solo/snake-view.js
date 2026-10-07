@@ -1,4 +1,5 @@
 import { GARDENS, GAUNTLET_FRUIT_GOAL, gardenLevels, advanceGarden, createState, step, turn, togglePause as pauseState } from './snake-engine.js';
+import { gameKey, getKeyboardLayout, displayKey, subscribeKeyboardLayout } from '../keyboard-layout.js';
 
 const KEY_DIRECTIONS = {
   ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
@@ -205,9 +206,11 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       const value = String(button.dataset.mode === mode);
       if (button.getAttribute('aria-pressed') !== value) button.setAttribute('aria-pressed', value);
     }
-    setText(hint, state.mode === 'gauntlet' ? `${GAUNTLET_FRUIT_GOAL} fruit across six demanding layouts. Start with a longer trail each stage. Reach each fruit before its move allowance runs out; pausing preserves it.` : state.mode === 'gardens' ? 'Six gentler layouts. Reach each fruit goal to move on. A new garden gives you a short trail; score carries.' : 'Arrow keys or W A S D to steer. Space to pause. Eat the fruit, grow your trail, and keep room to turn.');
+    view.dataset.keyboardLayout = getKeyboardLayout();
+    const keyboardHint = `Arrows / ${displayKey('WASD')} to steer · Space pauses. `;
+    setText(hint, keyboardHint + (state.mode === 'gauntlet' ? `${GAUNTLET_FRUIT_GOAL} fruit across six demanding layouts. Start with a longer trail each stage. Reach each fruit before its move allowance runs out; pausing preserves it.` : state.mode === 'gardens' ? 'Six gentler layouts. Reach each fruit goal to move on. A new garden gives you a short trail; score carries.' : 'Eat the fruit, grow your trail, and keep room to turn.'));
     setText(speed, `SPEED ${Math.round(1000 / state.stepMs * 10) / 10}${state.mode === 'gauntlet' ? ` · ${state.fruitMoves ?? '—'} MOVES` : ''}`);
-    const description = `Snake board. ${state.snake.length} tiles long. Score ${state.score}. ${message} Use arrow keys or W A S D to steer. Space pauses.`;
+    const description = `Snake board. ${state.snake.length} tiles long. Score ${state.score}. ${message} Use arrow keys or ${displayKey('W A S D')} to steer. Space pauses.`;
     if (canvas.getAttribute('aria-label') !== description) canvas.setAttribute('aria-label', description);
     onUpdate({ phase: state.phase === 'levelClear' ? 'playing' : state.phase, recordKey: mode === 'classic' ? 'default' : mode === 'gauntlet' ? 'gauntlet-v3' : mode, score: state.score, record: state.score, recordLabel: mode === 'gauntlet' ? 'BEST GAUNTLET' : 'BEST SCORE', scoreLabel: 'SCORE', detail: message });
     draw();
@@ -239,13 +242,14 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   }
   function keydown(event) {
     if (event.isComposing || event.altKey || event.ctrlKey || event.metaKey || isForm(event.target)) return;
-    if (event.code === 'Space' || event.key === ' ') {
+    const key = gameKey(event);
+    if (key === ' ' || key === 'Space') {
       if (event.target instanceof Element && event.target.closest('button,a,summary')) return;
       event.preventDefault();
       if (!event.repeat) togglePause();
-    } else if (KEY_DIRECTIONS[event.key]) {
+    } else if (KEY_DIRECTIONS[key]) {
       event.preventDefault();
-      steer(KEY_DIRECTIONS[event.key]);
+      steer(KEY_DIRECTIONS[key]);
     }
   }
   function clickDirection(event) {
@@ -271,6 +275,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   const resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(resize) : null;
   if (resizeObserver) resizeObserver.observe(canvas);
   window.addEventListener('resize', resize);
+  const unsubscribeKeyboardLayout = subscribeKeyboardLayout(publish);
   publish();
   schedule();
 
@@ -286,6 +291,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     destroy() {
       if (destroyed) return;
       destroyed = true;
+      unsubscribeKeyboardLayout();
       if (timer !== null) window.clearTimeout(timer);
       if (animationFrame !== null) window.cancelAnimationFrame(animationFrame);
       timer = null;
