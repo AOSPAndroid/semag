@@ -114,16 +114,18 @@ export function interpolatedState(samples, targetTime, localId, { predictMovemen
   // at bodies rendered a full network frame behind their authoritative pose.
   const projectedTicks = Math.floor(Math.min(maxExtrapolationMs, Math.max(0, targetTime - to.time)) * 120 / 1000);
   if (projectedTicks && state.phase === 'fight' && typeof predictMovement === 'function') {
-    for (const player of state.players) if (player.id !== localId && player.alive) predictMovement(player, player.previousInput || neutralInput(player.yaw, player.pitch), state.mapId, projectedTicks);
+    // Every projection sees the same body poses; render order never moves a blocker.
+    const peers = state.players.map(player => ({ ...player }));
+    for (const player of state.players) if (player.id !== localId && player.alive) predictMovement(player, player.previousInput || neutralInput(player.yaw, player.pitch), state.mapId, projectedTicks, peers);
   }
   return state;
 }
 
 /** Replay a bounded, copied movement history after the server acknowledges inputs. */
-export function reconcilePlayer(player, history, ack, mapId, predictMovement, allowMovement = true) {
+export function reconcilePlayer(player, history, ack, mapId, predictMovement, allowMovement = true, peers = []) {
   const pending = history.filter(frame => frame.seq > ack).slice(-240);
   const predicted = clone(player);
-  if (predicted?.alive && allowMovement) for (const frame of pending) predictMovement(predicted, frame.buttons, mapId, 1);
+  if (predicted?.alive && allowMovement) for (const frame of pending) predictMovement(predicted, frame.buttons, mapId, 1, peers);
   return { predicted, pending };
 }
 
@@ -462,7 +464,7 @@ async function boot() {
       accumulator -= 1 / 120;
       const seq = ++sequence;
       if (state.phase === 'fight' && predictedPlayer?.alive) {
-        engine.predictLocalMovement(predictedPlayer, buttons, state.mapId, 1);
+        engine.predictLocalMovement(predictedPlayer, buttons, state.mapId, 1, state.players);
         pending.push({ seq, buttons: { ...buttons } }); if (pending.length > 240) pending.shift();
       }
     }
@@ -509,7 +511,7 @@ async function boot() {
     const ackValue = message.acks?.[playerId];
     const ack = typeof ackValue === 'number' ? ackValue : ackValue?.seq ?? -1;
     if (local) {
-      const reconciled = reconcilePlayer(local, pending, ack, state.mapId, engine.predictLocalMovement, state.phase === 'fight');
+      const reconciled = reconcilePlayer(local, pending, ack, state.mapId, engine.predictLocalMovement, state.phase === 'fight', state.players);
       predictedPlayer = reconciled.predicted; pending = reconciled.pending;
       predictedPlayer.yaw = aim.yaw; predictedPlayer.pitch = aim.pitch;
     }

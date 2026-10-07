@@ -8,6 +8,8 @@ regression samples, not a hardware frame-rate benchmark.
 SEMAG_VOXEL_POLISH=1 retains the full changed 1v1 feedback sequence while
 checking 2v2/3v3 team gates, a brief native movement/shot, and refreshed maps
 with passive peers lifecycle-frozen after their synchronized Ready gate.
+SEMAG_PHYSICS_QA=1 checks native crate jumping/landing and body pressure, plus
+copied live-state collision invariants, and skips unchanged objective rounds.
 """
 import json
 import math
@@ -373,6 +375,44 @@ def gameplay_input(page,action,desired):
 def horizontal_distance(a,b):return math.hypot(a['x']-b['x'],a['z']-b['z'])
 
 
+def start_physics_monitor(page):
+    if os.environ.get('SEMAG_PHYSICS_QA')!='1':return
+    page.evaluate('''async()=>{
+        const {MAPS,playerHeight}=await import('/voxel-engine.js');
+        const stats=window.__voxelQA.physics={samples:0,boundaryChecks:0,coverChecks:0,bodyChecks:0,supportChecks:0,violations:[]};
+        const check=(condition,kind,detail)=>{if(!condition&&stats.violations.length<12)stats.violations.push({kind,...detail})};
+        stats.timer=setInterval(()=>{
+            const state=window.__voxelQA.latestState?.state;if(!state||state.phase!=='fight')return;
+            stats.samples++;const arena=MAPS[state.mapId],bodies=state.players.filter(body=>body.alive);
+            for(const body of bodies){
+                const height=playerHeight(body),r=body.radius;stats.boundaryChecks++;
+                check(['x','y','z','vx','vy','vz'].every(key=>Number.isFinite(body[key]))&&body.x>=arena.bounds.minX+r-.0001&&body.x<=arena.bounds.maxX-r+.0001&&body.z>=arena.bounds.minZ+r-.0001&&body.z<=arena.bounds.maxZ-r+.0001&&body.y>=-.0001,
+                    'boundary',{tick:state.tick,id:body.id,x:body.x,y:body.y,z:body.z});
+                let supported=body.y<=.0001;
+                for(const box of arena.colliders){
+                    const gap=Math.hypot(body.x-Math.max(box.x,Math.min(box.x+box.w,body.x)),body.z-Math.max(box.z,Math.min(box.z+box.d,body.z)));
+                    const overlaps=body.y<box.y+box.h-.0001&&body.y+height>box.y+.0001;
+                    stats.coverChecks++;check(!overlaps||gap>=r-.0001,'cover',{tick:state.tick,id:body.id,y:body.y,gap,radius:r,box:box.id});
+                    if(Math.abs(body.y-box.y-box.h)<.0001&&gap<=r+.0001)supported=true;
+                }
+                stats.supportChecks++;check(!body.grounded||supported,'support',{tick:state.tick,id:body.id,x:body.x,y:body.y,z:body.z});
+            }
+            for(let a=0;a<bodies.length;a++)for(let b=a+1;b<bodies.length;b++){
+                const first=bodies[a],second=bodies[b],overlaps=first.y<second.y+playerHeight(second)-.0001&&second.y<first.y+playerHeight(first)-.0001;
+                const gap=Math.hypot(first.x-second.x,first.z-second.z);stats.bodyChecks++;
+                check(!overlaps||gap>=first.radius+second.radius-.0001,'body',{tick:state.tick,ids:[first.id,second.id],gap});
+            }
+        },50);
+    }''')
+
+
+def physics_result(page):
+    if os.environ.get('SEMAG_PHYSICS_QA')!='1':return None
+    result=page.evaluate('''()=>{const stats=window.__voxelQA.physics;clearInterval(stats.timer);const {timer,...result}=stats;return result}''')
+    assert result['samples']>=20 and not result['violations'], ('Observed native physics violation',result)
+    return result
+
+
 def native_controls(page, profile):
     evidence={'entered':enter_arena(page),'layouts':[]}
     for chosen,left,forward in [('wasd','a','w'),('zqsd','q','z')]:
@@ -567,6 +607,73 @@ def native_wall_and_reload(page):
         'native_cover_reload_art':True,'wall_body_z':body['z'],'wall_front_z':6,'body_radius':.32}
 
 
+def native_crate_physics(page):
+    for x,z in [(-20,18),(-20,-9.2),(-16.95,-9.2)]:native_move(page,x,z)
+    native_aim(page,math.pi/2,0);enter_arena(page)
+    key='z' if page.locator('select[data-keyboard-layout]').input_value()=='zqsd' else 'w'
+    page.keyboard.down(key);page.keyboard.down('Space')
+    try:
+        wait(page,'window.__voxelQA.latestState.state.players[0].y>.8',timeout=3000)
+        wait(page,'(()=>{const p=window.__voxelQA.latestState.state.players[0];return p.y===1&&p.grounded})()',timeout=3000)
+    finally:page.keyboard.up('Space');page.keyboard.up(key)
+    page.wait_for_timeout(130);landed=actor(page)
+    assert landed['y']==1 and landed['grounded'], ('Native jump failed to land on low cover',landed)
+    screenshot(page,'voxel-native-crate-landing-canvas',viewport=True)
+    native_aim(page,-math.pi/2,0);page.keyboard.down(key)
+    try:
+        wait(page,'(()=>{const p=window.__voxelQA.latestState.state.players[0];return p.y<.9&&!p.grounded})()',timeout=3000,polling=20)
+        falling=actor(page)
+        wait(page,'window.__voxelQA.latestState.state.players[0].y===0',timeout=3000)
+    finally:page.keyboard.up(key)
+    page.wait_for_timeout(150);floor=actor(page)
+    assert floor['grounded'] and floor['y']==0
+    print(json.dumps({'stage':'native_crate_jump_landing_walkoff_passed','landed_y':landed['y'],'falling_grounded':falling['grounded']}),flush=True)
+    return {'native_landed':landed,'native_falling':falling,'native_floor':floor}
+
+
+def native_body_pressure(first,second):
+    # Clear east lane, reached using actual input through both teams' routes.
+    for x,z in [(-20,-9.2),(-20,8),(20,8)]:native_move(first,x,z)
+    native_move(first,20,12)
+    for x,z in [(20,-18),(20,8)]:native_move(second,x,z)
+    native_aim(first,0,0);enter_arena(first)
+    key='z' if first.locator('select[data-keyboard-layout]').input_value()=='zqsd' else 'w'
+    stationary=actor(second);first.keyboard.down(key)
+    try:
+        wait(first,'(()=>{const [a,b]=window.__voxelQA.latestState.state.players;return Math.hypot(a.x-b.x,a.z-b.z)<.65})()',timeout=5000)
+        first.wait_for_timeout(450);pressed=actor(first);blocked=actor(second)
+        predicted=first.evaluate('window.SemagVoxel.getState().predictedPlayer')
+    finally:first.keyboard.up(key)
+    assert horizontal_distance(stationary,blocked)<.001, ('Movement pushed an idle opponent',stationary,blocked)
+    assert horizontal_distance(pressed,blocked)>=.6399, ('Native player bodies overlapped',pressed,blocked)
+    assert horizontal_distance(predicted,blocked)>=.639, ('Local prediction crossed an observed live body',predicted,blocked)
+    native_aim(first,-math.pi/2,0);first.keyboard.down(key);first.wait_for_timeout(300);first.keyboard.up(key)
+    first.wait_for_timeout(100);escaped=actor(first)
+    assert escaped['x']<pressed['x']-.7, ('Body pressure prevented tangent escape',pressed,escaped)
+    screenshot(first,'voxel-native-body-pressure-canvas',viewport=True)
+    print(json.dumps({'stage':'native_idle_body_block_and_escape_passed','idle_drift':horizontal_distance(stationary,blocked)}),flush=True)
+    return {'stationary_before':stationary,'stationary_after':blocked,'native_contact':pressed,'predicted_contact':predicted,'native_escape':escaped}
+
+
+def native_team_body_pressure(page):
+    """A real active client approaches its connected, idle spawn teammate."""
+    stationary=actor(page,1);current=actor(page)
+    native_aim(page,math.atan2(stationary['x']-current['x'],-(stationary['z']-current['z'])),0);enter_arena(page)
+    key='z' if page.locator('select[data-keyboard-layout]').input_value()=='zqsd' else 'w'
+    page.keyboard.down(key)
+    try:
+        wait(page,'(()=>{const [a,b]=window.__voxelQA.latestState.state.players;return Math.hypot(a.x-b.x,a.z-b.z)<.65})()',timeout=4000)
+        page.wait_for_timeout(350);contact=actor(page);blocked=actor(page,1)
+        predicted=page.evaluate('window.SemagVoxel.getState().predictedPlayer')
+    finally:page.keyboard.up(key)
+    assert horizontal_distance(stationary,blocked)<.001 and horizontal_distance(contact,blocked)>=.6399, ('Team body pressure moved or overlapped idle teammate',stationary,contact,blocked)
+    assert horizontal_distance(predicted,blocked)>=.639, ('Team client predicted through its teammate',predicted,blocked)
+    native_aim(page,0,0);page.keyboard.down(key);page.wait_for_timeout(300);page.keyboard.up(key)
+    page.wait_for_timeout(100);escaped=actor(page)
+    assert escaped['z']<contact['z']-.7, ('Team body contact prevented tangent escape',contact,escaped)
+    return {'idle_teammate_before':stationary,'idle_teammate_after':blocked,'authoritative_contact':contact,'predicted_contact':predicted,'native_tangent_escape':escaped}
+
+
 def native_objective_round(first,second):
     route=[]
     for x,z in [(-20,18),(-20,-12),(-13,-12)]:
@@ -751,7 +858,8 @@ def performance_snapshot(page, frozen_peers=0):
 
 def room_case(browser,size,map_id,profile='desktop'):
     contexts=[];pages=[];observer_context=None;passive_sessions=[]
-    short_team=os.environ.get('SEMAG_VOXEL_POLISH')=='1' and size>1
+    physics=os.environ.get('SEMAG_PHYSICS_QA')=='1'
+    short_team=(os.environ.get('SEMAG_VOXEL_POLISH')=='1' or physics) and size>1
     try:
         count=size*2
         for index in range(count):
@@ -775,6 +883,7 @@ def room_case(browser,size,map_id,profile='desktop'):
         ready_clients(pages)
         print(json.dumps({'stage':'all_ready_gates_passed','mode':f'{size}v{size}','profile':profile}),flush=True)
         teams=team_consistency(pages,size,map_id)
+        start_physics_monitor(pages[0])
         if short_team:
             # Every peer first joins and reaches the authoritative fight. Only
             # then freeze passive renderer pages to keep software-GL QA useful;
@@ -801,13 +910,19 @@ def room_case(browser,size,map_id,profile='desktop'):
             screenshot(pages[0],f'voxel-{size}v{size}-{map_id}-{width}-canvas',viewport=True)
         lifecycle={}
         if short_team:lifecycle['passive_peer_renderers_frozen_after_synchronized_fight']=len(passive_sessions)
+        if short_team and physics:lifecycle['native_team_body_pressure']=native_team_body_pressure(pages[0])
         if size==1 and profile=='desktop':
             pages[0].set_viewport_size({'width':960,'height':800})
             lifecycle['software_test_gameplay_viewport']=[960,800]
-            lifecycle['collision_and_firing']=native_wall_and_reload(pages[0])
-            lifecycle.update(native_objective_and_elimination(pages))
-            lifecycle.update(native_disconnect_rejoin(pages,contexts))
-            lifecycle['context_recovery']=context_recovery(pages[1])
+            if physics:
+                lifecycle['crate_jump_landing_walkoff']=native_crate_physics(pages[0])
+                lifecycle['native_body_pressure']=native_body_pressure(pages[0],pages[1])
+                lifecycle['physics_scope']='Native movement/contact checks; objective, round and graphics lifecycle covered by the published 3.10.1 smoke suite.'
+            else:
+                lifecycle['collision_and_firing']=native_wall_and_reload(pages[0])
+                lifecycle.update(native_objective_and_elimination(pages))
+                lifecycle.update(native_disconnect_rejoin(pages,contexts))
+                lifecycle['context_recovery']=context_recovery(pages[1])
         if short_team:
             pages[0].evaluate('window.__voxelQA.cpu=[];window.__voxelQA.gaps=[];window.__voxelQA.drawCalls=[]')
             pages[0].wait_for_timeout(3200)
@@ -816,7 +931,7 @@ def room_case(browser,size,map_id,profile='desktop'):
         evidence={'game':'voxel-breach','mode':f'{size}v{size}','map':map_id,'profile':profile,
             'status':'passed','partial_room':partial,'full_room':full,'capacity_overflow':overflow,'all_ready_required':True,
             'countdown_cancel_resets_all_ready':True,'no_prestart_movement':True,'teams':teams,'native_controls':controls,
-            'performance':perf,'lifecycle':lifecycle}
+            'physics':physics_result(pages[0]),'performance':perf,'lifecycle':lifecycle}
         REPORT['cases'].append(evidence)
         print(json.dumps({'status':'passed','mode':f'{size}v{size}','profile':profile}),flush=True)
     except Exception:

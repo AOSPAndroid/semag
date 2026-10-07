@@ -137,6 +137,65 @@ test('opposing fast dashes cannot pass through one another', () => {
   assert.ok(state.fighters[0].x < state.fighters[1].x); assert.ok(state.fighters[1].x - state.fighters[0].x >= 30 - 1e-6);
   advance(state, 4, input({ left: true }), input({ right: true }, 1)); assert.ok(state.fighters[1].x - state.fighters[0].x > 30);
 });
+test('touching opponents retain shared sideways movement instead of freezing both paths', () => {
+  for (const mirrored of [false, true]) {
+    const state = fighting({ ax: mirrored ? 430 : 400, bx: mirrored ? 400 : 430 });
+    advance(state, 10, input({ right: !mirrored, left: mirrored, down: true }), input({ right: mirrored, left: !mirrored, down: true }, 1));
+    for (const [id, f] of state.fighters.entries()) {
+      assert.equal(f.x, id === Number(mirrored) ? 400 : 430);
+      assert.ok(Math.abs(f.y - (320 + 10 * 2.6 / Math.SQRT2)) < 1e-6, 'body contact must preserve the requested tangential velocity');
+    }
+    assert.equal(Math.hypot(state.fighters[0].x - state.fighters[1].x, state.fighters[0].y - state.fighters[1].y), 30);
+  }
+});
+test('one player pressing into contact cannot cancel the other player sideways escape', () => {
+  const state = fighting({ ax: 400, bx: 430 });
+  game.step(state, [input({ right: true, down: true }), input({ up: true }, 1)]);
+  assert.ok(state.fighters[0].y > 320); assert.equal(state.fighters[0].x, 400);
+  assert.ok(Math.abs(state.fighters[1].y - 317.4) < 1e-6); assert.equal(state.fighters[1].x, 430);
+  assert.ok(Math.hypot(state.fighters[0].x - state.fighters[1].x, state.fighters[0].y - state.fighters[1].y) >= 30);
+});
+test('a faster follower matches an escaping opponent pace without stopping or shoving them', () => {
+  const state = fighting({ ax: 400, bx: 430 });
+  for (let tick = 0; tick < 10; tick++) game.step(state, [input({ right: true, dash: tick === 0 }), input({ right: true }, 1)]);
+  assert.ok(Math.abs(state.fighters[0].x - 426) < 1e-6); assert.ok(Math.abs(state.fighters[1].x - 456) < 1e-6);
+  assert.equal(state.fighters[0].y, 320); assert.equal(state.fighters[1].y, 320);
+});
+test('outer-wall crowding cannot turn a body correction into extra movement speed', () => {
+  const state = fighting({ ax: game.WORLD.maxX, ay: 54.13504471460369, bx: 882.6340124233866, by: game.WORLD.minY });
+  Object.assign(state.fighters[1], { action: 'dash', actionFrame: 21, dashX: Math.SQRT1_2, dashY: -Math.SQRT1_2 });
+  const before = state.fighters.map(f => ({ x: f.x, y: f.y }));
+  game.step(state, [input({ left: true }), input({}, 1)]);
+  for (const f of state.fighters) {
+    assert.ok(Math.hypot(f.x - before[f.id].x, f.y - before[f.id].y) <= Math.hypot(f.vx, f.vy) + 1e-6, 'collision must not add energy to either player');
+    assert.ok(f.x >= game.WORLD.minX && f.x <= game.WORLD.maxX && f.y >= game.WORLD.minY && f.y <= game.WORLD.maxY);
+  }
+  assert.ok(Math.hypot(state.fighters[0].x - state.fighters[1].x, state.fighters[0].y - state.fighters[1].y) >= 30 - 1e-6);
+});
+test('body slide and dash crowding re-sweep real cover and boundaries on every authored stage', () => {
+  for (const stage of Object.values(game.STAGES)) {
+    const wall = stage.covers[0], x = wall.x + wall.w + game.WORLD.fighterRadius, y = wall.y + wall.h / 2;
+    const state = fighting({ ax: x + 30, ay: y, bx: x, by: y }); state.obstacles = stage.covers.map(rect => ({ ...rect }));
+    for (let tick = 0; tick < 100; tick++) {
+      game.step(state, [input({ left: true, down: true, dash: tick === 0 || tick === 60 }), input({ left: true, down: true }, 1)]);
+      const [a, b] = state.fighters;
+      assert.ok(Math.hypot(a.x - b.x, a.y - b.y) >= 30 - 1e-6, `${stage.id} bodies must remain separate`);
+      for (const f of state.fighters) {
+        assert.ok(f.x >= game.WORLD.minX && f.x <= game.WORLD.maxX && f.y >= game.WORLD.minY && f.y <= game.WORLD.maxY);
+        for (const rect of state.obstacles) assert.ok(distanceToRect(f, rect) >= f.radius - 1e-6, `${stage.id} slide must retain exact cover contact`);
+      }
+    }
+    for (const f of state.fighters) assert.ok(f.y > y + 70, `${stage.id} contact must allow escape along cover`);
+  }
+});
+test('kunai use the actual sideways body-contact path rather than a discarded movement path', () => {
+  const state = fighting({ ax: 400, bx: 430 });
+  kunai(state, { x: 405, y: 338.5, vx: 40 });
+  game.step(state, [input({ right: true, down: true }), input({ left: true, down: true }, 1)]);
+  assert.equal(state.fighters[1].hp, 86); assert.equal(state.projectiles.length, 0);
+  const hit = state.events.findLast(event => event.type === 'hit');
+  assert.equal(hit.attack, 'kunai'); assert.equal(hit.target, 1); assert.ok(hit.x > 420 && hit.x < 440);
+});
 test('JSON prediction clones remain deterministic through complex actions and all state stays bounded', () => {
   const a = fighting({ cover: true, ax: 154, bx: 806 }), b = game.cloneState(a);
   for (let tick = 0; tick < 2000; tick++) {

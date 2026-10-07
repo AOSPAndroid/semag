@@ -170,6 +170,41 @@ test('server acknowledgement replays only pending movement on a copied player', 
   assert.equal(player.z, createState().players[0].z); assert.equal(history.length, 4);
 });
 
+test('pending movement stops at a live body instead of predicting through it on every acknowledgement', () => {
+  const snapshot = createState(); snapshot.phase = 'fight';
+  const [local, blocker] = snapshot.players;
+  Object.assign(local, { x: 20, z: .32, vz: -5.4 });
+  Object.assign(blocker, { x: 20, z: -.32 });
+  const before = structuredClone(snapshot);
+  const buttons = { ...emptyInput(), up: true };
+  const history = Array.from({ length: 8 }, (_, index) => ({ seq: index + 1, buttons }));
+  const result = reconcilePlayer(local, history, 2, snapshot.mapId, predictLocalMovement, true, snapshot.players);
+  assert.deepEqual(result.pending.map(frame => frame.seq), [3, 4, 5, 6, 7, 8]);
+  assert.ok(result.predicted.z >= .32 - 1e-7, 'the camera stays outside the other cylinder');
+  assert.ok(Math.hypot(result.predicted.x - blocker.x, result.predicted.z - blocker.z) >= local.radius + blocker.radius - 1e-7);
+  assert.equal(result.predicted.vz, 0);
+  assert.deepEqual(snapshot, before, 'prediction does not move authoritative bodies');
+  blocker.alive = false;
+  const unblocked = reconcilePlayer(local, history, 2, snapshot.mapId, predictLocalMovement, true, snapshot.players);
+  assert.ok(unblocked.predicted.z < .1, 'eliminated players never obstruct movement');
+});
+
+test('remote projection respects frozen body contacts independently of player render order', () => {
+  const snapshot = createState({ teamSize: 2 }); snapshot.phase = 'fight';
+  const target = snapshot.players[1], blocker = snapshot.players[2];
+  Object.assign(target, { x: 20, z: .32, vz: -5.4, previousInput: { ...emptyInput(), up: true } });
+  Object.assign(blocker, { x: 20, z: -.32 });
+  const before = structuredClone(snapshot);
+  const render = state => interpolatedState([{ time: 0, state }], 25, 0, { predictMovement: predictLocalMovement });
+  const rendered = render(snapshot);
+  assert.ok(rendered.players[1].z >= .32 - 1e-7, 'a projected opponent stays on its side of contact');
+  assert.deepEqual(rendered.players[0], snapshot.players[0]);
+  const reversed = structuredClone(snapshot); reversed.players.reverse();
+  const reordered = render(reversed);
+  for (const player of rendered.players) assert.deepEqual(player, reordered.players.find(other => other.id === player.id));
+  assert.deepEqual(snapshot, before);
+});
+
 test('dead players and locked setup phases never predict movement; queues stay bounded', () => {
   const player = createState().players[0]; const buttons = { ...emptyInput(), up: true };
   const history = Array.from({ length: 600 }, (_, seq) => ({ seq, buttons }));

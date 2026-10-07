@@ -112,13 +112,17 @@ function moveFighter(state, f, dx, dy) {
   if (time < 1 - EPS || !path.length) path.push({ ax: f.x, ay: f.y, bx: f.x, by: f.y, t0: time, t1: 1 });
   return path;
 }
-function pathContact(a, b, radius) {
+function pathContact(a, b, radius, enteringOnly = false, from = 0) {
   let first = null;
   for (const ap of a) for (const bp of b) {
-    const lo = Math.max(ap.t0, bp.t0), hi = Math.min(ap.t1, bp.t1);
+    const lo = Math.max(ap.t0, bp.t0, from), hi = Math.min(ap.t1, bp.t1);
     if (hi <= lo + EPS) continue;
     const aa = pointAt([ap], lo), ab = pointAt([ap], hi), ba = pointAt([bp], lo), bb = pointAt([bp], hi);
-    const t = circleContact(aa.x - ba.x, aa.y - ba.y, ab.x - bb.x, ab.y - bb.y, radius);
+    const rx = aa.x - ba.x, ry = aa.y - ba.y, dx = ab.x - bb.x - rx, dy = ab.y - bb.y - ry;
+    const t = circleContact(rx, ry, rx + dx, ry + dy, radius);
+    // Body contacts constrain inward motion only. Tangent or separating motion
+    // must remain free; projectiles still contact a body they start touching.
+    if (t !== null && enteringOnly && (rx + dx * t) * dx + (ry + dy * t) * dy >= -EPS) continue;
     if (t !== null) { const at = lo + (hi - lo) * t; if (first === null || at < first) first = at; }
   }
   return first;
@@ -133,13 +137,72 @@ function stopAt(path, time) {
   kept.push({ ax: point.x, ay: point.y, bx: point.x, by: point.y, t0: time, t1: 1 });
   return { path: kept, point };
 }
+function velocityAt(path, time) {
+  const p = path.find(p => time >= p.t0 - EPS && time < p.t1 - EPS) || path.at(-1), duration = p.t1 - p.t0;
+  return duration > EPS ? { x: (p.bx - p.ax) / duration, y: (p.by - p.ay) / duration } : { x: 0, y: 0 };
+}
+function contactResponse(state, f, point, velocity, dx, dy) {
+  const normals = [];
+  for (const rect of state.obstacles) {
+    const nx = point.x - clamp(point.x, rect.x, rect.x + rect.w), ny = point.y - clamp(point.y, rect.y, rect.y + rect.h), length = Math.hypot(nx, ny);
+    if (length > EPS && length <= f.radius + 1e-6) normals.push({ x: nx / length, y: ny / length });
+  }
+  if (point.x <= WORLD.minX + EPS) normals.push({ x: 1, y: 0 });
+  if (point.x >= WORLD.maxX - EPS) normals.push({ x: -1, y: 0 });
+  if (point.y <= WORLD.minY + EPS) normals.push({ x: 0, y: 1 });
+  if (point.y >= WORLD.maxY - EPS) normals.push({ x: 0, y: -1 });
+  for (let pass = 0; pass < 3; pass++) for (const n of normals) {
+    // A fighter already moving away may reduce that outward velocity. A face
+    // constrains the correction only while it is actually holding them still.
+    if (velocity.x * n.x + velocity.y * n.y > EPS) continue;
+    const inward = Math.min(0, dx * n.x + dy * n.y); dx -= inward * n.x; dy -= inward * n.y;
+  }
+  return { x: dx, y: dy };
+}
 function collideFighters(state, paths) {
-  const [a, b] = state.fighters, time = pathContact(paths[0], paths[1], a.radius + b.radius);
-  if (time === null) return;
-  const pa = pointAt(paths[0], time), pb = pointAt(paths[1], time), endA = pointAt(paths[0], 1), endB = pointAt(paths[1], 1);
-  // Bodies already touching can move away or slide along one another.
-  if (time <= EPS && (endB.x - endA.x) * (pb.x - pa.x) + (endB.y - endA.y) * (pb.y - pa.y) >= (a.radius + b.radius) ** 2 - EPS) return;
-  for (const f of state.fighters) { const result = stopAt(paths[f.id], time); paths[f.id] = result.path; f.x = result.point.x; f.y = result.point.y; }
+  const [a, b] = state.fighters, radius = a.radius + b.radius;
+  let from = 0;
+  for (let iteration = 0; iteration < 6; iteration++) {
+    const time = pathContact(paths[0], paths[1], radius, true, from);
+    if (time === null) return;
+    const pa = pointAt(paths[0], time), pb = pointAt(paths[1], time), length = Math.hypot(pb.x - pa.x, pb.y - pa.y);
+    const nx = length > EPS ? (pb.x - pa.x) / length : 1, ny = length > EPS ? (pb.y - pa.y) / length : 0;
+    // Resolve the motion that survived cover sweeps, never the blocked input
+    // velocity. Only relative closing motion is constrained, so a fighter may
+    // follow an escaping opponent without freezing either player's sidestep.
+    const velocities = paths.map(path => velocityAt(path, time)), [va, vb] = velocities;
+    const na = va.x * nx + va.y * ny, nb = vb.x * nx + vb.y * ny, closing = Math.max(0, na - nb);
+    const pushA = Math.max(0, na), pushB = Math.max(0, -nb);
+    const speeds = velocities.map(v => Math.hypot(v.x, v.y));
+    const responseA = contactResponse(state, a, pa, va, -nx, -ny), responseB = contactResponse(state, b, pb, vb, nx, ny);
+    // A contact correction cannot point into a face already blocking movement.
+    // Solve using the remaining response directions, avoiding a body/cover
+    // projection loop that would otherwise cancel both tangential paths.
+    const mobility = pushA * Math.max(0, -responseA.x * nx - responseA.y * ny) + pushB * Math.max(0, responseB.x * nx + responseB.y * ny);
+    if (mobility > EPS) {
+      const correction = closing / mobility;
+      va.x += correction * pushA * responseA.x; va.y += correction * pushA * responseA.y;
+      vb.x += correction * pushB * responseB.x; vb.y += correction * pushB * responseB.y;
+    } else { va.x = va.y = vb.x = vb.y = 0; }
+    for (const [id, velocity] of velocities.entries()) {
+      const speed = Math.hypot(velocity.x, velocity.y);
+      if (speed > speeds[id] + EPS) { velocity.x *= speeds[id] / speed; velocity.y *= speeds[id] / speed; }
+    }
+    for (const f of state.fighters) {
+      const result = stopAt(paths[f.id], time), velocity = velocities[f.id];
+      // A stationary opponent receives no shove. Both moving fighters share
+      // the constraint according to their own inward contribution.
+      f.x = result.point.x; f.y = result.point.y;
+      const tail = moveFighter(state, f, velocity.x * (1 - time), velocity.y * (1 - time));
+      paths[f.id] = [...result.path.slice(0, -1), ...tail.map(p => ({ ...p, t0: time + p.t0 * (1 - time), t1: time + p.t1 * (1 - time) }))];
+    }
+    from = time;
+  }
+  // Crowding against multiple cover faces stays bounded and conservative.
+  const time = pathContact(paths[0], paths[1], radius, true, from);
+  if (time !== null) for (const f of state.fighters) {
+    const result = stopAt(paths[f.id], time); paths[f.id] = result.path; f.x = result.point.x; f.y = result.point.y;
+  }
 }
 function readInput(f, raw) {
   const input = emptyInput(); for (const key of INPUT_KEYS) input[key] = raw?.[key] === true;

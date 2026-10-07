@@ -6,6 +6,8 @@ Live games receive only native keyboard, pointer, or trusted Chromium touch
 input. State is observed, never injected. Pure copied fixtures inspect render
 and record policies independently. SEMAG_SCREENSHOT_DIR selects artifacts.
 Headless renderer timings are gross regressions, not a hardware GPU benchmark.
+SEMAG_PHYSICS_QA=1 adds native body-contact/boundary probes and continuously
+checks copied live snapshots for penetration throughout the same playthrough.
 """
 import base64
 import json
@@ -247,6 +249,47 @@ def room_state(page):
 
 def room_phase(page, phase, timeout=15000):
     wait(page,'phase=>window.firesideRoom?.getState().phase===phase',arg=phase,timeout=timeout)
+
+
+def start_physics_monitor(page, game):
+    """Sample copied states; the game, controls and simulation stay untouched."""
+    if os.environ.get('SEMAG_PHYSICS_QA')!='1':return
+    page.evaluate('''async game=>{
+        const shadow=game==='shadow-lantern',module=await import(shadow?'/solo/shadow-engine.js':'/shinobi-engine.js');
+        const stats=window.__ninjaQA.physics={samples:0,coverChecks:0,boundaryChecks:0,bodyChecks:0,violations:[]};
+        const check=(condition,kind,detail)=>{if(!condition&&stats.violations.length<12)stats.violations.push({kind,...detail})};
+        window.__ninjaQA.physicsTimer=setInterval(()=>{
+            const state=shadow?window.firesideSolo?.getState():window.firesideRoom?.getState();
+            if(!state||!['playing','fight'].includes(state.phase))return;
+            stats.samples++;
+            const bodies=shadow?[{...state.player,id:'player',radius:module.PLAYER_RADIUS},
+                ...state.guards.filter(guard=>guard.mode!=='down').map(guard=>({...guard,radius:module.GUARD_RADIUS}))]:state.fighters;
+            const walls=shadow?module.LEVELS[state.level].walls:state.obstacles;
+            for(const body of bodies){
+                const left=shadow?38+body.radius:module.WORLD.minX;
+                const right=shadow?922-body.radius:module.WORLD.maxX;
+                const top=shadow?48+body.radius:module.WORLD.minY;
+                const bottom=shadow?602-body.radius:module.WORLD.maxY;
+                stats.boundaryChecks++;check(Number.isFinite(body.x)&&Number.isFinite(body.y)&&body.x>=left-.001&&body.x<=right+.001&&body.y>=top-.001&&body.y<=bottom+.001,
+                    'boundary',{tick:state.tick,level:state.level,id:body.id,x:body.x,y:body.y});
+                for(const wall of walls){
+                    const gap=Math.hypot(body.x-Math.max(wall.x,Math.min(wall.x+wall.w,body.x)),body.y-Math.max(wall.y,Math.min(wall.y+wall.h,body.y)));
+                    stats.coverChecks++;check(gap>=body.radius-.001,'cover',{tick:state.tick,level:state.level,id:body.id,gap,radius:body.radius,wall});
+                }
+            }
+            for(let a=0;a<bodies.length;a++)for(let b=a+1;b<bodies.length;b++){
+                const first=bodies[a],second=bodies[b],gap=Math.hypot(first.x-second.x,first.y-second.y);
+                stats.bodyChecks++;check(gap>=first.radius+second.radius-.001,'body',{tick:state.tick,level:state.level,ids:[first.id,second.id],gap});
+            }
+        },50);
+    }''',game)
+
+
+def physics_result(page):
+    if os.environ.get('SEMAG_PHYSICS_QA')!='1':return None
+    result=page.evaluate('''()=>{clearInterval(window.__ninjaQA.physicsTimer);return window.__ninjaQA.physics}''')
+    assert result['samples']>=20 and not result['violations'], ('Observed live physics violation',result)
+    return result
 
 
 def watch(page, tag, errors, resources):
@@ -527,6 +570,49 @@ def shinobi_desktop(first,second):
     return evidence
 
 
+def shinobi_body_slide(first,second):
+    """Bring actual fighters into contact, then test shared and split tangents."""
+    def touching_pair():
+        # Serial trusted presses can let a shared tangent slide around the
+        # other body. Start the split escape from a renewed real contact.
+        room_move(first,(220,room_state(first)['fighters'][0]['y']),0)
+        room_move(first,(220,320),0);room_move(second,(430,320),1);room_move(first,(390,320),0)
+        first.locator('#arena').focus();first.keyboard.down('ArrowRight')
+        try:
+            wait(first,'(()=>{const [a,b]=window.firesideRoom.getState().fighters;return Math.hypot(a.x-b.x,a.y-b.y)<30.01})()',timeout=3000)
+        finally:first.keyboard.up('ArrowRight')
+        first.wait_for_timeout(100);contact=room_state(first)['fighters']
+        gap=math.hypot(contact[0]['x']-contact[1]['x'],contact[0]['y']-contact[1]['y'])
+        assert 29.999<=gap<30.05, ('Native slide probe did not start from touching bodies',gap,contact)
+        return contact
+    before=touching_pair()
+    keyboards=[Keyboard(first),Keyboard(second)]
+    try:
+        first.locator('#arena').focus();keyboards[0].set({'ArrowRight','ArrowDown'})
+        second.locator('#arena').focus();keyboards[1].set({'ArrowLeft','ArrowDown'})
+        first.wait_for_timeout(400)
+    finally:
+        for keyboard in keyboards:keyboard.release()
+    first.wait_for_timeout(100);shared=room_state(first)['fighters']
+    assert all(shared[index]['y']>before[index]['y']+25 for index in (0,1)), ('Touching fighters lost their shared tangent',before,shared)
+    assert math.hypot(shared[0]['x']-shared[1]['x'],shared[0]['y']-shared[1]['y'])>=29.999
+    escape_contact=touching_pair()
+    try:
+        first.locator('#arena').focus();keyboards[0].set({'ArrowRight','ArrowDown'})
+        second.locator('#arena').focus();keyboards[1].set({'ArrowUp'})
+        first.wait_for_timeout(300)
+    finally:
+        for keyboard in keyboards:keyboard.release()
+    first.wait_for_timeout(100);escaped=room_state(first)['fighters']
+    assert escaped[0]['y']>escape_contact[0]['y']+20 and escaped[1]['y']<escape_contact[1]['y']-20, ('Body contact prevented a tangent escape',escape_contact,escaped)
+    canvas_export(first,'#arena','shinobi-native-body-slide-canvas')
+    # Restore ordinary open-lane starting positions for the combat regression.
+    room_move(first,(220,escaped[0]['y']),0);room_move(first,(220,320),0)
+    room_move(second,(806,escaped[1]['y']),1);room_move(second,(806,320),1)
+    print('PASS shinobi native touching-body tangent and escape',flush=True)
+    return {'native_touching_contact':before,'shared_tangent':shared,'native_escape_contact':escape_contact,'split_tangent_escape':escaped}
+
+
 def shinobi_match(first,second):
     visited=set();captured=set();routes={1:[(646,320)],2:[(806,90),(190,90),(190,320)],3:[(154,75),(746,75),(746,220)]}
     deadline=time.monotonic()+100
@@ -622,6 +708,14 @@ def shadow_play(page,context,keyboard,profile):
     assert page.locator('.shadow-control[data-control="smoke"]').get_attribute('data-empty')=='false'
     assert page.locator('.shadow-control[data-control="kunai"]').get_attribute('data-empty')=='false'
     canvas_export(page,'.shadow-canvas',f'shadow-lantern-{profile}-native-smoke-canvas')
+    boundary=None
+    if os.environ.get('SEMAG_PHYSICS_QA')=='1':
+        canvas.focus();keyboard.set({'ArrowLeft','ArrowDown'});page.wait_for_timeout(1400);keyboard.release()
+        corner=state(page)['player'];assert abs(corner['x']-48)<.001 and abs(corner['y']-592)<.001, ('Courtyard body radius crossed the perimeter',corner)
+        keyboard.set({'ArrowLeft','ArrowUp'});page.wait_for_timeout(250);keyboard.release()
+        tangent=state(page)['player'];assert abs(tangent['x']-48)<.001 and tangent['y']<corner['y']-12, ('Courtyard tangent movement froze',corner,tangent)
+        boundary={'native_corner':corner,'native_wall_tangent':tangent}
+        canvas_export(page,'.shadow-canvas',f'shadow-lantern-{profile}-native-boundary-canvas')
     # Tool effects are exercised in a real warm-up. A fresh heist then follows
     # a repeatable quiet patrol route without changing the live state.
     page.locator('#solo-restart').click()
@@ -680,7 +774,7 @@ def shadow_play(page,context,keyboard,profile):
     canvas_export(page,'.shadow-canvas',f'shadow-lantern-{profile}-second-fortress-canvas')
     return {'first_mission_cleared':True,'native_rear_takedown':True,'native_tools':True,'native_touch':profile=='mobile',
         'recover_to_extract_objective_feedback':True,'native_channel_feedback':profile=='desktop',
-        'carried':carried,'route':waypoint_evidence,'first_clear':fixed,'next_state':next_state}
+        'native_boundary':boundary,'carried':carried,'route':waypoint_evidence,'first_clear':fixed,'next_state':next_state}
 
 def shinobi_touch(page,context):
     for target in page.locator('[data-shinobi-action],[data-shinobi-pad]').all():
@@ -758,6 +852,7 @@ def solo_case(browser,url,profile,errors,resources):
         assert state(page)['difficulty']=='veteran' and state(page)['recordKey']=='shadow-v1-veteran'
         assert page.locator('select[data-keyboard-layout]').input_value()=='zqsd'
         assert page.locator('#solo-record').inner_text().replace(',','')=='1300'
+        start_physics_monitor(page,'shadow-lantern')
         evidence=shadow_play(page,context,keyboard,profile)
         paused=pause_check(page,'shadow-lantern',keyboard)
         page.locator('#solo-pause').click();wait(page,'window.firesideSolo.getState().phase==="paused"')
@@ -787,12 +882,13 @@ def solo_case(browser,url,profile,errors,resources):
             for _ in range(index): page.keyboard.press('ArrowDown')
             page.keyboard.press('Enter');assert state(page)['difficulty']==tier
             assert page.locator('#solo-record').inner_text().replace(',','')==str(1200+index*100)
+        physics=physics_result(page)
         page.reload();wait(page,'window.firesideSolo?.getState()===null')
         assert page.locator('#solo-start').is_visible() and records(page)==original_records
         assert page.locator('select[data-keyboard-layout]').input_value()=='zqsd'
         assert not mutations and not sockets
         return {'game':'shadow-lantern','profile':profile,'dpr':dpr,'evidence':evidence,'exposure':exposure,
-            'paused':paused,'paint':paint,'performance':perf,'record_policy':policy,'records_preserved':True,'solo_room_mutations':mutations,'solo_sockets':sockets}
+            'physics':physics,'paused':paused,'paint':paint,'performance':perf,'record_policy':policy,'records_preserved':True,'solo_room_mutations':mutations,'solo_sockets':sockets}
     except Exception:
         screenshot(page,'failure-shadow-'+profile);(OUT/('failure-shadow-'+profile+'.json')).write_text(json.dumps(state(page),indent=2)+'\n');raise
     finally:
@@ -803,16 +899,18 @@ def multiplayer_case(browser,url,profile,errors,resources):
     contexts,pages,code=create_room(browser,url,errors,resources,profile);first,second=pages
     try:
         observe_shinobi_effects(first)
+        start_physics_monitor(first,'shinobi-showdown')
         room_form_check(first)
         if profile=='desktop':
-            evidence=shinobi_desktop(first,second);match=shinobi_match(first,second)
+            body_slide=shinobi_body_slide(first,second) if os.environ.get('SEMAG_PHYSICS_QA')=='1' else None
+            evidence=shinobi_desktop(first,second);evidence['body_slide']=body_slide;match=shinobi_match(first,second)
         else:
             evidence=shinobi_touch(first,contexts[0]);match={'desktop_full_match_tested_separately':True}
             no_overflow(first,'shinobi/mobile')
             canvas_export(first,'#arena','shinobi-showdown-mobile-native-canvas')
         perf=performance_result(first,'shinobi-showdown/'+profile)
         disconnect=shinobi_disconnect(browser,url,first,second,contexts[1],errors,resources,code)
-        return {'game':'shinobi-showdown','profile':profile,'dpr':2 if profile=='mobile' else 1,'evidence':evidence,'match':match,'performance':perf,'disconnect':disconnect,'paint':painted(first,'#arena')}
+        return {'game':'shinobi-showdown','profile':profile,'dpr':2 if profile=='mobile' else 1,'evidence':evidence,'match':match,'physics':physics_result(first),'performance':perf,'disconnect':disconnect,'paint':painted(first,'#arena')}
     except Exception:
         screenshot(first,'failure-shinobi-'+profile);(OUT/('failure-shinobi-'+profile+'.json')).write_text(json.dumps(room_state(first),indent=2)+'\n');raise
     finally:

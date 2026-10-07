@@ -110,7 +110,7 @@ function sweepRect(x, z, dx, dz, rect, radius) {
   if (dz > EPS) { const t = (rect.z - radius - z) / dz, at = x + dx * t; if (at >= rect.x - EPS && at <= rect.x + rect.w + EPS) accept(t, 0, -1); }
   if (dz < -EPS) { const t = (rect.z + rect.d + radius - z) / dz, at = x + dx * t; if (at >= rect.x - EPS && at <= rect.x + rect.w + EPS) accept(t, 0, 1); }
   const a = dx * dx + dz * dz;
-  if (a > EPS) for (const cx of [rect.x, rect.x + rect.w]) for (const cz of [rect.z, rect.z + rect.d]) {
+  if (a > EPS * EPS) for (const cx of [rect.x, rect.x + rect.w]) for (const cz of [rect.z, rect.z + rect.d]) {
     const ox = x - cx, oz = z - cz, b = 2 * (ox * dx + oz * dz), c = ox * ox + oz * oz - radius * radius, disc = b * b - 4 * a * c;
     if (disc < 0) continue;
     const t = (-b - Math.sqrt(disc)) / (2 * a), px = x + dx * t, pz = z + dz * t;
@@ -121,50 +121,83 @@ function sweepRect(x, z, dx, dz, rect, radius) {
   return contacts.sort((a, b) => a.t - b.t)[0] || null;
 }
 function bodyOverlapsBox(f, rect, height = playerHeight(f)) { return f.y < rect.y + rect.h - EPS && f.y + height > rect.y + EPS && circleRectOverlap(f.x, f.z, f.radius, rect); }
-function horizontalMove(f, dx, dz, arena) {
-  const height = playerHeight(f); let x = f.x, z = f.z;
-  for (let pass = 0; pass < 4 && Math.hypot(dx, dz) > EPS; pass++) {
+function bodyOverlapsPlayer(f, peer, height = playerHeight(f)) {
+  return peer.alive && peer.id !== f.id && f.y < peer.y + playerHeight(peer) - EPS && f.y + height > peer.y + EPS && Math.hypot(f.x - peer.x, f.z - peer.z) < f.radius + peer.radius - EPS;
+}
+function sweepBody(x, y, z, dx, dy, dz, height, radius, rect) {
+  let hit = null;
+  const side = sweepRect(x, z, dx, dz, rect, radius);
+  if (side) {
+    const atY = y + dy * side.t;
+    if (atY < rect.y + rect.h - EPS && atY + height > rect.y + EPS) hit = { ...side, ny: 0 };
+  }
+  const vertical = (t, ny) => {
+    if (t < -EPS || t > 1 + EPS || (hit && t >= hit.t - EPS)) return;
+    const px = x + dx * t, pz = z + dz * t, ox = px - clamp(px, rect.x, rect.x + rect.w), oz = pz - clamp(pz, rect.z, rect.z + rect.d), distanceSquared = ox * ox + oz * oz;
+    // At a shared top/side edge, the first infinitesimal inward step is already
+    // supported. Strict footprint overlap alone would lose both face contacts.
+    if (distanceSquared < radius * radius - EPS || (distanceSquared <= radius * radius + EPS && ox * dx + oz * dz < -EPS)) hit = { t: clamp(t, 0, 1), nx: 0, ny, nz: 0 };
+  };
+  if (dy < -EPS) vertical((rect.y + rect.h - y) / dy, 1);
+  if (dy > EPS) vertical((rect.y - height - y) / dy, -1);
+  return hit;
+}
+/** A peer is a read-only upright cylinder. Dead bodies and separated vertical ranges never block. */
+function sweepPlayer(x, y, z, dx, dy, dz, height, radius, peer) {
+  const min = radius + peer.radius, ox = x - peer.x, oz = z - peer.z;
+  const a = dx * dx + dz * dz, b = 2 * (ox * dx + oz * dz), c = ox * ox + oz * oz - min * min;
+  let hit = null;
+  if (a > EPS * EPS) {
+    const disc = b * b - 4 * a * c;
+    if (disc >= 0) {
+      const t = (-b - Math.sqrt(disc)) / (2 * a), atY = y + dy * t;
+      if (t >= -EPS && t <= 1 + EPS && atY < peer.y + playerHeight(peer) - EPS && atY + height > peer.y + EPS) {
+        const px = ox + dx * t, pz = oz + dz * t, length = Math.hypot(px, pz);
+        if (length > EPS && dx * px + dz * pz < -EPS) hit = { t: clamp(t, 0, 1), nx: px / length, ny: 0, nz: pz / length };
+      }
+    }
+  }
+  return hit;
+}
+/** Sweep the whole motion together, so a falling foot contacts a crate top at its real arrival point. */
+function bodyMove(f, dx, dy, dz, arena, peers = []) {
+  const height = playerHeight(f); let x = f.x, y = f.y, z = f.z;
+  for (let pass = 0; pass < 6 && Math.hypot(dx, dy, dz) > EPS; pass++) {
     let hit = null;
     for (const rect of arena.colliders) {
-      if (f.y >= rect.y + rect.h - EPS || f.y + height <= rect.y + EPS) continue;
-      const contact = sweepRect(x, z, dx, dz, rect, f.radius);
+      const contact = sweepBody(x, y, z, dx, dy, dz, height, f.radius, rect);
       if (contact && (!hit || contact.t < hit.t - EPS)) hit = contact;
     }
-    const bound = (t, nx, nz) => { if (t >= -EPS && t <= 1 + EPS && (!hit || t < hit.t - EPS)) hit = { t: clamp(t, 0, 1), nx, nz }; };
-    if (dx < -EPS) bound((arena.bounds.minX + f.radius - x) / dx, 1, 0);
-    if (dx > EPS) bound((arena.bounds.maxX - f.radius - x) / dx, -1, 0);
-    if (dz < -EPS) bound((arena.bounds.minZ + f.radius - z) / dz, 0, 1);
-    if (dz > EPS) bound((arena.bounds.maxZ - f.radius - z) / dz, 0, -1);
-    const t = hit?.t ?? 1; x += dx * t; z += dz * t;
+    for (const peer of peers) {
+      if (!peer.alive || peer.id === f.id) continue;
+      const contact = sweepPlayer(x, y, z, dx, dy, dz, height, f.radius, peer);
+      if (contact && (!hit || contact.t < hit.t - EPS)) hit = contact;
+    }
+    const bound = (t, nx, ny, nz) => { if (t >= -EPS && t <= 1 + EPS && (!hit || t < hit.t - EPS)) hit = { t: clamp(t, 0, 1), nx, ny, nz }; };
+    if (dx < -EPS) bound((arena.bounds.minX + f.radius - x) / dx, 1, 0, 0);
+    if (dx > EPS) bound((arena.bounds.maxX - f.radius - x) / dx, -1, 0, 0);
+    if (dz < -EPS) bound((arena.bounds.minZ + f.radius - z) / dz, 0, 0, 1);
+    if (dz > EPS) bound((arena.bounds.maxZ - f.radius - z) / dz, 0, 0, -1);
+    if (dy < -EPS) bound(-y / dy, 0, 1, 0);
+    const t = hit?.t ?? 1; x += dx * t; y += dy * t; z += dz * t;
     if (!hit) break;
-    dx *= 1 - t; dz *= 1 - t; const inward = Math.min(0, dx * hit.nx + dz * hit.nz); dx -= inward * hit.nx; dz -= inward * hit.nz;
-    const velocityInward = Math.min(0, f.vx * hit.nx + f.vz * hit.nz); f.vx -= velocityInward * hit.nx; f.vz -= velocityInward * hit.nz;
+    dx *= 1 - t; dy *= 1 - t; dz *= 1 - t;
+    const inward = Math.min(0, dx * hit.nx + dy * hit.ny + dz * hit.nz); dx -= inward * hit.nx; dy -= inward * hit.ny; dz -= inward * hit.nz;
+    const velocityInward = Math.min(0, f.vx * hit.nx + f.vy * hit.ny + f.vz * hit.nz); f.vx -= velocityInward * hit.nx; f.vy -= velocityInward * hit.ny; f.vz -= velocityInward * hit.nz;
   }
-  f.x = clamp(x, arena.bounds.minX + f.radius, arena.bounds.maxX - f.radius); f.z = clamp(z, arena.bounds.minZ + f.radius, arena.bounds.maxZ - f.radius);
+  f.x = clamp(x, arena.bounds.minX + f.radius, arena.bounds.maxX - f.radius); f.y = Math.max(0, y); f.z = clamp(z, arena.bounds.minZ + f.radius, arena.bounds.maxZ - f.radius);
 }
 function supportHeight(f, arena) {
   let height = 0;
   for (const rect of arena.colliders) if (rect.y + rect.h <= f.y + EPS && circleRectOverlap(f.x, f.z, f.radius, rect)) height = Math.max(height, rect.y + rect.h);
   return height;
 }
-function verticalMove(f, arena) {
-  const oldY = f.y, height = playerHeight(f); f.vy -= WORLD.gravity * DT; let target = oldY + f.vy * DT;
-  if (f.vy <= 0) {
-    let floor = 0;
-    for (const rect of arena.colliders) { const top = rect.y + rect.h; if (top <= oldY + EPS && top >= target - EPS && circleRectOverlap(f.x, f.z, f.radius, rect)) floor = Math.max(floor, top); }
-    if (target <= floor) { target = floor; f.vy = 0; f.grounded = true; } else f.grounded = false;
-  } else {
-    let ceiling = Infinity;
-    for (const rect of arena.colliders) if (rect.y >= oldY + height - EPS && rect.y <= target + height + EPS && circleRectOverlap(f.x, f.z, f.radius, rect)) ceiling = Math.min(ceiling, rect.y - height);
-    if (target >= ceiling) { target = ceiling; f.vy = 0; } f.grounded = false;
-  }
-  f.y = Math.max(0, target);
-}
-function movementTick(f, input, arena) {
+function refreshGrounded(f, arena) { f.grounded = f.alive && f.vy <= EPS && Math.abs(f.y - supportHeight(f, arena)) <= EPS; }
+function movementTick(f, input, arena, peers = [], headroomPeers = peers) {
   f.yaw = input.yaw; f.pitch = input.pitch;
   if (!f.alive) { f.vx = f.vy = f.vz = 0; return; }
   if (input.crouch) f.crouching = true;
-  else if (!arena.colliders.some(rect => bodyOverlapsBox(f, rect, WORLD.standHeight))) f.crouching = false;
+  else if (!arena.colliders.some(rect => bodyOverlapsBox(f, rect, WORLD.standHeight)) && !headroomPeers.some(peer => bodyOverlapsPlayer(f, peer, WORLD.standHeight))) f.crouching = false;
   if (f.grounded && input.jump && !f.previousInput?.jump && !f.crouching) { f.vy = WORLD.jumpSpeed; f.grounded = false; }
   let strafe = Number(input.right) - Number(input.left), forward = Number(input.up) - Number(input.down); const length = Math.hypot(strafe, forward);
   if (length > 0) { strafe /= length; forward /= length; }
@@ -173,15 +206,39 @@ function movementTick(f, input, arena) {
   const accel = f.grounded ? (length ? 43 : 58) : 7;
   const velocityX = targetX - f.vx, velocityZ = targetZ - f.vz, velocityDelta = Math.hypot(velocityX, velocityZ), accelerationFraction = velocityDelta > EPS ? Math.min(1, accel * DT / velocityDelta) : 0;
   f.vx += velocityX * accelerationFraction; f.vz += velocityZ * accelerationFraction;
-  verticalMove(f, arena); horizontalMove(f, f.vx * DT, f.vz * DT, arena);
-  if (f.grounded && f.y > supportHeight(f, arena) + EPS) f.grounded = false;
+  f.vy -= WORLD.gravity * DT;
+  bodyMove(f, f.vx * DT, f.vy * DT, f.vz * DT, arena, peers);
+  refreshGrounded(f, arena);
+}
+function separatePrediction(player, peers, arena) {
+  // Received peers can be older than the predicted local pose. Restore a legal
+  // contact before sweeping, without moving the snapshot or pulling through cover.
+  for (let pass = 0; pass < 12; pass++) {
+    let overlapping = false;
+    for (const peer of peers) {
+      if (!bodyOverlapsPlayer(player, peer)) continue;
+      overlapping = true;
+      const dx = player.x - peer.x, dz = player.z - peer.z, distance = Math.hypot(dx, dz), minimum = player.radius + peer.radius;
+      const fallback = player.id < peer.id ? -1 : 1;
+      const nx = distance > EPS ? dx / distance : ((player.id + peer.id) % 2 ? fallback : 0), nz = distance > EPS ? dz / distance : (nx ? 0 : fallback), push = minimum - distance + EPS;
+      bodyMove(player, nx * push, 0, nz * push, arena);
+      const inward = Math.min(0, player.vx * nx + player.vz * nz); player.vx -= inward * nx; player.vz -= inward * nz;
+    }
+    if (!overlapping) break;
+  }
+  refreshGrounded(player, arena);
 }
 /** Prediction mutates only the supplied player copy, never state, rounds, health or weapons. */
-export function predictLocalMovement(player, raw, mapIdOrMap = 'courtyard', ticks = 1) {
+export function predictLocalMovement(player, raw, mapIdOrMap = 'courtyard', ticks = 1, peers = []) {
   const arena = typeof mapIdOrMap === 'string' ? MAPS[mapIdOrMap] : mapIdOrMap;
   if (!arena) return player;
   const count = clamp(Math.floor(Number.isFinite(ticks) ? ticks : 1), 0, TICK_RATE / 4);
-  for (let i = 0; i < count; i++) { const input = readInput(player, raw); movementTick(player, input, arena); player.previousInput = input; }
+  for (let i = 0; i < count; i++) {
+    if (player.alive && peers.length) separatePrediction(player, peers, arena);
+    const input = readInput(player, raw); movementTick(player, input, arena, peers);
+    if (player.alive && peers.length) separatePrediction(player, peers, arena);
+    player.previousInput = input;
+  }
   return player;
 }
 /** Slab ray/box intersection in metres. A ray starting inside cover contacts at zero. */
@@ -251,22 +308,36 @@ function applyDamage(state, pending) {
   }
 }
 function separatePlayers(state, arena) {
-  // Bodies physically block one another. Tiny authoritative steps prevent crossing;
-  // wall-tested correction preserves cover contacts instead of pushing through a wall.
-  for (let pass = 0; pass < 3; pass++) for (let i = 0; i < state.players.length; i++) for (let j = i + 1; j < state.players.length; j++) {
-    const a = state.players[i], b = state.players[j]; if (!a.alive || !b.alive || a.y >= b.y + playerHeight(b) - EPS || b.y >= a.y + playerHeight(a) - EPS) continue;
-    const dx = b.x - a.x, dz = b.z - a.z, dist = Math.hypot(dx, dz), min = a.radius + b.radius; if (dist >= min - EPS) continue;
-    const nx = dist > EPS ? dx / dist : ((a.id + b.id) % 2 ? 1 : 0), nz = dist > EPS ? dz / dist : (nx ? 0 : 1), push = (min - dist) / 2 + EPS;
-    const ax = a.x, az = a.z, bx = b.x, bz = b.z;
-    horizontalMove(a, -nx * push, -nz * push, arena); horizontalMove(b, nx * push, nz * push, arena);
-    const after = Math.hypot(b.x - a.x, b.z - a.z), remaining = min - after;
-    if (remaining > EPS && after > EPS) {
-      const rx = (b.x - a.x) / after, rz = (b.z - a.z) / after;
-      if (Math.hypot(a.x - ax, a.z - az) < Math.hypot(b.x - bx, b.z - bz)) horizontalMove(b, rx * remaining, rz * remaining, arena);
-      else horizontalMove(a, -rx * remaining, -rz * remaining, arena);
+  // Only the closing movement yields at a contact. A stationary opponent cannot be
+  // shoved through a doorway, and a wall-pinned queue resolves outward in one pass.
+  for (let pass = 0; pass < 16; pass++) {
+    let overlapping = false;
+    for (let i = 0; i < state.players.length; i++) for (let j = i + 1; j < state.players.length; j++) {
+      const a = state.players[i], b = state.players[j]; if (!a.alive || !b.alive || a.y >= b.y + playerHeight(b) - EPS || b.y >= a.y + playerHeight(a) - EPS) continue;
+      const dx = b.x - a.x, dz = b.z - a.z, dist = Math.hypot(dx, dz), min = a.radius + b.radius; if (dist >= min - EPS) continue;
+      overlapping = true;
+      const nx = dist > EPS ? dx / dist : ((a.id + b.id) % 2 ? 1 : 0), nz = dist > EPS ? dz / dist : (nx ? 0 : 1);
+      const inwardA = Math.max(0, a.vx * nx + a.vz * nz), inwardB = Math.max(0, -b.vx * nx - b.vz * nz), closing = inwardA + inwardB;
+      // A falling body yields to the player underneath rather than pushing an idle
+      // opponent sideways. Peer bodies provide neither ground nor jump height.
+      const shareA = closing > EPS ? inwardA / closing : a.vy < -EPS && a.y > b.y + EPS ? 1 : b.vy < -EPS && b.y > a.y + EPS ? 0 : .5, push = min - dist + EPS;
+      const ax = a.x, az = a.z, bx = b.x, bz = b.z;
+      bodyMove(a, -nx * push * shareA, 0, -nz * push * shareA, arena); bodyMove(b, nx * push * (1 - shareA), 0, nz * push * (1 - shareA), arena);
+      const after = Math.hypot(b.x - a.x, b.z - a.z), remaining = min - after;
+      if (remaining > EPS && after > EPS) {
+        const rx = (b.x - a.x) / after, rz = (b.z - a.z) / after;
+        const fractionA = push * shareA > EPS ? Math.hypot(a.x - ax, a.z - az) / (push * shareA) : 1;
+        const fractionB = push * (1 - shareA) > EPS ? Math.hypot(b.x - bx, b.z - bz) / (push * (1 - shareA)) : 1;
+        // Transfer a blocked correction to the body that still has space. Compare
+        // the fraction completed, because the moving body may own the whole push.
+        if (fractionA < fractionB) bodyMove(b, rx * (remaining + EPS), 0, rz * (remaining + EPS), arena);
+        else bodyMove(a, -rx * (remaining + EPS), 0, -rz * (remaining + EPS), arena);
+      }
+      a.vx -= inwardA * nx; a.vz -= inwardA * nz; b.vx += inwardB * nx; b.vz += inwardB * nz;
     }
-    const inwardA = Math.max(0, a.vx * nx + a.vz * nz), inwardB = Math.min(0, b.vx * nx + b.vz * nz); a.vx -= inwardA * nx; a.vz -= inwardA * nz; b.vx -= inwardB * nx; b.vz -= inwardB * nz;
+    if (!overlapping) break;
   }
+  for (const f of state.players) refreshGrounded(f, arena);
 }
 function interactionAllowed(f, input, tick) { return f.alive && f.grounded && Math.hypot(f.vx, f.vz) < .25 && !input.fire && !f.reloadTicks && f.lastHitTick !== tick; }
 /** The visible charge must be reachable around solid cover; squad bodies are harmless. */
@@ -336,7 +407,7 @@ export function step(state, rawInputs = []) {
   state.roundTicks = Math.max(0, state.roundTicks - 1);
   if (state.bomb.status === 'planted') { state.bomb.timerTicks = Math.max(0, state.bomb.timerTicks - 1); if (!state.bomb.timerTicks) { resolveRound(state); return state; } }
   const arena = MAPS[state.mapId], pending = [];
-  for (const f of state.players) movementTick(f, inputs[f.id], arena);
+  for (const f of state.players) movementTick(f, inputs[f.id], arena, [], state.players);
   separatePlayers(state, arena);
   for (const f of state.players) tickWeapon(state, f, inputs[f.id], pending);
   applyDamage(state, pending); updateBomb(state, inputs); resolveRound(state);

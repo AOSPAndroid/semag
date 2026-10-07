@@ -104,6 +104,8 @@ This is a true first-person WebGL game with local voxel artwork. Stop moving for
 
 The tactical map shows cover, both sites, your position and living teammates. Painted site signs help you navigate the three distinct environments. The main clock switches to the charge countdown after planting; planting, defusing and reloading show progress. Round results explain the outcome before the next setup phase.
 
+Jump onto low crates, slide along solid cover, and step off ledges into a fall. Movement checks the full three-dimensional path, including landings at crate edges. Living players block movement, and local movement prediction also checks those bodies to reduce camera corrections at contact.
+
 Shadow Lantern:
 
 | Action | Keys |
@@ -117,7 +119,7 @@ Shadow Lantern:
 
 Nine heists cross Lantern Garden, Rainroof Citadel and Frost Keep. Collect every guarded seal, then return to the extraction mark. Patrol cones stop at solid cover; suspicion warns before detection. Shadows and sneaking reduce detection, while noisy movement and kunai impacts draw investigation. Approach an unaware guard from behind and hold Interact for a takedown. Health, finite tools and alarm pressure carry through the campaign. A visible deadline prevents waiting forever. Veteran starts by default; Standard and Nightmare have separate completed-campaign score records. Cleared missions wait for an explicit Continue button.
 
-Watch the exposure indicator and patrol sight cones when choosing a route. Nearby interaction prompts show channel progress, and the objective changes from recovering seals to extraction. Patrols keep separate bodies while passing one another and navigating solid cover.
+Watch the exposure indicator and patrol sight cones when choosing a route. Nearby interaction prompts show channel progress, and the objective changes from recovering seals to extraction. Patrols keep separate bodies while passing one another and navigating solid cover. Courtyard edges allow sliding while keeping bodies separate; kunai stop at the actual wall or border surface.
 
 Shinobi Showdown:
 
@@ -132,6 +134,8 @@ Shinobi Showdown:
 | Dash | Space / Shift |
 
 Aim before attacking: each cut commits to its starting direction. Face an incoming attack and time a parry to stun a swordsman or reflect a kunai. Dashes cost stamina and cannot pass through cover or bodies. Three kunai recover one at a time during free movement. Touch screens provide separate movement and aim pads plus five action buttons. Both players press Ready; the first to two round wins takes the match. Rounds rotate Moonlit Rooftops, Lantern Garden and Winter Shrine and last 75 seconds. Higher remaining health wins a timeout; equal health draws. Matches end after at most five rounds, and both players must agree to a rematch.
+
+Brushing another fighter blocks movement into their body while preserving sideways movement and retreat. Dash flanks use the same cover contacts, and kunai collisions follow the resulting movement path.
 
 Afterimage:
 

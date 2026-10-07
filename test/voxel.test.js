@@ -127,6 +127,102 @@ test('jump is a rising-edge action, respects gravity and lands on low crates', (
   assert.ok(maxY > 1); assert.ok(f.x > .2); close(f.y, .8); assert.equal(f.grounded, true); assert.equal(f.vy, 0);
   game.predictLocalMovement(f, input({ jump: true }), arena); close(f.y, .8); game.predictLocalMovement(f, input(), arena); game.predictLocalMovement(f, input({ jump: true }), arena); assert.ok(f.y > .8);
 });
+test('falling across a crate lip lands where horizontal and vertical trajectories meet', () => {
+  const arena = fixtureMap([{ x: 0, y: 0, z: -2, w: 2, h: .8, d: 4 }]);
+  for (const start of [{ x: -.325, y: .81, vy: -2 }, { x: -.32, y: .8, vy: 0 }]) {
+    const f = fixturePlayer(); Object.assign(f, { ...start, z: 0, vx: 5.4, vz: 0, grounded: false });
+    game.predictLocalMovement(f, input({ right: true }), arena);
+    assert.ok(f.x > -.32, 'the foot crosses the lip before landing'); close(f.y, .8); close(f.vy, 0); assert.equal(f.grounded, true);
+    game.predictLocalMovement(f, input({ right: true }), arena, 12); close(f.y, .8); assert.equal(f.grounded, true);
+  }
+});
+test('leaving an exact crate edge falls immediately instead of gaining a floating jump', () => {
+  const arena = fixtureMap([{ x: 0, y: 0, z: -2, w: 2, h: .8, d: 4 }]), f = fixturePlayer();
+  Object.assign(f, { x: -.32, y: .8, z: 0, vx: -5.4, grounded: true });
+  game.predictLocalMovement(f, input({ left: true }), arena);
+  assert.ok(f.x < -.32); assert.ok(f.y < .8); assert.equal(f.grounded, false);
+  game.predictLocalMovement(f, input({ left: true, jump: true }), arena); assert.ok(f.vy < 0);
+});
+test('a rising head entering an overhang contacts its underside while preserving lateral motion', () => {
+  const arena = fixtureMap([{ x: 0, y: 1.82, z: -2, w: 2, h: 1, d: 4 }]), f = fixturePlayer();
+  Object.assign(f, { x: -.325, z: 0, vx: 5.4 });
+  game.predictLocalMovement(f, input({ right: true, jump: true }), arena);
+  assert.ok(f.x > -.32); close(f.y, .02); close(f.vy, 0); assert.equal(f.grounded, false);
+  game.predictLocalMovement(f, input({ right: true, jump: true }), arena, 24); close(f.y, 0); assert.equal(f.grounded, true);
+});
+test('a stationary body blocks pressure without moving, and prediction agrees at its contact', () => {
+  const state = lane(fighting(), { ax: 20, az: .32, bx: 20, bz: -.32 }), predicted = game.cloneState(state.players[0]), peer = game.cloneState(state.players[1]);
+  const before = game.cloneState(peer);
+  for (let i = 0; i < 120; i++) {
+    const keys = input({ up: true }, state.players[0]); game.predictLocalMovement(predicted, keys, state.mapId, 1, [peer]);
+    game.step(state, [keys, input({}, state.players[1])]);
+    close(state.players[1].z, -.32); assert.ok(state.players[0].z >= .32 - 1e-8); close(predicted.z, state.players[0].z, 2e-8); close(predicted.vz, 0);
+  }
+  assert.deepEqual(peer, before);
+});
+test('wall-pinned six-player queues preserve all body and solid clearances under continuous pressure', () => {
+  const state = fighting({ teamSize: 3 });
+  for (const f of state.players) Object.assign(f, { x: -4, y: 0, z: 6.32 + f.id * .64 });
+  for (let tick = 0; tick < 240; tick++) {
+    game.step(state, state.players.map(f => input({ up: true }, f)));
+    for (let i = 0; i < state.players.length; i++) {
+      assert.ok(state.players[i].z >= 6.32 - 1e-8);
+      if (i) assert.ok(state.players[i].z - state.players[i - 1].z >= .64 - 1e-8);
+    }
+  }
+});
+test('prediction repairs stale peer overlap and slides around a body without changing peer state', () => {
+  const arena = fixtureMap([]), peer = fixturePlayer(), f = fixturePlayer();
+  Object.assign(peer, { id: 1, x: 0, z: 0 }); Object.assign(f, { x: 0, z: .25, vz: -5.4 });
+  const before = game.cloneState(peer);
+  game.predictLocalMovement(f, input({ up: true }), arena, 1, [peer]); close(f.z, .64, 2e-8); close(f.vz, 0);
+  for (let i = 0; i < 120; i++) {
+    game.predictLocalMovement(f, input({ up: true, right: true }), arena, 1, [peer]);
+    assert.ok(Math.hypot(f.x - peer.x, f.z - peer.z) >= .64 - 1e-8);
+  }
+  assert.ok(f.x > 2); assert.ok(f.z < 0); assert.deepEqual(peer, before);
+});
+test('prediction respects peer headroom but lets airborne or dead bodies clear vertically', () => {
+  const arena = fixtureMap([]), peer = fixturePlayer(), f = fixturePlayer();
+  Object.assign(peer, { id: 1, x: 0, z: 0, y: 1.3, grounded: false }); Object.assign(f, { x: 0, z: 0, crouching: true });
+  game.predictLocalMovement(f, input(), arena, 1, [peer]); assert.equal(f.crouching, true); close(f.x, 0); close(f.z, 0);
+  peer.alive = false; game.predictLocalMovement(f, input(), arena, 1, [peer]); assert.equal(f.crouching, false);
+  peer.alive = true; peer.y = 0;
+  Object.assign(f, { x: -.34, y: 1.9, z: 0, vx: 5.4, vy: 0, grounded: false });
+  game.predictLocalMovement(f, input({ right: true }), arena, 1, [peer]); assert.ok(f.x > -.32); assert.equal(f.grounded, false);
+});
+test('falling onto another player yields sideways without moving the lower body or granting a boost', () => {
+  const state = lane(fighting(), { ax: 20, az: 0, bx: 20, bz: 0 }), [a, b] = state.players;
+  Object.assign(a, { y: 1.8, grounded: false });
+  const predicted = game.cloneState(a), peer = game.cloneState(b);
+  game.predictLocalMovement(predicted, input(), state.mapId, 1, [peer]); game.step(state, neutral(state));
+  for (const key of ['x', 'y', 'z', 'vx', 'vy', 'vz']) close(predicted[key], a[key], 2e-8);
+  close(b.x, 20); close(b.z, 0); assert.ok(a.y < 1.8); assert.equal(a.grounded, false); assert.ok(Math.hypot(a.x - b.x, a.z - b.z) >= .64 - 1e-8);
+  game.step(state, [input({ jump: true }, a), input({}, b)]); assert.ok(a.vy < 0);
+});
+test('tiny stale-peer corrections cannot push a player through a rounded solid corner', () => {
+  const arena = fixtureMap([{ x: 0, y: 0, z: 0, w: 2, h: 3, d: 2 }]);
+  for (const overlap of [1e-6, 1e-5, 1e-4]) {
+    const f = fixturePlayer(), peer = fixturePlayer(), corner = -.32 / Math.SQRT2;
+    Object.assign(f, { x: corner, z: corner }); Object.assign(peer, { id: 1, x: corner - (.64 - overlap) / Math.SQRT2, z: corner - (.64 - overlap) / Math.SQRT2 });
+    const before = game.cloneState(peer);
+    game.predictLocalMovement(f, input(), arena, 1, [peer]);
+    assert.ok(Math.hypot(f.x, f.z) >= .32 - 1e-8); assert.deepEqual(peer, before);
+  }
+});
+test('oblique airborne player contacts against the canal boundary converge without penetration', () => {
+  const state = fighting({ mapId: 'canal' }), [a, b] = state.players;
+  Object.assign(a, { x: -24.68, y: .7415, z: 15.85910775469209, vx: -1.4271347465374, vy: 3.64, vz: 3.3048976299044037, grounded: false });
+  Object.assign(b, { x: -24.09389368513133, y: 0, z: 16.116166867876334, vx: -.051151399110349605, vy: 0, vz: .11845422311820819, grounded: true });
+  game.step(state, [input({ left: true, right: true, jump: true, yaw: .3396092126011499 }, a), input({ up: true, yaw: -1.4999219264544963 }, b)]);
+  assert.ok(a.x >= -24.68 - 1e-8); assert.ok(b.x >= -24.68 - 1e-8); assert.ok(Math.hypot(a.x - b.x, a.z - b.z) >= .64 - 1e-8);
+});
+test('body correction off a crate refreshes grounded state before the next jump', () => {
+  const state = fighting(), [a, b] = state.players;
+  Object.assign(a, { x: 1.5, y: 1.2, z: 12.2, grounded: true }); Object.assign(b, { x: 1.05, y: 1.2, z: 12.2, grounded: true });
+  game.step(state, neutral(state)); assert.ok(a.x > 1.52); assert.equal(a.grounded, false); close(a.y, 1.2);
+  game.step(state, [input({ jump: true }, a), input({}, b)]); assert.ok(a.vy < 0); assert.ok(a.y < 1.2);
+});
 test('prediction and authority use the same local movement physics', () => {
   const state = lane(fighting(), { ax: 20, az: 10, bx: -20, bz: -18 }), predicted = game.cloneState(state.players[0]);
   for (let i = 0; i < 240; i++) { const keys = input({ up: true, walk: i > 90, jump: i === 30, yaw: .2 }, state.players[0]); game.predictLocalMovement(predicted, keys, state.mapId); game.step(state, [keys, input({}, state.players[1])]); }

@@ -32,6 +32,7 @@ const routes = [
 export const LEVELS = Object.freeze(routes.map((level, i) => Object.freeze({ ...level, id: i + 1, walls: Object.freeze(level.walls.map(Object.freeze)), shadows: Object.freeze(level.shadows.map(Object.freeze)), guards: Object.freeze(level.guards.map(g => Object.freeze({ ...g, points: Object.freeze(g.points.map(Object.freeze)) }))), seals: Object.freeze(level.seals.map(Object.freeze)), caches: Object.freeze(level.caches.map(Object.freeze)), spawn: Object.freeze(level.spawn), exit: Object.freeze(level.exit) })));
 export const TOTAL_LEVELS = LEVELS.length;
 const EPS = 1e-8;
+const COURTYARD = Object.freeze({ left: 38, top: 48, right: WORLD.width - 38, bottom: WORLD.height - 38 });
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const angleDelta = (a, b) => Math.atan2(Math.sin(a - b), Math.cos(a - b));
 const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -48,8 +49,10 @@ export function segmentCircle(x, y, dx, dy, cx, cy, radius) {
   const ox = x - cx, oy = y - cy, c = ox * ox + oy * oy - radius * radius;
   if (c <= 0) return 0;
   const a = dx * dx + dy * dy; if (a < EPS) return null;
-  const b = 2 * (ox * dx + oy * dy), disc = b * b - 4 * a * c; if (disc < 0) return null;
-  const t = (-b - Math.sqrt(disc)) / (2 * a); return t >= 0 && t <= 1 ? t : null;
+  // Measuring at the closest point avoids a large quadratic subtraction at a grazing contact.
+  const closest = -(ox * dx + oy * dy) / a, px = ox + dx * closest, py = oy + dy * closest;
+  const depth = radius * radius - px * px - py * py; if (depth < -EPS) return null;
+  const t = closest - Math.sqrt((depth > EPS ? depth : 0) / a); return t >= 0 && t <= 1 ? t : null;
 }
 /** Exact rounded rectangle contact; the empty square at a wall corner stays free. */
 export function sweepCircleRect(x, y, dx, dy, radius, r) {
@@ -66,9 +69,19 @@ export function sweepCircleRect(x, y, dx, dy, radius, r) {
   }
   return best;
 }
+/** Border faces participate in a sweep before sliding, rather than pushing a body back afterward. */
+function sweepCourtyard(x, y, dx, dy, radius = 0) {
+  let best = null;
+  const offer = (time, nx, ny) => { if (time >= -EPS && time <= 1 + EPS && (!best || time < best.time)) best = { time: clamp(time, 0, 1), nx, ny }; };
+  if (dx < -EPS) offer((COURTYARD.left + radius - x) / dx, 1, 0);
+  if (dx > EPS) offer((COURTYARD.right - radius - x) / dx, -1, 0);
+  if (dy < -EPS) offer((COURTYARD.top + radius - y) / dy, 0, 1);
+  if (dy > EPS) offer((COURTYARD.bottom - radius - y) / dy, 0, -1);
+  return best;
+}
 export function moveBody(body, dx, dy, walls, radius = PLAYER_RADIUS, blockers = []) {
   for (let pass = 0; pass < 3; pass++) {
-    let contact = null;
+    let contact = sweepCourtyard(body.x, body.y, dx, dy, radius);
     for (const r of walls) { const hit = sweepCircleRect(body.x, body.y, dx, dy, radius, r); if (hit && (!contact || hit.time < contact.time)) contact = hit; }
     for (const other of blockers) {
       const time = segmentCircle(body.x, body.y, dx, dy, other.x, other.y, radius + other.radius);
@@ -83,7 +96,7 @@ export function moveBody(body, dx, dy, walls, radius = PLAYER_RADIUS, blockers =
     const into = dx * contact.nx + dy * contact.ny; if (into < 0) { dx -= into * contact.nx; dy -= into * contact.ny; }
     if (Math.hypot(dx, dy) < EPS) break;
   }
-  body.x = clamp(body.x, radius + 38, WORLD.width - radius - 38); body.y = clamp(body.y, radius + 48, WORLD.height - radius - 38);
+  body.x = clamp(body.x, COURTYARD.left + radius, COURTYARD.right - radius); body.y = clamp(body.y, COURTYARD.top + radius, COURTYARD.bottom - radius);
 }
 export function lineOfSight(level, a, b) {
   return !level.walls.some(r => { const t = segmentRect(a.x, a.y, b.x - a.x, b.y - a.y, r); return t !== null && t < 1 - EPS; });
@@ -91,10 +104,7 @@ export function lineOfSight(level, a, b) {
 export function rayEnd(level, x, y, angle, range) {
   const dx = Math.cos(angle) * range, dy = Math.sin(angle) * range; let time = 1;
   for (const r of level.walls) { const hit = segmentRect(x, y, dx, dy, r); if (hit !== null) time = Math.min(time, hit); }
-  // The enclosing courtyard is a real limit, also shown as the border wall.
-  const maxX = WORLD.width - 38, maxY = WORLD.height - 38;
-  if (dx > 0) time = Math.min(time, (maxX - x) / dx); if (dx < 0) time = Math.min(time, (38 - x) / dx);
-  if (dy > 0) time = Math.min(time, (maxY - y) / dy); if (dy < 0) time = Math.min(time, (48 - y) / dy);
+  const border = sweepCourtyard(x, y, dx, dy); if (border) time = Math.min(time, border.time);
   return { x: x + dx * time, y: y + dy * time };
 }
 export function inShadow(level, player) { return level.shadows.some(r => player.x >= r.x && player.x <= r.x + r.w && player.y >= r.y && player.y <= r.y + r.h); }
@@ -284,10 +294,11 @@ function simulate(s, input, dt) {
   }
   s.kunaiHeld = kunai;
   for (const shot of s.projectiles) {
-    const sx = shot.vx * dt, sy = shot.vy * dt; let hit = null;
+    const travel = Math.min(dt, shot.life), sx = shot.vx * travel, sy = shot.vy * travel;
+    let hit = sweepCourtyard(shot.x, shot.y, sx, sy, 2)?.time ?? null;
     for (const r of level.walls) { const contact = sweepCircleRect(shot.x, shot.y, sx, sy, 2, r); if (contact && (hit === null || contact.time < hit)) hit = contact.time; }
     shot.x += sx * (hit ?? 1); shot.y += sy * (hit ?? 1); shot.life -= dt;
-    if (hit !== null || shot.life <= 0 || shot.x < 45 || shot.x > WORLD.width - 45 || shot.y < 55 || shot.y > WORLD.height - 45) { noise(s, shot.x, shot.y, 235, 'kunai'); shot.life = 0; }
+    if (hit !== null || shot.life <= EPS) { noise(s, shot.x, shot.y, 235, 'kunai'); shot.life = 0; }
   }
   s.projectiles = s.projectiles.filter(shot => shot.life > 0);
   for (const g of s.guards) { updateGuard(s, g, dt); if (s.phase !== 'playing') break; }

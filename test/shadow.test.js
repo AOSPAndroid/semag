@@ -22,6 +22,27 @@ test('rounded wall corners leave empty diagonal space available', () => { const 
 test('swept wall contact prevents tunneling and allows tangential sliding', () => { const body = { x: 100, y: 250 }; moveBody(body, 450, 40, LEVELS[0].walls); close(body.x, 190); close(body.y, 290); });
 test('body touching a wall can retreat or move along it without sticking', () => { const b = { x: 190, y: 230 }; moveBody(b,-25,20,LEVELS[0].walls); close(b.x,165); close(b.y,250); });
 test('physical guard bodies stop frontal run-through and allow retreat', () => { const b = { x: 80, y: 100 }; moveBody(b,100,0,[],10,[{x:120,y:100,radius:11}]); close(b.x,99); moveBody(b,-20,0,[],10,[{x:120,y:100,radius:11}]); close(b.x,79); });
+test('a clear path grazing a guard remains responsive at every movement angle', () => {
+ for(let degrees=0;degrees<360;degrees+=10){const angle=degrees*Math.PI/180,tx=Math.cos(angle),ty=Math.sin(angle),b={x:480-21*ty-50*tx,y:320+21*tx-50*ty},wanted={x:b.x+100*tx,y:b.y+100*ty};
+  moveBody(b,100*tx,100*ty,[],10,[{x:480,y:320,radius:11}]);assert.ok(Math.hypot(b.x-wanted.x,b.y-wanted.y)<1e-7,'a numerical grazing normal must not shorten a clear path');
+ }
+});
+test('courtyard contact cannot clamp a sliding player or guard into another body', () => {
+ for(const radius of [10,11])for(const mirrorX of [false,true])for(const mirrorY of [false,true])for(const amount of [178/60/Math.SQRT2,30,100]){
+  const x=38+radius,y=48+radius,otherRadius=21-radius,otherX=38+otherRadius,otherY=y+21;
+  const reflect=(px,py)=>({x:mirrorX?960-px:px,y:mirrorY?650-py:py}),b=reflect(x,y),other={...reflect(otherX,otherY),radius:otherRadius};
+  moveBody(b,(mirrorX?1:-1)*amount,(mirrorY?-1:1)*amount,[],radius,[other]);
+  assert.ok(Math.hypot(b.x-other.x,b.y-other.y)>=21-1e-6,'border must constrain the original sweep before body contact');
+  assert.ok(b.x>=38+radius&&b.x<=922-radius&&b.y>=48+radius&&b.y<=602-radius);
+  const before={...b};moveBody(b,(mirrorX?-1:1)*20,(mirrorY?1:-1)*20,[],radius,[other]);
+  assert.ok(Math.hypot(b.x-before.x,b.y-before.y)>15,'retreat from simultaneous contacts stays responsive');
+ }
+});
+test('swept courtyard faces preserve full tangent movement and stop at both corner faces', () => {
+ const b={x:100,y:58};moveBody(b,100,-100,[]);close(b.x,200);close(b.y,58);
+ moveBody(b,1000,1000,[]);close(b.x,912);close(b.y,592);
+ moveBody(b,-1000,-1000,[]);close(b.x,48);close(b.y,58);
+});
 test('opposing live guards pass around one another without stacking or a parked queue', () => {
  const s=createState(),base=s.guards[0];s.player.x=100;s.player.y=100;
  const a={...base,id:0,x:400,y:550,facing:0,mode:'alert',lastSeen:{x:650,y:550},turnWait:0},b={...base,id:1,x:600,y:550,facing:Math.PI,mode:'alert',lastSeen:{x:350,y:550},turnWait:0};s.guards=[a,b];
@@ -50,6 +71,17 @@ test('quiet shadow gives more time but never indefinite visibility immunity', ()
 test('smoke uses one charge per press and blocks crossing sight lines', () => { const s=createState(),g=fixtureGuard(s);s.player.x=160;s.player.y=100;assert.equal(guardSees(s,g),true);play(s,{smoke:true},1);assert.equal(s.smoke,1);assert.equal(guardSees(s,g),false);assert.equal(s.clouds.length,1);play(s,{},.02);step(s,{smoke:true});assert.equal(s.smoke,0); });
 test('smoke expires after five active seconds and does not stop the campaign clock', () => { const s=quiet();step(s,{smoke:true});play(s,{},5.1);assert.equal(s.clouds.length,0);assert.ok(s.elapsed>5); });
 test('kunai press is finite and its swept impact stops at the real wall face', () => { const s=quiet();s.player.x=100;s.player.y=250;play(s,{kunai:true,aimX:500,aimY:250},.4);assert.equal(s.kunai,3);const impact=s.events.find(e=>e.type==='noise'&&e.kind==='kunai');assert.ok(impact);close(impact.x,198);close(impact.y,250); });
+test('kunai stop exactly one projectile radius before each drawn courtyard face', () => {
+ for(const [x,y,aimX,aimY,hitX,hitY]of[[60,100,0,100,40,100],[900,100,960,100,920,100],[100,70,100,0,100,50],[100,580,100,640,100,600]]){
+  const s=quiet();Object.assign(s.player,{x,y});play(s,{kunai:true,aimX,aimY},.15);
+  const impact=s.events.find(e=>e.type==='noise'&&e.kind==='kunai');assert.ok(impact);close(impact.x,hitX);close(impact.y,hitY);assert.equal(s.projectiles.length,0);
+  const ray=rayEnd(LEVELS[0],x,y,Math.atan2(aimY-y,aimX-x),400);close(Math.hypot(ray.x-impact.x,ray.y-impact.y),2);
+ }
+});
+test('a distraction ending between fixed steps travels only its remaining lifetime', () => {
+ const s=quiet();s.projectiles=[{x:100,y:100,vx:480,vy:0,life:.005}];step(s,{});
+ const impact=s.events.find(e=>e.type==='noise'&&e.kind==='kunai');assert.ok(impact);close(impact.x,102.4);close(impact.y,100);assert.equal(s.projectiles.length,0);
+});
 test('a distraction beside solid cover cannot park a patrol indefinitely', () => { const s=createState();step(s,{kunai:true,aimX:250,aimY:250});play(s,{},40);assert.equal(s.guards[0].mode,'patrol');assert.ok(s.guards[0].x>230||s.guards[0].y>360);assert.equal(s.alarm,0); });
 test('investigating guards navigate around solid cover rather than entering it', () => { const s=createState(),g=fixtureGuard(s,{x:170,y:250,mode:'investigate',lastSeen:{x:440,y:250},investigateAge:0});s.player.x=100;s.player.y=550;play(s,{},3);assert.ok(g.y<185||g.y>315);assert.ok(!LEVELS[0].walls.some(r=>g.x>r.x&&g.x<r.x+r.w&&g.y>r.y&&g.y<r.y+r.h)); });
 test('takedowns require the rear, quiet facing and clear physical space', () => { const s=createState(),g=fixtureGuard(s,{x:130,y:100});s.player.x=106;s.player.y=100;assert.equal(rearTakedownAvailable(s,g),true);g.facing=Math.PI;assert.equal(rearTakedownAvailable(s,g),false);g.facing=0;g.mode='alert';assert.equal(rearTakedownAvailable(s,g),false); });
