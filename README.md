@@ -2,10 +2,12 @@
 
 ![Semag pixel-art logo](public/hub/logo.svg)
 
-A self-hosted browser hub with **22 games: thirteen solo and nine two-player games**. Pick **Open game** to preview a solo game, then press **Start game** when ready, or create a room and share your PC address or room link with a colleague. Both players press **Ready** before multiplayer play begins. Each room has two seats; the server can run several independent rooms at once.
+A self-hosted browser hub with **24 games: fourteen solo and ten two-player games**. Pick **Open game** to preview a solo game, then press **Start game** when ready, or create a room and share your PC address or room link with a colleague. Both players press **Ready** before multiplayer play begins. Each room has two seats; the server can run several independent rooms at once.
 
 | Game | Mode | Goal |
 | --- | --- | --- |
+| Shadow Lantern | Solo ninja stealth campaign | Collect guarded seals and extract across nine authored heists in three districts, using cover, sneaking, distractions and limited smoke. |
+| Shinobi Showdown | Real-time 1v1 ninja duel | Read committed katana strikes, parry or reflect kunai, and manage stamina across three arenas. |
 | Skyline Hook | Solo precision grappling platformer | Swing through twelve authored rooftops in three districts with campaign lives and a completed-run time record. |
 | Starfall Squadron | Solo bullet-hell shooter | Focus through six stages, defeat six guardians, graze shots and shape your ship with upgrades. |
 | Ironwood Tactics | Solo squad tactics roguelike | Read locked enemy intent, push and pull foes, and protect a beacon across nine missions and three biomes. |
@@ -29,7 +31,7 @@ A self-hosted browser hub with **22 games: thirteen solo and nine two-player gam
 | Oddstock Rumble | Bonus 1v1 platform brawler | Choose one of six comic fighters; use knockback, recovery, and stage control to take three stocks. |
 | Rift Survivor | Solo survival arena | Read enemy attack patterns, choose upgrades, and build synergistic relics and defeat four guardians across twenty waves. |
 
-The action games are original implementations. Checkers follows American checkers rules. All multiplayer card games use the same two-seat rooms, ready countdown, and rematch flow. The shelf filters show **All games**, **With a friend**, **Solo**, **Driving**, **Action**, or **Roguelike**. Search narrows the selected shelf by title, category, or description. Room joining and invitations sit above the game shelf.
+The action games are original implementations. Checkers follows American checkers rules. All multiplayer card games use the same two-seat rooms, ready countdown, and rematch flow. The shelf filters show **All games**, **With a friend**, **Solo**, **Driving**, **Action**, **Roguelike**, or **Ninja**. Search narrows the selected shelf by title, category, or description. Room joining and invitations sit above the game shelf.
 
 The graphics use original local artwork: illustrated cards and enemy portraits,
 expressive character sprites, textured arena materials, crafted board pieces,
@@ -44,7 +46,7 @@ deckbuilding, driving, and falling-block games; **Gauntlet** for Snake;
 **Master** for Minesweeper; and **Master puzzles** for 2048. Easier modes remain
 available in each game. Veteran and Nightmare demand stronger tactics, pace,
 or planning, and keep their records separate from easier runs. Revised challenge
-records stay separate from historical scores. The three new campaigns also keep
+records stay separate from historical scores. The authored solo campaigns also keep
 their completion records separate by difficulty.
 
 ## Starting a solo game
@@ -73,13 +75,40 @@ npm start
 
 You can also double-click `start-windows.bat` on Windows, or run `bash start-mac-linux.sh` on macOS/Linux. The launchers install dependencies when needed.
 
-Keep that terminal open while playing. Open **http://localhost:3000** in a current browser. Enter your player name and choose a game. Solo games start immediately from **Play solo** and run in your browser. For multiplayer, create a room and send your colleague the invitation, or **http://YOUR-PC-HOSTNAME:3000** plus the room code. Oddstock also asks both players to choose a fighter and the host to choose a stage before Ready becomes available. They can join a listed room or enter its code. Both players then press **Ready**. A player cancelling readiness during the initial countdown returns the room to the lobby.
+Keep that terminal open while playing. Open **http://localhost:3000** in a current browser. Enter your player name and choose a game. Solo games open with **Open game**, wait for **Start game**, and run in your browser. For multiplayer, create a room and send your colleague the invitation, or **http://YOUR-PC-HOSTNAME:3000** plus the room code. Oddstock also asks both players to choose a fighter and the host to choose a stage before Ready becomes available. They can join a listed room or enter its code. Both players then press **Ready**. A player cancelling readiness during the initial countdown returns the room to the lobby.
 
 The colleague must be able to reach your PC. On the same LAN or a suitable VPN, allow inbound **TCP port 3000** through the host PC's firewall. If the hostname does not resolve, use the LAN IP address printed by the server, for example `http://192.168.1.42:3000`. `localhost` refers to the machine opening the page, so share your PC's hostname or IP instead.
 
 For players on separate networks, use a VPN that lets both computers reach each other, or configure your router to forward TCP port 3000 to your PC and share your actual public hostname/IP. Running the server does not automatically make your PC reachable over the internet. Stop it with **Ctrl+C** when finished.
 
 ## Controls and rules
+
+Shadow Lantern:
+
+| Action | Keys |
+| --- | --- |
+| Move | WASD or arrow keys |
+| Sneak | Hold Shift |
+| Collect a seal / rear takedown | Hold E nearby |
+| Smoke | Space |
+| Distraction kunai | Q (A in ZQSD) |
+| Aim | Mouse or face with movement |
+
+Nine heists cross Lantern Garden, Rainroof Citadel and Frost Keep. Collect every guarded seal, then return to the extraction mark. Patrol cones stop at solid cover; suspicion warns before detection. Shadows and sneaking reduce detection, while noisy movement and kunai impacts draw investigation. Approach an unaware guard from behind and hold Interact for a takedown. Health, finite tools and alarm pressure carry through the campaign. A visible deadline prevents waiting forever. Veteran starts by default; Standard and Nightmare have separate completed-campaign score records. Cleared missions wait for an explicit Continue button.
+
+Shinobi Showdown:
+
+| Action | Keys |
+| --- | --- |
+| Move | WASD or arrow keys |
+| Aim | Mouse |
+| Quick katana cut | J / left mouse button |
+| Heavy katana cut | K / right mouse button |
+| Throw kunai | L |
+| Timed directional parry | I |
+| Dash | Space / Shift |
+
+Aim before attacking: each cut commits to its starting direction. Face an incoming attack and time a parry to stun a swordsman or reflect a kunai. Dashes cost stamina and cannot pass through cover or bodies. Three kunai recover one at a time during free movement. Touch screens provide separate movement and aim pads plus five action buttons. Both players press Ready; the first to two round wins takes the match. Rounds rotate Moonlit Rooftops, Lantern Garden and Winter Shrine and last 75 seconds. Higher remaining health wins a timeout; equal health draws. Matches end after at most five rounds, and both players must agree to a rematch.
 
 Afterimage:
 
@@ -146,7 +175,7 @@ For Checkers, click a piece and then a highlighted destination. Captures are man
 
 **Deckbound:** click/tap cards, or use 1–9 to play hand slots and E to end your turn. Read enemy intent before spending energy on attacks, block, and statuses. Select a target when several enemies are present. Eighteen encounters cross three acts with combat, elites, shops, rest stops, and events. Shape a deck of 24 card types with upgrades, removal, rewards, and eight relics. Rest can heal or upgrade; shops spend earned gold. Defeat the three bosses to win. Veteran starts by default with three mandatory road battles per act; Nightmare requires four. Complementary enemy pairs and disclosed allied shields make targeting matter. Card healing is limited to 18/12 HP per battle in Veteran/Nightmare, while late turns bring stronger pressure. Different offensive and defensive builds remain viable. Zero-cost Quickstep exhausts after use. Standard and Nightmare are selectable. Death ends the expedition; replay the seed or start again.
 
-Solo games have pause and new-game controls beside the score display. P pauses and R restarts; leaving the page or switching tabs pauses real-time solo games, including a pending Rift upgrade choice. Open **How to play** for the rules. Touch controls appear on smaller screens or touch devices; Prism's on-screen controls are also available from its desktop disclosure. Best scores and completed timed records are saved in the current browser when browser storage is available. Records are separate by game mode and difficulty, including each Apex track or championship. Rebalanced challenge records stay separate from historical scores and practice modes across all thirteen solo games. Master 2048 requires a complete six-trial tour; Minesweeper requires a clean field before its active-time limit. Starting a new game resets the run; best records remain.
+Solo games have pause and new-game controls beside the score display. P pauses and R restarts; leaving the page or switching tabs pauses real-time solo games, including a pending Rift upgrade choice. Open **How to play** for the rules. Touch controls appear on smaller screens or touch devices; Prism's on-screen controls are also available from its desktop disclosure. Best scores and completed timed records are saved in the current browser when browser storage is available. Records are separate by game mode and difficulty, including each Apex track or championship. Rebalanced challenge records stay separate from historical scores and practice modes across all fourteen solo games. Master 2048 requires a complete six-trial tour; Minesweeper requires a clean field before its active-time limit. Starting a new game resets the run; best records remain.
 
 Leaving a room resets that room's match and readiness. Rooms and matches live in memory and disappear when the server stops. An empty room is eventually removed; create another room if an old invitation has expired.
 
@@ -156,7 +185,7 @@ Leaving a room resets that room's match and readiness. Rooms and matches live in
 npm test
 ```
 
-Optional browser checks require Python Playwright and Chromium. Run `python test/polished-expansion-browser-smoke.py` for the three new games: native keyboard/touch play, campaign decision screens, explicit Start, pause, restart, ZQSD, record isolation, artwork, and desktop/mobile layouts. Run `python test/difficulty-browser-smoke.py` for the challenge defaults, native difficulty/mode selection, record isolation, pause, restart, and desktop/mobile layouts. Run `python test/paris-browser-smoke.py` for Survival acceleration, braking, crash-ending time records, the full delivery route, native controls, and responsive layouts. The longer gameplay regression suites below explicitly select the original Standard/Classic rules so their fixtures and records remain comparable. Run `python test/cards-browser-smoke.py` to start an isolated local server and exercise all three card games in two browser sessions. Run `python test/solo-browser-smoke.py` to check the three arcade and puzzle games, records, and mobile layouts on an isolated server. Run `python test/driving-browser-smoke.py` to exercise driving controls, full laps, traffic, records, pause, and touch layouts on an isolated server. Run `python test/skill-browser-smoke.py` for Vector Arena's two-player combat, Prism Shift's controls and modes, and Rift Survivor's combat and upgrades. Run `python test/expansion-browser-smoke.py` for Ember Delve, Deckbound, and two-client Oddstock Rumble with mobile, native controls, pause, and real gameplay checks. Run `python test/dungeon-browser-smoke.py` for a physical co-op clear through the first guardian, shrine boons, and the Tide Crypt transition; set `DUNGEON_ROOMS=9` for the extended expedition check. To check the original four games, run `python test/hub-browser-smoke.py http://127.0.0.1:3000` against a running host.
+Optional browser checks require Python Playwright and Chromium. Run `python test/ninja-browser-smoke.py` for Shadow Lantern and two-client Shinobi Showdown: native keyboard and touch controls, explicit Start and Ready, collisions, difficulty records, and desktop/mobile layouts. Run `python test/polished-expansion-browser-smoke.py` for the three new games: native keyboard/touch play, campaign decision screens, explicit Start, pause, restart, ZQSD, record isolation, artwork, and desktop/mobile layouts. Run `python test/difficulty-browser-smoke.py` for the challenge defaults, native difficulty/mode selection, record isolation, pause, restart, and desktop/mobile layouts. Run `python test/paris-browser-smoke.py` for Survival acceleration, braking, crash-ending time records, the full delivery route, native controls, and responsive layouts. The longer gameplay regression suites below explicitly select the original Standard/Classic rules so their fixtures and records remain comparable. Run `python test/cards-browser-smoke.py` to start an isolated local server and exercise all three card games in two browser sessions. Run `python test/solo-browser-smoke.py` to check the three arcade and puzzle games, records, and mobile layouts on an isolated server. Run `python test/driving-browser-smoke.py` to exercise driving controls, full laps, traffic, records, pause, and touch layouts on an isolated server. Run `python test/skill-browser-smoke.py` for Vector Arena's two-player combat, Prism Shift's controls and modes, and Rift Survivor's combat and upgrades. Run `python test/expansion-browser-smoke.py` for Ember Delve, Deckbound, and two-client Oddstock Rumble with mobile, native controls, pause, and real gameplay checks. Run `python test/dungeon-browser-smoke.py` for a physical co-op clear through the first guardian, shrine boons, and the Tide Crypt transition; set `DUNGEON_ROOMS=9` for the extended expedition check. To check the original four games, run `python test/hub-browser-smoke.py http://127.0.0.1:3000` against a running host.
 
 The action games use authoritative combat at 120 ticks per second with live snapshots at 60 Hz. Quiet lobbies and turn-based boards use a 10 Hz heartbeat; readiness, moves, card actions, and selections broadcast immediately. Browsers send gameplay inputs during combat and predict local movement for responsiveness; the server decides hits and validates board and card actions. Empty rooms do no simulation work, and the simulation timer sleeps when no players are connected. Card snapshots are prepared separately for each seat: opposing hands, the draw order, and hidden memory cards are not sent to a player's browser. Network latency and jitter still affect online play.
 

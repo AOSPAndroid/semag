@@ -287,7 +287,7 @@ def run(url):
                         watch(page, f"{game}/{role}")
                     first.goto(url)
                     first.wait_for_function("document.querySelector('#host-status').textContent === 'Host is online'")
-                    assert first.locator("[data-create-game]").count() == 9
+                    assert first.locator("[data-create-game]").count() == 10
                     if game == "crazy-eights":
                         screenshot(first, "fireside-card-hub.png")
                         first.set_viewport_size({"width": 390, "height": 844})

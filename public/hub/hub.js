@@ -18,7 +18,7 @@ document.querySelectorAll('[data-play-solo]').forEach(button => button.addEventL
   if (GAMES[gameId]?.kind !== 'solo') return;
   updateName(); location.href = soloUrl(gameId);
 }));
-const matchesFilter = (game, filter) => filter === 'all' || (filter === 'roguelike' ? game?.roguelike === true : ['driving', 'action'].includes(filter) ? game?.genre === filter : (game?.kind === 'solo') === (filter === 'solo'));
+const matchesFilter = (game, filter) => filter === 'all' || (filter === 'ninja' ? game?.theme === 'ninja' : filter === 'roguelike' ? game?.roguelike === true : ['driving', 'action'].includes(filter) ? game?.genre === filter : (game?.kind === 'solo') === (filter === 'solo'));
 let activeFilter = 'all';
 function filterShelf() {
   const query = $('game-search').value.trim().toLowerCase();

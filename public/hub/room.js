@@ -4,11 +4,13 @@ import * as topdown from '../topdown-engine.js';
 import * as checkers from '../checkers-engine.js';
 import * as cards from '../cards-engine.js';
 import * as vector from '../vector-engine.js';
+import * as shinobi from '../shinobi-engine.js';
 import * as brawl from '../brawl-engine.js';
 import { TopdownRenderer } from '../topdown-renderer.js';
 import { CheckersView } from '../checkers-view.js';
 import { CardsView } from '../cards-view.js';
 import { VectorRenderer } from '../vector-renderer.js';
+import { ShinobiRenderer } from '../shinobi-renderer.js';
 import { BrawlRenderer, drawFighterPortrait, drawStagePreview } from '../brawl-renderer.js';
 import { GameAudio } from '../audio.js';
 import { GAMES, roomUrl, getName, saveName, hostInfo, copyText } from './shared.js';
@@ -19,11 +21,11 @@ const params = new URLSearchParams(location.search);
 const roomId = (params.get('room') || '').toUpperCase();
 const gameId = GAMES[params.get('game')] ? params.get('game') : 'relic-duel';
 const game = GAMES[gameId], boardMode = gameId === 'checkers', coop = gameId === 'dungeon-run';
-const vectorMode = gameId === 'vector-arena', brawlMode = gameId === 'oddstock-rumble', modernControls = vectorMode || brawlMode;
+const vectorMode = gameId === 'vector-arena', shinobiMode = gameId === 'shinobi-showdown', aimMode = vectorMode || shinobiMode, brawlMode = gameId === 'oddstock-rumble', modernControls = aimMode || brawlMode;
 const cardMode = ['crazy-eights', 'twenty-one', 'memory'].includes(gameId), realtimeMode = !boardMode && !cardMode;
-const engine = boardMode ? checkers : cardMode ? cards : vectorMode ? vector : brawlMode ? brawl : topdown;
-const emptyInput = vectorMode ? vector.emptyInput : brawlMode ? brawl.emptyInput : topdown.emptyInput, clone = state => JSON.parse(JSON.stringify(state));
-const initialState = () => boardMode ? checkers.createState() : cardMode ? cards.viewForPlayer(cards.createState(gameId), 0) : vectorMode ? vector.createState() : brawlMode ? brawl.createState() : topdown.createState(coop ? 'coop' : 'duel');
+const engine = boardMode ? checkers : cardMode ? cards : vectorMode ? vector : shinobiMode ? shinobi : brawlMode ? brawl : topdown;
+const emptyInput = vectorMode ? vector.emptyInput : shinobiMode ? shinobi.emptyInput : brawlMode ? brawl.emptyInput : topdown.emptyInput, clone = state => JSON.parse(JSON.stringify(state));
+const initialState = () => boardMode ? checkers.createState() : cardMode ? cards.viewForPlayer(cards.createState(gameId), 0) : vectorMode ? vector.createState() : shinobiMode ? shinobi.createState() : brawlMode ? brawl.createState() : topdown.createState(coop ? 'coop' : 'duel');
 let authoritative = initialState();
 let predicted = clone(authoritative), players = [null, null], localId = null;
 let socket, connected = false, permanentlyClosed = false, intentionalClose = false, attempts = 0, reconnectTimer;
@@ -32,7 +34,7 @@ let playerName = getName(), invite = location.href, ping = null, lastSnapshotAt 
 let previousPhase = 'lobby', flashUntil = 0, countdownLast = null, toastTimer, focusLost = false;
 const audio = new GameAudio();
 const canvas = $('arena');
-const renderer = realtimeMode ? vectorMode ? new VectorRenderer(canvas) : brawlMode ? new BrawlRenderer(canvas) : new TopdownRenderer(canvas) : null;
+const renderer = realtimeMode ? vectorMode ? new VectorRenderer(canvas) : shinobiMode ? new ShinobiRenderer(canvas) : brawlMode ? new BrawlRenderer(canvas) : new TopdownRenderer(canvas) : null;
 const board = boardMode ? new CheckersView($('checkers-board'), { onMove: (from, to) => send({ type: 'move', from, to }) }) : null;
 const cardTable = cardMode ? new CardsView($('cards-table'), { onAction: action => send({ type: 'card-action', action }) }) : null;
 const held = new Map();
@@ -47,6 +49,7 @@ $('player-name').value = playerName;
 $('room-app').classList.toggle('board-mode', boardMode);
 $('room-app').classList.toggle('card-mode', cardMode);
 $('room-app').classList.toggle('vector-mode', vectorMode);
+$('room-app').classList.toggle('shinobi-mode', shinobiMode);
 $('room-app').classList.toggle('brawl-mode', brawlMode);
 $('checkers-board').hidden = !boardMode; $('cards-table').hidden = !cardMode; canvas.hidden = !realtimeMode;
 $('controls-panel').hidden = !realtimeMode; $('board-instructions').hidden = !boardMode; $('card-instructions').hidden = !cardMode;
@@ -57,6 +60,10 @@ if (vectorMode) {
   canvas.setAttribute('aria-label', 'Vector Arena. WASD or arrow keys move, mouse aims, left mouse or J fires, right mouse or I focuses, Space dashes, R reloads.');
   $('stage-label').textContent = 'THE OVERGROWN GRID / 120 HZ';
   $('controls-panel').innerHTML = `<h2>Keep your angles.</h2><div class="control-line"><span class="keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><span>Move</span></div><div class="control-line"><kbd class="wide-key">MOUSE</kbd><span>Aim</span></div><div class="control-line"><kbd class="wide-key">LMB / J</kbd><span>Hold to fire</span></div><div class="control-line"><kbd class="wide-key">RMB / I</kbd><span>Focus aim</span></div><div class="control-line"><kbd class="wide-key">SPACE</kbd><span>Dash / evade</span></div><div class="control-line"><kbd>R</kbd><span>Reload</span></div><p id="combat-tip">Focus slows your movement and removes recoil. Use cover, lead your shots, and dash after the four-frame startup. Dashing cancels a reload.</p><details><summary>Timing &amp; touch controls</summary><p>Six shots per magazine. Reload takes 1.1 seconds. Dash costs 28 stamina and evades bullets during frames 4–15. Shift also dashes. On touch screens, use the Move and Aim pads with the Fire, Focus, Dash, and Reload buttons.</p></details>`;
+}
+if (shinobiMode) {
+  $('stage-label').textContent = 'MOONLIT ROOFTOPS / 120 HZ';
+  $('controls-panel').innerHTML = `<h2>Read their blade.</h2><div class="control-line"><span class="keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><span>Move</span></div><div class="control-line"><kbd class="wide-key">MOUSE</kbd><span>Aim</span></div><div class="control-line"><kbd class="wide-key">LMB / J</kbd><span>Quick katana cut</span></div><div class="control-line"><kbd class="wide-key">RMB / K</kbd><span>Committed heavy cut</span></div><div class="control-line"><kbd>L</kbd><span>Throw a kunai</span></div><div class="control-line"><kbd>I</kbd><span>Timed directional parry</span></div><div class="control-line"><kbd class="wide-key">SPACE</kbd><span>Dash / evade</span></div><p id="combat-tip">Aim before committing: a sword strike locks its direction. Face an incoming blade or kunai and tap Parry just before contact. A successful parry stuns a swordsman or reflects a kunai.</p><details><summary>Timing &amp; touch controls</summary><p>Quick cuts start after 10 ticks; heavy cuts after 28. Parry starts after 3 ticks and works through tick 13, then leaves you open. Dash costs 30 stamina and evades during ticks 3–12; it cannot cross bodies or cover. Three kunai recover one at a time after two seconds of free movement. Use the Move and Aim pads with five action buttons on touch screens. Arrow keys also move; Shift also dashes. First to two rounds across three arenas, 75 seconds per round; five rounds at most if there are draws.</p></details>`;
 }
 if (coop) $('combat-tip').textContent = 'Clear nine rooms across three biomes and defeat three bosses. Between rooms, walk to a shrine and hold Guard to choose a boon. Hold Guard near a fallen ally to revive them. No friendly fire.';
 if (realtimeMode && !coop && !modernControls) $('combat-tip').textContent = 'Win two rounds across Moss Courtyard, Tide Archive, and Cinder Gallery. Face a strike to guard, tap just before impact to parry, and use each arena’s pillars as cover.';
@@ -106,7 +113,7 @@ function receiveState(message) {
       }
     } else correction = { x: 0, y: 0 };
     snapshots.push({ time: lastSnapshotAt, state }); if (snapshots.length > 12) snapshots.shift();
-    audio.playEvents(state.events || []);
+    audio.playEvents(shinobiMode ? (state.events || []).map(event => event.type === 'parry' && event.target == null ? { ...event, type: 'parryStart' } : event.type === 'attack' ? { ...event, type: 'swing', move: event.action } : event.type === 'throw' && event.release ? { ...event, type: 'swing', move: 'light' } : event.type === 'deflect' ? { ...event, type: 'parry' } : event.type === 'cover' ? { ...event, type: 'block' } : event.type === 'hit' ? { ...event, move: event.attack } : event) : state.events || []);
   } else if (boardMode && state.lastMove && state.lastMove.tick !== receiveState.lastMoveTick) {
     receiveState.lastMoveTick = state.lastMove.tick;
     audio.playEvents([{ id: state.moves * 1000 + state.lastMove.tick, type: state.lastMove.capture == null ? 'block' : 'hit', x: 0, y: 0 }]);
@@ -133,7 +140,7 @@ function connect() {
     if (message.type === 'welcome') {
       if (message.gameId !== gameId) { intentionalClose = true; location.replace(roomUrl({ id: roomId, gameId: message.gameId })); return; }
       localId = message.playerId;
-      if (vectorMode) { vectorAim = { x: localId === 1 ? -1 : 1, y: 0 }; pointerTarget = null; refreshKeys(); }
+      if (aimMode) { vectorAim = { x: localId === 1 ? -1 : 1, y: 0 }; pointerTarget = null; refreshKeys(); }
       updateConnection();
     } else if (message.type === 'state') receiveState(message);
     else if (message.type === 'pong') { ping = Math.max(0, Math.round(performance.now() - message.time)); updateConnection(); }
@@ -159,6 +166,11 @@ const keyMap = new Map(brawlMode ? [
   ['KeyW', 'up'], ['ArrowUp', 'up'], ['KeyS', 'down'], ['ArrowDown', 'down'],
   ['Space', 'jump'], ['KeyJ', 'attack'], ['KeyK', 'special'], ['KeyI', 'shield'],
   ['KeyL', 'dodge'], ['ShiftLeft', 'dodge'], ['ShiftRight', 'dodge'],
+] : shinobiMode ? [
+  ['KeyA', 'left'], ['ArrowLeft', 'left'], ['KeyD', 'right'], ['ArrowRight', 'right'],
+  ['KeyW', 'up'], ['ArrowUp', 'up'], ['KeyS', 'down'], ['ArrowDown', 'down'],
+  ['KeyJ', 'attack'], ['KeyK', 'heavy'], ['KeyL', 'throw'], ['KeyI', 'parry'],
+  ['Space', 'dash'], ['ShiftLeft', 'dash'], ['ShiftRight', 'dash'],
 ] : vectorMode ? [
   ['KeyA', 'left'], ['ArrowLeft', 'left'], ['KeyD', 'right'], ['ArrowRight', 'right'],
   ['KeyW', 'up'], ['ArrowUp', 'up'], ['KeyS', 'down'], ['ArrowDown', 'down'],
@@ -171,9 +183,9 @@ const keyMap = new Map(brawlMode ? [
   ['KeyI', 'block'], ['KeyL', 'block'],
 ]);
 let vectorAim = { x: 1, y: 0 }, pointerTarget = null;
-const pointerButtons = { fire: false, focus: false }, touchButtons = Object.create(null), touchPointers = new Map();
+const pointerButtons = { fire: false, focus: false, attack: false, heavy: false }, touchButtons = Object.create(null), touchPointers = new Map();
 const pressIntents = new Set(), actionButtonKeys = new Map();
-const latchedActions = new Set(vectorMode ? ['fire', 'dash', 'reload'] : brawlMode ? ['jump', 'attack', 'special', 'dodge'] : []);
+const latchedActions = new Set(shinobiMode ? ['attack', 'heavy', 'throw', 'parry', 'dash'] : vectorMode ? ['fire', 'dash', 'reload'] : brawlMode ? ['jump', 'attack', 'special', 'dodge'] : []);
 function typing(target) { return target instanceof HTMLElement && (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable); }
 function refreshKeys() {
   keys = emptyInput();
@@ -181,8 +193,9 @@ function refreshKeys() {
   if (!modernControls) return;
   for (const [key, value] of Object.entries(touchButtons)) if (value) keys[key] = true;
   for (const action of actionButtonKeys.values()) keys[action] = true;
-  if (!vectorMode) return;
-  keys.fire ||= pointerButtons.fire; keys.focus ||= pointerButtons.focus;
+  if (!aimMode) return;
+  if (vectorMode) { keys.fire ||= pointerButtons.fire; keys.focus ||= pointerButtons.focus; }
+  if (shinobiMode) { keys.attack ||= pointerButtons.attack; keys.heavy ||= pointerButtons.heavy; }
   if (pointerTarget && localId != null) {
     const own = predicted.fighters[localId], dx = pointerTarget.x - own.x, dy = pointerTarget.y - own.y;
     const length = Math.hypot(dx, dy);
@@ -191,7 +204,7 @@ function refreshKeys() {
   keys.aimX = vectorAim.x; keys.aimY = vectorAim.y;
 }
 function releaseKeys() {
-  held.clear(); pressIntents.clear(); actionButtonKeys.clear(); pointerButtons.fire = false; pointerButtons.focus = false;
+  held.clear(); pressIntents.clear(); actionButtonKeys.clear(); pointerButtons.fire = false; pointerButtons.focus = false; pointerButtons.attack = false; pointerButtons.heavy = false;
   for (const key of Object.keys(touchButtons)) delete touchButtons[key];
   for (const [id, control] of touchPointers) {
     control.classList.remove('is-held'); control.style.removeProperty('--pad-x'); control.style.removeProperty('--pad-y');
@@ -210,7 +223,7 @@ document.addEventListener('keydown', event => {
   const identity = keyboardIdentity(event), code = gameCode(event);
   const interactive = event.target instanceof Element ? event.target.closest('button, a, summary') : null;
   if (interactive && ['Space', 'Enter'].includes(code)) {
-    const action = modernControls && (interactive.dataset.vectorAction || interactive.dataset.brawlAction);
+    const action = modernControls && (interactive.dataset.vectorAction || interactive.dataset.shinobiAction || interactive.dataset.brawlAction);
     if (!action || event.repeat && !actionButtonKeys.has(identity)) return;
     event.preventDefault();
     if (!actionButtonKeys.has(identity) && latchedActions.has(action)) pressIntents.add(action);
@@ -235,11 +248,11 @@ window.addEventListener('blur', () => { releaseKeys(); focusLost = true; });
 document.addEventListener('visibilitychange', () => { if (document.hidden) releaseKeys(); });
 canvas.addEventListener('pointerdown', event => {
   canvas.focus(); focusLost = false;
-  if (!vectorMode) return;
+  if (!aimMode) return;
   event.preventDefault(); updatePointerAim(event);
   if (event.pointerType === 'mouse' || event.pointerType === 'pen') {
-    pointerButtons.fire = !!(event.buttons & 1); pointerButtons.focus = !!(event.buttons & 2);
-    if (event.button === 0) pressIntents.add('fire');
+    if (vectorMode) { pointerButtons.fire = !!(event.buttons & 1); pointerButtons.focus = !!(event.buttons & 2); if (event.button === 0) pressIntents.add('fire'); }
+    if (shinobiMode) { pointerButtons.attack = !!(event.buttons & 1); pointerButtons.heavy = !!(event.buttons & 2); if (event.button === 0) pressIntents.add('attack'); if (event.button === 2) pressIntents.add('heavy'); }
   }
   canvas.setPointerCapture(event.pointerId); refreshKeys();
 });
@@ -247,38 +260,44 @@ function updatePointerAim(event) {
   const rect = canvas.getBoundingClientRect();
   if (rect.width <= 0 || rect.height <= 0) return;
   pointerTarget = {
-    x: Math.max(0, Math.min(vector.WORLD.width, (event.clientX - rect.left) * vector.WORLD.width / rect.width)),
-    y: Math.max(0, Math.min(vector.WORLD.height, (event.clientY - rect.top) * vector.WORLD.height / rect.height)),
+    x: Math.max(0, Math.min(engine.WORLD.width, (event.clientX - rect.left) * engine.WORLD.width / rect.width)),
+    y: Math.max(0, Math.min(engine.WORLD.height, (event.clientY - rect.top) * engine.WORLD.height / rect.height)),
   };
 }
 canvas.addEventListener('pointermove', event => {
-  if (!vectorMode) return;
+  if (!aimMode) return;
   updatePointerAim(event);
   if (event.pointerType === 'mouse' || event.pointerType === 'pen') {
-    pointerButtons.fire = !!(event.buttons & 1); pointerButtons.focus = !!(event.buttons & 2);
+    if (vectorMode) { pointerButtons.fire = !!(event.buttons & 1); pointerButtons.focus = !!(event.buttons & 2); }
+    if (shinobiMode) { pointerButtons.attack = !!(event.buttons & 1); pointerButtons.heavy = !!(event.buttons & 2); }
   }
   refreshKeys();
 });
 function releasePointer(event) {
-  if (!vectorMode || event.pointerType !== 'mouse' && event.pointerType !== 'pen') return;
+  if (!aimMode || event.pointerType !== 'mouse' && event.pointerType !== 'pen') return;
   pointerButtons.fire = event.type === 'pointerup' && !!(event.buttons & 1);
   pointerButtons.focus = event.type === 'pointerup' && !!(event.buttons & 2);
-  if (event.type === 'pointercancel') pressIntents.delete('fire');
+  pointerButtons.attack = event.type === 'pointerup' && !!(event.buttons & 1);
+  pointerButtons.heavy = event.type === 'pointerup' && !!(event.buttons & 2);
+  if (event.type === 'pointercancel') for (const action of ['fire', 'attack', 'heavy']) pressIntents.delete(action);
   refreshKeys();
 }
 window.addEventListener('pointerup', releasePointer);
 window.addEventListener('pointercancel', releasePointer);
 canvas.addEventListener('lostpointercapture', () => {
-  if (vectorMode) { if (pointerButtons.fire) pressIntents.delete('fire'); pointerButtons.fire = false; pointerButtons.focus = false; refreshKeys(); }
+  if (aimMode) { if (pointerButtons.fire) pressIntents.delete('fire'); if (pointerButtons.attack) pressIntents.delete('attack'); if (pointerButtons.heavy) pressIntents.delete('heavy'); pointerButtons.fire = false; pointerButtons.focus = false; pointerButtons.attack = false; pointerButtons.heavy = false; refreshKeys(); }
 });
-canvas.addEventListener('contextmenu', event => { if (vectorMode) event.preventDefault(); });
+canvas.addEventListener('contextmenu', event => { if (aimMode) event.preventDefault(); });
 setupVectorTouch();
+setupShinobiTouch();
 setupBrawl();
 // Brawl builds its own controls, so capture canonical copy after all game setup.
 const keyboardLabels = [...$('controls-panel').querySelectorAll('kbd')].map(node => ({ node, text: node.textContent }));
 const keyboardArenaLabel = brawlMode
   ? 'Oddstock Rumble. {A} and {D} move, {W} and {S} choose move direction, Space jumps, {J} attacks, {K} uses a special, {I} shields, {L} or Shift dodges.'
-  : vectorMode
+  : shinobiMode
+    ? 'Shinobi Showdown. {WASD} or arrow keys move, mouse aims, left mouse or {J} cuts, right mouse or {K} uses a heavy cut, {L} throws a kunai, {I} parries, Space or Shift dashes.'
+    : vectorMode
     ? 'Vector Arena. {WASD} or arrow keys move, mouse aims, left mouse or {J} fires, right mouse or {I} focuses, Space dashes, {R} reloads.'
     : 'Top-down adventure game. Use {WASD} to move, {J} to swing, {K} to shoot, Space to roll, {I} to guard.';
 function updateKeyboardHints() {
@@ -331,6 +350,50 @@ function setupVectorTouch() {
       }
     });
     control.addEventListener('pointermove', event => { if (touchPointers.get(event.pointerId) === control && control.dataset.vectorPad) updatePad(control, event); });
+    for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) control.addEventListener(type, release);
+  }
+}
+function setupShinobiTouch() {
+  const controls = $('shinobi-controls'); controls.hidden = !shinobiMode;
+  if (!shinobiMode) return;
+  const updatePad = (control, event) => {
+    const rect = control.getBoundingClientRect(), radius = Math.max(1, Math.min(rect.width, rect.height) * .36);
+    const dx = (event.clientX - rect.left - rect.width / 2) / radius;
+    const dy = (event.clientY - rect.top - rect.height / 2) / radius;
+    const length = Math.hypot(dx, dy), scale = Math.max(1, length);
+    control.style.setProperty('--pad-x', `${dx / scale * 25}px`);
+    control.style.setProperty('--pad-y', `${dy / scale * 25}px`);
+    if (control.dataset.shinobiPad === 'move') {
+      touchButtons.left = dx < -.25; touchButtons.right = dx > .25;
+      touchButtons.up = dy < -.25; touchButtons.down = dy > .25;
+    } else if (length > .2) {
+      vectorAim = { x: dx / length, y: dy / length }; pointerTarget = null;
+    }
+    refreshKeys();
+  };
+  for (const control of controls.querySelectorAll('[data-shinobi-pad], [data-shinobi-action]')) {
+    const release = event => {
+      if (touchPointers.get(event.pointerId) !== control) return;
+      touchPointers.delete(event.pointerId); control.classList.remove('is-held');
+      control.style.removeProperty('--pad-x'); control.style.removeProperty('--pad-y');
+      if (control.dataset.shinobiPad === 'move') for (const key of ['left', 'right', 'up', 'down']) touchButtons[key] = false;
+      if (control.dataset.shinobiAction) touchButtons[control.dataset.shinobiAction] = false;
+      if (event.type !== 'pointerup' && control.dataset.shinobiAction) pressIntents.delete(control.dataset.shinobiAction);
+      refreshKeys();
+      if (control.hasPointerCapture(event.pointerId)) control.releasePointerCapture(event.pointerId);
+    };
+    control.addEventListener('pointerdown', event => {
+      if (event.button !== 0 || [...touchPointers.values()].includes(control)) return;
+      event.preventDefault(); canvas.focus(); focusLost = false;
+      touchPointers.set(event.pointerId, control); control.setPointerCapture(event.pointerId); control.classList.add('is-held');
+      if (control.dataset.shinobiPad) updatePad(control, event);
+      else {
+        const action = control.dataset.shinobiAction; touchButtons[action] = true;
+        if (latchedActions.has(action)) pressIntents.add(action);
+        refreshKeys();
+      }
+    });
+    control.addEventListener('pointermove', event => { if (touchPointers.get(event.pointerId) === control && control.dataset.shinobiPad) updatePad(control, event); });
     for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) control.addEventListener(type, release);
   }
 }
@@ -525,10 +588,10 @@ function updateHUD(now) {
       setStyle($(prefix + '-health'), 'width', `${Math.min(100, Math.max(0, fighter.hp) / (fighter.maxHp || 100) * 100)}%`);
       setStyle($(prefix + '-stamina'), 'width', `${Math.max(0, fighter.stamina)}%`);
       setText($(prefix + '-score'), coop ? fighter.downed ? '↓' : `${Math.ceil(fighter.hp)}` : `${fighter.wins} / 2`);
-      setText($(prefix + '-detail'), vectorMode ? fighter.reloadTicks > 0 ? `RELOAD ${(fighter.reloadTicks / 120).toFixed(1)}s` : `${fighter.ammo} / 6 SHOTS` : fighter.downed ? `REVIVE ${Math.round((fighter.reviveProgress || 0) / 180 * 100)}%` : fighter.guardBroken ? 'GUARD BROKEN' : fighter.action === 'block' ? 'GUARDING' : fighter.action === 'roll' ? 'EVADING' : 'STAMINA');
-      if (vectorMode) {
+      setText($(prefix + '-detail'), shinobiMode ? fighter.action === 'stun' ? 'PARRIED / OPEN' : fighter.action === 'parry' ? fighter.actionFrame < shinobi.PARRY.startup ? 'SETTING PARRY' : fighter.actionFrame <= shinobi.PARRY.activeEnd ? 'PARRY WINDOW' : 'RECOVERING' : `${fighter.kunai} / 3 KUNAI` : vectorMode ? fighter.reloadTicks > 0 ? `RELOAD ${(fighter.reloadTicks / 120).toFixed(1)}s` : `${fighter.ammo} / 6 SHOTS` : fighter.downed ? `REVIVE ${Math.round((fighter.reviveProgress || 0) / 180 * 100)}%` : fighter.guardBroken ? 'GUARD BROKEN' : fighter.action === 'block' ? 'GUARDING' : fighter.action === 'roll' ? 'EVADING' : 'STAMINA');
+      if (aimMode) {
         setAttribute($(prefix + '-health-track'), 'aria-label', `${names[i]} health: ${Math.ceil(fighter.hp)} of 100`);
-        setAttribute($(prefix + '-stamina-track'), 'aria-label', `${names[i]} dash stamina: ${Math.round(fighter.stamina)} of 100`);
+        setAttribute($(prefix + '-stamina-track'), 'aria-label', `${names[i]} ${shinobiMode ? 'combat' : 'dash'} stamina: ${Math.round(fighter.stamina)} of 100`);
       }
     }
   }
@@ -560,9 +623,9 @@ function updateHUD(now) {
   } else {
     setText($('round-label'), `ROUND ${String(state.round).padStart(2, '0')}`);
     setText($('timer'), String(Math.max(0, Math.ceil(state.roundTicks / 120))).padStart(2, '0')); setText($('hud-caption'), vectorMode ? 'FIRST TO TWO' : 'FIRST TO 2');
-    setText($('objective'), phase === 'fight' ? vectorMode ? `${state.stageName || 'Reclaimed Garden'} · Control an angle. Focus your shots. Keep a dash in reserve.` : state.objective || 'Use the pillars as cover. Face your attacks and watch your stamina.' : phase === 'matchEnd' ? 'A winner. A rematch. Or a different game?' : 'Both players must ready up to begin.');
-    setText($('objective-detail'), (vectorMode ? state.stageName : state.roomName)?.toUpperCase() || '90 SECOND ROUNDS');
-    setText($('stage-label'), `${vectorMode ? state.stageName || 'Reclaimed Garden' : state.roomName || 'Moss Courtyard'} / 120 HZ`.toUpperCase());
+    setText($('objective'), phase === 'fight' ? shinobiMode ? `${state.stageName} · Commit your blade. Face the parry. Save a dash.` : vectorMode ? `${state.stageName || 'Reclaimed Garden'} · Control an angle. Focus your shots. Keep a dash in reserve.` : state.objective || 'Use the pillars as cover. Face your attacks and watch your stamina.' : phase === 'matchEnd' ? 'A winner. A rematch. Or a different game?' : 'Both players must ready up to begin.');
+    setText($('objective-detail'), (aimMode ? state.stageName : state.roomName)?.toUpperCase() || '90 SECOND ROUNDS');
+    setText($('stage-label'), `${aimMode ? state.stageName || 'Reclaimed Garden' : state.roomName || 'Moss Courtyard'} / 120 HZ`.toUpperCase());
   }
   setDisabled($('player-name'), active);
   const mine = players[localId]; const button = $('ready-button');
@@ -592,7 +655,7 @@ function updateOverlay(now, names) {
     kicker = coop ? 'STAY TOGETHER' : 'MAKE YOUR NEXT MOVE COUNT'; title = number; subtitle = coop ? 'Keep an eye on your friend.' : 'Good luck. Have fun.'; overlayClass += ' countdown';
     if (number !== countdownLast) { audio.countdown(number); countdownLast = number; }
   } else if (phase === 'fight') {
-    if (realtimeMode && now < flashUntil) { kicker = coop ? 'YOUR ADVENTURE STARTS HERE' : vectorMode ? 'TAKE YOUR ANGLE' : 'FIND YOUR OPENING'; title = coop ? 'LET’S GO' : vectorMode ? 'ENGAGE' : brawlMode ? 'RUMBLE!' : 'DUEL'; subtitle = ''; overlayClass += ' fight'; }
+    if (realtimeMode && now < flashUntil) { kicker = coop ? 'YOUR ADVENTURE STARTS HERE' : shinobiMode ? 'READ THEIR BLADE' : vectorMode ? 'TAKE YOUR ANGLE' : 'FIND YOUR OPENING'; title = coop ? 'LET’S GO' : shinobiMode ? 'SHINOBI' : vectorMode ? 'ENGAGE' : brawlMode ? 'RUMBLE!' : 'DUEL'; subtitle = ''; overlayClass += ' fight'; }
     else overlayHidden = true;
   } else if (cardMode) {
     // Keep showdown hands and memory pairs visible; results live above the table.
@@ -619,7 +682,7 @@ function animate(now) {
   if (document.hidden) { previousTime = now; accumulator = 0; return; }
   accumulator += Math.min(65, now - previousTime); previousTime = now;
   let ticks = 0; while (accumulator >= 1000 / 120 && ticks++ < 8) { inputTick(); accumulator -= 1000 / 120; }
-  renderer?.render(displayState(now), { localId, time: now, aimTarget: vectorMode ? pointerTarget : null });
+  renderer?.render(displayState(now), { localId, time: now, aimTarget: aimMode ? pointerTarget : null });
   if (!realtimeMode || now - lastHUD > 50) { updateHUD(now); lastHUD = now; }
   if (realtimeMode) scheduleFrame();
 }

@@ -1,4 +1,6 @@
 export const GAMES = {
+  'shadow-lantern': { title: 'Shadow Lantern', category: 'NINJA / STEALTH CAMPAIGN', kind: 'solo', genre: 'action', theme: 'ninja', icon: '☾', description: 'Watch the patrol. Take the seal. Leave no trail.', color: '#7b8198' },
+  'shinobi-showdown': { title: 'Shinobi Showdown', category: 'NINJA / REAL-TIME DUEL', kind: 'duel', genre: 'action', theme: 'ninja', icon: '✣', description: 'Read the strike. Parry the kunai. Outplay your rival.', color: '#8e7b87' },
   'skyline-hook': { title: 'Skyline Hook', category: 'PRECISION GRAPPLING', kind: 'solo', genre: 'action', icon: '↗', description: 'Build momentum. Catch an anchor. Earn the next rooftop.', color: '#71958b' },
   'starfall-squadron': { title: 'Starfall Squadron', category: 'BULLET-HELL SHOOTER', kind: 'solo', genre: 'action', icon: '✺', description: 'Read the pattern. Find the gap. Bring your squadron home.', color: '#7e81a4' },
   'ironwood-tactics': { title: 'Ironwood Tactics', category: 'SQUAD TACTICS ROGUELIKE', kind: 'solo', genre: 'strategy', roguelike: true, icon: '♜', description: 'Read their intent. Push the line. Protect the beacon.', color: '#8c9b72' },

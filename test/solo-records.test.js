@@ -7,11 +7,13 @@ test('new campaign records reject unfinished runs and unknown challenge scopes',
     ['skyline-hook', 'veteran-campaign-v1', undefined],
     ['starfall-squadron', 'veteran-campaign-v1', 'campaign'],
     ['ironwood-tactics', 'ironwood-v1-veteran', undefined],
+    ['shadow-lantern', 'shadow-v1-veteran', undefined],
   ]) {
-    for (const phase of ['playing', 'paused', 'lost', 'upgrade', 'stage-clear', 'reward']) {
+    for (const phase of ['playing', 'paused', 'lost', 'upgrade', 'stage-clear', 'mission-clear', 'reward']) {
       assert.equal(recordDetails(gameId, { phase, recordKey: scope, score: 500, record: 500, result }).candidate, null, `${gameId}/${phase}`);
     }
     assert.equal(recordDetails(gameId, { phase: 'won', recordKey: scope, record: 500, result }).candidate, 500);
+    assert.ok(recordDetails(gameId, { phase: 'won', recordKey: scope, score: 500, result }).candidate == null, `${gameId}/missing-completion-record`);
     assert.equal(recordDetails(gameId, { phase: 'won', recordKey: scope + '-unknown', record: 500, result }).candidate, null);
   }
   assert.equal(recordDetails('starfall-squadron', { phase: 'won', recordKey: 'veteran-campaign-v1', record: 500, result: 'stage' }).candidate, null);
@@ -38,12 +40,12 @@ test('Skyline fastest completed campaigns survive reload and stay separate by di
   assert.equal(store.read('apex-circuit', 'veteran-three-laps-v3'), null);
 });
 
-test('Starfall and Ironwood completed scores remain isolated across difficulties and games', () => {
+test('Starfall, Ironwood and Shadow completed scores remain isolated across difficulties and games', () => {
   const storage = browserStorage();
   let store = createBestStore(storage);
-  for (const gameId of ['starfall-squadron', 'ironwood-tactics']) {
+  for (const gameId of ['starfall-squadron', 'ironwood-tactics', 'shadow-lantern']) {
     for (const [index, tier] of ['standard', 'veteran', 'nightmare'].entries()) {
-      const recordKey = gameId === 'ironwood-tactics' ? `ironwood-v1-${tier}` : `${tier}-campaign-v1`;
+      const recordKey = gameId === 'shadow-lantern' ? `shadow-v1-${tier}` : gameId === 'ironwood-tactics' ? `ironwood-v1-${tier}` : `${tier}-campaign-v1`;
       const save = (phase, record) => {
         const policy = recordDetails(gameId, { phase, recordKey, record, result: 'campaign' });
         return store.update(gameId, policy.candidate, policy);

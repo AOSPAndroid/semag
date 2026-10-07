@@ -14,6 +14,7 @@ import * as Checkers from './public/checkers-engine.js';
 import * as Topdown from './public/topdown-engine.js';
 import * as Cards from './public/cards-engine.js';
 import * as Vector from './public/vector-engine.js';
+import * as Shinobi from './public/shinobi-engine.js';
 import * as Brawl from './public/brawl-engine.js';
 
 const TICK_RATE = 120;
@@ -36,6 +37,10 @@ const GAMES = {
   memory: { title: 'Memory Match', engine: Cards, makeState: () => Cards.createState('memory'), inputKeys: [], viewForPlayer: Cards.viewForPlayer },
   'vector-arena': {
     title: 'Vector Arena', engine: Vector, makeState: () => Vector.createState(), inputKeys: Vector.INPUT_KEYS,
+    numericControls: { aimX: { min: -1, max: 1, default: 1 }, aimY: { min: -1, max: 1, default: 0 } },
+  },
+  'shinobi-showdown': {
+    title: 'Shinobi Showdown', engine: Shinobi, makeState: () => Shinobi.createState(), inputKeys: Shinobi.INPUT_KEYS,
     numericControls: { aimX: { min: -1, max: 1, default: 1 }, aimY: { min: -1, max: 1, default: 0 } },
   },
   'oddstock-rumble': { title: 'Oddstock Rumble', engine: Brawl, makeState: () => Brawl.createState(), inputKeys: Brawl.INPUT_KEYS, selectionComplete: Brawl.selectionComplete },

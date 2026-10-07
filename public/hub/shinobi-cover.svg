@@ -1,0 +1,124 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 320" role="img" aria-labelledby="title desc">
+  <title id="title">Shinobi Showdown</title>
+  <desc id="desc">Two masked ninja duel with curved katana and precision kunai on a rain washed rooftop. Warm paper lanterns illuminate slate roof tiles, copper flashing and solid wooden cover. An amber blade meets a teal ninja's timed parry.</desc>
+  <defs>
+    <pattern id="tiles" width="72" height="36" patternUnits="userSpaceOnUse">
+      <path fill="#1c2d43" d="M0 0h72v36H0z"/>
+      <path fill="#35475e" d="M1 1h34v16H1zM37 19h34v16H37z"/>
+      <path fill="#304158" d="M37 1h34v16H37zM1 19h34v16H1z"/>
+      <path stroke="#8aafbf" stroke-opacity=".3" d="M3 2h30m6 0h30M3 20h30m6 0h30"/>
+      <path stroke="#18273d" stroke-width="2" d="M1 16h34m2 0h34M1 34h34m2 0h34"/>
+      <path fill="#7098a4" fill-opacity=".2" d="M6 7h14v1H6zm42 19h15v1H48z"/>
+    </pattern>
+    <g id="lantern" shape-rendering="crispEdges">
+      <path fill="#152631" d="M-10-12h20v26h-20z"/>
+      <path fill="#584a46" d="M-12-14h24v4h-24zM-12 12h24v4h-24z"/>
+      <path fill="#c68654" d="M-8-9H8v20H-8z"/>
+      <path fill="#f2c47a" d="M-6-8H6v17H-6z"/>
+      <path fill="#ffe4a0" d="M-3-6h6v12h-6z"/>
+      <path fill="#775546" d="M-8-2H8v2H-8zm0 8H8v2H-8z"/>
+      <path fill="#1e303b" d="M-9-8h2v19h-2zm16 0h2v19H7z"/>
+    </g>
+    <g id="cover" shape-rendering="crispEdges">
+      <path fill="#101e30" fill-opacity=".6" d="M4 6h90v75H4z"/>
+      <path fill="#121d30" d="M0 0h88v72H0z"/>
+      <path fill="#65798a" d="M1 1h86v70H1z"/>
+      <path fill="#bed6d8" d="M1 1h86v3H1zm0 3h2v66H1z"/>
+      <path fill="#263547" d="M84 4h3v67h-3zM4 67h80v4H4z"/>
+      <path fill="#635864" d="M8 8h72v56H8z"/>
+      <path fill="#8b8180" d="M9 9h70v2H9zm0 13h70v2H9zm0 13h70v2H9zm0 13h70v2H9z"/>
+      <path fill="#393744" d="M9 19h70v2H9zm0 13h70v2H9zm0 13h70v2H9zm0 13h70v2H9z"/>
+      <path fill="#243e4c" d="M13 7h5v58h-5zm57 0h5v58h-5z"/>
+      <path fill="#9bb0ad" d="M13 7h5v2h-5zm0 55h5v2h-5zM70 7h5v2h-5zm0 55h5v2h-5z"/>
+      <path fill="#d0c493" d="M40 32h8v7h-8z"/>
+      <path fill="#354b58" d="M42 35h4v3h-4z"/>
+    </g>
+    <g id="ninja" shape-rendering="crispEdges">
+      <ellipse cx="1" cy="3" rx="15" ry="12" fill="#071727" fill-opacity=".6"/>
+      <path fill="var(--ink)" d="M-13-10h9v6h-9zm2 14h9v6h-9zM-12-7l6-5 12 1 7 6 1 9-7 7-13 1-6-5z"/>
+      <path fill="var(--cloth)" d="M-10-7H8V7h-18z"/>
+      <path fill="var(--shade)" d="M-9-6h7V6h-7z"/>
+      <path fill="var(--edge)" d="M-9-7H3v2H-9zm1 3h4v2h-4zM-12-9h5v1h-5zm2 17h5v1h-5z"/>
+      <path fill="var(--sash)" d="M-5-8h3V8h-3zM-8 5H2v3H-8z"/>
+      <path fill="var(--pale)" d="M-5-5h1v9h-1zM-6 6h5v1h-5z"/>
+      <path fill="var(--cloth)" d="m-6-8 6-4 6 2 2 4-4 2-7-1z"/>
+      <path fill="var(--shade)" d="m-6 8 6 4 6-2 2-4-4-2-7 1z"/>
+      <path fill="var(--edge)" d="M-2-11h5v2h-5zm0 20h5v2h-5z"/>
+      <path fill="var(--ink)" d="m0-8 7-2 5 4 2 4v6L9 9 1 8l-3-5v-6z"/>
+      <path fill="var(--cloth)" d="m0-6 6-2 5 3 1 4v5L8 7 1 6l-2-4v-4z"/>
+      <path fill="var(--edge)" d="M1-6h6v2H1zm6 1h3v2H7z"/>
+      <path fill="var(--sash)" d="M0-2h10v2H0z"/>
+      <path fill="#101d29" d="M10-4h3v9h-3z"/>
+      <path fill="#dbb79b" d="M11-3h1v6h-1z"/>
+      <path fill="var(--pale)" d="M11-3h2v2h-2zm0 5h2v2h-2z"/>
+      <path fill="var(--shade)" d="M3 3h7v3H3zM1 4h4v3H1z"/>
+      <path fill="var(--sash)" d="m-7 1-7 1-2 4 5-2 3 1z"/>
+      <path fill="var(--pale)" d="M-13 3h3v1h-3z"/>
+    </g>
+    <g id="blade" shape-rendering="crispEdges">
+      <path fill="#111f2c" d="M8-4h10v7H8z"/>
+      <path fill="var(--sash)" d="M10-3h6v5h-6z"/>
+      <path fill="#dfc084" d="M17-5h3V5h-3z"/>
+      <path fill="#fff1c7" d="M20-2h31l5-2-3 5-33 2z"/>
+      <path stroke="#fff" fill="none" d="M21-1h30l4-2"/>
+      <path stroke="#4e7184" fill="none" d="M22 2 50 0"/>
+    </g>
+  </defs>
+  <path fill="#152236" d="M0 0h600v320H0z"/>
+  <path fill="url(#tiles)" d="M22 22h556v276H22z"/>
+  <path fill="#31475b" d="M0 0h600v22H0zM0 298h600v22H0zM0 22h22v276H0zM578 22h22v276h-22z"/>
+  <path stroke="#aec8ce" stroke-opacity=".7" stroke-width="2" d="M1 2h598M23 22v276M23 297h554m2-275v276"/>
+  <path stroke="#162739" stroke-width="3" d="M0 20h600M0 302h600M20 22v276m560-276v276"/>
+  <path stroke="#748e9a" stroke-opacity=".4" d="M48 0v20m48-20v20m48-20v20m48-20v20m48-20v20m48-20v20m48-20v20m48-20v20m48-20v20m48-20v20m48-20v20m48-20v20M48 302v18m48-18v18m48-18v18m48-18v18m48-18v18m48-18v18m48-18v18m48-18v18m48-18v18m48-18v18m48-18v18m48-18v18"/>
+  <path fill="#152832" d="M0 5h600v12H0zM0 304h600v12H0z"/>
+  <path fill="#3c5365" d="M0 5h600v3H0zM0 16h600v2H0zM0 304h600v3H0zM0 315h600v2H0z"/>
+  <path stroke="#819cac" stroke-opacity=".8" d="M0 5h600M0 304h600"/>
+  <path stroke="#3c5365" stroke-width="2" d="M32 8v8m32-8v8m32-8v8m32-8v8m32-8v8m288-8v8m32-8v8m32-8v8m32-8v8m32-8v8M32 307v8m32-8v8m32-8v8m32-8v8m64-8v8m224-8v8m32-8v8m32-8v8m32-8v8m32-8v8m32-8v8"/>
+  <path fill="#77a6b2" fill-opacity=".14" d="m75 74 53-4 17 7-33 6-40-3zM431 246l70-5 26 8-64 7-37-5z"/>
+  <path stroke="#b4ced3" stroke-opacity=".25" d="m84 74 37-2m321 176 41-3"/>
+  <path fill="#152b3b" d="M23 42h554v6H23zM23 274h554v6H23z"/>
+  <path stroke="#729396" stroke-opacity=".5" d="M23 43h554M23 275h554"/>
+  <path fill="#b0bda7" fill-opacity=".55" d="M35 44h2v2h-2zm28 0h2v2h-2zm28 0h2v2h-2zm28 0h2v2h-2zm28 0h2v2h-2zm28 0h2v2h-2zm28 0h2v2h-2zm308 0h2v2h-2zm28 0h2v2h-2zm28 0h2v2h-2zM35 276h2v2h-2zm28 0h2v2h-2zm28 0h2v2h-2zm28 0h2v2h-2zm364 0h2v2h-2zm28 0h2v2h-2zm28 0h2v2h-2zm28 0h2v2h-2z"/>
+  <use href="#cover" transform="translate(91 97) scale(.85)"/>
+  <use href="#cover" transform="translate(429 172) scale(.85)"/>
+  <use href="#cover" transform="translate(264 60) scale(.82 .4)"/>
+  <use href="#cover" transform="translate(264 232) scale(.82 .4)"/>
+  <use href="#lantern" transform="translate(74 11) scale(.7)"/>
+  <use href="#lantern" transform="translate(526 11) scale(.7)"/>
+  <use href="#lantern" transform="translate(11 161) scale(.7)"/>
+  <use href="#lantern" transform="translate(589 161) scale(.7)"/>
+  <use href="#lantern" transform="translate(74 309) scale(.7)"/>
+  <use href="#lantern" transform="translate(526 309) scale(.7)"/>
+  <circle cx="223" cy="165" r="27" fill="none" stroke="#ee9b67" stroke-opacity=".25"/>
+  <circle cx="352" cy="165" r="27" fill="none" stroke="#79d5c3" stroke-opacity=".25"/>
+  <g transform="translate(300 160)" fill="none" stroke="#b7cdcb" opacity=".18">
+    <circle r="40" stroke-width="2"/><circle r="36"/>
+    <path d="M0-36v6m25-25-4 4m15 15h-6m-5 25-4-4m-21 15v-6m-25-9 4-4m-15-21h6m5-25 4 4" stroke-width="2"/>
+    <path fill="#b7cdcb" stroke="none" d="M-13-20a22 22 0 1 1 0 40 19 19 0 0 0 0-40z"/>
+  </g>
+  <g transform="translate(217 165) scale(1.8)" style="--cloth:#314451;--shade:#1b2b37;--edge:#6b8491;--sash:#ee9b67;--pale:#ffe6ab;--ink:#101c27">
+    <path fill="none" stroke="#ee9b67" stroke-opacity=".3" stroke-width="7" d="M43-35A56 56 0 0 1 55 10"/>
+    <path fill="none" stroke="#fff0be" stroke-opacity=".8" stroke-width="2" d="M41-39A57 57 0 0 1 57 4"/>
+    <use href="#ninja"/>
+    <use href="#blade" transform="rotate(-2)"/>
+  </g>
+  <g transform="translate(352 165) rotate(180) scale(1.8)" style="--cloth:#39434a;--shade:#20292f;--edge:#788784;--sash:#79d5c3;--pale:#dcfff0;--ink:#13212a">
+    <use href="#ninja"/>
+    <use href="#blade" transform="rotate(-46) scale(.63 1)"/>
+    <path fill="none" stroke="#ffe9ae" stroke-width="2" d="M14-20A24 24 0 0 1 14 20"/>
+  </g>
+  <g transform="translate(308 162)" shape-rendering="crispEdges">
+    <path stroke="#24394b" stroke-width="5" d="M-17 0H17M0-17V17M-11-11 11 11M-11 11 11-11"/>
+    <path stroke="#ffe6a0" stroke-width="2" d="M-16 0h11m10 0h11M0-16v11m0 10v11M-11-11l7 7m8 8 7 7M-11 11l7-7m8-8 7-7"/>
+    <path fill="#fff7d7" d="M-3-3h6v6h-6z"/>
+    <path fill="#ffc982" d="M-22-12h3v2h-3zm38-10h2v3h-2zm8 25h3v2h-3zM-15 18h2v3h-2z"/>
+  </g>
+  <path stroke="#79d5c3" stroke-opacity=".8" stroke-width="2" d="M408 126 382 142"/>
+  <circle cx="380" cy="143" r="3" fill="#dcfff0"/>
+  <path fill="#516b7b" d="m378 143 3-1-1 3z"/>
+  <path fill="#152236" d="M177 0h246v22H177zM190 298h220v22H190z"/>
+  <path fill="#ee9b67" d="M187 9h19v3h-19z"/>
+  <path fill="#79d5c3" d="M394 9h19v3h-19z"/>
+  <text x="300" y="15" text-anchor="middle" fill="#d7e4dc" font-family="monospace" font-size="10" font-weight="bold" letter-spacing="2">SHINOBI SHOWDOWN</text>
+  <text x="300" y="312" text-anchor="middle" fill="#a8c0c7" font-family="monospace" font-size="8" letter-spacing="1">KATANA · KUNAI · PERFECT PARRY</text>
+</svg>

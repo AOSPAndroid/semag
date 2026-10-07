@@ -1,6 +1,7 @@
 import { mountKeyboardLayoutPicker, subscribeKeyboardLayout, displayKey } from '../keyboard-layout.js';
 import { setText, setAttribute, setDisabled, setHTML } from '../hub/dom.js';
 const SOLO_COVERS = {
+  'shadow-lantern': 'shadow',
   'skyline-hook': 'skyline', 'starfall-squadron': 'starfall', 'ironwood-tactics': 'ironwood',
   'paris-pedal': 'paris', 'ember-delve': 'ember', deckbound: 'deckbound',
   snake: 'snake', minesweeper: 'minesweeper', '2048': '2048',
@@ -15,6 +16,14 @@ const PARIS_DELIVERY_SCOPES = ['standard-delivery', 'veteran-delivery', 'nightma
 const PARIS_RUSH_SCOPES = ['standard-rush', 'veteran-rush', 'nightmare-rush', 'veteran-rush-v3', 'nightmare-rush-v3'];
 const baseScope = scope => scope.replace(/-v\d+$/, '');
 const GAME_INFO = {
+  'shadow-lantern': {
+    title: 'Shadow Lantern', category: 'NINJA / NINE STEALTH HEISTS', description: 'Watch the patrol. Take the seal. Leave no trail.',
+    module: '/solo/shadow-view.js', ruleTitle: 'Leave the lanterns undisturbed.',
+    recordPolicy: { scopes: ['shadow-v1-standard', 'shadow-v1-veteran', 'shadow-v1-nightmare'], onlyWon: true },
+    controls: [[['W', 'A', 'S', 'D', '↑', '←', '↓', '→'], 'Move'], [['Shift'], 'Sneak'], [['E'], 'Hold to interact / rear takedown'], [['Space'], 'Smoke'], [['Mouse'], 'Aim distraction'], [['Q'], 'Throw distraction kunai']],
+    touch: 'Use the direction buttons and Sneak, Interact, Smoke, and Distract controls. Face your target before throwing.',
+    rules: ['Collect the guarded seals and return to extraction in nine authored missions across three districts.', 'Watch patrol routes, facing and suspicion. Solid cover blocks sight, and shadow and sneaking help you stay unnoticed.', 'Hold Interact beside a seal or behind an unaware guard. Rear takedowns require careful approach and timing.', 'Use smoke to break sight or a distraction kunai to draw a patrol away. Health, tools and alarm pressure carry through the campaign.', 'Mission clocks count active play and give you time to plan a route. Pauses and decisions freeze the clock; waiting forever cannot finish a heist.', 'Veteran starts by default. Complete all nine missions to save a campaign score, separately for Standard, Veteran and Nightmare.'],
+  },
   'skyline-hook': {
     title: 'Skyline Hook', category: 'PRECISION PLATFORMER / GRAPPLING', description: 'Build momentum. Catch an anchor. Earn the next rooftop.',
     module: '/solo/skyline-view.js', ruleTitle: 'Turn a swing into a clean landing.',
@@ -155,6 +164,10 @@ export function recordDetails(gameId, update) {
 
 function recordNote(gameId, scope, direction) {
   scope = baseScope(scope);
+  if (gameId === 'shadow-lantern') {
+    const tier = scope.endsWith('nightmare') ? 'Nightmare' : scope.endsWith('veteran') ? 'Veteran' : 'Standard';
+    return `${tier} best score requires all nine heists. Pauses do not count; difficulties and other campaigns stay separate.`;
+  }
   if (gameId === 'ironwood-tactics') {
     const tier = scope.endsWith('nightmare') ? 'Nightmare' : scope.endsWith('veteran') ? 'Veteran' : 'Standard';
     return `${tier} renown requires all nine missions. Difficulties and earlier records stay separate.`;
