@@ -15,6 +15,7 @@ import subprocess
 import sys
 
 from playwright.sync_api import sync_playwright
+from browser_profiles import start_solo
 
 ROOT = Path(__file__).resolve().parents[1]
 SHOTS = Path(os.environ.get("FIRESIDE_SCREENSHOT_DIR", ROOT / "test-results" / "difficulty"))
@@ -128,7 +129,7 @@ def run(url):
                     page.goto(url + "/")
                     page.locator('[data-filter="solo"]').click()
                     page.locator(f'[data-play-solo="{game}"]').click()
-                    page.wait_for_function("game => window.firesideSolo?.gameId === game", arg=game)
+                    start_solo(page, game)
                     initial = state(page)
                     assert initial[field] == default, (game, initial)
                     pause_if_running(page)
@@ -197,9 +198,9 @@ def run(url):
                             selected_scope = "master-v3" if difficulty == "master" else difficulty
                             selected_display = "999999s" if difficulty in ("beginner", "expert") else "321s"
                             assert_known_record(page, game, selected_scope, selected_display)
-                    # Fresh navigation must launch challenge defaults again.
+                    # A fresh ready screen starts challenge defaults on explicit Start.
                     page.reload()
-                    page.wait_for_function("game => window.firesideSolo?.gameId === game", arg=game)
+                    start_solo(page, game)
                     assert state(page)[field] == default
                     pause_if_running(page)
                     if game == "paris-pedal":

@@ -16,7 +16,7 @@ import time
 from urllib.request import urlopen
 
 from playwright.sync_api import sync_playwright
-from browser_profiles import standard_profile
+from browser_profiles import standard_profile, start_solo
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -195,14 +195,14 @@ def focused_hold_controls(page, game, selector):
 
 def persistent_record(page, context, game, best):
     page.reload()
-    page.wait_for_function(f"game => {SURFACE}?.gameId === game", arg=game)
+    start_solo(page, game)
     standard_profile(page, game)
     assert stored_record(page, game) == best
     fresh = context.new_page()
     watch(fresh, f"{game}/fresh-page")
     try:
         fresh.goto(page.url)
-        fresh.wait_for_function(f"game => {SURFACE}?.gameId === game", arg=game)
+        start_solo(fresh, game)
         standard_profile(fresh, game)
         assert stored_record(fresh, game) == best, "Record was lost in a fresh same-origin page"
     finally:
@@ -217,7 +217,7 @@ def browser_back(page, url, game):
     page.locator(".solo-back").click()
     page.wait_for_url(url + "/")
     page.go_back(wait_until="commit")
-    page.wait_for_function(f"game => {SURFACE}?.gameId === game && {SURFACE}.getState() !== null", arg=game)
+    page.wait_for_function(f"game => {SURFACE}?.gameId === game", arg=game)
     cached = page.evaluate("window.__qaPageShowPersisted === true")
     if cached:
         assert state(page) == before, "Back/forward cache changed the paused driving session"
@@ -225,6 +225,7 @@ def browser_back(page, url, game):
         page.locator("#solo-pause").click()
         wait_phase(page, "playing")
     else:
+        start_solo(page, game)
         standard_profile(page, game)
         wait_phase(page, "playing")
     page.locator("#solo-restart").click()
@@ -510,7 +511,7 @@ def run(url):
                         mobile_previews(page, "driving-hub")
                     page.locator(f'[data-play-solo="{game}"]').click()
                     page.wait_for_url(f"**/solo.html?game={game}")
-                    page.wait_for_function(f"game => {SURFACE}?.gameId === game", arg=game)
+                    start_solo(page, game)
                     standard_profile(page, game)
                     wait_phase(page, "playing")
                     assert page.locator("#solo-controls-list").is_visible()

@@ -21,7 +21,7 @@
   <link rel="stylesheet" href="/keyboard-layout.css">
 </head>
 <body>
-  <main class="solo-app" id="solo-app" data-phase="playing">
+  <main class="solo-app" id="solo-app" data-phase="ready">
     <header class="solo-topbar">
       <a class="solo-back" href="/" aria-label="Back to the Semag game hub"><span aria-hidden="true">←</span><svg class="pixel-logo" viewBox="0 0 62 16" aria-hidden="true" focusable="false"><use href="/hub/logo.svg#brand" width="62" height="16"/></svg><b aria-hidden="true">/ BACK TO THE GAME SHELF</b></a>
       <div data-keyboard-layout-picker></div>
@@ -39,15 +39,25 @@
       <section class="solo-play-panel" aria-label="Solo game area">
         <div class="solo-hud">
           <div class="solo-score"><span id="solo-score-label">SCORE</span><strong id="solo-score">0</strong></div>
-          <div class="solo-play-status"><span class="solo-status-dot" aria-hidden="true"></span><span id="solo-status-label" role="status" aria-live="polite">LOADING</span></div>
+          <div class="solo-play-status"><span class="solo-status-dot" aria-hidden="true"></span><span id="solo-status-label" role="status" aria-live="polite">READY</span></div>
           <div class="solo-score solo-best"><span id="solo-record-label">BEST SCORE</span><strong id="solo-record">—</strong></div>
-          <div class="solo-session-actions" aria-label="Game session controls">
+          <div class="solo-session-actions" aria-label="Game session controls" hidden>
             <button class="solo-secondary" id="solo-pause" type="button" disabled aria-pressed="false" title="Pause or resume (P)"><span>Pause</span><b aria-hidden="true"><svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M3 2h3v12H3zm7 0h3v12h-3z"/></svg></b></button>
             <button class="solo-primary" id="solo-restart" type="button" disabled title="Start a new game (R)"><span>New game</span><b aria-hidden="true"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13 6a5 5 0 1 0 0 5M13 2v4H9"/></svg></b></button>
           </div>
         </div>
-        <div class="solo-game" id="solo-game" tabindex="0" aria-label="Game controls"></div>
-        <div class="solo-objective"><i aria-hidden="true"></i><span id="solo-detail">Your game is loading…</span></div>
+        <div class="solo-game" id="solo-game" tabindex="-1" aria-label="Game controls">
+          <div class="solo-launch" id="solo-launch">
+            <img id="solo-preview" alt="" width="600" height="320" decoding="async">
+            <div class="solo-launch-content">
+              <span class="solo-launch-kicker">YOUR NEXT CHALLENGE</span>
+              <h2>Ready when you are.</h2>
+              <p>Read the controls, then start your game.</p>
+              <button class="solo-launch-button" id="solo-start" type="button"><span>Start game</span><b aria-hidden="true"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="M4 2h2v1h2v1h2v1h2v1h2v2h-2v1h-2v1H8v1H6v1H4Z"/></svg></b></button>
+            </div>
+          </div>
+        </div>
+        <div class="solo-objective"><i aria-hidden="true"></i><span id="solo-detail">Start when you’re ready.</span></div>
       </section>
 
       <aside class="solo-sidebar">

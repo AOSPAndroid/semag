@@ -1,5 +1,10 @@
 import { mountKeyboardLayoutPicker, subscribeKeyboardLayout, displayKey } from '../keyboard-layout.js';
 import { setText, setAttribute, setDisabled, setHTML } from '../hub/dom.js';
+const SOLO_COVERS = {
+  'paris-pedal': 'paris', 'ember-delve': 'ember', deckbound: 'deckbound',
+  snake: 'snake', minesweeper: 'minesweeper', '2048': '2048',
+  'apex-circuit': 'circuit', 'night-drive': 'highway', 'prism-shift': 'prism', 'rift-survivor': 'rift',
+};
 const ACTION_SCOPES = ['default', 'veteran', 'nightmare', 'veteran-v3', 'nightmare-v3'];
 const tierScopes = scopes => [...scopes, ...['veteran', 'nightmare'].flatMap(tier => scopes.flatMap(scope => [`${tier}-${scope}`, `${tier}-${scope}-v3`]))];
 const RACE_SCOPES = tierScopes(['three-laps', 'harbor-ring-three-laps', 'rain-pass-three-laps', 'championship']);
@@ -190,11 +195,14 @@ async function startSolo() {
   let storage;
   try { storage = window.localStorage; } catch {}
   const records = createBestStore(storage);
+  const start = $('solo-start');
   const restart = $('solo-restart');
   const pause = $('solo-pause');
+  const sessionActions = document.querySelector('.solo-session-actions');
   const container = $('solo-game');
   const help = $('solo-how-to');
   let game = null;
+  let starting = false;
   let destroyed = false;
 
   document.title = `${info.title} — Semag`;
@@ -204,9 +212,11 @@ async function startSolo() {
   $('solo-title').textContent = info.title;
   $('solo-category').textContent = info.category;
   $('solo-description').textContent = info.description;
+  $('solo-preview').src = `/hub/${SOLO_COVERS[gameId]}-cover.svg`;
   $('solo-rules-title').textContent = info.ruleTitle;
   $('solo-touch-help').textContent = info.touch;
   container.setAttribute('aria-label', `${info.title} game area`);
+  Object.defineProperty(window, 'firesideSolo', { configurable: true, value: Object.freeze({ gameId, getState: () => game?.getState() ?? null }) });
   if (invalidGame) {
     $('solo-notice').textContent = 'That game is not on the solo shelf. Here is Snake instead.';
     $('solo-notice').hidden = false;
@@ -280,7 +290,7 @@ async function startSolo() {
     else cleanup();
   }
   function keydown(event) {
-    if (event.defaultPrevented || event.repeat || event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (!game || destroyed || event.defaultPrevented || event.repeat || event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
     if (event.target instanceof Element && event.target.closest('input,select,textarea,[contenteditable="true"]')) return;
     const key = event.key.toLowerCase();
     if (key === 'r') { event.preventDefault(); newGame(); }
@@ -294,6 +304,7 @@ async function startSolo() {
     if (destroyed) return;
     destroyed = true;
     unsubscribeLayout(); keyboardPicker.destroy();
+    start.removeEventListener('click', startGame);
     restart.removeEventListener('click', newGame);
     pause.removeEventListener('click', togglePause);
     help.removeEventListener('keydown', helpKeydown);
@@ -302,33 +313,55 @@ async function startSolo() {
     window.removeEventListener('pagehide', pageHidden);
     document.removeEventListener('visibilitychange', visibilityChanged);
     game?.destroy();
+    game = null;
   }
 
-  try {
-    const module = await import(info.module);
-    if (destroyed) return;
-    game = module.mount(container, { onUpdate });
-    if (!game || typeof game.getState !== 'function' || typeof game.restart !== 'function' || typeof game.togglePause !== 'function' || typeof game.destroy !== 'function') throw new Error('Invalid solo game interface');
-    restart.disabled = false;
-    restart.addEventListener('click', newGame);
-    pause.addEventListener('click', togglePause);
-    help.addEventListener('keydown', helpKeydown);
-    window.addEventListener('keydown', keydown);
-    window.addEventListener('blur', autoPause);
-    window.addEventListener('pagehide', pageHidden);
-    document.addEventListener('visibilitychange', visibilityChanged);
-    Object.defineProperty(window, 'firesideSolo', { configurable: true, value: Object.freeze({ gameId, getState: () => game?.getState() ?? null }) });
-    focusGame();
-  } catch (error) {
-    cleanup();
-    $('solo-error').textContent = 'This game could not load. Refresh the page to try again, or choose another game from the shelf.';
-    $('solo-error').hidden = false;
-    $('solo-status-label').textContent = 'UNAVAILABLE';
-    $('solo-detail').textContent = 'Your best scores are saved for your next visit.';
-    restart.disabled = true;
-    pause.disabled = true;
-    console.error('Solo game failed to load', error);
+  async function startGame() {
+    if (destroyed || starting || game) return;
+    starting = true;
+    start.disabled = true;
+    setText(start.querySelector('span'), 'Starting…');
+    $('solo-app').dataset.phase = 'loading';
+    setText($('solo-status-label'), 'LOADING');
+    container.setAttribute('aria-busy', 'true');
+    try {
+      const module = await import(info.module);
+      if (destroyed) return;
+      const focused = document.activeElement;
+      const focusPlayArea = focused === document.body || container.contains(focused);
+      container.replaceChildren();
+      game = module.mount(container, { onUpdate });
+      if (!game || typeof game.getState !== 'function' || typeof game.restart !== 'function' || typeof game.togglePause !== 'function' || typeof game.destroy !== 'function') throw new Error('Invalid solo game interface');
+      container.tabIndex = 0;
+      restart.disabled = false;
+      sessionActions.hidden = false;
+      // Loading can finish after the player has left this tab or window.
+      if (document.hidden || !document.hasFocus()) autoPause();
+      else if (focusPlayArea) focusGame();
+      else if (focused?.isConnected) focused.focus({ preventScroll: true });
+    } catch (error) {
+      cleanup();
+      $('solo-error').textContent = 'This game could not load. Refresh the page to try again, or choose another game from the shelf.';
+      $('solo-error').hidden = false;
+      $('solo-app').dataset.phase = 'unavailable';
+      $('solo-status-label').textContent = 'UNAVAILABLE';
+      $('solo-detail').textContent = 'Your best scores are saved for your next visit.';
+      restart.disabled = true;
+      pause.disabled = true;
+      console.error('Solo game failed to load', error);
+    } finally {
+      container.removeAttribute('aria-busy');
+    }
   }
+
+  start.addEventListener('click', startGame);
+  restart.addEventListener('click', newGame);
+  pause.addEventListener('click', togglePause);
+  help.addEventListener('keydown', helpKeydown);
+  window.addEventListener('keydown', keydown);
+  window.addEventListener('blur', autoPause);
+  window.addEventListener('pagehide', pageHidden);
+  document.addEventListener('visibilitychange', visibilityChanged);
 }
 
 if (typeof document !== 'undefined') startSolo();

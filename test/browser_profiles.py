@@ -6,6 +6,14 @@ fixtures without changing engine state or inserting gameplay inputs in JS.
 """
 
 
+def start_solo(page, game):
+    """Explicitly begin gameplay after a fresh navigation to its ready screen."""
+    page.wait_for_function("game => window.firesideSolo?.gameId === game", arg=game)
+    assert page.evaluate("window.firesideSolo.getState()") is None, "A fresh solo page started without player input"
+    page.locator("#solo-start").click()
+    page.wait_for_function("game => window.firesideSolo?.gameId === game && window.firesideSolo.getState() !== null", arg=game)
+
+
 def standard_profile(page, game):
     if game in ("snake", "2048"):
         button = page.locator('#solo-game [data-mode="classic"]')

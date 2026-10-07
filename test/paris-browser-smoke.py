@@ -18,6 +18,7 @@ import time
 from urllib.request import urlopen
 
 from playwright.sync_api import sync_playwright
+from browser_profiles import start_solo
 
 ROOT = Path(__file__).resolve().parents[1]
 SHOTS = Path(os.environ.get("FIRESIDE_SCREENSHOT_DIR", ROOT / "test-results" / "paris"))
@@ -91,7 +92,7 @@ def catalog(page):
             assert page.locator(f'[data-play-solo="{GAME}"]:visible').count() == 1
     page.locator('[data-filter="all"]').click()
     page.locator(f'[data-play-solo="{GAME}"]').click()
-    page.wait_for_function(f"{SURFACE}?.gameId === 'paris-pedal'")
+    start_solo(page, GAME)
     assert "room=" not in page.url
 
 
@@ -366,7 +367,7 @@ def survival_checks(page, context):
     assert state(page)["mode"] == "survival" and record(page, "veteran-survival-v1") == best
     native_button(page, "#solo-pause")
     page.reload()
-    page.wait_for_function(f"{SURFACE}?.gameId === 'paris-pedal'")
+    start_solo(page, GAME)
     assert state(page)["difficulty"] == "veteran" and state(page)["mode"] == "survival"
     assert record(page, "veteran-survival-v1") == best
     assert page.locator("#solo-record").inner_text() == duration_text(best)
@@ -523,7 +524,7 @@ def ride_delivery(page, survival_best):
     assert record(page, "veteran-delivery") == best, "Failed route replaced qualifying delivery score"
     page.screenshot(path=str(SHOTS / "paris-idle-failure.png"), full_page=True)
     page.reload()
-    page.wait_for_function(f"{SURFACE}?.gameId === 'paris-pedal'")
+    start_solo(page, GAME)
     assert state(page)["difficulty"] == "veteran" and state(page)["mode"] == "survival"
     assert record(page, "veteran-delivery") == best
     print(f"  Full five-district Veteran route won in {finished['finishTime']:.2f}s; visible traffic/warnings, scoring, qualifying-only records and idle failure passed", flush=True)

@@ -41,6 +41,10 @@ available in each game. Veteran and Nightmare demand stronger tactics, pace,
 or planning, and keep their records separate from easier runs. Revised challenge
 records stay separate from historical scores across all ten solo games.
 
+## Starting a solo game
+
+Open a solo game from the shelf, review its controls, and press **Start game** when you are ready. The game and its timers wait on the ready screen. After starting, use Pause / Resume or New game for that session.
+
 ## Keyboard layout
 
 Choose **WASD** or **ZQSD · Français** from the **Keyboard** selector on the shelf or game header. Semag remembers the choice in your browser, and each player can choose independently. Movement keys, hints, and accessible controls update together; arrow keys and touch controls stay available. In ZQSD, Apex Circuit uses **A** to reset, and Prism Shift uses **W** to rotate counterclockwise so **Q** and **Z** can control movement. Switching layouts releases held controls without restarting the run. The game instructions below use the default WASD labels.

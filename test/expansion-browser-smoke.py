@@ -15,7 +15,7 @@ import sys
 import time
 
 from playwright.sync_api import sync_playwright
-from browser_profiles import standard_profile
+from browser_profiles import standard_profile, start_solo
 
 ROOT = Path(__file__).resolve().parents[1]
 SHOTS = Path(os.environ.get("FIRESIDE_SCREENSHOT_DIR", ROOT / "test-results" / "expansion"))
@@ -311,7 +311,7 @@ def run(url):
                 if game == "ember-delve":
                     catalog(page)
                 page.locator(f'[data-play-solo="{game}"]').click()
-                page.wait_for_function("game=>window.firesideSolo?.gameId===game", arg=game)
+                start_solo(page, game)
                 standard_profile(page, game)
                 exercise(page, context)
                 context.close()

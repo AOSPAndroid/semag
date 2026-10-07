@@ -8,6 +8,7 @@ from pathlib import Path
 import sys
 
 from playwright.sync_api import sync_playwright
+from browser_profiles import start_solo
 
 GAMES = {
     'ember-delve': ('ember', 'ember-canvas'),
@@ -78,7 +79,7 @@ def run(url):
             for game, (prefix, canvas_class) in GAMES.items():
                 for selected in ('wasd', 'zqsd'):
                     page.goto(f'{url}/solo.html?game={game}')
-                    page.wait_for_function('game => window.firesideSolo?.gameId === game', arg=game)
+                    start_solo(page, game)
                     toggle_pause(page)
                     before = state(page)
                     assert before['phase'] == 'paused', (game, before['phase'])
