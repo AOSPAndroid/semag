@@ -73,8 +73,8 @@ def native_help(page):
 
 def catalog(page):
     assert page.locator("[data-create-game]").count() == 9
-    assert page.locator("[data-play-solo]").count() == 10
-    for name, friends, solos in [("all", 9, 10), ("friends", 9, 0), ("solo", 0, 10), ("roguelike", 0, 3), ("driving", 0, 3)]:
+    assert page.locator("[data-play-solo]").count() == 13
+    for name, friends, solos in [("all", 9, 13), ("friends", 9, 0), ("solo", 0, 13), ("roguelike", 0, 4), ("driving", 0, 3)]:
         page.locator(f'[data-filter="{name}"]').click()
         assert page.locator("[data-create-game]:visible").count() == friends
         assert page.locator("[data-play-solo]:visible").count() == solos
@@ -82,7 +82,7 @@ def catalog(page):
     for game in ("ember-delve", "deckbound", "oddstock-rumble"):
         assert page.locator(f'[data-game-card="{game}"]').is_visible()
     page.locator('#game-search').fill('roguelike')
-    assert page.locator('[data-game-card]:visible').count() == 3
+    assert page.locator('[data-game-card]:visible').count() == 4
     page.locator('#game-search').fill('')
     mobile(page, "expanded-hub")
 

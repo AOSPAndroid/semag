@@ -1,6 +1,7 @@
 import { mountKeyboardLayoutPicker, subscribeKeyboardLayout, displayKey } from '../keyboard-layout.js';
 import { setText, setAttribute, setDisabled, setHTML } from '../hub/dom.js';
 const SOLO_COVERS = {
+  'skyline-hook': 'skyline', 'starfall-squadron': 'starfall', 'ironwood-tactics': 'ironwood',
   'paris-pedal': 'paris', 'ember-delve': 'ember', deckbound: 'deckbound',
   snake: 'snake', minesweeper: 'minesweeper', '2048': '2048',
   'apex-circuit': 'circuit', 'night-drive': 'highway', 'prism-shift': 'prism', 'rift-survivor': 'rift',
@@ -14,6 +15,31 @@ const PARIS_DELIVERY_SCOPES = ['standard-delivery', 'veteran-delivery', 'nightma
 const PARIS_RUSH_SCOPES = ['standard-rush', 'veteran-rush', 'nightmare-rush', 'veteran-rush-v3', 'nightmare-rush-v3'];
 const baseScope = scope => scope.replace(/-v\d+$/, '');
 const GAME_INFO = {
+  'skyline-hook': {
+    title: 'Skyline Hook', category: 'PRECISION PLATFORMER / GRAPPLING', description: 'Build momentum. Catch an anchor. Earn the next rooftop.',
+    module: '/solo/skyline-view.js', ruleTitle: 'Turn a swing into a clean landing.',
+    scoreDigits: 2, scoreUnit: 's',
+    recordPolicy: { scopes: ['standard-campaign-v1', 'veteran-campaign-v1', 'nightmare-campaign-v1'], direction: 'min', unit: 's', digits: 2, onlyWon: true },
+    controls: [[['A', 'D', '←', '→'], 'Move'], [['Space'], 'Jump / hold for height'], [['Mouse'], 'Aim the hook'], [['Click', 'E'], 'Hold hook / release'], [['W', 'S', '↑', '↓'], 'Reel rope']],
+    touch: 'Use the direction and jump buttons. Tap a visible anchor to grapple; release and reel the rope with the action buttons.',
+    rules: ['Cross twelve authored rooftop stages in three distinct districts. Collect both relay chips and reach the exit to continue the same campaign.', 'Accelerate into a jump, hold the hook on a visible anchor, then release to carry your momentum onto the next platform. Holding jump changes its height.', 'A short jump buffer and coyote window help precise inputs. Grappling does not make you immune to spikes, laser gates, or falls.', 'Veteran starts by default. Lives carry through the campaign, so learn the hazard rhythm and choose controlled landings.', 'Pause freezes the stage and campaign clock. A new game resets the campaign and its resources.', 'Complete all twelve rooftops to save your fastest campaign time. Standard, Veteran, and Nightmare records stay separate.'],
+  },
+  'starfall-squadron': {
+    title: 'Starfall Squadron', category: 'BULLET HELL / SIX GUARDIANS', description: 'Read the pattern. Find the gap. Bring your squadron home.',
+    module: '/solo/starfall-view.js', ruleTitle: 'Stay calm inside the pattern.',
+    recordPolicy: { scopes: ['standard-campaign-v1', 'veteran-campaign-v1', 'nightmare-campaign-v1'], onlyWon: true, completionResult: 'campaign' },
+    controls: [[['W', 'A', 'S', 'D', '↑', '←', '↓', '→'], 'Move'], [['Shift'], 'Focus / precision movement'], [['J', 'Click'], 'Fire'], [['Space', 'K'], 'Bomb']],
+    touch: 'Drag to move your ship. Hold Focus for fine movements, and use Bomb when a pattern leaves little room. Auto-fire starts enabled.',
+    rules: ['Fight through six stages in three regions. Each stage ends with a guardian; the final guardian changes its attacks across three phases.', 'Your visible pilot core is the collision target. Focus slows your movement for narrow gaps and concentrates your fire.', 'Near passes build your graze score, but direct contact costs hull. Watch the warnings and leave room to change direction.', 'Bombs clear dangerous shots and are limited across the campaign. Choose upgrades between stages to shape your ship.', 'Veteran starts by default. Standard and Nightmare have separate campaign records; changing difficulty begins a fresh run.', 'Only a completed six-stage campaign saves a score. Pauses and upgrade choices freeze combat.'],
+  },
+  'ironwood-tactics': {
+    title: 'Ironwood Tactics', category: 'TURN-BASED SQUAD ROGUELIKE', description: 'Read their intent. Push the line. Protect the beacon.',
+    module: '/solo/ironwood-view.js', ruleTitle: 'Change the board before they strike.',
+    recordPolicy: { scopes: ['ironwood-v1-standard', 'ironwood-v1-veteran', 'ironwood-v1-nightmare'], onlyWon: true },
+    controls: [[['Click', 'Tap'], 'Select heroes, actions and tiles'], [['1', '2', '3'], 'Select a hero'], [['W', 'A', 'S', 'D', '↑', '←', '↓', '→'], 'Move the grid cursor'], [['Enter'], 'Choose a tile'], [['E'], 'End squad turn']],
+    touch: 'Tap a hero, choose an action, then tap a highlighted tile. Review the enemy intent and resolution order before ending the turn.',
+    rules: ['Lead a Warden, Ranger, and Weaver through nine missions in three biomes, with a guardian at the end of each biome.', 'Each hero has movement and one action per turn. Use pushes, pulls, cover, and firing lines to change the board. Bosses are rooted: displacement deals its collision bonus but cannot move them or cancel their intent.', 'Enemy intent marks the exact attack tiles and the order they resolve. Reposition your squad and protect the beacon before ending your turn. Royal lines can also hit the beacon, and living bosses drain one, two, or three beacon health each turn by biome.', 'Health and limited bandages carry between battles. Choose a unique permanent upgrade or a constrained recovery after each victory.', 'A mission deadline brings escalating storm damage. Waiting indefinitely cannot clear an expedition.', 'Veteran starts by default. Finish all nine missions to save expedition renown; practice and Nightmare records stay separate.'],
+  },
   'paris-pedal': {
     title: 'Paris Pedal', category: 'DRIVING / PARIS E-BIKE SURVIVAL', description: 'The longer you last, the faster Paris flies past.',
     module: '/solo/paris-view.js', ruleTitle: 'Last one more second.',
@@ -129,7 +155,13 @@ export function recordDetails(gameId, update) {
 
 function recordNote(gameId, scope, direction) {
   scope = baseScope(scope);
+  if (gameId === 'ironwood-tactics') {
+    const tier = scope.endsWith('nightmare') ? 'Nightmare' : scope.endsWith('veteran') ? 'Veteran' : 'Standard';
+    return `${tier} renown requires all nine missions. Difficulties and earlier records stay separate.`;
+  }
   const tier = scope.startsWith('nightmare') ? 'Nightmare' : scope.startsWith('veteran') ? 'Veteran' : 'Standard';
+  if (gameId === 'skyline-hook') return `${tier} fastest time requires all twelve rooftops in one campaign. Pauses do not count; difficulties stay separate.`;
+  if (gameId === 'starfall-squadron') return `${tier} best score requires all six stages and guardians. Difficulties stay separate.`;
   if (gameId === 'paris-pedal') {
     if (scope.endsWith('-survival')) return `${tier} longest survival counts active riding time until the third impact. Pauses do not count; other difficulties and older challenge records stay separate.`;
     return scope.endsWith('-delivery') ? `${tier} Delivery records require all five districts and stay separate from Survival.` : `${tier} historical Rush points stay separate from Survival and Delivery.`;

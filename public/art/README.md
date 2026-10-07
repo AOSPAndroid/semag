@@ -15,6 +15,13 @@ buildings face the road and meet the ground. Night Drive and Apex Circuit share
 painted car bodies, glass, tyres and rear lights. These cached materials,
 skyline art, and vehicle sprites ship with the host.
 
+Skyline Hook uses three layered rooftop palettes, detailed runners, signal
+anchors, and rope paths. Starfall Squadron uses distinct ship silhouettes,
+region scenery, and shot colors with a visible pilot collision core. Ironwood
+Tactics uses biome tiles, hero and enemy portraits, and exact intent overlays.
+Their original artwork is drawn locally and bundled with the host, including
+the shelf covers.
+
 Static environments and reusable portraits are cached by their renderers.
 Animated poses and effects follow the game state; artwork never changes movement,
 collision, attack range, card identity, or the multiplayer rules.

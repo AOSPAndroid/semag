@@ -1,4 +1,7 @@
 export const GAMES = {
+  'skyline-hook': { title: 'Skyline Hook', category: 'PRECISION GRAPPLING', kind: 'solo', genre: 'action', icon: '↗', description: 'Build momentum. Catch an anchor. Earn the next rooftop.', color: '#71958b' },
+  'starfall-squadron': { title: 'Starfall Squadron', category: 'BULLET-HELL SHOOTER', kind: 'solo', genre: 'action', icon: '✺', description: 'Read the pattern. Find the gap. Bring your squadron home.', color: '#7e81a4' },
+  'ironwood-tactics': { title: 'Ironwood Tactics', category: 'SQUAD TACTICS ROGUELIKE', kind: 'solo', genre: 'strategy', roguelike: true, icon: '♜', description: 'Read their intent. Push the line. Protect the beacon.', color: '#8c9b72' },
   'paris-pedal': { title: 'Paris Pedal', category: 'DRIVING / E-BIKE SURVIVAL', kind: 'solo', genre: 'driving', icon: '⌁', description: 'Paris gets faster the longer you survive. Last one more second.', color: '#488d87' },
   'ember-delve': { title: 'Ember Delve', category: 'ACTION ROGUELIKE', kind: 'solo', genre: 'action', roguelike: true, icon: '♨', description: 'Read the windup. Break the pursuit. Earn your descent.', color: '#a07151' },
   'deckbound': { title: 'Deckbound', category: 'DECKBUILDING ROGUELIKE', kind: 'solo', genre: 'cards', roguelike: true, icon: '♧', description: 'Read their intent. Commit to battles. Build for the bosses.', color: '#8e815b' },

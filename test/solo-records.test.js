@@ -2,6 +2,63 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createBestStore, recordDetails, formatValue } from '../public/solo/solo.js';
 
+test('new campaign records reject unfinished runs and unknown challenge scopes', () => {
+  for (const [gameId, scope, result] of [
+    ['skyline-hook', 'veteran-campaign-v1', undefined],
+    ['starfall-squadron', 'veteran-campaign-v1', 'campaign'],
+    ['ironwood-tactics', 'ironwood-v1-veteran', undefined],
+  ]) {
+    for (const phase of ['playing', 'paused', 'lost', 'upgrade', 'stage-clear', 'reward']) {
+      assert.equal(recordDetails(gameId, { phase, recordKey: scope, score: 500, record: 500, result }).candidate, null, `${gameId}/${phase}`);
+    }
+    assert.equal(recordDetails(gameId, { phase: 'won', recordKey: scope, record: 500, result }).candidate, 500);
+    assert.equal(recordDetails(gameId, { phase: 'won', recordKey: scope + '-unknown', record: 500, result }).candidate, null);
+  }
+  assert.equal(recordDetails('starfall-squadron', { phase: 'won', recordKey: 'veteran-campaign-v1', record: 500, result: 'stage' }).candidate, null);
+});
+
+test('Skyline fastest completed campaigns survive reload and stay separate by difficulty', () => {
+  const storage = browserStorage();
+  let store = createBestStore(storage);
+  const save = (tier, phase, time) => {
+    const policy = recordDetails('skyline-hook', { phase, recordKey: `${tier}-campaign-v1`, score: time, record: time });
+    return store.update('skyline-hook', policy.candidate, policy);
+  };
+  assert.equal(save('veteran', 'playing', 1), null);
+  assert.equal(save('veteran', 'won', 240.38), 240.38);
+  assert.equal(save('veteran', 'won', 260.5), 240.38);
+  assert.equal(save('veteran', 'lost', 1), 240.38);
+  assert.equal(save('standard', 'won', 100), 100);
+  assert.equal(save('nightmare', 'won', 300), 300);
+  store = createBestStore(storage);
+  assert.equal(store.read('skyline-hook', 'veteran-campaign-v1'), 240.38);
+  assert.equal(save('veteran', 'won', 230.2), 230.2);
+  assert.equal(formatValue(230.2, 2, 's'), '230.20s');
+  assert.equal(store.read('skyline-hook', 'standard-campaign-v1'), 100);
+  assert.equal(store.read('apex-circuit', 'veteran-three-laps-v3'), null);
+});
+
+test('Starfall and Ironwood completed scores remain isolated across difficulties and games', () => {
+  const storage = browserStorage();
+  let store = createBestStore(storage);
+  for (const gameId of ['starfall-squadron', 'ironwood-tactics']) {
+    for (const [index, tier] of ['standard', 'veteran', 'nightmare'].entries()) {
+      const recordKey = gameId === 'ironwood-tactics' ? `ironwood-v1-${tier}` : `${tier}-campaign-v1`;
+      const save = (phase, record) => {
+        const policy = recordDetails(gameId, { phase, recordKey, record, result: 'campaign' });
+        return store.update(gameId, policy.candidate, policy);
+      };
+      assert.equal(save('won', 900 + index), 900 + index);
+      assert.equal(save('won', 800), 900 + index);
+      assert.equal(save('lost', 9999), 900 + index);
+      assert.equal(save('playing', 9999), 900 + index);
+      store = createBestStore(storage);
+      assert.equal(store.read(gameId, recordKey), 900 + index);
+    }
+  }
+  assert.equal(store.read('deckbound', 'veteran-v3'), null);
+});
+
 function browserStorage() {
   const values = new Map();
   return {

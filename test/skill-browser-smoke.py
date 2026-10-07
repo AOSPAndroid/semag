@@ -87,7 +87,7 @@ class Keyboard:
 
 def check_catalog(page):
     assert page.locator("[data-create-game]").count() == 9
-    assert page.locator("[data-play-solo]").count() == 10
+    assert page.locator("[data-play-solo]").count() == 13
     for selector in ('[data-create-game="vector-arena"]', '[data-play-solo="prism-shift"]', '[data-play-solo="rift-survivor"]'):
         assert page.locator(selector).bounding_box()["height"] >= 44
     page.locator('[data-filter="action"]').click()
@@ -97,7 +97,7 @@ def check_catalog(page):
     assert page.locator("[data-play-solo]:visible").count() == 3
     assert page.locator("[data-create-game]:visible").count() == 0
     page.locator('[data-filter="solo"]').click()
-    assert page.locator("[data-play-solo]:visible").count() == 10
+    assert page.locator("[data-play-solo]:visible").count() == 13
     assert page.locator("[data-create-game]:visible").count() == 0
     page.locator('[data-filter="all"]').click()
 
@@ -124,10 +124,10 @@ def check_search(page):
     search.focus()
     page.keyboard.press("ControlOrMeta+a")
     page.keyboard.press("Backspace")
-    assert page.locator("[data-game-card]:visible").count() == 7
+    assert page.locator("[data-game-card]:visible").count() == 9
     assert page.locator("#shelf-empty").is_hidden()
     page.locator('[data-filter="all"]').click()
-    assert page.locator("[data-game-card]:visible").count() == 19
+    assert page.locator("[data-game-card]:visible").count() == 22
 
 
 CANVAS_PAINT = """() => [...document.querySelectorAll('.game-art canvas')]
