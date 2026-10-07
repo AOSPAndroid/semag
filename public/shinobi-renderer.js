@@ -7,9 +7,9 @@ const NINJAS = [
   { cloth: '#39434a', shade: '#20292f', edge: '#788784', sash: '#79d5c3', pale: '#dcfff0', ink: '#13212a' },
 ];
 const SCENES = {
-  rooftop: { name: 'RAIN ROOFTOP', seed: 1831, ink: '#121d30', floor: '#2c3d53', seam: '#18273d', tiles: ['#304158', '#35475e', '#293b51', '#34445b'], edge: '#8aafbf', stone: '#65798a', light: '#bed6d8', wood: '#635864' },
-  garden: { name: 'LANTERN COURTYARD', seed: 5901, ink: '#152829', floor: '#3c514b', seam: '#283d3b', tiles: ['#43564e', '#485b52', '#3e514b', '#465952'], edge: '#a1b295', stone: '#87978b', light: '#d7d8b3', wood: '#756354' },
-  shrine: { name: 'SNOW SHRINE', seed: 7293, ink: '#243949', floor: '#b4c6c6', seam: '#839d9f', tiles: ['#b4c8c8', '#bdcecd', '#aebfc0', '#b8c9c8'], edge: '#e7efdf', stone: '#7f9c9b', light: '#e9f1df', wood: '#676b70' },
+  rooftop: { name: 'MOONLIT ROOFTOPS', seed: 1831, ink: '#111d2d', floor: '#293c4b', seam: '#21323f', tiles: ['#304654', '#334957', '#2e4250', '#344754'], edge: '#8aafbf', stone: '#65798a', light: '#bed6d8', wood: '#635864' },
+  garden: { name: 'LANTERN GARDEN', seed: 5901, ink: '#152829', floor: '#3c514b', seam: '#334640', tiles: ['#485c51', '#4d6156', '#46594f', '#4b5e52'], edge: '#a1b295', stone: '#87978b', light: '#d7d8b3', wood: '#756354' },
+  shrine: { name: 'WINTER SHRINE', seed: 7293, ink: '#243949', floor: '#b4c6c6', seam: '#91a9a8', tiles: ['#b4c8c8', '#bdcecd', '#aebfc0', '#b8c9c8'], edge: '#e7efdf', stone: '#7f9c9b', light: '#e9f1df', wood: '#676b70' },
 };
 
 function randomFrom(seed) {
@@ -73,6 +73,9 @@ export class ShinobiRenderer {
 
   resize() {
     const bounds = this.canvas.getBoundingClientRect(), dpr = Math.min(window.devicePixelRatio || 1, 2);
+    // Resource bars and phase labels are UI, so keep them readable when the
+    // complete world is fitted into a portrait screen; world geometry is fixed.
+    this.uiScale = bounds.width > 0 ? clamp(WORLD.width / bounds.width, 1, 2.7) : 1;
     const width = Math.max(1, Math.round(bounds.width * dpr)), height = Math.max(1, Math.round(bounds.height * dpr));
     if (this.canvas.width !== width) this.canvas.width = width;
     if (this.canvas.height !== height) this.canvas.height = height;
@@ -80,8 +83,10 @@ export class ShinobiRenderer {
 
   resetEffects() {
     this.particles = []; this.bursts = []; this.ghosts = [];
+    this.callouts = [];
     this.seenEvents = new Set(); this.eventOrder = []; this.lastGhost = [-1, -1];
     this.lastTick = -1; this.lastTime = null; this.hitFlash = [0, 0];
+    this.lastRound = null; this.lastStage = null; this.lastPhase = null;
   }
 
   destroy() {
@@ -127,12 +132,14 @@ export class ShinobiRenderer {
     ctx.fillStyle = p.floor; ctx.fillRect(wall, wall, width - wall * 2, height - wall * 2);
     ctx.save(); ctx.beginPath(); ctx.rect(wall, wall, width - wall * 2, height - wall * 2); ctx.clip();
     if (id === 'rooftop') {
-      for (let row = 0, y = wall; y < height - wall; y += 24, row++) for (let x = wall - row % 2 * 24; x < width - wall; x += 48) {
-        ctx.fillStyle = p.tiles[Math.floor(random() * 4)]; ctx.fillRect(x + 1, y + 1, 46, 22);
-        ctx.fillStyle = '#17263c'; ctx.fillRect(x + 1, y + 20, 46, 3);
-        ctx.fillStyle = '#8eb1bc35'; ctx.fillRect(x + 3, y + 2, 42, 2);
-        ctx.fillStyle = '#4d718251'; ctx.fillRect(x + 4, y + 6, 40, 1);
-        if (random() > .78) { ctx.fillStyle = '#b6d0cf21'; ctx.fillRect(x + 8, y + 10, 16, 1); ctx.fillRect(x + 11, y + 12, 8, 1); }
+      // Broad slate panels keep the fighting lane quiet; the fine ribs are
+      // surface texture, with no decorative platform or false collision edge.
+      for (let row = 0, y = wall; y < height - wall; y += 32, row++) for (let x = wall - row % 2 * 40; x < width - wall; x += 80) {
+        ctx.fillStyle = p.tiles[Math.floor(random() * 4)]; ctx.fillRect(x + 1, y + 1, 78, 30);
+        ctx.fillStyle = '#162a343d'; ctx.fillRect(x + 1, y + 29, 78, 2);
+        ctx.fillStyle = '#9fc1bf27'; ctx.fillRect(x + 3, y + 2, 74, 1);
+        ctx.fillStyle = '#799b9d15'; ctx.fillRect(x + 3, y + 6, 73, 1);
+        if (random() > .68) { ctx.fillStyle = '#a6c4c325'; ctx.fillRect(x + 8, y + 14, 26, 1); ctx.fillRect(x + 12, y + 16, 14, 1); }
       }
       // Roof seams are flat copper flashing, not additional collision cover.
       for (const y of [78, 562]) {
@@ -143,6 +150,13 @@ export class ShinobiRenderer {
       for (const [x, y] of [[114, 161], [737, 99], [125, 470], [761, 537]]) {
         polygon(ctx, [[x, y], [x + 59, y - 4], [x + 73, y + 4], [x + 40, y + 8], [x - 2, y + 5]], '#77a6b223');
         line(ctx, [[x + 9, y + 1], [x + 49, y]], '#a1c9ce25');
+      }
+      for (const [x, y, w, h] of [[79, 215, 120, 72], [736, 365, 120, 72]]) {
+        ctx.fillStyle = '#78a9b020'; ctx.fillRect(x, y, w, h);
+        for (let py = y + 4; py < y + h; py += 6) {
+          ctx.fillStyle = '#a3cbca16'; ctx.fillRect(x + 7, py, w - 14, 1);
+        }
+        line(ctx, [[x + 5, y + h - 2], [x + w - 8, y + h - 2]], '#b2d0c934');
       }
     } else {
       const tileW = id === 'shrine' ? 56 : 64, tileH = id === 'shrine' ? 40 : 48;
@@ -172,7 +186,34 @@ export class ShinobiRenderer {
       if (id === 'shrine') for (const [x, y] of [[125, 185], [813, 476], [758, 130], [188, 557]]) {
         ctx.fillStyle = '#edf4e365'; ctx.fillRect(x, y, 38, 2); ctx.fillRect(x + 6, y + 2, 50, 3); ctx.fillRect(x + 17, y + 5, 36, 2);
       }
+      if (id === 'garden') {
+        // Moss follows the grout and fallen petals remain flush with the stone.
+        for (let i = 0; i < 70; i++) {
+          const side = i % 2, x = side ? 740 + random() * 155 : 65 + random() * 155;
+          const y = 62 + random() * 516;
+          ctx.fillStyle = '#8ba07425'; ctx.fillRect(Math.round(x), Math.round(y), 3 + Math.floor(random() * 8), 2);
+          if (i % 4 === 0) { ctx.fillStyle = '#d5aa9960'; ctx.fillRect(Math.round(x + 3), Math.round(y + 6), 3, 2); }
+        }
+      } else {
+        for (const [x, y, w] of [[57, 91, 140], [746, 540, 155], [58, 542, 90], [794, 67, 101]]) {
+          ctx.fillStyle = '#e8f1e58c'; ctx.fillRect(x, y, w, 3); ctx.fillRect(x + 8, y + 3, w - 24, 4);
+          ctx.fillStyle = '#dceadd66'; ctx.fillRect(x + 21, y + 7, w - 42, 3);
+        }
+      }
     }
+    // Fixed lighting is cached with the floor. Soft pools never hide silhouettes
+    // and remain flat lighting rather than a wall-sized ornamental object.
+    for (const [x, y] of [[74, 320], [886, 320], [112, 70], [848, 570]]) {
+      const glow = ctx.createRadialGradient(x, y, 0, x, y, id === 'shrine' ? 68 : 94);
+      glow.addColorStop(0, id === 'garden' ? '#f5c57d16' : id === 'shrine' ? '#f4e7b70d' : '#a4d0dc12');
+      glow.addColorStop(1, '#fff0'); ctx.fillStyle = glow;
+      ctx.fillRect(x - 100, y - 100, 200, 200);
+    }
+    // Perimeter occlusion grounds the playable floor without dimming the duel.
+    const shade = ctx.createLinearGradient(0, wall, 0, height - wall);
+    shade.addColorStop(0, '#05172030'); shade.addColorStop(.12, '#05172000');
+    shade.addColorStop(.87, '#05172000'); shade.addColorStop(1, '#05172022');
+    ctx.fillStyle = shade; ctx.fillRect(wall, wall, width - wall * 2, height - wall * 2);
     const markings = id === 'shrine' ? [[154, 420, NINJAS[0].sash], [806, 220, NINJAS[1].sash]]
       : [[154, 320, NINJAS[0].sash], [806, 320, NINJAS[1].sash]];
     for (const [x, y, color] of markings) {
@@ -311,16 +352,31 @@ export class ShinobiRenderer {
     const inset = 8;
     ctx.fillStyle = p.wood; ctx.fillRect(x + inset, y + inset, w - inset * 2, h - inset * 2);
     if (id === 'rooftop') {
-      for (let py = y + 9; py < y + h - 10; py += 13) {
-        ctx.fillStyle = '#8b818077'; ctx.fillRect(x + 9, py, w - 18, 2);
-        ctx.fillStyle = '#393744'; ctx.fillRect(x + 9, Math.min(py + 10, y + h - 9), w - 18, 2);
+      if (cover.id?.includes('chimney') || h > 60) {
+        // A brick chimney and dark flue give the square props a different
+        // silhouette/material from the low metal ventilation housings.
+        ctx.fillStyle = '#796764'; ctx.fillRect(x + 6, y + 6, w - 12, h - 12);
+        for (let row = 0, py = y + 7; py < y + h - 7; py += 12, row++) {
+          ctx.fillStyle = '#ae93816b'; ctx.fillRect(x + 7, py, w - 14, 1);
+          ctx.fillStyle = '#4a484a'; ctx.fillRect(x + 7, py + 10, w - 14, 2);
+          for (let px = x + 10 + row % 2 * 11; px < x + w - 9; px += 23) ctx.fillRect(px, py + 1, 2, 9);
+        }
+        ctx.fillStyle = '#c2b5a0'; ctx.fillRect(x + 17, y + 17, w - 34, h - 34);
+        ctx.fillStyle = '#404b53'; ctx.fillRect(x + 21, y + 21, w - 42, h - 42);
+        ctx.fillStyle = '#192c35'; ctx.fillRect(x + 24, y + 24, w - 48, h - 48);
+        ctx.fillStyle = '#8c99936b'; ctx.fillRect(x + 22, y + 21, w - 44, 2);
+        ctx.fillStyle = '#182b3430'; ctx.fillRect(x + 23, y + h - 30, w - 46, 7);
+      } else {
+        ctx.fillStyle = '#465e69'; ctx.fillRect(x + 6, y + 6, w - 12, h - 12);
+        ctx.fillStyle = '#8ca3a7'; ctx.fillRect(x + 8, y + 8, w - 16, 2);
+        for (let px = x + 13; px < x + w - 12; px += 8) {
+          ctx.fillStyle = '#1b3441'; ctx.fillRect(px, y + 12, 4, h - 24);
+          ctx.fillStyle = '#91acb2'; ctx.fillRect(px + 4, y + 12, 1, h - 24);
+        }
+        for (const px of [x + 5, x + w - 8]) for (const py of [y + 5, y + h - 8]) {
+          ctx.fillStyle = '#ced1b8'; ctx.fillRect(px, py, 2, 2);
+        }
       }
-      for (const px of [x + 13, x + w - 18]) {
-        ctx.fillStyle = '#243e4c'; ctx.fillRect(px, y + 7, 5, h - 14);
-        ctx.fillStyle = '#9bb0ad'; ctx.fillRect(px, y + 7, 5, 2); ctx.fillRect(px, y + h - 10, 5, 2);
-      }
-      ctx.fillStyle = '#d0c493'; ctx.fillRect(x + w / 2 - 4, y + h / 2 - 4, 8, 7);
-      ctx.fillStyle = '#354b58'; ctx.fillRect(x + w / 2 - 2, y + h / 2 - 1, 4, 3);
     } else {
       ctx.fillStyle = id === 'shrine' ? '#698f8f' : '#61766a'; ctx.fillRect(x + 11, y + 11, w - 22, h - 22);
       const size = Math.min(17, (Math.min(w, h) - 22) / 2), cx = x + w / 2, cy = y + h / 2;
@@ -329,9 +385,41 @@ export class ShinobiRenderer {
       ctx.fillStyle = p.light; ctx.fillRect(cx - 2, cy - 2, 4, 4);
       for (const dx of [7, w - 10]) for (const dy of [8, h - 11]) { ctx.fillStyle = p.light; ctx.fillRect(x + dx, y + dy, 3, 2); }
       if (id === 'garden') {
+        if (cover.id === 'garden-plinth') {
+          ctx.fillStyle = '#c2bca0'; ctx.fillRect(x + 14, y + 21, w - 28, h - 42);
+          ctx.fillStyle = '#7b8775'; ctx.fillRect(x + 17, y + 24, w - 34, h - 48);
+          ctx.fillStyle = '#a9af8c'; ctx.fillRect(x + 19, y + 25, w - 38, 3);
+          for (const py of [y + 33, y + h - 39]) {
+            line(ctx, [[x + 21, py], [x + w - 22, py]], '#d6d0ae9c');
+            ctx.fillStyle = '#556f65'; ctx.fillRect(x + 26, py + 4, w - 52, 2);
+          }
+          polygon(ctx, [[cx, cy - 10], [cx + 7, cy - 3], [cx + 4, cy + 9], [cx - 4, cy + 9], [cx - 7, cy - 3]], '#d4caa3');
+          ctx.fillStyle = '#5c7968'; ctx.fillRect(cx - 1, cy - 5, 2, 12);
+        } else {
+          // Recessed stone basins stay wholly inside their solid rectangle.
+          ctx.fillStyle = '#324b46'; ctx.fillRect(x + 11, y + 11, w - 22, h - 22);
+          ctx.fillStyle = '#5b7970'; ctx.fillRect(x + 13, y + 13, w - 26, h - 26);
+          for (let px = x + 17; px < x + w - 17; px += 16) {
+            polygon(ctx, [[px, cy + 4], [px - 6, cy - 1], [px - 3, cy - 6], [px + 1, cy - 2], [px + 7, cy - 5], [px + 5, cy + 2]], '#9aab78');
+            ctx.fillStyle = '#c3cd94'; ctx.fillRect(px, cy - 2, 2, 3);
+          }
+        }
         ctx.fillStyle = '#7c9963'; ctx.fillRect(x + w - 19, y + 5, 12, 3); ctx.fillRect(x + w - 10, y + 8, 4, 7);
         ctx.fillStyle = '#b1bf83'; ctx.fillRect(x + w - 16, y + 5, 7, 1);
       } else {
+        ctx.fillStyle = '#527a82'; ctx.fillRect(x + 14, y + 14, w - 28, h - 28);
+        ctx.fillStyle = '#a9c1b8'; ctx.fillRect(x + 17, y + 17, w - 34, 2);
+        if (h > w) {
+          for (let py = y + 29; py < y + h - 19; py += 18) {
+            polygon(ctx, [[cx - 7, py], [cx, py - 5], [cx + 7, py], [cx, py + 5]], '#98b8b5');
+            ctx.fillStyle = '#344f61'; ctx.fillRect(cx - 2, py - 1, 4, 2);
+          }
+        } else {
+          for (let px = x + 26; px < x + w - 19; px += 19) {
+            ctx.fillStyle = '#b4c6b9'; ctx.fillRect(px, y + 17, 3, h - 34);
+            ctx.fillStyle = '#315667'; ctx.fillRect(px + 5, y + 17, 4, h - 34);
+          }
+        }
         ctx.fillStyle = '#edf3e6'; ctx.fillRect(x + 3, y + 3, w - 6, 6); ctx.fillRect(x + 3, y + 9, 13, 4);
         ctx.fillStyle = '#c7dad2'; ctx.fillRect(x + 16, y + 9, w - 29, 2);
         ctx.fillStyle = '#e6eee2'; ctx.fillRect(x + w - 10, y + 10, 5, 7);
@@ -339,48 +427,74 @@ export class ShinobiRenderer {
     }
   }
 
-  sprite(id, stride = 0) {
-    const player = id === 1 ? 1 : 0, key = player * 3 + stride + 1;
+  sprite(id, stride = 0, pose = 'ready') {
+    const player = id === 1 ? 1 : 0, key = `${player}:${stride}:${pose}`;
     if (this.sprites.has(key)) return this.sprites.get(key);
     const canvas = canvasLayer(64, 64), ctx = canvas.getContext('2d'), p = NINJAS[player];
     ctx.translate(32, 32);
-    // Facing is +X. Cloth, mask, and boots stay within the 15 px body radius.
-    ctx.fillStyle = p.ink; ctx.fillRect(-12 - stride, -10, 9, 6); ctx.fillRect(-12 + stride, 4, 9, 6);
-    ctx.fillStyle = p.edge; ctx.fillRect(-11 - stride, -9, 5, 1); ctx.fillRect(-11 + stride, 8, 5, 1);
-    polygon(ctx, [[-12, -7], [-6, -12], [6, -11], [13, -5], [14, 4], [7, 11], [-6, 12], [-12, 7]], p.ink);
-    ctx.fillStyle = p.cloth; ctx.fillRect(-10, -7, 18, 14);
-    ctx.fillStyle = p.shade; ctx.fillRect(-9, -6, 7, 12);
-    ctx.fillStyle = p.edge; ctx.fillRect(-9, -7, 12, 2); ctx.fillRect(-8, -4, 4, 2);
-    ctx.fillStyle = p.sash; ctx.fillRect(-5, -8, 3, 16); ctx.fillRect(-8, 5, 10, 3);
-    ctx.fillStyle = p.pale; ctx.fillRect(-5, -5, 1, 9); ctx.fillRect(-6, 6, 5, 1);
-    polygon(ctx, [[-6, -8], [0, -12], [6, -10], [8, -6], [4, -4], [-3, -5]], p.cloth);
-    polygon(ctx, [[-6, 8], [0, 12], [6, 10], [8, 6], [4, 4], [-3, 5]], p.shade);
-    ctx.fillStyle = p.edge; ctx.fillRect(-2, -11, 5, 2); ctx.fillRect(-2, 9, 5, 2);
-    // A wrapped hood and vertical eye slit make the facing unambiguous.
-    polygon(ctx, [[0, -8], [7, -10], [12, -6], [14, -2], [14, 4], [9, 9], [1, 8], [-2, 3], [-2, -3]], p.ink);
-    polygon(ctx, [[0, -6], [6, -8], [11, -5], [12, -1], [12, 4], [8, 7], [1, 6], [-1, 2], [-1, -2]], p.cloth);
-    ctx.fillStyle = p.edge; ctx.fillRect(1, -6, 6, 2); ctx.fillRect(7, -5, 3, 2);
-    ctx.fillStyle = p.sash; ctx.fillRect(0, -2, 10, 2);
-    ctx.fillStyle = '#101d29'; ctx.fillRect(10, -4, 3, 9);
-    ctx.fillStyle = '#dbb79b'; ctx.fillRect(11, -3, 1, 6);
-    ctx.fillStyle = p.pale; ctx.fillRect(11, -3, 2, 2); ctx.fillRect(11, 2, 2, 2);
-    ctx.fillStyle = p.shade; ctx.fillRect(3, 3, 7, 3); ctx.fillRect(1, 4, 4, 3);
-    // A short tied ribbon is dim cloth rather than a glowing hurtbox extension.
-    polygon(ctx, [[-7, 1], [-14, 2], [-16, 6], [-11, 4], [-8, 5]], p.sash);
-    ctx.fillStyle = p.pale; ctx.fillRect(-13, 3, 3, 1);
+    // Facing is +X. The solid body is clipped to its exact circular hurtbox;
+    // only muted sash tails outside it are decorative cloth.
+    polygon(ctx, [[-8, 1], [-16, 2], [-20, 5], [-15, 7], [-11, 4], [-7, 5]], p.sash + 'a0');
+    line(ctx, [[-12, 3], [-17, 4]], p.shade, 2);
+    ctx.save(); ctx.beginPath(); ctx.arc(0, 0, WORLD.fighterRadius, 0, TAU); ctx.clip();
+    const windup = pose === 'windup', guarding = pose === 'guard', striking = pose === 'strike';
+    const lean = windup || pose === 'stun' ? -1 : striking || pose === 'throw' ? 1 : 0;
+    const shoulder = guarding ? 8 : windup ? -3 : striking ? 9 : 3;
+    ctx.fillStyle = p.ink;
+    ctx.fillRect(-13 - stride, -8, 9, 6); ctx.fillRect(-13 + stride, 3, 9, 6);
+    ctx.fillStyle = p.edge;
+    ctx.fillRect(-12 - stride, -7, 5, 1); ctx.fillRect(-12 + stride, 7, 5, 1);
+    polygon(ctx, [[-11, -7], [-6, -11], [3 + lean, -10], [7 + lean, -6], [7 + lean, 6], [2 + lean, 11], [-6, 11], [-11, 7]], p.ink);
+    polygon(ctx, [[-9, -6], [-4, -9], [2 + lean, -8], [5 + lean, -4], [5 + lean, 5], [1 + lean, 8], [-6, 8], [-9, 5]], p.cloth);
+    ctx.fillStyle = p.shade; ctx.fillRect(-8, -5, 6, 11);
+    ctx.fillStyle = p.edge; ctx.fillRect(-6, -8, 6, 2); ctx.fillRect(-8, -5, 2, 8);
+    // A brighter crossed sash identifies the fighter without enlarging the body.
+    line(ctx, [[-5, -8], [3, 7]], p.sash, 4);
+    ctx.fillStyle = p.sash; ctx.fillRect(-7, 6, 11, 3);
+    ctx.fillStyle = p.pale; ctx.fillRect(-4, -6, 1, 4); ctx.fillRect(-6, 6, 6, 1);
+    polygon(ctx, [[-2, -9], [shoulder, -11], [shoulder + 4, -7], [shoulder + 2, -4], [2, -4]], p.ink);
+    polygon(ctx, [[-1, -8], [shoulder, -9], [shoulder + 2, -7], [shoulder, -5], [2, -5]], p.cloth);
+    line(ctx, [[shoulder - 1, -9], [shoulder + 1, -7]], p.edge, 2);
+    polygon(ctx, [[0, 6], [guarding ? 9 : 6, 4], [guarding ? 11 : 7, 8], [1, 11], [-2, 9]], p.ink);
+    line(ctx, [[0, 8], [guarding ? 8 : 5, 7]], p.edge, 2);
+    // Hood, forehead wrap and two small bright eyes make the aim legible.
+    polygon(ctx, [[1 + lean, -7], [7 + lean, -9], [12 + lean, -5], [14 + lean, -1], [13 + lean, 5], [8 + lean, 8], [2 + lean, 6], [-1 + lean, 2]], p.ink);
+    polygon(ctx, [[2 + lean, -5], [7 + lean, -7], [11 + lean, -4], [12 + lean, -1], [11 + lean, 4], [8 + lean, 6], [3 + lean, 4], [1 + lean, 1]], p.cloth);
+    line(ctx, [[3 + lean, -5], [8 + lean, -5], [10 + lean, -3]], p.edge, 2);
+    ctx.fillStyle = p.sash; ctx.fillRect(2 + lean, -2, 9, 2);
+    ctx.fillStyle = p.ink; ctx.fillRect(10 + lean, -4, 3, 8);
+    ctx.fillStyle = '#d7b6a0'; ctx.fillRect(11 + lean, -3, 1, 6);
+    ctx.fillStyle = pose === 'stun' ? '#a99f86' : p.pale;
+    ctx.fillRect(11 + lean, -3, 2, 2); ctx.fillRect(11 + lean, 2, 2, 2);
+    ctx.fillStyle = p.shade; ctx.fillRect(4 + lean, 3, 6, 3);
+    if (pose === 'stun') line(ctx, [[-6, -5], [-2, -3]], '#cebc9470', 2);
+    ctx.restore();
     this.sprites.set(key, canvas); return canvas;
   }
 
   observeEvents(state) {
     if (state.tick < this.lastTick) this.resetEffects(); this.lastTick = state.tick;
+    if (this.lastRound != null && (state.round !== this.lastRound || state.stageId !== this.lastStage || state.phase === 'lobby' && this.lastPhase !== 'lobby')) {
+      this.particles.length = 0; this.bursts.length = 0; this.ghosts.length = 0; this.callouts.length = 0;
+      this.hitFlash.fill(0); this.lastGhost.fill(-1);
+    }
+    this.lastRound = state.round; this.lastStage = state.stageId; this.lastPhase = state.phase;
     for (const event of state.events || []) {
       if (this.seenEvents.has(event.id)) continue;
       this.seenEvents.add(event.id); this.eventOrder.push(event.id);
       if (this.eventOrder.length > 256) this.seenEvents.delete(this.eventOrder.shift());
+      if (Number.isFinite(event.tick) && state.tick - event.tick > 72) continue;
       if (!Number.isFinite(event.x) || !Number.isFinite(event.y)) continue;
       const p = NINJAS[event.fighter ?? event.owner ?? 0] || NINJAS[0];
       if (event.type === 'hit' && event.target != null) this.hitFlash[event.target] = .13;
       const impact = event.type !== 'parry' || event.target != null;
+      if (impact && (event.type === 'hit' && Number.isFinite(event.damage) || event.type === 'parry' || event.type === 'deflect')) {
+        const target = state.fighters?.find(fighter => fighter.id === (event.type === 'hit' ? event.target : event.fighter));
+        const offset = (this.uiScale || 1) > 1.5 && target?.id === 1 ? 67 : 37;
+        this.callouts.push({ x: target?.x ?? event.x, y: Math.max(28, (target?.y ?? event.y) - offset), age: 0, life: .6,
+          text: event.type === 'hit' ? `−${event.damage}` : event.type === 'parry' ? 'PARRY' : 'DEFLECT',
+          color: event.type === 'hit' ? '#ffe2c1' : '#fff2ba' });
+      }
       if (impact && ['hit', 'parry', 'deflect', 'cover', 'dash'].includes(event.type)) {
         const clash = ['parry', 'deflect'].includes(event.type);
         this.bursts.push({ x: event.x, y: event.y, age: 0, life: this.reducedMotion ? .12 : clash ? .26 : .18, type: event.type, color: clash ? '#fff0bb' : event.type === 'cover' ? '#d6ddd0' : p.pale, angle: event.id * .7 });
@@ -393,6 +507,7 @@ export class ShinobiRenderer {
     }
     if (this.particles.length > 96) this.particles.splice(0, this.particles.length - 96);
     if (this.bursts.length > 20) this.bursts.splice(0, this.bursts.length - 20);
+    if (this.callouts.length > 6) this.callouts.splice(0, this.callouts.length - 6);
   }
 
   paintBlade(ctx, angle, length, color, active = false) {
@@ -442,12 +557,15 @@ export class ShinobiRenderer {
     if (fighter.hp <= 0) ctx.globalAlpha *= .48;
     ctx.rotate(facing);
     const stride = action === 'run' && !this.reducedMotion ? Math.floor(tick / 6) % 3 - 1 : 0;
-    ctx.drawImage(this.sprite(fighter.id, stride), -32, -32);
+    const startup = move?.startup ?? 0, activeTicks = move?.active ?? 0;
+    const active = !!move && frame >= startup && frame < startup + activeTicks;
+    const parryActive = action === 'parry' && frame >= PARRY.startup && frame <= PARRY.activeEnd;
+    const pose = action === 'stun' ? 'stun' : move ? frame < startup ? 'windup' : active ? 'strike' : 'recover'
+      : action === 'parry' ? frame <= PARRY.activeEnd ? 'guard' : 'recover' : action === 'throw' ? 'throw' : 'ready';
+    ctx.drawImage(this.sprite(fighter.id, stride, pose), -32, -32);
     if (!ghost) {
       ctx.save();
       this.clipWeapons(ctx, fighter, facing, obstacles);
-      const startup = move?.startup ?? move?.startupTicks ?? 0, activeTicks = move?.active ?? move?.activeTicks ?? 0;
-      const active = !!move && frame >= startup && frame < startup + activeTicks;
       if (move) {
         const cone = move.cone ?? .8, reach = move.range ?? 58;
         if (active) {
@@ -465,9 +583,15 @@ export class ShinobiRenderer {
           }
           this.paintBlade(ctx, angle, reach - 2, p, true);
         } else if (frame < startup) {
-          this.paintBlade(ctx, -2.1 + .3 * clamp(frame / Math.max(1, startup), 0, 1), 39, p);
-          if (action === 'heavy' && frame > startup - 10) {
-            line(ctx, [[-19, -15], [-23, -21]], p.sash, 2); line(ctx, [[-10, -21], [-11, -27]], p.pale, 2);
+          const progress = clamp(frame / Math.max(1, startup), 0, 1);
+          this.paintBlade(ctx, -1.65 - .5 * progress, action === 'heavy' ? 42 : 36, p);
+          if (action === 'heavy') {
+            // A dashed amber tell is anticipation, while the solid white sweep
+            // below denotes only the engine's actual five/seven active ticks.
+            ctx.setLineDash([3, 5]); ctx.beginPath(); ctx.arc(0, 0, reach - 1, -cone, cone);
+            ctx.strokeStyle = p.sash + (progress > .6 ? 'b0' : '60'); ctx.lineWidth = 1; ctx.stroke(); ctx.setLineDash([]);
+            line(ctx, [[-17, -13], [-20, -18]], p.sash, 2);
+            if (progress > .65) line(ctx, [[-10, -18], [-11, -23]], p.pale, 2);
           }
         } else {
           const recovery = move.recovery ?? move.recoveryTicks ?? 23, progress = clamp((frame - startup - activeTicks) / Math.max(1, recovery), 0, 1);
@@ -476,7 +600,7 @@ export class ShinobiRenderer {
       } else if (action === 'parry') {
         const start = PARRY.activeStart ?? PARRY.startup ?? 3, end = PARRY.activeEnd ?? 13;
         const active = frame >= start && frame <= end;
-        this.paintBlade(ctx, -.8, 34, p, active);
+        this.paintBlade(ctx, -.7, 34, p, active);
         const cone = PARRY.cone ?? .95;
         ctx.beginPath(); ctx.arc(0, 0, 24, -cone, cone); ctx.strokeStyle = active ? '#ffe9ae' : p.sash + '70'; ctx.lineWidth = active ? 3 : 1; ctx.stroke();
         if (active) { ctx.fillStyle = '#fff4c6'; ctx.fillRect(26, -2, 4, 4); }
@@ -488,15 +612,36 @@ export class ShinobiRenderer {
           ctx.fillStyle = '#adbfc0'; ctx.fillRect(7, -12, 4, 2);
         }
         this.paintBlade(ctx, 1.35, 31, p);
-      } else this.paintBlade(ctx, 1.1, 33, p);
+      } else if (action === 'stun') this.paintBlade(ctx, 1.8, 29, p);
+      else this.paintBlade(ctx, 1.1, 33, p);
       ctx.restore();
       if (this.hitFlash[fighter.id] > 0) ring(ctx, 0, 0, fighter.radius, p.pale, 2);
+      if (action === 'stun') {
+        for (let i = 0; i < 3; i++) {
+          const angle = (this.reducedMotion ? 0 : tick / 18) + i * TAU / 3;
+          const x = Math.cos(angle) * 18, y = Math.sin(angle) * 14;
+          polygon(ctx, [[x, y - 3], [x + 2, y], [x, y + 3], [x - 2, y]], '#e8d5a3');
+        }
+      }
     }
     ctx.restore();
     if (!ghost && fighter.hp > 0) {
-      ctx.fillStyle = '#102431'; ctx.fillRect(fighter.x - 17, fighter.y - 26, 34, 5);
-      ctx.fillStyle = p.sash; ctx.fillRect(fighter.x - 16, fighter.y - 25, 32 * clamp(fighter.hp / (fighter.maxHp || 100), 0, 1), 3);
-      ctx.fillStyle = p.pale; ctx.fillRect(fighter.x - 16, fighter.y - 25, 32 * clamp(fighter.hp / (fighter.maxHp || 100), 0, 1), 1);
+      ctx.fillStyle = '#102431e0'; ctx.fillRect(fighter.x - 18, fighter.y - 29, 36, 9);
+      ctx.fillStyle = p.sash; ctx.fillRect(fighter.x - 17, fighter.y - 28, 34 * clamp(fighter.hp / (fighter.maxHp || 100), 0, 1), 3);
+      ctx.fillStyle = p.pale; ctx.fillRect(fighter.x - 17, fighter.y - 28, 34 * clamp(fighter.hp / (fighter.maxHp || 100), 0, 1), 1);
+      ctx.fillStyle = '#40555b'; ctx.fillRect(fighter.x - 17, fighter.y - 23, 34, 2);
+      ctx.fillStyle = fighter.stamina < PARRY.cost ? '#d99b7c' : '#bfcea2';
+      ctx.fillRect(fighter.x - 17, fighter.y - 23, 34 * clamp(fighter.stamina / 100, 0, 1), 2);
+      const label = action === 'stun' ? 'STUN' : move ? frame < startup ? action === 'heavy' ? 'HEAVY' : 'CUT'
+        : active ? 'STRIKE' : 'RECOVER' : action === 'parry' ? parryActive ? 'PARRY' : frame < PARRY.startup ? 'GUARD' : 'OPEN' : null;
+      if (label) {
+        const scale = this.uiScale || 1;
+        const labelY = fighter.y + (scale > 1.5 && fighter.id === 1 ? -36 : 25 + 6 * scale);
+        ctx.textAlign = 'center'; ctx.font = `bold ${8 * scale}px Consolas, monospace`;
+        ctx.lineWidth = 3; ctx.strokeStyle = '#142835'; ctx.strokeText(label, fighter.x, labelY);
+        ctx.fillStyle = action === 'stun' ? '#f2cda5' : active || parryActive ? '#fff0c1' : pose === 'recover' ? '#c6bcab' : p.sash;
+        ctx.fillText(label, fighter.x, labelY);
+      }
     }
   }
 
@@ -537,6 +682,17 @@ export class ShinobiRenderer {
       ctx.fillRect(Math.round(particle.x) - 1, Math.round(particle.y) - 1, 2, 2);
     }
     ctx.globalAlpha = 1;
+    live = 0;
+    for (const callout of this.callouts) if ((callout.age += dt) < callout.life) this.callouts[live++] = callout;
+    this.callouts.length = live;
+    ctx.font = `bold ${9 * (this.uiScale || 1)}px Consolas, monospace`; ctx.textAlign = 'center';
+    for (const callout of this.callouts) {
+      const y = callout.y - (this.reducedMotion ? 0 : callout.age * 12);
+      ctx.globalAlpha = Math.min(1, (callout.life - callout.age) / .18);
+      ctx.lineWidth = 3; ctx.strokeStyle = '#172b35'; ctx.strokeText(callout.text, callout.x, y);
+      ctx.fillStyle = callout.color; ctx.fillText(callout.text, callout.x, y);
+    }
+    ctx.globalAlpha = 1;
     for (let i = 0; i < this.hitFlash.length; i++) this.hitFlash[i] = Math.max(0, this.hitFlash[i] - dt);
   }
 
@@ -558,17 +714,23 @@ export class ShinobiRenderer {
       const color = i < fighter.kunai ? p.pale : '#506b71';
       polygon(ctx, [[354 + i * 13, 619], [357 + i * 13, 622], [354 + i * 13, 629], [351 + i * 13, 622]], color);
     }
+    if (fighter.kunai < KUNAI.capacity) {
+      ctx.fillStyle = '#3c575e'; ctx.fillRect(350, 633, 35, 1);
+      ctx.fillStyle = p.sash; ctx.fillRect(350, 633, 35 * clamp((fighter.kunaiRecoveryTicks || 0) / KUNAI.recoverTicks, 0, 1), 1);
+    }
     ctx.fillStyle = '#597175'; ctx.fillRect(399, 616, 1, 15);
     ctx.fillStyle = '#d8e3d7'; ctx.fillText('STAMINA', 416, 627);
     ctx.fillStyle = '#38515a'; ctx.fillRect(479, 620, 93, 6);
     ctx.fillStyle = fighter.stamina >= (DASH.cost ?? 30) ? p.sash : '#a98b70';
     ctx.fillRect(479, 620, 93 * clamp(fighter.stamina / 100, 0, 1), 6);
+    ctx.fillStyle = '#102732'; ctx.fillRect(479 + Math.round(93 * DASH.cost / 100), 620, 1, 6);
     ctx.fillStyle = fighter.stamina >= (PARRY.cost ?? 20) ? p.pale : '#758a89'; ctx.fillText('PARRY', 590, 627);
   }
 
   render(state, { localId = null, time = performance.now(), aimTarget = null } = {}) {
     const active = state.phase === 'fight' && !state.paused;
-    const dt = active && this.lastTime != null ? Math.min(.05, Math.max(0, (time - this.lastTime) / 1000)) : 0;
+    const animateEffects = !state.paused && (active || state.phase === 'roundEnd');
+    const dt = animateEffects && this.lastTime != null ? Math.min(.05, Math.max(0, (time - this.lastTime) / 1000)) : 0;
     this.lastTime = time; this.observeEvents(state);
     const ctx = this.ctx, stageId = Object.hasOwn(SCENES, state.stageId) ? state.stageId : 'rooftop';
     ctx.setTransform(this.canvas.width / WORLD.width, 0, 0, this.canvas.height / WORLD.height, 0, 0);
@@ -603,6 +765,11 @@ export class ShinobiRenderer {
     else {
       ctx.fillStyle = SCENES[stageId].light; ctx.textAlign = 'center'; ctx.font = '9px Consolas, monospace';
       ctx.fillText('READ THE BLADE  /  PARRY THE STRIKE  /  OWN THE ANGLE', WORLD.width / 2, 627);
+    }
+    // Small round seals complement the large score above the arena.
+    for (const fighter of fighters) for (let win = 0; win < 2; win++) {
+      const x = fighter.id ? 616 + win * 13 : 344 - win * 13, y = 16;
+      polygon(ctx, [[x, y - 4], [x + 4, y], [x, y + 4], [x - 4, y]], win < fighter.wins ? NINJAS[fighter.id].sash : '#6a818144');
     }
   }
 }

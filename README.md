@@ -96,16 +96,19 @@ Voxel Breach:
 | Jump | Space |
 | Crouch | Ctrl |
 | Slow walk | Shift |
+| Choose a loadout between rounds | 1 / 2 / 3, or the on-screen weapon buttons |
 
 Create a 1v1, 2v2 or 3v3 room and choose Sunset Courtyard, Freight Depot or Canal Exchange. Every seat must be filled and every player must press Ready. The match begins with a countdown and an eight-second preparation phase; choose a carbine, SMG or marksman rifle between rounds. First to four round wins takes the match; teams switch attacking and defending roles after three rounds. Attackers carry the bomb to either site and hold Interact for three seconds to plant it. Defenders hold Interact for five seconds to defuse. A planted bomb has a 35-second fuse and remains live when the attackers are eliminated. Unplanted rounds last 100 seconds. There are no respawns within a round; death lets you watch living teammates.
 
 This is a true first-person WebGL game with local voxel artwork. Stop moving for accurate shots; movement, jumping and sustained fire reduce accuracy. Reloads and weapon choices create openings. Solid 3D map cover blocks shots before player hitboxes, crouching lowers your profile, and friendly fire is disabled. Click the playfield to capture the mouse; Escape releases your controls. On hosts where the browser does not allow pointer lock, right-drag aims. Touch controls provide movement, look and action buttons. A disconnect returns the room to the lobby; all players must agree to a rematch.
 
+The tactical map shows cover, both sites, your position and living teammates. Painted site signs help you navigate the three distinct environments. The main clock switches to the charge countdown after planting; planting, defusing and reloading show progress. Round results explain the outcome before the next setup phase.
+
 Shadow Lantern:
 
 | Action | Keys |
 | --- | --- |
-| Move | WASD or arrow keys |
+| Move | WASD / ZQSD / arrow keys |
 | Sneak | Hold Shift |
 | Collect a seal / rear takedown | Hold E nearby |
 | Smoke | Space |
@@ -114,11 +117,13 @@ Shadow Lantern:
 
 Nine heists cross Lantern Garden, Rainroof Citadel and Frost Keep. Collect every guarded seal, then return to the extraction mark. Patrol cones stop at solid cover; suspicion warns before detection. Shadows and sneaking reduce detection, while noisy movement and kunai impacts draw investigation. Approach an unaware guard from behind and hold Interact for a takedown. Health, finite tools and alarm pressure carry through the campaign. A visible deadline prevents waiting forever. Veteran starts by default; Standard and Nightmare have separate completed-campaign score records. Cleared missions wait for an explicit Continue button.
 
+Watch the exposure indicator and patrol sight cones when choosing a route. Nearby interaction prompts show channel progress, and the objective changes from recovering seals to extraction. Patrols keep separate bodies while passing one another and navigating solid cover.
+
 Shinobi Showdown:
 
 | Action | Keys |
 | --- | --- |
-| Move | WASD or arrow keys |
+| Move | WASD / ZQSD / arrow keys |
 | Aim | Mouse |
 | Quick katana cut | J / left mouse button |
 | Heavy katana cut | K / right mouse button |

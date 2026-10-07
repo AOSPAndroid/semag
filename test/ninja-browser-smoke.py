@@ -22,11 +22,19 @@ from playwright.sync_api import sync_playwright
 ROOT=Path(__file__).resolve().parents[1]
 OUT=Path(os.environ.get('SEMAG_SCREENSHOT_DIR',ROOT/'test-results'/'ninjas'))
 INSTRUMENT=r"""() => {
-    const stats=window.__ninjaQA={rafCalls:0,frames:0,pending:[],cpu:[],gaps:[],paintCalls:[],operations:0,recordWrites:[]};
+    const stats=window.__ninjaQA={rafCalls:0,frames:0,pending:[],cpu:[],gaps:[],paintCalls:[],operations:0,recordWrites:[],textCalls:[]};
     for(const method of ['drawImage','fillRect','stroke','fill','clearRect']){
         const original=CanvasRenderingContext2D.prototype[method];
         CanvasRenderingContext2D.prototype[method]=function(...args){stats.operations++;return original.apply(this,args)};
     }
+    const drawText=CanvasRenderingContext2D.prototype.fillText;
+    CanvasRenderingContext2D.prototype.fillText=function(value,x,y,...args){
+        const text=String(value);
+        if(y<590 && /^(?:CUT|HEAVY|STRIKE|RECOVER|GUARD|PARRY|OPEN|STUN|DEFLECT|−\d+)$/.test(text)){
+            stats.textCalls.push({text,x,y});if(stats.textCalls.length>400)stats.textCalls.shift();
+        }
+        return drawText.call(this,value,x,y,...args);
+    };
     const request=window.requestAnimationFrame,cancel=window.cancelAnimationFrame,pending=new Set();let previous=null;
     window.requestAnimationFrame=callback=>{
         stats.rafCalls++;
@@ -328,6 +336,29 @@ def room_event(page,event_id,kind,timeout=4000,filters=None):
     return next(event for event in room_state(page)['events'] if event['id']>event_id and event['type']==kind and all(event.get(key)==value for key,value in filters.items()))
 
 
+def observe_shinobi_effects(page):
+    """Read the real renderer after each unchanged render call."""
+    page.evaluate('''async()=>{
+        const {ShinobiRenderer}=await import('/shinobi-renderer.js');
+        const original=ShinobiRenderer.prototype.render;
+        const stats=window.__ninjaQA.effects={maximum:{particles:0,bursts:0,ghosts:0,callouts:0,events:0,scenes:0},roundEnds:{}};
+        ShinobiRenderer.prototype.render=function(state,...args){
+            const result=original.call(this,state,...args);
+            const counts={particles:this.particles.length,bursts:this.bursts.length,ghosts:this.ghosts.length,
+                callouts:this.callouts.length,events:this.eventOrder.length,scenes:this.scenes.size};
+            for(const key of Object.keys(counts))stats.maximum[key]=Math.max(stats.maximum[key],counts[key]);
+            if(state.phase==='roundEnd'){
+                const key=String(state.round),now=performance.now();
+                const entry=stats.roundEnds[key]||=( {first:now,hadImpact:false,settledMs:null} );
+                const live=counts.particles+counts.bursts+counts.ghosts+counts.callouts;
+                if(live>0)entry.hadImpact=true;
+                if(entry.hadImpact && live===0 && entry.settledMs===null)entry.settledMs=now-entry.first;
+            }
+            return result;
+        };
+    }''')
+
+
 def room_layouts(page):
     screenshot(page,'shinobi-showdown-desktop-active')
     for width in (390,320):
@@ -442,7 +473,9 @@ def copied_weapon_cover_fixture(page):
     return result
 
 def shinobi_desktop(first,second):
-    evidence={'copied_weapon_cover_fixture':copied_weapon_cover_fixture(first)};room_move(first,(220,320),0);room_move(first,(220,220),0)
+    evidence={'copied_weapon_cover_fixture':copied_weapon_cover_fixture(first)}
+    first.evaluate('window.__ninjaQA.textCalls=[]');second.evaluate('window.__ninjaQA.textCalls=[]')
+    room_move(first,(220,320),0);room_move(first,(220,220),0)
     native_room_aim(first,500,220);first.locator('#arena').focus()
     event_id=room_state(first)['eventId'];first.keyboard.press('l',delay=30)
     contact=room_event(first,event_id,'cover');rect=room_state(first)['obstacles'][0]
@@ -461,6 +494,7 @@ def shinobi_desktop(first,second):
     hit=room_event(first,event_id,'hit');assert hit['attack']=='kunai' and hit['target']==1 and hit['damage']==14
     wait(second,'hp=>window.firesideRoom.getState().fighters[1].hp===hp',arg=previous['fighters'][1]['hp']-14)
     evidence['native_kunai_hit']=hit
+    wait(first,'window.__ninjaQA.textCalls.some(call=>call.text==="−14")',timeout=2000)
     wait_idle(first);room_move(first,(646,320),0)
     native_room_aim(first,706,320);native_room_aim(second,646,320)
     first.locator('#arena').focus();event_id=room_state(first)['eventId'];hp=room_state(first)['fighters'][1]['hp']
@@ -470,12 +504,14 @@ def shinobi_desktop(first,second):
     parry=room_event(first,event_id,'parry',filters={'target':0});assert parry['fighter']==1 and parry['target']==0
     assert room_state(first)['fighters'][1]['hp']==hp
     evidence['native_heavy_parry']=parry
+    wait(first,'window.__ninjaQA.textCalls.some(call=>call.text==="HEAVY") && window.__ninjaQA.textCalls.some(call=>call.text==="PARRY")',timeout=2000)
     canvas_export(first,'#arena','shinobi-rooftop-native-parry-canvas')
     wait_idle(first);wait_idle(second)
     first.locator('#arena').focus();native_room_aim(first,706,320);event_id=room_state(first)['eventId']
     first.mouse.down(button='left');first.wait_for_timeout(35);first.mouse.up(button='left')
     light=room_event(first,event_id,'hit');assert light['attack']=='light' and light['damage']==18
     evidence['native_pointer_katana']=light
+    wait(first,'window.__ninjaQA.textCalls.some(call=>call.text==="−18")',timeout=2000)
     canvas_export(first,'#arena','shinobi-rooftop-native-katana-canvas')
     wait_idle(first);wait_idle(second)
     native_room_aim(first,706,320);native_room_aim(second,646,320)
@@ -484,6 +520,8 @@ def shinobi_desktop(first,second):
     second.locator('#arena').focus();second.keyboard.press('i',delay=25)
     deflect=room_event(first,event_id,'deflect');assert deflect['fighter']==1
     evidence['native_kunai_deflect']=deflect
+    wait(first,'window.__ninjaQA.textCalls.some(call=>call.text==="DEFLECT")',timeout=2000)
+    evidence['native_painted_combat_feedback']=sorted({call['text'] for call in first.evaluate('window.__ninjaQA.textCalls')})
     canvas_export(first,'#arena','shinobi-rooftop-native-deflect-canvas')
     room_layouts(first)
     return evidence
@@ -516,12 +554,20 @@ def shinobi_match(first,second):
     result=room_state(first)
     assert result['winner']==0 and [f['wins'] for f in result['fighters']]==[2,1]
     assert visited=={'rooftop','garden','shrine'} and captured==visited, (visited,captured)
+    effects=first.evaluate('window.__ninjaQA.effects')
+    assert effects['maximum']['particles']<=96 and effects['maximum']['bursts']<=20
+    assert effects['maximum']['ghosts']<=12 and effects['maximum']['callouts']<=6
+    assert effects['maximum']['events']<=256 and effects['maximum']['scenes']<=3
+    assert len(effects['roundEnds'])==3, ('Three normal round endings were not rendered',effects)
+    assert all(entry['hadImpact'] and entry['settledMs'] is not None and entry['settledMs']<1500
+        for entry in effects['roundEnds'].values()), ('Final impacts froze through the next setup',effects)
     wait(second,'window.firesideRoom.getState().fighters[0].wins===2&&window.firesideRoom.getState().fighters[1].wins===1')
     screenshot(first,'shinobi-showdown-native-match-end')
     first.locator('#ready-button').click();first.wait_for_timeout(200)
     assert room_state(first)['phase']=='lobby', 'One player started a rematch without peer agreement'
     second.locator('#ready-button').click();room_phase(first,'fight');room_phase(second,'fight')
-    return {'stages':sorted(visited),'winner':0,'round_wins':[2,1],'both_agree_rematch':True}
+    return {'stages':sorted(visited),'winner':0,'round_wins':[2,1],'both_agree_rematch':True,
+        'bounded_real_renderer_effects':effects,'round_end_impact_settles':True}
 
 
 def solo_move(page,keyboard,x,y,timeout=14):
@@ -555,6 +601,9 @@ def active_help(page):
 
 def shadow_play(page,context,keyboard,profile):
     canvas=page.locator('.shadow-canvas');canvas.focus();initial=state(page)
+    assert page.locator('.shadow-objective').get_attribute('data-ready')=='false'
+    assert page.locator('.shadow-objective b').inner_text()=='01 / RECOVER'
+    assert page.locator('.shadow-objective-pips i[data-secured="true"]').count()==0
     keyboard.set({'q'});page.wait_for_timeout(90);keyboard.release();assert state(page)['player']['x']<initial['player']['x']-4
     keyboard.set({'z'});page.wait_for_timeout(90);keyboard.release();assert state(page)['player']['y']<initial['player']['y']-4
     assert state(page)['kunai']==initial['kunai'], 'French movement fired a distraction'
@@ -570,6 +619,8 @@ def shadow_play(page,context,keyboard,profile):
         native_solo_aim(page,100,100);canvas.focus();page.keyboard.press('Space',delay=25);page.keyboard.press('a',delay=25)
     tools=state(page);assert tools['smoke']==tools_before['smoke']-1 and tools['kunai']==tools_before['kunai']-1
     assert tools['clouds'] and any(event['type']=='throw' for event in tools['events'])
+    assert page.locator('.shadow-control[data-control="smoke"]').get_attribute('data-empty')=='false'
+    assert page.locator('.shadow-control[data-control="kunai"]').get_attribute('data-empty')=='false'
     canvas_export(page,'.shadow-canvas',f'shadow-lantern-{profile}-native-smoke-canvas')
     # Tool effects are exercised in a real warm-up. A fresh heist then follows
     # a repeatable quiet patrol route without changing the live state.
@@ -581,6 +632,7 @@ def shadow_play(page,context,keyboard,profile):
     wait(page,'window.firesideSolo.getState().guards[0].mode==="down"',timeout=15000,polling=20)
     keyboard.release();taken=state(page)
     assert any(event['type']=='takedown' for event in taken['events']) and taken['player']['hp']>0
+    assert 'takedown' in page.locator('.shadow-status').inner_text().lower()
     canvas_export(page,'.shadow-canvas',f'shadow-lantern-{profile}-native-takedown-canvas')
     waypoint_evidence=[]
 
@@ -592,15 +644,22 @@ def shadow_play(page,context,keyboard,profile):
         keyboard.release()
         if profile=='mobile': trusted_touch(page,context,'[data-control="interact"]',1350)
         else:
-            canvas.focus();keyboard.set({'Shift','e'});page.wait_for_timeout(1350);keyboard.release()
+            canvas.focus();keyboard.set({'Shift','e'});page.wait_for_timeout(220)
+            assert state(page)['channel'] is not None, ('No native interaction channel',kind,state(page))
+            assert '%' in page.locator('.shadow-concealment').inner_text(), ('Channel progress missing',kind)
+            page.wait_for_timeout(1130);keyboard.release()
         current=state(page)
-        if kind=='seal': assert current['scrolls'][index], ('Native scroll channel failed',current)
+        if kind=='seal':
+            assert current['scrolls'][index], ('Native scroll channel failed',current)
+            wait(page,'n=>document.querySelectorAll(".shadow-objective-pips i[data-secured=true]").length===n',arg=sum(current['scrolls']))
         elif kind=='cache': assert current['caches'][index], ('Native tool cache failed',current)
         elif kind=='exit': assert current['phase']=='mission-clear' and current['cleared']==1
 
     go(100,452);go(100,155);go(430,155);interact('seal',0)
     canvas_export(page,'.shadow-canvas',f'shadow-lantern-{profile}-native-seal-canvas')
     go(430,325);go(740,325);go(795,375);interact('seal',1)
+    wait(page,'document.querySelector(".shadow-objective").dataset.ready==="true"')
+    assert page.locator('.shadow-objective b').inner_text()=='02 / EXTRACT'
     canvas_export(page,'.shadow-canvas',f'shadow-lantern-{profile}-patrol-cones-canvas')
     go(795,535);go(585,535);go(585,505);interact('cache')
     go(585,535);go(100,535);interact('exit')
@@ -616,8 +675,12 @@ def shadow_play(page,context,keyboard,profile):
     next_state=state(page)
     assert next_state['cleared']==1 and next_state['smoke']==carried['smoke'] and next_state['kunai']==carried['kunai']
     assert next_state['alarm']==carried['alarm'] and next_state['player']['hp']==carried['hp']
+    assert page.locator('.shadow-objective').get_attribute('data-ready')=='false'
+    assert page.locator('.shadow-objective b').inner_text()=='01 / RECOVER'
     canvas_export(page,'.shadow-canvas',f'shadow-lantern-{profile}-second-fortress-canvas')
-    return {'first_mission_cleared':True,'native_rear_takedown':True,'native_tools':True,'native_touch':profile=='mobile','carried':carried,'route':waypoint_evidence,'first_clear':fixed,'next_state':next_state}
+    return {'first_mission_cleared':True,'native_rear_takedown':True,'native_tools':True,'native_touch':profile=='mobile',
+        'recover_to_extract_objective_feedback':True,'native_channel_feedback':profile=='desktop',
+        'carried':carried,'route':waypoint_evidence,'first_clear':fixed,'next_state':next_state}
 
 def shinobi_touch(page,context):
     for target in page.locator('[data-shinobi-action],[data-shinobi-pad]').all():
@@ -698,6 +761,15 @@ def solo_case(browser,url,profile,errors,resources):
         evidence=shadow_play(page,context,keyboard,profile)
         paused=pause_check(page,'shadow-lantern',keyboard)
         page.locator('#solo-pause').click();wait(page,'window.firesideSolo.getState().phase==="paused"')
+        exposure=page.evaluate('''async()=>{
+            const {guardSees}=await import('/solo/shadow-engine.js');
+            const observed=window.firesideSolo.getState();
+            const seen=observed.guards.filter(guard=>guardSees(observed,guard));
+            const expected=seen.some(guard=>guard.mode==='alert')?'alert':seen.length?'seen':'clear';
+            return{expected,displayed:document.querySelector('.shadow-concealment').dataset.danger,
+                label:document.querySelector('.shadow-concealment').textContent,seeing_guard_ids:seen.map(guard=>guard.id)};
+        }''')
+        assert exposure['displayed']==exposure['expected'], ('HUD exposure differs from real guard sight',exposure)
         no_overflow(page,tag);paint=painted(page,'.shadow-canvas')
         screenshot(page,'shadow-lantern-'+profile+'-active-page')
         if profile=='mobile':
@@ -719,7 +791,8 @@ def solo_case(browser,url,profile,errors,resources):
         assert page.locator('#solo-start').is_visible() and records(page)==original_records
         assert page.locator('select[data-keyboard-layout]').input_value()=='zqsd'
         assert not mutations and not sockets
-        return {'game':'shadow-lantern','profile':profile,'dpr':dpr,'evidence':evidence,'paused':paused,'paint':paint,'performance':perf,'record_policy':policy,'records_preserved':True,'solo_room_mutations':mutations,'solo_sockets':sockets}
+        return {'game':'shadow-lantern','profile':profile,'dpr':dpr,'evidence':evidence,'exposure':exposure,
+            'paused':paused,'paint':paint,'performance':perf,'record_policy':policy,'records_preserved':True,'solo_room_mutations':mutations,'solo_sockets':sockets}
     except Exception:
         screenshot(page,'failure-shadow-'+profile);(OUT/('failure-shadow-'+profile+'.json')).write_text(json.dumps(state(page),indent=2)+'\n');raise
     finally:
@@ -729,6 +802,7 @@ def solo_case(browser,url,profile,errors,resources):
 def multiplayer_case(browser,url,profile,errors,resources):
     contexts,pages,code=create_room(browser,url,errors,resources,profile);first,second=pages
     try:
+        observe_shinobi_effects(first)
         room_form_check(first)
         if profile=='desktop':
             evidence=shinobi_desktop(first,second);match=shinobi_match(first,second)

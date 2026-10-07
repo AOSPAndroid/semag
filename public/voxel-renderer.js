@@ -8,6 +8,11 @@ const MAX_TRACERS = 14;
 const MAX_EVENT_IDS = 256;
 const TEAM_COLORS = ['#efad64', '#66d3c8'];
 const TAU = Math.PI * 2;
+const ATMOSPHERE = Object.freeze({
+  courtyard: { sun: [-.52, .76, .39], direct: [.66, .51, .35], ambient: [.45, .52, .60], top: '#729aac', horizon: '#efd1ac', sunColor: '#ffe2a6' },
+  depot: { sun: [-.36, .88, -.31], direct: [.51, .59, .61], ambient: [.40, .49, .59], top: '#719cae', horizon: '#d0ddd9', sunColor: '#e8f2df' },
+  canal: { sun: [.47, .81, -.35], direct: [.62, .58, .45], ambient: [.44, .52, .61], top: '#799fb6', horizon: '#e7dfc5', sunColor: '#fff0c5' },
+});
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const finite = (value, fallback = 0) => Number.isFinite(value) ? value : fallback;
 
@@ -76,6 +81,17 @@ class Mesh {
   floor(x, z, w, d, color, y = .008) {
     this.quad([x, y, z], [x, y, z + d], [x + w, y, z + d], [x + w, y, z], [0, 1, 0], rgba(color));
   }
+  floorPolygon(points, color, y = .006) {
+    // The monotone hull supplies a convex silhouette for static sun shadows.
+    const sorted = points.map(point => [...point]).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    const cross = (a, b, c) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+    const half = list => { const hull = []; for (const point of list) { while (hull.length > 1 && cross(hull.at(-2), hull.at(-1), point) <= 0) hull.pop(); hull.push(point); } return hull; };
+    const hull = [...half(sorted).slice(0, -1), ...half(sorted.reverse()).slice(0, -1)], c = rgba(color);
+    for (let i = 1; i < hull.length - 1; i++) {
+      // Reverse the X/Z winding to point upward in the X/Y/Z world.
+      for (const point of [hull[0], hull[i + 1], hull[i]]) this.vertex([point[0], y, point[1]], [0, 1, 0], c);
+    }
+  }
   panel(x, y, z, w, h, d, color) {
     const c = rgba(color);
     if (d <= w) {
@@ -112,11 +128,16 @@ attribute vec4 aColor;
 uniform mat4 uProjection;
 uniform mat4 uView;
 uniform vec3 uEye;
+uniform vec3 uLightDirection;
+uniform vec3 uSun;
+uniform vec3 uAmbient;
 varying vec4 vColor;
 varying float vDistance;
 void main() {
   gl_Position = uProjection * uView * vec4(aPosition, 1.0);
-  float light = 0.70 + 0.30 * max(0.0, dot(normalize(aNormal), normalize(vec3(-0.42, 0.84, 0.34))));
+  vec3 normal = normalize(aNormal);
+  float direct = max(0.0, dot(normal, normalize(uLightDirection)));
+  vec3 light = uAmbient + uSun * direct + vec3(0.08, 0.09, 0.10) * (normal.y * 0.5 + 0.5);
   vColor = vec4(aColor.rgb * light, aColor.a);
   vDistance = length(aPosition - uEye);
 }`;
@@ -127,23 +148,38 @@ uniform float uFogStrength;
 varying vec4 vColor;
 varying float vDistance;
 void main() {
-  float fog = clamp((vDistance - 19.0) / 74.0, 0.0, 0.78) * uFogStrength;
+  float fog = clamp((vDistance - 27.0) / 90.0, 0.0, 0.56) * uFogStrength;
   gl_FragColor = vec4(mix(vColor.rgb, uFog, fog), vColor.a);
 }`;
 const SKY_VERTEX_SHADER = `
 attribute vec2 aPosition;
-varying float vHeight;
+varying vec2 vScreen;
 void main() {
   gl_Position = vec4(aPosition, 0.999, 1.0);
-  vHeight = (aPosition.y + 1.0) * 0.5;
+  vScreen = aPosition;
 }`;
 const SKY_FRAGMENT_SHADER = `
 precision mediump float;
 uniform vec3 uTop;
 uniform vec3 uHorizon;
-varying float vHeight;
+uniform vec3 uSunColor;
+uniform vec3 uSunDirection;
+uniform vec3 uRight;
+uniform vec3 uUp;
+uniform vec3 uForward;
+uniform vec2 uScale;
+varying vec2 vScreen;
 void main() {
-  gl_FragColor = vec4(mix(uHorizon, uTop, smoothstep(0.24, 1.0, vHeight)), 1.0);
+  vec3 ray = normalize(uForward + uRight * vScreen.x * uScale.x + uUp * vScreen.y * uScale.y);
+  vec3 sun = normalize(uSunDirection);
+  float glow = pow(max(0.0, dot(ray, sun)), 48.0) * 0.13;
+  // A tiny square sun suits the block world. Its basis is world-relative so
+  // the sky and light direction remain attached to the map when looking up.
+  vec3 side = normalize(cross(sun, vec3(0.0, 1.0, 0.0)));
+  vec3 up = normalize(cross(side, sun));
+  float square = step(abs(dot(ray, side)), 0.016) * step(abs(dot(ray, up)), 0.016) * step(0.99, dot(ray, sun));
+  vec3 sky = mix(uHorizon, uTop, smoothstep(-0.05, 0.70, ray.y));
+  gl_FragColor = vec4(mix(sky, uSunColor, min(1.0, glow + square)), 1.0);
 }`;
 
 function shader(gl, type, source) {
@@ -175,10 +211,67 @@ function rayCoverDistance(origin, direction, colliders, maximum) {
   return nearest;
 }
 
+const GLYPHS = Object.freeze({
+  A: ['01110','10001','10001','11111','10001','10001','10001'], B: ['11110','10001','10001','11110','10001','10001','11110'],
+  C: ['01111','10000','10000','10000','10000','10000','01111'], D: ['11110','10001','10001','10001','10001','10001','11110'],
+  E: ['11111','10000','10000','11110','10000','10000','11111'], F: ['11111','10000','10000','11110','10000','10000','10000'],
+  G: ['01111','10000','10000','10111','10001','10001','01111'], H: ['10001','10001','10001','11111','10001','10001','10001'],
+  I: ['111','010','010','010','010','010','111'], L: ['10000','10000','10000','10000','10000','10000','11111'],
+  M: ['10001','11011','10101','10101','10001','10001','10001'], N: ['10001','11001','10101','10011','10001','10001','10001'],
+  O: ['01110','10001','10001','10001','10001','10001','01110'], P: ['11110','10001','10001','11110','10000','10000','10000'],
+  R: ['11110','10001','10001','11110','10100','10010','10001'], S: ['01111','10000','10000','01110','00001','00001','11110'],
+  T: ['11111','00100','00100','00100','00100','00100','00100'], U: ['10001','10001','10001','10001','10001','10001','01110'],
+  V: ['10001','10001','10001','10001','10001','01010','00100'], W: ['10001','10001','10001','10101','10101','10101','01010'],
+  X: ['10001','10001','01010','00100','01010','10001','10001'], Y: ['10001','10001','01010','00100','00100','00100','00100'],
+  '0': ['01110','10001','10011','10101','11001','10001','01110'], '1': ['010','110','010','010','010','010','111'],
+  '2': ['01110','10001','00001','00010','00100','01000','11111'], '3': ['11110','00001','00001','01110','00001','00001','11110'],
+  '4': ['10010','10010','10010','11111','00010','00010','00010'], '5': ['11111','10000','10000','11110','00001','00001','11110'],
+  '6': ['01110','10000','10000','11110','10001','10001','01110'], '7': ['11111','00001','00010','00100','01000','01000','01000'],
+  '8': ['01110','10001','10001','01110','10001','10001','01110'], '9': ['01110','10001','10001','01111','00001','00001','01110'],
+  '<': ['00100','01000','10000','11111','10000','01000','00100'], '>': ['00100','00010','00001','11111','00001','00010','00100'],
+});
+
+function wallPatch(mesh, collider, face, left, bottom, width, height, color, offset = .015) {
+  if (width <= 0 || height <= 0) return;
+  const { x, y, z, w, d } = collider, c = rgba(color), low = y + bottom, high = low + height;
+  // Every patch is paint directly on an existing solid face. It never adds a
+  // protruding prop, a fake doorway or an uncollidable sight-line obstruction.
+  if (face === 'south') mesh.quad([x + left + width, low, z + d + offset], [x + left + width, high, z + d + offset], [x + left, high, z + d + offset], [x + left, low, z + d + offset], [0, 0, 1], c);
+  if (face === 'north') mesh.quad([x + left, low, z - offset], [x + left, high, z - offset], [x + left + width, high, z - offset], [x + left + width, low, z - offset], [0, 0, -1], c);
+  if (face === 'west') mesh.quad([x - offset, low, z + left + width], [x - offset, high, z + left + width], [x - offset, high, z + left], [x - offset, low, z + left], [-1, 0, 0], c);
+  if (face === 'east') mesh.quad([x + w + offset, low, z + left], [x + w + offset, high, z + left], [x + w + offset, high, z + left + width], [x + w + offset, low, z + left + width], [1, 0, 0], c);
+}
+
+function wallText(mesh, collider, face, text, left, bottom, height, color, offset = .026) {
+  const pixel = height / 7, reversed = face === 'north' || face === 'east';
+  const glyphs = [...text].map(character => GLYPHS[character.toUpperCase()]);
+  const total = glyphs.reduce((sum, glyph) => sum + (glyph ? glyph[0].length + 1 : 3), 0) - 1;
+  let cursor = 0;
+  for (const rows of glyphs) {
+    if (rows) for (let row = 0; row < rows.length; row++) for (let column = 0; column < rows[row].length; column++) {
+      if (rows[row][column] === '1') wallPatch(mesh, collider, face, left + (reversed ? total - cursor - column - 1 : cursor + column) * pixel, bottom + (6 - row) * pixel, pixel * .88, pixel * .88, color, offset);
+    }
+    cursor += rows ? rows[0].length + 1 : 3;
+  }
+}
+
+function siteSign(mesh, collider, siteId) {
+  const color = siteId === 'A' ? '#ecb964' : '#64c9bc', dark = '#263b3e';
+  for (const face of ['north', 'south', 'west', 'east']) {
+    const width = face === 'north' || face === 'south' ? collider.w : collider.d;
+    if (width < .8) continue;
+    const size = Math.min(.83, width - .22), left = (width - size) / 2;
+    wallPatch(mesh, collider, face, left, 1.42, size, 1.02, dark, .025);
+    wallPatch(mesh, collider, face, left + .04, 1.47, size - .08, .065, color, .028);
+    wallText(mesh, collider, face, siteId, left + (size - .50) / 2, 1.67, .70, color, .03);
+  }
+}
+
 function paintCollider(mesh, collider, theme) {
   const { x, y, z, w, h, d } = collider;
-  const c = rgba(collider.color || (theme === 'canal' ? '#b6b0a2' : '#8d9b9b'));
+  const original = rgba(collider.color || (theme === 'canal' ? '#b6b0a2' : '#8d9b9b'));
   const material = String(collider.material || 'concrete').toLowerCase();
+  const c = /wood|crate/.test(material) ? mix(original, rgba('#bd8042'), .28) : material === 'stone' && theme === 'courtyard' ? mix(original, rgba('#dfcbb1'), .24) : original;
   mesh.box(x, y, z, w, h, d, c);
   const detail = (xx, yy, zz, ww, hh, dd, color) => {
     if (Math.min(ww, dd) <= .049) mesh.panel(xx, yy, zz, ww, hh, dd, color);
@@ -199,6 +292,16 @@ function paintCollider(mesh, collider, theme) {
     detail(x - skin, y + h - rim, z - skin, w + skin * 2, rim, d + skin * 2, pale);
   }
   if (/crate|wood|cargo|container|metal/.test(material)) {
+    if (/wood|crate/.test(material)) {
+      const boards = clamp(Math.round(h / .22), 2, 10);
+      for (let i = 0; i < boards; i++) {
+        const tint = shade(c, .88 + (hash(`${collider.id}:board:${i}`) % 5) * .045);
+        for (const face of ['north', 'south']) wallPatch(mesh, collider, face, .05, i * h / boards + .025, w - .1, h / boards - .04, tint, .003);
+        for (const face of ['west', 'east']) wallPatch(mesh, collider, face, .05, i * h / boards + .025, d - .1, h / boards - .04, tint, .003);
+      }
+      for (let xx = x + .05; xx < x + w - .05; xx += .28) mesh.floor(xx, z + .025, Math.min(.25, x + w - xx - .025), d - .05, shade(c, .9 + (hash(`${collider.id}:${xx}`) % 4) * .045), y + h + .002);
+      for (const face of ['north', 'south']) for (const left of [.10, w - .13]) for (const bottom of [.15, h - .19]) wallPatch(mesh, collider, face, left, bottom, .035, .035, '#3b4140', .026);
+    }
     const panelsX = clamp(Math.round(w / .65), 1, 18), panelsZ = clamp(Math.round(d / .65), 1, 18);
     for (let i = 0; i <= panelsX; i++) {
       const xx = x + .06 + i * (w - .12) / panelsX;
@@ -217,6 +320,11 @@ function paintCollider(mesh, collider, theme) {
       }
     }
     if (/metal|container/.test(material) && w > 2 && h > 2) {
+      for (const face of ['north', 'south']) {
+        wallPatch(mesh, collider, face, w * .15, h * .57, w * .70, .78, shade(c, .73), .018);
+        wallText(mesh, collider, face, 'CARGO', w * .19, h * .63, .48, '#e5dac2', .031);
+        wallText(mesh, collider, face, String(hash(collider.id) % 90 + 10), w * .18, h * .34, .34, '#dcc29a', .032);
+      }
       for (const zz of [z - skin - .002, z + d + .002]) {
         for (const fraction of [.28, .72]) {
           detail(x + w * fraction, y + .30, zz, .038, h - .56, skin + .004, pale);
@@ -237,7 +345,7 @@ function paintCollider(mesh, collider, theme) {
     const count = clamp(Math.round(h / .48), 1, 14);
     for (let i = 1; i < count; i++) {
       const yy = y + i * h / count;
-      detail(x - skin, yy, z - skin, w + skin * 2, .017, d + skin * 2, shade(c, .76));
+      detail(x - skin, yy, z - skin, w + skin * 2, .017, d + skin * 2, shade(c, .84));
       const rowsX = Math.min(20, Math.floor(w / 1.1)), rowsZ = Math.min(20, Math.floor(d / 1.1));
       for (let j = 0; j < rowsX; j++) {
         const xx = x + .50 + j * w / Math.max(1, rowsX) + (i % 2) * .25;
@@ -288,6 +396,17 @@ function paintCollider(mesh, collider, theme) {
         }
       }
     }
+    // Staggered stone wear is surface paint; its low contrast keeps the useful
+    // outer silhouette stronger than the masonry pattern at long distances.
+    for (const face of ['north', 'south', 'west', 'east']) {
+      const width = face === 'north' || face === 'south' ? w : d;
+      for (let left = .24; left < width - .60; left += 1.46) {
+        const seed = hash(`${collider.id}:${face}:${left}`), bottom = .35 + seed % Math.max(1, Math.floor((h - .7) * 10)) / 10;
+        wallPatch(mesh, collider, face, left, bottom, Math.min(.64, width - left - .10), .23, shade(c, seed % 2 ? 1.06 : .94), .004);
+      }
+      wallPatch(mesh, collider, face, 0, .02, width, Math.min(.14, h / 6), shade(c, .54), .014);
+      wallPatch(mesh, collider, face, 0, h - .23, width, .085, mix(c, rgba('#e6dbc6'), .6), .014);
+    }
   }
   if (String(collider.id).includes('planter')) {
     for (let i = 0; i < 5; i++) for (let j = 0; j < 5; j++) {
@@ -297,7 +416,7 @@ function paintCollider(mesh, collider, theme) {
 }
 
 function floorLetter(mesh, letter, x, z, size, color) {
-  const rows = letter === 'B' ? ['11110', '10001', '10001', '11110', '10001', '10001', '11110'] : ['01110', '10001', '10001', '11111', '10001', '10001', '10001'];
+  const rows = GLYPHS[letter] || GLYPHS.A;
   const pixel = size / 7;
   for (let row = 0; row < rows.length; row++) {
     for (let column = 0; column < rows[row].length; column++) {
@@ -306,34 +425,88 @@ function floorLetter(mesh, letter, x, z, size, color) {
   }
 }
 
+function mapPaint(mesh, map, theme) {
+  const find = id => map.colliders.find(collider => collider.id === id);
+  const siteColumn = id => id === 'A' ? find(theme === 'courtyard' ? 'west-site-column' : theme === 'depot' ? 'west-loading-column' : 'west-site-pillar') : find(theme === 'courtyard' ? 'east-site-column' : theme === 'depot' ? 'east-loading-column' : 'east-site-pillar');
+  for (const site of map.sites) { const column = siteColumn(site.id); if (column) siteSign(mesh, column, site.id); }
+  if (theme === 'courtyard') {
+    for (const side of ['west', 'east']) {
+      const collider = find(`${side}-arcade`), color = side === 'west' ? '#dfa962' : '#68aaa2';
+      for (const face of ['north', 'south']) {
+        wallPatch(mesh, collider, face, .24, 1.57, 2.02, .73, '#354648', .027);
+        const label = face === 'south' ? (side === 'west' ? 'A <' : '> B') : (side === 'west' ? '> A' : 'B <');
+        wallText(mesh, collider, face, label, .42, 1.73, .45, color, .034);
+        wallPatch(mesh, collider, face, .28, .48, collider.w - .56, .08, color, .025);
+      }
+    }
+    const central = find('central-north');
+    for (const face of ['north', 'south']) {
+      wallPatch(mesh, central, face, 3.53, 2.01, 2.94, .93, '#9b6851', .025);
+      wallText(mesh, central, face, 'COURT', 3.75, 2.28, .49, '#edd9b3', .034);
+    }
+  } else if (theme === 'depot') {
+    // Loading-lane markings sit on traversable asphalt, never on phantom kerbs.
+    for (const x of [-10.2, 10.2]) {
+      for (let z = -18; z < 19; z += 3.2) mesh.floor(x - .055, z, .11, 1.5, '#c8ac68', .005);
+    }
+    for (const site of map.sites) {
+      mesh.floor(site.x - 2.75, site.z - 2.75, 5.5, .075, '#d6b35f', .005);
+      mesh.floor(site.x - 2.75, site.z + 2.70, 5.5, .075, '#d6b35f', .005);
+      for (const x of [site.x - 2.75, site.x + 2.70]) mesh.floor(x, site.z - 2.75, .075, 5.5, '#d6b35f', .005);
+    }
+    const central = find('mid-container');
+    for (const face of ['west', 'east']) {
+      wallPatch(mesh, central, face, .34, .42, .14, 2.32, '#d7b269', .032);
+      wallText(mesh, central, face, '03', .79, 1.31, .82, '#eddfc7', .032);
+    }
+  } else {
+    for (const side of ['west', 'east']) {
+      const market = find(`${side}-market`), accent = side === 'west' ? '#527f81' : '#bf7f59';
+      for (const face of ['north', 'south']) {
+        wallPatch(mesh, market, face, .08, .19, market.w - .16, .55, accent, .024);
+        for (let left = .10; left < market.w - .10; left += .72) wallPatch(mesh, market, face, left, 2.74, .33, .34, '#d6d4b6', .025);
+        wallPatch(mesh, market, face, 2.25, 1.5, 2.5, .85, accent, .024);
+        wallText(mesh, market, face, 'MARCHE', 2.38, 1.71, .40, '#eee2bf', .030);
+      }
+    }
+    for (const id of ['canal-west-bank', 'canal-east-bank']) {
+      const bank = find(id);
+      for (let z = bank.z + .20; z < bank.z + bank.d - .20; z += .38) mesh.floor(bank.x + .025, z, bank.w - .05, .035, '#d0cdb7', bank.y + bank.h + .003);
+    }
+  }
+}
+
 function mapMeshes(map) {
   const opaque = new Mesh(), shadows = new Mesh();
   const bounds = map.bounds || { minX: -25, maxX: 25, minZ: -25, maxZ: 25 };
   const theme = map.theme || map.id;
-  const floorColor = rgba(map.floorColor || (theme === 'canal' ? '#89988f' : theme === 'depot' ? '#626e71' : '#929b8b'));
+  const floorColor = mix(rgba(map.floorColor || '#929b8b'), rgba(theme === 'courtyard' ? '#d7c7aa' : theme === 'depot' ? '#4f626c' : '#a9b8b2'), .36);
   const { minX, maxX, minZ, maxZ } = bounds;
   const width = maxX - minX, depth = maxZ - minZ;
   opaque.floor(minX - 35, minZ - 35, width + 70, depth + 70, shade(floorColor, .72), -.025);
   opaque.floor(minX, minZ, width, depth, floorColor, 0);
   // Repeating paving seams are flat markings, so visible traversable ground is
   // identical to collision ground. A single GPU mesh serves the entire map.
-  const tile = theme === 'depot' ? 3 : 2;
-  for (let x = Math.ceil(minX / tile) * tile; x < maxX; x += tile) opaque.floor(x, minZ, .025, depth, shade(floorColor, .78), .002);
-  for (let z = Math.ceil(minZ / tile) * tile; z < maxZ; z += tile) opaque.floor(minX, z, width, .025, shade(floorColor, .78), .003);
-  for (let x = minX + .3; x < maxX; x += tile) {
-    for (let z = minZ + .3; z < maxZ; z += tile) {
-      if (hash(`${map.id}:${x}:${z}`) % 7 === 0) opaque.floor(x, z, tile * .55, tile * .58, shade(floorColor, .95), .001);
-    }
+  const tile = theme === 'depot' ? 5 : theme === 'canal' ? 1.6 : 2.5;
+  for (let x = minX; x < maxX; x += tile) for (let z = minZ; z < maxZ; z += tile) {
+    const seed = hash(`${map.id}:${x}:${z}`), lane = theme === 'courtyard' && Math.abs(Math.abs(x + tile / 2) - 11) < 2;
+    const tint = shade(floorColor, .94 + seed % 5 * .022);
+    opaque.floor(x + .025, z + .025, Math.min(tile - .05, maxX - x - .025), Math.min(tile - .05, maxZ - z - .025), lane ? mix(tint, rgba('#94a09a'), .25) : tint, .001);
+    if (theme === 'depot' && seed % 4 === 0) opaque.floor(x + .27, z + .57, tile * .49, tile * .44, shade(floorColor, .89), .002);
   }
+  const atmosphere = ATMOSPHERE[theme] || ATMOSPHERE.courtyard;
   for (const collider of map.colliders || []) {
     paintCollider(opaque, collider, theme);
     if (collider.h < .15) continue;
-    const extent = Math.min(1.25, collider.h * .28);
+    const sun = atmosphere.sun, dx = -sun[0] / sun[1] * collider.h, dz = -sun[2] / sun[1] * collider.h;
     for (let layer = 3; layer >= 0; layer--) {
-      const softness = layer * .055;
-      shadows.floor(collider.x + .10 - softness, collider.z + .09 - softness, collider.w + extent + softness * 2, collider.d + extent * .5 + softness * 2, [.045, .065, .07, .065 + (3 - layer) * .012], .004 + (3 - layer) * .0004);
+      const soft = .035 + layer * .075;
+      const corners = [[collider.x - soft, collider.z - soft], [collider.x + collider.w + soft, collider.z - soft], [collider.x + collider.w + soft, collider.z + collider.d + soft], [collider.x - soft, collider.z + collider.d + soft]];
+      shadows.floorPolygon([...corners, ...corners.map(point => [point[0] + dx, point[1] + dz])], [.075, .095, .13, .062], .005 + (3 - layer) * .0003);
     }
+    shadows.floor(collider.x - .08, collider.z - .08, collider.w + .16, collider.d + .16, [.055, .07, .08, .22], .007);
   }
+  mapPaint(opaque, map, theme);
   for (const site of map.sites || []) {
     const color = site.id === 'A' ? rgba('#d9ae72') : rgba('#69bcb6');
     const radius = site.radius || 2.2;
@@ -356,6 +529,15 @@ function mapMeshes(map) {
       const c = shade(skylineColor, .80 + (seed % 4) * .07);
       opaque.box(x, -.05, z, w, h, d, c);
       opaque.box(x - .07, h - .2, z - .07, w + .14, .18, d + .14, shade(c, .70));
+      if (theme === 'courtyard') opaque.box(x + .16, h, z + .16, w - .32, .30, d - .32, mix(c, rgba('#ad8971'), .34));
+      if (theme === 'depot' && seed % 3 === 0) {
+        opaque.box(x + .45, h, z + .45, 1.4, .72, 1.6, shade(c, .72));
+        opaque.box(x + 2.50, h, z + 1.1, .38, 2.3, .38, '#80634f');
+      }
+      if (theme === 'canal') {
+        opaque.box(x + .1, h, z + .1, w - .2, .40, d - .2, mix(c, rgba('#b48369'), .42));
+        opaque.box(x + .65, h + .4, z + .8, 2.6, .35, 2.4, mix(c, rgba('#b48369'), .54));
+      }
       if (seed % 4 === 0) {
         const xx = x + 1.2, zz = z + 1.4;
         opaque.box(xx, h - .02, zz, .075, 1.70, .075, '#4b626b');
@@ -367,10 +549,8 @@ function mapMeshes(map) {
         for (let slot = .55; slot < 3.8; slot += 1.15) {
           const glass = ((seed + Math.round(level * 10) + Math.round(slot * 7)) % 4 === 0) ? '#bcaa79' : '#526d76';
           // Outward backdrop faces on both axes remain aligned to their walls.
-          opaque.box(x + slot, level, z - .009, .48, .62, .012, glass);
-          opaque.box(x + slot, level, z + d, .48, .62, .012, glass);
-          opaque.box(x - .009, level, z + slot, .012, .62, .48, glass);
-          opaque.box(x + w, level, z + slot, .012, .62, .48, glass);
+          const building = { x, y: 0, z, w, d };
+          for (const face of ['north', 'south', 'west', 'east']) wallPatch(opaque, building, face, slot, level, .48, .62, glass, .012);
         }
       }
     }
@@ -393,7 +573,8 @@ function weaponParts(mesh, weapon, pose, options = {}) {
   const rifle = !/pistol|sidearm/.test(weapon || ''), smg = /smg|compact/.test(weapon || ''), marksman = weapon === 'marksman';
   const length = rifle ? (smg ? .68 : marksman ? 1.04 : .92) : .42;
   const limit = options.limit ?? length + .20;
-  const body = rgba(options.body || '#424f54'), trim = '#1f292f', metal = '#99a5a4';
+  const body = rgba(options.body || (smg ? '#506f76' : marksman ? '#465d62' : '#57675e')), trim = '#202d32', metal = '#b2bfb7';
+  const reload = clamp(finite(options.reloadProgress), 0, 1), magazineDrop = reload > .04 && reload < .64 ? Math.sin((reload - .04) / .60 * Math.PI) * .25 : 0;
   const part = (x, y, z, w, h, d, color) => {
     // The weapon points down local -Z. Clamp each part at the first solid
     // cover contact so a barrel cannot reappear through a thin wall.
@@ -409,16 +590,31 @@ function weaponParts(mesh, weapon, pose, options = {}) {
     part(-.049, .080, -.36, .098, .040, .30, '#262f35');
     part(-.016, .120, -.41, .032, .030, .05, '#b8c5bc');
     part(-.020, .116, -.18, .040, .041, .055, '#b8c5bc');
-    part(-.045, -.25, -.18, .09, .20, .105, trim);
+    part(-.045, -.25 - magazineDrop, -.18 + magazineDrop * .16, .09, .20, .105, trim);
+    part(-.045, -.23 - magazineDrop, -.182 + magazineDrop * .16, .09, .04, .109, '#738b80');
     part(-.06, -.067, -.06, .12, .125, .25, options.stock || '#b39872');
     part(-.033, -.19, -.035, .066, .13, .09, '#6a746d');
     part(-.072, .016, -.51, .144, .014, .045, '#c6a474');
+    part(-.071, -.016, -.36, .008, .07, .13, '#9ba99c');
+    part(.067, -.016, -.34, .008, .060, .18, '#293c3e');
+    for (let i = 0; i < 4; i++) part(-.06, .026, -.61 + i * .045, .12, .012, .017, '#667f78');
+    const bolt = options.bolt || (reload > .72 && reload < .90 ? Math.sin((reload - .72) / .18 * Math.PI) : 0);
+    part(.061, .022, -.23 + bolt * .09, .046, .025, .06, metal);
+    if (smg) {
+      part(-.079, -.04, -.50, .016, .082, .14, '#77a9a5');
+      part(.063, -.04, -.50, .016, .082, .14, '#77a9a5');
+      part(-.073, -.014, .15, .146, .055, .055, '#748a80');
+    }
     if (marksman) {
       part(-.055, .11, -.43, .11, .13, .30, '#2c3f43');
       part(-.063, .115, -.465, .126, .12, .045, '#202f34');
       part(-.040, .132, -.469, .08, .075, .004, '#73aaa7');
       part(-.063, .115, -.14, .126, .12, .045, '#202f34');
       part(-.03, -.023, -.68, .06, .025, .05, '#bca6de');
+      part(-.040, .132, -.094, .08, .075, .004, '#5f9c9d');
+      part(-.011, .132, -.089, .007, .075, .002, '#203d40');
+      part(-.040, .165, -.089, .08, .006, .002, '#203d40');
+      part(-.011, .201, -.13, .032, .010, .008, '#c0d9c5');
     }
   } else {
     part(-.048, -.025, -.38, .096, .088, .34, body);
@@ -440,7 +636,7 @@ function playerMesh(mesh, player, map, time, allied) {
   const bodyYaw = Math.round(yaw / (Math.PI / 2)) * (Math.PI / 2);
   const pose = { x: player.x, y: finite(player.y), z: player.z, yaw: bodyYaw, pitch: 0 };
   const color = TEAM_COLORS[player.team === 1 ? 1 : 0];
-  const team = rgba(color), uniform = mix(team, rgba('#27373e'), .41), dark = '#202f36', plate = '#3b4e55';
+  const team = rgba(color), uniform = mix(team, rgba('#27373e'), .33), dark = '#202f36', plate = '#34484f';
   const box = (x, y, z, w, h, d, c) => {
     const bottom = y * scale, top = Math.min((y + h) * scale, crouch ? .83 : 1.48);
     mesh.box(x, bottom, z, w, top - bottom, d, c, pose);
@@ -453,23 +649,23 @@ function playerMesh(mesh, player, map, time, allied) {
   box(.04, .17, -.11 - step, .18, .62, .23, uniform);
   box(-.24, .47, -.132 + step, .20, .15, .036, plate);
   box(.035, .47, -.132 - step, .20, .15, .036, plate);
-  box(-.29, .78, -.27, .58, .62, .54, uniform);
-  box(-.25, .87, -.195, .50, .39, .08, plate);
-  box(-.21, 1.25, -.214, .42, .075, .035, team);
-  for (const xx of [-.18, -.025, .13]) box(xx, .97, -.255, .11, .18, .068, '#6a796e');
-  box(-.29, .80, -.195, .58, .075, .39, '#2d393c');
+  box(-.29, .78, -.20, .58, .62, .40, uniform);
+  box(-.25, .87, -.25, .50, .39, .065, plate);
+  box(-.21, 1.25, -.255, .42, .075, .035, team);
+  for (const xx of [-.18, -.025, .13]) box(xx, .97, -.29, .11, .18, .08, '#79897c');
+  box(-.29, .80, -.23, .58, .075, .46, '#2d393c');
   box(-.21, .89, .16, .42, .35, .12, '#465b5b');
   box(-.29, 1.16, -.12, .10, .22, .22, uniform);
   box(.19, 1.16, -.12, .10, .22, .22, uniform);
-  box(-.285, 1.28, -.136, .09, .065, .025, team);
-  box(.195, 1.28, -.136, .09, .065, .025, team);
+  box(-.285, 1.28, -.245, .09, .065, .025, team);
+  box(.195, 1.28, -.245, .09, .065, .025, team);
   box(-.13, 1.40, -.13, .26, .09, .26, '#344a4c');
   // Head width and top match the engine's real ±.22, top 1.8/1.15 box.
   const headBase = crouch ? .83 : 1.48;
   const headPose = { ...pose, y: pose.y + headBase, pitch: 0 };
   const eyeY = .095 + Math.sin(pitch) * .018;
   mesh.box(-.22, 0, -.22, .44, .32, .44, '#344a4d', headPose);
-  mesh.box(-.22, .19, -.22, .44, .13, .44, '#64796b', headPose);
+  mesh.box(-.22, .19, -.22, .44, .13, .44, mix(team, rgba('#5a736c'), .52), headPose);
   mesh.box(-.185, .072, -.22, .37, .07, .006, '#bdc6ac', headPose);
   mesh.box(-.155, eyeY, -.22, .12, .022, .009, '#121f26', headPose);
   mesh.box(.038, eyeY, -.22, .12, .022, .009, '#121f26', headPose);
@@ -477,11 +673,15 @@ function playerMesh(mesh, player, map, time, allied) {
   mesh.box(-.22, .088, -.13, .031, .15, .15, '#25383c', headPose);
   mesh.box(.189, .088, -.13, .031, .15, .15, '#25383c', headPose);
   mesh.box(-.07, .23, -.22, .14, .04, .006, team, headPose);
+  mesh.box(-.22, .235, -.12, .006, .035, .24, team, headPose);
+  mesh.box(.214, .235, -.12, .006, .035, .24, team, headPose);
   const handOffset = rotate([.21, crouch ? .82 : 1.24, -.24], yaw);
-  const gunPose = { x: pose.x + handOffset[0], y: pose.y + handOffset[1], z: pose.z + handOffset[2], yaw, pitch };
-  const direction = [Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch)];
+  const reloadProgress = player.reloadTicks > 0 ? clamp(1 - player.reloadTicks / (WEAPONS[player.weapon]?.reloadTicks || 252), 0, 1) : 0;
+  const reloadTilt = Math.sin(reloadProgress * Math.PI);
+  const gunPose = { x: pose.x + handOffset[0], y: pose.y + handOffset[1] - reloadTilt * .12, z: pose.z + handOffset[2], yaw, pitch: pitch - reloadTilt * .24 };
+  const direction = [Math.sin(yaw) * Math.cos(gunPose.pitch), Math.sin(gunPose.pitch), -Math.cos(yaw) * Math.cos(gunPose.pitch)];
   const limit = Math.max(0, rayCoverDistance([gunPose.x, gunPose.y, gunPose.z], direction, map.colliders || [], 1.05) - .015);
-  weaponParts(mesh, player.weapon, gunPose, { limit, stock: color });
+  weaponParts(mesh, player.weapon, gunPose, { limit, stock: color, reloadProgress });
   mesh.box(-.33, -.072, -.43, .17, .14, .26, '#526662', gunPose);
   mesh.box(-.08, -.14, -.11, .13, .14, .17, '#526662', gunPose);
   if (allied) {
@@ -530,16 +730,16 @@ export class VoxelRenderer {
     }
     this.program = program;
     this.attributes = { position: gl.getAttribLocation(program, 'aPosition'), normal: gl.getAttribLocation(program, 'aNormal'), color: gl.getAttribLocation(program, 'aColor') };
-    this.uniforms = Object.fromEntries(['Projection', 'View', 'Eye', 'Fog', 'FogStrength'].map(name => [name.toLowerCase(), gl.getUniformLocation(program, `u${name}`)]));
-    this.dynamicBuffer = gl.createBuffer(); this.weaponBuffer = gl.createBuffer();
+    this.uniforms = Object.fromEntries(['Projection', 'View', 'Eye', 'Fog', 'FogStrength', 'LightDirection', 'Sun', 'Ambient'].map(name => [name.toLowerCase(), gl.getUniformLocation(program, `u${name}`)]));
+    this.dynamicBuffer = gl.createBuffer(); this.weaponBuffer = gl.createBuffer(); this.contactBuffer = gl.createBuffer();
     this.tracerBuffer = gl.createBuffer();
-    this.dynamicCapacity = 0; this.weaponCapacity = 0; this.tracerCapacity = 0;
+    this.dynamicCapacity = 0; this.weaponCapacity = 0; this.tracerCapacity = 0; this.contactCapacity = 0;
     const skyVertex = shader(gl, gl.VERTEX_SHADER, SKY_VERTEX_SHADER), skyFragment = shader(gl, gl.FRAGMENT_SHADER, SKY_FRAGMENT_SHADER);
     this.skyProgram = gl.createProgram(); gl.attachShader(this.skyProgram, skyVertex); gl.attachShader(this.skyProgram, skyFragment); gl.linkProgram(this.skyProgram);
     gl.deleteShader(skyVertex); gl.deleteShader(skyFragment);
     if (!gl.getProgramParameter(this.skyProgram, gl.LINK_STATUS)) throw new Error('Voxel sky graphics could not initialize.');
     this.skyAttributes = { position: gl.getAttribLocation(this.skyProgram, 'aPosition') };
-    this.skyUniforms = { top: gl.getUniformLocation(this.skyProgram, 'uTop'), horizon: gl.getUniformLocation(this.skyProgram, 'uHorizon') };
+    this.skyUniforms = Object.fromEntries(['Top', 'Horizon', 'SunColor', 'SunDirection', 'Right', 'Up', 'Forward', 'Scale'].map(name => [name.toLowerCase(), gl.getUniformLocation(this.skyProgram, `u${name}`)]));
     this.skyBuffer = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, this.skyBuffer); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
     gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK); gl.frontFace(gl.CCW);
     gl.disable(gl.DITHER);
@@ -583,7 +783,7 @@ export class VoxelRenderer {
     gl.drawArrays(gl.TRIANGLES, 0, mesh.count);
   }
   _dynamic(array, kind = 'world') {
-    const gl = this.gl, buffer = kind === 'weapon' ? this.weaponBuffer : kind === 'tracer' ? this.tracerBuffer : this.dynamicBuffer, capacityKey = kind === 'weapon' ? 'weaponCapacity' : kind === 'tracer' ? 'tracerCapacity' : 'dynamicCapacity';
+    const gl = this.gl, buffer = kind === 'weapon' ? this.weaponBuffer : kind === 'tracer' ? this.tracerBuffer : kind === 'contact' ? this.contactBuffer : this.dynamicBuffer, capacityKey = kind === 'weapon' ? 'weaponCapacity' : kind === 'tracer' ? 'tracerCapacity' : kind === 'contact' ? 'contactCapacity' : 'dynamicCapacity';
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     if (array.byteLength > this[capacityKey]) {
       this[capacityKey] = Math.max(16384, Math.ceil(array.byteLength / 16384) * 16384);
@@ -662,27 +862,32 @@ export class VoxelRenderer {
     }
     this.lastAim = { yaw, pitch };
     const reloadActive = finite(player.reloadTicks) > 0;
-    let reload = 0;
+    let reload = 0, reloadProgress = 0;
     if (reloadActive) {
       const ticks = finite(player.reloadTicks);
       const duration = WEAPONS[player.weapon]?.reloadTicks || WEAPONS.carbine.reloadTicks;
-      reload = Math.sin(clamp(1 - ticks / duration, .04, .96) * Math.PI);
+      reloadProgress = clamp(1 - ticks / duration, 0, 1);
+      reload = Math.sin(clamp(reloadProgress, .04, .96) * Math.PI);
     }
     const pose = {
       x: .29 + this.swayX + Math.sin(step) * .008 * walking,
-      y: -.29 + this.swayY - Math.abs(Math.cos(step)) * .008 * walking - reload * .17,
+      y: -.29 + this.swayY - Math.abs(Math.cos(step)) * .008 * walking - reload * .105,
       z: -.49 + kick * .052 + reload * .065,
-      yaw: -.065 + this.swayX * 2 + reload * .30,
-      pitch: kick * .055 - reload * .30,
+      yaw: -.065 + this.swayX * 2 + reload * .22,
+      pitch: kick * .055 - reload * .23,
       scale: .74,
     };
-    const length = weaponParts(mesh, player.weapon, pose, { body: '#55615e', stock: team });
-    mesh.box(-.17, -.09, -.52, .15, .12, .30, '#526661', pose);
-    mesh.box(-.20, -.15, -.27, .17, .17, .32, '#435952', pose);
-    mesh.box(-.205, -.14, -.11, .18, .17, .12, team, pose);
+    const length = weaponParts(mesh, player.weapon, pose, { stock: team, reloadProgress, bolt: kick * .75 });
+    const handShift = reload * .30, handDrop = reload * .17;
+    mesh.box(-.17, -.09 - handDrop, -.52 + handShift, .15, .12, .30, '#526661', pose);
+    mesh.box(-.20, -.15 - handDrop, -.27 + handShift, .17, .17, .32, '#435952', pose);
+    mesh.box(-.205, -.14 - handDrop, -.11 + handShift, .18, .17, .12, mix(rgba(team), rgba('#64796b'), .24), pose);
+    mesh.box(-.178, -.073 - handDrop, -.46 + handShift, .126, .026, .23, '#72887b', pose);
     mesh.box(-.065, -.16, -.06, .13, .13, .16, '#526661', pose);
     mesh.box(.015, -.22, -.01, .17, .17, .32, '#435952', pose);
-    mesh.box(.07, -.235, .12, .15, .18, .10, team, pose);
+    mesh.box(.07, -.235, .12, .15, .18, .10, mix(rgba(team), rgba('#64796b'), .24), pose);
+    mesh.box(.078, -.057, .13, .126, .018, .083, '#2a4143', pose);
+    mesh.box(.113, -.038, .16, .062, .006, .039, '#79d0c0', pose);
     if (age < 44 && !reloadActive) {
       const flash = .032 + (1 - age / 44) * .040;
       mesh.box(-flash / 2, -.015, -length - .070, flash, flash, .085, '#f6d991', pose);
@@ -713,25 +918,40 @@ export class VoxelRenderer {
     const fov = clamp(finite(options.fov, 70), 55, 95) * Math.PI / 180;
     const projection = perspective(fov, this.aspect || 16 / 9, .025, 110), view = viewMatrix(eye, yaw, pitch);
     const sky = rgba(map.skyColor || (map.id === 'canal' ? '#a3bdc2' : map.id === 'depot' ? '#8da6b0' : '#a8bcb9'));
+    const atmosphere = ATMOSPHERE[map.theme || map.id] || ATMOSPHERE.courtyard;
     gl.clearColor(...sky); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     gl.disable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE); gl.disable(gl.BLEND);
     gl.useProgram(this.skyProgram); gl.bindBuffer(gl.ARRAY_BUFFER, this.skyBuffer);
     gl.enableVertexAttribArray(this.skyAttributes.position); gl.vertexAttribPointer(this.skyAttributes.position, 2, gl.FLOAT, false, 8, 0);
-    gl.uniform3fv(this.skyUniforms.top, mix(sky, rgba('#7c9eb0'), map.id === 'courtyard' ? .21 : .18).slice(0, 3));
-    gl.uniform3fv(this.skyUniforms.horizon, mix(sky, rgba('#f0e1c7'), .13).slice(0, 3)); gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.uniform3fv(this.skyUniforms.top, rgba(atmosphere.top).slice(0, 3));
+    gl.uniform3fv(this.skyUniforms.horizon, rgba(atmosphere.horizon).slice(0, 3));
+    gl.uniform3fv(this.skyUniforms.suncolor, rgba(atmosphere.sunColor).slice(0, 3));
+    gl.uniform3fv(this.skyUniforms.sundirection, atmosphere.sun);
+    const sy = Math.sin(yaw), cy = Math.cos(yaw), sp = Math.sin(pitch), cp = Math.cos(pitch), tangent = Math.tan(fov / 2);
+    gl.uniform3fv(this.skyUniforms.right, [cy, 0, sy]); gl.uniform3fv(this.skyUniforms.up, [-sy * sp, cp, cy * sp]); gl.uniform3fv(this.skyUniforms.forward, [sy * cp, sp, -cy * cp]);
+    gl.uniform2fv(this.skyUniforms.scale, [tangent * this.aspect, tangent]); gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.useProgram(this.program);
     gl.uniformMatrix4fv(this.uniforms.projection, false, projection); gl.uniformMatrix4fv(this.uniforms.view, false, view);
     gl.uniform3fv(this.uniforms.eye, eye); gl.uniform3fv(this.uniforms.fog, sky.slice(0, 3)); gl.uniform1f(this.uniforms.fogstrength, 1);
+    gl.uniform3fv(this.uniforms.lightdirection, atmosphere.sun); gl.uniform3fv(this.uniforms.sun, atmosphere.direct); gl.uniform3fv(this.uniforms.ambient, atmosphere.ambient);
     gl.enable(gl.DEPTH_TEST); gl.depthMask(true); gl.disable(gl.BLEND); gl.enable(gl.CULL_FACE);
     const cached = this._getMap(map);
     this._draw(cached.opaque);
     gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false);
     this._draw(cached.shadows); gl.depthMask(true); gl.disable(gl.BLEND);
-    const dynamic = new Mesh(), local = players.find(player => player.id === localId) || cameraPlayer;
+    const dynamic = new Mesh(), contacts = new Mesh(), local = players.find(player => player.id === localId) || cameraPlayer;
     for (const player of players) {
       if (!player.alive || player.id === cameraPlayer.id || !Number.isFinite(player.x) || !Number.isFinite(player.z)) continue;
       playerMesh(dynamic, player, map, time, player.team === local.team);
-      dynamic.floor(player.x - .25, player.z - .20, .50, .40, [.065, .085, .075, 1], .004);
+      const support = map.colliders.find(collider => player.x >= collider.x && player.x <= collider.x + collider.w && player.z >= collider.z && player.z <= collider.z + collider.d && collider.y + collider.h <= finite(player.y) + .05 && collider.y + collider.h > 0);
+      const ground = support ? support.y + support.h : 0;
+      const altitude = Math.max(0, finite(player.y) - ground), spread = .26 + Math.min(.22, altitude * .08), opacity = .15 / (1 + altitude);
+      for (let layer = 2; layer >= 0; layer--) {
+        const size = spread + layer * .055;
+        const minX = Math.max(player.x - size, support?.x ?? -Infinity), maxX = Math.min(player.x + size, support ? support.x + support.w : Infinity);
+        const minZ = Math.max(player.z - size * .8, support?.z ?? -Infinity), maxZ = Math.min(player.z + size * .8, support ? support.z + support.d : Infinity);
+        contacts.floor(minX, minZ, maxX - minX, maxZ - minZ, [.035, .055, .08, opacity], ground + .012 + (2 - layer) * .0003);
+      }
     }
     this._bomb(dynamic, state, players.filter(player => player.id !== cameraPlayer.id), time);
     for (const particle of this.particles) {
@@ -740,6 +960,10 @@ export class VoxelRenderer {
       dynamic.box(particle.origin[0] + particle.vx * age - size / 2, particle.origin[1] + particle.vy * age - age * age * 3, particle.origin[2] + particle.vz * age - size / 2, size, size, size, shade(rgba(particle.color), .7 + fade * .3));
     }
     this._draw(this._dynamic(dynamic.array));
+    if (contacts.vertices.length) {
+      gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false);
+      this._draw(this._dynamic(contacts.array, 'contact')); gl.depthMask(true); gl.disable(gl.BLEND);
+    }
     if (this.tracers.length) {
       const traces = new Mesh();
       for (const trace of this.tracers) {
@@ -758,6 +982,9 @@ export class VoxelRenderer {
       // wall. World cover and hit detection continue using the real camera.
       gl.clear(gl.DEPTH_BUFFER_BIT); gl.uniformMatrix4fv(this.uniforms.view, false, IDENTITY);
       gl.uniform3fv(this.uniforms.eye, [0, 0, 0]); gl.uniform1f(this.uniforms.fogstrength, 0);
+      // The hands use a stable soft key light so turning into map shade cannot
+      // hide the weapon's sights or the magazine during a reload.
+      gl.uniform3fv(this.uniforms.lightdirection, [-.30, .70, .62]); gl.uniform3fv(this.uniforms.sun, [.43, .43, .40]); gl.uniform3fv(this.uniforms.ambient, [.64, .68, .72]);
       this._draw(this._dynamic(this._viewModel(cameraPlayer, yaw, pitch, time), 'weapon'));
     }
     return true;
@@ -776,6 +1003,7 @@ export class VoxelRenderer {
       for (const cached of this.mapCache.values()) { gl.deleteBuffer(cached.opaque.buffer); gl.deleteBuffer(cached.shadows.buffer); }
       if (this.dynamicBuffer) gl.deleteBuffer(this.dynamicBuffer);
       if (this.weaponBuffer) gl.deleteBuffer(this.weaponBuffer);
+      if (this.contactBuffer) gl.deleteBuffer(this.contactBuffer);
       if (this.tracerBuffer) gl.deleteBuffer(this.tracerBuffer);
       if (this.skyBuffer) gl.deleteBuffer(this.skyBuffer);
       if (this.program) gl.deleteProgram(this.program);

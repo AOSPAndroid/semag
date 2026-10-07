@@ -51,6 +51,42 @@ export function createContinuousInputPacer(maxHz = 60) {
   };
 }
 
+/** The planted charge replaces the round clock; it never runs beside a stale timer. */
+export function matchClock(state) {
+  const phase = state?.phase || 'lobby';
+  const planted = phase === 'fight' && state?.bomb?.status === 'planted';
+  const ticks = planted ? state.bomb.timerTicks : phase === 'fight' ? state.roundTicks : state?.phaseTicks;
+  const seconds = Math.max(0, Math.ceil((ticks || 0) / 120));
+  const inactive = phase === 'lobby' || phase === 'matchEnd';
+  return { seconds, planted, urgent: !inactive && phase === 'fight' && seconds <= 10,
+    label: planted ? `SITE ${state.bomb.siteId || 'A'} · DEVICE PLANTED` : phase === 'lobby' ? 'ASSEMBLE YOUR TEAM' : phase === 'buy' ? 'LOADOUT PHASE' : phase === 'roundEnd' ? 'NEXT ROUND' : phase === 'matchEnd' ? 'MATCH COMPLETE' : `ROUND ${String(state?.round || 1).padStart(2, '0')}`,
+    text: inactive ? '—' : phase === 'fight' && !planted ? `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}` : String(seconds).padStart(2, '0') };
+}
+
+export function roundResult(state, localTeam) {
+  const winner = state?.roundWinner;
+  if (winner !== 0 && winner !== 1) return null;
+  const won = winner === localTeam;
+  const reason = ({ defuse: 'Device defused.', explosion: 'Device detonated.', time: 'Time expired. Both sites held.', elimination: won ? 'Opposing squad eliminated.' : 'Your squad was eliminated.' })[state.roundReason] || 'Round complete.';
+  return { won, title: won ? 'Round secured.' : 'Round lost.', team: winner === 0 ? 'AMBER' : 'TEAL', role: winner === state.attackTeam ? 'BREACH' : 'HOLD', reason };
+}
+
+/** Navigation contains only connected, living teammates; opponents never supply markers. */
+export function tacticalMapPlayers(state, localId, connectedIds) {
+  const local = state?.players?.find(player => player.id === localId);
+  if (!local) return [];
+  const connected = connectedIds == null ? null : new Set(connectedIds);
+  return state.players.filter(player => player.team === local.team && player.alive && (!connected || connected.has(player.id)) && [player.x, player.z, player.yaw].every(Number.isFinite))
+    .map(player => ({ id: player.id, x: player.x, z: player.z, yaw: player.yaw, self: player.id === localId }));
+}
+
+export function loadoutForKey(event, phase) {
+  if (!['countdown', 'buy', 'roundEnd'].includes(phase) || event.repeat || event.altKey || event.ctrlKey || event.metaKey || isFormTarget(event.target)) return null;
+  // Unshifted AZERTY prints &, é and " on these physical number keys.
+  return ({ Digit1: 'carbine', Digit2: 'smg', Digit3: 'marksman', Numpad1: 'carbine', Numpad2: 'smg', Numpad3: 'marksman' })[event.code]
+    || ({ '1': 'carbine', '2': 'smg', '3': 'marksman' })[event.key] || null;
+}
+
 /** Interpolate remote bodies only. Camera aim and authoritative combat remain immediate. */
 export function interpolatedState(samples, targetTime, localId, { predictMovement, maxExtrapolationMs = 25 } = {}) {
   if (!samples.length) return null;
@@ -107,14 +143,14 @@ async function boot() {
   let paused = true; let entered = false; let fallback = false; let touchMode = false;
   let rightDrag = false; let graphicsError = ''; let modalOpen = false; let spectatorId = null; let teamSwitchPending = false; let requestedTeam = null;
   let previousPhase = null; let previousRound = null; let aim = { yaw: 0, pitch: 0 };
-  let hitUntil = 0; let toastTimer; let lastCountdown = null; let lastHUDAt = 0;
+  let hitUntil = 0; let hitKind = 'body'; let damageUntil = 0; let feedbackUntil = 0; let toastTimer; let lastCountdown = null; let lastHUDAt = 0;
   let inputHeartbeat = null; let lastAimSendAt = 0; let lastTouchLookAt = performance.now();
   const keys = new Set(); const pressedKeys = new Map();
   const mouse = { fire: false };
   const touch = { move: { x: 0, y: 0 }, look: { x: 0, y: 0 }, actions: new Set() };
   const actionPointers = new Map(); const padPointers = new Map();
   const padInputPacer = createContinuousInputPacer(60);
-  let rosterSignature = ''; let idleDrawSignature = '';
+  let rosterSignature = ''; let idleDrawSignature = ''; let mapPlanId = ''; const mapMarkers = new Map();
   const audio = new GameAudio(); const eventSeen = new Set(); const eventOrder = []; const kills = [];
   const removers = [];
   function listen(target, name, handler, options) { target.addEventListener(name, handler, options); removers.push(() => target.removeEventListener(name, handler, options)); }
@@ -160,6 +196,49 @@ async function boot() {
   function bombState() { const value = state?.bomb || state?.objective; return value && typeof value === 'object' ? value : null; }
   function allConnected() { return roster.filter(player => player?.connected).length === capacity; }
 
+  function selectArenaLoadout(weaponId) {
+    if (!connected || modalOpen || graphicsError || !['countdown', 'buy', 'roundEnd'].includes(state?.phase) || ownPlayer()?.weapon === weaponId) return;
+    neutralize(); send({ type: 'fps-loadout', weaponId });
+  }
+
+  function updateTacticalMap() {
+    const plan = engine?.MAPS?.[state?.mapId]; const local = ownPlayer();
+    $('tactical-map').hidden = !plan || !local || !['countdown', 'buy', 'fight', 'roundEnd'].includes(state?.phase);
+    if (!plan || !local) return;
+    const svg = $('map-plan'); const svgNode = (tag, attributes) => {
+      const node = document.createElementNS('http://www.w3.org/2000/svg', tag);
+      for (const [key, value] of Object.entries(attributes)) node.setAttribute(key, value);
+      return node;
+    };
+    if (mapPlanId !== plan.id) {
+      mapPlanId = plan.id; mapMarkers.clear(); svg.replaceChildren();
+      const bounds = plan.bounds;
+      svg.setAttribute('viewBox', `${bounds.minX - 2} ${bounds.minZ - 2} ${bounds.maxX - bounds.minX + 4} ${bounds.maxZ - bounds.minZ + 4}`);
+      svg.append(svgNode('rect', { x: bounds.minX, y: bounds.minZ, width: bounds.maxX - bounds.minX, height: bounds.maxZ - bounds.minZ, class: 'map-floor' }));
+      for (const box of plan.colliders) svg.append(svgNode('rect', { x: box.x, y: box.z, width: box.w, height: box.d, class: `map-cover${box.h < 1.3 ? ' low' : ''}` }));
+      for (const site of plan.sites) {
+        svg.append(svgNode('circle', { cx: site.x, cy: site.z, r: site.radius + .4, class: 'map-site' }));
+        const label = svgNode('text', { x: site.x, y: site.z + 1.1, class: 'map-site-label' }); label.textContent = site.id; svg.append(label);
+      }
+      const markers = svgNode('g', { class: 'map-team-markers' }); svg.append(markers);
+      // Exactly six reusable nodes cover the largest lobby. Updates only move/hide them.
+      for (let id = 0; id < 6; id++) {
+        const node = svgNode('path', { d: 'M0 -1.8 L1.3 1.3 L0 .7 L-1.3 1.3 Z', class: 'map-player', display: 'none' });
+        node.dataset.playerId = String(id); markers.append(node); mapMarkers.set(id, node);
+      }
+    }
+    const players = tacticalMapPlayers(state, playerId, roster.filter(person => person?.connected).map(person => person.id));
+    const visible = new Set(players.map(player => player.id));
+    for (const [id, marker] of mapMarkers) marker.setAttribute('display', visible.has(id) ? 'inline' : 'none');
+    for (const player of players) {
+      const marker = mapMarkers.get(player.id); if (!marker) continue;
+      const pose = player.self && local.alive ? predictedPlayer || local : player;
+      marker.setAttribute('transform', `translate(${pose.x} ${pose.z}) rotate(${(player.self ? aim.yaw : player.yaw) * 180 / Math.PI})`);
+      marker.setAttribute('d', player.self ? 'M0 -1.8 L1.3 1.3 L0 .7 L-1.3 1.3 Z' : 'M1.2 0 A1.2 1.2 0 1 1 -1.2 0 A1.2 1.2 0 1 1 1.2 0 Z');
+      marker.setAttribute('class', player.self ? 'map-player self' : 'map-player');
+    }
+  }
+
   function playEvents(events = []) {
     for (const event of events) {
       const eventId = event.id ?? `${state?.tick}:${event.type}:${event.playerId ?? event.attackerId ?? ''}:${event.targetId ?? ''}`;
@@ -168,10 +247,14 @@ async function boot() {
       if (eventOrder.length > 512) eventSeen.delete(eventOrder.shift());
       const shooter = event.shooterId ?? event.attackerId ?? event.playerId ?? event.attacker;
       const target = event.targetId ?? event.victimId ?? event.target;
-      if (event.type === 'damage' && shooter === playerId && event.damage > 0) hitUntil = performance.now() + 135;
+      if (event.type === 'damage' && event.damage > 0) {
+        if (shooter === playerId) { hitUntil = performance.now() + 150; hitKind = event.headshot ? 'headshot' : 'body'; }
+        if (target === playerId) damageUntil = performance.now() + 230;
+      }
       if (['kill', 'death', 'elimination'].includes(event.type)) {
-        kills.push({ at: performance.now(), text: `${lookupName(shooter)}  ›  ${lookupName(target)}` });
+        kills.push({ at: performance.now(), text: `${lookupName(shooter)}  ${event.headshot ? '[HS]' : '›'}  ${lookupName(target)}`, own: shooter === playerId, headshot: !!event.headshot });
         if (kills.length > 4) kills.shift();
+        if (shooter === playerId) { hitUntil = performance.now() + 230; hitKind = 'elimination'; feedbackUntil = performance.now() + 1100; $('combat-feedback').textContent = event.headshot ? 'HEADSHOT · ELIMINATED' : 'ELIMINATED'; }
       }
       if (!audio.enabled) continue;
       try {
@@ -248,6 +331,7 @@ async function boot() {
     for (let team = 0; team < 2; team++) {
       const lives = $(`team${team}-lives`);
       const teamPlayers = state?.players?.filter(person => person.team === team) || Array(teamSize).fill({ alive: true });
+      lives.setAttribute('aria-label', `${team === 0 ? 'Amber' : 'Teal'}: ${teamPlayers.filter(player => player.alive).length} of ${teamSize} alive`);
       const livesSignature = teamPlayers.map(player => player.alive ? '1' : '0').join('');
       if (lives.dataset.signature === livesSignature) continue;
       lives.dataset.signature = livesSignature; lives.replaceChildren();
@@ -255,14 +339,21 @@ async function boot() {
         const marker = document.createElement('i'); marker.className = player.alive ? '' : 'dead'; lives.append(marker);
       }
     }
-    $('round-label').textContent = inLobby ? 'ASSEMBLE YOUR TEAM' : phase === 'buy' ? 'LOADOUT PHASE' : phase === 'matchEnd' ? 'MATCH COMPLETE' : `ROUND ${String(state?.round || 1).padStart(2, '0')}`;
-    const remaining = phase === 'fight' ? state?.roundTicks : state?.phaseTicks;
-    $('timer').textContent = inLobby || phase === 'matchEnd' ? '—' : String(Math.max(0, Math.ceil((remaining || 0) / 120))).padStart(2, '0');
+    const clock = matchClock(state);
+    $('round-label').textContent = clock.label; $('timer').textContent = clock.text;
+    $('timer').classList.toggle('urgent', clock.urgent); $('round-label').classList.toggle('device-live', clock.planted);
     $('map-label').textContent = `${mapName || state?.mapName || 'PRIVATE ROOM'} / ${local ? `TEAM ${local.team === 0 ? 'AMBER' : 'TEAL'}` : 'CONNECTING'}`.toUpperCase();
     $('combat-hud').hidden = inLobby || !local || !local.alive || phase === 'matchEnd';
     $('health').textContent = local?.hp ?? 100; $('health-fill').style.width = `${Math.max(0, Math.min(100, local?.hp ?? 100))}%`;
+    $('health').closest('.health-readout').classList.toggle('low-health', !!local && local.hp <= 30);
     $('weapon-label').textContent = (local?.weapon || 'carbine').toUpperCase(); $('ammo').textContent = local?.ammo ?? '—'; $('reserve').textContent = local?.reserve ?? '—';
-    $('weapon-status').textContent = local?.reloadTicks > 0 ? `RELOADING ${(local.reloadTicks / 120).toFixed(1)}S` : local?.ammo === 0 ? 'R TO RELOAD' : local?.crouching ? 'CROUCHED / STEADY' : 'STOP. AIM. BURST.';
+    const reloading = local?.reloadTicks > 0; const weapon = engine?.WEAPONS?.[local?.weapon];
+    const reloadPercent = reloading && weapon ? Math.max(0, Math.min(100, 100 - local.reloadTicks / weapon.reloadTicks * 100)) : 0;
+    $('reload-track').hidden = !reloading; $('reload-progress').style.width = `${reloadPercent}%`;
+    $('reload-track').setAttribute('aria-valuenow', String(Math.round(reloadPercent)));
+    $('reload-track').setAttribute('aria-valuetext', `${((local?.reloadTicks || 0) / 120).toFixed(1)} seconds remaining`);
+    $('weapon-status').textContent = reloading ? `RELOADING ${(local.reloadTicks / 120).toFixed(1)}S` : local?.ammo === 0 ? local.reserve > 0 ? 'R TO RELOAD' : 'OUT OF AMMUNITION' : !local?.grounded ? 'AIRBORNE / UNSTEADY' : local?.crouching ? 'CROUCHED / STEADY' : 'STOP. AIM. BURST.';
+    $('ammo').classList.toggle('low-ammo', !reloading && !!weapon && local?.ammo <= Math.max(2, Math.floor(weapon.magazine / 4)));
     $('crosshair').hidden = !controlsActive() || phase !== 'fight';
     if (local) {
       const weapon = engine?.WEAPONS?.[local.weapon];
@@ -279,7 +370,7 @@ async function boot() {
     $('spectator-label').textContent = spectatorId !== null ? `SPECTATING ${lookupName(spectatorId).toUpperCase()}` : 'YOUR TEAM IS ELIMINATED';
     $('next-spectator').hidden = allies.length < 2;
     const bomb = bombState();
-    $('objective-hud').hidden = !bomb || !['buy', 'fight'].includes(phase);
+    $('objective-hud').hidden = !bomb || phase !== 'fight';
     $('interaction-track').hidden = true;
     if (bomb) {
       let label; let detail;
@@ -292,7 +383,11 @@ async function boot() {
         label = planting ? 'PLANTING / KEEP HOLDING E' : 'DEFUSING / KEEP HOLDING E';
         const ticks = planting ? bomb.plantTicks : bomb.defuseTicks; const total = planting ? 360 : 600;
         detail = `${((total - ticks) / 120).toFixed(1)} SECONDS REMAINING`;
-        $('interaction-track').hidden = false; $('interaction-progress').style.width = `${Math.min(100, ticks / total * 100)}%`;
+        const progress = Math.min(100, ticks / total * 100);
+        $('interaction-track').hidden = false; $('interaction-progress').style.width = `${progress}%`;
+        $('interaction-track').setAttribute('aria-valuenow', String(Math.round(progress)));
+        $('interaction-track').setAttribute('aria-label', planting ? 'Planting device' : 'Defusing device');
+        $('interaction-track').setAttribute('aria-valuetext', `${((total - ticks) / 120).toFixed(1)} seconds remaining`);
       } else if (phase === 'fight' && local?.alive && local.grounded && bomb.status === 'carried' && bomb.carrierId === playerId) {
         const nearSite = engine.MAPS?.[state.mapId]?.sites?.find(site => Math.hypot(local.x - site.x, local.z - site.z) <= site.radius);
         if (nearSite) detail = `SITE ${nearSite.id} · STOP AND HOLD E TO PLANT`;
@@ -300,18 +395,39 @@ async function boot() {
         detail = engine.canInteractWithBomb?.(state, local) ? 'STOP AND HOLD E TO DEFUSE' : 'Find a clear angle to the device';
       }
       $('objective-label').textContent = label; $('objective-detail').textContent = detail;
+      $('objective-hud').classList.toggle('interacting', planting || defusing);
+      $('objective-hud').classList.toggle('device-live', bomb.status === 'planted');
     }
     const roles = local?.team === attackTeam ? 'Breach' : 'Hold';
     $('objective').textContent = inLobby ? `All ${capacity} players must be connected and ready.` : phase === 'buy' ? `${roles}: choose your weapon. Movement is locked during setup.` : phase === 'fight' ? local?.alive ? `${roles}: ${local.team === attackTeam ? 'plant at A or B, or eliminate Hold.' : 'protect the sites; hold E to defuse.'}` : 'Eliminated. Watch your own team until the next round.' : phase === 'roundEnd' ? state?.objective || 'Round complete. The next round is on its way.' : phase === 'matchEnd' ? 'Match complete. Rematch returns to lobby; everyone must ready up.' : 'Round begins shortly. Enter the arena when ready.';
     let overlay = false; let kicker = ''; let title = ''; let subtitle = ''; let enter = false;
     if (graphicsError) { overlay = true; kicker = 'GRAPHICS UNAVAILABLE'; title = 'The arena could not render.'; subtitle = graphicsError; }
     else if (!connected) { overlay = true; kicker = 'CONNECTING TO THE HOST'; title = permanentError ? 'This room is unavailable.' : 'Waiting for the host.'; subtitle = permanentError ? 'Return to the game shelf and create or join a room.' : 'Your controls are released while the connection recovers.'; }
-    else if (inLobby) { overlay = true; kicker = `${teamSize}V${teamSize} / ${mapName || 'PRIVATE MATCH'}`; title = me?.ready ? 'Your squad is on the way.' : 'Take your position.'; subtitle = `Choose your loadout below, invite the other ${capacity - 1} players, then ready up. Every seat must be connected and ready.`; }
+    else if (inLobby) {
+      const readyCount = roster.filter(person => person?.connected && person.ready).length;
+      const waiting = capacity - readyCount;
+      overlay = true; kicker = `${teamSize}V${teamSize} / ${mapName || 'PRIVATE MATCH'}`; title = me?.ready ? `Ready. Waiting for ${waiting}.` : 'Take your position.';
+      subtitle = me?.ready ? `${readyCount} of ${capacity} players ready. Share the invite below; the countdown begins when everyone is ready.` : `Choose your loadout below, invite the other ${capacity - 1} players, then ready up. Every seat must be connected and ready.`;
+    }
     else if (phase === 'matchEnd') { overlay = true; kicker = 'MATCH COMPLETE'; title = state.winner === local?.team ? 'Your team takes the match.' : 'A hard-fought match.'; subtitle = `${state.scores?.[0] || 0} — ${state.scores?.[1] || 0}. Rematch returns everyone to the lobby. All players must ready up again.`; }
-    else if (local?.alive && (paused || !entered) && !modalOpen) { overlay = true; kicker = phase === 'countdown' ? 'THE SQUADS ARE READY' : 'CONTROLS RELEASED'; title = !entered ? 'Enter the arena.' : 'Take a breath. Find your angle.'; subtitle = phase === 'countdown' || phase === 'buy' ? 'Setup is underway. Capture the mouse, then choose your weapon before the round goes live.' : 'The multiplayer round keeps running. Return when you are ready.'; enter = true; }
+    else if (local?.alive && ['countdown', 'buy', 'fight'].includes(phase) && (paused || !entered) && !modalOpen) { overlay = true; kicker = phase === 'countdown' || phase === 'buy' ? `${roles.toUpperCase()} / ROUND ${String(state.round).padStart(2, '0')}` : 'CONTROLS RELEASED'; title = !entered ? 'Enter the arena.' : 'Controls released.'; subtitle = phase === 'countdown' || phase === 'buy' ? `${roles}: ${local.team === attackTeam ? 'plant at A or B.' : 'protect A and B, then defuse.'} Choose a weapon; movement unlocks when live.` : 'The multiplayer round keeps running. Return when you are ready.'; enter = true; }
     $('game-overlay').hidden = !overlay; $('overlay-kicker').textContent = kicker; $('overlay-title').textContent = title; $('overlay-subtitle').textContent = subtitle;
     $('enter-arena').hidden = !enter; $('retry-graphics').hidden = !graphicsError;
+    $('arena-loadouts').hidden = !enter || !['countdown', 'buy'].includes(phase);
+    for (const button of document.querySelectorAll('[data-arena-loadout]')) {
+      button.setAttribute('aria-pressed', String(button.dataset.arenaLoadout === local?.weapon));
+      button.disabled = !connected || !['countdown', 'buy'].includes(phase);
+    }
     $('aim-note').hidden = !enter; $('aim-note').textContent = touchMode ? 'Touch: Move and Look pads, with six action buttons.' : 'Mouse capture where available. Otherwise, hold right mouse and drag to look.';
+    const result = roundResult(state, local?.team);
+    $('phase-announcement').hidden = !connected || !!graphicsError || modalOpen || overlay || !['countdown', 'buy', 'roundEnd'].includes(phase);
+    $('phase-announcement').dataset.phase = phase;
+    $('phase-announcement').dataset.outcome = result?.won ? 'won' : 'lost';
+    $('phase-kicker').textContent = phase === 'roundEnd' && result ? `${result.team} / ${result.role} · ROUND ${String(state.round).padStart(2, '0')}` : `${roles.toUpperCase()} / ROUND ${String(state?.round || 1).padStart(2, '0')}`;
+    $('phase-title').textContent = phase === 'roundEnd' ? result?.title || 'Round complete.' : phase === 'buy' ? 'Choose your weapon.' : 'Take your angle.';
+    $('phase-detail').textContent = phase === 'roundEnd' ? `${result?.reason || ''} Next round in ${clock.seconds}s.${state.round === 3 ? ' Teams switch roles.' : ''}` : phase === 'buy' ? `${clock.seconds}s until live · ${(local?.weapon || 'carbine').toUpperCase()} selected` : `${clock.seconds}s until setup · ${roles === 'Breach' ? 'Plant at A or B.' : 'Protect both sites.'}`;
+    $('phase-shortcuts').hidden = phase === 'roundEnd' || touchMode;
+    updateTacticalMap();
     renderRoster();
   }
 
@@ -325,10 +441,13 @@ async function boot() {
     renderer.render(renderedState, { playerId, localId: playerId, localPlayer: predictedPlayer, viewPlayer, cameraPlayer: viewPlayer, yaw: viewAim.yaw, pitch: viewAim.pitch + (viewPlayer?.recoil || 0), time: now });
     renderCount++;
     $('hit-marker').hidden = now >= hitUntil;
+    $('hit-marker').dataset.kind = hitKind;
+    $('damage-cue').hidden = now >= damageUntil;
+    $('combat-feedback').hidden = now >= feedbackUntil;
     while (kills.length && now - kills[0].at > 6000) kills.shift();
     const feed = $('kill-feed');
     if (feed.dataset.signature !== kills.map(item => item.text).join('|')) {
-      feed.replaceChildren(...kills.map(kill => { const item = document.createElement('li'); item.textContent = kill.text; return item; })); feed.dataset.signature = kills.map(item => item.text).join('|');
+      feed.replaceChildren(...kills.map(kill => { const item = document.createElement('li'); item.textContent = kill.text; item.classList.toggle('own-kill', kill.own); item.classList.toggle('headshot', kill.headshot); return item; })); feed.dataset.signature = kills.map(item => item.text).join('|');
     }
   }
 
@@ -384,7 +503,7 @@ async function boot() {
     if (previousPhase !== state.phase && previousPhase !== null) neutralize();
     if (state.phase === 'lobby' && previousPhase !== 'lobby') {
       neutralize({ pause: true, unlock: true }); entered = false; fallback = false;
-      eventSeen.clear(); eventOrder.length = 0; kills.length = 0; hitUntil = 0; lastCountdown = null; audio.resetEvents();
+      eventSeen.clear(); eventOrder.length = 0; kills.length = 0; hitUntil = damageUntil = feedbackUntil = 0; lastCountdown = null; audio.resetEvents();
     }
     if (local && !local.alive && old?.players.find(player => player.id === playerId)?.alive !== false) neutralize({ pause: true, unlock: true });
     const ackValue = message.acks?.[playerId];
@@ -436,7 +555,7 @@ async function boot() {
   }
 
   async function enterArena(event) {
-    if (!connected || !ownPlayer()?.alive || graphicsError || state?.phase === 'lobby' || state?.phase === 'matchEnd') return;
+    if (!connected || !ownPlayer()?.alive || graphicsError || !['countdown', 'buy', 'fight'].includes(state?.phase)) return;
     neutralize(); entered = true; paused = false;
     touchMode ||= event?.pointerType === 'touch' || matchMedia('(pointer: coarse)').matches;
     canvas.focus({ preventScroll: true });
@@ -460,6 +579,8 @@ async function boot() {
   const unsubscribeLayout = subscribeKeyboardLayout(updateLayout); $('move-keys').textContent = getKeyboardLayout().toUpperCase();
   listen(window, 'keydown', event => {
     if (event.key === 'Escape') { if (modalOpen) closeGuide(); else if (entered && state?.phase !== 'lobby') neutralize({ pause: true, unlock: true }); return; }
+    const loadout = entered && !modalOpen && !document.hidden ? loadoutForKey(event, state?.phase) : null;
+    if (loadout) { event.preventDefault(); selectArenaLoadout(loadout); return; }
     if (!controlsActive() || isFormTarget(event.target)) return;
     const action = controlForKey(event); if (!action) return;
     event.preventDefault(); const keyId = event.code || event.key;
@@ -512,6 +633,7 @@ async function boot() {
   listen($('rematch-button'), 'click', () => send({ type: 'rematch' }));
   listen($('player-name'), 'change', () => { playerName = saveName($('player-name').value); $('player-name').value = playerName; send({ type: 'join', name: playerName }); });
   listen($('loadout-select'), 'change', () => { neutralize(); send({ type: 'fps-loadout', weaponId: $('loadout-select').value }); });
+  for (const button of document.querySelectorAll('[data-arena-loadout]')) listen(button, 'click', () => selectArenaLoadout(button.dataset.arenaLoadout));
   for (const button of document.querySelectorAll('[data-choose-team]')) listen(button, 'click', () => { neutralize({ pause: true, unlock: true }); teamSwitchPending = true; requestedTeam = Number(button.dataset.chooseTeam); send({ type: 'fps-team', team: requestedTeam }); updateUI(); });
   listen($('next-spectator'), 'click', () => {
     const local = ownPlayer(); const allies = state?.players.filter(player => player.team === local?.team && player.alive && player.id !== playerId) || [];

@@ -22,6 +22,24 @@ test('rounded wall corners leave empty diagonal space available', () => { const 
 test('swept wall contact prevents tunneling and allows tangential sliding', () => { const body = { x: 100, y: 250 }; moveBody(body, 450, 40, LEVELS[0].walls); close(body.x, 190); close(body.y, 290); });
 test('body touching a wall can retreat or move along it without sticking', () => { const b = { x: 190, y: 230 }; moveBody(b,-25,20,LEVELS[0].walls); close(b.x,165); close(b.y,250); });
 test('physical guard bodies stop frontal run-through and allow retreat', () => { const b = { x: 80, y: 100 }; moveBody(b,100,0,[],10,[{x:120,y:100,radius:11}]); close(b.x,99); moveBody(b,-20,0,[],10,[{x:120,y:100,radius:11}]); close(b.x,79); });
+test('opposing live guards pass around one another without stacking or a parked queue', () => {
+ const s=createState(),base=s.guards[0];s.player.x=100;s.player.y=100;
+ const a={...base,id:0,x:400,y:550,facing:0,mode:'alert',lastSeen:{x:650,y:550},turnWait:0},b={...base,id:1,x:600,y:550,facing:Math.PI,mode:'alert',lastSeen:{x:350,y:550},turnWait:0};s.guards=[a,b];
+ for(let tick=0;tick<180;tick++){step(s,{});assert.ok(Math.hypot(a.x-b.x,a.y-b.y)>=22-1e-6,'live guard circles must remain separate');}
+ assert.ok(a.x>520&&b.x<480,`both opposing routes must continue: ${a.x}, ${b.x}`);
+});
+test('overlap repair keeps wall-pinned and coincident guard bodies outside solid cover', () => {
+ for(const positions of [[[189,250],[175,250]],[[100,100],[100,100]]]){const s=createState(),base=s.guards[0];s.guards=positions.map(([x,y],id)=>({...base,id,x,y,turnWait:100}));step(s,{});const[a,b]=s.guards;assert.ok(Math.hypot(a.x-b.x,a.y-b.y)>=22-1e-6);
+  for(const g of s.guards){assert.ok(g.x>=49&&g.x<=911&&g.y>=59&&g.y<=591);assert.ok(Math.hypot(g.x-s.player.x,g.y-s.player.y)>=21-1e-6);for(const r of LEVELS[0].walls){const x=Math.max(r.x,Math.min(r.x+r.w,g.x)),y=Math.max(r.y,Math.min(r.y+r.h,g.y));assert.ok(Math.hypot(g.x-x,g.y-y)>=11-1e-6,'separation cannot push a guard into cover');}}
+ }
+});
+test('normal sprint and sneak routes keep converging live patrols separate', () => {
+ const route=[[100,155],[430,155],[430,325],[740,325],[795,375],[795,535],[585,535],[585,505],[585,535],[100,535]];
+ for(const sneak of [false,true]){const s=createState();let waypoint=0,ticks=0;while(s.phase==='playing'&&ticks++<5400){const[x,y]=route[waypoint%route.length],dx=x-s.player.x,dy=y-s.player.y;if(Math.hypot(dx,dy)<3)waypoint++;step(s,{right:dx>1,left:dx< -1,down:dy>1,up:dy< -1,sneak});for(let i=0;i<s.guards.length;i++)for(let j=i+1;j<s.guards.length;j++)assert.ok(Math.hypot(s.guards[i].x-s.guards[j].x,s.guards[i].y-s.guards[j].y)>=22-1e-6,'normal movement must not merge guard threats');}assert.ok(ticks>60*18,'replay reaches the original converging patrol case');}
+});
+test('all nine authored mission entrances begin with separate live guard bodies', () => {
+ const s=createState();for(let level=0;level<TOTAL_LEVELS;level++){assert.equal(s.level,level);for(let i=0;i<s.guards.length;i++)for(let j=i+1;j<s.guards.length;j++)assert.ok(Math.hypot(s.guards[i].x-s.guards[j].x,s.guards[i].y-s.guards[j].y)>=22-1e-6,`mission ${level+1} starts with separate guard circles`);if(level<TOTAL_LEVELS-1){s.phase='mission-clear';assert.equal(nextMission(s),true);}}
+});
 test('circle sweep catches a moving segment crossing before its endpoint', () => { close(segmentCircle(0,0,100,0,50,0,5),.45); assert.equal(segmentCircle(0,0,100,0,50,10,5),null); });
 test('player body remains within the drawn courtyard boundary', () => { const s = quiet(); play(s,{left:true,down:true},8); assert.ok(s.player.x >= 48); assert.ok(s.player.y <= WORLD.height - 48); });
 test('diagonal movement has the same total pace as a cardinal move', () => { const a=quiet(), b=quiet(); a.player.x=b.player.x=90;a.player.y=b.player.y=550; play(a,{right:true},.2);play(b,{right:true,up:true},.2);close(a.player.x-90,Math.hypot(b.player.x-90,b.player.y-550)); });

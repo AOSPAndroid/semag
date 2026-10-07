@@ -197,19 +197,42 @@ test('only real parry contacts create clash effects; deduplicated effects remain
   const { ShinobiRenderer } = await import('../public/shinobi-renderer.js'), renderer = { reducedMotion: false, resetEffects: ShinobiRenderer.prototype.resetEffects };
   renderer.resetEffects();
   const state = { tick: 1, events: [{ id: 1, type: 'parryStart', fighter: 0, x: 200, y: 200 }, { id: 2, type: 'parry', fighter: 0, x: 200, y: 200 }] };
-  ShinobiRenderer.prototype.observeEvents.call(renderer, state); assert.equal(renderer.bursts.length, 0); assert.equal(renderer.particles.length, 0);
+  ShinobiRenderer.prototype.observeEvents.call(renderer, state); assert.equal(renderer.bursts.length, 0); assert.equal(renderer.particles.length, 0); assert.equal(renderer.callouts.length, 0);
   state.events.push({ id: 3, type: 'parry', fighter: 0, target: 1, x: 220, y: 200 }); ShinobiRenderer.prototype.observeEvents.call(renderer, state); assert.equal(renderer.particles.length, 10);
   ShinobiRenderer.prototype.observeEvents.call(renderer, state); assert.equal(renderer.particles.length, 10);
   for (let tick = 2; tick < 500; tick++) ShinobiRenderer.prototype.observeEvents.call(renderer, { tick, events: [{ id: tick + 10, type: 'hit', fighter: 0, target: 1, x: tick, y: 200 }] });
-  assert.ok(renderer.particles.length <= 96); assert.ok(renderer.bursts.length <= 20); assert.ok(renderer.seenEvents.size <= 256);
+  assert.ok(renderer.particles.length <= 96); assert.ok(renderer.bursts.length <= 20); assert.ok(renderer.seenEvents.size <= 256); assert.ok(renderer.callouts.length <= 6);
 });
 
-test('renderer effects freeze in lobby or paused fight and advance only during live combat', async () => {
+test('renderer effects freeze in lobby or pause and settle after finishing blows', async () => {
   const { ShinobiRenderer } = await import('../public/shinobi-renderer.js');
   const context = new Proxy({}, { get(target, key) { return target[key] ?? (() => {}); }, set(target, key, value) { target[key] = value; return true; } });
-  const renderer = { ctx: context, canvas: { width: 960, height: 640 }, reducedMotion: false, lastTime: 0, lastGhost: [-1, -1], ghosts: [{ id: 0, x: 100, y: 100, facing: 0, age: .01 }], particles: [{ x: 100, y: 100, vx: 100, vy: 0, age: .01, life: .2, color: '#fff' }], bursts: [{ x: 100, y: 100, age: .01, life: .2, type: 'hit', color: '#fff', angle: 0 }], hitFlash: [.1, 0], observeEvents() {}, scene: () => ({ canvas: {}, coverLayer: {} }), background: () => ({}), sprite: () => ({}), paintFighter() {}, paintProjectile() {}, paintEffects: ShinobiRenderer.prototype.paintEffects };
+  const renderer = { ctx: context, canvas: { width: 960, height: 640 }, reducedMotion: false, lastTime: 0, lastGhost: [-1, -1], ghosts: [{ id: 0, x: 100, y: 100, facing: 0, age: .01 }], particles: [{ x: 100, y: 100, vx: 100, vy: 0, age: .01, life: .2, color: '#fff' }], bursts: [{ x: 100, y: 100, age: .01, life: .2, type: 'hit', color: '#fff', angle: 0 }], callouts: [{ x: 100, y: 63, age: .01, life: .6, text: '−18', color: '#ffe2c1' }], hitFlash: [.1, 0], observeEvents() {}, scene: () => ({ canvas: {}, coverLayer: {} }), background: () => ({}), sprite: () => ({}), paintFighter() {}, paintProjectile() {}, paintEffects: ShinobiRenderer.prototype.paintEffects };
   const state = game.createState(); ShinobiRenderer.prototype.render.call(renderer, state, { time: 1000 }); ShinobiRenderer.prototype.render.call(renderer, state, { time: 2000 });
   assert.equal(renderer.particles[0].age, .01); assert.equal(renderer.particles[0].x, 100); assert.equal(renderer.ghosts[0].age, .01); assert.equal(renderer.hitFlash[0], .1);
+  assert.equal(renderer.callouts[0].age, .01);
   state.phase = 'fight'; state.paused = true; ShinobiRenderer.prototype.render.call(renderer, state, { time: 2500 }); assert.equal(renderer.particles[0].age, .01);
   state.paused = false; ShinobiRenderer.prototype.render.call(renderer, state, { time: 2520 }); assert.ok(renderer.particles[0].age > .01); assert.ok(renderer.particles[0].x > 100); assert.ok(renderer.hitFlash[0] < .1);
+  const previousAge = renderer.callouts[0].age;
+  state.phase = 'roundEnd'; ShinobiRenderer.prototype.render.call(renderer, state, { time: 2540 });
+  assert.ok(renderer.callouts[0].age > previousAge, 'a finishing blow must settle during roundEnd instead of remaining frozen over the result');
+});
+
+test('round changes clear old impact feedback and stale snapshot events do not replay', async () => {
+  const { ShinobiRenderer } = await import('../public/shinobi-renderer.js');
+  const renderer = { reducedMotion: false, resetEffects: ShinobiRenderer.prototype.resetEffects };
+  renderer.resetEffects();
+  const state = { tick: 200, round: 1, stageId: 'rooftop', phase: 'fight', events: [{ id: 1, tick: 199, type: 'hit', fighter: 0, target: 1, damage: 18, x: 300, y: 300 }] };
+  ShinobiRenderer.prototype.observeEvents.call(renderer, state);
+  assert.equal(renderer.callouts[0].text, '−18'); assert.ok(renderer.particles.length > 0);
+  state.round = 2; state.stageId = 'garden'; state.events = [];
+  ShinobiRenderer.prototype.observeEvents.call(renderer, state);
+  assert.equal(renderer.callouts.length, 0); assert.equal(renderer.particles.length, 0); assert.equal(renderer.bursts.length, 0);
+  state.events = [{ id: 2, tick: 1, type: 'hit', fighter: 0, target: 1, damage: 32, x: 300, y: 300 }];
+  ShinobiRenderer.prototype.observeEvents.call(renderer, state);
+  assert.equal(renderer.callouts.length, 0); assert.equal(renderer.particles.length, 0); assert.equal(renderer.hitFlash[1], 0);
+  state.events = [{ id: 3, tick: 200, type: 'deflect', fighter: 1, x: 300, y: 300 }];
+  ShinobiRenderer.prototype.observeEvents.call(renderer, state); assert.equal(renderer.callouts[0].text, 'DEFLECT');
+  state.phase = 'lobby'; state.events = [];
+  ShinobiRenderer.prototype.observeEvents.call(renderer, state); assert.equal(renderer.callouts.length, 0); assert.equal(renderer.particles.length, 0);
 });

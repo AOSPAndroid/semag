@@ -2,9 +2,9 @@
   <title id="title">Voxel Breach</title>
   <desc id="desc">First-person view into Sunset Courtyard. Amber and teal voxel operatives face off between solid masonry cover, wooden crates and two marked charge sites. A compact block-built carbine sits in the foreground beneath a warm city skyline.</desc>
   <defs>
-    <linearGradient id="sky" x2="0" y2="1"><stop stop-color="#bdc0b4"/><stop offset="1" stop-color="#efd1af"/></linearGradient>
-    <linearGradient id="ground" x2="0" y2="1"><stop stop-color="#ab9e85"/><stop offset="1" stop-color="#c8b698"/></linearGradient>
-    <pattern id="brick" width="40" height="22" patternUnits="userSpaceOnUse"><path fill="#ae9e87" d="M0 0h40v22H0z"/><path stroke="#817864" stroke-width="1" d="M0 0h40M0 11h40M20 0v11M0 11v11M40 11v11"/><path stroke="#bfaf97" stroke-width="1" d="M1 1h38M1 12h38"/></pattern>
+    <linearGradient id="sky" x2="0" y2="1"><stop stop-color="#729aac"/><stop offset=".76" stop-color="#e6cba8"/><stop offset="1" stop-color="#efd1af"/></linearGradient>
+    <linearGradient id="ground" x2="0" y2="1"><stop stop-color="#bba88c"/><stop offset="1" stop-color="#ddc9a7"/></linearGradient>
+    <pattern id="brick" width="40" height="22" patternUnits="userSpaceOnUse"><path fill="#c1ac8d" d="M0 0h40v22H0z"/><path stroke="#94846d" stroke-width=".7" d="M0 0h40M0 11h40M20 0v11M0 11v11M40 11v11"/><path stroke="#e1cdb0" stroke-width="1" d="M1 1h38M1 12h38"/></pattern>
     <g id="operative" shape-rendering="crispEdges">
       <path fill="#344447" d="m0 46 8-2 9 2 1 3H0z"/>
       <path fill="#26363b" d="M1 38h6v9H1zm10 0h6v9h-6z"/>
@@ -22,6 +22,8 @@
     </g>
   </defs>
   <path fill="url(#sky)" d="M0 0h600v320H0z"/>
+  <path fill="#ffe2a6" fill-opacity=".13" d="M437 17h45v45h-45z"/>
+  <path fill="#ffe2a6" d="M451 31h17v17h-17z"/>
   <g fill="#f0dbc2" shape-rendering="crispEdges"><path d="M55 35h73v9H55zm19-7h39v8H74zm34 13h36v5h-36zM352 44h80v7h-80zm22-6h38v6h-38zm41 9h36v6h-36zM508 24h65v8h-65zm18-5h34v5h-34z"/></g>
   <g shape-rendering="crispEdges">
     <path fill="#73888a" d="M0 81h49v79H0zM51 97h45v62H51zM101 74h58v86h-58zM164 103h43v57h-43zM209 89h54v73h-54zM271 108h44v50h-44zM319 95h40v65h-40zM365 72h57v92h-57zM427 104h42v58h-42zM475 84h60v81h-60zM540 65h60v98h-60z"/>
@@ -29,25 +31,30 @@
     <path fill="#a5a38c" d="M8 93h5v8H8zm14 0h5v8h-5zm14 0h5v8h-5zM110 88h5v8h-5zm14 0h5v8h-5zm14 0h5v8h-5zm14 0h4v8h-4zM220 101h5v8h-5zm14 0h5v8h-5zm14 0h5v8h-5zM377 87h5v8h-5zm15 0h5v8h-5zm15 0h5v8h-5zM488 96h5v8h-5zm15 0h5v8h-5zm15 0h5v8h-5zM551 80h5v8h-5zm15 0h5v8h-5zm15 0h5v8h-5z"/>
     <path fill="#50636a" d="M119 57h2v19h-2zm-7 6h16v1h-16zm3-4h10v1h-10zM394 55h2v20h-2zm-7 5h16v1h-16zM552 47h2v19h-2zm-6 7h13v1h-13z"/>
   </g>
-  <path fill="#a99f89" d="M0 128h600v81H0z"/>
+  <path fill="#9f927b" d="M0 128h600v81H0z"/>
   <path stroke="#7f796b" fill="none" stroke-width="1" d="M0 145h600M0 161h600M0 180h600M15 128v17m38 0v16m-8 0v19m44-52v17m40 0v16m-4 0v19m40-52v17m40 0v16m-4 0v19m40-52v17m40 0v16m-4 0v19m40-52v17m40 0v16m-4 0v19m40-52v17m40 0v16m-4 0v19m40-52v17m40 0v16m-4 0v19"/>
   <path fill="url(#ground)" d="M0 195 301 171 600 194v126H0z"/>
   <path stroke="#8b846f" fill="none" stroke-width="1" d="M301 171 24 320m277-149 112 149m-112-149 255 149m-255-149L188 320m113-149v149M0 220l301-21 299 21M0 258l301-24 299 25M0 307l301-28 299 28"/>
-  <path fill="#736e5e" fill-opacity=".22" d="m120 213 108-7 52 12-118 14zm251 28 129-9 100 23v23l-222-12z"/>
+  <path fill="#344b56" fill-opacity=".27" d="m103 213 135-2 43-29 48 17-137 45-89-6zm266 58 129-39 102 23v23l-172 23z"/>
   <g>
     <path fill="url(#brick)" d="M103 124h135v88H103z"/>
-    <path fill="#7e7768" d="m238 124 19-7v84l-19 11z"/>
+    <path fill="#758485" d="m238 124 19-7v84l-19 11z"/>
     <path fill="#c6b89f" d="m103 124 14-7h140l-19 7z"/>
     <path fill="#c1b399" d="M103 124h4v87h-4zm126 0h5v87h-5z"/>
     <path fill="#756d5f" d="M132 142h27v21h-27zm44 0h27v21h-27z"/>
     <path stroke="#bcb09a" stroke-width="2" d="M134 147h23m-23 5h23m-23 5h23m21-10h23m-23 5h23m-23 5h23"/>
-    <path fill="#ada189" d="m369 104 34-27v224l-34-30z"/>
+    <path fill="#354648" d="M146 179h60v22h-60z"/>
+    <path fill="#dfa962" d="M151 187h2v-4h6v4h2v10h-2v-5h-6v5h-2zm2-2v5h6v-5zM176 190l8-7v4l-4 3h13v2h-13l4 3v4z"/>
+    <path fill="#dda965" d="M107 207h127v3H107z"/>
+    <path fill="#697e83" d="m369 104 34-27v224l-34-30z"/>
     <path fill="url(#brick)" d="M403 77h128v224H403z"/>
     <path fill="#c5b79f" d="m369 104 7 0 34-26h121v-4H403z"/>
     <path stroke="#7d7668" stroke-width="1" d="m369 128 34-22m-34 46 34-17m-34 42 34-13m-34 39 34-10m-34 35 34-5m-34 32 34-1"/>
     <path fill="#c5b89d" d="M403 80h5v221h-5zm118 0h5v221h-5z"/>
     <path fill="#6d7167" d="M433 132h44v32h-44z"/>
     <path stroke="#bbb299" stroke-width="3" d="M436 138h38m-38 7h38m-38 7h38m-38 7h38"/>
+    <path fill="#263b3e" d="M459 205h36v49h-36z"/>
+    <path fill="#64c9bc" d="M463 248h28v3h-28zM468 214h13v3h4v11h-4v3h4v11h-4v3h-13zm4 3v10h8v-10zm0 14v10h8v-10z"/>
   </g>
   <g shape-rendering="crispEdges">
     <path fill="#8a623f" d="m271 182 22-5 20 3v26l-22 5-20-3z"/>

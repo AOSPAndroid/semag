@@ -5,6 +5,9 @@ Creates real rooms through Semag and drives clients using trusted Chromium
 keyboard, mouse, and touch input. Live state is only observed, never changed.
 SEMAG_SCREENSHOT_DIR selects artifacts. Software WebGL timings are gross
 regression samples, not a hardware frame-rate benchmark.
+SEMAG_VOXEL_POLISH=1 retains the full changed 1v1 feedback sequence while
+checking 2v2/3v3 team gates, a brief native movement/shot, and refreshed maps
+with passive peers lifecycle-frozen after their synchronized Ready gate.
 """
 import json
 import math
@@ -295,6 +298,39 @@ def ready_clients(pages):
     phase(pages[0],'buy');phase(pages[-1],'buy')
     assert all(player['alive'] for player in state(pages[0])['players'])
     screenshot(pages[0],f'voxel-{len(pages)//2}v{len(pages)//2}-buy')
+    if len(pages)==2:
+        # Setup controls are exercised inside the real eight-second phase;
+        # movement/fire still cannot begin before the authoritative bell.
+        first=pages[0];before=actor(first);touch_setup=first.viewport_size['width']<600
+        if touch_setup:
+            first.set_viewport_size({'width':320,'height':1000});no_overflow(first,'1v1/mobile/setup320')
+            boxes=first.evaluate('''()=>{
+                const rect=node=>{const r=node.getBoundingClientRect();return{x:r.x,y:r.y,right:r.right,bottom:r.bottom}};
+                return{overlay:rect(document.querySelector('#game-overlay')),card:rect(document.querySelector('.overlay-card')),
+                    buttons:Array.from(document.querySelectorAll('[data-arena-loadout],#enter-arena')).map(rect)};
+            }''')
+            outer=boxes['overlay']
+            for item in [boxes['card'],*boxes['buttons']]:
+                assert item['x']>=outer['x']-1 and item['right']<=outer['right']+1 and item['y']>=outer['y']-1 and item['bottom']<=outer['bottom']+1, ('Mobile setup control clipped',boxes)
+            screenshot(first,'voxel-1v1-buy-320')
+            first.set_viewport_size({'width':390,'height':1000})
+        setup_weapon=first.locator('[data-arena-loadout="carbine"]')
+        if touch_setup:setup_weapon.tap()
+        else:setup_weapon.click()
+        wait(first,'window.__voxelQA.latestState.state.players[0].weapon==="carbine"')
+        if touch_setup:
+            first.locator('#enter-arena').tap()
+            wait(first,'window.SemagVoxel.getState().controls.touch && !window.SemagVoxel.getState().controls.paused')
+            first.locator('#arena').focus()
+        else:enter_arena(first)
+        cdp_key(first,'é','Digit2');cdp_key(first,'é','Digit2','keyUp')
+        wait(first,'window.__voxelQA.latestState.state.players[0].weapon==="smg"')
+        cdp_key(first,'"','Digit3');cdp_key(first,'"','Digit3','keyUp')
+        wait(first,'window.__voxelQA.latestState.state.players[0].weapon==="marksman"')
+        first.keyboard.down('w');first.wait_for_timeout(80);first.keyboard.up('w')
+        assert horizontal_distance(before,actor(first))<.001,'Setup phase movement unlocked early'
+        assert first.locator('#loadout-select').input_value()=='marksman'
+        print(json.dumps({'stage':'native_setup_loadouts_passed','button':'carbine','trusted_azerty_shortcuts':['smg','marksman']}),flush=True)
     phase(pages[0],'fight',timeout=18000);phase(pages[-1],'fight')
 
 
@@ -307,7 +343,19 @@ def team_consistency(pages,size,map_id):
     assert [player['team'] for player in first['state']['players']]==expected
     assert [player['team'] for player in last['players']]==expected
     assert first['state']['phase']==last['state']['phase']=='fight'
-    return {'capacity':2*size,'metadata_teams':expected,'all_clients_joined':True,'synchronized_fight':True}
+    privacy=[]
+    for page in pages:
+        ident=welcome(page)['playerId'];team=state(page)['players'][ident]['team']
+        own_ids=[player['id'] for player in state(page)['players'] if player['team']==team and player['alive']]
+        wait(page,'ids=>Array.from(document.querySelectorAll("#map-plan .map-player"))'
+            '.filter(node=>node.getAttribute("display")!=="none").map(node=>Number(node.dataset.playerId))'
+            '.sort((a,b)=>a-b).join(",")===ids.join(",")',arg=own_ids)
+        assert page.locator('#map-plan .map-player').count()==6,'Map marker nodes grew with updates'
+        assert page.locator(f'#map-plan .map-player.self[data-player-id="{ident}"]').count()==1
+        assert page.locator('#map-plan .map-site-label').all_text_contents()==['A','B']
+        privacy.append({'observer':ident,'visible_player_ids':own_ids,'opponents_hidden':True})
+    return {'capacity':2*size,'metadata_teams':expected,'all_clients_joined':True,'synchronized_fight':True,
+        'tactical_map_privacy':privacy,'bounded_reused_map_marker_nodes':6}
 
 
 def enter_arena(page):
@@ -357,6 +405,19 @@ def native_controls(page, profile):
     return evidence
 
 
+def native_team_polish_controls(page):
+    """A short real input probe; the complete keyboard suite remains 1v1."""
+    entered=enter_arena(page)
+    before=actor(page);page.keyboard.down('d');gameplay_input(page,'right',True)
+    page.wait_for_timeout(180);page.keyboard.up('d');gameplay_input(page,'right',False)
+    page.wait_for_timeout(120)
+    assert horizontal_distance(before,actor(page))>.25,'Team mode native movement failed'
+    shot=native_shot(page)
+    assert shot['playerId']==welcome(page)['playerId']
+    return {'entered':entered,'native_movement':True,'native_weapon_firing':True,
+        'full_keyboard_and_neutral_control_suite':'Fresh 1v1 desktop/mobile cases'}
+
+
 def neutral_forms_and_help(page):
     enter_arena(page);page.keyboard.down('d');gameplay_input(page,'right',True)
     page.keyboard.press('Escape');gameplay_input(page,'right',False);page.keyboard.up('d')
@@ -364,10 +425,10 @@ def neutral_forms_and_help(page):
     page.wait_for_timeout(220);before=actor(page)
     page.evaluate("""()=>{const input=document.createElement('input');input.id='voxel-form-qa';
       input.setAttribute('aria-label','QA text input');document.body.append(input);input.focus()}""")
-    field=page.locator('#voxel-form-qa');field.press('w');field.press('q');field.press('r');field.press('e');field.press('Space')
-    assert field.input_value()=='wqre '
+    field=page.locator('#voxel-form-qa');field.press('w');field.press('q');field.press('r');field.press('e');field.press('Space');field.press('2')
+    assert field.input_value()=='wqre 2'
     current=actor(page)
-    assert current['ammo']==before['ammo'] and horizontal_distance(before,current)<.01,'Editable input caused movement/action'
+    assert current['ammo']==before['ammo'] and current['weapon']==before['weapon'] and horizontal_distance(before,current)<.01,'Editable input caused movement/action'
     field.evaluate('input=>input.remove()')
     page.locator('#guide-button').click();assert page.locator('#guide-dialog').is_visible()
     assert page.evaluate('window.SemagVoxel.getState().controls.paused')
@@ -481,6 +542,11 @@ def native_wall_and_reload(page):
     assert actor(page,1)['hp']==enemy_hp,'Shot crossed solid cover'
     before=actor(page);page.keyboard.press('r',delay=40)
     wait(page,'window.__voxelQA.latestState.state.players[0].reloadTicks>0')
+    page.locator('#reload-track').wait_for(state='visible')
+    assert 'RELOADING' in page.locator('#weapon-status').inner_text()
+    progress=int(page.locator('#reload-track').get_attribute('aria-valuenow'))
+    assert 0<=progress<100
+    screenshot(page,'voxel-native-reload-feedback-canvas',viewport=True)
     wait(page,'window.__voxelQA.latestState.state.players[0].reloadTicks===0',timeout=6000)
     after=actor(page)
     assert after['ammo']>before['ammo'] and after['reserve']<before['reserve'],'Native reload did not transfer finite reserve'
@@ -489,8 +555,16 @@ def native_wall_and_reload(page):
     page.keyboard.down(key);page.wait_for_timeout(550);page.keyboard.up(key);page.wait_for_timeout(180)
     body=actor(page);assert abs(body['z']-6.32)<.035,('Body did not stop at central wall plus radius',body)
     screenshot(page,'voxel-native-cover-contact-canvas',viewport=True)
+    contact_shot=native_shot(page)
+    assert contact_shot['hitKind']=='wall','Point-blank cover shot crossed the wall'
+    page.keyboard.press('r',delay=35)
+    wait(page,'window.__voxelQA.latestState.state.players[0].reloadTicks>0')
+    screenshot(page,'voxel-native-cover-reload-canvas',viewport=True)
+    wait(page,'window.__voxelQA.latestState.state.players[0].reloadTicks===0',timeout=6000)
+    assert page.evaluate('window.SemagVoxel.getState().graphicsError')=='','Reload at cover broke graphics'
     native_move(page,-4,18)
-    return {'blocked_shot':shot,'reload_finite_reserve':True,'wall_body_z':body['z'],'wall_front_z':6,'body_radius':.32}
+    return {'blocked_shot':shot,'reload_finite_reserve':True,'native_reload_progress':True,
+        'native_cover_reload_art':True,'wall_body_z':body['z'],'wall_front_z':6,'body_radius':.32}
 
 
 def native_objective_round(first,second):
@@ -498,20 +572,35 @@ def native_objective_round(first,second):
     for x,z in [(-20,18),(-20,-12),(-13,-12)]:
         current=native_move(first,x,z);route.append({'x':current['x'],'z':current['z']})
     first.keyboard.down('e');gameplay_input(first,'interact',True)
+    first.locator('#interaction-track').wait_for(state='visible',timeout=3000)
+    assert first.locator('#interaction-track').get_attribute('aria-label')=='Planting device'
+    assert 'PLANTING' in first.locator('#objective-label').inner_text()
     wait(first,'window.__voxelQA.latestState.state.bomb.status==="planted"',timeout=7000)
     first.keyboard.up('e');gameplay_input(first,'interact',False)
     print(json.dumps({'stage':'native_plant_passed'}),flush=True)
     planted=state(first)['bomb'];assert planted['siteId']=='A' and planted['timerTicks']>0
+    wait(first,'document.querySelector("#round-label").textContent.includes("DEVICE PLANTED")')
+    clock=int(first.locator('#timer').inner_text())
+    assert 0<clock<=35 and abs(clock-math.ceil(state(first)['bomb']['timerTicks']/120))<=1,('Planted HUD clock is stale',clock,state(first)['bomb'])
+    assert clock!=math.ceil(state(first)['roundTicks']/120),'Planted HUD still displays the preplant round clock'
     screenshot(first,'voxel-native-planted-site-canvas',viewport=True)
     for x,z in [(-13,-18),(-13,-12)]:native_move(second,x,z)
     second.keyboard.down('e');gameplay_input(second,'interact',True)
+    second.locator('#interaction-track').wait_for(state='visible',timeout=3000)
+    assert second.locator('#interaction-track').get_attribute('aria-label')=='Defusing device'
     wait(first,'window.__voxelQA.latestState.state.roundReason==="defuse"',timeout=9000)
     second.keyboard.up('e');gameplay_input(second,'interact',False)
     result=state(first);assert result['scores']==[0,1] and result['bomb']['status']=='defused'
     assert any(event['type']=='plant' for event in result['events']) and any(event['type']=='defuse' for event in result['events'])
+    wait(first,'document.querySelector("#phase-title").textContent==="Round lost."')
+    wait(second,'document.querySelector("#phase-title").textContent==="Round secured."')
+    assert 'Device defused.' in first.locator('#phase-detail').inner_text()
+    assert first.locator('#phase-announcement').get_attribute('data-outcome')=='lost'
+    assert second.locator('#phase-announcement').get_attribute('data-outcome')=='won'
     screenshot(first,'voxel-native-defused-round')
     print(json.dumps({'stage':'native_defuse_passed'}),flush=True)
-    return {'actual_plant_and_defuse':True,'attacker_route':route,'planted':planted,'score':result['scores']}
+    return {'actual_plant_and_defuse':True,'attacker_route':route,'planted':planted,'score':result['scores'],
+        'native_channel_progress':True,'planted_clock_uses_charge_seconds':clock,'perspective_aware_defuse_result':True}
 
 
 def native_elimination_round(first,second):
@@ -529,10 +618,17 @@ def native_elimination_round(first,second):
     result=state(first)
     assert shot['targetId']==1 and shot['hitKind']=='head' and shot['damage']>=100,('Precise stationary marksman shot did not hit',shot)
     assert result['players'][0]['kills']>0 and result['players'][1]['deaths']>0
+    wait(first,'document.querySelector("#kill-feed").textContent.includes("[HS]")',timeout=2000)
+    assert 'HEADSHOT' in first.locator('#combat-feedback').inner_text()
+    assert first.locator('#hit-marker').get_attribute('data-kind')=='elimination'
+    wait(first,'document.querySelector("#phase-title").textContent==="Round secured."')
+    wait(second,'document.querySelector("#phase-title").textContent==="Round lost."')
+    assert 'Opposing squad eliminated.' in first.locator('#phase-detail').inner_text()
     if result['phase']!='matchEnd':second.locator('#spectator-hud').wait_for(state='visible',timeout=2500)
     screenshot(second,f'voxel-native-eliminated-round-{result["round"]}')
     print(json.dumps({'stage':'native_elimination_passed','round':result['round'],'scores':result['scores']}),flush=True)
-    return {'round':result['round'],'shot':shot,'scores':result['scores'],'dead_peer_spectates':True}
+    return {'round':result['round'],'shot':shot,'scores':result['scores'],'dead_peer_spectates':True,
+        'native_headshot_feedback_and_kill_feed':True,'perspective_aware_elimination_result':True}
 
 
 def native_objective_and_elimination(pages):
@@ -654,7 +750,8 @@ def performance_snapshot(page, frozen_peers=0):
 
 
 def room_case(browser,size,map_id,profile='desktop'):
-    contexts=[];pages=[];observer_context=None
+    contexts=[];pages=[];observer_context=None;passive_sessions=[]
+    short_team=os.environ.get('SEMAG_VOXEL_POLISH')=='1' and size>1
     try:
         count=size*2
         for index in range(count):
@@ -678,17 +775,32 @@ def room_case(browser,size,map_id,profile='desktop'):
         ready_clients(pages)
         print(json.dumps({'stage':'all_ready_gates_passed','mode':f'{size}v{size}','profile':profile}),flush=True)
         teams=team_consistency(pages,size,map_id)
+        if short_team:
+            # Every peer first joins and reaches the authoritative fight. Only
+            # then freeze passive renderer pages to keep software-GL QA useful;
+            # sockets stay genuinely connected and the server state is intact.
+            for peer in pages[1:]:
+                session=peer.context.new_cdp_session(peer)
+                session.send('Page.setWebLifecycleState',{'state':'frozen'})
+                passive_sessions.append(session)
         touch=native_touch(pages[0],contexts[0]) if profile=='mobile' else None
-        controls=native_controls(pages[0],profile)
-        controls.update(neutral_forms_and_help(pages[0]))
+        controls=native_team_polish_controls(pages[0]) if short_team else native_controls(pages[0],profile)
+        if not short_team:controls.update(neutral_forms_and_help(pages[0]))
         print(json.dumps({'stage':'native_controls_passed','mode':f'{size}v{size}','profile':profile}),flush=True)
         if touch is not None:controls['touch']=touch
         for width in ([1280] if profile=='desktop' else [390,320]):
             pages[0].set_viewport_size({'width':width,'height':1000 if profile=='mobile' else 960})
             no_overflow(pages[0],f'{size}v{size}/{width}')
+            if profile=='mobile':
+                rects=pages[0].evaluate('''()=>{
+                    const rect=node=>{const r=node.getBoundingClientRect();return{x:r.x,right:r.right,y:r.y,bottom:r.bottom}};
+                    return{map:rect(document.querySelector('#tactical-map')),objective:rect(document.querySelector('#objective-hud'))};
+                }''')
+                assert rects['map']['right']<=rects['objective']['x'],('Mobile map overlaps objective',rects)
             screenshot(pages[0],f'voxel-{size}v{size}-{map_id}-{width}')
             screenshot(pages[0],f'voxel-{size}v{size}-{map_id}-{width}-canvas',viewport=True)
         lifecycle={}
+        if short_team:lifecycle['passive_peer_renderers_frozen_after_synchronized_fight']=len(passive_sessions)
         if size==1 and profile=='desktop':
             pages[0].set_viewport_size({'width':960,'height':800})
             lifecycle['software_test_gameplay_viewport']=[960,800]
@@ -696,10 +808,15 @@ def room_case(browser,size,map_id,profile='desktop'):
             lifecycle.update(native_objective_and_elimination(pages))
             lifecycle.update(native_disconnect_rejoin(pages,contexts))
             lifecycle['context_recovery']=context_recovery(pages[1])
+        if short_team:
+            pages[0].evaluate('window.__voxelQA.cpu=[];window.__voxelQA.gaps=[];window.__voxelQA.drawCalls=[]')
+            pages[0].wait_for_timeout(3200)
+            perf=performance_snapshot(pages[0],len(passive_sessions))
+        else:perf=performance(pages[0],pages[1:])
         evidence={'game':'voxel-breach','mode':f'{size}v{size}','map':map_id,'profile':profile,
             'status':'passed','partial_room':partial,'full_room':full,'capacity_overflow':overflow,'all_ready_required':True,
             'countdown_cancel_resets_all_ready':True,'no_prestart_movement':True,'teams':teams,'native_controls':controls,
-            'performance':performance(pages[0],pages[1:]),'lifecycle':lifecycle}
+            'performance':perf,'lifecycle':lifecycle}
         REPORT['cases'].append(evidence)
         print(json.dumps({'status':'passed','mode':f'{size}v{size}','profile':profile}),flush=True)
     except Exception:
@@ -710,6 +827,9 @@ def room_case(browser,size,map_id,profile='desktop'):
         except Exception:pass
         raise
     finally:
+        for session in passive_sessions:
+            try:session.send('Page.setWebLifecycleState',{'state':'active'});session.detach()
+            except Exception:pass
         if observer_context:observer_context.close()
         for context in contexts:context.close()
 

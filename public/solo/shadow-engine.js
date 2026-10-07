@@ -115,6 +115,26 @@ function resetMission(s) {
   const level = LEVELS[s.level]; s.levelElapsed = 0; s.phase = 'playing'; s.reason = ''; s.scrolls = level.seals.map(() => false); s.caches = level.caches.map(() => false); s.channel = null; s.clouds = []; s.projectiles = []; s.noises = []; s.footstep = 0; s.smokeHeld = false; s.kunaiHeld = false;
   s.player.x = level.spawn[0]; s.player.y = level.spawn[1]; s.player.facing = -Math.PI / 2; s.player.invulnerable = 0; s.player.moving = false;
   s.guards = level.guards.map((route, i) => { const index = route.offset % route.points.length, start = route.points[index], target = route.points[(index + 1) % route.points.length]; return { id: i, x: start[0], y: start[1], facing: Math.atan2(target[1] - start[1], target[0] - start[0]), waypoint: (index + 1) % route.points.length, mode: 'patrol', suspicion: 0, lastSeen: null, searchTime: 0, noticedNoise: 0, investigateAge: 0, attack: 0, attackFacing: 0, attackHit: false, cooldown: 0, turnWait: .4 }; });
+  separateGuards(s);
+}
+function guardBlockers(s, g) { return [{ x: s.player.x, y: s.player.y, radius: PLAYER_RADIUS }, ...s.guards.filter(other => other !== g && other.mode !== 'down').map(other => ({ x: other.x, y: other.y, radius: GUARD_RADIUS }))]; }
+/** Repair authored or numerical overlap using the same swept cover/player contacts as movement. */
+function separateGuards(s) {
+  const guards = s.guards.filter(g => g.mode !== 'down'), walls = LEVELS[s.level].walls;
+  for (let pass = 0; pass < 6; pass++) {
+    let repaired = false;
+    for (let i = 0; i < guards.length; i++) for (let j = i + 1; j < guards.length; j++) {
+      const a = guards[i], b = guards[j], dx = b.x - a.x, dy = b.y - a.y, length = Math.hypot(dx, dy), overlap = GUARD_RADIUS * 2 - length;
+      if (overlap <= 1e-7) continue; repaired = true;
+      const angle = (a.id * 3 + b.id * 7) * 2.39996323, nx = length > EPS ? dx / length : Math.cos(angle), ny = length > EPS ? dy / length : Math.sin(angle);
+      const move = (g, sign, amount) => moveBody(g, nx * sign * amount, ny * sign * amount, walls, GUARD_RADIUS, guardBlockers(s, g));
+      move(a, -1, overlap / 2 + 1e-6); move(b, 1, overlap / 2 + 1e-6);
+      // A wall-pinned partner leaves its share to the free body; never displace through cover.
+      let remaining = GUARD_RADIUS * 2 - distance(a, b); if (remaining > 0) move(a, -1, remaining + 1e-6);
+      remaining = GUARD_RADIUS * 2 - distance(a, b); if (remaining > 0) move(b, 1, remaining + 1e-6);
+    }
+    if (!repaired) break;
+  }
 }
 export function nextMission(s) { if (s.phase !== 'mission-clear' || s.level >= TOTAL_LEVELS - 1) return false; s.level++; resetMission(s); emit(s, 'mission'); return true; }
 export function togglePause(s) { if (s.phase === 'playing') s.phase = 'paused'; else if (s.phase === 'paused') s.phase = 'playing'; else return false; s.smokeHeld = false; s.kunaiHeld = false; s.player.moving = false; s.channel = null; return true; }
@@ -206,7 +226,15 @@ function updateGuard(s, g, dt) {
   const destination = guardDestination(level, g, target, dt);
   const dx = destination.x - g.x, dy = destination.y - g.y, d = Math.hypot(dx, dy); if (d > 0) {
     const targetAngle = Math.atan2(dy, dx); g.facing += clamp(angleDelta(targetAngle, g.facing), -dt * 4, dt * 4);
-    moveBody(g, dx / d * Math.min(d, speed * dt), dy / d * Math.min(d, speed * dt), level.walls, GUARD_RADIUS, [{ x: p.x, y: p.y, radius: PLAYER_RADIUS }]);
+    const amount = Math.min(d, speed * dt), startX = g.x, startY = g.y, blockers = guardBlockers(s, g);
+    moveBody(g, dx / d * amount, dy / d * amount, level.walls, GUARD_RADIUS, blockers);
+    const travelled = Math.hypot(g.x - startX, g.y - startY), bodyAhead = s.guards.some(other => other !== g && other.mode !== 'down' && distance(g, other) < GUARD_RADIUS * 2 + 2 && (other.x - g.x) * dx + (other.y - g.y) * dy > 0);
+    if (bodyAhead && travelled < amount * .35) {
+      // A consistent left sidestep lets opposing patrols pass instead of forming a permanent queue.
+      const side = (amount - travelled) * .8, beforeX = g.x, beforeY = g.y;
+      moveBody(g, -dy / d * side, dx / d * side, level.walls, GUARD_RADIUS, blockers);
+      if (Math.hypot(g.x - beforeX, g.y - beforeY) < side * .2) moveBody(g, dy / d * side, -dx / d * side, level.walls, GUARD_RADIUS, blockers);
+    }
   }
 }
 export function rearTakedownAvailable(s, g) {
@@ -263,6 +291,7 @@ function simulate(s, input, dt) {
   }
   s.projectiles = s.projectiles.filter(shot => shot.life > 0);
   for (const g of s.guards) { updateGuard(s, g, dt); if (s.phase !== 'playing') break; }
+  separateGuards(s);
   if (s.phase === 'playing') updateInteraction(s, input, dt);
 }
 export function step(state, input = {}, duration = FIXED_STEP) {

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { cleanAim, composeInput, controlForKey, createContinuousInputPacer, FPS_BUTTONS, interpolatedState, isFormTarget, neutralInput, reconcilePlayer } from '../public/voxel-client.js';
+import { cleanAim, composeInput, controlForKey, createContinuousInputPacer, FPS_BUTTONS, interpolatedState, isFormTarget, loadoutForKey, matchClock, neutralInput, reconcilePlayer, roundResult, tacticalMapPlayers } from '../public/voxel-client.js';
 import { createState, emptyInput, MAPS, predictLocalMovement } from '../public/voxel-engine.js';
 
 test('FPS controls use printed French letters and preserve arrows and actions', () => {
@@ -57,6 +57,51 @@ test('aim wraps continuously and clamps pitch before crossing the network', () =
   const aim = cleanAim(Math.PI + .03, 20); assert.ok(Math.abs(aim.yaw - (-Math.PI + .03)) < 1e-12); assert.equal(aim.pitch, 1.35);
   assert.deepEqual(cleanAim(NaN, Infinity), { yaw: 0, pitch: 0 });
   assert.equal(neutralInput(0, -20).pitch, -1.35);
+});
+
+test('the planted charge owns the primary clock even when the pre-plant round expires', () => {
+  const state = createState(); state.phase = 'fight'; state.roundTicks = 120 * 100;
+  assert.equal(matchClock(state).text, '1:40');
+  state.bomb.status = 'planted'; state.bomb.siteId = 'B'; state.bomb.timerTicks = 120 * 35;
+  let clock = matchClock(state); assert.equal(clock.text, '35'); assert.equal(clock.label, 'SITE B · DEVICE PLANTED'); assert.equal(clock.planted, true);
+  state.roundTicks = 0; state.bomb.timerTicks = 120 * 9 + 1;
+  clock = matchClock(state); assert.equal(clock.text, '10'); assert.equal(clock.urgent, true);
+  state.bomb.timerTicks = 0; assert.equal(matchClock(state).text, '00');
+  state.phase = 'roundEnd'; state.phaseTicks = 4 * 120;
+  assert.equal(matchClock(state).text, '04'); assert.equal(matchClock(state).planted, false);
+  state.phase = 'matchEnd'; assert.equal(matchClock(state).text, '—'); assert.equal(matchClock(state).urgent, false);
+});
+
+test('round outcomes follow the local team and the current swapped attack role', () => {
+  const state = createState(); assert.equal(roundResult(state, 0), null);
+  state.round = 4; state.attackTeam = 1; state.roundWinner = 1; state.roundReason = 'elimination';
+  assert.deepEqual(roundResult(state, 1), { won: true, title: 'Round secured.', team: 'TEAL', role: 'BREACH', reason: 'Opposing squad eliminated.' });
+  assert.equal(roundResult(state, 0).title, 'Round lost.'); assert.equal(roundResult(state, 0).reason, 'Your squad was eliminated.');
+  state.roundWinner = 0; state.roundReason = 'defuse';
+  assert.equal(roundResult(state, 0).role, 'HOLD'); assert.equal(roundResult(state, 0).reason, 'Device defused.');
+});
+
+test('tactical navigation never reveals enemies, dead bodies, disconnected seats or invalid poses', () => {
+  const state = createState({ teamSize: 3 });
+  state.players[1].alive = false; state.players[2].x = 8;
+  const markers = tacticalMapPlayers(state, 0, [0, 1, 2, 3, 4, 5]);
+  assert.deepEqual(markers.map(player => player.id), [0, 2]); assert.equal(markers[0].self, true); assert.equal(markers[1].self, false);
+  markers[1].x = 200; assert.equal(state.players[2].x, 8, 'markers are copied navigation data');
+  assert.deepEqual(tacticalMapPlayers(state, 0, [0, 3, 4, 5]).map(player => player.id), [0]);
+  state.players[2].x = NaN; assert.deepEqual(tacticalMapPlayers(state, 0, [0, 2]).map(player => player.id), [0]);
+  assert.deepEqual(tacticalMapPlayers(state, 5, [0, 1, 2, 3, 4, 5]).map(player => player.id), [3, 4, 5]);
+  assert.deepEqual(tacticalMapPlayers(state, null), []);
+});
+
+test('arena loadout shortcuts respect setup phases, French digits, form focus and repeat/modifiers', () => {
+  for (const phase of ['countdown', 'buy', 'roundEnd']) {
+    assert.equal(loadoutForKey({ key: '1' }, phase), 'carbine');
+    assert.equal(loadoutForKey({ key: '&', code: 'Digit1' }, phase), 'carbine');
+    assert.equal(loadoutForKey({ key: 'é', code: 'Digit2' }, phase), 'smg');
+    assert.equal(loadoutForKey({ key: '"', code: 'Digit3' }, phase), 'marksman');
+  }
+  for (const phase of ['lobby', 'fight', 'matchEnd']) assert.equal(loadoutForKey({ key: '2', code: 'Digit2' }, phase), null);
+  for (const blocked of [{ repeat: true }, { ctrlKey: true }, { metaKey: true }, { altKey: true }, { target: { closest() { return {}; } } }]) assert.equal(loadoutForKey({ key: '1', ...blocked }, 'buy'), null);
 });
 
 test('form, buttons and dialog targets never supply game input', () => {
