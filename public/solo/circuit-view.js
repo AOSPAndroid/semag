@@ -189,7 +189,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   const hint = element(
     'p',
     'circuit-hint',
-    'Follow the arrows. Brake before a corner; tap the handbrake to rotate, then accelerate out. Keep every checkpoint in order.',
+    'Follow the arrows. Brake before tight corners: too much speed reduces steering grip. Tap the handbrake to rotate, then accelerate out. Keep every checkpoint in order.',
   );
   description.append(status, hint);
   const reset = element('button', 'circuit-reset');
@@ -541,6 +541,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     if (state.phase === 'lost')
       return state.result === 'time-limit'
         ? 'Time target missed. Carry speed through the straights and brake before corners. Standard practice has no time limit.'
+        : state.result === 'lap-pace'
+          ? 'Lap pace missed. Each lap has a tighter target: brake before the apex, then accelerate out. Standard practice has no pace deadline.'
         : 'Track limits exceeded. Keep the car on the asphalt; off-track time accumulates for this race. Standard practice lets you learn the line.';
     if (state.phase === 'stage-clear')
       return `${course.title} complete in ${seconds(state.elapsed)}. ${state.medal.toUpperCase()} medal. Continue to the next circuit.`;
@@ -550,10 +552,14 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       return `Three clean laps. Race ${seconds(state.raceTime)}, best lap ${seconds(state.bestLap)}. Start a new race to chase your record.`;
     if (state.phase === 'paused') return 'Paused. Your race clock is stopped. Resume when you are ready.';
     if (state.startDelay > 0)
-      return 'Get ready. Three laps, every checkpoint in order. Accelerate when the lights go out.';
+      return state.challenge
+        ? 'Get ready. Three laps with progressively tighter lap targets. Keep every checkpoint in order and accelerate when the lights go out.'
+        : 'Get ready. Three laps, every checkpoint in order. Accelerate when the lights go out.';
     if (state.wrongWay) return 'Wrong way. Follow the track arrows and pass each checkpoint in order.';
     if (!state.onRoad)
-      return 'Grass slows you down. Ease back onto the circuit, or reset your car for a +3s penalty.';
+      return state.challenge && state.challenge.resets >= state.challenge.resetLimit
+        ? 'Off-track allowance is running out. Ease back onto the asphalt; no recovery resets remain.'
+        : 'Grass slows you down. Ease back onto the circuit, or reset your car for a +3s penalty.';
     return `Lap ${Math.min(3, state.lap)} of 3. ${state.nextGate === 0 ? 'All checkpoints clear — cross the finish line.' : `Follow the arrows to checkpoint ${state.nextGate}.`} Brake early, accelerate out.`;
   }
   function updateOverlay() {
@@ -595,7 +601,11 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       setValue(
         overlayTitle,
         'textContent',
-        state.result === 'time-limit' ? 'TIME TARGET MISSED' : 'TRACK LIMITS',
+        state.result === 'time-limit'
+          ? 'TIME TARGET MISSED'
+          : state.result === 'lap-pace'
+            ? 'LAP PACE MISSED'
+            : 'TRACK LIMITS',
       );
       setValue(overlayDetail, 'textContent', 'NEW GAME TO TRY AGAIN · STANDARD TO PRACTISE');
     } else if (mode === 'ready') {
@@ -628,18 +638,18 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       setValue(
         challengeTime,
         'textContent',
-        `${state.challenge.remaining.toFixed(1)}s LEFT / ${state.challenge.limit}s TARGET`,
+        `${state.challenge.remaining.toFixed(1)}s RACE / LAP ${state.lap}: ${state.challenge.lapRemaining.toFixed(1)}s LEFT`,
       );
       setValue(
         challengeLimits,
         'textContent',
-        `OFF TRACK ${state.challenge.offRoad.toFixed(1)} / ${state.challenge.offRoadLimit}s · RESETS ${state.challenge.resets} / ${state.challenge.resetLimit}`,
+        `LAP TARGET ${seconds(state.challenge.lapLimit)} · OFF TRACK ${state.challenge.offRoad.toFixed(2)} / ${state.challenge.offRoadLimit}s · RESETS ${state.challenge.resets} / ${state.challenge.resetLimit}`,
       );
       setValue(
         challengePanel.dataset,
         'urgent',
         String(
-          state.challenge.remaining <= 10 || state.challenge.offRoadLimit - state.challenge.offRoad <= 0.5,
+          state.challenge.remaining <= 10 || state.challenge.lapRemaining <= 3 || state.challenge.offRoadLimit - state.challenge.offRoad <= 0.15,
         ),
       );
     }

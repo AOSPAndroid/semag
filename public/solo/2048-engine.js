@@ -10,15 +10,15 @@ export const PUZZLES = Object.freeze([
   { title: 'The Quiet Reservoir', target: 256, budget: 12, board: [0,0,4,2,128,64,16,0,0,0,8,0,0,0,32,2] },
   { title: 'The Grand Merge', target: 512, budget: 15, board: [128,0,2,16,256,0,0,32,8,0,0,4,0,2,0,64] },
 ].map(p => Object.freeze({ ...p, board: Object.freeze(p.board) })));
-// Dense, fixed boards. Budgets were checked by a breadth-first shortest-path
-// search: the opener allows one spare move; later trials require an optimal line.
+// Dense, fixed boards. Breadth-first search proves an exact route through every
+// trial. Rewinds and retries are scarce across the whole six-trial descent.
 export const MASTER_PUZZLES = Object.freeze([
-  { title: 'A Crowded Orchard', target: 128, budget: 10, board: [16,4,2,16,4,4,4,16,4,2,8,8,8,8,16,8] },
-  { title: 'Thread the Needle', target: 256, budget: 11, board: [8,8,2,16,64,4,2,16,8,64,4,32,4,16,4,4] },
-  { title: 'Four Tight Corners', target: 512, budget: 12, board: [16,16,128,64,8,8,16,4,4,32,64,8,16,32,32,64] },
-  { title: 'The Last Opening', target: 1024, budget: 13, board: [8,8,4,32,64,2,2,64,8,64,256,64,128,32,32,256] },
-  { title: 'An Exacting Fold', target: 2048, budget: 15, board: [16,128,32,128,256,64,128,256,128,128,64,256,256,128,16,64] },
-  { title: 'The Master Merge', target: 4096, budget: 17, board: [32,256,128,256,128,512,256,64,512,32,512,256,256,128,512,256] },
+  { title: 'The Narrow Opening', target: 256, budget: 17, board: [8,16,4,8,16,32,16,16,2,8,32,2,32,32,16,16] },
+  { title: 'A Tangled Thread', target: 1024, budget: 19, board: [2,256,2,64,32,32,8,256,64,128,64,64,8,32,4,8] },
+  { title: 'The Broken Stair', target: 2048, budget: 20, board: [4,4,16,128,256,64,64,16,128,128,128,512,512,8,64,16] },
+  { title: 'The Deep Reservoir', target: 4096, budget: 21, board: [256,256,8,256,128,32,1024,32,32,128,8,256,128,16,1024,512] },
+  { title: 'Across Sixteen Corners', target: 8192, budget: 22, board: [512,2048,256,512,512,64,32,16,512,2048,256,64,16,1024,256,64] },
+  { title: 'The Final Fold', target: 16384, budget: 24, board: [1024,512,1024,128,128,32,128,64,1024,2048,4096,4096,512,32,1024,512] },
 ].map(p => Object.freeze({ ...p, board: Object.freeze(p.board) })));
 export const puzzleLevels = mode => mode === 'master' ? MASTER_PUZZLES : PUZZLES;
 const isPuzzle = state => state.mode === 'puzzles' || state.mode === 'master';
@@ -45,6 +45,7 @@ export function createState({ random = Math.random, mode = 'classic' } = {}) {
   const state = {
     gameId: '2048', mode: ['puzzles', 'master'].includes(mode) ? mode : 'classic', level: 0, totalMoves: 0, puzzlesCleared: 0, levelStartScore: 0, levelStartMoves: 0, result: null, board: Array(16).fill(0), score: 0, phase: 'playing',
     won: false, continued: false, undoAvailable: false, moves: 0,
+    rewindsLeft: mode === 'master' ? 2 : null, retriesLeft: mode === 'master' ? 2 : null,
   };
   internals.set(state, { random, previous: null });
   if (isPuzzle(state)) state.board = [...puzzleLevels(state.mode)[0].board];
@@ -99,13 +100,20 @@ export function move(state, direction) {
   state.board = next;
   state.score += gained;
   state.moves += 1; state.totalMoves += 1;
-  state.undoAvailable = true;
+  state.undoAvailable = state.mode !== 'master' || state.rewindsLeft > 0;
   const spawned = isPuzzle(state) ? null : spawn(state);
   const puzzle = puzzleLevels(state.mode)[state.level];
   const target = isPuzzle(state) ? puzzle.target : 2048;
   state.won = state.won || state.board.some(value => value >= target);
   if (isPuzzle(state)) {
-    if (state.won) { state.phase = 'won'; state.puzzlesCleared++; state.score += 100 + Math.max(0, puzzle.budget - state.moves) * 25; state.result = state.level === puzzleLevels(state.mode).length - 1 ? 'tour' : 'puzzle'; }
+    if (state.won) {
+      state.phase = 'won'; state.puzzlesCleared++; state.score += 100 + Math.max(0, puzzle.budget - state.moves) * 25;
+      state.result = state.level === puzzleLevels(state.mode).length - 1 ? 'tour' : 'puzzle';
+      if (state.mode === 'master' && state.result === 'tour') {
+        state.score += state.rewindsLeft * 250 + state.retriesLeft * 500;
+        state.undoAvailable = false; data.previous = null;
+      }
+    }
     else if (state.moves >= puzzle.budget) { state.phase = 'lost'; state.result = 'budget'; }
     else if (!hasMoves(state)) { state.phase = 'lost'; state.result = 'blocked'; }
     return { changed: true, score: state.score, phase: state.phase, gained, merged, spawned };
@@ -118,6 +126,8 @@ export function move(state, direction) {
 export function undo(state) {
   const data = internals.get(state);
   if (!data?.previous || !state.undoAvailable) return false;
+  if (state.mode === 'master' && (state.phase === 'paused' || state.rewindsLeft <= 0)) return false;
+  if (state.mode === 'master') state.rewindsLeft--;
   Object.assign(state, data.previous, { board: [...data.previous.board], undoAvailable: false });
   data.previous = null;
   return true;
@@ -148,6 +158,10 @@ export function nextPuzzle(state) {
 
 export function retryPuzzle(state) {
   if (!isPuzzle(state) || state.phase !== 'lost') return false;
+  if (state.mode === 'master') {
+    if (state.retriesLeft <= 0) return false;
+    state.retriesLeft--;
+  }
   state.board = [...puzzleLevels(state.mode)[state.level].board]; state.moves = 0;
   state.score = state.levelStartScore; state.totalMoves = state.levelStartMoves;
   state.won = false; state.phase = 'playing'; state.result = null; state.undoAvailable = false;

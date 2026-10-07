@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { DIFFICULTIES, advanceTime, chord, cloneState, createState, flag, getStats, neighbors, reveal, togglePause } from '../public/solo/minesweeper-engine.js';
+import { DIFFICULTIES, advanceTime, chord, cloneState, createState, flag, getStats, logicalDeductions, neighbors, reveal, solveLogically, togglePause } from '../public/solo/minesweeper-engine.js';
 
 function seeded(seed = 42) {
   return () => {
@@ -236,4 +236,100 @@ test('Expert normal reveals can complete all 381 safe tiles with a frozen final 
   const s = createState({ rows: 16, cols: 30, mines: 99, random: () => .73 }); reveal(s, 0); advanceTime(s, 17);
   for (let i = 0; i < s.cells.length; i++) if (!s.cells[i].mine && !s.cells[i].revealed) reveal(s, i);
   assert.equal(s.phase, 'won'); assert.equal(s.opened, 381); advanceTime(s, 30); assert.equal(s.elapsed, 17);
+});
+
+
+const mirroredFallbackRandom = mirror => { let calls = 0; return () => calls++ < 8 * 90 ? 0 : mirror / 4; };
+
+test('all four Master mirrors protect every opening and complete through legal visible-clue deductions', () => {
+  for (let first = 0; first < 384; first++) for (let mirror = 0; mirror < 4; mirror++) {
+    const state = createState({ ...DIFFICULTIES.master, random: mirroredFallbackRandom(mirror) });
+    assert.equal(reveal(state, first).ok, true);
+    assert.equal(state.generationAttempts, 9, 'the fallback follows exactly eight rejected fields');
+    assert.equal(state.cells.filter(cell => cell.mine).length, 90);
+    assert.ok([first, ...neighbors(state, first)].every(index => !state.cells[index].mine));
+    assert.ok(state.opened < 70, `opening ${first}/${mirror}: most of the field remains covered`);
+    let deductions = 0, subsets = 0;
+    while (state.phase === 'playing' && deductions++ < state.cells.length) {
+      const moves = logicalDeductions(state);
+      assert.ok(moves.safe.length || moves.mines.length, `opening ${first}/${mirror}: no guesses`);
+      if (moves.kind === 'subset') subsets++;
+      for (const index of moves.mines) assert.equal(flag(state, index).ok, true);
+      for (const index of moves.safe) if (state.phase === 'playing' && !state.cells[index].revealed) assert.equal(reveal(state, index).ok, true);
+    }
+    assert.equal(state.phase, 'won', `opening ${first}/${mirror}`);
+    assert.equal(state.opened, 294);
+    assert.ok(subsets > 0, `opening ${first}/${mirror}: overlapping clues are needed`);
+  }
+});
+
+test('repeated Master openings can produce four distinct certified fallback fields', () => {
+  for (const first of [0, 23, 179, 204, 383]) {
+    const layouts = [];
+    for (let mirror = 0; mirror < 4; mirror++) {
+      const state = createState({ ...DIFFICULTIES.master, random: mirroredFallbackRandom(mirror) });
+      reveal(state, first);
+      layouts.push(state.cells.map(cell => Number(cell.mine)).join(''));
+      assert.ok(solveLogically(state, first).solved);
+    }
+    assert.equal(new Set(layouts).size, 4, `opening ${first}: fallback replay variety`);
+  }
+});
+
+test('visible deductions ignore every hidden mine bit and covered number', () => {
+  const state = createState({ rows: 3, cols: 3, mines: 1 });
+  state.cells[3].mine = true;
+  for (let i = 0; i < state.cells.length; i++) state.cells[i].adjacent = neighbors(state, i).filter(other => state.cells[other].mine).length;
+  state.cells[0].revealed = state.cells[1].revealed = true;
+  state.opened = 2;
+  const deduction = logicalDeductions(state);
+  assert.equal(deduction.kind, 'subset');
+  assert.deepEqual(new Set(deduction.safe), new Set([2, 5]));
+  const masked = cloneState(state);
+  for (const cell of masked.cells) if (!cell.revealed) { cell.mine = !cell.mine; cell.adjacent = 8; }
+  assert.deepEqual(logicalDeductions(masked), deduction, 'the same public clues always produce the same inference');
+});
+
+test('Master is completed with only legal reveal and flag inputs justified by public clues', () => {
+  for (const seed of [1, 2, 3, 11, 27, 91, 733]) {
+    const state = createState({ ...DIFFICULTIES.master, random: seeded(seed) });
+    const first = seed % state.cells.length;
+    reveal(state, first);
+    let rounds = 0, subsets = 0;
+    while (state.phase === 'playing' && rounds++ < 384) {
+      const moves = logicalDeductions(state);
+      assert.ok(moves.safe.length || moves.mines.length, `seed ${seed}, round ${rounds}: no guesses`);
+      if (moves.kind === 'subset') subsets++;
+      for (const index of moves.mines) { assert.equal(flag(state, index).ok, true); }
+      for (const index of moves.safe) if (state.phase === 'playing' && !state.cells[index].revealed) assert.equal(reveal(state, index).ok, true);
+      advanceTime(state, 1);
+    }
+    assert.equal(state.phase, 'won');
+    assert.equal(state.opened, 294);
+    assert.ok(subsets >= 2);
+    const terminal = cloneState(state);
+    advanceTime(state, 1000);
+    rejectUnchanged(state, reveal, first);
+    assert.deepEqual(state, terminal);
+  }
+});
+
+test('Master countdown begins after the first reveal, freezes while paused, and expires as an immutable loss', () => {
+  const state = createState({ ...DIFFICULTIES.master, random: seeded(17) });
+  advanceTime(state, 1000);
+  assert.equal(state.elapsed, 0);
+  reveal(state, 204);
+  advanceTime(state, 359.75);
+  assert.equal(state.phase, 'playing');
+  togglePause(state); const paused = cloneState(state);
+  advanceTime(state, 1000); assert.deepEqual(state, paused);
+  togglePause(state); advanceTime(state, .25);
+  assert.equal(state.phase, 'lost'); assert.equal(state.failure, 'timeout');
+  assert.equal(state.elapsed, 360); assert.equal(state.exploded, null);
+  const terminal = cloneState(state);
+  for (const action of [reveal, flag, chord]) rejectUnchanged(state, action, 0);
+  advanceTime(state, 1000); assert.deepEqual(state, terminal);
+  const expert = createState({ ...DIFFICULTIES.expert, random: seeded(17) });
+  reveal(expert, 204); advanceTime(expert, 1000);
+  assert.equal(expert.phase, 'playing'); assert.equal(expert.timeLimit, null);
 });

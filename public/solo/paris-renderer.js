@@ -509,7 +509,7 @@ export function createParisRenderer(ctx, { sprites, reducedMotion = false } = {}
     draw(nextState, { bellPulseUntil = 0 } = {}) {
       state = nextState;
       if (!state) return;
-      survival = state.mode === 'survival';
+      survival = state.mode === 'survival' || state.mode === 'rush' && state.difficulty !== 'standard';
       warningFar = survival && Number.isFinite(state.warningDistance) ? Math.max(45, state.warningDistance) : 45;
       actorFar = survival ? Math.max(FAR, warningFar, Number.isFinite(state.lookAheadDistance) ? state.lookAheadDistance : FAR) : FAR;
       ctx.save(); ctx.imageSmoothingEnabled = false;

@@ -10,12 +10,25 @@ export const SPRINT_LINES = 40;
 export const TYPES = Object.freeze(['I', 'J', 'L', 'O', 'S', 'T', 'Z']);
 export const DEFAULT_PROFILE = 'veteran';
 export const PROFILES = Object.freeze(Object.fromEntries([
-  { id: 'standard', name: 'Standard', startLevel: 1, linesPerLevel: 10, lockDelay: .5, lockResets: 15, previews: 5, sprintSeconds: null, digLevel: 1, digLevelEvery: 2, digMaxLevel: 4, description: 'Original pace · open-ended Sprint · Dig 8' },
-  { id: 'veteran', name: 'Veteran', startLevel: 8, linesPerLevel: 8, lockDelay: .38, lockResets: 8, previews: 4, sprintSeconds: 90, digLevel: 8, digLevelEvery: 3, digMaxLevel: 12, description: 'Fast opening · 90-second Sprint · Dig 10' },
-  { id: 'nightmare', name: 'Nightmare', startLevel: 12, linesPerLevel: 6, lockDelay: .28, lockResets: 5, previews: 3, sprintSeconds: 60, digLevel: 10, digLevelEvery: 2, digMaxLevel: 15, description: 'High gravity · 60-second Sprint · Dig 12' },
+  { id: 'standard', name: 'Standard', startLevel: 1, linesPerLevel: 10, lockDelay: .5, minLockDelay: .5, lockResets: 15, previews: 5, sprintSeconds: null, paceSeconds: null, digLevel: 1, digLevelEvery: 2, digMaxLevel: 4, description: 'Original pace · open-ended Sprint · Dig 8' },
+  { id: 'veteran', name: 'Veteran', startLevel: 10, linesPerLevel: 6, lockDelay: .32, minLockDelay: .20, lockResets: 6, previews: 4, sprintSeconds: 75, paceSeconds: 30, digLevel: 9, digLevelEvery: 3, digMaxLevel: 12, description: 'Lv 10 · Marathon accelerates every 30s / 6 lines · 75s Sprint · Dig 10' },
+  { id: 'nightmare', name: 'Nightmare', startLevel: 13, linesPerLevel: 4, lockDelay: .24, minLockDelay: .16, lockResets: 4, previews: 3, sprintSeconds: 50, paceSeconds: 20, digLevel: 11, digLevelEvery: 2, digMaxLevel: 15, description: 'Lv 13 · Marathon accelerates every 20s / 4 lines · 50s Sprint · Dig 12' },
 ].map(profile => [profile.id, Object.freeze(profile)])));
 export const getProfile = state => PROFILES[state.profile] || PROFILES.standard;
-export const recordScope = state => state.profile === 'standard' ? state.mode : `${state.profile}-${state.mode}`;
+export const recordScope = state => state.profile === 'standard' ? state.mode : `${state.profile}-${state.mode}-v3`;
+export function lockDelayFor(state) {
+  const profile = getProfile(state);
+  return state.mode === 'marathon' ? Math.max(profile.minLockDelay, profile.lockDelay - Math.max(0, state.level - profile.startLevel) * .01) : profile.lockDelay;
+}
+export function lockResetLimit(state) {
+  const profile = getProfile(state);
+  return state.mode === 'marathon' && profile.paceSeconds ? Math.max(2, profile.lockResets - Math.floor(Math.max(0, state.level - profile.startLevel) / 3)) : profile.lockResets;
+}
+function paceLevel(state) {
+  const profile = getProfile(state), lines = profile.startLevel + Math.floor(state.lines / profile.linesPerLevel);
+  if (state.mode !== 'marathon' || !profile.paceSeconds) return lines;
+  return Math.min(30, Math.max(lines, profile.startLevel + Math.floor((state.elapsed + EPSILON) / profile.paceSeconds)));
+}
 export function timeRemaining(state) {
   return state.timeLimit == null ? null : Math.max(0, state.timeLimit - (state.elapsed - (state.mode === 'dig' ? state.dig.stageStart : 0)));
 }
@@ -229,8 +242,8 @@ function challengeLadder(profile) {
     // One disclosed off-route piece requires hold, rather than an extra lock.
     const queue = [required[0], 'Z', ...required.slice(1), 'S', 'I', 'T'];
     return buildDigStage({ id: `${profile}-${id}`, title, groups, brief, queue,
-      budget: required.length + (profile === 'veteran' && index < 3 ? 1 : 0),
-      seconds: profile === 'veteran' ? 12 + required.length * 3 : 8 + required.length * 2,
+      budget: required.length,
+      seconds: profile === 'veteran' ? Math.ceil(9 + required.length * 2.2) : Math.ceil(5 + required.length * 1.5),
     });
   }));
 }
@@ -520,7 +533,7 @@ export function createState({ mode = 'marathon', profile = DEFAULT_PROFILE, rand
   return state;
 }
 function resetLockAfterAction(state, wasGrounded) {
-  if (wasGrounded && state.lockResets < getProfile(state).lockResets) {
+  if (wasGrounded && state.lockResets < lockResetLimit(state)) {
     state.lockElapsed = 0;
     state.lockResets += 1;
   }
@@ -595,7 +608,7 @@ function lockPiece(state) {
   state.level =
     state.mode === 'dig'
       ? Math.min(profile.digMaxLevel, profile.digLevel + Math.floor(state.dig.stageIndex / profile.digLevelEvery))
-      : profile.startLevel + Math.floor(state.lines / profile.linesPerLevel);
+      : paceLevel(state);
   state.piecesLocked += 1;
   const lineLabels = ['', 'SINGLE', 'DOUBLE', 'TRIPLE', 'TETRIS'];
   const label = spin
@@ -696,8 +709,10 @@ export function step(state, input = {}, dt = 1 / 120) {
   if (state.phase !== 'playing' || !state.active || !Number.isFinite(dt) || dt <= 0 || dt > 1) return false;
   let remaining = dt;
   const softDrop = input?.softDrop === true;
-  const lockDelay = getProfile(state).lockDelay;
+  const profile = getProfile(state);
   while (remaining > EPSILON && state.phase === 'playing') {
+    if (state.mode === 'marathon') state.level = paceLevel(state);
+    const lockDelay = lockDelayFor(state);
     const interval = softDrop
       ? Math.min(gravitySeconds(state.level), SOFT_DROP_SECONDS)
       : gravitySeconds(state.level);
@@ -705,11 +720,14 @@ export function step(state, input = {}, dt = 1 / 120) {
     const untilGravity = Math.max(0, interval - state.gravityElapsed);
     const untilLock = grounded ? Math.max(0, lockDelay - state.lockElapsed) : Infinity;
     const untilDeadline = timeRemaining(state) ?? Infinity;
-    const advance = Math.min(remaining, untilGravity, untilLock, untilDeadline);
+    const untilPace = state.mode === 'marathon' && profile.paceSeconds && state.level < 30
+      ? (Math.floor((state.elapsed + EPSILON) / profile.paceSeconds) + 1) * profile.paceSeconds - state.elapsed : Infinity;
+    const advance = Math.min(remaining, untilGravity, untilLock, untilDeadline, untilPace);
     state.elapsed += advance;
     state.gravityElapsed += advance;
     if (grounded) state.lockElapsed += advance;
     remaining -= advance;
+    if (state.mode === 'marathon') state.level = paceLevel(state);
     if (grounded && state.lockElapsed >= lockDelay - EPSILON) {
       lockPiece(state);
       continue;

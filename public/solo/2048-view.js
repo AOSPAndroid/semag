@@ -57,6 +57,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   const retryButton = element.querySelector('[data-action=retry-puzzle]');
   for (let i = 0; i < 6; i++) { const dot = document.createElement('span'); dot.textContent = i + 1; progress.append(dot); }
   const undoButton = element.querySelector('[data-action="undo"]');
+  const undoNote = element.querySelector('.tiles-2048-tools > span');
   const moveButtons = [...element.querySelectorAll('[data-action^="move-"]')];
   const notice = element.querySelector('.tiles-2048-notice');
   const hint = element.querySelector('.tiles-2048-hint');
@@ -96,7 +97,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     const maximum = Math.max(...state.board);
     const puzzle = puzzleLevels(mode)[state.level];
     onUpdate({
-      phase: state.phase, score: state.score, record: state.score, recordKey: mode === 'classic' ? 'default' : mode,
+      phase: state.phase, result: state.result, score: state.score, record: state.score, recordKey: mode === 'classic' ? 'default' : mode === 'master' ? 'master-v3' : mode,
       recordLabel: mode === 'master' ? 'BEST MASTER' : 'BEST SCORE', scoreLabel: 'SCORE',
       detail: mode !== 'classic' ? `${mode === 'master' ? 'Master' : 'Puzzle'} ${state.level + 1}/6 · Target ${puzzle.target} · ${state.moves}/${puzzle.budget} moves` : `${state.moves} ${state.moves === 1 ? 'move' : 'moves'} · Highest tile ${maximum}`,
     });
@@ -113,14 +114,15 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     if (challenge) {
       setText(puzzleTitle, `${mode === 'master' ? 'MASTER ' : ''}${state.level + 1} / 6 · ${puzzle.title}`);
       setText(budget, `TARGET ${puzzle.target} · ${Math.max(0, puzzle.budget - state.moves)} MOVES LEFT`);
-      setText(challengeText, mode === 'master' ? 'Six dense trials. One spare move in the opener; optimal play after that. No new tiles. Merge every tile into the target before the budget runs out.' : 'A gentler six-puzzle tour. No new tiles. Merge the entire board into its target before your moves run out.');
+      setText(challengeText, mode === 'master' ? `Six dense trials with exact move budgets. Two rewinds and two retries for the entire tour. No new tiles. Rewinds left: ${state.rewindsLeft} · Retries left: ${state.retriesLeft}.` : 'A gentler six-puzzle tour. No new tiles. Merge the entire board into its target before your moves run out.');
       for (let i = 0; i < 6; i++) {
         const value = i < state.level || state.phase === 'won' && i === state.level ? 'done' : i === state.level ? 'current' : 'future';
         if (progress.children[i].dataset.state !== value) progress.children[i].dataset.state = value;
       }
     }
     setHidden(nextButton, !challenge || state.phase !== 'won' || state.level === levels.length - 1);
-    setHidden(retryButton, !challenge || state.phase !== 'lost');
+    setHidden(retryButton, !challenge || state.phase !== 'lost' || mode === 'master' && state.retriesLeft === 0);
+    setText(undoNote, mode === 'master' ? `${state.rewindsLeft} rewinds left for the entire tour.` : 'One move back. Another way forward.');
     const dx = direction === 'left' ? '8px' : direction === 'right' ? '-8px' : '0px';
     const dy = direction === 'up' ? '8px' : direction === 'down' ? '-8px' : '0px';
     if (grid.style.getPropertyValue('--tile-move-x') !== dx) grid.style.setProperty('--tile-move-x', dx);
@@ -138,7 +140,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       if (animation) { cell.classList.add(animation); animatedCells.add(cell); }
     });
     if (animatedCells.size) animationTimer = setTimeout(clearAnimation, 220);
-    if (undoButton.disabled !== !state.undoAvailable) undoButton.disabled = !state.undoAvailable;
+    const undoDisabled = !state.undoAvailable || mode === 'master' && state.phase === 'paused';
+    if (undoButton.disabled !== undoDisabled) undoButton.disabled = undoDisabled;
     moveButtons.forEach(button => { if (button.disabled !== (state.phase !== 'playing')) button.disabled = state.phase !== 'playing'; });
     if (element.dataset.phase !== state.phase) element.dataset.phase = state.phase;
     setHidden(overlay, state.phase === 'playing');
@@ -154,7 +157,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       notice.textContent = challenge ? state.level === levels.length - 1 ? 'All six challenges complete.' : 'Puzzle complete. Choose Next puzzle when you’re ready.' : 'You reached 2048! Choose Keep going to continue.';
     } else if (state.phase === 'lost') {
       title.textContent = challenge ? 'A different route awaits.' : 'A full board.';
-      description.textContent = challenge ? state.result === 'budget' ? 'The move budget ran out. Undo once or retry this puzzle.' : 'These tiles cannot reach the target. Undo once or retry this puzzle.' : 'No more moves. Undo your last move or start a new game.';
+      description.textContent = mode === 'master' ? `${state.result === 'budget' ? 'The exact move budget ran out.' : 'These tiles cannot reach the target.'} ${state.rewindsLeft || state.retriesLeft ? 'Use a remaining rewind or retry, or start a new tour.' : 'Your rewinds and retries are spent. Start a new tour to try again.'}` : challenge ? state.result === 'budget' ? 'The move budget ran out. Undo once or retry this puzzle.' : 'These tiles cannot reach the target. Undo once or retry this puzzle.' : 'No more moves. Undo your last move or start a new game.';
       notice.textContent = `No moves left. Final score ${state.score}.`;
     } else {
       notice.textContent = result?.gained ? `Merged for ${result.gained} points. Score ${state.score}.` : `${state.moves} moves. Score ${state.score}.`;

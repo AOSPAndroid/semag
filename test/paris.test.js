@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   BIKE_LENGTH, BIKE_WIDTH, DISTRICTS, DIFFICULTIES, FIXED_DT, HORIZON, MAX_TRAFFIC, ROAD_HALF,
-  createState, getDifficulty, getDistrict, getSurvivalPace, recordScope, step, togglePause,
+  createState, getDifficulty, getDistrict, getSurvivalPace, getTrafficTransitionSeconds, usesAutomaticPace, recordScope, step, togglePause,
 } from '../public/solo/paris-engine.js';
 
 const TOTAL = DISTRICTS.reduce((sum, district) => sum + district.length, 0);
@@ -75,7 +75,7 @@ test('Legacy Paris Pedal starts as a seeded Veteran delivery with readable physi
   assert.equal(state.difficulty, 'veteran');
   assert.equal(state.health, 3);
   assert.equal(state.stageTotalDistance, 500);
-  assert.equal(state.timeLeft, 46);
+  assert.equal(state.timeLeft, 43);
   assert.equal(state.speed, 8);
   assert.equal(getDistrict(state).title, 'Bastille');
   assert.equal(ROAD_HALF, 5);
@@ -95,7 +95,7 @@ test('all six difficulty and mode combinations have independent explicit record 
   const scopes = new Set();
   for (const profile of DIFFICULTIES) for (const mode of ['delivery', 'rush']) {
     const state = createState({ mode: 'delivery', difficulty: profile.id, mode });
-    assert.equal(recordScope(state), `${profile.id}-${mode}`);
+    assert.equal(recordScope(state), `${profile.id}-${mode}${profile.id === 'standard' ? '' : '-v3'}`);
     assert.equal(getDifficulty(state), profile);
     scopes.add(recordScope(state));
     if (mode === 'rush' || profile.id === 'standard') assert.equal(state.timeLeft, null);
@@ -137,7 +137,7 @@ test('paused and terminal runs freeze every simulation field and cannot be reviv
 });
 
 test('steering is immediately responsive, damped, bounded and cancels opposite keys', () => {
-  const state = emptyRoad(createState({ mode: 'rush' }));
+  const state = emptyRoad(createState({ mode: 'delivery' }));
   step(state, { right: true });
   assert.ok(state.x > 0 && state.x < 0.01);
   drive(state, 0.4, { right: true });
@@ -152,7 +152,7 @@ test('steering is immediately responsive, damped, bounded and cancels opposite k
 });
 
 test('throttle, deliberate braking and coast regeneration have distinct useful effects', () => {
-  const state = emptyRoad(createState({ mode: 'rush' }));
+  const state = emptyRoad(createState({ mode: 'delivery' }));
   drive(state, 2, { throttle: true });
   assert.equal(state.speed, 11.5);
   drive(state, 1, { throttle: true, brake: true });
@@ -170,7 +170,7 @@ test('throttle, deliberate braking and coast regeneration have distinct useful e
 });
 
 test('assist spends finite battery, locks when exhausted, and braking takes priority', () => {
-  const state = emptyRoad(createState({ mode: 'rush' }));
+  const state = emptyRoad(createState({ mode: 'delivery' }));
   drive(state, 1.7, { throttle: true, assist: true });
   assert.equal(state.speed, 16);
   assert.ok(state.battery < 0.65);
@@ -343,19 +343,19 @@ test('Veteran and Nightmare delivery checkpoints never replenish health', () => 
 
 test('delivery exactly on its deadline counts, while a late one loses', () => {
   const onTime = emptyRoad(createState({ mode: 'delivery' }));
-  onTime.elapsed = 46 - FIXED_DT; onTime.stageDistance = 499.97; onTime.distance = 499.97;
+  onTime.elapsed = getDifficulty(onTime).deadlines[0] - FIXED_DT; onTime.stageDistance = 499.97; onTime.distance = 499.97;
   step(onTime, { throttle: true });
   assert.equal(onTime.deliveries, 1);
   assert.equal(onTime.phase, 'playing');
   const late = emptyRoad(createState({ mode: 'delivery' }));
-  late.elapsed = 46 - FIXED_DT; late.stageDistance = 495; late.distance = 495;
+  late.elapsed = getDifficulty(late).deadlines[0] - FIXED_DT; late.stageDistance = 495; late.distance = 495;
   step(late, { throttle: true });
   assert.equal(late.phase, 'lost');
   assert.equal(late.result, 'delivery-late');
 });
 
 test('Montmartre climb affects unassisted and assisted speed rather than hiding a control penalty', () => {
-  const state = emptyRoad(createState({ mode: 'rush' }));
+  const state = emptyRoad(createState({ mode: 'delivery' }));
   state.stageIndex = 4;
   drive(state, 3, { throttle: true });
   assert.equal(state.speed, 10.85);
@@ -447,14 +447,14 @@ test('Survival is the default and its record is a versioned duration record', ()
   assert.equal(state.mode, 'survival');
   assert.equal(state.difficulty, 'veteran');
   assert.equal(state.timeLeft, null);
-  assert.equal(state.speed, 10.5);
-  assert.equal(state.survivalPace, 10.5);
+  assert.equal(state.speed, 12.5);
+  assert.equal(state.survivalPace, 12.5);
   assert.equal(state.brakeCharge, 1);
-  assert.equal(recordScope(state), 'veteran-survival-v1');
+  assert.equal(recordScope(state), 'veteran-survival-v3');
   for (const difficulty of ['standard', 'veteran', 'nightmare']) {
-    assert.equal(recordScope(createState({ difficulty })), `${difficulty}-survival-v1`);
-    assert.equal(recordScope(createState({ difficulty, mode: 'delivery' })), `${difficulty}-delivery`);
-    assert.equal(recordScope(createState({ difficulty, mode: 'rush' })), `${difficulty}-rush`);
+    assert.equal(recordScope(createState({ difficulty })), `${difficulty}-survival-${difficulty === 'standard' ? 'v1' : 'v3'}`);
+    assert.equal(recordScope(createState({ difficulty, mode: 'delivery' })), `${difficulty}-delivery${difficulty === 'standard' ? '' : '-v3'}`);
+    assert.equal(recordScope(createState({ difficulty, mode: 'rush' })), `${difficulty}-rush${difficulty === 'standard' ? '' : '-v3'}`);
   }
 });
 
@@ -474,9 +474,9 @@ test('Survival pace increases smoothly without a ceiling, with distinct tier sta
     assert.ok(fifthMinuteGrowth > 0 && fifthMinuteGrowth < firstMinuteGrowth);
     assert.ok(getSurvivalPace(300.001, difficulty) - getSurvivalPace(300, difficulty) < 0.001);
   }
-  assert.ok(Math.abs(getSurvivalPace(60) - 14.227922) < 0.00001);
-  assert.equal(getSurvivalPace(180), 19.5);
-  assert.ok(Math.abs(getSurvivalPace(300) - 23.545407) < 0.00001);
+  assert.ok(Math.abs(getSurvivalPace(60) - 18.713203) < 0.00001);
+  assert.equal(getSurvivalPace(180), 27.5);
+  assert.ok(Math.abs(getSurvivalPace(300) - 34.242346) < 0.00001);
   assert.ok(getSurvivalPace(300, 'nightmare') > getSurvivalPace(300, 'veteran'));
   assert.ok(getSurvivalPace(300, 'veteran') > getSurvivalPace(300, 'standard'));
 });
@@ -636,8 +636,8 @@ test('late Survival warning reach and row separation allow physically achievable
     const profile = getDifficulty(state);
     // Long bus halves, stagger and bike lengths consume at most sixteen metres.
     const availableTransition = (state.rowGap - 16) / peakSpeed;
-    assert.ok(availableTransition >= profile.transitionSeconds);
-    assert.ok(availableTransition > 3.5 / 3.6 + 0.15);
+    assert.ok(availableTransition >= getTrafficTransitionSeconds(state));
+    assert.ok(availableTransition > 3.5 / 3.6 + 0.13);
     assert.ok(state.warningDistance / peakSpeed > profile.warning + 0.8);
     assert.ok(state.lookAheadDistance >= state.warningDistance + state.rowGap);
     assert.ok(state.traffic.length > 0 && state.traffic.length <= MAX_TRAFFIC);
@@ -685,5 +685,67 @@ test('holding neutral controls, brake, empty assist or a curb cannot survive aut
     assert.equal(state.health, 0);
     assert.equal(state.timeLeft, null);
     assert.equal(state.score, Math.floor(state.finishTime * 1000));
+  }
+});
+
+
+test('strict Paris Rush and Survival force the same pace and finite brake charge while Standard Rush remains practice', () => {
+  for (const difficulty of ['veteran', 'nightmare']) for (const mode of ['rush', 'survival']) {
+    const state = emptyRoad(createState({ mode, difficulty }));
+    assert.equal(usesAutomaticPace(state), true);
+    drive(state, 12, { brake: true, left: true });
+    assert.equal(state.brakeCharge, 0);
+    assert.equal(state.brakeLocked, true);
+    assert.ok(state.distance > 120);
+    assert.ok(state.speed >= state.survivalPace - 0.001);
+    assert.equal(state.timeLeft, null);
+  }
+  const practice = emptyRoad(createState({ mode: 'rush', difficulty: 'standard' }));
+  assert.equal(usesAutomaticPace(practice), false);
+  drive(practice, 12, { brake: true });
+  assert.equal(practice.speed, 2.2);
+});
+
+test('Paris difficulty requires more precise steering and progressively quicker corridor transitions', () => {
+  const practice = createState({ difficulty: 'standard' });
+  for (const difficulty of ['veteran', 'nightmare']) {
+    const opening = createState({ difficulty });
+    const late = createState({ difficulty }); late.elapsed = 180;
+    const practiceCars = practice.traffic.filter((actor) => actor.kind === 'car');
+    assert.ok(practiceCars.every((actor) => [-3.5, -1.75, 0, 1.75, 3.5].includes(actor.x)));
+    assert.ok(opening.traffic.some((actor) => actor.kind === 'car' && ![-3.5, -1.75, 0, 1.75, 3.5].includes(actor.x)));
+    for (const a of opening.traffic.filter((actor) => actor.kind === 'car')) {
+      assert.equal(a.width, 1.75);
+      for (const b of opening.traffic.filter((actor) => actor.kind === 'car' && actor.id !== a.id && actor.row === a.row))
+        assert.ok(Math.abs(a.x - b.x) >= (a.width + b.width) / 2 - 1e-9, 'queued bodies do not overlap');
+    }
+    assert.ok(getSurvivalPace(60, difficulty) > getSurvivalPace(60, 'standard') + 6);
+    assert.ok(getTrafficTransitionSeconds(late) < getTrafficTransitionSeconds(opening));
+    // A full two-lane shift remains possible at the worst assisted approach speed.
+    emptyRoad(late); late.nextRowZ = late.distance + 100;
+    step(late);
+    const seconds = (late.rowGap - 16) / (late.survivalPace + 3.5);
+    assert.ok(seconds > 3.5 / 3.6 + 0.13);
+  }
+});
+
+test('imprecise slow corrections lose quickly while timely legal steering earns a long Survival run', () => {
+  for (const difficulty of ['veteran', 'nightmare']) for (const seed of [1, 7, 31]) {
+    const late = createState({ difficulty, seed }), control = rider({ assist: false });
+    let input = {};
+    for (let tick = 0; tick < 120 * 60 && late.phase === 'playing'; tick++) {
+      if (tick % 24 === 0) input = control(late);
+      step(late, input);
+    }
+    assert.equal(late.phase, 'lost');
+    assert.ok(late.elapsed < 25, `${difficulty} ${seed}: late correction survived ${late.elapsed}`);
+    const precise = createState({ difficulty, seed }), timely = rider({ assist: false });
+    for (let tick = 0; tick < 120 * 60 && precise.phase === 'playing'; tick++) {
+      if (tick % 8 === 0) input = timely(precise);
+      step(precise, input);
+    }
+    assert.equal(precise.phase, 'playing');
+    assert.equal(precise.health, 3);
+    assert.ok(precise.deliveries >= 1);
   }
 });

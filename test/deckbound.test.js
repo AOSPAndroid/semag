@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ACTS, CARDS, RELICS, DIFFICULTIES, difficultyInfo, removalCost, relicInfo, createState, dispatch, togglePause, cardInfo, intentDamage, intentDamageAt } from '../public/solo/deckbound-engine.js';
+import { ACTS, CARDS, RELICS, DIFFICULTIES, difficultyInfo, removalCost, relicInfo, createState, dispatch, togglePause, cardInfo, intentDamage, intentDamageAt, pressureStrength, recoveryRemaining, recordScope } from '../public/solo/deckbound-engine.js';
 const copy = value => structuredClone(value);
 function battle(seed = 1) { const s = createState({ seed }); assert.equal(dispatch(s, 'choose-route', { id: 'path-0' }).ok, true); return s; }
 function hand(s, id, upgraded = false) { const c = { uid: 900 + s.hand.length, id, upgraded }; s.hand = [c]; return c; }
@@ -144,17 +144,28 @@ function legalTurn(s) {
   for (const payload of best.path) if (s.phase === 'battle') assert.equal(dispatch(s, 'play-card', payload).ok, true);
   if (s.phase === 'battle') assert.equal(dispatch(s, 'end-turn').ok, true);
 }
-function playRun(seed, difficulty = "standard") {
-  const s = createState({ seed, difficulty }); const visited = new Set(); const bosses = new Set(); let actions = 0;
+function playRun(seed, difficulty = "standard", adaptive = false) {
+  const s = createState({ seed, difficulty });
+  const rating = id => {
+    if (!adaptive) return rank[id] || 0;
+    const count = s.deck.filter(c => c.id === id).length;
+    if (id === 'mend') return count ? 3 : 10;
+    if (id === 'leech') return count >= 2 ? 3 : 8;
+    if (id === 'kindle') return count >= 3 ? 4 : 10;
+    if (id === 'wildfire') return s.deck.some(c => c.id === 'kindle') ? count >= 2 ? 5 : 10 : 7;
+    if (id === 'cleave') return count ? 4 : 8;
+    return rank[id] || 0;
+  };
+  const visited = new Set(); const bosses = new Set(); let actions = 0;
   const act = (name, payload) => { actions++; assert.equal(dispatch(s, name, payload).ok, true, `${name}: ${JSON.stringify(payload)}`); };
   while (!['won', 'lost'].includes(s.phase) && actions < 1500) {
     visited.add(s.phase);
     if (s.phase === 'route') { const options = s.routeOptions; const o = options.find(o => o.kind === 'rest' && s.hp < 55) || options.find(o => o.kind === 'shop' && s.gold > 80) || options.find(o => o.kind === 'combat') || options.find(o => o.kind === 'rest') || options[0]; act('choose-route', { id: o.id }); }
     else if (s.phase === 'battle') { s.enemies.filter(e => e.id.startsWith('boss')).forEach(e => bosses.add(e.id)); legalTurn(s); actions++; }
-    else if (s.phase === 'reward') { const id = [...s.rewardCards].sort((a, b) => (rank[b] || 0) - (rank[a] || 0))[0]; act('choose-reward', { id: s.deck.length < 18 || rank[id] > 8 ? id : 'skip' }); }
+    else if (s.phase === 'reward') { const id = [...s.rewardCards].sort((a, b) => rating(b) - rating(a))[0]; act('choose-reward', { id: s.deck.length < 18 || rating(id) > 8 ? id : 'skip' }); }
     else if (s.phase === 'relic') act('claim-relic', { id: s.relicChoices.find(id => id === 'tea') || s.relicChoices.find(id => id === 'emberglass') || s.relicChoices.find(id => id === 'buckle') || s.relicChoices[0] });
-    else if (s.phase === 'rest') { if (s.hp < s.maxHp - difficultyInfo(s).restHeal + 4) act('rest', { kind: 'heal' }); else { const c = s.deck.filter(c => !c.upgraded).sort((a, b) => (rank[b.id] || 0) - (rank[a.id] || 0))[0]; act('rest', c ? { kind: 'upgrade', uid: c.uid } : { kind: 'heal' }); } }
-    else if (s.phase === 'shop') { for (const o of s.shopOffers) { if (o.kind === 'card' && (rank[o.cardId] || 0) >= 8 && s.gold >= o.cost) act('buy', { id: o.id }); if (o.kind === 'relic' && ['tea', 'emberglass', 'buckle'].includes(o.relicId) && s.gold >= o.cost) act('buy', { id: o.id }); } const c = s.deck.find(c => c.id === 'strike'); if (c && s.gold >= removalCost(s) && s.deck.length > 9) act('remove-card', { uid: c.uid }); act('leave-shop'); }
+    else if (s.phase === 'rest') { if (s.hp < s.maxHp - difficultyInfo(s).restHeal + 4) act('rest', { kind: 'heal' }); else { const c = s.deck.filter(c => !c.upgraded).sort((a, b) => rating(b.id) - rating(a.id))[0]; act('rest', c ? { kind: 'upgrade', uid: c.uid } : { kind: 'heal' }); } }
+    else if (s.phase === 'shop') { for (const o of s.shopOffers) { if (o.kind === 'card' && rating(o.cardId) >= 8 && s.gold >= o.cost) act('buy', { id: o.id }); if (o.kind === 'relic' && ['tea', 'emberglass', 'buckle'].includes(o.relicId) && s.gold >= o.cost) act('buy', { id: o.id }); } const c = s.deck.find(c => c.id === 'strike'); if (c && s.gold >= removalCost(s) && s.deck.length > 9) act('remove-card', { uid: c.uid }); act('leave-shop'); }
     else if (s.phase === 'event') act('choose-event', { id: s.hp > 45 ? 'gift' : s.gold >= difficultyInfo(s).renewCost ? 'renew' : 'leave' });
   }
   return { s, actions, visited, bosses };
@@ -183,7 +194,7 @@ test('Several zero-cost Quicksteps exhaust once each and cannot form a free resh
   dispatch(s, 'end-turn'); assert.equal(s.hand.length, 0); assert.equal(s.player.block, 0);
   const before = copy(s); assert.equal(dispatch(s, 'play-card', { uid: cards[0].uid }).ok, false); assert.deepEqual(s, before);
 });
-test('Avoiding every offered fight still requires two Veteran or three Nightmare road battles before the boss', () => {
+test('Avoiding every offered fight still requires three Veteran or four Nightmare road battles before the boss', () => {
   for (const difficulty of ['standard', 'veteran', 'nightmare']) {
     const s = createState({ seed: 7, difficulty }); let decisions = 0;
     while (!(s.phase === 'route' && s.floor === 6) && decisions++ < 100) {
@@ -280,7 +291,8 @@ test('Harder recovery and removal prices match their visible profile, including 
     dispatch(s, 'choose-route', { id: 'path-2' }); s.hp = 40; const gold = s.gold;
     assert.ok(s.event.choices[0].text.includes(`Lose ${d.giftHp} HP`));
     dispatch(s, 'choose-event', { id: 'renew' }); assert.equal(s.hp, 40 + d.renewHeal); assert.equal(s.gold, gold - d.renewCost);
-    dispatch(s, 'choose-route', { id: 'path-1' }); s.hp = 20; dispatch(s, 'rest', { kind: 'heal' }); assert.equal(s.hp, 20 + d.restHeal);
+    // Recovery amounts are independent of route admission, tested above.
+    s.phase = 'rest'; s.hp = 20; dispatch(s, 'rest', { kind: 'heal' }); assert.equal(s.hp, 20 + d.restHeal);
     s.phase = 'shop'; s.gold = 500; s.shopRemoved = false; const cost = removalCost(s);
     dispatch(s, 'remove-card', { uid: s.deck[0].uid }); assert.equal(s.gold, 500 - cost); assert.equal(removalCost(s), cost + d.removalStep);
     s.phase = 'reward'; s.encounter = 'boss'; s.floor = 6; s.hp = 20; s.relics = Object.keys(RELICS); s.roadBattles = d.roadBattles;
@@ -288,10 +300,88 @@ test('Harder recovery and removal prices match their visible profile, including 
   }
 });
 test('Veteran and Nightmare both allow a complete legal three-boss run with meaningful deck growth and required battles', () => {
-  for (const difficulty of ['veteran', 'nightmare']) {
-    const { s, bosses, visited } = playRun(1, difficulty); assert.equal(s.phase, 'won'); assert.ok(s.hp > 0); assert.equal(s.path.length, 18);
+  for (const [difficulty, seed] of [['veteran', 1], ['nightmare', 9]]) {
+    const { s, bosses, visited } = playRun(seed, difficulty); assert.equal(s.phase, 'won'); assert.ok(s.hp > 0); assert.equal(s.path.length, 18);
     assert.deepEqual([...bosses], ['boss1', 'boss2', 'boss3']); assert.ok(s.deck.length > 10); assert.ok(visited.has('shop')); assert.ok(s.relics.length >= 3);
     for (let act = 1; act <= 3; act++) assert.ok(s.path.filter(p => p.act === act && ['combat', 'elite'].includes(p.kind)).length >= DIFFICULTIES[difficulty].roadBattles);
     assert.equal(s.difficulty, difficulty);
   }
+});
+
+test('Challenge records have new scopes while Standard renown remains compatible', () => {
+  assert.equal(recordScope(createState()), 'default');
+  assert.equal(recordScope(createState({ difficulty: 'veteran' })), 'veteran-v3');
+  assert.equal(recordScope(createState({ difficulty: 'nightmare' })), 'nightmare-v3');
+});
+
+test('Later roads guarantee complementary foes and honest support shields, with unchanged enemy HP scales', () => {
+  for (const difficulty of ['veteran', 'nightmare']) {
+    const rules = DIFFICULTIES[difficulty]; let shieldFixture;
+    for (let seed = 1; seed <= 20; seed++) {
+      const s = createState({ seed, difficulty }); s.act = 2; s.floor = rules.pairFloor;
+      s.routeOptions = [{ id: 'road', kind: 'combat' }]; dispatch(s, 'choose-route', { id: 'road' });
+      assert.equal(s.enemies.length, 2);
+      assert.notEqual(s.enemies[0].id, s.enemies[1].id);
+      assert.equal(s.enemies[0].maxHp, Math.round(({sentinel:35,hexer:30,hunter:42})[s.enemies[0].id] * 1.22 * rules.hpScale));
+      if (s.enemies[0].id === 'sentinel' && s.enemies[0].intent.allyBlock) shieldFixture = s;
+    }
+    assert.ok(shieldFixture, 'a real generated guard opening is covered');
+    const support = shieldFixture.enemies[0], ally = shieldFixture.enemies[1];
+    assert.equal(support.intent.allyBlock, rules.allyBlock);
+    const removed = copy(shieldFixture); removed.enemies[0].burn = removed.enemies[0].hp;
+    shieldFixture.player.block = 100; dispatch(shieldFixture, 'end-turn');
+    assert.equal(ally.block, rules.allyBlock, 'the later ally keeps its formation shield after acting');
+    removed.player.block = 100; dispatch(removed, 'end-turn');
+    assert.equal(removed.enemies[0].hp, 0); assert.equal(removed.enemies[1].block, 0, 'killing the support before its intent prevents the shield');
+  }
+  const standard = createState({ seed: 1 }); dispatch(standard, 'choose-route', { id: 'path-0' });
+  assert.equal(standard.enemies.length, 1);
+});
+
+test('Card healing uses the announced finite battle reserve, consumes only recovered HP, and leaves rests separate', () => {
+  for (const difficulty of ['standard', 'veteran', 'nightmare']) {
+    const s = createState({ seed: 1, difficulty }); dispatch(s, 'choose-route', { id: 'path-0' }); dummy(s, 1000);
+    cast(s, 'leech', true); assert.equal(s.recoveryUsed, 0, 'full-health casts do not spend the reserve');
+    s.hp = 20;
+    for (let castIndex = 0; castIndex < 5; castIndex++) cast(s, 'leech', true);
+    const recovered = difficultyInfo(s).recoveryLimit ?? 30;
+    assert.equal(s.hp, 20 + recovered);
+    assert.equal(recoveryRemaining(s), difficulty === 'standard' ? null : 0);
+    if (difficulty !== 'standard') {
+      assert.match(cardInfo({ id: 'mend', upgraded: true }, s).text, /Heal up to 0 HP/);
+      const hp = s.hp; cast(s, 'mend', true); assert.equal(s.hp, hp); assert.equal(s.player.block, 7, 'exhausted recovery does not remove the card’s defensive value');
+      s.phase = 'rest'; dispatch(s, 'rest', { kind: 'heal' }); assert.equal(s.hp, hp + difficultyInfo(s).restHeal);
+      s.phase = 'route'; s.routeOptions = [{ id: 'next', kind: 'combat' }]; dispatch(s, 'choose-route', { id: 'next' });
+      assert.equal(recoveryRemaining(s), difficultyInfo(s).recoveryLimit, 'the next encounter replenishes the allowance');
+    }
+  }
+});
+
+test('Long fights escalate beyond the first strength pulse rather than sustaining a permanent heal/block loop', () => {
+  for (const difficulty of ['veteran', 'nightmare']) {
+    const s = createState({ seed: 2, difficulty }); dispatch(s, 'choose-route', { id: 'path-0' }); dummy(s, 10000);
+    s.enemies[0].id = 'sprig'; s.enemies[0].intent = { kind: 'guard', block: 0 }; s.hp = s.maxHp = 10000;
+    let expected = s.enemies[0].strength;
+    while (s.turn < 14) {
+      expected += pressureStrength(s, s.turn + 1); dispatch(s, 'end-turn');
+      assert.equal(s.enemies[0].strength, expected);
+    }
+    const rules = difficultyInfo(s);
+    assert.equal(pressureStrength(s, rules.pressureTurn), 1);
+    assert.equal(pressureStrength(s, rules.pressureTurn + rules.pressureEvery * 3), 2);
+    assert.equal(pressureStrength(s, rules.pressureTurn + rules.pressureEvery * 6), 3);
+  }
+});
+
+test('The conservative recovery-first planner now fails difficult roads that adaptive deck decisions must solve', () => {
+  for (const [difficulty, seed, ending] of [['veteran', 29, [2,6]], ['nightmare', 1, [2,6]]]) {
+    const { s } = playRun(seed, difficulty);
+    assert.equal(s.phase, 'lost'); assert.deepEqual([s.act, s.floor], ending);
+  }
+  const adaptive = playRun(29, 'veteran', true).s;
+  assert.equal(adaptive.phase, 'won'); assert.equal(adaptive.hp, 46);
+  assert.ok(adaptive.deck.some(c => c.id === 'weakness') && adaptive.deck.some(c => c.id === 'riposte'));
+  assert.ok(!adaptive.deck.some(c => ['kindle', 'wildfire'].includes(c.id)), 'a defensive/debuff road remains viable without the burn-scaling combo');
+  const burn = playRun(5, 'veteran', true).s;
+  assert.equal(burn.phase, 'won'); assert.ok(burn.deck.some(c => c.id === 'kindle') && burn.deck.some(c => c.id === 'wildfire'));
 });

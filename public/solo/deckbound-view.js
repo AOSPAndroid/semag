@@ -1,4 +1,4 @@
-import { ACTS, CARDS, DIFFICULTIES, difficultyInfo, removalCost, relicInfo, cardInfo, createState, dispatch, togglePause as pauseState, intentDamageAt } from './deckbound-engine.js';
+import { ACTS, CARDS, DIFFICULTIES, difficultyInfo, removalCost, relicInfo, cardInfo, createState, dispatch, togglePause as pauseState, intentDamageAt, pressureStrength, recoveryRemaining, recordScope } from './deckbound-engine.js';
 const copy = value => JSON.parse(JSON.stringify(value));
 const ART_FAMILIES = {
   sword:'blade',axe:'blade',arrow:'blade',hammer:'blade',blades:'blade',forge:'blade',echo:'blade',
@@ -12,8 +12,8 @@ function illustration(path, className) {
 }
 function art(id) { return illustration(`/art/deckbound-card-${Object.hasOwn(ART_FAMILIES,id) ? id : 'leaf'}.svg`, 'deckbound-card-art'); }
 function button(label, action, data = {}, className = '') { const b = node('button', className, label); b.type = 'button'; b.dataset.action = action; for (const [key, value] of Object.entries(data)) b.dataset[key] = value; return b; }
-function cardView(c, action, data = {}, label = '') {
-  const info = cardInfo(c); const b = button('', action, data, `deckbound-card deckbound-card-${info.kind}${c.upgraded ? ' is-upgraded' : ''}`);
+function cardView(c, action, data = {}, label = '', state) {
+  const info = cardInfo(c, state); const b = button('', action, data, `deckbound-card deckbound-card-${info.kind}${c.upgraded ? ' is-upgraded' : ''}`);
   b.dataset.artFamily = ART_FAMILIES[info.art] || 'root';
   const header = node('span', 'deckbound-card-heading'); header.append(node('b', 'deckbound-card-cost', String(info.cost)), node('strong', '', info.name));
   b.append(header, art(info.art), node('span', 'deckbound-card-type', info.kind.toUpperCase()), node('span', 'deckbound-card-text', info.text));
@@ -29,7 +29,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   const view = node('section', 'deckbound-view'); view.tabIndex = 0; view.dataset.soloFocus = ''; view.setAttribute('aria-label', 'Deckbound card adventure'); container.append(view);
   function publish() {
     onUpdate({ phase: ['paused', 'won', 'lost'].includes(state.phase) ? state.phase : 'playing', score: state.score,
-      detail: state.phase === 'paused' ? 'Your road waits. Resume to continue this exact encounter.' : state.phase === 'won' ? 'Three gates opened. The Hollow Crown is quiet.' : state.phase === 'lost' ? state.result : `${difficultyInfo(state).label} · Act ${state.act} · encounter ${state.floor}/6 · ${state.deck.length} cards · ${state.gold} gold`, scoreLabel: 'RENOWN', recordLabel: 'BEST RENOWN', recordKey: state.difficulty === 'standard' ? 'default' : state.difficulty });
+      detail: state.phase === 'paused' ? 'Your road waits. Resume to continue this exact encounter.' : state.phase === 'won' ? 'Three gates opened. The Hollow Crown is quiet.' : state.phase === 'lost' ? state.result : `${difficultyInfo(state).label} · Act ${state.act} · encounter ${state.floor}/6 · ${state.deck.length} cards · ${state.gold} gold`, scoreLabel: 'RENOWN', recordLabel: 'BEST RENOWN', recordKey: recordScope(state) });
   }
   function run(action, payload = {}) { if (destroyed) return; const r = dispatch(state, action, payload); if (!r.ok) return; choosingUpgrade = false; choosingRemoval = false; if (!state.enemies[target] || state.enemies[target].hp <= 0) target = state.enemies.findIndex(e => e.hp > 0); target = Math.max(0, target); render(); }
   function relicRow() {
@@ -81,7 +81,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   function renderRoute() {
     const panel = choices('Every road has a price.', 'CHOOSE YOUR NEXT ENCOUNTER');
     const d = difficultyInfo(state);
-    panel.append(node('p', 'deckbound-route-pressure', d.roadBattles ? `${d.label}: ${Math.min(state.roadBattles, d.roadBattles)} / ${d.roadBattles} road battles completed this act. Fight early to keep later hearths and markets available. Enemies gain strength from turn ${d.pressureTurn}, then every ${d.pressureEvery} turns.` : 'Standard: forgiving recovery and open routes. Changing difficulty starts a new run.'));
+    panel.append(node('p', 'deckbound-route-pressure', d.roadBattles ? `${d.label}: ${Math.min(state.roadBattles, d.roadBattles)} / ${d.roadBattles} road battles completed this act. Fight early to keep later hearths and markets available. Paired foes from encounter ${d.pairFloor}; Sentinels shield allies. Enemy strength rises from turn ${d.pressureTurn}, every ${d.pressureEvery} turns, with a larger increase each six turns. Cards can recover at most ${d.recoveryLimit} HP per battle.` : 'Standard: forgiving recovery and open routes. Changing difficulty starts a new run.'));
     const panorama = node('div', 'deckbound-panorama'); panorama.append(scene(state.act)); panel.append(panorama);
     const row = node('div', 'deckbound-paths');
     for (const o of state.routeOptions) {
@@ -98,7 +98,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       b.append(illustration(`/art/deckbound-enemy-${e.art}.svg`, 'deckbound-enemy-art'), node('strong', '', e.name), node('span', 'deckbound-enemy-health', `${e.hp} / ${e.maxHp} HP${e.block ? ` · ${e.block} block` : ''}`));
       const intent = node('span', 'deckbound-intent'); intent.append(node('b', '', e.hp > 0 ? `${e.intent.damage ? `${intentDamageAt(state, i)}${e.intent.hits > 1 ? ` × ${e.intent.hits}` : ''} DAMAGE` : e.intent.block ? `${e.intent.block} BLOCK` : 'DEBUFF'}` : 'DEFEATED'), node('span', '', e.hp > 0 ? e.intent.label : 'The road is clear.'));
       const effects = [];
-      if (e.hp > 0) { if (e.intent.weak) effects.push(`${e.intent.weak} weak`); if (e.intent.vulnerable) effects.push(`${e.intent.vulnerable} vulnerable`); if (e.intent.poison) effects.push(`${e.intent.poison} poison`); if (e.intent.strength) effects.push(`+${e.intent.strength} strength`); if (e.intent.thorns) effects.push(`${e.intent.thorns} thorns next turn`); if (e.intent.cleanseBurn) effects.push(`clear ${e.intent.cleanseBurn} burn`); if (e.intent.frail) effects.push(`${e.intent.frail} frail`); if (effects.length) intent.append(node('small', '', effects.join(' · '))); }
+      if (e.hp > 0) { if (e.intent.weak) effects.push(`${e.intent.weak} weak`); if (e.intent.vulnerable) effects.push(`${e.intent.vulnerable} vulnerable`); if (e.intent.poison) effects.push(`${e.intent.poison} poison`); if (e.intent.strength) effects.push(`+${e.intent.strength} strength`); if (e.intent.allyBlock) effects.push(`${e.intent.allyBlock} block to allies`); if (e.intent.thorns) effects.push(`${e.intent.thorns} thorns next turn`); if (e.intent.cleanseBurn) effects.push(`clear ${e.intent.cleanseBurn} burn`); if (e.intent.frail) effects.push(`${e.intent.frail} frail`); if (effects.length) intent.append(node('small', '', effects.join(' · '))); }
       b.append(intent);
       const status = [e.burn ? `${e.burn} burn` : '', e.weak ? `${e.weak} weak` : '', e.vulnerable ? `${e.vulnerable} vulnerable` : '', e.thorns ? `${e.thorns} thorns` : '', e.strength ? `${e.strength} strength` : ''].filter(Boolean).join(' · ');
       if (status) b.append(node('span', 'deckbound-enemy-status', status));
@@ -111,10 +111,11 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     const stats = [`${state.player.block} block`, state.player.strength ? `${state.player.strength} strength` : '', state.player.dexterity ? `${state.player.dexterity} dexterity` : '', state.player.thorns ? `${state.player.thorns} thorns` : '', state.player.weak ? `${state.player.weak} weak` : '', state.player.vulnerable ? `${state.player.vulnerable} vulnerable` : '', state.player.frail ? `${state.player.frail} frail` : '', state.player.poison ? `${state.player.poison} poison` : ''].filter(Boolean);
     status.textContent = stats.join(' · '); tools.append(status, button('End turn →', 'end-turn', {}, 'deckbound-primary')); view.append(tools);
     const hand = node('div', 'deckbound-hand'); hand.setAttribute('aria-label', 'Cards in your hand');
-    state.hand.forEach((c, i) => { const b = cardView(c, 'play-card', { uid: c.uid }, `${i < 9 ? `[${i + 1}] · ` : ''}${CARDS[c.id].exhaust ? 'Exhausts' : 'Discard after use'}`); b.disabled = CARDS[c.id].cost > state.energy; hand.append(b); });
+    state.hand.forEach((c, i) => { const b = cardView(c, 'play-card', { uid: c.uid }, `${i < 9 ? `[${i + 1}] · ` : ''}${CARDS[c.id].exhaust ? 'Exhausts' : 'Discard after use'}`, state); b.disabled = CARDS[c.id].cost > state.energy; hand.append(b); });
     if (!state.hand.length) hand.append(node('p', 'deckbound-empty', 'Your hand is empty. End your turn to draw five new cards.'));
     const d = difficultyInfo(state), pressure = d.pressureTurn ? Math.max(d.pressureTurn, state.turn + 1 + ((d.pressureEvery - (state.turn + 1 - d.pressureTurn) % d.pressureEvery) % d.pressureEvery)) : 0;
-    view.append(hand, node('p', 'deckbound-piles', `Draw ${state.draw.length} · Discard ${state.discard.length} · Exhaust ${state.exhaust.length} · Block expires next turn. Burn hits before the enemy acts.${pressure ? ` Enemy strength +1 on turn ${pressure}.` : ''}`));
+    const recovery = recoveryRemaining(state);
+    view.append(hand, node('p', 'deckbound-piles', `Draw ${state.draw.length} · Discard ${state.discard.length} · Exhaust ${state.exhaust.length} · Block expires next turn. Burn hits before the enemy acts.${pressure ? ` Enemy strength +${pressureStrength(state, pressure)} on turn ${pressure}.` : ''}${recovery !== null ? ` Card recovery ${recovery} / ${d.recoveryLimit} HP remaining this battle; rest and relic recovery are separate.` : ''}`));
   }
   function renderReward() {
     const panel = choices('Make the next hand yours.', 'VICTORY · TAKE ONE CARD'); const row = node('div', 'deckbound-reward-cards');

@@ -4,8 +4,8 @@ export const ACT_NAMES = Object.freeze(['The Coal Galleries', 'The Glass Burrows
 export const BOSSES = Object.freeze(['Ash Warden', 'Mirror Stag', 'Cinder Queen']);
 export const DIFFICULTIES = Object.freeze({
   standard: Object.freeze({ title: 'Standard', description: 'A gentler descent. Familiar patrols and generous recovery.', extra: 0, speed: 1, lead: 0, mana: 100, manaRegen: 10, staminaRegen: 32, bladeCost: 10, boltCost: 12, heal: 1 }),
-  veteran: Object.freeze({ title: 'Veteran', description: 'Leading volleys, pouncing guards, marked ground strikes. Blade hits refill mana; save stamina for dodges.', extra: 2, speed: 1.55, lead: .58, mana: 75, manaRegen: 7, staminaRegen: 24, bladeCost: 14, boltCost: 16, heal: .6 }),
-  nightmare: Object.freeze({ title: 'Nightmare', description: 'Faster interception, overlapping threats, scarce recovery. Read the marks and break your movement pattern.', extra: 3, speed: 1.85, lead: .68, mana: 65, manaRegen: 6, staminaRegen: 22, bladeCost: 15, boltCost: 17, heal: .4 }),
+  veteran: Object.freeze({ title: 'Veteran', description: 'Guarded relics, mixed boss fights, limited kill recovery. Attacks briefly slow movement and delay stamina recovery. Change direction after tells; reserve a dodge.', extra: 2, speed: 1.55, lead: .58, mana: 75, manaRegen: 6, staminaRegen: 22, bladeCost: 14, boltCost: 16, heal: .6, healingBudget: 10, bladeMana: 6, summonLimit: 3 }),
+  nightmare: Object.freeze({ title: 'Nightmare', description: 'Stronger relic guards, three-way boss pressure, scarce kill recovery. Commit to openings; attack spam spends your escape.', extra: 3, speed: 1.85, lead: .68, mana: 65, manaRegen: 5, staminaRegen: 20, bladeCost: 15, boltCost: 17, heal: .4, healingBudget: 6, bladeMana: 5, summonLimit: 4 }),
 });
 const profile = s => DIFFICULTIES[s.difficulty] || DIFFICULTIES.standard;
 export const RELICS = Object.freeze({
@@ -50,6 +50,17 @@ function lineClear(s, a, b, r = 0) {
   });
 }
 function steer(s, b, target) {
+  if (s.difficulty !== 'standard') {
+    // A charge can leave a circle beside a pillar corner, inside the padded
+    // visibility rectangle. Step out before pathfinding; otherwise every edge
+    // rejects its own starting point and the guard can be parked indefinitely.
+    const clearance = b.radius + 3;
+    for (const o of s.room.obstacles) if (b.x > o.x - clearance && b.x < o.x + o.width + clearance && b.y > o.y - clearance && b.y < o.y + o.height + clearance) {
+      const exits = [{ x: o.x - clearance, y: b.y }, { x: o.x + o.width + clearance, y: b.y }, { x: b.x, y: o.y - clearance }, { x: b.x, y: o.y + o.height + clearance }]
+        .filter(point => !solid(s, point.x, point.y, b.radius)).sort((a, c) => dist(a, b) - dist(c, b));
+      if (exits.length) return unit(exits[0].x - b.x, exits[0].y - b.y);
+    }
+  }
   target = { ...target };
   for (const o of s.room.obstacles) {
     const m = b.radius + 5;
@@ -84,17 +95,27 @@ function spawn(s, type, point = null) {
   const spots = [{ x: 720, y: 315 }, { x: 650, y: 110 }, { x: 795, y: 500 }, { x: 510, y: 320 }, { x: 170, y: 500 }, { x: 790, y: 200 }];
   const p = point || spots[s.enemyId % spots.length];
   const hp = boss ? [290, 440, 620][s.act - 1] : ({ crawler: 42, archer: 48, charger: 64, sentinel: 88 }[type] + (s.act - 1) * 12) * (s.room.kind === 'elite' ? 1.28 : 1);
-  const e = { id: ++s.enemyId, type, boss, ...p, radius, hp, maxHp: hp, phase: 'seek', timer: .45 + rng(s) * .4, pattern: 0, aimX: -1, aimY: 0, burn: 0, burnDps: 0, slow: 0, attackId: 0 };
+  const e = { id: ++s.enemyId, type, boss, ...p, radius, hp, maxHp: hp, phase: 'seek', timer: .45 + rng(s) * .4, pattern: 0, summons: 0, aimX: -1, aimY: 0, burn: 0, burnDps: 0, slow: 0, attackId: 0 };
   // Spawns need the same clearance as the navigation graph, not just their body.
   if (solid(s, e.x, e.y, radius + 6)) { e.x = 780; e.y = 320; }
   s.enemies.push(e);
 }
 function roomStart(s, kind) {
-  s.phase = 'playing'; s.choices = []; s.projectiles = []; s.enemies = []; s.effects = [];
+  s.phase = 'playing'; s.choices = []; s.projectiles = []; s.enemies = []; s.effects = []; s.roomHealing = 0;
   const layout = kind === 'boss' ? 3 : (s.act + s.depth + s.roomsCleared) % 3;
   s.room = { id: `${s.act}-${s.depth}-${kind}`, kind, title: kind === 'boss' ? BOSSES[s.act - 1] : `${['Ember', 'Crystal', 'Crown'][s.act - 1]} ${kind === 'elite' ? 'Crucible' : kind === 'treasure' ? 'Reliquary' : kind === 'camp' ? 'Sanctuary' : ['Gallery', 'Crossing', 'Vault'][layout]}`, obstacles: layouts[layout].map(o => ({ ...o })), exit: { x: 890, y: 320, radius: 42 }, shrine: { x: 570, y: 320, radius: 50 }, cleared: false, rewardTaken: false };
-  s.player.x = 105; s.player.y = 320; s.player.velocityX = s.player.velocityY = 0; s.player.invulnerable = .6; s.player.dashTime = 0; s.player.attackTime = 0; s.player.attackCooldown = 0; s.player.spellCooldown = 0;
-  if (kind === 'boss') spawn(s, 'boss');
+  s.player.x = 105; s.player.y = 320; s.player.velocityX = s.player.velocityY = 0; s.player.invulnerable = .6; s.player.dashTime = 0; s.player.attackTime = 0; s.player.castTime = 0; s.player.staminaDelay = 0; s.player.attackCooldown = 0; s.player.spellCooldown = 0;
+  if (kind === 'boss') {
+    spawn(s, 'boss');
+    if (s.difficulty !== 'standard') {
+      // Support starts in visible, separated positions and cannot attack on entry.
+      for (const type of s.difficulty === 'nightmare' ? ['archer', 'crawler', 'sentinel'] : ['archer', 'crawler']) {
+        spawn(s, type); s.enemies.at(-1).timer = 1.5;
+      }
+    }
+  } else if (kind === 'treasure' && s.difficulty !== 'standard') {
+    for (const type of s.difficulty === 'nightmare' ? ['sentinel', 'archer', 'charger'] : ['sentinel', 'archer']) spawn(s, type);
+  }
   else if (kind === 'combat' || kind === 'elite') {
     const types = ['crawler', 'archer', 'charger', 'sentinel'];
     const count = (kind === 'elite' ? 5 + s.act : 3 + s.act) + profile(s).extra;
@@ -106,7 +127,7 @@ export function createState({ seed = Date.now(), difficulty = 'standard' } = {})
   difficulty = Object.hasOwn(DIFFICULTIES, difficulty) ? difficulty : 'standard';
   const normalized = Number.isFinite(Number(seed)) ? Number(seed) >>> 0 : 1;
   const s = { gameId: 'ember-delve', difficulty, seed: normalized || 1, randomState: normalized || 1, phase: 'playing', pausedPhase: null, act: 1, depth: 1, roomsCleared: 0, kills: 0, score: 0, elapsed: 0, tick: 0, result: null, gold: 0, relics: {}, choices: [], routeHistory: [], enemies: [], enemyId: 0, projectiles: [], projectileId: 0, effects: [], events: [], eventId: 0, attackId: 0, pending: null,
-    player: { x: 105, y: 320, radius: 12, hp: 140, maxHp: 140, mana: 100, maxMana: 100, manaRegen: 10, stamina: 100, maxStamina: 100, staminaRegen: 32, moveSpeed: 245, swordDamage: 30, spellDamage: 28, aimX: 1, aimY: 0, attackCooldown: 0, attackTime: 0, spellCooldown: 0, dodgeCooldown: 0, dashTime: 0, dashX: 1, dashY: 0, invulnerable: 0, damageCooldown: 0, empowered: 0, dashHeld: false, interactHeld: false } };
+    player: { x: 105, y: 320, radius: 12, hp: 140, maxHp: 140, mana: 100, maxMana: 100, manaRegen: 10, stamina: 100, maxStamina: 100, staminaRegen: 32, moveSpeed: 245, swordDamage: 30, spellDamage: 28, aimX: 1, aimY: 0, attackCooldown: 0, attackTime: 0, spellCooldown: 0, dodgeCooldown: 0, dashTime: 0, castTime: 0, staminaDelay: 0, bladeManaRemaining: 0, dashX: 1, dashY: 0, invulnerable: 0, damageCooldown: 0, empowered: 0, dashHeld: false, interactHeld: false } };
   const rules = profile(s); s.player.mana = s.player.maxMana = rules.mana; s.player.manaRegen = rules.manaRegen; s.player.staminaRegen = rules.staminaRegen;
   s.player.velocityX = s.player.velocityY = 0;
   roomStart(s, 'combat'); return s;
@@ -114,7 +135,8 @@ export function createState({ seed = Date.now(), difficulty = 'standard' } = {})
 export function getRelicInfo(s, id) {
   const info = { ...RELICS[id] };
   if (s.difficulty !== 'standard') {
-    if (id === 'chalice') info.description = `Kills restore ${s.difficulty === 'nightmare' ? 1 : 2} health; stacks add 1, capped at ${s.difficulty === 'nightmare' ? 4 : 5} per kill.`;
+    if (id === 'chalice') info.description = `Kills restore ${s.difficulty === 'nightmare' ? 1 : 2} health; stacks add 1, capped at ${s.difficulty === 'nightmare' ? 4 : 5} per kill and ${profile(s).healingBudget} per room.`;
+    if (id === 'fleet') info.description = 'Dodge costs 5 less stamina per rank, down to 26. Movement gains 12 speed per rank.';
     if (id === 'vitality') info.description = `Gain 20 maximum health and restore ${Math.round(30 * profile(s).heal)} health.`;
   }
   return info;
@@ -127,7 +149,7 @@ function choices(s, phase) {
   } else if (phase === 'route') {
     s.choices = s.depth === 1 ? [
       { id: 'combat', title: 'The Long Gallery', description: 'A guarded room. Earn gold, a relic, and combat score.', risk: 'STANDARD', kind: 'combat' },
-      { id: 'treasure', title: 'The Quiet Reliquary', description: 'A safe chest with one relic. Lower score, no combat gold.', risk: 'SAFE', kind: 'treasure' },
+      { id: 'treasure', title: s.difficulty === 'standard' ? 'The Quiet Reliquary' : 'The Guarded Reliquary', description: s.difficulty === 'standard' ? 'A safe chest with one relic. Lower score, no combat gold.' : 'Defeat the relic guards, then open the chest. Fewer foes, no combat gold.', risk: s.difficulty === 'standard' ? 'SAFE' : 'GUARDED', kind: 'treasure' },
     ] : s.depth === 2 ? [
       { id: 'elite', title: 'The Crucible', description: 'More durable enemies. Double gold, better score, and a relic.', risk: 'HIGH RISK', kind: 'elite' },
       { id: 'camp', title: 'The Warm Sanctuary', description: 'Spend gold to heal, or meditate for maximum mana.', risk: 'RECOVERY', kind: 'camp' },
@@ -190,7 +212,10 @@ function damageEnemy(s, e, damage, weapon) {
     if (s.relics.frost) e.slow = 1.8;
   }
   e.hp -= damage; event(s, 'hit', { x: e.x, y: e.y, damage: Math.round(damage), enemyId: e.id });
-  if (weapon === 'sword' && s.difficulty !== 'standard') s.player.mana = Math.min(s.player.maxMana, s.player.mana + (e.type === 'sentinel' && damage < s.player.swordDamage ? 1 : 4));
+  if (weapon === 'sword' && s.difficulty !== 'standard') {
+    const restored = Math.min(s.player.bladeManaRemaining, e.type === 'sentinel' && damage < s.player.swordDamage ? 1 : 4);
+    s.player.mana = Math.min(s.player.maxMana, s.player.mana + restored); s.player.bladeManaRemaining -= restored;
+  }
 }
 function shot(s, owner, x, y, angle, speed, damage, extra = {}) {
   if (s.projectiles.length >= 160) return;
@@ -209,6 +234,7 @@ function tell(s, e, duration, kind) {
   const a = unit((s.difficulty === 'standard' ? p.x : target.x) - e.x, (s.difficulty === 'standard' ? p.y : target.y) - e.y);
   e.aimX = a.x; e.aimY = a.y; e.phase = 'tell'; e.timer = duration; e.tellDuration = duration; e.tell = kind; e.attackId = ++s.attackId;
   e.fanCount = s.difficulty === 'standard' ? e.boss ? 7 : 3 : e.boss ? 9 : s.difficulty === 'nightmare' ? 7 : 5;
+  if (e.boss && s.difficulty !== 'standard' && e.hp < e.maxHp / 2) e.fanCount += 2;
   e.fanSpread = e.boss ? .16 : .14; e.shotSpeed = s.difficulty === 'standard' ? 190 : s.difficulty === 'nightmare' ? 285 : 250;
   e.chargeSpeed = s.difficulty === 'standard' ? 450 : e.type === 'crawler' ? 570 : 550 + (s.difficulty === 'nightmare' ? 40 : 0);
   e.chargeDuration = e.boss ? .55 : e.type === 'crawler' ? .34 : .42;
@@ -239,18 +265,27 @@ function enemyStep(s, e, dt) {
     } else if (e.tell === 'fault') {
       for (const target of e.targets || []) if (s.effects.length < 24) s.effects.push({ ...target, kind: 'fault', life: .3, attackId: e.attackId });
       e.phase = 'recover'; e.timer = .9;
-    } else if (e.tell === 'summon') { spawn(s, 'crawler', { x: 160, y: 150 }); spawn(s, 'archer', { x: 800, y: 490 }); e.phase = 'recover'; e.timer = 1; }
+    } else if (e.tell === 'summon') {
+      e.summons = (e.summons || 0) + 1;
+      for (const [type, point] of [['crawler', { x: 160, y: 150 }], ['archer', { x: 800, y: 490 }]]) {
+        const before = s.enemies.length; spawn(s, type, point);
+        if (s.enemies.length > before) { s.enemies.at(-1).summoned = true; s.enemies.at(-1).timer = .8; }
+      }
+      e.phase = 'recover'; e.timer = 1;
+    }
     else { fan(s, e, e.fanCount ?? (e.boss ? 7 : 3), e.fanSpread ?? (e.boss ? .16 : .14), e.shotSpeed ?? 190); e.phase = 'recover'; e.timer = hard ? .65 : e.boss ? .8 : 1; }
     return;
   }
   if (e.phase === 'charge') { move(s, e, e.aimX * (e.chargeSpeed ?? 450) * dt, e.aimY * (e.chargeSpeed ?? 450) * dt); if (gap < e.radius + p.radius + 10) hurt(s, e.boss ? 30 : 24, e.attackId); if (e.timer <= 0) { e.phase = 'recover'; e.timer = hard ? .65 : .9; } return; }
-  if (e.phase === 'recover') { if (e.timer <= 0) { e.phase = 'seek'; e.timer = hard ? .3 : e.boss ? .7 : .5; } return; }
+  if (e.phase === 'recover') { if (e.timer <= 0) { e.phase = 'seek'; e.timer = hard ? e.boss && e.hp < e.maxHp / 2 ? .16 : .3 : e.boss ? .7 : .5; } return; }
   if (e.boss) {
     const toward = steer(s, e, p); if (gap > (hard ? 175 : 230)) move(s, e, toward.x * (hard ? 125 + s.act * 10 : 70) * dt, toward.y * (hard ? 125 + s.act * 10 : 70) * dt);
     if (e.timer <= 0) {
       e.pattern++;
-      const patterns = hard ? s.act === 1 ? ['charge', 'fan', 'ring', 'charge', 'sweep'] : s.act === 2 ? ['fan', 'charge', 'fault', 'charge', 'ring'] : ['ring', 'fault', 'fan', 'summon', 'charge'] : s.act === 1 ? ['charge', 'ring', 'sweep'] : s.act === 2 ? ['fan', 'charge', 'charge', 'ring'] : ['ring', 'fan', 'summon', 'ring'];
-      const kind = patterns[(e.pattern - 1) % patterns.length];
+      const patterns = hard ? s.act === 1 ? ['charge', 'fan', 'fault', 'ring', 'sweep'] : s.act === 2 ? ['fan', 'charge', 'fault', 'charge', 'ring'] : ['ring', 'fault', 'fan', 'summon', 'charge'] : s.act === 1 ? ['charge', 'ring', 'sweep'] : s.act === 2 ? ['fan', 'charge', 'charge', 'ring'] : ['ring', 'fan', 'summon', 'ring'];
+      let kind = patterns[(e.pattern - 1) % patterns.length];
+      // Finite summons keep a stalled guardian from becoming an endless farm.
+      if (hard && kind === 'summon' && (e.summons || 0) >= rules.summonLimit) kind = 'fault';
       tell(s, e, kind === 'fault' || kind === 'summon' ? 1 : e.pattern % patterns.length === 0 ? .95 : .7, kind);
     }
     return;
@@ -274,7 +309,7 @@ function enemyStep(s, e, dt) {
   }
 }
 function interaction(s) {
-  if (!s.room.cleared && s.room.kind === 'treasure' && dist(s.player, s.room.shrine) < 70) { s.pending = 'treasure'; choices(s, 'reward'); return; }
+  if (!s.room.cleared && s.room.kind === 'treasure' && s.enemies.length === 0 && dist(s.player, s.room.shrine) < 70) { s.pending = 'treasure'; choices(s, 'reward'); return; }
   if (!s.room.cleared && s.room.kind === 'camp' && dist(s.player, s.room.shrine) < 70) { choices(s, 'camp'); return; }
   if (!s.room.cleared || dist(s.player, s.room.exit) > 70) return;
   if (s.act === 3 && s.depth === 4) { s.phase = 'won'; s.result = 'The Crown Furnace is quiet'; s.score += 1500; event(s, 'victory'); return; }
@@ -285,28 +320,30 @@ export function step(s, input = {}, dt = 1 / 120) {
   if (s.phase !== 'playing' || !Number.isFinite(dt) || dt <= 0) return;
   dt = Math.min(dt, 1 / 30); s.tick++; s.elapsed += dt;
   const p = s.player;
-  for (const key of ['attackCooldown', 'attackTime', 'spellCooldown', 'dodgeCooldown', 'dashTime', 'invulnerable', 'damageCooldown', 'empowered']) p[key] = Math.max(0, p[key] - dt);
-  p.mana = Math.min(p.maxMana, p.mana + p.manaRegen * dt); p.stamina = Math.min(p.maxStamina, p.stamina + p.staminaRegen * dt);
+  for (const key of ['attackCooldown', 'attackTime', 'castTime', 'staminaDelay', 'spellCooldown', 'dodgeCooldown', 'dashTime', 'invulnerable', 'damageCooldown', 'empowered']) p[key] = Math.max(0, p[key] - dt);
+  p.mana = Math.min(p.maxMana, p.mana + p.manaRegen * dt);
+  if (s.difficulty === 'standard' || p.staminaDelay <= 0) p.stamina = Math.min(p.maxStamina, p.stamina + p.staminaRegen * dt);
   const aim = unit(Number.isFinite(input.aimX) ? input.aimX : p.aimX, Number.isFinite(input.aimY) ? input.aimY : p.aimY, p.aimX, p.aimY); p.aimX = aim.x; p.aimY = aim.y;
   const rawX = Number.isFinite(input.moveX) ? clamp(input.moveX, -1, 1) : (input.right === true ? 1 : 0) - (input.left === true ? 1 : 0);
   const rawY = Number.isFinite(input.moveY) ? clamp(input.moveY, -1, 1) : (input.down === true ? 1 : 0) - (input.up === true ? 1 : 0);
   const movement = Math.hypot(rawX, rawY) > .05 ? unit(rawX, rawY) : { x: 0, y: 0 };
-  const dash = input.dash === true, dashCost = Math.max(14, 34 - (s.relics.fleet || 0) * 8);
-  if (dash && !p.dashHeld && p.stamina >= dashCost && p.dodgeCooldown <= 0) { p.stamina -= dashCost; p.dashTime = .18; p.invulnerable = .22; p.dodgeCooldown = .32; p.dashX = movement.x || movement.y ? movement.x : aim.x; p.dashY = movement.x || movement.y ? movement.y : aim.y; event(s, 'dash'); }
+  const hard = s.difficulty !== 'standard';
+  const dash = input.dash === true, dashCost = Math.max(hard ? 26 : 14, 34 - (s.relics.fleet || 0) * (hard ? 5 : 8));
+  if (dash && !p.dashHeld && p.stamina >= dashCost && p.dodgeCooldown <= 0) { p.stamina -= dashCost; if (hard) p.staminaDelay = .6; p.dashTime = .18; p.invulnerable = .22; p.dodgeCooldown = .32; p.dashX = movement.x || movement.y ? movement.x : aim.x; p.dashY = movement.x || movement.y ? movement.y : aim.y; event(s, 'dash'); }
   p.dashHeld = dash;
   const oldX = p.x, oldY = p.y;
   if (p.dashTime > 0) move(s, p, p.dashX * 660 * dt, p.dashY * 660 * dt);
-  else move(s, p, movement.x * p.moveSpeed * dt, movement.y * p.moveSpeed * dt);
+  else { const pace = hard && (p.attackTime > 0 || p.castTime > 0) ? .85 : 1; move(s, p, movement.x * p.moveSpeed * pace * dt, movement.y * p.moveSpeed * pace * dt); }
   // Dash velocity is deliberately excluded from the opponent's prediction.
   p.velocityX = p.dashTime > 0 ? 0 : (p.x - oldX) / dt; p.velocityY = p.dashTime > 0 ? 0 : (p.y - oldY) / dt;
   const rules = profile(s);
   if (input.melee === true && p.attackCooldown <= 0 && p.stamina >= rules.bladeCost && p.dashTime <= 0) {
-    p.stamina -= rules.bladeCost; p.attackCooldown = Math.max(.18, .34 - (s.relics.blade || 0) * .02); p.attackTime = .15; event(s, 'swing');
+    p.stamina -= rules.bladeCost; if (hard) { p.staminaDelay = .12; p.bladeManaRemaining = rules.bladeMana; } p.attackCooldown = Math.max(.18, .34 - (s.relics.blade || 0) * .02); p.attackTime = .15; event(s, 'swing');
     for (const e of s.enemies) { const toward = unit(e.x - p.x, e.y - p.y); if (dist(p, e) < 96 + e.radius && toward.x * aim.x + toward.y * aim.y > .38 && lineClear(s, p, e)) damageEnemy(s, e, p.swordDamage * (p.empowered > 0 ? 1.75 : 1), 'sword'); }
     p.empowered = 0;
   }
   if (input.spell === true && p.spellCooldown <= 0 && p.mana >= rules.boltCost && p.dashTime <= 0) {
-    p.mana -= rules.boltCost; p.spellCooldown = .23; const muzzle = { x: p.x + aim.x * 22, y: p.y + aim.y * 22 };
+    p.mana -= rules.boltCost; if (hard) p.castTime = .08; p.spellCooldown = .23; const muzzle = { x: p.x + aim.x * 22, y: p.y + aim.y * 22 };
     if (lineClear(s, p, muzzle, 6)) shot(s, 'player', muzzle.x, muzzle.y, Math.atan2(aim.y, aim.x), 580, p.spellDamage);
     event(s, 'cast');
   }
@@ -327,8 +364,18 @@ export function step(s, input = {}, dt = 1 / 120) {
   }
   s.projectiles = s.projectiles.filter(b => b.life > 0);
   const dead = s.enemies.filter(e => e.hp <= 0);
-  for (const e of dead) { s.kills++; const gain = e.boss ? 500 * s.act : s.room.kind === 'elite' ? 100 : 55; s.score += gain; s.gold += e.boss ? 40 : s.room.kind === 'elite' ? 8 : 4; if (s.relics.chalice && s.phase !== 'lost') { const amount = s.difficulty === 'standard' ? 3 + 2 * (s.relics.chalice - 1) : Math.min(s.difficulty === 'nightmare' ? 4 : 5, (s.difficulty === 'nightmare' ? 1 : 2) + s.relics.chalice - 1); p.hp = Math.min(p.maxHp, p.hp + amount); } event(s, 'kill', { x: e.x, y: e.y, boss: e.boss }); }
+  for (const e of dead) {
+    s.kills++; const gain = e.boss ? 500 * s.act : s.room.kind === 'elite' ? 100 : 55; s.score += hard && e.summoned ? 10 : gain;
+    if (!hard || !e.summoned && s.room.kind !== 'treasure') s.gold += e.boss ? 40 : s.room.kind === 'elite' ? 8 : 4;
+    if (s.relics.chalice && s.phase !== 'lost') {
+      const amount = !hard ? 3 + 2 * (s.relics.chalice - 1) : Math.min(s.difficulty === 'nightmare' ? 4 : 5, (s.difficulty === 'nightmare' ? 1 : 2) + s.relics.chalice - 1);
+      const restored = Math.min(p.maxHp - p.hp, amount, hard ? Math.max(0, rules.healingBudget - s.roomHealing) : Infinity);
+      p.hp += restored; s.roomHealing += restored;
+    }
+    event(s, 'kill', { x: e.x, y: e.y, boss: e.boss });
+  }
   s.enemies = s.enemies.filter(e => e.hp > 0);
+  if (hard && s.room.kind === 'treasure' && dead.length && !s.enemies.length) { s.projectiles = []; s.effects = []; event(s, 'guards-clear'); }
   if (!s.room.cleared && ['combat', 'elite', 'boss'].includes(s.room.kind) && s.enemies.length === 0 && s.phase === 'playing') { s.room.cleared = true; s.roomsCleared++; s.score += 120 * s.act; s.projectiles = []; s.effects = []; event(s, 'clear'); }
   const interact = input.interact === true; if (interact && !p.interactHeld && s.phase === 'playing') interaction(s); p.interactHeld = interact;
 }

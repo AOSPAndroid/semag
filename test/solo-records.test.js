@@ -303,3 +303,59 @@ test('Survival milliseconds display as elapsed time without rounding into the ne
   assert.equal(formatValue(87.25, 2, 's'), '87.25s');
   assert.equal(formatValue(9210), '9210');
 });
+
+test('rebalanced solo records survive reload without competing against historical results', () => {
+  const cases = [
+    ['ember-delve', 'veteran', 'veteran-v3'], ['ember-delve', 'nightmare', 'nightmare-v3'],
+    ['rift-survivor', 'veteran-v2', 'veteran-v3'], ['rift-survivor', 'nightmare', 'nightmare-v3'],
+    ['deckbound', 'veteran', 'veteran-v3'], ['deckbound', 'nightmare', 'nightmare-v3'],
+    ['snake', 'gauntlet', 'gauntlet-v3'], ['minesweeper', 'expert', 'master-v3'],
+    ['2048', 'master', 'master-v3'],
+  ];
+  for (const [game, previous, current] of cases) {
+    const storage = browserStorage(), store = createBestStore(storage);
+    store.update(game, 999999, { scope: previous });
+    const policy = recordDetails(game, { recordKey: current, phase: 'won', result: 'tour', record: 1234, score: 1234 });
+    assert.equal(policy.scope, current); assert.equal(policy.candidate, 1234);
+    store.update(game, policy.candidate, policy);
+    const loaded = createBestStore(storage);
+    assert.equal(loaded.read(game, current), 1234, game);
+    assert.equal(loaded.read(game, previous), 999999, game);
+  }
+});
+
+test('versioned driving and Prism records retain completed-only and time policies', () => {
+  for (const tier of ['veteran', 'nightmare']) {
+    for (const [game, modes, direction, unit] of [
+      ['apex-circuit', ['three-laps', 'harbor-ring-three-laps', 'rain-pass-three-laps', 'championship'], 'min', 's'],
+      ['prism-shift', ['sprint', 'dig'], 'min', 's'],
+      ['night-drive', ['tour'], 'max', ''],
+      ['paris-pedal', ['delivery'], 'max', ''],
+    ]) for (const mode of modes) {
+      const key = `${tier}-${mode}-v3`;
+      for (const phase of ['playing', 'paused', 'lost', 'stage-clear'])
+        assert.equal(recordDetails(game, { recordKey: key, phase, record: 1 }).candidate, null, `${game}/${key}/${phase}`);
+      const policy = recordDetails(game, { recordKey: key, phase: 'won', record: 120 });
+      assert.equal(policy.scope, key); assert.equal(policy.candidate, 120);
+      assert.equal(policy.direction, direction); assert.equal(policy.unit, unit);
+      assert.equal(recordDetails(game, { recordKey: key, phase: 'won', score: 999 }).candidate, undefined);
+    }
+    const marathon = recordDetails('prism-shift', { recordKey: `${tier}-marathon-v3`, phase: 'playing', score: 800 });
+    assert.equal(marathon.direction, 'max'); assert.equal(marathon.candidate, 800);
+    const survival = `${tier}-survival-v3`;
+    for (const phase of ['playing', 'paused', 'won'])
+      assert.equal(recordDetails('paris-pedal', { recordKey: survival, phase, result: 'crashed', record: 60000 }).candidate, null);
+    const finished = recordDetails('paris-pedal', { recordKey: survival, phase: 'lost', result: 'crashed', record: 60123, score: 999999 });
+    assert.equal(finished.scope, survival); assert.equal(finished.unit, 'duration-ms'); assert.equal(finished.candidate, 60123);
+    assert.equal(recordDetails('paris-pedal', { recordKey: survival, phase: 'lost', result: 'delivery-late', record: 60000 }).candidate, null);
+  }
+});
+
+test('the new Master tour record requires all six trials, not an individual puzzle win', () => {
+  for (const result of [null, undefined, 'puzzle', 'budget'])
+    assert.equal(recordDetails('2048', { recordKey: 'master-v3', phase: 'won', result, record: 9000 }).candidate, null);
+  for (const phase of ['playing', 'paused', 'lost'])
+    assert.equal(recordDetails('2048', { recordKey: 'master-v3', phase, result: 'tour', record: 9000 }).candidate, null);
+  assert.equal(recordDetails('2048', { recordKey: 'master-v3', phase: 'won', result: 'tour', record: 9000 }).candidate, 9000);
+  assert.equal(recordDetails('2048', { recordKey: 'master', phase: 'playing', score: 999 }).candidate, 999, 'historical scope retains its original meaning');
+});

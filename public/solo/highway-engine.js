@@ -89,9 +89,13 @@ export const DIFFICULTIES = Object.freeze([
   Object.freeze({
     id: 'veteran',
     title: 'Veteran',
-    rowGap: 1.15,
-    densityBonus: 0.22,
-    limits: Object.freeze([21, 20, 20, 20, 20]),
+    rowGap: 1.04,
+    densityBonus: 0.38,
+    limits: Object.freeze([20, 19.5, 19.5, 19.5, 19.5]),
+    trafficWidth: 0.4,
+    wideWidth: 0.44,
+    barrierWidth: 0.45,
+    windScale: 1.6,
     boostStart: 0.65,
     boostDrain: 0.3,
     boostRegen: 0.022,
@@ -107,9 +111,13 @@ export const DIFFICULTIES = Object.freeze([
   Object.freeze({
     id: 'nightmare',
     title: 'Nightmare',
-    rowGap: 1.02,
-    densityBonus: 0.35,
+    rowGap: 0.96,
+    densityBonus: 0.5,
     limits: Object.freeze([19, 18, 18, 18.5, 18]),
+    trafficWidth: 0.42,
+    wideWidth: 0.46,
+    barrierWidth: 0.48,
+    windScale: 2.2,
     boostStart: 0.55,
     boostDrain: 0.32,
     boostRegen: 0.012,
@@ -132,7 +140,7 @@ export function getDistrict(state) {
 }
 export function recordScope(state) {
   const scope = state.mode === 'tour' ? 'tour' : 'default';
-  return getDifficulty(state).id === 'standard' ? scope : `${state.difficulty}-${scope}`;
+  return getDifficulty(state).id === 'standard' ? scope : `${state.difficulty}-${scope}-v3`;
 }
 
 const randomSources = new WeakMap();
@@ -157,8 +165,20 @@ function event(state, type, details = {}) {
 // At maximum boost this gives over one second between rows, enough to cross
 // both lanes. Every row leaves a full lane open. A shared traffic speed keeps
 // those openings from collapsing as the rows approach the driver.
+export function getEndlessPressure(state) {
+  if (state.mode !== 'endless' || state.difficulty === 'standard') return 0;
+  // Every complete five-district lap tightens the pace; growth stays bounded
+  // so the full two-lane steering corridor remains physically achievable.
+  return Math.min(5, Math.floor(state.districtIndex / DISTRICTS.length));
+}
+export function getDeliveryLimit(state, index = state.districtIndex) {
+  const limits = getDifficulty(state).limits;
+  return limits ? limits[index % DISTRICTS.length] - getEndlessPressure(state) * (state.difficulty === 'nightmare' ? 0.15 : 0.2) : null;
+}
 export function rowSpacing(speed, trafficSpeed = TRAFFIC_SPEED, difficulty = 'standard') {
-  return Math.max(36, ((Math.max(220, speed) - trafficSpeed) / 3.6) * getDifficulty(difficulty).rowGap + 5);
+  const pressure = typeof difficulty === 'object' ? getEndlessPressure(difficulty) : 0;
+  const reaction = Math.max(0.91, getDifficulty(difficulty).rowGap - pressure * 0.02);
+  return Math.max(36, ((Math.max(220, speed) - trafficSpeed) / 3.6) * reaction + 5);
 }
 
 function spawnRow(state, z) {
@@ -174,7 +194,7 @@ function spawnRow(state, z) {
     safeLane = (safeLane + 1 + Math.floor(random(state) * 2)) % LANES.length;
   state.lastSafeLane = safeLane;
   const candidates = [0, 1, 2].filter((lane) => lane !== safeLane);
-  const twoCars = random(state) < Math.min(1, district.density + difficulty.densityBonus);
+  const twoCars = random(state) < Math.min(1, district.density + difficulty.densityBonus + getEndlessPressure(state) * 0.06);
   if (!twoCars) candidates.splice(Math.floor(random(state) * candidates.length), 1);
   const row = ++state.rowId;
   for (const lane of candidates) {
@@ -186,7 +206,7 @@ function spawnRow(state, z) {
       x: LANES[lane],
       z,
       speed: district.trafficSpeed,
-      width: district.pattern === 'barriers' ? 0.42 : wide ? 0.4 : 0.34,
+      width: district.pattern === 'barriers' ? difficulty.barrierWidth ?? 0.42 : wide ? difficulty.wideWidth ?? 0.4 : difficulty.trafficWidth ?? 0.34,
       length: district.pattern === 'barriers' ? 2.8 : wide ? 5.3 : 4.3,
       color: COLORS[Math.floor(random(state) * COLORS.length)],
       passed: false,
@@ -337,7 +357,7 @@ function advanceTraffic(state, distance, dt) {
         }
       }
     }
-    if (!car.passed && previousZ > 0 && car.z <= 0) {
+    if (!car.passed && previousZ > -collisionLength && car.z <= -collisionLength) {
       car.passed = true;
       const base = car.kind === 'barrier' ? 30 : 50;
       let points = base;
@@ -407,7 +427,7 @@ function updateDistrict(state) {
     state.districtId = getDistrict(state).id;
     state.districtCrashes = 0;
     if (state.delivery) {
-      const limit = difficulty.limits[reached % DISTRICTS.length];
+      const limit = getDeliveryLimit(state);
       state.delivery = { limit, remaining: limit, startedAt: state.elapsed, bonus: 0, warned: false };
     }
     state.traffic = [];
@@ -445,7 +465,7 @@ function integrate(state, inputs, dt) {
       : district.weather === 'rain'
         ? Math.sin(state.distance / 170) * 0.055
         : 0;
-  state.x = clamp(state.x + (state.steeringVelocity + wind) * dt, -1.18, 1.18);
+  state.x = clamp(state.x + (state.steeringVelocity + wind * (difficulty.windScale ?? 1)) * dt, -1.18, 1.18);
   if (Math.abs(state.x) >= 1.18 && Math.sign(state.steeringVelocity) === Math.sign(state.x)) {
     state.steeringVelocity = 0;
   }

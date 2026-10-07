@@ -247,7 +247,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       setValue(
         deliveryRules,
         'textContent',
-        `${difficulty.title} · ${state.delivery.limit}s / district · no repairs · fast near misses add time`,
+        `${difficulty.title} · ${state.delivery.limit.toFixed(1)}s / district · no repairs · fast near misses add time${state.mode === 'endless' && state.districtIndex >= 5 ? ' · lap pressure rising' : ''}`,
       );
       setValue(delivery.dataset, 'urgent', String(state.delivery.remaining <= 4));
     }

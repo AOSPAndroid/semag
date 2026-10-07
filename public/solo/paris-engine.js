@@ -14,8 +14,8 @@ export const DISTRICTS = Object.freeze([
 ]);
 export const DIFFICULTIES = Object.freeze([
   Object.freeze({ id: 'standard', title: 'Standard', description: 'A gentler start and slower survival acceleration.', deadlines: null, gap: 40, warning: 1.8, drain: 0.095, checkpointBattery: 0.30, startingBattery: 1, survivalStart: 9, survivalRamp: 7, transitionSeconds: 1.7 }),
-  Object.freeze({ id: 'veteran', title: 'Veteran', description: 'Increasing traffic pace. Read signals and plan your gaps.', deadlines: Object.freeze([46, 47, 50, 43, 49]), gap: 34, warning: 1.55, drain: 0.13, checkpointBattery: 0.22, startingBattery: 0.85, survivalStart: 10.5, survivalRamp: 9, transitionSeconds: 1.35 }),
-  Object.freeze({ id: 'nightmare', title: 'Nightmare', description: 'A faster start, stronger acceleration, and fewer reserves.', deadlines: Object.freeze([42, 44, 47.5, 41, 48]), gap: 31, warning: 1.4, drain: 0.15, checkpointBattery: 0.18, startingBattery: 0.75, survivalStart: 12, survivalRamp: 11, transitionSeconds: 1.2 }),
+  Object.freeze({ id: 'veteran', title: 'Veteran', description: 'Tight traffic gaps and a fast opening pace. Use precise steering and short brake bursts.', deadlines: Object.freeze([43, 44.5, 47.5, 41, 48.5]), gap: 32, warning: 1.55, drain: 0.13, checkpointBattery: 0.20, startingBattery: 0.85, survivalStart: 12.5, survivalRamp: 15, transitionSeconds: 1.15, corridorInset: 0.12 }),
+  Object.freeze({ id: 'nightmare', title: 'Nightmare', description: 'Narrow corridors, sharper acceleration, and demanding delivery clocks.', deadlines: Object.freeze([41.8, 43.8, 47.2, 40.6, 48]), gap: 30.5, warning: 1.4, drain: 0.15, checkpointBattery: 0.18, startingBattery: 0.75, survivalStart: 14.5, survivalRamp: 19, transitionSeconds: 1.05, corridorInset: 0.185 }),
 ]);
 const LANES = [-3.5, -1.75, 0, 1.75, 3.5];
 const COLORS = ['#dfb668', '#bf6b5a', '#85a5a4', '#d5d6ce', '#888f9c', '#a58799'];
@@ -26,7 +26,18 @@ export function getDifficulty(value = 'veteran') {
   return DIFFICULTIES.find((d) => d.id === id) || DIFFICULTIES[1];
 }
 export function getDistrict(state) { return DISTRICTS[state.stageIndex % DISTRICTS.length]; }
-export function recordScope(state) { return `${state.difficulty}-${state.mode}${state.mode === 'survival' ? '-v1' : ''}`; }
+export function recordScope(state) {
+  return `${state.difficulty}-${state.mode}${state.difficulty === 'standard' ? state.mode === 'survival' ? '-v1' : '' : '-v3'}`;
+}
+export function usesAutomaticPace(state) {
+  return state.mode === 'survival' || state.mode === 'rush' && state.difficulty !== 'standard';
+}
+export function getTrafficTransitionSeconds(state) {
+  const profile = getDifficulty(state);
+  if (!usesAutomaticPace(state) || profile.id === 'standard') return profile.transitionSeconds;
+  const minimum = profile.id === 'nightmare' ? 1.03 : 1.06;
+  return Math.max(minimum, profile.transitionSeconds - Math.min(1, state.elapsed / 180) * (profile.transitionSeconds - minimum));
+}
 /** Smooth, unbounded acceleration with a gradually slowing growth rate. Active seconds only. */
 export function getSurvivalPace(value = 0, difficulty = 'veteran') {
   const elapsed = typeof value === 'object' && value !== null ? value.elapsed : value;
@@ -61,6 +72,9 @@ function spawnRow(state, z) {
   if (profile.id === 'standard' && row % 3 === 0) blocked.splice(Math.floor(random(state) * blocked.length), 1);
   for (const lane of blocked) {
     const x = LANES[lane], away = Math.sign(x - LANES[safe]);
+    // The two cars beside the free lane sit a little closer to its edges.
+    // Their body widths stay physical and neighboring blocked cars never overlap.
+    const queuedX = x - (Math.abs(lane - safe) === 1 ? away * (profile.corridorInset ?? 0) : 0);
     // Queued Paris traffic sits bumper-to-bumper at different positions, rather
     // than forming a straight arcade gate. The hash consumes no routing RNG.
     const stagger = (((row * 5 + lane * 11) % 7) - 3) * 0.75;
@@ -74,20 +88,20 @@ function spawnRow(state, z) {
     if (kind === 'bus') item = actor(state, row, kind, x + away * 0.4, slotZ, { width: 2.15, targetWidth: 2.15, length: 8.6, targetX: x - away * 0.25, turnSignal: -away, color: '#789787' });
     else if (kind === 'cyclist') item = actor(state, row, kind, x + away * 0.35, slotZ, { width: 0.72, targetWidth: 0.72, length: 1.85, targetX: x - away * 0.36, turnSignal: -away, color: '#ce704d' });
     else if (kind === 'door') item = actor(state, row, kind, away * 4.35, slotZ - 3, { width: 1.1, targetWidth: 2.3, length: 2, speed: 0, targetX: away * 3.9, turnSignal: -away, color: '#a99179' });
-    else if (kind === 'barrier') item = actor(state, row, kind, x, slotZ, { length: 2.3, speed: 0, color: '#de9c59' });
-    else item = actor(state, row, kind, x, slotZ);
+    else if (kind === 'barrier') item = actor(state, row, kind, queuedX, slotZ, { length: 2.3, speed: 0, color: '#de9c59' });
+    else item = actor(state, row, kind, queuedX, slotZ);
     state.traffic.push(item);
   }
 }
 function fillTraffic(state) {
   const profile = getDifficulty(state);
-  const normalGap = Math.max(29, profile.gap - Math.min(3, state.stageIndex * 0.6) - Math.min(2, Math.floor(state.stageIndex / 5)));
+  const normalGap = Math.max(profile.id === 'standard' ? 29 : 28.5, profile.gap - Math.min(3, state.stageIndex * 0.6) - Math.min(2, Math.floor(state.stageIndex / 5)));
   // Preserve physical steering time between the complete bus/stagger envelopes.
   // The extra speed budget covers assist and pace gained before the next row arrives.
-  const gap = state.mode === 'survival' ? Math.max(normalGap, (state.survivalPace + 3.5) * 1.08 * profile.transitionSeconds + 16) : normalGap;
+  const gap = usesAutomaticPace(state) ? Math.max(normalGap, (state.survivalPace + 3.5) * 1.08 * getTrafficTransitionSeconds(state) + 16) : normalGap;
   state.rowGap = gap;
-  state.warningDistance = state.mode === 'survival' ? Math.max(36, (state.survivalPace + 3.5) * (profile.warning + 0.8) + 10) : 36;
-  state.lookAheadDistance = state.mode === 'survival' ? Math.max(HORIZON, state.warningDistance + gap + 10, gap * 3) : HORIZON;
+  state.warningDistance = usesAutomaticPace(state) ? Math.max(36, (state.survivalPace + 3.5) * (profile.warning + 0.8) + 10) : 36;
+  state.lookAheadDistance = usesAutomaticPace(state) ? Math.max(HORIZON, state.warningDistance + gap + 10, gap * 3) : HORIZON;
   while (state.nextRowZ < state.distance + state.lookAheadDistance && state.traffic.length <= MAX_TRAFFIC - 4) {
     spawnRow(state, state.nextRowZ);
     state.nextRowZ += gap + random(state) * 4;
@@ -99,8 +113,8 @@ export function createState({ seed = 73129, mode = 'survival', difficulty = 'vet
   if (!Number.isFinite(Number(seed))) throw new TypeError('Seed must be a finite number.');
   const normalizedSeed = Number(seed) >>> 0, profile = getDifficulty(difficulty);
   const state = { gameId: 'paris-pedal', seed: normalizedSeed, rng: normalizedSeed, mode, difficulty, phase: 'playing',
-    elapsed: 0, tick: 0, distance: 0, speed: mode === 'survival' ? profile.survivalStart : 8,
-    survivalPace: mode === 'survival' ? profile.survivalStart : null,
+    elapsed: 0, tick: 0, distance: 0, speed: mode === 'survival' || mode === 'rush' && difficulty !== 'standard' ? profile.survivalStart : 8,
+    survivalPace: mode === 'survival' || mode === 'rush' && difficulty !== 'standard' ? profile.survivalStart : null,
     x: 0, vx: 0, lean: 0, battery: profile.startingBattery,
     health: 3, score: 0, passPoints: 0, checkpointPoints: 0, combo: 0, comboTimer: 0, totalCrashes: 0,
     stageIndex: 0, stageDistance: 0, stageTotalDistance: DISTRICTS[0].length, stageStartedAt: 0,
@@ -227,7 +241,7 @@ function integrate(state, input, dt) {
   const profile = getDifficulty(state), district = getDistrict(state);
   const oldX = state.x, oldDistance = state.distance;
   state.elapsed += dt; state.tick++;
-  if (state.mode === 'survival') {
+  if (usesAutomaticPace(state)) {
     state.survivalPace = getSurvivalPace(state);
     // Holding the brake can buy one short reaction window, never a slower run.
     if (input.brake !== true) {
@@ -259,17 +273,17 @@ function integrate(state, input, dt) {
     state.battery = Math.max(0, state.battery - profile.drain * dt);
     if (state.battery === 0) state.assistLocked = true;
   } else {
-    const regen = state.mode === 'survival'
+    const regen = usesAutomaticPace(state)
       ? state.brakeActive ? 0.05 : state.slipstream ? 0.009 : 0.006
       : input.brake === true ? 0.05 : input.throttle !== true ? 0.028 : state.slipstream ? 0.009 : 0.002;
     state.battery = Math.min(1, state.battery + regen * dt);
   }
   const hill = district.id === 'montmartre' ? 0.65 : 0;
   const cruise = input.throttle === true ? 11.5 - hill : 7.4 - hill;
-  const targetSpeed = state.mode === 'survival'
+  const targetSpeed = usesAutomaticPace(state)
     ? state.brakeActive ? state.survivalPace * 0.78 : state.survivalPace + (state.assistActive ? 3.5 : input.throttle === true ? 0.65 : 0)
     : state.shoulder ? 5.4 : input.brake === true ? 2.2 : state.assistActive ? 16 - hill : cruise + (state.slipstream ? 0.5 : 0);
-  const speedRate = state.mode === 'survival'
+  const speedRate = usesAutomaticPace(state)
     ? targetSpeed < state.speed
       ? state.brakeActive ? Math.max(9, state.survivalPace * 0.8) : Math.max(3.5, state.survivalPace * 0.35)
       : Math.max(5.5, state.survivalPace * 0.55)

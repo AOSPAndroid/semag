@@ -5,19 +5,25 @@ export const LAPS = 3;
 export const FIXED_DT = 1 / 120;
 export const RESET_PENALTY = 3;
 export const DIFFICULTIES = Object.freeze([
-  Object.freeze({ id: 'standard', title: 'Standard', limits: null, offRoadLimit: null, resetLimit: null }),
+  Object.freeze({ id: 'standard', title: 'Standard', limits: null, lapRatios: null, cornerAcceleration: null, offRoadLimit: null, resetLimit: null }),
   Object.freeze({
     id: 'veteran',
     title: 'Veteran',
-    limits: Object.freeze([58, 72, 64]),
-    offRoadLimit: 2.5,
+    limits: Object.freeze([51, 65, 55]),
+    // The standing start has more room; each subsequent lap demands pace.
+    // Winning still requires the complete-race target, not just three lap cuts.
+    lapRatios: Object.freeze([0.35, 0.34, 0.32]),
+    cornerAcceleration: 420,
+    offRoadLimit: 1.2,
     resetLimit: 1,
   }),
   Object.freeze({
     id: 'nightmare',
     title: 'Nightmare',
-    limits: Object.freeze([50, 65, 56]),
-    offRoadLimit: 0.75,
+    limits: Object.freeze([45, 59, 47]),
+    lapRatios: Object.freeze([0.35, 0.34, 0.32]),
+    cornerAcceleration: 340,
+    offRoadLimit: 0.35,
     resetLimit: 0,
   }),
 ]);
@@ -261,7 +267,7 @@ export function recordScope(state) {
       : state.trackId === 'meadow-loop'
         ? 'three-laps'
         : `${state.trackId}-three-laps`;
-  return getDifficulty(state).id === 'standard' ? scope : `${state.difficulty}-${scope}`;
+  return getDifficulty(state).id === 'standard' ? scope : `${state.difficulty}-${scope}-v3`;
 }
 
 function carAt(s, track) {
@@ -299,6 +305,8 @@ export function createState({ trackId = 'meadow-loop', mode = 'time-trial', diff
       ? {
           limit,
           remaining: limit,
+          lapLimit: limit * profile.lapRatios[0],
+          lapRemaining: limit * profile.lapRatios[0],
           offRoad: 0,
           offRoadLimit: profile.offRoadLimit,
           resets: 0,
@@ -331,6 +339,30 @@ export function createState({ trackId = 'meadow-loop', mode = 'time-trial', diff
     result: null,
     course: { previous: { x: car.x, y: car.y }, lastS: track.length - 18, travel: 18, lapStart: 0 },
   };
+}
+
+function updateChallenge(state) {
+  const challenge = state.challenge;
+  if (!challenge) return;
+  const profile = getDifficulty(state),
+    lapElapsed = ['won', 'stage-clear'].includes(state.phase)
+      ? state.lapTimes.at(-1)
+      : state.elapsed - state.course.lapStart;
+  challenge.remaining = Math.max(0, challenge.limit - state.elapsed);
+  challenge.lapLimit = challenge.limit * profile.lapRatios[Math.min(state.lap - 1, LAPS - 1)];
+  challenge.lapRemaining = Math.max(0, challenge.lapLimit - lapElapsed);
+  const result = state.elapsed > challenge.limit + 1e-9
+    ? 'time-limit'
+    : lapElapsed > challenge.lapLimit + 1e-9
+      ? 'lap-pace'
+      : challenge.offRoad > challenge.offRoadLimit + 1e-9
+        ? 'track-limits'
+        : null;
+  if (result) {
+    state.phase = 'lost';
+    state.pausedPhase = null;
+    state.result = result;
+  }
 }
 
 function crossedGate(gate, before, after, roadWidth) {
@@ -421,12 +453,24 @@ function integrate(state, controls, dt) {
     sine = Math.sin(car.heading);
   let forward = car.vx * cosine + car.vy * sine;
   let lateral = -car.vx * sine + car.vy * cosine;
+  const fraction = nearest.s / track.length;
+  state.slick =
+    track.surface === 'rain' &&
+    ((fraction > 0.18 && fraction < 0.32) || (fraction > 0.61 && fraction < 0.75));
+  const grip = track.grip * (state.slick ? 0.76 : 1),
+    profile = getDifficulty(state);
+  // Tyres cannot bend a full-speed car through a hairpin indefinitely. The
+  // strict tiers have finite corner grip, so braking restores steering lock.
+  // Practice retains its original handling for learning the track layout.
+  const turnLimit = profile.cornerAcceleration === null
+    ? 3.8
+    : Math.min(3.8, (profile.cornerAcceleration * grip) / Math.max(Math.abs(forward), 55));
   const steering = Number(controls.right) - Number(controls.left);
   const steerAngle = 0.69 - 0.22 * Math.min(Math.abs(forward) / MAX_SPEED, 1);
   const targetYaw = clamp(
     ((steering * forward) / 43) * Math.tan(steerAngle) * (controls.handbrake ? 1.22 : 1),
-    -3.8,
-    3.8,
+    -turnLimit,
+    turnLimit,
   );
   car.angularVelocity += (targetYaw - car.angularVelocity) * (1 - Math.exp(-10 * dt));
   if (Math.abs(forward) < 0.5 && Math.abs(lateral) < 0.5) car.angularVelocity = 0;
@@ -443,11 +487,6 @@ function integrate(state, controls, dt) {
   const retainedForward = forward * Math.cos(yawDelta) + lateral * Math.sin(yawDelta);
   lateral = lateral * Math.cos(yawDelta) - forward * Math.sin(yawDelta);
   forward = retainedForward;
-  const fraction = nearest.s / track.length;
-  state.slick =
-    track.surface === 'rain' &&
-    ((fraction > 0.18 && fraction < 0.32) || (fraction > 0.61 && fraction < 0.75));
-  const grip = track.grip * (state.slick ? 0.76 : 1);
   lateral *= Math.exp(-(controls.handbrake ? 1.7 * grip : 8.5 * grip + offRoad * 4) * dt);
   const newCos = Math.cos(car.heading),
     newSin = Math.sin(car.heading);
@@ -474,12 +513,8 @@ function integrate(state, controls, dt) {
   state.onRoad = after.distance <= track.roadWidth / 2;
   if (state.challenge) {
     const challenge = state.challenge;
-    challenge.remaining = Math.max(0, challenge.limit - state.elapsed);
     if (!state.onRoad) challenge.offRoad += dt;
-    if (state.elapsed > challenge.limit + 1e-9 || challenge.offRoad > challenge.offRoadLimit + 1e-9) {
-      state.phase = 'lost';
-      state.result = state.elapsed > challenge.limit + 1e-9 ? 'time-limit' : 'track-limits';
-    }
+    updateChallenge(state);
   }
   if (state.phase !== 'playing') {
     state.course.previous = { x: car.x, y: car.y };
@@ -488,6 +523,9 @@ function integrate(state, controls, dt) {
     return;
   }
   updateCourse(state, after, dt);
+  // A newly earned lap gets its next pace target immediately, including HUD
+  // publications on the finish-line frame. Terminal races keep the final lap.
+  if (state.challenge) updateChallenge(state);
 }
 
 /** Fixed-substep, mutable simulation. Only literal true is a held control. */
@@ -546,11 +584,7 @@ export function resetCar(state) {
   state.course.travel = s < 0 ? 18 : 12;
   if (state.challenge) {
     state.challenge.resets += 1;
-    state.challenge.remaining = Math.max(0, state.challenge.limit - state.elapsed);
-    if (state.elapsed > state.challenge.limit + 1e-9) {
-      state.phase = 'lost';
-      state.result = 'time-limit';
-    }
+    updateChallenge(state);
   }
   return true;
 }

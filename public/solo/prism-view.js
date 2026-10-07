@@ -13,6 +13,8 @@ import {
   getProfile,
   recordScope,
   timeRemaining,
+  lockDelayFor,
+  lockResetLimit,
   getDigStages,
   getDigStageCount,
   getDigStage,
@@ -507,7 +509,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
           block(ctx, part.x * cell, (part.y - HIDDEN_ROWS) * cell, cell, state.active.type, false, true);
       }
       if (state.lockElapsed > 0 && state.phase === 'playing') {
-        const progress = Math.min(1, state.lockElapsed / getProfile(state).lockDelay);
+        const progress = Math.min(1, state.lockElapsed / lockDelayFor(state));
         ctx.fillStyle = '#b4ded9';
         ctx.fillRect(
           0,
@@ -620,7 +622,9 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       return 'The stack reached the top. Start fresh and leave room for your next piece.';
     return state.mode === 'sprint'
       ? `${Math.max(0, 40 - state.lines)} lines to go. Plan ahead, place quickly, and keep the stack clean.`
-      : 'Build four-line clears and T-spins. Chain difficult clears for a bigger score.';
+      : getProfile(state).paceSeconds
+        ? `Pace rises with lines or the clock. ${Math.round(lockDelayFor(state) * 1000)} ms lock, ${lockResetLimit(state)} resets. Build clean four-line clears and T-spins before the next acceleration.`
+        : 'Build four-line clears and T-spins. Chain difficult clears for a bigger score.';
   }
 
   function publish() {
@@ -630,7 +634,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     const profile = getProfile(state);
     const remaining = timeRemaining(state);
     setValue(view.dataset, 'prismProfile', state.profile);
-    setValue(profileNote, 'textContent', `${profile.description} · ${Math.round(profile.lockDelay * 1000)} ms lock`);
+    setValue(profileNote, 'textContent', `${profile.description} · ${Math.round(lockDelayFor(state) * 1000)} ms lock · ${lockResetLimit(state)} resets`);
     setValue(metricLabels.time, 'textContent', remaining === null ? 'TIME' : 'TIME LEFT');
     setValue(metricNodes.time.dataset, 'urgent', String(remaining !== null && remaining <= 10));
     setValue(view.dataset, 'prismMode', state.mode);
@@ -697,9 +701,12 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       state.phase === 'paused'
         ? 'PAUSED'
         : state.lockElapsed > 0
-          ? `LOCK ${Math.min(100, Math.round((state.lockElapsed / getProfile(state).lockDelay) * 100))}%`
+          ? `LOCK ${Math.min(100, Math.round((state.lockElapsed / lockDelayFor(state)) * 100))}%`
           : 'GHOST ON',
     );
+    const timedPace = state.mode === 'marathon' && profile.paceSeconds;
+    const linesTowardPace = timedPace ? Math.max(0, state.lines - (state.level - profile.startLevel) * profile.linesPerLevel) : state.lines % profile.linesPerLevel;
+    const secondsTowardPace = timedPace ? Math.max(0, state.elapsed - (state.level - profile.startLevel) * profile.paceSeconds) : 0;
     setValue(
       progressTitle,
       'textContent',
@@ -720,7 +727,9 @@ export function mount(container, { onUpdate = () => {} } = {}) {
           ? `${Math.min(state.lines, 40)} / 40`
           : maximumPace
             ? 'LEVEL 30'
-            : `${state.lines % profile.linesPerLevel} / ${profile.linesPerLevel}`,
+            : timedPace
+              ? `${linesTowardPace} / ${profile.linesPerLevel} L · ${Math.max(0, (state.level + 1 - profile.startLevel) * profile.paceSeconds - state.elapsed).toFixed(0)}s`
+              : `${linesTowardPace} / ${profile.linesPerLevel}`,
     );
     const progression = dig
       ? 1 - state.dig.remainingRows / state.dig.garbageRows
@@ -728,7 +737,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
         ? Math.min(1, state.lines / 40)
         : maximumPace
           ? 1
-          : (state.lines % profile.linesPerLevel) / profile.linesPerLevel;
+          : Math.max(linesTowardPace / profile.linesPerLevel, timedPace ? secondsTowardPace / profile.paceSeconds : 0);
     setValue(progressFill.style, 'width', `${progression * 100}%`);
     setAttribute(progressTrack, 'role', 'progressbar');
     setAttribute(
@@ -758,7 +767,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
             ? Math.min(state.lines, 40)
             : maximumPace
               ? profile.linesPerLevel
-              : state.lines % profile.linesPerLevel,
+              : linesTowardPace,
       ),
     );
     setValue(incoming, 'hidden', !dig || state.phase !== 'stage-clear');
@@ -973,7 +982,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
           }
         }
         const oldPiece = state.active ? { ...state.active } : null;
-        const rows = state.lockElapsed > getProfile(state).lockDelay - 0.03 ? pendingClearRows(oldPiece) : [];
+        const rows = state.lockElapsed > lockDelayFor(state) - 0.03 ? pendingClearRows(oldPiece) : [];
         step(state, { softDrop: held('softDrop') }, interval);
         noticeLock(oldPiece, rows);
         accumulator -= interval;

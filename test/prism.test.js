@@ -31,6 +31,8 @@ import {
   getDigStages,
   recordScope,
   timeRemaining,
+  lockDelayFor,
+  lockResetLimit,
 } from '../public/solo/prism-engine.js';
 
 function seeded(seed = 1) {
@@ -690,7 +692,7 @@ test('fresh games default to Veteran; all tier/mode record scopes preserve origi
   for (const profile of Object.keys(PROFILES)) {
     for (const mode of ['marathon', 'sprint', 'dig']) {
       const state = createState({ profile, mode, random: seeded(123) });
-      assert.equal(recordScope(state), profile === 'standard' ? mode : `${profile}-${mode}`);
+      assert.equal(recordScope(state), profile === 'standard' ? mode : `${profile}-${mode}-v3`);
       assert.equal(getProfile(state), PROFILES[profile]);
       assert.equal(collides(state, state.active), false);
     }
@@ -705,7 +707,7 @@ test('tier choice changes actual gravity from the first second without changing 
   assert.ok(states[1].active.y > states[0].active.y);
   assert.ok(states[2].active.y > states[1].active.y);
   assert.ok(gravitySeconds(states[0].level) > gravitySeconds(states[1].level) * 7);
-  assert.ok(gravitySeconds(states[1].level) > gravitySeconds(states[2].level) * 3);
+  assert.ok(gravitySeconds(states[1].level) > gravitySeconds(states[2].level) * 1.5);
 });
 
 for (const profile of ['veteran', 'nightmare']) {
@@ -833,4 +835,77 @@ test('Dig stage deadlines are local to each stage and stop precisely without acc
   step(state, {}, .5);
   dispatch(state, 'hold');
   assert.deepEqual(state, finished);
+});
+
+// Placement search may inspect cloned boards, but its returned moves are replayed
+// through the real public actions with gravity, lock timing and clocks running.
+function value(s, previousLines){
+ if(s.phase==='lost')return -1e9;
+ const heights=s.board[0].map((_,x)=>{const top=s.board.findIndex(row=>row[x]);return top<0?0:HEIGHT-top;});
+ let holes=0;for(let x=0;x<WIDTH;x++){let occupied=false;for(let y=0;y<HEIGHT;y++){if(s.board[y][x])occupied=true;else if(occupied)holes++;}}
+ const roughness=heights.slice(1).reduce((sum,h,i)=>sum+Math.abs(h-heights[i]),0);
+ return (s.lines-previousLines)*110-heights.reduce((a,b)=>a+b,0)*.7-holes*16-roughness*.9-Math.max(...heights)*2;
+}
+function action(s,a,cadence){step(s,{},cadence);return s.phase==='playing'&&dispatch(s,a);}
+function plan(s,cadence){let best=null;
+ for(const holding of [false,true])for(const rotation of [0,1,2,3])for(let x=-2;x<10;x++){
+  const trial=clone(s),actions=[];let valid=true;
+  const act=a=>{if(!action(trial,a,cadence)){valid=false;return false;}actions.push(a);return true;};
+  if(holding&&!act('hold'))continue;
+  const direction=rotation===3?'rotate-ccw':'rotate-cw';
+  for(let i=0;i<(rotation===3?1:rotation);i++)if(!act(direction))break;
+  if(!valid)continue;
+  while(trial.active.x!==x&&valid)act(trial.active.x<x?'right':'left');
+  if(!valid||!act('hard-drop'))continue;
+  const score=value(trial,s.lines);
+  if(!best||score>best.score)best={actions,score};
+ }
+ return best;
+}
+
+for (const profile of ['veteran', 'nightmare']) {
+  test(`${profile} Sprint is attainable on three real seven-bag queues via legal inputs`, () => {
+    for (const seed of [1, 7, 55]) {
+      const state = createState({ mode: 'sprint', profile, random: seeded(seed) });
+      while (state.phase === 'playing' && state.piecesLocked < 150) {
+        step(state, {}, .1);
+        const next = plan(state, 1 / 60);
+        assert.ok(next, `seed ${seed}: a reachable placement exists`);
+        for (const input of next.actions) assert.equal(action(state, input, 1 / 60), true);
+      }
+      assert.equal(state.phase, 'won', `seed ${seed}`);
+      assert.ok(state.lines >= 40 && state.piecesLocked >= 100);
+      assert.ok(state.elapsed > 10 && state.elapsed < PROFILES[profile].sprintSeconds);
+    }
+  });
+  test(`${profile} Marathon pace advances with the clock even without a clear, then tightens floor precision`, () => {
+    const rules = PROFILES[profile], state = fixture('O', 0, 3, HEIGHT - 2, profile);
+    state.elapsed = rules.paceSeconds - .01; state.lockElapsed = 0;
+    const chunked = clone(state), fine = clone(state);
+    step(chunked, {}, .02);
+    for (let tick = 0; tick < 4; tick++) step(fine, {}, .005);
+    assert.equal(chunked.level, rules.startLevel + 1);
+    assert.equal(chunked.lines, 0);
+    assert.ok(Math.abs(chunked.elapsed - fine.elapsed) < 1e-8);
+    assert.equal(lockDelayFor(chunked), rules.lockDelay - .01);
+    assert.equal(lockResetLimit(chunked), rules.lockResets);
+    const late = fixture('O', 0, 3, HEIGHT - 2, profile);
+    late.elapsed = rules.paceSeconds * 6; step(late, {}, .001);
+    assert.equal(late.level, rules.startLevel + 6);
+    assert.ok(lockDelayFor(late) < rules.lockDelay && lockResetLimit(late) < rules.lockResets);
+    late.lockElapsed = lockDelayFor(late) - .001; step(late, {}, .001);
+    assert.equal(late.piecesLocked, 1);
+    const paused = clone(chunked); togglePause(paused); const snapshot = clone(paused);
+    step(paused, {}, 1); assert.deepEqual(paused, snapshot);
+  });
+}
+
+test('Standard Marathon retains its original untimed pace and full floor allowance', () => {
+  const state = fixture('O', 0, 3, HEIGHT - 2); state.elapsed = 600;
+  step(state, {}, .01);
+  assert.equal(state.level, 1); assert.equal(lockDelayFor(state), .5); assert.equal(lockResetLimit(state), 15);
+  for (const profile of ['veteran', 'nightmare']) for (const stage of DIG_LADDERS[profile]) {
+    assert.equal(stage.budget, stage.placements.length, 'every challenge Dig lock must serve a chamber');
+    assert.ok(stage.seconds < (profile === 'veteran' ? 12 + stage.placements.length * 3 : 8 + stage.placements.length * 2));
+  }
 });

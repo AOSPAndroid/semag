@@ -37,6 +37,13 @@ def state(page):
     return page.evaluate(f"{SURFACE}.getState()")
 
 
+def uncleared_traffic(current):
+    """Keep the whole traffic body until its rear clears the player's rear."""
+    player_length = current["car"]["length"]
+    return [car for car in current["traffic"] if not car["passed"] and
+            car["z"] > -(player_length + car["length"]) / 2]
+
+
 def wait_phase(page, phase, timeout=8000):
     page.wait_for_function(f"phase => {SURFACE}?.getState().phase === phase", arg=phase, timeout=timeout)
 
@@ -435,7 +442,7 @@ def night_drive(page, context):
         assert current["phase"] == "playing", "Traffic pass driver lost the run"
         if current["overtakePoints"] >= 50:
             break
-        upcoming = [car for car in current["traffic"] if not car["passed"] and car["z"] > -5]
+        upcoming = uncleared_traffic(current)
         row = min(upcoming, key=lambda car: car["z"])["row"]
         occupied = {car["lane"] for car in upcoming if car["row"] == row}
         safe = min((x for index, x in enumerate((-.62, 0, .62)) if index not in occupied), key=lambda x: abs(x - current["x"]))
@@ -457,7 +464,7 @@ def night_drive(page, context):
         crash_events.update(event["id"] for event in current["events"] if event["type"] == "crash")
         if current["phase"] == "lost":
             break
-        upcoming = [car for car in current["traffic"] if not car["passed"] and car["z"] > -5]
+        upcoming = uncleared_traffic(current)
         assert upcoming, "No traffic available to test collisions"
         target = min(upcoming, key=lambda car: car["z"])
         steer_toward(current, target["x"], {"ArrowUp", "Space"})

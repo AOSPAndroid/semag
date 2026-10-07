@@ -1,11 +1,18 @@
 /** Deckbound: deterministic, turn-based deck roguelike. No clock or DOM dependency. */
 export const ACTS = ['The Moss Road', 'The Brass Archive', 'The Hollow Crown'];
 export const DIFFICULTIES = Object.freeze({
-  standard: Object.freeze({ label: 'Standard', roadBattles: 0, hpScale: 1, pressureTurn: 0, pressureEvery: 0, restHeal: 25, bossHeal: 22, teaHeal: 5, giftHp: 8, giftGold: 25, renewCost: 25, renewHeal: 18, shopScale: 1, removalBase: 40, removalStep: 0, thorns: 0, cleanseBurn: 0, frail: 0 }),
-  veteran: Object.freeze({ label: 'Veteran', roadBattles: 2, hpScale: 1.06, pressureTurn: 4, pressureEvery: 2, restHeal: 18, bossHeal: 12, teaHeal: 3, giftHp: 12, giftGold: 18, renewCost: 30, renewHeal: 14, shopScale: 1.15, removalBase: 45, removalStep: 15, thorns: 2, cleanseBurn: 4, frail: 2 }),
-  nightmare: Object.freeze({ label: 'Nightmare', roadBattles: 3, hpScale: 1.13, pressureTurn: 3, pressureEvery: 2, restHeal: 14, bossHeal: 8, teaHeal: 2, giftHp: 16, giftGold: 14, renewCost: 35, renewHeal: 12, shopScale: 1.25, removalBase: 50, removalStep: 20, thorns: 3, cleanseBurn: 6, frail: 3 }),
+  standard: Object.freeze({ label: 'Standard', roadBattles: 0, hpScale: 1, pressureTurn: 0, pressureEvery: 0, recoveryLimit: null, pairFloor: null, allyBlock: 0, restHeal: 25, bossHeal: 22, teaHeal: 5, giftHp: 8, giftGold: 25, renewCost: 25, renewHeal: 18, shopScale: 1, removalBase: 40, removalStep: 0, thorns: 0, cleanseBurn: 0, frail: 0 }),
+  veteran: Object.freeze({ label: 'Veteran', roadBattles: 3, hpScale: 1.06, pressureTurn: 4, pressureEvery: 2, recoveryLimit: 18, pairFloor: 3, allyBlock: 4, restHeal: 18, bossHeal: 12, teaHeal: 3, giftHp: 12, giftGold: 18, renewCost: 30, renewHeal: 14, shopScale: 1.15, removalBase: 45, removalStep: 15, thorns: 2, cleanseBurn: 4, frail: 2 }),
+  nightmare: Object.freeze({ label: 'Nightmare', roadBattles: 4, hpScale: 1.13, pressureTurn: 3, pressureEvery: 2, recoveryLimit: 12, pairFloor: 2, allyBlock: 6, restHeal: 14, bossHeal: 8, teaHeal: 2, giftHp: 16, giftGold: 14, renewCost: 35, renewHeal: 12, shopScale: 1.25, removalBase: 50, removalStep: 20, thorns: 3, cleanseBurn: 6, frail: 3 }),
 });
 export const difficultyInfo = s => DIFFICULTIES[s?.difficulty] || DIFFICULTIES.standard;
+export const recordScope = s => s.difficulty === 'standard' ? 'default' : `${s.difficulty}-v3`;
+export function pressureStrength(s, turn = s.turn) {
+  const d = difficultyInfo(s);
+  return d.pressureTurn && turn >= d.pressureTurn && (turn - d.pressureTurn) % d.pressureEvery === 0
+    ? 1 + Math.floor((turn - d.pressureTurn) / (d.pressureEvery * 3)) : 0;
+}
+export const recoveryRemaining = s => difficultyInfo(s).recoveryLimit == null ? null : Math.max(0, difficultyInfo(s).recoveryLimit - s.recoveryUsed);
 export const removalCost = s => difficultyInfo(s).removalBase + (s.removals || 0) * difficultyInfo(s).removalStep;
 export function relicInfo(id, s) { const def = RELICS[id]; return id === 'tea' ? { ...def, text: `Heal ${difficultyInfo(s).teaHeal} HP after every battle.` } : def; }
 export const CARDS = Object.freeze({
@@ -52,7 +59,13 @@ function sample(s, a, n) { return shuffle(s, [...a]).slice(0, n); }
 function card(s, id, upgraded = false) { return { uid: s.nextCard++, id, upgraded }; }
 function note(s, text) { s.message = text; s.log.push(text); if (s.log.length > 30) s.log.shift(); }
 const has = (s, id) => s.relics.includes(id);
-export function cardInfo(c) { const def = CARDS[c?.id]; return def ? { ...def, name: def.name + (c.upgraded ? ' +' : ''), text: c.upgraded ? def.upgraded : def.text } : null; }
+export function cardInfo(c, s) {
+  const def = CARDS[c?.id]; if (!def) return null;
+  let text = c.upgraded ? def.upgraded : def.text;
+  const reserve = s && (s.phase === 'battle' || s.pausedPhase === 'battle') ? recoveryRemaining(s) : null;
+  if (reserve !== null && ['mend', 'leech'].includes(c.id)) text = text.replace(/Heal (\d+) HP/, (_, amount) => `Heal up to ${Math.min(Number(amount), reserve)} HP (${reserve} recovery left)`);
+  return { ...def, name: def.name + (c.upgraded ? ' +' : ''), text };
+}
 function routeOptions(s) {
   if (s.floor === 6) return [{ id: 'boss', kind: 'boss', title: ['The Mosswarden', 'The Clockwork Curator', 'The Hollow Regent'][s.act - 1], text: 'The gatekeeper awaits. A relic lies beyond.' }];
   const rows = [
@@ -72,7 +85,7 @@ export function createState({ seed = Date.now(), difficulty = 'standard' } = {})
     act: 1, floor: 1, score: 0, gold: 65, nextCard: 1, hp: 82, maxHp: 82, deck: [], relics: ['satchel'], path: [],
     routeOptions: [], hand: [], draw: [], discard: [], exhaust: [], enemies: [], energy: 0, turn: 0,
     player: { block: 0, strength: 0, dexterity: 0, weak: 0, vulnerable: 0, frail: 0, poison: 0, thorns: 0, retain: false },
-    rewardCards: [], relicChoices: [], shopOffers: [], shopRemoved: false, event: null, encounter: null, log: [], message: '', result: null };
+    rewardCards: [], relicChoices: [], shopOffers: [], shopRemoved: false, event: null, encounter: null, recoveryUsed: 0, log: [], message: '', result: null };
   for (const id of ['strike', 'strike', 'strike', 'strike', 'guard', 'guard', 'guard', 'guard', 'ember', 'quickstep']) s.deck.push(card(s, id));
   s.routeOptions = routeOptions(s); note(s, 'Choose a road. Read the enemy’s intent before spending your energy.'); return s;
 }
@@ -107,6 +120,7 @@ function nextIntent(s, e) {
   if (e.id === 'boss1' && intent.block && d.thorns) intent.thorns = d.thorns;
   if (e.id === 'boss2' && intent.block && d.cleanseBurn) intent.cleanseBurn = d.cleanseBurn;
   if (e.id === 'boss3' && intent.poison && d.frail) intent.frail = d.frail;
+  if (e.id === 'sentinel' && intent.block && d.allyBlock) { intent.allyBlock = d.allyBlock; intent.label = 'Shield the formation'; }
   return intent;
 }
 export function intentDamage(e, player) {
@@ -125,22 +139,33 @@ export function intentDamageAt(s, index) {
 }
 function beginBattle(s, kind) {
   if (kind !== 'boss') s.roadBattles++;
-  s.phase = 'battle'; s.encounter = kind; s.hand = []; s.discard = []; s.exhaust = []; s.draw = shuffle(s, s.deck.map(c => ({ ...c })));
+  s.phase = 'battle'; s.encounter = kind; s.recoveryUsed = 0; s.hand = []; s.discard = []; s.exhaust = []; s.draw = shuffle(s, s.deck.map(c => ({ ...c })));
   s.player = { block: 0, strength: has(s, 'whetstone') ? 1 : 0, dexterity: has(s, 'crown') ? 1 : 0, weak: 0, vulnerable: 0, frail: 0, poison: 0, thorns: 0, retain: false };
   const ordinary = [['sprig', 'moth', 'sentinel'], ['sentinel', 'hexer', 'hunter'], ['hunter', 'hexer', 'sentinel']][s.act - 1];
   if (kind === 'boss') s.enemies = [makeEnemy(s, `boss${s.act}`)];
   else if (kind === 'elite') s.enemies = [makeEnemy(s, s.act === 1 ? 'giant' : 'hunter', true), ...(s.act > 1 ? [makeEnemy(s, 'sprig')] : [])];
-  else { const id = ordinary[Math.floor(rng(s) * ordinary.length)]; s.enemies = [makeEnemy(s, id), ...(s.floor >= 3 && rng(s) < .45 ? [makeEnemy(s, 'sprig')] : [])]; }
+  else {
+    const id = ordinary[Math.floor(rng(s) * ordinary.length)], d = difficultyInfo(s);
+    const paired = d.pairFloor ? s.floor >= d.pairFloor : s.floor >= 3 && rng(s) < .45;
+    const companions = { sprig: 'moth', moth: 'sprig', sentinel: s.act > 1 ? 'hexer' : 'sprig', hexer: 'hunter', hunter: 'sprig' };
+    s.enemies = [makeEnemy(s, id), ...(paired ? [makeEnemy(s, d.pairFloor ? companions[id] : 'sprig')] : [])];
+  }
   s.turn = 0; startTurn(s); note(s, `${kind === 'boss' ? 'Gatekeeper' : kind === 'elite' ? 'Elite encounter' : 'Encounter'}: ${s.enemies.map(e => e.name).join(' & ')}.`);
 }
 function startTurn(s) {
   s.turn++; s.energy = 3; s.player.block = s.player.retain ? Math.floor(s.player.block / 2) : 0; s.player.retain = false;
-  const d = difficultyInfo(s);
-  if (d.pressureTurn && s.turn >= d.pressureTurn && (s.turn - d.pressureTurn) % d.pressureEvery === 0) for (const e of s.enemies) if (e.hp > 0) e.strength++;
+  const pressure = pressureStrength(s);
+  if (pressure) for (const e of s.enemies) if (e.hp > 0) e.strength += pressure;
   s.skillRelicUsed = false; s.exhaustRelicUsed = false;
   drawCards(s, 5 + (s.turn === 1 && has(s, 'satchel') ? 1 : 0));
 }
-function heal(s, amount) { if (s.hp > 0) s.hp = Math.min(s.maxHp, s.hp + amount); }
+function heal(s, amount, combat = false) {
+  if (s.hp <= 0) return;
+  const reserve = combat ? recoveryRemaining(s) : null;
+  const recovered = Math.min(s.maxHp - s.hp, amount, reserve ?? Infinity);
+  s.hp += recovered;
+  if (combat && reserve !== null) s.recoveryUsed += recovered;
+}
 function gainBlock(s, amount, dexterity = true) { s.player.block += Math.max(0, Math.floor((amount + (dexterity ? s.player.dexterity : 0)) * (s.player.frail > 0 ? .75 : 1))); }
 function damageEnemy(s, e, amount, { ignoreBlock = false, raw = false } = {}) {
   if (!e || e.hp <= 0 || (!raw && s.hp <= 0)) return 0;
@@ -199,7 +224,7 @@ function play(s, uid, target = 0) {
     case 'flurry': for (let i = 0; i < 3; i++) damageEnemy(s, e, up ? 4 : 3); break;
     case 'kindle': burn(s, e, up ? 10 : 7); break;
     case 'wildfire': damageEnemy(s, e, up ? 14 : 9); e.burn *= 2; break;
-    case 'leech': if (damageEnemy(s, e, up ? 20 : 15) > 0) heal(s, up ? 6 : 4); break;
+    case 'leech': if (damageEnemy(s, e, up ? 20 : 15) > 0) heal(s, up ? 6 : 4, true); break;
     case 'insight': drawCards(s, up ? 3 : 2); break;
     case 'salvage': s.energy += up ? 2 : 1; drawCards(s, 1); break;
     case 'weakness': damageEnemy(s, e, up ? 8 : 5); e.weak += up ? 3 : 2; break;
@@ -208,7 +233,7 @@ function play(s, uid, target = 0) {
     case 'windfall': gainBlock(s, up ? 12 : 9); drawCards(s, 2); break;
     case 'cinder': for (const enemy of s.enemies) burn(s, enemy, up ? 9 : 6); gainBlock(s, up ? 11 : 8); break;
     case 'echo': damageEnemy(s, e, (up ? 9 : 6) + s.exhaust.length * (up ? 4 : 3)); break;
-    case 'mend': heal(s, up ? 10 : 7); gainBlock(s, up ? 7 : 4); break;
+    case 'mend': heal(s, up ? 10 : 7, true); gainBlock(s, up ? 7 : 4); break;
   }
   if (def.kind === 'skill' && has(s, 'buckle') && !s.skillRelicUsed) { gainBlock(s, 3, false); s.skillRelicUsed = true; }
   if (def.exhaust) {
@@ -222,12 +247,15 @@ function endTurn(s) {
   s.discard.push(...s.hand); s.hand = [];
   for (const e of s.enemies) if (e.hp > 0 && e.burn > 0) { damageEnemy(s, e, e.burn, { raw: true, ignoreBlock: true }); e.burn--; }
   if (finishBattle(s)) return;
+  // Remove last turn's shields before support intents create the next formation.
+  for (const e of s.enemies) { e.block = 0; e.thorns = 0; }
   for (const e of s.enemies) {
     if (e.hp <= 0 || s.hp <= 0) continue;
-    const intent = e.intent; e.block = 0; e.thorns = 0;
+    const intent = e.intent;
     if (intent.damage) for (let i = 0; i < (intent.hits || 1) && e.hp > 0 && s.hp > 0; i++) { hitPlayer(s, intentDamage(e)); if (s.player.thorns > 0) damageEnemy(s, e, s.player.thorns, { raw: true, ignoreBlock: true }); }
     if (e.hp <= 0) continue;
     if (intent.block) e.block += intent.block;
+    if (intent.allyBlock) for (const ally of s.enemies) if (ally !== e && ally.hp > 0) ally.block += intent.allyBlock;
     if (intent.strength) e.strength += intent.strength;
     if (intent.weak) s.player.weak += intent.weak;
     if (intent.vulnerable) s.player.vulnerable += intent.vulnerable;

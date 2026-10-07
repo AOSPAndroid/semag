@@ -762,13 +762,15 @@ function tacticalInput(state, memory) {
     || state.enemies.some(e => e.phase === 'charge' && Math.hypot(e.x - player.x, e.y - player.y) < 100)
     || state.hazards.some(h => h.warning < .12 && (h.kind === 'vertical' ? Math.abs(h.x - player.x) < 50
       : h.kind === 'horizontal' ? Math.abs(h.y - player.y) < 50 : Math.hypot(h.x - player.x, h.y - player.y) < h.radius + 15));
+  if (player.heat > 75 || player.overheated) memory.cooling = true;
+  if (player.heat < 25) memory.cooling = false;
   return { moveX: best.x, moveY: best.y, aimX: closest.x + vx * travel - player.x, aimY: closest.y + vy * travel - player.y,
-    fire: true, dash: urgent && !player.dashHeld && player.stamina >= player.dashCost };
+    fire: state.difficulty === 'standard' || !memory.cooling, dash: urgent && !player.dashHeld && player.stamina >= player.dashCost };
 }
 
 test('deliberate legal dodging and build choices can beat both demanding tiers', () => {
-  for (const difficulty of ['veteran', 'nightmare']) {
-    const state = createState({ difficulty, random: seeded(7) });
+  for (const difficulty of ['veteran', 'nightmare']) for (const seed of [7, 31]) {
+    const state = createState({ difficulty, random: seeded(seed) });
     const memory = {}; let input = {}; let lastEvent = 0; let dashes = 0;
     const bosses = [];
     for (let tick = 0; tick < 120 * 600 && !['won', 'lost'].includes(state.phase); tick += 1) {
@@ -791,7 +793,7 @@ test('deliberate legal dodging and build choices can beat both demanding tiers',
       assert.ok(state.projectiles.length <= MAX_PROJECTILES);
       assert.ok(state.hazards.length <= 32 && state.events.length <= 32);
     }
-    assert.equal(state.phase, 'won', `${difficulty}: wave ${state.wave}`);
+    assert.equal(state.phase, 'won', `${difficulty} seed ${seed}: wave ${state.wave}`);
     assert.equal(state.wavesCleared, TOTAL_WAVES);
     assert.deepEqual(bosses, [5, 10, 15, 20]);
     assert.equal(state.kills, difficulty === 'veteran' ? 299 : 353);
@@ -820,4 +822,59 @@ test('a healing-first perimeter loop no longer cruises through Veteran', () => {
     assert.ok(state.wave <= 8, `seed ${seed}: wave ${state.wave}`);
     assert.ok(state.wave >= 3, 'Opening waves should give time to learn the warnings');
   }
+});
+
+
+test('releasing fire restores full cooling and clears an overheat that held input prolongs', () => {
+  for (const difficulty of ['veteran', 'nightmare']) {
+    const held = quiet(createState({ random: seeded(41), difficulty })), released = quiet(createState({ random: seeded(41), difficulty }));
+    for (const s of [held, released]) { s.player.heat = 90; s.player.overheated = true; }
+    advance(held, 2.5, { fire: true }); advance(released, 2.5);
+    assert.ok(held.player.heat > released.player.heat + 20); assert.equal(held.player.overheated, true); assert.equal(released.player.overheated, false);
+    step(released, { fire: true }); assert.ok(released.projectileId > 0);
+  }
+  const practiceHeld = quiet(), practiceReleased = quiet();
+  for (const s of [practiceHeld, practiceReleased]) { s.player.heat = 90; s.player.overheated = true; }
+  advance(practiceHeld, 1, { fire: true }); advance(practiceReleased, 1); assert.equal(practiceHeld.player.heat, practiceReleased.player.heat);
+});
+
+test('even a complete heat-sink build has to release fire instead of erasing weapon pressure', () => {
+  const held = quiet(createState({ random: seeded(42), difficulty: 'veteran' })); held.player.cooling = 52; held.player.heatPerShot = 7;
+  advance(held, 8, { fire: true, aimX: -1, aimY: 0 }); assert.ok(held.events.some(e => e.type === 'overheat')); assert.ok(held.player.heat > 28);
+  const ready = held.player.heat; advance(held, .5); assert.ok(held.player.heat < ready - 25);
+});
+
+test('elite suppression keeps its committed location and full warning, allowing a clean sidestep', () => {
+  const setup = () => {
+    const s = quiet(createState({ random: seeded(43), difficulty: 'veteran' })); s.wave = 8; s.player.invulnerable = 0;
+    const foe = enemy({ type: 'ranged', x: 180, y: 340, elite: true, phase: 'windup', timer: .001, volleyIndex: 1, targetX: 500, targetY: 340 }); s.enemies = [foe];
+    step(s); s.projectiles = []; foe.phase = 'recover'; foe.timer = 100; return s;
+  };
+  const stay = setup(), evade = setup(); assert.equal(stay.hazards.length, 1); assert.ok(stay.hazards[0].warning >= .9);
+  const target = { x: evade.hazards[0].x, y: evade.hazards[0].y }; advance(stay, .8); assert.equal(stay.player.hp, 100);
+  advance(evade, .8, { up: true }); assert.deepEqual({ x: evade.hazards[0].x, y: evade.hazards[0].y }, target);
+  advance(stay, .3); advance(evade, .3, { up: true }); assert.ok(stay.player.hp < 100); assert.equal(evade.player.hp, 100);
+});
+
+test('wounded guardians add readable escape pressure in every sector without extra actors', () => {
+  for (let sector = 0; sector < SECTORS.length; sector++) {
+    const waves = [];
+    for (const difficulty of ['standard', 'veteran', 'nightmare']) {
+      const s = quiet(createState({ random: seeded(44), difficulty })); s.sector = sector; s.wave = (sector + 1) * 5;
+      s.enemies = [enemy({ type: 'boss', x: 160, y: 340, hp: 490, maxHp: 1000, phase: 'windup', timer: .001, attackName: SECTORS[sector].patterns[0] })];
+      step(s, { up: true }); waves.push(s);
+      assert.equal(s.enemies.length, 1); assert.ok(s.projectiles.length <= MAX_PROJECTILES);
+      if (difficulty !== 'standard') assert.ok(s.hazards.some(h => h.warning >= .99 && h.radius === 60));
+    }
+    assert.ok(waves[1].hazards.length > waves[0].hazards.length); assert.ok(waves[2].hazards.length > waves[1].hazards.length);
+    const mark = waves[1].hazards.find(h => h.radius === 60); const fixed = { x: mark.x, y: mark.y }; advance(waves[1], .3, { down: true }); assert.deepEqual({ x: mark.x, y: mark.y }, fixed);
+  }
+});
+
+test('deep frost still controls ordinary foes while tough guardians resist being permanently pinned', () => {
+  const normal = quiet(createState({ random: seeded(45), difficulty: 'veteran' })), guardian = quiet(createState({ random: seeded(45), difficulty: 'veteran' }));
+  for (const s of [normal, guardian]) s.player.frost = 3;
+  normal.enemies = [enemy({ x: 560, y: 340, hp: 1000 })]; guardian.enemies = [enemy({ type: 'boss', x: 560, y: 340, hp: 1000 })];
+  advance(normal, .1, { fire: true, aimX: 1, aimY: 0 }); advance(guardian, .1, { fire: true, aimX: 1, aimY: 0 });
+  assert.ok(normal.enemies[0].hp < 1000 && guardian.enemies[0].hp < 1000); assert.ok(guardian.enemies[0].slowFactor > normal.enemies[0].slowFactor); assert.ok(guardian.enemies[0].slowTime < normal.enemies[0].slowTime);
 });

@@ -15,6 +15,8 @@ import {
   recordScope,
   DIFFICULTIES,
   getDifficulty,
+  getEndlessPressure,
+  getDeliveryLimit,
 } from '../public/solo/highway-engine.js';
 
 function seeded(seed = 37) {
@@ -192,7 +194,7 @@ test('overtakes and near misses award points once, never for crashes or rear app
   const state = createState();
   state.speed = 180;
   state.x = 0.45;
-  state.traffic = [vehicle({ id: 10, z: 0.1 })];
+  state.traffic = [vehicle({ id: 10, z: -4.25 })];
   step(state);
   assert.equal(state.overtakePoints, 75);
   assert.equal(state.combo, 1);
@@ -200,7 +202,7 @@ test('overtakes and near misses award points once, never for crashes or rear app
   drive(state, 0.2);
   assert.equal(state.overtakePoints, 75);
   state.x = 0.62;
-  state.traffic = [vehicle({ id: 11, z: 0.1 })];
+  state.traffic = [vehicle({ id: 11, z: -4.25 })];
   step(state);
   assert.equal(state.overtakePoints, 125);
   assert.equal(state.events.at(-1).type, 'pass');
@@ -246,11 +248,11 @@ test('every generated row keeps a lane open and max-speed spacing permits an esc
 test('a long real-input boosted run stays finite and a simple lane escape succeeds', () => {
   const state = createState({ random: seeded(9) });
   drive(state, 90, (current) => {
-    const ahead = current.traffic.filter((car) => !car.passed && car.z > 0);
+    const ahead = current.traffic.filter((car) => !car.passed && car.z > -(CAR_LENGTH + car.length) / 2);
     const next = ahead.reduce((nearest, car) => (!nearest || car.z < nearest.z ? car : nearest), null);
     const blocked = next ? ahead.filter((car) => car.row === next.row).map((car) => car.lane) : [];
     const safe = LANES.filter((_, index) => !blocked.includes(index));
-    const target = safe.reduce(
+    let target = safe.reduce(
       (best, x) => (Math.abs(x - current.x) < Math.abs(best - current.x) ? x : best),
       safe[0],
     );
@@ -301,8 +303,8 @@ test('frame bounds and invalid randomness are handled without poisoning the stat
   assert.throws(() => createState({ random: () => 1 }), RangeError);
 });
 
-function districtDriver(state) {
-  const ahead = state.traffic.filter((car) => !car.passed && car.z > 0);
+function districtDriver(state, { precise = false } = {}) {
+  const ahead = state.traffic.filter((car) => !car.passed && car.z > -(CAR_LENGTH + car.length) / 2);
   const nearest = ahead.reduce((a, b) => (!a || b.z < a.z ? b : a), null);
   const row = nearest ? ahead.filter((car) => car.row === nearest.row) : [];
   const blocked = new Set(
@@ -311,13 +313,18 @@ function districtDriver(state) {
     ),
   );
   const safe = LANES.filter((_, index) => !blocked.has(index));
-  const target = safe.reduce(
+  let target = safe.reduce(
     (best, x) => (Math.abs(x - state.x) < Math.abs(best - state.x) ? x : best),
     safe[0] ?? 0,
   );
+  if (precise) {
+    const neighbor = row.reduce((a, b) => (!a || Math.abs(b.x - target) < Math.abs(a.x - target) ? b : a), null);
+    if (neighbor) target += Math.sign(neighbor.x - target) * 0.10;
+  }
+  const error = state.x + (precise ? state.steeringVelocity * 0.09 : 0) - target;
   return {
-    left: state.x > target + 0.018,
-    right: state.x < target - 0.018,
+    left: error > (precise ? 0.025 : 0.018),
+    right: error < -(precise ? 0.025 : 0.018),
     throttle: true,
     boost: state.elapsed % 11 < 3,
   };
@@ -399,7 +406,7 @@ test('near-miss risk builds a capped multiplier and fuel while collision or time
   state.speed = 180;
   state.boost = 0.2;
   for (let hit = 1; hit <= 7; hit += 1) {
-    state.traffic = [vehicle({ id: 100 + hit, z: 0.1 })];
+    state.traffic = [vehicle({ id: 100 + hit, z: -4.25 })];
     const before = state.overtakePoints;
     step(state);
     assert.equal(state.combo, Math.min(5, hit));
@@ -410,7 +417,7 @@ test('near-miss risk builds a capped multiplier and fuel while collision or time
   drive(state, 8.1);
   assert.equal(state.combo, 0);
   state.x = 0.45;
-  state.traffic = [vehicle({ z: 0.1 })];
+  state.traffic = [vehicle({ z: -4.25 })];
   step(state);
   assert.equal(state.combo, 1);
   state.x = 0;
@@ -510,7 +517,7 @@ test('difficulty profiles preserve standard records and separate every harder mo
       assert.equal(getDifficulty(state), difficulty);
       assert.equal(state.boost, difficulty.boostStart);
       const base = mode === 'tour' ? 'tour' : 'default';
-      assert.equal(recordScope(state), difficulty.id === 'standard' ? base : `${difficulty.id}-${base}`);
+      assert.equal(recordScope(state), difficulty.id === 'standard' ? base : `${difficulty.id}-${base}-v3`);
       assert.deepEqual(state, JSON.parse(JSON.stringify(state)));
     }
 });
@@ -576,7 +583,7 @@ test('harder resources recharge slowly, reward fast near misses once, cap time c
     assert.ok(Math.abs(state.boost - (0.1 + profile.boostRegen)) < 1e-8);
     state.speed = 180;
     for (let pass = 0; pass < 15; pass++) {
-      state.traffic = [vehicle({ id: 900 + pass, x: 0.45, z: 0.01, speed: 0 })];
+      state.traffic = [vehicle({ id: 900 + pass, x: 0.45, z: -4.34, speed: 0 })];
       step(state, { throttle: true });
     }
     assert.ok(Math.abs(state.delivery.bonus - profile.bonusCap) < 1e-8);
@@ -596,7 +603,7 @@ test('harder resources recharge slowly, reward fast near misses once, cap time c
   }
   const slow = emptyRoad(createState({ difficulty: 'veteran' }));
   slow.speed = 130;
-  slow.traffic = [vehicle({ x: 0.45, z: 0.01, speed: 0 })];
+  slow.traffic = [vehicle({ x: 0.45, z: -4.34, speed: 0 })];
   step(slow);
   assert.equal(slow.combo, 1);
   assert.equal(slow.delivery.bonus, 0, 'slow overtakes cannot farm delivery time');
@@ -615,7 +622,7 @@ test('seeded fast steering and resource use complete every harder tour without c
       assert.ok(state.districtResults.every((district) => district.clean && district.timeLeft > 0));
       assert.ok(state.boost >= 0 && state.boost <= 1);
       assert.ok(state.finishTime > 75 && state.finishTime < 101);
-      assert.equal(recordScope(state), `${difficulty}-tour`);
+      assert.equal(recordScope(state), `${difficulty}-tour-v3`);
     }
 });
 
@@ -635,4 +642,101 @@ test('pause freezes delivery deadlines, resources and traffic and fixed profile 
   step(frame, { right: true, boost: true }, 0.05);
   for (let tick = 0; tick < 6; tick++) step(fixed, { right: true, boost: true });
   assert.deepEqual(frame, fixed);
+});
+
+
+test('a Night Drive overtake is rewarded only after the complete rear body clears', () => {
+  const state = createState({ random: seeded(9) });
+  state.speed = 180; state.x = 0.45;
+  const car = vehicle({ id: 3000, z: 0.1 });
+  state.traffic = [car];
+  step(state, { throttle: true });
+  assert.ok(car.z < 0);
+  assert.equal(car.passed, false);
+  assert.equal(state.overtakePoints, 0);
+  drive(state, 0.15, { throttle: true });
+  assert.equal(car.passed, false);
+  drive(state, 0.05, { throttle: true });
+  assert.equal(car.passed, true);
+  assert.equal(state.overtakePoints, 75);
+  const earned = state.overtakePoints;
+  drive(state, 0.25, { throttle: true });
+  assert.equal(state.overtakePoints, earned);
+});
+
+test('steering into an uncleared rear half causes a crash instead of exploiting midpoint immunity', () => {
+  const state = createState({ random: seeded(9) });
+  state.speed = 180; state.x = 0.62;
+  const car = vehicle({ id: 3100, z: 0.02, speed: 160 });
+  state.traffic = [car];
+  step(state, { throttle: true });
+  assert.ok(car.z < 0);
+  assert.equal(car.passed, false);
+  drive(state, 0.3, { throttle: true, left: true });
+  assert.equal(state.health, 2);
+  assert.equal(car.crashed, true);
+  assert.equal(state.overtakePoints, 0);
+});
+
+test('Night Drive endless laps tighten density, clocks and row spacing without collapsing the steering corridor', () => {
+  for (const difficulty of ['veteran', 'nightmare']) {
+    const opening = createState({ difficulty, random: seeded(7) });
+    const late = createState({ difficulty, random: seeded(7) });
+    late.districtIndex = 25;
+    assert.equal(getEndlessPressure(opening), 0);
+    assert.equal(getEndlessPressure(late), 5);
+    assert.ok(getDeliveryLimit(late) < getDeliveryLimit(opening));
+    assert.ok(rowSpacing(220, 0, late) < rowSpacing(220, 0, opening));
+    for (const trafficSpeed of [0, 70, 80, 90, 95]) {
+      const free = (rowSpacing(220, trafficSpeed, late) - 5.3 - CAR_LENGTH) / ((220 - trafficSpeed) / 3.6);
+      // 1.24 road units at 2.15 units/s, plus dry/wet steering damping.
+      assert.ok(free > 1.24 / 2.15 + 0.13);
+    }
+    late.districtIndex = 100;
+    assert.equal(getEndlessPressure(late), 5, 'late pressure is bounded');
+    const tour = createState({ mode: 'tour', difficulty });
+    tour.districtIndex = 25;
+    assert.equal(getEndlessPressure(tour), 0, 'finite tours retain their published pace');
+  }
+  const practice = createState({ difficulty: 'standard' }); practice.districtIndex = 25;
+  assert.equal(getEndlessPressure(practice), 0);
+  assert.equal(getDeliveryLimit(practice), null);
+});
+
+test('midpoint-only route planning no longer completes strict tours but full-body planning does', () => {
+  for (const difficulty of ['veteran', 'nightmare']) for (const seed of [9, 37, 81]) {
+    const state = createState({ difficulty, mode: 'tour', random: seeded(seed) });
+    drive(state, 110, (current) => {
+      // This controller only changes its reading of visible cars, never engine fields.
+      const visible = { ...current, traffic: current.traffic.filter((car) => car.z > 0) };
+      return districtDriver(visible);
+    });
+    assert.equal(state.phase, 'lost', `${difficulty} ${seed} midpoint-only strategy`);
+    assert.ok(state.totalCrashes > 0);
+  }
+});
+
+
+test('fast precise passes sustain late Nightmare laps while safe center riding eventually misses their pace goal', () => {
+  for (const seed of [9, 37]) {
+    const centered = createState({ difficulty: 'nightmare', random: seeded(seed) });
+    const precise = createState({ difficulty: 'nightmare', random: seeded(seed) });
+    for (const [state, close] of [[centered, false], [precise, true]]) {
+      let input = {};
+      for (let tick = 0; tick < 120 * 600 && state.phase === 'playing'; tick++) {
+        if (tick % 8 === 0) input = districtDriver(state, { precise: close });
+        step(state, input);
+      }
+    }
+    assert.equal(centered.phase, 'lost');
+    assert.equal(centered.result, 'delivery-missed');
+    assert.equal(centered.totalCrashes, 0, 'safe steering alone does not satisfy the later pace goal');
+    assert.ok(centered.elapsed < 240);
+    assert.equal(precise.phase, 'playing');
+    assert.equal(precise.totalCrashes, 0);
+    assert.ok(precise.districtIndex >= 30);
+    assert.equal(getEndlessPressure(precise), 5);
+    assert.ok(precise.delivery.remaining > 0);
+    assert.ok(precise.boost > 0);
+  }
 });

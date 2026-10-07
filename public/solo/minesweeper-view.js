@@ -5,7 +5,7 @@ const flagArt = '<svg viewBox="0 0 40 44" aria-hidden="true"><path d="M10 37H29"
 const mineArt = '<svg viewBox="0 0 44 44" aria-hidden="true"><g stroke="#405444" stroke-width="3" stroke-linecap="round"><path d="M22 4V40M4 22H40M9 9L35 35M9 35L35 9"/></g><circle cx="22" cy="23" r="12" fill="#304b3d" stroke="#758565" stroke-width="2"/><path d="M13 21A9 9 0 0 1 23 14" fill="none" stroke="#a7b589" stroke-width="2" stroke-linecap="round"/><circle cx="17" cy="18" r="2" fill="#d7ddba"/><path d="M28 26 26 29" stroke="#152f26" stroke-width="2" stroke-linecap="round"/></svg>';
 
 export function mount(container, { onUpdate = () => {} } = {}) {
-  let difficulty = 'expert';
+  let difficulty = 'master';
   let state = createState(DIFFICULTIES[difficulty]);
   let flagMode = false;
   let focused = 0;
@@ -26,6 +26,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     <div class="minesweeper-controls">
       <label class="minesweeper-difficulty-label">Difficulty
         <select class="minesweeper-difficulty" aria-label="Minesweeper difficulty">
+          <option value="master">Master · 24 × 16 · 90 mines · 6 min</option>
           <option value="beginner">Beginner · 9 × 9</option>
           <option value="intermediate">Intermediate · 16 × 16</option>
           <option value="expert">Expert · 30 × 16 · 99 mines</option>
@@ -37,7 +38,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       <div class="minesweeper-instruments">
         <div><span>MINES LEFT</span><strong class="minesweeper-remaining">10</strong></div>
         <i class="minesweeper-emblem" aria-hidden="true"></i>
-        <div><span>TIME</span><strong class="minesweeper-clock">0:00</strong></div>
+        <div><span class="minesweeper-time-label">TIME</span><strong class="minesweeper-clock">0:00</strong></div>
       </div>
       <p class="minesweeper-pan-hint" hidden>↔ Pan the field horizontally. Arrow-key focus keeps the selected tile in view.</p>
       <div class="minesweeper-board-wrap">
@@ -56,6 +57,9 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   const flagButton = root.querySelector('.minesweeper-flag-mode');
   const remaining = root.querySelector('.minesweeper-remaining');
   const clock = root.querySelector('.minesweeper-clock');
+  const timeLabel = root.querySelector('.minesweeper-time-label');
+  const help = root.querySelector('.minesweeper-help');
+  const clockValue = () => state.timeLimit === null ? state.elapsed : Math.max(0, state.timeLimit - state.elapsed);
   const status = root.querySelector('.minesweeper-status');
   const pauseOverlay = root.querySelector('.minesweeper-pause');
   const boardWrap = root.querySelector('.minesweeper-board-wrap');
@@ -70,8 +74,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   function detail() {
     if (state.phase === 'paused') return 'Paused. Your timer is stopped.';
     if (state.phase === 'won') return `All ${state.opened} safe tiles found in ${formatTime(state.elapsed)}. Well played!`;
-    if (state.phase === 'lost') return 'A mine went off. Start a new board and try again.';
-    if (!state.generated) return 'Choose a tile to begin. Your first reveal is safe.';
+    if (state.phase === 'lost') return state.failure === 'timeout' ? 'Six minutes are up. Master requires a complete field before the clock runs out. Start a new board.' : 'A mine went off. Start a new board and try again.';
+    if (!state.generated) return state.logicOnly ? 'Master: 90 mines, six active minutes. Every field can be solved from clues. Your first neighborhood is safe; the clock starts with your first reveal.' : 'Choose a tile to begin. Your first reveal is safe.';
     return `${state.opened} of ${state.cells.length - state.mines} safe tiles found. ${state.mines - state.flags} mines left to flag.`;
   }
 
@@ -80,7 +84,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     onUpdate({
       phase: state.phase, score: stats.opened, scoreLabel: 'SAFE TILES',
       record: state.phase === 'won' ? Math.round(state.elapsed * 1000) / 1000 : null,
-      recordDirection: 'min', recordKey: difficulty, recordLabel: 'BEST TIME', detail: detail(),
+      recordDirection: 'min', recordKey: difficulty === 'master' ? 'master-v3' : difficulty, recordLabel: 'BEST TIME', detail: detail(),
     });
   }
 
@@ -120,7 +124,9 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     syncPauseCover();
     if (root.dataset.phase !== state.phase) root.dataset.phase = state.phase;
     setText(remaining, String(state.mines - state.flags).padStart(2, '0'));
-    setText(clock, formatTime(state.elapsed));
+    setText(clock, formatTime(clockValue()));
+    setText(timeLabel, state.timeLimit === null ? 'TIME' : 'TIME LEFT');
+    setText(help, state.logicOnly ? 'Compare overlapping number groups to deduce the safe tiles. Master fields need no guesses. Clear all 294 safe tiles within six active minutes. Pause stops the clock.' : 'Uncover the safe tiles. Numbers count nearby mines. Flag those mines, then select a number to open around it.');
     if (pauseOverlay.hidden !== (state.phase !== 'paused')) pauseOverlay.hidden = state.phase !== 'paused';
     setAttribute(flagButton, 'aria-pressed', String(flagMode));
     setText(flagButton, `⚑ Flag mode: ${flagMode ? 'on' : 'off'}`);
@@ -171,8 +177,11 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   function act(index, flagAction = false) {
     if (destroyed || state.phase !== 'playing') return;
     syncTime();
+    if (state.phase !== 'playing') { notice = ''; render(); return; }
+    const wasGenerated = state.generated;
     const openedBefore = state.opened;
     const result = flagAction ? flag(state, index) : state.cells[index]?.revealed ? chord(state, index) : reveal(state, index);
+    if (!wasGenerated && state.generated) lastClock = performance.now();
     if (!result.ok) notice = result.error;
     else if (state.phase === 'won' || state.phase === 'lost') notice = '';
     else if (flagAction) notice = `${state.cells[index].flagged ? 'Flag placed' : 'Flag removed'}. ${state.mines - state.flags} mines left to flag.`;
@@ -264,10 +273,12 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     clockTimer = setTimeout(() => {
       clockTimer = null;
       if (destroyed) return;
+      const phaseBefore = state.phase;
       syncTime();
+      if (state.phase !== phaseBefore) { notice = ''; render(); return; }
       if (lastSecond !== Math.floor(state.elapsed)) {
         lastSecond = Math.floor(state.elapsed);
-        setText(clock, formatTime(state.elapsed));
+        setText(clock, formatTime(clockValue()));
         emit();
       }
       scheduleClock();
@@ -275,7 +286,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   }
 
   return {
-    getState() { syncTime(); return cloneState(state); },
+    getState() { const before = state.phase; syncTime(); if (state.phase !== before) { notice = ''; render(); } return cloneState(state); },
     restart,
     togglePause() {
       if (destroyed) return;

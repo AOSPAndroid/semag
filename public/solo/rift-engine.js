@@ -13,12 +13,12 @@ export const DIFFICULTIES = Object.freeze({
   standard: Object.freeze({ title: 'Expedition', description: 'Twenty waves, four sectors, one evolving build.',
     enemySpeed: 1, projectileSpeed: 1, cadence: 1, lead: 0, damage: 1, score: 1,
     elites: 0, extras: Object.freeze([]), repair: 35, plating: 10, siphon: 1, healingBudget: null }),
-  veteran: Object.freeze({ title: 'Veteran', description: 'Leading shots, mixed attacks, limited healing · +50% points.',
+  veteran: Object.freeze({ title: 'Veteran', description: 'Suppression marks, two-phase guardians, burst-fire heat control · +50% points.',
     enemySpeed: 1.18, projectileSpeed: 1.38, cadence: .72, lead: .8, damage: 1.2, score: 1.5,
-    elites: 1, extras: Object.freeze(['ranged', 'weaver']), repair: 24, plating: 7, siphon: .55, healingBudget: 8 }),
-  nightmare: Object.freeze({ title: 'Nightmare', description: 'Dense volleys, relentless elites, scarce healing · double points.',
+    elites: 1, extras: Object.freeze(['ranged', 'weaver']), repair: 24, plating: 7, siphon: .55, healingBudget: 8, heldCooling: .6, heatUnlock: 28, staminaRegen: 22 }),
+  nightmare: Object.freeze({ title: 'Nightmare', description: 'Overlapping suppression, faster guardian second phases, scarce recovery · double points.',
     enemySpeed: 1.32, projectileSpeed: 1.62, cadence: .55, lead: 1, damage: 1.35, score: 2,
-    elites: 2, extras: Object.freeze(['ranged', 'brute', 'weaver', 'ranged', 'weaver']), repair: 16, plating: 5, siphon: .35, healingBudget: 5 }),
+    elites: 2, extras: Object.freeze(['ranged', 'brute', 'weaver', 'ranged', 'weaver']), repair: 16, plating: 5, siphon: .35, healingBudget: 5, heldCooling: .5, heatUnlock: 22, staminaRegen: 20 }),
 });
 export const OBSTACLES = Object.freeze([
   { x: 280, y: 200, width: 90, height: 70 },
@@ -200,6 +200,7 @@ export function createState({ random: source = Math.random, difficulty = 'standa
     events: [], eventId: 0, upgrades: {}, upgradeChoices: [],
     hazards: [], hazardId: 0,
   };
+  if (difficulty !== 'standard') state.player.staminaRegen = DIFFICULTIES[difficulty].staminaRegen;
   sources.set(state, source);
   startWave(state, 1);
   return state;
@@ -275,6 +276,8 @@ function beginTell(state, enemy, duration) {
     clamp(player.y + player.vy * velocityScale * horizon * profile.lead, player.radius, ARENA.height - player.radius) - enemy.y);
   enemy.aimX = aim.x;
   enemy.aimY = aim.y;
+  enemy.targetX = clamp(player.x + player.vx * velocityScale * duration * profile.lead, player.radius, ARENA.width - player.radius);
+  enemy.targetY = clamp(player.y + player.vy * velocityScale * duration * profile.lead, player.radius, ARENA.height - player.radius);
   enemy.phase = 'windup';
   if (enemy.boss) enemy.attackName = SECTORS[enemy.bossSector ?? state.sector].patterns[enemy.pattern % 2];
   enemy.timer = duration;
@@ -297,7 +300,10 @@ function damageEnemy(state, target, amount, chain = true) {
   if (target.hp <= 0) return;
   const damage = amount * (1 - (target.armor || 0));
   target.hp = Math.max(0, target.hp - damage);
-  if (state.player.frost > 0) { target.slowTime = 1.2; target.slowFactor = 1 - .15 * state.player.frost; }
+  if (state.player.frost > 0) {
+    target.slowTime = state.difficulty !== 'standard' && target.boss ? .8 : 1.2;
+    target.slowFactor = Math.max(state.difficulty !== 'standard' && target.boss ? .8 : state.difficulty !== 'standard' && target.elite ? .65 : 0, 1 - .15 * state.player.frost);
+  }
   event(state, 'hit', { x: target.x, y: target.y, enemyId: target.id, damage });
   if (target.hp === 0) {
     state.kills += 1; state.waveKills += 1;
@@ -328,6 +334,14 @@ function damageEnemy(state, target, amount, chain = true) {
 
 function bossAttack(state, enemy) {
   const name = enemy.attackName;
+  if (state.difficulty !== 'standard' && enemy.hp < enemy.maxHp / 2) {
+    // A second phase denies the predicted escape route, with a fresh complete
+    // floor warning. The marks never follow the player after being placed.
+    const player = state.player, lead = state.difficulty === 'nightmare' ? .85 : .65;
+    const speed = length(player.vx, player.vy), scale = speed > player.moveSpeed ? player.moveSpeed / speed : 1;
+    addHazard(state, 'blast', player.x + player.vx * scale * lead, player.y + player.vy * scale * lead, { radius: 60, warning: 1, damage: 12 });
+    if (state.difficulty === 'nightmare') addHazard(state, 'blast', player.x, player.y, { radius: 52, warning: 1.1, damage: 12 });
+  }
   if (name === 'radial') fireFan(state, enemy, 12, Math.PI * 2 / 12, 210, 14);
   if (name === 'fan') fireFan(state, enemy, 5, .14, 280, 14);
   if (name === 'mines' || name === 'fan-mines') {
@@ -370,7 +384,7 @@ function bossAttack(state, enemy) {
     addHazard(state, 'blast', state.player.x, state.player.y, { radius: 58, warning: 1.0, damage: 12 });
   }
   enemy.pattern += 1;
-  enemy.phase = 'recover'; enemy.timer = .5; enemy.attackTimer = 1.45 * DIFFICULTIES[state.difficulty].cadence;
+  enemy.phase = 'recover'; enemy.timer = .5; enemy.attackTimer = 1.45 * DIFFICULTIES[state.difficulty].cadence * (state.difficulty !== 'standard' && enemy.hp < enemy.maxHp / 2 ? .8 : 1);
 }
 
 function lineClear(from, to, radius = 0) {
@@ -474,6 +488,9 @@ function updateEnemies(state, dt) {
         const shot = enemyShotPattern(state, enemy);
         fireFan(state, enemy, shot.count, shot.spread, shot.speed, shot.damage);
         enemy.volleyIndex = (enemy.volleyIndex || 0) + 1;
+        if (state.difficulty !== 'standard' && state.wave >= 4 && enemy.elite && (state.difficulty === 'nightmare' || enemy.volleyIndex % 2 === 0)) {
+          addHazard(state, 'blast', enemy.targetX ?? state.player.x, enemy.targetY ?? state.player.y, { radius: 58, warning: .95, damage: 10 });
+        }
         enemy.phase = 'recover'; enemy.timer = enemy.type === 'ranged' ? .35 : .2;
         enemy.attackTimer = (enemy.type === 'ranged' ? 2 : 1.4) * cadence;
         if (enemy.type === 'weaver') enemy.strafe *= -1;
@@ -486,7 +503,7 @@ function updateEnemies(state, dt) {
         enemy.aimX = Math.cos(angle); enemy.aimY = Math.sin(angle);
         fireFan(state, enemy, 10, Math.PI * 2 / 10, 240, 12);
         enemy.aimX = original.x; enemy.aimY = original.y;
-        enemy.pattern += 1; enemy.phase = 'recover'; enemy.timer = .5; enemy.attackTimer = 1.5 * cadence;
+        enemy.pattern += 1; enemy.phase = 'recover'; enemy.timer = .5; enemy.attackTimer = 1.5 * cadence * (state.difficulty !== 'standard' && enemy.hp < enemy.maxHp / 2 ? .8 : 1);
       }
     } else if (enemy.phase === 'charge') {
       const before = { x: enemy.x, y: enemy.y };
@@ -700,8 +717,10 @@ export function step(state, inputs = {}, dt = 1 / 120) {
   player.invulnerable = Math.max(0, player.invulnerable - dt);
   player.damageCooldown = Math.max(0, player.damageCooldown - dt);
   player.staminaDelay = Math.max(0, player.staminaDelay - dt);
-  player.heat = Math.max(0, player.heat - player.cooling * dt);
-  if (player.overheated && player.heat <= 35) player.overheated = false;
+  const profile = DIFFICULTIES[state.difficulty];
+  const cooling = player.cooling * (inputs.fire === true ? profile.heldCooling ?? 1 : 1);
+  player.heat = Math.max(0, player.heat - cooling * dt);
+  if (player.overheated && player.heat <= (profile.heatUnlock ?? 35)) player.overheated = false;
   if (Number.isFinite(inputs.aimX) && Number.isFinite(inputs.aimY)) {
     const aim = unit(inputs.aimX, inputs.aimY, player.aimX, player.aimY);
     player.aimX = aim.x; player.aimY = aim.y;

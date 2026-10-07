@@ -275,19 +275,21 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       : `Wave ${state.wavesCleared} cleared. Choose an upgrade, and decide whether to overcharge the next wave.`;
     if (state.phase === 'won') return `All ${TOTAL_WAVES} waves cleared. Your build held the rift.`;
     if (state.phase === 'lost') return `Reached wave ${state.wave}. Read the windups and try a new build.`;
-    if (state.player.overheated) return 'Weapon overheated. Keep moving while it cools.';
+    if (state.player.overheated) return state.difficulty === 'standard' ? 'Weapon overheated. Keep moving while it cools.' : 'Weapon overheated. Release fire to cool faster; keep moving until it unlocks.';
     const guardian = state.enemies.find(enemy => enemy.boss);
-    if (guardian) return `${guardian.bossName}: ${guardian.attackName.replaceAll('-', ' ')}. Read the windup and the marked floor.`;
+    if (guardian) return `${guardian.bossName}${state.difficulty !== 'standard' && guardian.hp < guardian.maxHp / 2 ? ' · PHASE II' : ''}: ${guardian.attackName.replaceAll('-', ' ')}. Read the windup and the marked floor.`;
     if (state.waveRisk) return 'Overcharged wave: heavier hits and extra elites. Clear it for 35% more points.';
     const profile = DIFFICULTIES[state.difficulty];
     if (state.player.siphon && profile.healingBudget !== null) return `Blood circuit: ${Math.max(0, profile.healingBudget - state.waveHealing).toFixed(1)} health left this wave. Reverse after the locked aim; preserve your dash.`;
-    if (profile.lead) return 'Shots lock ahead of your movement. Reverse after the windup; keep stamina for the next attack.';
+    if (profile.lead) return 'Fire in bursts; release fire to cool faster. Reverse after locked shots and leave suppression marks before they strike.';
     return 'Break line of sight with cover. Dash through danger; leave enough stamina for the next attack.';
   }
   function descriptor(id) {
     const profile = DIFFICULTIES[state.difficulty];
     if (id === 'repair') return { ...UPGRADES[id], description: `Restore ${profile.repair} health. Your scars carry between waves.` };
     if (id === 'plating') return { ...UPGRADES[id], description: `+10 maximum health and restore ${profile.plating} health, up to 130.` };
+    if (id === 'cooling' && state.difficulty !== 'standard') return { ...UPGRADES[id], description: '+8 cooling per second and less heat per shot. Release fire for full cooling; held fire cools more slowly.' };
+    if (id === 'frost' && state.difficulty !== 'standard') return { ...UPGRADES[id], description: 'Hits slow enemies for 1.2 seconds. Elites resist deep chill; guardians resist slowing and shake it off sooner. Arcs inherit frost.' };
     if (id === 'siphon' && profile.healingBudget !== null) return { ...UPGRADES[id], description: `Kills restore ${profile.siphon} health per rank, up to ${profile.healingBudget} health per wave. Arcs and shocks share that limit.` };
     return UPGRADES[id] || { id, name: id, description: 'Improve your next wave.' };
   }
@@ -375,7 +377,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     }
     updateUpgrades();
     onUpdate({ phase: state.phase === 'upgrade' ? 'playing' : state.phase, score: state.score, record: state.score,
-      recordKey: { standard: 'default', veteran: 'veteran-v2', nightmare: 'nightmare' }[state.difficulty],
+      recordKey: { standard: 'default', veteran: 'veteran-v3', nightmare: 'nightmare-v3' }[state.difficulty],
       recordLabel: { standard: 'EXPEDITION BEST', veteran: 'VETERAN BEST', nightmare: 'NIGHTMARE BEST' }[state.difficulty], scoreLabel: 'SCORE', detail });
     if (changedPhase && state.phase === 'upgrade') upgradeChoices.querySelector('button')?.focus({ preventScroll: true });
   }

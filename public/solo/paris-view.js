@@ -1,6 +1,6 @@
 import {
   FIXED_DT, DISTRICTS, DIFFICULTIES,
-  createState, step, togglePause as pauseState, getDistrict, getDifficulty, getSurvivalPace, recordScope,
+  createState, step, togglePause as pauseState, getDistrict, getDifficulty, getSurvivalPace, usesAutomaticPace, recordScope,
 } from './paris-engine.js';
 import { createParisPerspective } from '../art/paris-perspective.js';
 import { createParisRenderer } from './paris-renderer.js';
@@ -51,7 +51,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   const difficulties = node('div', 'paris-difficulties');
   difficulties.setAttribute('role', 'group'); difficulties.setAttribute('aria-label', 'Choose difficulty');
   for (const difficulty of DIFFICULTIES) {
-    const button = node('button', 'paris-choice', difficulty.title);
+    const button = node('button', 'paris-choice', difficulty.id === 'standard' ? 'Standard · practice' : difficulty.title);
     button.type = 'button'; button.dataset.difficulty = difficulty.id;
     button.title = 'Changing difficulty starts a fresh ride with the same seed.';
     difficulties.append(button);
@@ -152,13 +152,14 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     lastPublished = state.elapsed; lastPhase = state.phase;
     const district = getDistrict(state);
     const survival = state.mode === 'survival';
+    const automaticPace = usesAutomaticPace(state);
     const elapsedMs = Math.floor(state.elapsed * 1000);
     const pace = Math.round(getSurvivalPace(state) * 3.6);
     const complete = state.phase === 'won';
     const portion = complete ? 100 : clamp(state.stageDistance / district.length * 100, 0, 100);
     setText(location, `${String((state.stageIndex % DISTRICTS.length) + 1).padStart(2, '0')} / ${district.title}`);
     const remaining = Math.max(0, Math.ceil(district.length - state.stageDistance));
-    setText(routeDetail, survival ? `PACE ${pace} KM/H · ${remaining} m ahead` : complete ? 'ALL FIVE DELIVERED' : `${remaining} m to ${state.mode === 'delivery' ? 'delivery' : 'next quartier'}`);
+    setText(routeDetail, automaticPace ? `PACE ${pace} KM/H · ${remaining} m ahead` : complete ? 'ALL FIVE DELIVERED' : `${remaining} m to ${state.mode === 'delivery' ? 'delivery' : 'next quartier'}`);
     setText(clock, survival ? formatAlive(elapsedMs) : complete ? 'MERCI !' : state.timeLeft === null || state.timeLeft === undefined ? 'NO DEADLINE' : `${Math.max(0, state.timeLeft).toFixed(1)} s`);
     setAttr(clock, 'aria-label', survival ? `Time alive ${formatAlive(elapsedMs)}` : 'Delivery clock');
     setAttr(progress, 'aria-label', survival ? 'Current quartier progress' : 'Current delivery progress');
@@ -167,14 +168,14 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     setText(mobileSpeed, String(Math.round(state.speed * 3.6)));
     setText(mobileBattery, `${Math.round(state.battery * 100)}%`);
     setText(mobileHealth, `${state.health}/3`);
-    setText(mobileFourthLabel, survival ? 'BRAKE' : 'COMBO');
-    setText(mobileCombo, survival ? state.brakeLocked ? 'WAIT' : `${Math.round(state.brakeCharge * 100)}%` : `${Math.max(1, state.combo)}×`);
-    brakeMeter.hidden = !survival;
+    setText(mobileFourthLabel, automaticPace ? 'BRAKE' : 'COMBO');
+    setText(mobileCombo, automaticPace ? state.brakeLocked ? 'WAIT' : `${Math.round(state.brakeCharge * 100)}%` : `${Math.max(1, state.combo)}×`);
+    brakeMeter.hidden = !automaticPace;
     brakeFill.style.width = `${Math.round(clamp(state.brakeCharge ?? 1, 0, 1) * 100)}%`;
     const brakeButton = buttons.get('brake');
-    brakeButton.dataset.recharging = String(survival && state.brakeLocked);
-    brakeButton.title = survival ? 'Short brake burst. Release to recharge; braking cannot stop the bike.' : 'Hold to brake.';
-    setText(hint, survival
+    brakeButton.dataset.recharging = String(automaticPace && state.brakeLocked);
+    brakeButton.title = automaticPace ? 'Short brake burst. Release to recharge; braking cannot stop the bike.' : 'Hold to brake.';
+    setText(hint, automaticPace
       ? '← → steer · ↑ pedal · Space assist · B bell. Speed rises automatically. ↓ is a short brake burst; release it to recharge.'
       : '← → steer · ↑ pedal · ↓ brake · Space assist · B bell. Amber arrows show a merge; red stripes warn of a door.');
     progressFill.style.width = `${portion}%`;

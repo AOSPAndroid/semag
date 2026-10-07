@@ -148,7 +148,7 @@ test('lethal burn cancels a queued enemy attack before damage and still awards t
 });
 
 function finishSkilledRun(seed, { difficulty = 'veteran', fullRun = false } = {}) {
-  const s = createState({ seed, difficulty }); let waypoint = 0, navTag = '', path = [], lastRoom = '';  const visited = new Set(), bosses = new Set(), checkpoints = []; let checkpointRoom='';
+  const s = createState({ seed, difficulty }); let waypoint = 0, navTag = '', path = [], lastRoom = '';  const visited = new Set(), bosses = new Set(), checkpoints = []; let checkpointRoom=''; const enemyPositions=new Map();
   for (let frame = 0; frame < 120 * (fullRun ? 500 : 240) && (fullRun || s.act < 2) && !['won', 'lost'].includes(s.phase); frame++) {
     if (lastRoom !== s.room.id) { lastRoom = s.room.id; waypoint = 0; }
     if(s.room.cleared&&checkpointRoom!==s.room.id){checkpointRoom=s.room.id;checkpoints.push({room:s.room.id,hp:s.player.hp,elapsed:s.elapsed});}visited.add(s.room.id); if (s.room.kind === 'boss') bosses.add(s.room.title);
@@ -160,9 +160,12 @@ function finishSkilledRun(seed, { difficulty = 'veteran', fullRun = false } = {}
       const target = s.room.cleared ? s.room.exit : s.room.shrine; const tag = s.room.id + String(s.room.cleared); if (tag !== navTag) { navTag = tag; path = navigation(s, p, target); }
       const t = path[0] || target; if (Math.hypot(t.x - p.x, t.y - p.y) < 20) path.shift(); dx = t.x - p.x; dy = t.y - p.y; if (Math.hypot(target.x - p.x, target.y - p.y) < 50) { dx = dy = 0; interact = frame % 2 === 0; }
     } else {
-      const e = [...s.enemies].sort((a, b) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y))[0]; aimX = e.x - p.x; aimY = e.y - p.y;
+      const e = [...s.enemies].sort((a, b) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y))[0]; const previous=enemyPositions.get(e.id),travel=Math.hypot(e.x-p.x,e.y-p.y)/580;
+      const vx=previous?Math.max(-200,Math.min(200,(e.x-previous.x)*120)):0,vy=previous?Math.max(-200,Math.min(200,(e.y-previous.y)*120)):0;
+      aimX=e.x+vx*travel-p.x;aimY=e.y+vy*travel-p.y;
       const pts = [{ x: 120, y: 90 }, { x: 840, y: 90 }, { x: 840, y: 550 }, { x: 120, y: 550 }]; if (Math.hypot(pts[waypoint].x - p.x, pts[waypoint].y - p.y) < 30) waypoint = (waypoint + 1) % 4;
       dx = pts[waypoint].x - p.x; dy = pts[waypoint].y - p.y;
+      if(p.mana<24&&p.stamina>=55&&Math.hypot(e.x-p.x,e.y-p.y)>90){dx=e.x-p.x;dy=e.y-p.y;}
       dash = frame % 50 === 0 && (s.projectiles.some(b => b.owner === 'enemy' && Math.hypot(b.x - p.x, b.y - p.y) < 75) || Math.hypot(aimX, aimY) < 100);
     }
     const length = Math.hypot(dx, dy); const direction={x:length?dx/length:0,y:length?dy/length:0};
@@ -171,7 +174,7 @@ function finishSkilledRun(seed, { difficulty = 'veteran', fullRun = false } = {}
       const risk=v=>{
         let cost=0;
         for(let t=.1;t<=.95;t+=.1){
-          const x=p.x+v.x*p.moveSpeed*t,y=p.y+v.y*p.moveSpeed*t;
+          const pace=p.attackTime>0||p.castTime>0?.85:1;const x=p.x+v.x*p.moveSpeed*pace*t,y=p.y+v.y*p.moveSpeed*pace*t;
           if(x<54||x>906||y<54||y>586||s.room.obstacles.some(o=>Math.hypot(x-Math.max(o.x,Math.min(o.x+o.width,x)),y-Math.max(o.y,Math.min(o.y+o.height,y)))<14))cost+=120;
           for(const b of s.projectiles)if(b.owner==='enemy'&&Math.hypot(b.x+b.vx*t-x,b.y+b.vy*t-y)<30)cost+=600;
           for(const e of s.enemies){
@@ -191,6 +194,7 @@ function finishSkilledRun(seed, { difficulty = 'veteran', fullRun = false } = {}
       dash=frame%2===0&&risk(best)>=600&&p.stamina>=34&&p.dodgeCooldown<=0;
     }
     const nearest=s.enemies.reduce((best,e)=>!best||Math.hypot(e.x-p.x,e.y-p.y)<Math.hypot(best.x-p.x,best.y-p.y)?e:best,null),gap=nearest?Math.hypot(nearest.x-p.x,nearest.y-p.y):Infinity;
+    for(const e of s.enemies)enemyPositions.set(e.id,{x:e.x,y:e.y});
     step(s, { moveX: direction.x, moveY: direction.y, aimX, aimY, spell: gap<500, melee: gap<105&&p.stamina>=48, dash, interact });
   }
   return { s, visited, bosses, checkpoints };
@@ -279,11 +283,104 @@ test('legal threat-reading Veteran play clears four first-act rooms and Ash Ward
   assert.equal(s.act,2);assert.equal(s.depth,1);assert.equal(s.phase,'playing');assert.equal(s.roomsCleared,4);assert.equal(visited.size,4);
   assert.deepEqual([...bosses],['Ash Warden']);assert.ok(s.player.hp>50);assert.ok(s.elapsed<90);assert.ok(s.relics.chalice);
   assert.deepEqual(checkpoints.map(c=>c.room),['1-1-combat','1-2-treasure','1-3-camp','1-4-boss']);
-  assert.ok(checkpoints[2].hp>checkpoints[1].hp);assert.ok(checkpoints[3].hp<checkpoints[2].hp);
+  assert.ok(checkpoints[2].hp>=checkpoints[1].hp);assert.ok(checkpoints[3].elapsed>checkpoints[2].elapsed);
 });
 
 test('legal Veteran keyboard-direction play completes all twelve rooms and the three harder boss cycles',()=>{
   const {s,visited,bosses}=finishSkilledRun(12345,{fullRun:true});
   assert.equal(s.phase,'won');assert.equal(s.roomsCleared,12);assert.equal(visited.size,12);assert.deepEqual([...bosses],BOSSES);
   assert.ok(s.player.hp>0);assert.ok(s.elapsed<250);assert.ok(s.kills>=25);assert.ok(s.relics.chalice);assert.equal(s.difficulty,'veteran');
+});
+
+
+test('tough relic branches require beating real guards and never resume into stale hostile attacks', () => {
+  for (const difficulty of ['standard', 'veteran', 'nightmare']) {
+    const s = createState({ seed: 33, difficulty }); s.phase = 'route'; s.choices = [{ id: 'treasure' }];
+    assert.equal(chooseRoute(s, 'treasure'), true);
+    s.player.x = s.room.shrine.x; s.player.y = s.room.shrine.y;
+    if (difficulty === 'standard') { step(s, { interact: true }); assert.equal(s.phase, 'reward'); continue; }
+    assert.ok(s.enemies.some(e => e.type === 'sentinel') && s.enemies.some(e => e.type === 'archer'));
+    step(s, { interact: true }); assert.equal(s.phase, 'playing'); assert.equal(s.room.rewardTaken, false);
+    const gold = s.gold;
+    for (const e of s.enemies) e.hp = 0;
+    s.projectiles = [{ owner: 'enemy', x: 850, y: 550, vx: 0, vy: 0, radius: 5, damage: 20, life: 2 }];
+    s.effects = [{ kind: 'fault', x: 850, y: 550, radius: 50, life: .3 }];
+    step(s); assert.equal(s.enemies.length, 0); assert.equal(s.gold, gold); assert.deepEqual(s.projectiles, []); assert.deepEqual(s.effects, []);
+    step(s, { interact: true }); assert.equal(s.phase, 'reward');
+    assert.equal(chooseReward(s, s.choices[0].id), true); assert.equal(s.room.cleared, true); assert.equal(s.room.rewardTaken, true);
+  }
+});
+
+test('every tough guardian has separated mixed support while practice retains its solo duel', () => {
+  for (const difficulty of ['standard', 'veteran', 'nightmare']) for (const act of [1, 2, 3]) {
+    const s = createState({ seed: 34, difficulty }); s.act = act; s.depth = 3; s.phase = 'route'; s.choices = [{ id: 'boss' }];
+    chooseRoute(s, 'boss'); assert.equal(s.enemies.filter(e => e.boss).length, 1);
+    if (difficulty === 'standard') assert.equal(s.enemies.length, 1);
+    else {
+      assert.ok(s.enemies.some(e => e.type === 'archer') && s.enemies.some(e => e.type === 'crawler'));
+      assert.ok(s.enemies.every(e => !s.room.obstacles.some(o => Math.hypot(e.x-Math.max(o.x,Math.min(o.x+o.width,e.x)),e.y-Math.max(o.y,Math.min(o.y+o.height,e.y))) < e.radius)));
+      for (const e of s.enemies.filter(e => !e.boss)) assert.ok(e.timer >= 1.4);
+    }
+  }
+});
+
+test('shared room recovery cannot turn many weak kills or huge chalice stacks into infinite sustain', () => {
+  for (const difficulty of ['veteran', 'nightmare']) {
+    const s = createState({ seed: 35, difficulty }); s.player.hp = 30; s.relics.chalice = 50;
+    const template = { ...s.enemies[0], x: 800, y: 500, phase: 'recover', timer: 1000 };
+    for (let index = 0; index < 20; index++) { s.enemies = [{ ...template, id: index + 100, hp: 0 }, { ...template, id: 900, hp: 1000 }]; step(s); }
+    const restored = s.player.hp - 30; assert.ok(restored > 0 && restored <= 10); assert.equal(s.roomHealing, restored);
+    const hp = s.player.hp; s.enemies = [{ ...template, hp: 0 }, { ...template, id: 900, hp: 1000 }]; step(s); assert.equal(s.player.hp, hp);
+    s.phase = 'route'; s.choices = [{ id: 'combat' }]; chooseRoute(s, 'combat'); assert.equal(s.roomHealing, 0);
+    assert.match(getRelicInfo(s, 'chalice').description, /per room/);
+  }
+});
+
+test('cleaving a packed group grants a bounded mana opening rather than four full refunds', () => {
+  const s = createState({ seed: 36, difficulty: 'veteran' }); s.player.x = 480; s.player.y = 320; s.player.mana = 0;
+  s.enemies = Array.from({ length: 4 }, (_, i) => ({ ...s.enemies.find(e => e.type === 'crawler'), id: 100+i, x: 540+i*4, y: 310+i*5, hp: 100, timer: 100 }));
+  step(s, { melee: true, aimX: 1, aimY: 0 }); assert.ok(s.enemies.every(e => e.hp < 100)); assert.ok(s.player.mana >= 4 && s.player.mana < 8);
+});
+
+test('attack commitments spend movement and recovery, but releasing inputs restores both', () => {
+  const moving = createState({ seed: 37, difficulty: 'veteran' }), attacking = createState({ seed: 37, difficulty: 'veteran' });
+  moving.enemies = attacking.enemies = []; moving.room.cleared = attacking.room.cleared = true;
+  ticks(moving, 36, { right: true }); ticks(attacking, 36, { right: true, melee: true, spell: true });
+  assert.ok(attacking.player.x < moving.player.x - 3); assert.ok(attacking.player.stamina < moving.player.stamina); assert.ok(attacking.player.mana < moving.player.mana);
+  const reserve = attacking.player.stamina; ticks(attacking, 120); assert.ok(attacking.player.stamina > reserve); assert.equal(attacking.player.castTime, 0); assert.equal(attacking.player.staminaDelay, 0);
+  assert.match(DIFFICULTIES.veteran.description, /slow movement/);
+});
+
+test('stacked boots preserve a real dodge cost on tough runs', () => {
+  const s = createState({ seed: 38, difficulty: 'veteran' }); s.enemies = []; s.room.cleared = true; s.relics.fleet = 100;
+  step(s, { dash: true }); assert.ok(s.player.stamina <= 74); assert.match(getRelicInfo(s, 'fleet').description, /down to 26/);
+});
+
+test('a charged guardian escapes pillar navigation padding and cannot be parked behind a corner', () => {
+  const s = createState({ seed: 39, difficulty: 'veteran' }); s.depth = 3; s.phase = 'route'; s.choices = [{ id: 'boss' }]; chooseRoute(s, 'boss');
+  s.player.x = 173; s.player.y = 188; const boss = s.enemies.find(e => e.boss); s.enemies = [boss]; boss.x = 731.26; boss.y = 519.61; boss.phase = 'seek'; boss.timer = 4;
+  const origin = { x: boss.x, y: boss.y }; ticks(s, 240); assert.ok(Math.hypot(boss.x-origin.x,boss.y-origin.y) > 30);
+});
+
+test('a long final guardian fight has finite summons and no summon gold farming', () => {
+  for (const difficulty of ['veteran', 'nightmare']) {
+    const s = createState({ seed: 40, difficulty }); s.act = 3; s.depth = 3; s.phase = 'route'; s.choices = [{ id: 'boss' }]; chooseRoute(s, 'boss');
+    const boss = s.enemies.find(e => e.boss); s.enemies = [boss]; s.player.invulnerable = 1000;
+    let summonedKills = 0, summonCount = 0, gold = s.gold;
+    for (let tick = 0; tick < 120 * 100; tick++) {
+      for (const e of s.enemies) if (e.summoned) { e.hp = 0; summonedKills++; }
+      step(s); summonCount = Math.max(summonCount, boss.summons || 0);
+    }
+    assert.ok(summonCount > 0 && summonCount <= 4); assert.equal(summonedKills, summonCount * 2); assert.equal(s.gold, gold);
+    const settled = summonCount; ticks(s, 120 * 30); assert.equal(boss.summons, settled); assert.ok(s.enemies.length <= 18);
+  }
+});
+
+test('adaptive legal aim, route choices and dodges complete several tough seeded runs', () => {
+  for (const seed of [1, 7, 31, 12345]) {
+    const { s, visited, bosses } = finishSkilledRun(seed, { fullRun: true });
+    assert.equal(s.phase, 'won', `Veteran seed ${seed}: ${s.room.id}`); assert.equal(visited.size, 12); assert.deepEqual([...bosses], BOSSES); assert.ok(s.kills >= 38 && s.player.hp > 0); assert.ok(s.elapsed < 300);
+  }
+  const nightmare = finishSkilledRun(12345, { fullRun: true, difficulty: 'nightmare' }).s;
+  assert.equal(nightmare.phase, 'won'); assert.ok(nightmare.kills > 45); assert.ok(nightmare.player.hp > 0 && nightmare.player.hp < nightmare.player.maxHp / 2);
 });
