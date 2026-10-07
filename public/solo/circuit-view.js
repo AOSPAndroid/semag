@@ -597,7 +597,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     } else if (mode === 'paused') {
       setValue(overlayEyebrow, 'textContent', 'PIT STOP');
       setValue(overlayTitle, 'textContent', 'RACE PAUSED');
-      setValue(overlayDetail, 'textContent', 'P OR RESUME TO GET BACK ON TRACK');
+      setValue(overlayDetail, 'textContent', 'ESC OR RESUME TO GET BACK ON TRACK');
     } else if (mode === 'lost') {
       setValue(overlayEyebrow, 'textContent', 'CHALLENGE OVER');
       setValue(

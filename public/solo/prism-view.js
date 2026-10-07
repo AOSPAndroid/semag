@@ -590,7 +590,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       ctx.font = `${Math.max(8, Math.round(width * 0.044))}px ui-monospace, monospace`;
       const line =
         state.phase === 'paused'
-          ? 'P / RESUME'
+          ? 'ESC / RESUME'
           : state.phase === 'stage-clear'
             ? `${getDigStage(state).title.toUpperCase()}`
             : state.phase === 'won'
@@ -1034,11 +1034,6 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       return;
     const key = gameKey(event);
     const action = KEY_ACTIONS[key];
-    if (key === 'Escape') {
-      event.preventDefault();
-      if (!event.repeat) togglePause();
-      return;
-    }
     if (
       !action ||
       (action === 'hardDrop' && event.target instanceof Element && event.target.closest('button,a'))

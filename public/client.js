@@ -1,5 +1,6 @@
 import { setText, setAttribute, setHidden, setDisabled, setClass, toggleClass, setStyle, setHTML } from './hub/dom.js';
 import { gameCode, displayKey, formatKeyboardText, subscribeKeyboardLayout, mountKeyboardLayoutPicker } from './keyboard-layout.js';
+import { createCombatKeyMap, combatInputFromKeys } from './combat-controls.js';
 import { createState, step, startMatch, cloneState, emptyInput, TICK_RATE } from './engine.js';
 import { ArenaRenderer } from './renderer.js';
 import { botInput, TRAINING_STAGES } from './practice.js';
@@ -146,16 +147,10 @@ function connect() {
   socket.addEventListener('error', () => { /* close provides the reconnect path. */ });
 }
 
-const keyMapping = new Map([
-  ['KeyA', 'left'], ['ArrowLeft', 'left'], ['KeyD', 'right'], ['ArrowRight', 'right'],
-  ['KeyW', 'jump'], ['Space', 'jump'], ['ArrowUp', 'jump'], ['KeyJ', 'light'],
-  ['KeyK', 'heavy'], ['KeyL', 'dash'], ['ShiftLeft', 'dash'], ['ShiftRight', 'dash'],
-  ['KeyI', 'block'], ['KeyU', 'block'],
-]);
+const keyMapping = createCombatKeyMap('afterimage');
 const heldCodes = new Map();
 function refreshKeys() {
-  keys = emptyInput();
-  for (const code of heldCodes.values()) if (keyMapping.has(code)) keys[keyMapping.get(code)] = true;
+  keys = combatInputFromKeys(keyMapping, heldCodes.values(), emptyInput());
 }
 function releaseKeys() {
   heldCodes.clear(); keys = emptyInput();
@@ -167,7 +162,7 @@ function releaseKeys() {
 function isTyping(target) { return target instanceof HTMLElement && (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable); }
 const keyboardIdentity = event => event.code || (event.key?.length === 1 ? event.key.toLowerCase() : event.key);
 document.addEventListener('keydown', (event) => {
-  if (isTyping(event.target) || event.isComposing || event.target instanceof Element && event.target.closest('button,a,summary') || event.ctrlKey || event.metaKey || event.altKey) return;
+  if (event.defaultPrevented || isTyping(event.target) || event.isComposing || event.target instanceof Element && event.target.closest('button,a,summary') || event.ctrlKey || event.metaKey || event.altKey) return;
   const identity = keyboardIdentity(event), code = gameCode(event);
   if (event.repeat && !heldCodes.has(identity)) return;
   if (keyMapping.has(code)) {
@@ -183,7 +178,7 @@ document.addEventListener('keyup', (event) => {
 });
 const keyboardLabels = [...document.querySelectorAll('.controls-panel kbd')].map(node => ({ node, text: node.textContent }));
 const keyboardHints = [...document.querySelectorAll('.alternate-controls')].map(node => ({ node, text: node.textContent.replace('W to jump', '{W} to jump').replace('U to block', '{U} to block') }));
-const keyboardArenaLabel = 'Two sword fighters face each other on a nighttime rooftop. Use {A} and {D} to move, {W} or Space to jump, {J} for a quick strike, {K} for a heavy strike, {L} or Shift to dash, {I} or {U} to block.';
+const keyboardArenaLabel = 'Two sword fighters face each other on a nighttime rooftop. Use {A} and {D} to move, {W} or Space to jump, {C} for a quick strike, {G} for a heavy strike, Shift to dash, {F} to block or parry. Legacy {J}, {K}, {L}, {I} and {U} controls also work.';
 function updateKeyboardHints() {
   for (const { node, text } of keyboardLabels) setText(node, displayKey(text));
   for (const { node, text } of keyboardHints) setText(node, formatKeyboardText(text));

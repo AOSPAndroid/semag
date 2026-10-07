@@ -1,10 +1,11 @@
 import { ARENA, ACT_NAMES, BOSSES, RELICS, DIFFICULTIES, getRelicInfo, createState, step, chooseRoute, chooseReward, chooseCamp, togglePause as pauseState } from './ember-engine.js';
 import { drawEmberActor, drawEmberProjectile, drawEmberBlade } from '../art/ember-sprites.js';
 import { gameKey, getKeyboardLayout, displayKey, subscribeKeyboardLayout } from '../keyboard-layout.js';
+import { blocksSoloShortcut } from './input-shortcuts.js';
 const copy = s => JSON.parse(JSON.stringify(s));
 const node = (tag, cls, text) => { const n = document.createElement(tag); n.className = cls; if (text !== undefined) n.textContent = text; return n; };
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-const controls = { ArrowUp: 'up', w: 'up', W: 'up', ArrowDown: 'down', s: 'down', S: 'down', ArrowLeft: 'left', a: 'left', A: 'left', ArrowRight: 'right', d: 'right', D: 'right', j: 'melee', J: 'melee', k: 'spell', K: 'spell', e: 'spell', E: 'spell', ' ': 'dash', Shift: 'dash', f: 'interact', F: 'interact' };
+const controls = { ArrowUp: 'up', w: 'up', W: 'up', ArrowDown: 'down', s: 'down', S: 'down', ArrowLeft: 'left', a: 'left', A: 'left', ArrowRight: 'right', d: 'right', D: 'right', c: 'melee', C: 'melee', j: 'melee', J: 'melee', k: 'spell', K: 'spell', e: 'spell', E: 'spell', ' ': 'dash', Shift: 'dash', f: 'interact', F: 'interact' };
 function pixelIcon(id) {
   const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('aria-hidden','true');svg.setAttribute('shape-rendering','crispEdges');
   const paths={melee:'M16 2h6v6h-2v2h-2v2h-2v2h-2v2h-2v-2H8v-2H6v-2h4V8h2V6h2V4h2zM6 14h4v4H6v4H2v-4h4z',spell:'M10 2h4v4h2v4h4v4h-4v4h-2v4h-4v-4H8v-4H4v-4h4V6h2z',dash:'M4 4h4v4h4v4H8v4H4v-4h4V8H4zM12 4h4v4h4v4h-4v4h-4v-4h4V8h-4zM2 20h12v2H2z',interact:'M6 2h14v20H6v-4H4v-2h2V2zm2 2v16h10V4H8zm6 7h2v4h-2zM2 8h8v2h2v4h-2v2H2v-2h6v-4H2z',move:'M10 2h4v4h2v2h-2v2h8v4h-8v8h-4v-8H2v-4h8V8H8V6h2z'};
@@ -31,12 +32,12 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   for (let a = 1; a <= 3; a++) { const li = node('li', ''); li.dataset.act = a; li.append(node('b', '', `ACT ${a}`)); for (let d = 1; d <= 4; d++) { const mark = node('span', '', d === 4 ? '♜' : '◇'); mark.dataset.depth = d; li.append(mark);mapMarks.push({mark,a,d}); } map.append(li); }
   const meters = node('div', 'ember-meters'), meterRefs = {};
   for (const [key, title] of [['hp', 'HEALTH'], ['stamina', 'STAMINA'], ['mana', 'MANA']]) { const wrap = node('div', `ember-meter ember-meter-${key}`), label = node('div', 'ember-meter-label'), value = node('b', ''), rail = node('div', 'ember-meter-rail'), fill = node('i', ''); rail.setAttribute('role', 'progressbar'); rail.setAttribute('aria-label', title); rail.setAttribute('aria-valuemin', '0'); label.append(node('span', '', title), value); rail.append(fill); wrap.append(label, rail); meters.append(wrap); meterRefs[key] = { value, rail, fill }; }
-  const board = node('div', 'ember-board'), canvas = node('canvas', 'ember-canvas'); canvas.width = ARENA.width; canvas.height = ARENA.height; canvas.tabIndex = 0; canvas.dataset.soloFocus = ''; canvas.setAttribute('role', 'img'); canvas.setAttribute('aria-label', 'Pixel cavern. WASD to move, pointer to aim, click or J to swing, right click or E to cast, Space to dodge, F to use doors or shrines.');
+  const board = node('div', 'ember-board'), canvas = node('canvas', 'ember-canvas'); canvas.width = ARENA.width; canvas.height = ARENA.height; canvas.tabIndex = 0; canvas.dataset.soloFocus = ''; canvas.setAttribute('role', 'img'); canvas.setAttribute('aria-label', 'Pixel cavern. WASD to move, pointer to aim, click or C to swing, right click or E to cast, Space to dodge, F to use doors or shrines.');
   const overlay = node('div', 'ember-overlay'); overlay.hidden = true; const overlayTitle = node('strong', ''), overlayText = node('p', ''), replay = node('button', '', 'Begin another descent'); replay.type = 'button'; overlay.append(node('span', 'ember-eyebrow', 'EMBER DELVE'), overlayTitle, overlayText, replay); board.append(canvas, overlay);
   const prompt = node('div', 'ember-prompt'); prompt.setAttribute('role', 'status'); prompt.setAttribute('aria-live', 'polite');
   const decisions = node('section', 'ember-decisions'); decisions.hidden = true; decisions.setAttribute('aria-label', 'Dungeon choices'); const decisionTitle = node('strong', 'ember-decision-title'), decisionNote = node('p', 'ember-decision-note'), decisionList = node('div', 'ember-choice-list'); decisions.append(decisionTitle, decisionNote, decisionList);
   const build = node('div', 'ember-build'); build.setAttribute('aria-label', 'Run relics');
-  const hints = node('div', 'ember-hints'); for (const [key, text] of [['WASD','Move'],['Click / J','Blade'],['E / K','Ember bolt'],['Space','Dodge'],['F','Interact']]) { const n = node('span', ''); n.append(node('kbd','',key),document.createTextNode(text)); hints.append(n); }
+  const hints = node('div', 'ember-hints'); for (const [key, text] of [['WASD','Move'],['Click / C','Blade'],['RMB / E','Ember bolt'],['Space','Dodge'],['F','Interact']]) { const n = node('span', ''); n.append(node('kbd','',key),document.createTextNode(text)); hints.append(n); }
   const touch = node('div', 'ember-controls'), pads = {};
   for (const [id, title] of [['move','MOVE'],['aim','AIM + ATTACK']]) { const group = node('div','ember-stick-group'), pad = node('button','ember-stick'), knob = node('i','ember-stick-knob');knob.append(pixelIcon(id==='move'?'move':'spell')); pad.type = 'button'; pad.dataset.stick = id; pad.setAttribute('aria-label',id === 'move' ? 'Drag to move' : 'Drag to aim, swing, and cast'); pad.append(knob); group.append(pad,node('span','',title)); touch.append(group); pads[id] = { pad, knob }; }
   const actions = node('div','ember-actions'), actionRefs = {};
@@ -197,7 +198,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     updateUI();draw();if(time-lastUpdate>180){emit();lastUpdate=time;}schedule();
   }
   const native = target => target instanceof Element && Boolean(target.closest('input,textarea,select,[contenteditable],button,a,summary'));
-  function keydown(e) {if(e.defaultPrevented||e.isComposing||e.metaKey||e.ctrlKey||e.altKey)return;if(native(e.target))return;const control=controls[gameKey(e)];if(!control)return;e.preventDefault();if(e.repeat)return;if(state.phase==='playing'){held.set(e.code||e.key,control);queue.add(control);}}
+  function keydown(e) {if(blocksSoloShortcut(e)||native(e.target))return;const control=controls[gameKey(e)];if(!control)return;e.preventDefault();if(state.phase==='playing'){held.set(e.code||e.key,control);queue.add(control);}}
   function keyup(e) {held.delete(e.code||e.key);}
   const coordinate = e => {const r=canvas.getBoundingClientRect();return{x:(e.clientX-r.left)*960/r.width,y:(e.clientY-r.top)*640/r.height};};
   function aimMove(e){if(e.pointerType!=='touch')aimPoint=coordinate(e);}
@@ -215,7 +216,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   function updateKeyboardHints() {
     view.dataset.keyboardLayout=getKeyboardLayout();
     hints.querySelector('kbd').textContent=displayKey('WASD');
-    canvas.setAttribute('aria-label',`Pixel cavern. ${displayKey('WASD')} or arrow keys to move, pointer to aim, click or J to swing, right click or E to cast, Space to dodge, F to use doors or shrines.`);
+    canvas.setAttribute('aria-label',`Pixel cavern. ${displayKey('WASD')} or arrow keys to move, pointer to aim, click or C to swing, right click or E to cast, Space to dodge, F to use doors or shrines.`);
   }
   const unsubscribeKeyboardLayout=subscribeKeyboardLayout(()=>{release();updateKeyboardHints();});
   updateKeyboardHints();

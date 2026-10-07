@@ -1,13 +1,13 @@
 import { ARENA, HITBOX, DIFFICULTIES, STAGES, UPGRADES, createState, step, chooseUpgrade, togglePause as pauseState, recordKey } from './starfall-engine.js';
 import { gameKey, displayKey, getKeyboardLayout, subscribeKeyboardLayout } from '../keyboard-layout.js';
+import { blocksSoloShortcut } from './input-shortcuts.js';
 
 const W = ARENA.width; const H = ARENA.height; const STEP = 1 / 120;
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 const copy = value => JSON.parse(JSON.stringify(value));
 const node = (tag, className, text) => { const element = document.createElement(tag); element.className = className; if (text !== undefined) element.textContent = text; return element; };
 const text = (element, value) => { if (element.textContent !== value) element.textContent = value; };
-const isForm = target => target instanceof Element && Boolean(target.closest('input,select,textarea,[contenteditable]:not([contenteditable="false"])'));
-const KEY_CONTROLS = { ArrowUp: 'up', w: 'up', W: 'up', ArrowDown: 'down', s: 'down', S: 'down', ArrowLeft: 'left', a: 'left', A: 'left', ArrowRight: 'right', d: 'right', D: 'right', Shift: 'focus', j: 'fire', J: 'fire', ' ': 'bomb', k: 'bomb', K: 'bomb' };
+const KEY_CONTROLS = { ArrowUp: 'up', w: 'up', W: 'up', ArrowDown: 'down', s: 'down', S: 'down', ArrowLeft: 'left', a: 'left', A: 'left', ArrowRight: 'right', d: 'right', D: 'right', Shift: 'focus', c: 'fire', C: 'fire', j: 'fire', J: 'fire', ' ': 'bomb', e: 'bomb', E: 'bomb', k: 'bomb', K: 'bomb' };
 const ICON_PATHS = {
   lance: 'M14 2h4v19h4l-6 9-6-9h4zM6 6h3v11H6zm17 0h3v11h-3z',
   wings: 'M14 3h4v24h-4zM3 12l8-6v18l-8-6zm26 0-8-6v18l8-6z',
@@ -129,7 +129,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   const bossRail = node('div', 'starfall-boss-rail'); bossRail.setAttribute('role', 'progressbar'); bossRail.setAttribute('aria-label', 'Guardian hull'); bossRail.setAttribute('aria-valuemin', '0'); const bossFill = node('i', ''); bossRail.append(bossFill); bossHud.append(bossLine, bossRail);
   const overlay = node('div', 'starfall-overlay'); overlay.hidden = true; const overlayIcon = node('span', 'starfall-overlay-icon', '✦'); overlayIcon.setAttribute('aria-hidden', 'true');
   const overlayKicker = node('small', ''); const overlayTitle = node('strong', ''); const overlayDetail = node('p', ''); const replay = node('button', 'starfall-replay'); replay.type = 'button'; replay.dataset.starfallReplay = ''; overlay.append(overlayIcon, overlayKicker, overlayTitle, overlayDetail, replay); board.append(canvas, bossHud, overlay);
-  const hint = node('div', 'starfall-flight-note'); const core = node('span', '', '● 3 PX CORE'); const focusHint = node('span', ''); focusHint.append(node('kbd', '', 'Shift'), document.createTextNode(' focus · '), node('kbd', '', 'Space'), document.createTextNode(' nova')); hint.append(core, focusHint);
+  const hint = node('div', 'starfall-flight-note'); const core = node('span', '', '● 3 PX CORE'); const focusHint = node('span', ''); focusHint.append(node('kbd', '', 'Click / C'), document.createTextNode(' fire · '), node('kbd', '', 'Shift'), document.createTextNode(' focus · '), node('kbd', '', 'Space / E'), document.createTextNode(' nova')); hint.append(core, focusHint);
   const controls = node('div', 'starfall-controls'); const movePad = node('div', 'starfall-stick'); movePad.dataset.starfallStick = ''; movePad.setAttribute('role', 'group'); movePad.setAttribute('aria-label', 'Touch movement joystick');
   const stickRing = node('span', 'starfall-stick-ring'); const stickThumb = node('span', 'starfall-stick-thumb'); const stickCaption = node('small', '', 'MOVE'); movePad.append(stickRing, stickThumb, stickCaption);
   const actionButtons = node('div', 'starfall-actions'); const focusButton = node('button', 'starfall-control', '◎ FOCUS'); focusButton.type = 'button'; focusButton.dataset.starfallControl = 'focus'; focusButton.setAttribute('aria-label', 'Hold focus: precise movement and narrow lance'); focusButton.setAttribute('aria-pressed', 'false');
@@ -280,7 +280,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   function togglePause() { if (destroyed) return; releaseControls(); pauseState(state); previous = null; accumulator = 0; refresh(); }
   function restart() { if (destroyed) return; releaseControls(); state = createState({ difficulty }); previous = null; accumulator = 0; lastPublished = -1; lastPhase = null; lastEvent = 0; particles = []; rings = []; flashes.clear(); bombGlow = 0; upgradeSignature = ''; buildSignature = ''; refresh(); canvas.focus({ preventScroll: true }); }
   function keydown(event) {
-    if (event.defaultPrevented || event.isComposing || event.ctrlKey || event.altKey || event.metaKey || isForm(event.target) || state.phase !== 'playing') return;
+    if (blocksSoloShortcut(event, { allowRepeat: true }) || state.phase !== 'playing') return;
     const target = event.target instanceof Element ? event.target.closest('button,a,summary') : null;
     const activation = event.key === ' ' || event.key === 'Enter';
     let control = KEY_CONTROLS[gameKey(event)];
@@ -323,7 +323,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   function autoChange() { releaseControls(); publish(true); }
   function hidden() { if (document.hidden) releaseControls(); }
   function motionChange() { if (reducedMotion.matches) { particles = []; rings = []; } if (state.phase !== 'playing') draw(); }
-  function keyboardHints() { view.dataset.keyboardLayout = getKeyboardLayout(); canvas.setAttribute('aria-label', `Starfall Squadron. Move with ${displayKey('WASD')} or arrow keys; Shift focuses your visible three-pixel core, J or click fires, Space or K uses a finite bomb. Touch: drag to move, hold Focus, tap Nova.`); }
+  function keyboardHints() { view.dataset.keyboardLayout = getKeyboardLayout(); canvas.setAttribute('aria-label', `Starfall Squadron. Move with ${displayKey('WASD')} or arrow keys; Shift focuses your visible three-pixel core, click or C fires, Space or E uses a finite bomb. Touch: drag to move, hold Focus, tap Nova.`); }
   const unsubscribe = subscribeKeyboardLayout(() => { releaseControls(); keyboardHints(); }); keyboardHints();
   window.addEventListener('keydown', keydown); window.addEventListener('keyup', keyup); window.addEventListener('blur', releaseControls); document.addEventListener('visibilitychange', hidden);
   controls.addEventListener('pointerdown', controlDown); canvas.addEventListener('pointerdown', canvasDown); window.addEventListener('pointermove', pointerMove); window.addEventListener('pointerup', pointerEnd); window.addEventListener('pointercancel', pointerEnd); view.addEventListener('lostpointercapture', pointerEnd);

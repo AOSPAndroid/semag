@@ -1,5 +1,6 @@
 import { setText, setAttribute, setHidden, setDisabled, setClass, toggleClass, setStyle, setHTML } from './dom.js';
 import { gameCode, displayKey, formatKeyboardText, subscribeKeyboardLayout, mountKeyboardLayoutPicker } from '../keyboard-layout.js';
+import { createCombatKeyMap, combatInputFromKeys } from '../combat-controls.js';
 import * as topdown from '../topdown-engine.js';
 import * as checkers from '../checkers-engine.js';
 import * as cards from '../cards-engine.js';
@@ -57,13 +58,13 @@ $('party-title').textContent = coop ? 'Your party' : 'Your room';
 $('footer-mode').textContent = coop ? 'TWO-PLAYER CO-OP' : boardMode ? 'AMERICAN CHECKERS' : cardMode ? 'TWO-PLAYER CARD TABLE' : 'REAL-TIME 1V1';
 $('stage-label').textContent = coop ? 'THE RUINS / TWO ADVENTURERS' : 'THE MOSS GARDEN / 120 HZ';
 if (vectorMode) {
-  canvas.setAttribute('aria-label', 'Vector Arena. WASD or arrow keys move, mouse aims, left mouse or J fires, right mouse or I focuses, Space dashes, R reloads.');
+  canvas.setAttribute('aria-label', 'Vector Arena. WASD or arrow keys move, mouse aims, left mouse or C fires, right mouse or F focuses, Space dashes, R reloads.');
   $('stage-label').textContent = 'THE OVERGROWN GRID / 120 HZ';
-  $('controls-panel').innerHTML = `<h2>Keep your angles.</h2><div class="control-line"><span class="keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><span>Move</span></div><div class="control-line"><kbd class="wide-key">MOUSE</kbd><span>Aim</span></div><div class="control-line"><kbd class="wide-key">LMB / J</kbd><span>Hold to fire</span></div><div class="control-line"><kbd class="wide-key">RMB / I</kbd><span>Focus aim</span></div><div class="control-line"><kbd class="wide-key">SPACE</kbd><span>Dash / evade</span></div><div class="control-line"><kbd>R</kbd><span>Reload</span></div><p id="combat-tip">Focus slows your movement and removes recoil. Use cover, lead your shots, and dash after the four-frame startup. Dashing cancels a reload.</p><details><summary>Timing &amp; touch controls</summary><p>Six shots per magazine. Reload takes 1.1 seconds. Dash costs 28 stamina and evades bullets during frames 4–15. Shift also dashes. On touch screens, use the Move and Aim pads with the Fire, Focus, Dash, and Reload buttons.</p></details>`;
+  $('controls-panel').innerHTML = `<h2>Keep your angles.</h2><div class="control-line"><span class="keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><span>Move</span></div><div class="control-line"><kbd class="wide-key">MOUSE</kbd><span>Aim</span></div><div class="control-line"><kbd class="wide-key">LMB / C</kbd><span>Hold to fire</span></div><div class="control-line"><kbd class="wide-key">RMB / F</kbd><span>Focus aim</span></div><div class="control-line"><kbd class="wide-key">SPACE</kbd><span>Dash / evade</span></div><div class="control-line"><kbd>R</kbd><span>Reload</span></div><p id="combat-tip">Focus slows your movement and removes recoil. Use cover, lead your shots, and dash after the four-frame startup. Dashing cancels a reload.</p><details><summary>Timing &amp; touch controls</summary><p>Six shots per magazine. Reload takes 1.1 seconds. Dash costs 28 stamina and evades bullets during frames 4–15. Shift also dashes; J also fires and I also focuses. On touch screens, use the Move and Aim pads with the Fire, Focus, Dash, and Reload buttons.</p></details>`;
 }
 if (shinobiMode) {
   $('stage-label').textContent = 'MOONLIT ROOFTOPS / 120 HZ';
-  $('controls-panel').innerHTML = `<h2>Read their blade.</h2><div class="control-line"><span class="keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><span>Move</span></div><div class="control-line"><kbd class="wide-key">MOUSE</kbd><span>Aim</span></div><div class="control-line"><kbd class="wide-key">LMB / J</kbd><span>Quick katana cut</span></div><div class="control-line"><kbd class="wide-key">RMB / K</kbd><span>Committed heavy cut</span></div><div class="control-line"><kbd>L</kbd><span>Throw a kunai</span></div><div class="control-line"><kbd>I</kbd><span>Timed directional parry</span></div><div class="control-line"><kbd class="wide-key">SPACE</kbd><span>Dash / evade</span></div><p id="combat-tip">Aim before committing: a sword strike locks its direction. Face an incoming blade or kunai and tap Parry just before contact. A successful parry stuns a swordsman or reflects a kunai.</p><details><summary>Timing &amp; touch controls</summary><p>Quick cuts start after 10 ticks; heavy cuts after 28. Parry starts after 3 ticks and works through tick 13, then leaves you open. Dash costs 30 stamina and evades during ticks 3–12; it cannot cross bodies or cover. Three kunai recover one at a time after two seconds of free movement. Use the Move and Aim pads with five action buttons on touch screens. Arrow keys also move; Shift also dashes. First to two rounds across three arenas, 75 seconds per round; five rounds at most if there are draws.</p></details>`;
+  $('controls-panel').innerHTML = `<h2>Read their blade.</h2><div class="control-line"><span class="keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><span>Move</span></div><div class="control-line"><kbd class="wide-key">MOUSE</kbd><span>Aim</span></div><div class="control-line"><kbd class="wide-key">LMB / C</kbd><span>Quick katana cut</span></div><div class="control-line"><kbd class="wide-key">RMB / G</kbd><span>Committed heavy cut</span></div><div class="control-line"><kbd>E</kbd><span>Throw a kunai</span></div><div class="control-line"><kbd>F</kbd><span>Timed directional parry</span></div><div class="control-line"><kbd class="wide-key">SPACE</kbd><span>Dash / evade</span></div><p id="combat-tip">Aim before committing: a sword strike locks its direction. Face an incoming blade or kunai and tap Parry just before contact. A successful parry stuns a swordsman or reflects a kunai.</p><details><summary>Timing &amp; touch controls</summary><p>Quick cuts start after 10 ticks; heavy cuts after 28. Parry starts after 3 ticks and works through tick 13, then leaves you open. Dash costs 30 stamina and evades during ticks 3–12; it cannot cross bodies or cover. Three kunai recover one at a time after two seconds of free movement. Use the Move and Aim pads with five action buttons on touch screens. Arrow keys also move; Shift also dashes. Legacy J/K cuts, L kunai and I parry also work. First to two rounds across three arenas, 75 seconds per round; five rounds at most if there are draws.</p></details>`;
 }
 if (coop) $('combat-tip').textContent = 'Clear nine rooms across three biomes and defeat three bosses. Between rooms, walk to a shrine and hold Guard to choose a boon. Hold Guard near a fallen ally to revive them. No friendly fire.';
 if (realtimeMode && !coop && !modernControls) $('combat-tip').textContent = 'Win two rounds across Moss Courtyard, Tide Archive, and Cinder Gallery. Face a strike to guard, tap just before impact to parry, and use each arena’s pillars as cover.';
@@ -161,35 +162,14 @@ function connect() {
   ws.addEventListener('error', () => {});
 }
 
-const keyMap = new Map(brawlMode ? [
-  ['KeyA', 'left'], ['ArrowLeft', 'left'], ['KeyD', 'right'], ['ArrowRight', 'right'],
-  ['KeyW', 'up'], ['ArrowUp', 'up'], ['KeyS', 'down'], ['ArrowDown', 'down'],
-  ['Space', 'jump'], ['KeyJ', 'attack'], ['KeyK', 'special'], ['KeyI', 'shield'],
-  ['KeyL', 'dodge'], ['ShiftLeft', 'dodge'], ['ShiftRight', 'dodge'],
-] : shinobiMode ? [
-  ['KeyA', 'left'], ['ArrowLeft', 'left'], ['KeyD', 'right'], ['ArrowRight', 'right'],
-  ['KeyW', 'up'], ['ArrowUp', 'up'], ['KeyS', 'down'], ['ArrowDown', 'down'],
-  ['KeyJ', 'attack'], ['KeyK', 'heavy'], ['KeyL', 'throw'], ['KeyI', 'parry'],
-  ['Space', 'dash'], ['ShiftLeft', 'dash'], ['ShiftRight', 'dash'],
-] : vectorMode ? [
-  ['KeyA', 'left'], ['ArrowLeft', 'left'], ['KeyD', 'right'], ['ArrowRight', 'right'],
-  ['KeyW', 'up'], ['ArrowUp', 'up'], ['KeyS', 'down'], ['ArrowDown', 'down'],
-  ['KeyJ', 'fire'], ['Space', 'dash'], ['ShiftLeft', 'dash'], ['ShiftRight', 'dash'],
-  ['KeyR', 'reload'], ['KeyI', 'focus'],
-] : [
-  ['KeyA', 'left'], ['ArrowLeft', 'left'], ['KeyD', 'right'], ['ArrowRight', 'right'],
-  ['KeyW', 'up'], ['ArrowUp', 'up'], ['KeyS', 'down'], ['ArrowDown', 'down'],
-  ['KeyJ', 'attack'], ['KeyK', 'shoot'], ['Space', 'roll'], ['ShiftLeft', 'roll'], ['ShiftRight', 'roll'],
-  ['KeyI', 'block'], ['KeyL', 'block'],
-]);
+const keyMap = createCombatKeyMap(gameId);
 let vectorAim = { x: 1, y: 0 }, pointerTarget = null;
 const pointerButtons = { fire: false, focus: false, attack: false, heavy: false }, touchButtons = Object.create(null), touchPointers = new Map();
 const pressIntents = new Set(), actionButtonKeys = new Map();
 const latchedActions = new Set(shinobiMode ? ['attack', 'heavy', 'throw', 'parry', 'dash'] : vectorMode ? ['fire', 'dash', 'reload'] : brawlMode ? ['jump', 'attack', 'special', 'dodge'] : []);
 function typing(target) { return target instanceof HTMLElement && (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable); }
 function refreshKeys() {
-  keys = emptyInput();
-  for (const code of held.values()) if (keyMap.has(code)) keys[keyMap.get(code)] = true;
+  keys = combatInputFromKeys(keyMap, held.values(), emptyInput());
   if (!modernControls) return;
   for (const [key, value] of Object.entries(touchButtons)) if (value) keys[key] = true;
   for (const action of actionButtonKeys.values()) keys[action] = true;
@@ -219,7 +199,7 @@ function releaseKeys() {
 // cannot turn a held movement key into a different action.
 const keyboardIdentity = event => event.code || (event.key?.length === 1 ? event.key.toLowerCase() : event.key);
 document.addEventListener('keydown', event => {
-  if (typing(event.target) || event.isComposing || event.metaKey || event.ctrlKey || event.altKey) return;
+  if (event.defaultPrevented || typing(event.target) || event.isComposing || event.metaKey || event.ctrlKey || event.altKey) return;
   const identity = keyboardIdentity(event), code = gameCode(event);
   const interactive = event.target instanceof Element ? event.target.closest('button, a, summary') : null;
   if (interactive && ['Space', 'Enter'].includes(code)) {
@@ -294,15 +274,16 @@ setupBrawl();
 // Brawl builds its own controls, so capture canonical copy after all game setup.
 const keyboardLabels = [...$('controls-panel').querySelectorAll('kbd')].map(node => ({ node, text: node.textContent }));
 const keyboardArenaLabel = brawlMode
-  ? 'Oddstock Rumble. {A} and {D} move, {W} and {S} choose move direction, Space jumps, {J} attacks, {K} uses a special, {I} shields, {L} or Shift dodges.'
+  ? 'Oddstock Rumble. {A} and {D} move, {W} and {S} choose move direction, Space jumps, {C} attacks, {G} uses a special, {F} shields, Shift dodges. Legacy {J}, {K}, {I} and {L} controls also work.'
   : shinobiMode
-    ? 'Shinobi Showdown. {WASD} or arrow keys move, mouse aims, left mouse or {J} cuts, right mouse or {K} uses a heavy cut, {L} throws a kunai, {I} parries, Space or Shift dashes.'
+    ? 'Shinobi Showdown. {WASD} or arrow keys move, mouse aims, left mouse or {C} cuts, right mouse or {G} uses a heavy cut, {E} throws a kunai, {F} parries, Space or Shift dashes.'
     : vectorMode
-    ? 'Vector Arena. {WASD} or arrow keys move, mouse aims, left mouse or {J} fires, right mouse or {I} focuses, Space dashes, {R} reloads.'
-    : 'Top-down adventure game. Use {WASD} to move, {J} to swing, {K} to shoot, Space to roll, {I} to guard.';
+    ? 'Vector Arena. {WASD} or arrow keys move, mouse aims, left mouse or {C} fires, right mouse or {F} focuses, Space dashes, {R} reloads.'
+    : 'Top-down adventure game. Use {WASD} to move, {C} to swing, {G} to shoot, Space or Shift to roll, {F} to guard. Legacy {J}, {K}, {I} and {L} controls also work.';
 function updateKeyboardHints() {
   for (const { node, text } of keyboardLabels) setText(node, displayKey(text));
   setAttribute(canvas, 'aria-label', formatKeyboardText(keyboardArenaLabel));
+  if (brawlMode) { updateBrawlLobby.character = null; updateBrawlLobby(authoritative); }
 }
 subscribeKeyboardLayout(() => { releaseKeys(); updateKeyboardHints(); });
 const keyboardPicker = document.querySelector('[data-keyboard-layout-picker]');
@@ -401,9 +382,9 @@ function setupBrawl() {
   $('brawl-controls').hidden = !brawlMode; $('brawl-move-card').hidden = !brawlMode;
   if (!brawlMode) return;
   canvas.width = brawl.WORLD.width; canvas.height = brawl.WORLD.height;
-  canvas.setAttribute('aria-label', 'Oddstock Rumble. A and D move, W and S choose move direction, Space jumps, J attacks, K uses a special, I shields, L or Shift dodges.');
+  canvas.setAttribute('aria-label', 'Oddstock Rumble. A and D move, W and S choose move direction, Space jumps, C attacks, G uses a special, F shields, Shift dodges.');
   $('footer-mode').textContent = 'THREE-STOCK PLATFORM BRAWLER';
-  $('controls-panel').innerHTML = `<h2>Make a glorious mess.</h2><div class="control-line"><span class="keys"><kbd>A</kbd><kbd>D</kbd></span><span>Move / steer in air</span></div><div class="control-line"><span class="keys"><kbd>W</kbd><kbd>S</kbd></span><span>Choose move direction</span></div><div class="control-line"><kbd class="wide-key">SPACE</kbd><span>Jump / double jump</span></div><div class="control-line"><kbd>J</kbd><span>Attack</span></div><div class="control-line"><kbd>K</kbd><span>Directional special</span></div><div class="control-line"><kbd>I</kbd><span>Shield / timed parry</span></div><div class="control-line"><kbd class="wide-key">L / SHIFT</kbd><span>Dodge / air evade</span></div><p id="combat-tip">Damage builds knockback, rather than draining health. Launch your rival beyond the stage boundaries to take a stock. Keep your extra jump and upward special for recovery.</p><details><summary>Movement and timing</summary><p>Arrow keys also move and choose direction. Neutral, side, up and down attacks change again in the air. Hold Down to fast-fall; Down + Jump drops through thin platforms. Tap Shield just before a hit to parry. Holding it drains the shield; a broken shield leaves you open. Three stocks each, four minutes, then remaining stocks and lower damage decide the winner.</p></details>`;
+  $('controls-panel').innerHTML = `<h2>Make a glorious mess.</h2><div class="control-line"><span class="keys"><kbd>A</kbd><kbd>D</kbd></span><span>Move / steer in air</span></div><div class="control-line"><span class="keys"><kbd>W</kbd><kbd>S</kbd></span><span>Choose move direction</span></div><div class="control-line"><kbd class="wide-key">SPACE</kbd><span>Jump / double jump</span></div><div class="control-line"><kbd>C</kbd><span>Attack</span></div><div class="control-line"><kbd>G</kbd><span>Directional special</span></div><div class="control-line"><kbd>F</kbd><span>Shield / timed parry</span></div><div class="control-line"><kbd class="wide-key">SHIFT</kbd><span>Dodge / air evade</span></div><p id="combat-tip">Damage builds knockback, rather than draining health. Launch your rival beyond the stage boundaries to take a stock. Keep your extra jump and upward special for recovery.</p><details><summary>Movement and timing</summary><p>Arrow keys also move and choose direction. Legacy J/K attacks, I shield and L dodge also work. Neutral, side, up and down attacks change again in the air. Hold Down to fast-fall; Down + Jump drops through thin platforms. Tap Shield just before a hit to parry. Holding it drains the shield; a broken shield leaves you open. Three stocks each, four minutes, then remaining stocks and lower damage decide the winner.</p></details>`;
   for (const character of Object.values(brawl.CHARACTERS)) {
     const button = document.createElement('button'); button.type = 'button'; button.className = 'brawl-choice';
     button.dataset.brawlCharacter = character.id; button.setAttribute('aria-pressed', 'false');
@@ -465,13 +446,13 @@ function updateBrawlLobby(state) {
     setText($('brawl-character-description'), character?.description || 'Choose a fighter to see their signature moves.');
     $('brawl-moves').replaceChildren();
     if (character) for (const [label, detail] of [
-      [character.specialName, 'K + side or neutral: your signature special.'],
-      [character.recoveryName, 'W + K: upward recovery, once per airtime.'],
-      [character.downName, 'S + K: your downward special.'],
-      ['Ground and aerial attacks', 'J changes with direction and whether you are airborne.'],
+      [character.specialName, '{G} + side or neutral: your signature special.'],
+      [character.recoveryName, '{W} + {G}: upward recovery, once per airtime.'],
+      [character.downName, '{S} + {G}: your downward special.'],
+      ['Ground and aerial attacks', '{C} changes with direction and whether you are airborne.'],
     ]) {
       const row = document.createElement('div'), title = document.createElement('strong'), copy = document.createElement('small');
-      title.textContent = label; copy.textContent = detail; row.append(title, copy); $('brawl-moves').append(row);
+      title.textContent = label; copy.textContent = formatKeyboardText(detail); row.append(title, copy); $('brawl-moves').append(row);
     }
   }
 }

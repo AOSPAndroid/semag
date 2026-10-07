@@ -20,6 +20,7 @@ import {
   displayKey,
   subscribeKeyboardLayout,
 } from "../keyboard-layout.js";
+import { blocksSoloShortcut, handShortcutIndex } from "./input-shortcuts.js";
 const copy = (value) => JSON.parse(JSON.stringify(value));
 function node(tag, className = "", text) {
   const e = document.createElement(tag);
@@ -528,7 +529,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       node(
         "p",
         "",
-        `Select a guardian with 1 / 2 / 3 or tap their portrait. Choose Move or a named action, then tap a tile. ${displayKey("W A S D")} / arrows move the grid cursor; Enter selects its tile. E ends the turn. F chooses attack, M chooses movement. Each guardian has 3 move and 1 action. Movement and action can be used in either order.`,
+        `Select a guardian with 1 / 2 / 3 or tap their portrait. Choose Move or a named action, then tap a tile. ${displayKey("W A S D")} / arrows move the grid cursor; Enter selects its tile. E ends the turn. F chooses attack, C chooses movement. Each guardian has 3 move and 1 action. Movement and action can be used in either order.`,
       ),
       node(
         "p",
@@ -602,23 +603,14 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   function keydown(e) {
     if (
       destroyed ||
-      e.defaultPrevented ||
-      e.repeat ||
-      e.isComposing ||
-      e.ctrlKey ||
-      e.metaKey ||
-      e.altKey ||
+      blocksSoloShortcut(e) ||
       state.phase !== "battle"
     )
       return;
-    if (
-      e.target instanceof Element &&
-      e.target.closest('input,select,textarea,summary,[contenteditable="true"]')
-    )
-      return;
     const key = gameKey(e).toLowerCase();
-    if (/^[123]$/.test(key)) {
-      const h = state.heroes[Number(key) - 1];
+    const heroIndex = handShortcutIndex(e, 3);
+    if (heroIndex !== null) {
+      const h = state.heroes[heroIndex];
       if (h.hp > 0) {
         e.preventDefault();
         selected = h.id;
@@ -658,7 +650,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       if (e.target.closest?.("button") && !view.contains(e.target)) return;
       e.preventDefault();
       run("end-turn");
-    } else if (key === "f" || key === "m") {
+    } else if (key === "f" || key === "c" || key === "m") {
       e.preventDefault();
       mode = key === "f" ? "attack" : "move";
       render();

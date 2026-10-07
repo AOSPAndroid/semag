@@ -1,4 +1,4 @@
-import { gameKey, getKeyboardLayout, mountKeyboardLayoutPicker, subscribeKeyboardLayout } from './keyboard-layout.js';
+import { displayKey, gameKey, getKeyboardLayout, mountKeyboardLayoutPicker, subscribeKeyboardLayout } from './keyboard-layout.js';
 import { copyText, getName, hostInfo, roomUrl, saveName } from './hub/shared.js';
 import { GameAudio } from './audio.js';
 
@@ -17,12 +17,15 @@ export function neutralInput(yaw = 0, pitch = 0) {
 }
 
 export function controlForKey(event, layout = getKeyboardLayout()) {
+  if (event.defaultPrevented || event.isComposing || event.altKey || event.metaKey) return null;
   const key = gameKey(event, layout).toLowerCase();
-  return ({ w: 'up', arrowup: 'up', s: 'down', arrowdown: 'down', a: 'left', arrowleft: 'left', d: 'right', arrowright: 'right', ' ': 'jump', control: 'crouch', shift: 'walk', r: 'reload', e: 'interact', v: 'swap', g: 'grenade', h: 'heal' })[key] || null;
+  const action = ({ w: 'up', arrowup: 'up', s: 'down', arrowdown: 'down', a: 'left', arrowleft: 'left', d: 'right', arrowright: 'right', ' ': 'jump', control: 'crouch', shift: 'walk', r: 'reload', e: 'interact', v: 'swap', q: 'grenade', g: 'grenade', f: 'heal', h: 'heal' })[key] || null;
+  // Ctrl is the crouch control, so captured gameplay actions must work while it is held.
+  return action;
 }
 
 export function isFormTarget(target) {
-  return !!target?.closest?.('input, select, textarea, button, a, [contenteditable="true"], [role="dialog"]');
+  return !!(target?.isContentEditable || target?.closest?.('input, select, textarea, button, a, [contenteditable]:not([contenteditable="false"]), [role="dialog"]'));
 }
 
 export function composeInput(keys, touch, mouse, aim, active = true) {
@@ -681,9 +684,16 @@ async function boot() {
     modalOpen = true; neutralize({ pause: true, unlock: true }); $('guide-dialog').hidden = false; $('guide-button').setAttribute('aria-expanded', 'true'); $('close-guide').focus();
   }
   function closeGuide() { $('guide-dialog').hidden = true; modalOpen = false; $('guide-button').setAttribute('aria-expanded', 'false'); updateUI(); $('guide-button').focus(); }
-  function updateLayout() { neutralize({ pause: entered, unlock: true }); $('move-keys').textContent = getKeyboardLayout().toUpperCase(); }
-  const unsubscribeLayout = subscribeKeyboardLayout(updateLayout); $('move-keys').textContent = getKeyboardLayout().toUpperCase();
+  function updateKeyLabels() {
+    const layout = getKeyboardLayout();
+    $('move-keys').textContent = layout.toUpperCase();
+    for (const label of document.querySelectorAll('[data-voxel-key]')) label.textContent = displayKey(label.dataset.voxelKey, layout);
+    canvas.setAttribute('aria-label', `3D tactical shooter. ${layout.toUpperCase()} or arrows to move, mouse to look, left click to shoot or strike, right click to aim, V switch sword, ${displayKey('Q', layout)} grenade, F healing potion, R reload, hold E to plant or defuse, Space jump, Control crouch, Shift walk.`);
+  }
+  function updateLayout() { neutralize({ pause: entered, unlock: true }); updateKeyLabels(); }
+  const unsubscribeLayout = subscribeKeyboardLayout(updateLayout); updateKeyLabels();
   listen(window, 'keydown', event => {
+    if (event.defaultPrevented || event.isComposing || event.altKey || event.metaKey) return;
     if (event.key === 'Escape') { if (modalOpen) closeGuide(); else if (entered && state?.phase !== 'lobby') neutralize({ pause: true, unlock: true }); return; }
     const loadout = entered && !modalOpen && !document.hidden ? loadoutForKey(event, state?.phase) : null;
     if (loadout) { event.preventDefault(); selectArenaLoadout(loadout); return; }

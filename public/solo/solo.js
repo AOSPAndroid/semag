@@ -1,4 +1,5 @@
 import { mountKeyboardLayoutPicker, subscribeKeyboardLayout, displayKey } from '../keyboard-layout.js';
+import { soloSessionShortcut } from './input-shortcuts.js';
 import { setText, setAttribute, setDisabled, setHTML } from '../hub/dom.js';
 const SOLO_COVERS = {
   'shadow-lantern': 'shadow',
@@ -37,7 +38,7 @@ const GAME_INFO = {
     title: 'Starfall Squadron', category: 'BULLET HELL / SIX GUARDIANS', description: 'Read the pattern. Find the gap. Bring your squadron home.',
     module: '/solo/starfall-view.js', ruleTitle: 'Stay calm inside the pattern.',
     recordPolicy: { scopes: ['standard-campaign-v1', 'veteran-campaign-v1', 'nightmare-campaign-v1'], onlyWon: true, completionResult: 'campaign' },
-    controls: [[['W', 'A', 'S', 'D', '↑', '←', '↓', '→'], 'Move'], [['Shift'], 'Focus / precision movement'], [['J', 'Click'], 'Fire'], [['Space', 'K'], 'Bomb']],
+    controls: [[['W', 'A', 'S', 'D', '↑', '←', '↓', '→'], 'Move'], [['Shift'], 'Focus / precision movement'], [['Click', 'C'], 'Fire'], [['Space', 'E'], 'Bomb']],
     touch: 'Drag to move your ship. Hold Focus for fine movements, and use Bomb when a pattern leaves little room. Auto-fire starts enabled.',
     rules: ['Fight through six stages in three regions. Each stage ends with a guardian; the final guardian changes its attacks across three phases.', 'Your visible pilot core is the collision target. Focus slows your movement for narrow gaps and concentrates your fire.', 'Near passes build your graze score, but direct contact costs hull. Watch the warnings and leave room to change direction.', 'Bombs clear dangerous shots and are limited across the campaign. Choose upgrades between stages to shape your ship.', 'Veteran starts by default. Standard and Nightmare have separate campaign records; changing difficulty begins a fresh run.', 'Only a completed six-stage campaign saves a score. Pauses and upgrade choices freeze combat.'],
   },
@@ -45,7 +46,7 @@ const GAME_INFO = {
     title: 'Ironwood Tactics', category: 'TURN-BASED SQUAD ROGUELIKE', description: 'Read their intent. Push the line. Protect the beacon.',
     module: '/solo/ironwood-view.js', ruleTitle: 'Change the board before they strike.',
     recordPolicy: { scopes: ['ironwood-v1-standard', 'ironwood-v1-veteran', 'ironwood-v1-nightmare'], onlyWon: true },
-    controls: [[['Click', 'Tap'], 'Select heroes, actions and tiles'], [['1', '2', '3'], 'Select a hero'], [['W', 'A', 'S', 'D', '↑', '←', '↓', '→'], 'Move the grid cursor'], [['Enter'], 'Choose a tile'], [['E'], 'End squad turn']],
+    controls: [[['Click', 'Tap'], 'Select heroes, actions and tiles'], [['1', '2', '3'], 'Select a hero'], [['W', 'A', 'S', 'D', '↑', '←', '↓', '→'], 'Move the grid cursor'], [['Enter'], 'Choose a tile'], [['F'], 'Choose attack'], [['C'], 'Choose movement'], [['E'], 'End squad turn']],
     touch: 'Tap a hero, choose an action, then tap a highlighted tile. Review the enemy intent and resolution order before ending the turn.',
     rules: ['Lead a Warden, Ranger, and Weaver through nine missions in three biomes, with a guardian at the end of each biome.', 'Each hero has movement and one action per turn. Use pushes, pulls, cover, and firing lines to change the board. Bosses are rooted: displacement deals its collision bonus but cannot move them or cancel their intent.', 'Enemy intent marks the exact attack tiles and the order they resolve. Reposition your squad and protect the beacon before ending your turn. Royal lines can also hit the beacon, and living bosses drain one, two, or three beacon health each turn by biome.', 'Health and limited bandages carry between battles. Choose a unique permanent upgrade or a constrained recovery after each victory.', 'A mission deadline brings escalating storm damage. Waiting indefinitely cannot clear an expedition.', 'Veteran starts by default. Finish all nine missions to save expedition renown; practice and Nightmare records stay separate.'],
   },
@@ -56,7 +57,7 @@ const GAME_INFO = {
       ...Object.fromEntries(PARIS_SURVIVAL_SCOPES.map(scope => [scope, { onlyCrashed: true, unit: 'duration-ms' }])),
       ...Object.fromEntries(PARIS_DELIVERY_SCOPES.map(scope => [scope, { onlyWon: true }])),
     } },
-    controls: [[['A', 'D', '←', '→'], 'Steer'], [['W', '↑'], 'Pedal'], [['S', '↓'], 'Brake'], [['Space'], 'Motor assist'], [['B'], 'Ring bell']],
+    controls: [[['A', 'D', '←', '→'], 'Steer'], [['W', '↑'], 'Pedal'], [['S', '↓'], 'Brake'], [['Space'], 'Motor assist'], [['E'], 'Ring bell']],
     touch: 'Your e-bike moves automatically. Hold the steering and brake buttons to find gaps; use pedal and assist for bursts. Tap the bell to warn cyclists.',
     rules: ['Survival starts by default. Stay alive as long as possible while the streets cycle endlessly through five Paris-inspired districts.', 'Your e-bike moves automatically and its pace keeps rising with time alive. Braking trims speed but cannot stop the ride.', 'Thread between cars. Buses signal before pulling out, cyclists warn before veering, and parked doors flash before opening.', 'Motor assist spends battery; braking recovers charge. The bell warns nearby cyclists, while buses and cars still need a clear escape route.', 'Three impacts end a Survival run. District changes never repair the rider. Pause time does not count toward your record.', 'Veteran starts faster and demands more precise gaps as you survive. Your longest completed time stays separate by difficulty and from earlier rules.', 'Five deliveries is an alternate route with checkpoint deadlines on Veteran and Nightmare. Its points records require all five districts and stay separate from Survival. Veteran and Nightmare Rush also use automatic pace and finite braking.'],
   },
@@ -64,7 +65,7 @@ const GAME_INFO = {
     recordPolicy: { scopes: ACTION_SCOPES },
     title: 'Ember Delve', category: 'ACTION ROGUELIKE / THREE ACTS', description: 'Read the windup. Break the pursuit. Earn your descent.',
     module: '/solo/ember-view.js', ruleTitle: 'Keep the flame alive.',
-    controls: [[['W','A','S','D'], 'Move'], [['Mouse'], 'Aim'], [['Click','J'], 'Sword'], [['E','K'], 'Ember bolt'], [['Space','Shift'], 'Dodge'], [['F'], 'Interact']],
+    controls: [[['W','A','S','D'], 'Move'], [['Mouse'], 'Aim'], [['Click','C'], 'Sword'], [['Right click','E'], 'Ember bolt'], [['Space','Shift'], 'Dodge'], [['F'], 'Interact']],
     touch: 'Use the left pad to move, the right pad to aim, and the action buttons to attack, cast, dodge, or interact.',
     rules: ['Clear each chamber, then reach a glowing exit to choose a route.', 'Safe roads offer supplies and camps. Risky roads offer elite fights and richer rewards.', 'Choose relics to shape sword, spell, and dodge combinations. Health carries between rooms. Relic chambers are guarded, bosses bring support, and repeated healing shares a room allowance.', 'Veteran starts by default: enemies intercept, flank, and pressure your recovery. Watch their warnings and vary your movement. Attacking briefly slows you and delays stamina recovery, so commit after an opening.', 'Standard offers a gentler descent; Nightmare demands tighter resource management and dodges. Changing difficulty begins a fresh run.', 'Save the run seed to revisit the same dungeon at the same difficulty. A new run resets your build.'],
   },
@@ -136,7 +137,7 @@ const GAME_INFO = {
     recordPolicy: { scopes: ['default', 'veteran', 'veteran-v2', 'nightmare', 'veteran-v3', 'nightmare-v3', 'veteran-v4', 'nightmare-v4'] },
     title: 'Rift Survivor', category: 'SURVIVAL ARENA / FOUR SECTORS', description: 'Find your opening. Shape your build. Close the rift.',
     module: '/solo/rift-view.js', ruleTitle: 'Learn the patterns.',
-    controls: [[['W', 'A', 'S', 'D'], 'Move'], [['Mouse'], 'Aim'], [['Click', 'J'], 'Fire'], [['Space', 'Shift'], 'Dash']],
+    controls: [[['W', 'A', 'S', 'D'], 'Move'], [['Mouse'], 'Aim'], [['Click', 'C'], 'Fire'], [['Space', 'Shift'], 'Dash']],
     touch: 'Use the left pad to move and the right pad to aim and fire. Dash at the right moment to cross a dangerous gap.',
     rules: ['Clear twenty waves across four sectors. Chasers, strafers, casters, charging brutes, and affixed elites demand different movement.', 'Veteran starts with mixed threats and stronger pursuit. Enemy movement, new attacks, and attack frequency grow faster with active combat time, adding up to 25% threat pace after five minutes. Change direction after an enemy locks its aim; use cover and keep room to dash.', 'Sustained fire heats your weapon. Release it to cool down faster; dash uses stamina. Elites mark escape routes with visible warnings, so change direction and use cover. Warning durations remain readable as the threat pace rises.', 'Choose an upgrade after each cleared wave. Build around ricochet, chains, frost, dash attacks, and recovery. Upgrade menus and pauses freeze the pace clock; clearing a wave does not reset it. Overcharge a wave for extra risk and rewards.', 'Four guardians protect waves five, ten, fifteen, and twenty. Read their warning patterns and floor hazards. Guardians add a second phase; frost slows them but cannot pin them indefinitely.', 'Expedition (Standard) and Nightmare remain selectable. A new run resets threat pace. Accelerating Veteran and Nightmare records stay separate from earlier scores.'],
   },
@@ -335,11 +336,10 @@ async function startSolo() {
     else cleanup();
   }
   function keydown(event) {
-    if (!game || destroyed || event.defaultPrevented || event.repeat || event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
-    if (event.target instanceof Element && event.target.closest('input,select,textarea,[contenteditable="true"]')) return;
-    const key = event.key.toLowerCase();
-    if (key === 'r') { event.preventDefault(); newGame(); }
-    else if (key === 'p') { event.preventDefault(); togglePause(); }
+    if (!game || destroyed) return;
+    const shortcut = soloSessionShortcut(event);
+    if (shortcut === 'restart') { event.preventDefault(); newGame(); }
+    else if (shortcut === 'pause') { event.preventDefault(); togglePause(); }
   }
   function helpKeydown(event) {
     // Keep native disclosure activation from also triggering a game action.

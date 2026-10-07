@@ -150,7 +150,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   canvas.setAttribute('role', 'img');
   canvas.setAttribute(
     'aria-label',
-    'Night highway. Arrow keys or W A S D to drive, Space to boost, P to pause.',
+    'Night highway. Arrow keys or W A S D to drive, Space to boost, Escape to pause.',
   );
   const overlay = node('div', 'highway-overlay');
   overlay.hidden = true;
@@ -337,7 +337,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
         overlayDetail,
         'textContent',
         state.phase === 'paused'
-          ? 'Press P or Resume to keep driving.'
+          ? 'Press Escape or Resume to keep driving.'
           : `${(state.distance / 1000).toFixed(2)} KM  ·  ${state.score} POINTS`,
       );
       setValue(replay, 'hidden', state.phase === 'paused');
@@ -1041,7 +1041,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   replay.addEventListener('click', restart);
   function updateKeyboardHints() {
     view.dataset.keyboardLayout = getKeyboardLayout();
-    canvas.setAttribute('aria-label', `Night highway. Arrow keys or ${displayKey('W A S D')} to drive, Space to boost, P to pause.`);
+    canvas.setAttribute('aria-label', `Night highway. Arrow keys or ${displayKey('W A S D')} to drive, Space to boost, Escape to pause.`);
   }
   const unsubscribeKeyboardLayout = subscribeKeyboardLayout(() => { releaseControls(); updateKeyboardHints(); publish(true); });
   updateKeyboardHints();

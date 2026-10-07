@@ -1,5 +1,6 @@
 import { ARENA, OBSTACLES, TOTAL_WAVES, UPGRADES, SECTORS, DIFFICULTIES, threatPace, chargeSpeed, enemyShotPattern, createState, step, togglePause as pauseState, chooseUpgrade } from './rift-engine.js';
 import { gameKey, getKeyboardLayout, displayKey, subscribeKeyboardLayout } from '../keyboard-layout.js';
+import { blocksSoloShortcut } from './input-shortcuts.js';
 
 const W = ARENA.width;
 const H = ARENA.height;
@@ -8,9 +9,8 @@ const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 const KEY_CONTROLS = {
   ArrowUp: 'up', w: 'up', W: 'up', ArrowDown: 'down', s: 'down', S: 'down',
   ArrowLeft: 'left', a: 'left', A: 'left', ArrowRight: 'right', d: 'right', D: 'right',
-  j: 'fire', J: 'fire', ' ': 'dash', Space: 'dash', Shift: 'dash', ShiftLeft: 'dash', ShiftRight: 'dash',
+  c: 'fire', C: 'fire', j: 'fire', J: 'fire', ' ': 'dash', Space: 'dash', Shift: 'dash', ShiftLeft: 'dash', ShiftRight: 'dash',
 };
-const isForm = target => target instanceof Element && Boolean(target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"])'));
 const copy = value => JSON.parse(JSON.stringify(value));
 const textIfChanged = (element, value) => { if (element.textContent !== value) element.textContent = value; };
 const attrIfChanged = (element, name, value) => { if (element.getAttribute(name) !== value) element.setAttribute(name, value); };
@@ -133,7 +133,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   canvas.tabIndex = 0;
   canvas.dataset.soloFocus = '';
   canvas.setAttribute('role', 'img');
-  canvas.setAttribute('aria-label', 'Rift arena. Move with WASD or arrow keys, aim with the pointer, hold click or J to fire, Space or Shift to dash.');
+  canvas.setAttribute('aria-label', 'Rift arena. Move with WASD or arrow keys, aim with the pointer, hold click or C to fire, Space or Shift to dash.');
   const overlay = node('div', 'rift-overlay');
   overlay.hidden = true;
   const overlayEyebrow = node('span', 'rift-overlay-eyebrow');
@@ -162,7 +162,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   status.setAttribute('aria-live', 'polite');
   status.setAttribute('aria-atomic', 'true');
   const hint = node('p', 'rift-hint');
-  for (const [key, label] of [['WASD', 'Move'], ['Mouse', 'Aim'], ['Click / J', 'Fire'], ['Space', 'Dash']]) {
+  for (const [key, label] of [['WASD', 'Move'], ['Mouse', 'Aim'], ['Click / C', 'Fire'], ['Space', 'Dash']]) {
     const item = node('span', '');
     item.append(node('kbd', '', key), document.createTextNode(label));
     hint.append(item);
@@ -381,7 +381,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     if (!overlay.hidden) {
       textIfChanged(overlayEyebrow, { paused: 'HOLD YOUR POSITION', upgrade: 'A MOMENT BETWEEN WAVES', won: 'THE RIFT IS SEALED', lost: 'ONE MORE RUN' }[state.phase]);
       textIfChanged(overlayTitle, { paused: 'Take a breather.', upgrade: 'Wave cleared.', won: 'You held the line.', lost: 'The rift fought back.' }[state.phase]);
-      textIfChanged(overlayDetail, state.phase === 'paused' ? 'Press P or Resume to continue.' : state.phase === 'upgrade' ? 'Choose your next upgrade below.' : `${state.score} POINTS · ${state.kills} ENEMIES CLEARED`);
+      textIfChanged(overlayDetail, state.phase === 'paused' ? 'Press Escape or Resume to continue.' : state.phase === 'upgrade' ? 'Choose your next upgrade below.' : `${state.score} POINTS · ${state.kills} ENEMIES CLEARED`);
       propIfChanged(replay, 'hidden', state.phase === 'paused' || state.phase === 'upgrade');
     }
     updateUpgrades();
@@ -1083,7 +1083,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     refresh(); canvas.focus({ preventScroll: true });
   }
   function keydown(event) {
-    if (event.defaultPrevented || event.isComposing || event.ctrlKey || event.metaKey || event.altKey || isForm(event.target)) return;
+    if (blocksSoloShortcut(event, { allowRepeat: true })) return;
     const focused = event.target instanceof Element ? event.target.closest('button[data-control]') : null;
     const activation = event.code === 'Space' || event.key === ' ' || event.key === 'Enter';
     const focusedControl = activation && focused && controls.contains(focused) ? focused.dataset.control : null;
@@ -1199,7 +1199,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   function updateKeyboardHints() {
     view.dataset.keyboardLayout = getKeyboardLayout();
     hint.querySelector('kbd').textContent = displayKey('WASD');
-    canvas.setAttribute('aria-label', `Rift arena. Move with ${displayKey('WASD')} or arrow keys, aim with the pointer, hold click or J to fire, Space or Shift to dash.`);
+    canvas.setAttribute('aria-label', `Rift arena. Move with ${displayKey('WASD')} or arrow keys, aim with the pointer, hold click or C to fire, Space or Shift to dash.`);
   }
   const unsubscribeKeyboardLayout = subscribeKeyboardLayout(() => { releaseControls(); updateKeyboardHints(); });
   updateKeyboardHints();

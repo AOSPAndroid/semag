@@ -5,12 +5,13 @@ import {
 import { createParisPerspective } from '../art/paris-perspective.js';
 import { createParisRenderer } from './paris-renderer.js';
 import { gameKey, getKeyboardLayout, displayKey, subscribeKeyboardLayout } from '../keyboard-layout.js';
+import { blocksSoloShortcut, createPressLatch } from './input-shortcuts.js';
 
 const W = 720, H = 520;
 const KEY_CONTROLS = {
   ArrowLeft: 'left', a: 'left', A: 'left', ArrowRight: 'right', d: 'right', D: 'right',
   ArrowUp: 'throttle', w: 'throttle', W: 'throttle', ArrowDown: 'brake', s: 'brake', S: 'brake',
-  ' ': 'assist', Space: 'assist', b: 'bell', B: 'bell',
+  ' ': 'assist', Space: 'assist', e: 'bell', E: 'bell', b: 'bell', B: 'bell',
 };
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 const isInteractive = (target) => target instanceof Element &&
@@ -35,6 +36,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   const desktop = window.matchMedia?.('(min-width:951px) and (pointer:fine)');
   const mobile = window.matchMedia?.('(max-width:600px)');
   const keys = new Map(), pointers = new Map(), buttons = new Map();
+  const bellPress = createPressLatch();
   let destroyed = false, raf = null, previousFrame = null, accumulator = 0;
   let lastPublished = -Infinity, lastPhase = null, lastEventId = -1;
   let message = null, bellPulseUntil = 0;
@@ -74,7 +76,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   const canvas = node('canvas', 'paris-canvas');
   canvas.width = W; canvas.height = H; canvas.tabIndex = 0; canvas.dataset.soloFocus = '';
   canvas.setAttribute('role', 'img');
-  canvas.setAttribute('aria-label', 'Forward-facing, 3D-style Paris street. Ride behind the e-bike courier. Arrow keys or W A S D to ride. Space for electric assist; B rings the bell. P pauses.');
+  canvas.setAttribute('aria-label', 'Forward-facing, 3D-style Paris street. Ride behind the e-bike courier. Arrow keys or W A S D to ride. Space for electric assist; E rings the bell. Escape pauses.');
   const overlay = node('div', 'paris-overlay'); overlay.hidden = true;
   const overlayEyebrow = node('span', 'paris-overlay-eyebrow');
   const overlayTitle = node('strong', 'paris-overlay-title');
@@ -106,7 +108,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     if (control === 'brake') button.append(brakeMeter);
     buttons.set(control, button); controls.append(button);
   }
-  const hint = node('p', 'paris-hint', '← → steer · ↑ pedal · ↓ brake · Space assist · B bell. Amber arrows show a merge; red stripes warn of a door.');
+  const hint = node('p', 'paris-hint', '← → steer · ↑ pedal · ↓ brake · Space assist · E bell. Amber arrows show a merge; red stripes warn of a door.');
   const status = node('p', 'paris-status');
   status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite'); status.setAttribute('aria-atomic', 'true');
   footer.append(controls, hint, status);
@@ -130,6 +132,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   }
   function releaseControls() {
     keys.clear();
+    bellPress.reset();
     const captures = [...pointers]; pointers.clear();
     for (const [id, pointer] of captures) {
       try { if (pointer.button.hasPointerCapture?.(id)) pointer.button.releasePointerCapture(id); } catch {}
@@ -137,7 +140,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     syncButtons();
   }
   function details() {
-    if (state.phase === 'paused') return 'Ride paused. Press P or Resume to continue.';
+    if (state.phase === 'paused') return 'Ride paused. Press Escape or Resume to continue.';
     if (state.mode === 'survival') {
       if (state.phase === 'lost') return `Survived ${formatAlive(Math.floor((state.finishTime ?? state.elapsed) * 1000))}. Three impacts ended your ${(state.distance / 1000).toFixed(2)} km ride.`;
       return 'Stay alive as Paris gets faster. Read the signals, use short brake bursts, and leave an escape gap.';
@@ -177,8 +180,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     brakeButton.dataset.recharging = String(automaticPace && state.brakeLocked);
     brakeButton.title = automaticPace ? 'Short brake burst. Release to recharge; braking cannot stop the bike.' : 'Hold to brake.';
     setText(hint, automaticPace
-      ? `${displayKey('A / D')} / ← → steer · ${displayKey('W')} / ↑ pedal · Space assist · B bell. Speed rises automatically. S / ↓ is a short brake burst; release it to recharge.`
-      : `${displayKey('A / D')} / ← → steer · ${displayKey('W')} / ↑ pedal · S / ↓ brake · Space assist · B bell. Amber arrows show a merge; red stripes warn of a door.`);
+      ? `${displayKey('A / D')} / ← → steer · ${displayKey('W')} / ↑ pedal · Space assist · E bell. Speed rises automatically. S / ↓ is a short brake burst; release it to recharge.`
+      : `${displayKey('A / D')} / ← → steer · ${displayKey('W')} / ↑ pedal · S / ↓ brake · Space assist · E bell. Amber arrows show a merge; red stripes warn of a door.`);
     progressFill.style.width = `${portion}%`;
     setAttr(progress, 'aria-valuenow', String(Math.round(portion)));
     for (const button of modes.children) setAttr(button, 'aria-pressed', String(button.dataset.mode === state.mode));
@@ -188,7 +191,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     if (!overlay.hidden) {
       setText(overlayEyebrow, state.phase === 'paused' ? 'UN PETIT MOMENT' : survival ? 'PARIS / SURVIVAL' : 'PARIS / FIN DE COURSE');
       setText(overlayTitle, state.phase === 'paused' ? 'Take a breather.' : survival ? `Survived ${formatAlive(Math.floor((state.finishTime ?? state.elapsed) * 1000))}.` : state.phase === 'won' ? 'Livraison réussie.' : 'End of the ride.');
-      setText(overlayDetail, state.phase === 'paused' ? 'Press P or Resume when you are ready.' : survival
+      setText(overlayDetail, state.phase === 'paused' ? 'Press Escape or Resume when you are ready.' : survival
         ? `THREE IMPACTS · ${(state.distance / 1000).toFixed(2)} KM · ${Math.round(state.speed * 3.6)} KM/H · ${getDifficulty(state).title.toUpperCase()}`
         : `${(state.distance / 1000).toFixed(2)} KM · ${Math.round(state.score)} POINTS · ${getDifficulty(state).title.toUpperCase()}`);
       replay.hidden = state.phase === 'paused';
@@ -277,8 +280,10 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     const elapsed = previousFrame === null ? 0 : clamp((time - previousFrame) / 1000, 0, 0.075);
     previousFrame = time; accumulator += elapsed;
     const held = input();
+    const bellHeld = held.bell;
     let steps = 0;
     while (accumulator >= FIXED_DT && steps < 9 && state.phase === 'playing') {
+      held.bell = bellPress.consume(bellHeld);
       step(state, held, FIXED_DT); events(); accumulator -= FIXED_DT; steps++;
     }
     if (steps === 9) accumulator = Math.min(accumulator, FIXED_DT);
@@ -319,7 +324,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     publish(true); draw(); syncAnimation();
   }
   function keydown(event) {
-    if (event.isComposing || event.altKey || event.ctrlKey || event.metaKey) return;
+    if (blocksSoloShortcut(event, { allowRepeat: true })) return;
     if (event.key === 'Tab') { releaseControls(); return; }
     const focused = event.target instanceof Element ? event.target.closest('button[data-control]') : null;
     const activation = event.key === ' ' || event.code === 'Space' || event.key === 'Enter';
@@ -329,17 +334,25 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     if (!control || state.phase !== 'playing') return;
     const key = event.code || event.key;
     if (event.repeat && !keys.has(key)) return;
-    event.preventDefault(); keys.set(key, control); syncButtons();
+    event.preventDefault();
+    if (control === 'bell' && !event.repeat && !keys.has(key)) bellPress.press();
+    keys.set(key, control); syncButtons();
   }
   function keyup(event) { if (keys.delete(event.code || event.key)) syncButtons(); }
   function pointerdown(event) {
     const button = event.target instanceof Element ? event.target.closest('button[data-control]') : null;
     if (!button || !controls.contains(button) || state.phase !== 'playing' || (event.button !== 0 && event.pointerType !== 'touch')) return;
     event.preventDefault(); pointers.set(event.pointerId, { control: button.dataset.control, button });
+    if (button.dataset.control === 'bell') bellPress.press();
     try { button.setPointerCapture(event.pointerId); } catch {}
     syncButtons();
   }
-  function pointerend(event) { if (pointers.delete(event.pointerId)) syncButtons(); }
+  function pointerend(event) {
+    const pointer = pointers.get(event.pointerId);
+    if (!pointers.delete(event.pointerId)) return;
+    if (pointer.control === 'bell' && ['pointercancel', 'lostpointercapture'].includes(event.type)) bellPress.reset();
+    syncButtons();
+  }
   function chooseMode(event) {
     const button = event.target instanceof Element ? event.target.closest('button[data-mode]') : null;
     if (button && modes.contains(button) && button.dataset.mode !== state.mode) restart({ mode: button.dataset.mode });
@@ -365,7 +378,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   observer?.observe(canvas); observer?.observe(view);
   function updateKeyboardHints() {
     view.dataset.keyboardLayout = getKeyboardLayout();
-    canvas.setAttribute('aria-label', `Forward-facing, 3D-style Paris street. Ride behind the e-bike courier. Arrow keys or ${displayKey('W A S D')} to ride. Space for electric assist; B rings the bell. P pauses.`);
+    canvas.setAttribute('aria-label', `Forward-facing, 3D-style Paris street. Ride behind the e-bike courier. Arrow keys or ${displayKey('W A S D')} to ride. Space for electric assist; E rings the bell. Escape pauses.`);
   }
   const unsubscribeKeyboardLayout = subscribeKeyboardLayout(() => { releaseControls(); updateKeyboardHints(); publish(true); });
   updateKeyboardHints();

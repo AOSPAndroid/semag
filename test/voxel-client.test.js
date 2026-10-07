@@ -7,9 +7,26 @@ test('FPS controls use printed French letters and preserve arrows and actions', 
   assert.equal(controlForKey({ key: 'z', code: 'KeyW' }, 'zqsd'), 'up');
   assert.equal(controlForKey({ key: 'q', code: 'KeyA' }, 'zqsd'), 'left');
   assert.equal(controlForKey({ key: 'w', code: 'KeyZ' }, 'zqsd'), null);
-  assert.equal(controlForKey({ key: 'a', code: 'KeyQ' }, 'zqsd'), null);
+  assert.equal(controlForKey({ key: 'a', code: 'KeyQ' }, 'zqsd'), 'grenade');
+  assert.equal(controlForKey({ key: 'q', code: 'KeyQ' }, 'wasd'), 'grenade');
   assert.equal(controlForKey({ key: 'ArrowLeft', code: 'ArrowLeft' }, 'zqsd'), 'left');
-  for (const [key, action] of [[' ', 'jump'], ['Control', 'crouch'], ['Shift', 'walk'], ['r', 'reload'], ['e', 'interact'], ['g', 'grenade'], ['v', 'swap'], ['h', 'heal']]) assert.equal(controlForKey({ key }, 'zqsd'), action);
+  for (const [key, action] of [[' ', 'jump'], ['Control', 'crouch'], ['Shift', 'walk'], ['r', 'reload'], ['e', 'interact'], ['g', 'grenade'], ['v', 'swap'], ['f', 'heal'], ['h', 'heal']]) assert.equal(controlForKey({ key }, 'zqsd'), action);
+});
+
+test('FPS nearby utility keys reject consumed input and work while crouch is held', () => {
+  for (const modifier of ['altKey', 'metaKey', 'isComposing', 'defaultPrevented']) {
+    for (const key of ['q', 'f', 'g', 'h', 'r', 'e', 'v']) {
+      assert.equal(controlForKey({ key, [modifier]: true }, 'wasd'), null, `${modifier} + ${key}`);
+    }
+  }
+  assert.equal(controlForKey({ key: 'Control', ctrlKey: true }, 'wasd'), 'crouch');
+  assert.equal(controlForKey({ key: 'q', code: 'KeyA', ctrlKey: true }, 'zqsd'), 'left');
+  assert.equal(controlForKey({ key: 'z', code: 'KeyW', ctrlKey: true }, 'zqsd'), 'up');
+  for (const [key, action] of [['a', 'grenade'], ['f', 'heal'], ['g', 'grenade'], ['h', 'heal'], ['r', 'reload'], ['e', 'interact'], ['v', 'swap']]) {
+    assert.equal(controlForKey({ key, ctrlKey: true }, 'zqsd'), action, `crouch + ${key}`);
+  }
+  assert.equal(controlForKey({ key: 'A', code: 'KeyQ', shiftKey: true }, 'zqsd'), 'grenade');
+  assert.equal(controlForKey({ key: 'F', shiftKey: true }, 'zqsd'), 'heal');
 });
 
 test('all movement, touch and mouse inputs release together without changing aim', () => {

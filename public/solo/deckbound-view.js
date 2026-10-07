@@ -1,4 +1,5 @@
 import { ACTS, CARDS, DIFFICULTIES, difficultyInfo, removalCost, relicInfo, cardInfo, createState, dispatch, togglePause as pauseState, intentDamageAt, pressureStrength, recoveryRemaining, recordScope } from './deckbound-engine.js';
+import { blocksSoloShortcut, handShortcutIndex } from './input-shortcuts.js';
 const copy = value => JSON.parse(JSON.stringify(value));
 const ART_FAMILIES = {
   sword:'blade',axe:'blade',arrow:'blade',hammer:'blade',blades:'blade',forge:'blade',echo:'blade',
@@ -190,9 +191,10 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     run(action, { id: b.dataset.id, uid: Number(b.dataset.uid), kind: b.dataset.kind, target });
   }
   function keydown(event) {
-    if (destroyed || event.defaultPrevented || event.repeat || event.isComposing || event.ctrlKey || event.metaKey || event.altKey || state.phase !== 'battle') return;
-    if (event.target instanceof Element && event.target.closest('button,summary,input,select,textarea,[contenteditable="true"]')) return;
-    if (/^[1-9]$/.test(event.key)) { const c = state.hand[Number(event.key) - 1]; if (c) { event.preventDefault(); run('play-card', { uid: c.uid, target }); } }
+    if (destroyed || blocksSoloShortcut(event) || state.phase !== 'battle') return;
+    if (event.target instanceof Element && event.target.closest('button')) return;
+    const handIndex = handShortcutIndex(event, 9);
+    if (handIndex !== null) { const c = state.hand[handIndex]; if (c) { event.preventDefault(); run('play-card', { uid: c.uid, target }); } }
     else if (event.key.toLowerCase() === 'e') { event.preventDefault(); run('end-turn'); }
   }
   function blur() { if (!destroyed && !['paused', 'won', 'lost'].includes(state.phase)) controller.togglePause(); }
