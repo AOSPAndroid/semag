@@ -1,4 +1,4 @@
-import { MAPS, WEAPONS } from './voxel-engine.js';
+import { MAPS, WEAPONS, ADS, MELEE, HEAL } from './voxel-engine.js';
 
 // All solid world surfaces come directly from the engine's minimum-corner
 // colliders. Decoration is either painted on those surfaces or outside bounds.
@@ -15,6 +15,28 @@ const ATMOSPHERE = Object.freeze({
 });
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const finite = (value, fallback = 0) => Number.isFinite(value) ? value : fallback;
+const smooth = value => { const t = clamp(value, 0, 1); return t * t * (3 - 2 * t); };
+const lerp = (a, b, amount) => a + (b - a) * amount;
+
+function aimProgress(player) {
+  return player.slot === 'sword' || player.healing || finite(player.healTicks) > 0 || finite(player.reloadTicks) > 0 || finite(player.grenadeThrowTicks) > 0 || player.alive === false ? 0 : smooth(finite(player.aimTicks) / ADS.ticks);
+}
+
+function swordMotion(player) {
+  const total = MELEE.startupTicks + MELEE.activeTicks + MELEE.recoveryTicks;
+  const remaining = clamp(finite(player.meleeTicks), 0, total), elapsed = total - remaining;
+  if (!remaining) return { yaw: -.18, pitch: .48, extension: 0, active: false };
+  if (elapsed < MELEE.startupTicks) {
+    const progress = smooth(elapsed / MELEE.startupTicks);
+    return { yaw: lerp(-.18, -.64, progress), pitch: lerp(.48, .30, progress), extension: 0, active: false };
+  }
+  if (elapsed < MELEE.startupTicks + MELEE.activeTicks) {
+    const progress = smooth((elapsed - MELEE.startupTicks) / MELEE.activeTicks);
+    return { yaw: lerp(-.64, .64, progress), pitch: lerp(.30, -.30, progress), extension: Math.sin(progress * Math.PI) * .37, active: true };
+  }
+  const progress = smooth((elapsed - MELEE.startupTicks - MELEE.activeTicks) / MELEE.recoveryTicks);
+  return { yaw: lerp(.64, -.18, progress), pitch: lerp(-.30, .48, progress), extension: 0, active: false };
+}
 
 function rgba(value, alpha = 1) {
   if (Array.isArray(value)) return [value[0] ?? 1, value[1] ?? 1, value[2] ?? 1, value[3] ?? alpha];
@@ -191,11 +213,11 @@ function shader(gl, type, source) {
   }
   return result;
 }
-function rayCoverDistance(origin, direction, colliders, maximum) {
+function rayCoverDistance(origin, direction, colliders, maximum, padding = 0) {
   let nearest = maximum;
   for (const collider of colliders) {
     let entry = 0, exit = nearest;
-    const mins = [collider.x, collider.y, collider.z], maxs = [collider.x + collider.w, collider.y + collider.h, collider.z + collider.d];
+    const mins = [collider.x - padding, collider.y - padding, collider.z - padding], maxs = [collider.x + collider.w + padding, collider.y + collider.h + padding, collider.z + collider.d + padding];
     let valid = true;
     for (let axis = 0; axis < 3; axis++) {
       if (Math.abs(direction[axis]) < 1e-8) {
@@ -570,10 +592,11 @@ function mapMeshes(map) {
 }
 
 function weaponParts(mesh, weapon, pose, options = {}) {
-  const rifle = !/pistol|sidearm/.test(weapon || ''), smg = /smg|compact/.test(weapon || ''), marksman = weapon === 'marksman';
-  const length = rifle ? (smg ? .68 : marksman ? 1.04 : .92) : .42;
+  const pistol = weapon === 'pistol', shotgun = weapon === 'shotgun', burst = weapon === 'burst';
+  const rifle = !pistol, smg = weapon === 'smg', marksman = weapon === 'marksman';
+  const length = pistol ? .42 : smg ? .68 : marksman ? 1.04 : shotgun ? 1.02 : burst ? .87 : .92;
   const limit = options.limit ?? length + .20;
-  const body = rgba(options.body || (smg ? '#506f76' : marksman ? '#465d62' : '#57675e')), trim = '#202d32', metal = '#b2bfb7';
+  const body = rgba(options.body || (smg ? '#506f76' : marksman ? '#465d62' : shotgun ? '#7d6248' : burst ? '#765b52' : pistol ? '#63788a' : '#57675e')), trim = '#202d32', metal = '#b2bfb7';
   const reload = clamp(finite(options.reloadProgress), 0, 1), magazineDrop = reload > .04 && reload < .64 ? Math.sin((reload - .04) / .60 * Math.PI) * .25 : 0;
   const part = (x, y, z, w, h, d, color) => {
     // The weapon points down local -Z. Clamp each part at the first solid
@@ -587,11 +610,12 @@ function weaponParts(mesh, weapon, pose, options = {}) {
     part(-.055, -.032, -.64, .11, .10, .24, trim);
     part(-.025, -.014, -length, .05, .054, length - .60 + .04, metal);
     part(-.041, -.02, -length - .035, .082, .075, .06, trim);
-    part(-.049, .080, -.36, .098, .040, .30, '#262f35');
-    part(-.016, .120, -.41, .032, .030, .05, '#b8c5bc');
-    part(-.020, .116, -.18, .040, .041, .055, '#b8c5bc');
-    part(-.045, -.25 - magazineDrop, -.18 + magazineDrop * .16, .09, .20, .105, trim);
-    part(-.045, -.23 - magazineDrop, -.182 + magazineDrop * .16, .09, .04, .109, '#738b80');
+    part(-.049, .080, -.36, .098, .033, .30, '#262f35');
+    if (!shotgun) {
+      const magazineZ = burst ? -.11 : -.18;
+      part(-.045, -.25 - magazineDrop, magazineZ + magazineDrop * .16, .09, .20, .105, trim);
+      part(-.045, -.23 - magazineDrop, magazineZ - .002 + magazineDrop * .16, .09, .04, .109, burst ? '#bb8878' : '#738b80');
+    }
     part(-.06, -.067, -.06, .12, .125, .25, options.stock || '#b39872');
     part(-.033, -.19, -.035, .066, .13, .09, '#6a746d');
     part(-.072, .016, -.51, .144, .014, .045, '#c6a474');
@@ -605,26 +629,128 @@ function weaponParts(mesh, weapon, pose, options = {}) {
       part(.063, -.04, -.50, .016, .082, .14, '#77a9a5');
       part(-.073, -.014, .15, .146, .055, .055, '#748a80');
     }
+    if (burst) {
+      part(-.08, -.045, -.50, .16, .10, .18, '#5a4441');
+      part(-.08, .055, -.43, .16, .025, .30, '#b88271');
+      part(-.075, -.03, -.66, .15, .036, .14, '#c39e84');
+      for (let i = 0; i < 3; i++) part(.075, -.01, -.40 + i * .035, .008, .035, .019, '#d7b399');
+      part(-.060, -.048, .15, .12, .095, .075, '#795c52');
+    }
+    if (shotgun) {
+      // A pump, tubular magazine and shell saddle make the close-range gun
+      // readable without adding another material or rendering pass.
+      const pump = clamp(finite(options.pump), 0, 1) * .12;
+      part(-.040, -.088, -.91, .08, .063, .43, '#303a3c');
+      part(-.073, -.087, -.72 + pump, .146, .105, .26, '#996f48');
+      for (let i = 0; i < 5; i++) part(-.075, -.084, -.69 + pump + i * .04, .15, .098, .012, '#523f32');
+      part(-.087, -.013, -.34, .020, .055, .19, '#473b35');
+      for (let i = 0; i < 4; i++) {
+        part(-.103, -.026, -.33 + i * .045, .030, .068, .032, '#a65c45');
+        part(-.104, .033, -.33 + i * .045, .032, .014, .033, '#d1b36b');
+      }
+      if (reload > .18 && reload < .85) {
+        const shell = Math.sin((reload - .18) / .67 * Math.PI);
+        part(-.10 - shell * .025, -.11 - (1 - shell) * .06, -.25, .033, .075, .033, '#b36f47');
+        part(-.10 - shell * .025, -.039 - (1 - shell) * .06, -.25, .033, .015, .033, '#d5b871');
+      }
+    }
     if (marksman) {
-      part(-.055, .11, -.43, .11, .13, .30, '#2c3f43');
-      part(-.063, .115, -.465, .126, .12, .045, '#202f34');
-      part(-.040, .132, -.469, .08, .075, .004, '#73aaa7');
-      part(-.063, .115, -.14, .126, .12, .045, '#202f34');
+      part(-.050, .105, -.36, .10, .023, .19, '#2c3f43');
+      for (const z of [-.465, -.14]) {
+        // The scope is an open square tube. At full ADS the camera looks
+        // through its aperture, rather than at a solid painted glass block.
+        part(-.063, .115, z, .023, .12, .045, '#202f34');
+        part(.040, .115, z, .023, .12, .045, '#202f34');
+        part(-.040, .115, z, .080, .017, .045, '#202f34');
+        part(-.040, .216, z, .080, .019, .045, '#202f34');
+      }
+      part(-.060, .139, -.42, .017, .063, .285, '#31464a');
+      part(.043, .139, -.42, .017, .063, .285, '#31464a');
       part(-.03, -.023, -.68, .06, .025, .05, '#bca6de');
-      part(-.040, .132, -.094, .08, .075, .004, '#5f9c9d');
-      part(-.011, .132, -.089, .007, .075, .002, '#203d40');
-      part(-.040, .165, -.089, .08, .006, .002, '#203d40');
-      part(-.011, .201, -.13, .032, .010, .008, '#c0d9c5');
+      part(.057, .160, -.29, .029, .035, .065, '#a1bdb1');
+      if (finite(options.aim) < .2) {
+        part(-.040, .132, -.469, .08, .075, .004, '#73aaa7');
+        part(-.040, .132, -.094, .08, .075, .004, '#5f9c9d');
+        part(-.007, .132, -.089, .004, .075, .002, '#203d40');
+        part(-.040, .171, -.089, .08, .004, .002, '#203d40');
+      }
     }
   } else {
+    const slide = clamp(finite(options.bolt), 0, 1) * .053;
     part(-.048, -.025, -.38, .096, .088, .34, body);
-    part(-.046, .063, -.385, .092, .04, .345, metal);
+    part(-.046, .063, -.385 + slide, .092, .044, .345, metal);
     part(-.022, -.018, -.44, .044, .044, .065, trim);
-    part(-.040, -.19, -.11, .08, .18, .105, trim);
-    part(-.032, .103, -.10, .064, .025, .035, '#232e32');
-    part(-.016, .102, -.36, .032, .024, .025, '#dab46a');
+    part(-.040, -.19 - magazineDrop, -.11, .08, .18, .105, trim);
+    part(-.041, -.08, -.115, .008, .066, .086, '#a4b1ae');
+    part(.033, -.08, -.115, .008, .066, .086, '#a4b1ae');
+    part(-.040, -.19 - magazineDrop, -.113, .08, .015, .109, '#8eb0bd');
+    for (let i = 0; i < 4; i++) part(.046, .066, -.17 + slide + i * .02, .006, .035, .008, '#596e79');
+  }
+  if (!marksman) {
+    // A genuine open rear notch and luminous front post share the same
+    // .152 sight line, which the first-person ADS pose places on camera Y=0.
+    const front = pistol ? -.355 : -length + .05, rear = pistol ? -.085 : -.15;
+    part(-.036, .112, rear, .017, .040, .035, '#253237');
+    part(.019, .112, rear, .017, .040, .035, '#253237');
+    part(-.008, .109, front, .016, .043, .025, '#c3d2bc');
+    part(-.004, .142, front - .002, .008, .010, .005, '#c8e6b4');
+    part(-.031, .137, rear + .036, .010, .010, .004, '#bdd4ae');
+    part(.021, .137, rear + .036, .010, .010, .004, '#bdd4ae');
   }
   return length;
+}
+
+function swordParts(mesh, pose, options = {}) {
+  const limit = finite(options.limit, 1.24);
+  const part = (x, y, z, w, h, d, color) => {
+    const clippedZ = Math.max(z, -limit), clippedDepth = z + d - clippedZ;
+    if (clippedDepth > 0) mesh.box(x, y, clippedZ, w, h, clippedDepth, color, pose);
+  };
+  part(-.030, -.036, -.045, .060, .072, .235, '#443a35');
+  for (let i = 0; i < 4; i++) part(-.032, -.038, -.013 + i * .045, .064, .076, .018, '#887953');
+  part(-.044, -.047, .167, .088, .094, .047, '#aebfc0');
+  part(-.172, -.035, -.09, .344, .070, .055, '#bba772');
+  part(-.18, -.043, -.095, .047, .086, .065, '#6a755c');
+  part(.133, -.043, -.095, .047, .086, .065, '#6a755c');
+  const blade = options.active ? '#dde9e4' : '#b6c9cc';
+  part(-.062, -.024, -.83, .124, .048, .75, blade);
+  part(-.036, -.018, -1.03, .072, .036, .22, blade);
+  part(-.019, -.010, -1.14, .038, .020, .13, '#eef2dc');
+  part(-.011, -.026, -.82, .022, .052, .70, '#748d96');
+  part(-.065, -.026, -.81, .011, .052, .69, '#e5eadd');
+  part(.054, -.026, -.81, .011, .052, .69, '#e5eadd');
+}
+
+function potionParts(mesh, pose, progress = 0) {
+  // An opaque faceted bottle avoids translucent sorting and makes the
+  // consumable readable in the same low-cost batch as the operative's hands.
+  mesh.box(-.066, -.082, -.059, .132, .175, .118, '#547e72', pose);
+  mesh.box(-.051, -.068, -.064, .102, .125, .128, '#7fb5a0', pose);
+  mesh.box(-.041, .086, -.04, .082, .044, .080, '#b8d4b6', pose);
+  mesh.box(-.031, .123, -.031, .062, .059, .062, '#90b59c', pose);
+  if (progress < .13 || progress > .94) mesh.box(-.037, .174, -.037, .074, .039, .074, '#bb9762', pose);
+  mesh.box(-.018, -.037, -.066, .036, .074, .005, '#e9e4be', pose);
+  mesh.box(-.041, -.014, -.066, .082, .026, .005, '#e9e4be', pose);
+  mesh.box(-.047, -.049, .061, .094, .054, .005, '#314e4a', pose);
+  mesh.box(-.063, .052, -.030, .014, .028, .049, '#c9ded0', pose);
+}
+
+function grenadeParts(mesh, pose, radius, fuseTicks, time) {
+  const r = clamp(finite(radius, .12), .04, .25), scale = r / .12;
+  const blinkPeriod = lerp(70, 320, clamp(finite(fuseTicks) / 288, 0, 1));
+  const lit = Math.floor(time / blinkPeriod) % 2 === 0;
+  const shell = lit && fuseTicks < 120 ? '#977457' : '#4a6655';
+  const part = (x, y, z, w, h, d, color) => mesh.box(x * scale, y * scale, z * scale, w * scale, h * scale, d * scale, color, pose);
+  // Every corner stays inside the engine's .12m sphere. Voxel steps suggest a
+  // rounded shell without the corners of a large cube becoming false cover.
+  part(-.069, -.069, -.069, .138, .138, .138, shell);
+  part(-.104, -.034, -.034, .208, .068, .068, shell);
+  part(-.034, -.104, -.034, .068, .208, .068, shell);
+  part(-.034, -.034, -.104, .068, .068, .208, shell);
+  part(-.079, -.052, -.049, .015, .104, .098, '#263b37');
+  part(.064, -.052, -.049, .015, .104, .098, '#263b37');
+  part(-.024, .071, -.027, .048, .035, .054, '#859287');
+  part(-.022, .105, -.020, .044, .009, .040, lit ? '#efb86a' : '#aa7a4f');
 }
 
 function playerMesh(mesh, player, map, time, allied) {
@@ -675,15 +801,30 @@ function playerMesh(mesh, player, map, time, allied) {
   mesh.box(-.07, .23, -.22, .14, .04, .006, team, headPose);
   mesh.box(-.22, .235, -.12, .006, .035, .24, team, headPose);
   mesh.box(.214, .235, -.12, .006, .035, .24, team, headPose);
-  const handOffset = rotate([.21, crouch ? .82 : 1.24, -.24], yaw);
+  const healing = finite(player.healTicks) > 0;
+  const sword = player.slot === 'sword', motion = swordMotion(player);
+  const heldYaw = sword && player.meleeTicks > 0 ? finite(player.meleeYaw, yaw) : yaw;
+  const heldPitch = sword && player.meleeTicks > 0 ? finite(player.meleePitch, pitch) : pitch;
+  const handOffset = rotate([healing ? -.16 : .21, healing ? (crouch ? .87 : 1.42) : (crouch ? .82 : 1.24), healing ? -.34 : -.24 - (sword ? motion.extension : 0)], heldYaw);
   const reloadProgress = player.reloadTicks > 0 ? clamp(1 - player.reloadTicks / (WEAPONS[player.weapon]?.reloadTicks || 252), 0, 1) : 0;
   const reloadTilt = Math.sin(reloadProgress * Math.PI);
-  const gunPose = { x: pose.x + handOffset[0], y: pose.y + handOffset[1] - reloadTilt * .12, z: pose.z + handOffset[2], yaw, pitch: pitch - reloadTilt * .24 };
-  const direction = [Math.sin(yaw) * Math.cos(gunPose.pitch), Math.sin(gunPose.pitch), -Math.cos(yaw) * Math.cos(gunPose.pitch)];
-  const limit = Math.max(0, rayCoverDistance([gunPose.x, gunPose.y, gunPose.z], direction, map.colliders || [], 1.05) - .015);
-  weaponParts(mesh, player.weapon, gunPose, { limit, stock: color, reloadProgress });
-  mesh.box(-.33, -.072, -.43, .17, .14, .26, '#526662', gunPose);
-  mesh.box(-.08, -.14, -.11, .13, .14, .17, '#526662', gunPose);
+  const gunPose = { x: pose.x + handOffset[0], y: pose.y + handOffset[1] - reloadTilt * .12, z: pose.z + handOffset[2], yaw: heldYaw + (sword ? motion.yaw : 0), pitch: heldPitch + (sword ? motion.pitch : -reloadTilt * .24), scale: sword && !healing ? 1.35 : 1 };
+  const direction = [Math.sin(gunPose.yaw) * Math.cos(gunPose.pitch), Math.sin(gunPose.pitch), -Math.cos(gunPose.yaw) * Math.cos(gunPose.pitch)];
+  const limit = Math.max(0, rayCoverDistance([gunPose.x, gunPose.y, gunPose.z], direction, map.colliders || [], sword ? 1.24 * 1.35 : 1.09, sword ? .088 : 0) - .025) / gunPose.scale;
+  if (healing) {
+    const progress = clamp(1 - player.healTicks / HEAL.ticks, 0, 1), drink = Math.sin(progress * Math.PI);
+    const bottlePose = { ...gunPose, pitch: drink * .72 };
+    potionParts(mesh, bottlePose, progress);
+    mesh.box(-.084, -.105, -.037, .17, .093, .17, '#526662', bottlePose);
+  } else if (sword) {
+    swordParts(mesh, gunPose, { limit, active: motion.active });
+    mesh.box(-.070, -.085, -.025, .14, .16, .20, '#526662', gunPose);
+    mesh.box(-.060, -.075, .15, .12, .15, .27, uniform, gunPose);
+  } else {
+    weaponParts(mesh, player.weapon, gunPose, { limit, stock: color, reloadProgress, aim: aimProgress(player) });
+    mesh.box(-.33, -.072, -.43, .17, .14, .26, '#526662', gunPose);
+    mesh.box(-.08, -.14, -.11, .13, .14, .17, '#526662', gunPose);
+  }
   if (allied) {
     // A small in-world team tab is depth-tested like every other triangle.
     mesh.box(-.055, (crouch ? 1.15 : 1.8) + .09, -.045, .11, .045, .09, team, pose);
@@ -697,7 +838,7 @@ export class VoxelRenderer {
     this.gl = canvas.getContext('webgl', { alpha: false, antialias: false, depth: true, powerPreference: 'high-performance', preserveDrawingBuffer: false }) || canvas.getContext('experimental-webgl');
     if (!this.gl) throw new Error('Voxel Breach needs WebGL. Enable hardware acceleration in your browser and reopen the game.');
     this.available = true; this.contextLost = false; this.error = null; this.destroyed = false;
-    this.mapCache = new Map(); this.mapId = null; this.eventIds = new Set(); this.eventQueue = [];
+    this.mapCache = new Map(); this.mapId = null; this.effectRound = null; this.effectPhase = null; this.eventIds = new Set(); this.eventQueue = [];
     this.particles = []; this.tracers = []; this.localShot = null; this.localReload = null;
     this.lastAim = null; this.swayX = 0; this.swayY = 0;
     this._onLost = event => {
@@ -793,18 +934,20 @@ export class VoxelRenderer {
     return { buffer, count: array.length / VERTEX_STRIDE };
   }
   _events(state, time, localId) {
+    const combat = !state.phase || ['fight', 'roundEnd', 'matchEnd'].includes(state.phase);
     for (const event of state.events || []) {
       const key = event.id ?? `${event.tick}:${event.type}:${event.playerId}:${event.shotIndex ?? ''}`;
       if (this.eventIds.has(key)) continue;
       this.eventIds.add(key); this.eventQueue.push(key);
       while (this.eventQueue.length > MAX_EVENT_IDS) this.eventIds.delete(this.eventQueue.shift());
       if (Number.isFinite(state.tick) && Number.isFinite(event.tick) && state.tick - event.tick > 18) continue;
+      if (!combat) continue;
       if (event.type === 'shot') {
         const origin = [finite(event.x), finite(event.y), finite(event.z)];
         const direction = [finite(event.dx), finite(event.dy), finite(event.dz, -1)];
         const end = [event.hitX, event.hitY, event.hitZ].every(Number.isFinite) ? [event.hitX, event.hitY, event.hitZ] : origin.map((value, i) => value + direction[i] * 60);
         this.tracers.push({ origin, end, born: time, team: event.team, local: event.playerId === localId });
-        if (event.playerId === localId) this.localShot = { born: time, weapon: event.weapon };
+        if (event.playerId === localId && (!event.pellet || event.pelletCount === 1)) this.localShot = { born: time, weapon: event.weapon };
         if (event.hitKind && event.hitKind !== 'none') {
           const count = event.hitKind === 'wall' ? 5 : 7;
           const seed = hash(key);
@@ -814,11 +957,19 @@ export class VoxelRenderer {
           }
         }
       } else if (event.type === 'reload' && event.playerId === localId) this.localReload = { born: time, weapon: event.weapon };
-      else if (event.type === 'explosion') {
+      else if (event.type === 'grenadeBounce' || event.type === 'meleeHit' || event.type === 'healComplete') {
+        const origin = [finite(event.x), finite(event.y, .2), finite(event.z)], heal = event.type === 'healComplete';
+        const count = heal ? 8 : 4;
+        for (let i = 0; i < count; i++) {
+          const angle = i * 2.39996 + hash(key) % 7;
+          this.particles.push({ origin, born: time, vx: Math.sin(angle) * (heal ? .25 : .48) + finite(event.nx) * .45, vy: heal ? .35 + i * .04 : .25 + finite(event.ny) * .40, vz: Math.cos(angle) * (heal ? .25 : .48) + finite(event.nz) * .45, color: heal ? '#a9d6b9' : event.type === 'grenadeBounce' ? '#bfa47b' : '#e4c286', life: heal ? 360 + i * 15 : 180 + i * 12, gravity: heal ? 0 : 3, cover: true });
+        }
+      } else if (event.type === 'explosion' || event.type === 'grenadeExplosion') {
         const origin = [finite(event.x), finite(event.y, .25), finite(event.z)];
-        for (let i = 0; i < 24; i++) {
+        const grenade = event.type === 'grenadeExplosion', count = grenade ? 28 : 24;
+        for (let i = 0; i < count; i++) {
           const angle = i * 2.39996;
-          this.particles.push({ origin, born: time, vx: Math.sin(angle) * (2 + i % 4), vy: 1 + i % 5, vz: Math.cos(angle) * (2 + i % 4), color: i % 2 ? '#efbc77' : '#a9896e', life: 450 + i * 12 });
+          this.particles.push({ origin, born: time, vx: Math.sin(angle) * (2 + i % 4), vy: 1 + i % 5, vz: Math.cos(angle) * (2 + i % 4), color: i % 3 ? '#efbc77' : '#8c8c79', life: grenade ? 330 + i * 9 : 450 + i * 12, gravity: 3, cover: true, radius: grenade ? finite(event.radius, 5.5) : 8 });
         }
       }
     }
@@ -847,6 +998,23 @@ export class VoxelRenderer {
     mesh.box(x + .10, y + .20, z - .06, .06, .01, .11, '#263d3f');
     for (let i = 0; i < 3; i++) mesh.box(x - .17 + i * .034, y + .03, z - .168, .016, .13, .016, i === 1 ? '#b45e4c' : '#6e998c');
   }
+  _grenades(mesh, contacts, state, map, time) {
+    for (const grenade of (state.grenades || []).slice(0, 12)) {
+      if (![grenade.x, grenade.y, grenade.z].every(Number.isFinite)) continue;
+      const r = clamp(finite(grenade.radius, .12), .04, .25);
+      const speed = Math.hypot(finite(grenade.vx), finite(grenade.vy), finite(grenade.vz));
+      const spin = speed > .12 ? time * .005 + finite(grenade.bounces) * .8 : finite(grenade.bounces) * .8;
+      grenadeParts(mesh, { x: grenade.x, y: grenade.y, z: grenade.z, yaw: spin, pitch: spin * .7 }, r, grenade.fuseTicks, time);
+      const support = map.colliders.find(collider => grenade.x >= collider.x && grenade.x <= collider.x + collider.w && grenade.z >= collider.z && grenade.z <= collider.z + collider.d && collider.y + collider.h <= grenade.y + .005 && collider.y + collider.h > 0);
+      const ground = support ? support.y + support.h : 0, altitude = Math.max(0, grenade.y - r - ground);
+      for (let layer = 1; layer >= 0; layer--) {
+        const size = r * (.8 + layer * .5) + Math.min(.10, altitude * .05);
+        const minX = Math.max(grenade.x - size, support?.x ?? -Infinity), maxX = Math.min(grenade.x + size, support ? support.x + support.w : Infinity);
+        const minZ = Math.max(grenade.z - size, support?.z ?? -Infinity), maxZ = Math.min(grenade.z + size, support ? support.z + support.d : Infinity);
+        contacts.floor(minX, minZ, maxX - minX, maxZ - minZ, [.035, .055, .08, .17 / (1 + altitude * 1.5)], ground + .014 + layer * .0004);
+      }
+    }
+  }
   _viewModel(player, yaw, pitch, time) {
     const mesh = new Mesh(), team = TEAM_COLORS[player.team === 1 ? 1 : 0];
     const speed = Math.hypot(finite(player.vx), finite(player.vz));
@@ -861,6 +1029,30 @@ export class VoxelRenderer {
       this.swayY += (clamp((pitch - this.lastAim.pitch) * .17, -.021, .021) - this.swayY) * .3;
     }
     this.lastAim = { yaw, pitch };
+    if (finite(player.healTicks) > 0) {
+      const progress = clamp(1 - player.healTicks / HEAL.ticks, 0, 1), drink = Math.sin(progress * Math.PI);
+      const pose = { x: -.14 - drink * .025, y: -.22 + drink * .11, z: -.43 + drink * .08, yaw: .12, pitch: drink * .72, scale: .93 };
+      potionParts(mesh, pose, progress);
+      mesh.box(-.078, -.119, -.042, .156, .123, .15, '#526661', pose);
+      mesh.box(-.063, -.22, -.019, .132, .16, .17, '#435952', pose);
+      mesh.box(-.067, -.28, .026, .141, .095, .115, mix(rgba(team), rgba('#64796b'), .24), pose);
+      return mesh.array;
+    }
+    if (player.slot === 'sword') {
+      const motion = swordMotion(player);
+      // The committed attack direction stays fixed for the full swing. Camera
+      // motion can inspect its recovery without visually steering the blade.
+      let committedYaw = player.meleeTicks > 0 ? finite(player.meleeYaw, yaw) - yaw : 0;
+      while (committedYaw > Math.PI) committedYaw -= TAU;
+      while (committedYaw < -Math.PI) committedYaw += TAU;
+      const committedPitch = player.meleeTicks > 0 ? finite(player.meleePitch, pitch) - pitch : 0;
+      const pose = { x: .27 + this.swayX * .5, y: -.32 - Math.abs(Math.cos(step)) * .007 * walking, z: -.42 - motion.extension * .12, yaw: motion.yaw + committedYaw, pitch: motion.pitch + committedPitch, scale: .90 };
+      swordParts(mesh, pose, { active: motion.active });
+      mesh.box(-.085, -.09, -.026, .17, .18, .20, '#526661', pose);
+      mesh.box(-.072, -.13, .17, .15, .19, .27, '#435952', pose);
+      mesh.box(-.077, -.145, .31, .16, .20, .11, mix(rgba(team), rgba('#64796b'), .24), pose);
+      return mesh.array;
+    }
     const reloadActive = finite(player.reloadTicks) > 0;
     let reload = 0, reloadProgress = 0;
     if (reloadActive) {
@@ -869,25 +1061,40 @@ export class VoxelRenderer {
       reloadProgress = clamp(1 - ticks / duration, 0, 1);
       reload = Math.sin(clamp(reloadProgress, .04, .96) * Math.PI);
     }
+    const aim = aimProgress(player), steady = 1 - aim * .92;
+    const throwing = Math.sin(clamp(finite(player.grenadeThrowTicks) / 24, 0, 1) * Math.PI);
     const pose = {
-      x: .29 + this.swayX + Math.sin(step) * .008 * walking,
-      y: -.29 + this.swayY - Math.abs(Math.cos(step)) * .008 * walking - reload * .105,
-      z: -.49 + kick * .052 + reload * .065,
-      yaw: -.065 + this.swayX * 2 + reload * .22,
-      pitch: kick * .055 - reload * .23,
+      x: lerp(.29, 0, aim) + (this.swayX + Math.sin(step) * .008 * walking) * steady,
+      y: lerp(-.29, -(player.weapon === 'marksman' ? .175 : .152) * .74, aim) + (this.swayY - Math.abs(Math.cos(step)) * .008 * walking) * steady - reload * .105 - throwing * .15,
+      z: lerp(-.49, -.35, aim) + kick * .052 + reload * .065,
+      yaw: -.065 * (1 - aim) + this.swayX * 2 * steady + reload * .22,
+      pitch: kick * .055 * (1 - aim * .70) - reload * .23 - throwing * .20,
       scale: .74,
     };
-    const length = weaponParts(mesh, player.weapon, pose, { stock: team, reloadProgress, bolt: kick * .75 });
+    const pump = player.weapon === 'shotgun' && age > 80 && age < 640 ? Math.sin((age - 80) / 560 * Math.PI) : 0;
+    const length = weaponParts(mesh, player.weapon, pose, { stock: team, reloadProgress, bolt: kick * .75, pump, aim });
     const handShift = reload * .30, handDrop = reload * .17;
-    mesh.box(-.17, -.09 - handDrop, -.52 + handShift, .15, .12, .30, '#526661', pose);
-    mesh.box(-.20, -.15 - handDrop, -.27 + handShift, .17, .17, .32, '#435952', pose);
-    mesh.box(-.205, -.14 - handDrop, -.11 + handShift, .18, .17, .12, mix(rgba(team), rgba('#64796b'), .24), pose);
-    mesh.box(-.178, -.073 - handDrop, -.46 + handShift, .126, .026, .23, '#72887b', pose);
+    if (player.weapon === 'pistol') {
+      mesh.box(-.15, -.17 - handDrop, -.19 + handShift, .12, .13, .17, '#526661', pose);
+      mesh.box(-.17, -.23 - handDrop, -.12 + handShift, .14, .14, .22, '#435952', pose);
+      mesh.box(-.175, -.235 - handDrop, .01 + handShift, .15, .15, .10, mix(rgba(team), rgba('#64796b'), .24), pose);
+    } else {
+      mesh.box(-.17, -.09 - handDrop, -.52 + handShift + pump * .12, .15, .12, .30, '#526661', pose);
+      mesh.box(-.20, -.15 - handDrop, -.27 + handShift + pump * .12, .17, .17, .32, '#435952', pose);
+      mesh.box(-.205, -.14 - handDrop, -.11 + handShift + pump * .12, .18, .17, .12, mix(rgba(team), rgba('#64796b'), .24), pose);
+      mesh.box(-.178, -.073 - handDrop, -.46 + handShift + pump * .12, .126, .026, .23, '#72887b', pose);
+    }
     mesh.box(-.065, -.16, -.06, .13, .13, .16, '#526661', pose);
     mesh.box(.015, -.22, -.01, .17, .17, .32, '#435952', pose);
     mesh.box(.07, -.235, .12, .15, .18, .10, mix(rgba(team), rgba('#64796b'), .24), pose);
     mesh.box(.078, -.057, .13, .126, .018, .083, '#2a4143', pose);
     mesh.box(.113, -.038, .16, .062, .006, .039, '#79d0c0', pose);
+    if (throwing > 0) {
+      const hand = { x: -.20, y: -.17 - (1 - throwing) * .22, z: -.39 - throwing * .18, yaw: .17, pitch: -.16, scale: .74 };
+      mesh.box(-.061, -.073, -.092, .122, .145, .184, '#526661', hand);
+      mesh.box(-.071, -.08, .085, .142, .163, .28, '#435952', hand);
+      mesh.box(-.075, -.085, .26, .15, .175, .09, mix(rgba(team), rgba('#64796b'), .24), hand);
+    }
     if (age < 44 && !reloadActive) {
       const flash = .032 + (1 - age / 44) * .040;
       mesh.box(-flash / 2, -.015, -length - .070, flash, flash, .085, '#f6d991', pose);
@@ -908,14 +1115,18 @@ export class VoxelRenderer {
       cameraPlayer = { ...spawn, y: 0, alive: false };
     }
     const time = finite(options.time, typeof performance !== 'undefined' ? performance.now() : 0);
-    if (map.id !== this.mapId) { this.resetEffects(); this.mapId = map.id; }
+    const freshRound = Number.isFinite(state.round) && state.round !== this.effectRound;
+    const setupTransition = state.phase !== this.effectPhase && ['lobby', 'countdown', 'buy'].includes(state.phase);
+    if (map.id !== this.mapId || freshRound || setupTransition) this.resetEffects();
+    this.mapId = map.id; this.effectRound = state.round; this.effectPhase = state.phase;
     this._events(state, time, localId);
     const yaw = finite(options.aimYaw ?? options.yaw, finite(cameraPlayer.yaw));
     const pitch = clamp(finite(options.aimPitch ?? options.pitch, finite(cameraPlayer.pitch)), -1.48, 1.48);
     const eye = [finite(cameraPlayer.x), finite(cameraPlayer.y) + (cameraPlayer.crouching ? .98 : 1.62), finite(cameraPlayer.z)];
     const gl = this.gl;
     this.resize();
-    const fov = clamp(finite(options.fov, 70), 55, 95) * Math.PI / 180;
+    const aim = aimProgress(cameraPlayer), zoom = cameraPlayer.weapon === 'marksman' ? ADS.scopedFovRatio : ADS.fovRatio;
+    const fov = clamp(finite(options.fov, 70), 55, 95) * lerp(1, finite(zoom, cameraPlayer.weapon === 'marksman' ? 40 / 70 : 54 / 70), aim) * Math.PI / 180;
     const projection = perspective(fov, this.aspect || 16 / 9, .025, 110), view = viewMatrix(eye, yaw, pitch);
     const sky = rgba(map.skyColor || (map.id === 'canal' ? '#a3bdc2' : map.id === 'depot' ? '#8da6b0' : '#a8bcb9'));
     const atmosphere = ATMOSPHERE[map.theme || map.id] || ATMOSPHERE.courtyard;
@@ -954,10 +1165,24 @@ export class VoxelRenderer {
       }
     }
     this._bomb(dynamic, state, players.filter(player => player.id !== cameraPlayer.id), time);
+    this._grenades(dynamic, contacts, state, map, time);
     for (const particle of this.particles) {
       const age = (time - particle.born) / 1000, fade = 1 - (time - particle.born) / particle.life;
       const size = .026 + fade * .028;
-      dynamic.box(particle.origin[0] + particle.vx * age - size / 2, particle.origin[1] + particle.vy * age - age * age * 3, particle.origin[2] + particle.vz * age - size / 2, size, size, size, shade(rgba(particle.color), .7 + fade * .3));
+      let point = [particle.origin[0] + particle.vx * age, Math.max(size / 2, particle.origin[1] + particle.vy * age - age * age * finite(particle.gravity, 3)), particle.origin[2] + particle.vz * age];
+      if (particle.cover) {
+        // Decorative blast fragments cannot paint a damaging-looking sphere
+        // through cover: each fragment stops at the same solid world faces.
+        const delta = point.map((value, i) => value - particle.origin[i]), length = Math.hypot(...delta);
+        if (length > 1e-5) {
+          const direction = delta.map(value => value / length);
+          const limit = Math.min(length, finite(particle.radius, Infinity));
+          const contact = rayCoverDistance(particle.origin, direction, map.colliders, limit, size * .55);
+          const travel = contact < length ? Math.max(0, contact - size * .6) : length;
+          point = particle.origin.map((value, i) => value + direction[i] * travel);
+        }
+      }
+      dynamic.box(point[0] - size / 2, point[1] - size / 2, point[2] - size / 2, size, size, size, shade(rgba(particle.color), .7 + fade * .3));
     }
     this._draw(this._dynamic(dynamic.array));
     if (contacts.vertices.length) {
@@ -977,7 +1202,8 @@ export class VoxelRenderer {
       this._draw(this._dynamic(traces.array, 'tracer'));
       gl.depthMask(true); gl.disable(gl.BLEND); gl.enable(gl.CULL_FACE);
     }
-    if (cameraPlayer.alive && cameraPlayer.id === localId && !options.hideWeapon) {
+    const scoped = cameraPlayer.weapon === 'marksman' && aim >= smooth(14 / ADS.ticks);
+    if (cameraPlayer.alive && cameraPlayer.id === localId && !options.hideWeapon && !scoped) {
       // Independent depth for the hands prevents flickering against a near
       // wall. World cover and hit detection continue using the real camera.
       gl.clear(gl.DEPTH_BUFFER_BIT); gl.uniformMatrix4fv(this.uniforms.view, false, IDENTITY);

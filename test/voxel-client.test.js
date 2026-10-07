@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { cleanAim, composeInput, controlForKey, createContinuousInputPacer, FPS_BUTTONS, interpolatedState, isFormTarget, loadoutForKey, matchClock, neutralInput, reconcilePlayer, roundResult, tacticalMapPlayers } from '../public/voxel-client.js';
+import { aimFraction, aimLookMultiplier, combatEventPerspective, combatReadout, cleanAim, composeInput, controlForKey, createContinuousInputPacer, FPS_BUTTONS, hasGunshotReport, interpolatedState, isFormTarget, loadoutForKey, matchClock, neutralInput, reconcilePlayer, roundResult, tacticalMapPlayers } from '../public/voxel-client.js';
 import { createState, emptyInput, MAPS, predictLocalMovement } from '../public/voxel-engine.js';
 
 test('FPS controls use printed French letters and preserve arrows and actions', () => {
@@ -9,7 +9,7 @@ test('FPS controls use printed French letters and preserve arrows and actions', 
   assert.equal(controlForKey({ key: 'w', code: 'KeyZ' }, 'zqsd'), null);
   assert.equal(controlForKey({ key: 'a', code: 'KeyQ' }, 'zqsd'), null);
   assert.equal(controlForKey({ key: 'ArrowLeft', code: 'ArrowLeft' }, 'zqsd'), 'left');
-  for (const [key, action] of [[' ', 'jump'], ['Control', 'crouch'], ['Shift', 'walk'], ['r', 'reload'], ['e', 'interact']]) assert.equal(controlForKey({ key }, 'zqsd'), action);
+  for (const [key, action] of [[' ', 'jump'], ['Control', 'crouch'], ['Shift', 'walk'], ['r', 'reload'], ['e', 'interact'], ['g', 'grenade'], ['v', 'swap'], ['h', 'heal']]) assert.equal(controlForKey({ key }, 'zqsd'), action);
 });
 
 test('all movement, touch and mouse inputs release together without changing aim', () => {
@@ -99,6 +99,10 @@ test('arena loadout shortcuts respect setup phases, French digits, form focus an
     assert.equal(loadoutForKey({ key: '&', code: 'Digit1' }, phase), 'carbine');
     assert.equal(loadoutForKey({ key: 'é', code: 'Digit2' }, phase), 'smg');
     assert.equal(loadoutForKey({ key: '"', code: 'Digit3' }, phase), 'marksman');
+    assert.equal(loadoutForKey({ key: "'", code: 'Digit4' }, phase), 'pistol');
+    assert.equal(loadoutForKey({ key: '(', code: 'Digit5' }, phase), 'shotgun');
+    assert.equal(loadoutForKey({ key: '-', code: 'Digit6' }, phase), 'burst');
+    for (const [key, weapon] of [['4', 'pistol'], ['5', 'shotgun'], ['6', 'burst']]) assert.equal(loadoutForKey({ key, code: `Numpad${key}` }, phase), weapon);
   }
   for (const phase of ['lobby', 'fight', 'matchEnd']) assert.equal(loadoutForKey({ key: '2', code: 'Digit2' }, phase), null);
   for (const blocked of [{ repeat: true }, { ctrlKey: true }, { metaKey: true }, { altKey: true }, { target: { closest() { return {}; } } }]) assert.equal(loadoutForKey({ key: '1', ...blocked }, 'buy'), null);
@@ -212,4 +216,96 @@ test('dead players and locked setup phases never predict movement; queues stay b
   assert.equal(result.pending.length, 240); assert.equal(result.predicted.z, player.z);
   player.alive = false; result = reconcilePlayer(player, history, -1, 'courtyard', predictLocalMovement);
   assert.equal(result.predicted.z, player.z);
+});
+
+
+test('ADS and utility controls compose independent sources and clear every new action', () => {
+  assert.deepEqual(FPS_BUTTONS, Object.keys(emptyInput()).filter(key => !['yaw', 'pitch'].includes(key)), 'wire actions match the authoritative engine contract');
+  const touch = { move: { x: 0, y: 0 }, actions: new Set(['swap', 'heal']) };
+  const mouse = { fire: false, aim: true }; const aim = { yaw: 1, pitch: -.3 };
+  let input = composeInput(new Set(['grenade']), touch, mouse, aim);
+  for (const action of ['aim', 'swap', 'grenade', 'heal']) assert.equal(input[action], true);
+  assert.equal(input.fire, false);
+  mouse.aim = false; touch.actions.delete('swap');
+  input = composeInput(new Set(['grenade']), touch, mouse, aim);
+  assert.equal(input.aim, false); assert.equal(input.swap, false); assert.equal(input.heal, true);
+  touch.actions.add('aim');
+  assert.equal(composeInput(new Set(), touch, mouse, aim).aim, true, 'touch aim works without a mouse');
+  for (const action of FPS_BUTTONS) assert.equal(composeInput(new Set(FPS_BUTTONS), touch, { fire: true, aim: true }, aim, false)[action], false, `${action} releases on inactive controls`);
+  for (const action of ['aim', 'swap', 'grenade', 'heal']) assert.equal(neutralInput()[action], false);
+});
+
+test('aim sensitivity follows the finite camera zoom throughout ADS and release', () => {
+  assert.equal(aimFraction({ aimTicks: Infinity }), 0);
+  assert.equal(aimFraction({ aimTicks: -5 }), 0); assert.equal(aimFraction({ aimTicks: 50 }), 1);
+  assert.equal(aimLookMultiplier({ weapon: 'carbine', aimTicks: 0 }), 1);
+  assert.equal(aimLookMultiplier({ weapon: 'carbine', aimTicks: 18 }), 54 / 70);
+  assert.equal(aimLookMultiplier({ weapon: 'marksman', aimTicks: 18 }), 40 / 70);
+  assert.equal(aimLookMultiplier({ weapon: 'carbine', aimTicks: 9, aiming: false }), 1 + (54 / 70 - 1) / 2, 'releasing aim keeps look aligned with the still narrowing view');
+  assert.ok(aimLookMultiplier({ weapon: 'marksman', aimTicks: 9 }) < aimLookMultiplier({ weapon: 'carbine', aimTicks: 9 }));
+  assert.equal(aimLookMultiplier({ weapon: 'marksman', aimTicks: 5 }, { ticks: 5, scopedFovRatio: .5 }), .5);
+  for (const blocked of [{ slot: 'sword' }, { healing: true }, { healTicks: 20 }, { reloadTicks: 20 }, { grenadeThrowTicks: 10 }, { alive: false }]) {
+    assert.equal(aimFraction({ aimTicks: 18, ...blocked }), 0);
+    assert.equal(aimLookMultiplier({ weapon: 'marksman', aimTicks: 18, ...blocked }), 1, 'look and scope release whenever the camera returns to hip fire');
+  }
+});
+
+test('combat readout distinguishes a committed sword strike, gun ammo and potion channel', () => {
+  const weapons = { pistol: { label: 'PISTOL', mode: 'semi', reloadTicks: 240 } };
+  const player = { weapon: 'pistol', slot: 'primary', grounded: true, hp: 75, maxHp: 100, ammo: 6, reserve: 24, grenades: 1, potions: 1 };
+  let readout = combatReadout(player, weapons);
+  assert.equal(readout.label, 'PISTOL'); assert.equal(readout.ammo, 6); assert.equal(readout.status, 'CLICK EACH SHOT'); assert.equal(readout.progress, null);
+  Object.assign(player, { slot: 'sword', meleeTicks: 54, meleePhase: 'active' });
+  readout = combatReadout(player, weapons);
+  assert.equal(readout.label, 'SWORD'); assert.equal(readout.ammo, 'STRIKE'); assert.equal(readout.progress.percent, 25); assert.equal(readout.status, '0.5S · BLADE ACTIVE');
+  player.meleeTicks = 0; player.meleePhase = 'idle';
+  readout = combatReadout(player, weapons); assert.equal(readout.ammo, 'READY'); assert.equal(readout.progress, null);
+  player.meleeCooldown = 36;
+  readout = combatReadout(player, weapons); assert.equal(readout.ammo, 'RECOVER'); assert.equal(readout.status, '0.3S · RECOVERING'); assert.equal(readout.progress.percent, 50, 'swapping away from a swing cannot hide its recovery');
+  player.meleeCooldown = 0;
+  Object.assign(player, { healing: true, healTicks: 120, potions: 0 });
+  readout = combatReadout(player, weapons);
+  assert.equal(readout.label, 'HEALING POTION'); assert.equal(readout.ammo, '+25'); assert.equal(readout.progress.percent, 50); assert.equal(readout.progress.label, 'Drinking healing potion'); assert.equal(readout.potions, 0);
+  assert.equal(player.ammo, 6, 'readout cannot consume the primary gun magazine');
+});
+
+test('reload progress and empty ammo remain honest across utility and weapon states', () => {
+  const weapons = { shotgun: { label: 'SHOTGUN', mode: 'pump', reloadTicks: 300 } };
+  const player = { weapon: 'shotgun', slot: 'primary', grounded: true, hp: 40, ammo: 0, reserve: 8, grenades: 0, potions: 0 };
+  let readout = combatReadout(player, weapons); assert.equal(readout.status, 'R TO RELOAD'); assert.equal(readout.grenades, 0); assert.equal(readout.potions, 0);
+  player.reloadTicks = 225;
+  readout = combatReadout(player, weapons); assert.equal(readout.progress.percent, 25); assert.equal(readout.progress.remaining, 225); assert.equal(readout.status, 'RELOADING 1.9S');
+  player.reloadTicks = 0; player.reserve = 0;
+  assert.equal(combatReadout(player, weapons).status, 'OUT OF AMMUNITION');
+  player.ammo = 3; player.shotCooldown = 60;
+  assert.equal(combatReadout(player, weapons).status, 'PUMPING 0.5S');
+  player.shotCooldown = 0;
+  assert.equal(combatReadout(player, weapons).status, 'CLICK EACH SHELL');
+  player.reloadTicks = 600;
+  assert.equal(combatReadout(player, weapons).progress.percent, 0, 'malformed or corrected remaining duration never paints negative progress');
+});
+
+
+test('self grenade hits count as hurt feedback and never as successful offense', () => {
+  const ownFrag = { type: 'damage', attack: 'grenade', playerId: 0, targetId: 0, damage: 80 };
+  assert.deepEqual(combatEventPerspective(ownFrag, 0), { source: 0, target: 0, self: true, outgoing: false, incoming: true });
+  assert.deepEqual(combatEventPerspective({ ...ownFrag, type: 'kill' }, 0), { source: 0, target: 0, self: true, outgoing: false, incoming: true });
+  const enemyHit = { ...ownFrag, targetId: 1 };
+  assert.equal(combatEventPerspective(enemyHit, 0).outgoing, true);
+  assert.equal(combatEventPerspective(enemyHit, 1).incoming, true);
+  assert.equal(combatEventPerspective(enemyHit, null).outgoing, false, 'a disconnected seat cannot receive offensive feedback');
+  assert.equal(combatEventPerspective({ type: 'grenadeExplosion', ownerId: 0 }, 0).outgoing, false, 'an explosion alone is not a confirmed hit');
+});
+
+
+test('one shotgun shell produces one report while legacy shots and pellets remain supported', () => {
+  assert.equal(hasGunshotReport({ type: 'shot', weapon: 'carbine' }), true);
+  assert.equal(hasGunshotReport({ type: 'fire', weapon: 'marksman' }), true);
+  assert.equal(hasGunshotReport({ type: 'shot', pellet: 0, pelletCount: 8 }), true);
+  for (let pellet = 1; pellet < 8; pellet++) assert.equal(hasGunshotReport({ type: 'shot', pellet, pelletCount: 8 }), false);
+  assert.equal(hasGunshotReport({ type: 'damage', pellet: 0 }), false);
+  assert.equal(hasGunshotReport(null), false);
+  const volley = Array.from({ length: 6 }, (_, playerId) => Array.from({ length: 8 }, (_, pellet) => ({ type: 'shot', playerId, weapon: 'shotgun', pellet }))).flat();
+  assert.equal(volley.filter(hasGunshotReport).length, 6, 'a full 3v3 volley needs six gun reports rather than 48');
+  assert.equal(volley.length, 48, 'audio gating never removes pellet contact events');
 });

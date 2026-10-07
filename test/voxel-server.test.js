@@ -134,7 +134,8 @@ test('Voxel rejects nonfinite angles, unknown controls and invalid sequences wit
   const game = await host(t), room = await game.make(), { peer } = await game.peer(room);
   for (const buttons of [
     { yaw: Math.PI + .001 }, { yaw: -Math.PI - .001 }, { pitch: 1.351 }, { pitch: -1.351 },
-    { yaw: '0' }, { pitch: null }, { fire: 1 }, { jump: 'yes' }, { hp: 200 }, { aimX: 1 }, { weapon: 'marksman' },
+    { yaw: '0' }, { pitch: null }, { fire: 1 }, { jump: 'yes' }, { aim: 1 }, { swap: 'sword' }, { grenade: 2 }, { heal: 'yes' },
+    { hp: 200 }, { aimX: 1 }, { weapon: 'marksman' }, { potions: 99 }, { grenades: 99 },
   ]) {
     const after = peer.messages.length;
     peer.send({ type: 'input', seq: 0, buttons });
@@ -236,6 +237,58 @@ test('Voxel requires all six players to accept a rematch and preserves the room 
   assert.equal(room.state.capacity, 6);
   assert.equal(room.state.mapId, 'depot');
   assert.equal(room.state.round, 1);
+});
+
+test('Voxel arsenal controls release on stale input without accepting inventory or damage from the client', async t => {
+  const game = await host(t), room = await game.make(), seat = await game.peer(room);
+  await inputFrames(game, room, seat, { aim: true, swap: true, grenade: true, heal: true, yaw: .6, pitch: -.3 }, 1);
+  for (const key of ['aim', 'swap', 'grenade', 'heal']) assert.equal(room.slots[0].buttons[key], true);
+  room.slots[0].lastInputTime -= 351; game.app.tick();
+  for (const key of ['aim', 'swap', 'grenade', 'heal']) assert.equal(room.slots[0].buttons[key], false);
+  assert.equal(room.slots[0].buttons.yaw, .6); assert.equal(room.slots[0].buttons.pitch, -.3);
+  assert.equal(room.state.players[0].slot, 'primary');
+  assert.equal(room.state.players[0].grenades, 1); assert.equal(room.state.players[0].potions, 1);
+  const hp = room.state.players[0].hp;
+  for (const buttons of [{ hp: 999 }, { potions: 99 }, { damage: 999 }, { slot: 'sword' }, { grenades: 99 }]) {
+    const after = seat.peer.messages.length;
+    seat.peer.send({ type: 'input', seq: 2, buttons });
+    await seat.peer.waitFor(message => message.type === 'error', { after });
+    assert.equal(room.slots[0].lastAccepted, 0);
+    assert.equal(room.state.players[0].hp, hp);
+  }
+});
+
+test('Voxel new loadouts and finite utility actions are authoritative through real sockets', async t => {
+  const game = await host(t), room = await game.make(2, 'depot'), seats = await game.fill(room);
+  for (const [id, weaponId] of ['pistol', 'shotgun', 'burst', 'carbine'].entries()) {
+    const after = seats[id].peer.messages.length;
+    seats[id].peer.send({ type: 'fps-loadout', weaponId });
+    await seats[id].peer.untilState(message => message.state.players[id].weapon === weaponId, { after });
+  }
+  await readyEveryone(room, seats); advance(game.app, room, 'fight');
+  const actor = room.state.players[0];
+  await inputFrames(game, room, seats[0], { aim: true }, Voxel.ADS.ticks);
+  assert.equal(actor.aiming, true); assert.equal(actor.aimTicks, Voxel.ADS.ticks);
+  await inputFrames(game, room, seats[0], { swap: true }, 40);
+  assert.equal(actor.slot, 'sword'); assert.equal(actor.aiming, false);
+  assert.equal(actor.weapon, 'pistol', 'the primary loadout remains available when drawing the sword');
+  await inputFrames(game, room, seats[0], {}, 1);
+  await inputFrames(game, room, seats[0], { swap: true }, 1); assert.equal(actor.slot, 'primary');
+  await inputFrames(game, room, seats[0], { grenade: true }, 30);
+  assert.equal(actor.grenades, 0); assert.equal(room.state.grenades.length, 1);
+  await inputFrames(game, room, seats[0], { grenade: true }, 30);
+  assert.equal(room.state.grenades.length, 1, 'a held throw cannot invent another grenade');
+  assert.equal(actor.potions, 1);
+  await inputFrames(game, room, seats[0], { heal: true }, 10);
+  assert.equal(actor.potions, 1, 'full health does not waste the healing potion');
+  room.state.phase = 'roundEnd'; room.state.phaseTicks = 1;
+  game.app.tick();
+  assert.equal(room.state.phase, 'countdown'); assert.equal(room.state.grenades.length, 0);
+  for (const player of room.state.players) {
+    assert.equal(player.slot, 'primary'); assert.equal(player.grenades, 1); assert.equal(player.potions, 1);
+    assert.equal(player.healing, false); assert.equal(player.meleeTicks, 0);
+  }
+  assert.deepEqual(room.state.players.map(player => player.weapon), ['pistol', 'shotgun', 'burst', 'carbine']);
 });
 
 test('Voxel loadouts are selected authoritatively and cannot be changed during live combat', async t => {

@@ -3,7 +3,7 @@ import { copyText, getName, hostInfo, roomUrl, saveName } from './hub/shared.js'
 import { GameAudio } from './audio.js';
 
 export const LOOK_SENSITIVITY = 0.0025;
-export const FPS_BUTTONS = Object.freeze(['up', 'down', 'left', 'right', 'jump', 'crouch', 'walk', 'fire', 'reload', 'interact']);
+export const FPS_BUTTONS = Object.freeze(['up', 'down', 'left', 'right', 'jump', 'crouch', 'walk', 'fire', 'reload', 'interact', 'aim', 'swap', 'grenade', 'heal']);
 const TAU = Math.PI * 2;
 const clone = value => value == null ? value : structuredClone(value);
 
@@ -18,7 +18,7 @@ export function neutralInput(yaw = 0, pitch = 0) {
 
 export function controlForKey(event, layout = getKeyboardLayout()) {
   const key = gameKey(event, layout).toLowerCase();
-  return ({ w: 'up', arrowup: 'up', s: 'down', arrowdown: 'down', a: 'left', arrowleft: 'left', d: 'right', arrowright: 'right', ' ': 'jump', control: 'crouch', shift: 'walk', r: 'reload', e: 'interact' })[key] || null;
+  return ({ w: 'up', arrowup: 'up', s: 'down', arrowdown: 'down', a: 'left', arrowleft: 'left', d: 'right', arrowright: 'right', ' ': 'jump', control: 'crouch', shift: 'walk', r: 'reload', e: 'interact', v: 'swap', g: 'grenade', h: 'heal' })[key] || null;
 }
 
 export function isFormTarget(target) {
@@ -33,7 +33,8 @@ export function composeInput(keys, touch, mouse, aim, active = true) {
   input.down ||= touch.move.y > 0.22;
   input.left ||= touch.move.x < -0.22;
   input.right ||= touch.move.x > 0.22;
-  input.fire ||= mouse.fire;
+  input.fire ||= mouse.fire === true;
+  input.aim ||= mouse.aim === true;
   return input;
 }
 
@@ -82,9 +83,68 @@ export function tacticalMapPlayers(state, localId, connectedIds) {
 
 export function loadoutForKey(event, phase) {
   if (!['countdown', 'buy', 'roundEnd'].includes(phase) || event.repeat || event.altKey || event.ctrlKey || event.metaKey || isFormTarget(event.target)) return null;
-  // Unshifted AZERTY prints &, é and " on these physical number keys.
-  return ({ Digit1: 'carbine', Digit2: 'smg', Digit3: 'marksman', Numpad1: 'carbine', Numpad2: 'smg', Numpad3: 'marksman' })[event.code]
-    || ({ '1': 'carbine', '2': 'smg', '3': 'marksman' })[event.key] || null;
+  // Physical number keys also work with unshifted AZERTY &, é, ", ', ( and -.
+  return ({ Digit1: 'carbine', Digit2: 'smg', Digit3: 'marksman', Digit4: 'pistol', Digit5: 'shotgun', Digit6: 'burst', Numpad1: 'carbine', Numpad2: 'smg', Numpad3: 'marksman', Numpad4: 'pistol', Numpad5: 'shotgun', Numpad6: 'burst' })[event.code]
+    || ({ '1': 'carbine', '2': 'smg', '3': 'marksman', '4': 'pistol', '5': 'shotgun', '6': 'burst' })[event.key] || null;
+}
+
+/** Scope and look cues use the same finite authoritative ADS transition as the camera. */
+export function aimFraction(player, ticks = 18) {
+  if (player?.alive === false || player?.slot === 'sword' || player?.healing || player?.healTicks > 0 || player?.reloadTicks > 0 || player?.grenadeThrowTicks > 0) return 0;
+  return Math.max(0, Math.min(1, Number.isFinite(player?.aimTicks) ? player.aimTicks / Math.max(1, ticks) : 0));
+}
+
+export function aimLookMultiplier(player, ads = {}) {
+  const progress = aimFraction(player, ads.ticks); const smooth = progress * progress * (3 - 2 * progress);
+  const zoom = player?.weapon === 'marksman' ? ads.scopedFovRatio || 40 / 70 : ads.fovRatio || 54 / 70;
+  return 1 + (zoom - 1) * smooth;
+}
+
+/** Action progress always comes from the simulation; readiness never anticipates a hit. */
+export function combatReadout(player, weapons = {}, rules = {}) {
+  const weapon = weapons[player?.weapon]; const sword = player?.slot === 'sword';
+  const ticks = Math.max(0, Number.isFinite(player?.meleeTicks) ? player.meleeTicks : 0, Number.isFinite(player?.meleeCooldown) ? player.meleeCooldown : 0);
+  const meleePhase = ticks && !(player?.meleeTicks > 0) ? 'recovery' : player?.meleePhase || 'idle';
+  const meleeTotal = (rules.MELEE?.startupTicks || 18) + (rules.MELEE?.activeTicks || 12) + (rules.MELEE?.recoveryTicks || 42);
+  const healing = player?.healTicks > 0; const reloading = !sword && player?.reloadTicks > 0;
+  let label = sword ? 'SWORD' : weapon?.label || (player?.weapon || 'carbine').toUpperCase();
+  let ammo = sword ? ({ startup: 'WINDUP', active: 'STRIKE', recovery: 'RECOVER' })[meleePhase] || 'READY' : player?.ammo ?? '—';
+  let status; let progress = null;
+  if (sword) {
+    status = ticks ? `${(ticks / 120).toFixed(1)}S · ${meleePhase === 'startup' ? 'COMMITTING' : meleePhase === 'active' ? 'BLADE ACTIVE' : 'RECOVERING'}` : 'LMB STRIKE · V GUN';
+    if (ticks) progress = { label: 'Sword attack and recovery', remaining: ticks, total: meleeTotal };
+  } else if (player?.ammo === 0) status = player.reserve > 0 ? 'R TO RELOAD' : 'OUT OF AMMUNITION';
+  else if (weapon?.mode === 'burst' && player?.burstRemaining > 0) status = 'BURST FIRING';
+  else if (weapon?.mode === 'burst' && player?.shotCooldown > 0) status = `BURST RECOVERY ${(player.shotCooldown / 120).toFixed(1)}S`;
+  else if (weapon?.mode === 'pump' && player?.shotCooldown > 0) status = `PUMPING ${(player.shotCooldown / 120).toFixed(1)}S`;
+  else if (!player?.grounded) status = 'AIRBORNE / UNSTEADY';
+  else if (player?.aiming) status = Math.hypot(player.vx || 0, player.vz || 0) > .22 ? 'AIMING / MOVING' : 'AIMING / STEADY';
+  else if (player?.crouching) status = Math.hypot(player.vx || 0, player.vz || 0) > .22 ? 'CROUCHED / MOVING' : 'CROUCHED / STEADY';
+  else status = ({ semi: 'CLICK EACH SHOT', burst: 'CLICK EACH BURST', pump: 'CLICK EACH SHELL' })[weapon?.mode] || 'RMB AIM · V SWORD';
+  if (reloading) { status = `RELOADING ${(player.reloadTicks / 120).toFixed(1)}S`; progress = { label: 'Reload', remaining: player.reloadTicks, total: weapon?.reloadTicks || player.reloadTicks }; }
+  if (player?.grenadeThrowTicks > 0) status = `THROWING ${(player.grenadeThrowTicks / 120).toFixed(1)}S`;
+  if (healing) {
+    label = 'HEALING POTION'; ammo = `+${Math.min(rules.HEAL?.amount || 40, Math.max(0, (player.maxHp || 100) - player.hp))}`;
+    status = `${(player.healTicks / 120).toFixed(1)}S · STAY IN COVER`;
+    progress = { label: 'Drinking healing potion', remaining: player.healTicks, total: rules.HEAL?.ticks || 240 };
+  }
+  if (progress) progress.percent = Math.max(0, Math.min(100, 100 - progress.remaining / progress.total * 100));
+  return { label, ammo, reserve: player?.reserve ?? '—', sword, healing, reloading, status, progress,
+    grenades: Math.max(0, player?.grenades ?? 0), potions: Math.max(0, player?.potions ?? 0) };
+}
+
+/** A shotgun shell reports once; every pellet still supplies its own contact feedback. */
+export function hasGunshotReport(event) {
+  return ['shot', 'fire'].includes(event?.type) && (event.pellet == null || event.pellet === 0);
+}
+
+/** Self-inflicted damage is incoming damage; it never earns an offensive hit cue. */
+export function combatEventPerspective(event, localId) {
+  const source = event.shooterId ?? event.attackerId ?? event.playerId ?? event.ownerId ?? event.attacker;
+  const target = event.targetId ?? event.victimId ?? event.target;
+  return { source, target, self: source != null && source === target,
+    outgoing: localId != null && source === localId && target != null && target !== localId,
+    incoming: localId != null && target === localId };
 }
 
 /** Interpolate remote bodies only. Camera aim and authoritative combat remain immediate. */
@@ -148,7 +208,7 @@ async function boot() {
   let hitUntil = 0; let hitKind = 'body'; let damageUntil = 0; let feedbackUntil = 0; let toastTimer; let lastCountdown = null; let lastHUDAt = 0;
   let inputHeartbeat = null; let lastAimSendAt = 0; let lastTouchLookAt = performance.now();
   const keys = new Set(); const pressedKeys = new Map();
-  const mouse = { fire: false };
+  const mouse = { fire: false, aim: false };
   const touch = { move: { x: 0, y: 0 }, look: { x: 0, y: 0 }, actions: new Set() };
   const actionPointers = new Map(); const padPointers = new Map();
   const padInputPacer = createContinuousInputPacer(60);
@@ -163,10 +223,21 @@ async function boot() {
   function pointerLocked() { return document.pointerLockElement === canvas; }
   function controlsActive() { return connected && entered && !paused && !modalOpen && !graphicsError && !document.hidden && !!ownPlayer()?.alive && ['countdown', 'buy', 'fight'].includes(state?.phase) && (pointerLocked() || fallback || touchMode); }
   function currentInput() { return composeInput(keys, touch, mouse, aim, controlsActive()); }
+  function utilityFeedback(action) {
+    const local = ownPlayer(); if (state?.phase !== 'fight' || !local?.alive) return;
+    if (action === 'heal' && !local.healTicks) {
+      if (!local.potions) toast('Your potion is spent. Supplies reset next round.');
+      else if (local.hp >= local.maxHp) toast('Health is full. Save your potion.');
+      else if (!local.grounded) toast('Land before drinking your potion.');
+    } else if (action === 'grenade' && !local.grenades) toast('Your frag is spent. Supplies reset next round.');
+  }
   function sendInput(buttons = currentInput()) { if (teamSwitchPending) return sequence; if (sequence >= 999999000) sequence = 0; send({ type: 'input', seq: ++sequence, buttons }); return sequence; }
   function integrateTouchLook(now = performance.now()) {
     const delta = Math.max(0, Math.min(.1, (now - lastTouchLookAt) / 1000)); lastTouchLookAt = now;
-    if (controlsActive() && touchMode) aim = cleanAim(aim.yaw + touch.look.x * delta * 2.4, aim.pitch - touch.look.y * delta * 1.85);
+    if (controlsActive() && touchMode) {
+      const sensitivity = aimLookMultiplier(ownPlayer(), engine?.ADS);
+      aim = cleanAim(aim.yaw + touch.look.x * delta * 2.4 * sensitivity, aim.pitch - touch.look.y * delta * 1.85 * sensitivity);
+    }
   }
   function refreshHeartbeat() {
     const shouldRun = !destroyed && connected && !document.hidden && !teamSwitchPending && ['countdown', 'buy', 'fight'].includes(state?.phase);
@@ -174,7 +245,7 @@ async function boot() {
     else if (!shouldRun && inputHeartbeat) { clearInterval(inputHeartbeat); inputHeartbeat = null; }
   }
   function neutralize({ pause = false, unlock = false } = {}) {
-    keys.clear(); pressedKeys.clear(); mouse.fire = false; rightDrag = false;
+    keys.clear(); pressedKeys.clear(); mouse.fire = mouse.aim = false; rightDrag = false;
     touch.actions.clear(); touch.move = { x: 0, y: 0 }; touch.look = { x: 0, y: 0 };
     for (const [pointerId, element] of actionPointers) try { element.releasePointerCapture(pointerId); } catch { /* A cancelled pointer is already released. */ }
     for (const [pointerId, record] of padPointers) try { record.element.releasePointerCapture(pointerId); } catch { /* A cancelled pointer is already released. */ }
@@ -242,33 +313,48 @@ async function boot() {
   }
 
   function playEvents(events = []) {
+    const impactSounds = new Set();
     for (const event of events) {
       const eventId = event.id ?? `${state?.tick}:${event.type}:${event.playerId ?? event.attackerId ?? ''}:${event.targetId ?? ''}`;
       if (eventSeen.has(eventId)) continue;
       eventSeen.add(eventId); eventOrder.push(eventId);
       if (eventOrder.length > 512) eventSeen.delete(eventOrder.shift());
-      const shooter = event.shooterId ?? event.attackerId ?? event.playerId ?? event.attacker;
-      const target = event.targetId ?? event.victimId ?? event.target;
+      const perspective = combatEventPerspective(event, playerId);
+      const shooter = perspective.source; const target = perspective.target;
       if (event.type === 'damage' && event.damage > 0) {
-        if (shooter === playerId) { hitUntil = performance.now() + 150; hitKind = event.headshot ? 'headshot' : 'body'; }
+        if (perspective.outgoing) { hitUntil = performance.now() + 150; hitKind = event.headshot ? 'headshot' : 'body'; }
         if (target === playerId) damageUntil = performance.now() + 230;
       }
       if (['kill', 'death', 'elimination'].includes(event.type)) {
-        kills.push({ at: performance.now(), text: `${lookupName(shooter)}  ${event.headshot ? '[HS]' : '›'}  ${lookupName(target)}`, own: shooter === playerId, headshot: !!event.headshot });
+        kills.push({ at: performance.now(), text: perspective.self ? `${lookupName(target)}  [SELF FRAG]` : `${shooter == null ? 'THE DEVICE' : lookupName(shooter)}  ${event.headshot ? '[HS]' : '›'}  ${lookupName(target)}`, own: perspective.outgoing, headshot: !!event.headshot });
         if (kills.length > 4) kills.shift();
-        if (shooter === playerId) { hitUntil = performance.now() + 230; hitKind = 'elimination'; feedbackUntil = performance.now() + 1100; $('combat-feedback').textContent = event.headshot ? 'HEADSHOT · ELIMINATED' : 'ELIMINATED'; }
+        if (perspective.outgoing) { hitUntil = performance.now() + 230; hitKind = 'elimination'; feedbackUntil = performance.now() + 1100; $('combat-feedback').textContent = event.headshot ? 'HEADSHOT · ELIMINATED' : 'ELIMINATED'; }
+      }
+      if (shooter === playerId && ['healStart', 'healComplete', 'healCancel'].includes(event.type)) {
+        feedbackUntil = performance.now() + (event.type === 'healStart' ? 650 : 1100);
+        $('combat-feedback').textContent = event.type === 'healComplete' ? `HEALED +${Math.round(event.amount || 0)} HP` : event.type === 'healCancel' ? 'HEALING INTERRUPTED' : 'DRINKING POTION';
       }
       if (!audio.enabled) continue;
       try {
-        if (event.type === 'shot' || event.type === 'fire') {
+        if (hasGunshotReport(event)) {
           const own = shooter === playerId;
           audio.noise(0.075, { highpass: 170, lowpass: 4400, gain: own ? 0.34 : 0.12 });
           audio.tone(event.weapon === 'marksman' ? 90 : 150, 0.09, { end: 48, type: 'triangle', gain: own ? 0.26 : 0.09 });
         } else if (event.type === 'damage' && (shooter === playerId || target === playerId)) {
-          audio.tone(shooter === playerId ? 920 : 130, 0.055, { end: shooter === playerId ? 620 : 70, type: 'triangle', gain: 0.23 });
+          const soundKey = `${event.tick ?? state?.tick}:${perspective.incoming ? 'incoming' : 'outgoing'}`;
+          if (impactSounds.has(soundKey)) continue;
+          impactSounds.add(soundKey);
+          audio.tone(perspective.outgoing ? 920 : 130, 0.055, { end: perspective.outgoing ? 620 : 70, type: 'triangle', gain: 0.23 });
         } else if (['plant', 'planted', 'defuse', 'defused', 'bombPlant', 'bombDefuse'].includes(event.type)) {
           audio.tone(640, 0.13, { gain: 0.18 }); audio.tone(880, 0.12, { gain: 0.12, delay: 0.13 });
-        } else if (event.type === 'explosion' || event.type === 'detonate') {
+        } else if (event.type === 'meleeStart') {
+          audio.noise(.13, { highpass: 1600, lowpass: 4500, gain: shooter === playerId ? .14 : .045 });
+          audio.tone(170, .13, { end: 70, type: 'triangle', gain: shooter === playerId ? .10 : .035 });
+        } else if (event.type === 'grenadeThrow' && shooter === playerId) {
+          audio.noise(.06, { highpass: 1800, lowpass: 3900, gain: .12 });
+        } else if (event.type === 'healComplete' && shooter === playerId) {
+          audio.tone(660, .13, { end: 920, type: 'triangle', gain: .15 });
+        } else if (event.type === 'explosion' || event.type === 'detonate' || event.type === 'grenadeExplosion') {
           audio.noise(0.45, { highpass: 30, lowpass: 1700, gain: 0.45 }); audio.tone(65, 0.42, { end: 28, gain: 0.25 });
         }
       } catch { /* Optional sound cannot interrupt gameplay. */ }
@@ -348,21 +434,39 @@ async function boot() {
     $('combat-hud').hidden = inLobby || !local || !local.alive || phase === 'matchEnd';
     $('health').textContent = local?.hp ?? 100; $('health-fill').style.width = `${Math.max(0, Math.min(100, local?.hp ?? 100))}%`;
     $('health').closest('.health-readout').classList.toggle('low-health', !!local && local.hp <= 30);
-    $('weapon-label').textContent = (local?.weapon || 'carbine').toUpperCase(); $('ammo').textContent = local?.ammo ?? '—'; $('reserve').textContent = local?.reserve ?? '—';
-    const reloading = local?.reloadTicks > 0; const weapon = engine?.WEAPONS?.[local?.weapon];
-    const reloadPercent = reloading && weapon ? Math.max(0, Math.min(100, 100 - local.reloadTicks / weapon.reloadTicks * 100)) : 0;
-    $('reload-track').hidden = !reloading; $('reload-progress').style.width = `${reloadPercent}%`;
-    $('reload-track').setAttribute('aria-valuenow', String(Math.round(reloadPercent)));
-    $('reload-track').setAttribute('aria-valuetext', `${((local?.reloadTicks || 0) / 120).toFixed(1)} seconds remaining`);
-    $('weapon-status').textContent = reloading ? `RELOADING ${(local.reloadTicks / 120).toFixed(1)}S` : local?.ammo === 0 ? local.reserve > 0 ? 'R TO RELOAD' : 'OUT OF AMMUNITION' : !local?.grounded ? 'AIRBORNE / UNSTEADY' : local?.crouching ? 'CROUCHED / STEADY' : 'STOP. AIM. BURST.';
-    $('ammo').classList.toggle('low-ammo', !reloading && !!weapon && local?.ammo <= Math.max(2, Math.floor(weapon.magazine / 4)));
-    $('crosshair').hidden = !controlsActive() || phase !== 'fight';
+    const readout = combatReadout(local, engine?.WEAPONS, engine);
+    const weapon = engine?.WEAPONS?.[local?.weapon];
+    $('weapon-label').textContent = readout.label; $('ammo').textContent = readout.ammo; $('reserve').textContent = readout.reserve;
+    $('weapon-readout').dataset.slot = readout.healing ? 'potion' : readout.sword ? 'sword' : 'primary';
+    $('weapon-readout').classList.toggle('healing', readout.healing);
+    $('ammo-reserve').hidden = readout.sword || readout.healing;
+    $('reload-track').hidden = !readout.progress; $('reload-progress').style.width = `${readout.progress?.percent || 0}%`;
+    $('reload-track').setAttribute('aria-label', readout.progress?.label || 'Weapon action');
+    $('reload-track').setAttribute('aria-valuenow', String(Math.round(readout.progress?.percent || 0)));
+    $('reload-track').setAttribute('aria-valuetext', `${((readout.progress?.remaining || 0) / 120).toFixed(1)} seconds remaining`);
+    $('weapon-status').textContent = readout.status;
+    $('ammo').classList.toggle('low-ammo', !readout.sword && !readout.reloading && !!weapon && local?.ammo <= Math.max(2, Math.floor(weapon.magazine / 4)));
+    $('grenade-charge').textContent = readout.grenades; $('potion-charge').textContent = readout.potions;
+    $('grenade-utility').classList.toggle('spent', !readout.grenades);
+    $('potion-utility').classList.toggle('spent', !readout.potions);
+    $('potion-utility').classList.toggle('channeling', readout.healing);
+    const scoped = !!local?.alive && local.slot !== 'sword' && !readout.healing && local.weapon === 'marksman' && aimFraction(local, engine?.ADS?.ticks) >= 14 / 18;
+    $('scope-reticle').hidden = !controlsActive() || phase !== 'fight' || !scoped;
+    $('crosshair').hidden = !controlsActive() || phase !== 'fight' || scoped || readout.healing;
+    $('crosshair').dataset.stance = readout.sword ? 'sword' : local?.aiming ? 'aim' : 'hip';
     if (local) {
-      const weapon = engine?.WEAPONS?.[local.weapon];
       const motion = weapon ? Math.max(0, Math.min(1, (Math.hypot(local.vx, local.vz) - .22) / weapon.speed)) : 0;
-      const spread = weapon ? motion * weapon.movingSpread + (local.grounded ? 0 : weapon.airborneSpread) + Math.min(8, local.heat || 0) * weapon.bloom : 0;
-      const size = Math.round(22 + Math.min(64, spread * canvas.clientHeight * 2));
+      const ads = aimFraction(local, engine?.ADS?.ticks);
+      const spread = weapon ? (weapon.pelletSpread || 0) + (motion * weapon.movingSpread + (local.grounded ? 0 : weapon.airborneSpread) + Math.min(8, local.heat || 0) * weapon.bloom) * (1 + ((engine?.ADS?.spreadMultiplier || .4) - 1) * ads) : 0;
+      const size = readout.sword ? 27 : Math.round(22 - ads * 8 + Math.min(64, spread * canvas.clientHeight * 2));
       $('crosshair').style.width = `${size}px`; $('crosshair').style.height = `${size}px`;
+    }
+    for (const button of document.querySelectorAll('[data-voxel-action]')) {
+      const action = button.dataset.voxelAction;
+      if (action === 'swap') { button.textContent = readout.sword ? 'GUN' : 'SWORD'; button.setAttribute('aria-label', readout.sword ? 'Switch to primary gun' : 'Switch to sword'); button.setAttribute('aria-pressed', String(readout.sword)); }
+      if (action === 'aim') button.setAttribute('aria-pressed', String(!!local?.aiming));
+      if (action === 'grenade') { button.textContent = `FRAG ${readout.grenades}`; button.setAttribute('aria-label', `Throw fragmentation grenade: ${readout.grenades} remaining`); button.classList.toggle('unavailable', !readout.grenades); }
+      if (action === 'heal') { button.textContent = readout.healing ? 'DRINKING' : `POTION ${readout.potions}`; button.setAttribute('aria-label', `Drink healing potion: ${readout.potions} remaining; restores up to 40 health after two seconds; interruption spends the potion`); button.classList.toggle('unavailable', (!readout.potions && !readout.healing) || local?.hp >= (local?.maxHp || 100)); }
     }
     $('pause-button').hidden = paused || inLobby || phase === 'matchEnd' || !entered;
     $('touch-controls').hidden = !touchMode || !entered || !['countdown', 'buy', 'fight'].includes(phase) || !local?.alive;
@@ -420,7 +524,7 @@ async function boot() {
       button.setAttribute('aria-pressed', String(button.dataset.arenaLoadout === local?.weapon));
       button.disabled = !connected || !['countdown', 'buy'].includes(phase);
     }
-    $('aim-note').hidden = !enter; $('aim-note').textContent = touchMode ? 'Touch: Move and Look pads, with six action buttons.' : 'Mouse capture where available. Otherwise, hold right mouse and drag to look.';
+    $('aim-note').hidden = !enter; $('aim-note').textContent = touchMode ? 'Touch: Move / Look pads. Hold AIM for sights; tap SWORD, FRAG or POTION.' : 'RMB aims. If mouse capture is unavailable, hold RMB and drag to look.';
     const result = roundResult(state, local?.team);
     $('phase-announcement').hidden = !connected || !!graphicsError || modalOpen || overlay || !['countdown', 'buy', 'roundEnd'].includes(phase);
     $('phase-announcement').dataset.phase = phase;
@@ -587,7 +691,7 @@ async function boot() {
     const action = controlForKey(event); if (!action) return;
     event.preventDefault(); const keyId = event.code || event.key;
     if (pressedKeys.has(keyId)) return;
-    pressedKeys.set(keyId, action); keys.add(action); sendInput();
+    pressedKeys.set(keyId, action); keys.add(action); utilityFeedback(action); sendInput();
   });
   listen(window, 'keyup', event => {
     const keyId = event.code || event.key; const action = pressedKeys.get(keyId); pressedKeys.delete(keyId);
@@ -610,13 +714,14 @@ async function boot() {
     if (!controlsActive()) return;
     event.preventDefault(); canvas.focus({ preventScroll: true });
     if (event.button === 0) mouse.fire = true;
-    if (event.button === 2 && fallback) rightDrag = true;
+    if (event.button === 2) { mouse.aim = true; if (fallback) rightDrag = true; }
     sendInput();
   });
-  listen(window, 'mouseup', event => { if (event.button === 0) mouse.fire = false; if (event.button === 2) rightDrag = false; if (entered && [0, 2].includes(event.button)) sendInput(); });
+  listen(window, 'mouseup', event => { if (event.button === 0) mouse.fire = false; if (event.button === 2) { mouse.aim = false; rightDrag = false; } if (entered && [0, 2].includes(event.button)) sendInput(); });
   listen(document, 'mousemove', event => {
     if (!controlsActive() || !(pointerLocked() || fallback && rightDrag)) return;
-    aim = cleanAim(aim.yaw + event.movementX * LOOK_SENSITIVITY, aim.pitch - event.movementY * LOOK_SENSITIVITY);
+    const sensitivity = LOOK_SENSITIVITY * aimLookMultiplier(ownPlayer(), engine?.ADS);
+    aim = cleanAim(aim.yaw + event.movementX * sensitivity, aim.pitch - event.movementY * sensitivity);
     const now = performance.now(); if (now - lastAimSendAt >= 1000 / 120) { sendInput(); lastAimSendAt = now; }
   });
   listen(canvas, 'contextmenu', event => event.preventDefault());
@@ -678,7 +783,7 @@ async function boot() {
     for (const event of ['pointerup', 'pointercancel', 'lostpointercapture']) listen(pad, event, end);
   }
   for (const button of document.querySelectorAll('[data-voxel-action]')) {
-    listen(button, 'pointerdown', event => { if (!controlsActive()) return; event.preventDefault(); actionPointers.set(event.pointerId, button); touch.actions.add(button.dataset.voxelAction); button.classList.add('pressed'); button.setPointerCapture(event.pointerId); sendInput(); });
+    listen(button, 'pointerdown', event => { if (!controlsActive()) return; event.preventDefault(); utilityFeedback(button.dataset.voxelAction); actionPointers.set(event.pointerId, button); touch.actions.add(button.dataset.voxelAction); button.classList.add('pressed'); button.setPointerCapture(event.pointerId); sendInput(); });
     const end = event => {
       if (actionPointers.get(event.pointerId) !== button) return; actionPointers.delete(event.pointerId);
       if (![...actionPointers.values()].includes(button)) { touch.actions.delete(button.dataset.voxelAction); button.classList.remove('pressed'); }

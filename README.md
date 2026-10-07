@@ -90,19 +90,25 @@ Voxel Breach:
 | --- | --- |
 | Move | WASD / ZQSD / arrow keys |
 | Look | Mouse; right mouse drag when pointer lock is unavailable |
-| Shoot | Left mouse button |
+| Shoot / swing sword | Left mouse button |
+| Aim down sights | Hold right mouse button |
+| Switch gun / sword | V |
+| Throw frag grenade | G |
+| Drink healing potion | H |
 | Reload | R |
 | Plant / defuse | Hold E near a site or planted bomb |
 | Jump | Space |
 | Crouch | Ctrl |
 | Slow walk | Shift |
-| Choose a loadout between rounds | 1 / 2 / 3, or the on-screen weapon buttons |
+| Choose a loadout between rounds | 1–6 (physical number keys on French layouts), or the on-screen weapon buttons |
 
-Create a 1v1, 2v2 or 3v3 room and choose Sunset Courtyard, Freight Depot or Canal Exchange. Every seat must be filled and every player must press Ready. The match begins with a countdown and an eight-second preparation phase; choose a carbine, SMG or marksman rifle between rounds. First to four round wins takes the match; teams switch attacking and defending roles after three rounds. Attackers carry the bomb to either site and hold Interact for three seconds to plant it. Defenders hold Interact for five seconds to defuse. A planted bomb has a 35-second fuse and remains live when the attackers are eliminated. Unplanted rounds last 100 seconds. There are no respawns within a round; death lets you watch living teammates.
+Create a 1v1, 2v2 or 3v3 room and choose Sunset Courtyard, Freight Depot or Canal Exchange. Every seat must be filled and every player must press Ready. The match begins with a countdown and an eight-second preparation phase; choose a carbine, SMG, marksman rifle, pistol, shotgun or burst rifle between rounds. First to four round wins takes the match; teams switch attacking and defending roles after three rounds. Attackers carry the bomb to either site and hold Interact for three seconds to plant it. Defenders hold Interact for five seconds to defuse. A planted bomb has a 35-second fuse and remains live when the attackers are eliminated. Unplanted rounds last 100 seconds. There are no respawns within a round; death lets you watch living teammates.
 
-This is a true first-person WebGL game with local voxel artwork. Stop moving for accurate shots; movement, jumping and sustained fire reduce accuracy. Reloads and weapon choices create openings. Solid 3D map cover blocks shots before player hitboxes, crouching lowers your profile, and friendly fire is disabled. Click the playfield to capture the mouse; Escape releases your controls. On hosts where the browser does not allow pointer lock, right-drag aims. Touch controls provide movement, look and action buttons. A disconnect returns the room to the lobby; all players must agree to a rematch.
+This is a true first-person WebGL game with local voxel artwork. Stop moving for accurate shots; movement, jumping and sustained fire reduce accuracy. Hold right-click to use the sights: precision improves and recoil decreases, while movement slows. The pistol, shotgun and burst rifle require a fresh click for each shot, shell or burst. The shotgun fires eight pellets with damage falling off at range, and the burst rifle fires three shots per burst. Reloads and weapon choices create openings. Solid 3D map cover blocks shots before player hitboxes, crouching lowers your profile, and friendly fire is disabled. Click the playfield to capture the mouse; Escape releases your controls. On hosts where the browser does not allow pointer lock, hold right-click and drag to look while aiming. Touch controls provide movement, look, aiming and action buttons. A disconnect returns the room to the lobby; all players must agree to a rematch.
 
-The tactical map shows cover, both sites, your position and living teammates. Painted site signs help you navigate the three distinct environments. The main clock switches to the charge countdown after planting; planting, defusing and reloading show progress. Round results explain the outcome before the next setup phase.
+Every loadout includes a sword, one frag grenade and one healing potion per round. Sword swings have a visible wind-up, committed direction and recovery; walls and intervening teammates block them. Frags bounce and roll before exploding after 2.4 seconds. Cover protects against the blast, teammates are immune, and your own grenade can hurt you. Drinking takes two seconds and restores up to 40 HP on completion. Damage, shooting, jumping, switching weapons, throwing a grenade, reloading or interacting interrupts it and spends the potion. Full-health players cannot waste a potion. Healing slows movement, so find cover before drinking. Round setup restores ammunition and utility charges.
+
+The tactical map shows cover, both sites, your position and living teammates. Painted site signs help you navigate the three distinct environments. The main clock switches to the charge countdown after planting; planting, defusing, reloading, sword recovery and drinking show progress. The HUD displays your active weapon and remaining grenade and potion charges. Round results explain the outcome before the next setup phase.
 
 Jump onto low crates, slide along solid cover, and step off ledges into a fall. Movement checks the full three-dimensional path, including landings at crate edges. Living players block movement, and local movement prediction also checks those bodies to reduce camera corrections at contact.
 

@@ -1,11 +1,21 @@
 /** Voxel Breach: shared, deterministic 120 Hz tactical first-person simulation. */
+import { throwGrenade, advanceGrenades } from './voxel-ordnance.js';
 export const TICK_RATE = 120;
+// Keep every pellet contact from a six-player shotgun volley through the next
+// network snapshot, including utility and damage feedback in the same interval.
+export const EVENT_LIMIT = 128;
 export const WORLD = Object.freeze({ radius: .32, standHeight: 1.8, crouchHeight: 1.15, eyeHeight: 1.62, crouchEyeHeight: .98, gravity: 18.4, jumpSpeed: 6.4, roundSeconds: 100, bombSeconds: 35, plantSeconds: 3, defuseSeconds: 5, buySeconds: 8, winsToMatch: 4 });
-export const INPUT_KEYS = Object.freeze(['up', 'down', 'left', 'right', 'jump', 'crouch', 'walk', 'fire', 'reload', 'interact']);
+export const INPUT_KEYS = Object.freeze(['up', 'down', 'left', 'right', 'jump', 'crouch', 'walk', 'fire', 'reload', 'interact', 'aim', 'swap', 'grenade', 'heal']);
+export const ADS = Object.freeze({ ticks: 18, speedMultiplier: .65, spreadMultiplier: .4, recoilMultiplier: .62, fovRatio: 54 / 70, scopedFovRatio: 40 / 70 });
+export const MELEE = Object.freeze({ startupTicks: 18, activeTicks: 12, recoveryTicks: 42, damage: 55, reach: 2.15, arcRadians: .64, speed: 5.85 });
+export const HEAL = Object.freeze({ ticks: 240, amount: 40, speedMultiplier: .3 });
 export const WEAPONS = Object.freeze({
   carbine: Object.freeze({ id: 'carbine', name: 'Kestrel Carbine', label: 'CARBINE', magazine: 24, reserve: 72, damage: 28, headMultiplier: 3, cooldown: 12, reloadTicks: 252, speed: 5.4, range: 100, recoil: .0085, movingSpread: .043, airborneSpread: .105, bloom: .0028, color: '#83d0bd', description: 'Accurate opening shot; controlled bursts beat sustained recoil.' }),
   smg: Object.freeze({ id: 'smg', name: 'Swift SMG', label: 'SMG', magazine: 30, reserve: 90, damage: 20, headMultiplier: 2.5, cooldown: 9, reloadTicks: 216, speed: 5.9, range: 70, recoil: .0065, movingSpread: .026, airborneSpread: .082, bloom: .0022, color: '#ffc77a', description: 'Fast movement and close-range fire; damage falls beyond 20 metres.' }),
   marksman: Object.freeze({ id: 'marksman', name: 'Heron Marksman', label: 'MARKSMAN', magazine: 8, reserve: 24, damage: 58, headMultiplier: 2, cooldown: 54, reloadTicks: 300, speed: 4.85, range: 120, recoil: .019, movingSpread: .077, airborneSpread: .15, bloom: .001, color: '#bcb5ff', description: 'A precise headshot wins instantly. Movement demands discipline.' }),
+  pistol: Object.freeze({ id: 'pistol', name: 'Finch Pistol', label: 'PISTOL', mode: 'semi', magazine: 12, reserve: 48, damage: 34, headMultiplier: 2.4, cooldown: 22, reloadTicks: 180, speed: 6, range: 85, recoil: .012, movingSpread: .029, airborneSpread: .095, bloom: .0022, color: '#a1d0f3', description: 'One shot per press. Quick movement rewards deliberate close-range aim.' }),
+  shotgun: Object.freeze({ id: 'shotgun', name: 'Warden Shotgun', label: 'SHOTGUN', mode: 'pump', magazine: 6, reserve: 18, damage: 12, headMultiplier: 1.35, cooldown: 90, reloadTicks: 288, speed: 5.15, range: 36, recoil: .024, movingSpread: .035, airborneSpread: .09, bloom: .002, pellets: 8, pelletSpread: .055, color: '#eac394', description: 'Eight pellets per shell. Powerful up close; cover blocks each pellet.' }),
+  burst: Object.freeze({ id: 'burst', name: 'Osprey Burst Rifle', label: 'BURST', mode: 'burst', magazine: 27, reserve: 81, damage: 23, headMultiplier: 2.8, cooldown: 42, burstCount: 3, burstInterval: 8, reloadTicks: 264, speed: 5.15, range: 105, recoil: .0095, movingSpread: .05, airborneSpread: .115, bloom: .0028, color: '#ecab91', description: 'Three shots per press. Release and re-aim during the burst recovery.' }),
 });
 const box = (id, x, y, z, w, h, d, color = '#647780', material = 'stone') => Object.freeze({ id, x, y, z, w, h, d, color, material });
 const perimeter = (w = 50, d = 44, color = '#b8a993') => [box('wall-west', -w / 2 - 1, 0, -d / 2 - 1, 1, 4.2, d + 2, color), box('wall-east', w / 2, 0, -d / 2 - 1, 1, 4.2, d + 2, color), box('wall-north', -w / 2, 0, -d / 2 - 1, w, 4.2, 1, color), box('wall-south', -w / 2, 0, d / 2, w, 4.2, 1, color)];
@@ -44,17 +54,17 @@ export const emptyInput = (aim = {}) => ({ ...Object.fromEntries(INPUT_KEYS.map(
 export function cloneState(state) { const copy = JSON.parse(JSON.stringify(state)); if (copy.players) copy.fighters = copy.players; return copy; }
 function newPlayer(id, teamSize, loadout = 'carbine') {
   const weapon = Object.hasOwn(WEAPONS, loadout) ? loadout : 'carbine', w = WEAPONS[weapon];
-  return { id, team: Math.floor(id / teamSize), x: 0, y: 0, z: 0, yaw: 0, pitch: 0, vx: 0, vy: 0, vz: 0, radius: WORLD.radius, grounded: true, crouching: false, alive: true, hp: 100, maxHp: 100, weapon, ammo: w.magazine, reserve: w.reserve, reloadTicks: 0, shotCooldown: 0, recoil: 0, heat: 0, shotIndex: 0, shots: 0, kills: 0, deaths: 0, damageDealt: 0, lastHitTick: -1000, triggerBlocked: false, interaction: null, interactTicks: 0, previousInput: emptyInput() };
+  return { id, team: Math.floor(id / teamSize), x: 0, y: 0, z: 0, yaw: 0, pitch: 0, vx: 0, vy: 0, vz: 0, radius: WORLD.radius, grounded: true, crouching: false, alive: true, hp: 100, maxHp: 100, weapon, slot: 'primary', ammo: w.magazine, reserve: w.reserve, reloadTicks: 0, shotCooldown: 0, burstRemaining: 0, recoil: 0, heat: 0, shotIndex: 0, shots: 0, kills: 0, deaths: 0, damageDealt: 0, lastHitTick: -1000, triggerBlocked: false, aiming: false, aimTicks: 0, meleeTicks: 0, meleeCooldown: 0, meleeYaw: 0, meleePitch: 0, meleePhase: 'idle', meleeHitIds: [], healing: false, healTicks: 0, healStartTick: -1, potions: 1, grenades: 1, grenadeThrowTicks: 0, interaction: null, interactTicks: 0, previousInput: emptyInput() };
 }
 function freshBomb() { return { status: 'carried', carrierId: 0, x: 0, y: 0, z: 0, vy: 0, siteId: null, plantPlayerId: null, plantTicks: 0, defusePlayerId: null, defuseTicks: 0, timerTicks: 0 }; }
 export function createState({ teamSize = 1, mapId = 'courtyard' } = {}) {
   if (![1, 2, 3].includes(teamSize)) throw new RangeError('teamSize must be 1, 2 or 3.');
   if (!Object.hasOwn(MAPS, mapId)) throw new RangeError('Unknown Voxel Breach map.');
   const players = Array.from({ length: teamSize * 2 }, (_, id) => newPlayer(id, teamSize));
-  const state = { gameId: 'voxel-breach', teamSize, capacity: teamSize * 2, mapId, mapName: MAPS[mapId].name, tick: 0, phase: 'lobby', phaseTicks: 0, round: 1, maxRounds: 7, roundTicks: WORLD.roundSeconds * TICK_RATE, scores: [0, 0], attackTeam: 0, winner: null, roundWinner: null, roundReason: null, players, fighters: players, bomb: freshBomb(), events: [], eventId: 0, objective: 'Attackers plant at A or B. Defenders deny the plant or defuse. First to four rounds.' };
+  const state = { gameId: 'voxel-breach', teamSize, capacity: teamSize * 2, mapId, mapName: MAPS[mapId].name, tick: 0, phase: 'lobby', phaseTicks: 0, round: 1, maxRounds: 7, roundTicks: WORLD.roundSeconds * TICK_RATE, scores: [0, 0], attackTeam: 0, winner: null, roundWinner: null, roundReason: null, players, fighters: players, bomb: freshBomb(), grenades: [], grenadeId: 0, events: [], eventId: 0, objective: 'Attackers plant at A or B. Defenders deny the plant or defuse. First to four rounds.' };
   spawnPlayers(state, false); return state;
 }
-function emit(state, type, data = {}) { state.events.push({ id: ++state.eventId, tick: state.tick, type, ...data }); if (state.events.length > 64) state.events.splice(0, state.events.length - 64); }
+function emit(state, type, data = {}) { state.events.push({ id: ++state.eventId, tick: state.tick, type, ...data }); if (state.events.length > EVENT_LIMIT) state.events.splice(0, state.events.length - EVENT_LIMIT); }
 function spawnPlayers(state, preserveStats = true) {
   const arena = MAPS[state.mapId];
   state.players = state.players.map(old => {
@@ -64,6 +74,7 @@ function spawnPlayers(state, preserveStats = true) {
     return f;
   });
   state.fighters = state.players;
+  state.grenades = [];
   state.bomb = freshBomb(); state.bomb.carrierId = state.players.find(f => f.team === state.attackTeam).id; const carrier = state.players[state.bomb.carrierId];
   Object.assign(state.bomb, { x: carrier.x, y: carrier.y, z: carrier.z });
 }
@@ -87,10 +98,10 @@ export function resetLobby(state) {
 export function selectLoadout(state, playerId, weaponId) {
   const f = state.players[playerId];
   if (!f || !Number.isInteger(playerId)) return { ok: false, changed: false, error: 'Unknown player.' };
-  if (!Object.hasOwn(WEAPONS, weaponId)) return { ok: false, changed: false, error: 'Choose carbine, smg or marksman.' };
+  if (!Object.hasOwn(WEAPONS, weaponId)) return { ok: false, changed: false, error: 'Choose carbine, smg, marksman, pistol, shotgun or burst.' };
   if (!['lobby', 'countdown', 'buy', 'roundEnd'].includes(state.phase)) return { ok: false, changed: false, error: 'Weapons can be changed between rounds.' };
   if (f.weapon === weaponId) return { ok: true, changed: false };
-  const w = WEAPONS[weaponId]; Object.assign(f, { weapon: weaponId, ammo: w.magazine, reserve: w.reserve, reloadTicks: 0, shotCooldown: 0, recoil: 0, heat: 0, shotIndex: 0 });
+  const w = WEAPONS[weaponId]; Object.assign(f, { weapon: weaponId, slot: 'primary', ammo: w.magazine, reserve: w.reserve, reloadTicks: 0, shotCooldown: 0, burstRemaining: 0, recoil: 0, heat: 0, shotIndex: 0, aiming: false, aimTicks: 0 });
   emit(state, 'loadout', { playerId, weapon: weaponId }); return { ok: true, changed: true };
 }
 export const setLoadout = selectLoadout;
@@ -201,7 +212,9 @@ function movementTick(f, input, arena, peers = [], headroomPeers = peers) {
   if (f.grounded && input.jump && !f.previousInput?.jump && !f.crouching) { f.vy = WORLD.jumpSpeed; f.grounded = false; }
   let strafe = Number(input.right) - Number(input.left), forward = Number(input.up) - Number(input.down); const length = Math.hypot(strafe, forward);
   if (length > 0) { strafe /= length; forward /= length; }
-  const speed = f.crouching ? 2.35 : input.walk ? 2.8 : WEAPONS[f.weapon].speed;
+  const primarySpeed = f.slot === 'sword' ? MELEE.speed : WEAPONS[f.weapon].speed;
+  const ads = input.aim && f.slot !== 'sword' && !f.reloadTicks && !f.healTicks && !f.grenadeThrowTicks;
+  const speed = (f.crouching ? 2.35 : input.walk ? 2.8 : primarySpeed) * (f.healTicks ? HEAL.speedMultiplier : ads ? ADS.speedMultiplier : 1);
   const targetX = (Math.sin(f.yaw) * forward + Math.cos(f.yaw) * strafe) * speed, targetZ = (-Math.cos(f.yaw) * forward + Math.sin(f.yaw) * strafe) * speed;
   const accel = f.grounded ? (length ? 43 : 58) : 7;
   const velocityX = targetX - f.vx, velocityZ = targetZ - f.vz, velocityDelta = Math.hypot(velocityX, velocityZ), accelerationFraction = velocityDelta > EPS ? Math.min(1, accel * DT / velocityDelta) : 0;
@@ -272,6 +285,100 @@ export function traceShot(state, playerId, origin, direction, maxDistance = 120)
   }
   return { ...result, x: origin.x + direction.x * result.distance, y: origin.y + direction.y * result.distance, z: origin.z + direction.z * result.distance };
 }
+function cancelHeal(state, f, reason) {
+  if (!f.healTicks) return;
+  f.healTicks = 0; f.healing = false;
+  emit(state, 'healCancel', { playerId: f.id, reason });
+}
+function clearMelee(f) { f.meleeTicks = 0; f.meleePhase = 'idle'; f.meleeHitIds = []; }
+function tickActions(state, f, input, arena) {
+  if (!f.alive) return;
+  f.yaw = input.yaw; f.pitch = input.pitch;
+  f.grenadeThrowTicks = Math.max(0, f.grenadeThrowTicks - 1);
+  f.meleeCooldown = Math.max(0, f.meleeCooldown - 1);
+  if (!input.fire) f.triggerBlocked = false;
+  if (f.healTicks && (input.fire || input.swap || input.grenade || input.jump || input.interact || input.reload)) cancelHeal(state, f, 'action');
+  if (input.swap && !f.previousInput.swap && !input.interact) {
+    f.slot = f.slot === 'sword' ? 'primary' : 'sword';
+    f.reloadTicks = 0; f.burstRemaining = 0; clearMelee(f); cancelHeal(state, f, 'swap');
+    f.triggerBlocked = input.fire;
+    emit(state, 'swap', { playerId: f.id, slot: f.slot });
+  }
+  if (input.grenade && !f.previousInput.grenade && !input.interact && !f.grenadeThrowTicks) {
+    const grenade = throwGrenade(state, f, arena, (type, data) => emit(state, type, data));
+    if (grenade) {
+      f.reloadTicks = 0; f.burstRemaining = 0; clearMelee(f); cancelHeal(state, f, 'grenade');
+      f.grenadeThrowTicks = 24; f.triggerBlocked = input.fire;
+    }
+  }
+  if (input.heal && !f.previousInput.heal && f.potions > 0 && f.hp < f.maxHp && !f.healTicks && !f.meleeTicks && !f.grenadeThrowTicks && !input.fire && !input.jump && !input.swap && !input.grenade && !input.interact && !input.reload && f.grounded) {
+    f.potions--; f.healTicks = HEAL.ticks; f.healStartTick = state.tick; f.healing = true; f.reloadTicks = 0; f.burstRemaining = 0;
+    emit(state, 'healStart', { playerId: f.id, x: f.x, y: f.y + eyeHeight(f), z: f.z });
+  }
+  f.aiming = input.aim && f.slot === 'primary' && !f.reloadTicks && !f.healTicks && !f.grenadeThrowTicks && !input.interact;
+  f.aimTicks = clamp(f.aimTicks + (f.aiming ? 1 : -2), 0, ADS.ticks);
+}
+function tickHealing(state, f) {
+  if (!f.alive || !f.healTicks || f.healStartTick === state.tick) return;
+  if (--f.healTicks === 0) {
+    const amount = Math.min(HEAL.amount, f.maxHp - f.hp); f.hp += amount; f.healing = false;
+    emit(state, 'healComplete', { playerId: f.id, amount, hp: f.hp, x: f.x, y: f.y + eyeHeight(f), z: f.z });
+  }
+}
+function tickMelee(state, f, input, pendingDamage) {
+  if (f.meleeTicks > 0) {
+    f.meleeTicks--;
+    f.meleePhase = f.meleeTicks > MELEE.activeTicks + MELEE.recoveryTicks ? 'startup' : f.meleeTicks > MELEE.recoveryTicks ? 'active' : f.meleeTicks > 0 ? 'recovery' : 'idle';
+  } else if (input.fire && !f.previousInput.fire && !f.triggerBlocked && !f.meleeCooldown && !input.interact) {
+    f.meleeTicks = MELEE.startupTicks + MELEE.activeTicks + MELEE.recoveryTicks; f.meleePhase = 'startup'; f.meleeHitIds = [];
+    f.meleeCooldown = f.meleeTicks; f.meleeYaw = f.yaw; f.meleePitch = f.pitch;
+    emit(state, 'meleeStart', { playerId: f.id, weapon: 'sword', x: f.x, y: f.y + eyeHeight(f), z: f.z, yaw: f.yaw });
+  }
+  if (f.meleePhase !== 'active') return;
+  const origin = { x: f.x, y: f.y + eyeHeight(f) * .76, z: f.z }, forward = aimDirection(f.meleeYaw, f.meleePitch);
+  for (const target of state.players) {
+    if (!target.alive || target.id === f.id || target.team === f.team || f.meleeHitIds.includes(target.id)) continue;
+    // Contact the closest point on the target's upright body, including crouched
+    // or elevated targets. Visual sword length does not invent an extended hitbox.
+    const dx = target.x - origin.x, dz = target.z - origin.z, horizontal = Math.hypot(dx, dz);
+    const targetY = clamp(origin.y, target.y + .18, target.y + playerHeight(target) - .16), dy = targetY - origin.y;
+    const contactDistance = Math.hypot(Math.max(0, horizontal - target.radius), dy);
+    const centerDistance = Math.hypot(dx, dy, dz);
+    if (contactDistance > MELEE.reach || centerDistance <= EPS) continue;
+    const direction = { x: dx / centerDistance, y: dy / centerDistance, z: dz / centerDistance };
+    if (direction.x * forward.x + direction.y * forward.y + direction.z * forward.z < Math.cos(MELEE.arcRadians)) continue;
+    // The same nearest-body/world ray used by guns prevents wall and ally cleaves.
+    const hit = traceShot(state, f.id, origin, direction, centerDistance + .01);
+    if (hit.playerId !== target.id) continue;
+    f.meleeHitIds.push(target.id);
+    pendingDamage.push({ playerId: f.id, targetId: target.id, damage: MELEE.damage, headshot: false, attack: 'sword', weapon: 'sword' });
+    emit(state, 'meleeHit', { playerId: f.id, targetId: target.id, weapon: 'sword', damage: MELEE.damage, x: hit.x, y: hit.y, z: hit.z });
+  }
+}
+function fireRound(state, f, weapon, pendingDamage) {
+  const speed = Math.hypot(f.vx, f.vz), motion = clamp((speed - .22) / weapon.speed, 0, 1), ads = f.aimTicks / ADS.ticks;
+  const spread = (motion * weapon.movingSpread + (f.grounded ? 0 : weapon.airborneSpread) + Math.min(8, f.heat) * weapon.bloom) * (1 - ads * (1 - ADS.spreadMultiplier));
+  // Fixed indexed spread and fixed pellet geometry replay independently of frames.
+  const index = ++f.shotIndex, angle = index * 2.399963229728653, radius = spread * Math.sqrt(((index * 73) % 101 + 1) / 102);
+  const horizontalRecoil = f.heat > .25 ? Math.sin(index * 1.73) * Math.min(.009, f.recoil * .24) : 0;
+  const yaw = f.yaw + horizontalRecoil + Math.cos(angle) * radius, pitch = clamp(f.pitch + f.recoil + Math.sin(angle) * radius, -1.5, 1.5);
+  const origin = { x: f.x, y: f.y + eyeHeight(f), z: f.z }, pelletCount = weapon.pellets || 1;
+  f.ammo--; f.shots++; f.recoil = Math.min(.13, f.recoil + weapon.recoil * (1 - ads * (1 - ADS.recoilMultiplier))); f.heat = Math.min(12, f.heat + 1);
+  for (let pellet = 0; pellet < pelletCount; pellet++) {
+    // One centered pellet keeps close precise aim meaningful; the ring fixes the
+    // shotgun's minimum cone, so ADS cannot turn it into an eight-hit sniper.
+    const pelletAngle = (pellet - 1) * Math.PI * 2 / Math.max(1, pelletCount - 1), pelletRadius = pellet ? weapon.pelletSpread : 0;
+    const direction = aimDirection(yaw + Math.cos(pelletAngle) * pelletRadius, clamp(pitch + Math.sin(pelletAngle) * pelletRadius, -1.5, 1.5));
+    const hit = traceShot(state, f.id, origin, direction, weapon.range);
+    let damage = 0;
+    if (hit.playerId !== null && state.players[hit.playerId].team !== f.team) {
+      const falloff = f.weapon === 'smg' ? clamp(1 - Math.max(0, hit.distance - 20) / 70, .65, 1) : f.weapon === 'shotgun' ? clamp(1 - Math.max(0, hit.distance - 8) / 24, .25, 1) : 1;
+      damage = Math.round(weapon.damage * (hit.kind === 'head' ? weapon.headMultiplier : 1) * falloff);
+      pendingDamage.push({ playerId: f.id, targetId: hit.playerId, damage, headshot: hit.kind === 'head', attack: 'gun', weapon: f.weapon });
+    }
+    emit(state, 'shot', { playerId: f.id, targetId: hit.playerId, weapon: f.weapon, pellet, pelletCount, x: origin.x, y: origin.y, z: origin.z, dx: direction.x, dy: direction.y, dz: direction.z, hitX: hit.x, hitY: hit.y, hitZ: hit.z, hitKind: hit.kind, colliderId: hit.colliderId, damage });
+  }
+}
 function tickWeapon(state, f, input, pendingDamage) {
   if (!f.alive) return;
   const weapon = WEAPONS[f.weapon]; f.shotCooldown = Math.max(0, f.shotCooldown - 1); f.recoil = Math.max(0, f.recoil - .04 * DT); f.heat = Math.max(0, f.heat - 2.8 * DT);
@@ -279,31 +386,36 @@ function tickWeapon(state, f, input, pendingDamage) {
     f.reloadTicks--;
     if (f.reloadTicks === 0) { const loaded = Math.min(weapon.magazine - f.ammo, f.reserve); f.ammo += loaded; f.reserve -= loaded; emit(state, 'reloadComplete', { playerId: f.id, weapon: f.weapon }); }
   }
-  if (!input.fire) f.triggerBlocked = false;
-  if (input.reload && !f.previousInput.reload && !f.reloadTicks && f.ammo < weapon.magazine && f.reserve > 0) { f.reloadTicks = weapon.reloadTicks; emit(state, 'reload', { playerId: f.id, weapon: f.weapon }); }
-  if (!input.fire || f.triggerBlocked || f.shotCooldown || f.reloadTicks || input.interact) return;
-  if (f.ammo <= 0) { if (!f.previousInput.fire) emit(state, 'dryFire', { playerId: f.id }); return; }
-  const speed = Math.hypot(f.vx, f.vz), motion = clamp((speed - .22) / weapon.speed, 0, 1), spread = motion * weapon.movingSpread + (f.grounded ? 0 : weapon.airborneSpread) + Math.min(8, f.heat) * weapon.bloom;
-  // Fixed, indexed spread is replayable and cannot depend on render rate or wall-clock RNG.
-  const index = ++f.shotIndex, angle = index * 2.399963229728653, radius = spread * Math.sqrt(((index * 73) % 101 + 1) / 102);
-  const horizontalRecoil = f.heat > .25 ? Math.sin(index * 1.73) * Math.min(.009, f.recoil * .24) : 0;
-  const direction = aimDirection(f.yaw + horizontalRecoil + Math.cos(angle) * radius, clamp(f.pitch + f.recoil + Math.sin(angle) * radius, -1.5, 1.5));
-  const origin = { x: f.x, y: f.y + eyeHeight(f), z: f.z }, hit = traceShot(state, f.id, origin, direction, weapon.range);
-  f.ammo--; f.shotCooldown = weapon.cooldown; f.shots++; f.recoil = Math.min(.13, f.recoil + weapon.recoil); f.heat = Math.min(12, f.heat + 1);
-  let damage = 0;
-  if (hit.playerId !== null && state.players[hit.playerId].team !== f.team) {
-    const falloff = f.weapon === 'smg' ? clamp(1 - Math.max(0, hit.distance - 20) / 70, .65, 1) : 1;
-    damage = Math.round(weapon.damage * (hit.kind === 'head' ? weapon.headMultiplier : 1) * falloff); pendingDamage.push({ playerId: f.id, targetId: hit.playerId, damage, headshot: hit.kind === 'head' });
+  if (f.healTicks || f.grenadeThrowTicks) return;
+  if (f.slot === 'sword') { tickMelee(state, f, input, pendingDamage); return; }
+  if (input.reload && !f.previousInput.reload && !f.reloadTicks && f.ammo < weapon.magazine && f.reserve > 0) { f.reloadTicks = weapon.reloadTicks; f.burstRemaining = 0; f.aiming = false; emit(state, 'reload', { playerId: f.id, weapon: f.weapon }); }
+  if (input.interact) f.burstRemaining = 0;
+  if (f.triggerBlocked || f.shotCooldown || f.reloadTicks || input.interact) return;
+  if (!f.burstRemaining) {
+    if (!input.fire || ((weapon.mode === 'semi' || weapon.mode === 'burst' || weapon.mode === 'pump') && f.previousInput.fire)) return;
+    if (f.ammo <= 0) { if (!f.previousInput.fire) emit(state, 'dryFire', { playerId: f.id }); return; }
+    if (weapon.mode === 'burst') f.burstRemaining = Math.min(weapon.burstCount, f.ammo);
   }
-  emit(state, 'shot', { playerId: f.id, targetId: hit.playerId, weapon: f.weapon, x: origin.x, y: origin.y, z: origin.z, dx: direction.x, dy: direction.y, dz: direction.z, hitX: hit.x, hitY: hit.y, hitZ: hit.z, hitKind: hit.kind, colliderId: hit.colliderId, damage });
+  fireRound(state, f, weapon, pendingDamage);
+  if (weapon.mode === 'burst') { f.burstRemaining--; f.shotCooldown = f.burstRemaining ? weapon.burstInterval : weapon.cooldown; }
+  else f.shotCooldown = weapon.cooldown;
 }
 function applyDamage(state, pending) {
   const lethalHits = new Map();
-  for (const hit of pending) { const f = state.players[hit.targetId], attacker = state.players[hit.playerId]; if (!f.alive || f.hp <= 0) continue; const damage = Math.min(f.hp, hit.damage); f.hp -= damage; f.lastHitTick = state.tick; attacker.damageDealt += damage; if (f.hp <= 0) lethalHits.set(f.id, hit); emit(state, 'damage', { ...hit, damage, hp: f.hp, x: f.x, y: f.y + eyeHeight(f), z: f.z }); }
+  for (const hit of pending) {
+    const f = state.players[hit.targetId], attacker = state.players[hit.playerId];
+    if (!f?.alive || f.hp <= 0 || !Number.isFinite(hit.damage) || hit.damage <= 0) continue;
+    const damage = Math.min(f.hp, hit.damage); f.hp -= damage; f.lastHitTick = state.tick;
+    cancelHeal(state, f, 'damage');
+    if (attacker && attacker.id !== f.id && attacker.team !== f.team) attacker.damageDealt += damage;
+    if (f.hp <= 0) lethalHits.set(f.id, hit);
+    emit(state, 'damage', { ...hit, damage, hp: f.hp, x: f.x, y: f.y + eyeHeight(f), z: f.z });
+  }
   for (const f of state.players) if (f.alive && f.hp <= 0) {
-    f.alive = false; f.deaths++; f.vx = f.vy = f.vz = 0; f.reloadTicks = 0; f.interaction = null; f.interactTicks = 0;
-    const killer = lethalHits.get(f.id); if (killer) state.players[killer.playerId].kills++;
-    emit(state, 'kill', { playerId: killer?.playerId ?? null, targetId: f.id, headshot: killer?.headshot || false, x: f.x, y: f.y, z: f.z });
+    f.alive = false; f.deaths++; f.vx = f.vy = f.vz = 0; f.reloadTicks = 0; f.burstRemaining = 0; f.aiming = false; f.aimTicks = 0; f.healing = false; f.healTicks = 0; f.grenadeThrowTicks = 0; clearMelee(f); f.interaction = null; f.interactTicks = 0;
+    const killer = lethalHits.get(f.id), attacker = killer && state.players[killer.playerId];
+    if (attacker && attacker.id !== f.id && attacker.team !== f.team) attacker.kills++;
+    emit(state, 'kill', { playerId: killer?.playerId ?? null, targetId: f.id, headshot: killer?.headshot || false, attack: killer?.attack || 'gun', weapon: killer?.weapon ?? (killer?.attack === 'grenade' ? 'grenade' : null), x: f.x, y: f.y, z: f.z });
     if (state.bomb.status === 'carried' && state.bomb.carrierId === f.id) { Object.assign(state.bomb, { status: 'dropped', carrierId: null, x: f.x, y: f.y, z: f.z, plantPlayerId: null, plantTicks: 0 }); emit(state, 'bombDrop', { playerId: f.id, x: f.x, y: f.y, z: f.z }); }
   }
 }
@@ -339,7 +451,7 @@ function separatePlayers(state, arena) {
   }
   for (const f of state.players) refreshGrounded(f, arena);
 }
-function interactionAllowed(f, input, tick) { return f.alive && f.grounded && Math.hypot(f.vx, f.vz) < .25 && !input.fire && !f.reloadTicks && f.lastHitTick !== tick; }
+function interactionAllowed(f, input, tick) { return f.alive && f.grounded && Math.hypot(f.vx, f.vz) < .25 && !input.fire && !f.reloadTicks && !f.healTicks && !f.meleeTicks && !f.grenadeThrowTicks && f.lastHitTick !== tick; }
 /** The visible charge must be reachable around solid cover; squad bodies are harmless. */
 export function canInteractWithBomb(state, player) {
   const bomb = state.bomb, origin = { x: player.x, y: player.y + eyeHeight(player), z: player.z }, dx = bomb.x - origin.x, dy = bomb.y + .12 - origin.y, dz = bomb.z - origin.z, distance = Math.hypot(dx, dy, dz);
@@ -379,7 +491,8 @@ function winRound(state, team, reason) {
   if (state.phase !== 'fight') return;
   state.roundWinner = team; state.roundReason = reason; state.scores[team]++; state.phase = 'roundEnd'; state.phaseTicks = TICK_RATE * 4;
   state.objective = reason === 'defuse' ? 'Charge defused.' : reason === 'explosion' ? 'Charge detonated.' : reason === 'time' ? 'Time expired. Defenders held both sites.' : 'Opposing squad eliminated.';
-  for (const f of state.players) { f.vx = f.vy = f.vz = 0; f.interaction = null; f.interactTicks = 0; }
+  state.grenades = [];
+  for (const f of state.players) { f.vx = f.vy = f.vz = 0; f.interaction = null; f.interactTicks = 0; f.reloadTicks = 0; f.burstRemaining = 0; f.aiming = false; f.aimTicks = 0; cancelHeal(state, f, 'round'); f.grenadeThrowTicks = 0; clearMelee(f); }
   emit(state, 'roundEnd', { winner: team, reason, round: state.round, scores: [...state.scores] });
   if (state.scores[team] >= WORLD.winsToMatch) { state.phase = 'matchEnd'; state.phaseTicks = 0; state.winner = team; state.objective = 'Match complete. Both squads must ready up for a rematch.'; emit(state, 'matchEnd', { winner: team, scores: [...state.scores] }); }
 }
@@ -407,10 +520,14 @@ export function step(state, rawInputs = []) {
   state.roundTicks = Math.max(0, state.roundTicks - 1);
   if (state.bomb.status === 'planted') { state.bomb.timerTicks = Math.max(0, state.bomb.timerTicks - 1); if (!state.bomb.timerTicks) { resolveRound(state); return state; } }
   const arena = MAPS[state.mapId], pending = [];
+  for (const f of state.players) tickActions(state, f, inputs[f.id], arena);
   for (const f of state.players) movementTick(f, inputs[f.id], arena, [], state.players);
   separatePlayers(state, arena);
   for (const f of state.players) tickWeapon(state, f, inputs[f.id], pending);
-  applyDamage(state, pending); updateBomb(state, inputs); resolveRound(state);
+  advanceGrenades(state, arena, { emit: (type, data) => emit(state, type, data), queueDamage: hit => pending.push(hit) });
+  applyDamage(state, pending);
+  for (const f of state.players) tickHealing(state, f);
+  updateBomb(state, inputs); resolveRound(state);
   for (const f of state.players) f.previousInput = inputs[f.id];
   return state;
 }
