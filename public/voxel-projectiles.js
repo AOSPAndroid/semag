@@ -108,7 +108,7 @@ export function advanceBolts(state, { dt = DT, trace, arena = null, emit = noop,
       const damage = target?.alive && target.team !== bolt.team && (headshot || hit.kind === 'body' || hit.kind === 'leg')
         ? Math.round(bolt.damage * (headshot ? bolt.headMultiplier : hit.kind === 'leg' ? bolt.legMultiplier : 1)) : 0;
       if (damage > 0) {
-        const queued = { playerId: bolt.playerId, targetId: target.id, damage, hitKind: hit.kind, headshot, attack: 'bolt', weapon: bolt.weapon };
+        const queued = { playerId: bolt.playerId, targetId: target.id, damage, hitKind: hit.kind, headshot, attack: 'bolt', weapon: bolt.weapon, hitX: bolt.x, hitY: bolt.y, hitZ: bolt.z, dx: direction.x, dy: direction.y, dz: direction.z };
         hits.push(queued); queueDamage(queued);
       }
       emit('boltHit', { ...eventData(bolt), targetId: target?.id ?? null, damage, headshot,

@@ -83,9 +83,11 @@ def meter(page, hp, visible=True):
         meter:rect(meter),health:rect(document.querySelector('#health-readout')),weapon:rect(document.querySelector('#weapon-readout')),
         viewport:rect(document.querySelector('#viewport'))};
     }''')
-    assert shown['hp'] == hp and shown['number'] == str(hp) and shown['max'] == 100, shown
-    assert shown['fill'] == hp, ('HP fill disagrees with authoritative HP', shown)
-    assert hp <= shown['trail'] <= 100, ('Damage trail outside real HP history', shown)
+    assert shown['hp'] == hp and shown['number'] == str(hp) and shown['max'] == 200, shown
+    shown['percent'] = hp / shown['max'] * 100
+    shown['trail_hp'] = shown['trail'] / 100 * shown['max']
+    assert shown['fill'] == shown['percent'], ('HP fill disagrees with authoritative HP', shown)
+    assert hp <= shown['trail_hp'] <= shown['max'], ('Damage trail outside real HP history', shown)
     if visible:
         assert page.locator('#health-meter').is_visible()
         assert shown['meter']['height'] >= 6, ('Compact health bar too thin to read', shown)
@@ -191,6 +193,7 @@ def aim_at(shooter, target, height):
 def damage_shot(shooter, victim, kind, expected_hp, height):
     target_id = snapshot(victim)['playerId']
     before = actor(victim)['hp']
+    wait(shooter, 'id=>window.SemagVoxel.getState().state.players[id].shotCooldown===0', snapshot(shooter)['playerId'])
     event_id = snapshot(shooter)['state']['eventId']
     aim_at(shooter, actor(victim), height)
     shot = native.native_shot(shooter, duration=22)
@@ -203,7 +206,7 @@ def damage_shot(shooter, victim, kind, expected_hp, height):
 
 
 def first_round(first, second):
-    full = responsive_health(first, 100, 'full')
+    full = responsive_health(first, 200, 'full')
     native.enter_arena(first)
     native.cdp_key(first, 'f', 'KeyF')
     native.cdp_key(first, 'f', 'KeyF', 'keyUp')
@@ -211,40 +214,45 @@ def first_round(first, second):
     assert actor(first)['potions'] == 1 and not actor(first)['healTicks'], 'Full health consumed potion'
     approach(second)
     aim_at(first, actor(second), 1.0)
-    body = damage_shot(second, first, 'body', 72, 1.0)
-    recent = meter(first, 72)
-    assert recent['trail'] > recent['hp'], ('Recent-damage trail did not hold previous HP', recent)
+    body = damage_shot(second, first, 'body', 172, 1.0)
+    recent = meter(first, 172)
+    assert recent['trail_hp'] > recent['hp'], ('Recent-damage trail did not hold previous HP', recent)
     screenshot(first, 'voxel-health-body-damage-trail')
     wait(second, 'document.querySelector("#combat-feedback").textContent==="HIT · 28 HP"', timeout=1200)
     body['feedback'] = second.locator('#combat-feedback').inner_text()
-    leg = damage_shot(second, first, 'leg', 51, .27)
+    leg = damage_shot(second, first, 'leg', 151, .27)
     wait(second, 'document.querySelector("#combat-feedback").textContent==="LEG HIT · 21 HP"', timeout=1200)
     leg['feedback'] = second.locator('#combat-feedback').inner_text()
     screenshot(second, 'voxel-health-confirmed-leg-hit')
-    low = damage_shot(second, first, 'body', 23, 1.0)
-    warning = meter(first, 23)
+    # Extra native contacts are required to reach the same genuine low-health
+    # state now that full health is doubled. Every click confirms real damage.
+    followups = [damage_shot(second, first, 'body', hp, 1.0) for hp in (123, 95, 67, 39)]
+    low = followups[-1]
+    warning = meter(first, 39)
     assert warning['low'] and warning['status'] == 'LOW HEALTH · FIND COVER', warning
-    low_layouts = responsive_health(first, 23, 'low')
+    low_layouts = responsive_health(first, 39, 'low')
     first.wait_for_timeout(1050)
-    settled = meter(first, 23)
-    assert abs(settled['trail'] - 23) < .01, ('Trail did not settle to actual HP', settled)
+    settled = meter(first, 39)
+    assert abs(settled['trail_hp'] - 39) < .01, ('Trail did not settle to actual HP', settled)
     native.enter_arena(first)
     event_id = snapshot(first)['state']['eventId']
     native.cdp_key(first, 'f', 'KeyF')
     first.wait_for_timeout(30)
     native.cdp_key(first, 'f', 'KeyF', 'keyUp')
     wait(first, 'window.SemagVoxel.getState().state.players[0].healTicks>0')
-    assert actor(first)['potions'] == 0 and actor(first)['hp'] == 23
+    assert actor(first)['potions'] == 0 and actor(first)['hp'] == 39
     wait(first, 'document.querySelector("#weapon-label").textContent==="HEALING POTION"', timeout=1200)
     screenshot(first, 'voxel-health-potion-channel')
-    wait(first, 'window.SemagVoxel.getState().state.players[0].hp===63', timeout=5000)
+    wait(first, 'window.SemagVoxel.getState().state.players[0].hp===99', timeout=5000)
     healed = next(event for event in snapshot(first)['state']['events'] if event['id'] > event_id and event['type'] == 'healComplete')
-    assert healed['amount'] == 40 and healed['hp'] == 63
-    healed_meter = meter(first, 63)
-    assert healed_meter['trail'] == 63 and not healed_meter['low'], healed_meter
+    assert healed['amount'] == 60 and healed['hp'] == 99
+    healed_meter = meter(first, 99)
+    assert healed_meter['trail_hp'] == 99 and not healed_meter['low'], healed_meter
     wait(first, '!document.querySelector("#health-gain").hidden')
-    assert first.locator('#health-gain').inner_text() == '+40 HP'
-    screenshot(first, 'voxel-health-healed-40')
+    assert first.locator('#health-gain').inner_text() == '+60 HP'
+    screenshot(first, 'voxel-health-healed-60')
+    head = damage_shot(second, first, 'head', 15, 1.65)
+    assert actor(first)['alive'], 'A single carbine headshot eliminated a 99 HP target'
     # Clamped confirmed damage remains honest on a lethal headshot.
     death = damage_shot(second, first, 'head', 0, 1.65)
     dead_meter = meter(first, 0, visible=False)
@@ -254,12 +262,13 @@ def first_round(first, second):
     assert 'HEADSHOT' in death['feedback']
     screenshot(second, 'voxel-health-headshot-elimination')
     wait(first, 'window.SemagVoxel.getState().state.phase==="buy"', timeout=18000)
-    restore = meter(first, 100)
-    assert restore['trail'] == 100 and not restore['low'] and actor(first)['potions'] == 1
-    log('native_health_damage_heal_reset_passed', hp_sequence=[100, 72, 51, 23, 63, 0, 100])
-    return {'native_hp_sequence': [100, 72, 51, 23, 63, 0, 100], 'body': body, 'leg': leg, 'low': low,
+    restore = meter(first, 200)
+    assert restore['trail_hp'] == 200 and not restore['low'] and actor(first)['potions'] == 1
+    sequence = [200, 172, 151, 123, 95, 67, 39, 99, 15, 0, 200]
+    log('native_health_damage_heal_reset_passed', hp_sequence=sequence)
+    return {'native_hp_sequence': sequence, 'body': body, 'leg': leg, 'low': low, 'native_low_health_followups': followups,
             'recent_damage_trail': recent, 'settled_damage_trail': settled, 'native_f_heal': healed,
-            'healed_meter': healed_meter, 'headshot_death': death, 'dead_meter': dead_meter,
+            'healed_meter': healed_meter, 'survived_headshot': head, 'headshot_death': death, 'dead_meter': dead_meter,
             'round_reset': restore, 'full_responsive': full, 'low_responsive': low_layouts}
 
 
@@ -276,7 +285,7 @@ def cover_fire(first, second, weapon):
     events = [event for event in snapshot(first)['state']['events'] if event['id'] > event_id
               and event['type'] == kind and event['playerId'] == 0]
     assert events and all(event['hitKind'] == 'wall' for event in events), (weapon, events)
-    assert actor(first)['ammo'] == before['ammo'] - 1 and actor(second)['hp'] == 100
+    assert actor(first)['ammo'] == before['ammo'] - 1 and actor(second)['hp'] == 200
     profile = first.evaluate('async id=>(await import("/voxel-weapons.js")).WEAPONS[id].effects', weapon)
     if weapon == 'shotgun':
         assert len(events) == 8 and all(event['pelletCount'] == 8 for event in events)
@@ -302,7 +311,9 @@ def health_and_weapons(browser):
         wait(first, 'window.SemagVoxel.getState().state.phase==="fight"', timeout=14000)
         REPORT['cases'].append({'name': 'native_shotgun_cover', 'result': cover_fire(first, second, 'shotgun')})
         approach(second)
-        damage_shot(second, first, 'head', 16, 1.65)
+        damage_shot(second, first, 'head', 116, 1.65)
+        damage_shot(second, first, 'head', 32, 1.65)
+        damage_shot(second, first, 'body', 4, 1.0)
         damage_shot(second, first, 'body', 0, 1.0)
         wait(first, 'window.SemagVoxel.getState().state.phase==="buy"', timeout=18000)
         fixture.select_native(first, '#loadout-select', 'crossbow')
@@ -359,22 +370,24 @@ def spectator_case(browser):
             lifecycle(page, 'active')
             wait(page, 'tick=>window.SemagVoxel.getState().state.tick>=tick', lane_tick)
         log('native_spectator_shooter_in_lane', tick=lane_tick)
-        damage_shot(shooter, first, 'head', 0, 1.65)
+        opening = damage_shot(shooter, first, 'head', 84, 1.65)
+        assert actor(first)['alive'], 'A single marksman headshot eliminated a full-health player'
+        finishing = damage_shot(shooter, first, 'head', 0, 1.65)
         wait(first, 'document.querySelector("#health-readout").classList.contains("is-spectating")')
-        viewed = meter(first, 100)
+        viewed = meter(first, 200)
         assert viewed['spectating'] and viewed['status'] == 'TEAMMATE' and viewed['label'] != 'Your health', viewed
         assert actor(first)['hp'] == 0 and snapshot(first)['state']['phase'] == 'fight'
         squad_ids = first.locator('#squad-health [data-player-id]').evaluate_all('(nodes)=>nodes.map(node=>Number(node.dataset.playerId))')
         assert squad_ids == [1] and first.locator('#squad-health').is_visible(), squad_ids
-        damage_shot(shooter, teammate, 'body', 42, 1.0)
-        live = meter(first, 42)
+        allied_hit = damage_shot(shooter, teammate, 'body', 142, 1.0)
+        live = meter(first, 142)
         assert live['spectating'] and live['subject'] == viewed['subject'], live
-        wait(first, 'document.querySelector("#squad-health [data-player-id=\\"1\\"] [role=meter]").getAttribute("aria-valuenow")==="42"')
-        log('native_spectator_allied_health_changed', expected_hp=42, tick=snapshot(first)['state']['tick'])
-        # After both trusted shots, the shooter can be a background tab while
+        wait(first, 'document.querySelector("#squad-health [data-player-id=\\"1\\"] [role=meter]").getAttribute("aria-valuenow")==="142"')
+        log('native_spectator_allied_health_changed', expected_hp=142, tick=snapshot(first)['state']['tick'])
+        # After all trusted shots, the shooter can be a background tab while
         # the living teammate and dead local client's camera remain live.
         lifecycle(shooter, 'frozen')
-        layouts = responsive_health(first, 42, 'allied-spectator')
+        layouts = responsive_health(first, 142, 'allied-spectator')
         # Opposing roster does not expose health even to a dead spectator.
         enemy_text = first.locator('#team1-roster').inner_text()
         assert 'HP' not in enemy_text, enemy_text
@@ -383,8 +396,9 @@ def spectator_case(browser):
         assert final['state']['phase'] == 'fight' and final['state']['round'] == 1
         assert [person['id'] for person in final['state']['players'] if person['alive']] == [1, 2, 3]
         REPORT['cases'].append({'name': 'native_allied_spectator_health', 'result': {
-            'dead_local_hp': 0, 'live_allied_hp': 42, 'meter_initial': viewed, 'meter_updated': live,
-            'compact_squad_meter_current_hp': 42, 'compact_squad_contains_only_allies': squad_ids,
+            'dead_local_hp': 0, 'live_allied_hp': 142, 'meter_initial': viewed, 'meter_updated': live,
+            'native_opening_headshot_survived': opening, 'native_finishing_headshot': finishing, 'native_allied_body_hit': allied_hit,
+            'compact_squad_meter_current_hp': 142, 'compact_squad_contains_only_allies': squad_ids,
             'all_four_genuine_clients_still_connected': True, 'normal_round_timer_unchanged': True,
             'enemy_health_hidden': True, 'responsive': layouts}})
         log('native_allied_spectator_health_passed')

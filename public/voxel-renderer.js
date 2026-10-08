@@ -1,6 +1,7 @@
-import { MAPS, ADS, MELEE, HEAL } from './voxel-engine.js';
+import { MAPS, ADS, HEAL } from './voxel-engine.js';
 import { WEAPONS, weaponAimFovRatio } from './voxel-weapons.js';
 import { grenadeCapacity } from './voxel-ordnance.js';
+import { meleeProfile, meleeWeaponId } from './voxel-melee.js';
 
 // All solid world surfaces come directly from the engine's minimum-corner
 // colliders. Decoration is either painted on those surfaces or outside bounds.
@@ -53,20 +54,24 @@ function aimProgress(player) {
   return player.slot === 'sword' || player.healing || finite(player.healTicks) > 0 || finite(player.reloadTicks) > 0 || finite(player.grenadeThrowTicks) > 0 || player.alive === false ? 0 : smooth(finite(player.aimTicks) / ADS.ticks);
 }
 
-function swordMotion(player) {
-  const total = MELEE.startupTicks + MELEE.activeTicks + MELEE.recoveryTicks;
+export function meleeMotion(player) {
+  const profile = meleeProfile(player), knife = meleeWeaponId(player) === 'knife';
+  const total = profile.startupTicks + profile.activeTicks + profile.recoveryTicks;
   const remaining = clamp(finite(player.meleeTicks), 0, total), elapsed = total - remaining;
-  if (!remaining) return { yaw: -.18, pitch: .48, extension: 0, active: false };
-  if (elapsed < MELEE.startupTicks) {
-    const progress = smooth(elapsed / MELEE.startupTicks);
-    return { yaw: lerp(-.18, -.64, progress), pitch: lerp(.48, .30, progress), extension: 0, active: false };
+  const idleYaw = knife ? -.10 : -.18, idlePitch = knife ? .22 : .48;
+  const windYaw = knife ? -.43 : -.64, endYaw = knife ? .43 : .64;
+  const windPitch = knife ? .12 : .30, endPitch = knife ? -.12 : -.30;
+  if (!remaining) return { yaw: idleYaw, pitch: idlePitch, extension: 0, active: false };
+  if (elapsed < profile.startupTicks) {
+    const progress = smooth(elapsed / profile.startupTicks);
+    return { yaw: lerp(idleYaw, windYaw, progress), pitch: lerp(idlePitch, windPitch, progress), extension: 0, active: false };
   }
-  if (elapsed < MELEE.startupTicks + MELEE.activeTicks) {
-    const progress = smooth((elapsed - MELEE.startupTicks) / MELEE.activeTicks);
-    return { yaw: lerp(-.64, .64, progress), pitch: lerp(.30, -.30, progress), extension: Math.sin(progress * Math.PI) * .37, active: true };
+  if (elapsed < profile.startupTicks + profile.activeTicks) {
+    const progress = smooth((elapsed - profile.startupTicks) / profile.activeTicks);
+    return { yaw: lerp(windYaw, endYaw, progress), pitch: lerp(windPitch, endPitch, progress), extension: Math.sin(progress * Math.PI) * (knife ? .16 : .37), active: true };
   }
-  const progress = smooth((elapsed - MELEE.startupTicks - MELEE.activeTicks) / MELEE.recoveryTicks);
-  return { yaw: lerp(.64, -.18, progress), pitch: lerp(-.30, .48, progress), extension: 0, active: false };
+  const progress = smooth((elapsed - profile.startupTicks - profile.activeTicks) / profile.recoveryTicks);
+  return { yaw: lerp(endYaw, idleYaw, progress), pitch: lerp(endPitch, idlePitch, progress), extension: 0, active: false };
 }
 
 function rgba(value, alpha = 1) {
@@ -118,6 +123,25 @@ function impactParticles(event, contact, direction, map, time, key) {
     const scatter = (metal ? .75 : wood ? .55 : .35) * (.5 + i / count) * strength;
     const velocity = normal.map((value, axis) => value * outward + (tangent[axis] * Math.cos(angle) + bitangent[axis] * Math.sin(angle)) * scatter);
     return { origin, born: time, vx: velocity[0], vy: velocity[1] + .12, vz: velocity[2], color, life: (metal ? 145 : wood ? 250 : 190) + i * 13, gravity: metal ? 3 : 4, cover: true, size: metal ? .016 : wood ? .026 : .030, material };
+  });
+}
+
+function bloodParticles(event, state, time, key) {
+  // Shot/bolt contact reports can still describe a pellet arriving after a
+  // lethal hit, or an allied blocker. Only confirmed HP loss creates blood.
+  if (event.type !== 'damage' || !(event.damage > 0) || !['gun', 'bolt'].includes(event.attack) || event.targetId == null || event.playerId == null || event.targetId === event.playerId) return [];
+  const target = state.players?.find(player => player.id === event.targetId), source = state.players?.find(player => player.id === event.playerId);
+  if (state.gameId !== 'voxel-royale' && target && source && target.team === source.team) return [];
+  const contact = [event.hitX, event.hitY, event.hitZ].every(Number.isFinite) ? [event.hitX, event.hitY, event.hitZ] : [event.x, event.y, event.z];
+  if (!contact.every(Number.isFinite)) return [];
+  const normal = normalized([-finite(event.dx), -finite(event.dy), -finite(event.dz)], [0, .12, 1]);
+  const tangent = normalized(cross(normal, Math.abs(normal[1]) > .9 ? [1, 0, 0] : [0, 1, 0])), bitangent = cross(normal, tangent);
+  const seed = hash(key), count = clamp(3 + Math.ceil(event.damage / 35), 4, 8);
+  const origin = contact.map((value, axis) => value + normal[axis] * .045);
+  return Array.from({ length: count }, (_, i) => {
+    const angle = seed % 11 + i * 2.39996, scatter = .34 + (i % 4) * .11;
+    const velocity = normal.map((value, axis) => value * (.56 + (i % 3) * .12) + (tangent[axis] * Math.cos(angle) + bitangent[axis] * Math.sin(angle)) * scatter);
+    return { origin, born: time, vx: velocity[0], vy: velocity[1] + .18 + (i % 3) * .07, vz: velocity[2], color: i % 3 === 0 ? '#922f37' : i % 3 === 1 ? '#c4484b' : '#ac353d', life: 235 + (i % 4) * 27, gravity: 4.8, cover: true, radius: .72, size: .016 + (i % 3) * .004, material: 'blood', shrink: true };
   });
 }
 function rotate(vector, yaw = 0, pitch = 0) {
@@ -318,7 +342,7 @@ function rayCoverDistance(origin, direction, colliders, maximum, padding = 0) {
 export function particlePosition(particle, time, colliders = []) {
   const elapsed = clamp(finite(time - particle.born), 0, finite(particle.life, 1));
   const age = elapsed / 1000, fade = 1 - elapsed / finite(particle.life, 1);
-  const size = finite(particle.size, .026) + fade * .028;
+  const size = particle.shrink ? finite(particle.size, .026) * fade + fade * .025 : finite(particle.size, .026) + fade * .028;
   let point = [particle.origin[0] + finite(particle.vx) * age, Math.max(size / 2, particle.origin[1] + finite(particle.vy) * age - age * age * finite(particle.gravity, 3)), particle.origin[2] + finite(particle.vz) * age];
   if (particle.cover) {
     const delta = point.map((value, i) => value - particle.origin[i]), length = Math.hypot(...delta);
@@ -1282,6 +1306,33 @@ function swordParts(mesh, pose, options = {}) {
   part(.054, -.026, -.81, .011, .052, .69, '#e5eadd');
 }
 
+const meleeLength = player => meleeWeaponId(player) === 'knife' ? .48 : 1.24;
+function meleeParts(mesh, player, pose, options = {}) {
+  if (meleeWeaponId(player) !== 'knife') { swordParts(mesh, pose, options); return; }
+  const limit = finite(options.limit, .48);
+  const part = (x, y, z, w, h, d, color) => {
+    const clippedZ = Math.max(z, -limit), clippedDepth = z + d - clippedZ;
+    if (clippedDepth > 0) mesh.box(x, y, clippedZ, w, h, clippedDepth, color, pose);
+  };
+  // A short single-edged utility knife. Its silhouette, scale and quicker cut
+  // make the unarmed scavenger clearly different from Breach's long sword.
+  part(-.026, -.030, -.023, .052, .060, .175, '#344943');
+  for (let i = 0; i < 3; i++) part(-.028, -.033, .003 + i * .040, .056, .066, .013, '#5c7469');
+  part(-.032, -.035, .142, .064, .070, .023, '#8fa6a3');
+  part(-.071, -.028, -.056, .142, .056, .030, '#8fa6a3');
+  const blade = options.active ? '#e3ece5' : '#b9cccc';
+  part(-.044, -.014, -.34, .088, .028, .29, blade);
+  part(-.030, -.012, -.42, .060, .024, .09, blade);
+  part(-.012, -.009, -.47, .024, .018, .06, '#e2ebe0');
+  part(-.048, -.015, -.34, .010, .030, .285, '#edf0df');
+  part(.028, -.015, -.33, .010, .030, .27, '#738d94');
+}
+
+/** The same clipped blade geometry is used by both first and third person. */
+export function meleeMeshes(player, pose = {}, options = {}) {
+  const mesh = new Mesh(); meleeParts(mesh, player, { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, ...pose }, options); return mesh.array;
+}
+
 function potionParts(mesh, pose, progress = 0) {
   // An opaque faceted bottle avoids translucent sorting and makes the
   // consumable readable in the same low-cost batch as the operative's hands.
@@ -1460,22 +1511,22 @@ function playerMesh(mesh, player, map, time, allied, freeForAll = false) {
   mesh.box(-.22, .235, -.12, .006, .035, .24, team, headPose);
   mesh.box(.214, .235, -.12, .006, .035, .24, team, headPose);
   const healing = finite(player.healTicks) > 0;
-  const sword = player.slot === 'sword', motion = swordMotion(player);
+  const sword = player.slot === 'sword', knife = sword && meleeWeaponId(player) === 'knife', motion = meleeMotion(player);
   const heldYaw = sword && player.meleeTicks > 0 ? finite(player.meleeYaw, yaw) : yaw;
   const heldPitch = sword && player.meleeTicks > 0 ? finite(player.meleePitch, pitch) : pitch;
   const handOffset = rotate([healing ? -.16 : .21, healing ? (crouch ? .87 : 1.42) : (crouch ? .82 : 1.24), healing ? -.34 : -.24 - (sword ? motion.extension : 0)], heldYaw);
   const reloadProgress = player.reloadTicks > 0 ? clamp(1 - player.reloadTicks / (WEAPONS[player.weapon]?.reloadTicks || 252), 0, 1) : 0;
   const reloadTilt = Math.sin(reloadProgress * Math.PI);
-  const gunPose = { x: pose.x + handOffset[0], y: pose.y + handOffset[1] - reloadTilt * .12, z: pose.z + handOffset[2], yaw: heldYaw + (sword ? motion.yaw : 0), pitch: heldPitch + (sword ? motion.pitch : -reloadTilt * .24), scale: sword && !healing ? 1.35 : 1 };
+  const gunPose = { x: pose.x + handOffset[0], y: pose.y + handOffset[1] - reloadTilt * .12, z: pose.z + handOffset[2], yaw: heldYaw + (sword ? motion.yaw : 0), pitch: heldPitch + (sword ? motion.pitch : -reloadTilt * .24), scale: sword && !healing ? knife ? 1.15 : 1.35 : 1 };
   const direction = [Math.sin(gunPose.yaw) * Math.cos(gunPose.pitch), Math.sin(gunPose.pitch), -Math.cos(gunPose.yaw) * Math.cos(gunPose.pitch)];
-  const limit = Math.max(0, rayCoverDistance([gunPose.x, gunPose.y, gunPose.z], direction, map.colliders || [], sword ? 1.24 * 1.35 : weaponLength(player.weapon) + .12, sword ? .088 : 0) - .025) / gunPose.scale;
+  const limit = Math.max(0, rayCoverDistance([gunPose.x, gunPose.y, gunPose.z], direction, map.colliders || [], sword ? meleeLength(player) * gunPose.scale : weaponLength(player.weapon) + .12, sword ? knife ? .055 : .088 : 0) - .025) / gunPose.scale;
   if (healing) {
     const progress = clamp(1 - player.healTicks / HEAL.ticks, 0, 1), drink = Math.sin(progress * Math.PI);
     const bottlePose = { ...gunPose, pitch: drink * .72 };
     potionParts(mesh, bottlePose, progress);
     mesh.box(-.084, -.105, -.037, .17, .093, .17, '#526662', bottlePose);
   } else if (sword) {
-    swordParts(mesh, gunPose, { limit, active: motion.active });
+    meleeParts(mesh, player, gunPose, { limit, active: motion.active });
     mesh.box(-.070, -.085, -.025, .14, .16, .20, '#526662', gunPose);
     mesh.box(-.060, -.075, .15, .12, .15, .27, uniform, gunPose);
   } else {
@@ -1623,6 +1674,8 @@ export class VoxelRenderer {
       } else if (event.type === 'boltHit') {
         const origin = [finite(event.x), finite(event.y), finite(event.z)];
         this.particles.push(...impactParticles(event, origin, [-finite(event.nx), -finite(event.ny), -finite(event.nz)], map, time, key));
+      } else if (event.type === 'damage') {
+        this.particles.push(...bloodParticles(event, state, time, key));
       } else if (event.type === 'reload' && event.playerId === localId) this.localReload = { born: time, weapon: event.weapon };
       else if (event.type === 'grenadeBounce' || event.type === 'meleeHit' || event.type === 'healComplete') {
         const origin = [finite(event.x), finite(event.y, .2), finite(event.z)], heal = event.type === 'healComplete';
@@ -1699,7 +1752,7 @@ export class VoxelRenderer {
       mesh.box(-.006, -.042, .32, .012, .084, .09, feather, pose);
     }
   }
-  _viewModel(player, yaw, pitch, time, freeForAll = false) {
+  _viewModel(player, yaw, pitch, time, freeForAll = false, map = null) {
     const mesh = new Mesh(), team = freeForAll ? survivorColor(player) : TEAM_COLORS[player.team === 1 ? 1 : 0];
     const speed = Math.hypot(finite(player.vx), finite(player.vz));
     const walking = clamp(speed / 5.5, 0, 1), step = time * .011;
@@ -1724,15 +1777,22 @@ export class VoxelRenderer {
       return mesh.array;
     }
     if (player.slot === 'sword') {
-      const motion = swordMotion(player);
+      const motion = meleeMotion(player), knife = meleeWeaponId(player) === 'knife';
       // The committed attack direction stays fixed for the full swing. Camera
       // motion can inspect its recovery without visually steering the blade.
       let committedYaw = player.meleeTicks > 0 ? finite(player.meleeYaw, yaw) - yaw : 0;
       while (committedYaw > Math.PI) committedYaw -= TAU;
       while (committedYaw < -Math.PI) committedYaw += TAU;
       const committedPitch = player.meleeTicks > 0 ? finite(player.meleePitch, pitch) - pitch : 0;
-      const pose = { x: .27 + this.swayX * .5, y: -.32 - Math.abs(Math.cos(step)) * .007 * walking, z: -.42 - motion.extension * .12, yaw: motion.yaw + committedYaw, pitch: motion.pitch + committedPitch, scale: .90 };
-      swordParts(mesh, pose, { active: motion.active });
+      const pose = { x: (knife ? .22 : .27) + this.swayX * .5, y: (knife ? -.28 : -.32) - Math.abs(Math.cos(step)) * .007 * walking, z: -.42 - motion.extension * .12, yaw: motion.yaw + committedYaw, pitch: motion.pitch + committedPitch, scale: .90 };
+      let limit = meleeLength(player);
+      if (map?.colliders?.length) {
+        const offset = rotate([pose.x, pose.y, pose.z], yaw, pitch), eye = [finite(player.x), finite(player.y) + (player.crouching ? .98 : 1.62), finite(player.z)];
+        const origin = eye.map((value, axis) => value + offset[axis]);
+        const direction = rotate(rotate([0, 0, -1], pose.yaw, pose.pitch), yaw, pitch);
+        limit = Math.max(0, rayCoverDistance(origin, direction, map.colliders, limit * pose.scale, knife ? .055 : .088) - .025) / pose.scale;
+      }
+      meleeParts(mesh, player, pose, { limit, active: motion.active });
       mesh.box(-.085, -.09, -.026, .17, .18, .20, '#526661', pose);
       mesh.box(-.072, -.13, .17, .15, .19, .27, '#435952', pose);
       mesh.box(-.077, -.145, .31, .16, .20, .11, mix(rgba(team), rgba('#64796b'), .24), pose);
@@ -1900,12 +1960,12 @@ export class VoxelRenderer {
       // The hands use a stable soft key light so turning into map shade cannot
       // hide the weapon's sights or the magazine during a reload.
       gl.uniform3fv(this.uniforms.lightdirection, [-.30, .70, .62]); gl.uniform3fv(this.uniforms.sun, [.43, .43, .40]); gl.uniform3fv(this.uniforms.ambient, [.64, .68, .72]);
-      this._draw(this._dynamic(this._viewModel(cameraPlayer, yaw, pitch, time, freeForAll), 'weapon'));
+      this._draw(this._dynamic(this._viewModel(cameraPlayer, yaw, pitch, time, freeForAll, map), 'weapon'));
     }
     return true;
   }
   get stats() {
-    return Object.freeze({ mapId: this.mapId, mapVertices: this._mapVertices, cachedMaps: this.mapCache.size, drawCalls: this._frameDrawCalls, dynamicVertices: this._frameDynamicVertices, lootItems: this._lootItems, stormVertices: this._stormVertices });
+    return Object.freeze({ mapId: this.mapId, mapVertices: this._mapVertices, cachedMaps: this.mapCache.size, drawCalls: this._frameDrawCalls, dynamicVertices: this._frameDynamicVertices, lootItems: this._lootItems, stormVertices: this._stormVertices, bloodParticles: this.particles.filter(particle => particle.material === 'blood').length });
   }
   resetEffects() {
     this.eventIds.clear(); this.eventQueue.length = 0; this.particles.length = 0; this.tracers.length = 0;

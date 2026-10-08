@@ -3,6 +3,9 @@ import { copyText, getName, hostInfo, roomUrl, saveName } from './hub/shared.js'
 import { GameAudio } from './audio.js';
 import { WEAPONS, WEAPON_IDS, weaponAimFovRatio, weaponSpread, weaponStats } from './voxel-weapons.js';
 import { advanceBolts, MAX_BOLTS } from './voxel-projectiles.js';
+import { PLAYER_HEALTH, HEAL } from './voxel-engine.js';
+import { meleeLabel, meleeProfile } from './voxel-melee.js';
+import { incomingDamageFeedback, damageFeedbackPresentation, paintDamageFeedback } from './voxel-damage-feedback.js';
 
 export const LOOK_SENSITIVITY = 0.0025;
 export const FPS_BUTTONS = Object.freeze(['up', 'down', 'left', 'right', 'jump', 'crouch', 'walk', 'fire', 'reload', 'interact', 'aim', 'swap', 'grenade', 'heal']);
@@ -111,14 +114,15 @@ export function combatReadout(player, weapons = WEAPONS, rules = {}) {
   const weapon = weapons[player?.weapon]; const sword = player?.slot === 'sword';
   const ticks = Math.max(0, Number.isFinite(player?.meleeTicks) ? player.meleeTicks : 0, Number.isFinite(player?.meleeCooldown) ? player.meleeCooldown : 0);
   const meleePhase = ticks && !(player?.meleeTicks > 0) ? 'recovery' : player?.meleePhase || 'idle';
-  const meleeTotal = (rules.MELEE?.startupTicks || 18) + (rules.MELEE?.activeTicks || 12) + (rules.MELEE?.recoveryTicks || 42);
+  const melee = (player?.meleeWeapon === 'knife' ? rules.KNIFE : rules.MELEE) || meleeProfile(player);
+  const meleeTotal = melee.startupTicks + melee.activeTicks + melee.recoveryTicks;
   const healing = player?.healTicks > 0; const reloading = !sword && player?.reloadTicks > 0;
-  let label = sword ? 'SWORD' : weapon?.label || (player?.weapon || 'carbine').toUpperCase();
+  let label = sword ? meleeLabel(player) : weapon?.label || (player?.weapon || 'carbine').toUpperCase();
   let ammo = sword ? ({ startup: 'WINDUP', active: 'STRIKE', recovery: 'RECOVER' })[meleePhase] || 'READY' : player?.ammo ?? '—';
   let status; let progress = null;
   if (sword) {
     status = ticks ? `${(ticks / 120).toFixed(1)}S · ${meleePhase === 'startup' ? 'COMMITTING' : meleePhase === 'active' ? 'BLADE ACTIVE' : 'RECOVERING'}` : 'LMB STRIKE · V GUN';
-    if (ticks) progress = { label: 'Sword attack and recovery', remaining: ticks, total: meleeTotal };
+    if (ticks) progress = { label: `${meleeLabel(player) === 'KNIFE' ? 'Knife' : 'Sword'} attack and recovery`, remaining: ticks, total: meleeTotal };
   } else if (player?.ammo === 0) status = player.reserve > 0 ? weapon?.projectile ? 'R TO RELOAD BOLT' : 'R TO RELOAD' : 'OUT OF AMMUNITION';
   else if (weapon?.spinupTicks && player?.spinTicks > 0 && player.spinTicks < weapon.spinupTicks) {
     status = 'SPINNING UP · HOLD FIRE';
@@ -138,7 +142,7 @@ export function combatReadout(player, weapons = WEAPONS, rules = {}) {
   if (reloading) { status = `RELOADING ${(player.reloadTicks / 120).toFixed(1)}S`; progress = { label: 'Reload', remaining: player.reloadTicks, total: weapon?.reloadTicks || player.reloadTicks }; }
   if (player?.grenadeThrowTicks > 0) status = `THROWING ${(player.grenadeThrowTicks / 120).toFixed(1)}S`;
   if (healing) {
-    label = 'HEALING POTION'; ammo = `+${Math.min(rules.HEAL?.amount || 40, Math.max(0, (player.maxHp || 100) - player.hp))}`;
+    label = 'HEALING POTION'; ammo = `+${Math.min(rules.HEAL?.amount || HEAL.amount, Math.max(0, (player.maxHp || PLAYER_HEALTH) - player.hp))}`;
     status = `${(player.healTicks / 120).toFixed(1)}S · STAY IN COVER`;
     progress = { label: 'Drinking healing potion', remaining: player.healTicks, total: rules.HEAL?.ticks || 240 };
   }
@@ -178,7 +182,7 @@ export function tacticalSquadHealth(state, localId, connectedIds) {
 
 /** Actual HP paints immediately. A short separate trail makes recent damage readable. */
 export function healthPresentation(player, previous = null, { now = 0, round = 0 } = {}) {
-  const maxHp = Number.isFinite(player?.maxHp) && player.maxHp > 0 ? player.maxHp : 100;
+  const maxHp = Number.isFinite(player?.maxHp) && player.maxHp > 0 ? player.maxHp : PLAYER_HEALTH;
   const hp = Math.max(0, Math.min(maxHp, Number.isFinite(player?.hp) ? player.hp : 0));
   const reset = !previous || previous.id !== player?.id || previous.round !== round || previous.maxHp !== maxHp;
   let trailHp = reset ? hp : previous.trailHp;
@@ -312,7 +316,7 @@ async function boot() {
   let paused = true; let entered = false; let fallback = false; let touchMode = false;
   let rightDrag = false; let graphicsError = ''; let modalOpen = false; let spectatorId = null; let teamSwitchPending = false; let requestedTeam = null;
   let previousPhase = null; let previousRound = null; let aim = { yaw: 0, pitch: 0 };
-  let hitUntil = 0; let hitKind = 'body'; let damageUntil = 0; let feedbackUntil = 0; let toastTimer; let lastCountdown = null; let lastHUDAt = 0;
+  let hitUntil = 0; let hitKind = 'body'; let damageFeedback = null; let feedbackUntil = 0; let toastTimer; let lastCountdown = null; let lastHUDAt = 0;
   let inputHeartbeat = null; let lastAimSendAt = 0; let lastTouchLookAt = performance.now();
   const keys = new Set(); const pressedKeys = new Map();
   const mouse = { fire: false, aim: false };
@@ -444,7 +448,9 @@ async function boot() {
       const shooter = perspective.source; const target = perspective.target;
       if (event.type === 'damage' && event.damage > 0) {
         if (perspective.outgoing) { hitUntil = performance.now() + 150; hitKind = event.headshot ? 'headshot' : 'body'; }
-        if (target === playerId) damageUntil = performance.now() + 230;
+        const viewed = healthHUDPlayer(state, playerId, spectatorId);
+        const incoming = incomingDamageFeedback(event, viewed, state.players, { now: performance.now(), lifeKey: state.round });
+        if (incoming) damageFeedback = incoming;
       }
       if (['kill', 'death', 'elimination'].includes(event.type)) {
         kills.push({ at: performance.now(), text: perspective.self ? `${lookupName(target)}  [SELF FRAG]` : `${shooter == null ? 'THE DEVICE' : lookupName(shooter)}  ${event.weapon === 'crossbow' ? event.headshot ? '[BOLT HS]' : '[BOLT]' : event.headshot ? '[HS]' : '›'}  ${lookupName(target)}`, own: perspective.outgoing, headshot: !!event.headshot });
@@ -649,7 +655,7 @@ async function boot() {
       if (action === 'swap') { button.textContent = readout.sword ? 'GUN' : 'SWORD'; button.setAttribute('aria-label', readout.sword ? 'Switch to primary gun' : 'Switch to sword'); button.setAttribute('aria-pressed', String(readout.sword)); }
       if (action === 'aim') button.setAttribute('aria-pressed', String(!!local?.aiming));
       if (action === 'grenade') { button.textContent = `FRAG ${readout.grenades}`; button.setAttribute('aria-label', `Throw fragmentation grenade: ${readout.grenades} remaining`); button.classList.toggle('unavailable', !readout.grenades); }
-      if (action === 'heal') { button.textContent = readout.healing ? 'DRINKING' : `POTION ${readout.potions}`; button.setAttribute('aria-label', `Drink healing potion: ${readout.potions} remaining; restores up to 40 health after two seconds; interruption spends the potion`); button.classList.toggle('unavailable', (!readout.potions && !readout.healing) || local?.hp >= (local?.maxHp || 100)); }
+      if (action === 'heal') { button.textContent = readout.healing ? 'DRINKING' : `POTION ${readout.potions}`; button.setAttribute('aria-label', `Drink healing potion: ${readout.potions} remaining; restores up to ${engine?.HEAL?.amount || HEAL.amount} health after two seconds; interruption spends the potion`); button.classList.toggle('unavailable', (!readout.potions && !readout.healing) || local?.hp >= (local?.maxHp || PLAYER_HEALTH)); }
     }
     $('pause-button').hidden = paused || inLobby || phase === 'matchEnd' || !entered;
     $('touch-controls').hidden = !touchMode || !entered || !['countdown', 'buy', 'fight'].includes(phase) || !local?.alive;
@@ -732,7 +738,7 @@ async function boot() {
     renderCount++;
     $('hit-marker').hidden = now >= hitUntil;
     $('hit-marker').dataset.kind = hitKind;
-    $('damage-cue').hidden = now >= damageUntil;
+    paintDamageFeedback($('damage-cue'), damageFeedbackPresentation(damageFeedback, viewPlayer, { now, lifeKey: state.round, yaw: viewAim.yaw, active: state.phase === 'fight' }));
     $('combat-feedback').hidden = now >= feedbackUntil;
     while (kills.length && now - kills[0].at > 6000) kills.shift();
     const feed = $('kill-feed');
@@ -788,12 +794,12 @@ async function boot() {
       aim = cleanAim(useSpawn ? spawn?.yaw ?? local?.yaw : local?.yaw, useSpawn ? spawn?.pitch ?? 0 : local?.pitch);
       pending = []; snapshots = []; spectatorId = null; accumulator = 0;
       if (local) sendInput(neutralInput(aim.yaw, aim.pitch));
-      renderer?.resetEffects();
+      renderer?.resetEffects(); damageFeedback = null;
     }
     if (previousPhase !== state.phase && previousPhase !== null) neutralize();
     if (state.phase === 'lobby' && previousPhase !== 'lobby') {
       neutralize({ pause: true, unlock: true }); entered = false; fallback = false;
-      eventSeen.clear(); eventOrder.length = 0; kills.length = 0; healthView = null; healthGainUntil = 0; hitUntil = damageUntil = feedbackUntil = 0; lastCountdown = null; audio.resetEvents();
+      eventSeen.clear(); eventOrder.length = 0; kills.length = 0; healthView = null; healthGainUntil = 0; hitUntil = feedbackUntil = 0; damageFeedback = null; lastCountdown = null; audio.resetEvents();
     }
     if (local && !local.alive && old?.players.find(player => player.id === playerId)?.alive !== false) neutralize({ pause: true, unlock: true });
     const ackValue = message.acks?.[playerId];

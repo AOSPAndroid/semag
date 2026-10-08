@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createCombatPlayer, predictLocalMovement, emptyInput } from '../public/voxel-engine.js';
+import { createCombatPlayer, predictLocalMovement, emptyInput, PLAYER_HEALTH } from '../public/voxel-engine.js';
 import { WEAPONS } from '../public/voxel-weapons.js';
 import { cleanAim, neutralInput, controlForKey, controlsAllowed, composeInput, createInputPacer, aliveParticipants, canHostStart, roomPresentation, spectatorPlayer, lootPresentation, stormPresentation, healthPresentation, combatReadout, aimFraction, confirmedHitGroups, reconcilePlayer, interpolatedState } from '../public/voxel-royale-client.js';
 
 const arena = { id: 'test-island', bounds: { minX: -20, maxX: 20, minZ: -20, maxZ: 20 }, colliders: [{ id: 'cover', x: -3, y: 0, z: -3, w: 6, h: 3, d: 1 }] };
-const player = (id = 0, values = {}) => ({ ...createCombatPlayer(id), team: id, hasGun: false, slot: 'sword', ammo: 0, reserve: 0, potions: 0, grenades: 0, ...values });
+const player = (id = 0, values = {}) => ({ ...createCombatPlayer(id), team: id, hasGun: false, meleeWeapon: 'knife', slot: 'sword', ammo: 0, reserve: 0, potions: 0, grenades: 0, ...values });
 const active = { connected: true, entered: true, paused: false, modalOpen: false, graphicsError: '', hidden: false, alive: true, phase: 'fight', pointerLocked: true, fallback: false, touchMode: false };
 
 test('French printed movement and close-hand utilities work while Control crouches', () => {
@@ -67,11 +67,19 @@ test('living HUD remains own, eliminated spectators can follow any living partic
 
 test('gun placeholder does not become owned inventory or sights until scavenged', () => {
   const unarmed = player(0, { weapon: 'sniper', aimTicks: 18, slot: 'primary' });
-  const sword = combatReadout(unarmed); assert.equal(sword.label, 'SWORD'); assert.equal(sword.ammo, 'READY'); assert.match(sword.inventory, /SWORD ONLY/); assert.equal(aimFraction(unarmed), 0);
+  const sword = combatReadout(unarmed); assert.equal(sword.label, 'KNIFE'); assert.equal(sword.ammo, 'READY'); assert.match(sword.inventory, /KNIFE ONLY/); assert.equal(aimFraction(unarmed), 0);
   const gun = player(0, { hasGun: true, weapon: 'shotgun', slot: 'primary', ammo: 4, reserve: 12 });
   const armed = combatReadout(gun); assert.equal(armed.label, WEAPONS.shotgun.label); assert.equal(armed.ammo, 4); assert.equal(armed.reserve, 12);
   assert.equal(aimFraction({ ...gun, aimTicks: 18 }), 1);
   assert.equal(aimFraction({ ...gun, aimTicks: 18, reloadTicks: 1 }), 0);
+});
+
+test('small-knife progress uses its quicker profile and remains in inventory after finding a gun', () => {
+  const own = player(0, { meleeTicks: 22, meleePhase: 'startup' });
+  let readout = combatReadout(own);
+  assert.equal(readout.label, 'KNIFE'); assert.equal(readout.progress.total, 44); assert.equal(readout.progress.percent, 50); assert.equal(readout.progress.label, 'Knife attack and recovery');
+  readout = combatReadout({ ...own, hasGun: true, weapon: 'smg', slot: 'primary', meleeTicks: 0 });
+  assert.equal(readout.inventory, `${WEAPONS.smg.label} + KNIFE`);
 });
 
 test('pickup readout explains gun exchanges, consumables and ammunition without inventing availability', () => {
@@ -80,7 +88,7 @@ test('pickup readout explains gun exchanges, consumables and ammunition without 
   assert.equal(exchange.name, WEAPONS.sniper.name); assert.match(exchange.detail, /EXCHANGE CARBINE.*2 \/ 8/);
   assert.match(lootPresentation({ id: 1, kind: 'weapon', weapon: 'smg' }, player()).detail, /PICK UP/);
   assert.match(lootPresentation({ id: 1, kind: 'ammo', amount: 24 }, own).detail, /\+24 RESERVE/);
-  assert.match(lootPresentation({ id: 1, kind: 'heal' }, own).detail, /40 HP/);
+  assert.match(lootPresentation({ id: 1, kind: 'heal' }, own).detail, /60 HP/);
   assert.equal(lootPresentation(null, own), null);
   assert.equal(lootPresentation({ kind: 'weapon', weapon: 'unknown' }, own), null);
   assert.equal(lootPresentation({ kind: 'heal' }, { ...own, alive: false }), null);
@@ -97,8 +105,8 @@ test('storm readout follows authoritative circle, countdown and changing damage'
 
 test('HP responds immediately, recent loss decays and spectator or rematch never inherits a trail', () => {
   let health = healthPresentation(player(), null, { now: 0, matchId: 1 });
-  health = healthPresentation(player(0, { hp: 72 }), health, { now: 100, matchId: 1 }); assert.equal(health.hp, 72); assert.equal(health.trailHp, 100);
-  health = healthPresentation(player(0, { hp: 23 }), health, { now: 200, matchId: 1 }); assert.equal(health.low, true); assert.equal(health.percent, 23);
+  health = healthPresentation(player(0, { hp: 72 }), health, { now: 100, matchId: 1 }); assert.equal(health.hp, 72); assert.equal(health.trailHp, PLAYER_HEALTH);
+  health = healthPresentation(player(0, { hp: 23 }), health, { now: 200, matchId: 1 }); assert.equal(health.low, true); assert.equal(health.percent, 11.5);
   health = healthPresentation(player(0, { hp: 23 }), health, { now: 1150, matchId: 1 }); assert.equal(health.trailHp, 23);
   health = healthPresentation(player(0, { hp: 63 }), health, { now: 1200, matchId: 1 }); assert.equal(health.trailHp, 63);
   health = healthPresentation(player(2, { hp: 90 }), health, { now: 1250, matchId: 1 }); assert.equal(health.trailHp, 90);
@@ -108,7 +116,8 @@ test('HP responds immediately, recent loss decays and spectator or rematch never
 test('reload and healing progress follow actual simulation ticks and reserves', () => {
   const own = player(0, { hasGun: true, weapon: 'crossbow', slot: 'primary', ammo: 0, reserve: 4, reloadTicks: WEAPONS.crossbow.reloadTicks / 2 });
   let readout = combatReadout(own); assert.equal(readout.progress.percent, 50); assert.match(readout.status, /RELOADING/);
-  own.hp = 80; own.healTicks = 120; own.potions = 0; readout = combatReadout(own); assert.equal(readout.ammo, '+20'); assert.equal(readout.progress.percent, 50); assert.equal(readout.healing, true);
+  own.hp = 80; own.healTicks = 120; own.potions = 0; readout = combatReadout(own); assert.equal(readout.ammo, '+60'); assert.equal(readout.progress.percent, 50); assert.equal(readout.healing, true);
+  own.hp = 185; assert.equal(combatReadout(own).ammo, '+15', 'healing stops at authoritative maximum health');
 });
 
 test('confirmed hits group shotgun pellets and exclude speculative, self or storm damage', () => {
@@ -120,7 +129,7 @@ test('real shared prediction respects royale cover, copies source and bounds una
   const own = player(0, { x: 0, z: 0 }), before = structuredClone(own), history = Array.from({ length: 360 }, (_, i) => ({ seq: i + 1, buttons: emptyInput({ yaw: 0 }) }));
   for (const frame of history) frame.buttons.up = true;
   const result = reconcilePlayer(own, history, 0, arena, predictLocalMovement, true, []);
-  assert.equal(result.pending.length, 240); assert.deepEqual(own, before); assert.ok(result.predicted.z >= -2 + own.radius - 1e-6, `cover blocks at z=${result.predicted.z}`); assert.equal(result.predicted.hp, 100); assert.equal(result.predicted.ammo, 0);
+  assert.equal(result.pending.length, 240); assert.deepEqual(own, before); assert.ok(result.predicted.z >= -2 + own.radius - 1e-6, `cover blocks at z=${result.predicted.z}`); assert.equal(result.predicted.hp, PLAYER_HEALTH); assert.equal(result.predicted.ammo, 0);
   const acked = reconcilePlayer(own, history, 359, arena, predictLocalMovement); assert.equal(acked.pending.length, 1);
   assert.deepEqual(reconcilePlayer(own, history, 0, arena, predictLocalMovement, false).predicted, own);
 });

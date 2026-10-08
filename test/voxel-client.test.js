@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { aimFraction, aimLookMultiplier, confirmedHitGroups, healthHUDPlayer, healthPresentation, weaponComparison, combatEventPerspective, combatReadout, cleanAim, composeInput, controlForKey, createContinuousInputPacer, FPS_BUTTONS, hasGunshotReport, interpolatedState, isFormTarget, loadoutForKey, matchClock, neutralInput, reconcilePlayer, roundResult, tacticalSquadHealth, tacticalMapPlayers } from '../public/voxel-client.js';
-import { createState, emptyInput, MAPS, predictLocalMovement, traceShot, WEAPONS } from '../public/voxel-engine.js';
+import { createState, emptyInput, MAPS, predictLocalMovement, traceShot, WEAPONS, PLAYER_HEALTH } from '../public/voxel-engine.js';
 import { advanceBolts, launchBolt } from '../public/voxel-projectiles.js';
 
 function boltSamples() {
@@ -59,7 +59,7 @@ test('projected bolts respect real cover, the floor and bodies without applying 
     launchBolt(state, state.players[0], WEAPONS.crossbow, origin, aim);
     const original = JSON.stringify(state), rendered = interpolatedState([{ time: 0, state }], 25, 0, { traceProjectile: traceShot });
     assert.deepEqual(rendered.bolts, [], `${contact} absorbs the projected bolt`);
-    assert.equal(rendered.players[1].hp, 100); assert.equal(JSON.stringify(state), original);
+    assert.equal(rendered.players[1].hp, PLAYER_HEALTH); assert.equal(JSON.stringify(state), original);
     assert.deepEqual(rendered.events, state.events);
   }
 });
@@ -451,6 +451,15 @@ test('health meter paints actual HP immediately and keeps a bounded fading damag
   assert.equal(player.hp, 40, 'presentation cannot change simulation health');
 });
 
+test('missing health maximum falls back to the shared 200 HP rule and potions cap at missing health', () => {
+  const player = { id: 0, alive: true, hp: 190, weapon: 'carbine', slot: 'primary', healTicks: 120 };
+  assert.equal(healthPresentation(player).maxHp, PLAYER_HEALTH);
+  assert.equal(healthPresentation(player).percent, 95);
+  assert.equal(combatReadout(player).ammo, '+10');
+  player.hp = 100;
+  assert.equal(combatReadout(player).ammo, '+60');
+});
+
 test('healing, round restore and a different spectator reset the health trail truthfully', () => {
   const player = { id: 0, hp: 30, maxHp: 100, alive: true };
   const low = healthPresentation(player, null, { now: 100, round: 1 });
@@ -508,5 +517,5 @@ test('the live squad health strip exposes at most two connected allies with hone
   const squad = tacticalSquadHealth(state, 0, [0, 1, 2, 3, 4]);
   assert.deepEqual(squad.map(player => player.id), [1, 2]); assert.equal(squad[0].low, true); assert.equal(squad[1].dead, true); assert.equal(squad[1].percent, 0);
   assert.deepEqual(tacticalSquadHealth(state, 0, [0, 3]), []); assert.deepEqual(tacticalSquadHealth(state, null), []);
-  state.players[1].hp = 999; assert.equal(tacticalSquadHealth(state, 0, [0, 1])[0].hp, 100);
+  state.players[1].hp = 999; assert.equal(tacticalSquadHealth(state, 0, [0, 1])[0].hp, PLAYER_HEALTH);
 });

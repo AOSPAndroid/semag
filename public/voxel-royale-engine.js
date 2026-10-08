@@ -35,7 +35,7 @@ function shuffled(state, items) {
   return result;
 }
 function inactivePlayer(id) {
-  return { ...createCombatPlayer(id), team: id, alive: false, hp: 0, slot: 'sword', hasGun: false, ammo: 0, reserve: 0, potions: 0, grenades: 0, participating: false, inventoryDropped: false };
+  return { ...createCombatPlayer(id), team: id, alive: false, hp: 0, slot: 'sword', meleeWeapon: 'knife', hasGun: false, ammo: 0, reserve: 0, potions: 0, grenades: 0, participating: false, inventoryDropped: false };
 }
 function initialStorm(arena) {
   const center = arena.stormCenter || { x: (arena.bounds.minX + arena.bounds.maxX) / 2, z: (arena.bounds.minZ + arena.bounds.maxZ) / 2 };
@@ -102,11 +102,11 @@ export function startMatch(state, participantIds) {
   const spawns = shuffled(state, spawnPoints);
   for (let index = 0; index < state.participantIds.length; index++) {
     const id = state.participantIds[index], player = state.players[id], spawn = spawns[index];
-    Object.assign(player, { ...spawn, yaw: finite(spawn.yaw), alive: true, hp: 100, participating: true });
+    Object.assign(player, { ...spawn, yaw: finite(spawn.yaw), alive: true, hp: player.maxHp, participating: true });
     player.previousInput = emptyInput(player);
   }
   seedLoot(state); state.aliveCount = state.participantIds.length; state.phase = 'countdown'; state.phaseTicks = ROYALE.countdownTicks;
-  state.objective = 'One life. Start with a blade; search structures for weapons and supplies.';
+  state.objective = 'One life. Start with a small knife; search structures for weapons and supplies.';
   emitCombatEvent(state, 'matchStart', { matchId, participantIds: [...state.participantIds], mapId: state.mapId });
   return state;
 }

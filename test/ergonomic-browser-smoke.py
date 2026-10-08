@@ -465,7 +465,7 @@ def voxel_controls(browser):
         wait(first, 'window.SemagVoxel.getState().input.crouch')
         cdp_key(first, 'q', 'KeyA', modifiers=2)
         wait(first, 'window.SemagVoxel.getState().input.left && window.SemagVoxel.getState().input.crouch')
-        assert read(first)['state']['players'][0]['hp'] == 100
+        assert read(first)['state']['players'][0]['hp'] == 200
         cdp_key(first, 'f', 'KeyF', modifiers=2)
         wait(first, 'window.SemagVoxel.getState().input.heal && window.SemagVoxel.getState().input.left && window.SemagVoxel.getState().input.crouch')
         assert read(first)['state']['players'][0]['potions'] == 1, 'Full-health potion was consumed'

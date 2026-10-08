@@ -76,10 +76,12 @@ test('body and head damage arrive only after real travel through the production 
   for (const [originY, expectedKind, expectedDamage] of [[.85, 'body', 75], [1.62, 'head', 150]]) {
     const { state, shooter, origin, target } = lane({ originY });
     launchBolt(state, shooter, weapon(), origin, direction);
-    const early = run(state, 3); assert.equal(early.hits.length, 0); assert.equal(target.hp, 100); assert.equal(state.bolts.length, 1);
+    const early = run(state, 3); assert.equal(early.hits.length, 0); assert.equal(target.hp, 200); assert.equal(state.bolts.length, 1);
     const contact = run(state, 8); assert.equal(contact.hits.length, 1); assert.equal(contact.hits[0].damage, expectedDamage);
     assert.equal(contact.events[0].type, 'boltHit'); assert.equal(contact.events[0].hitKind, expectedKind);
-    assert.equal(contact.events[0].targetId, target.id); assert.equal(target.hp, 100, 'the engine owns simultaneous damage application');
+    for (const axis of ['X', 'Y', 'Z']) close(contact.hits[0][`hit${axis}`], contact.events[0][axis.toLowerCase()]);
+    close(Math.hypot(contact.hits[0].dx, contact.hits[0].dy, contact.hits[0].dz), 1);
+    assert.equal(contact.events[0].targetId, target.id); assert.equal(target.hp, 200, 'the engine owns simultaneous damage application');
     assert.equal(state.bolts.length, 0); assert.equal(run(state, 30).hits.length, 0);
   }
 });
@@ -97,7 +99,7 @@ test('leading matters: a target who moves out of the flight path avoids a bolt',
   const { state, shooter, origin, target } = lane({ targetZ: -9 });
   launchBolt(state, shooter, weapon(), origin, direction); assert.equal(run(state, 8).hits.length, 0);
   target.x = 21.2;
-  const result = run(state, 70); assert.equal(result.hits.length, 0); assert.equal(target.hp, 100);
+  const result = run(state, 70); assert.equal(result.hits.length, 0); assert.equal(target.hp, 200);
   assert.equal(result.events.find(event => event.type === 'boltHit').hitKind, 'wall');
 });
 
@@ -106,7 +108,7 @@ test('an allied body absorbs a bolt without damaging a teammate or enemy behind 
   Object.assign(state.players[1], { x: 20, y: 0, z: -1 });
   launchBolt(state, shooter, weapon(), origin, direction);
   const result = run(state, 30); assert.equal(result.hits.length, 0); assert.equal(result.events[0].targetId, 1);
-  assert.equal(result.events[0].damage, 0); assert.equal(target.hp, 100); assert.equal(state.players[1].hp, 100); assert.equal(state.bolts.length, 0);
+  assert.equal(result.events[0].damage, 0); assert.equal(target.hp, 200); assert.equal(state.players[1].hp, 200); assert.equal(state.bolts.length, 0);
 });
 
 test('an in-flight bolt keeps its owner and damage after the shooter dies or swaps loadouts', () => {
@@ -123,7 +125,7 @@ test('opposing bolts queue both contacts in one tick without prematurely killing
   assert.equal(run(state, 4).hits.length, 0);
   const result = run(state, 1);
   assert.deepEqual(result.hits.map(hit => [hit.playerId, hit.targetId, hit.damage]), [[0, 1, 75], [1, 0, 75]]);
-  assert.deepEqual(state.players.map(player => player.hp), [100, 100]);
+  assert.deepEqual(state.players.map(player => player.hp), [200, 200]);
   assert.equal(state.bolts.length, 0); assert.equal(result.events.length, 2);
 });
 
@@ -210,9 +212,9 @@ test('engine crossbow fire consumes one bolt with visible travel, delayed gravit
   assert.equal(shooter.ammo, 0); assert.equal(shooter.shots, 1); assert.equal(state.bolts.length, 1);
   assert.equal(state.events.filter(event => event.type === 'boltLaunch').length, 1);
   assert.equal(state.events.filter(event => event.type === 'shot').length, 0, 'crossbow must not also fire an instant hitscan tracer');
-  assert.equal(target.hp, 100); assert.equal(state.bolts[0].ageTicks, 0);
-  liveTicks(state, 20); assert.equal(target.hp, 100); assert.equal(state.bolts.length, 1);
-  liveTicks(state, 10); assert.equal(target.hp, 25); assert.equal(state.bolts.length, 0);
+  assert.equal(target.hp, 200); assert.equal(state.bolts[0].ageTicks, 0);
+  liveTicks(state, 20); assert.equal(target.hp, 200); assert.equal(state.bolts.length, 1);
+  liveTicks(state, 10); assert.equal(target.hp, 125); assert.equal(state.bolts.length, 0);
   const impact = state.events.findLast(event => event.type === 'boltHit'); assert.equal(impact.hitKind, 'body'); assert.equal(impact.damage, 75);
   liveTicks(state, 1, { 0: { reload: true } }); assert.equal(shooter.reloadTicks, WEAPONS.crossbow.reloadTicks);
   liveTicks(state, WEAPONS.crossbow.reloadTicks); assert.equal(shooter.ammo, 1); assert.equal(shooter.reserve, 11);
@@ -243,5 +245,5 @@ test('round respawn clears old ballistic flight so it cannot damage the next rou
   state.phase = 'roundEnd'; state.phaseTicks = 1; state.roundWinner = 0;
   liveTicks(state, 1); assert.equal(state.phase, 'countdown'); assert.equal(state.round, 2);
   assert.deepEqual(state.bolts, []); assert.equal(state.boltId, 0);
-  assert.deepEqual(state.players.map(player => player.hp), [100, 100]);
+  assert.deepEqual(state.players.map(player => player.hp), [200, 200]);
 });

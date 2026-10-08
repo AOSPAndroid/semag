@@ -322,7 +322,10 @@ def begin(pages, mode):
     wait(pages[1], f'window.{debug(pages[1])}.getState().state.phase==="fight"')
     if mode == 'royale':
         assert before_fight['participantIds'] == [0, 1] and before_fight['aliveCount'] == 2
-        assert all(not before_fight['players'][ident]['hasGun'] and before_fight['players'][ident]['slot'] == 'sword' for ident in (0, 1))
+        for ident in (0, 1):
+            body = before_fight['players'][ident]
+            assert body['hp'] == body['maxHp'] == 200 and not body['hasGun'] and body['slot'] == 'sword'
+            assert body['meleeWeapon'] == 'knife' and body['ammo'] == body['reserve'] == body['potions'] == body['grenades'] == 0
     enter(pages[0])
     return {'prestart_movement_blocked': True, 'all_ready_required': mode == 'breach',
             'host_starts_two_in_ten': mode == 'royale', 'phase': 'fight'}

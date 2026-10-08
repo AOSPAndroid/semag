@@ -112,7 +112,7 @@ test('a ten-player sustained volley renders all drops in seven passes with bound
     players: players('lmg'), loot: Array.from({ length: 128 }, (_, id) => pickup({ id, weapon: 'sniper', x: id % 16 - 8, z: Math.floor(id / 16) - 4 })),
     storm: { active: true, x: 0, z: 0, radius: 30 }, maxGrenades: 20,
     grenades: Array.from({ length: 20 }, (_, id) => ({ id, x: id % 10 * 2 - 10, y: .12, z: 20 + Math.floor(id / 10) * 3, radius: .12, fuseTicks: 180 })),
-    events: Array.from({ length: 150 }, (_, id) => ({ id, tick: 100, type: 'shot', weapon: 'lmg', playerId: id % 10, x: 0, y: 1.6, z: 4, dx: 0, dy: 0, dz: -1, hitX: 0, hitY: 1.6, hitZ: 0, hitKind: 'body', damage: 26 })) };
+    events: Array.from({ length: 150 }, (_, id) => ({ id: id * 2, tick: 100, type: 'shot', weapon: 'lmg', playerId: id % 10, targetId: (id + 1) % 10, x: 0, y: 1.6, z: 4, dx: 0, dy: 0, dz: -1, hitX: 0, hitY: 1.6, hitZ: 0, hitKind: 'body', damage: 26 })).flatMap(event => [event, { ...event, id: event.id + 1, type: 'damage', attack: 'gun' }]) };
   assert.equal(renderer.render(state, { localId: 0, time: 1000 }), true);
   assert.equal(renderer.stats.lootItems, 128);
   assert.equal(renderer.stats.stormVertices, 768);
@@ -121,6 +121,7 @@ test('a ten-player sustained volley renders all drops in seven passes with bound
   for (const grenade of state.grenades) assert.ok(world.some(([x, y, z]) => Math.abs(x - grenade.x) < .13 && y >= 0 && y < .3 && Math.abs(z - grenade.z) < .13), `live frag ${grenade.id} cannot disappear below the authoritative cap`);
   assert.ok(renderer.stats.drawCalls <= 7);
   assert.equal(renderer.particles.length, 84);
+  assert.ok(renderer.stats.bloodParticles > 0, 'confirmed blood shares the existing dynamic pass and bounded particle pool');
   assert.equal(renderer.tracers.length, 14);
   renderer.destroy();
 });

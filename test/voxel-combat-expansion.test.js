@@ -22,7 +22,7 @@ function fighting(weapon = 'carbine', teamSize = 1, mapId = 'courtyard') {
 }
 const shotEvents = (state, id = 0) => state.events.filter(event => event.type === 'shot' && event.playerId === id);
 
-test('sniper hip fire misses a distant body that a settled scope kills through the real shot trace', () => {
+test('sniper hip fire misses a distant body while a settled scope deals its honest 100 damage', () => {
   const outcomes = [];
   for (const scoped of [false, true]) {
     const state = fighting('sniper'), [shooter, target] = state.players;
@@ -38,12 +38,13 @@ test('sniper hip fire misses a distant body that a settled scope kills through t
     outcomes.push({ error: Math.acos(Math.max(-1, Math.min(1, dot))), target, event, state });
   }
   assert.ok(outcomes[0].error > outcomes[1].error * 40, 'the authoritative cone settles during the ADS transition');
-  assert.equal(outcomes[0].target.hp, 100);
+  assert.equal(outcomes[0].target.hp, 200);
   assert.equal(outcomes[0].event.damage, 0);
   assert.equal(outcomes[1].event.hitKind, 'body');
   assert.equal(outcomes[1].event.damage, 100);
-  assert.equal(outcomes[1].target.hp, 0);
-  assert.equal(outcomes[1].state.events.findLast(event => event.type === 'kill').weapon, 'sniper');
+  assert.equal(outcomes[1].target.hp, 100);
+  assert.equal(outcomes[1].target.alive, true);
+  assert.equal(outcomes[1].state.events.some(event => event.type === 'kill'), false);
 });
 
 test('sniper requires a fresh click after its full bolt cycle and discards clicks made during recovery', () => {

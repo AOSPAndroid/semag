@@ -414,7 +414,8 @@ def start(pages):
     spawns = []
     for ident in countdown['participantIds']:
         body = countdown['players'][ident]
-        assert body['alive'] and body['hp'] == 100 and not body['hasGun'] and body['slot'] == 'sword'
+        assert body['alive'] and body['hp'] == body['maxHp'] == 200 and not body['hasGun'] and body['slot'] == 'sword'
+        assert body['meleeWeapon'] == 'knife', ('Royale must start with only the small knife', body)
         assert body['ammo'] == body['reserve'] == body['potions'] == body['grenades'] == 0
         spawns.append({'id': ident, 'x': body['x'], 'y': body['y'], 'z': body['z']})
     assert len({(body['x'], body['z']) for body in spawns}) == len(pages), 'Random starts overlapped'
@@ -423,7 +424,7 @@ def start(pages):
         wait(page, 'window.SemagRoyale.getState().state.phase==="fight"')
     assert snapshot(pages[0])['state']['matchId'] == before + 1
     return {'capacity': countdown['capacity'], 'started_with': len(pages), 'host_only_explicit_start': True,
-            'sword_empty_inventory': True, 'separate_random_spawn_points': spawns}
+            'knife_empty_inventory': True, 'separate_random_spawn_points': spawns}
 
 
 def freeze(page):
@@ -514,6 +515,8 @@ def controls(page):
     enter(page)
     tap(page, 'v', 'KeyV')
     wait(page, 'id=>window.SemagRoyale.getState().state.players[id].slot==="sword"', snapshot(page)['playerId'])
+    assert actor(page)['meleeWeapon'] == 'knife'
+    wait(page, 'document.querySelector("#weapon-label").textContent==="KNIFE"')
     tap(page, 'v', 'KeyV')
     wait(page, 'id=>window.SemagRoyale.getState().state.players[id].slot==="primary"', snapshot(page)['playerId'])
     page.mouse.down(button='right')
@@ -526,7 +529,7 @@ def controls(page):
     wait(page, 'id=>window.SemagRoyale.getState().state.players[id].y>.15', snapshot(page)['playerId'])
     apex = actor(page)['y']
     wait(page, 'id=>window.SemagRoyale.getState().state.players[id].grounded', snapshot(page)['playerId'])
-    return {'native_sword_gun_toggle': True, 'right_mouse_ads': True, 'jump_y': apex}
+    return {'native_knife_gun_toggle': True, 'right_mouse_ads': True, 'jump_y': apex}
 
 
 def aim_at(page, target, height=1):
@@ -571,11 +574,15 @@ def combat(first, second, arena):
     assert 0 < damaged < before_hp and actor(second)['alive'], ('First leg shot failed to preserve a healing target', fired, before_hp, damaged)
     assert fired['hitKind'] == 'leg', fired
     enter(second)
+    heal_event_id = snapshot(second)['state']['eventId']
     tap(second, 'f', 'KeyF')
     wait(second, 'id=>window.SemagRoyale.getState().state.players[id].healTicks>0', victim_id)
     assert actor(second)['potions'] == 0
-    wait(second, '([id,hp])=>window.SemagRoyale.getState().state.players[id].hp===hp', [victim_id, min(100, damaged + 40)], timeout=6000)
+    wait(second, '([id,hp])=>window.SemagRoyale.getState().state.players[id].hp===hp', [victim_id, min(200, damaged + 60)], timeout=6000)
     healed = actor(second)['hp']
+    heal_event = next(event for event in snapshot(second)['state']['events']
+                      if event['id'] > heal_event_id and event['type'] == 'healComplete' and event['playerId'] == victim_id)
+    assert heal_event['amount'] == min(60, 200 - damaged) and heal_event['hp'] == healed, heal_event
     screenshot(second, 'voxel-royale-native-damage-heal')
     kill_shots = []
     for _ in range(12):
@@ -601,9 +608,12 @@ def combat(first, second, arena):
     wait(second, 'window.SemagRoyale.getState().state.phase==="lobby"')
     replay = start([first, second])
     assert snapshot(first)['state']['matchId'] == ended['matchId'] + 1
-    assert all(actor(page)['hp'] == 100 and not actor(page)['hasGun'] for page in (first, second))
+    assert all(actor(page)['hp'] == actor(page)['maxHp'] == 200 and not actor(page)['hasGun']
+               and actor(page)['meleeWeapon'] == 'knife' and actor(page)['slot'] == 'sword'
+               and actor(page)['ammo'] == actor(page)['reserve'] == actor(page)['potions'] == actor(page)['grenades'] == 0
+               for page in (first, second))
     return {'rendezvous_native_routes': routes, 'leg_shot': fired, 'confirmed_feedback': confirmed,
-            'hp_before': before_hp, 'hp_damaged': damaged, 'hp_healed': healed, 'body_kill_shots': kill_shots,
+            'hp_before': before_hp, 'hp_damaged': damaged, 'hp_healed': healed, 'confirmed_native_heal': heal_event, 'body_kill_shots': kill_shots,
             'winner': ended['winnerId'], 'placements': ended['placements'], 'host_native_rematch': replay}
 
 

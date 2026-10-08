@@ -751,11 +751,18 @@ def native_elimination_round(first,second):
     first.wait_for_timeout(500)
     screenshot(first,f'voxel-native-firing-angle-round-{state(first)["round"]}-canvas',viewport=True)
     assert first.locator('#crosshair').is_visible()
+    opening=native_shot(first)
+    wait(first,'window.__voxelQA.latestState.state.players[1].hp===84',timeout=3000)
+    assert opening['targetId']==1 and opening['hitKind']=='head' and opening['damage']==116,('Precise stationary marksman opening shot did not hit',opening)
+    assert actor(first,1)['alive'], 'A single marksman headshot eliminated a full-health player'
+    wait(first,'window.__voxelQA.latestState.state.players[0].shotCooldown===0',timeout=3000)
+    opponent=actor(first,1);current=actor(first)
+    native_aim(first,math.atan2(opponent['x']-current['x'],-(opponent['z']-current['z'])),0)
     shot=native_shot(first)
     wait(first,'!window.__voxelQA.latestState.state.players[1].alive',timeout=3000)
     wait(second,'!window.__voxelQA.latestState.state.players[1].alive')
     result=state(first)
-    assert shot['targetId']==1 and shot['hitKind']=='head' and shot['damage']>=100,('Precise stationary marksman shot did not hit',shot)
+    assert shot['targetId']==1 and shot['hitKind']=='head' and shot['damage']==116,('Precise stationary marksman follow-up did not hit',shot)
     assert result['players'][0]['kills']>0 and result['players'][1]['deaths']>0
     wait(first,'document.querySelector("#kill-feed").textContent.includes("[HS]")',timeout=2000)
     assert 'HEADSHOT' in first.locator('#combat-feedback').inner_text()
@@ -766,7 +773,7 @@ def native_elimination_round(first,second):
     if result['phase']!='matchEnd':second.locator('#spectator-hud').wait_for(state='visible',timeout=2500)
     screenshot(second,f'voxel-native-eliminated-round-{result["round"]}')
     print(json.dumps({'stage':'native_elimination_passed','round':result['round'],'scores':result['scores']}),flush=True)
-    return {'round':result['round'],'shot':shot,'scores':result['scores'],'dead_peer_spectates':True,
+    return {'round':result['round'],'opening_headshot_survived':opening,'shot':shot,'scores':result['scores'],'dead_peer_spectates':True,
         'native_headshot_feedback_and_kill_feed':True,'perspective_aware_elimination_result':True}
 
 
@@ -782,7 +789,7 @@ def native_objective_and_elimination(pages):
 def native_disconnect_rejoin(pages,contexts):
     first,second=pages
     second.close();phase(first,'lobby')
-    reset=state(first);assert reset['scores']==[0,0] and all(player['hp']==100 for player in reset['players'])
+    reset=state(first);assert reset['scores']==[0,0] and all(player['hp']==200 for player in reset['players'])
     wait(first,'window.__voxelQA.latestState.players.every(player=>!player||!player.ready)')
     replacement=contexts[1].new_page();observe(replacement,'1v1/rejoin');replacement.goto(first.url)
     assert connected(replacement)==1 and state(replacement)['phase']=='lobby'
@@ -930,7 +937,7 @@ def native_friendly_grenade(page):
     evidence=native_frag(page,f'voxel-{state(page)["teamSize"]}v{state(page)["teamSize"]}-frag')
     teammate_after=actor(page,1);blast=evidence['explosion']
     distance=math.hypot(teammate_after['x']-blast['x'],teammate_after['z']-blast['z'])
-    assert distance<5.5 and teammate_after['hp']==teammate['hp']==100,('Friendly frag fixture was not nearby and immune',distance,teammate,teammate_after,blast)
+    assert distance<5.5 and teammate_after['hp']==teammate['hp']==200,('Friendly frag fixture was not nearby and immune',distance,teammate,teammate_after,blast)
     assert evidence['after_hp']<evidence['before_hp'] and actor(page)['alive'],'Thrower self-risk was not observed safely'
     evidence.update(teammate_within_blast_radius=distance,teammate_hp_unchanged=True,thrower_self_damage=True)
     return evidence
@@ -970,7 +977,7 @@ def native_arsenal_weapon_case(browser,weapon):
         if weapon=='shotgun':
             pellets=[e for e in state(first)['events'] if e['type']=='shot' and e['playerId']==0 and e['tick']==shot['tick']]
             assert shot['pelletCount']==8 and len(pellets)==8 and sorted(e['pellet'] for e in pellets)==list(range(8)),('Shotgun did not report eight real pellet rays',shot,pellets)
-        assert shot['hitKind']=='wall' and actor(first,1)['hp']==100,('Native gun shot crossed cover',weapon,shot)
+        assert shot['hitKind']=='wall' and actor(first,1)['hp']==200,('Native gun shot crossed cover',weapon,shot)
         assert first.locator('#weapon-label').inner_text()==weapon.upper()
         first.keyboard.press('r',delay=40)
         wait(first,'window.__voxelQA.latestState.state.players[0].reloadTicks>0')
@@ -1022,16 +1029,16 @@ def native_arsenal_utilities_case(browser):
     try:
         contexts,pages=arsenal_room(browser);first,second=pages
         enter_arena(first);first.keyboard.press('h',delay=40);first.wait_for_timeout(180)
-        assert actor(first)['hp']==100 and actor(first)['potions']==1 and not actor(first)['healTicks'],'Full-health potion was consumed'
+        assert actor(first)['hp']==200 and actor(first)['potions']==1 and not actor(first)['healTicks'],'Full-health potion was consumed'
         native_aim(first,0,-1.2);frag=native_frag(first,'voxel-native-frag')
-        assert 0<frag['after_hp']<100,('Floor frag did not provide a safe native wound',frag)
+        assert 0<frag['after_hp']<200,('Floor frag did not provide a safe native wound',frag)
         before=actor(first);event_id=state(first)['eventId'];first.keyboard.press('h',delay=40)
         wait_event(first,'healStart',event_id);wait(first,'window.__voxelQA.latestState.state.players[0].healTicks>0')
         wait(first,'document.querySelector("#weapon-label").textContent==="HEALING POTION"',timeout=1800)
         screenshot(first,'voxel-native-potion-channel-canvas',viewport='hud')
         healed=wait_event(first,'healComplete',event_id)
-        assert healed['amount']==min(40,100-before['hp']) and actor(first)['potions']==0
-        assert actor(first)['hp']==min(100,before['hp']+40),'Native potion restored an incorrect amount'
+        assert healed['amount']==min(60,200-before['hp']) and actor(first)['potions']==0
+        assert actor(first)['hp']==min(200,before['hp']+60),'Native potion restored an incorrect amount'
         print(json.dumps({'stage':'native_frag_and_potion_passed','hp_before':before['hp'],'hp_after':actor(first)['hp']}),flush=True)
         first.keyboard.press('h',delay=40);first.wait_for_timeout(180)
         assert not actor(first)['healTicks'] and actor(first)['potions']==0,'Empty potion inventory started another channel'
@@ -1051,7 +1058,7 @@ def native_arsenal_utilities_case(browser):
         native_aim(first,math.atan2(target['x']-own['x'],-(target['z']-own['z'])),0)
         started=sword_swing(first,'voxel-native-sword-hit')
         hit=wait_event(first,'meleeHit',started['id'])
-        assert hit['damage']==55 and hit['targetId']==1 and actor(first,1)['hp']==45,'Sword did not cause its one precise enemy hit'
+        assert hit['damage']==55 and hit['targetId']==1 and actor(first,1)['hp']==145,'Sword did not cause its one precise enemy hit'
         print(json.dumps({'stage':'native_sword_enemy_hit_passed','damage':hit['damage']}),flush=True)
         # The wounded defender consumes its own potion, then interrupts it by firing.
         own=actor(first);peer=actor(second);distance=horizontal_distance(own,peer)
@@ -1060,11 +1067,20 @@ def native_arsenal_utilities_case(browser):
         wait_event(second,'healStart',action_event,player_id=1)
         native_shot(second)
         action_cancel=wait_event(second,'healCancel',action_event,player_id=1)
-        assert action_cancel['reason']=='action' and actor(second)['potions']==0 and actor(second)['hp']==45 and not actor(second)['healTicks'],'Firing did not interrupt the defender potion'
+        assert action_cancel['reason']=='action' and actor(second)['potions']==0 and actor(second)['hp']==145 and not actor(second)['healTicks'],'Firing did not interrupt the defender potion'
         first.wait_for_timeout(2100)
-        assert actor(first,1)['hp']==45,'Action-interrupted potion completed later'
+        assert actor(first,1)['hp']==145,'Action-interrupted potion completed later'
         print(json.dumps({'stage':'native_fire_interrupts_potion_passed'}),flush=True)
-        sword_swing(first)
+        finishing_hits=[]
+        for expected_hp in (90,35,0):
+            before_hp=actor(first,1)['hp']
+            swing=sword_swing(first)
+            confirmed=wait_event(first,'meleeHit',swing['id'])
+            assert confirmed['targetId']==1 and confirmed['damage']==55, confirmed
+            damage=wait_event(first,'damage',swing['id'])
+            assert damage['targetId']==1 and damage['damage']==before_hp-expected_hp, ('Sword damage feedback failed to clamp overkill',damage,before_hp,expected_hp)
+            assert actor(first,1)['hp']==expected_hp, ('Fresh sword hit restored or omitted damage',expected_hp,confirmed,actor(first,1))
+            finishing_hits.append({'contact':confirmed,'confirmed_damage':damage})
         wait(first,'window.__voxelQA.latestState.state.roundReason==="elimination"')
         assert actor(first,1)['hp']==0 and not actor(first,1)['alive']
         phase(first,'buy',timeout=18000)
@@ -1076,17 +1092,17 @@ def native_arsenal_utilities_case(browser):
         for x,z in [(-20,-18),(-20,18),(-8,18)]:native_move(second,x,z)
         own=actor(first);peer=actor(second);distance=horizontal_distance(own,peer)
         native_aim(second,math.atan2(own['x']-peer['x'],-(own['z']-peer['z'])),math.atan2(.9-1.62,distance))
-        native_shot(second);wait(first,'window.__voxelQA.latestState.state.players[0].hp===66')
+        native_shot(second);wait(first,'window.__voxelQA.latestState.state.players[0].hp===166')
         event_id=state(first)['eventId'];enter_arena(first);first.keyboard.press('h',delay=40)
         wait_event(first,'healStart',event_id);screenshot(first,'voxel-native-potion-interrupted-canvas',viewport='hud')
         second.wait_for_timeout(240);native_shot(second)
         cancelled=wait_event(first,'healCancel',event_id)
-        assert cancelled['reason']=='damage' and actor(first)['hp']==32 and actor(first)['potions']==0 and not actor(first)['healTicks'],'Damage did not interrupt finite healing'
+        assert cancelled['reason']=='damage' and actor(first)['hp']==132 and actor(first)['potions']==0 and not actor(first)['healTicks'],'Damage did not interrupt finite healing'
         first.wait_for_timeout(2300)
-        assert actor(first)['hp']==32 and not any(e['type']=='healComplete' and e['id']>event_id for e in state(first)['events']),'Interrupted potion completed later'
+        assert actor(first)['hp']==132 and not any(e['type']=='healComplete' and e['id']>event_id for e in state(first)['events']),'Interrupted potion completed later'
         evidence={'status':'passed','full_health_does_not_consume':True,'native_frag':frag,'native_heal':healed,
             'finite_inventory':True,'blocked_sword_start':blocked_start,'native_sword_hit':hit,
-            'held_attack_does_not_repeat':True,'sword_elimination':True,'round_inventory_and_channels_reset':True,
+            'held_attack_does_not_repeat':True,'sword_elimination':True,'native_sword_finishing_hits':finishing_hits,'round_inventory_and_channels_reset':True,
             'native_fire_heal_cancellation':action_cancel,
             'native_damage_heal_cancellation':cancelled,'interrupted_channel_never_completes':True}
         print(json.dumps({'stage':'native_arsenal_utilities_passed'}),flush=True)

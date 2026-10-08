@@ -353,11 +353,11 @@ def rooftop_counterplay(first, second):
         second.mouse.down(button='left')
         second.wait_for_timeout(40)
         second.mouse.up(button='left')
-        wait(first, 'window.SemagVoxel.getState().state.players[0].hp<100')
+        wait(first, 'window.SemagVoxel.getState().state.players[0].hp<200')
     finally:
         second.mouse.up(button='right')
     contested = actor(first)
-    assert contested['alive'] and contested['hp'] < 100
+    assert contested['alive'] and contested['hp'] < 200
     native.native_aim(first, math.atan2(-16.1 - contested['x'], -(-1.1 - contested['z'])), -.35)
     event_id = snapshot(first)['state']['eventId']
     # Printed A on unshifted AZERTY is canonical Q: grenade, while printed Q
@@ -472,7 +472,7 @@ def blocked_weapon(first, second, weapon):
     after = actor(first)
     impacts = [event for event in snapshot(first)['state']['events'] if event['id'] > event_id and event['type'] == kind and event['playerId'] == 0]
     assert impacts and impacts[0]['hitKind'] == 'wall', (weapon, impacts)
-    assert actor(second, 1)['hp'] == 100
+    assert actor(second, 1)['hp'] == 200
     if weapon == 'sniper':
         assert before['ammo'] - after['ammo'] == 1, ('Held sniper trigger repeated', before, after)
     if weapon == 'lmg':

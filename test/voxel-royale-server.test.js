@@ -118,6 +118,13 @@ test('Only the host can start with at least two players; ten-seat rooms can star
   await rejected(hostSeat.peer, { type: 'start' }, /only from the lobby/);
   assert.equal(room.state.phase, 'countdown');
   advance(game.app, room, 'fight');
+  for (const id of room.state.participantIds) {
+    const player = room.state.players[id];
+    assert.equal(player.hp, 200); assert.equal(player.maxHp, 200);
+    assert.equal(player.meleeWeapon, 'knife'); assert.equal(player.slot, 'sword');
+    assert.equal(player.hasGun, false);
+    for (const supply of ['ammo', 'reserve', 'potions', 'grenades']) assert.equal(player[supply], 0, supply);
+  }
   assert.ok(room.players.every(player => !player || !player.ready));
 });
 

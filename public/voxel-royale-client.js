@@ -3,7 +3,10 @@ import { copyText, getName, hostInfo, roomUrl, saveName } from './hub/shared.js'
 import { GameAudio } from './audio.js';
 import { WEAPONS, weaponAimFovRatio, weaponSpread } from './voxel-weapons.js';
 import { advanceBolts, MAX_BOLTS } from './voxel-projectiles.js';
-import { predictLocalMovement, traceShot, ADS, HEAL } from './voxel-engine.js';
+import { predictLocalMovement, traceShot, ADS, HEAL, PLAYER_HEALTH } from './voxel-engine.js';
+
+import { meleeLabel, meleeProfile } from './voxel-melee.js';
+import { incomingDamageFeedback, damageFeedbackPresentation, paintDamageFeedback } from './voxel-damage-feedback.js';
 
 export const LOOK_SENSITIVITY = .0025;
 export const INPUT_ACTIONS = Object.freeze(['up', 'down', 'left', 'right', 'jump', 'crouch', 'walk', 'fire', 'reload', 'interact', 'aim', 'swap', 'grenade', 'heal']);
@@ -70,7 +73,7 @@ export function lootPresentation(loot, player) {
     const exchange = player.hasGun && player.weapon !== loot.weapon;
     return { id: loot.id, name: weapon.name, detail: exchange ? `EXCHANGE ${WEAPONS[player.weapon]?.label || 'GUN'} · ${loot.ammo ?? weapon.magazine} / ${loot.reserve ?? weapon.reserve}` : `PICK UP · ${loot.ammo ?? weapon.magazine} / ${loot.reserve ?? weapon.reserve}`, kind: 'weapon' };
   }
-  if (loot.kind === 'heal') return { id: loot.id, name: 'Healing potion', detail: 'PICK UP · F TO HEAL UP TO 40 HP', kind: 'heal' };
+  if (loot.kind === 'heal') return { id: loot.id, name: 'Healing potion', detail: `PICK UP · F TO HEAL UP TO ${HEAL.amount} HP`, kind: 'heal' };
   if (loot.kind === 'grenade') return { id: loot.id, name: 'Fragmentation grenade', detail: 'PICK UP · THROW WITH Q', kind: 'grenade' };
   if (loot.kind === 'ammo') return { id: loot.id, name: 'Ammunition', detail: `PICK UP · +${Math.max(0, loot.amount || 0)} RESERVE`, kind: 'ammo' };
   return null;
@@ -89,7 +92,7 @@ export function stormPresentation(state, player) {
     detail: outside ? `${Math.max(0, finite(storm.damagePerSecond))} HP / SEC · GET INSIDE` : `STAGE ${Math.max(1, finite(storm.stage) + 1)} · ${Math.round(radius)} M SAFE RADIUS` };
 }
 export function healthPresentation(player, previous = null, { now = 0, matchId = 0 } = {}) {
-  const maxHp = Number.isFinite(player?.maxHp) && player.maxHp > 0 ? player.maxHp : 100;
+  const maxHp = Number.isFinite(player?.maxHp) && player.maxHp > 0 ? player.maxHp : PLAYER_HEALTH;
   const hp = clamp(finite(player?.hp), 0, maxHp);
   const reset = !previous || previous.id !== player?.id || previous.matchId !== matchId || previous.maxHp !== maxHp;
   let trailFrom = reset ? hp : previous.trailFrom; let damageAt = reset ? -Infinity : previous.damageAt;
@@ -109,21 +112,24 @@ export function aimLookMultiplier(player, ads = {}) {
 }
 export function combatReadout(player, rules = {}) {
   const weapon = player?.hasGun ? WEAPONS[player.weapon] : null;
-  const sword = !weapon || player?.slot === 'sword'; const healing = player?.healTicks > 0;
-  let label = sword ? 'SWORD' : weapon.label, ammo = sword ? 'READY' : player.ammo;
+  const sword = !weapon || player?.slot === 'sword';
+  const blade = player?.meleeWeapon ? player : { ...player, meleeWeapon: 'knife' };
+  const bladeLabel = meleeLabel(blade), profile = meleeProfile(blade);
+  const healing = player?.healTicks > 0;
+  let label = sword ? bladeLabel : weapon.label, ammo = sword ? 'READY' : player.ammo;
   let status = sword ? player.hasGun ? 'LMB STRIKE · V GUN' : 'LMB STRIKE · FIND A GUN' : 'RMB AIM · R RELOAD';
   let progress = null;
   const melee = Math.max(finite(player?.meleeTicks), finite(player?.meleeCooldown));
-  if (sword && melee) { ammo = ({ startup: 'WINDUP', active: 'STRIKE' })[player.meleePhase] || 'RECOVER'; status = `${(melee / 120).toFixed(1)}S · COMMITTED ATTACK`; }
+  if (sword && melee) { ammo = ({ startup: 'WINDUP', active: 'STRIKE' })[player.meleePhase] || 'RECOVER'; status = `${(melee / 120).toFixed(1)}S · COMMITTED ATTACK`; progress = { remaining: melee, total: profile.startupTicks + profile.activeTicks + profile.recoveryTicks, label: `${bladeLabel === 'KNIFE' ? 'Knife' : 'Sword'} attack and recovery` }; }
   if (!sword && !player.ammo) status = player.reserve ? 'R TO RELOAD' : 'NO AMMUNITION';
   if (!sword && weapon.spinupTicks && player.spinTicks > 0 && player.spinTicks < weapon.spinupTicks) {
     status = 'HOLD FIRE · WINDING UP'; progress = { remaining: weapon.spinupTicks - player.spinTicks, total: weapon.spinupTicks, label: 'Weapon wind-up' };
   }
   if (!sword && player.reloadTicks > 0) { status = `RELOADING ${(player.reloadTicks / 120).toFixed(1)}S`; progress = { remaining: player.reloadTicks, total: weapon.reloadTicks, label: 'Reload' }; }
   if (!sword && player.shotCooldown > 0 && ['bolt', 'pump', 'burst'].includes(weapon.mode) && !player.reloadTicks) status = ({ bolt: 'CYCLING BOLT', pump: 'PUMPING', burst: 'BURST RECOVERY' })[weapon.mode];
-  if (healing) { label = 'HEALING POTION'; ammo = `+${Math.min(rules.HEAL?.amount || 40, Math.max(0, (player.maxHp || 100) - player.hp))}`; status = 'DRINKING · STAY IN COVER'; progress = { remaining: player.healTicks, total: rules.HEAL?.ticks || 240, label: 'Drinking healing potion' }; }
+  if (healing) { label = 'HEALING POTION'; ammo = `+${Math.min(rules.HEAL?.amount || HEAL.amount, Math.max(0, (player.maxHp || PLAYER_HEALTH) - player.hp))}`; status = 'DRINKING · STAY IN COVER'; progress = { remaining: player.healTicks, total: rules.HEAL?.ticks || 240, label: 'Drinking healing potion' }; }
   if (progress) progress.percent = clamp(100 - progress.remaining / progress.total * 100, 0, 100);
-  return { label, ammo, reserve: Math.max(0, finite(player?.reserve)), sword, healing, status, progress, inventory: weapon ? `${weapon.label} + SWORD` : 'SWORD ONLY · SCAVENGE A GUN', grenades: Math.max(0, finite(player?.grenades)), potions: Math.max(0, finite(player?.potions)) };
+  return { label, ammo, reserve: Math.max(0, finite(player?.reserve)), sword, healing, status, progress, inventory: weapon ? `${weapon.label} + ${bladeLabel}` : `${bladeLabel} ONLY · SCAVENGE A GUN`, grenades: Math.max(0, finite(player?.grenades)), potions: Math.max(0, finite(player?.potions)) };
 }
 export function confirmedHitGroups(events, localId) {
   const groups = new Map();
@@ -181,7 +187,7 @@ async function boot() {
   let paused = true, entered = false, fallback = false, touchMode = false, rightDrag = false, modalOpen = false, graphicsError = '', spectatorId = null;
   let destroyed = false, permanentError = false, reconnectTimer, reconnectAttempts = 0, frameId = null, lastFrameAt = 0, accumulator = 0, renderCount = 0;
   let heartbeat = null, lastTouchLookAt = performance.now(), lastHUDAt = 0, previousPhase = null, previousMatch = null;
-  let toastTimer, hitUntil = 0, damageUntil = 0, feedbackUntil = 0, hitKind = 'body', healthView = null, healthGain = 0, healthGainUntil = 0, lastCountdown = null;
+  let toastTimer, hitUntil = 0, damageFeedback = null, feedbackUntil = 0, hitKind = 'body', healthView = null, healthGain = 0, healthGainUntil = 0, lastCountdown = null;
   let rosterSignature = '', mapPlanId = '', mapSelf = null, zoneCircle = null, nextCircle = null, idleSignature = '';
   const keys = new Set(), pressedKeys = new Map(), mouse = { fire: false, aim: false };
   const touch = { actions: new Set(), move: { x: 0, y: 0 }, look: { x: 0, y: 0 } };
@@ -208,7 +214,7 @@ async function boot() {
       else if (player.hp >= player.maxHp) toast('Health is full. Save your potion.');
       else if (!player.grounded) toast('Land before drinking.');
     } else if (action === 'grenade' && !player.grenades) toast('No grenades. Scavenge one first.');
-    else if (action === 'swap' && !player.hasGun) toast('Sword equipped. Find a gun and press E to pick it up.');
+    else if (action === 'swap' && !player.hasGun) toast('Knife equipped. Find a gun and press E to pick it up.');
   }
   function refreshHeartbeat() {
     const needed = !destroyed && connected && !document.hidden && ['countdown', 'fight'].includes(state?.phase);
@@ -302,14 +308,14 @@ async function boot() {
     const living = aliveParticipants(state), placement = state?.placements?.find(item => item.playerId === playerId);
     $('spectator-hud').hidden = !local || local.alive || phase !== 'fight'; $('placement-label').textContent = placement ? `PLACED #${placement.place}` : 'ELIMINATED'; $('spectator-label').textContent = spectating ? `SPECTATING ${lookupName(viewed.id).toUpperCase()}` : 'NO SURVIVORS'; $('next-spectator').hidden = living.length < 2;
     $('pause-button').hidden = paused || !entered || !local?.alive || !['countdown', 'fight'].includes(phase); $('touch-controls').hidden = !touchMode || !entered || paused || !local?.alive || !['countdown', 'fight'].includes(phase);
-    for (const button of document.querySelectorAll('[data-royale-action]')) { const action = button.dataset.royaleAction; if (action === 'swap') { button.textContent = readout.sword && local?.hasGun ? 'GUN' : 'SWORD'; button.setAttribute('aria-pressed', String(readout.sword)); } if (action === 'aim') button.setAttribute('aria-pressed', String(!!local?.aiming)); }
+    for (const button of document.querySelectorAll('[data-royale-action]')) { const action = button.dataset.royaleAction; if (action === 'swap') { button.textContent = readout.sword && local?.hasGun ? 'GUN' : 'KNIFE'; button.setAttribute('aria-label', readout.sword && local?.hasGun ? 'Switch to scavenged gun' : 'Switch to small knife'); button.setAttribute('aria-pressed', String(readout.sword)); } if (action === 'aim') button.setAttribute('aria-pressed', String(!!local?.aiming)); }
     $('objective').textContent = phase === 'lobby' ? room.capacity === 2 ? 'Invite your rival. The host starts with both players here.' : `The host can start with 2–${room.capacity} players.` : phase === 'countdown' ? 'Random spawns. Scavenge a gun when the battle begins.' : phase === 'fight' ? local?.alive ? 'Scavenge supplies. Stay inside the zone. Be the last alive.' : 'One life spent. Watch the remaining survivors.' : 'Battle complete. The host can return everyone to the lobby.';
     let overlay = false, title = '', kicker = '', subtitle = '', enter = false;
     if (graphicsError) { overlay = true; kicker = 'GRAPHICS UNAVAILABLE'; title = 'The island could not render.'; subtitle = graphicsError; }
     else if (!connected) { overlay = true; kicker = 'CONNECTING TO THE HOST'; title = permanentError ? 'This room is unavailable.' : 'Waiting for the host.'; subtitle = permanentError ? 'Return to the shelf to create a room or join the next battle.' : 'Your controls are released while the connection recovers.'; }
     else if (phase === 'lobby') { overlay = true; kicker = `${state?.mapName || 'PRIVATE ISLAND'} / ${count} PLAYERS`; title = isHost ? count >= 2 ? 'Your rivals are here.' : 'Gather your rivals.' : 'Waiting for the host.'; subtitle = isHost ? count >= 2 ? count >= room.capacity ? 'Everyone is here. Start when you are ready.' : `Start with the players here, or invite more. This room holds up to ${room.capacity} players.` : 'Share your invite with at least one other player. You choose when the battle begins.' : `${lookupName(hostId)} starts the battle when everyone is here. You do not need to ready up.`; }
     else if (phase === 'matchEnd') { overlay = true; const winner = state.winnerId ?? state.winner; kicker = 'BATTLE COMPLETE'; title = winner == null ? 'No one left standing.' : winner === playerId ? 'You outlasted everyone.' : `${lookupName(winner)} survives.`; subtitle = `${placement ? `You placed #${placement.place}. ` : ''}${local?.kills || 0} eliminations. ${isHost ? 'Return to the lobby below to invite players and go again.' : 'The host can open the lobby for another battle.'}`; }
-    else if (local?.alive && (paused || !entered) && !modalOpen) { overlay = true; kicker = entered ? 'CONTROLS RELEASED' : 'YOUR ONE LIFE STARTS HERE'; title = entered ? 'Controls released.' : 'Enter the arena.'; subtitle = 'You start with a sword. Find a gun and supplies, then keep moving with the safe zone. The battle keeps running while controls are released.'; enter = true; }
+    else if (local?.alive && (paused || !entered) && !modalOpen) { overlay = true; kicker = entered ? 'CONTROLS RELEASED' : 'YOUR ONE LIFE STARTS HERE'; title = entered ? 'Controls released.' : 'Enter the arena.'; subtitle = 'You start with a small knife and 200 health. Find a gun and supplies, then keep moving with the safe zone. The battle keeps running while controls are released.'; enter = true; }
     $('game-overlay').hidden = !overlay; $('overlay-kicker').textContent = kicker; $('overlay-title').textContent = title; $('overlay-subtitle').textContent = subtitle; $('enter-arena').hidden = !enter; $('retry-graphics').hidden = !graphicsError; $('aim-note').hidden = !enter; $('aim-note').textContent = touchMode ? 'Move / Look pads. Hold AIM for sights.' : 'RMB aims. If capture is unavailable, hold RMB and drag to look.';
     $('phase-announcement').hidden = phase !== 'countdown' || overlay || modalOpen || !connected; $('countdown-number').textContent = Math.max(1, Math.ceil(finite(state?.phaseTicks) / 120)); renderRoster();
   }
@@ -319,7 +325,7 @@ async function boot() {
       const id = event.id ?? `${state?.tick}:${event.type}:${event.playerId ?? event.attackerId ?? ''}:${event.targetId ?? ''}`;
       if (eventSeen.has(id)) continue; eventSeen.add(id); eventOrder.push(id); fresh.push(event); if (eventOrder.length > 512) eventSeen.delete(eventOrder.shift());
       const source = event.shooterId ?? event.attackerId ?? event.playerId ?? event.ownerId, target = event.targetId;
-      if (event.type === 'damage' && event.damage > 0) { if (source === playerId && target !== playerId) { hitUntil = performance.now() + 150; hitKind = event.headshot ? 'headshot' : 'body'; } if (target === playerId) damageUntil = performance.now() + 230; }
+      if (event.type === 'damage' && event.damage > 0) { if (source === playerId && target !== playerId) { hitUntil = performance.now() + 150; hitKind = event.headshot ? 'headshot' : 'body'; } const incoming = incomingDamageFeedback(event, spectatorPlayer(state, playerId, spectatorId), state.players, { now: performance.now(), lifeKey: state.matchId, friendlyFire: true }); if (incoming) damageFeedback = incoming; }
       if (['kill', 'elimination', 'death'].includes(event.type)) {
         kills.push({ at: performance.now(), own: source === playerId && target !== playerId, text: `${source == null ? 'THE STORM' : source === target ? 'SELF FRAG' : lookupName(source)} ${event.headshot ? '[HS]' : '›'} ${lookupName(target)}` }); if (kills.length > 4) kills.shift();
       }
@@ -343,7 +349,7 @@ async function boot() {
     const camera = state.phase === 'lobby' ? { ...state.map.spawnPoints[0], alive: false, id: playerId, y: finite(state.map.spawnPoints[0]?.y) } : local?.alive ? predictedPlayer || local : viewed;
     const viewAim = local?.alive ? aim : cleanAim(camera?.yaw, camera?.pitch);
     renderer.render(rendered, { playerId, localId: playerId, localPlayer: predictedPlayer, viewPlayer: camera, yaw: viewAim.yaw, pitch: viewAim.pitch + finite(camera?.recoil), time: now }); renderCount++;
-    $('hit-marker').hidden = now >= hitUntil; $('hit-marker').dataset.kind = hitKind; $('damage-cue').hidden = now >= damageUntil; $('combat-feedback').hidden = now >= feedbackUntil;
+    $('hit-marker').hidden = now >= hitUntil; $('hit-marker').dataset.kind = hitKind; paintDamageFeedback($('damage-cue'), damageFeedbackPresentation(damageFeedback, camera, { now, lifeKey: state.matchId, yaw: viewAim.yaw, active: state.phase === 'fight' })); $('combat-feedback').hidden = now >= feedbackUntil;
     while (kills.length && now - kills[0].at > 6000) kills.shift(); const signature = kills.map(item => item.text).join('|');
     if ($('kill-feed').dataset.signature !== signature) { $('kill-feed').dataset.signature = signature; $('kill-feed').replaceChildren(...kills.map(kill => { const item = document.createElement('li'); item.textContent = kill.text; item.classList.toggle('own-kill', kill.own); return item; })); }
   }
@@ -368,9 +374,9 @@ async function boot() {
     hostId = message.hostId ?? next.hostId ?? hostId;
     roster = (Array.isArray(message.players) ? message.players : Object.values(message.players || {})).map((person, id) => person ? { ...person, id: person.id ?? id } : null);
     const local = ownPlayer(), fresh = previousMatch !== state.matchId || previousPhase === 'lobby' && state.phase !== 'lobby';
-    if (!old || predictedPlayer?.id !== playerId || fresh) { neutralize(); aim = cleanAim(local?.yaw, local?.pitch); pending = []; snapshots = []; spectatorId = null; accumulator = 0; renderer?.resetEffects(); healthView = null; if (fresh) { eventSeen.clear(); eventOrder.length = 0; kills.length = 0; hitUntil = damageUntil = feedbackUntil = 0; healthGainUntil = 0; lastCountdown = null; } sendInput(neutralInput(aim.yaw, aim.pitch), true); }
+    if (!old || predictedPlayer?.id !== playerId || fresh) { neutralize(); aim = cleanAim(local?.yaw, local?.pitch); pending = []; snapshots = []; spectatorId = null; accumulator = 0; renderer?.resetEffects(); healthView = null; damageFeedback = null; if (fresh) { eventSeen.clear(); eventOrder.length = 0; kills.length = 0; hitUntil = feedbackUntil = 0; damageFeedback = null; healthGainUntil = 0; lastCountdown = null; } sendInput(neutralInput(aim.yaw, aim.pitch), true); }
     if (previousPhase !== null && previousPhase !== state.phase) neutralize();
-    if (state.phase === 'lobby' && previousPhase !== 'lobby') { neutralize({ pause: true, unlock: true }); entered = false; fallback = false; healthView = null; snapshots = []; pending = []; audio.resetEvents(); }
+    if (state.phase === 'lobby' && previousPhase !== 'lobby') { neutralize({ pause: true, unlock: true }); entered = false; fallback = false; healthView = null; damageFeedback = null; snapshots = []; pending = []; audio.resetEvents(); }
     if (local && !local.alive && old?.players?.find(player => player.id === playerId)?.alive !== false) neutralize({ pause: true, unlock: true });
     if (state.phase === 'matchEnd' && previousPhase !== 'matchEnd') neutralize({ pause: true, unlock: true });
     const ackValue = message.acks?.[playerId], ack = typeof ackValue === 'number' ? ackValue : ackValue?.seq ?? -1;
@@ -403,7 +409,7 @@ async function boot() {
   }
   function openGuide() { modalOpen = true; neutralize({ pause: true, unlock: true }); $('guide-dialog').hidden = false; $('guide-button').setAttribute('aria-expanded', 'true'); $('close-guide').focus(); }
   function closeGuide() { $('guide-dialog').hidden = true; modalOpen = false; $('guide-button').setAttribute('aria-expanded', 'false'); updateUI(); $('guide-button').focus(); }
-  function updateKeyLabels() { $('move-keys').textContent = getKeyboardLayout().toUpperCase(); for (const label of document.querySelectorAll('[data-royale-key]')) label.textContent = displayKey(label.dataset.royaleKey); canvas.setAttribute('aria-label', `3D battle royale. ${getKeyboardLayout().toUpperCase()} or arrows move; mouse looks; left click shoots or strikes; right click aims; E picks up loot; V swaps sword and gun; ${displayKey('Q')} throws grenade; F heals; R reloads; Space jumps; Control crouches; Shift walks; Escape releases controls.`); }
+  function updateKeyLabels() { $('move-keys').textContent = getKeyboardLayout().toUpperCase(); for (const label of document.querySelectorAll('[data-royale-key]')) label.textContent = displayKey(label.dataset.royaleKey); canvas.setAttribute('aria-label', `3D battle royale. ${getKeyboardLayout().toUpperCase()} or arrows move; mouse looks; left click shoots or strikes; right click aims; E picks up loot; V swaps knife and gun; ${displayKey('Q')} throws grenade; F heals; R reloads; Space jumps; Control crouches; Shift walks; Escape releases controls.`); }
   const unsubscribeLayout = subscribeKeyboardLayout(() => { neutralize({ pause: entered, unlock: true }); updateKeyLabels(); }); updateKeyLabels();
   listen(window, 'keydown', event => { if (event.defaultPrevented || event.isComposing || event.altKey || event.metaKey) return; if (event.key === 'Escape') { if (modalOpen) closeGuide(); else if (entered) neutralize({ pause: true, unlock: true }); return; } if (event.key.toLowerCase() === 'p' && !isFormTarget(event.target) && entered) { event.preventDefault(); neutralize({ pause: true, unlock: true }); return; } if (!controlsActive() || isFormTarget(event.target)) return; const action = controlForKey(event); if (!action) return; event.preventDefault(); const id = event.code || event.key; if (pressedKeys.has(id)) return; pressedKeys.set(id, action); keys.add(action); utilityFeedback(action); sendInput(currentInput(), true); });
   listen(window, 'keyup', event => { const id = event.code || event.key, action = pressedKeys.get(id); pressedKeys.delete(id); if (action && ![...pressedKeys.values()].includes(action)) keys.delete(action); if (action) { sendInput(currentInput(), true); if (!isFormTarget(event.target)) event.preventDefault(); } });
@@ -449,7 +455,7 @@ async function boot() {
   listen(window, 'pagehide', destroy);
   const inspect = () => { const { map, ...snapshot } = state || {}; return clone({ state: state ? snapshot : null, players: roster, playerId, hostId, input: currentInput(), predictedPlayer, connected, controls: { pointerLocked: pointerLocked(), fallback, touch: touchMode, paused, entered, modalOpen }, queueLength: pending.length, renderCount, renderStats: renderer?.stats || null, graphicsError, spectatorId }); };
   window.SemagRoyale = Object.freeze({ getState: inspect, inspect }); updateUI();
-  try { const [rules, visual] = await Promise.all([import('./voxel-royale-engine.js'), import('./voxel-renderer.js')]); if (destroyed) return; engine = { ...rules, predictLocalMovement, traceShot, ADS, HEAL }; renderer = new visual.VoxelRenderer(canvas); renderer.resize(); } catch (cause) { graphicsError = cause?.message || 'This game requires WebGL. Enable hardware acceleration and reload graphics.'; error(graphicsError); updateUI(); return; }
+  try { const [rules, visual] = await Promise.all([import('./voxel-royale-engine.js'), import('./voxel-renderer.js')]); if (destroyed) return; engine = { ...rules, predictLocalMovement, traceShot, ADS, HEAL, PLAYER_HEALTH }; renderer = new visual.VoxelRenderer(canvas); renderer.resize(); } catch (cause) { graphicsError = cause?.message || 'This game requires WebGL. Enable hardware acceleration and reload graphics.'; error(graphicsError); updateUI(); return; }
   connect();
 }
 if (typeof document !== 'undefined' && document.querySelector('.royale-app') && document.getElementById('arena')) boot().catch(cause => { const banner = document.getElementById('error-banner'); banner.hidden = false; banner.textContent = `The game could not start: ${cause.message}. Reload to try again.`; });

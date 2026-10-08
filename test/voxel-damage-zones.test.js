@@ -60,7 +60,7 @@ test('ground-level leg aim still stops at the first real cover or allied silhoue
   const hit = contact(allied.state, allied.target, .25);
   assert.equal(hit.kind, 'leg'); assert.equal(hit.playerId, 1);
   ticks(allied.state, 1, { 0: { fire: true, pitch: Math.atan2(.25 - WORLD.eyeHeight, 2) } });
-  assert.equal(allied.state.players[1].hp, 100); assert.equal(allied.target.hp, 100);
+  assert.equal(allied.state.players[1].hp, 200); assert.equal(allied.target.hp, 200);
   assert.equal(allied.state.events.findLast(event => event.type === 'shot').damage, 0);
 });
 
@@ -72,22 +72,28 @@ test('all nine loadouts apply reduced leg damage through real gun or ballistic c
     ticks(state, 18, { 0: { aim: true, pitch } });
     ticks(state, WEAPONS[id].spinupTicks || 1, { 0: { aim: true, fire: true, pitch } });
     if (WEAPONS[id].projectile) {
-      assert.equal(target.hp, 100, `${id} damage must wait for flight`);
+      assert.equal(target.hp, 200, `${id} damage must wait for flight`);
       ticks(state, 14, { 0: { aim: true, pitch } });
     }
     const hit = state.events.findLast(event => event.type === (WEAPONS[id].projectile ? 'boltHit' : 'shot') && (event.pellet ?? 0) === 0);
     assert.equal(hit.hitKind, 'leg', id); assert.equal(hit.damage, weaponDamage(id, 'leg', 4), id);
     const damage = state.events.filter(event => event.type === 'damage' && event.targetId === target.id);
     assert.ok(damage.length > 0, id);
+    for (const event of damage) {
+      assert.ok([event.hitX, event.hitY, event.hitZ, event.dx, event.dy, event.dz].every(Number.isFinite), `${id}: confirmed feedback carries its actual contact and direction`);
+      assert.ok(Math.abs(Math.hypot(event.dx, event.dy, event.dz) - 1) < 1e-8, id);
+      assert.ok(Math.abs(event.hitX - target.x) <= .29 + 1e-8 && Math.abs(event.hitZ - target.z) <= .29 + 1e-8, id);
+      assert.ok(event.hitY >= target.y && event.hitY <= target.y + WORLD.standHeight, id);
+    }
     // The shotgun's real cone may also catch the lower torso at the near face.
     assert.ok(damage.every(event => (event.hitKind === 'leg' || (WEAPONS[id].pellets && event.hitKind === 'body')) && !event.headshot), id);
-    assert.equal(target.hp, 100 - damage.reduce((sum, event) => sum + event.damage, 0), id);
+    assert.equal(target.hp, 200 - damage.reduce((sum, event) => sum + event.damage, 0), id);
     assert.equal(shooter.shots, 1, `${id}: pellets or flight must not invent extra trigger reports`);
   }
 });
 
-test('a scoped sniper leg hit leaves 30 HP while torso and head retain their lethal damage', () => {
-  for (const [relativeY, expectedHp, kind] of [[.25, 30, 'leg'], [.9, 0, 'body'], [1.62, 0, 'head']]) {
+test('a scoped sniper preserves leg, torso and head damage against the larger starting health pool', () => {
+  for (const [relativeY, expectedHp, kind] of [[.25, 130, 'leg'], [.9, 100, 'body'], [1.62, 50, 'head']]) {
     const { state, target } = lane({ weapon: 'sniper' });
     const pitch = Math.atan2(relativeY - WORLD.eyeHeight, 4);
     ticks(state, 18, { 0: { aim: true, pitch } }); ticks(state, 1, { 0: { aim: true, fire: true, pitch } });
@@ -124,7 +130,7 @@ test('a sword contacting an elevated leg keeps its fixed 55 damage and body feed
   const footY = damage.y - WORLD.eyeHeight;
   assert.ok(contact.y >= footY && contact.y < footY + .55, 'the physical contact is inside the elevated leg volume');
   assert.equal(damage.damage, 55); assert.equal(damage.hitKind, 'body'); assert.equal(damage.attack, 'sword');
-  assert.equal(target.hp, 45); assert.equal(state.events.filter(event => event.type === 'damage').length, 1);
+  assert.equal(target.hp, 145); assert.equal(state.events.filter(event => event.type === 'damage').length, 1);
 });
 
 test('stats report exact zones, realistic burst cadence, pellet units, falloff and reload', () => {
