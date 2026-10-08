@@ -1,5 +1,20 @@
 /** Shared Voxel Breach loadouts. Distances are metres; durations are 120 Hz ticks. */
+// Presentation follows the same immutable catalog as authoritative damage.
+// Durations are 120 Hz ticks, widths are world metres; audio durations are seconds.
+const PROFILES = Object.freeze({
+  carbine: { legMultiplier: .75, effects: { tracerColor: '#ffe0a0', muzzleColor: '#ffd38c', impactColor: '#ffcc8c', tracerWidth: .016, tracerTicks: 15, muzzleTicks: 5, muzzleSize: 1, muzzleStrength: .95, impactStrength: 1, kickStrength: .8, kickTicks: 13 }, sound: { noiseDuration: .07, noiseVolume: .2, frequency: 170, toneDuration: .08, toneVolume: .09, wave: 'triangle', lowpass: 3400 } },
+  smg: { legMultiplier: .8, effects: { tracerColor: '#fff0bf', muzzleColor: '#ffe0a6', impactColor: '#f9d693', tracerWidth: .012, tracerTicks: 12, muzzleTicks: 3, muzzleSize: .72, muzzleStrength: .72, impactStrength: .65, kickStrength: .45, kickTicks: 9 }, sound: { noiseDuration: .045, noiseVolume: .15, frequency: 230, toneDuration: .05, toneVolume: .065, wave: 'triangle', lowpass: 4500 } },
+  marksman: { legMultiplier: .75, effects: { tracerColor: '#edddff', muzzleColor: '#fff0be', impactColor: '#e6c9ff', tracerWidth: .021, tracerTicks: 21, muzzleTicks: 7, muzzleSize: 1.15, muzzleStrength: 1.1, impactStrength: 1.25, kickStrength: 1.25, kickTicks: 22 }, sound: { noiseDuration: .11, noiseVolume: .23, frequency: 118, toneDuration: .12, toneVolume: .13, wave: 'triangle', lowpass: 2800 } },
+  pistol: { legMultiplier: .85, effects: { tracerColor: '#d8efff', muzzleColor: '#ffe9b8', impactColor: '#b8dfff', tracerWidth: .014, tracerTicks: 13, muzzleTicks: 4, muzzleSize: .7, muzzleStrength: .75, impactStrength: .8, kickStrength: .9, kickTicks: 16 }, sound: { noiseDuration: .065, noiseVolume: .17, frequency: 270, toneDuration: .07, toneVolume: .085, wave: 'triangle', lowpass: 3900 } },
+  shotgun: { legMultiplier: .7, effects: { tracerColor: '#ffd6a0', muzzleColor: '#ffb969', impactColor: '#eab480', tracerWidth: .01, tracerTicks: 12, muzzleTicks: 8, muzzleSize: 1.42, muzzleStrength: 1.3, impactStrength: .65, kickStrength: 1.65, kickTicks: 30 }, sound: { noiseDuration: .17, noiseVolume: .29, frequency: 92, toneDuration: .16, toneVolume: .16, wave: 'triangle', lowpass: 2100 } },
+  burst: { legMultiplier: .78, effects: { tracerColor: '#ffd0b0', muzzleColor: '#ffcf8c', impactColor: '#edbba0', tracerWidth: .015, tracerTicks: 15, muzzleTicks: 4, muzzleSize: .95, muzzleStrength: .88, impactStrength: .92, kickStrength: .7, kickTicks: 12 }, sound: { noiseDuration: .06, noiseVolume: .19, frequency: 195, toneDuration: .065, toneVolume: .095, wave: 'triangle', lowpass: 3600 } },
+  sniper: { legMultiplier: .7, effects: { tracerColor: '#f2d5ff', muzzleColor: '#fff2c9', impactColor: '#e8baff', tracerWidth: .03, tracerTicks: 26, muzzleTicks: 10, muzzleSize: 1.65, muzzleStrength: 1.45, impactStrength: 1.6, kickStrength: 1.95, kickTicks: 39 }, sound: { noiseDuration: .2, noiseVolume: .3, frequency: 72, toneDuration: .23, toneVolume: .18, wave: 'triangle', lowpass: 2200 } },
+  lmg: { legMultiplier: .8, effects: { tracerColor: '#f1efb1', muzzleColor: '#ffdd94', impactColor: '#d5d6a4', tracerWidth: .019, tracerTicks: 18, muzzleTicks: 6, muzzleSize: 1.28, muzzleStrength: 1.13, impactStrength: 1.05, kickStrength: 1.05, kickTicks: 14 }, sound: { noiseDuration: .09, noiseVolume: .22, frequency: 135, toneDuration: .095, toneVolume: .12, wave: 'triangle', lowpass: 2700 } },
+  crossbow: { legMultiplier: .8, effects: { tracerColor: '#a7e6e9', muzzleColor: '#a7e6e9', impactColor: '#9ad4d6', tracerWidth: .012, tracerTicks: 0, muzzleTicks: 0, muzzleSize: 0, muzzleStrength: 0, impactStrength: .7, kickStrength: .3, kickTicks: 18 }, sound: { noiseDuration: .09, noiseVolume: .075, frequency: 410, toneDuration: .115, toneVolume: .06, wave: 'sine', lowpass: 1900 } },
+});
 const freezeWeapon = weapon => Object.freeze({ adsFovRatio: 54 / 70, adsSightHeight: .152, ...weapon,
+  legMultiplier: PROFILES[weapon.id].legMultiplier,
+  effects: Object.freeze(PROFILES[weapon.id].effects), sound: Object.freeze(PROFILES[weapon.id].sound),
   ...(weapon.falloff ? { falloff: Object.freeze(weapon.falloff) } : {}) });
 
 export const WEAPONS = Object.freeze({
@@ -27,7 +42,8 @@ export function weaponDamage(weaponOrId, hitKind = 'body', distance = 0) {
   if (!weapon || !Number.isFinite(weapon.damage) || weapon.damage <= 0) return 0;
   const falloff = weapon.falloff;
   const multiplier = falloff ? clamp(1 - Math.max(0, finite(distance) - falloff.start) / falloff.span, falloff.minimum, 1) : 1;
-  return Math.round(weapon.damage * (hitKind === 'head' ? finite(weapon.headMultiplier, 1) : 1) * multiplier);
+  const zone = hitKind === 'head' ? finite(weapon.headMultiplier, 1) : hitKind === 'leg' ? finite(weapon.legMultiplier, .75) : 1;
+  return Math.round(weapon.damage * zone * multiplier);
 }
 
 /** Indexed shot geometry consumes this angular cone; there is no random client spread. */
@@ -49,4 +65,29 @@ export function weaponAimFovRatio(weaponOrId, rules = {}) {
   const configured = weapon?.scoped ? rules.scopedFovRatio : rules.fovRatio;
   const ratio = finite(weapon?.adsFovRatio, standard) * finite(configured, standard) / standard;
   return clamp(ratio, .2, 1);
+}
+
+
+/** Loadout comparison describes actual damage and cadence, not nominal pellet DPS. */
+export function weaponStats(weaponOrId) {
+  const weapon = resolveWeapon(weaponOrId);
+  if (!weapon || !Number.isFinite(weapon.cooldown) || weapon.cooldown <= 0) return null;
+  const mode = weapon.mode || 'auto', pellets = weapon.pellets || 1;
+  const cycleTicks = mode === 'burst'
+    ? (weapon.burstCount - 1) * weapon.burstInterval + weapon.cooldown
+    : weapon.projectile ? Math.max(weapon.cooldown, weapon.reloadTicks) : weapon.cooldown;
+  const shotsPerSecond = 120 * (mode === 'burst' ? weapon.burstCount : 1) / cycleTicks;
+  const cadence = `${Number(shotsPerSecond.toFixed(1))} ${pellets > 1 ? 'shells' : 'shots'}/s`;
+  const fireRateLabel = mode === 'burst' ? `${weapon.burstCount}-round burst · ${cadence}` : mode === 'semi' || mode === 'pump' || mode === 'bolt' ? `${cadence} · per press` : cadence;
+  return Object.freeze({
+    body: weaponDamage(weapon, 'body'), head: weaponDamage(weapon, 'head'), leg: weaponDamage(weapon, 'leg'),
+    pellets, damagePerPellet: pellets > 1, shotsPerSecond, fireRateLabel, mode,
+    reloadSeconds: weapon.reloadTicks / 120, cycleSeconds: cycleTicks / 120,
+    windupSeconds: (weapon.spinupTicks || 0) / 120,
+    effectiveRange: weapon.range, falloffStart: weapon.falloff?.start ?? null,
+    falloffEnd: weapon.falloff ? weapon.falloff.start + weapon.falloff.span * (1 - weapon.falloff.minimum) : null,
+    falloffMinimum: weapon.falloff?.minimum ?? 1,
+    projectileSpeed: weapon.projectile ? weapon.projectileSpeed : null,
+    projectileGravity: weapon.projectile ? weapon.projectileGravity : null,
+  });
 }

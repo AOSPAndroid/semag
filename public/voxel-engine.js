@@ -238,8 +238,14 @@ export function rayBox(origin, direction, rect, maxDistance = Infinity) {
 }
 export function aimDirection(yaw, pitch) { const c = Math.cos(pitch); return { x: Math.sin(yaw) * c, y: Math.sin(pitch), z: -Math.cos(yaw) * c }; }
 function playerBoxes(f) {
-  const h = playerHeight(f);
-  return [{ kind: 'head', x: f.x - .22, y: f.y + h - .32, z: f.z - .22, w: .44, h: .32, d: .44 }, { kind: 'body', x: f.x - .29, y: f.y, z: f.z - .29, w: .58, h: h - .32, d: .58 }];
+  const h = playerHeight(f), legHeight = f.crouching ? .3 : .55;
+  // Split the original body silhouette without growing it. Head wins shared
+  // faces, then torso; only contacts below the knee boundary count as legs.
+  return [
+    { kind: 'head', x: f.x - .22, y: f.y + h - .32, z: f.z - .22, w: .44, h: .32, d: .44 },
+    { kind: 'body', x: f.x - .29, y: f.y + legHeight, z: f.z - .29, w: .58, h: h - .32 - legHeight, d: .58 },
+    { kind: 'leg', x: f.x - .29, y: f.y, z: f.z - .29, w: .58, h: legHeight, d: .58 },
+  ];
 }
 /** Earliest real 3D contact, including allied bodies (which block but never take damage). */
 export function traceShot(state, playerId, origin, direction, maxDistance = 120) {
@@ -323,7 +329,7 @@ function tickMelee(state, f, input, pendingDamage) {
     const hit = traceShot(state, f.id, origin, direction, centerDistance + .01);
     if (hit.playerId !== target.id) continue;
     f.meleeHitIds.push(target.id);
-    pendingDamage.push({ playerId: f.id, targetId: target.id, damage: MELEE.damage, headshot: false, attack: 'sword', weapon: 'sword' });
+    pendingDamage.push({ playerId: f.id, targetId: target.id, damage: MELEE.damage, hitKind: 'body', headshot: false, attack: 'sword', weapon: 'sword' });
     emit(state, 'meleeHit', { playerId: f.id, targetId: target.id, weapon: 'sword', damage: MELEE.damage, x: hit.x, y: hit.y, z: hit.z });
   }
 }
@@ -348,7 +354,7 @@ function fireRound(state, f, weapon, pendingDamage) {
     let damage = 0;
     if (hit.playerId !== null && state.players[hit.playerId].team !== f.team) {
       damage = weaponDamage(weapon, hit.kind, hit.distance);
-      pendingDamage.push({ playerId: f.id, targetId: hit.playerId, damage, headshot: hit.kind === 'head', attack: 'gun', weapon: f.weapon });
+      pendingDamage.push({ playerId: f.id, targetId: hit.playerId, damage, hitKind: hit.kind, headshot: hit.kind === 'head', attack: 'gun', weapon: f.weapon });
     }
     emit(state, 'shot', { playerId: f.id, targetId: hit.playerId, weapon: f.weapon, pellet, pelletCount, x: origin.x, y: origin.y, z: origin.z, dx: direction.x, dy: direction.y, dz: direction.z, hitX: hit.x, hitY: hit.y, hitZ: hit.z, hitKind: hit.kind, colliderId: hit.colliderId, damage });
   }
@@ -395,7 +401,7 @@ function applyDamage(state, pending) {
     f.alive = false; f.deaths++; f.vx = f.vy = f.vz = 0; f.jumpBufferTicks = 0; f.reloadTicks = 0; f.burstRemaining = 0; f.spinTicks = 0; f.aiming = false; f.aimTicks = 0; f.healing = false; f.healTicks = 0; f.grenadeThrowTicks = 0; clearMelee(f); f.interaction = null; f.interactTicks = 0;
     const killer = lethalHits.get(f.id), attacker = killer && state.players[killer.playerId];
     if (attacker && attacker.id !== f.id && attacker.team !== f.team) attacker.kills++;
-    emit(state, 'kill', { playerId: killer?.playerId ?? null, targetId: f.id, headshot: killer?.headshot || false, attack: killer?.attack || 'gun', weapon: killer?.weapon ?? (killer?.attack === 'grenade' ? 'grenade' : null), x: f.x, y: f.y, z: f.z });
+    emit(state, 'kill', { playerId: killer?.playerId ?? null, targetId: f.id, hitKind: killer?.hitKind ?? 'body', headshot: killer?.headshot || false, attack: killer?.attack || 'gun', weapon: killer?.weapon ?? (killer?.attack === 'grenade' ? 'grenade' : null), x: f.x, y: f.y, z: f.z });
     if (state.bomb.status === 'carried' && state.bomb.carrierId === f.id) { Object.assign(state.bomb, { status: 'dropped', carrierId: null, x: f.x, y: f.y, z: f.z, plantPlayerId: null, plantTicks: 0 }); emit(state, 'bombDrop', { playerId: f.id, x: f.x, y: f.y, z: f.z }); }
   }
 }

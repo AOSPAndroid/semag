@@ -67,3 +67,36 @@
 .map-climb-step{fill:#24372c;stroke:#f0d29a;stroke-width:.34}.map-player.elevated-player{stroke:#ffe1a0;stroke-width:.7}.map-caption b{font:9px monospace;color:#f0d29a}
 @media(max-width:600px){.viewport:has(.arena-loadouts:not([hidden])){min-height:430px}.position-status{font-size:6px;letter-spacing:.3px}.phase-announcement>small{line-height:1.8}}
 @media(max-width:350px){.viewport:has(.arena-loadouts:not([hidden])){min-height:400px}.arena-loadouts button{min-height:45px}}
+
+/* Tactical health: immediate HP, a readable recent-damage trail, and clear team context. */
+.health-column{max-width:220px}.health-readout{width:210px;padding:10px 14px 9px;border:1px solid #809c8e;border-bottom:3px solid #b9edda;background:#0c1917ed;box-shadow:0 2px 8px #0004}
+.health-readout>span{font:9px monospace;letter-spacing:1.25px;color:#d5ebe2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.health-readout .health-numbers{display:flex;align-items:baseline;gap:7px;height:auto;background:none;margin:3px 0 7px}
+.health-numbers strong{font:bold 38px monospace;line-height:1;color:#f4fffb}.health-numbers small{font:12px monospace;color:#aec9be}.health-numbers b{margin-left:auto;font:11px monospace;color:#aeefc0;white-space:nowrap}
+.health-readout .health-meter{height:12px;position:relative;background:#233d35;border:1px solid #637a6d;overflow:hidden}
+.health-meter i{position:absolute;left:0;top:0;height:100%;width:100%;display:block}.health-meter .health-trail{background:#dfad6c}.health-meter .health-fill{background:#b9edda}
+.health-segments{position:absolute;inset:0;background:repeating-linear-gradient(90deg,transparent 0,transparent calc(10% - 1px),#0c1917 10%);pointer-events:none}
+.health-status{display:block;margin-top:6px;font:8px monospace;letter-spacing:.6px;color:#abc7ba}.health-readout.low-health{border-color:#eda887;background:#2a1713ed}.health-readout.low-health .health-fill{background:#ffb392}.health-readout.low-health .health-status{color:#ffbca3}.health-readout.is-spectating{border-color:var(--blue)}
+.roster-health{display:block;width:100%;height:4px;background:#14241c;position:relative;overflow:hidden}.roster-health i{display:block;height:100%;background:#b9edda}.roster-slot small b{color:#c6e6d5;font-weight:normal}
+.weapon-comparison{margin-top:18px;padding:18px;background:#11231c;border:1px solid #456052;display:grid;grid-template-columns:1.15fr .9fr 1fr;gap:20px;min-width:0}.comparison-title h3{margin:7px 0 6px;font-size:18px;letter-spacing:-.4px}.comparison-title p{font-size:11px;color:#b8caba;line-height:1.5;margin:0}.comparison-damage>span{font:8px monospace;color:#aacabb;letter-spacing:.6px}.comparison-damage dl{display:flex;gap:20px;margin:12px 0 0}.comparison-damage dl>div{flex:1}.comparison-damage dt{font:8px monospace;color:#9db3a5}.comparison-damage dd{font:bold 26px monospace;margin:4px 0 0;color:#f7e8be}.comparison-details p{margin:0 0 6px;font:9px monospace;color:#abc3b4;line-height:1.45}.comparison-details p:has(span){display:flex;justify-content:space-between;gap:12px}.comparison-details span{font-size:8px;color:#91aa9b}.comparison-details strong{font-weight:normal;color:#e9f2df;text-align:right}
+@media(max-width:850px){.weapon-comparison{grid-template-columns:1fr 1fr;gap:16px}.comparison-title{grid-column:1/-1}}
+@media(max-width:600px){.health-column{max-width:132px}.health-readout{width:130px;padding:7px 9px 6px}.health-readout>span{font-size:7px;letter-spacing:.5px}.health-readout .health-numbers{gap:4px;margin:3px 0 6px}.health-numbers strong{font-size:30px}.health-numbers small{font-size:9px}.health-numbers b{font-size:8px}.health-readout .health-meter{height:10px}.health-status{font-size:6px;letter-spacing:.05px}.spectator-hud{bottom:107px}.weapon-comparison{padding:14px;gap:14px 12px}.comparison-title h3{font-size:16px}.comparison-title p{font-size:10px}.comparison-damage>span{font-size:7px;letter-spacing:0;display:block;line-height:1.5}.comparison-damage dl{gap:12px;margin-top:10px}.comparison-damage dd{font-size:22px}.comparison-details p{font-size:8px}.comparison-details span{font-size:7px}}
+@media(max-width:350px){.health-column{max-width:119px}.health-readout{width:118px;padding:7px 8px 6px}.health-numbers strong{font-size:29px}.health-numbers b{font-size:7px}.health-status{font-size:6px;letter-spacing:0}.weapon-comparison{grid-template-columns:1fr;padding:12px}.comparison-title{grid-column:auto}.comparison-damage dl{max-width:210px}.comparison-details p{font-size:9px}.spectator-hud{bottom:105px}}
+@media(prefers-reduced-motion:reduce){.health-meter i{transition:none!important}.health-gain{animation:none!important}}
+
+.health-column{width:210px}.health-column .health-readout{width:100%}
+.overlay-card .arena-weapon-stats{font:9px monospace;line-height:1.7;letter-spacing:.1px;color:#e5c99b;background:#0b1b15;padding:8px 10px;border:1px solid #39584a;margin:8px 0 12px}
+@media(max-width:600px){.health-column{width:130px}.health-column .health-readout{width:100%}.overlay-card .arena-weapon-stats{font-size:7px;line-height:1.6;padding:6px 7px;margin:5px 0 9px}}
+@media(max-width:350px){.health-column{width:118px}.health-column .health-readout{width:100%}}
+
+.squad-health{position:absolute;top:42px;right:18px;width:154px;display:grid;gap:4px;pointer-events:none}.squad-health-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 8px;padding:6px 8px;background:#10251deb;border:1px solid #577161;font:8px monospace;color:#d7e9de}.squad-health-row>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.squad-health-row>b{font-size:8px;color:#c9f0dd}.squad-health-row>i{grid-column:1/-1;display:block;height:3px;background:#30483a;font-style:normal}.squad-health-row em{display:block;height:100%;background:#b9edda}.squad-health-row.low{border-color:#bd8065}.squad-health-row.low>b{color:#ffd0ad}.squad-health-row.low em{background:#f0aa85}.squad-health-row.eliminated{opacity:.65}.viewport:has(.squad-health:not([hidden])) .kill-feed{top:120px}
+@media(max-width:600px){.squad-health{top:110px;right:10px;width:103px;gap:3px}.squad-health-row{padding:4px 5px;gap:3px 5px;font-size:7px}.squad-health-row>b{font-size:7px}.viewport:has(.squad-health:not([hidden])) .kill-feed{top:174px;max-width:160px}}
+
+/* On small screens, the watched player's card already identifies the camera. */
+@media(max-width:600px){
+  .viewport:has(.health-readout.is-spectating) .spectator-hud{bottom:14px;width:44px;max-width:44px;padding:0;gap:0;background:none}
+  .viewport:has(.health-readout.is-spectating) .spectator-hud>span{display:none}
+  .viewport:has(.health-readout.is-spectating) .spectator-hud:has(#next-spectator[hidden]){display:none}
+  .viewport:has(.health-readout.is-spectating) #next-spectator{width:44px;height:44px;min-width:44px;padding:0;font-size:0}
+  .viewport:has(.health-readout.is-spectating) #next-spectator::after{content:'→';font-size:20px;line-height:1}
+}

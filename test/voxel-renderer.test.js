@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import test from 'node:test';
 import { MAPS } from '../public/voxel-maps.js';
 import { WEAPONS } from '../public/voxel-weapons.js';
-import { mapMeshes, surfaceBelow, VoxelRenderer } from '../public/voxel-renderer.js';
+import { mapMeshes, surfaceBelow, particlePosition, VoxelRenderer } from '../public/voxel-renderer.js';
 
 const pointVertices = array => {
   const result = [];
@@ -108,6 +108,111 @@ test('ballistic events produce impacts without an instantaneous shot tracer', ()
   VoxelRenderer.prototype._events.call(renderer, { phase: 'fight', tick: 21, events: [{ id: 1, type: 'boltLaunch', tick: 20, playerId: 0, weapon: 'crossbow', x: 0, y: 1.6, z: 0 }, { id: 2, type: 'boltHit', tick: 21, playerId: 0, hitKind: 'wall', x: 0, y: 1.6, z: -4, nx: 0, ny: 0, nz: 1 }] }, 1000, 0);
   assert.equal(renderer.tracers.length, 0);
   assert.equal(renderer.localShot.weapon, 'crossbow');
-  assert.equal(renderer.particles.length, 5);
+  assert.equal(renderer.particles.length, 4, 'a quiet bolt produces fewer fragments than a rifle');
   assert.ok(renderer.particles.every(particle => particle.cover));
+});
+
+const effectRenderer = () => ({ eventIds: new Set(), eventQueue: [], tracers: [], particles: [], localShot: null });
+const processEffects = (renderer, events, time = 1000, map = MAPS.courtyard) => VoxelRenderer.prototype._events.call(renderer, { phase: 'fight', tick: 21, map, events: events.map(event => ({ tick: 21, ...event })) }, time, 0);
+const shot = (weapon, patch = {}) => ({ id: 1, type: 'shot', weapon, playerId: 0, x: 0, y: 1.6, z: 4, dx: 0, dy: 0, dz: -1, hitX: 0, hitY: 1.6, hitZ: 0, hitKind: 'none', ...patch });
+
+test('weapon tracers use distinct profiles and end at the authoritative contact', () => {
+  const signatures = new Set();
+  for (const weapon of Object.values(WEAPONS)) {
+    const renderer = effectRenderer();
+    processEffects(renderer, [shot(weapon.id)]);
+    if (weapon.projectile) {
+      assert.equal(renderer.tracers.length, 0, 'a malformed crossbow shot cannot paint a hitscan beam');
+      continue;
+    }
+    const tracer = renderer.tracers[0];
+    assert.deepEqual(tracer.end, [0, 1.6, 0], 'effect never extends beyond the server collision');
+    assert.equal(tracer.color, weapon.effects.tracerColor);
+    assert.equal(tracer.width, weapon.effects.tracerWidth);
+    signatures.add([tracer.color, tracer.width, tracer.life].join(':'));
+    processEffects(renderer, [shot(weapon.id)], 1001);
+    assert.equal(renderer.tracers.length, 1, 'repeated snapshots do not repeat a report');
+    processEffects(renderer, [], 1000 + weapon.effects.tracerTicks * 1000 / 120 + 1);
+    assert.equal(renderer.tracers.length, 0, 'beam disappears after its weapon-specific duration');
+  }
+  assert.equal(signatures.size, 8);
+});
+
+test('each gun has a finite distinct firing model; switching weapons clears stale flashes', () => {
+  const signatures = new Set();
+  for (const weapon of Object.values(WEAPONS)) {
+    const fired = viewModel(weapon.id, {}, { localShot: { born: 990, weapon: weapon.id } });
+    assert.ok(fired.every(Number.isFinite));
+    assert.ok(fired.length / 10 < 3000);
+    signatures.add(digest(fired));
+    const staleShot = viewModel(weapon.id, {}, { localShot: { born: 990, weapon: weapon.id === 'pistol' ? 'smg' : 'pistol' } });
+    assert.equal(digest(staleShot), digest(viewModel(weapon.id)), `${weapon.id}: a previous weapon's flash cannot leak into the new model`);
+    if (weapon.projectile) assert.equal(fired.length, viewModel(weapon.id).length);
+    else assert.equal(fired.length - viewModel(weapon.id).length, 72 * 10, 'exactly one two-part flash per report');
+  }
+  assert.equal(signatures.size, 9);
+  const smgLate = viewModel('smg', {}, { localShot: { born: 960, weapon: 'smg' } });
+  const sniperLate = viewModel('sniper', {}, { localShot: { born: 960, weapon: 'sniper' } });
+  assert.equal(smgLate.length, viewModel('smg').length, 'SMG flash is already gone');
+  assert.ok(sniperLate.length > viewModel('sniper').length, 'the heavy sniper report is still visible');
+});
+
+test('shotgun pellet snapshots create one local kick rather than eight flashes', () => {
+  const renderer = effectRenderer();
+  const pellets = Array.from({ length: 8 }, (_, pellet) => shot('shotgun', { id: pellet + 1, pellet, pelletCount: 8 }));
+  processEffects(renderer, [pellets[0]], 1000);
+  processEffects(renderer, pellets.slice(1), 1010);
+  assert.equal(renderer.localShot.born, 1000);
+  assert.equal(renderer.tracers.length, 8, 'the individual collision rays remain visible');
+});
+
+test('metal, wood, stone and damage zones create distinct honest contact fragments', () => {
+  const signatures = new Set();
+  for (const material of ['wood', 'metal', 'stone']) {
+    const collider = { id: 'surface', x: -1, y: 0, z: -1, w: 2, h: 3, d: 1, material };
+    const renderer = effectRenderer();
+    processEffects(renderer, [shot('carbine', { hitKind: 'wall', colliderId: 'surface' })], 1000, { colliders: [collider] });
+    assert.ok(renderer.particles.length > 0);
+    assert.ok(renderer.particles.every(particle => particle.cover && particle.material === material && particle.origin[2] > 0 && particle.vz > 0), 'fragments emit outward from the actual contacted front face');
+    signatures.add(JSON.stringify(renderer.particles.map(({ color, size, life }) => ({ color, size, life }))));
+  }
+  assert.equal(signatures.size, 3);
+  const colors = new Set();
+  for (const hitKind of ['head', 'body', 'leg']) {
+    const renderer = effectRenderer();
+    processEffects(renderer, [shot('marksman', { hitKind, damage: 20 })]);
+    assert.ok(renderer.particles.every(particle => particle.material === hitKind && particle.cover));
+    colors.add(renderer.particles[0].color);
+  }
+  assert.equal(colors.size, 3, 'impact cues distinguish real head, body and leg contacts');
+  const ally = effectRenderer();
+  processEffects(ally, [shot('marksman', { hitKind: 'head', damage: 0 })]);
+  assert.equal(ally.particles[0].material, 'cloth', 'an allied blocker does not produce the damaging head-hit cue');
+});
+
+test('impact fragments stop at walls and raised deck undersides and respect their radius', () => {
+  const wall = { x: -.25, y: 0, z: -.25, w: .5, h: 4, d: .5 };
+  const particle = { origin: [0, 1, 2], born: 1000, vx: 0, vy: 0, vz: -10, life: 1000, gravity: 0, cover: true, size: .02 };
+  const wallPoint = particlePosition(particle, 1300, [wall]);
+  assert.ok(wallPoint.point[2] > .25 + wallPoint.size / 2);
+  const deck = { x: -2, y: 2.8, z: -2, w: 4, h: .4, d: 4 };
+  const underside = particlePosition({ ...particle, origin: [0, 1, 0], vy: 10, vz: 0 }, 1300, [deck]);
+  assert.ok(underside.point[1] < 2.8 - underside.size / 2);
+  const limited = particlePosition({ ...particle, radius: .5 }, 1300, []);
+  assert.ok(Math.hypot(...limited.point.map((value, i) => value - particle.origin[i])) <= .5 + 1e-6);
+  assert.ok([...wallPoint.point, ...underside.point, ...limited.point].every(Number.isFinite));
+});
+
+test('a six-player sustained volley keeps effects within the existing performance budgets', () => {
+  const renderer = effectRenderer();
+  processEffects(renderer, Array.from({ length: 144 }, (_, id) => shot(id % 3 === 0 ? 'sniper' : 'lmg', { id, playerId: id % 6, hitKind: 'body', damage: 26 })));
+  assert.equal(renderer.tracers.length, 14);
+  assert.equal(renderer.particles.length, 84);
+  for (const particle of renderer.particles) {
+    assert.ok([particle.vx, particle.vy, particle.vz, particle.life, ...particle.origin].every(Number.isFinite));
+    assert.ok(particlePosition(particle, 1120, MAPS.foundry.colliders).point.every(Number.isFinite));
+  }
+  processEffects(renderer, [], 2000);
+  assert.equal(renderer.tracers.length, 0);
+  assert.equal(renderer.particles.length, 0);
 });

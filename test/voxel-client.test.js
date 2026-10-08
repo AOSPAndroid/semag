@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { aimFraction, aimLookMultiplier, combatEventPerspective, combatReadout, cleanAim, composeInput, controlForKey, createContinuousInputPacer, FPS_BUTTONS, hasGunshotReport, interpolatedState, isFormTarget, loadoutForKey, matchClock, neutralInput, reconcilePlayer, roundResult, tacticalMapPlayers } from '../public/voxel-client.js';
+import { aimFraction, aimLookMultiplier, confirmedHitGroups, healthHUDPlayer, healthPresentation, weaponComparison, combatEventPerspective, combatReadout, cleanAim, composeInput, controlForKey, createContinuousInputPacer, FPS_BUTTONS, hasGunshotReport, interpolatedState, isFormTarget, loadoutForKey, matchClock, neutralInput, reconcilePlayer, roundResult, tacticalSquadHealth, tacticalMapPlayers } from '../public/voxel-client.js';
 import { createState, emptyInput, MAPS, predictLocalMovement, traceShot, WEAPONS } from '../public/voxel-engine.js';
 import { advanceBolts, launchBolt } from '../public/voxel-projectiles.js';
 
@@ -430,4 +430,83 @@ test('sniper recovery and single-bolt crossbow reload are visible without antici
   assert.equal(combatReadout(player).status, 'LEAD TARGET · CLICK EACH BOLT');
   assert.equal(combatEventPerspective({ type: 'boltLaunch', playerId: 0 }, 0).outgoing, false, 'firing a bolt is not a confirmed hit');
   assert.equal(combatEventPerspective({ type: 'damage', weapon: 'crossbow', playerId: 0, targetId: 1 }, 0).outgoing, true);
+});
+
+
+test('health meter paints actual HP immediately and keeps a bounded fading damage trail', () => {
+  const player = { id: 0, hp: 150, maxHp: 150, alive: true };
+  const full = healthPresentation(player, null, { now: 0, round: 1 });
+  assert.equal(full.percent, 100); assert.equal(full.maxHp, 150);
+  player.hp = 90;
+  const hit = healthPresentation(player, full, { now: 100, round: 1 });
+  assert.equal(hit.hp, 90); assert.equal(hit.percent, 60); assert.equal(hit.trailPercent, 100);
+  const held = healthPresentation(player, hit, { now: 499, round: 1 });
+  assert.equal(held.trailPercent, 100);
+  const fading = healthPresentation(player, held, { now: 775, round: 1 });
+  assert.equal(fading.trailPercent, 80);
+  const done = healthPresentation(player, fading, { now: 1100, round: 1 });
+  assert.equal(done.trailPercent, 60);
+  player.hp = 40;
+  assert.equal(healthPresentation(player, done, { now: 1200, round: 1 }).low, true);
+  assert.equal(player.hp, 40, 'presentation cannot change simulation health');
+});
+
+test('healing, round restore and a different spectator reset the health trail truthfully', () => {
+  const player = { id: 0, hp: 30, maxHp: 100, alive: true };
+  const low = healthPresentation(player, null, { now: 100, round: 1 });
+  player.hp = 70;
+  const healed = healthPresentation(player, low, { now: 200, round: 1 });
+  assert.equal(healed.hp, 70); assert.equal(healed.trailPercent, 70); assert.equal(healed.low, false);
+  player.hp = 10;
+  const hit = healthPresentation(player, healed, { now: 300, round: 1 });
+  player.hp = 100;
+  const newRound = healthPresentation(player, hit, { now: 350, round: 2 });
+  assert.equal(newRound.trailHp, 100); assert.equal(newRound.damageAt, -Infinity);
+  const other = healthPresentation({ ...player, id: 1, hp: 20 }, hit, { now: 350, round: 1 });
+  assert.equal(other.trailHp, 20); assert.equal(other.hp, 20);
+  assert.equal(healthPresentation({ ...player, hp: -30, alive: false }).hp, 0);
+  assert.equal(healthPresentation({ ...player, hp: Infinity }).hp, 0);
+});
+
+test('spectated HP and ammunition belong only to the actual allied camera', () => {
+  const state = { players: [{ id: 0, team: 0, alive: true, hp: 80 }, { id: 1, team: 0, alive: true, hp: 25 }, { id: 2, team: 1, alive: true, hp: 99 }] };
+  assert.equal(healthHUDPlayer(state, 0, 1).id, 0, 'living player always sees their own health');
+  state.players[0].alive = false;
+  assert.equal(healthHUDPlayer(state, 0, 1).hp, 25);
+  assert.equal(healthHUDPlayer(state, 0, 2).id, 0, 'an enemy cannot supply HUD health');
+  state.players[1].alive = false;
+  assert.equal(healthHUDPlayer(state, 0, 1).id, 0);
+  assert.equal(healthHUDPlayer(state, null, 2), null);
+});
+
+test('shotgun feedback groups confirmed HP loss per target and excludes speculative and self hits', () => {
+  const pellets = Array.from({ length: 8 }, (_, n) => ({ type: 'damage', tick: 20, playerId: 0, targetId: 1, weapon: 'shotgun', damage: n === 7 ? 4 : 12, headshot: n === 0 }));
+  const events = [...pellets, { type: 'shot', tick: 20, playerId: 0, targetId: 1, damage: 999 }, { type: 'damage', tick: 20, playerId: 0, targetId: 0, weapon: 'grenade', damage: 80 }, { type: 'damage', tick: 20, playerId: 1, targetId: 0, damage: 28 }];
+  const hits = confirmedHitGroups(events, 0);
+  assert.equal(hits.length, 1); assert.equal(hits[0].damage, 88); assert.equal(hits[0].contacts, 8); assert.equal(hits[0].label, 'HEADSHOT');
+  assert.deepEqual(confirmedHitGroups(events, null), []);
+  assert.equal(confirmedHitGroups([{ type: 'damage', tick: 21, playerId: 0, targetId: 1, weapon: 'carbine', damage: 21, hitKind: 'leg' }], 0)[0].label, 'LEG HIT');
+});
+
+test('all nine loadout comparison cards state damage, firing rhythm and real falloff', () => {
+  for (const id of Object.keys(WEAPONS)) {
+    const card = weaponComparison(id); assert.ok(card);
+    assert.ok(Number.isFinite(card.body) && card.body > 0); assert.ok(card.head >= card.body); assert.ok(card.leg < card.body);
+    assert.match(card.reload, / s$/); assert.ok(card.rate.length); assert.ok(card.handling.length);
+  }
+  const shotgun = weaponComparison('shotgun');
+  assert.equal(shotgun.body, 12); assert.match(shotgun.damageLabel, /PELLET.*8 PELLETS/);
+  assert.match(shotgun.range, /8 m.*25%/);
+  assert.match(weaponComparison('crossbow').handling, /48 m\/s.*9 m\/s²/);
+  assert.match(weaponComparison('lmg').handling, /0.20 s wind-up/);
+  assert.equal(weaponComparison('invalid'), null);
+});
+
+
+test('the live squad health strip exposes at most two connected allies with honest death and HP', () => {
+  const state = { players: [{ id: 0, team: 0, alive: true, hp: 100 }, { id: 1, team: 0, alive: true, hp: 25 }, { id: 2, team: 0, alive: false, hp: 0 }, { id: 3, team: 1, alive: true, hp: 10 }, { id: 4, team: 0, alive: true, hp: 100 }] };
+  const squad = tacticalSquadHealth(state, 0, [0, 1, 2, 3, 4]);
+  assert.deepEqual(squad.map(player => player.id), [1, 2]); assert.equal(squad[0].low, true); assert.equal(squad[1].dead, true); assert.equal(squad[1].percent, 0);
+  assert.deepEqual(tacticalSquadHealth(state, 0, [0, 3]), []); assert.deepEqual(tacticalSquadHealth(state, null), []);
+  state.players[1].hp = 999; assert.equal(tacticalSquadHealth(state, 0, [0, 1])[0].hp, 100);
 });

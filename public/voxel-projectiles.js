@@ -23,7 +23,7 @@ export function launchBolt(state, player, weapon, origin, direction, { emit = no
     x: origin.x, y: origin.y, z: origin.z,
     vx: direction.x / length * speed, vy: direction.y / length * speed, vz: direction.z / length * speed,
     gravity: clamp(finite(weapon?.projectileGravity, 9), 0, 100),
-    damage: clamp(finite(weapon?.damage, 75), 0, 1000), headMultiplier: clamp(finite(weapon?.headMultiplier, 2), 0, 10),
+    damage: clamp(finite(weapon?.damage, 75), 0, 1000), headMultiplier: clamp(finite(weapon?.headMultiplier, 2), 0, 10), legMultiplier: clamp(finite(weapon?.legMultiplier, .8), 0, 1),
     range: clamp(finite(weapon?.range, 100), .01, 1000), traveledDistance: 0,
     ttlTicks: clamp(Math.floor(finite(weapon?.projectileTicks, MAX_TTL)), 1, MAX_TTL), ageTicks: 0,
     bornTick: Math.max(0, Math.floor(finite(state.tick, 0))),
@@ -57,9 +57,9 @@ function contactNormal(hit, point, direction, arena) {
 
 function validBolt(bolt) {
   return bolt && Number.isInteger(bolt.id) && Number.isInteger(bolt.playerId) && Number.isInteger(bolt.team)
-    && [bolt.x, bolt.y, bolt.z, bolt.vx, bolt.vy, bolt.vz, bolt.gravity, bolt.damage, bolt.headMultiplier,
+    && [bolt.x, bolt.y, bolt.z, bolt.vx, bolt.vy, bolt.vz, bolt.gravity, bolt.damage, bolt.headMultiplier, bolt.legMultiplier,
       bolt.ageTicks, bolt.ttlTicks, bolt.range, bolt.traveledDistance, bolt.bornTick].every(Number.isFinite)
-    && bolt.y >= 0 && bolt.gravity >= 0 && bolt.damage >= 0 && bolt.headMultiplier >= 0
+    && bolt.y >= 0 && bolt.gravity >= 0 && bolt.damage >= 0 && bolt.headMultiplier >= 0 && bolt.legMultiplier >= 0 && bolt.legMultiplier <= 1
     && bolt.ageTicks >= 0 && bolt.ageTicks < Math.min(MAX_TTL, bolt.ttlTicks)
     && bolt.traveledDistance >= 0 && bolt.traveledDistance < bolt.range;
 }
@@ -68,7 +68,7 @@ function validBolt(bolt) {
  * Advance one authoritative tick with a swept chord of the ballistic arc.
  * Damage is queued, never applied here, so same-tick gun/bolt contacts can trade.
  * trace(state, shooterId, origin, unitDirection, distance) must return the first
- * wall/body/head contact. The floor is also checked when an adapter omits it.
+ * wall/leg/body/head contact. The floor is also checked when an adapter omits it.
  */
 export function advanceBolts(state, { dt = DT, trace, arena = null, emit = noop, queueDamage = noop } = {}) {
   if (!Array.isArray(state.bolts) || !state.bolts.length) return [];
@@ -105,10 +105,10 @@ export function advanceBolts(state, { dt = DT, trace, arena = null, emit = noop,
     bolt.traveledDistance += distance;
     if (hit) {
       const target = state.players?.find(player => player.id === hit.playerId), headshot = hit.kind === 'head';
-      const damage = target?.alive && target.team !== bolt.team && (headshot || hit.kind === 'body')
-        ? Math.round(bolt.damage * (headshot ? bolt.headMultiplier : 1)) : 0;
+      const damage = target?.alive && target.team !== bolt.team && (headshot || hit.kind === 'body' || hit.kind === 'leg')
+        ? Math.round(bolt.damage * (headshot ? bolt.headMultiplier : hit.kind === 'leg' ? bolt.legMultiplier : 1)) : 0;
       if (damage > 0) {
-        const queued = { playerId: bolt.playerId, targetId: target.id, damage, headshot, attack: 'bolt', weapon: bolt.weapon };
+        const queued = { playerId: bolt.playerId, targetId: target.id, damage, hitKind: hit.kind, headshot, attack: 'bolt', weapon: bolt.weapon };
         hits.push(queued); queueDamage(queued);
       }
       emit('boltHit', { ...eventData(bolt), targetId: target?.id ?? null, damage, headshot,

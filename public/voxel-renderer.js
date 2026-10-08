@@ -68,6 +68,39 @@ function hash(value) {
   for (const character of String(value)) result = Math.imul(result ^ character.charCodeAt(0), 16777619);
   return result >>> 0;
 }
+const DEFAULT_SHOT_EFFECT = Object.freeze({ tracerColor: '#f5ce83', muzzleColor: '#f6d991', impactColor: '#e4c286', tracerWidth: .009, tracerTicks: 8, muzzleTicks: 5, muzzleSize: 1, muzzleStrength: 1, impactStrength: 1, kickStrength: 1, kickTicks: 28 });
+const shotEffect = weapon => WEAPONS[weapon]?.effects || DEFAULT_SHOT_EFFECT;
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const normalized = (vector, fallback = [0, 1, 0]) => { const length = Math.hypot(...vector); return length > 1e-6 ? vector.map(value => value / length) : fallback; };
+
+function impactParticles(event, contact, direction, map, time, key) {
+  const effects = shotEffect(event.weapon || (event.type === 'boltHit' ? 'crossbow' : 'carbine'));
+  const collider = map?.colliders?.find(box => box.id === event.colliderId);
+  let normal = [finite(event.nx), finite(event.ny), finite(event.nz)];
+  if (Math.hypot(...normal) < 1e-5) {
+    if (event.colliderId === 'floor') normal = [0, 1, 0];
+    else if (collider) {
+      // Use the contacted physical face, including the underside of a deck.
+      const faces = [[Math.abs(contact[0] - collider.x), [-1, 0, 0]], [Math.abs(contact[0] - collider.x - collider.w), [1, 0, 0]], [Math.abs(contact[1] - collider.y), [0, -1, 0]], [Math.abs(contact[1] - collider.y - collider.h), [0, 1, 0]], [Math.abs(contact[2] - collider.z), [0, 0, -1]], [Math.abs(contact[2] - collider.z - collider.d), [0, 0, 1]]];
+      normal = faces.reduce((nearest, face) => face[0] < nearest[0] ? face : nearest)[1];
+    } else normal = direction.map(value => -value);
+  }
+  normal = normalized(normal);
+  const tangent = normalized(cross(normal, Math.abs(normal[1]) > .9 ? [1, 0, 0] : [0, 1, 0]));
+  const bitangent = cross(normal, tangent);
+  const material = event.hitKind === 'wall' ? collider?.material || 'stone' : event.damage > 0 ? event.hitKind : 'cloth';
+  const metal = material === 'metal', wood = material === 'wood', head = material === 'head', leg = material === 'leg';
+  const strength = clamp(finite(effects.impactStrength, 1), .25, 2);
+  const count = clamp(Math.round((metal || head ? 6 : 5) * strength), 3, 10);
+  const color = wood ? '#bd9163' : metal ? effects.impactColor : head ? '#ffdfad' : leg ? '#ad7d68' : material === 'body' ? '#d6a189' : material === 'cloth' ? '#89928a' : '#c6bba5';
+  const seed = hash(key), origin = contact.map((value, i) => value + normal[i] * .055);
+  return Array.from({ length: count }, (_, i) => {
+    const angle = seed % 7 + i * 2.39996, outward = (metal ? .75 : .40) * strength;
+    const scatter = (metal ? .75 : wood ? .55 : .35) * (.5 + i / count) * strength;
+    const velocity = normal.map((value, axis) => value * outward + (tangent[axis] * Math.cos(angle) + bitangent[axis] * Math.sin(angle)) * scatter);
+    return { origin, born: time, vx: velocity[0], vy: velocity[1] + .12, vz: velocity[2], color, life: (metal ? 145 : wood ? 250 : 190) + i * 13, gravity: metal ? 3 : 4, cover: true, size: metal ? .016 : wood ? .026 : .030, material };
+  });
+}
 function rotate(vector, yaw = 0, pitch = 0) {
   const cp = Math.cos(pitch), sp = Math.sin(pitch), cy = Math.cos(yaw), sy = Math.sin(yaw);
   const y = vector[1] * cp - vector[2] * sp;
@@ -243,6 +276,24 @@ function rayCoverDistance(origin, direction, colliders, maximum, padding = 0) {
     if (valid && exit >= 0) nearest = Math.min(nearest, Math.max(0, entry));
   }
   return nearest;
+}
+
+/** Cosmetic fragments remain on the visible side of real collision surfaces. */
+export function particlePosition(particle, time, colliders = []) {
+  const elapsed = clamp(finite(time - particle.born), 0, finite(particle.life, 1));
+  const age = elapsed / 1000, fade = 1 - elapsed / finite(particle.life, 1);
+  const size = finite(particle.size, .026) + fade * .028;
+  let point = [particle.origin[0] + finite(particle.vx) * age, Math.max(size / 2, particle.origin[1] + finite(particle.vy) * age - age * age * finite(particle.gravity, 3)), particle.origin[2] + finite(particle.vz) * age];
+  if (particle.cover) {
+    const delta = point.map((value, i) => value - particle.origin[i]), length = Math.hypot(...delta);
+    if (length > 1e-5) {
+      const direction = delta.map(value => value / length), limit = Math.min(length, finite(particle.radius, Infinity));
+      const contact = rayCoverDistance(particle.origin, direction, colliders, limit, size * .55);
+      const travel = contact < length ? Math.max(0, contact - size * .6) : Math.min(length, limit);
+      point = particle.origin.map((value, i) => value + direction[i] * travel);
+    }
+  }
+  return { point, size, fade };
 }
 
 /** Highest surface beneath a point, independent of authored collider order. */
@@ -1137,6 +1188,7 @@ export class VoxelRenderer {
   }
   _events(state, time, localId) {
     const combat = !state.phase || ['fight', 'roundEnd', 'matchEnd'].includes(state.phase);
+    const map = typeof state.map === 'object' && state.map?.colliders ? state.map : MAPS[state.mapId];
     for (const event of state.events || []) {
       const key = event.id ?? `${event.tick}:${event.type}:${event.playerId}:${event.shotIndex ?? ''}`;
       if (this.eventIds.has(key)) continue;
@@ -1145,27 +1197,22 @@ export class VoxelRenderer {
       if (Number.isFinite(state.tick) && Number.isFinite(event.tick) && state.tick - event.tick > 18) continue;
       if (!combat) continue;
       if (event.type === 'shot') {
+        // Ballistic bolts are represented only by their moving world geometry.
+        if (WEAPONS[event.weapon]?.projectile) continue;
         const origin = [finite(event.x), finite(event.y), finite(event.z)];
         const direction = [finite(event.dx), finite(event.dy), finite(event.dz, -1)];
         const end = [event.hitX, event.hitY, event.hitZ].every(Number.isFinite) ? [event.hitX, event.hitY, event.hitZ] : origin.map((value, i) => value + direction[i] * 60);
-        this.tracers.push({ origin, end, born: time, team: event.team, local: event.playerId === localId });
+        const effects = shotEffect(event.weapon);
+        this.tracers.push({ origin, end, born: time, team: event.team, local: event.playerId === localId, width: effects.tracerWidth, color: effects.tracerColor, life: effects.tracerTicks * 1000 / 120, weapon: event.weapon });
         if (event.playerId === localId && (!event.pellet || event.pelletCount === 1)) this.localShot = { born: time, weapon: event.weapon };
         if (event.hitKind && event.hitKind !== 'none') {
-          const count = event.hitKind === 'wall' ? 5 : 7;
-          const seed = hash(key);
-          for (let i = 0; i < count; i++) {
-            const angle = (seed % 1000 + i * 1.618) * 2.39;
-            this.particles.push({ origin: end, born: time, vx: Math.sin(angle) * (.5 + i * .13), vy: .6 + i * .11, vz: Math.cos(angle) * (.5 + i * .13), color: event.hitKind === 'wall' ? '#d4c7a1' : '#edb56f', life: 230 + i * 17 });
-          }
+          this.particles.push(...impactParticles(event, end, direction, map, time, key));
         }
       } else if (event.type === 'boltLaunch') {
         if (event.playerId === localId) this.localShot = { born: time, weapon: 'crossbow' };
       } else if (event.type === 'boltHit') {
-        const origin = [finite(event.x), finite(event.y), finite(event.z)], seed = hash(key);
-        for (let i = 0; i < 5; i++) {
-          const angle = seed % 7 + i * 2.39996;
-          this.particles.push({ origin, born: time, vx: finite(event.nx) * .48 + Math.sin(angle) * .3, vy: finite(event.ny) * .48 + .25 + i * .035, vz: finite(event.nz) * .48 + Math.cos(angle) * .3, color: event.hitKind === 'wall' ? '#c9bea1' : '#e9b276', life: 170 + i * 14, gravity: 3, cover: true });
-        }
+        const origin = [finite(event.x), finite(event.y), finite(event.z)];
+        this.particles.push(...impactParticles(event, origin, [-finite(event.nx), -finite(event.ny), -finite(event.nz)], map, time, key));
       } else if (event.type === 'reload' && event.playerId === localId) this.localReload = { born: time, weapon: event.weapon };
       else if (event.type === 'grenadeBounce' || event.type === 'meleeHit' || event.type === 'healComplete') {
         const origin = [finite(event.x), finite(event.y, .2), finite(event.z)], heal = event.type === 'healComplete';
@@ -1185,7 +1232,7 @@ export class VoxelRenderer {
     }
     if (this.tracers.length > MAX_TRACERS) this.tracers.splice(0, this.tracers.length - MAX_TRACERS);
     if (this.particles.length > MAX_PARTICLES) this.particles.splice(0, this.particles.length - MAX_PARTICLES);
-    this.tracers = this.tracers.filter(trace => time - trace.born < 68);
+    this.tracers = this.tracers.filter(trace => time - trace.born < finite(trace.life, 68));
     this.particles = this.particles.filter(particle => time - particle.born < particle.life);
   }
   _bomb(mesh, state, players, time) {
@@ -1244,8 +1291,9 @@ export class VoxelRenderer {
     const mesh = new Mesh(), team = TEAM_COLORS[player.team === 1 ? 1 : 0];
     const speed = Math.hypot(finite(player.vx), finite(player.vz));
     const walking = clamp(speed / 5.5, 0, 1), step = time * .011;
-    const age = this.localShot ? Math.max(0, time - this.localShot.born) : 10000;
-    const kick = age < 240 ? Math.exp(-age / 65) : 0;
+    const age = this.localShot?.weapon === player.weapon ? Math.max(0, time - this.localShot.born) : 10000;
+    const effects = shotEffect(player.weapon), kickDuration = finite(effects.kickTicks, 28) * 1000 / 120;
+    const kick = age < kickDuration ? finite(effects.kickStrength, 1) * Math.exp(-age / Math.max(25, kickDuration * .28)) * (1 - age / kickDuration) : 0;
     if (this.lastAim) {
       let yawDelta = yaw - this.lastAim.yaw;
       while (yawDelta > Math.PI) yawDelta -= TAU;
@@ -1320,10 +1368,13 @@ export class VoxelRenderer {
       mesh.box(-.071, -.08, .085, .142, .163, .28, '#435952', hand);
       mesh.box(-.075, -.085, .26, .15, .175, .09, mix(rgba(team), rgba('#64796b'), .24), hand);
     }
-    if (age < 44 && !reloadActive && player.weapon !== 'crossbow') {
-      const flash = .032 + (1 - age / 44) * .040;
-      mesh.box(-flash / 2, -.015, -length - .070, flash, flash, .085, '#f6d991', pose);
-      mesh.box(-flash * .95, -.013 + flash * .2, -length - .055, flash * 1.9, flash * .38, .030, '#ffeabd', pose);
+    const flashDuration = finite(effects.muzzleTicks, 5) * 1000 / 120;
+    if (age < flashDuration && !reloadActive && !throwing && finite(effects.muzzleStrength, 1) > 0 && player.weapon !== 'crossbow') {
+      const flare = (1 - age / flashDuration) * finite(effects.muzzleStrength, 1);
+      const flash = (.025 + flare * .036) * finite(effects.muzzleSize, 1);
+      const glow = rgba(effects.muzzleColor), core = mix(glow, rgba('#fff8dc'), .60);
+      mesh.box(-flash / 2, -.015, -length - .070, flash, flash, .05 + flare * .04, glow, pose);
+      mesh.box(-flash * .95, -.013 + flash * .2, -length - .055, flash * 1.9, flash * .38, .028, core, pose);
     }
     return mesh.array;
   }
@@ -1395,21 +1446,7 @@ export class VoxelRenderer {
     this._grenades(dynamic, contacts, state, map, time);
     this._bolts(dynamic, state);
     for (const particle of this.particles) {
-      const age = (time - particle.born) / 1000, fade = 1 - (time - particle.born) / particle.life;
-      const size = .026 + fade * .028;
-      let point = [particle.origin[0] + particle.vx * age, Math.max(size / 2, particle.origin[1] + particle.vy * age - age * age * finite(particle.gravity, 3)), particle.origin[2] + particle.vz * age];
-      if (particle.cover) {
-        // Decorative blast fragments cannot paint a damaging-looking sphere
-        // through cover: each fragment stops at the same solid world faces.
-        const delta = point.map((value, i) => value - particle.origin[i]), length = Math.hypot(...delta);
-        if (length > 1e-5) {
-          const direction = delta.map(value => value / length);
-          const limit = Math.min(length, finite(particle.radius, Infinity));
-          const contact = rayCoverDistance(particle.origin, direction, map.colliders, limit, size * .55);
-          const travel = contact < length ? Math.max(0, contact - size * .6) : length;
-          point = particle.origin.map((value, i) => value + direction[i] * travel);
-        }
-      }
+      const { point, size, fade } = particlePosition(particle, time, map.colliders);
       dynamic.box(point[0] - size / 2, point[1] - size / 2, point[2] - size / 2, size, size, size, shade(rgba(particle.color), .7 + fade * .3));
     }
     this._draw(this._dynamic(dynamic.array));
@@ -1424,7 +1461,8 @@ export class VoxelRenderer {
         // quad when a shot originates inside the camera's near plane.
         const delta = trace.end.map((value, i) => value - trace.origin[i]), length = Math.hypot(...delta) || 1;
         const start = trace.local ? trace.origin.map((value, i) => value + delta[i] / length * Math.min(.35, length * .2)) : trace.origin;
-        traces.line(start, trace.end, .009, [1, .83, .49, .40], eye);
+        const fade = 1 - clamp((time - trace.born) / finite(trace.life, 68), 0, 1);
+        traces.line(start, trace.end, finite(trace.width, .009), rgba(trace.color || '#f5ce83', .42 * fade), eye);
       }
       gl.disable(gl.CULL_FACE); gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE); gl.depthMask(false);
       this._draw(this._dynamic(traces.array, 'tracer'));

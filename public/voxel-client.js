@@ -1,7 +1,7 @@
 import { displayKey, gameKey, getKeyboardLayout, mountKeyboardLayoutPicker, subscribeKeyboardLayout } from './keyboard-layout.js';
 import { copyText, getName, hostInfo, roomUrl, saveName } from './hub/shared.js';
 import { GameAudio } from './audio.js';
-import { WEAPONS, WEAPON_IDS, weaponAimFovRatio, weaponSpread } from './voxel-weapons.js';
+import { WEAPONS, WEAPON_IDS, weaponAimFovRatio, weaponSpread, weaponStats } from './voxel-weapons.js';
 import { advanceBolts, MAX_BOLTS } from './voxel-projectiles.js';
 
 export const LOOK_SENSITIVITY = 0.0025;
@@ -161,6 +161,62 @@ export function combatEventPerspective(event, localId) {
     incoming: localId != null && target === localId };
 }
 
+/** The HUD follows the same allied camera as the renderer; enemy health is never shown. */
+export function healthHUDPlayer(state, localId, spectatorId) {
+  const local = state?.players?.find(player => player.id === localId);
+  if (!local || local.alive) return local || null;
+  return state.players.find(player => player.id === spectatorId && player.team === local.team && player.alive) || local;
+}
+
+/** A compact two-seat squad readout excludes rivals, self and disconnected seats. */
+export function tacticalSquadHealth(state, localId, connectedIds) {
+  const local = state?.players?.find(player => player.id === localId); if (!local) return [];
+  const connected = connectedIds == null ? null : new Set(connectedIds);
+  return state.players.filter(player => player.team === local.team && player.id !== localId && (!connected || connected.has(player.id))).slice(0, 2)
+    .map(player => { const health = healthPresentation(player); return { id: player.id, hp: health.hp, maxHp: health.maxHp, percent: health.percent, low: health.low, dead: health.dead }; });
+}
+
+/** Actual HP paints immediately. A short separate trail makes recent damage readable. */
+export function healthPresentation(player, previous = null, { now = 0, round = 0 } = {}) {
+  const maxHp = Number.isFinite(player?.maxHp) && player.maxHp > 0 ? player.maxHp : 100;
+  const hp = Math.max(0, Math.min(maxHp, Number.isFinite(player?.hp) ? player.hp : 0));
+  const reset = !previous || previous.id !== player?.id || previous.round !== round || previous.maxHp !== maxHp;
+  let trailHp = reset ? hp : previous.trailHp;
+  let damageAt = reset ? -Infinity : previous.damageAt;
+  let trailFrom = reset ? hp : previous.trailFrom;
+  if (!reset && hp < previous.hp) { trailFrom = Math.max(previous.trailHp, previous.hp); damageAt = now; }
+  if (reset || hp > previous.hp) { trailHp = hp; trailFrom = hp; damageAt = -Infinity; }
+  else { const decay = Math.max(0, Math.min(1, (now - damageAt - 400) / 550)); trailHp = hp + Math.max(0, trailFrom - hp) * (1 - decay); }
+  return { id: player?.id, round, hp, maxHp, trailHp, trailFrom, damageAt,
+    percent: hp / maxHp * 100, trailPercent: trailHp / maxHp * 100,
+    low: hp > 0 && hp / maxHp <= .3, dead: player?.alive === false || hp === 0 };
+}
+
+/** Group confirmed HP loss, never speculative bullet contacts or overkill damage. */
+export function confirmedHitGroups(events = [], localId) {
+  const groups = new Map();
+  for (const event of events) {
+    if (event.type !== 'damage' || !(event.damage > 0) || !combatEventPerspective(event, localId).outgoing) continue;
+    const target = combatEventPerspective(event, localId).target;
+    const key = `${event.tick ?? ''}:${target}:${event.weapon || event.attack || ''}`;
+    const group = groups.get(key) || { targetId: target, weapon: event.weapon, damage: 0, headshot: false, legshot: true, contacts: 0 };
+    group.damage += event.damage; group.headshot ||= !!event.headshot;
+    group.legshot &&= event.hitKind === 'leg' || event.hitZone === 'leg'; group.contacts++;
+    groups.set(key, group);
+  }
+  return [...groups.values()].map(group => ({ ...group, label: group.headshot ? 'HEADSHOT' : group.legshot ? 'LEG HIT' : 'HIT' }));
+}
+
+export function weaponComparison(id) {
+  const weapon = WEAPONS[id]; const stats = weaponStats(id);
+  if (!weapon || !stats) return null;
+  return { name: weapon.name, description: weapon.description, body: stats.body, head: stats.head, leg: stats.leg,
+    damageLabel: stats.pellets > 1 ? `DAMAGE / PELLET · ${stats.pellets} PELLETS PER SHELL` : 'DAMAGE / HIT · CLOSE RANGE',
+    rate: stats.fireRateLabel, reload: `${stats.reloadSeconds.toFixed(2)} s`,
+    range: stats.falloffStart != null ? `Falls after ${stats.falloffStart} m · minimum ${Math.round(stats.falloffMinimum * 100)}%` : `Full damage to ${stats.effectiveRange} m`,
+    handling: stats.projectileSpeed ? `Bolts ${stats.projectileSpeed} m/s · gravity ${stats.projectileGravity} m/s²` : stats.windupSeconds ? `${stats.windupSeconds.toFixed(2)} s wind-up before fire` : weapon.scoped ? 'Scoped precision · settle before firing' : weapon.mode === 'burst' ? 'Three-shot volley · release between bursts' : ['semi', 'pump', 'bolt'].includes(weapon.mode) ? 'One shot per click · release between shots' : 'Automatic fire · control recoil' };
+}
+
 /** Smooth remote bodies and live bolts. Combat and camera aim remain authoritative. */
 export function interpolatedState(samples, targetTime, localId, { predictMovement, traceProjectile, maxExtrapolationMs = 25 } = {}) {
   if (!samples.length) return null;
@@ -263,7 +319,8 @@ async function boot() {
   const touch = { move: { x: 0, y: 0 }, look: { x: 0, y: 0 }, actions: new Set() };
   const actionPointers = new Map(); const padPointers = new Map();
   const padInputPacer = createContinuousInputPacer(60);
-  let rosterSignature = ''; let idleDrawSignature = ''; let mapPlanId = ''; const mapMarkers = new Map();
+  let healthView = null; let healthGain = 0; let healthGainUntil = 0; let previewWeapon = null;
+  let squadSignature = ''; let rosterSignature = ''; let idleDrawSignature = ''; let mapPlanId = ''; const mapMarkers = new Map();
   const audio = new GameAudio(); const eventSeen = new Set(); const eventOrder = []; const kills = [];
   const removers = [];
   function listen(target, name, handler, options) { target.addEventListener(name, handler, options); removers.push(() => target.removeEventListener(name, handler, options)); }
@@ -377,11 +434,11 @@ async function boot() {
   }
 
   function playEvents(events = []) {
-    const impactSounds = new Set();
+    const impactSounds = new Set(); const freshEvents = [];
     for (const event of events) {
       const eventId = event.id ?? `${state?.tick}:${event.type}:${event.playerId ?? event.attackerId ?? ''}:${event.targetId ?? ''}`;
       if (eventSeen.has(eventId)) continue;
-      eventSeen.add(eventId); eventOrder.push(eventId);
+      eventSeen.add(eventId); eventOrder.push(eventId); freshEvents.push(event);
       if (eventOrder.length > 512) eventSeen.delete(eventOrder.shift());
       const perspective = combatEventPerspective(event, playerId);
       const shooter = perspective.source; const target = perspective.target;
@@ -396,25 +453,18 @@ async function boot() {
       }
       if (shooter === playerId && ['healStart', 'healComplete', 'healCancel'].includes(event.type)) {
         feedbackUntil = performance.now() + (event.type === 'healStart' ? 650 : 1100);
+        if (event.type === 'healComplete') { healthGain = Math.max(0, Math.round(event.amount || 0)); healthGainUntil = performance.now() + 1400; }
         $('combat-feedback').textContent = event.type === 'healComplete' ? `HEALED +${Math.round(event.amount || 0)} HP` : event.type === 'healCancel' ? 'HEALING INTERRUPTED' : 'DRINKING POTION';
       }
       if (!audio.enabled) continue;
       try {
         if (hasGunshotReport(event)) {
           const own = shooter === playerId;
-          if (event.weapon === 'crossbow') {
-            audio.noise(.045, { highpass: 1100, lowpass: 2900, gain: own ? .16 : .055 });
-            audio.tone(330, .14, { end: 80, type: 'triangle', gain: own ? .12 : .045 });
-          } else if (event.weapon === 'sniper') {
-            audio.noise(.12, { highpass: 110, lowpass: 3900, gain: own ? .38 : .13 });
-            audio.tone(80, .19, { end: 38, type: 'triangle', gain: own ? .3 : .1 });
-            if (own) audio.noise(.05, { highpass: 1800, lowpass: 4800, gain: .1, delay: .42 });
-          } else if (event.weapon === 'lmg') {
-            audio.noise(.06, { highpass: 220, lowpass: 4400, gain: own ? .3 : .11 });
-            audio.tone(110, .075, { end: 54, type: 'triangle', gain: own ? .22 : .075 });
-          } else {
-            audio.noise(0.075, { highpass: 170, lowpass: 4400, gain: own ? 0.34 : 0.12 });
-            audio.tone(event.weapon === 'marksman' ? 90 : 150, 0.09, { end: 48, type: 'triangle', gain: own ? 0.26 : 0.09 });
+          const profile = WEAPONS[event.weapon]?.sound;
+          const gain = own ? 1 : .34;
+          if (profile) {
+            audio.noise(profile.noiseDuration, { highpass: profile.highpass || 170, lowpass: profile.lowpass, gain: profile.noiseVolume * gain });
+            audio.tone(profile.frequency, profile.toneDuration, { end: profile.endFrequency || 48, type: profile.wave || 'triangle', gain: profile.toneVolume * gain });
           }
         } else if (event.type === 'damage' && (shooter === playerId || target === playerId)) {
           const soundKey = `${event.tick ?? state?.tick}:${perspective.incoming ? 'incoming' : 'outgoing'}`;
@@ -435,10 +485,28 @@ async function boot() {
         }
       } catch { /* Optional sound cannot interrupt gameplay. */ }
     }
+    const hits = confirmedHitGroups(freshEvents, playerId);
+    if (hits.length) {
+      const hit = hits.reduce((best, next) => next.damage > best.damage ? next : best);
+      const killed = freshEvents.some(event => ['kill', 'death', 'elimination'].includes(event.type) && combatEventPerspective(event, playerId).outgoing && combatEventPerspective(event, playerId).target === hit.targetId);
+      feedbackUntil = performance.now() + (killed ? 1100 : 650);
+      $('combat-feedback').textContent = `${hit.label} · ${Math.round(hit.damage)} HP${killed ? ' · ELIMINATED' : ''}`;
+    }
+  }
+
+  function renderWeaponComparison(id) {
+    if ($('weapon-comparison').dataset.weapon === id) return;
+    const data = weaponComparison(id); if (!data) return;
+    $('weapon-comparison').dataset.weapon = id;
+    $('comparison-name').textContent = data.name;
+    $('comparison-description').textContent = data.description;
+    for (const key of ['body', 'head', 'leg', 'rate', 'reload', 'range', 'handling']) $(`comparison-${key}`).textContent = data[key];
+    $('comparison-damage-label').textContent = data.damageLabel;
+    $('arena-weapon-stats').textContent = `${data.head} HEAD / ${data.body} BODY / ${data.leg} LEGS${WEAPONS[id].pellets > 1 ? ' · PER PELLET' : ''} · ${data.rate}`;
   }
 
   function renderRoster() {
-    const signature = JSON.stringify([teamSize, playerId, state?.phase, roster.map(person => person && [person.id, person.name, person.connected, person.ready]), state?.players?.map(player => [player.id, player.alive, player.weapon])]);
+    const signature = JSON.stringify([teamSize, playerId, state?.phase, roster.map(person => person && [person.id, person.name, person.connected, person.ready]), state?.players?.map(player => [player.id, player.alive, player.weapon, player.team === ownPlayer()?.team ? player.hp : null])]);
     if (signature === rosterSignature) return;
     rosterSignature = signature;
     for (let team = 0; team < 2; team++) {
@@ -453,7 +521,15 @@ async function boot() {
         name.textContent = person?.connected ? person.name || `Player ${id + 1}` : 'Open seat';
         const status = document.createElement('small');
         status.textContent = !person?.connected ? 'SEND AN INVITE' : state?.phase === 'lobby' ? person.ready ? 'READY' : 'CHOOSING LOADOUT' : player?.alive ? (player.weapon || 'carbine').toUpperCase() : 'ELIMINATED';
-        details.append(name, status); row.append(number, details);
+        details.append(name, status);
+        if (person?.connected && player && player.team === ownPlayer()?.team && state?.phase !== 'lobby') {
+          const health = healthPresentation(player); const meter = document.createElement('span'); meter.className = 'roster-health';
+          meter.setAttribute('role', 'meter'); meter.setAttribute('aria-label', `${name.textContent} health`);
+          meter.setAttribute('aria-valuemin', '0'); meter.setAttribute('aria-valuemax', String(health.maxHp)); meter.setAttribute('aria-valuenow', String(health.hp));
+          const fill = document.createElement('i'); fill.style.width = `${health.percent}%`; meter.append(fill);
+          const amount = document.createElement('b'); amount.textContent = `${health.hp} HP`; status.append(document.createTextNode(' · '), amount); details.append(meter);
+        }
+        row.append(number, details);
         const badge = document.createElement('span'); badge.textContent = id === playerId ? 'YOU' : '';
         row.append(badge); container.append(row);
       }
@@ -507,12 +583,39 @@ async function boot() {
     $('round-label').textContent = clock.label; $('timer').textContent = clock.text;
     $('timer').classList.toggle('urgent', clock.urgent); $('round-label').classList.toggle('device-live', clock.planted);
     $('map-label').textContent = `${mapName || state?.mapName || 'PRIVATE ROOM'} / ${local ? `TEAM ${local.team === 0 ? 'AMBER' : 'TEAL'}` : 'CONNECTING'}`.toUpperCase();
-    $('combat-hud').hidden = inLobby || !local || !local.alive || phase === 'matchEnd';
-    $('health').textContent = local?.hp ?? 100; $('health-fill').style.width = `${Math.max(0, Math.min(100, local?.hp ?? 100))}%`;
-    $('health').closest('.health-readout').classList.toggle('low-health', !!local && local.hp <= 30);
-    const readout = combatReadout(local, WEAPONS, engine);
-    const weapon = WEAPONS[local?.weapon];
-    const pose = predictedPlayer || local;
+    const livingAllies = state?.players?.filter(player => player.team === local?.team && player.alive && player.id !== playerId) || [];
+    if (!livingAllies.some(player => player.id === spectatorId)) spectatorId = livingAllies[0]?.id ?? null;
+    const squad = tacticalSquadHealth(state, playerId, roster.filter(person => person?.connected).map(person => person.id));
+    $('squad-health').hidden = !squad.length || !['fight', 'roundEnd'].includes(phase);
+    const nextSquadSignature = JSON.stringify(squad.map(person => [person, lookupName(person.id)]));
+    if (nextSquadSignature !== squadSignature) {
+      squadSignature = nextSquadSignature; $('squad-health').replaceChildren();
+      for (const person of squad) {
+        const row = document.createElement('div'); row.className = `squad-health-row${person.low ? ' low' : ''}${person.dead ? ' eliminated' : ''}`; row.dataset.playerId = person.id;
+        const name = document.createElement('span'); name.textContent = lookupName(person.id);
+        const hp = document.createElement('b'); hp.textContent = person.dead ? 'OUT' : `${person.hp} HP`;
+        const meter = document.createElement('i'); meter.setAttribute('role', 'meter'); meter.setAttribute('aria-label', `${lookupName(person.id)} health`);
+        meter.setAttribute('aria-valuemin', '0'); meter.setAttribute('aria-valuemax', String(person.maxHp)); meter.setAttribute('aria-valuenow', String(person.hp));
+        const fill = document.createElement('em'); fill.style.width = `${person.percent}%`; meter.append(fill); row.append(name, hp, meter); $('squad-health').append(row);
+      }
+    }
+    const viewed = healthHUDPlayer(state, playerId, spectatorId);
+    const spectating = viewed && viewed.id !== playerId;
+    $('combat-hud').hidden = inLobby || !viewed || (!viewed.alive && !spectating) || phase === 'matchEnd';
+    healthView = healthPresentation(viewed, healthView, { now: performance.now(), round: state?.round });
+    $('health').textContent = healthView.hp; $('health-max').textContent = `/ ${healthView.maxHp}`;
+    $('health-fill').style.width = `${healthView.percent}%`; $('health-trail').style.width = `${healthView.trailPercent}%`;
+    $('health-meter').setAttribute('aria-valuemax', String(healthView.maxHp)); $('health-meter').setAttribute('aria-valuenow', String(healthView.hp));
+    $('health-meter').setAttribute('aria-label', spectating ? `${lookupName(viewed.id)} health` : 'Your health');
+    $('health-subject').textContent = spectating ? lookupName(viewed.id).toUpperCase() : 'YOUR HEALTH';
+    $('health-status').textContent = healthView.dead ? 'ELIMINATED' : healthView.low ? 'LOW HEALTH · FIND COVER' : spectating ? 'TEAMMATE' : 'COMBAT READY';
+    $('health-readout').classList.toggle('low-health', healthView.low); $('health-readout').classList.toggle('is-spectating', !!spectating);
+    $('health-gain').hidden = spectating || performance.now() >= healthGainUntil || !healthGain;
+    $('health-gain').textContent = `+${healthGain} HP`;
+    const readout = combatReadout(viewed, WEAPONS, engine);
+    if (!previewWeapon) renderWeaponComparison(local?.weapon || 'carbine');
+    const weapon = WEAPONS[viewed?.weapon];
+    const pose = spectating ? viewed : predictedPlayer || local;
     $('position-status').textContent = !pose?.grounded ? 'AIRBORNE' : pose.y >= .75 ? 'HIGH GROUND' : 'GROUND LEVEL';
     $('position-status').classList.toggle('elevated', !!pose && pose.y >= .75);
     $('weapon-label').textContent = readout.label; $('ammo').textContent = readout.ammo; $('reserve').textContent = readout.reserve;
@@ -524,7 +627,7 @@ async function boot() {
     $('reload-track').setAttribute('aria-valuenow', String(Math.round(readout.progress?.percent || 0)));
     $('reload-track').setAttribute('aria-valuetext', `${((readout.progress?.remaining || 0) / 120).toFixed(1)} seconds remaining`);
     $('weapon-status').textContent = readout.status;
-    $('ammo').classList.toggle('low-ammo', !readout.sword && !readout.reloading && !!weapon && local?.ammo <= Math.max(2, Math.floor(weapon.magazine / 4)));
+    $('ammo').classList.toggle('low-ammo', !readout.sword && !readout.reloading && !!weapon && viewed?.ammo <= Math.max(2, Math.floor(weapon.magazine / 4)));
     $('grenade-charge').textContent = readout.grenades; $('potion-charge').textContent = readout.potions;
     $('grenade-utility').classList.toggle('spent', !readout.grenades);
     $('potion-utility').classList.toggle('spent', !readout.potions);
@@ -600,6 +703,7 @@ async function boot() {
     $('game-overlay').hidden = !overlay; $('overlay-kicker').textContent = kicker; $('overlay-title').textContent = title; $('overlay-subtitle').textContent = subtitle;
     $('enter-arena').hidden = !enter; $('retry-graphics').hidden = !graphicsError;
     $('arena-loadouts').hidden = !enter || !['countdown', 'buy'].includes(phase);
+    $('arena-weapon-stats').hidden = $('arena-loadouts').hidden;
     for (const button of document.querySelectorAll('[data-arena-loadout]')) {
       button.setAttribute('aria-pressed', String(button.dataset.arenaLoadout === local?.weapon));
       button.disabled = !connected || !['countdown', 'buy'].includes(phase);
@@ -689,7 +793,7 @@ async function boot() {
     if (previousPhase !== state.phase && previousPhase !== null) neutralize();
     if (state.phase === 'lobby' && previousPhase !== 'lobby') {
       neutralize({ pause: true, unlock: true }); entered = false; fallback = false;
-      eventSeen.clear(); eventOrder.length = 0; kills.length = 0; hitUntil = damageUntil = feedbackUntil = 0; lastCountdown = null; audio.resetEvents();
+      eventSeen.clear(); eventOrder.length = 0; kills.length = 0; healthView = null; healthGainUntil = 0; hitUntil = damageUntil = feedbackUntil = 0; lastCountdown = null; audio.resetEvents();
     }
     if (local && !local.alive && old?.players.find(player => player.id === playerId)?.alive !== false) neutralize({ pause: true, unlock: true });
     const ackValue = message.acks?.[playerId];
@@ -826,8 +930,14 @@ async function boot() {
   listen($('ready-button'), 'click', () => { playerName = saveName($('player-name').value); $('player-name').value = playerName; send({ type: 'join', name: playerName }); send({ type: 'ready', ready: !roster.find(player => player?.id === playerId)?.ready }); });
   listen($('rematch-button'), 'click', () => send({ type: 'rematch' }));
   listen($('player-name'), 'change', () => { playerName = saveName($('player-name').value); $('player-name').value = playerName; send({ type: 'join', name: playerName }); });
-  listen($('loadout-select'), 'change', () => { neutralize(); send({ type: 'fps-loadout', weaponId: $('loadout-select').value }); });
-  for (const button of document.querySelectorAll('[data-arena-loadout]')) listen(button, 'click', () => selectArenaLoadout(button.dataset.arenaLoadout));
+  listen($('loadout-select'), 'change', () => { previewWeapon = null; renderWeaponComparison($('loadout-select').value); neutralize(); send({ type: 'fps-loadout', weaponId: $('loadout-select').value }); });
+  for (const button of document.querySelectorAll('[data-arena-loadout]')) {
+    listen(button, 'click', () => { previewWeapon = null; renderWeaponComparison(button.dataset.arenaLoadout); selectArenaLoadout(button.dataset.arenaLoadout); });
+    listen(button, 'mouseenter', () => { previewWeapon = button.dataset.arenaLoadout; renderWeaponComparison(previewWeapon); });
+    listen(button, 'focus', () => { previewWeapon = button.dataset.arenaLoadout; renderWeaponComparison(previewWeapon); });
+    listen(button, 'mouseleave', () => { previewWeapon = null; renderWeaponComparison(ownPlayer()?.weapon || 'carbine'); });
+    listen(button, 'blur', () => { previewWeapon = null; renderWeaponComparison(ownPlayer()?.weapon || 'carbine'); });
+  }
   for (const button of document.querySelectorAll('[data-choose-team]')) listen(button, 'click', () => { neutralize({ pause: true, unlock: true }); teamSwitchPending = true; requestedTeam = Number(button.dataset.chooseTeam); send({ type: 'fps-team', team: requestedTeam }); updateUI(); });
   listen($('next-spectator'), 'click', () => {
     const local = ownPlayer(); const allies = state?.players.filter(player => player.team === local?.team && player.alive && player.id !== playerId) || [];
