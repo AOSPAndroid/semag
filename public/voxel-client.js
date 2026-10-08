@@ -1,6 +1,8 @@
 import { displayKey, gameKey, getKeyboardLayout, mountKeyboardLayoutPicker, subscribeKeyboardLayout } from './keyboard-layout.js';
 import { copyText, getName, hostInfo, roomUrl, saveName } from './hub/shared.js';
 import { GameAudio } from './audio.js';
+import { WEAPONS, WEAPON_IDS, weaponAimFovRatio, weaponSpread } from './voxel-weapons.js';
+import { advanceBolts, MAX_BOLTS } from './voxel-projectiles.js';
 
 export const LOOK_SENSITIVITY = 0.0025;
 export const FPS_BUTTONS = Object.freeze(['up', 'down', 'left', 'right', 'jump', 'crouch', 'walk', 'fire', 'reload', 'interact', 'aim', 'swap', 'grenade', 'heal']);
@@ -81,14 +83,15 @@ export function tacticalMapPlayers(state, localId, connectedIds) {
   if (!local) return [];
   const connected = connectedIds == null ? null : new Set(connectedIds);
   return state.players.filter(player => player.team === local.team && player.alive && (!connected || connected.has(player.id)) && [player.x, player.z, player.yaw].every(Number.isFinite))
-    .map(player => ({ id: player.id, x: player.x, z: player.z, yaw: player.yaw, self: player.id === localId }));
+    .map(player => ({ id: player.id, x: player.x, y: Number.isFinite(player.y) ? player.y : 0, z: player.z, yaw: player.yaw, self: player.id === localId }));
 }
 
 export function loadoutForKey(event, phase) {
-  if (!['countdown', 'buy', 'roundEnd'].includes(phase) || event.repeat || event.altKey || event.ctrlKey || event.metaKey || isFormTarget(event.target)) return null;
-  // Physical number keys also work with unshifted AZERTY &, é, ", ', ( and -.
-  return ({ Digit1: 'carbine', Digit2: 'smg', Digit3: 'marksman', Digit4: 'pistol', Digit5: 'shotgun', Digit6: 'burst', Numpad1: 'carbine', Numpad2: 'smg', Numpad3: 'marksman', Numpad4: 'pistol', Numpad5: 'shotgun', Numpad6: 'burst' })[event.code]
-    || ({ '1': 'carbine', '2': 'smg', '3': 'marksman', '4': 'pistol', '5': 'shotgun', '6': 'burst' })[event.key] || null;
+  if (!['countdown', 'buy', 'roundEnd'].includes(phase) || event.defaultPrevented || event.isComposing || event.repeat || event.altKey || event.ctrlKey || event.metaKey || isFormTarget(event.target)) return null;
+  // Physical number keys also work with unshifted AZERTY symbols, including è, _ and ç.
+  const physical = /^(?:Digit|Numpad)([1-9])$/.exec(event.code || '');
+  const digit = physical?.[1] || (/^[1-9]$/.test(event.key || '') ? event.key : null);
+  return digit ? WEAPON_IDS[Number(digit) - 1] || null : null;
 }
 
 /** Scope and look cues use the same finite authoritative ADS transition as the camera. */
@@ -99,12 +102,12 @@ export function aimFraction(player, ticks = 18) {
 
 export function aimLookMultiplier(player, ads = {}) {
   const progress = aimFraction(player, ads.ticks); const smooth = progress * progress * (3 - 2 * progress);
-  const zoom = player?.weapon === 'marksman' ? ads.scopedFovRatio || 40 / 70 : ads.fovRatio || 54 / 70;
+  const zoom = weaponAimFovRatio(player?.weapon, ads);
   return 1 + (zoom - 1) * smooth;
 }
 
 /** Action progress always comes from the simulation; readiness never anticipates a hit. */
-export function combatReadout(player, weapons = {}, rules = {}) {
+export function combatReadout(player, weapons = WEAPONS, rules = {}) {
   const weapon = weapons[player?.weapon]; const sword = player?.slot === 'sword';
   const ticks = Math.max(0, Number.isFinite(player?.meleeTicks) ? player.meleeTicks : 0, Number.isFinite(player?.meleeCooldown) ? player.meleeCooldown : 0);
   const meleePhase = ticks && !(player?.meleeTicks > 0) ? 'recovery' : player?.meleePhase || 'idle';
@@ -116,14 +119,22 @@ export function combatReadout(player, weapons = {}, rules = {}) {
   if (sword) {
     status = ticks ? `${(ticks / 120).toFixed(1)}S · ${meleePhase === 'startup' ? 'COMMITTING' : meleePhase === 'active' ? 'BLADE ACTIVE' : 'RECOVERING'}` : 'LMB STRIKE · V GUN';
     if (ticks) progress = { label: 'Sword attack and recovery', remaining: ticks, total: meleeTotal };
-  } else if (player?.ammo === 0) status = player.reserve > 0 ? 'R TO RELOAD' : 'OUT OF AMMUNITION';
+  } else if (player?.ammo === 0) status = player.reserve > 0 ? weapon?.projectile ? 'R TO RELOAD BOLT' : 'R TO RELOAD' : 'OUT OF AMMUNITION';
+  else if (weapon?.spinupTicks && player?.spinTicks > 0 && player.spinTicks < weapon.spinupTicks) {
+    status = 'SPINNING UP · HOLD FIRE';
+    progress = { label: 'LMG wind-up', remaining: weapon.spinupTicks - player.spinTicks, total: weapon.spinupTicks };
+  }
   else if (weapon?.mode === 'burst' && player?.burstRemaining > 0) status = 'BURST FIRING';
   else if (weapon?.mode === 'burst' && player?.shotCooldown > 0) status = `BURST RECOVERY ${(player.shotCooldown / 120).toFixed(1)}S`;
   else if (weapon?.mode === 'pump' && player?.shotCooldown > 0) status = `PUMPING ${(player.shotCooldown / 120).toFixed(1)}S`;
+  else if (weapon?.mode === 'bolt' && player?.shotCooldown > 0) {
+    status = `CYCLING BOLT ${(player.shotCooldown / 120).toFixed(1)}S`;
+    progress = { label: 'Bolt recovery', remaining: player.shotCooldown, total: weapon.cooldown };
+  }
   else if (!player?.grounded) status = 'AIRBORNE / UNSTEADY';
   else if (player?.aiming) status = Math.hypot(player.vx || 0, player.vz || 0) > .22 ? 'AIMING / MOVING' : 'AIMING / STEADY';
   else if (player?.crouching) status = Math.hypot(player.vx || 0, player.vz || 0) > .22 ? 'CROUCHED / MOVING' : 'CROUCHED / STEADY';
-  else status = ({ semi: 'CLICK EACH SHOT', burst: 'CLICK EACH BURST', pump: 'CLICK EACH SHELL' })[weapon?.mode] || 'RMB AIM · V SWORD';
+  else status = weapon?.projectile ? 'LEAD TARGET · CLICK EACH BOLT' : weapon?.spinupTicks ? 'HOLD FIRE · WIND-UP' : ({ semi: 'CLICK EACH SHOT', burst: 'CLICK EACH BURST', pump: 'CLICK EACH SHELL', bolt: 'SETTLE INTO SCOPE' })[weapon?.mode] || 'RMB AIM · V SWORD';
   if (reloading) { status = `RELOADING ${(player.reloadTicks / 120).toFixed(1)}S`; progress = { label: 'Reload', remaining: player.reloadTicks, total: weapon?.reloadTicks || player.reloadTicks }; }
   if (player?.grenadeThrowTicks > 0) status = `THROWING ${(player.grenadeThrowTicks / 120).toFixed(1)}S`;
   if (healing) {
@@ -138,7 +149,7 @@ export function combatReadout(player, weapons = {}, rules = {}) {
 
 /** A shotgun shell reports once; every pellet still supplies its own contact feedback. */
 export function hasGunshotReport(event) {
-  return ['shot', 'fire'].includes(event?.type) && (event.pellet == null || event.pellet === 0);
+  return ['shot', 'fire', 'boltLaunch'].includes(event?.type) && (event.pellet == null || event.pellet === 0);
 }
 
 /** Self-inflicted damage is incoming damage; it never earns an offensive hit cue. */
@@ -150,19 +161,29 @@ export function combatEventPerspective(event, localId) {
     incoming: localId != null && target === localId };
 }
 
-/** Interpolate remote bodies only. Camera aim and authoritative combat remain immediate. */
-export function interpolatedState(samples, targetTime, localId, { predictMovement, maxExtrapolationMs = 25 } = {}) {
+/** Smooth remote bodies and live bolts. Combat and camera aim remain authoritative. */
+export function interpolatedState(samples, targetTime, localId, { predictMovement, traceProjectile, maxExtrapolationMs = 25 } = {}) {
   if (!samples.length) return null;
   let from = samples[0]; let to = samples[samples.length - 1];
   for (let i = 1; i < samples.length; i++) {
     if (samples[i].time >= targetTime) { from = samples[i - 1]; to = samples[i]; break; }
     from = samples[i];
   }
-  const state = { ...to.state, players: to.state.players.map(player => ({ ...player })) };
+  const state = { ...to.state, players: to.state.players.map(player => ({ ...player })),
+    bolts: (to.state.bolts || []).slice(0, MAX_BOLTS).map(bolt => ({ ...bolt })) };
   state.fighters = state.players;
   const span = to.time - from.time;
   const ratio = span > 0 ? Math.max(0, Math.min(1, (targetTime - from.time) / span)) : 1;
   if (from.state.phase !== to.state.phase || from.state.round !== to.state.round) return state;
+  // Keep the newest membership: a hit/deleted bolt must never reappear while
+  // interpolating. Birth identity also prevents a reused round ID from sliding.
+  for (const bolt of state.bolts) {
+    const old = from.state.bolts?.find(other => other.id === bolt.id && other.playerId === bolt.playerId && other.bornTick === bolt.bornTick);
+    if (!old) continue;
+    for (const axis of ['x', 'y', 'z', 'vx', 'vy', 'vz']) {
+      if (Number.isFinite(old[axis]) && Number.isFinite(bolt[axis])) bolt[axis] = old[axis] + (bolt[axis] - old[axis]) * ratio;
+    }
+  }
   for (const player of state.players) {
     const old = from.state.players.find(other => other.id === player.id);
     if (player.id === localId || !old || old.alive !== player.alive) continue;
@@ -181,6 +202,19 @@ export function interpolatedState(samples, targetTime, localId, { predictMovemen
     const peers = state.players.map(player => ({ ...player }));
     for (const player of state.players) if (player.id !== localId && player.alive) predictMovement(player, player.previousInput || neutralInput(player.yaw, player.pitch), state.mapId, projectedTicks, peers);
   }
+  // A short projection fills the part of the 30 Hz interval beyond the newest
+  // sample. Reuse the authoritative sweep on copies, with no events or damage.
+  let boltSeconds = Math.min(25, maxExtrapolationMs, Math.max(0, targetTime - to.time)) / 1000;
+  if (boltSeconds > 0 && state.phase === 'fight' && state.bolts.length && typeof traceProjectile === 'function') {
+    const projection = { ...state, tick: state.tick };
+    while (boltSeconds > 1e-8 && projection.bolts.length) {
+      const dt = Math.min(1 / 120, boltSeconds);
+      projection.tick++;
+      advanceBolts(projection, { dt, trace: traceProjectile });
+      boltSeconds -= dt;
+    }
+    state.bolts = projection.bolts;
+  }
   return state;
 }
 
@@ -195,6 +229,20 @@ export function reconcilePlayer(player, history, ack, mapId, predictMovement, al
 async function boot() {
   const $ = id => document.getElementById(id);
   const canvas = $('arena');
+  // Both selectors are built once from the same catalog that validates the server loadout.
+  const loadoutOptions = document.createDocumentFragment(), arenaButtons = document.createDocumentFragment();
+  for (const [index, id] of WEAPON_IDS.entries()) {
+    const weapon = WEAPONS[id];
+    const caption = weapon.projectile ? 'Lead + bolt drop' : weapon.spinupTicks ? 'Hold fire to wind up' : weapon.mode === 'bolt' ? 'Settle into scope' : weapon.mode === 'burst' ? 'Three-shot volleys' : weapon.mode === 'pump' ? 'Close-range spread' : weapon.mode === 'semi' ? 'Fast single shots' : weapon.scoped ? 'Precise headshots' : weapon.magazine >= 30 ? 'Close quarters' : 'Measured bursts';
+    const option = document.createElement('option'); option.value = id; option.textContent = `${weapon.label} · ${caption}`; loadoutOptions.append(option);
+    const button = document.createElement('button'); button.dataset.arenaLoadout = id; button.setAttribute('aria-pressed', 'false');
+    button.setAttribute('aria-label', `${index + 1}: ${weapon.name}. ${weapon.description}`); button.title = weapon.description;
+    const number = document.createElement('b'); number.textContent = String(index + 1);
+    const detail = document.createElement('small'); detail.textContent = caption;
+    button.append(number, document.createTextNode(` ${weapon.label}`), detail); arenaButtons.append(button);
+  }
+  $('loadout-select').replaceChildren(loadoutOptions); $('arena-loadouts').replaceChildren(arenaButtons);
+  $('phase-shortcuts').textContent = WEAPON_IDS.map((id, index) => `${index + 1} ${WEAPONS[id].label}`).join(' · ');
   const roomId = new URLSearchParams(location.search).get('room')?.trim().toUpperCase() || '';
   const roomLabel = /^[A-Z0-9]{6}$/.test(roomId) ? roomId : 'NO ROOM';
   $('room-code').textContent = roomLabel;
@@ -291,7 +339,20 @@ async function boot() {
       const bounds = plan.bounds;
       svg.setAttribute('viewBox', `${bounds.minX - 2} ${bounds.minZ - 2} ${bounds.maxX - bounds.minX + 4} ${bounds.maxZ - bounds.minZ + 4}`);
       svg.append(svgNode('rect', { x: bounds.minX, y: bounds.minZ, width: bounds.maxX - bounds.minX, height: bounds.maxZ - bounds.minZ, class: 'map-floor' }));
-      for (const box of plan.colliders) svg.append(svgNode('rect', { x: box.x, y: box.z, width: box.w, height: box.d, class: `map-cover${box.h < 1.3 ? ' low' : ''}` }));
+      for (const box of plan.colliders) {
+        const top = box.y + box.h;
+        const cover = svgNode('rect', { x: box.x, y: box.z, width: box.w, height: box.d, class: `map-cover${top < 1.3 ? ' low' : top >= 2.5 && !box.id.startsWith('wall-') ? ' elevated' : ''}` });
+        svg.append(cover);
+      }
+      const climbMarkers = new Set();
+      for (const route of plan.routes || []) {
+        svg.append(svgNode('polyline', { points: [route.start, ...route.steps].map(point => `${point.x},${point.z}`).join(' '), class: 'map-climb-path' }));
+        for (const step of route.steps) {
+          const key = `${step.x}:${step.z}`; if (climbMarkers.has(key)) continue;
+          climbMarkers.add(key);
+          svg.append(svgNode('circle', { cx: step.x, cy: step.z, r: .5, class: 'map-climb-step' }));
+        }
+      }
       for (const site of plan.sites) {
         svg.append(svgNode('circle', { cx: site.x, cy: site.z, r: site.radius + .4, class: 'map-site' }));
         const label = svgNode('text', { x: site.x, y: site.z + 1.1, class: 'map-site-label' }); label.textContent = site.id; svg.append(label);
@@ -311,7 +372,7 @@ async function boot() {
       const pose = player.self && local.alive ? predictedPlayer || local : player;
       marker.setAttribute('transform', `translate(${pose.x} ${pose.z}) rotate(${(player.self ? aim.yaw : player.yaw) * 180 / Math.PI})`);
       marker.setAttribute('d', player.self ? 'M0 -1.8 L1.3 1.3 L0 .7 L-1.3 1.3 Z' : 'M1.2 0 A1.2 1.2 0 1 1 -1.2 0 A1.2 1.2 0 1 1 1.2 0 Z');
-      marker.setAttribute('class', player.self ? 'map-player self' : 'map-player');
+      marker.setAttribute('class', `${player.self ? 'map-player self' : 'map-player'}${pose.y >= .75 ? ' elevated-player' : ''}`);
     }
   }
 
@@ -329,7 +390,7 @@ async function boot() {
         if (target === playerId) damageUntil = performance.now() + 230;
       }
       if (['kill', 'death', 'elimination'].includes(event.type)) {
-        kills.push({ at: performance.now(), text: perspective.self ? `${lookupName(target)}  [SELF FRAG]` : `${shooter == null ? 'THE DEVICE' : lookupName(shooter)}  ${event.headshot ? '[HS]' : '›'}  ${lookupName(target)}`, own: perspective.outgoing, headshot: !!event.headshot });
+        kills.push({ at: performance.now(), text: perspective.self ? `${lookupName(target)}  [SELF FRAG]` : `${shooter == null ? 'THE DEVICE' : lookupName(shooter)}  ${event.weapon === 'crossbow' ? event.headshot ? '[BOLT HS]' : '[BOLT]' : event.headshot ? '[HS]' : '›'}  ${lookupName(target)}`, own: perspective.outgoing, headshot: !!event.headshot });
         if (kills.length > 4) kills.shift();
         if (perspective.outgoing) { hitUntil = performance.now() + 230; hitKind = 'elimination'; feedbackUntil = performance.now() + 1100; $('combat-feedback').textContent = event.headshot ? 'HEADSHOT · ELIMINATED' : 'ELIMINATED'; }
       }
@@ -341,8 +402,20 @@ async function boot() {
       try {
         if (hasGunshotReport(event)) {
           const own = shooter === playerId;
-          audio.noise(0.075, { highpass: 170, lowpass: 4400, gain: own ? 0.34 : 0.12 });
-          audio.tone(event.weapon === 'marksman' ? 90 : 150, 0.09, { end: 48, type: 'triangle', gain: own ? 0.26 : 0.09 });
+          if (event.weapon === 'crossbow') {
+            audio.noise(.045, { highpass: 1100, lowpass: 2900, gain: own ? .16 : .055 });
+            audio.tone(330, .14, { end: 80, type: 'triangle', gain: own ? .12 : .045 });
+          } else if (event.weapon === 'sniper') {
+            audio.noise(.12, { highpass: 110, lowpass: 3900, gain: own ? .38 : .13 });
+            audio.tone(80, .19, { end: 38, type: 'triangle', gain: own ? .3 : .1 });
+            if (own) audio.noise(.05, { highpass: 1800, lowpass: 4800, gain: .1, delay: .42 });
+          } else if (event.weapon === 'lmg') {
+            audio.noise(.06, { highpass: 220, lowpass: 4400, gain: own ? .3 : .11 });
+            audio.tone(110, .075, { end: 54, type: 'triangle', gain: own ? .22 : .075 });
+          } else {
+            audio.noise(0.075, { highpass: 170, lowpass: 4400, gain: own ? 0.34 : 0.12 });
+            audio.tone(event.weapon === 'marksman' ? 90 : 150, 0.09, { end: 48, type: 'triangle', gain: own ? 0.26 : 0.09 });
+          }
         } else if (event.type === 'damage' && (shooter === playerId || target === playerId)) {
           const soundKey = `${event.tick ?? state?.tick}:${perspective.incoming ? 'incoming' : 'outgoing'}`;
           if (impactSounds.has(soundKey)) continue;
@@ -437,8 +510,11 @@ async function boot() {
     $('combat-hud').hidden = inLobby || !local || !local.alive || phase === 'matchEnd';
     $('health').textContent = local?.hp ?? 100; $('health-fill').style.width = `${Math.max(0, Math.min(100, local?.hp ?? 100))}%`;
     $('health').closest('.health-readout').classList.toggle('low-health', !!local && local.hp <= 30);
-    const readout = combatReadout(local, engine?.WEAPONS, engine);
-    const weapon = engine?.WEAPONS?.[local?.weapon];
+    const readout = combatReadout(local, WEAPONS, engine);
+    const weapon = WEAPONS[local?.weapon];
+    const pose = predictedPlayer || local;
+    $('position-status').textContent = !pose?.grounded ? 'AIRBORNE' : pose.y >= .75 ? 'HIGH GROUND' : 'GROUND LEVEL';
+    $('position-status').classList.toggle('elevated', !!pose && pose.y >= .75);
     $('weapon-label').textContent = readout.label; $('ammo').textContent = readout.ammo; $('reserve').textContent = readout.reserve;
     $('weapon-readout').dataset.slot = readout.healing ? 'potion' : readout.sword ? 'sword' : 'primary';
     $('weapon-readout').classList.toggle('healing', readout.healing);
@@ -453,14 +529,15 @@ async function boot() {
     $('grenade-utility').classList.toggle('spent', !readout.grenades);
     $('potion-utility').classList.toggle('spent', !readout.potions);
     $('potion-utility').classList.toggle('channeling', readout.healing);
-    const scoped = !!local?.alive && local.slot !== 'sword' && !readout.healing && local.weapon === 'marksman' && aimFraction(local, engine?.ADS?.ticks) >= 14 / 18;
+    const scoped = !!local?.alive && local.slot !== 'sword' && !readout.healing && !!weapon?.scoped && aimFraction(local, engine?.ADS?.ticks) >= 14 / 18;
     $('scope-reticle').hidden = !controlsActive() || phase !== 'fight' || !scoped;
+    $('scope-label').textContent = `${weapon?.label || 'PRECISION'} / PRECISION SIGHT`;
     $('crosshair').hidden = !controlsActive() || phase !== 'fight' || scoped || readout.healing;
     $('crosshair').dataset.stance = readout.sword ? 'sword' : local?.aiming ? 'aim' : 'hip';
     if (local) {
       const motion = weapon ? Math.max(0, Math.min(1, (Math.hypot(local.vx, local.vz) - .22) / weapon.speed)) : 0;
       const ads = aimFraction(local, engine?.ADS?.ticks);
-      const spread = weapon ? (weapon.pelletSpread || 0) + (motion * weapon.movingSpread + (local.grounded ? 0 : weapon.airborneSpread) + Math.min(8, local.heat || 0) * weapon.bloom) * (1 + ((engine?.ADS?.spreadMultiplier || .4) - 1) * ads) : 0;
+      const spread = weapon ? (weapon.pelletSpread || 0) + weaponSpread(weapon, { motion, grounded: local.grounded, heat: local.heat, ads }, engine?.ADS) : 0;
       const size = readout.sword ? 27 : Math.round(22 - ads * 8 + Math.min(64, spread * canvas.clientHeight * 2));
       $('crosshair').style.width = `${size}px`; $('crosshair').style.height = `${size}px`;
     }
@@ -542,7 +619,7 @@ async function boot() {
 
   function draw(now = performance.now()) {
     if (!renderer || !state || graphicsError || document.hidden) return;
-    const renderedState = interpolatedState(snapshots, now - 12, playerId, { predictMovement: engine.predictLocalMovement }) || state;
+    const renderedState = interpolatedState(snapshots, now - 12, playerId, { predictMovement: engine.predictLocalMovement, traceProjectile: engine.traceShot }) || state;
     const local = ownPlayer();
     if (teamSwitchPending && local?.team === requestedTeam) { teamSwitchPending = false; requestedTeam = null; }
     const viewPlayer = local?.alive ? predictedPlayer || local : renderedState.players.find(player => player.id === spectatorId && player.team === local?.team && player.alive) || local;
@@ -688,7 +765,7 @@ async function boot() {
     const layout = getKeyboardLayout();
     $('move-keys').textContent = layout.toUpperCase();
     for (const label of document.querySelectorAll('[data-voxel-key]')) label.textContent = displayKey(label.dataset.voxelKey, layout);
-    canvas.setAttribute('aria-label', `3D tactical shooter. ${layout.toUpperCase()} or arrows to move, mouse to look, left click to shoot or strike, right click to aim, V switch sword, ${displayKey('Q', layout)} grenade, F healing potion, R reload, hold E to plant or defuse, Space jump, Control crouch, Shift walk.`);
+    canvas.setAttribute('aria-label', `3D tactical shooter. ${layout.toUpperCase()} or arrows to move, mouse to look, left click to shoot or strike, right click to aim, V switch sword, ${displayKey('Q', layout)} grenade, F healing potion, R reload, hold E to plant or defuse, Space jump between crates and ledges, Control crouch, Shift walk. Choose nine weapons with number keys 1 to 9 during setup.`);
   }
   function updateLayout() { neutralize({ pause: entered, unlock: true }); updateKeyLabels(); }
   const unsubscribeLayout = subscribeKeyboardLayout(updateLayout); updateKeyLabels();
@@ -816,8 +893,8 @@ async function boot() {
     for (const remove of removers) remove(); pending = []; snapshots = []; kills.length = 0; eventSeen.clear();
   }
   listen(window, 'pagehide', destroy);
-  const inspect = () => clone({ state, players: roster, playerId, input: currentInput(), predictedPlayer, connected, controls: { pointerLocked: pointerLocked(), fallback, touch: touchMode, paused, entered, modalOpen }, queueLength: pending.length, renderCount, graphicsError, spectatorId });
-  window.SemagVoxel = Object.freeze({ getState: inspect });
+  const inspect = () => clone({ state, players: roster, playerId, input: currentInput(), predictedPlayer, connected, controls: { pointerLocked: pointerLocked(), fallback, touch: touchMode, paused, entered, modalOpen }, queueLength: pending.length, renderCount, renderStats: renderer?.stats || null, graphicsError, spectatorId });
+  window.SemagVoxel = Object.freeze({ getState: inspect, inspect });
   updateUI();
   try {
     const [engineModule, rendererModule] = await Promise.all([import('./voxel-engine.js'), import('./voxel-renderer.js')]);

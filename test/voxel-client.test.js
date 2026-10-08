@@ -1,7 +1,68 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { aimFraction, aimLookMultiplier, combatEventPerspective, combatReadout, cleanAim, composeInput, controlForKey, createContinuousInputPacer, FPS_BUTTONS, hasGunshotReport, interpolatedState, isFormTarget, loadoutForKey, matchClock, neutralInput, reconcilePlayer, roundResult, tacticalMapPlayers } from '../public/voxel-client.js';
-import { createState, emptyInput, MAPS, predictLocalMovement } from '../public/voxel-engine.js';
+import { createState, emptyInput, MAPS, predictLocalMovement, traceShot, WEAPONS } from '../public/voxel-engine.js';
+import { advanceBolts, launchBolt } from '../public/voxel-projectiles.js';
+
+function boltSamples() {
+  const state = createState(); state.phase = 'fight'; state.tick = 10;
+  launchBolt(state, state.players[0], WEAPONS.crossbow, { x: 20, y: 3, z: 5 }, { x: 0, y: 0, z: -1 });
+  const before = structuredClone(state);
+  for (let tick = 0; tick < 4; tick++) { state.tick++; advanceBolts(state, { trace: traceShot }); }
+  return [{ time: 0, state: before }, { time: 1000 / 30, state: structuredClone(state) }];
+}
+
+test('live bolts interpolate at frame time on copied positions and velocity', () => {
+  const samples = boltSamples(), original = JSON.stringify(samples);
+  const rendered = interpolatedState(samples, 1000 / 60, 0);
+  assert.ok(Math.abs(rendered.bolts[0].z - 4.2) < 1e-10);
+  assert.ok(Math.abs(rendered.bolts[0].y - 2.9975) < 1e-10);
+  assert.ok(Math.abs(rendered.bolts[0].vy - -.15) < 1e-10);
+  assert.notEqual(rendered.bolts, samples[1].state.bolts); assert.notEqual(rendered.bolts[0], samples[1].state.bolts[0]);
+  assert.equal(JSON.stringify(samples), original);
+});
+
+test('deleted bolts never reappear and a new birth or owner never inherits old flight', () => {
+  const samples = boltSamples(); samples[1].state.bolts = [];
+  assert.deepEqual(interpolatedState(samples, 10, 0).bolts, []);
+  for (const field of ['bornTick', 'playerId']) {
+    const reused = boltSamples(); reused[1].state.bolts[0][field]++;
+    assert.equal(interpolatedState(reused, 10, 0).bolts[0].z, reused[1].state.bolts[0].z);
+  }
+});
+
+test('round and phase transitions do not interpolate or project reused bolt identities', () => {
+  for (const change of [{ round: 2 }, { phase: 'countdown' }]) {
+    const samples = boltSamples(); Object.assign(samples[1].state, change);
+    const rendered = interpolatedState(samples, 15, 0, { traceProjectile: traceShot });
+    assert.equal(rendered.bolts[0].z, samples[1].state.bolts[0].z);
+  }
+});
+
+test('bolt projection follows gravity between snapshots and stops after 25 milliseconds', () => {
+  const [sample] = boltSamples(), original = JSON.stringify(sample.state);
+  const rendered = interpolatedState([sample], 25, 0, { traceProjectile: traceShot });
+  assert.ok(Math.abs(rendered.bolts[0].z - 3.8) < 1e-10);
+  assert.ok(Math.abs(rendered.bolts[0].y - (3 - .5 * 9 * .025 ** 2)) < 1e-10);
+  const stalled = interpolatedState([sample], 1000, 0, { traceProjectile: traceShot, maxExtrapolationMs: 1000 });
+  assert.deepEqual(stalled.bolts, rendered.bolts); assert.equal(JSON.stringify(sample.state), original);
+  const paused = interpolatedState([{ ...sample, state: { ...sample.state, phase: 'roundEnd' } }], 25, 0, { traceProjectile: traceShot });
+  assert.equal(paused.bolts[0].z, 5);
+});
+
+test('projected bolts respect real cover, the floor and bodies without applying render damage', () => {
+  for (const contact of ['wall', 'floor', 'body']) {
+    const state = createState(); state.phase = 'fight'; state.tick = 10;
+    const origin = contact === 'wall' ? { x: -4, y: 1.62, z: 6.15 } : { x: 20, y: contact === 'floor' ? .02 : 1.62, z: 5 };
+    const aim = contact === 'floor' ? { x: 0, y: -1, z: 0 } : { x: 0, y: 0, z: -1 };
+    if (contact === 'body') Object.assign(state.players[1], { x: 20, y: 0, z: 4.3 });
+    launchBolt(state, state.players[0], WEAPONS.crossbow, origin, aim);
+    const original = JSON.stringify(state), rendered = interpolatedState([{ time: 0, state }], 25, 0, { traceProjectile: traceShot });
+    assert.deepEqual(rendered.bolts, [], `${contact} absorbs the projected bolt`);
+    assert.equal(rendered.players[1].hp, 100); assert.equal(JSON.stringify(state), original);
+    assert.deepEqual(rendered.events, state.events);
+  }
+});
 
 test('FPS controls use printed French letters and preserve arrows and actions', () => {
   assert.equal(controlForKey({ key: 'z', code: 'KeyW' }, 'zqsd'), 'up');
@@ -119,10 +180,17 @@ test('arena loadout shortcuts respect setup phases, French digits, form focus an
     assert.equal(loadoutForKey({ key: "'", code: 'Digit4' }, phase), 'pistol');
     assert.equal(loadoutForKey({ key: '(', code: 'Digit5' }, phase), 'shotgun');
     assert.equal(loadoutForKey({ key: '-', code: 'Digit6' }, phase), 'burst');
-    for (const [key, weapon] of [['4', 'pistol'], ['5', 'shotgun'], ['6', 'burst']]) assert.equal(loadoutForKey({ key, code: `Numpad${key}` }, phase), weapon);
+    assert.equal(loadoutForKey({ key: 'è', code: 'Digit7' }, phase), 'sniper');
+    assert.equal(loadoutForKey({ key: '_', code: 'Digit8' }, phase), 'lmg');
+    assert.equal(loadoutForKey({ key: 'ç', code: 'Digit9' }, phase), 'crossbow');
+    for (const [key, weapon] of [['4', 'pistol'], ['5', 'shotgun'], ['6', 'burst'], ['7', 'sniper'], ['8', 'lmg'], ['9', 'crossbow']]) {
+      assert.equal(loadoutForKey({ key, code: `Numpad${key}` }, phase), weapon);
+      assert.equal(loadoutForKey({ key }, phase), weapon);
+    }
   }
   for (const phase of ['lobby', 'fight', 'matchEnd']) assert.equal(loadoutForKey({ key: '2', code: 'Digit2' }, phase), null);
-  for (const blocked of [{ repeat: true }, { ctrlKey: true }, { metaKey: true }, { altKey: true }, { target: { closest() { return {}; } } }]) assert.equal(loadoutForKey({ key: '1', ...blocked }, 'buy'), null);
+  for (const blocked of [{ repeat: true }, { defaultPrevented: true }, { isComposing: true }, { ctrlKey: true }, { metaKey: true }, { altKey: true }, { target: { closest() { return {}; } } }]) assert.equal(loadoutForKey({ key: '1', ...blocked }, 'buy'), null);
+  for (const key of ['0', 'è', '_', 'ç', 'F7']) assert.equal(loadoutForKey({ key }, 'buy'), null, 'symbols require their physical number-row identity');
 });
 
 test('form, buttons and dialog targets never supply game input', () => {
@@ -258,6 +326,8 @@ test('aim sensitivity follows the finite camera zoom throughout ADS and release'
   assert.equal(aimLookMultiplier({ weapon: 'carbine', aimTicks: 0 }), 1);
   assert.equal(aimLookMultiplier({ weapon: 'carbine', aimTicks: 18 }), 54 / 70);
   assert.equal(aimLookMultiplier({ weapon: 'marksman', aimTicks: 18 }), 40 / 70);
+  assert.ok(Math.abs(aimLookMultiplier({ weapon: 'sniper', aimTicks: 18 }) - 32 / 70) < 1e-12);
+  assert.ok(aimLookMultiplier({ weapon: 'sniper', aimTicks: 9 }) < aimLookMultiplier({ weapon: 'marksman', aimTicks: 9 }));
   assert.equal(aimLookMultiplier({ weapon: 'carbine', aimTicks: 9, aiming: false }), 1 + (54 / 70 - 1) / 2, 'releasing aim keeps look aligned with the still narrowing view');
   assert.ok(aimLookMultiplier({ weapon: 'marksman', aimTicks: 9 }) < aimLookMultiplier({ weapon: 'carbine', aimTicks: 9 }));
   assert.equal(aimLookMultiplier({ weapon: 'marksman', aimTicks: 5 }, { ticks: 5, scopedFovRatio: .5 }), .5);
@@ -318,6 +388,8 @@ test('self grenade hits count as hurt feedback and never as successful offense',
 test('one shotgun shell produces one report while legacy shots and pellets remain supported', () => {
   assert.equal(hasGunshotReport({ type: 'shot', weapon: 'carbine' }), true);
   assert.equal(hasGunshotReport({ type: 'fire', weapon: 'marksman' }), true);
+  assert.equal(hasGunshotReport({ type: 'boltLaunch', weapon: 'crossbow' }), true);
+  assert.equal(hasGunshotReport({ type: 'boltImpact', weapon: 'crossbow' }), false);
   assert.equal(hasGunshotReport({ type: 'shot', pellet: 0, pelletCount: 8 }), true);
   for (let pellet = 1; pellet < 8; pellet++) assert.equal(hasGunshotReport({ type: 'shot', pellet, pelletCount: 8 }), false);
   assert.equal(hasGunshotReport({ type: 'damage', pellet: 0 }), false);
@@ -325,4 +397,37 @@ test('one shotgun shell produces one report while legacy shots and pellets remai
   const volley = Array.from({ length: 6 }, (_, playerId) => Array.from({ length: 8 }, (_, pellet) => ({ type: 'shot', playerId, weapon: 'shotgun', pellet }))).flat();
   assert.equal(volley.filter(hasGunshotReport).length, 6, 'a full 3v3 volley needs six gun reports rather than 48');
   assert.equal(volley.length, 48, 'audio gating never removes pellet contact events');
+});
+
+test('LMG feedback shows only authoritative wind-up, and utility interrupts its progress', () => {
+  const player = { weapon: 'lmg', slot: 'primary', grounded: true, hp: 80, maxHp: 100, ammo: 48, reserve: 96, spinTicks: 12 };
+  let readout = combatReadout(player);
+  assert.equal(readout.status, 'SPINNING UP · HOLD FIRE');
+  assert.equal(readout.progress.label, 'LMG wind-up');
+  assert.equal(readout.progress.remaining, 12); assert.equal(readout.progress.percent, 50);
+  player.spinTicks = 24;
+  assert.equal(combatReadout(player).progress, null, 'a fully wound weapon has no fictitious loading progress');
+  player.spinTicks = 0;
+  assert.equal(combatReadout(player).status, 'HOLD FIRE · WIND-UP');
+  player.spinTicks = 12; player.reloadTicks = 198;
+  readout = combatReadout(player); assert.equal(readout.progress.label, 'Reload'); assert.equal(readout.progress.percent, 50);
+  player.healTicks = 120;
+  readout = combatReadout(player); assert.equal(readout.label, 'HEALING POTION'); assert.equal(readout.progress.label, 'Drinking healing potion');
+});
+
+test('sniper recovery and single-bolt crossbow reload are visible without anticipating hits', () => {
+  const player = { weapon: 'sniper', slot: 'primary', grounded: true, ammo: 4, reserve: 15, shotCooldown: 120 };
+  let readout = combatReadout(player);
+  assert.equal(readout.label, 'BOLT SNIPER'); assert.equal(readout.status, 'CYCLING BOLT 1.0S');
+  assert.equal(readout.progress.label, 'Bolt recovery'); assert.equal(readout.progress.percent, 20);
+  player.shotCooldown = 0;
+  assert.equal(combatReadout(player).status, 'SETTLE INTO SCOPE');
+  Object.assign(player, { weapon: 'crossbow', ammo: 0, reserve: 12, shotCooldown: 90 });
+  assert.equal(combatReadout(player).status, 'R TO RELOAD BOLT');
+  player.reloadTicks = 99;
+  readout = combatReadout(player); assert.equal(readout.progress.label, 'Reload'); assert.equal(readout.progress.percent, 50);
+  Object.assign(player, { reloadTicks: 0, shotCooldown: 0, ammo: 1 });
+  assert.equal(combatReadout(player).status, 'LEAD TARGET · CLICK EACH BOLT');
+  assert.equal(combatEventPerspective({ type: 'boltLaunch', playerId: 0 }, 0).outgoing, false, 'firing a bolt is not a confirmed hit');
+  assert.equal(combatEventPerspective({ type: 'damage', weapon: 'crossbow', playerId: 0, targetId: 1 }, 0).outgoing, true);
 });

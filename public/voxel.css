@@ -56,3 +56,14 @@
 .arena-loadouts{width:100%;min-width:0}.arena-loadouts button{min-width:0;overflow-wrap:anywhere}
 /* A tall mobile setup keeps the parent width when its aspect ratio yields. */
 .game-shell{min-width:0}.viewport{width:100%;min-width:0}
+
+/* Nine loadouts remain reachable inside shorter windows and mobile setup views. */
+.game-overlay{grid-template-rows:minmax(0,1fr)}
+.overlay-card{max-height:100%;overflow-y:auto;overscroll-behavior:contain;scrollbar-color:#7f9974 #16281f;scrollbar-width:thin}
+.arena-loadouts button{line-height:1.4}.arena-loadouts button small{line-height:1.35}
+.position-status{font:8px monospace;letter-spacing:.6px;color:#b4c5ac;padding:2px 1px;text-shadow:0 1px 3px #08130b}
+.position-status.elevated{color:#f2d18d}
+.map-cover.elevated{fill:#8b8262;stroke:#c3b786}.map-climb-path{fill:none;stroke:#e6c583;stroke-width:.35;stroke-dasharray:1 1;opacity:.62}
+.map-climb-step{fill:#24372c;stroke:#f0d29a;stroke-width:.34}.map-player.elevated-player{stroke:#ffe1a0;stroke-width:.7}.map-caption b{font:9px monospace;color:#f0d29a}
+@media(max-width:600px){.viewport:has(.arena-loadouts:not([hidden])){min-height:430px}.position-status{font-size:6px;letter-spacing:.3px}.phase-announcement>small{line-height:1.8}}
+@media(max-width:350px){.viewport:has(.arena-loadouts:not([hidden])){min-height:400px}.arena-loadouts button{min-height:45px}}

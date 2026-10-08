@@ -412,3 +412,36 @@ test('six Voxel clients observe a normal-input plant, defuse and authoritative r
   assert.ok(defused[0].state.events.some(event => event.type === 'plant'));
   assert.ok(defused[0].state.events.some(event => event.type === 'defuse'));
 });
+
+test('flagship maps and weapons round-trip through real team rooms without live loadout refills', async t => {
+  const game = await host(t);
+  for (const [index, mapId] of ['rooftops', 'foundry', 'bastion'].entries()) {
+    const room = await game.make(index + 1, mapId), seats = await game.fill(room);
+    for (let id = 0; id < seats.length; id++) {
+      const weaponId = ['sniper', 'lmg', 'crossbow'][id % 3], { peer } = seats[id];
+      const after = peer.messages.length;
+      peer.send({ type: 'fps-loadout', weaponId });
+      await peer.untilState(message => message.state.players[id].weapon === weaponId, { after });
+      assert.equal(room.state.players[id].ammo, Voxel.WEAPONS[weaponId].magazine);
+    }
+    await readyEveryone(room, seats);
+    advance(game.app, room, 'fight');
+    const shooter = room.state.players[0], ammo = shooter.ammo;
+    await inputFrames(game, room, seats[0], { fire: true, yaw: 1.5, pitch: 0 }, 1);
+    assert.equal(shooter.ammo, ammo - 1);
+    const after = seats[0].peer.messages.length;
+    seats[0].peer.send({ type: 'fps-loadout', weaponId: 'crossbow' });
+    await seats[0].peer.waitFor(message => message.type === 'error', { after });
+    assert.equal(shooter.weapon, 'sniper'); assert.equal(shooter.ammo, ammo - 1);
+    const listed = await (await fetch(`${game.origin}/api/rooms`)).json();
+    assert.equal(listed.rooms.find(item => item.id === room.id).mapId, mapId);
+    assert.equal(room.state.mapName, Voxel.MAPS[mapId].name);
+    for (const { peer } of seats) peer.socket.terminate();
+    await new Promise(resolve => setTimeout(resolve, 5));
+  }
+  for (const path of ['/voxel-maps.js', '/voxel-weapons.js', '/voxel-projectiles.js']) {
+    const response = await fetch(game.origin + path);
+    assert.equal(response.status, 200); assert.match(response.headers.get('Content-Type'), /javascript/);
+    assert.ok((await response.text()).length > 100);
+  }
+});

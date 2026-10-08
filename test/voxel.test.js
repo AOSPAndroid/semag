@@ -62,7 +62,7 @@ test('the nearest physical body blocks a shot and crouched heads lower precisely
   assert.equal(game.traceShot(solo, 0, { x: 20, y: .98, z: 5 }, { x: 0, y: 0, z: -1 }).kind, 'head');
 });
 test('stationary first shots are accurate and headshots use each weapon multiplier', () => {
-  for (const weapon of Object.keys(game.WEAPONS).filter(id => id !== 'shotgun')) {
+  for (const weapon of ['carbine', 'smg', 'marksman', 'pistol', 'burst']) {
     const state = game.createState(); game.selectLoadout(state, 0, weapon); game.startMatch(state); advance(state, 1320); lane(state); shot(state);
     const hit = state.events.findLast(event => event.type === 'shot'); assert.equal(hit.hitKind, 'head'); close(hit.dx, 0); close(hit.dy, 0); assert.equal(state.players[1].hp, Math.max(0, 100 - Math.round(game.WEAPONS[weapon].damage * game.WEAPONS[weapon].headMultiplier)));
   }
@@ -292,7 +292,7 @@ test('authored maps have two reachable sites and distinct geometry for every mod
     const flank = siteIndex ? 20 : -20, crossing = siteIndex && mapId === 'depot' ? -10 : -7, site = arena.sites[siteIndex];
     driveTo(flank, 18); driveTo(flank, crossing); driveTo(site.x, crossing); driveTo(site.x, site.z); hold(state, 0, 360); assert.equal(state.bomb.status, 'planted', `${mapId} ${site.id}`);
   }
-  assert.equal(new Set(Object.values(game.MAPS).map(map => JSON.stringify(map.colliders))).size, 3);
+  assert.equal(new Set(Object.values(game.MAPS).map(map => JSON.stringify(map.colliders))).size, Object.keys(game.MAPS).length);
 });
 test('every authored map screens all three-versus-three spawn headshot lanes', () => {
   for (const mapId of Object.keys(game.MAPS)) {
@@ -309,13 +309,14 @@ test('invalid input cannot poison finite player state or invent keypresses', () 
   for (const f of state.players) for (const key of ['x', 'y', 'z', 'vx', 'vy', 'vz', 'yaw', 'pitch', 'hp', 'ammo']) assert.ok(Number.isFinite(f[key]));
 });
 
-test('all six primary loadouts keep finite ammunition and refill only between rounds', () => {
+test('all nine primary loadouts keep finite ammunition and refill only between rounds', () => {
   const state = game.createState();
-  assert.deepEqual(Object.keys(game.WEAPONS), ['carbine', 'smg', 'marksman', 'pistol', 'shotgun', 'burst']);
+  assert.deepEqual(Object.keys(game.WEAPONS), ['carbine', 'smg', 'marksman', 'pistol', 'shotgun', 'burst', 'sniper', 'lmg', 'crossbow']);
   for (const weapon of Object.values(game.WEAPONS)) {
     assert.equal(game.selectLoadout(state, 0, weapon.id).ok, true);
     assert.equal(state.players[0].ammo, weapon.magazine); assert.equal(state.players[0].reserve, weapon.reserve);
   }
+  game.selectLoadout(state, 0, 'burst');
   game.startMatch(state); advance(state, 1320); lane(state);
   shot(state, 0, { yaw: Math.PI / 2 }); assert.equal(state.players[0].ammo, game.WEAPONS.burst.magazine - 1);
   assert.equal(game.selectLoadout(state, 0, 'pistol').ok, false);

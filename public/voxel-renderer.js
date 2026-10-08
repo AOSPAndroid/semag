@@ -1,4 +1,5 @@
-import { MAPS, WEAPONS, ADS, MELEE, HEAL } from './voxel-engine.js';
+import { MAPS, ADS, MELEE, HEAL } from './voxel-engine.js';
+import { WEAPONS, weaponAimFovRatio } from './voxel-weapons.js';
 
 // All solid world surfaces come directly from the engine's minimum-corner
 // colliders. Decoration is either painted on those surfaces or outside bounds.
@@ -12,6 +13,17 @@ const ATMOSPHERE = Object.freeze({
   courtyard: { sun: [-.52, .76, .39], direct: [.66, .51, .35], ambient: [.45, .52, .60], top: '#729aac', horizon: '#efd1ac', sunColor: '#ffe2a6' },
   depot: { sun: [-.36, .88, -.31], direct: [.51, .59, .61], ambient: [.40, .49, .59], top: '#719cae', horizon: '#d0ddd9', sunColor: '#e8f2df' },
   canal: { sun: [.47, .81, -.35], direct: [.62, .58, .45], ambient: [.44, .52, .61], top: '#799fb6', horizon: '#e7dfc5', sunColor: '#fff0c5' },
+  rooftops: { sun: [-.58, .75, -.30], direct: [.64, .57, .43], ambient: [.43, .53, .61], top: '#729aac', horizon: '#eee0c3', sunColor: '#ffe6b6' },
+  foundry: { sun: [.42, .80, .43], direct: [.60, .50, .35], ambient: [.44, .49, .56], top: '#748b9c', horizon: '#c5bdac', sunColor: '#ffd69d' },
+  bastion: { sun: [-.37, .84, .40], direct: [.56, .59, .54], ambient: [.44, .53, .62], top: '#7699b0', horizon: '#d9e4d9', sunColor: '#f0edc5' },
+});
+const ART = Object.freeze({
+  courtyard: { paving: '#d7c7aa', accent: '#cc9d76', skyline: '#748b90', cloud: '#f4dcc0', tile: 2.5 },
+  depot: { paving: '#4f626c', accent: '#c79152', skyline: '#5f747c', cloud: '#dfe9df', tile: 5 },
+  canal: { paving: '#a9b8b2', accent: '#608f91', skyline: '#657c81', cloud: '#dfe9df', tile: 1.6 },
+  rooftops: { paving: '#b6c5bc', accent: '#6faaa3', skyline: '#7e9d9b', cloud: '#ece8d5', tile: 2.5 },
+  foundry: { paving: '#5d6769', accent: '#d69b62', skyline: '#5f7078', cloud: '#d9d7c9', tile: 5 },
+  bastion: { paving: '#a2afa9', accent: '#c4b06c', skyline: '#70878a', cloud: '#e2e9dd', tile: 2.5 },
 });
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const finite = (value, fallback = 0) => Number.isFinite(value) ? value : fallback;
@@ -233,6 +245,17 @@ function rayCoverDistance(origin, direction, colliders, maximum, padding = 0) {
   return nearest;
 }
 
+/** Highest surface beneath a point, independent of authored collider order. */
+export function surfaceBelow(colliders, x, z, height) {
+  let support = null, top = 0;
+  for (const collider of colliders || []) {
+    const candidate = collider.y + collider.h;
+    if (x < collider.x || x > collider.x + collider.w || z < collider.z || z > collider.z + collider.d || candidate > height + .005 || candidate <= top) continue;
+    support = collider; top = candidate;
+  }
+  return support;
+}
+
 const GLYPHS = Object.freeze({
   A: ['01110','10001','10001','11111','10001','10001','10001'], B: ['11110','10001','10001','11110','10001','10001','11110'],
   C: ['01111','10000','10000','10000','10000','10000','01111'], D: ['11110','10001','10001','10001','10001','10001','11110'],
@@ -300,7 +323,7 @@ function paintCollider(mesh, collider, theme) {
     else mesh.box(xx, yy, zz, ww, hh, dd, color);
   };
   const skin = .012;
-  const dark = shade(c, .58), pale = mix(c, rgba('#e4dfcb'), .30), accent = rgba(theme === 'canal' ? '#608f91' : theme === 'depot' ? '#c79152' : '#cc9d76');
+  const dark = shade(c, .58), pale = mix(c, rgba('#e4dfcb'), .30), accent = rgba((ART[theme] || ART.courtyard).accent);
   const rim = Math.min(.08, w / 5, d / 5, h / 6);
   if (material === 'water') {
     for (let i = 0; i < 9; i++) {
@@ -447,13 +470,66 @@ function floorLetter(mesh, letter, x, z, size, color) {
   }
 }
 
+function floorChevron(mesh, x, z, yaw, color, y = .016) {
+  const point = ([xx, zz]) => {
+    const rotated = rotate([xx, 0, zz], yaw);
+    return [x + rotated[0], y, z + rotated[2]];
+  };
+  for (const points of [[[-.30, .20], [-.22, .28], [.045, .015], [-.04, -.07]], [[-.045, .015], [.22, .28], [.30, .20], [.04, -.07]]]) {
+    mesh.quad(...points.map(point), [0, 1, 0], rgba(color));
+  }
+}
+
+function routePaint(mesh, map) {
+  const byId = new Map((map.colliders || []).map(collider => [collider.id, collider]));
+  const trimmed = new Set();
+  const color = mix(rgba('#e1c88e'), rgba((ART[map.theme || map.id] || ART.courtyard).accent), .23);
+  for (const route of map.routes || []) {
+    const steps = route.steps || [], start = route.start, first = steps[0];
+    if (start && first && [start.x, start.z, first.x, first.z].every(Number.isFinite)) {
+      floorChevron(mesh, start.x, start.z, Math.atan2(first.x - start.x, start.z - first.z), color);
+    }
+    for (let i = 0; i < steps.length; i++) {
+      const step = steps[i], collider = byId.get(step.colliderId);
+      if (!collider || ![step.x, step.z].every(Number.isFinite)) continue;
+      const top = collider.y + collider.h;
+      if (!trimmed.has(collider.id)) {
+        trimmed.add(collider.id);
+        // These narrow strips are paint on the playable top, never a railing
+        // or a lip that would alter the jump or its collision silhouette.
+        const inset = .065, edge = .027;
+        if (collider.w > .20 && collider.d > .20) {
+          mesh.floor(collider.x + inset, collider.z + inset, collider.w - inset * 2, edge, color, top + .004);
+          mesh.floor(collider.x + inset, collider.z + collider.d - inset - edge, collider.w - inset * 2, edge, color, top + .004);
+          mesh.floor(collider.x + inset, collider.z + inset, edge, collider.d - inset * 2, color, top + .004);
+          mesh.floor(collider.x + collider.w - inset - edge, collider.z + inset, edge, collider.d - inset * 2, color, top + .004);
+        }
+      }
+      const next = steps[i + 1];
+      if (collider.w >= .75 && collider.d >= .75) {
+        const x = clamp(step.x, collider.x + .36, collider.x + collider.w - .36);
+        const z = clamp(step.z, collider.z + .36, collider.z + collider.d - .36);
+        floorChevron(mesh, x, z, next ? Math.atan2(next.x - x, z - next.z) : route.side === 'north' ? Math.PI : 0, color, top + .016);
+      }
+    }
+  }
+}
+
 function mapPaint(mesh, map, theme) {
   const find = id => map.colliders.find(collider => collider.id === id);
-  const siteColumn = id => id === 'A' ? find(theme === 'courtyard' ? 'west-site-column' : theme === 'depot' ? 'west-loading-column' : 'west-site-pillar') : find(theme === 'courtyard' ? 'east-site-column' : theme === 'depot' ? 'east-loading-column' : 'east-site-pillar');
-  for (const site of map.sites) { const column = siteColumn(site.id); if (column) siteSign(mesh, column, site.id); }
+  const siteColumn = id => {
+    const side = id === 'A' ? 'west' : 'east';
+    const prefix = ({ rooftops: 'roofline', foundry: 'foundry', bastion: 'bastion' })[theme];
+    return find(prefix ? `${prefix}-${side}-site-column` : `${side}-${theme === 'courtyard' ? 'site-column' : theme === 'depot' ? 'loading-column' : 'site-pillar'}`);
+  };
+  for (const site of map.sites || []) {
+    const column = siteColumn(site.id) || map.colliders.filter(collider => collider.h >= 2.5 && collider.y < .1 && collider.w >= .8 && collider.d >= .8 && !String(collider.id).startsWith('wall-')).sort((a, b) => Math.hypot(a.x + a.w / 2 - site.x, a.z + a.d / 2 - site.z) - Math.hypot(b.x + b.w / 2 - site.x, b.z + b.d / 2 - site.z))[0];
+    if (column) siteSign(mesh, column, site.id);
+  }
   if (theme === 'courtyard') {
     for (const side of ['west', 'east']) {
       const collider = find(`${side}-arcade`), color = side === 'west' ? '#dfa962' : '#68aaa2';
+      if (!collider) continue;
       for (const face of ['north', 'south']) {
         wallPatch(mesh, collider, face, .24, 1.57, 2.02, .73, '#354648', .027);
         const label = face === 'south' ? (side === 'west' ? 'A <' : '> B') : (side === 'west' ? '> A' : 'B <');
@@ -462,7 +538,7 @@ function mapPaint(mesh, map, theme) {
       }
     }
     const central = find('central-north');
-    for (const face of ['north', 'south']) {
+    if (central) for (const face of ['north', 'south']) {
       wallPatch(mesh, central, face, 3.53, 2.01, 2.94, .93, '#9b6851', .025);
       wallText(mesh, central, face, 'COURT', 3.75, 2.28, .49, '#edd9b3', .034);
     }
@@ -477,13 +553,14 @@ function mapPaint(mesh, map, theme) {
       for (const x of [site.x - 2.75, site.x + 2.70]) mesh.floor(x, site.z - 2.75, .075, 5.5, '#d6b35f', .005);
     }
     const central = find('mid-container');
-    for (const face of ['west', 'east']) {
+    if (central) for (const face of ['west', 'east']) {
       wallPatch(mesh, central, face, .34, .42, .14, 2.32, '#d7b269', .032);
       wallText(mesh, central, face, '03', .79, 1.31, .82, '#eddfc7', .032);
     }
-  } else {
+  } else if (theme === 'canal') {
     for (const side of ['west', 'east']) {
       const market = find(`${side}-market`), accent = side === 'west' ? '#527f81' : '#bf7f59';
+      if (!market) continue;
       for (const face of ['north', 'south']) {
         wallPatch(mesh, market, face, .08, .19, market.w - .16, .55, accent, .024);
         for (let left = .10; left < market.w - .10; left += .72) wallPatch(mesh, market, face, left, 2.74, .33, .34, '#d6d4b6', .025);
@@ -493,23 +570,69 @@ function mapPaint(mesh, map, theme) {
     }
     for (const id of ['canal-west-bank', 'canal-east-bank']) {
       const bank = find(id);
+      if (!bank) continue;
       for (let z = bank.z + .20; z < bank.z + bank.d - .20; z += .38) mesh.floor(bank.x + .025, z, bank.w - .05, .035, '#d0cdb7', bank.y + bank.h + .003);
     }
+  } else if (theme === 'rooftops') {
+    // Flat service-lane paint keeps the alleys readable below the walkways.
+    for (const x of [-10.5, 10.5]) for (let z = -17; z < 18; z += 3.2) mesh.floor(x, z, .085, 1.15, '#d9dfc9', .005);
+    for (const collider of map.colliders) {
+      if (collider.y > 2 && collider.h < .8) {
+        const top = collider.y + collider.h;
+        mesh.floor(collider.x + .08, collider.z + .08, collider.w - .16, .08, '#719e98', top + .003);
+        mesh.floor(collider.x + .08, collider.z + collider.d - .16, collider.w - .16, .08, '#719e98', top + .003);
+      }
+    }
+  } else if (theme === 'foundry') {
+    for (const x of [-10, 10]) for (let z = -18; z < 18; z += 3) mesh.floor(x - .08, z, .16, 1.4, '#caa063', .005);
+    for (const collider of map.colliders) {
+      if (collider.h > 1.8 && collider.w > 3 && collider.y < .1 && !String(collider.id).startsWith('wall-')) {
+        for (const face of ['north', 'south']) {
+          wallPatch(mesh, collider, face, .15, .38, collider.w - .3, .08, '#d2a16a', .021);
+          for (let left = .2; left < collider.w - .25; left += .48) wallPatch(mesh, collider, face, left, .58, .15, .16, '#c48b52', .021);
+        }
+      }
+    }
+  } else if (theme === 'bastion') {
+    for (const x of [-12.5, 12.5]) {
+      for (let z = -17; z < 18; z += 1.5) mesh.floor(x - .24, z, .48, .14, '#bdc3aa', .005);
+    }
+    for (const collider of map.colliders) {
+      if (collider.h > 2.4 && collider.w > 3 && collider.y < .1) {
+        for (const face of ['north', 'south']) {
+          wallPatch(mesh, collider, face, .06, 1.1, collider.w - .12, .12, '#8c9d85', .021);
+          wallPatch(mesh, collider, face, .06, collider.h - .40, collider.w - .12, .10, '#c4ba88', .021);
+        }
+      }
+    }
   }
+  if (['rooftops', 'foundry', 'bastion'].includes(theme)) {
+    const sign = map.colliders.find(collider => collider.w >= 5 && collider.h >= 2.7 && collider.y < .1 && !String(collider.id).startsWith('wall-'));
+    if (sign) {
+      const label = theme === 'rooftops' ? 'ROOFLINE' : theme === 'foundry' ? 'FOUNDRY' : 'BASTION';
+      const width = Math.min(4.2, sign.w - .4), left = (sign.w - width) / 2;
+      for (const face of ['north', 'south']) {
+        wallPatch(mesh, sign, face, left, 1.72, width, .78, '#314748', .026);
+        wallText(mesh, sign, face, label, left + .15, 1.91, .42, '#e5d2a4', .034);
+      }
+    }
+  }
+  routePaint(mesh, map);
 }
 
-function mapMeshes(map) {
+export function mapMeshes(map) {
   const opaque = new Mesh(), shadows = new Mesh();
   const bounds = map.bounds || { minX: -25, maxX: 25, minZ: -25, maxZ: 25 };
   const theme = map.theme || map.id;
-  const floorColor = mix(rgba(map.floorColor || '#929b8b'), rgba(theme === 'courtyard' ? '#d7c7aa' : theme === 'depot' ? '#4f626c' : '#a9b8b2'), .36);
+  const art = ART[theme] || ART.courtyard;
+  const floorColor = mix(rgba(map.floorColor || '#929b8b'), rgba(art.paving), .36);
   const { minX, maxX, minZ, maxZ } = bounds;
   const width = maxX - minX, depth = maxZ - minZ;
   opaque.floor(minX - 35, minZ - 35, width + 70, depth + 70, shade(floorColor, .72), -.025);
   opaque.floor(minX, minZ, width, depth, floorColor, 0);
   // Repeating paving seams are flat markings, so visible traversable ground is
   // identical to collision ground. A single GPU mesh serves the entire map.
-  const tile = theme === 'depot' ? 5 : theme === 'canal' ? 1.6 : 2.5;
+  const tile = art.tile;
   for (let x = minX; x < maxX; x += tile) for (let z = minZ; z < maxZ; z += tile) {
     const seed = hash(`${map.id}:${x}:${z}`), lane = theme === 'courtyard' && Math.abs(Math.abs(x + tile / 2) - 11) < 2;
     const tint = shade(floorColor, .94 + seed % 5 * .022);
@@ -520,7 +643,7 @@ function mapMeshes(map) {
   for (const collider of map.colliders || []) {
     paintCollider(opaque, collider, theme);
     if (collider.h < .15) continue;
-    const sun = atmosphere.sun, dx = -sun[0] / sun[1] * collider.h, dz = -sun[2] / sun[1] * collider.h;
+    const sun = atmosphere.sun, elevation = collider.y + collider.h, dx = -sun[0] / sun[1] * elevation, dz = -sun[2] / sun[1] * elevation;
     for (let layer = 3; layer >= 0; layer--) {
       const soft = .035 + layer * .075;
       const corners = [[collider.x - soft, collider.z - soft], [collider.x + collider.w + soft, collider.z - soft], [collider.x + collider.w + soft, collider.z + collider.d + soft], [collider.x - soft, collider.z + collider.d + soft]];
@@ -541,7 +664,7 @@ function mapMeshes(map) {
   }
   // Only skyline geometry sits outside the collision perimeter. It cannot
   // create misleading obstacles, routes, or peek-through decorative windows.
-  const skylineColor = rgba(theme === 'canal' ? '#657c81' : theme === 'depot' ? '#5f747c' : '#748b90');
+  const skylineColor = rgba(art.skyline);
   const backdrop = (axis, side, start, length) => {
     for (let i = 0; i < length; i += 4.5) {
       const seed = hash(`${map.id}:${axis}:${side}:${i}`), h = 6 + seed % 7;
@@ -552,13 +675,17 @@ function mapMeshes(map) {
       opaque.box(x, -.05, z, w, h, d, c);
       opaque.box(x - .07, h - .2, z - .07, w + .14, .18, d + .14, shade(c, .70));
       if (theme === 'courtyard') opaque.box(x + .16, h, z + .16, w - .32, .30, d - .32, mix(c, rgba('#ad8971'), .34));
-      if (theme === 'depot' && seed % 3 === 0) {
+      if ((theme === 'depot' || theme === 'foundry') && seed % 3 === 0) {
         opaque.box(x + .45, h, z + .45, 1.4, .72, 1.6, shade(c, .72));
         opaque.box(x + 2.50, h, z + 1.1, .38, 2.3, .38, '#80634f');
       }
       if (theme === 'canal') {
         opaque.box(x + .1, h, z + .1, w - .2, .40, d - .2, mix(c, rgba('#b48369'), .42));
         opaque.box(x + .65, h + .4, z + .8, 2.6, .35, 2.4, mix(c, rgba('#b48369'), .54));
+      }
+      if (theme === 'rooftops') opaque.box(x + .1, h, z + .1, w - .2, .18, d - .2, '#c4cbb9');
+      if (theme === 'bastion') {
+        for (let xx = x + .2; xx < x + w - .25; xx += 1.1) opaque.box(xx, h, z + .1, .55, .48, .52, mix(c, rgba('#9eaa98'), .22));
       }
       if (seed % 4 === 0) {
         const xx = x + 1.2, zz = z + 1.4;
@@ -581,7 +708,7 @@ function mapMeshes(map) {
   backdrop('z', maxZ + 7, minX - 8, width + 16);
   backdrop('x', minX - 11, minZ - 8, depth + 16);
   backdrop('x', maxX + 7, minZ - 8, depth + 16);
-  const cloud = rgba(theme === 'courtyard' ? '#f4dcc0' : '#dfe9df');
+  const cloud = rgba(art.cloud);
   for (let i = 0; i < 6; i++) {
     const seed = hash(`${map.id}:cloud:${i}`), xx = minX - 22 + i * 17, zz = minZ - 28 + (seed % 35), yy = 23 + seed % 7;
     opaque.box(xx, yy, zz, 8 + seed % 5, .65, 3.6, cloud);
@@ -591,12 +718,15 @@ function mapMeshes(map) {
   return { opaque: opaque.array, shadows: shadows.array };
 }
 
+const weaponLength = weapon => ({ pistol: .42, smg: .68, marksman: 1.04, shotgun: 1.02, burst: .87, sniper: 1.26, lmg: 1.08, crossbow: .83 })[weapon] || .92;
+
 function weaponParts(mesh, weapon, pose, options = {}) {
   const pistol = weapon === 'pistol', shotgun = weapon === 'shotgun', burst = weapon === 'burst';
-  const rifle = !pistol, smg = weapon === 'smg', marksman = weapon === 'marksman';
-  const length = pistol ? .42 : smg ? .68 : marksman ? 1.04 : shotgun ? 1.02 : burst ? .87 : .92;
+  const rifle = !pistol, smg = weapon === 'smg', marksman = weapon === 'marksman', sniper = weapon === 'sniper', lmg = weapon === 'lmg';
+  const scoped = !!WEAPONS[weapon]?.scoped;
+  const length = weaponLength(weapon);
   const limit = options.limit ?? length + .20;
-  const body = rgba(options.body || (smg ? '#506f76' : marksman ? '#465d62' : shotgun ? '#7d6248' : burst ? '#765b52' : pistol ? '#63788a' : '#57675e')), trim = '#202d32', metal = '#b2bfb7';
+  const body = rgba(options.body || (smg ? '#506f76' : sniper ? '#62706a' : lmg ? '#79764f' : marksman ? '#465d62' : shotgun ? '#7d6248' : burst ? '#765b52' : pistol ? '#63788a' : '#57675e')), trim = '#202d32', metal = '#b2bfb7';
   const reload = clamp(finite(options.reloadProgress), 0, 1), magazineDrop = reload > .04 && reload < .64 ? Math.sin((reload - .04) / .60 * Math.PI) * .25 : 0;
   const part = (x, y, z, w, h, d, color) => {
     // The weapon points down local -Z. Clamp each part at the first solid
@@ -605,13 +735,55 @@ function weaponParts(mesh, weapon, pose, options = {}) {
     const clippedDepth = z + d - clippedZ;
     if (clippedDepth > 0) mesh.box(x, y, clippedZ, w, h, clippedDepth, color, pose);
   };
+  const string = (a, b, width, color) => {
+    const dx = b[0] - a[0], dz = b[2] - a[2], length = Math.hypot(dx, dz) || 1;
+    const offset = [-dz / length * width / 2, 0, dx / length * width / 2];
+    const transform = point => {
+      const clipped = [point[0], point[1], Math.max(point[2], -limit)];
+      const rotated = rotate(pose.scale ? clipped.map(value => value * pose.scale) : clipped, pose.yaw, pose.pitch);
+      return [rotated[0] + pose.x, rotated[1] + pose.y, rotated[2] + pose.z];
+    };
+    const points = [a.map((v, i) => v - offset[i]), a.map((v, i) => v + offset[i]), b.map((v, i) => v + offset[i]), b.map((v, i) => v - offset[i])].map(transform);
+    const normal = rotate([0, 1, 0], pose.yaw, pose.pitch), tint = rgba(color);
+    // A two-sided continuous ribbon reads as a taut string from either side,
+    // using fewer triangles than disconnected tiny boxes along its length.
+    mesh.quad(...points, normal, tint);
+    mesh.quad(...[...points].reverse(), normal.map(value => -value), tint);
+  };
+  if (weapon === 'crossbow') {
+    const loaded = options.loaded !== false && reload === 0;
+    const draw = reload > 0 ? smooth(reload) : 1;
+    const stringZ = lerp(-.61, -.19, draw);
+    part(-.055, -.061, -.62, .11, .132, .68, '#676d52');
+    part(-.065, -.012, -.65, .13, .080, .51, '#354844');
+    part(-.045, .069, -.72, .09, .020, .63, '#a0ac8a');
+    part(-.067, -.060, -.055, .134, .13, .26, options.stock || '#ad9170');
+    part(-.034, -.20, -.01, .068, .15, .075, '#31433d');
+    // The horizontal limbs and thin cocking string distinguish this weapon
+    // from a rifle. A real loaded bolt disappears as soon as ammo is spent.
+    part(-.44, -.014, -.69, .88, .052, .085, '#6f8d79');
+    part(-.49, -.010, -.76, .17, .046, .084, '#a2b59a');
+    part(.32, -.010, -.76, .17, .046, .084, '#a2b59a');
+    string([-.45, .014, -.69], [0, .014, stringZ], .009, '#d7d3b1');
+    string([0, .014, stringZ], [.45, .014, -.69], .009, '#d7d3b1');
+    if (loaded) {
+      part(-.009, .094, -.79, .018, .018, .66, '#ddcc99');
+      part(-.015, .090, -.84, .030, .024, .078, '#c4d1c3');
+      part(-.040, .089, -.16, .080, .012, .11, '#709d8e');
+      part(-.006, .073, -.16, .012, .056, .11, '#709d8e');
+    }
+    part(-.034, .112, -.13, .015, .040, .027, trim);
+    part(.019, .112, -.13, .015, .040, .027, trim);
+    part(-.006, .112, -.61, .012, .040, .020, '#cce1af');
+    return length;
+  }
   if (rifle) {
     part(-.067, -.055, -.44, .134, .145, .45, body);
     part(-.055, -.032, -.64, .11, .10, .24, trim);
     part(-.025, -.014, -length, .05, .054, length - .60 + .04, metal);
     part(-.041, -.02, -length - .035, .082, .075, .06, trim);
     part(-.049, .080, -.36, .098, .033, .30, '#262f35');
-    if (!shotgun) {
+    if (!shotgun && !lmg) {
       const magazineZ = burst ? -.11 : -.18;
       part(-.045, -.25 - magazineDrop, magazineZ + magazineDrop * .16, .09, .20, .105, trim);
       part(-.045, -.23 - magazineDrop, magazineZ - .002 + magazineDrop * .16, .09, .04, .109, burst ? '#bb8878' : '#738b80');
@@ -654,9 +826,36 @@ function weaponParts(mesh, weapon, pose, options = {}) {
         part(-.10 - shell * .025, -.039 - (1 - shell) * .06, -.25, .033, .015, .033, '#d5b871');
       }
     }
-    if (marksman) {
+    if (lmg) {
+      part(-.090, -.068, -.51, .18, .17, .37, '#536250');
+      part(-.100, -.030, -.34, .20, .18, .31, '#797d58');
+      part(-.075, -.27 - magazineDrop, -.27, .15, .23, .24, '#485340');
+      part(-.074, -.262 - magazineDrop, -.268, .148, .048, .236, '#9c9d70');
+      part(-.05, -.092, -.95, .10, .063, .41, '#435442');
+      for (let i = 0; i < 6; i++) {
+        part(-.155 - i * .022, .040 - i * .012, -.30, .027, .034, .043, '#b5a570');
+        part(-.154 - i * .022, .067 - i * .012, -.30, .025, .009, .042, '#d4c189');
+      }
+      part(-.15, .017, -.34, .07, .05, .105, '#344331');
+      part(-.032, -.038, -1.11, .064, .073, .082, '#293830');
+      const spin = clamp(finite(options.spin), 0, 1);
+      for (let i = 0; i < 3; i++) part(.102, .062, -.20 + i * .034, .006, .018, .022, spin >= (i + 1) / 3 ? '#d4dba2' : '#35483c');
+    }
+    if (sniper) {
+      part(-.071, -.025, -.58, .142, .11, .46, '#718170');
+      part(-.044, -.01, -1.18, .088, .075, .29, '#344740');
+      part(-.065, -.018, -1.30, .13, .095, .14, '#43594f');
+      part(-.075, .02, .10, .15, .16, .17, '#7e8b70');
+      part(-.030, -.040, -1.01, .022, .11, .035, '#516055');
+      part(.008, -.040, -1.01, .022, .11, .035, '#516055');
+      const recovery = clamp(finite(options.cycle), 0, 1), bolt = Math.sin(recovery * Math.PI) * .15;
+      part(.065, .013, -.28 + bolt, .087, .023, .037, '#b7c6b6');
+      part(.13, -.025 + Math.sin(recovery * Math.PI) * .055, -.28 + bolt, .045, .07, .045, '#31483e');
+    }
+    if (scoped) {
       part(-.050, .105, -.36, .10, .023, .19, '#2c3f43');
-      for (const z of [-.465, -.14]) {
+      const front = sniper ? -.58 : -.465;
+      for (const z of [front, -.14]) {
         // The scope is an open square tube. At full ADS the camera looks
         // through its aperture, rather than at a solid painted glass block.
         part(-.063, .115, z, .023, .12, .045, '#202f34');
@@ -664,12 +863,12 @@ function weaponParts(mesh, weapon, pose, options = {}) {
         part(-.040, .115, z, .080, .017, .045, '#202f34');
         part(-.040, .216, z, .080, .019, .045, '#202f34');
       }
-      part(-.060, .139, -.42, .017, .063, .285, '#31464a');
-      part(.043, .139, -.42, .017, .063, .285, '#31464a');
+      part(-.060, .139, front + .045, .017, .063, -front - .18, '#31464a');
+      part(.043, .139, front + .045, .017, .063, -front - .18, '#31464a');
       part(-.03, -.023, -.68, .06, .025, .05, '#bca6de');
       part(.057, .160, -.29, .029, .035, .065, '#a1bdb1');
       if (finite(options.aim) < .2) {
-        part(-.040, .132, -.469, .08, .075, .004, '#73aaa7');
+        part(-.040, .132, front - .004, .08, .075, .004, '#73aaa7');
         part(-.040, .132, -.094, .08, .075, .004, '#5f9c9d');
         part(-.007, .132, -.089, .004, .075, .002, '#203d40');
         part(-.040, .171, -.089, .08, .004, .002, '#203d40');
@@ -686,7 +885,7 @@ function weaponParts(mesh, weapon, pose, options = {}) {
     part(-.040, -.19 - magazineDrop, -.113, .08, .015, .109, '#8eb0bd');
     for (let i = 0; i < 4; i++) part(.046, .066, -.17 + slide + i * .02, .006, .035, .008, '#596e79');
   }
-  if (!marksman) {
+  if (!scoped) {
     // A genuine open rear notch and luminous front post share the same
     // .152 sight line, which the first-person ADS pose places on camera Y=0.
     const front = pistol ? -.355 : -length + .05, rear = pistol ? -.085 : -.15;
@@ -810,7 +1009,7 @@ function playerMesh(mesh, player, map, time, allied) {
   const reloadTilt = Math.sin(reloadProgress * Math.PI);
   const gunPose = { x: pose.x + handOffset[0], y: pose.y + handOffset[1] - reloadTilt * .12, z: pose.z + handOffset[2], yaw: heldYaw + (sword ? motion.yaw : 0), pitch: heldPitch + (sword ? motion.pitch : -reloadTilt * .24), scale: sword && !healing ? 1.35 : 1 };
   const direction = [Math.sin(gunPose.yaw) * Math.cos(gunPose.pitch), Math.sin(gunPose.pitch), -Math.cos(gunPose.yaw) * Math.cos(gunPose.pitch)];
-  const limit = Math.max(0, rayCoverDistance([gunPose.x, gunPose.y, gunPose.z], direction, map.colliders || [], sword ? 1.24 * 1.35 : 1.09, sword ? .088 : 0) - .025) / gunPose.scale;
+  const limit = Math.max(0, rayCoverDistance([gunPose.x, gunPose.y, gunPose.z], direction, map.colliders || [], sword ? 1.24 * 1.35 : weaponLength(player.weapon) + .12, sword ? .088 : 0) - .025) / gunPose.scale;
   if (healing) {
     const progress = clamp(1 - player.healTicks / HEAL.ticks, 0, 1), drink = Math.sin(progress * Math.PI);
     const bottlePose = { ...gunPose, pitch: drink * .72 };
@@ -821,7 +1020,7 @@ function playerMesh(mesh, player, map, time, allied) {
     mesh.box(-.070, -.085, -.025, .14, .16, .20, '#526662', gunPose);
     mesh.box(-.060, -.075, .15, .12, .15, .27, uniform, gunPose);
   } else {
-    weaponParts(mesh, player.weapon, gunPose, { limit, stock: color, reloadProgress, aim: aimProgress(player) });
+    weaponParts(mesh, player.weapon, gunPose, { limit, stock: color, reloadProgress, aim: aimProgress(player), loaded: player.ammo > 0, spin: finite(player.spinTicks) / (WEAPONS[player.weapon]?.spinupTicks || 1), cycle: 1 - finite(player.shotCooldown) / (WEAPONS[player.weapon]?.cooldown || 1) });
     mesh.box(-.33, -.072, -.43, .17, .14, .26, '#526662', gunPose);
     mesh.box(-.08, -.14, -.11, .13, .14, .17, '#526662', gunPose);
   }
@@ -841,6 +1040,7 @@ export class VoxelRenderer {
     this.mapCache = new Map(); this.mapId = null; this.effectRound = null; this.effectPhase = null; this.eventIds = new Set(); this.eventQueue = [];
     this.particles = []; this.tracers = []; this.localShot = null; this.localReload = null;
     this.lastAim = null; this.swayX = 0; this.swayY = 0;
+    this._frameDrawCalls = 0; this._frameDynamicVertices = 0; this._mapVertices = 0;
     this._onLost = event => {
       event.preventDefault(); this.contextLost = true; this.available = false;
       this.error = 'The 3D graphics context was interrupted. Waiting for the browser to restore it.';
@@ -907,7 +1107,7 @@ export class VoxelRenderer {
     const meshes = mapMeshes(map);
     const result = { opaque: this._staticMesh(meshes.opaque), shadows: this._staticMesh(meshes.shadows) };
     this.mapCache.set(map.id, result);
-    // At most the three authored maps remain resident.
+    // A bounded cache keeps six authored maps from doubling resident memory.
     while (this.mapCache.size > 3) {
       const [key, old] = this.mapCache.entries().next().value;
       this.gl.deleteBuffer(old.opaque.buffer); this.gl.deleteBuffer(old.shadows.buffer); this.mapCache.delete(key);
@@ -922,6 +1122,7 @@ export class VoxelRenderer {
     gl.enableVertexAttribArray(attributes.normal); gl.vertexAttribPointer(attributes.normal, 3, gl.FLOAT, false, stride, 12);
     gl.enableVertexAttribArray(attributes.color); gl.vertexAttribPointer(attributes.color, 4, gl.FLOAT, false, stride, 24);
     gl.drawArrays(gl.TRIANGLES, 0, mesh.count);
+    this._frameDrawCalls++;
   }
   _dynamic(array, kind = 'world') {
     const gl = this.gl, buffer = kind === 'weapon' ? this.weaponBuffer : kind === 'tracer' ? this.tracerBuffer : kind === 'contact' ? this.contactBuffer : this.dynamicBuffer, capacityKey = kind === 'weapon' ? 'weaponCapacity' : kind === 'tracer' ? 'tracerCapacity' : kind === 'contact' ? 'contactCapacity' : 'dynamicCapacity';
@@ -931,6 +1132,7 @@ export class VoxelRenderer {
       gl.bufferData(gl.ARRAY_BUFFER, this[capacityKey], gl.DYNAMIC_DRAW);
     }
     if (array.byteLength) gl.bufferSubData(gl.ARRAY_BUFFER, 0, array);
+    this._frameDynamicVertices += array.length / VERTEX_STRIDE;
     return { buffer, count: array.length / VERTEX_STRIDE };
   }
   _events(state, time, localId) {
@@ -955,6 +1157,14 @@ export class VoxelRenderer {
             const angle = (seed % 1000 + i * 1.618) * 2.39;
             this.particles.push({ origin: end, born: time, vx: Math.sin(angle) * (.5 + i * .13), vy: .6 + i * .11, vz: Math.cos(angle) * (.5 + i * .13), color: event.hitKind === 'wall' ? '#d4c7a1' : '#edb56f', life: 230 + i * 17 });
           }
+        }
+      } else if (event.type === 'boltLaunch') {
+        if (event.playerId === localId) this.localShot = { born: time, weapon: 'crossbow' };
+      } else if (event.type === 'boltHit') {
+        const origin = [finite(event.x), finite(event.y), finite(event.z)], seed = hash(key);
+        for (let i = 0; i < 5; i++) {
+          const angle = seed % 7 + i * 2.39996;
+          this.particles.push({ origin, born: time, vx: finite(event.nx) * .48 + Math.sin(angle) * .3, vy: finite(event.ny) * .48 + .25 + i * .035, vz: finite(event.nz) * .48 + Math.cos(angle) * .3, color: event.hitKind === 'wall' ? '#c9bea1' : '#e9b276', life: 170 + i * 14, gravity: 3, cover: true });
         }
       } else if (event.type === 'reload' && event.playerId === localId) this.localReload = { born: time, weapon: event.weapon };
       else if (event.type === 'grenadeBounce' || event.type === 'meleeHit' || event.type === 'healComplete') {
@@ -1005,7 +1215,7 @@ export class VoxelRenderer {
       const speed = Math.hypot(finite(grenade.vx), finite(grenade.vy), finite(grenade.vz));
       const spin = speed > .12 ? time * .005 + finite(grenade.bounces) * .8 : finite(grenade.bounces) * .8;
       grenadeParts(mesh, { x: grenade.x, y: grenade.y, z: grenade.z, yaw: spin, pitch: spin * .7 }, r, grenade.fuseTicks, time);
-      const support = map.colliders.find(collider => grenade.x >= collider.x && grenade.x <= collider.x + collider.w && grenade.z >= collider.z && grenade.z <= collider.z + collider.d && collider.y + collider.h <= grenade.y + .005 && collider.y + collider.h > 0);
+      const support = surfaceBelow(map.colliders, grenade.x, grenade.z, grenade.y - r);
       const ground = support ? support.y + support.h : 0, altitude = Math.max(0, grenade.y - r - ground);
       for (let layer = 1; layer >= 0; layer--) {
         const size = r * (.8 + layer * .5) + Math.min(.10, altitude * .05);
@@ -1013,6 +1223,21 @@ export class VoxelRenderer {
         const minZ = Math.max(grenade.z - size, support?.z ?? -Infinity), maxZ = Math.min(grenade.z + size, support ? support.z + support.d : Infinity);
         contacts.floor(minX, minZ, maxX - minX, maxZ - minZ, [.035, .055, .08, .17 / (1 + altitude * 1.5)], ground + .014 + layer * .0004);
       }
+    }
+  }
+  _bolts(mesh, state) {
+    for (const bolt of (state.bolts || []).slice(0, 24)) {
+      if (![bolt.x, bolt.y, bolt.z, bolt.vx, bolt.vy, bolt.vz].every(Number.isFinite)) continue;
+      const horizontal = Math.hypot(bolt.vx, bolt.vz);
+      const pose = { x: bolt.x, y: bolt.y, z: bolt.z, yaw: Math.atan2(bolt.vx, -bolt.vz), pitch: Math.atan2(bolt.vy, horizontal) };
+      // The live projectile is depth-tested in the operative batch. It never
+      // draws an instantaneous beam or a trail through solid cover.
+      // The simulated point is the tip; the shaft stays behind it so it cannot
+      // visually enter a wall before the swept projectile contact does.
+      mesh.box(-.009, -.009, .04, .018, .018, .37, '#d8ceaa', pose);
+      mesh.box(-.015, -.012, 0, .030, .024, .078, '#c3d2c1', pose);
+      mesh.box(-.045, -.006, .32, .09, .012, .09, bolt.team === 1 ? '#7baaa1' : '#b7a177', pose);
+      mesh.box(-.006, -.042, .32, .012, .084, .09, bolt.team === 1 ? '#7baaa1' : '#b7a177', pose);
     }
   }
   _viewModel(player, yaw, pitch, time) {
@@ -1065,14 +1290,14 @@ export class VoxelRenderer {
     const throwing = Math.sin(clamp(finite(player.grenadeThrowTicks) / 24, 0, 1) * Math.PI);
     const pose = {
       x: lerp(.29, 0, aim) + (this.swayX + Math.sin(step) * .008 * walking) * steady,
-      y: lerp(-.29, -(player.weapon === 'marksman' ? .175 : .152) * .74, aim) + (this.swayY - Math.abs(Math.cos(step)) * .008 * walking) * steady - reload * .105 - throwing * .15,
+      y: lerp(-.29, -(WEAPONS[player.weapon]?.adsSightHeight || .152) * .74, aim) + (this.swayY - Math.abs(Math.cos(step)) * .008 * walking) * steady - reload * .105 - throwing * .15,
       z: lerp(-.49, -.35, aim) + kick * .052 + reload * .065,
       yaw: -.065 * (1 - aim) + this.swayX * 2 * steady + reload * .22,
       pitch: kick * .055 * (1 - aim * .70) - reload * .23 - throwing * .20,
       scale: .74,
     };
     const pump = player.weapon === 'shotgun' && age > 80 && age < 640 ? Math.sin((age - 80) / 560 * Math.PI) : 0;
-    const length = weaponParts(mesh, player.weapon, pose, { stock: team, reloadProgress, bolt: kick * .75, pump, aim });
+    const length = weaponParts(mesh, player.weapon, pose, { stock: team, reloadProgress, bolt: kick * .75, pump, aim, loaded: player.ammo > 0, spin: finite(player.spinTicks) / (WEAPONS[player.weapon]?.spinupTicks || 1), cycle: 1 - finite(player.shotCooldown) / (WEAPONS[player.weapon]?.cooldown || 1) });
     const handShift = reload * .30, handDrop = reload * .17;
     if (player.weapon === 'pistol') {
       mesh.box(-.15, -.17 - handDrop, -.19 + handShift, .12, .13, .17, '#526661', pose);
@@ -1095,7 +1320,7 @@ export class VoxelRenderer {
       mesh.box(-.071, -.08, .085, .142, .163, .28, '#435952', hand);
       mesh.box(-.075, -.085, .26, .15, .175, .09, mix(rgba(team), rgba('#64796b'), .24), hand);
     }
-    if (age < 44 && !reloadActive) {
+    if (age < 44 && !reloadActive && player.weapon !== 'crossbow') {
       const flash = .032 + (1 - age / 44) * .040;
       mesh.box(-flash / 2, -.015, -length - .070, flash, flash, .085, '#f6d991', pose);
       mesh.box(-flash * .95, -.013 + flash * .2, -length - .055, flash * 1.9, flash * .38, .030, '#ffeabd', pose);
@@ -1124,9 +1349,10 @@ export class VoxelRenderer {
     const pitch = clamp(finite(options.aimPitch ?? options.pitch, finite(cameraPlayer.pitch)), -1.48, 1.48);
     const eye = [finite(cameraPlayer.x), finite(cameraPlayer.y) + (cameraPlayer.crouching ? .98 : 1.62), finite(cameraPlayer.z)];
     const gl = this.gl;
+    this._frameDrawCalls = 0; this._frameDynamicVertices = 0;
     this.resize();
-    const aim = aimProgress(cameraPlayer), zoom = cameraPlayer.weapon === 'marksman' ? ADS.scopedFovRatio : ADS.fovRatio;
-    const fov = clamp(finite(options.fov, 70), 55, 95) * lerp(1, finite(zoom, cameraPlayer.weapon === 'marksman' ? 40 / 70 : 54 / 70), aim) * Math.PI / 180;
+    const aim = aimProgress(cameraPlayer), zoom = weaponAimFovRatio(cameraPlayer.weapon, ADS);
+    const fov = clamp(finite(options.fov, 70), 55, 95) * lerp(1, zoom, aim) * Math.PI / 180;
     const projection = perspective(fov, this.aspect || 16 / 9, .025, 110), view = viewMatrix(eye, yaw, pitch);
     const sky = rgba(map.skyColor || (map.id === 'canal' ? '#a3bdc2' : map.id === 'depot' ? '#8da6b0' : '#a8bcb9'));
     const atmosphere = ATMOSPHERE[map.theme || map.id] || ATMOSPHERE.courtyard;
@@ -1140,13 +1366,14 @@ export class VoxelRenderer {
     gl.uniform3fv(this.skyUniforms.sundirection, atmosphere.sun);
     const sy = Math.sin(yaw), cy = Math.cos(yaw), sp = Math.sin(pitch), cp = Math.cos(pitch), tangent = Math.tan(fov / 2);
     gl.uniform3fv(this.skyUniforms.right, [cy, 0, sy]); gl.uniform3fv(this.skyUniforms.up, [-sy * sp, cp, cy * sp]); gl.uniform3fv(this.skyUniforms.forward, [sy * cp, sp, -cy * cp]);
-    gl.uniform2fv(this.skyUniforms.scale, [tangent * this.aspect, tangent]); gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.uniform2fv(this.skyUniforms.scale, [tangent * this.aspect, tangent]); gl.drawArrays(gl.TRIANGLES, 0, 3); this._frameDrawCalls++;
     gl.useProgram(this.program);
     gl.uniformMatrix4fv(this.uniforms.projection, false, projection); gl.uniformMatrix4fv(this.uniforms.view, false, view);
     gl.uniform3fv(this.uniforms.eye, eye); gl.uniform3fv(this.uniforms.fog, sky.slice(0, 3)); gl.uniform1f(this.uniforms.fogstrength, 1);
     gl.uniform3fv(this.uniforms.lightdirection, atmosphere.sun); gl.uniform3fv(this.uniforms.sun, atmosphere.direct); gl.uniform3fv(this.uniforms.ambient, atmosphere.ambient);
     gl.enable(gl.DEPTH_TEST); gl.depthMask(true); gl.disable(gl.BLEND); gl.enable(gl.CULL_FACE);
     const cached = this._getMap(map);
+    this._mapVertices = cached.opaque.count + cached.shadows.count;
     this._draw(cached.opaque);
     gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false);
     this._draw(cached.shadows); gl.depthMask(true); gl.disable(gl.BLEND);
@@ -1154,7 +1381,7 @@ export class VoxelRenderer {
     for (const player of players) {
       if (!player.alive || player.id === cameraPlayer.id || !Number.isFinite(player.x) || !Number.isFinite(player.z)) continue;
       playerMesh(dynamic, player, map, time, player.team === local.team);
-      const support = map.colliders.find(collider => player.x >= collider.x && player.x <= collider.x + collider.w && player.z >= collider.z && player.z <= collider.z + collider.d && collider.y + collider.h <= finite(player.y) + .05 && collider.y + collider.h > 0);
+      const support = surfaceBelow(map.colliders, player.x, player.z, finite(player.y) + .045);
       const ground = support ? support.y + support.h : 0;
       const altitude = Math.max(0, finite(player.y) - ground), spread = .26 + Math.min(.22, altitude * .08), opacity = .15 / (1 + altitude);
       for (let layer = 2; layer >= 0; layer--) {
@@ -1166,6 +1393,7 @@ export class VoxelRenderer {
     }
     this._bomb(dynamic, state, players.filter(player => player.id !== cameraPlayer.id), time);
     this._grenades(dynamic, contacts, state, map, time);
+    this._bolts(dynamic, state);
     for (const particle of this.particles) {
       const age = (time - particle.born) / 1000, fade = 1 - (time - particle.born) / particle.life;
       const size = .026 + fade * .028;
@@ -1202,7 +1430,7 @@ export class VoxelRenderer {
       this._draw(this._dynamic(traces.array, 'tracer'));
       gl.depthMask(true); gl.disable(gl.BLEND); gl.enable(gl.CULL_FACE);
     }
-    const scoped = cameraPlayer.weapon === 'marksman' && aim >= smooth(14 / ADS.ticks);
+    const scoped = WEAPONS[cameraPlayer.weapon]?.scoped && aim >= smooth(14 / ADS.ticks);
     if (cameraPlayer.alive && cameraPlayer.id === localId && !options.hideWeapon && !scoped) {
       // Independent depth for the hands prevents flickering against a near
       // wall. World cover and hit detection continue using the real camera.
@@ -1214,6 +1442,9 @@ export class VoxelRenderer {
       this._draw(this._dynamic(this._viewModel(cameraPlayer, yaw, pitch, time), 'weapon'));
     }
     return true;
+  }
+  get stats() {
+    return Object.freeze({ mapId: this.mapId, mapVertices: this._mapVertices, cachedMaps: this.mapCache.size, drawCalls: this._frameDrawCalls, dynamicVertices: this._frameDynamicVertices });
   }
   resetEffects() {
     this.eventIds.clear(); this.eventQueue.length = 0; this.particles.length = 0; this.tracers.length = 0;
