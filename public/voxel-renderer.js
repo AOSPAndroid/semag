@@ -122,7 +122,7 @@ function impactParticles(event, contact, direction, map, time, key) {
     const angle = seed % 7 + i * 2.39996, outward = (metal ? .75 : .40) * strength;
     const scatter = (metal ? .75 : wood ? .55 : .35) * (.5 + i / count) * strength;
     const velocity = normal.map((value, axis) => value * outward + (tangent[axis] * Math.cos(angle) + bitangent[axis] * Math.sin(angle)) * scatter);
-    return { origin, born: time, vx: velocity[0], vy: velocity[1] + .12, vz: velocity[2], color, life: (metal ? 145 : wood ? 250 : 190) + i * 13, gravity: metal ? 3 : 4, cover: true, size: metal ? .016 : wood ? .026 : .030, material };
+    return { origin, born: time, vx: velocity[0], vy: velocity[1] + .12, vz: velocity[2], color, life: (metal ? 145 : wood ? 250 : 190) + i * 13, gravity: metal ? 3 : 4, cover: true, size: metal ? .016 : wood ? .026 : .030, material, targetId: event.targetId ?? null };
   });
 }
 
@@ -141,7 +141,7 @@ function bloodParticles(event, state, time, key) {
   return Array.from({ length: count }, (_, i) => {
     const angle = seed % 11 + i * 2.39996, scatter = .34 + (i % 4) * .11;
     const velocity = normal.map((value, axis) => value * (.56 + (i % 3) * .12) + (tangent[axis] * Math.cos(angle) + bitangent[axis] * Math.sin(angle)) * scatter);
-    return { origin, born: time, vx: velocity[0], vy: velocity[1] + .18 + (i % 3) * .07, vz: velocity[2], color: i % 3 === 0 ? '#922f37' : i % 3 === 1 ? '#c4484b' : '#ac353d', life: 235 + (i % 4) * 27, gravity: 4.8, cover: true, radius: .72, size: .016 + (i % 3) * .004, material: 'blood', shrink: true };
+    return { origin, born: time, vx: velocity[0], vy: velocity[1] + .18 + (i % 3) * .07, vz: velocity[2], color: i % 3 === 0 ? '#922f37' : i % 3 === 1 ? '#c4484b' : '#ac353d', life: 235 + (i % 4) * 27, gravity: 4.8, cover: true, radius: .72, size: .016 + (i % 3) * .004, material: 'blood', shrink: true, targetId: event.targetId };
   });
 }
 function rotate(vector, yaw = 0, pitch = 0) {
@@ -1927,9 +1927,16 @@ export class VoxelRenderer {
     this._bomb(dynamic, state, players.filter(player => player.id !== cameraPlayer.id), time);
     this._grenades(dynamic, contacts, state, map, time);
     this._bolts(dynamic, state);
+    this._visibleBloodParticles = 0;
     for (const particle of this.particles) {
+      // A head contact sits directly against its victim's eye. Rendering the
+      // victim's own cubes here fills the crosshair with a near-plane square;
+      // incoming damage already has a restrained screen-edge cue. Use the
+      // watched player, rather than localId, so spectators keep the same view.
+      if (particle.targetId != null && particle.targetId === cameraPlayer.id) continue;
       const { point, size, fade } = particlePosition(particle, time, map.colliders);
       dynamic.box(point[0] - size / 2, point[1] - size / 2, point[2] - size / 2, size, size, size, shade(rgba(particle.color), .7 + fade * .3));
+      if (particle.material === 'blood') this._visibleBloodParticles++;
     }
     this._draw(this._dynamic(dynamic.array));
     if (contacts.vertices.length) {
@@ -1965,10 +1972,11 @@ export class VoxelRenderer {
     return true;
   }
   get stats() {
-    return Object.freeze({ mapId: this.mapId, mapVertices: this._mapVertices, cachedMaps: this.mapCache.size, drawCalls: this._frameDrawCalls, dynamicVertices: this._frameDynamicVertices, lootItems: this._lootItems, stormVertices: this._stormVertices, bloodParticles: this.particles.filter(particle => particle.material === 'blood').length });
+    return Object.freeze({ mapId: this.mapId, mapVertices: this._mapVertices, cachedMaps: this.mapCache.size, drawCalls: this._frameDrawCalls, dynamicVertices: this._frameDynamicVertices, lootItems: this._lootItems, stormVertices: this._stormVertices, bloodParticles: this.particles.filter(particle => particle.material === 'blood').length, visibleBloodParticles: this._visibleBloodParticles || 0 });
   }
   resetEffects() {
     this.eventIds.clear(); this.eventQueue.length = 0; this.particles.length = 0; this.tracers.length = 0;
+    this._visibleBloodParticles = 0;
     this.localShot = null; this.localReload = null; this.lastAim = null; this.swayX = 0; this.swayY = 0;
   }
   destroy() {

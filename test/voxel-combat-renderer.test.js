@@ -5,13 +5,13 @@ import { MELEE, KNIFE } from '../public/voxel-melee.js';
 import { meleeMeshes, meleeMotion, particlePosition, VoxelRenderer } from '../public/voxel-renderer.js';
 
 const arena = { id: 'combat-art-fixture', colliders: [], bounds: { minX: -10, maxX: 10, minZ: -10, maxZ: 10 } };
-function combatFixture(weapon = 'carbine', patch = {}, colliders = []) {
+function combatFixture(weapon = 'carbine', patch = {}, colliders = [], pitch = -.075) {
   const state = createState();
   Object.assign(state, { map: { ...arena, colliders }, phase: 'fight', tick: 0, events: [] });
   state.players = [{ ...createCombatPlayer(0, 1, weapon), z: 3 }, { ...createCombatPlayer(1), z: -3, ...patch }];
   for (let tick = 0; tick < 25; tick++) {
     state.tick++;
-    combatStep(state, state.players.map(player => ({ ...emptyInput({ yaw: 0, pitch: -.075 }), fire: player.id === 0 && tick === 0 })), state.map);
+    combatStep(state, state.players.map(player => ({ ...emptyInput({ yaw: 0, pitch }), fire: player.id === 0 && tick === 0 })), state.map);
     if (state.events.some(event => event.type === 'damage' || ['shot', 'boltHit'].includes(event.type) && event.hitKind !== 'none')) break;
   }
   return state;
@@ -43,6 +43,48 @@ test('actual gun and flying-bolt HP loss emits one short blood burst at the conf
       assert.equal(blood(renderer).length, count, 'repeated contact and damage snapshots do not duplicate blood');
       effects(renderer, { ...state, events: [] }, 1400, localId);
       assert.equal(blood(renderer).length, 0);
+    }
+  }
+});
+
+function renderHarness() {
+  const gl = new Proxy({}, { get(_, name) {
+    if (name === 'getShaderParameter' || name === 'getProgramParameter') return () => true;
+    if (name === 'getAttribLocation') return () => 0;
+    if (name === 'getUniformLocation') return (_program, uniform) => uniform;
+    if (typeof name === 'string' && name.startsWith('create')) return () => ({});
+    return () => {};
+  } });
+  const canvas = { getContext: () => gl, addEventListener() {}, removeEventListener() {}, getBoundingClientRect: () => ({ width: 960, height: 540 }) };
+  const renderer = new VoxelRenderer(canvas), world = [];
+  const upload = renderer._dynamic;
+  renderer._dynamic = function(array, kind = 'world') { if (kind === 'world') world.push(array); return upload.call(this, array, kind); };
+  return { renderer, world };
+}
+
+test('actual head-hit blood and contact cubes never draw over the victim or watched victim, while other observers retain the burst', () => {
+  for (const weapon of ['carbine', 'crossbow']) {
+    const state = combatFixture(weapon, {}, [], 0), damage = state.events.find(event => event.type === 'damage');
+    assert.equal(damage.hitKind, 'head', `${weapon}: actual head contact near the victim's camera`);
+    state.players.push({ ...createCombatPlayer(2), team: 2, x: 5, z: 0 });
+    for (const options of [{ localId: 1 }, { localId: 99, viewPlayer: 1 }, { localId: 0 }, { localId: 2 }, { localId: 99, viewPlayer: 0 }]) {
+      const { renderer, world } = renderHarness(), watchingVictim = options.viewPlayer === 1 || options.localId === 1;
+      renderer.render({ ...state, events: [] }, { ...options, time: 1000, hideWeapon: true });
+      const baseline = world.at(-1);
+      renderer.render(state, { ...options, time: 1000, hideWeapon: true });
+      const hit = world.at(-1);
+      assert.ok(blood(renderer).length > 0, 'confirmed burst remains available for other observers');
+      assert.ok(renderer.particles.every(particle => particle.targetId === 1), 'both blood and ordinary head-contact fragments identify their victim');
+      if (watchingVictim) {
+        assert.deepEqual(hit, baseline, 'neither red blood nor beige contact cubes are uploaded in the victim camera');
+        assert.equal(renderer.stats.visibleBloodParticles, 0);
+      } else {
+        assert.equal(hit.length - baseline.length, renderer.particles.length * 36 * 10, 'other cameras still draw every ordinary and confirmed blood voxel');
+        assert.equal(renderer.stats.visibleBloodParticles, blood(renderer).length);
+      }
+      assert.ok(renderer.stats.drawCalls <= 7);
+      assert.ok(renderer.particles.length <= 84);
+      renderer.destroy();
     }
   }
 });
