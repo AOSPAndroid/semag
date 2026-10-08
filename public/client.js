@@ -11,6 +11,7 @@ import { capturePlanarPose, presentPlanarFighter } from './planar-presentation.j
 const elements = new Map();
 const $ = id => { const node = elements.get(id) || document.getElementById(id); if (node) elements.set(id, node); return node; };
 const canvas = $('arena');
+const roomControls = $('room-controls');
 const renderer = new ArenaRenderer(canvas);
 const audio = new GameAudio();
 const STEP_MS = 1000 / TICK_RATE;
@@ -30,7 +31,10 @@ let presentation = null, renderCount = 0;
 let trainingMode='open', trainingStage=0;
 const trainingProfile=()=>trainingMode==='ladder'?TRAINING_STAGES[trainingStage]:TRAINING_STAGES.find(stage=>stage.id===trainingMode);
 function trainingHUD(){
-  setHidden($('training-panel'), !practice);const profile=trainingProfile();
+  setHidden($('training-panel'), !practice);
+  setHidden($('training-button'), !practice);
+  setText($('controls-session-note'), practice ? 'Practice pauses while this panel is open. Close it to return to the duel.' : 'Online matches keep running while this panel is open.');
+  const profile=trainingProfile();
   setText($('training-title'), profile?.name || 'Open sparring');
   setText($('training-tip'), profile?.tip || 'Practice the whole move set against a balanced sparring partner.');
   setText($('training-progress'), trainingMode==='ladder'?`${trainingStage+1} / 5 DUELS${practiceState?.phase==='matchEnd' && practiceState.winner===0?' · CLEARED':''}`:'');
@@ -167,10 +171,41 @@ function releaseKeys() {
     pending.push(frame); send(frame);
   }
 }
+function openRoomControls(focusTarget = $('room-controls-close')) {
+  releaseKeys();
+  if (practiceState) previousPracticePose = capturePlanarPose(practiceState);
+  if (!roomControls.open) roomControls.showModal();
+  setAttribute($('room-controls-button'), 'aria-expanded', 'true');
+  trainingHUD();
+  focusTarget?.focus();
+}
+$('room-controls-button').addEventListener('click', () => openRoomControls());
+$('training-button').addEventListener('click', () => openRoomControls($('training-mode')));
+$('room-controls-close').addEventListener('click', () => roomControls.close());
+roomControls.addEventListener('close', () => {
+  releaseKeys(); previousTime = performance.now(); accumulator = 0;
+  setAttribute($('room-controls-button'), 'aria-expanded', 'false');
+  const phase = (practice ? practiceState : authoritative).phase;
+  if (['countdown', 'fight', 'roundEnd'].includes(phase)) canvas.focus({ preventScroll: true });
+  else $('room-controls-button').focus({ preventScroll: true });
+});
+roomControls.addEventListener('keydown', event => {
+  if (event.key !== 'Tab') return;
+  const focusable = [...roomControls.querySelectorAll('button, input, select, textarea, a[href], summary, [tabindex]')].filter(node => !node.disabled && node.tabIndex >= 0 && node.getClientRects().length && getComputedStyle(node).visibility !== 'hidden');
+  if (!focusable.length) { event.preventDefault(); roomControls.focus(); return; }
+  const first = focusable[0], last = focusable.at(-1), current = document.activeElement;
+  if (event.shiftKey && (current === first || !roomControls.contains(current))) { event.preventDefault(); last.focus(); }
+  else if (!event.shiftKey && (current === last || !roomControls.contains(current))) { event.preventDefault(); first.focus(); }
+});
+roomControls.addEventListener('click', event => {
+  if (event.target !== roomControls) return;
+  const bounds = roomControls.getBoundingClientRect();
+  if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) roomControls.close();
+});
 function isTyping(target) { return target instanceof HTMLElement && (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable); }
 const keyboardIdentity = event => event.code || (event.key?.length === 1 ? event.key.toLowerCase() : event.key);
 document.addEventListener('keydown', (event) => {
-  if (event.defaultPrevented || isTyping(event.target) || event.isComposing || event.target instanceof Element && event.target.closest('button,a,summary') || event.ctrlKey || event.metaKey || event.altKey) return;
+  if (roomControls.open || event.defaultPrevented || isTyping(event.target) || event.isComposing || event.target instanceof Element && event.target.closest('button,a,summary') || event.ctrlKey || event.metaKey || event.altKey) return;
   const identity = keyboardIdentity(event), code = gameCode(event);
   if (event.repeat && !heldCodes.has(identity)) return;
   if (keyMapping.has(code)) {
@@ -204,7 +239,7 @@ document.addEventListener('visibilitychange', () => {
 });
 $('player-name').addEventListener('focus', releaseKeys);
 canvas.tabIndex = 0;
-canvas.addEventListener('pointerdown', () => { canvas.focus(); focusLost = false; $('focus-note').hidden = true; });
+canvas.addEventListener('pointerdown', () => { if (roomControls.open) return; canvas.focus({ preventScroll: true }); focusLost = false; $('focus-note').hidden = true; });
 
 function toggleReady() {
   if (practice) {
@@ -259,6 +294,13 @@ $('fullscreen-button').addEventListener('click', async () => {
     else await $('app').requestFullscreen();
   } catch { toast('Fullscreen is unavailable in this browser.'); }
 });
+document.addEventListener('fullscreenchange', () => {
+  const active = !!document.fullscreenElement;
+  setAttribute($('fullscreen-button'), 'aria-label', active ? 'Exit fullscreen' : 'Enter fullscreen');
+  setAttribute($('fullscreen-button'), 'title', active ? 'Exit fullscreen' : 'Fullscreen');
+  setAttribute($('fullscreen-button'), 'aria-pressed', String(active));
+  renderer.resize();
+});
 $('guide-button').addEventListener('click', () => {
   const open = $('combat-guide').hidden;
   $('combat-guide').hidden = !open;
@@ -298,6 +340,7 @@ async function setInvite() {
 
 function inputTick() {
   if (practice) {
+    if (roomControls.open) return;
     const phase = practiceState.phase;
     previousPracticePose = capturePlanarPose(practiceState);
     step(practiceState, [copyInput(), botInput(practiceState, 1, trainingProfile()?.id || 'open')]);
@@ -350,6 +393,7 @@ function displayState(now, fraction) {
 const actionLabels = { idle: 'HOLD YOUR GROUND', run: 'FINDING THE RANGE', jump: 'AIRBORNE', light: 'QUICK STRIKE', heavy: 'HEAVY STRIKE', dash: 'EVASION', block: 'GUARDING', parry: 'PARRY', hit: 'RECOVERING', dead: 'KNOCKED OUT' };
 function updateHUD(now) {
   const state = practice ? practiceState : authoritative;
+  setAttribute($('app'), 'data-phase', state.phase);
   const inMatch = ['countdown', 'fight', 'roundEnd', 'matchEnd'].includes(state.phase);
   const names = practice ? [playerName, trainingProfile()?.name.slice(5) || 'Sparring partner'] : players.map((p, i) => safeName(p?.name, `Challenger 0${i + 1}`));
   for (let i = 0; i < 2; i++) {

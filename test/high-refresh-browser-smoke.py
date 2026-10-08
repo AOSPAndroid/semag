@@ -19,6 +19,7 @@ import sys
 import time
 
 from playwright.sync_api import sync_playwright
+from browser_controls import click_control
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = Path(os.environ.get('SEMAG_SCREENSHOT_DIR', '/workspace/scratch/semag-high-refresh-browser'))
@@ -224,10 +225,10 @@ def afterimage_case(browser):
         screenshot(host, 'refresh-afterimage-practice', '#arena')
         host.locator('#practice-button').click()
         wait(host, '!window.afterimage.practice && window.afterimage.getState().phase === "lobby"')
-        host.locator('#ready-button').click()
+        click_control(host, '#ready-button')
         host.wait_for_timeout(100)
         assert host.evaluate('window.afterimage.getState().phase') == 'lobby'
-        peer.locator('#ready-button').click()
+        click_control(peer, '#ready-button')
         wait(host, 'window.afterimage.getState().phase === "fight"', timeout=12000)
         wait(peer, 'window.afterimage.getState().phase === "fight"')
         before = host.evaluate('window.afterimage.getState().fighters[0].x')

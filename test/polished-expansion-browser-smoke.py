@@ -16,6 +16,7 @@ import sys
 import time
 
 from playwright.sync_api import sync_playwright
+from browser_controls import controls_panel
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = Path(os.environ.get('SEMAG_SCREENSHOT_DIR', ROOT / 'test-results' / 'polished-expansion'))
@@ -151,7 +152,7 @@ def pause_check(page, game, keyboard):
     # All shortcuts stay native in editable controls. Pausing makes accidental
     # input/action leakage detectable without elapsed time obscuring comparison.
     page.evaluate('''()=>{const input=document.createElement('input');input.id='expansion-form-qa';
-        input.setAttribute('aria-label','QA text input');document.querySelector('.solo-sidebar').append(input);input.focus()}''')
+        input.setAttribute('aria-label','QA text input');document.querySelector('#solo-game').append(input);input.focus()}''')
     page.keyboard.type('rpzqsdwasd123ejk')
     page.keyboard.press('Space')
     assert page.locator('#expansion-form-qa').input_value()=='rpzqsdwasd123ejk '
@@ -161,11 +162,12 @@ def pause_check(page, game, keyboard):
     assert state(page)==paused, (game,'Layout change mutated paused state')
     native_layout(page,'zqsd')
     assert state(page)==paused
-    page.locator('#solo-how-to summary').focus();page.keyboard.press('Space')
-    assert page.locator('#solo-how-to').evaluate('details=>details.open')
-    assert state(page)==paused, (game,'Help shortcut leaked')
-    page.keyboard.press('Enter')
-    assert not page.locator('#solo-how-to').evaluate('details=>details.open')
+    with controls_panel(page, '#solo-how-to', resume=False):
+        page.locator('#solo-how-to summary').focus();page.keyboard.press('Space')
+        assert page.locator('#solo-how-to').evaluate('details=>details.open')
+        assert state(page)==paused, (game,'Help shortcut leaked')
+        page.keyboard.press('Enter')
+        assert not page.locator('#solo-how-to').evaluate('details=>details.open')
     page.locator('#solo-pause').click()
     wait(page,'window.firesideSolo.getState().phase!=="paused"')
     return paused

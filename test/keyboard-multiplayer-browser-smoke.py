@@ -10,6 +10,7 @@ import sys
 from urllib.parse import parse_qs, urlparse
 
 from playwright.sync_api import sync_playwright
+from browser_controls import controls_panel
 
 URL = (sys.argv[1] if len(sys.argv) > 1 else 'http://127.0.0.1:3000').rstrip('/')
 RESULTS = Path('/workspace/scratch/keyboard-multiplayer')
@@ -29,11 +30,12 @@ def wait_phase(page, game, phase):
 
 
 def layout(page, value):
-    picker = page.locator('select[data-keyboard-layout]')
-    assert picker.count() == 1, 'Each page must have exactly one layout selector'
-    picker.select_option(value)
-    assert picker.input_value() == value
-    assert page.evaluate("localStorage.getItem('semag-keyboard-layout')") == value
+    with controls_panel(page, 'select[data-keyboard-layout]', resume=False):
+        picker = page.locator('select[data-keyboard-layout]')
+        assert picker.count() == 1, 'Each page must have exactly one layout selector'
+        picker.select_option(value)
+        assert picker.input_value() == value
+        assert page.evaluate("localStorage.getItem('semag-keyboard-layout')") == value
 
 
 def observe(page, name):
@@ -62,19 +64,30 @@ def cdp_key(page, key, code, kind='keyDown', repeat=False):
 
 def left_moves(page, game, letter, french=False):
     page.locator('#arena').focus()
-    before = state(page, game)['fighters'][0]['x']
-    if french:
-        cdp_key(page, letter, 'KeyA')
-    else:
-        page.keyboard.down(letter)
-    input_is(page, game, 'left', True)
-    page.wait_for_timeout(100)
-    moved = state(page, game)['fighters'][0]['x']
-    if french:
-        cdp_key(page, letter, 'KeyA', 'keyUp')
-    else:
-        page.keyboard.up(letter)
-    input_is(page, game, 'left', False)
+    for attempt in range(2):
+        if game == 'oddstock-rumble':
+            page.wait_for_function('''() => { const fighter=window.firesideRoom.getState().fighters[0];
+                return fighter.stocks > 0 && fighter.respawnTicks === 0 && fighter.grounded; }''', timeout=5000)
+        initial = state(page, game)['fighters'][0]
+        before = initial['x']
+        if french:
+            cdp_key(page, letter, 'KeyA')
+        else:
+            page.keyboard.down(letter)
+        input_is(page, game, 'left', True)
+        page.wait_for_timeout(100)
+        observed = state(page, game)['fighters'][0]
+        moved = observed['x']
+        if french:
+            cdp_key(page, letter, 'KeyA', 'keyUp')
+        else:
+            page.keyboard.up(letter)
+        input_is(page, game, 'left', False)
+        if game != 'oddstock-rumble' or observed['stocks'] == initial['stocks'] and observed['respawnTicks'] == 0:
+            break
+        # A respawn teleports the fighter. It cannot prove direction; retry a
+        # fresh trusted key press after the surviving fighter lands safely.
+        assert attempt == 0 and observed['stocks'] > 0, ('No safe brawl movement sample', initial, observed)
     assert moved < before - 4, (game, letter, before, moved, 'Left input did not move real fighter')
     # Restore room on the platform and away from boundary walls.
     page.keyboard.down('d')
@@ -95,8 +108,7 @@ def up_input(page, game, letter, french=False):
         page.keyboard.down(letter)
     input_is(page, game, action, True)
     if game == 'afterimage':
-        page.wait_for_timeout(100)
-        assert state(page, game)['fighters'][0]['y'] < 460, 'French jump did not leave ground'
+        page.wait_for_function('window.afterimage.getState().fighters[0].y < 460', timeout=2000)
     if french:
         cdp_key(page, letter, 'KeyW', 'keyUp')
     else:
@@ -155,8 +167,9 @@ def responsive(page, game):
         page.wait_for_timeout(90)
         sizes = page.evaluate('({width:innerWidth,scroll:document.documentElement.scrollWidth})')
         assert sizes['scroll'] <= sizes['width'], (game, sizes)
-        picker = page.locator('select[data-keyboard-layout]').bounding_box()
-        assert picker and picker['x'] >= 0 and picker['x'] + picker['width'] <= width + 1, (game, picker)
+        with controls_panel(page, 'select[data-keyboard-layout]'):
+            picker = page.locator('select[data-keyboard-layout]').bounding_box()
+            assert picker and picker['x'] >= 0 and picker['x'] + picker['width'] <= width + 1, (game, picker)
         page.screenshot(path=str(RESULTS / f'{game}-{width}.png'), full_page=True)
     page.set_viewport_size({'width': 1440, 'height': 1000})
 
@@ -208,10 +221,11 @@ def run(browser, game):
         second.wait_for_function(f'{surface(game)}?.connected && {surface(game)}.playerId === 1')
         # Changing layout / typing R within a name must never ready a player.
         layout(first, 'zqsd')
-        first.locator('#player-name').fill('')
-        first.locator('#player-name').press('r')
-        first.locator('#player-name').press('q')
-        assert first.locator('#player-name').input_value() == 'rq'
+        with controls_panel(first, '#player-name', resume=False):
+            first.locator('#player-name').fill('')
+            first.locator('#player-name').press('r')
+            first.locator('#player-name').press('q')
+            assert first.locator('#player-name').input_value() == 'rq'
         assert state(first, game)['phase'] == 'lobby'
         assert first.locator('#ready-button span').inner_text() == 'Ready up'
         if game == 'oddstock-rumble':

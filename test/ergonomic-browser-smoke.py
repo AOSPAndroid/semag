@@ -14,6 +14,7 @@ import time
 from urllib.parse import parse_qs, urlparse
 
 from playwright.sync_api import sync_playwright
+from browser_controls import controls_panel, click_control
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -57,11 +58,12 @@ def cdp_key(page, key, code, kind='keyDown', repeat=False, modifiers=0):
 
 
 def layout(page, chosen):
-    picker = page.locator('select[data-keyboard-layout]')
-    assert picker.count() == 1
-    picker.select_option(chosen)
-    assert picker.input_value() == chosen
-    assert (page.evaluate("localStorage.getItem('semag-keyboard-layout')") or 'wasd') == chosen
+    with controls_panel(page, 'select[data-keyboard-layout]', resume=False):
+        picker = page.locator('select[data-keyboard-layout]')
+        assert picker.count() == 1
+        picker.select_option(chosen)
+        assert picker.input_value() == chosen
+        assert (page.evaluate("localStorage.getItem('semag-keyboard-layout')") or 'wasd') == chosen
 
 
 def solo_state(page):
@@ -142,9 +144,10 @@ def combat_room(browser, game):
         second.wait_for_url('**/*room=*')
         wait(second, surface(game) + '?.connected && ' + surface(game) + '.playerId != null', timeout=15000)
         first, second = settled_seats([first, second], lambda page: page.evaluate(f'({{connected:{surface(game)}.connected,playerId:{surface(game)}.playerId}})'))
-        first.locator('#player-name').fill('cgef')
-        first.locator('#player-name').press('r')
-        assert first.locator('#player-name').input_value() == 'cgefr'
+        with controls_panel(first, '#player-name', resume=False):
+            first.locator('#player-name').fill('cgef')
+            first.locator('#player-name').press('r')
+            assert first.locator('#player-name').input_value() == 'cgefr'
         assert room_state(first, game)['phase'] == 'lobby'
         if game == 'oddstock-rumble':
             first.locator('[data-brawl-character="wrench"]').click()
@@ -214,12 +217,13 @@ def combat_room(browser, game):
         room_input(first, game, 'right', True)
         # Player names are locked after Ready; the live keyboard selector is
         # the editable control available during combat and releases held input.
-        first.locator('select[data-keyboard-layout]').focus()
-        room_input(first, game, 'right', False)
-        first.keyboard.up('d')
-        first.keyboard.type('cgef')
-        for key, action in ROOM_ACTIONS[game]:
-            room_input(first, game, action, False)
+        with controls_panel(first, 'select[data-keyboard-layout]'):
+            first.locator('select[data-keyboard-layout]').focus()
+            room_input(first, game, 'right', False)
+            first.keyboard.up('d')
+            first.keyboard.type('cgef')
+            for key, action in ROOM_ACTIONS[game]:
+                room_input(first, game, action, False)
         if game == 'shinobi-showdown':
             first.bring_to_front()
             first.locator('#arena').focus()
@@ -231,15 +235,16 @@ def combat_room(browser, game):
             first.keyboard.up('d')
             first.keyboard.up('f')
         layout(first, 'zqsd')
-        labels = first.locator('.controls-panel').inner_text()
-        assert all(key.upper() in labels for key, _ in ROOM_ACTIONS[game]), (game, labels)
-        if game == 'shinobi-showdown':
-            first.screenshot(path=str(OUT / 'shinobi-zqsd-controls-desktop.png'), full_page=True)
-            first.locator('#controls-panel').screenshot(path=str(OUT / 'shinobi-zqsd-control-card.png'))
-            for width in (390, 320):
-                first.set_viewport_size({'width': width, 'height': 900})
-                no_overflow(first, game + '/' + str(width))
-                first.screenshot(path=str(OUT / f'shinobi-zqsd-controls-{width}.png'), full_page=True)
+        with controls_panel(first, '.controls-panel'):
+            labels = first.locator('.controls-panel').inner_text()
+            assert all(key.upper() in labels for key, _ in ROOM_ACTIONS[game]), (game, labels)
+            if game == 'shinobi-showdown':
+                first.screenshot(path=str(OUT / 'shinobi-zqsd-controls-desktop.png'), full_page=True)
+                first.locator('#controls-panel').screenshot(path=str(OUT / 'shinobi-zqsd-control-card.png'))
+                for width in (390, 320):
+                    first.set_viewport_size({'width': width, 'height': 900})
+                    no_overflow(first, game + '/' + str(width))
+                    first.screenshot(path=str(OUT / f'shinobi-zqsd-controls-{width}.png'), full_page=True)
         CHECKS.append({'game': game, 'near_hand_actions': dict(ROOM_ACTIONS[game]),
                        'wasd_zqsd': True, 'simultaneous_movement': True,
                        'mouse_preserved': game in ('shinobi-showdown', 'vector-arena'),
@@ -300,7 +305,7 @@ def solo_pause_and_ui(browser, game):
                 const element = document.createElement(tag); element.id = 'ergonomic-qa-editor';
                 element.setAttribute('aria-label', 'Controls QA editor');
                 if (editable !== null) element.setAttribute('contenteditable', editable);
-                document.querySelector('.solo-sidebar').append(element); element.focus();
+                document.querySelector('#solo-game').append(element); element.focus();
             }''', [tag, editable])
             page.keyboard.type('rpzqsdwasdef123')
             page.keyboard.press('Escape')
@@ -312,16 +317,17 @@ def solo_pause_and_ui(browser, game):
         for chosen in ('wasd', 'zqsd'):
             layout(page, chosen)
             assert solo_state(page) == paused, (game, 'Layout selection changed paused game')
-        summary = page.locator('#solo-how-to summary')
-        summary.focus()
-        if page.locator('#solo-how-to').evaluate('element => element.open'):
+        with controls_panel(page, '#solo-how-to', resume=False):
+            summary = page.locator('#solo-how-to summary')
+            summary.focus()
+            if page.locator('#solo-how-to').evaluate('element => element.open'):
+                page.keyboard.press('Enter')
+            page.keyboard.press('Space')
+            assert page.locator('#solo-how-to').evaluate('element => element.open')
+            assert solo_state(page) == paused, (game, 'Help Space activated a game action')
             page.keyboard.press('Enter')
-        page.keyboard.press('Space')
-        assert page.locator('#solo-how-to').evaluate('element => element.open')
-        assert solo_state(page) == paused, (game, 'Help Space activated a game action')
-        page.keyboard.press('Enter')
-        assert not page.locator('#solo-how-to').evaluate('element => element.open')
-        assert solo_state(page) == paused
+            assert not page.locator('#solo-how-to').evaluate('element => element.open')
+            assert solo_state(page) == paused
         solo_focus(page)
         page.keyboard.press('Escape')
         wait(page, 'phase => window.firesideSolo.getState().phase === phase', phase)
@@ -453,9 +459,9 @@ def voxel_controls(browser):
         wait(second, 'window.SemagVoxel?.getState().connected && window.SemagVoxel.getState().playerId != null', timeout=15000)
         first, second = settled_seats([first, second], lambda page: {'connected': read(page)['connected'], 'playerId': read(page)['playerId']})
         layout(first, 'zqsd')
-        first.locator('#ready-button').click()
+        click_control(first, '#ready-button')
         assert read(first)['state']['phase'] == 'lobby'
-        second.locator('#ready-button').click()
+        click_control(second, '#ready-button')
         wait(first, 'window.SemagVoxel.getState().state.phase === "fight"', timeout=16000)
         if first.locator('#enter-arena').is_visible():
             first.locator('#enter-arena').click()

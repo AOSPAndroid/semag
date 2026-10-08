@@ -12,6 +12,7 @@ import subprocess
 import sys
 
 from playwright.sync_api import sync_playwright
+from browser_controls import controls_panel
 
 ROOT = Path(__file__).resolve().parents[1]
 SHOTS = Path(os.environ.get('SEMAG_SCREENSHOT_DIR', ROOT / 'test-results' / 'solo-start'))
@@ -224,12 +225,13 @@ def run(url):
                         assert_idle(page, game, original_records, requests)
                         idle_keys = page.evaluate('window.__soloStartQA.idleKeys')
                         assert len(idle_keys) >= 8 and all(not event['prevented'] for event in idle_keys), (game, 'Idle shortcuts consumed gameplay input', idle_keys)
-                        page.locator('#solo-how-to summary').focus()
-                        page.keyboard.press('Enter')
-                        assert page.locator('#solo-how-to').evaluate('node => node.open')
+                        with controls_panel(page, '#solo-how-to', resume=False):
+                            page.locator('#solo-how-to summary').focus()
+                            page.keyboard.press('Enter')
+                            assert page.locator('#solo-how-to').evaluate('node => node.open')
                         native_layout(page, 'zqsd')
                         assert_idle(page, game, original_records, requests)
-                        page.evaluate('''() => {const input=document.createElement('input');input.id='start-qa-input';document.querySelector('.solo-sidebar').append(input);input.focus()}''')
+                        page.evaluate('''() => {const input=document.createElement('input');input.id='start-qa-input';document.querySelector('#solo-game').append(input);input.focus()}''')
                         page.keyboard.type('rpzqsdwasd')
                         assert page.locator('#start-qa-input').input_value() == 'rpzqsdwasd'
                         assert_idle(page, game, original_records, requests)

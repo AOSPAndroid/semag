@@ -56,6 +56,8 @@ their completion records separate by difficulty.
 
 Open a solo game from the shelf, review its controls, and press **Start game** when you are ready. The game and its timers wait on the ready screen. After starting, press **Escape** to pause or resume, or use Pause / Resume and New game for that session.
 
+Play pages use compact headers and keep the game in the main space. **Controls & info** opens solo instructions and records; **Room & controls** opens multiplayer setup, invitations and rules. Opening solo instructions pauses the run; close them and press Resume when ready. Multiplayer matches continue while a panel is open. Fullscreen keeps an exit button available alongside the game.
+
 ## Keyboard layout
 
 Choose **WASD** or **ZQSD · Français** from the **Keyboard** selector on the shelf or game header. Semag remembers the choice in your browser, and each player can choose independently. Movement keys, hints, and accessible controls update together; arrow keys and touch controls stay available. In ZQSD, Apex Circuit uses **A** to reset, and Prism Shift uses **W** to rotate counterclockwise so **Q** and **Z** can control movement. Switching layouts releases held controls without restarting the run. The game instructions below use the default WASD labels.
@@ -243,6 +245,8 @@ The action and driving games automatically use your display's refresh rate, incl
 ```sh
 npm test
 ```
+
+Run `python test/compact-play-browser-smoke.py http://127.0.0.1:3000` for native checks of the compact layouts, controls panels, readiness, pause, fullscreen and responsive play areas.
 
 Run `python test/high-refresh-browser-smoke.py http://127.0.0.1:3000` for native gameplay, rendering, collision and pause/resume checks of the high-refresh presentation paths. Automated timing tests cover 60, 120, 144 and 240 Hz independently of the browser machine's display.
 

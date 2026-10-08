@@ -15,6 +15,7 @@ from urllib.parse import parse_qs, urlparse
 from urllib.request import urlopen
 
 from playwright.sync_api import sync_playwright
+from browser_controls import controls_panel
 from browser_profiles import standard_profile, start_solo
 
 
@@ -189,23 +190,24 @@ def check_previews(page):
 
 
 def native_help(page, game):
-    disclosure = page.locator("#solo-how-to")
-    assert disclosure.get_attribute("open") is None, "Long help should begin collapsed"
-    summary = disclosure.locator("summary")
-    before = state(page)
-    summary.focus()
-    page.keyboard.press("Space", delay=40)
-    assert disclosure.get_attribute("open") is not None, "Space did not activate native help"
-    assert page.locator("#solo-rules").is_visible()
-    page.keyboard.press("Enter", delay=40)
-    assert disclosure.get_attribute("open") is None, "Enter did not close native help"
-    after = state(page)
-    if game == "prism-shift":
-        assert after["piecesLocked"] == before["piecesLocked"], "Opening help also hard-dropped a piece"
-    else:
-        assert after["player"]["stamina"] >= before["player"]["stamina"] - .01, "Opening help also dashed"
-        assert after["player"]["dashTime"] == 0 and after["player"]["heat"] <= before["player"]["heat"], "Native help leaked combat input"
-    page.locator("[data-solo-focus]").focus()
+    with controls_panel(page, '#solo-how-to', resume=True):
+        disclosure = page.locator("#solo-how-to")
+        assert disclosure.get_attribute("open") is None, "Long help should begin collapsed"
+        summary = disclosure.locator("summary")
+        before = state(page)
+        summary.focus()
+        page.keyboard.press("Space", delay=40)
+        assert disclosure.get_attribute("open") is not None, "Space did not activate native help"
+        assert page.locator("#solo-rules").is_visible()
+        page.keyboard.press("Enter", delay=40)
+        assert disclosure.get_attribute("open") is None, "Enter did not close native help"
+        after = state(page)
+        if game == "prism-shift":
+            assert after["piecesLocked"] == before["piecesLocked"], "Opening help also hard-dropped a piece"
+        else:
+            assert after["player"]["stamina"] >= before["player"]["stamina"] - .01, "Opening help also dashed"
+            assert after["player"]["dashTime"] == 0 and after["player"]["heat"] <= before["player"]["heat"], "Native help leaked combat input"
+        page.locator("[data-solo-focus]").focus()
 
 
 def desktop_play_layout(page, game):

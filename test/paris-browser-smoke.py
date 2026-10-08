@@ -18,6 +18,7 @@ import time
 from urllib.request import urlopen
 
 from playwright.sync_api import sync_playwright
+from browser_controls import controls_panel
 from browser_profiles import start_solo
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -131,11 +132,12 @@ def native_selection_and_layout(page):
     page.wait_for_timeout(250)
     assert state(page) == paused, "Paused ride advanced"
     # Help is a native disclosure. Space/Enter must never reach the rider.
-    page.locator("#solo-how-to summary").focus()
-    page.keyboard.press("Space", delay=20)
-    assert page.locator("#solo-how-to").evaluate("element => element.open")
-    assert state(page) == paused, "Help key leaked into gameplay"
-    page.keyboard.press("Enter", delay=20)
+    with controls_panel(page, '#solo-how-to', resume=False):
+        page.locator("#solo-how-to summary").focus()
+        page.keyboard.press("Space", delay=20)
+        assert page.locator("#solo-how-to").evaluate("element => element.open")
+        assert state(page) == paused, "Help key leaked into gameplay"
+        page.keyboard.press("Enter", delay=20)
     layout_checks(page, "survival")
     native_button(page, "#solo-pause")
     for difficulty in ["nightmare", "standard", "veteran"]:
@@ -160,11 +162,12 @@ def native_selection_and_layout(page):
     native_button(page, "#solo-pause")
     layout_checks(page, "delivery")
     native_button(page, "#solo-pause")
-    page.locator("#solo-how-to summary").focus()
-    page.keyboard.press("Space", delay=40)
-    page.wait_for_timeout(60)
-    assert not state(page)["assistActive"], "Live help key leaked into motor assist"
-    page.keyboard.press("Enter", delay=20)
+    with controls_panel(page, '#solo-how-to', resume=True):
+        page.locator("#solo-how-to summary").focus()
+        page.keyboard.press("Space", delay=40)
+        page.wait_for_timeout(60)
+        assert not state(page)["assistActive"], "Live help key leaked into motor assist"
+        page.keyboard.press("Enter", delay=20)
     print("  Survival default, native selection/restart/help, both-mode desktop/laptop/390/320px layouts and 44px controls passed", flush=True)
 
 

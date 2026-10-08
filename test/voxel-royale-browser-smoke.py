@@ -17,6 +17,7 @@ import time
 from urllib.parse import parse_qs, urlparse
 
 from playwright.sync_api import sync_playwright
+from browser_controls import controls_panel, click_control
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = Path(os.environ.get('SEMAG_SCREENSHOT_DIR', '/workspace/scratch/semag-royale-browser'))
@@ -81,15 +82,16 @@ def no_overflow(page, tag):
 
 
 def select_native(page, selector, value):
-    picker = page.locator(selector)
-    values = picker.locator('option').evaluate_all('(nodes)=>nodes.map(node=>node.value)')
-    assert value in values, (selector, value, values)
-    picker.click()
-    page.keyboard.press('Home')
-    for _ in range(values.index(value)):
-        page.keyboard.press('ArrowDown')
-    page.keyboard.press('Enter')
-    assert picker.input_value() == value
+    with controls_panel(page, selector, resume=False):
+        picker = page.locator(selector)
+        values = picker.locator('option').evaluate_all('(nodes)=>nodes.map(node=>node.value)')
+        assert value in values, (selector, value, values)
+        picker.click()
+        page.keyboard.press('Home')
+        for _ in range(values.index(value)):
+            page.keyboard.press('ArrowDown')
+        page.keyboard.press('Enter')
+        assert picker.input_value() == value
 
 
 def enter(page):
@@ -384,8 +386,9 @@ def room(browser, map_id, count, capacity=10):
         for index, page in enumerate(pages[1:], 1):
             page.goto(pages[0].url)
             connected(page)
-            page.locator('#player-name').fill(f'Rival {index + 1}')
-            page.keyboard.press('Tab')
+            with controls_panel(page, '#player-name', resume=False):
+                page.locator('#player-name').fill(f'Rival {index + 1}')
+                page.keyboard.press('Tab')
         wait(pages[0], 'count=>window.SemagRoyale.getState().players.filter(player=>player?.connected).length===count', count)
         pages.sort(key=lambda page: snapshot(page)['playerId'])
         assert [snapshot(page)['playerId'] for page in pages] == list(range(count))
@@ -603,7 +606,7 @@ def combat(first, second, arena):
     assert not actor(second)['alive'] and actor(second)['hp'] == 0
     assert sorted((placement['playerId'], placement['place']) for placement in ended['placements']) == [(0, 1), (1, 2)]
     screenshot(first, 'voxel-royale-last-survivor', viewport=False)
-    first.locator('#rematch-button').click()
+    click_control(first, '#rematch-button')
     wait(first, 'window.SemagRoyale.getState().state.phase==="lobby"')
     wait(second, 'window.SemagRoyale.getState().state.phase==="lobby"')
     replay = start([first, second])

@@ -24,6 +24,7 @@ import time
 from urllib.parse import parse_qs, urlparse
 
 from playwright.sync_api import sync_playwright
+from browser_controls import controls_panel, click_control
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = Path(os.environ.get('SEMAG_SCREENSHOT_DIR', '/workspace/scratch/semag-voxel-browser'))
@@ -140,15 +141,16 @@ def distribution(values):
 
 
 def native_layout(page, value):
-    if page.evaluate('Boolean(window.SemagVoxel?.getState().controls.pointerLocked)'):
-        page.keyboard.press('Escape')
-        wait(page,'!window.SemagVoxel.getState().controls.pointerLocked')
-    picker=page.locator('select[data-keyboard-layout]')
-    assert picker.count()==1
-    picker.click();page.keyboard.press('Home')
-    if value=='zqsd':page.keyboard.press('ArrowDown')
-    page.keyboard.press('Enter')
-    assert picker.input_value()==value
+    with controls_panel(page, 'select[data-keyboard-layout]', resume=False):
+        if page.evaluate('Boolean(window.SemagVoxel?.getState().controls.pointerLocked)'):
+            page.keyboard.press('Escape')
+            wait(page,'!window.SemagVoxel.getState().controls.pointerLocked')
+        picker=page.locator('select[data-keyboard-layout]')
+        assert picker.count()==1
+        picker.click();page.keyboard.press('Home')
+        if value=='zqsd':page.keyboard.press('ArrowDown')
+        page.keyboard.press('Enter')
+        assert picker.input_value()==value
 
 
 def cdp_key(page, key, code, kind='keyDown', repeat=False, session=None):
@@ -295,15 +297,15 @@ def hub_capacity(observer,code,count,capacity):
 
 
 def ready_clients(pages, setup_probe=True):
-    for page in pages[:-1]:page.locator('#ready-button').click()
+    for page in pages[:-1]:click_control(page, '#ready-button')
     pages[0].wait_for_timeout(350)
     assert all(state(page)['phase']=='lobby' for page in pages),'Game started with missing Ready'
     assert sum(player['ready'] for player in envelope(pages[0])['players'])==len(pages)-1
-    pages[-1].locator('#ready-button').click();phase(pages[0],'countdown')
+    click_control(pages[-1], '#ready-button');phase(pages[0],'countdown')
     # Cancelling the first countdown resets the entire readiness agreement.
-    pages[0].locator('#ready-button').click();phase(pages[0],'lobby')
+    click_control(pages[0], '#ready-button');phase(pages[0],'lobby')
     wait(pages[0],'window.__voxelQA.latestState.players.every(player=>!player.ready)')
-    for page in pages:page.locator('#ready-button').click()
+    for page in pages:click_control(page, '#ready-button')
     phase(pages[0],'buy');phase(pages[-1],'buy')
     assert all(player['alive'] for player in state(pages[0])['players'])
     screenshot(pages[0],f'voxel-{len(pages)//2}v{len(pages)//2}-buy')
@@ -794,8 +796,8 @@ def native_disconnect_rejoin(pages,contexts):
     replacement=contexts[1].new_page();observe(replacement,'1v1/rejoin');replacement.goto(first.url)
     assert connected(replacement)==1 and state(replacement)['phase']=='lobby'
     pages[1]=replacement
-    first.locator('#ready-button').click();first.wait_for_timeout(200);assert state(first)['phase']=='lobby'
-    replacement.locator('#ready-button').click();phase(first,'countdown')
+    click_control(first, '#ready-button');first.wait_for_timeout(200);assert state(first)['phase']=='lobby'
+    click_control(replacement, '#ready-button');phase(first,'countdown')
     return {'disconnect_resets_match':True,'open_seat_rejoined':True,'all_ready_required_again':True}
 
 
@@ -879,11 +881,12 @@ def native_touch_pacing(page,context):
 
 def native_select_loadout(page,weapon):
     """A real select and keyboard choice; no synthetic change or socket call."""
-    picker=page.locator('#loadout-select');picker.click();page.keyboard.press('Home')
-    for _ in range(LOADOUTS.index(weapon)):page.keyboard.press('ArrowDown')
-    page.keyboard.press('Enter')
-    wait(page,'weapon=>window.__voxelQA.latestState.state.players[0].weapon===weapon',arg=weapon)
-    assert picker.input_value()==weapon
+    with controls_panel(page, '#loadout-select', resume=False):
+        picker=page.locator('#loadout-select');picker.click();page.keyboard.press('Home')
+        for _ in range(LOADOUTS.index(weapon)):page.keyboard.press('ArrowDown')
+        page.keyboard.press('Enter')
+        wait(page,'weapon=>window.__voxelQA.latestState.state.players[0].weapon===weapon',arg=weapon)
+        assert picker.input_value()==weapon
 
 
 def native_ads(page,name=None):
@@ -950,10 +953,11 @@ def arsenal_room(browser,weapon='marksman',peer_weapon='pistol'):
     create_room(pages[0],1,'courtyard');native_select_loadout(pages[0],weapon)
     pages[1].goto(pages[0].url);connected(pages[1])
     # Select helper observes local slot zero, so the peer uses its real picker directly.
-    picker=pages[1].locator('#loadout-select');picker.click();pages[1].keyboard.press('Home')
-    for _ in range(LOADOUTS.index(peer_weapon)):pages[1].keyboard.press('ArrowDown')
-    pages[1].keyboard.press('Enter')
-    wait(pages[1],'weapon=>window.__voxelQA.latestState.state.players[1].weapon===weapon',arg=peer_weapon)
+    with controls_panel(pages[1], '#loadout-select', resume=False):
+        picker=pages[1].locator('#loadout-select');picker.click();pages[1].keyboard.press('Home')
+        for _ in range(LOADOUTS.index(peer_weapon)):pages[1].keyboard.press('ArrowDown')
+        pages[1].keyboard.press('Enter')
+        wait(pages[1],'weapon=>window.__voxelQA.latestState.state.players[1].weapon===weapon',arg=peer_weapon)
     ready_clients(pages,setup_probe=False)
     return contexts,pages
 
@@ -1240,8 +1244,9 @@ def room_case(browser,size,map_id,profile='desktop'):
             contexts.append(context);pages.append(page)
         code=create_room(pages[0],size,map_id);invite=pages[0].url
         if size==1 and profile=='desktop':
-            pages[0].locator('#loadout-select').click();pages[0].keyboard.press('Home');pages[0].keyboard.press('ArrowDown');pages[0].keyboard.press('ArrowDown');pages[0].keyboard.press('Enter')
-            wait(pages[0],'window.__voxelQA.latestState.state.players[0].weapon==="marksman"')
+            with controls_panel(pages[0], '#loadout-select', resume=False):
+                pages[0].locator('#loadout-select').click();pages[0].keyboard.press('Home');pages[0].keyboard.press('ArrowDown');pages[0].keyboard.press('ArrowDown');pages[0].keyboard.press('Enter')
+                wait(pages[0],'window.__voxelQA.latestState.state.players[0].weapon==="marksman"')
         observer_context=new_context(browser);observer=observer_context.new_page();observe(observer,f'{size}v{size}/hub')
         partial=hub_capacity(observer,code,1,count)
         for index,page in enumerate(pages[1:],1):

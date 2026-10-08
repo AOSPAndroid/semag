@@ -257,9 +257,17 @@ async function startSolo() {
   const sessionActions = document.querySelector('.solo-session-actions');
   const container = $('solo-game');
   const help = $('solo-how-to');
+  const app = $('solo-app');
+  const infoDialog = $('solo-info');
+  const infoButton = $('solo-info-button');
+  const closeInfoButton = $('solo-info-close');
+  const fullscreenButton = $('solo-fullscreen');
   let game = null;
   let starting = false;
   let destroyed = false;
+  let layoutFrame = null;
+  let fitCanvas = null;
+  let fitBoard = null;
 
   document.title = `${info.title} — Semag`;
   const keyboardPicker = mountKeyboardLayoutPicker(document.querySelector('[data-keyboard-layout-picker]'));
@@ -333,13 +341,94 @@ async function startSolo() {
     focusGame();
   }
   function togglePause() {
-    if (!game || destroyed || ['won', 'lost'].includes(game.getState().phase)) return;
+    if (!game || destroyed || infoDialog.open || ['won', 'lost'].includes(game.getState().phase)) return;
     game.togglePause();
   }
   function autoPause() {
     if (game && !destroyed && !['paused', 'won', 'lost'].includes(game.getState().phase)) game.togglePause();
   }
   function visibilityChanged() { if (document.hidden) autoPause(); }
+  function openInfo() {
+    if (destroyed || infoDialog.open) return;
+    autoPause();
+    infoDialog.showModal();
+    infoButton.setAttribute('aria-expanded', 'true');
+    closeInfoButton.focus({ preventScroll: true });
+  }
+  function closeInfo() { if (infoDialog.open) infoDialog.close(); }
+  function infoClosed() {
+    infoButton.setAttribute('aria-expanded', 'false');
+    infoButton.focus({ preventScroll: true });
+  }
+  function infoCancelled(event) { event.preventDefault(); closeInfo(); }
+  function infoBackdrop(event) { if (event.target === infoDialog && (event.clientX < infoDialog.getBoundingClientRect().left || event.clientX > infoDialog.getBoundingClientRect().right || event.clientY < infoDialog.getBoundingClientRect().top || event.clientY > infoDialog.getBoundingClientRect().bottom)) closeInfo(); }
+  function infoKeydown(event) {
+    // Dialog controls keep native typing, Tab and button activation; global
+    // game handlers must never receive their movement or restart keys.
+    if (!infoDialog.open) return;
+    if (event.key === 'Tab') {
+      const focusable = [...infoDialog.querySelectorAll('a[href],button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),summary,[tabindex]:not([tabindex="-1"])')].filter(element => element.getClientRects().length);
+      const first = focusable[0], last = focusable.at(-1);
+      const outside = !infoDialog.contains(document.activeElement);
+      if (first && (outside || event.shiftKey && document.activeElement === first || !event.shiftKey && document.activeElement === last)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus({ preventScroll: true });
+      }
+    }
+    event.stopPropagation();
+  }
+  async function toggleFullscreen() {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await app.requestFullscreen();
+    } catch {
+      $('solo-notice').textContent = 'Fullscreen is unavailable in this browser. You can keep playing in this window.';
+      $('solo-notice').hidden = false;
+    }
+  }
+  function fullscreenChanged() {
+    const active = document.fullscreenElement === app;
+    fullscreenButton.setAttribute('aria-pressed', String(active));
+    fullscreenButton.setAttribute('aria-label', active ? 'Exit fullscreen' : 'Enter fullscreen');
+    fullscreenButton.title = active ? 'Exit fullscreen' : 'Enter fullscreen';
+    fullscreenButton.querySelector('span').textContent = active ? 'Exit fullscreen' : 'Fullscreen';
+    scheduleLayout();
+  }
+  function fitPlayfield() {
+    layoutFrame = null;
+    if (destroyed || !game) return;
+    if (!fitCanvas?.isConnected) {
+      fitCanvas = container.querySelector('canvas[data-solo-focus],canvas[tabindex]');
+      fitBoard = fitCanvas?.parentElement;
+      if (fitBoard && gameId !== 'voxel-wilds') fitBoard.classList.add('solo-fit-board');
+    }
+    if (!fitCanvas || !fitBoard || gameId === 'voxel-wilds') return;
+    const boardAspect = getComputedStyle(fitBoard).aspectRatio;
+    const canvasAspect = getComputedStyle(fitCanvas).aspectRatio;
+    const ratioParts = (boardAspect !== 'auto' ? boardAspect : canvasAspect).split('/').map(Number);
+    let ratio = ratioParts.length === 2 && ratioParts.every(value => value > 0) ? ratioParts[0] / ratioParts[1] : fitCanvas.width / fitCanvas.height;
+    const desktop = matchMedia('(min-width: 951px) and (pointer: fine)').matches || document.fullscreenElement === app;
+    if (!desktop || !Number.isFinite(ratio) || ratio <= 0) { fitBoard.style.removeProperty('--solo-board-width'); return; }
+    // Keep the world aspect intact. This caps the containing board, rather
+    // than stretching a canvas and changing click/aim coordinates.
+    const top = fitCanvas.getBoundingClientRect().top + window.scrollY;
+    const available = Math.max(240, window.innerHeight - top - 44);
+    const frame = fitBoard.getBoundingClientRect().width - fitCanvas.getBoundingClientRect().width;
+    if (gameId === 'shadow-lantern') {
+      // Shadow's native camera changes from 480×440 to 960×640 at 580px.
+      // Decide which shape fits from the available space, not its previous
+      // shape: otherwise a portrait crop can keep its own width below 580px
+      // after the player returns to a roomy desktop window.
+      const wideWidth = Math.min(fitBoard.parentElement.clientWidth, available * 960 / 640 + Math.max(0, frame));
+      ratio = wideWidth - Math.max(0, frame) >= 580 ? 960 / 640 : 480 / 440;
+    }
+    const width = `${Math.round(available * ratio + Math.max(0, frame))}px`;
+    if (fitBoard.style.getPropertyValue('--solo-board-width') !== width) fitBoard.style.setProperty('--solo-board-width', width);
+  }
+  function scheduleLayout() { if (game && !destroyed && layoutFrame === null) layoutFrame = requestAnimationFrame(fitPlayfield); }
+  const layoutObserver = new ResizeObserver(scheduleLayout);
+  layoutObserver.observe(container);
+  layoutObserver.observe(document.querySelector('.solo-topbar'));
   function pageHidden(event) {
     // A cached page keeps its controller so browser Back restores a paused game.
     if (event.persisted) autoPause();
@@ -358,10 +447,22 @@ async function startSolo() {
   function cleanup() {
     if (destroyed) return;
     destroyed = true;
+    if (infoDialog.open) infoDialog.close();
     unsubscribeLayout(); keyboardPicker.destroy();
     start.removeEventListener('click', startGame);
     restart.removeEventListener('click', newGame);
     pause.removeEventListener('click', togglePause);
+    infoButton.removeEventListener('click', openInfo);
+    closeInfoButton.removeEventListener('click', closeInfo);
+    infoDialog.removeEventListener('close', infoClosed);
+    infoDialog.removeEventListener('cancel', infoCancelled);
+    infoDialog.removeEventListener('click', infoBackdrop);
+    document.removeEventListener('keydown', infoKeydown, true);
+    fullscreenButton.removeEventListener('click', toggleFullscreen);
+    document.removeEventListener('fullscreenchange', fullscreenChanged);
+    window.removeEventListener('resize', scheduleLayout);
+    layoutObserver.disconnect();
+    if (layoutFrame !== null) cancelAnimationFrame(layoutFrame);
     help.removeEventListener('keydown', helpKeydown);
     window.removeEventListener('keydown', keydown);
     window.removeEventListener('blur', autoPause);
@@ -387,13 +488,18 @@ async function startSolo() {
       container.replaceChildren();
       game = module.mount(container, { onUpdate });
       if (!game || typeof game.getState !== 'function' || typeof game.restart !== 'function' || typeof game.togglePause !== 'function' || typeof game.destroy !== 'function') throw new Error('Invalid solo game interface');
+      // The views retain their live references, so mission-specific advice
+      // still updates while the optional panel stays out of the playfield.
+      const fieldNotes = container.querySelector('.skyline-tutorial,.shadow-notes,.wilds-field-guide');
+      if (fieldNotes) { $('solo-field-notes').append(fieldNotes); $('solo-extra-info').hidden = false; }
       container.tabIndex = 0;
       restart.disabled = false;
       sessionActions.hidden = false;
       // Loading can finish after the player has left this tab or window.
-      if (document.hidden || !document.hasFocus()) autoPause();
+      if (infoDialog.open || document.hidden || !document.hasFocus()) autoPause();
       else if (focusPlayArea) focusGame();
       else if (focused?.isConnected) focused.focus({ preventScroll: true });
+      fitPlayfield();
     } catch (error) {
       cleanup();
       $('solo-error').textContent = 'This game could not load. Refresh the page to try again, or choose another game from the shelf.';
@@ -412,6 +518,15 @@ async function startSolo() {
   start.addEventListener('click', startGame);
   restart.addEventListener('click', newGame);
   pause.addEventListener('click', togglePause);
+  infoButton.addEventListener('click', openInfo);
+  closeInfoButton.addEventListener('click', closeInfo);
+  infoDialog.addEventListener('close', infoClosed);
+  infoDialog.addEventListener('cancel', infoCancelled);
+  infoDialog.addEventListener('click', infoBackdrop);
+  document.addEventListener('keydown', infoKeydown, true);
+  fullscreenButton.addEventListener('click', toggleFullscreen);
+  document.addEventListener('fullscreenchange', fullscreenChanged);
+  window.addEventListener('resize', scheduleLayout);
   help.addEventListener('keydown', helpKeydown);
   window.addEventListener('keydown', keydown);
   window.addEventListener('blur', autoPause);

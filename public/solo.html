@@ -28,15 +28,14 @@
 <body>
   <main class="solo-app" id="solo-app" data-phase="ready">
     <header class="solo-topbar">
-      <a class="solo-back" href="/" aria-label="Back to the Semag game hub"><span aria-hidden="true">←</span><svg class="pixel-logo" viewBox="0 0 62 16" aria-hidden="true" focusable="false"><use href="/hub/logo.svg#brand" width="62" height="16"/></svg><b aria-hidden="true">/ BACK TO THE GAME SHELF</b></a>
-      <div data-keyboard-layout-picker></div>
-      <span class="solo-mode"><i aria-hidden="true"></i> SOLO / CHOOSE YOUR CHALLENGE</span>
+      <a class="solo-back" href="/" aria-label="Back to the Semag game hub"><span aria-hidden="true">←</span><svg class="pixel-logo" viewBox="0 0 62 16" aria-hidden="true" focusable="false"><use href="/hub/logo.svg#brand" width="62" height="16"/></svg></a>
+      <div class="solo-heading"><span class="eyebrow" id="solo-category">ONE PLAYER</span><h1 id="solo-title">Solo play</h1></div>
+      <div class="solo-toolbar-actions">
+        <div data-keyboard-layout-picker></div>
+        <button class="solo-toolbar-button" id="solo-info-button" type="button" aria-haspopup="dialog" aria-controls="solo-info" aria-expanded="false">Controls &amp; info</button>
+        <button class="solo-toolbar-button solo-fullscreen" id="solo-fullscreen" type="button" aria-label="Enter fullscreen" aria-pressed="false" title="Enter fullscreen"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M7 3H3v4m10-4h4v4M3 13v4h4m10-4v4h-4"/></svg><span>Fullscreen</span></button>
+      </div>
     </header>
-
-    <div class="solo-heading">
-      <div><span class="eyebrow" id="solo-category">ONE PLAYER</span><h1 id="solo-title">A little time for yourself.</h1><p id="solo-description">Pick up a game. Make it your own.</p></div>
-      <span class="solo-seat">01 <span>PLAYER</span></span>
-    </div>
     <div class="solo-notice" id="solo-notice" role="status" hidden></div>
     <div class="solo-error" id="solo-error" role="alert" hidden></div>
 
@@ -65,7 +64,13 @@
         <div class="solo-objective"><i aria-hidden="true"></i><span id="solo-detail">Start when you’re ready.</span></div>
       </section>
 
-      <aside class="solo-sidebar">
+    </div>
+
+    <dialog class="solo-info-dialog" id="solo-info" aria-labelledby="solo-info-title" aria-describedby="solo-info-note">
+      <div class="solo-info-header"><div><span class="eyebrow">SOLO PLAY</span><h2 id="solo-info-title">Controls &amp; info</h2></div><button class="solo-info-close" id="solo-info-close" type="button" aria-label="Close controls and info">✕</button></div>
+      <p class="solo-info-description" id="solo-description">Pick up a game. Make it your own.</p>
+      <p class="solo-info-note" id="solo-info-note">Your game stays paused while you read. Close this panel, then resume when you are ready.</p>
+      <div class="solo-sidebar">
         <section class="solo-controls-panel">
           <h2>Quick controls</h2>
           <div id="solo-controls-list"></div>
@@ -79,10 +84,10 @@
           <ol id="solo-rules"></ol>
           <small>Leaving the tab pauses your game. Resume when you are ready.</small>
         </details>
+        <section class="solo-extra-info" id="solo-extra-info" hidden><h2>Field notes</h2><div id="solo-field-notes"></div></section>
         <div class="solo-record-note"><span class="eyebrow">YOUR PERSONAL BEST</span><p id="solo-record-scope">Best scores stay in this browser.</p></div>
-      </aside>
-    </div>
-    <footer class="solo-footer"><a href="/">← A different game?</a><span>SEMAG / SOLO PLAY</span><span>A MOMENT WELL SPENT.</span></footer>
+      </div>
+    </dialog>
   </main>
   <script type="module" src="/solo/solo.js"></script>
 </body>

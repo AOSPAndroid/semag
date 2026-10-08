@@ -1,0 +1,172 @@
+/* Play pages keep the game in front; room setup and reference live in a drawer. */
+.room-app,
+.room-app:not(.board-mode):not(.card-mode),
+.room-app.card-mode,
+.room-app.brawl-mode:not(.board-mode):not(.card-mode):not(:fullscreen) {
+  max-width: 1500px;
+  padding: 0 20px;
+}
+.room-app .room-topbar { display: flex; height: 48px; min-height: 0; padding: 0; gap: 14px; }
+.room-topbar > [data-keyboard-layout-picker] { margin-left: auto; }
+.room-topbar .keyboard-layout-picker { flex-direction: row; gap: 0; }
+.room-topbar .keyboard-layout-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.room-topbar .keyboard-layout-select { width: 128px; max-width: 128px; min-height: 34px; }
+.room-topbar .back-link { gap: 8px; }
+.room-topbar .back-link > b { display: none; }
+.room-topbar .pixel-logo { width: 77.5px; height: 20px; }
+.room-topbar .connection { margin-right: 2px; }
+.room-topbar .icon-button { min-width: 34px; min-height: 34px; }
+.room-app .room-heading { padding: 10px 0 12px; min-height: 60px; gap: 18px; }
+.room-title { min-width: 0; }
+.room-title .eyebrow, .room-title #game-description { display: none; }
+.room-app .room-heading h1 { margin: 0; font-size: 22px; line-height: 1.2; letter-spacing: -.6px; }
+.room-heading-actions { display: flex; align-items: center; gap: 9px; }
+.room-ready-note { max-width: 215px; margin: 0; font-size: 11px; line-height: 1.45; color: #5b7357; text-align: right; }
+.room-heading .ready-button { width: auto; min-width: 116px; min-height: 38px; padding: 8px 12px; margin: 0; gap: 12px; font-size: 12px; }
+.room-app[data-phase=fight] .ready-button,
+.room-app[data-phase=roundEnd] .ready-button,
+.room-app[data-phase=fight] .room-ready-note,
+.room-app[data-phase=roundEnd] .room-ready-note { display: none; }
+.room-panel-button { display: inline-flex; align-items: center; justify-content: center; gap: 9px; min-height: 38px; padding: 8px 11px; border: 1px solid #bdcbb3; border-radius: 5px; background: #fffdf8; color: #34583d; font-size: 12px; white-space: nowrap; }
+.room-panel-button:hover { background: #eaf0e1; }
+.room-panel-button > span { padding: 3px 5px; border-radius: 3px; background: #edf1e4; color: #5e7550; font: 9px var(--mono); }
+.room-panel-button[aria-expanded=true] { background: #e2ead6; }
+.room-heading .room-code-button { display: flex; flex-direction: row; align-items: center; gap: 7px; min-height: 38px; padding: 8px 10px; }
+.room-heading .room-code-button > span { display: none; }
+.room-heading .room-code-button > strong { font-size: 12px; letter-spacing: 1px; }
+.room-heading .room-code-button > i { font-size: 15px; }
+.room-app .room-layout { display: block; }
+.room-app .play-panel { width: 100%; margin: 0 auto; border-color: #c4ccb8; box-shadow: 0 3px 12px #193b3207; }
+.room-app .game-hud { height: 62px; padding: 9px 16px; gap: 20px; }
+.room-app .health-track { height: 5px; margin: 6px 0 5px; }
+.room-app .player-heading > strong { font-size: 11px; max-width: 72%; }
+.room-app .player-heading .score { flex-shrink: 0; white-space: nowrap; }
+.room-app .center-hud { width: 94px; gap: 1px; }
+.room-app .center-hud > strong { font-size: 25px; line-height: 27px; }
+.room-app .center-hud > span { font-size: 9px; letter-spacing: 0; line-height: 1.2; }
+.room-app.board-mode .player-detail,
+.room-app.card-mode .player-detail,
+.room-app.brawl-mode .player-detail { margin-top: 6px; }
+.room-app .game-viewport { max-height: none; }
+.room-app.brawl-mode:not(.brawl-lobby-open) .game-viewport { max-height: none; }
+.room-app .objective-bar { min-height: 32px; padding: 8px 14px; line-height: 1.45; font-size: 11px; }
+.room-app .room-footer { margin-top: 8px; padding: 8px 0; min-height: 30px; border: 0; }
+.room-app .error-banner { margin-bottom: 10px; padding: 8px 12px; font-size: 12px; }
+.room-app.brawl-mode.brawl-lobby-open .play-panel { max-width: 1100px; }
+.room-app.brawl-mode .brawl-lobby { padding: 18px; }
+.room-app.brawl-mode .brawl-choice { min-height: 86px; }
+.room-app.brawl-mode .brawl-stage canvas { max-height: 146px; object-fit: cover; }
+.room-app.card-mode .play-panel { max-width: 1140px; }
+.room-app.card-mode .game-viewport { padding: 14px; }
+.room-app.card-mode .cards-view { max-width: 1030px; }
+.room-app.card-mode .cards-center { margin: 10px 0 14px; }
+.room-app.card-mode .cards-hand-heading { margin-bottom: 9px; }
+.room-app.card-mode .cards-topline { margin-bottom: 8px; }
+.room-app.card-mode .cards-surface { padding-top: 17px; padding-bottom: 17px; }
+.room-app.card-mode .cards-status { margin-top: 9px; }
+.room-app.card-mode .cards-hint { display: none; }
+.room-panel .cards-progress-panel { border: 1px solid #c8d3ba; border-radius: 5px; background: #fffdf8; }
+.room-panel .cards-progress-panel > h2 { font-size: 15px; font-weight: 550; margin: 0 0 12px; }
+.room-panel .cards-progress-panel .cards-context { margin: 0; padding: 0; border: 0; background: transparent; box-shadow: none; }
+.room-app.board-mode .play-panel { max-width: 1080px; }
+.room-app.board-mode .game-viewport { padding: 14px 20px; }
+.room-panel { position: fixed; inset: 12px 12px 12px auto; width: min(420px, calc(100vw - 24px)); max-width: none; max-height: calc(100dvh - 24px); margin: 0; padding: 0; border: 1px solid #a8b99a; border-radius: 10px; background: #f5f2ea; color: var(--ink); box-shadow: 0 16px 60px #16392740; overflow-y: auto; overscroll-behavior: contain; }
+.room-panel::backdrop { background: #17372bb3; }
+body:has(.room-panel[open]) { overflow: hidden; }
+.room-panel-heading { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 17px 18px; border-bottom: 1px solid #d1dac7; background: #f5f2ea; }
+.room-panel-heading h2 { font-size: 19px; font-weight: 600; letter-spacing: -.4px; margin: 5px 0 0; }
+.room-panel-close { display: grid; place-items: center; min-width: 40px; min-height: 40px; padding: 0; border: 1px solid #bdcbb3; border-radius: 5px; background: #fffdf8; color: #34583d; font-size: 25px; }
+.room-panel-close:hover { background: #e5edda; }
+.room-panel-note { font-size: 11px; line-height: 1.6; margin: 0; padding: 13px 18px 0; color: #65795b; }
+.room-panel .room-sidebar { display: flex; padding: 14px 18px 18px; gap: 12px; }
+.room-panel .room-sidebar > section { padding: 15px; width: 100%; margin: 0; }
+.room-panel .party-player strong { max-width: none; }
+.room-panel .panel-title { margin-bottom: 8px; }
+.room-panel .room-name-label { margin-top: 13px; }
+.room-panel .party-ready-hint { font-size: 11px; line-height: 1.6; margin: 12px 0 0; color: #5b7357; }
+.room-panel .controls-panel h2 { margin-bottom: 12px; }
+.room-app:fullscreen,
+.room-app:not(.board-mode):not(.card-mode):fullscreen,
+.room-app.card-mode:fullscreen { max-width: none; width: 100%; margin: 0; padding: 0 20px; }
+.room-app:fullscreen .room-layout { max-width: none; }
+.room-app:fullscreen .room-footer { display: none; }
+@media (min-width: 600px) and (orientation: landscape) {
+  .room-app:not(.board-mode):not(.card-mode):not(.brawl-lobby-open) .play-panel { max-width: min(100%, var(--room-game-width, 1100px)); }
+}
+@media (min-width: 801px) and (pointer: fine) {
+  .room-app:not(.board-mode):not(.card-mode):not(.brawl-lobby-open) .play-panel { max-width: min(100%, var(--room-game-width, 1100px)); }
+  .room-app.board-mode .checkers-view { display: grid; width: min(100%, 950px); grid-template-columns: minmax(170px, 230px) minmax(0, var(--room-board-width, 600px)); grid-template-rows: min-content min-content min-content 1fr min-content; justify-content: center; align-items: start; gap: 12px 22px; }
+  .room-app.board-mode .checkers-frame { grid-column: 2; grid-row: 1 / span 4; }
+  .room-app.board-mode .checkers-toolbar { grid-column: 1; grid-row: 1; flex-wrap: wrap; margin-bottom: 0; }
+  .room-app.board-mode .checkers-material { grid-column: 1; grid-row: 2; grid-template-columns: 1fr; margin-bottom: 0; }
+  .room-app.board-mode .checkers-notice { grid-column: 2; grid-row: 5; margin: 0; }
+  .room-app.board-mode .checkers-legend { grid-column: 1; grid-row: 3; justify-content: flex-start; margin: 0; }
+  .room-app.board-mode .checkers-history { grid-column: 1; grid-row: 4; }
+  .room-app.board-mode .checkers-history-list { grid-template-columns: 1fr; }
+  .room-app.board-mode .checkers-view.is-enlarged { grid-template-columns: minmax(170px, 230px) minmax(0, 650px); }
+  .room-app.card-mode [data-game=twenty-one] .cards-surface { display: grid; grid-template-columns: minmax(0, 1fr) 160px minmax(0, 1fr); align-items: center; gap: 20px; min-height: 290px; }
+  .room-app.card-mode [data-game=twenty-one] .cards-center { margin: 0; }
+  .room-app.card-mode [data-game=twenty-one] .cards-actions { gap: 6px; }
+  .room-app.card-mode [data-game=twenty-one] .cards-action { font-size: 11px; padding-inline: 10px; }
+  .room-app.card-mode [data-game=memory] .memory-grid { max-width: var(--room-memory-width, 560px); }
+  .room-app.card-mode [data-game=memory] .memory-card { max-height: none; }
+}
+@media (max-width: 1050px) {
+  .room-ready-note { display: none; }
+}
+@media (min-width: 600px) and (max-width: 800px) and (orientation: landscape), (min-width: 600px) and (pointer: coarse) and (orientation: landscape) {
+  .room-app:is(.vector-mode, .shinobi-mode, .brawl-mode):not(.board-mode):not(.card-mode):not(.brawl-lobby-open) .play-panel { max-width: 100%; background: #e6eadf; }
+  .room-app:is(.vector-mode, .shinobi-mode, .brawl-mode):not(.brawl-lobby-open) .game-viewport { width: min(100%, var(--room-game-width, 100%)); margin-inline: auto; }
+  .room-app .vector-controls, .room-app .shinobi-controls { padding: 9px 12px; }
+  .room-app .vector-touch-actions { grid-template-columns: repeat(4, minmax(0, 1fr)); max-width: none; }
+  .room-app .shinobi-touch-actions { grid-template-columns: repeat(5, minmax(0, 1fr)); max-width: none; }
+  .room-app .shinobi-touch-actions [data-shinobi-action=dash] { grid-column: auto; }
+  .room-app .brawl-actions { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+}
+@media (max-width: 800px), (pointer: coarse) {
+  .room-app, .room-app:not(.board-mode):not(.card-mode), .room-app.card-mode, .room-app.brawl-mode:not(.board-mode):not(.card-mode):not(:fullscreen), .room-app:fullscreen { padding: 0 12px; }
+  .room-topbar .connection #connection-status { font-size: 8px; }
+  .room-app .room-heading { gap: 10px; }
+  .room-app .room-heading h1 { font-size: 20px; }
+  .room-heading-actions { gap: 6px; }
+  .room-app .game-hud { padding: 9px 12px; gap: 10px; }
+  .room-app .objective-bar > span:last-child { display: none; }
+  .room-app .room-footer > span:last-child { display: none; }
+  .room-app.card-mode .game-viewport { padding: 10px; }
+  .room-app.board-mode .game-viewport { padding: 12px; }
+}
+@media (max-width: 570px) {
+  .room-app .room-topbar { height: 54px; gap: 6px; flex-wrap: nowrap; }
+  .room-topbar .keyboard-layout-select { width: 108px; max-width: 108px; min-height: 40px; padding-left: 7px; font-size: 10px; }
+  .room-topbar .icon-button { min-width: 44px; min-height: 44px; }
+  .room-topbar .back-link > .back-arrow { display: none; }
+  .room-topbar .pixel-logo { width: 62px; height: 16px; }
+  .room-topbar .room-top-actions { gap: 5px; }
+  .room-topbar .connection { gap: 4px; margin: 0; }
+  .room-topbar .connection #connection-status { display: none; }
+  .room-app .room-heading { flex-wrap: wrap; padding: 9px 0; gap: 8px; }
+  .room-title { width: 100%; }
+  .room-app .room-heading h1 { font-size: 19px; }
+  .room-heading-actions { width: 100%; justify-content: flex-start; }
+  .room-heading .ready-button { flex: 1; min-width: 0; min-height: 40px; padding: 8px; gap: 4px; }
+  .room-heading .ready-button > b { display: none; }
+  .room-heading .ready-button > span { font-size: 11px; white-space: nowrap; }
+  .room-panel-button { min-height: 40px; padding: 8px; font-size: 11px; gap: 5px; }
+  .room-heading .room-code-button { margin-left: auto; padding: 8px; min-height: 40px; }
+  .room-heading .room-code-button > strong { font-size: 11px; }
+  .room-heading .room-code-button > i { display: none; }
+  .room-app .game-hud { height: 64px; padding: 8px; gap: 7px; }
+  .room-app .player-heading { gap: 4px; }
+  .room-app .player-heading > strong { font-size: 9px; max-width: 100%; }
+  .room-app .player-badge { display: none; }
+  .room-app .center-hud { width: 68px; }
+  .room-app .center-hud > strong { font-size: 23px; }
+  .room-app .center-hud > span { font-size: 8px; }
+  .room-app .objective-bar { padding: 8px 10px; font-size: 10px; }
+  .room-app .room-footer { font-size: 7px; letter-spacing: .4px; }
+  .room-app.brawl-mode .brawl-lobby { padding: 12px 10px; }
+  .room-app.brawl-mode .brawl-choice { min-height: 120px; }
+  .room-app.card-mode .cards-center { margin: 16px 0 20px; }
+  .room-app.board-mode .game-viewport { padding: 12px 8px; }
+  .room-panel { border-radius: 8px; }
+}

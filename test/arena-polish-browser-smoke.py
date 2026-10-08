@@ -15,6 +15,7 @@ import time
 from urllib.parse import parse_qs, urlparse
 
 from playwright.sync_api import sync_playwright
+from browser_controls import controls_panel
 
 URL = (sys.argv[1] if len(sys.argv) > 1 else 'http://127.0.0.1:3000').rstrip('/')
 ARTIFACTS = Path(os.environ.get('SEMAG_SCREENSHOT_DIR', Path(__file__).resolve().parents[1] / 'test-results' / 'arena-polish'))
@@ -109,8 +110,9 @@ def capture_layouts(page, game):
         page.wait_for_timeout(80)
         sizes = page.evaluate('({width:innerWidth,scroll:document.documentElement.scrollWidth})')
         assert sizes['scroll'] <= sizes['width'], (game, sizes)
-        box = page.locator('select[data-keyboard-layout]').bounding_box()
-        assert box and 0 <= box['x'] and box['x'] + box['width'] <= width + 1
+        with controls_panel(page, 'select[data-keyboard-layout]'):
+            box = page.locator('select[data-keyboard-layout]').bounding_box()
+            assert box and 0 <= box['x'] and box['x'] + box['width'] <= width + 1
         screenshot(page, f'{game}-{width}.png')
     page.set_viewport_size({'width': 1440, 'height': 1000})
 
@@ -149,10 +151,11 @@ def fresh_room(browser, game):
     second.wait_for_url('**/*room=*')
     connected(second, 1)
     assert first.locator('select[data-keyboard-layout]').input_value() == 'zqsd'
-    first.locator('#player-name').fill('')
-    first.locator('#player-name').press('r')
-    first.locator('#player-name').press('q')
-    assert first.locator('#player-name').input_value() == 'rq'
+    with controls_panel(first, '#player-name', resume=False):
+        first.locator('#player-name').fill('')
+        first.locator('#player-name').press('r')
+        first.locator('#player-name').press('q')
+        assert first.locator('#player-name').input_value() == 'rq'
     assert first.locator('#ready-button span').inner_text() == 'Ready up'
     if game == 'oddstock-rumble':
         first.locator('[data-brawl-character="sprout"]').click()

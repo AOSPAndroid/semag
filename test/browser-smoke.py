@@ -9,6 +9,7 @@ import os
 import sys
 import time
 from playwright.sync_api import sync_playwright
+from browser_controls import controls_panel
 
 URL = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:3000/afterimage.html"
 errors = []
@@ -64,8 +65,9 @@ with sync_playwright() as playwright:
         second.goto(URL)
         second.wait_for_function("window.afterimage?.connected && window.afterimage.playerId === 1")
         for page, name in [(first, "Mina QA"), (second, "Rook QA")]:
-            page.locator("#player-name").fill(name)
-            page.locator("#player-name").press("Enter")
+            with controls_panel(page, '#player-name', resume=False):
+                page.locator("#player-name").fill(name)
+                page.locator("#player-name").press("Enter")
         first.wait_for_function("document.querySelector('#p2-name').textContent === 'ROOK QA'")
         second.wait_for_function("document.querySelector('#p1-name').textContent === 'MINA QA'")
         print("PASS two independent contexts connect, reserve distinct slots, and sync names", flush=True)

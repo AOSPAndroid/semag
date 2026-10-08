@@ -16,6 +16,7 @@ import sys
 import time
 from urllib.request import urlopen
 from playwright.sync_api import sync_playwright
+from browser_controls import controls_panel
 
 ROOT = Path(__file__).resolve().parents[1]
 SCREENSHOTS = Path(os.environ.get('FIRESIDE_SCREENSHOT_DIR', ROOT / 'test-results' / 'dungeon'))
@@ -148,7 +149,10 @@ def main(url):
         ca=browser.new_context(viewport={'width':1440,'height':1000},has_touch=False);cb=browser.new_context(viewport={'width':1440,'height':1000},has_touch=False)
         a,b=ca.new_page(),cb.new_page();watch(a,'P1');watch(b,'P2')
         a.goto(url);a.locator('[data-create-game="dungeon-run"]').click();a.wait_for_function('window.firesideRoom?.connected');b.goto(a.url);b.wait_for_function('window.firesideRoom?.playerId===1')
-        a.locator('#player-name').fill('Mina');a.locator('#player-name').press('Enter');b.locator('#player-name').fill('Rook');b.locator('#player-name').press('Enter')
+        for page, name in ((a, 'Mina'), (b, 'Rook')):
+            with controls_panel(page, '#player-name'):
+                page.locator('#player-name').fill(name)
+                page.locator('#player-name').press('Enter')
         a.locator('#ready-button').focus();a.keyboard.press('Space');a.wait_for_function('document.querySelector("#ready-button").classList.contains("is-ready")');assert read(a)['phase']=='lobby'
         b.locator('#ready-button').click();a.wait_for_function('window.firesideRoom.getState().phase==="fight"');a.locator('#arena').focus();b.locator('#arena').focus()
         keyboard=[Keyboard(a),Keyboard(b)];navigator=Navigator();seen=set();rooms=set();bosses=set();boons=[];actions=set();first_shrines=False;first_choices=False;next_room=False;last_status=0

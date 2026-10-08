@@ -42,6 +42,14 @@ const canvas = $('arena');
 const renderer = realtimeMode ? vectorMode ? new VectorRenderer(canvas) : shinobiMode ? new ShinobiRenderer(canvas) : brawlMode ? new BrawlRenderer(canvas) : new TopdownRenderer(canvas) : null;
 const board = boardMode ? new CheckersView($('checkers-board'), { onMove: (from, to) => send({ type: 'move', from, to }) }) : null;
 const cardTable = cardMode ? new CardsView($('cards-table'), { onAction: action => send({ type: 'card-action', action }) }) : null;
+if (cardTable) {
+  const progress = document.createElement('section');
+  progress.className = 'cards-progress-panel';
+  const title = document.createElement('h2');
+  title.textContent = 'Match progress';
+  progress.append(title, cardTable.context);
+  document.querySelector('.room-sidebar').append(progress);
+}
 const held = new Map();
 const safeName = (name, fallback) => typeof name === 'string' && name.trim() ? name.trim().slice(0, 24) : fallback;
 
@@ -49,6 +57,7 @@ document.title = `${game.title} — Semag`;
 $('game-title').textContent = game.title;
 $('game-category').textContent = game.category;
 $('game-description').textContent = game.description;
+$('room-panel-note').textContent = `${game.description} Invite a friend or check the controls here. Live games continue while this panel is open.`;
 $('room-code-label').textContent = roomId || '—';
 $('player-name').value = playerName;
 $('room-app').classList.toggle('board-mode', boardMode);
@@ -56,6 +65,7 @@ $('room-app').classList.toggle('card-mode', cardMode);
 $('room-app').classList.toggle('vector-mode', vectorMode);
 $('room-app').classList.toggle('shinobi-mode', shinobiMode);
 $('room-app').classList.toggle('brawl-mode', brawlMode);
+$('game-title').setAttribute('title', game.description);
 $('checkers-board').hidden = !boardMode; $('cards-table').hidden = !cardMode; canvas.hidden = !realtimeMode;
 $('controls-panel').hidden = !realtimeMode; $('board-instructions').hidden = !boardMode; $('card-instructions').hidden = !cardMode;
 $('party-title').textContent = coop ? 'Your party' : 'Your room';
@@ -207,6 +217,7 @@ function releaseKeys() {
 const keyboardIdentity = event => event.code || (event.key?.length === 1 ? event.key.toLowerCase() : event.key);
 document.addEventListener('keydown', event => {
   if (event.defaultPrevented || typing(event.target) || event.isComposing || event.metaKey || event.ctrlKey || event.altKey) return;
+  if ($('room-panel').open) return;
   const identity = keyboardIdentity(event), code = gameCode(event);
   const interactive = event.target instanceof Element ? event.target.closest('button, a, summary') : null;
   if (interactive && ['Space', 'Enter'].includes(code)) {
@@ -234,6 +245,7 @@ document.addEventListener('keyup', event => {
 window.addEventListener('blur', () => { releaseKeys(); focusLost = true; });
 document.addEventListener('visibilitychange', () => { if (document.hidden) releaseKeys(); });
 canvas.addEventListener('pointerdown', event => {
+  if ($('room-panel').open) return;
   canvas.focus(); focusLost = false;
   if (!aimMode) return;
   event.preventDefault(); updatePointerAim(event);
@@ -252,6 +264,7 @@ function updatePointerAim(event) {
   };
 }
 canvas.addEventListener('pointermove', event => {
+  if ($('room-panel').open) return;
   if (!aimMode) return;
   updatePointerAim(event);
   if (event.pointerType === 'mouse' || event.pointerType === 'pen') {
@@ -466,6 +479,46 @@ function updateBrawlLobby(state) {
 $('player-name').addEventListener('focus', releaseKeys);
 $('player-name').addEventListener('change', () => { playerName = saveName($('player-name').value); $('player-name').value = playerName; send({ type: 'join', name: playerName }); });
 $('player-name').addEventListener('keydown', event => { if (event.key === 'Enter') event.target.blur(); });
+const roomPanel = $('room-panel');
+let roomPanelReturnToGame = false;
+function closeRoomPanel({ returnToGame = false } = {}) {
+  if (!roomPanel.open) return;
+  roomPanelReturnToGame = returnToGame;
+  roomPanel.close();
+}
+$('room-panel-button').addEventListener('click', () => {
+  releaseKeys();
+  focusLost = realtimeMode && authoritative.phase === 'fight';
+  roomPanel.showModal();
+  roomPanelReturnToGame = false;
+  $('room-panel-button').setAttribute('aria-expanded', 'true');
+  $('room-panel-close').focus({ preventScroll: true });
+});
+$('room-panel-close').addEventListener('click', () => closeRoomPanel({ returnToGame: authoritative.phase === 'fight' }));
+roomPanel.addEventListener('close', () => {
+  releaseKeys();
+  $('room-panel-button').setAttribute('aria-expanded', 'false');
+  const returnToGame = roomPanelReturnToGame && realtimeMode && authoritative.phase === 'fight';
+  if (returnToGame) focusLost = false;
+  (returnToGame ? canvas : $('room-panel-button')).focus({ preventScroll: true });
+  roomPanelReturnToGame = false;
+});
+roomPanel.addEventListener('keydown', event => {
+  if (event.key !== 'Tab') return;
+  const controls = [...roomPanel.querySelectorAll('button, input, select, textarea, a[href], summary, [tabindex]')]
+    .filter(node => !node.disabled && node.tabIndex >= 0 && node.getClientRects().length);
+  if (!controls.length) { event.preventDefault(); roomPanel.focus(); return; }
+  const first = controls[0], last = controls.at(-1);
+  if (!roomPanel.contains(document.activeElement) || event.shiftKey && document.activeElement === first || !event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    (event.shiftKey ? last : first).focus();
+  }
+});
+roomPanel.addEventListener('click', event => {
+  if (event.target !== roomPanel) return;
+  const rect = roomPanel.getBoundingClientRect();
+  if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) closeRoomPanel({ returnToGame: authoritative.phase === 'fight' });
+});
 $('ready-button').addEventListener('click', () => {
   if (!connected || localId == null) return;
   if (authoritative.phase === 'fight' || authoritative.phase === 'roundEnd') return;
@@ -552,6 +605,8 @@ function updateDungeonBuild(state) {
 }
 function updateHUD(now) {
   const state = authoritative, phase = state.phase;
+  setAttribute($('room-app'), 'data-phase', phase);
+  setText($('room-seat-summary'), `${players.filter(player => player?.connected).length} / 2`);
   const names = players.map((p, i) => safeName(p?.name, `Player ${i + 1}`));
   const active = ['countdown', 'fight', 'roundEnd'].includes(phase);
   for (let i = 0; i < 2; i++) {
@@ -602,6 +657,7 @@ function updateHUD(now) {
     setText($('objective'), cardObjective(state, names));
     setText($('objective-detail'), twentyOne ? 'FIVE ROUNDS / NO BETTING' : gameId === 'memory' ? `${state.pairsRemaining} PAIRS LEFT` : `${state.deckCount} IN DECK`);
     cardTable.render(state, { localId, players });
+    setHidden(cardTable.context.parentElement, !cardTable.context.childNodes.length);
   } else if (brawlMode) {
     setText($('round-label'), '3 STOCKS'); setText($('timer'), `${Math.floor(Math.max(0, state.roundTicks) / 7200)}:${String(Math.floor(Math.max(0, state.roundTicks) / 120) % 60).padStart(2, '0')}`); setText($('hud-caption'), 'DAMAGE');
     setText($('objective'), phase === 'fight' ? 'Build damage. Launch your rival. Save a jump for the trip back.' : phase === 'matchEnd' ? state.winner == null ? 'A glorious draw. Ready for another rumble?' : `${names[state.winner]} takes the rumble.` : 'Choose a fighter and let the host pick a stage, then both ready up.');
@@ -698,7 +754,59 @@ window.firesideRoom = {
   get playerId() { return localId; }, get connected() { return connected; }, roomId, gameId,
 };
 window.addEventListener('beforeunload', () => { intentionalClose = true; socket?.close(); });
-window.addEventListener('resize', () => renderer?.resize());
+// Size the whole arena to the space below its actual toolbar and HUD. The
+// canvas always retains the engine's aspect ratio, including in fullscreen.
+let resizeFrame = null;
+function resizePlaySpace() {
+  resizeFrame = null;
+  const app = $('room-app'), viewport = $('game-viewport');
+  const fitArena = matchMedia('(min-width: 801px) and (pointer: fine), (min-width: 600px) and (orientation: landscape)').matches;
+  if (fitArena && (!brawlMode || !app.classList.contains('brawl-lobby-open'))) {
+    const footer = document.querySelector('.room-footer'), objective = document.querySelector('.objective-bar');
+    const footerSpace = footer.getBoundingClientRect().height + parseFloat(getComputedStyle(footer).marginTop || 0);
+    const touchSpace = ['vector-controls', 'shinobi-controls', 'brawl-controls']
+      .reduce((height, id) => height + $(id).getBoundingClientRect().height, 0);
+    const height = Math.max(180, innerHeight - viewport.getBoundingClientRect().top - objective.getBoundingClientRect().height - touchSpace - footerSpace - 12);
+    app.style.setProperty('--room-game-width', `${Math.floor(height * (brawlMode ? 5 / 3 : 3 / 2))}px`);
+    if (boardMode) {
+      const notice = document.querySelector('.checkers-notice');
+      const viewportStyle = getComputedStyle(viewport);
+      const padding = parseFloat(viewportStyle.paddingTop) + parseFloat(viewportStyle.paddingBottom);
+      app.style.setProperty('--room-board-width', `${Math.max(300, Math.min(650, Math.floor(height - (notice?.getBoundingClientRect().height || 20) - 12 - padding)))}px`);
+    }
+    if (gameId === 'memory') {
+      const grid = document.querySelector('.memory-grid');
+      if (grid) {
+        const gridStyle = getComputedStyle(grid);
+        const rowGap = parseFloat(gridStyle.rowGap) || 9;
+        const extraHeight = viewport.getBoundingClientRect().height - grid.getBoundingClientRect().height;
+        const width = ((height - extraHeight - rowGap * 3) / 4) * .74 * 8 + rowGap * 7;
+        app.style.setProperty('--room-memory-width', `${Math.max(420, Math.min(650, Math.floor(width)))}px`);
+      }
+    }
+  } else {
+    app.style.removeProperty('--room-game-width');
+    app.style.removeProperty('--room-board-width');
+    app.style.removeProperty('--room-memory-width');
+  }
+  renderer?.resize();
+}
+function queuePlaySpaceResize() {
+  if (resizeFrame == null) resizeFrame = requestAnimationFrame(resizePlaySpace);
+}
+window.addEventListener('resize', queuePlaySpaceResize);
+document.addEventListener('fullscreenchange', () => {
+  const fullscreen = !!document.fullscreenElement;
+  const label = fullscreen ? 'Exit fullscreen' : 'Enter fullscreen';
+  $('fullscreen-button').setAttribute('aria-label', label);
+  $('fullscreen-button').title = label;
+  queuePlaySpaceResize();
+});
+if (typeof ResizeObserver === 'function') {
+  const observer = new ResizeObserver(queuePlaySpaceResize);
+  for (const node of [document.querySelector('.room-heading'), document.querySelector('.game-hud'), document.querySelector('.objective-bar'), document.querySelector('.room-footer'), $('game-viewport')]) observer.observe(node);
+}
+queuePlaySpaceResize();
 setInterval(() => { if (connected) send({ type: 'ping', time: performance.now() }); }, 1000);
 setInterval(() => { if (connected && performance.now() - lastSnapshotAt > 3000) { error('The host stopped responding. Reconnecting…'); socket.close(); } }, 1500);
 connect(); updateConnection(); scheduleFrame();

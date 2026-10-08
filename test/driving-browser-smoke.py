@@ -16,6 +16,7 @@ import time
 from urllib.request import urlopen
 
 from playwright.sync_api import sync_playwright
+from browser_controls import controls_panel
 from browser_profiles import standard_profile, start_solo
 
 
@@ -514,11 +515,12 @@ def run(url):
                     start_solo(page, game)
                     standard_profile(page, game)
                     wait_phase(page, "playing")
-                    assert page.locator("#solo-controls-list").is_visible()
-                    assert not page.locator("#solo-rules").is_visible()
-                    page.locator("#solo-how-to > summary").click()
-                    assert page.locator("#solo-rules").is_visible()
-                    page.locator("#solo-how-to > summary").click()
+                    with controls_panel(page, '#solo-how-to', resume=True):
+                        assert page.locator("#solo-controls-list").is_visible()
+                        assert not page.locator("#solo-rules").is_visible()
+                        page.locator("#solo-how-to > summary").click()
+                        assert page.locator("#solo-rules").is_visible()
+                        page.locator("#solo-how-to > summary").click()
                     assert "room=" not in page.url
                     page.locator("#solo-pause").click()
                     wait_phase(page, "paused")

@@ -151,3 +151,141 @@
 .damage-bearing::before{content:"";position:absolute;top:0;left:calc(50% - 10px);width:20px;height:8px;background:currentColor;clip-path:polygon(0 0,100% 0,100% 50%,50% 100%,0 50%)}
 .damage-cue[data-direction=""] .damage-bearing{display:none}
 @media(max-width:600px){.blood-pixels>i{transform:scale(.72)}.damage-bearing{left:calc(50% - 55px);top:calc(50% - 55px);width:110px;height:110px}.damage-bearing::before{width:16px;height:6px;left:calc(50% - 8px)}}
+
+/* The arena fills the play page; room setup opens only when it is needed. */
+.voxel-app{width:100%;max-width:1920px;margin:auto;padding:0 16px}
+.voxel-topbar{height:48px;min-height:48px;padding:0;gap:12px;flex-wrap:nowrap}
+.brand{gap:10px;font-size:17px;flex-shrink:0}
+.brand svg{width:94px;height:24px}
+.brand .back-copy,.brand small{font-size:8px;letter-spacing:1px}
+.voxel-topbar .top-actions,.topbar .top-actions{gap:8px;min-width:0;width:auto;flex-wrap:nowrap;justify-content:flex-end}
+.voxel-topbar .top-actions>[data-keyboard-layout-picker],.topbar .top-actions>[data-keyboard-layout-picker]{width:auto}
+.top-actions .keyboard-layout-label{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.top-actions .keyboard-layout-select{height:32px!important;min-height:32px!important;font-size:10px!important;max-width:125px!important}
+.icon-button{height:32px;min-width:32px}
+.room-heading{height:44px;min-height:44px;padding:0;gap:12px}
+.room-heading .eyebrow,.room-heading p{display:none}
+.room-heading h1{font-size:24px;line-height:1.1;letter-spacing:-.5px;margin:0}
+.room-heading h1>span{font-size:8px;margin-left:8px;padding:3px}
+.room-code-button{padding:6px 10px;min-height:30px;gap:5px 9px}
+.room-code-button>span:first-child,.room-code-button>small{font-size:7px}
+.room-code-button strong{font-size:14px;letter-spacing:2px}
+.game-shell{position:relative;min-width:0;max-width:none}
+.match-hud{height:42px;min-height:42px;flex-shrink:0}
+.viewport{width:100%;height:calc(100dvh - 180px);min-height:280px;aspect-ratio:auto}
+.viewport:has(.arena-loadouts:not([hidden])){min-height:385px}
+.objective-bar{min-height:40px;gap:8px;padding:0 8px 0 12px;flex-wrap:nowrap;font:9px/1.4 Arial,sans-serif}
+.objective-bar #objective{flex:1;min-width:0}
+.objective-bar #objective-mode,.objective-bar>small{display:none}
+.play-actions{display:flex;align-items:center;gap:5px;flex-shrink:0;margin-left:auto}
+.play-actions button{height:30px;min-width:30px;padding:0 9px;border:1px solid #72857055;background:#1a2d22;color:#c3d8b9;font:10px Arial,sans-serif;white-space:nowrap;border-radius:3px}
+.play-actions button:hover{border-color:#c3d8b9}
+#arena-fullscreen-button{font-size:17px;padding:0 6px}
+#arena-guide-button{font-size:14px;padding:0 8px}
+.voxel-app>footer{display:none}
+.game-overlay{padding:18px}
+.overlay-card h2{font-size:31px;line-height:1.15;margin:9px 0 12px}
+.overlay-card>p{font-size:12px;line-height:1.65;margin-bottom:17px}
+.overlay-card button{min-height:44px}
+.overlay-card .secondary-button{color:#d8e5ca;background:#1d3429;border-color:#a0b99c66}
+#game-shell:fullscreen{padding:0;display:flex;flex-direction:column;justify-content:flex-start}
+#game-shell:fullscreen .viewport{height:auto;flex:1;min-height:0;aspect-ratio:auto}
+#game-shell:fullscreen .objective-bar{min-height:40px;flex-shrink:0}
+.room-dialog{position:fixed;inset:0;z-index:24;display:flex;align-items:flex-start;justify-content:center;padding:24px;background:#102019df;overflow:auto;overscroll-behavior:contain;backdrop-filter:blur(4px)}
+.room-panel-card{width:min(880px,100%);margin:auto;min-width:0;padding:22px;background:#192820;color:#e9ebde;border:1px solid #39473c;border-radius:7px;box-shadow:0 18px 70px #07181055}
+.room-panel-heading{display:flex;justify-content:space-between;align-items:center;gap:12px;padding-bottom:18px;border-bottom:1px solid #39473c}
+.room-panel-heading h2{margin:5px 0 0;font-size:25px;font-weight:400;letter-spacing:-.4px}
+.room-panel-heading .icon-button{height:44px;min-width:44px;font-size:24px;flex-shrink:0}
+.room-panel-card .lobby-panel{margin:0;padding:20px 0;border:0;background:none}
+.room-panel-card .lobby-heading h2{font-size:19px;margin:5px 0 13px}
+.room-panel-card .rosters{gap:14px;margin-bottom:16px}
+.room-panel-card .team-choices{margin-bottom:15px}
+.room-panel-card .lobby-actions{gap:12px;margin-top:12px;padding-top:13px}
+.room-panel-card .weapon-comparison{margin-top:16px;padding:14px;gap:15px}
+.room-panel-card .invite-panel{margin:0 0 16px;padding:15px 0;border-radius:0;background:none;border:0;border-top:1px solid #39473c;border-bottom:1px solid #39473c}
+.room-panel-controls{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
+.room-panel-controls .secondary-button{min-height:44px}
+.room-panel-note{font:11px/1.6 Arial,sans-serif;color:#9eac9e;margin:15px 0}
+#close-room-bottom{min-height:44px}
+.guide-dialog{z-index:25;overscroll-behavior:contain}
+.guide-card{width:min(800px,100%);min-width:0}
+.guide-card>.icon-button{width:44px;height:44px}
+@media(max-width:900px){
+ .voxel-app{padding:0 12px}
+ .brand .back-copy,.brand small,.connection>span{display:none}
+ .connection{gap:5px}
+ .room-panel-card .player-roster{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media(max-width:600px){
+ .voxel-app{padding:0 8px}
+ .voxel-topbar{height:50px;min-height:50px;gap:8px}
+ .brand{gap:6px;font-size:16px}
+ .brand svg{width:78px;height:20px}
+ .voxel-topbar .top-actions,.topbar .top-actions{gap:4px}
+ .connection{display:none}
+ .icon-button{height:38px;min-width:34px}
+ .keyboard-layout-label{display:none!important}
+ .top-actions .keyboard-layout-select{height:34px!important;min-height:34px!important;max-width:82px!important;font-size:9px!important;padding:4px!important}
+ .room-heading{height:42px;min-height:42px}
+ .room-heading h1{font-size:22px}
+ .room-code-button{padding:5px 7px;gap:3px 5px}
+ .room-code-button>span:first-child,.room-code-button>small{display:none}
+ .room-code-button strong{font-size:13px;letter-spacing:1.5px}
+ .match-hud{height:40px;min-height:40px}
+ .viewport{height:clamp(300px,58svh,580px);min-height:300px;aspect-ratio:auto}
+ .viewport:has(.arena-loadouts:not([hidden])){min-height:430px}
+ .objective-bar{min-height:46px;gap:5px;padding:3px 6px 3px 8px;font-size:8px}
+ .objective-bar>i{display:none}
+ .play-actions{gap:4px}
+ .play-actions button{height:40px;min-width:35px;padding:0 8px;font-size:9px}
+ #arena-fullscreen-button{font-size:17px}
+ .overlay-card h2{font-size:27px}
+ .overlay-card>p{font-size:11px}
+ .room-dialog{padding:10px}
+ .room-panel-card{padding:17px 14px}
+ .room-panel-heading{padding-bottom:13px}
+ .room-panel-heading h2{font-size:23px}
+ .room-panel-card .lobby-panel{padding:17px 0}
+ .room-panel-card .player-roster{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .room-panel-card .invite-panel code{min-width:0;flex-basis:100%;font-size:10px}
+ .room-panel-controls{gap:10px}
+ .room-panel-controls .keyboard-layout-select{height:44px!important;font-size:11px!important;max-width:none!important}
+ .room-panel-controls .keyboard-layout-label{display:block!important}
+ .room-panel-note{font-size:10px}
+ #game-shell:fullscreen .objective-bar{min-height:46px}
+}
+@media(max-width:350px){
+ .brand svg{width:60px;height:18px}
+ .brand{gap:4px}
+ .voxel-topbar .top-actions,.topbar .top-actions{gap:3px}
+ .icon-button{min-width:33px}
+ .top-actions .keyboard-layout-select{max-width:75px!important}
+ .room-heading h1{font-size:20px}
+ .room-heading h1>span{display:none}
+ .play-actions button{padding:0 6px;min-width:32px}
+ #room-panel-button{max-width:91px;white-space:normal;line-height:1.2}
+}
+@media(pointer:coarse){
+ .voxel-app:has(.touch-controls:not([hidden])) .viewport{height:calc(100svh - 340px);min-height:280px}
+ .voxel-app:has(.touch-controls:not([hidden])) .viewport:has(.arena-loadouts:not([hidden])){min-height:430px}
+}
+@media(pointer:coarse) and (orientation:landscape){
+ .voxel-topbar{height:36px;min-height:36px}
+ .room-heading{height:28px;min-height:28px}
+ .room-heading h1{font-size:20px}
+ .match-hud{height:32px;min-height:32px}
+ .voxel-app:has(.touch-controls:not([hidden])) .viewport{height:calc(100svh - 219px);min-height:170px}
+ .touch-controls{gap:9px;flex-wrap:nowrap;padding:7px 10px;align-items:center}
+ .touch-pad{width:62px;height:62px}
+ .touch-actions{order:0;flex-basis:auto;grid-template-columns:repeat(5,minmax(0,1fr))}
+ .touch-actions button{min-height:30px;font-size:7px}
+ .touch-pad[data-royale-pad=look]{margin-left:0}
+ .room-code-button,.room-code{min-height:24px;padding:3px 8px}
+ .room-code-button>span:first-child,.room-code>small{display:none}
+ .room-code-button i{font-size:16px}
+ .tactical-map{top:8px;left:8px;width:62px;padding:3px}
+ .tactical-map svg{height:45px;aspect-ratio:auto}
+ .tactical-map>span,.map-north{font-size:5px}
+ .tactical-map>small,.map-caption{font-size:4px;line-height:1.1;margin-top:2px}
+ .stage-info{top:8px;left:82px;right:8px}
+}

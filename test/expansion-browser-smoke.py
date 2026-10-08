@@ -15,6 +15,7 @@ import sys
 import time
 
 from playwright.sync_api import sync_playwright
+from browser_controls import controls_panel
 from browser_profiles import standard_profile, start_solo
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -57,18 +58,19 @@ def paused_choice(page, expected, selector):
 
 
 def native_help(page):
-    page.locator("#solo-how-to summary").focus()
-    before = state(page)
-    page.keyboard.press("Space", delay=30)
-    assert page.locator("#solo-how-to").evaluate("n => n.open")
-    after = state(page)
-    if "stamina" in after.get("player", {}):
-        assert after["player"]["stamina"] >= before["player"]["stamina"] - .01
-        assert after["player"]["dashTime"] == 0
-    else:
-        assert after == before, "Native help leaked a card shortcut"
-    page.keyboard.press("Enter", delay=30)
-    assert not page.locator("#solo-how-to").evaluate("n => n.open")
+    with controls_panel(page, '#solo-how-to', resume=True):
+        page.locator("#solo-how-to summary").focus()
+        before = state(page)
+        page.keyboard.press("Space", delay=30)
+        assert page.locator("#solo-how-to").evaluate("n => n.open")
+        after = state(page)
+        if "stamina" in after.get("player", {}):
+            assert after["player"]["stamina"] >= before["player"]["stamina"] - .01
+            assert after["player"]["dashTime"] == 0
+        else:
+            assert after == before, "Native help leaked a card shortcut"
+        page.keyboard.press("Enter", delay=30)
+        assert not page.locator("#solo-how-to").evaluate("n => n.open")
 
 
 def catalog(page):

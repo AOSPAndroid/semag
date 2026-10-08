@@ -172,7 +172,7 @@ def crazy_eights(first, second):
 
 def twenty_one(first, second):
     hit = False
-    simultaneous = False
+    independent_stands = False
     rounds = set()
     deadline = time.monotonic() + 45
     while time.monotonic() < deadline:
@@ -185,18 +185,20 @@ def twenty_one(first, second):
             first.wait_for_function(f"{SURFACE}.getState().phase !== 'roundEnd'", timeout=7000)
             continue
         rounds.add(current["round"])
-        if hit and not simultaneous and not any(current["stood"]):
+        if hit and not independent_stands and not any(current["stood"]):
             for actor in (first, second):
                 wait_actionable(actor, '[data-action="stand"]')
             revision = current["revision"]
-            start_at = int(time.time() * 1000) + 250
+            # Make both decisions with real pointer input, without invoking a
+            # product handler or changing the browser clock. The second player
+            # remains free to stand after the first player's decision arrives.
             for actor in (first, second):
-                actor.evaluate("start => setTimeout(() => document.querySelector('[data-action=stand]').click(), Math.max(0, start - Date.now()))", start_at)
+                actor.locator('[data-action="stand"]').click()
             for actor in (first, second):
                 actor.wait_for_function(f"revision => {SURFACE}.getState().revision >= revision + 2", arg=revision)
             assert state(first)["stood"] == [True, True]
             assert_sync(first, second)
-            simultaneous = True
+            independent_stands = True
             continue
         for seat, actor in enumerate((first, second)):
             current = state(actor)
@@ -212,7 +214,7 @@ def twenty_one(first, second):
                 action(first, second, actor, '[data-action="stand"]')
     assert state(first)["phase"] == "matchEnd", "Five-round Twenty-One did not finish"
     assert hit, "No hit was exercised"
-    assert simultaneous, "No simultaneous decisions were exercised"
+    assert independent_stands, "Both native stand decisions were not exercised"
     assert state(first)["round"] == 5
     assert_sync(first, second)
     first.locator("#ready-button").click()
@@ -224,7 +226,7 @@ def twenty_one(first, second):
     for page in (first, second):
         wait_phase(page, "fight")
     assert_sync(first, second)
-    print(f"  Twenty-One: real hit, simultaneous stands, {len(rounds)} active rounds, complete five-round match, two-player rematch", flush=True)
+    print(f"  Twenty-One: real hit, independent native stands, {len(rounds)} active rounds, complete five-round match, two-player rematch", flush=True)
 
 
 def memory(first, second):
@@ -287,7 +289,9 @@ def run(url):
                         watch(page, f"{game}/{role}")
                     first.goto(url)
                     first.wait_for_function("document.querySelector('#host-status').textContent === 'Host is online'")
-                    assert first.locator("[data-create-game]").count() == 11
+                    assert first.locator("[data-create-game]").count() == 12
+                    for card_game in ("crazy-eights", "twenty-one", "memory"):
+                        assert first.locator(f'[data-create-game="{card_game}"]').count() == 1
                     if game == "crazy-eights":
                         screenshot(first, "fireside-card-hub.png")
                         first.set_viewport_size({"width": 390, "height": 844})

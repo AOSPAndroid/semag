@@ -185,10 +185,12 @@ async function boot() {
   const $ = id => document.getElementById(id), canvas = $('arena');
   const roomId = new URLSearchParams(location.search).get('room')?.trim().toUpperCase() || '';
   $('room-code').textContent = /^[A-Z0-9]{6}$/.test(roomId) ? roomId : 'NO ROOM';
-  const layoutPicker = mountKeyboardLayoutPicker(document.querySelector('[data-keyboard-layout-picker]'));
+  const layoutPickerHost = document.querySelector('[data-keyboard-layout-picker]'), layoutPickerHome = layoutPickerHost.parentElement;
+  const layoutPicker = mountKeyboardLayoutPicker(layoutPickerHost);
   let playerName = getName(); $('player-name').value = playerName;
   let engine, renderer, socket, state = null, playerId = null, hostId = null, connected = false, roster = [], capacity = 10;
   let predictedPlayer = null, presentationPlayer = null, snapshots = [], pending = [], sequence = 0, aim = cleanAim();
+  let dialogReturnFocus = null, guideReturnToRoom = false;
   let paused = true, entered = false, fallback = false, touchMode = false, rightDrag = false, modalOpen = false, graphicsError = '', spectatorId = null;
   let destroyed = false, permanentError = false, reconnectTimer, reconnectAttempts = 0, frameId = null, lastFrameAt = 0, accumulator = 0, renderCount = 0;
   let heartbeat = null, lastTouchLookAt = performance.now(), lastHUDAt = 0, previousPhase = null, previousMatch = null;
@@ -277,6 +279,7 @@ async function boot() {
   }
   function updateUI() {
     refreshHeartbeat(); const phase = state?.phase || 'lobby', local = ownPlayer(), room = roomPresentation(state, roster, capacity), { count } = room, isHost = playerId != null && playerId === hostId;
+    document.querySelector('.royale-app').dataset.phase = phase;
     $('connection-status').textContent = connected ? 'CONNECTED' : permanentError ? 'UNAVAILABLE' : 'RECONNECTING'; $('connection-dot').classList.toggle('online', connected);
     $('seat-count').textContent = room.label; $('map-name').textContent = (state?.mapName || state?.map?.name || 'PRIVATE ISLAND').toUpperCase();
     $('phase-label').textContent = ({ lobby: 'ASSEMBLING', countdown: 'SPAWNING', fight: 'LAST PLAYER STANDING', matchEnd: 'BATTLE COMPLETE' })[phase] || phase.toUpperCase();
@@ -286,6 +289,9 @@ async function boot() {
     $('start-button').hidden = !isHost || phase !== 'lobby'; $('start-button').disabled = !startable;
     $('overlay-start').hidden = !isHost || phase !== 'lobby' || !!graphicsError; $('overlay-start').disabled = !startable;
     $('rematch-button').hidden = !isHost || phase !== 'matchEnd'; $('rematch-button').disabled = !connected;
+    $('overlay-rematch').hidden = $('rematch-button').hidden; $('overlay-rematch').disabled = $('rematch-button').disabled;
+    $('overlay-room').hidden = !connected || !['lobby', 'matchEnd'].includes(phase) || !!graphicsError;
+    $('overlay-room').firstChild.textContent = phase === 'matchEnd' ? 'Room & controls ' : 'Room setup ';
     $('host-label').textContent = isHost ? 'You host this room.' : hostId != null ? `${lookupName(hostId)} hosts this room.` : 'Waiting for the host';
     $('start-note').textContent = phase === 'lobby' ? count < 2 ? 'Invite at least one rival. The host chooses when to start.' : count >= room.capacity ? `${count} players are here. This room is full and the host can start.` : `${count} players are here. The host can start now or invite up to ${room.capacity - count} more.` : phase === 'matchEnd' ? isHost ? 'Return everyone to the lobby, invite more rivals and start a new battle.' : 'The host can open the lobby for another battle.' : 'The battle keeps running when controls are released.';
     const viewed = spectatorPlayer(state, playerId, spectatorId), spectating = !!viewed && viewed.id !== playerId;
@@ -320,7 +326,7 @@ async function boot() {
     if (graphicsError) { overlay = true; kicker = 'GRAPHICS UNAVAILABLE'; title = 'The island could not render.'; subtitle = graphicsError; }
     else if (!connected) { overlay = true; kicker = 'CONNECTING TO THE HOST'; title = permanentError ? 'This room is unavailable.' : 'Waiting for the host.'; subtitle = permanentError ? 'Return to the shelf to create a room or join the next battle.' : 'Your controls are released while the connection recovers.'; }
     else if (phase === 'lobby') { overlay = true; kicker = `${state?.mapName || 'PRIVATE ISLAND'} / ${count} PLAYERS`; title = isHost ? count >= 2 ? 'Your rivals are here.' : 'Gather your rivals.' : 'Waiting for the host.'; subtitle = isHost ? count >= 2 ? count >= room.capacity ? 'Everyone is here. Start when you are ready.' : `Start with the players here, or invite more. This room holds up to ${room.capacity} players.` : 'Share your invite with at least one other player. You choose when the battle begins.' : `${lookupName(hostId)} starts the battle when everyone is here. You do not need to ready up.`; }
-    else if (phase === 'matchEnd') { overlay = true; const winner = state.winnerId ?? state.winner; kicker = 'BATTLE COMPLETE'; title = winner == null ? 'No one left standing.' : winner === playerId ? 'You outlasted everyone.' : `${lookupName(winner)} survives.`; subtitle = `${placement ? `You placed #${placement.place}. ` : ''}${local?.kills || 0} eliminations. ${isHost ? 'Return to the lobby below to invite players and go again.' : 'The host can open the lobby for another battle.'}`; }
+    else if (phase === 'matchEnd') { overlay = true; const winner = state.winnerId ?? state.winner; kicker = 'BATTLE COMPLETE'; title = winner == null ? 'No one left standing.' : winner === playerId ? 'You outlasted everyone.' : `${lookupName(winner)} survives.`; subtitle = `${placement ? `You placed #${placement.place}. ` : ''}${local?.kills || 0} eliminations. ${isHost ? 'Return to the lobby to invite players and go again.' : 'The host can open the lobby for another battle.'}`; }
     else if (local?.alive && (paused || !entered) && !modalOpen) { overlay = true; kicker = entered ? 'CONTROLS RELEASED' : 'YOUR ONE LIFE STARTS HERE'; title = entered ? 'Controls released.' : 'Enter the arena.'; subtitle = 'You start with a small knife and 200 health. Find a gun and supplies, then keep moving with the safe zone. The battle keeps running while controls are released.'; enter = true; }
     $('game-overlay').hidden = !overlay; $('overlay-kicker').textContent = kicker; $('overlay-title').textContent = title; $('overlay-subtitle').textContent = subtitle; $('enter-arena').hidden = !enter; $('retry-graphics').hidden = !graphicsError; $('aim-note').hidden = !enter; $('aim-note').textContent = touchMode ? 'Move / Look pads. Hold AIM for sights.' : 'RMB aims. If capture is unavailable, hold RMB and drag to look.';
     $('phase-announcement').hidden = phase !== 'countdown' || overlay || modalOpen || !connected; $('countdown-number').textContent = Math.max(1, Math.ceil(finite(state?.phaseTicks) / 120)); renderRoster();
@@ -416,11 +422,55 @@ async function boot() {
     try { const request = canvas.requestPointerLock(); if (request?.then) await request; if (!pointerLocked()) { fallback = true; toast('Mouse capture unavailable. Hold right mouse and drag to look.'); } } catch { fallback = true; toast('Mouse capture unavailable. Hold right mouse and drag to look.'); }
     updateUI(); wake();
   }
-  function openGuide() { modalOpen = true; neutralize({ pause: true, unlock: true }); $('guide-dialog').hidden = false; $('guide-button').setAttribute('aria-expanded', 'true'); $('close-guide').focus(); }
-  function closeGuide() { $('guide-dialog').hidden = true; modalOpen = false; $('guide-button').setAttribute('aria-expanded', 'false'); updateUI(); $('guide-button').focus(); }
+  function positionLayoutPicker() {
+    if (document.fullscreenElement || !$('room-dialog').hidden) $('room-keyboard-host').append(layoutPickerHost);
+    else layoutPickerHome.insertBefore(layoutPickerHost, $('sound-button'));
+  }
+  function setDialog(kind) {
+    modalOpen = !!kind;
+    $('room-dialog').hidden = kind !== 'room';
+    $('guide-dialog').hidden = kind !== 'guide';
+    positionLayoutPicker();
+    $('room-panel-button').setAttribute('aria-expanded', String(kind === 'room'));
+    for (const id of ['guide-button', 'arena-guide-button']) $(id).setAttribute('aria-expanded', String(kind === 'guide'));
+    // Keep the active dialog reachable in fullscreen and remove the background from Tab order.
+    for (const element of document.querySelector('.royale-app').children) {
+      if (element !== $('game-shell')) element.inert = modalOpen;
+    }
+    for (const element of $('game-shell').children) {
+      if (element !== $('room-dialog') && element !== $('guide-dialog')) element.inert = modalOpen;
+    }
+  }
+  function restoreDialogFocus() {
+    const target = dialogReturnFocus?.isConnected && !dialogReturnFocus.closest('[hidden], [inert]') ? dialogReturnFocus : $('room-panel-button');
+    target.focus({ preventScroll: true });
+  }
+  function openRoom(event) {
+    dialogReturnFocus = event?.currentTarget || document.activeElement;
+    guideReturnToRoom = false; setDialog('room');
+    neutralize({ pause: true, unlock: true }); $('close-room').focus({ preventScroll: true });
+  }
+  function closeRoom() { setDialog(null); updateUI(); restoreDialogFocus(); }
+  function openGuide(event) {
+    guideReturnToRoom = !$('room-dialog').hidden;
+    if (!guideReturnToRoom) dialogReturnFocus = event?.currentTarget || document.activeElement;
+    setDialog('guide'); neutralize({ pause: true, unlock: true }); $('close-guide').focus({ preventScroll: true });
+  }
+  function closeGuide() {
+    const returnToRoom = guideReturnToRoom; guideReturnToRoom = false;
+    setDialog(returnToRoom ? 'room' : null); updateUI();
+    if (returnToRoom) $('room-guide-button').focus({ preventScroll: true }); else restoreDialogFocus();
+  }
+  function trapDialogTab(event) {
+    if (event.key !== 'Tab') return;
+    const items = [...event.currentTarget.querySelectorAll('button:not(:disabled), input:not(:disabled), select:not(:disabled), a[href], [tabindex="0"]')].filter(element => element.getClientRects().length && !element.closest('[hidden]'));
+    const first = items[0], last = items.at(-1); if (!first) return;
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+  }
   function updateKeyLabels() { $('move-keys').textContent = getKeyboardLayout().toUpperCase(); for (const label of document.querySelectorAll('[data-royale-key]')) label.textContent = displayKey(label.dataset.royaleKey); canvas.setAttribute('aria-label', `3D battle royale. ${getKeyboardLayout().toUpperCase()} or arrows move; mouse looks; left click shoots or strikes; right click aims; E picks up loot; V swaps knife and gun; ${displayKey('Q')} throws grenade; F heals; R reloads; Space jumps; Control crouches; Shift walks; Escape releases controls.`); }
   const unsubscribeLayout = subscribeKeyboardLayout(() => { neutralize({ pause: entered, unlock: true }); updateKeyLabels(); }); updateKeyLabels();
-  listen(window, 'keydown', event => { if (event.defaultPrevented || event.isComposing || event.altKey || event.metaKey) return; if (event.key === 'Escape') { if (modalOpen) closeGuide(); else if (entered) neutralize({ pause: true, unlock: true }); return; } if (event.key.toLowerCase() === 'p' && !isFormTarget(event.target) && entered) { event.preventDefault(); neutralize({ pause: true, unlock: true }); return; } if (!controlsActive() || isFormTarget(event.target)) return; const action = controlForKey(event); if (!action) return; event.preventDefault(); const id = event.code || event.key; if (pressedKeys.has(id)) return; pressedKeys.set(id, action); keys.add(action); utilityFeedback(action); sendInput(currentInput(), true); });
+  listen(window, 'keydown', event => { if (event.defaultPrevented || event.isComposing || event.altKey || event.metaKey) return; if (event.key === 'Escape') { if (modalOpen) { if (!$('guide-dialog').hidden) closeGuide(); else closeRoom(); } else if (entered) neutralize({ pause: true, unlock: true }); return; } if (event.key.toLowerCase() === 'p' && !isFormTarget(event.target) && entered) { event.preventDefault(); neutralize({ pause: true, unlock: true }); return; } if (!controlsActive() || isFormTarget(event.target)) return; const action = controlForKey(event); if (!action) return; event.preventDefault(); const id = event.code || event.key; if (pressedKeys.has(id)) return; pressedKeys.set(id, action); keys.add(action); utilityFeedback(action); sendInput(currentInput(), true); });
   listen(window, 'keyup', event => { const id = event.code || event.key, action = pressedKeys.get(id); pressedKeys.delete(id); if (action && ![...pressedKeys.values()].includes(action)) keys.delete(action); if (action) { sendInput(currentInput(), true); if (!isFormTarget(event.target)) event.preventDefault(); } });
   listen(document, 'focusin', event => { if (isFormTarget(event.target) && !actionPointers.size && !padPointers.size) neutralize(); });
   listen(window, 'blur', () => neutralize({ pause: entered, unlock: true }));
@@ -433,14 +483,30 @@ async function boot() {
   listen(canvas, 'contextmenu', event => event.preventDefault()); listen(canvas, 'click', event => { if (!entered || paused) enterArena(event); }); listen($('enter-arena'), 'click', enterArena);
   listen($('pause-button'), 'click', () => neutralize({ pause: true, unlock: true }));
   listen($('guide-button'), 'click', openGuide); listen($('close-guide'), 'click', closeGuide); listen($('close-guide-bottom'), 'click', closeGuide); listen($('guide-dialog'), 'click', event => { if (event.target === $('guide-dialog')) closeGuide(); });
-  listen($('guide-dialog'), 'keydown', event => { if (event.key !== 'Tab') return; const first = $('close-guide'), last = $('close-guide-bottom'); if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); } else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); } });
+  listen($('guide-dialog'), 'keydown', trapDialogTab);
+  listen($('room-dialog'), 'keydown', trapDialogTab);
+  listen($('room-dialog'), 'click', event => { if (event.target === $('room-dialog')) closeRoom(); });
+  listen($('room-panel-button'), 'click', openRoom); listen($('overlay-room'), 'click', openRoom);
+  listen($('close-room'), 'click', closeRoom); listen($('close-room-bottom'), 'click', closeRoom);
+  listen($('arena-guide-button'), 'click', openGuide); listen($('room-guide-button'), 'click', openGuide);
   const startBattle = () => { playerName = saveName($('player-name').value); $('player-name').value = playerName; send({ type: 'join', name: playerName }); neutralize({ pause: true, unlock: true }); send({ type: 'start' }); };
+  listen($('overlay-rematch'), 'click', () => $('rematch-button').click());
   listen($('start-button'), 'click', startBattle); listen($('overlay-start'), 'click', startBattle); listen($('rematch-button'), 'click', () => send({ type: 'rematch' }));
   listen($('player-name'), 'change', () => { playerName = saveName($('player-name').value); $('player-name').value = playerName; send({ type: 'join', name: playerName }); });
   listen($('next-spectator'), 'click', () => { const alive = aliveParticipants(state); spectatorId = alive[(alive.findIndex(player => player.id === spectatorId) + 1) % Math.max(1, alive.length)]?.id ?? null; healthView = null; updateUI(); draw(); });
   listen($('sound-button'), 'click', async () => { const enabled = await audio.setEnabled(!audio.enabled); $('sound-button').setAttribute('aria-pressed', String(enabled)); $('sound-button').setAttribute('aria-label', enabled ? 'Mute sound' : 'Enable sound'); toast(enabled ? 'Sound on.' : 'Sound off.'); });
-  listen($('fullscreen-button'), 'click', async () => { try { if (document.fullscreenElement) await document.exitFullscreen(); else await $('game-shell').requestFullscreen(); } catch { toast('Fullscreen is unavailable in this browser.'); } });
-  listen(document, 'fullscreenchange', () => { renderer?.resize(); draw(); $('fullscreen-button').setAttribute('aria-label', document.fullscreenElement ? 'Exit fullscreen' : 'Enter fullscreen'); });
+  async function toggleFullscreen() {
+    neutralize({ pause: entered, unlock: true });
+    try { if (document.fullscreenElement) await document.exitFullscreen(); else await $('game-shell').requestFullscreen(); }
+    catch { toast('Fullscreen is unavailable in this browser.'); }
+  }
+  listen($('fullscreen-button'), 'click', toggleFullscreen); listen($('arena-fullscreen-button'), 'click', toggleFullscreen);
+  listen(document, 'fullscreenchange', () => {
+    positionLayoutPicker(); renderer?.resize(); draw();
+    for (const id of ['fullscreen-button', 'arena-fullscreen-button']) {
+      const label = document.fullscreenElement ? 'Exit fullscreen' : 'Enter fullscreen'; $(id).setAttribute('aria-label', label); $(id).title = label;
+    }
+  });
   listen($('retry-graphics'), 'click', () => location.reload());
   listen(canvas, 'voxel-renderer-error', event => { graphicsError = event.detail?.message || 'Graphics were interrupted. Reload to try again.'; neutralize({ pause: true, unlock: true }); error(graphicsError); });
   listen(canvas, 'voxel-renderer-restored', () => { graphicsError = ''; error(''); renderer?.resize(); idleSignature = ''; updateUI(); draw(); wake(); }); listen(window, 'resize', () => { renderer?.resize(); draw(); });

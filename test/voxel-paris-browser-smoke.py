@@ -15,6 +15,7 @@ import time
 from urllib.parse import parse_qs, urlparse
 
 from playwright.sync_api import sync_playwright
+from browser_controls import controls_panel, click_control
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = Path(os.environ.get('SEMAG_SCREENSHOT_DIR', '/workspace/scratch/semag-paris-browser'))
@@ -91,7 +92,8 @@ def screenshot(page, name, target='#viewport'):
 
 
 def select(page, selector, value):
-    royale.select_native(page, selector, value)
+    with controls_panel(page, selector, resume=False):
+        royale.select_native(page, selector, value)
 
 
 def enter(page):
@@ -308,10 +310,10 @@ def begin(pages, mode):
     assert native.horizontal_distance(before, actor(pages[0])) < .001
     if mode == 'breach':
         select(pages[0], '#loadout-select', 'carbine')
-        pages[0].locator('#ready-button').click()
+        click_control(pages[0], '#ready-button')
         pages[0].wait_for_timeout(100)
         assert snapshot(pages[0])['state']['phase'] == 'lobby'
-        pages[1].locator('#ready-button').click()
+        click_control(pages[1], '#ready-button')
     else:
         assert snapshot(pages[0])['state']['capacity'] == 10
         assert pages[1].locator('#start-button').is_disabled()

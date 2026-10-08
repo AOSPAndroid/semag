@@ -20,6 +20,7 @@ import time
 from urllib.parse import parse_qs, urlparse
 
 from playwright.sync_api import sync_playwright
+from browser_controls import controls_panel
 
 ROOT=Path(__file__).resolve().parents[1]
 OUT=Path(os.environ.get('SEMAG_SCREENSHOT_DIR',ROOT/'test-results'/'ninjas'))
@@ -164,7 +165,7 @@ def pause_check(page, game, keyboard):
     # All shortcuts stay native in editable controls. Pausing makes accidental
     # input/action leakage detectable without elapsed time obscuring comparison.
     page.evaluate('''()=>{const input=document.createElement('input');input.id='ninja-form-qa';
-        input.setAttribute('aria-label','QA text input');document.querySelector('.solo-sidebar').append(input);input.focus()}''')
+        input.setAttribute('aria-label','QA text input');document.querySelector('#solo-game').append(input);input.focus()}''')
     page.keyboard.type('rpzqsdwasd123ejk')
     page.keyboard.press('Space')
     assert page.locator('#ninja-form-qa').input_value()=='rpzqsdwasd123ejk '
@@ -174,11 +175,12 @@ def pause_check(page, game, keyboard):
     assert state(page)==paused, (game,'Layout change mutated paused state')
     native_layout(page,'zqsd')
     assert state(page)==paused
-    page.locator('#solo-how-to summary').focus();page.keyboard.press('Space')
-    assert page.locator('#solo-how-to').evaluate('details=>details.open')
-    assert state(page)==paused, (game,'Help shortcut leaked')
-    page.keyboard.press('Enter')
-    assert not page.locator('#solo-how-to').evaluate('details=>details.open')
+    with controls_panel(page, '#solo-how-to', resume=False):
+        page.locator('#solo-how-to summary').focus();page.keyboard.press('Space')
+        assert page.locator('#solo-how-to').evaluate('details=>details.open')
+        assert state(page)==paused, (game,'Help shortcut leaked')
+        page.keyboard.press('Enter')
+        assert not page.locator('#solo-how-to').evaluate('details=>details.open')
     page.locator('#solo-pause').click()
     wait(page,'window.firesideSolo.getState().phase!=="paused"')
     return paused
@@ -426,8 +428,9 @@ def create_room(browser,url,errors,resources,profile):
     wait(second,'window.firesideRoom?.connected&&window.firesideRoom.playerId===1')
     for page in pages:
         assert page.locator('select[data-keyboard-layout]').input_value()=='zqsd'
-        page.locator('#player-name').fill('');page.locator('#player-name').press('r');page.locator('#player-name').press('q')
-        assert page.locator('#player-name').input_value()=='rq'
+        with controls_panel(page, '#player-name', resume=False):
+            page.locator('#player-name').fill('');page.locator('#player-name').press('r');page.locator('#player-name').press('q')
+            assert page.locator('#player-name').input_value()=='rq'
         assert room_state(page)['phase']=='lobby'
         assert page.locator('#ready-button span').inner_text()=='Ready up'
     first.locator('#ready-button').click()
@@ -679,10 +682,11 @@ def native_solo_aim(page,x,y):
 
 
 def active_help(page):
-    before=state(page);page.locator('#solo-how-to summary').focus();page.keyboard.press('Space')
-    assert page.locator('#solo-how-to').evaluate('details=>details.open'), 'Active Help did not open with Space'
-    assert state(page)['smoke']==before['smoke'] and state(page)['kunai']==before['kunai'], 'Help activation spent a ninja tool'
-    page.keyboard.press('Enter');assert not page.locator('#solo-how-to').evaluate('details=>details.open')
+    with controls_panel(page, '#solo-how-to', resume=True):
+        before=state(page);page.locator('#solo-how-to summary').focus();page.keyboard.press('Space')
+        assert page.locator('#solo-how-to').evaluate('details=>details.open'), 'Active Help did not open with Space'
+        assert state(page)['smoke']==before['smoke'] and state(page)['kunai']==before['kunai'], 'Help activation spent a ninja tool'
+        page.keyboard.press('Enter');assert not page.locator('#solo-how-to').evaluate('details=>details.open')
 
 
 def shadow_play(page,context,keyboard,profile):
@@ -801,22 +805,23 @@ def shinobi_touch(page,context):
 
 def room_form_check(page):
     page.locator('#arena').focus();wait_idle(page);page.wait_for_timeout(180)
-    before=room_state(page)['fighters'][0]
-    # Player names are deliberately locked during a match. A temporary neutral
-    # editable field tests the document keyboard guard without changing game
-    # state or disabling the product's name lock.
-    page.evaluate('''()=>{const input=document.createElement('input');input.id='ninja-room-form-qa';
-        input.setAttribute('aria-label','QA text input');document.querySelector('.party-panel').append(input)}''')
-    field=page.locator('#ninja-room-form-qa');field.fill('');field.press('j');field.press('k');field.press('l');field.press('i');field.press('Space');field.press('q')
-    assert field.input_value()=='jkli q'
-    current=room_state(page)['fighters'][0]
-    assert current['kunai']==before['kunai'] and current['action'] in ('idle','run'), 'Name input triggered a combat action'
-    assert abs(current['x']-before['x'])<.05 and abs(current['y']-before['y'])<.05
-    field.evaluate('input=>input.remove()')
-    details=page.locator('#controls-panel details');details.locator('summary').focus();page.keyboard.press('Space')
-    assert details.evaluate('details=>details.open')
-    assert room_state(page)['fighters'][0]['action'] in ('idle','run'), 'Help activation caused a dash'
-    page.keyboard.press('Enter');assert not details.evaluate('details=>details.open')
+    with controls_panel(page, '#controls-panel', resume=False):
+        before=room_state(page)['fighters'][0]
+        # Player names are deliberately locked during a match. A temporary neutral
+        # editable field tests the document keyboard guard without changing game
+        # state or disabling the product's name lock.
+        page.evaluate('''()=>{const input=document.createElement('input');input.id='ninja-room-form-qa';
+            input.setAttribute('aria-label','QA text input');document.querySelector('.party-panel').append(input)}''')
+        field=page.locator('#ninja-room-form-qa');field.fill('');field.press('j');field.press('k');field.press('l');field.press('i');field.press('Space');field.press('q')
+        assert field.input_value()=='jkli q'
+        current=room_state(page)['fighters'][0]
+        assert current['kunai']==before['kunai'] and current['action'] in ('idle','run'), 'Name input triggered a combat action'
+        assert abs(current['x']-before['x'])<.05 and abs(current['y']-before['y'])<.05
+        field.evaluate('input=>input.remove()')
+        details=page.locator('#controls-panel details');details.locator('summary').focus();page.keyboard.press('Space')
+        assert details.evaluate('details=>details.open')
+        assert room_state(page)['fighters'][0]['action'] in ('idle','run'), 'Help activation caused a dash'
+        page.keyboard.press('Enter');assert not details.evaluate('details=>details.open')
 
 
 def shinobi_disconnect(browser,url,first,second,context,errors,resources,code):

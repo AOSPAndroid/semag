@@ -15,6 +15,7 @@ import subprocess
 import sys
 
 from playwright.sync_api import sync_playwright
+from browser_controls import controls_panel
 from browser_profiles import start_solo
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -151,11 +152,12 @@ def run(url):
                     before = state(page)
                     page.wait_for_timeout(250)
                     assert state(page) == before, f"{game}: paused challenge advanced"
-                    page.locator("#solo-how-to summary").focus()
-                    page.keyboard.press("Space", delay=20)
-                    assert page.locator("#solo-how-to").evaluate("node => node.open")
-                    assert state(page) == before, f"{game}: native help leaked gameplay input"
-                    page.keyboard.press("Enter", delay=20)
+                    with controls_panel(page, '#solo-how-to', resume=False):
+                        page.locator("#solo-how-to summary").focus()
+                        page.keyboard.press("Space", delay=20)
+                        assert page.locator("#solo-how-to").evaluate("node => node.open")
+                        assert state(page) == before, f"{game}: native help leaked gameplay input"
+                        page.keyboard.press("Enter", delay=20)
                     for width, height in [(1440, 1000), (1366, 768), (390, 900), (320, 900)]:
                         page.set_viewport_size({"width": width, "height": height})
                         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth"), (game, width, "overflow")

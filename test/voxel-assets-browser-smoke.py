@@ -16,6 +16,7 @@ from pathlib import Path
 import sys
 
 from playwright.sync_api import sync_playwright
+from browser_controls import click_control
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = Path(os.environ.get('SEMAG_SCREENSHOT_DIR', '/workspace/scratch/semag-voxel-assets-browser'))
@@ -101,10 +102,10 @@ def begin(pages, mode):
     host, peer = pages
     name = debug(host)
     if mode == 'breach':
-        host.locator('#ready-button').click()
+        click_control(host, '#ready-button')
         host.wait_for_timeout(80)
         assert snapshot(host)['state']['phase'] == 'lobby', 'One Ready started the game'
-        peer.locator('#ready-button').click()
+        click_control(peer, '#ready-button')
     else:
         assert peer.locator('#start-button').is_disabled()
         host.locator('#overlay-start').click()

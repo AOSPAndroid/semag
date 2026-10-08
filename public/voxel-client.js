@@ -308,7 +308,8 @@ async function boot() {
   const roomId = new URLSearchParams(location.search).get('room')?.trim().toUpperCase() || '';
   const roomLabel = /^[A-Z0-9]{6}$/.test(roomId) ? roomId : 'NO ROOM';
   $('room-code').textContent = roomLabel;
-  const layoutPicker = mountKeyboardLayoutPicker(document.querySelector('[data-keyboard-layout-picker]'));
+  const layoutPickerHost = document.querySelector('[data-keyboard-layout-picker]'), layoutPickerHome = layoutPickerHost.parentElement;
+  const layoutPicker = mountKeyboardLayoutPicker(layoutPickerHost);
   let playerName = getName(); $('player-name').value = playerName;
   let engine; let renderer; let socket; let connected = false; let playerId = null;
   let state = null; let roster = []; let capacity = 2; let teamSize = 1; let mapName = '';
@@ -316,6 +317,7 @@ async function boot() {
   let frameId = null; let lastFrameAt = 0; let accumulator = 0; let renderCount = 0;
   let destroyed = false; let reconnectTimer; let attempts = 0; let permanentError = false;
   let paused = true; let entered = false; let fallback = false; let touchMode = false;
+  let dialogReturnFocus = null; let guideReturnToRoom = false;
   let rightDrag = false; let graphicsError = ''; let modalOpen = false; let spectatorId = null; let teamSwitchPending = false; let requestedTeam = null;
   let previousPhase = null; let previousRound = null; let aim = { yaw: 0, pitch: 0 };
   let hitUntil = 0; let hitKind = 'body'; let damageFeedback = null; let feedbackUntil = 0; let toastTimer; let lastCountdown = null; let lastHUDAt = 0;
@@ -550,6 +552,7 @@ async function boot() {
     refreshHeartbeat();
     connectionUI();
     const phase = state?.phase || 'lobby'; const local = ownPlayer(); const inLobby = phase === 'lobby';
+    document.querySelector('.voxel-app').dataset.phase = phase;
     $('seat-count').textContent = `${roster.filter(player => player?.connected).length} / ${capacity} PLAYERS · ${teamSize}V${teamSize}`;
     $('mode-tag').textContent = `${teamSize}V${teamSize} · FIRST TO FOUR`;
     $('stage-mode').textContent = `${teamSize}V${teamSize} / FIRST TO FOUR`;
@@ -568,6 +571,14 @@ async function boot() {
     }
     $('ready-button').setAttribute('aria-pressed', String(!!me?.ready));
     $('rematch-button').disabled = !connected || !allConnected() || !!graphicsError;
+    const overlayReady = $('overlay-ready'), readySource = phase === 'matchEnd' ? $('rematch-button') : $('ready-button');
+    overlayReady.hidden = !connected || !['lobby', 'matchEnd'].includes(phase) || !!graphicsError;
+    overlayReady.disabled = readySource.disabled;
+    if (overlayReady.textContent !== readySource.textContent) overlayReady.replaceChildren(...[...readySource.childNodes].map(node => node.cloneNode(true)));
+    overlayReady.setAttribute('aria-pressed', phase === 'matchEnd' ? 'false' : String(!!me?.ready));
+    $('overlay-room').hidden = !connected || !['lobby', 'matchEnd'].includes(phase) || !!graphicsError;
+    $('overlay-room').firstChild.textContent = phase === 'matchEnd' ? 'Room & controls ' : 'Room setup ';
+
     for (const button of document.querySelectorAll('[data-choose-team]')) {
       const team = Number(button.dataset.chooseTeam);
       button.disabled = !connected || !inLobby || teamSwitchPending || local?.team === team || roster.filter(person => person?.connected && person.team === team).length >= teamSize;
@@ -706,7 +717,7 @@ async function boot() {
       const readyCount = roster.filter(person => person?.connected && person.ready).length;
       const waiting = capacity - readyCount;
       overlay = true; kicker = `${teamSize}V${teamSize} / ${mapName || 'PRIVATE MATCH'}`; title = me?.ready ? `Ready. Waiting for ${waiting}.` : 'Take your position.';
-      subtitle = me?.ready ? `${readyCount} of ${capacity} players ready. Share the invite below; the countdown begins when everyone is ready.` : `Choose your loadout below, invite the other ${capacity - 1} players, then ready up. Every seat must be connected and ready.`;
+      subtitle = me?.ready ? `${readyCount} of ${capacity} players ready. Share your room invite; the countdown begins when everyone is ready.` : `Open Room setup to choose your loadout and invite the other ${capacity - 1} players, then ready up. Every seat must be connected and ready.`;
     }
     else if (phase === 'matchEnd') { overlay = true; kicker = 'MATCH COMPLETE'; title = state.winner === local?.team ? 'Your team takes the match.' : 'A hard-fought match.'; subtitle = `${state.scores?.[0] || 0} — ${state.scores?.[1] || 0}. Rematch returns everyone to the lobby. All players must ready up again.`; }
     else if (local?.alive && ['countdown', 'buy', 'fight'].includes(phase) && (paused || !entered) && !modalOpen) { overlay = true; kicker = phase === 'countdown' || phase === 'buy' ? `${roles.toUpperCase()} / ROUND ${String(state.round).padStart(2, '0')}` : 'CONTROLS RELEASED'; title = !entered ? 'Enter the arena.' : 'Controls released.'; subtitle = phase === 'countdown' || phase === 'buy' ? `${roles}: ${local.team === attackTeam ? 'plant at A or B.' : 'protect A and B, then defuse.'} Choose a weapon; movement unlocks when live.` : 'The multiplayer round keeps running. Return when you are ready.'; enter = true; }
@@ -874,10 +885,52 @@ async function boot() {
     updateUI(); wake();
   }
 
-  function openGuide() {
-    modalOpen = true; neutralize({ pause: true, unlock: true }); $('guide-dialog').hidden = false; $('guide-button').setAttribute('aria-expanded', 'true'); $('close-guide').focus();
+  function positionLayoutPicker() {
+    if (document.fullscreenElement || !$('room-dialog').hidden) $('room-keyboard-host').append(layoutPickerHost);
+    else layoutPickerHome.insertBefore(layoutPickerHost, $('sound-button'));
   }
-  function closeGuide() { $('guide-dialog').hidden = true; modalOpen = false; $('guide-button').setAttribute('aria-expanded', 'false'); updateUI(); $('guide-button').focus(); }
+  function setDialog(kind) {
+    modalOpen = !!kind;
+    $('room-dialog').hidden = kind !== 'room';
+    $('guide-dialog').hidden = kind !== 'guide';
+    positionLayoutPicker();
+    $('room-panel-button').setAttribute('aria-expanded', String(kind === 'room'));
+    for (const id of ['guide-button', 'arena-guide-button']) $(id).setAttribute('aria-expanded', String(kind === 'guide'));
+    // Keep the active dialog reachable in fullscreen and remove the background from Tab order.
+    for (const element of document.querySelector('.voxel-app').children) {
+      if (element !== $('game-shell')) element.inert = modalOpen;
+    }
+    for (const element of $('game-shell').children) {
+      if (element !== $('room-dialog') && element !== $('guide-dialog')) element.inert = modalOpen;
+    }
+  }
+  function restoreDialogFocus() {
+    const target = dialogReturnFocus?.isConnected && !dialogReturnFocus.closest('[hidden], [inert]') ? dialogReturnFocus : $('room-panel-button');
+    target.focus({ preventScroll: true });
+  }
+  function openRoom(event) {
+    dialogReturnFocus = event?.currentTarget || document.activeElement;
+    guideReturnToRoom = false; setDialog('room');
+    neutralize({ pause: true, unlock: true }); $('close-room').focus({ preventScroll: true });
+  }
+  function closeRoom() { setDialog(null); updateUI(); restoreDialogFocus(); }
+  function openGuide(event) {
+    guideReturnToRoom = !$('room-dialog').hidden;
+    if (!guideReturnToRoom) dialogReturnFocus = event?.currentTarget || document.activeElement;
+    setDialog('guide'); neutralize({ pause: true, unlock: true }); $('close-guide').focus({ preventScroll: true });
+  }
+  function closeGuide() {
+    const returnToRoom = guideReturnToRoom; guideReturnToRoom = false;
+    setDialog(returnToRoom ? 'room' : null); updateUI();
+    if (returnToRoom) $('room-guide-button').focus({ preventScroll: true }); else restoreDialogFocus();
+  }
+  function trapDialogTab(event) {
+    if (event.key !== 'Tab') return;
+    const items = [...event.currentTarget.querySelectorAll('button:not(:disabled), input:not(:disabled), select:not(:disabled), a[href], [tabindex="0"]')].filter(element => element.getClientRects().length && !element.closest('[hidden]'));
+    const first = items[0], last = items.at(-1); if (!first) return;
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+  }
   function updateKeyLabels() {
     const layout = getKeyboardLayout();
     $('move-keys').textContent = layout.toUpperCase();
@@ -888,7 +941,7 @@ async function boot() {
   const unsubscribeLayout = subscribeKeyboardLayout(updateLayout); updateKeyLabels();
   listen(window, 'keydown', event => {
     if (event.defaultPrevented || event.isComposing || event.altKey || event.metaKey) return;
-    if (event.key === 'Escape') { if (modalOpen) closeGuide(); else if (entered && state?.phase !== 'lobby') neutralize({ pause: true, unlock: true }); return; }
+    if (event.key === 'Escape') { if (modalOpen) { if (!$('guide-dialog').hidden) closeGuide(); else closeRoom(); } else if (entered && state?.phase !== 'lobby') neutralize({ pause: true, unlock: true }); return; }
     const loadout = entered && !modalOpen && !document.hidden ? loadoutForKey(event, state?.phase) : null;
     if (loadout) { event.preventDefault(); selectArenaLoadout(loadout); return; }
     if (!controlsActive() || isFormTarget(event.target)) return;
@@ -934,14 +987,15 @@ async function boot() {
   listen($('pause-button'), 'click', () => neutralize({ pause: true, unlock: true }));
   listen($('guide-button'), 'click', openGuide); listen($('close-guide'), 'click', closeGuide); listen($('close-guide-bottom'), 'click', closeGuide);
   listen($('guide-dialog'), 'click', event => { if (event.target === $('guide-dialog')) closeGuide(); });
-  listen($('guide-dialog'), 'keydown', event => {
-    if (event.key !== 'Tab') return;
-    const first = $('close-guide'); const last = $('close-guide-bottom');
-    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
-  });
+  listen($('guide-dialog'), 'keydown', trapDialogTab);
+  listen($('room-dialog'), 'keydown', trapDialogTab);
+  listen($('room-dialog'), 'click', event => { if (event.target === $('room-dialog')) closeRoom(); });
+  listen($('room-panel-button'), 'click', openRoom); listen($('overlay-room'), 'click', openRoom);
+  listen($('close-room'), 'click', closeRoom); listen($('close-room-bottom'), 'click', closeRoom);
+  listen($('arena-guide-button'), 'click', openGuide); listen($('room-guide-button'), 'click', openGuide);
   listen($('ready-button'), 'click', () => { playerName = saveName($('player-name').value); $('player-name').value = playerName; send({ type: 'join', name: playerName }); send({ type: 'ready', ready: !roster.find(player => player?.id === playerId)?.ready }); });
   listen($('rematch-button'), 'click', () => send({ type: 'rematch' }));
+  listen($('overlay-ready'), 'click', () => (state?.phase === 'matchEnd' ? $('rematch-button') : $('ready-button')).click());
   listen($('player-name'), 'change', () => { playerName = saveName($('player-name').value); $('player-name').value = playerName; send({ type: 'join', name: playerName }); });
   listen($('loadout-select'), 'change', () => { previewWeapon = null; renderWeaponComparison($('loadout-select').value); neutralize(); send({ type: 'fps-loadout', weaponId: $('loadout-select').value }); });
   for (const button of document.querySelectorAll('[data-arena-loadout]')) {
@@ -959,8 +1013,18 @@ async function boot() {
   listen($('sound-button'), 'click', async () => {
     const enabled = await audio.setEnabled(!audio.enabled); $('sound-button').setAttribute('aria-pressed', String(enabled)); $('sound-button').setAttribute('aria-label', enabled ? 'Mute sound' : 'Enable sound'); $('sound-button').title = enabled ? 'Mute sound' : 'Enable sound'; toast(enabled ? 'Sound on.' : 'Sound off.');
   });
-  listen($('fullscreen-button'), 'click', async () => { try { if (document.fullscreenElement) await document.exitFullscreen(); else await $('game-shell').requestFullscreen(); } catch { toast('Fullscreen is unavailable in this browser.'); } });
-  listen(document, 'fullscreenchange', () => { renderer?.resize(); draw(); $('fullscreen-button').setAttribute('aria-label', document.fullscreenElement ? 'Exit fullscreen' : 'Enter fullscreen'); });
+  async function toggleFullscreen() {
+    neutralize({ pause: entered, unlock: true });
+    try { if (document.fullscreenElement) await document.exitFullscreen(); else await $('game-shell').requestFullscreen(); }
+    catch { toast('Fullscreen is unavailable in this browser.'); }
+  }
+  listen($('fullscreen-button'), 'click', toggleFullscreen); listen($('arena-fullscreen-button'), 'click', toggleFullscreen);
+  listen(document, 'fullscreenchange', () => {
+    positionLayoutPicker(); renderer?.resize(); draw();
+    for (const id of ['fullscreen-button', 'arena-fullscreen-button']) {
+      const label = document.fullscreenElement ? 'Exit fullscreen' : 'Enter fullscreen'; $(id).setAttribute('aria-label', label); $(id).title = label;
+    }
+  });
   listen($('retry-graphics'), 'click', () => location.reload());
   listen(canvas, 'voxel-renderer-error', event => { graphicsError = event.detail?.message || 'WebGL was interrupted. Reload graphics to try again.'; neutralize({ pause: true, unlock: true }); error(graphicsError); });
   listen(canvas, 'voxel-renderer-restored', () => {

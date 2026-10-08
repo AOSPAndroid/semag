@@ -43,3 +43,210 @@
   .solo-launch-kicker{font-size:8px;letter-spacing:1px}
   .solo-launch-button{min-width:170px}
 }
+
+/* Play takes the page. Instructions are a modal panel, so every game keeps
+   its full width without a permanent controls column. */
+#solo-app{max-width:1720px;padding:0 16px 12px}
+#solo-app .solo-topbar{min-height:56px;height:56px;border-bottom:0;gap:18px}
+#solo-app .solo-back{gap:10px;flex-shrink:0}
+#solo-app .solo-back>.pixel-logo{width:77.5px;height:20px}
+#solo-app .solo-heading{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:3px;padding:0;min-width:0;margin-right:auto}
+#solo-app .solo-heading .eyebrow{font-size:7px;line-height:1.2;letter-spacing:.7px;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#solo-app .solo-heading h1{font-size:19px;line-height:1.1;font-weight:600;letter-spacing:-.5px;margin:0;white-space:nowrap}
+#solo-app .solo-toolbar-actions{display:flex;align-items:center;gap:8px;flex-shrink:0}
+#solo-app .keyboard-layout-picker{flex-direction:row;align-items:center;gap:7px}
+#solo-app .keyboard-layout-label{font-size:8px;letter-spacing:.5px}
+#solo-app .keyboard-layout-select{min-height:34px;max-width:145px;padding:6px 22px 6px 8px;font-size:10px}
+#solo-app .solo-toolbar-button{display:flex;align-items:center;justify-content:center;gap:6px;min-height:34px;padding:7px 11px;border:1px solid #ccd5c1;border-radius:4px;background:#fffdf8;color:#35573e;font-size:11px;white-space:nowrap}
+#solo-app .solo-toolbar-button:hover{background:#e8eddf;border-color:#a8ba97}
+#solo-app .solo-fullscreen{width:36px;padding:7px}
+#solo-app .solo-fullscreen>span{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+#solo-app .solo-fullscreen[aria-pressed=true]{border-color:#739063;background:#e6ecd9}
+#solo-app .solo-layout{display:block}
+#solo-app .solo-play-panel{border-radius:6px;background:#e9eadf}
+#solo-app .solo-hud{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr) auto;min-height:48px;padding:7px 13px;gap:16px}
+#solo-app .solo-score{display:flex;flex-direction:row;align-items:center;gap:9px;min-width:0}
+#solo-app .solo-score>span{font-size:8px;letter-spacing:.5px;line-height:1.25;max-width:80px}
+#solo-app .solo-score>strong{font-size:18px;line-height:1.2;letter-spacing:-.5px;white-space:nowrap;font-variant-numeric:tabular-nums}
+#solo-app .solo-best{justify-content:flex-end;text-align:right}
+#solo-app .solo-play-status{font-size:8px;letter-spacing:.7px}
+#solo-app .solo-session-actions{display:flex;align-items:center;justify-content:flex-end;grid-column:auto;gap:6px;border:0;padding:0}
+#solo-app .solo-session-actions button{flex:none;min-height:32px;width:auto;margin:0;padding:7px 9px;gap:9px;font-size:11px}
+#solo-app .solo-game{padding:10px;min-height:0}
+#solo-app .solo-objective{align-items:center;min-height:30px;padding:6px 12px;font-size:10px;line-height:1.45}
+#solo-app .solo-objective>i{margin:0}
+#solo-app .solo-notice,#solo-app .solo-error{padding:8px 12px;margin:0 0 8px;font-size:11px}
+#solo-app .solo-fit-board{width:100%;max-width:var(--solo-board-width,100%);margin-inline:auto}
+#solo-app .solo-launch{aspect-ratio:auto;min-height:360px;height:clamp(360px,calc(100dvh - 150px),820px)}
+#solo-app[data-phase=ready] .solo-game,#solo-app[data-phase=loading] .solo-game{padding:0}
+#solo-app[data-phase=ready] .solo-hud,#solo-app[data-phase=loading] .solo-hud{grid-template-columns:minmax(0,1fr) auto minmax(0,1fr)}
+#solo-app .solo-launch-content{padding:30px 36px}
+#solo-app .solo-launch-content h2{font-size:28px}
+#solo-app .solo-launch-content p{margin-bottom:18px}
+#solo-app .solo-info-dialog{width:min(600px,calc(100% - 32px));max-height:calc(100dvh - 40px);margin:auto;padding:22px;border:1px solid #b9c5ac;border-radius:8px;background:#f5f2ea;color:#26392e;box-shadow:0 16px 70px #13281f55;overflow-y:auto;overscroll-behavior:contain}
+#solo-app .solo-info-dialog::backdrop{background:#152a24aa;backdrop-filter:blur(3px)}
+#solo-app .solo-info-header{display:flex;justify-content:space-between;align-items:center;gap:16px}
+#solo-app .solo-info-header h2{font-size:21px;font-weight:600;letter-spacing:-.5px;margin:6px 0 0}
+#solo-app .solo-info-close{display:grid;place-items:center;min-width:40px;min-height:40px;padding:8px;border:1px solid #c7d2b9;border-radius:4px;background:#fffdf8;color:#3c5b40;font-size:15px}
+#solo-app .solo-info-description{margin:13px 0 0;font-size:13px;line-height:1.7;color:#53684e}
+#solo-app .solo-info-note{margin:12px 0 18px;padding:10px 12px;border:1px solid #d7decd;border-radius:4px;background:#e9eddf;font-size:11px;line-height:1.6;color:#55694a}
+#solo-app .solo-sidebar{display:flex;flex-direction:column;gap:12px}
+#solo-app .solo-controls-panel,#solo-app .solo-rules-panel{padding:16px;background:#fffdf8}
+#solo-app .solo-extra-info{padding:16px;background:#fffdf8;border:1px solid #d9dfce;border-radius:6px}
+#solo-app .solo-extra-info>h2{margin-bottom:12px}
+#solo-app .solo-extra-info .skyline-tutorial,#solo-app .solo-extra-info .shadow-notes{display:flex;flex-direction:column;gap:7px;margin:0;padding:0;background:none;border:0}
+#solo-app .solo-extra-info .skyline-tutorial b,#solo-app .solo-extra-info .shadow-notes b{max-width:none;color:#8d6d43;font-size:9px;line-height:1.5}
+#solo-app .solo-extra-info .skyline-tutorial span,#solo-app .solo-extra-info .shadow-notes span{color:#53684e;font-size:12px;line-height:1.7}
+#solo-app .solo-extra-info .wilds-field-guide{display:block;margin:0;padding:0;border:0;background:none;font-size:11px}
+#solo-app .solo-controls-panel{grid-row:auto}
+#solo-app .solo-controls-panel h2{margin-bottom:13px}
+#solo-app .solo-record-note{padding:0 3px;margin:2px 0 0;border:0}
+#solo-app:fullscreen{width:100%;max-width:none;height:100dvh;padding:0 10px 8px;margin:0;background:var(--paper);overflow-y:auto}
+#solo-app:fullscreen .solo-topbar{height:50px;min-height:50px;position:sticky;top:0;z-index:20;background:var(--paper)}
+
+/* The 3D world can use the viewport's actual shape; its camera is resized by
+   the existing renderer. Keep world menus and the eight-slot hotbar intact. */
+#solo-app .wilds-view{max-width:none}
+#solo-app .wilds-toolbar{margin-bottom:7px}
+#solo-app .wilds-board{border-width:1px;border-radius:4px;box-shadow:none}
+#solo-app .wilds-canvas{aspect-ratio:auto;height:clamp(320px,calc(100dvh - 205px),1000px);min-height:0}
+#solo-app .wilds-objective{padding:7px 10px;margin-top:7px}
+#solo-app .wilds-controls-hint{display:none}
+#solo-app:fullscreen .wilds-canvas{height:calc(100dvh - 190px);min-height:230px}
+
+@media(min-width:951px) and (pointer:fine){
+  #solo-app .ember-hints,#solo-app .rift-hint,#solo-app .skyline-hint,#solo-app .shadow-hint,#solo-app .highway-hint,#solo-app .paris-hint{display:none}
+  #solo-app .paris-view,#solo-app .highway-view{max-width:1100px}
+  #solo-app .shadow-hud{padding-block:10px}
+  #solo-app .shadow-objective{padding-block:7px;margin-bottom:8px}
+  #solo-app .skyline-view{gap:10px}
+  #solo-app .skyline-tier-bar{padding-block:9px}
+  #solo-app .prism-stage{grid-template-columns:minmax(0,clamp(180px,calc((100dvh - 320px) / 2),300px)) minmax(0,1fr)}
+  #solo-app .skyline-controls,#solo-app .shadow-controls,#solo-app .paris-controls,#solo-app .highway-controls,#solo-app .circuit-controls,#solo-app .snake-controls{display:none}
+  #solo-app .shadow-view{max-width:1200px;margin-inline:auto}
+  #solo-app .shadow-tier-bar{padding:7px 12px;gap:15px}
+  #solo-app .shadow-tier-bar label{display:flex;align-items:center;gap:9px;font-size:8px;letter-spacing:.8px}
+  #solo-app .shadow-tier-select{display:inline-block;margin:0;min-height:32px;padding:5px 8px;font-size:11px}
+  #solo-app .shadow-tier-detail{font-size:10px;line-height:1.5}
+  #solo-app .shadow-journey{padding:6px 12px 0;gap:5px}
+  #solo-app .shadow-mission-badge{height:18px;font-size:8px}
+  #solo-app .shadow-hud{align-items:center;padding:8px 12px;gap:12px}
+  #solo-app .shadow-title{flex-direction:row;align-items:baseline;gap:10px}
+  #solo-app .shadow-title span{font-size:8px;letter-spacing:.5px}
+  #solo-app .shadow-title b{font-size:16px}
+  #solo-app .shadow-numbers{font-size:9px;gap:5px}
+  #solo-app .shadow-numbers span{padding:5px 7px}
+  #solo-app .shadow-objective{padding:6px 9px;margin:0 12px 8px;gap:9px}
+  #solo-app .shadow-objective b{font-size:8px}
+  #solo-app .shadow-objective>span{font-size:10px;line-height:1.4}
+  #solo-app .shadow-legend{padding-top:7px;font-size:8px}
+  #solo-app .shadow-equipment{padding-block:7px;font-size:9px}
+  #solo-app .shadow-notes{padding:8px 12px;gap:12px}
+  #solo-app .shadow-notes b{font-size:8px;max-width:none}
+  #solo-app .shadow-notes span{font-size:10px;line-height:1.5}
+  #solo-app .shadow-status{font-size:10px;min-height:0;padding-block:7px 2px}
+  #solo-app .skyline-view{gap:7px}
+  #solo-app .skyline-tier-bar{padding:7px 10px;gap:12px}
+  #solo-app .skyline-tier-bar label{display:flex;align-items:center;gap:9px;font-size:8px}
+  #solo-app .skyline-tier-select{min-height:30px;padding:5px 8px;font-size:11px}
+  #solo-app .skyline-tier-detail{font-size:10px;max-width:none;line-height:1.5}
+  #solo-app .skyline-stage-badge{min-height:18px;font-size:8px}
+  #solo-app .skyline-hud{align-items:center}
+  #solo-app .skyline-district{display:flex;align-items:baseline;gap:10px}
+  #solo-app .skyline-district span{font-size:8px}
+  #solo-app .skyline-district b{font-size:16px}
+  #solo-app .skyline-numbers{gap:12px;font-size:10px}
+  #solo-app .skyline-tutorial{padding:7px 10px;font-size:10px;line-height:1.5;gap:12px}
+  #solo-app .skyline-tutorial b{font-size:8px}
+  #solo-app .skyline-status{font-size:10px;min-height:0}
+  #solo-app .starfall-heading{margin-bottom:7px;gap:9px}
+  #solo-app .starfall-stage{font-size:15px;line-height:1.3}
+  #solo-app .starfall-region{font-size:8px;letter-spacing:.7px}
+  #solo-app .starfall-tier{flex-direction:row;align-items:center;gap:7px}
+  #solo-app .starfall-route{margin-bottom:7px;gap:4px}
+  #solo-app .starfall-route li{padding:4px}
+  #solo-app .starfall-route li b{display:inline;font-size:9px;margin-right:4px}
+  #solo-app .starfall-route li span{display:inline;font-size:7px;margin:0}
+  #solo-app .starfall-hud{padding:6px 9px;gap:8px;margin-bottom:7px}
+  #solo-app .starfall-stat b{font-size:13px}
+  #solo-app .starfall-controls{min-height:32px;padding:6px 9px;margin-top:7px}
+  #solo-app .starfall-stick,#solo-app .starfall-actions{display:none}
+  #solo-app .starfall-auto{display:flex;gap:6px;align-items:center}
+  #solo-app .starfall-auto small{max-width:none}
+  #solo-app .starfall-status{font-size:10px;min-height:0;margin-top:7px}
+  #solo-app .ember-difficulty{padding-bottom:7px;margin-bottom:8px;gap:12px}
+  #solo-app .ember-difficulty select{min-height:30px;padding:5px 20px 5px 8px}
+  #solo-app .ember-topline{margin-bottom:7px}
+  #solo-app .ember-route-map{margin-bottom:8px}
+  #solo-app .ember-route-map li{padding-bottom:5px}
+  #solo-app .ember-meters{margin-bottom:9px}
+  #solo-app .ember-meter-label{font-size:9px;margin-bottom:4px}
+  #solo-app .ember-prompt{min-height:26px;padding:7px 0 5px;font-size:10px}
+  #solo-app .ember-build{min-height:26px;padding:4px 0 6px}
+  #solo-app .ember-seed{padding-top:7px}
+  #solo-app .paris-choice,#solo-app .highway-difficulty,#solo-app .highway-mode{min-height:32px;padding:6px 8px;font-size:10px}
+  #solo-app .paris-stage{padding:6px 9px;margin-bottom:7px}
+  #solo-app .paris-location{font-size:12px}
+  #solo-app .paris-stage[data-mode=survival] .paris-clock{font-size:15px}
+  #solo-app .highway-topline{margin-bottom:7px}
+  #solo-app .highway-stage{padding:7px 10px;margin-bottom:7px}
+  #solo-app .highway-stage-label,#solo-app .highway-stage-description{font-size:9px;line-height:1.4}
+  #solo-app .highway-stage-title{font-size:13px}
+  #solo-app .highway-footer,#solo-app .paris-footer{margin-top:8px}
+  #solo-app .highway-status,#solo-app .paris-status{font-size:10px}
+}
+@media(max-width:950px){
+  #solo-app .solo-topbar{gap:12px}
+  #solo-app .keyboard-layout-label{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+  #solo-app .solo-toolbar-actions{gap:6px}
+  #solo-app .solo-hud{gap:10px}
+}
+@media(max-width:600px){
+  #solo-app{padding:0 8px 8px}
+  #solo-app .solo-topbar{height:auto;min-height:0;display:grid;grid-template-columns:auto minmax(0,1fr);padding:10px 2px 8px;gap:7px 13px}
+  #solo-app .solo-heading{margin:0}
+  #solo-app .solo-heading .eyebrow{font-size:6px;letter-spacing:.4px}
+  #solo-app .solo-heading h1{font-size:18px}
+  #solo-app .solo-toolbar-actions{grid-column:1/-1;width:100%;justify-content:flex-end;gap:7px}
+  #solo-app .solo-toolbar-actions>[data-keyboard-layout-picker]{margin-right:auto}
+  #solo-app .solo-toolbar-button{min-height:40px;font-size:10px;padding:9px 10px}
+  #solo-app .solo-fullscreen{width:40px;padding:9px}
+  #solo-app .keyboard-layout-select{min-height:40px;max-width:140px;font-size:10px}
+  #solo-app .solo-hud{grid-template-columns:minmax(0,1fr) minmax(0,1fr);min-height:0;padding:9px 10px;gap:8px 10px}
+  #solo-app .solo-score{grid-row:1;grid-column:1;gap:6px;align-items:flex-start}
+  #solo-app .solo-score.solo-best{grid-row:1;grid-column:2}
+  #solo-app .solo-score>span{font-size:7px;line-height:1.4;max-width:62px}
+  #solo-app .solo-score>strong{font-size:17px;white-space:normal;overflow-wrap:anywhere}
+  #solo-app .solo-play-status{grid-row:2;grid-column:1;justify-content:flex-start;font-size:7px;letter-spacing:.3px}
+  #solo-app .solo-session-actions{grid-row:2;grid-column:2;gap:5px}
+  #solo-app .solo-session-actions button{min-height:38px;padding:8px;gap:5px;font-size:10px}
+  #solo-app .solo-session-actions b{display:none}
+  #solo-app[data-phase=ready] .solo-hud,#solo-app[data-phase=loading] .solo-hud{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+  #solo-app[data-phase=ready] .solo-play-status,#solo-app[data-phase=loading] .solo-play-status{grid-row:2;grid-column:1/-1;justify-content:center}
+  #solo-app .solo-game{padding:7px}
+  #solo-app .solo-objective{font-size:9px;padding:7px 9px}
+  #solo-app .solo-launch{height:calc(100dvh - 190px);min-height:360px}
+  #solo-app .solo-launch-content{padding:25px 20px}
+  #solo-app .solo-launch-content h2{font-size:25px}
+  #solo-app .solo-info-dialog{width:calc(100% - 20px);max-height:calc(100dvh - 24px);padding:16px}
+  #solo-app .solo-info-dialog::backdrop{backdrop-filter:none}
+  #solo-app .solo-info-header h2{font-size:20px}
+  #solo-app .solo-controls-panel,#solo-app .solo-rules-panel{padding:14px}
+  #solo-app .wilds-world-info{gap:4px;font-size:8px}
+  #solo-app .wilds-toolbar{gap:5px}
+  #solo-app .wilds-open-inventory{white-space:normal;padding:9px;font-size:8px}
+  #solo-app .wilds-toolbar-actions{gap:4px}
+  #solo-app .wilds-canvas{height:clamp(360px,calc(100dvh - 280px),650px)}
+  #solo-app .wilds-objective{font-size:9px}
+}
+@media(max-height:520px) and (min-width:601px){
+  #solo-app .solo-topbar{height:48px;min-height:48px}
+  #solo-app .solo-heading .eyebrow{display:none}
+  #solo-app .solo-heading h1{font-size:17px}
+  #solo-app .solo-hud{min-height:44px;padding-block:5px}
+  #solo-app .solo-launch{height:calc(100dvh - 126px);min-height:220px}
+  #solo-app .solo-launch-content{padding:20px 26px}
+  #solo-app .solo-launch-content h2{font-size:22px;margin:7px 0}
+  #solo-app .solo-launch-content p{margin-bottom:12px}
+  #solo-app .wilds-canvas{height:calc(100dvh - 185px);min-height:230px}
+}
