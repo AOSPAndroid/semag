@@ -1,6 +1,7 @@
 import { mountKeyboardLayoutPicker } from '../keyboard-layout.js';
 import { GAMES, roomUrl, roomCapacity, soloUrl, getName, saveName, hostInfo, copyText } from './shared.js';
 import { chooseVoxelRoom } from './voxel-setup.js';
+import { chooseRoyaleRoom } from './royale-setup.js';
 import { setText, toggleClass } from './dom.js';
 const $ = (id) => document.getElementById(id);
 mountKeyboardLayoutPicker(document.querySelector('[data-keyboard-layout-picker]'));
@@ -45,7 +46,7 @@ document.querySelectorAll('[data-filter]').forEach(button => {
 document.querySelectorAll('[data-create-game]').forEach(button => button.addEventListener('click', async () => {
   if (creating) return;
   const gameId = button.dataset.createGame;
-  const settings = gameId === 'voxel-breach' ? await chooseVoxelRoom($('voxel-setup')) : {};
+  const settings = gameId === 'voxel-breach' ? await chooseVoxelRoom($('voxel-setup')) : gameId === 'voxel-royale' ? await chooseRoyaleRoom($('royale-setup')) : {};
   if (!settings || creating) return;
   updateName(); creating = true; error('');
   document.querySelectorAll('[data-create-game]').forEach(b => { b.disabled = true; });
@@ -76,7 +77,8 @@ function renderRooms() {
     const title = document.createElement('strong'); title.textContent = room.players.find(p => p?.connected)?.name || room.name || game.title;
     const subtitle = document.createElement('small'); subtitle.textContent = `${game.title}${room.gameId === 'voxel-breach' ? ` · ${capacity / 2}v${capacity / 2}` : ''} · ${count}/${capacity} players`;
     description.append(title, subtitle);
-    const join = document.createElement('button'); join.textContent = count >= capacity ? 'Full' : 'Join'; join.disabled = count >= capacity;
+    const matchUnderway = room.gameId === 'voxel-royale' && room.phase !== 'lobby';
+    const join = document.createElement('button'); join.textContent = matchUnderway ? 'In match' : count >= capacity ? 'Full' : 'Join'; join.disabled = matchUnderway || count >= capacity;
     join.addEventListener('click', () => { updateName(); location.href = roomUrl(room); });
     row.append(icon, description, join); list.append(row);
   }
@@ -104,6 +106,7 @@ $('join-form').addEventListener('submit', async (event) => {
     await refreshRooms();
     const room = rooms.find(room => room.id === code);
     if (!room) throw new Error('Room not found. Check the code or ask your friend to create a new room.');
+    if (room.gameId === 'voxel-royale' && room.phase !== 'lobby') throw new Error('This battle is underway. Ask the host to open the next lobby after the match.');
     if (room.players.filter(p => p?.connected).length >= roomCapacity(room)) throw new Error('All seats are taken in that room.');
     location.href = roomUrl(room);
   } catch (e) { $('join-error').textContent = e.message; $('join-error').hidden = false; $('join-button').disabled = false; }

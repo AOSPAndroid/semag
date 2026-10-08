@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { GRENADE, throwGrenade, advanceGrenades, grenadeBlastHits, sweepSphereBox } from '../public/voxel-ordnance.js';
+import { GRENADE, MAX_GRENADES, grenadeCapacity, throwGrenade, advanceGrenades, grenadeBlastHits, sweepSphereBox } from '../public/voxel-ordnance.js';
 
 const arena = (colliders = [], size = 30) => ({ bounds: { minX: -size, maxX: size, minZ: -size, maxZ: size }, colliders });
 const player = (id = 0, team = 0, fields = {}) => ({ id, team, alive: true, x: 0, y: 0, z: 0, yaw: 0, pitch: 0, vx: 0, vy: 0, vz: 0, radius: .32, grenades: 1, ...fields });
@@ -28,6 +28,19 @@ test('dead owners and full capacities cannot create or consume more grenades', (
   const six = state(Array.from({ length: 6 }, (_, id) => player(id, id < 3 ? 0 : 1)));
   for (const member of six.players) assert.ok(throwGrenade(six, member, arena()));
   six.players[0].grenades = 1; assert.equal(throwGrenade(six, six.players[0], arena()), null); assert.equal(six.grenades.length, 6);
+});
+
+test('an explicit mode budget is capped at twenty while absent or invalid overrides preserve the original capacity', () => {
+  assert.equal(MAX_GRENADES, 20); assert.equal(grenadeCapacity({ capacity: 10 }), 6);
+  assert.equal(grenadeCapacity({ capacity: 2, maxGrenades: 20 }), 20);
+  assert.equal(grenadeCapacity({ capacity: 2, maxGrenades: 100000 }), 20);
+  assert.equal(grenadeCapacity({ capacity: 10, maxGrenades: NaN }), 6);
+  assert.equal(grenadeCapacity({ capacity: 10, maxGrenades: Infinity }), 6);
+  assert.equal(grenadeCapacity({ capacity: 10, maxGrenades: 0 }), 0);
+  const match = state(Array.from({ length: 10 }, (_, id) => player(id, id))); match.maxGrenades = 100000;
+  for (let index = 0; index < 20; index++) { match.players[0].grenades = 1; assert.ok(throwGrenade(match, match.players[0], arena())); }
+  match.players[0].grenades = 1; assert.equal(throwGrenade(match, match.players[0], arena()), null); assert.equal(match.players[0].grenades, 1);
+  match.grenades.push(frag({ id: 21 })); advance(match, arena(), 1); assert.equal(match.grenades.length, 20);
 });
 
 test('sphere sweeps contact faces, rounded edges and corners at their exact physical points', () => {

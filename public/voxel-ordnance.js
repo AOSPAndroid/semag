@@ -1,10 +1,17 @@
 /** Deterministic, server-owned frag grenades. Distances are metres; one step is 1/120s. */
 export const GRENADE = Object.freeze({ radius: .12, fuseTicks: 288, blastRadius: 5.5, damage: 120, speed: 11.5, loft: 3.1, gravity: 18.4, restitution: .48, capacity: 6 });
+export const MAX_GRENADES = 20;
 const DT = 1 / 120, EPS = 1e-9, SKIN = 1e-7;
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 const finite = (n, fallback = 0) => Number.isFinite(n) ? n : fallback;
 const axes = [['x', 'w'], ['y', 'h'], ['z', 'd']];
 const noop = () => {};
+
+/** Modes may expand the live budget without changing Breach's six-frag default. */
+export function grenadeCapacity(state) {
+  if (Number.isInteger(state.maxGrenades)) return clamp(state.maxGrenades, 0, MAX_GRENADES);
+  return clamp(Math.floor(finite(state.capacity, state.players?.length ?? 2)), 0, GRENADE.capacity);
+}
 
 function boxNormal(point, box) {
   const nearest = { x: clamp(point.x, box.x, box.x + box.w), y: clamp(point.y, box.y, box.y + box.h), z: clamp(point.z, box.z, box.z + box.d) };
@@ -83,7 +90,7 @@ function eventData(grenade) {
 
 /** Caller owns the input edge and live-round gate. Inventory changes only on a successful throw. */
 export function throwGrenade(state, player, arena, emit = noop) {
-  const active = Array.isArray(state.grenades) ? state.grenades : [], capacity = clamp(Math.floor(finite(state.capacity, state.players?.length ?? 2)), 0, GRENADE.capacity);
+  const active = Array.isArray(state.grenades) ? state.grenades : [], capacity = grenadeCapacity(state);
   if (!player?.alive || !Number.isInteger(player.grenades) || player.grenades <= 0 || active.length >= capacity) return null;
   const yaw = finite(player.yaw), pitch = clamp(finite(player.pitch), -1.35, 1.35), cosine = Math.cos(pitch);
   const direction = { x: Math.sin(yaw) * cosine, y: Math.sin(pitch), z: -Math.cos(yaw) * cosine };
@@ -182,7 +189,7 @@ export function grenadeBlastHits(state, grenade, arena) {
 /** Fuse/physics are independent of the thrower's current life or position. */
 export function advanceGrenades(state, arena, { emit = noop, queueDamage = noop } = {}) {
   if (!Array.isArray(state.grenades) || !state.grenades.length) return [];
-  const capacity = clamp(Math.floor(finite(state.capacity, state.players?.length ?? 2)), 0, GRENADE.capacity), remaining = [], hits = [];
+  const capacity = grenadeCapacity(state), remaining = [], hits = [];
   for (const grenade of state.grenades.slice(0, capacity)) {
     // A corrupt snapshot must not poison the authoritative simulation.
     if (![grenade.x, grenade.y, grenade.z, grenade.vx, grenade.vy, grenade.vz, grenade.fuseTicks].every(Number.isFinite) || grenade.fuseTicks <= 0) continue;

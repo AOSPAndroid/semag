@@ -1,5 +1,6 @@
 export const GAMES = {
   'voxel-breach': { title: 'Voxel Breach', category: 'VOXEL / TACTICAL 3D FPS', kind: 'team', genre: 'action', theme: 'voxel', maxPlayers: 6, icon: '⌗', description: 'Hold an angle. Breach a site. Win together.', color: '#628b88' },
+  'voxel-royale': { title: 'Voxel Royale', category: 'VOXEL / BATTLE ROYALE', kind: 'battle-royale', genre: 'action', theme: 'voxel', maxPlayers: 10, icon: '◈', description: 'Find your kit. Escape the storm. Be the last alive.', color: '#75957b' },
   'shadow-lantern': { title: 'Shadow Lantern', category: 'NINJA / STEALTH CAMPAIGN', kind: 'solo', genre: 'action', theme: 'ninja', icon: '☾', description: 'Watch the patrol. Take the seal. Leave no trail.', color: '#7b8198' },
   'shinobi-showdown': { title: 'Shinobi Showdown', category: 'NINJA / REAL-TIME DUEL', kind: 'duel', genre: 'action', theme: 'ninja', icon: '✣', description: 'Read the strike. Parry the kunai. Outplay your rival.', color: '#8e7b87' },
   'skyline-hook': { title: 'Skyline Hook', category: 'PRECISION GRAPPLING', kind: 'solo', genre: 'action', icon: '↗', description: 'Build momentum. Catch an anchor. Earn the next rooftop.', color: '#71958b' },
@@ -29,10 +30,15 @@ export function soloUrl(gameId) {
   return `/solo.html?game=${encodeURIComponent(gameId)}`;
 }
 export function roomUrl(room) {
+  if (room.gameId === 'voxel-royale') return `/voxel-royale.html?room=${encodeURIComponent(room.id)}`;
   if (room.gameId === 'voxel-breach') return `/voxel.html?room=${encodeURIComponent(room.id)}`;
   return room.gameId === 'afterimage' ? `/afterimage.html?room=${encodeURIComponent(room.id)}` : `/play.html?room=${encodeURIComponent(room.id)}&game=${encodeURIComponent(room.gameId)}`;
 }
 export function roomCapacity(room) {
+  if (room.gameId === 'voxel-royale') {
+    if (Number.isInteger(room.capacity) && room.capacity >= 2 && room.capacity <= 10) return room.capacity;
+    return room.players?.length >= 2 && room.players.length <= 10 ? room.players.length : 10;
+  }
   if ([2, 4, 6].includes(room.capacity)) return room.capacity;
   return [2, 4, 6].includes(room.players?.length) ? room.players.length : 2;
 }

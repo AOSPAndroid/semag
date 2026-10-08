@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 320" role="img" aria-labelledby="title description">
+<title id="title">Voxel Royale</title><desc id="description">A voxel survivor searches forest shelters and ancient desert ruins as the storm closes.</desc>
+<defs><linearGradient id="sky" x2="0" y2="1"><stop stop-color="#abc8bc"/><stop offset="1" stop-color="#e6ddba"/></linearGradient><linearGradient id="ground" x2="1" y2="0"><stop stop-color="#687e50"/><stop offset=".53" stop-color="#a7ad71"/><stop offset="1" stop-color="#cbb58c"/></linearGradient><g id="pine"><path d="M26 45h10v55H26z" fill="#6c5c40"/><path d="m31 0-22 22h9L0 43h17L0 68h62L45 43h17L44 22h9Z" fill="#48684c"/><path d="m31 0 22 22h-9l18 21H45l17 25H31Z" fill="#345743"/><path d="M9 22h22v5H9M0 43h31v5H0M0 68h31v5H0" fill="#76905d" opacity=".7"/></g></defs>
+<path fill="url(#sky)" d="M0 0h600v320H0z"/><path fill="#849c87" d="M0 112h46V83h58v35h42V70h58v38h64V97h56v44h68v-21h43v26h68V99h42v32h55v62H0z" opacity=".6"/>
+<path fill="url(#ground)" d="m0 156 165-19 169 35 132-13 134 19v142H0Z"/>
+<path fill="#d9c29c" d="m329 170 108-100 97 99Z"/><path fill="#bba27b" d="m437 70 97 99h-97Z"/><path fill="none" stroke="#f0dbb5" stroke-width="5" d="M400 105h67m-90 22h114m-137 22h159"/>
+<g fill="#8e8d63"><path d="m464 196 25-13 29 13v38l-26 14-28-14Z"/><path d="M548 174h13v62h-13zM578 163h12v58h-12z"/></g><g fill="#c7b98b"><path d="m464 196 25-13 29 13-26 13Z"/><path d="M544 174h21v7h-21zM574 163h20v7h-20z"/></g>
+<use href="#pine" x="15" y="91"/><use href="#pine" x="95" y="66"/><use href="#pine" x="217" y="78"/><use href="#pine" x="164" y="101" transform="translate(28 14) scale(.85)"/>
+<path fill="#705c42" d="m55 184 65-28 68 27v62l-68 27-65-29Z"/><path fill="#aa8d60" d="m55 184 65 24v64l-65-29Z"/><path fill="#527365" d="m43 177 77-35 80 31-80 35Z"/><path fill="#37574c" d="m120 142 80 31v11l-80 35v-11Z"/><path fill="#3a4837" d="M80 211h19v43l-19-8Z"/><path fill="#c2bc84" d="m130 219 19-8v18l-19 8Z"/>
+<ellipse cx="317" cy="261" rx="225" ry="51" fill="none" stroke="#84bfbb" stroke-width="5"/><path d="M0 280c62-20 111-24 160-19M488 238c47 11 76 22 112 33" fill="none" stroke="#a8dfd3" stroke-width="4" opacity=".7"/>
+<path fill="#364b3e" opacity=".3" d="m242 279 59-12 47 15-58 19Z"/>
+<path fill="#51665b" d="m267 168 25-9 27 10v27l-24 10-28-12Z"/><path fill="#819889" d="m267 168 25-9 27 10-24 10Z"/><path fill="#1f3833" d="m267 177 28 10v13l-28-10Z"/>
+<path fill="#45695b" d="m259 204 33-12 35 13v46l-35 14-33-14Z"/><path fill="#789683" d="m259 204 33 13v48l-33-14Z"/><path fill="#c8c79a" d="M272 222h12v5h-12v-5Zm0 13h12v5h-12z"/><path fill="#294a43" d="m266 254 18 7v35l-18-6Zm30 8 19-7v32l-19 9Z"/><path fill="#182c2b" d="m263 287 23 8v9l-23-8Zm31 6 24-8v9l-24 8Z"/>
+<path fill="#85968c" d="m314 210 16-6 32 12-16 7Z"/><path fill="#2c4541" d="m332 211 48-18 18 7-48 19Z"/><path fill="#172f2d" d="m380 193 18 7v9l-18-7Z"/><path fill="#39534d" d="m332 211 18 8v7l-18-8Z"/>
+<path fill="#d8c194" d="m400 248 19-9 21 8-19 10Z"/><path fill="#936d42" d="m400 248 21 9v28l-21-9Z"/><path fill="#b18c56" d="m421 257 19-10v28l-19 10Z"/><path fill="#6a583a" d="M408 254v22m23-23v25" stroke="#615333" stroke-width="2"/>
+<path fill="#d3e9cb" d="M363 252h8v5h-8zM365 244h4v9h-4z"/><path fill="#80b899" d="M359 257h16v16h-16z"/><path fill="#315744" d="M375 257h4v16h-4z"/>
+<path d="M16 15h16v2H18v14h-2M584 15h-16v2h14v14h2M16 305h16v-2H18v-14h-2M584 305h-16v-2h14v-14h2" fill="#e8edce" opacity=".55"/>
+</svg>

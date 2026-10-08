@@ -1,0 +1,455 @@
+import { displayKey, gameKey, getKeyboardLayout, mountKeyboardLayoutPicker, subscribeKeyboardLayout } from './keyboard-layout.js';
+import { copyText, getName, hostInfo, roomUrl, saveName } from './hub/shared.js';
+import { GameAudio } from './audio.js';
+import { WEAPONS, weaponAimFovRatio, weaponSpread } from './voxel-weapons.js';
+import { advanceBolts, MAX_BOLTS } from './voxel-projectiles.js';
+import { predictLocalMovement, traceShot, ADS, HEAL } from './voxel-engine.js';
+
+export const LOOK_SENSITIVITY = .0025;
+export const INPUT_ACTIONS = Object.freeze(['up', 'down', 'left', 'right', 'jump', 'crouch', 'walk', 'fire', 'reload', 'interact', 'aim', 'swap', 'grenade', 'heal']);
+const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
+const finite = (n, fallback = 0) => Number.isFinite(n) ? n : fallback;
+const clone = value => value == null ? value : structuredClone(value);
+const TAU = Math.PI * 2;
+
+export function cleanAim(yaw = 0, pitch = 0) {
+  return { yaw: ((finite(yaw) + Math.PI) % TAU + TAU) % TAU - Math.PI, pitch: clamp(finite(pitch), -1.35, 1.35) };
+}
+export function neutralInput(yaw = 0, pitch = 0) {
+  return { ...Object.fromEntries(INPUT_ACTIONS.map(action => [action, false])), ...cleanAim(yaw, pitch) };
+}
+export function controlForKey(event, layout = getKeyboardLayout()) {
+  if (event.defaultPrevented || event.isComposing || event.altKey || event.metaKey) return null;
+  return ({ w: 'up', s: 'down', a: 'left', d: 'right', arrowup: 'up', arrowdown: 'down', arrowleft: 'left', arrowright: 'right', ' ': 'jump', control: 'crouch', shift: 'walk', r: 'reload', e: 'interact', v: 'swap', q: 'grenade', g: 'grenade', f: 'heal', h: 'heal' })[gameKey(event, layout).toLowerCase()] || null;
+}
+export function isFormTarget(target) {
+  return !!(target?.isContentEditable || target?.closest?.('input, select, textarea, button, a, [contenteditable]:not([contenteditable="false"]), [role="dialog"]'));
+}
+export function controlsAllowed({ connected, entered, paused, modalOpen, graphicsError, hidden, alive, phase, pointerLocked, fallback, touchMode }) {
+  return !!(connected && entered && !paused && !modalOpen && !graphicsError && !hidden && alive && ['countdown', 'fight'].includes(phase) && (pointerLocked || fallback || touchMode));
+}
+export function composeInput(keys, touch, mouse, aim, active = true) {
+  const input = neutralInput(aim.yaw, aim.pitch); if (!active) return input;
+  for (const action of INPUT_ACTIONS) input[action] = keys.has(action) || touch.actions.has(action);
+  input.up ||= touch.move.y < -.22; input.down ||= touch.move.y > .22;
+  input.left ||= touch.move.x < -.22; input.right ||= touch.move.x > .22;
+  input.fire ||= mouse.fire === true; input.aim ||= mouse.aim === true;
+  return input;
+}
+/** Continuous look, movement and heartbeat share one budget. Press/release edges bypass it. */
+export function createInputPacer(maxHz = 60) {
+  let previousAt = -Infinity; const interval = 1000 / maxHz;
+  return { shouldSend(now, edge = false) { if (!edge && now - previousAt < interval - .001) return false; previousAt = now; return true; }, reset() { previousAt = -Infinity; } };
+}
+export function aliveParticipants(state) {
+  const participants = new Set(state?.participantIds || []);
+  return (state?.players || []).filter(player => player.alive && participants.has(player.id));
+}
+export function canHostStart(state, roster, localId, hostId, connected = true) {
+  return !!(connected && state?.phase === 'lobby' && localId != null && localId === hostId && roster.filter(person => person?.connected).length >= 2);
+}
+/** The server-selected room capacity governs invitations, labels and visible seats. */
+export function roomPresentation(state, roster = [], fallbackCapacity = 10) {
+  const valid = value => Number.isInteger(value) && value >= 2 && value <= 10;
+  const capacity = valid(state?.capacity) ? state.capacity : valid(fallbackCapacity) ? fallbackCapacity : 10;
+  const count = roster.filter(person => person?.connected).length;
+  return { capacity, count, label: `${count} / ${capacity} PLAYERS`, slots: Array.from({ length: capacity }, (_, id) => ({ id, person: roster.find(person => person?.id === id) || null })) };
+}
+/** A living player sees their own HUD. Eliminated players may follow any remaining participant. */
+export function spectatorPlayer(state, localId, spectatorId) {
+  const local = state?.players?.find(player => player.id === localId);
+  if (local?.alive) return local;
+  const living = aliveParticipants(state);
+  return living.find(player => player.id === spectatorId) || living[0] || local || null;
+}
+/** Pickup eligibility and line of sight come from the shared authoritative helper. */
+export function lootPresentation(loot, player) {
+  if (!loot || !player?.alive) return null;
+  if (loot.kind === 'weapon') {
+    const weapon = WEAPONS[loot.weapon]; if (!weapon) return null;
+    const exchange = player.hasGun && player.weapon !== loot.weapon;
+    return { id: loot.id, name: weapon.name, detail: exchange ? `EXCHANGE ${WEAPONS[player.weapon]?.label || 'GUN'} · ${loot.ammo ?? weapon.magazine} / ${loot.reserve ?? weapon.reserve}` : `PICK UP · ${loot.ammo ?? weapon.magazine} / ${loot.reserve ?? weapon.reserve}`, kind: 'weapon' };
+  }
+  if (loot.kind === 'heal') return { id: loot.id, name: 'Healing potion', detail: 'PICK UP · F TO HEAL UP TO 40 HP', kind: 'heal' };
+  if (loot.kind === 'grenade') return { id: loot.id, name: 'Fragmentation grenade', detail: 'PICK UP · THROW WITH Q', kind: 'grenade' };
+  if (loot.kind === 'ammo') return { id: loot.id, name: 'Ammunition', detail: `PICK UP · +${Math.max(0, loot.amount || 0)} RESERVE`, kind: 'ammo' };
+  return null;
+}
+export function stormPresentation(state, player) {
+  const storm = state?.storm;
+  if (!storm || state.phase !== 'fight') return { visible: false, outside: false, label: 'SAFE ZONE', text: '—', detail: '' };
+  const radius = Math.max(0, finite(storm.radius));
+  const outside = !!player?.alive && [player.x, player.z, storm.x, storm.z].every(Number.isFinite) && Math.hypot(player.x - storm.x, player.z - storm.z) > radius;
+  const shrinking = storm.mode === 'shrinking'; const final = storm.mode === 'final';
+  const ticks = shrinking ? storm.ticksUntilNext : storm.ticksUntilShrink;
+  const seconds = Math.max(0, Math.ceil(finite(ticks) / 120));
+  return { visible: true, outside, shrinking, final, seconds,
+    label: final ? 'FINAL ZONE' : shrinking ? 'ZONE CLOSING' : 'ZONE CLOSES IN',
+    text: final ? 'SURVIVE' : `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`,
+    detail: outside ? `${Math.max(0, finite(storm.damagePerSecond))} HP / SEC · GET INSIDE` : `STAGE ${Math.max(1, finite(storm.stage) + 1)} · ${Math.round(radius)} M SAFE RADIUS` };
+}
+export function healthPresentation(player, previous = null, { now = 0, matchId = 0 } = {}) {
+  const maxHp = Number.isFinite(player?.maxHp) && player.maxHp > 0 ? player.maxHp : 100;
+  const hp = clamp(finite(player?.hp), 0, maxHp);
+  const reset = !previous || previous.id !== player?.id || previous.matchId !== matchId || previous.maxHp !== maxHp;
+  let trailFrom = reset ? hp : previous.trailFrom; let damageAt = reset ? -Infinity : previous.damageAt;
+  if (!reset && hp < previous.hp) { trailFrom = Math.max(previous.trailHp, previous.hp); damageAt = now; }
+  if (reset || hp > previous.hp) { trailFrom = hp; damageAt = -Infinity; }
+  const decay = clamp((now - damageAt - 400) / 550, 0, 1);
+  const trailHp = hp + Math.max(0, trailFrom - hp) * (1 - decay);
+  return { id: player?.id, matchId, hp, maxHp, trailHp, trailFrom, damageAt, percent: hp / maxHp * 100, trailPercent: trailHp / maxHp * 100, low: hp > 0 && hp / maxHp <= .3, dead: player?.alive === false || hp === 0 };
+}
+export function aimFraction(player, ticks = 18) {
+  if (!player?.hasGun || player?.alive === false || player?.slot === 'sword' || player?.healTicks > 0 || player?.reloadTicks > 0 || player?.grenadeThrowTicks > 0) return 0;
+  return clamp(finite(player.aimTicks) / Math.max(1, ticks), 0, 1);
+}
+export function aimLookMultiplier(player, ads = {}) {
+  const fraction = aimFraction(player, ads.ticks), smooth = fraction * fraction * (3 - 2 * fraction);
+  return 1 + (weaponAimFovRatio(player?.weapon, ads) - 1) * smooth;
+}
+export function combatReadout(player, rules = {}) {
+  const weapon = player?.hasGun ? WEAPONS[player.weapon] : null;
+  const sword = !weapon || player?.slot === 'sword'; const healing = player?.healTicks > 0;
+  let label = sword ? 'SWORD' : weapon.label, ammo = sword ? 'READY' : player.ammo;
+  let status = sword ? player.hasGun ? 'LMB STRIKE · V GUN' : 'LMB STRIKE · FIND A GUN' : 'RMB AIM · R RELOAD';
+  let progress = null;
+  const melee = Math.max(finite(player?.meleeTicks), finite(player?.meleeCooldown));
+  if (sword && melee) { ammo = ({ startup: 'WINDUP', active: 'STRIKE' })[player.meleePhase] || 'RECOVER'; status = `${(melee / 120).toFixed(1)}S · COMMITTED ATTACK`; }
+  if (!sword && !player.ammo) status = player.reserve ? 'R TO RELOAD' : 'NO AMMUNITION';
+  if (!sword && weapon.spinupTicks && player.spinTicks > 0 && player.spinTicks < weapon.spinupTicks) {
+    status = 'HOLD FIRE · WINDING UP'; progress = { remaining: weapon.spinupTicks - player.spinTicks, total: weapon.spinupTicks, label: 'Weapon wind-up' };
+  }
+  if (!sword && player.reloadTicks > 0) { status = `RELOADING ${(player.reloadTicks / 120).toFixed(1)}S`; progress = { remaining: player.reloadTicks, total: weapon.reloadTicks, label: 'Reload' }; }
+  if (!sword && player.shotCooldown > 0 && ['bolt', 'pump', 'burst'].includes(weapon.mode) && !player.reloadTicks) status = ({ bolt: 'CYCLING BOLT', pump: 'PUMPING', burst: 'BURST RECOVERY' })[weapon.mode];
+  if (healing) { label = 'HEALING POTION'; ammo = `+${Math.min(rules.HEAL?.amount || 40, Math.max(0, (player.maxHp || 100) - player.hp))}`; status = 'DRINKING · STAY IN COVER'; progress = { remaining: player.healTicks, total: rules.HEAL?.ticks || 240, label: 'Drinking healing potion' }; }
+  if (progress) progress.percent = clamp(100 - progress.remaining / progress.total * 100, 0, 100);
+  return { label, ammo, reserve: Math.max(0, finite(player?.reserve)), sword, healing, status, progress, inventory: weapon ? `${weapon.label} + SWORD` : 'SWORD ONLY · SCAVENGE A GUN', grenades: Math.max(0, finite(player?.grenades)), potions: Math.max(0, finite(player?.potions)) };
+}
+export function confirmedHitGroups(events, localId) {
+  const groups = new Map();
+  for (const event of events || []) {
+    const source = event.attackerId ?? event.shooterId ?? event.playerId ?? event.ownerId;
+    if (event.type !== 'damage' || !(event.damage > 0) || source !== localId || event.targetId == null || event.targetId === localId) continue;
+    const key = `${event.tick}:${event.targetId}:${event.weapon || ''}`, group = groups.get(key) || { targetId: event.targetId, damage: 0, headshot: false, legshot: true };
+    group.damage += event.damage; group.headshot ||= !!event.headshot; group.legshot &&= event.hitKind === 'leg'; groups.set(key, group);
+  }
+  return [...groups.values()].map(group => ({ ...group, label: group.headshot ? 'HEADSHOT' : group.legshot ? 'LEG HIT' : 'HIT' }));
+}
+/** Bounded copied history predicts movement only: HP, inventory and attacks stay authoritative. */
+export function reconcilePlayer(player, history, ack, map, predictMovement, allowMovement = true, peers = []) {
+  const pending = history.filter(frame => frame.seq > ack).slice(-240); const predicted = clone(player);
+  if (predicted?.alive && allowMovement) for (const frame of pending) predictMovement(predicted, frame.buttons, map, 1, peers);
+  return { predicted, pending };
+}
+export function interpolatedState(samples, targetTime, localId, { predictMovement, traceProjectile, maxExtrapolationMs = 25 } = {}) {
+  if (!samples.length) return null;
+  let from = samples[0], to = samples.at(-1);
+  for (let i = 1; i < samples.length; i++) { if (samples[i].time >= targetTime) { from = samples[i - 1]; to = samples[i]; break; } from = samples[i]; }
+  const state = { ...to.state, players: to.state.players.map(player => ({ ...player })), bolts: (to.state.bolts || []).slice(0, MAX_BOLTS).map(bolt => ({ ...bolt })) }; state.fighters = state.players;
+  if (from.state.phase !== to.state.phase || from.state.matchId !== to.state.matchId) return state;
+  const span = to.time - from.time, ratio = span > 0 ? clamp((targetTime - from.time) / span, 0, 1) : 1;
+  for (const player of state.players) {
+    const old = from.state.players.find(other => other.id === player.id);
+    if (player.id === localId || !old || old.alive !== player.alive || Math.hypot(player.x - old.x, player.y - old.y, player.z - old.z) > 4) continue;
+    for (const axis of ['x', 'y', 'z']) player[axis] = old[axis] + (player[axis] - old[axis]) * ratio;
+    player.yaw = cleanAim(old.yaw + cleanAim(player.yaw - old.yaw).yaw * ratio).yaw; player.pitch = old.pitch + (player.pitch - old.pitch) * ratio;
+  }
+  for (const bolt of state.bolts) {
+    const old = from.state.bolts?.find(other => other.id === bolt.id && other.bornTick === bolt.bornTick && other.playerId === bolt.playerId);
+    if (!old) continue;
+    for (const axis of ['x', 'y', 'z', 'vx', 'vy', 'vz']) if (Number.isFinite(old[axis]) && Number.isFinite(bolt[axis])) bolt[axis] = old[axis] + (bolt[axis] - old[axis]) * ratio;
+  }
+  const projectedTicks = Math.floor(clamp(targetTime - to.time, 0, Math.min(25, maxExtrapolationMs)) * 120 / 1000);
+  if (projectedTicks && state.phase === 'fight' && typeof predictMovement === 'function') {
+    const peers = state.players.map(player => ({ ...player }));
+    for (const player of state.players) if (player.id !== localId && player.alive) predictMovement(player, player.previousInput || neutralInput(player.yaw, player.pitch), state.map, projectedTicks, peers);
+  }
+  if (projectedTicks && state.phase === 'fight' && typeof traceProjectile === 'function') {
+    for (let i = 0; i < projectedTicks && state.bolts.length; i++) { const projection = { ...state, tick: state.tick + i + 1 }; advanceBolts(projection, { dt: 1 / 120, trace: traceProjectile }); state.bolts = projection.bolts; }
+  }
+  return state;
+}
+
+async function boot() {
+  const $ = id => document.getElementById(id), canvas = $('arena');
+  const roomId = new URLSearchParams(location.search).get('room')?.trim().toUpperCase() || '';
+  $('room-code').textContent = /^[A-Z0-9]{6}$/.test(roomId) ? roomId : 'NO ROOM';
+  const layoutPicker = mountKeyboardLayoutPicker(document.querySelector('[data-keyboard-layout-picker]'));
+  let playerName = getName(); $('player-name').value = playerName;
+  let engine, renderer, socket, state = null, playerId = null, hostId = null, connected = false, roster = [], capacity = 10;
+  let predictedPlayer = null, snapshots = [], pending = [], sequence = 0, aim = cleanAim();
+  let paused = true, entered = false, fallback = false, touchMode = false, rightDrag = false, modalOpen = false, graphicsError = '', spectatorId = null;
+  let destroyed = false, permanentError = false, reconnectTimer, reconnectAttempts = 0, frameId = null, lastFrameAt = 0, accumulator = 0, renderCount = 0;
+  let heartbeat = null, lastTouchLookAt = performance.now(), lastHUDAt = 0, previousPhase = null, previousMatch = null;
+  let toastTimer, hitUntil = 0, damageUntil = 0, feedbackUntil = 0, hitKind = 'body', healthView = null, healthGain = 0, healthGainUntil = 0, lastCountdown = null;
+  let rosterSignature = '', mapPlanId = '', mapSelf = null, zoneCircle = null, nextCircle = null, idleSignature = '';
+  const keys = new Set(), pressedKeys = new Map(), mouse = { fire: false, aim: false };
+  const touch = { actions: new Set(), move: { x: 0, y: 0 }, look: { x: 0, y: 0 } };
+  const actionPointers = new Map(), padPointers = new Map(), wirePacer = createInputPacer(60);
+  const eventSeen = new Set(), eventOrder = [], kills = [], audio = new GameAudio(), removers = [];
+  function listen(target, name, callback, options) { target.addEventListener(name, callback, options); removers.push(() => target.removeEventListener(name, callback, options)); }
+  function send(message) { if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message)); }
+  function error(message = '') { $('error-banner').textContent = message; $('error-banner').hidden = !message; }
+  function toast(message) { clearTimeout(toastTimer); $('toast').textContent = message; $('toast').hidden = false; toastTimer = setTimeout(() => { $('toast').hidden = true; }, 2800); }
+  function ownPlayer() { return state?.players?.find(player => player.id === playerId) || null; }
+  function lookupName(id) { return roster.find(person => person?.id === id)?.name || `Player ${Number(id) + 1}`; }
+  function pointerLocked() { return document.pointerLockElement === canvas; }
+  function controlsActive() { return controlsAllowed({ connected, entered, paused, modalOpen, graphicsError, hidden: document.hidden, alive: ownPlayer()?.alive, phase: state?.phase, pointerLocked: pointerLocked(), fallback, touchMode }); }
+  function currentInput() { return composeInput(keys, touch, mouse, aim, controlsActive()); }
+  function sendInput(buttons = currentInput(), edge = false) {
+    if (!connected || playerId == null || !wirePacer.shouldSend(performance.now(), edge)) return sequence;
+    if (sequence >= 999999000) sequence = 0;
+    send({ type: 'input', seq: ++sequence, buttons }); return sequence;
+  }
+  function utilityFeedback(action) {
+    const player = ownPlayer(); if (!player?.alive || state?.phase !== 'fight') return;
+    if (action === 'heal' && !player.healTicks) {
+      if (!player.potions) toast('No potions. Search structures for supplies.');
+      else if (player.hp >= player.maxHp) toast('Health is full. Save your potion.');
+      else if (!player.grounded) toast('Land before drinking.');
+    } else if (action === 'grenade' && !player.grenades) toast('No grenades. Scavenge one first.');
+    else if (action === 'swap' && !player.hasGun) toast('Sword equipped. Find a gun and press E to pick it up.');
+  }
+  function refreshHeartbeat() {
+    const needed = !destroyed && connected && !document.hidden && ['countdown', 'fight'].includes(state?.phase);
+    if (needed && !heartbeat) heartbeat = setInterval(() => { integrateTouchLook(); sendInput(); }, 50);
+    if (!needed && heartbeat) { clearInterval(heartbeat); heartbeat = null; }
+  }
+  function integrateTouchLook(now = performance.now()) {
+    const dt = clamp((now - lastTouchLookAt) / 1000, 0, .1); lastTouchLookAt = now;
+    if (touchMode && controlsActive()) { const sensitivity = aimLookMultiplier(ownPlayer(), engine?.ADS); aim = cleanAim(aim.yaw + touch.look.x * dt * 2.4 * sensitivity, aim.pitch - touch.look.y * dt * 1.85 * sensitivity); }
+  }
+  function neutralize({ pause = false, unlock = false } = {}) {
+    keys.clear(); pressedKeys.clear(); mouse.fire = mouse.aim = false; rightDrag = false;
+    touch.actions.clear(); touch.move = { x: 0, y: 0 }; touch.look = { x: 0, y: 0 };
+    for (const [id, element] of actionPointers) try { element.releasePointerCapture(id); } catch { /* Already cancelled. */ }
+    for (const [id, record] of padPointers) try { record.element.releasePointerCapture(id); } catch { /* Already cancelled. */ }
+    actionPointers.clear(); padPointers.clear(); document.querySelectorAll('.touch-pad.active, .touch-actions .pressed').forEach(element => element.classList.remove('active', 'pressed'));
+    document.querySelectorAll('.touch-pad i').forEach(element => { element.style.transform = ''; });
+    if (pause) paused = true;
+    if (unlock && pointerLocked()) document.exitPointerLock?.();
+    sendInput(neutralInput(aim.yaw, aim.pitch), true); wirePacer.reset(); pending = []; accumulator = 0; lastTouchLookAt = performance.now();
+    predictedPlayer = clone(ownPlayer()); updateUI();
+  }
+  function updateMap(viewed) {
+    const map = state?.map; $('tactical-map').hidden = !map || !viewed || !['countdown', 'fight', 'matchEnd'].includes(state.phase); if (!map || !viewed) return;
+    const svg = $('map-plan'), node = (tag, attrs) => { const element = document.createElementNS('http://www.w3.org/2000/svg', tag); for (const [key, value] of Object.entries(attrs)) element.setAttribute(key, value); return element; };
+    if (mapPlanId !== map.id) {
+      mapPlanId = map.id; svg.replaceChildren(); const b = map.bounds;
+      svg.setAttribute('viewBox', `${b.minX - 2} ${b.minZ - 2} ${b.maxX - b.minX + 4} ${b.maxZ - b.minZ + 4}`);
+      svg.append(node('rect', { x: b.minX, y: b.minZ, width: b.maxX - b.minX, height: b.maxZ - b.minZ, class: 'map-floor' }));
+      for (const box of map.colliders) if (box.h >= .3) svg.append(node('rect', { x: box.x, y: box.z, width: box.w, height: box.d, class: 'map-cover' }));
+      zoneCircle = node('circle', { class: 'map-storm' }); nextCircle = node('circle', { class: 'map-next' }); mapSelf = node('path', { d: 'M0 -2 L1.6 1.5 L0 .8 L-1.6 1.5 Z', class: 'map-self' });
+      svg.append(nextCircle, zoneCircle, mapSelf);
+    }
+    for (const [circle, radius] of [[zoneCircle, state.storm?.radius], [nextCircle, state.storm?.nextRadius]]) {
+      circle.setAttribute('display', Number.isFinite(radius) ? 'inline' : 'none'); circle.setAttribute('cx', finite(state.storm?.x)); circle.setAttribute('cy', finite(state.storm?.z)); circle.setAttribute('r', Math.max(0, finite(radius)));
+    }
+    const pose = viewed.id === playerId ? predictedPlayer || viewed : viewed;
+    mapSelf.setAttribute('transform', `translate(${pose.x} ${pose.z}) rotate(${(viewed.id === playerId ? aim.yaw : viewed.yaw) * 180 / Math.PI})`);
+    $('tactical-map').setAttribute('aria-label', `${viewed.id === playerId ? 'Your' : 'Spectated player'} position and current safe zone; opponent positions are hidden`);
+  }
+  function renderRoster() {
+    const room = roomPresentation(state, roster, capacity);
+    const signature = JSON.stringify([room.capacity, hostId, playerId, state?.phase, roster.map(person => person && [person.id, person.name, person.connected]), state?.players?.map(player => [player.id, player.alive, player.kills]), state?.participantIds]);
+    if (signature === rosterSignature) return; rosterSignature = signature; const container = $('player-roster'); container.replaceChildren();
+    for (const { id, person } of room.slots) {
+      const player = state?.players?.find(other => other.id === id), participating = state?.participantIds?.includes(id);
+      const eliminated = participating && !player?.alive && state.phase !== 'lobby';
+      const row = document.createElement('div'); row.className = `roster-slot${person ? '' : ' empty'}${eliminated ? ' eliminated' : ''}`; row.dataset.playerId = id;
+      const number = document.createElement('i'); number.textContent = String(id + 1).padStart(2, '0');
+      const detail = document.createElement('div'), name = document.createElement('strong'), status = document.createElement('small'), badge = document.createElement('span');
+      name.textContent = person?.name || 'Open seat'; status.textContent = !person ? 'SEND AN INVITE' : !person.connected ? 'DISCONNECTED' : state?.phase === 'lobby' ? id === hostId ? 'ROOM HOST' : 'IN THE LOBBY' : eliminated ? `ELIMINATED · ${player?.kills || 0} KILLS` : participating ? `ALIVE · ${player?.kills || 0} KILLS` : 'NEXT BATTLE';
+      badge.textContent = id === playerId ? 'YOU' : id === hostId ? 'HOST' : ''; detail.append(name, status); row.append(number, detail, badge); container.append(row);
+    }
+  }
+  function updateUI() {
+    refreshHeartbeat(); const phase = state?.phase || 'lobby', local = ownPlayer(), room = roomPresentation(state, roster, capacity), { count } = room, isHost = playerId != null && playerId === hostId;
+    $('connection-status').textContent = connected ? 'CONNECTED' : permanentError ? 'UNAVAILABLE' : 'RECONNECTING'; $('connection-dot').classList.toggle('online', connected);
+    $('seat-count').textContent = room.label; $('map-name').textContent = (state?.mapName || state?.map?.name || 'PRIVATE ISLAND').toUpperCase();
+    $('phase-label').textContent = ({ lobby: 'ASSEMBLING', countdown: 'SPAWNING', fight: 'LAST PLAYER STANDING', matchEnd: 'BATTLE COMPLETE' })[phase] || phase.toUpperCase();
+    $('alive-count').textContent = phase === 'lobby' ? count : aliveParticipants(state).length; $('alive-label').textContent = phase === 'lobby' ? ` / ${room.capacity} PLAYERS` : ` / ${state?.participantIds?.length || 0} ALIVE`;
+    $('player-name').disabled = !connected || phase !== 'lobby';
+    const startable = canHostStart(state, roster, playerId, hostId, connected) && !graphicsError;
+    $('start-button').hidden = !isHost || phase !== 'lobby'; $('start-button').disabled = !startable;
+    $('overlay-start').hidden = !isHost || phase !== 'lobby' || !!graphicsError; $('overlay-start').disabled = !startable;
+    $('rematch-button').hidden = !isHost || phase !== 'matchEnd'; $('rematch-button').disabled = !connected;
+    $('host-label').textContent = isHost ? 'You host this room.' : hostId != null ? `${lookupName(hostId)} hosts this room.` : 'Waiting for the host';
+    $('start-note').textContent = phase === 'lobby' ? count < 2 ? 'Invite at least one rival. The host chooses when to start.' : count >= room.capacity ? `${count} players are here. This room is full and the host can start.` : `${count} players are here. The host can start now or invite up to ${room.capacity - count} more.` : phase === 'matchEnd' ? isHost ? 'Return everyone to the lobby, invite more rivals and start a new battle.' : 'The host can open the lobby for another battle.' : 'The battle keeps running when controls are released.';
+    const viewed = spectatorPlayer(state, playerId, spectatorId), spectating = !!viewed && viewed.id !== playerId;
+    if (!local?.alive) spectatorId = viewed?.alive ? viewed.id : null;
+    const health = healthPresentation(viewed, healthView, { now: performance.now(), matchId: state?.matchId }); healthView = health;
+    $('combat-hud').hidden = !viewed?.alive || !['countdown', 'fight'].includes(phase);
+    $('health').textContent = Math.round(health.hp); $('health-max').textContent = `/ ${health.maxHp}`;
+    $('health-fill').style.width = `${health.percent}%`; $('health-trail').style.width = `${health.trailPercent}%`;
+    $('health-meter').setAttribute('aria-valuenow', String(health.hp)); $('health-meter').setAttribute('aria-valuemax', String(health.maxHp)); $('health-meter').setAttribute('aria-label', spectating ? `${lookupName(viewed.id)} health` : 'Your health');
+    $('health-subject').textContent = spectating ? lookupName(viewed.id).toUpperCase() : 'YOUR HEALTH'; $('health-readout').classList.toggle('low-health', health.low);
+    $('health-status').textContent = health.low ? 'LOW HEALTH · FIND COVER' : spectating ? 'SPECTATING' : 'ONE LIFE · STAY SHARP';
+    $('health-gain').hidden = spectating || performance.now() >= healthGainUntil || !healthGain; $('health-gain').textContent = `+${healthGain}`;
+    const readout = combatReadout(viewed || {}, engine); $('weapon-label').textContent = readout.label; $('ammo').textContent = readout.ammo; $('reserve').textContent = readout.reserve;
+    $('ammo-reserve').hidden = readout.sword || readout.healing; $('weapon-status').textContent = readout.status; $('inventory-label').textContent = readout.inventory;
+    $('weapon-readout').dataset.slot = readout.healing ? 'potion' : readout.sword ? 'sword' : 'primary';
+    $('reload-track').hidden = !readout.progress; $('reload-progress').style.width = `${readout.progress?.percent || 0}%`; $('reload-track').setAttribute('aria-label', readout.progress?.label || 'Weapon action'); $('reload-track').setAttribute('aria-valuenow', String(Math.round(readout.progress?.percent || 0)));
+    $('grenade-charge').textContent = readout.grenades; $('potion-charge').textContent = readout.potions;
+    const storm = stormPresentation(state, viewed); $('storm-hud').hidden = !storm.visible; $('storm-label').textContent = storm.label; $('storm-clock').textContent = storm.text; $('storm-detail').textContent = storm.detail; $('storm-hud').classList.toggle('shrinking', !!storm.shrinking); $('storm-hud').classList.toggle('outside', storm.outside); $('storm-warning').hidden = !storm.outside;
+    updateMap(viewed);
+    const nearLoot = local?.alive && phase === 'fight' && engine?.findNearbyLoot ? lootPresentation(engine.findNearbyLoot(state, playerId), local) : null;
+    $('loot-prompt').hidden = !nearLoot || paused || !entered || modalOpen; $('loot-name').textContent = nearLoot?.name || ''; $('loot-detail').textContent = nearLoot?.detail ? displayKey(nearLoot.detail) : '';
+    const scoped = !!local?.hasGun && !!WEAPONS[local.weapon]?.scoped && aimFraction(local, engine?.ADS?.ticks) >= 14 / 18;
+    $('scope-reticle').hidden = !controlsActive() || phase !== 'fight' || !scoped; $('scope-label').textContent = `${WEAPONS[local?.weapon]?.label || 'PRECISION'} / PRECISION SIGHT`;
+    $('crosshair').hidden = !controlsActive() || phase !== 'fight' || scoped || readout.healing; $('crosshair').dataset.stance = readout.sword ? 'sword' : local?.aiming ? 'aim' : 'hip';
+    if (local) { const weapon = WEAPONS[local.weapon], ads = aimFraction(local, engine?.ADS?.ticks); const motion = weapon ? clamp((Math.hypot(finite(local.vx), finite(local.vz)) - .22) / weapon.speed, 0, 1) : 0; const spread = weapon ? (weapon.pelletSpread || 0) + weaponSpread(weapon, { motion, grounded: local.grounded, heat: local.heat, ads }, engine?.ADS) : 0; const size = readout.sword ? 18 : Math.round(20 - ads * 8 + Math.min(60, spread * canvas.clientHeight * 2)); $('crosshair').style.width = `${size}px`; $('crosshair').style.height = `${size}px`; }
+    const living = aliveParticipants(state), placement = state?.placements?.find(item => item.playerId === playerId);
+    $('spectator-hud').hidden = !local || local.alive || phase !== 'fight'; $('placement-label').textContent = placement ? `PLACED #${placement.place}` : 'ELIMINATED'; $('spectator-label').textContent = spectating ? `SPECTATING ${lookupName(viewed.id).toUpperCase()}` : 'NO SURVIVORS'; $('next-spectator').hidden = living.length < 2;
+    $('pause-button').hidden = paused || !entered || !local?.alive || !['countdown', 'fight'].includes(phase); $('touch-controls').hidden = !touchMode || !entered || paused || !local?.alive || !['countdown', 'fight'].includes(phase);
+    for (const button of document.querySelectorAll('[data-royale-action]')) { const action = button.dataset.royaleAction; if (action === 'swap') { button.textContent = readout.sword && local?.hasGun ? 'GUN' : 'SWORD'; button.setAttribute('aria-pressed', String(readout.sword)); } if (action === 'aim') button.setAttribute('aria-pressed', String(!!local?.aiming)); }
+    $('objective').textContent = phase === 'lobby' ? room.capacity === 2 ? 'Invite your rival. The host starts with both players here.' : `The host can start with 2–${room.capacity} players.` : phase === 'countdown' ? 'Random spawns. Scavenge a gun when the battle begins.' : phase === 'fight' ? local?.alive ? 'Scavenge supplies. Stay inside the zone. Be the last alive.' : 'One life spent. Watch the remaining survivors.' : 'Battle complete. The host can return everyone to the lobby.';
+    let overlay = false, title = '', kicker = '', subtitle = '', enter = false;
+    if (graphicsError) { overlay = true; kicker = 'GRAPHICS UNAVAILABLE'; title = 'The island could not render.'; subtitle = graphicsError; }
+    else if (!connected) { overlay = true; kicker = 'CONNECTING TO THE HOST'; title = permanentError ? 'This room is unavailable.' : 'Waiting for the host.'; subtitle = permanentError ? 'Return to the shelf to create a room or join the next battle.' : 'Your controls are released while the connection recovers.'; }
+    else if (phase === 'lobby') { overlay = true; kicker = `${state?.mapName || 'PRIVATE ISLAND'} / ${count} PLAYERS`; title = isHost ? count >= 2 ? 'Your rivals are here.' : 'Gather your rivals.' : 'Waiting for the host.'; subtitle = isHost ? count >= 2 ? count >= room.capacity ? 'Everyone is here. Start when you are ready.' : `Start with the players here, or invite more. This room holds up to ${room.capacity} players.` : 'Share your invite with at least one other player. You choose when the battle begins.' : `${lookupName(hostId)} starts the battle when everyone is here. You do not need to ready up.`; }
+    else if (phase === 'matchEnd') { overlay = true; const winner = state.winnerId ?? state.winner; kicker = 'BATTLE COMPLETE'; title = winner == null ? 'No one left standing.' : winner === playerId ? 'You outlasted everyone.' : `${lookupName(winner)} survives.`; subtitle = `${placement ? `You placed #${placement.place}. ` : ''}${local?.kills || 0} eliminations. ${isHost ? 'Return to the lobby below to invite players and go again.' : 'The host can open the lobby for another battle.'}`; }
+    else if (local?.alive && (paused || !entered) && !modalOpen) { overlay = true; kicker = entered ? 'CONTROLS RELEASED' : 'YOUR ONE LIFE STARTS HERE'; title = entered ? 'Controls released.' : 'Enter the arena.'; subtitle = 'You start with a sword. Find a gun and supplies, then keep moving with the safe zone. The battle keeps running while controls are released.'; enter = true; }
+    $('game-overlay').hidden = !overlay; $('overlay-kicker').textContent = kicker; $('overlay-title').textContent = title; $('overlay-subtitle').textContent = subtitle; $('enter-arena').hidden = !enter; $('retry-graphics').hidden = !graphicsError; $('aim-note').hidden = !enter; $('aim-note').textContent = touchMode ? 'Move / Look pads. Hold AIM for sights.' : 'RMB aims. If capture is unavailable, hold RMB and drag to look.';
+    $('phase-announcement').hidden = phase !== 'countdown' || overlay || modalOpen || !connected; $('countdown-number').textContent = Math.max(1, Math.ceil(finite(state?.phaseTicks) / 120)); renderRoster();
+  }
+  function playEvents(events = []) {
+    const fresh = [], impactSounds = new Set();
+    for (const event of events) {
+      const id = event.id ?? `${state?.tick}:${event.type}:${event.playerId ?? event.attackerId ?? ''}:${event.targetId ?? ''}`;
+      if (eventSeen.has(id)) continue; eventSeen.add(id); eventOrder.push(id); fresh.push(event); if (eventOrder.length > 512) eventSeen.delete(eventOrder.shift());
+      const source = event.shooterId ?? event.attackerId ?? event.playerId ?? event.ownerId, target = event.targetId;
+      if (event.type === 'damage' && event.damage > 0) { if (source === playerId && target !== playerId) { hitUntil = performance.now() + 150; hitKind = event.headshot ? 'headshot' : 'body'; } if (target === playerId) damageUntil = performance.now() + 230; }
+      if (['kill', 'elimination', 'death'].includes(event.type)) {
+        kills.push({ at: performance.now(), own: source === playerId && target !== playerId, text: `${source == null ? 'THE STORM' : source === target ? 'SELF FRAG' : lookupName(source)} ${event.headshot ? '[HS]' : '›'} ${lookupName(target)}` }); if (kills.length > 4) kills.shift();
+      }
+      if (source === playerId && ['healStart', 'healCancel', 'healComplete'].includes(event.type)) { feedbackUntil = performance.now() + 1100; $('combat-feedback').textContent = event.type === 'healComplete' ? `HEALED +${Math.round(event.amount || 0)} HP` : event.type === 'healCancel' ? 'HEALING INTERRUPTED' : 'DRINKING POTION'; if (event.type === 'healComplete') { healthGain = Math.max(0, Math.round(event.amount || 0)); healthGainUntil = performance.now() + 1400; } }
+      if (event.type === 'lootPickup' && source === playerId) toast(event.kind === 'weapon' ? `${WEAPONS[event.weapon]?.label || 'Weapon'} equipped.` : event.kind === 'heal' ? 'Healing potion collected.' : event.kind === 'grenade' ? 'Frag grenade collected.' : 'Ammunition collected.');
+      if (!audio.enabled) continue;
+      try {
+        if (['shot', 'fire', 'boltLaunch'].includes(event.type) && (event.pellet == null || event.pellet === 0)) { const profile = WEAPONS[event.weapon]?.sound, gain = source === playerId ? 1 : .3; if (profile) { audio.noise(profile.noiseDuration, { highpass: profile.highpass || 170, lowpass: profile.lowpass, gain: profile.noiseVolume * gain }); audio.tone(profile.frequency, profile.toneDuration, { end: profile.endFrequency || 48, type: profile.wave || 'triangle', gain: profile.toneVolume * gain }); } }
+        else if (event.type === 'damage' && (source === playerId || target === playerId)) { const key = `${event.tick}:${target === playerId ? 'in' : 'out'}`; if (impactSounds.has(key)) continue; impactSounds.add(key); audio.tone(target === playerId ? 130 : 920, .055, { end: target === playerId ? 70 : 620, type: 'triangle', gain: .22 }); }
+        else if (event.type === 'meleeStart') audio.noise(.13, { highpass: 1600, lowpass: 4500, gain: source === playerId ? .14 : .04 });
+        else if (event.type === 'explosion' || event.type === 'grenadeExplosion') { audio.noise(.45, { highpass: 30, lowpass: 1700, gain: .4 }); audio.tone(65, .42, { end: 28, gain: .22 }); }
+        else if (event.type === 'healComplete' && source === playerId) audio.tone(660, .13, { end: 920, type: 'triangle', gain: .15 });
+      } catch { /* Optional sound cannot interrupt the match. */ }
+    }
+    const hits = confirmedHitGroups(fresh, playerId); if (hits.length) { const hit = hits.reduce((best, next) => next.damage > best.damage ? next : best); const killed = fresh.some(event => ['kill', 'elimination', 'death'].includes(event.type) && event.targetId === hit.targetId && (event.attackerId ?? event.shooterId ?? event.playerId) === playerId); feedbackUntil = performance.now() + (killed ? 1100 : 650); $('combat-feedback').textContent = `${hit.label} · ${Math.round(hit.damage)} HP${killed ? ' · ELIMINATED' : ''}`; }
+  }
+  function draw(now = performance.now()) {
+    if (!renderer || !state || graphicsError || document.hidden) return;
+    const rendered = interpolatedState(snapshots, now - 12, playerId, { predictMovement: engine.predictLocalMovement, traceProjectile: engine.traceShot }) || state;
+    const local = ownPlayer(), viewed = spectatorPlayer(rendered, playerId, spectatorId);
+    const camera = state.phase === 'lobby' ? { ...state.map.spawnPoints[0], alive: false, id: playerId, y: finite(state.map.spawnPoints[0]?.y) } : local?.alive ? predictedPlayer || local : viewed;
+    const viewAim = local?.alive ? aim : cleanAim(camera?.yaw, camera?.pitch);
+    renderer.render(rendered, { playerId, localId: playerId, localPlayer: predictedPlayer, viewPlayer: camera, yaw: viewAim.yaw, pitch: viewAim.pitch + finite(camera?.recoil), time: now }); renderCount++;
+    $('hit-marker').hidden = now >= hitUntil; $('hit-marker').dataset.kind = hitKind; $('damage-cue').hidden = now >= damageUntil; $('combat-feedback').hidden = now >= feedbackUntil;
+    while (kills.length && now - kills[0].at > 6000) kills.shift(); const signature = kills.map(item => item.text).join('|');
+    if ($('kill-feed').dataset.signature !== signature) { $('kill-feed').dataset.signature = signature; $('kill-feed').replaceChildren(...kills.map(kill => { const item = document.createElement('li'); item.textContent = kill.text; item.classList.toggle('own-kill', kill.own); return item; })); }
+  }
+  function activeAnimation() { return connected && state && !document.hidden && !graphicsError && ['countdown', 'fight'].includes(state.phase); }
+  function frame(now) {
+    frameId = null; if (destroyed || !activeAnimation()) { lastFrameAt = 0; return; }
+    const dt = lastFrameAt ? Math.min(.0667, (now - lastFrameAt) / 1000) : 0; lastFrameAt = now; integrateTouchLook(now); accumulator += dt;
+    const buttons = currentInput(); let ticks = 0;
+    while (accumulator >= 1 / 120 && ticks++ < 8) { accumulator -= 1 / 120; const seq = ++sequence; if (state.phase === 'fight' && predictedPlayer?.alive) { engine.predictLocalMovement(predictedPlayer, buttons, state.map, 1, state.players); pending.push({ seq, buttons: { ...buttons } }); if (pending.length > 240) pending.shift(); } }
+    if (ticks) sendInput(buttons);
+    if (predictedPlayer) { predictedPlayer.yaw = aim.yaw; predictedPlayer.pitch = aim.pitch; }
+    draw(now); if (now - lastHUDAt >= 80) { updateUI(); lastHUDAt = now; } frameId = requestAnimationFrame(frame);
+  }
+  function wake() {
+    if (!frameId && activeAnimation()) { idleSignature = ''; lastFrameAt = 0; frameId = requestAnimationFrame(frame); }
+    else if (!activeAnimation()) { const signature = JSON.stringify([state?.mapId, state?.phase, playerId, spectatorId, state?.winner, state?.players?.map(player => [player.id, player.x, player.y, player.z, player.alive])]); if (signature !== idleSignature) { idleSignature = signature; draw(); } }
+  }
+  function receiveState(message) {
+    const next = message.state; if (!next?.players || !engine?.MAPS?.[next.mapId]) return;
+    const old = state; state = { ...next, map: engine.MAPS[next.mapId] }; state.fighters = state.players;
+    capacity = roomPresentation(next, [], message.capacity ?? capacity).capacity;
+    hostId = message.hostId ?? next.hostId ?? hostId;
+    roster = (Array.isArray(message.players) ? message.players : Object.values(message.players || {})).map((person, id) => person ? { ...person, id: person.id ?? id } : null);
+    const local = ownPlayer(), fresh = previousMatch !== state.matchId || previousPhase === 'lobby' && state.phase !== 'lobby';
+    if (!old || predictedPlayer?.id !== playerId || fresh) { neutralize(); aim = cleanAim(local?.yaw, local?.pitch); pending = []; snapshots = []; spectatorId = null; accumulator = 0; renderer?.resetEffects(); healthView = null; if (fresh) { eventSeen.clear(); eventOrder.length = 0; kills.length = 0; hitUntil = damageUntil = feedbackUntil = 0; healthGainUntil = 0; lastCountdown = null; } sendInput(neutralInput(aim.yaw, aim.pitch), true); }
+    if (previousPhase !== null && previousPhase !== state.phase) neutralize();
+    if (state.phase === 'lobby' && previousPhase !== 'lobby') { neutralize({ pause: true, unlock: true }); entered = false; fallback = false; healthView = null; snapshots = []; pending = []; audio.resetEvents(); }
+    if (local && !local.alive && old?.players?.find(player => player.id === playerId)?.alive !== false) neutralize({ pause: true, unlock: true });
+    if (state.phase === 'matchEnd' && previousPhase !== 'matchEnd') neutralize({ pause: true, unlock: true });
+    const ackValue = message.acks?.[playerId], ack = typeof ackValue === 'number' ? ackValue : ackValue?.seq ?? -1;
+    if (local) { const result = reconcilePlayer(local, pending, ack, state.map, engine.predictLocalMovement, state.phase === 'fight', state.players); predictedPlayer = result.predicted; pending = result.pending; predictedPlayer.yaw = aim.yaw; predictedPlayer.pitch = aim.pitch; }
+    snapshots.push({ time: performance.now(), state }); if (snapshots.length > 12) snapshots.shift(); playEvents(state.events || message.events || []);
+    if (state.phase === 'countdown') { const number = Math.ceil(finite(state.phaseTicks) / 120); if (number !== lastCountdown) { audio.countdown(number); lastCountdown = number; } }
+    if (state.phase === 'fight' && previousPhase !== 'fight') audio.fight(); previousPhase = state.phase; previousMatch = state.matchId; updateUI(); wake();
+  }
+  function connect() {
+    clearTimeout(reconnectTimer); if (destroyed || permanentError) return;
+    if (!/^[A-Z0-9]{6}$/.test(roomId)) { permanentError = true; error('This invite needs a valid room code. Return to Semag to create or join Voxel Royale.'); updateUI(); return; }
+    const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws?room=${encodeURIComponent(roomId)}`); socket = ws;
+    ws.addEventListener('open', () => { if (socket !== ws) return; connected = true; reconnectAttempts = 0; sequence = 0; pending = []; snapshots = []; wirePacer.reset(); error(''); send({ type: 'join', name: playerName }); updateUI(); });
+    ws.addEventListener('message', ({ data }) => { if (socket !== ws || destroyed) return; let message; try { message = JSON.parse(data); } catch { return; }
+      if (message.type === 'welcome') { if (message.gameId !== 'voxel-royale') { permanentError = true; location.replace(roomUrl({ id: roomId, gameId: message.gameId })); return; } neutralize({ pause: true, unlock: true }); playerId = message.playerId; hostId = message.hostId ?? hostId; capacity = roomPresentation(null, [], message.capacity).capacity; sequence = 0; pending = []; entered = false; fallback = false; aim = cleanAim(ownPlayer()?.yaw, ownPlayer()?.pitch); updateUI(); }
+      else if (message.type === 'state') receiveState(message);
+      else if (message.type === 'pong') $('ping').textContent = `${Math.max(0, Math.round(performance.now() - message.time))} ms`;
+      else if (message.type === 'error') { error(message.message || 'The host could not accept that action.'); if (/room.*(?:full|not found|expired|in progress|already started)|unknown room|all.*occupied/i.test(message.message || '')) permanentError = true; }
+    });
+    ws.addEventListener('close', event => { if (socket !== ws || destroyed) return; connected = false; neutralize({ pause: true, unlock: true }); playerId = null; pending = []; snapshots = []; $('ping').textContent = '— ms'; if ([4403, 4404, 4409].includes(event.code)) permanentError = true; if (frameId) cancelAnimationFrame(frameId); frameId = null; lastFrameAt = 0; updateUI(); if (!permanentError) { error('Connection lost. Reconnecting automatically. If the battle has started, join again when the host opens the lobby.'); reconnectTimer = setTimeout(connect, Math.min(5000, 750 * 2 ** reconnectAttempts++)); } });
+    ws.addEventListener('error', () => {});
+  }
+  async function enterArena(event) {
+    if (!connected || !ownPlayer()?.alive || graphicsError || !['countdown', 'fight'].includes(state?.phase)) return;
+    neutralize(); entered = true; paused = false; touchMode ||= event?.pointerType === 'touch' || matchMedia('(pointer: coarse)').matches; canvas.focus({ preventScroll: true });
+    if (touchMode) { fallback = false; updateUI(); wake(); return; } fallback = false;
+    if (!canvas.requestPointerLock) { fallback = true; updateUI(); wake(); return; }
+    try { const request = canvas.requestPointerLock(); if (request?.then) await request; if (!pointerLocked()) { fallback = true; toast('Mouse capture unavailable. Hold right mouse and drag to look.'); } } catch { fallback = true; toast('Mouse capture unavailable. Hold right mouse and drag to look.'); }
+    updateUI(); wake();
+  }
+  function openGuide() { modalOpen = true; neutralize({ pause: true, unlock: true }); $('guide-dialog').hidden = false; $('guide-button').setAttribute('aria-expanded', 'true'); $('close-guide').focus(); }
+  function closeGuide() { $('guide-dialog').hidden = true; modalOpen = false; $('guide-button').setAttribute('aria-expanded', 'false'); updateUI(); $('guide-button').focus(); }
+  function updateKeyLabels() { $('move-keys').textContent = getKeyboardLayout().toUpperCase(); for (const label of document.querySelectorAll('[data-royale-key]')) label.textContent = displayKey(label.dataset.royaleKey); canvas.setAttribute('aria-label', `3D battle royale. ${getKeyboardLayout().toUpperCase()} or arrows move; mouse looks; left click shoots or strikes; right click aims; E picks up loot; V swaps sword and gun; ${displayKey('Q')} throws grenade; F heals; R reloads; Space jumps; Control crouches; Shift walks; Escape releases controls.`); }
+  const unsubscribeLayout = subscribeKeyboardLayout(() => { neutralize({ pause: entered, unlock: true }); updateKeyLabels(); }); updateKeyLabels();
+  listen(window, 'keydown', event => { if (event.defaultPrevented || event.isComposing || event.altKey || event.metaKey) return; if (event.key === 'Escape') { if (modalOpen) closeGuide(); else if (entered) neutralize({ pause: true, unlock: true }); return; } if (event.key.toLowerCase() === 'p' && !isFormTarget(event.target) && entered) { event.preventDefault(); neutralize({ pause: true, unlock: true }); return; } if (!controlsActive() || isFormTarget(event.target)) return; const action = controlForKey(event); if (!action) return; event.preventDefault(); const id = event.code || event.key; if (pressedKeys.has(id)) return; pressedKeys.set(id, action); keys.add(action); utilityFeedback(action); sendInput(currentInput(), true); });
+  listen(window, 'keyup', event => { const id = event.code || event.key, action = pressedKeys.get(id); pressedKeys.delete(id); if (action && ![...pressedKeys.values()].includes(action)) keys.delete(action); if (action) { sendInput(currentInput(), true); if (!isFormTarget(event.target)) event.preventDefault(); } });
+  listen(document, 'focusin', event => { if (isFormTarget(event.target) && !actionPointers.size && !padPointers.size) neutralize(); });
+  listen(window, 'blur', () => neutralize({ pause: entered, unlock: true }));
+  listen(document, 'visibilitychange', () => { if (document.hidden) { neutralize({ pause: entered, unlock: true }); if (frameId) cancelAnimationFrame(frameId); frameId = null; lastFrameAt = 0; } else { renderer?.resize(); updateUI(); wake(); } });
+  listen(document, 'pointerlockchange', () => { if (pointerLocked()) { fallback = false; paused = false; entered = true; updateUI(); wake(); } else if (entered && !fallback && !touchMode && ownPlayer()?.alive) neutralize({ pause: true }); });
+  listen(document, 'pointerlockerror', () => { if (entered && !modalOpen) { fallback = true; paused = false; updateUI(); toast('Hold right mouse and drag to look. Left click fires.'); } });
+  listen(canvas, 'mousedown', event => { if (!controlsActive()) return; event.preventDefault(); canvas.focus({ preventScroll: true }); if (event.button === 0) mouse.fire = true; if (event.button === 2) { mouse.aim = true; if (fallback) rightDrag = true; } if ([0, 2].includes(event.button)) sendInput(currentInput(), true); });
+  listen(window, 'mouseup', event => { if (event.button === 0) mouse.fire = false; if (event.button === 2) { mouse.aim = false; rightDrag = false; } if (entered && [0, 2].includes(event.button)) sendInput(currentInput(), true); });
+  listen(document, 'mousemove', event => { if (!controlsActive() || !(pointerLocked() || fallback && rightDrag)) return; const sensitivity = LOOK_SENSITIVITY * aimLookMultiplier(ownPlayer(), engine?.ADS); aim = cleanAim(aim.yaw + event.movementX * sensitivity, aim.pitch - event.movementY * sensitivity); sendInput(); });
+  listen(canvas, 'contextmenu', event => event.preventDefault()); listen(canvas, 'click', event => { if (!entered || paused) enterArena(event); }); listen($('enter-arena'), 'click', enterArena);
+  listen($('pause-button'), 'click', () => neutralize({ pause: true, unlock: true }));
+  listen($('guide-button'), 'click', openGuide); listen($('close-guide'), 'click', closeGuide); listen($('close-guide-bottom'), 'click', closeGuide); listen($('guide-dialog'), 'click', event => { if (event.target === $('guide-dialog')) closeGuide(); });
+  listen($('guide-dialog'), 'keydown', event => { if (event.key !== 'Tab') return; const first = $('close-guide'), last = $('close-guide-bottom'); if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); } else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); } });
+  const startBattle = () => { playerName = saveName($('player-name').value); $('player-name').value = playerName; send({ type: 'join', name: playerName }); neutralize({ pause: true, unlock: true }); send({ type: 'start' }); };
+  listen($('start-button'), 'click', startBattle); listen($('overlay-start'), 'click', startBattle); listen($('rematch-button'), 'click', () => send({ type: 'rematch' }));
+  listen($('player-name'), 'change', () => { playerName = saveName($('player-name').value); $('player-name').value = playerName; send({ type: 'join', name: playerName }); });
+  listen($('next-spectator'), 'click', () => { const alive = aliveParticipants(state); spectatorId = alive[(alive.findIndex(player => player.id === spectatorId) + 1) % Math.max(1, alive.length)]?.id ?? null; healthView = null; updateUI(); draw(); });
+  listen($('sound-button'), 'click', async () => { const enabled = await audio.setEnabled(!audio.enabled); $('sound-button').setAttribute('aria-pressed', String(enabled)); $('sound-button').setAttribute('aria-label', enabled ? 'Mute sound' : 'Enable sound'); toast(enabled ? 'Sound on.' : 'Sound off.'); });
+  listen($('fullscreen-button'), 'click', async () => { try { if (document.fullscreenElement) await document.exitFullscreen(); else await $('game-shell').requestFullscreen(); } catch { toast('Fullscreen is unavailable in this browser.'); } });
+  listen(document, 'fullscreenchange', () => { renderer?.resize(); draw(); $('fullscreen-button').setAttribute('aria-label', document.fullscreenElement ? 'Exit fullscreen' : 'Enter fullscreen'); });
+  listen($('retry-graphics'), 'click', () => location.reload());
+  listen(canvas, 'voxel-renderer-error', event => { graphicsError = event.detail?.message || 'Graphics were interrupted. Reload to try again.'; neutralize({ pause: true, unlock: true }); error(graphicsError); });
+  listen(canvas, 'voxel-renderer-restored', () => { graphicsError = ''; error(''); renderer?.resize(); idleSignature = ''; updateUI(); draw(); wake(); }); listen(window, 'resize', () => { renderer?.resize(); draw(); });
+  for (const pad of document.querySelectorAll('[data-royale-pad]')) {
+    function movePad(event) { const record = padPointers.get(event.pointerId); if (!record || record.element !== pad) return; const before = currentInput(), rect = pad.getBoundingClientRect(), radius = Math.max(20, Math.min(rect.width, rect.height) * .37); let x = (event.clientX - record.startX) / radius, y = (event.clientY - record.startY) / radius; const length = Math.hypot(x, y); if (length > 1) { x /= length; y /= length; } if (pad.dataset.royalePad === 'look') integrateTouchLook(); touch[pad.dataset.royalePad === 'look' ? 'look' : 'move'] = { x, y }; pad.querySelector('i').style.transform = `translate(${x * radius * .55}px, ${y * radius * .55}px)`; const after = currentInput(); sendInput(after, INPUT_ACTIONS.some(action => before[action] !== after[action])); }
+    listen(pad, 'pointerdown', event => { if (!entered || paused || !ownPlayer()?.alive || modalOpen || !connected) return; event.preventDefault(); for (const record of padPointers.values()) if (record.element === pad) return; touchMode = true; fallback = false; padPointers.set(event.pointerId, { element: pad, startX: event.clientX, startY: event.clientY }); pad.setPointerCapture(event.pointerId); pad.classList.add('active'); movePad(event); updateUI(); });
+    listen(pad, 'pointermove', event => { if (padPointers.has(event.pointerId)) { event.preventDefault(); movePad(event); } });
+    const end = event => { const record = padPointers.get(event.pointerId); if (!record || record.element !== pad) return; if (pad.dataset.royalePad === 'look') integrateTouchLook(); padPointers.delete(event.pointerId); touch[pad.dataset.royalePad === 'look' ? 'look' : 'move'] = { x: 0, y: 0 }; pad.classList.remove('active'); pad.querySelector('i').style.transform = ''; sendInput(currentInput(), true); };
+    for (const name of ['pointerup', 'pointercancel', 'lostpointercapture']) listen(pad, name, end);
+  }
+  for (const button of document.querySelectorAll('[data-royale-action]')) {
+    listen(button, 'pointerdown', event => { if (!controlsActive()) return; event.preventDefault(); utilityFeedback(button.dataset.royaleAction); actionPointers.set(event.pointerId, button); touch.actions.add(button.dataset.royaleAction); button.classList.add('pressed'); button.setPointerCapture(event.pointerId); sendInput(currentInput(), true); });
+    const end = event => { if (actionPointers.get(event.pointerId) !== button) return; actionPointers.delete(event.pointerId); if (![...actionPointers.values()].includes(button)) { touch.actions.delete(button.dataset.royaleAction); button.classList.remove('pressed'); } sendInput(currentInput(), true); };
+    for (const name of ['pointerup', 'pointercancel', 'lostpointercapture']) listen(button, name, end); listen(button, 'contextmenu', event => event.preventDefault());
+  }
+  let invite = `${location.origin}/voxel-royale.html?room=${encodeURIComponent(roomId)}`; $('invite-address').textContent = invite;
+  hostInfo().then(info => { invite = `${info.origin}/voxel-royale.html?room=${encodeURIComponent(roomId)}`; $('invite-address').textContent = invite; }).catch(() => {});
+  listen($('copy-code'), 'click', async () => { try { await copyText(roomId); toast('Room code copied.'); } catch (cause) { toast(cause.message); } }); listen($('copy-invite'), 'click', async () => { try { await copyText(invite); toast('Invite link copied.'); } catch (cause) { toast(cause.message); } });
+  const pingTimer = setInterval(() => { if (connected && !document.hidden) send({ type: 'ping', time: performance.now() }); }, 1500);
+  function destroy() { if (destroyed) return; neutralize({ pause: true, unlock: true }); destroyed = true; clearTimeout(reconnectTimer); clearTimeout(toastTimer); clearInterval(pingTimer); clearInterval(heartbeat); heartbeat = null; if (frameId) cancelAnimationFrame(frameId); frameId = null; socket?.close(); renderer?.destroy(); audio.destroy(); layoutPicker.destroy(); unsubscribeLayout(); for (const remove of removers) remove(); pending = []; snapshots = []; kills.length = 0; eventSeen.clear(); }
+  listen(window, 'pagehide', destroy);
+  const inspect = () => { const { map, ...snapshot } = state || {}; return clone({ state: state ? snapshot : null, players: roster, playerId, hostId, input: currentInput(), predictedPlayer, connected, controls: { pointerLocked: pointerLocked(), fallback, touch: touchMode, paused, entered, modalOpen }, queueLength: pending.length, renderCount, renderStats: renderer?.stats || null, graphicsError, spectatorId }); };
+  window.SemagRoyale = Object.freeze({ getState: inspect, inspect }); updateUI();
+  try { const [rules, visual] = await Promise.all([import('./voxel-royale-engine.js'), import('./voxel-renderer.js')]); if (destroyed) return; engine = { ...rules, predictLocalMovement, traceShot, ADS, HEAL }; renderer = new visual.VoxelRenderer(canvas); renderer.resize(); } catch (cause) { graphicsError = cause?.message || 'This game requires WebGL. Enable hardware acceleration and reload graphics.'; error(graphicsError); updateUI(); return; }
+  connect();
+}
+if (typeof document !== 'undefined' && document.querySelector('.royale-app') && document.getElementById('arena')) boot().catch(cause => { const banner = document.getElementById('error-banner'); banner.hidden = false; banner.textContent = `The game could not start: ${cause.message}. Reload to try again.`; });

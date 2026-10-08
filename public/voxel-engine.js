@@ -19,10 +19,11 @@ export const eyeHeight = player => player.crouching ? WORLD.crouchEyeHeight : WO
 export const playerHeight = player => player.crouching ? WORLD.crouchHeight : WORLD.standHeight;
 export const emptyInput = (aim = {}) => ({ ...Object.fromEntries(INPUT_KEYS.map(key => [key, false])), yaw: Number.isFinite(aim.yaw) ? clamp(aim.yaw, -Math.PI, Math.PI) : 0, pitch: Number.isFinite(aim.pitch) ? clamp(aim.pitch, -1.35, 1.35) : 0 });
 export function cloneState(state) { const copy = JSON.parse(JSON.stringify(state)); if (copy.players) copy.fighters = copy.players; return copy; }
-function newPlayer(id, teamSize, loadout = 'carbine') {
+export function createCombatPlayer(id, teamSize = 1, loadout = 'carbine') {
   const weapon = Object.hasOwn(WEAPONS, loadout) ? loadout : 'carbine', w = WEAPONS[weapon];
   return { id, team: Math.floor(id / teamSize), x: 0, y: 0, z: 0, yaw: 0, pitch: 0, vx: 0, vy: 0, vz: 0, radius: WORLD.radius, grounded: true, jumpBufferTicks: 0, crouching: false, alive: true, hp: 100, maxHp: 100, weapon, slot: 'primary', ammo: w.magazine, reserve: w.reserve, reloadTicks: 0, shotCooldown: 0, burstRemaining: 0, spinTicks: 0, recoil: 0, heat: 0, shotIndex: 0, shots: 0, kills: 0, deaths: 0, damageDealt: 0, lastHitTick: -1000, triggerBlocked: false, aiming: false, aimTicks: 0, meleeTicks: 0, meleeCooldown: 0, meleeYaw: 0, meleePitch: 0, meleePhase: 'idle', meleeHitIds: [], healing: false, healTicks: 0, healStartTick: -1, potions: 1, grenades: 1, grenadeThrowTicks: 0, interaction: null, interactTicks: 0, previousInput: emptyInput() };
 }
+const newPlayer = createCombatPlayer;
 function freshBomb() { return { status: 'carried', carrierId: 0, x: 0, y: 0, z: 0, vy: 0, siteId: null, plantPlayerId: null, plantTicks: 0, defusePlayerId: null, defuseTicks: 0, timerTicks: 0 }; }
 export function createState({ teamSize = 1, mapId = 'courtyard' } = {}) {
   if (![1, 2, 3].includes(teamSize)) throw new RangeError('teamSize must be 1, 2 or 3.');
@@ -31,7 +32,12 @@ export function createState({ teamSize = 1, mapId = 'courtyard' } = {}) {
   const state = { gameId: 'voxel-breach', teamSize, capacity: teamSize * 2, mapId, mapName: MAPS[mapId].name, tick: 0, phase: 'lobby', phaseTicks: 0, round: 1, maxRounds: 7, roundTicks: WORLD.roundSeconds * TICK_RATE, scores: [0, 0], attackTeam: 0, winner: null, roundWinner: null, roundReason: null, players, fighters: players, bomb: freshBomb(), grenades: [], grenadeId: 0, bolts: [], boltId: 0, events: [], eventId: 0, objective: 'Attackers plant at A or B. Defenders deny the plant or defuse. First to four rounds.' };
   spawnPlayers(state, false); return state;
 }
-function emit(state, type, data = {}) { state.events.push({ id: ++state.eventId, tick: state.tick, type, ...data }); if (state.events.length > EVENT_LIMIT) state.events.splice(0, state.events.length - EVENT_LIMIT); }
+export function emitCombatEvent(state, type, data = {}) {
+  const limit = Number.isInteger(state.eventLimit) ? clamp(state.eventLimit, EVENT_LIMIT, 256) : EVENT_LIMIT;
+  state.events.push({ id: ++state.eventId, tick: state.tick, type, ...data });
+  if (state.events.length > limit) state.events.splice(0, state.events.length - limit);
+}
+const emit = emitCombatEvent;
 function spawnPlayers(state, preserveStats = true) {
   const arena = MAPS[state.mapId];
   state.players = state.players.map(old => {
@@ -248,9 +254,9 @@ function playerBoxes(f) {
   ];
 }
 /** Earliest real 3D contact, including allied bodies (which block but never take damage). */
-export function traceShot(state, playerId, origin, direction, maxDistance = 120) {
+export function traceShot(state, playerId, origin, direction, maxDistance = 120, arena = state.map || MAPS[state.mapId]) {
   let result = { distance: maxDistance, kind: 'none', playerId: null, colliderId: null };
-  for (const rect of MAPS[state.mapId].colliders) {
+  for (const rect of arena.colliders) {
     const distance = rayBox(origin, direction, rect, maxDistance); if (distance !== null && distance <= result.distance + EPS) result = { distance, kind: 'wall', playerId: null, colliderId: rect.id };
   }
   if (direction.y < -EPS) { const distance = -origin.y / direction.y; if (distance >= 0 && distance <= result.distance + EPS) result = { distance, kind: 'wall', playerId: null, colliderId: 'floor' }; }
@@ -303,7 +309,7 @@ function tickHealing(state, f) {
     emit(state, 'healComplete', { playerId: f.id, amount, hp: f.hp, x: f.x, y: f.y + eyeHeight(f), z: f.z });
   }
 }
-function tickMelee(state, f, input, pendingDamage) {
+function tickMelee(state, f, input, pendingDamage, arena) {
   if (f.meleeTicks > 0) {
     f.meleeTicks--;
     f.meleePhase = f.meleeTicks > MELEE.activeTicks + MELEE.recoveryTicks ? 'startup' : f.meleeTicks > MELEE.recoveryTicks ? 'active' : f.meleeTicks > 0 ? 'recovery' : 'idle';
@@ -326,14 +332,14 @@ function tickMelee(state, f, input, pendingDamage) {
     const direction = { x: dx / centerDistance, y: dy / centerDistance, z: dz / centerDistance };
     if (direction.x * forward.x + direction.y * forward.y + direction.z * forward.z < Math.cos(MELEE.arcRadians)) continue;
     // The same nearest-body/world ray used by guns prevents wall and ally cleaves.
-    const hit = traceShot(state, f.id, origin, direction, centerDistance + .01);
+    const hit = traceShot(state, f.id, origin, direction, centerDistance + .01, arena);
     if (hit.playerId !== target.id) continue;
     f.meleeHitIds.push(target.id);
     pendingDamage.push({ playerId: f.id, targetId: target.id, damage: MELEE.damage, hitKind: 'body', headshot: false, attack: 'sword', weapon: 'sword' });
     emit(state, 'meleeHit', { playerId: f.id, targetId: target.id, weapon: 'sword', damage: MELEE.damage, x: hit.x, y: hit.y, z: hit.z });
   }
 }
-function fireRound(state, f, weapon, pendingDamage) {
+function fireRound(state, f, weapon, pendingDamage, arena) {
   if (weapon.projectile && state.bolts.length >= MAX_BOLTS) return false;
   const speed = Math.hypot(f.vx, f.vz), motion = clamp((speed - .22) / weapon.speed, 0, 1), ads = f.aimTicks / ADS.ticks;
   const spread = weaponSpread(weapon, { motion, grounded: f.grounded, heat: f.heat, ads }, ADS);
@@ -350,7 +356,7 @@ function fireRound(state, f, weapon, pendingDamage) {
     // shotgun's minimum cone, so ADS cannot turn it into an eight-hit sniper.
     const pelletAngle = (pellet - 1) * Math.PI * 2 / Math.max(1, pelletCount - 1), pelletRadius = pellet ? weapon.pelletSpread : 0;
     const direction = aimDirection(yaw + Math.cos(pelletAngle) * pelletRadius, clamp(pitch + Math.sin(pelletAngle) * pelletRadius, -1.5, 1.5));
-    const hit = traceShot(state, f.id, origin, direction, weapon.range);
+    const hit = traceShot(state, f.id, origin, direction, weapon.range, arena);
     let damage = 0;
     if (hit.playerId !== null && state.players[hit.playerId].team !== f.team) {
       damage = weaponDamage(weapon, hit.kind, hit.distance);
@@ -360,7 +366,7 @@ function fireRound(state, f, weapon, pendingDamage) {
   }
   return true;
 }
-function tickWeapon(state, f, input, pendingDamage) {
+function tickWeapon(state, f, input, pendingDamage, arena) {
   if (!f.alive) return;
   const weapon = WEAPONS[f.weapon]; f.shotCooldown = Math.max(0, f.shotCooldown - 1); f.recoil = Math.max(0, f.recoil - .04 * DT); f.heat = Math.max(0, f.heat - 2.8 * DT);
   if (f.reloadTicks > 0) {
@@ -368,7 +374,7 @@ function tickWeapon(state, f, input, pendingDamage) {
     if (f.reloadTicks === 0) { const loaded = Math.min(weapon.magazine - f.ammo, f.reserve); f.ammo += loaded; f.reserve -= loaded; emit(state, 'reloadComplete', { playerId: f.id, weapon: f.weapon }); }
   }
   if (f.healTicks || f.grenadeThrowTicks) { f.spinTicks = 0; return; }
-  if (f.slot === 'sword') { f.spinTicks = 0; tickMelee(state, f, input, pendingDamage); return; }
+  if (f.slot === 'sword') { f.spinTicks = 0; tickMelee(state, f, input, pendingDamage, arena); return; }
   if (input.reload && !f.previousInput.reload && !f.reloadTicks && f.ammo < weapon.magazine && f.reserve > 0) { f.reloadTicks = weapon.reloadTicks; f.burstRemaining = 0; f.spinTicks = 0; f.aiming = false; emit(state, 'reload', { playerId: f.id, weapon: f.weapon }); }
   if (input.interact) { f.burstRemaining = 0; f.spinTicks = 0; }
   // Wind-up advances while the trigger is held, including between shots. Any
@@ -382,11 +388,11 @@ function tickWeapon(state, f, input, pendingDamage) {
     if (weapon.spinupTicks && f.spinTicks < weapon.spinupTicks) return;
     if (weapon.mode === 'burst') f.burstRemaining = Math.min(weapon.burstCount, f.ammo);
   }
-  if (!fireRound(state, f, weapon, pendingDamage)) return;
+  if (!fireRound(state, f, weapon, pendingDamage, arena)) return;
   if (weapon.mode === 'burst') { f.burstRemaining--; f.shotCooldown = f.burstRemaining ? weapon.burstInterval : weapon.cooldown; }
   else f.shotCooldown = weapon.cooldown;
 }
-function applyDamage(state, pending) {
+export function applyCombatDamage(state, pending) {
   const lethalHits = new Map();
   for (const hit of pending) {
     const f = state.players[hit.targetId], attacker = state.players[hit.playerId];
@@ -402,8 +408,27 @@ function applyDamage(state, pending) {
     const killer = lethalHits.get(f.id), attacker = killer && state.players[killer.playerId];
     if (attacker && attacker.id !== f.id && attacker.team !== f.team) attacker.kills++;
     emit(state, 'kill', { playerId: killer?.playerId ?? null, targetId: f.id, hitKind: killer?.hitKind ?? 'body', headshot: killer?.headshot || false, attack: killer?.attack || 'gun', weapon: killer?.weapon ?? (killer?.attack === 'grenade' ? 'grenade' : null), x: f.x, y: f.y, z: f.z });
-    if (state.bomb.status === 'carried' && state.bomb.carrierId === f.id) { Object.assign(state.bomb, { status: 'dropped', carrierId: null, x: f.x, y: f.y, z: f.z, plantPlayerId: null, plantTicks: 0 }); emit(state, 'bombDrop', { playerId: f.id, x: f.x, y: f.y, z: f.z }); }
+    if (state.bomb?.status === 'carried' && state.bomb.carrierId === f.id) { Object.assign(state.bomb, { status: 'dropped', carrierId: null, x: f.x, y: f.y, z: f.z, plantPlayerId: null, plantTicks: 0 }); emit(state, 'bombDrop', { playerId: f.id, x: f.x, y: f.y, z: f.z }); }
   }
+}
+/** Shared physical combat only. The caller owns time, lobby, objectives and match rules. */
+export function combatStep(state, rawInputs = [], arena = state.map || MAPS[state.mapId], { additionalDamage = [] } = {}) {
+  if (!arena?.colliders || !arena?.bounds) throw new TypeError('Combat requires a physical arena.');
+  const inputs = state.players.map(f => readInput(f, rawInputs[f.id])), pending = [];
+  for (const f of state.players) tickActions(state, f, inputs[f.id], arena);
+  for (const f of state.players) movementTick(f, inputs[f.id], arena, [], state.players);
+  separatePlayers(state, arena);
+  for (const f of state.players) tickWeapon(state, f, inputs[f.id], pending, arena);
+  advanceGrenades(state, arena, { emit: (type, data) => emit(state, type, data), queueDamage: hit => pending.push(hit) });
+  // Traces use the same explicit arena as movement, including custom mode maps.
+  advanceBolts(state, { trace: (snapshot, id, origin, direction, distance) => traceShot(snapshot, id, origin, direction, distance, arena), arena, emit: (type, data) => emit(state, type, data), queueDamage: hit => pending.push(hit) });
+  // Lazy environmental contacts use the final physical pose for this tick,
+  // while participating in the same death/heal ordering as weapon contacts.
+  pending.push(...(typeof additionalDamage === 'function' ? additionalDamage(state) : additionalDamage));
+  applyCombatDamage(state, pending);
+  for (const f of state.players) tickHealing(state, f);
+  for (const f of state.players) f.previousInput = inputs[f.id];
+  return state;
 }
 function separatePlayers(state, arena) {
   // Only the closing movement yields at a contact. A stationary opponent cannot be
@@ -505,16 +530,7 @@ export function step(state, rawInputs = []) {
   if (state.phase !== 'fight') return state;
   state.roundTicks = Math.max(0, state.roundTicks - 1);
   if (state.bomb.status === 'planted') { state.bomb.timerTicks = Math.max(0, state.bomb.timerTicks - 1); if (!state.bomb.timerTicks) { resolveRound(state); return state; } }
-  const arena = MAPS[state.mapId], pending = [];
-  for (const f of state.players) tickActions(state, f, inputs[f.id], arena);
-  for (const f of state.players) movementTick(f, inputs[f.id], arena, [], state.players);
-  separatePlayers(state, arena);
-  for (const f of state.players) tickWeapon(state, f, inputs[f.id], pending);
-  advanceGrenades(state, arena, { emit: (type, data) => emit(state, type, data), queueDamage: hit => pending.push(hit) });
-  advanceBolts(state, { trace: traceShot, arena, emit: (type, data) => emit(state, type, data), queueDamage: hit => pending.push(hit) });
-  applyDamage(state, pending);
-  for (const f of state.players) tickHealing(state, f);
+  combatStep(state, inputs, MAPS[state.mapId]);
   updateBomb(state, inputs); resolveRound(state);
-  for (const f of state.players) f.previousInput = inputs[f.id];
   return state;
 }

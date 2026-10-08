@@ -1,5 +1,6 @@
 import { MAPS, ADS, MELEE, HEAL } from './voxel-engine.js';
 import { WEAPONS, weaponAimFovRatio } from './voxel-weapons.js';
+import { grenadeCapacity } from './voxel-ordnance.js';
 
 // All solid world surfaces come directly from the engine's minimum-corner
 // colliders. Decoration is either painted on those surfaces or outside bounds.
@@ -8,6 +9,9 @@ const MAX_PARTICLES = 84;
 const MAX_TRACERS = 14;
 const MAX_EVENT_IDS = 256;
 const TEAM_COLORS = ['#efad64', '#66d3c8'];
+const SURVIVOR_COLORS = ['#cfb785', '#94bca3', '#c69e8f', '#a9b6d5', '#b4a0c3', '#d2aa6e', '#8bb7b8', '#c5bd8b', '#9bac80', '#c897b1'];
+const ROYALE_THEMES = new Set(['forest', 'maze', 'desert']);
+const MAX_LOOT = 128;
 const TAU = Math.PI * 2;
 const ATMOSPHERE = Object.freeze({
   courtyard: { sun: [-.52, .76, .39], direct: [.66, .51, .35], ambient: [.45, .52, .60], top: '#729aac', horizon: '#efd1ac', sunColor: '#ffe2a6' },
@@ -16,6 +20,9 @@ const ATMOSPHERE = Object.freeze({
   rooftops: { sun: [-.58, .75, -.30], direct: [.64, .57, .43], ambient: [.43, .53, .61], top: '#729aac', horizon: '#eee0c3', sunColor: '#ffe6b6' },
   foundry: { sun: [.42, .80, .43], direct: [.60, .50, .35], ambient: [.44, .49, .56], top: '#748b9c', horizon: '#c5bdac', sunColor: '#ffd69d' },
   bastion: { sun: [-.37, .84, .40], direct: [.56, .59, .54], ambient: [.44, .53, .62], top: '#7699b0', horizon: '#d9e4d9', sunColor: '#f0edc5' },
+  forest: { sun: [-.48, .78, .38], direct: [.53, .55, .36], ambient: [.44, .54, .48], top: '#749fac', horizon: '#d6ddbc', sunColor: '#fff0bd' },
+  maze: { sun: [.40, .82, -.36], direct: [.52, .50, .42], ambient: [.47, .52, .60], top: '#7a9dab', horizon: '#d9dfcf', sunColor: '#efe9c8' },
+  desert: { sun: [-.34, .90, -.28], direct: [.68, .57, .39], ambient: [.52, .55, .60], top: '#6ca9ba', horizon: '#eed9b7', sunColor: '#fff1c6' },
 });
 const ART = Object.freeze({
   courtyard: { paving: '#d7c7aa', accent: '#cc9d76', skyline: '#748b90', cloud: '#f4dcc0', tile: 2.5 },
@@ -24,11 +31,21 @@ const ART = Object.freeze({
   rooftops: { paving: '#b6c5bc', accent: '#6faaa3', skyline: '#7e9d9b', cloud: '#ece8d5', tile: 2.5 },
   foundry: { paving: '#5d6769', accent: '#d69b62', skyline: '#5f7078', cloud: '#d9d7c9', tile: 5 },
   bastion: { paving: '#a2afa9', accent: '#c4b06c', skyline: '#70878a', cloud: '#e2e9dd', tile: 2.5 },
+  forest: { paving: '#657b48', accent: '#bdd19c', skyline: '#47674f', cloud: '#edf0dc', tile: 4 },
+  maze: { paving: '#899783', accent: '#9cc6bd', skyline: '#718d78', cloud: '#e5e9de', tile: 4 },
+  desert: { paving: '#d7ba83', accent: '#51aca5', skyline: '#bd9867', cloud: '#f6e9c8', tile: 4 },
 });
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const finite = (value, fallback = 0) => Number.isFinite(value) ? value : fallback;
 const smooth = value => { const t = clamp(value, 0, 1); return t * t * (3 - 2 * t); };
 const lerp = (a, b, amount) => a + (b - a) * amount;
+
+/** Free-for-all uniforms never imply the two tactical teams. */
+export function survivorColor(player) {
+  const id = player?.id;
+  const index = Number.isInteger(id) ? Math.abs(id) % SURVIVOR_COLORS.length : hash(id ?? 'spectator') % SURVIVOR_COLORS.length;
+  return SURVIVOR_COLORS[index];
+}
 
 function aimProgress(player) {
   return player.slot === 'sword' || player.healing || finite(player.healTicks) > 0 || finite(player.reloadTicks) > 0 || finite(player.grenadeThrowTicks) > 0 || player.alive === false ? 0 : smooth(finite(player.aimTicks) / ADS.ticks);
@@ -89,10 +106,10 @@ function impactParticles(event, contact, direction, map, time, key) {
   const tangent = normalized(cross(normal, Math.abs(normal[1]) > .9 ? [1, 0, 0] : [0, 1, 0]));
   const bitangent = cross(normal, tangent);
   const material = event.hitKind === 'wall' ? collider?.material || 'stone' : event.damage > 0 ? event.hitKind : 'cloth';
-  const metal = material === 'metal', wood = material === 'wood', head = material === 'head', leg = material === 'leg';
+  const metal = material === 'metal', wood = material === 'wood' || material === 'bark', leaves = material === 'foliage', head = material === 'head', leg = material === 'leg';
   const strength = clamp(finite(effects.impactStrength, 1), .25, 2);
   const count = clamp(Math.round((metal || head ? 6 : 5) * strength), 3, 10);
-  const color = wood ? '#bd9163' : metal ? effects.impactColor : head ? '#ffdfad' : leg ? '#ad7d68' : material === 'body' ? '#d6a189' : material === 'cloth' ? '#89928a' : '#c6bba5';
+  const color = leaves ? '#90ac6f' : wood ? '#bd9163' : metal ? effects.impactColor : head ? '#ffdfad' : leg ? '#ad7d68' : material === 'body' ? '#d6a189' : material === 'cloth' ? '#89928a' : '#c6bba5';
   const seed = hash(key), origin = contact.map((value, i) => value + normal[i] * .055);
   return Array.from({ length: count }, (_, i) => {
     const angle = seed % 7 + i * 2.39996, outward = (metal ? .75 : .40) * strength;
@@ -123,6 +140,7 @@ const IDENTITY = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 
 
 class Mesh {
   constructor() { this.vertices = []; }
+  append(array) { for (const value of array) this.vertices.push(value); }
   vertex(position, normal, color) { this.vertices.push(...position, ...normal, ...color); }
   quad(a, b, c, d, normal, color) {
     this.vertex(a, normal, color); this.vertex(b, normal, color); this.vertex(c, normal, color);
@@ -200,6 +218,7 @@ uniform vec3 uSun;
 uniform vec3 uAmbient;
 varying vec4 vColor;
 varying float vDistance;
+varying vec2 vWorldXZ;
 void main() {
   gl_Position = uProjection * uView * vec4(aPosition, 1.0);
   vec3 normal = normalize(aNormal);
@@ -207,16 +226,24 @@ void main() {
   vec3 light = uAmbient + uSun * direct + vec3(0.08, 0.09, 0.10) * (normal.y * 0.5 + 0.5);
   vColor = vec4(aColor.rgb * light, aColor.a);
   vDistance = length(aPosition - uEye);
+  vWorldXZ = aPosition.xz;
 }`;
 const FRAGMENT_SHADER = `
 precision mediump float;
 uniform vec3 uFog;
 uniform float uFogStrength;
+uniform vec3 uStormCircle;
+uniform float uStormStrength;
 varying vec4 vColor;
 varying float vDistance;
+varying vec2 vWorldXZ;
 void main() {
   float fog = clamp((vDistance - 27.0) / 90.0, 0.0, 0.56) * uFogStrength;
-  gl_FragColor = vec4(mix(vColor.rgb, uFog, fog), vColor.a);
+  vec3 color = mix(vColor.rgb, uFog, fog);
+  // Surface haze adds no opaque wall or false cover at the safe-zone edge.
+  float outside = smoothstep(-0.20, 3.5, length(vWorldXZ - uStormCircle.xy) - uStormCircle.z);
+  color = mix(color, vec3(0.30, 0.48, 0.69), outside * uStormStrength * (0.20 + fog * 0.35));
+  gl_FragColor = vec4(color, vColor.a);
 }`;
 const SKY_VERTEX_SHADER = `
 attribute vec2 aPosition;
@@ -363,7 +390,55 @@ function siteSign(mesh, collider, siteId) {
   }
 }
 
+function paintRoyaleCollider(mesh, collider, theme) {
+  const { x, y, z, w, h, d } = collider;
+  const color = rgba(collider.color || (theme === 'desert' ? '#c8a574' : theme === 'forest' ? '#6f7c52' : '#8c9788'));
+  const material = String(collider.material || 'stone').toLowerCase();
+  const id = String(collider.id || ''), dark = shade(color, .78), pale = shade(color, 1.10);
+  // The complete base box is always emitted; painted detail can never erase
+  // collision surfaces or replace a physical doorway with decoration.
+  mesh.box(x, y, z, w, h, d, color);
+  if (h < .12) return;
+  const leaves = /foliage|leaves|leaf|canopy/.test(`${material}:${id}`);
+  const trunk = /bark|trunk/.test(`${material}:${id}`);
+  for (const face of ['north', 'south', 'west', 'east']) {
+    const width = face === 'north' || face === 'south' ? w : d;
+    if (leaves) {
+      for (let i = 0; i < 3; i++) {
+        const seed = hash(`${id}:${face}:${i}`), left = (.12 + (seed % 60) / 100) * width;
+        wallPatch(mesh, collider, face, left, h * (.18 + i * .22), Math.min(width - left, width * .19), h * .16, seed % 2 ? pale : dark, .003);
+      }
+    } else if (trunk) {
+      for (const fraction of [.22, .63]) wallPatch(mesh, collider, face, width * fraction, .03, Math.min(.07, width * .13), Math.max(.01, h - .06), dark, .003);
+    } else if (/wood|crate/.test(material)) {
+      const rows = clamp(Math.round(h / .42), 1, 7);
+      for (let i = 1; i < rows; i++) wallPatch(mesh, collider, face, .01, h * i / rows, Math.max(.01, width - .02), .015, dark, .003);
+      for (const fraction of [.14, .84]) wallPatch(mesh, collider, face, width * fraction, h * .12, .025, Math.max(.01, h * .76), pale, .004);
+    } else {
+      // Broad stone blocks use a bounded number of masonry seams. A 200-box
+      // survival map must not inherit the city renderer's dense window art.
+      const rows = clamp(Math.round(h / .72), 1, 4);
+      for (let i = 1; i < rows; i++) {
+        wallPatch(mesh, collider, face, .01, h * i / rows, Math.max(.01, width - .02), .014, dark, .003);
+        for (const fraction of [.26, .66]) wallPatch(mesh, collider, face, width * fraction + (i % 2) * .11, h * (i - 1) / rows + .025, .015, Math.max(.01, h / rows - .04), dark, .003);
+      }
+      if (h > 1.1 && width > .65) {
+        wallPatch(mesh, collider, face, .03, Math.max(.03, h - .18), width - .06, .055, pale, .004);
+        if (theme === 'desert' && /temple|column|pyramid|shrine/.test(id)) {
+          const turquoise = mix(color, rgba('#428f91'), .58);
+          wallPatch(mesh, collider, face, .03, Math.min(h * .64, h - .27), width - .06, .075, turquoise, .004);
+          for (const fraction of [.25, .55, .80]) wallPatch(mesh, collider, face, width * fraction, Math.min(h * .64, h - .27) + .025, .033, .025, '#e9cb85', .006);
+        }
+      }
+    }
+  }
+  if (leaves) {
+    for (let i = 0; i < 3; i++) mesh.floor(x + w * (.06 + i * .30), z + d * .13, w * .23, d * .69, i % 2 ? dark : pale, y + h + .002);
+  } else mesh.floor(x + .025, z + .025, Math.max(.01, w - .05), Math.max(.01, d - .05), pale, y + h + .002);
+}
+
 function paintCollider(mesh, collider, theme) {
+  if (ROYALE_THEMES.has(theme)) return paintRoyaleCollider(mesh, collider, theme);
   const { x, y, z, w, h, d } = collider;
   const original = rgba(collider.color || (theme === 'canal' ? '#b6b0a2' : '#8d9b9b'));
   const material = String(collider.material || 'concrete').toLowerCase();
@@ -689,6 +764,12 @@ export function mapMeshes(map) {
     const tint = shade(floorColor, .94 + seed % 5 * .022);
     opaque.floor(x + .025, z + .025, Math.min(tile - .05, maxX - x - .025), Math.min(tile - .05, maxZ - z - .025), lane ? mix(tint, rgba('#94a09a'), .25) : tint, .001);
     if (theme === 'depot' && seed % 4 === 0) opaque.floor(x + .27, z + .57, tile * .49, tile * .44, shade(floorColor, .89), .002);
+    if (theme === 'forest') {
+      opaque.floor(x + .36 + seed % 13 / 10, z + .28 + seed % 17 / 10, .42, .14, shade(floorColor, .78), .002);
+      if (seed % 3 === 0) opaque.floor(x + .58, z + .72, .09, .25, '#adab6c', .003);
+    }
+    if (theme === 'desert') for (let i = 0; i < 2; i++) opaque.floor(x + .35 + i * .28, z + .65 + i * 1.15, 2.4 - i * .5, .025, shade(floorColor, .90), .002);
+    if (theme === 'maze' && seed % 3 === 0) opaque.floor(x + .35, z + .42, .81, .31, '#728b71', .002);
   }
   const atmosphere = ATMOSPHERE[theme] || ATMOSPHERE.courtyard;
   for (const collider of map.colliders || []) {
@@ -717,12 +798,29 @@ export function mapMeshes(map) {
   // create misleading obstacles, routes, or peek-through decorative windows.
   const skylineColor = rgba(art.skyline);
   const backdrop = (axis, side, start, length) => {
-    for (let i = 0; i < length; i += 4.5) {
+    for (let i = 0; i < length; i += ROYALE_THEMES.has(theme) ? 8 : 4.5) {
       const seed = hash(`${map.id}:${axis}:${side}:${i}`), h = 6 + seed % 7;
       const x = axis === 'x' ? side : start + i;
       const z = axis === 'z' ? side : start + i;
       const w = axis === 'x' ? 4 : 4.1, d = axis === 'z' ? 4 : 4.1;
       const c = shade(skylineColor, .80 + (seed % 4) * .07);
+      if (theme === 'forest') {
+        opaque.box(x + 1.65, -.05, z + 1.65, .70, h + 1, .70, '#5a6650');
+        for (let tier = 0; tier < 4; tier++) {
+          const spread = 5 - tier * .82;
+          opaque.box(x + 2 - spread / 2, 3.2 + tier * 1.4, z + 2 - spread / 2, spread, 1.85, spread, shade(c, .83 + tier * .07));
+        }
+        continue;
+      }
+      if (theme === 'desert') {
+        // Distant stepped dunes, never city towers or walls inside the arena.
+        for (let tier = 0; tier < 3; tier++) opaque.box(x - 1 + tier * .8, -.10 + tier * 1.0, z - 1 + tier * .8, 8 - tier * 1.6, 1.2, 8 - tier * 1.6, shade(c, .94 + tier * .035));
+        continue;
+      }
+      if (theme === 'maze') {
+        for (let tier = 0; tier < 3; tier++) opaque.box(x + tier * .18, -.10 + tier * 1.6, z + tier * .18, 5.6 - tier * .36, 1.8, 5.6 - tier * .36, shade(c, .84 + tier * .09));
+        continue;
+      }
       opaque.box(x, -.05, z, w, h, d, c);
       opaque.box(x - .07, h - .2, z - .07, w + .14, .18, d + .14, shade(c, .70));
       if (theme === 'courtyard') opaque.box(x + .16, h, z + .16, w - .32, .30, d - .32, mix(c, rgba('#ad8971'), .34));
@@ -1003,7 +1101,104 @@ function grenadeParts(mesh, pose, radius, fuseTicks, time) {
   part(-.022, .105, -.020, .044, .009, .040, lit ? '#efb86a' : '#aa7a4f');
 }
 
-function playerMesh(mesh, player, map, time, allied) {
+function lootGun(mesh, weapon, pose) {
+  const part = (...values) => mesh.box(...values, pose);
+  const metal = '#bcc5b6', trim = '#2a3b3d', body = weapon === 'shotgun' ? '#ad8057' : weapon === 'lmg' ? '#8b9161' : weapon === 'sniper' ? '#80937e' : '#698779';
+  if (weapon === 'crossbow') {
+    part(-.045, -.045, -.52, .09, .10, .62, '#8d9970');
+    part(-.39, -.02, -.55, .78, .04, .08, '#9ac2a0');
+    part(-.009, .06, -.65, .018, .018, .64, '#eddbad');
+    part(-.06, -.04, .05, .12, .11, .17, '#987954');
+    part(-.025, -.16, -.07, .05, .12, .06, trim);
+    return;
+  }
+  const pistol = weapon === 'pistol', length = weaponLength(weapon), barrel = pistol ? .34 : length * .88;
+  part(-.07, -.045, -.47, .14, .12, .42, body);
+  if (pistol) part(-.045, .075, -.47, .09, .04, .36, metal);
+  part(-.025, -.005, -barrel, .05, .05, Math.max(.03, barrel - .44), trim);
+  part(-.035, -.19, -.14, .07, .16, .09, trim);
+  if (pistol) return;
+  part(-.06, -.06, -.03, .12, .12, .23, '#aa9370');
+  if (weapon === 'shotgun') {
+    part(-.025, -.065, -.86, .05, .05, .43, trim);
+    part(-.065, -.08, -.69, .13, .08, .23, '#bc9060');
+  } else if (weapon === 'lmg') {
+    part(-.095, -.21, -.31, .19, .20, .23, '#5b7153');
+    part(-.15, .09, -.29, .07, .025, .19, '#dcc37c');
+  } else {
+    part(-.055, -.21, -.29, .11, .17, .12, trim);
+    if (weapon === 'smg') part(-.085, -.03, -.57, .17, .08, .19, '#6aafa5');
+    if (weapon === 'burst') part(-.079, .048, -.56, .158, .035, .21, '#b88870');
+  }
+  if (weapon === 'marksman' || weapon === 'sniper') {
+    part(-.06, .12, -.48, .12, .10, weapon === 'sniper' ? .37 : .27, trim);
+    // The glass is one painted face instead of another six-sided box.
+    const point = vector => { const rotated = rotate(vector.map(value => value * pose.scale), pose.yaw, pose.pitch); return rotated.map((value, axis) => value + [pose.x, pose.y, pose.z][axis]); };
+    mesh.quad(...[[-.052, .132, -.482], [-.052, .207, -.482], [.052, .207, -.482], [.052, .132, -.482]].map(point), rotate([0, 0, -1], pose.yaw, pose.pitch), rgba('#a2cbd0'));
+  }
+}
+
+const validLoot = item => item && ['weapon', 'heal', 'ammo', 'grenade'].includes(item.kind) && [item.x, item.y, item.z].every(Number.isFinite) && (item.kind !== 'weapon' || !!WEAPONS[item.weapon]);
+
+/** Pickups are deliberately small display props, not misleading solid cover. */
+export function lootMeshes(items = [], time = 0) {
+  const opaque = new Mesh(), contacts = new Mesh();
+  let count = 0;
+  for (const item of items) {
+    if (count >= MAX_LOOT) break;
+    if (!validLoot(item)) continue;
+    count++;
+    const x = item.x, y = item.y, z = item.z, seed = hash(item.id);
+    const tint = item.kind === 'heal' ? '#a3e6b7' : item.kind === 'weapon' ? '#edd494' : item.kind === 'grenade' ? '#deb39c' : '#94c8da';
+    contacts.floorRing(x, z, .23, .275, rgba(tint, .64), y + .018, 8);
+    const bob = Math.sin(finite(time) * .0023 + seed % 13) * .016;
+    if (item.kind === 'weapon') {
+      const length = weaponLength(item.weapon);
+      const yaw = (seed % 4) * Math.PI / 2 + .45;
+      // Center the sideways miniature over its marker; it cannot resemble a
+      // crate or a wall that a player could use as cover.
+      const offset = rotate([0, 0, length * .22], yaw);
+      lootGun(opaque, item.weapon, { x: x + offset[0], y: y + .27 + bob, z: z + offset[2], yaw, pitch: 0, scale: .44 });
+      opaque.floor(x - .15, z - .15, .30, .30, '#6f6d51', y + .022);
+    } else if (item.kind === 'heal') {
+      const pose = { x, y: y + .15 + bob, z, yaw: .32, pitch: 0, scale: 1.10 };
+      opaque.box(-.066, -.082, -.059, .132, .175, .118, '#71af8e', pose);
+      opaque.box(-.039, .086, -.039, .078, .079, .078, '#b2d2aa', pose);
+      opaque.box(-.037, .164, -.037, .074, .038, .074, '#bd9a66', pose);
+      opaque.box(-.017, -.037, -.063, .034, .074, .005, '#f3edcb', pose);
+      opaque.box(-.041, -.014, -.063, .082, .026, .005, '#f3edcb', pose);
+      opaque.box(-.047, -.049, .060, .094, .054, .005, '#314e4a', pose);
+    } else if (item.kind === 'ammo') {
+      opaque.box(x - .14, y + .025, z - .11, .28, .18, .22, '#496b71');
+      opaque.box(x - .15, y + .205, z - .12, .30, .035, .24, '#9fbdb6');
+      for (let i = 0; i < 3; i++) {
+        opaque.box(x - .075 + i * .06, y + .06, z - .118, .025, .08, .018, '#e3c77e');
+      }
+    } else {
+      // A ground pickup has an intact pin and no live fuse blink.
+      const bottom = y + .035 + bob;
+      opaque.box(x - .069, bottom, z - .069, .138, .17, .138, '#5e7f60');
+      opaque.box(x - .095, bottom + .042, z - .042, .19, .085, .084, '#4d6c52');
+      opaque.box(x - .042, bottom + .042, z - .095, .084, .085, .19, '#4d6c52');
+      opaque.box(x - .025, bottom + .17, z - .027, .05, .043, .054, '#afbb9b');
+      opaque.box(x - .015, bottom + .201, z - .02, .06, .014, .04, '#ceb980');
+      opaque.box(x + .015, bottom + .16, z - .047, .029, .032, .06, '#e4d8b0');
+    }
+  }
+  return { opaque: opaque.array, contacts: contacts.array, count };
+}
+
+/** The circle is a ground projection; outside danger comes from surface haze. */
+export function stormMesh(storm) {
+  const mesh = new Mesh();
+  if (!storm?.active || ![storm.x, storm.z, storm.radius].every(Number.isFinite) || storm.radius < 0) return mesh.array;
+  const radius = Math.min(storm.radius, 256);
+  mesh.floorRing(storm.x, storm.z, Math.max(0, radius - .11), radius + .11, [.49, .79, .94, .68], .035, 64);
+  mesh.floorRing(storm.x, storm.z, Math.max(0, radius - .43), Math.max(.025, radius - .32), [.47, .73, .90, .19], .034, 64);
+  return mesh.array;
+}
+
+function playerMesh(mesh, player, map, time, allied, freeForAll = false) {
   const crouch = player.crouching, scale = crouch ? 1.15 / 1.8 : 1;
   const yaw = finite(player.yaw), pitch = clamp(finite(player.pitch) + finite(player.recoil), -1.45, 1.45);
   // The simulation targets axis-aligned voxel boxes. Quarter-turn silhouettes
@@ -1011,7 +1206,7 @@ function playerMesh(mesh, player, map, time, allied) {
   // aim angle; the held weapon still follows continuous yaw and pitch.
   const bodyYaw = Math.round(yaw / (Math.PI / 2)) * (Math.PI / 2);
   const pose = { x: player.x, y: finite(player.y), z: player.z, yaw: bodyYaw, pitch: 0 };
-  const color = TEAM_COLORS[player.team === 1 ? 1 : 0];
+  const color = freeForAll ? survivorColor(player) : TEAM_COLORS[player.team === 1 ? 1 : 0];
   const team = rgba(color), uniform = mix(team, rgba('#27373e'), .33), dark = '#202f36', plate = '#34484f';
   const box = (x, y, z, w, h, d, c) => {
     const bottom = y * scale, top = Math.min((y + h) * scale, crouch ? .83 : 1.48);
@@ -1091,7 +1286,7 @@ export class VoxelRenderer {
     this.mapCache = new Map(); this.mapId = null; this.effectRound = null; this.effectPhase = null; this.eventIds = new Set(); this.eventQueue = [];
     this.particles = []; this.tracers = []; this.localShot = null; this.localReload = null;
     this.lastAim = null; this.swayX = 0; this.swayY = 0;
-    this._frameDrawCalls = 0; this._frameDynamicVertices = 0; this._mapVertices = 0;
+    this._frameDrawCalls = 0; this._frameDynamicVertices = 0; this._mapVertices = 0; this._lootItems = 0; this._stormVertices = 0;
     this._onLost = event => {
       event.preventDefault(); this.contextLost = true; this.available = false;
       this.error = 'The 3D graphics context was interrupted. Waiting for the browser to restore it.';
@@ -1122,7 +1317,7 @@ export class VoxelRenderer {
     }
     this.program = program;
     this.attributes = { position: gl.getAttribLocation(program, 'aPosition'), normal: gl.getAttribLocation(program, 'aNormal'), color: gl.getAttribLocation(program, 'aColor') };
-    this.uniforms = Object.fromEntries(['Projection', 'View', 'Eye', 'Fog', 'FogStrength', 'LightDirection', 'Sun', 'Ambient'].map(name => [name.toLowerCase(), gl.getUniformLocation(program, `u${name}`)]));
+    this.uniforms = Object.fromEntries(['Projection', 'View', 'Eye', 'Fog', 'FogStrength', 'LightDirection', 'Sun', 'Ambient', 'StormCircle', 'StormStrength'].map(name => [name.toLowerCase(), gl.getUniformLocation(program, `u${name}`)]));
     this.dynamicBuffer = gl.createBuffer(); this.weaponBuffer = gl.createBuffer(); this.contactBuffer = gl.createBuffer();
     this.tracerBuffer = gl.createBuffer();
     this.dynamicCapacity = 0; this.weaponCapacity = 0; this.tracerCapacity = 0; this.contactCapacity = 0;
@@ -1236,6 +1431,7 @@ export class VoxelRenderer {
     this.particles = this.particles.filter(particle => time - particle.born < particle.life);
   }
   _bomb(mesh, state, players, time) {
+    if (state.gameId === 'voxel-royale') return;
     const bomb = state.bomb;
     if (!bomb) return;
     if (bomb.status === 'carried') {
@@ -1256,7 +1452,7 @@ export class VoxelRenderer {
     for (let i = 0; i < 3; i++) mesh.box(x - .17 + i * .034, y + .03, z - .168, .016, .13, .016, i === 1 ? '#b45e4c' : '#6e998c');
   }
   _grenades(mesh, contacts, state, map, time) {
-    for (const grenade of (state.grenades || []).slice(0, 12)) {
+    for (const grenade of (state.grenades || []).slice(0, grenadeCapacity(state))) {
       if (![grenade.x, grenade.y, grenade.z].every(Number.isFinite)) continue;
       const r = clamp(finite(grenade.radius, .12), .04, .25);
       const speed = Math.hypot(finite(grenade.vx), finite(grenade.vy), finite(grenade.vz));
@@ -1277,18 +1473,19 @@ export class VoxelRenderer {
       if (![bolt.x, bolt.y, bolt.z, bolt.vx, bolt.vy, bolt.vz].every(Number.isFinite)) continue;
       const horizontal = Math.hypot(bolt.vx, bolt.vz);
       const pose = { x: bolt.x, y: bolt.y, z: bolt.z, yaw: Math.atan2(bolt.vx, -bolt.vz), pitch: Math.atan2(bolt.vy, horizontal) };
+      const feather = state.gameId === 'voxel-royale' ? survivorColor({ id: bolt.playerId }) : bolt.team === 1 ? '#7baaa1' : '#b7a177';
       // The live projectile is depth-tested in the operative batch. It never
       // draws an instantaneous beam or a trail through solid cover.
       // The simulated point is the tip; the shaft stays behind it so it cannot
       // visually enter a wall before the swept projectile contact does.
       mesh.box(-.009, -.009, .04, .018, .018, .37, '#d8ceaa', pose);
       mesh.box(-.015, -.012, 0, .030, .024, .078, '#c3d2c1', pose);
-      mesh.box(-.045, -.006, .32, .09, .012, .09, bolt.team === 1 ? '#7baaa1' : '#b7a177', pose);
-      mesh.box(-.006, -.042, .32, .012, .084, .09, bolt.team === 1 ? '#7baaa1' : '#b7a177', pose);
+      mesh.box(-.045, -.006, .32, .09, .012, .09, feather, pose);
+      mesh.box(-.006, -.042, .32, .012, .084, .09, feather, pose);
     }
   }
-  _viewModel(player, yaw, pitch, time) {
-    const mesh = new Mesh(), team = TEAM_COLORS[player.team === 1 ? 1 : 0];
+  _viewModel(player, yaw, pitch, time, freeForAll = false) {
+    const mesh = new Mesh(), team = freeForAll ? survivorColor(player) : TEAM_COLORS[player.team === 1 ? 1 : 0];
     const speed = Math.hypot(finite(player.vx), finite(player.vz));
     const walking = clamp(speed / 5.5, 0, 1), step = time * .011;
     const age = this.localShot?.weapon === player.weapon ? Math.max(0, time - this.localShot.born) : 10000;
@@ -1383,6 +1580,7 @@ export class VoxelRenderer {
     const map = typeof state.map === 'object' && state.map?.colliders ? state.map : MAPS[state.mapId] || MAPS.courtyard;
     if (!map) return false;
     const players = state.players || state.fighters || [];
+    const freeForAll = state.gameId === 'voxel-royale';
     const localId = options.localId ?? options.playerId;
     let cameraPlayer = options.viewPlayer ?? options.cameraPlayer ?? options.predictedPlayer ?? options.localPlayer ?? players.find(player => player.id === localId) ?? players.find(player => player.alive) ?? players[0];
     if (typeof cameraPlayer === 'string' || typeof cameraPlayer === 'number') cameraPlayer = players.find(player => player.id === cameraPlayer);
@@ -1421,6 +1619,9 @@ export class VoxelRenderer {
     gl.useProgram(this.program);
     gl.uniformMatrix4fv(this.uniforms.projection, false, projection); gl.uniformMatrix4fv(this.uniforms.view, false, view);
     gl.uniform3fv(this.uniforms.eye, eye); gl.uniform3fv(this.uniforms.fog, sky.slice(0, 3)); gl.uniform1f(this.uniforms.fogstrength, 1);
+    const storm = freeForAll && state.storm?.active && [state.storm.x, state.storm.z, state.storm.radius].every(Number.isFinite) && state.storm.radius >= 0 ? state.storm : null;
+    gl.uniform3fv(this.uniforms.stormcircle, storm ? [storm.x, storm.z, Math.min(storm.radius, 256)] : [0, 0, 256]);
+    gl.uniform1f(this.uniforms.stormstrength, storm ? 1 : 0);
     gl.uniform3fv(this.uniforms.lightdirection, atmosphere.sun); gl.uniform3fv(this.uniforms.sun, atmosphere.direct); gl.uniform3fv(this.uniforms.ambient, atmosphere.ambient);
     gl.enable(gl.DEPTH_TEST); gl.depthMask(true); gl.disable(gl.BLEND); gl.enable(gl.CULL_FACE);
     const cached = this._getMap(map);
@@ -1431,7 +1632,7 @@ export class VoxelRenderer {
     const dynamic = new Mesh(), contacts = new Mesh(), local = players.find(player => player.id === localId) || cameraPlayer;
     for (const player of players) {
       if (!player.alive || player.id === cameraPlayer.id || !Number.isFinite(player.x) || !Number.isFinite(player.z)) continue;
-      playerMesh(dynamic, player, map, time, player.team === local.team);
+      playerMesh(dynamic, player, map, time, !freeForAll && player.team === local.team, freeForAll);
       const support = surfaceBelow(map.colliders, player.x, player.z, finite(player.y) + .045);
       const ground = support ? support.y + support.h : 0;
       const altitude = Math.max(0, finite(player.y) - ground), spread = .26 + Math.min(.22, altitude * .08), opacity = .15 / (1 + altitude);
@@ -1441,6 +1642,12 @@ export class VoxelRenderer {
         const minZ = Math.max(player.z - size * .8, support?.z ?? -Infinity), maxZ = Math.min(player.z + size * .8, support ? support.z + support.d : Infinity);
         contacts.floor(minX, minZ, maxX - minX, maxZ - minZ, [.035, .055, .08, opacity], ground + .012 + (2 - layer) * .0003);
       }
+    }
+    this._lootItems = 0; this._stormVertices = 0;
+    if (freeForAll) {
+      const loot = lootMeshes(state.loot || [], time), boundary = stormMesh(storm);
+      dynamic.append(loot.opaque); contacts.append(loot.contacts); contacts.append(boundary);
+      this._lootItems = loot.count; this._stormVertices = boundary.length / VERTEX_STRIDE;
     }
     this._bomb(dynamic, state, players.filter(player => player.id !== cameraPlayer.id), time);
     this._grenades(dynamic, contacts, state, map, time);
@@ -1474,15 +1681,16 @@ export class VoxelRenderer {
       // wall. World cover and hit detection continue using the real camera.
       gl.clear(gl.DEPTH_BUFFER_BIT); gl.uniformMatrix4fv(this.uniforms.view, false, IDENTITY);
       gl.uniform3fv(this.uniforms.eye, [0, 0, 0]); gl.uniform1f(this.uniforms.fogstrength, 0);
+      gl.uniform1f(this.uniforms.stormstrength, 0);
       // The hands use a stable soft key light so turning into map shade cannot
       // hide the weapon's sights or the magazine during a reload.
       gl.uniform3fv(this.uniforms.lightdirection, [-.30, .70, .62]); gl.uniform3fv(this.uniforms.sun, [.43, .43, .40]); gl.uniform3fv(this.uniforms.ambient, [.64, .68, .72]);
-      this._draw(this._dynamic(this._viewModel(cameraPlayer, yaw, pitch, time), 'weapon'));
+      this._draw(this._dynamic(this._viewModel(cameraPlayer, yaw, pitch, time, freeForAll), 'weapon'));
     }
     return true;
   }
   get stats() {
-    return Object.freeze({ mapId: this.mapId, mapVertices: this._mapVertices, cachedMaps: this.mapCache.size, drawCalls: this._frameDrawCalls, dynamicVertices: this._frameDynamicVertices });
+    return Object.freeze({ mapId: this.mapId, mapVertices: this._mapVertices, cachedMaps: this.mapCache.size, drawCalls: this._frameDrawCalls, dynamicVertices: this._frameDynamicVertices, lootItems: this._lootItems, stormVertices: this._stormVertices });
   }
   resetEffects() {
     this.eventIds.clear(); this.eventQueue.length = 0; this.particles.length = 0; this.tracers.length = 0;
