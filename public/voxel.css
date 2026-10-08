@@ -100,3 +100,35 @@
   .viewport:has(.health-readout.is-spectating) #next-spectator{width:44px;height:44px;min-width:44px;padding:0;font-size:0}
   .viewport:has(.health-readout.is-spectating) #next-spectator::after{content:'→';font-size:20px;line-height:1}
 }
+
+/* Compact match HUD: clear numbers and alerts, with more of the arena visible. */
+.match-hud{height:52px;padding:0 16px;grid-template-columns:1fr 120px 1fr}
+.team-hud{gap:12px}.team-hud>span{font-size:9px;letter-spacing:1px}.team-hud>strong{font-size:23px}.team-lives i{width:6px;height:15px}
+.round-hud{gap:1px}.round-hud>span{font-size:8px;letter-spacing:.4px}.round-hud strong{font-size:20px}.round-hud small{font-size:7px;letter-spacing:.4px}
+.stage-info{top:10px;left:14px;right:14px;font-size:8px;letter-spacing:.5px}
+.tactical-map{top:30px;left:14px;width:94px;padding:4px;background:#111f19c9;box-shadow:none}.tactical-map svg{height:78px}.map-caption{display:none}.map-north{right:5px;top:3px;font-size:6px}
+.objective-hud{top:30px;padding:5px 9px;min-width:140px;max-width:48%;background:#152017ca}.objective-hud>span{font-size:7px;letter-spacing:.6px}.objective-hud>strong{font-size:9px;margin-top:3px;line-height:1.35}.interaction-track{height:3px;margin-top:5px}
+.combat-hud{bottom:13px;left:16px;right:16px}.health-column{width:140px;max-width:140px;gap:2px}
+.health-column .health-readout{padding:6px 9px 7px;border-bottom-width:2px;background:#0c1917d4;box-shadow:none}
+.health-readout:not(.is-spectating)>#health-subject{display:none}.health-readout.is-spectating>#health-subject{font-size:7px;line-height:1.2;letter-spacing:.4px}
+.health-readout .health-numbers{gap:4px;margin:0 0 4px}.health-numbers strong{font-size:28px}.health-numbers small{font-size:9px}.health-numbers b{font-size:8px}
+.health-readout .health-meter{height:8px}
+.health-status{font-size:6px;line-height:1.25;letter-spacing:.15px;margin-top:4px}.health-readout:not(.low-health):not(.is-spectating) .health-status{display:none}
+.utility-readout{padding:2px 2px;background:none;border:0;gap:8px}.utility-readout>span{font-size:0;gap:4px}.utility-readout svg{width:11px;height:11px}.utility-readout kbd{display:inline-block;font:6px monospace;padding:0 2px}.utility-readout b{font-size:9px}
+.position-status{font-size:6px;line-height:1.2;padding:0 1px;letter-spacing:.3px}.position-status:not(.elevated){opacity:.5}
+.weapon-readout{width:115px;padding:6px 8px 5px;background:#122018b8;border-bottom-width:1px}.weapon-readout>span{font-size:7px;line-height:1.3;letter-spacing:.6px}.weapon-readout strong{font-size:26px;line-height:1.05}.weapon-readout small{font-size:11px}.weapon-readout p{font-size:6px;line-height:1.35;letter-spacing:0;margin:3px 0 0}.weapon-readout .reload-track{height:3px;margin-top:5px}
+.weapon-readout[data-slot=sword] strong{font-size:15px;line-height:1.7}
+.squad-health{top:30px;right:14px;width:124px;gap:3px}.squad-health-row{padding:4px 6px;gap:3px 6px;background:#10251dcc;border-color:#57716188;font-size:7px}.squad-health-row>b{font-size:7px}.squad-health-row>i{height:2px}
+.kill-feed{top:92px;right:14px;max-width:225px}.kill-feed li{font-size:8px;padding:4px 7px;margin-bottom:3px}.viewport:has(.squad-health:not([hidden])) .kill-feed{top:92px}
+.objective-bar{padding:8px 14px;font-size:9px}
+@media(max-width:600px){
+  .match-hud{height:46px;padding:0 8px;grid-template-columns:1fr 102px 1fr}.team-hud{gap:6px}.team-hud>span{font-size:7px;letter-spacing:.3px}.team-hud>strong{font-size:20px}.team-lives i{width:5px;height:12px}.round-hud>span{font-size:7px;letter-spacing:.1px}.round-hud strong{font-size:19px}.round-hud small{font-size:6px;letter-spacing:.1px}
+  .stage-info{top:9px;left:8px;right:8px;font-size:6px;letter-spacing:.2px}.tactical-map{top:25px;left:8px;width:70px;padding:3px}.tactical-map svg{height:61px}
+  .objective-hud{top:25px;left:86px;right:8px;max-width:none;min-width:0;padding:4px 6px}.objective-hud>span{font-size:6px;letter-spacing:.1px}.objective-hud>strong{font-size:8px;margin-top:2px;line-height:1.3}.phase-announcement{left:86px;right:8px;top:25px}
+  .combat-hud{left:8px;right:8px;bottom:8px}.health-column{width:118px;max-width:118px;gap:1px}.health-column .health-readout{padding:5px 7px 6px}.health-numbers strong{font-size:24px}.health-numbers small{font-size:8px}.health-numbers b{font-size:7px}.health-readout .health-numbers{gap:3px;margin-bottom:4px}.health-readout .health-meter{height:7px}.health-readout.is-spectating>#health-subject{font-size:6px;letter-spacing:.1px}.health-status{font-size:6px;letter-spacing:0;margin-top:3px}
+  .utility-readout{padding:2px 1px;gap:5px}.utility-readout>span{gap:3px}.utility-readout svg{width:10px;height:10px}.utility-readout kbd{font-size:6px}.utility-readout b{font-size:8px}.position-status{font-size:5px;letter-spacing:.1px}
+  .weapon-readout{width:98px;padding:5px 7px}.weapon-readout>span{font-size:6px;letter-spacing:.4px}.weapon-readout strong{font-size:24px}.weapon-readout small{font-size:10px}.weapon-readout p{font-size:6px;line-height:1.3;margin-top:2px}.weapon-readout[data-slot=sword] strong{font-size:12px;line-height:1.8}
+  .squad-health{top:88px;right:8px;width:95px;gap:2px}.squad-health-row{padding:3px 5px;gap:2px 4px;font-size:6px}.squad-health-row>b{font-size:6px}.squad-health-row>i{height:2px}.kill-feed{top:94px;right:8px;max-width:158px}.kill-feed li{font-size:7px;padding:3px 5px}.viewport:has(.squad-health:not([hidden])) .kill-feed{top:140px;max-width:142px}
+  .objective-bar{padding:7px 9px;font-size:8px}.pause-button{bottom:10px}
+}
+@media(max-width:350px){.match-hud{grid-template-columns:1fr 94px 1fr}.team-hud{gap:5px}.team-hud>strong{font-size:19px}.team-hud>span{font-size:6px}.team-lives i{width:4px}.phase-announcement[data-phase=roundEnd]{left:50%;right:auto}}

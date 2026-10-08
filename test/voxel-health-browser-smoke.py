@@ -79,6 +79,7 @@ def meter(page, hp, visible=True):
         low:document.querySelector('#health-readout').classList.contains('low-health'),
         spectating:document.querySelector('#health-readout').classList.contains('is-spectating'),
         status:document.querySelector('#health-status').textContent,subject:document.querySelector('#health-subject').textContent,
+        hpFont:parseFloat(getComputedStyle(document.querySelector('#health')).fontSize),
         meter:rect(meter),health:rect(document.querySelector('#health-readout')),weapon:rect(document.querySelector('#weapon-readout')),
         viewport:rect(document.querySelector('#viewport'))};
     }''')
@@ -87,7 +88,8 @@ def meter(page, hp, visible=True):
     assert hp <= shown['trail'] <= 100, ('Damage trail outside real HP history', shown)
     if visible:
         assert page.locator('#health-meter').is_visible()
-        assert shown['meter']['height'] >= 9, ('Health bar too thin to read', shown)
+        assert shown['meter']['height'] >= 6, ('Compact health bar too thin to read', shown)
+        assert shown['hpFont'] >= 20, ('Health number too small to read', shown)
         assert shown['health']['right'] <= shown['weapon']['x'] + 1, ('Health overlaps ammunition', shown)
         assert shown['health']['x'] >= shown['viewport']['x'] and shown['weapon']['right'] <= shown['viewport']['right'], shown
     return shown
