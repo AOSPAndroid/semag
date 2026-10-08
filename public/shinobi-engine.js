@@ -1,7 +1,7 @@
-/** Shinobi Showdown: deterministic 120 Hz duels with committed swordplay. */
+/** Shinobi Showdown: deterministic 120 Hz duels with committed, reactive swordplay. */
 export const TICK_RATE = 120;
 export const WORLD = Object.freeze({ width: 960, height: 640, wall: 32, minX: 48, maxX: 912, minY: 48, maxY: 592, fighterRadius: 15, roundSeconds: 75 });
-export const INPUT_KEYS = Object.freeze(['up', 'down', 'left', 'right', 'attack', 'heavy', 'throw', 'parry', 'dash']);
+export const INPUT_KEYS = Object.freeze(['up', 'down', 'left', 'right', 'attack', 'heavy', 'throw', 'parry', 'dash', 'feint']);
 const cover = (id, x, y, w, h) => Object.freeze({ id, x, y, w, h });
 const stage = (id, name, description, covers, spawns) => Object.freeze({ id, name, description, covers: Object.freeze(covers), spawns: Object.freeze(spawns.map(Object.freeze)) });
 export const STAGES = Object.freeze({
@@ -10,19 +10,23 @@ export const STAGES = Object.freeze({
   shrine: stage('shrine', 'Winter Shrine', 'Twin columns interrupt long throws. Crossing the shrine opens a dangerous sword lane.', [cover('shrine-west', 280, 252, 56, 136), cover('shrine-east', 624, 252, 56, 136), cover('shrine-north', 414, 146, 132, 44), cover('shrine-south', 414, 450, 132, 44)], [{ x: 154, y: 420 }, { x: 806, y: 220 }]),
 });
 const STAGE_ORDER = Object.freeze(Object.keys(STAGES));
-export const MOVES = Object.freeze({ light: Object.freeze({ startup: 10, active: 5, recovery: 23, range: 58, cone: .8, damage: 18, cost: 14 }), heavy: Object.freeze({ startup: 28, active: 7, recovery: 42, range: 76, cone: .62, damage: 32, cost: 26 }) });
-export const DASH = Object.freeze({ duration: 23, startup: 3, invulnerableEnd: 12, cost: 30, speed: 8.5 });
-export const PARRY = Object.freeze({ duration: 30, startup: 3, activeEnd: 13, cost: 20, cone: .95, stun: 40 });
-export const KUNAI = Object.freeze({ startup: 14, recovery: 24, speed: 10, damage: 14, capacity: 3, recoverTicks: 240 });
+export const MOVES = Object.freeze({ light: Object.freeze({ startup: 8, active: 4, recovery: 19, range: 58, cone: .8, damage: 18, cost: 14 }), heavy: Object.freeze({ startup: 24, active: 6, recovery: 32, range: 76, cone: .62, damage: 32, cost: 26 }) });
+export const MOVEMENT = Object.freeze({ speed: 3.15, startupSpeed: 1.1, activeSpeed: .4, recoverySpeed: 1.5, throwSpeed: 1.7, parrySpeed: .8, feintSpeed: 1.3 });
+export const DASH = Object.freeze({ duration: 20, startup: 3, invulnerableEnd: 9, cost: 28, speed: 9.2, startupSpeed: 3.3, brakeStart: 15, brakeSpeed: 4.2 });
+export const PARRY = Object.freeze({ duration: 28, startup: 2, activeEnd: 9, cost: 20, cone: .85, stun: 24, refund: 8, successDuration: 11, perfectEnd: 4, perfectCone: .55, perfectStun: 40, perfectRefund: 16, perfectReflectionSpeed: 1.2 });
+export const KUNAI = Object.freeze({ startup: 11, recovery: 17, speed: 11.5, damage: 14, capacity: 3, recoverTicks: 240 });
+export const INPUT_BUFFER = Object.freeze({ ticks: 10, priority: Object.freeze(['dash', 'parry', 'feint', 'heavy', 'attack', 'throw']) });
+export const CHAIN = Object.freeze({ max: 3, startFrame: 16, endFrame: 26, dashCancelCost: DASH.cost + 8 });
+export const FEINT = Object.freeze({ startFrame: 6, endFrame: 17, cost: 12, duration: 14 });
 export const emptyInput = () => ({ ...Object.fromEntries(INPUT_KEYS.map(key => [key, false])), aimX: 1, aimY: 0 });
 export const cloneState = state => JSON.parse(JSON.stringify(state));
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 const EPS = 1e-8;
 function fighter(id, wins = 0) {
-  return { id, x: id ? 806 : 154, y: 320, vx: 0, vy: 0, radius: WORLD.fighterRadius, hp: 100, maxHp: 100, stamina: 100, wins, aimX: id ? -1 : 1, aimY: 0, facing: id ? Math.PI : 0, actionFacing: id ? Math.PI : 0, action: 'idle', actionFrame: 0, attackHits: [], dashFrame: 0, dashX: 1, dashY: 0, invulnerable: false, staminaDelay: 0, kunai: KUNAI.capacity, kunaiRecoveryTicks: 0, damageDealt: 0, parries: 0, previousInput: { ...emptyInput(), aimX: id ? -1 : 1 } };
+  return { id, x: id ? 806 : 154, y: 320, vx: 0, vy: 0, radius: WORLD.fighterRadius, hp: 100, maxHp: 100, stamina: 100, wins, aimX: id ? -1 : 1, aimY: 0, facing: id ? Math.PI : 0, actionFacing: id ? Math.PI : 0, action: 'idle', actionFrame: 0, attackHits: [], comboStep: 0, hitConfirmed: false, hitTick: -1, inputBuffer: null, parrySuccess: false, dashFrame: 0, dashX: 1, dashY: 0, invulnerable: false, staminaDelay: 0, kunai: KUNAI.capacity, kunaiRecoveryTicks: 0, damageDealt: 0, parries: 0, perfectParries: 0, previousInput: { ...emptyInput(), aimX: id ? -1 : 1 } };
 }
 export function createState() {
-  return { gameId: 'shinobi-showdown', tick: 0, phase: 'lobby', phaseTicks: 0, round: 1, maxRounds: 5, roundTicks: WORLD.roundSeconds * TICK_RATE, winner: null, stageId: 'rooftop', stageName: STAGES.rooftop.name, fighters: [fighter(0), fighter(1)], obstacles: STAGES.rooftop.covers.map(rect => ({ ...rect })), projectiles: [], projectileId: 0, events: [], eventId: 0, objective: 'First to two rounds. Commit your blade, read their parry, and conserve your dash.' };
+  return { gameId: 'shinobi-showdown', tick: 0, phase: 'lobby', phaseTicks: 0, round: 1, maxRounds: 5, roundTicks: WORLD.roundSeconds * TICK_RATE, winner: null, stageId: 'rooftop', stageName: STAGES.rooftop.name, fighters: [fighter(0), fighter(1)], obstacles: STAGES.rooftop.covers.map(rect => ({ ...rect })), projectiles: [], projectileId: 0, events: [], eventId: 0, objective: 'First to two rounds. Confirm your cuts, bait a parry, and punish the opening.' };
 }
 function emit(state, type, data = {}) {
   state.events.push({ id: ++state.eventId, tick: state.tick, type, ...data });
@@ -204,39 +208,108 @@ function collideFighters(state, paths) {
     const result = stopAt(paths[f.id], time); paths[f.id] = result.path; f.x = result.point.x; f.y = result.point.y;
   }
 }
+/** Project a displayed pair through the same swept cover/body contacts as play.
+ * The predicted pair supplies valid bases; presentation fields remain newest.
+ */
+export function sweepPresentationFighters(state, desiredFighters) {
+  if (!Array.isArray(desiredFighters)) return [];
+  const copies = desiredFighters.map(f => ({ ...f }));
+  if (state?.fighters?.length !== 2 || copies.length !== 2 || !Array.isArray(state.obstacles)) return copies;
+  const bases = [0, 1].map(id => state.fighters.find(f => f.id === id));
+  const displayed = [0, 1].map(id => copies.find(f => f.id === id));
+  if (bases.some(f => !f || !Number.isFinite(f.x) || !Number.isFinite(f.y) || !Number.isFinite(f.radius) || f.radius <= 0) || displayed.some(f => !f)) return copies;
+  const actors = bases.map(f => ({ ...f })), simulation = { ...state, fighters: actors };
+  const paths = actors.map(f => {
+    const target = displayed[f.id], dx = target.x - f.x, dy = target.y - f.y;
+    const valid = Number.isFinite(dx) && Number.isFinite(dy) && Math.hypot(dx, dy) <= 128;
+    return moveFighter(simulation, f, valid ? dx : 0, valid ? dy : 0);
+  });
+  collideFighters(simulation, paths);
+  for (const f of actors) { displayed[f.id].x = f.x; displayed[f.id].y = f.y; }
+  return copies;
+}
 function readInput(f, raw) {
   const input = emptyInput(); for (const key of INPUT_KEYS) input[key] = raw?.[key] === true;
   const x = Number.isFinite(raw?.aimX) ? clamp(raw.aimX, -1, 1) : f.aimX, y = Number.isFinite(raw?.aimY) ? clamp(raw.aimY, -1, 1) : f.aimY;
   const length = Math.hypot(x, y); if (length > .0001) { f.aimX = x / length; f.aimY = y / length; }
   input.aimX = f.aimX; input.aimY = f.aimY; f.facing = Math.atan2(f.aimY, f.aimX); return input;
 }
-function beginAction(state, f, action, cost) {
-  f.stamina -= cost; f.staminaDelay = 60; f.action = action; f.actionFrame = 0; f.actionFacing = f.facing; f.attackHits = [];
-  emit(state, action === 'light' || action === 'heavy' ? 'attack' : action === 'parry' ? 'parryStart' : action, { fighter: f.id, action, facing: f.actionFacing, x: f.x, y: f.y });
+function beginAction(state, f, action, cost, comboStep = action === 'light' ? 1 : 0) {
+  const intent = f.inputBuffer;
+  const committedFacing = action === 'feint' ? f.actionFacing : intent ? Math.atan2(intent.aimY, intent.aimX) : f.facing;
+  f.stamina -= cost; f.staminaDelay = 60; f.action = action; f.actionFrame = 0; f.actionFacing = committedFacing; f.attackHits = [];
+  if (action === 'dash') { const directional = intent?.moveX || intent?.moveY; f.dashX = directional ? intent.moveX : intent?.aimX ?? f.aimX; f.dashY = directional ? intent.moveY : intent?.aimY ?? f.aimY; }
+  f.comboStep = comboStep; f.hitConfirmed = false; f.hitTick = -1; f.parrySuccess = false; f.inputBuffer = null;
+  emit(state, action === 'light' || action === 'heavy' ? 'attack' : action === 'parry' ? 'parryStart' : action, { fighter: f.id, action, comboStep, facing: f.actionFacing, x: f.x, y: f.y });
 }
 function busy(f) { return !['idle', 'run'].includes(f.action); }
-function duration(f) { const move = MOVES[f.action]; return move ? move.startup + move.active + move.recovery : f.action === 'throw' ? KUNAI.startup + 1 + KUNAI.recovery : f.action === 'parry' ? PARRY.duration : f.action === 'dash' ? DASH.duration : f.action === 'stun' ? f.stunDuration || PARRY.stun : 0; }
+export function getMove(f) { return MOVES[f?.action] || null; }
+function duration(f) { const move = getMove(f); return move ? move.startup + move.active + move.recovery : f.action === 'throw' ? KUNAI.startup + 1 + KUNAI.recovery : f.action === 'parry' ? f.parrySuccess ? PARRY.successDuration : PARRY.duration : f.action === 'dash' ? DASH.duration : f.action === 'feint' ? FEINT.duration : f.action === 'stun' ? f.stunDuration || PARRY.stun : 0; }
+/** Availability is shared by controls, practice opponents, and visible combat cues. */
+export function getCombatOptions(f) {
+  const alive = f?.hp > 0, frame = f?.actionFrame || 0;
+  const confirmedRecovery = alive && f.action === 'light' && f.hitConfirmed === true && f.comboStep < CHAIN.max && frame >= CHAIN.startFrame && frame <= CHAIN.endFrame;
+  const parryActive = alive && f.action === 'parry' && frame >= PARRY.startup && frame <= PARRY.activeEnd;
+  return {
+    canChain: Boolean(confirmedRecovery && f.stamina >= MOVES.light.cost),
+    canDashCancel: Boolean(confirmedRecovery && f.stamina >= CHAIN.dashCancelCost),
+    canFeint: Boolean(alive && f.action === 'heavy' && frame >= FEINT.startFrame && frame <= FEINT.endFrame && f.stamina >= FEINT.cost),
+    parryActive: Boolean(parryActive),
+    perfectParryActive: Boolean(parryActive && frame <= PARRY.perfectEnd),
+    bufferedAction: f?.inputBuffer?.action || null,
+  };
+}
+function bufferInput(state, f, input) {
+  if (f.inputBuffer && --f.inputBuffer.ticks <= 0) f.inputBuffer = null;
+  const pressed = INPUT_BUFFER.priority.find(key => input[key] && !f.previousInput[key]);
+  if (pressed) {
+    // A feint is an intentional early-heavy choice. It never becomes a queued
+    // attack in neutral or after the blade has committed to its active sector.
+    if (pressed !== 'feint' || f.action === 'heavy' && f.actionFrame <= FEINT.endFrame) {
+      const dx = Number(input.right) - Number(input.left), dy = Number(input.down) - Number(input.up), length = Math.hypot(dx, dy);
+      f.inputBuffer = { action: pressed, ticks: INPUT_BUFFER.ticks, pressedTick: state.tick, aimX: input.aimX, aimY: input.aimY, moveX: length ? dx / length : 0, moveY: length ? dy / length : 0 };
+    }
+  }
+  if (f.inputBuffer?.action === 'feint' && (f.action !== 'heavy' || f.actionFrame > FEINT.endFrame)) f.inputBuffer = null;
+}
+function startBufferedAction(state, f, moving) {
+  const choice = f.inputBuffer?.action, options = getCombatOptions(f);
+  if (choice === 'feint' && options.canFeint) {
+    beginAction(state, f, 'feint', FEINT.cost); return;
+  }
+  const confirmedPress = f.inputBuffer && f.inputBuffer.pressedTick >= f.hitTick;
+  if (choice === 'attack' && options.canChain && confirmedPress) {
+    const comboStep = f.comboStep + 1;
+    beginAction(state, f, 'light', MOVES.light.cost, comboStep);
+    emit(state, 'chain', { fighter: f.id, comboStep, facing: f.actionFacing, x: f.x, y: f.y }); return;
+  }
+  if (choice === 'dash' && options.canDashCancel && confirmedPress) {
+    beginAction(state, f, 'dash', CHAIN.dashCancelCost);
+    emit(state, 'dashCancel', { fighter: f.id, facing: f.actionFacing, x: f.x, y: f.y }); return;
+  }
+  if (busy(f)) return;
+  if (choice === 'dash' && f.stamina >= DASH.cost) {
+    beginAction(state, f, 'dash', DASH.cost);
+  } else if (choice === 'parry' && f.stamina >= PARRY.cost) beginAction(state, f, 'parry', PARRY.cost);
+  else if (choice === 'heavy' && f.stamina >= MOVES.heavy.cost) beginAction(state, f, 'heavy', MOVES.heavy.cost);
+  else if (choice === 'attack' && f.stamina >= MOVES.light.cost) beginAction(state, f, 'light', MOVES.light.cost);
+  else if (choice === 'throw' && f.kunai > 0 && f.stamina >= 6) { beginAction(state, f, 'throw', 6); f.kunai--; }
+  else f.action = moving ? 'run' : 'idle';
+}
 function updateFighter(state, f, input) {
   f.invulnerable = false; if (f.staminaDelay > 0) f.staminaDelay--;
-  if (busy(f)) { f.actionFrame++; if (f.actionFrame >= duration(f)) { f.action = 'idle'; f.actionFrame = 0; } }
+  if (busy(f)) { f.actionFrame++; if (f.actionFrame >= duration(f)) { f.action = 'idle'; f.actionFrame = 0; f.comboStep = 0; f.hitConfirmed = false; f.hitTick = -1; f.parrySuccess = false; } }
   const rawX = Number(input.right) - Number(input.left), rawY = Number(input.down) - Number(input.up), length = Math.hypot(rawX, rawY), nx = length ? rawX / length : 0, ny = length ? rawY / length : 0;
-  if (!busy(f)) {
-    if (input.dash && !f.previousInput.dash && f.stamina >= DASH.cost) {
-      beginAction(state, f, 'dash', DASH.cost); f.dashX = length ? nx : f.aimX; f.dashY = length ? ny : f.aimY;
-    } else if (input.parry && !f.previousInput.parry && f.stamina >= PARRY.cost) beginAction(state, f, 'parry', PARRY.cost);
-    else if (input.heavy && !f.previousInput.heavy && f.stamina >= MOVES.heavy.cost) beginAction(state, f, 'heavy', MOVES.heavy.cost);
-    else if (input.attack && !f.previousInput.attack && f.stamina >= MOVES.light.cost) beginAction(state, f, 'light', MOVES.light.cost);
-    else if (input.throw && !f.previousInput.throw && f.kunai > 0 && f.stamina >= 6) { beginAction(state, f, 'throw', 6); f.kunai--; }
-    else f.action = length ? 'run' : 'idle';
-  }
-  let speed = 2.6;
-  if (MOVES[f.action]) { const move = MOVES[f.action]; speed = f.actionFrame < move.startup ? .85 : f.actionFrame < move.startup + move.active ? .25 : 1.2; }
-  if (f.action === 'throw') speed = 1.4;
-  if (f.action === 'parry') speed = .75;
+  bufferInput(state, f, input); startBufferedAction(state, f, length > 0);
+  let speed = MOVEMENT.speed;
+  if (getMove(f)) { const move = getMove(f); speed = f.actionFrame < move.startup ? MOVEMENT.startupSpeed : f.actionFrame < move.startup + move.active ? MOVEMENT.activeSpeed : MOVEMENT.recoverySpeed; }
+  if (f.action === 'throw') speed = MOVEMENT.throwSpeed;
+  if (f.action === 'parry') speed = MOVEMENT.parrySpeed;
+  if (f.action === 'feint') speed = MOVEMENT.feintSpeed;
   if (f.action === 'stun') speed = 0;
   if (f.action === 'dash') {
     f.dashFrame = f.actionFrame; f.invulnerable = f.actionFrame >= DASH.startup && f.actionFrame <= DASH.invulnerableEnd;
-    const dashSpeed = f.actionFrame < DASH.startup ? 3 : f.actionFrame >= 18 ? 3.8 : DASH.speed;
+    const dashSpeed = f.actionFrame < DASH.startup ? DASH.startupSpeed : f.actionFrame >= DASH.brakeStart ? DASH.brakeSpeed : DASH.speed;
     f.vx = f.dashX * dashSpeed; f.vy = f.dashY * dashSpeed;
   } else { f.vx = nx * speed; f.vy = ny * speed; }
   if (!busy(f) && f.staminaDelay === 0) f.stamina = Math.min(100, f.stamina + .30);
@@ -244,14 +317,21 @@ function updateFighter(state, f, input) {
   if (f.kunai < KUNAI.capacity && !busy(f)) { f.kunaiRecoveryTicks++; if (f.kunaiRecoveryTicks >= KUNAI.recoverTicks) { f.kunai++; f.kunaiRecoveryTicks = 0; emit(state, 'recovered', { fighter: f.id, x: f.x, y: f.y }); } }
   f.previousInput = input; return moveFighter(state, f, f.vx, f.vy);
 }
-function parrying(f, fromX, fromY) {
-  if (f.action !== 'parry' || f.actionFrame < PARRY.startup || f.actionFrame > PARRY.activeEnd) return false;
+function parryType(f, fromX, fromY) {
+  if (!getCombatOptions(f).parryActive) return null;
   const dx = fromX - f.x, dy = fromY - f.y, length = Math.hypot(dx, dy);
-  return length < EPS || (dx * Math.cos(f.actionFacing) + dy * Math.sin(f.actionFacing)) / length >= Math.cos(PARRY.cone);
+  const alignment = length < EPS ? 1 : (dx * Math.cos(f.actionFacing) + dy * Math.sin(f.actionFacing)) / length;
+  if (alignment < Math.cos(PARRY.cone)) return null;
+  return f.actionFrame <= PARRY.perfectEnd && alignment >= Math.cos(PARRY.perfectCone) ? 'perfect' : 'normal';
+}
+function rewardParry(f, perfect) {
+  f.parries++; if (perfect) f.perfectParries++;
+  f.parrySuccess = true; f.stamina = Math.min(100, f.stamina + (perfect ? PARRY.perfectRefund : PARRY.refund));
 }
 function hurt(state, source, target, damage, x, y, type) {
-  const taken = Math.min(target.hp, damage); target.hp -= taken; source.damageDealt += taken;
-  emit(state, 'hit', { fighter: source.id, target: target.id, damage: taken, x, y, attack: type });
+  const taken = Math.min(target.hp, damage); target.hp -= taken; source.damageDealt += taken; target.inputBuffer = null;
+  if (taken > 0 && (type === 'light' || type === 'heavy')) { source.hitConfirmed = true; source.hitTick = state.tick; }
+  emit(state, 'hit', { fighter: source.id, target: target.id, damage: taken, x, y, attack: type, comboStep: type === 'light' ? source.comboStep : 0 });
 }
 function bladeContact(state, source, target, move) {
   const dx = target.x - source.x, dy = target.y - source.y, length = Math.hypot(dx, dy);
@@ -294,14 +374,16 @@ function melee(state) {
     if (!move || source.hp <= 0 || target.hp <= 0 || source.actionFrame < move.startup || source.actionFrame >= move.startup + move.active || source.attackHits.includes(target.id) || target.invulnerable) continue;
     const contact = bladeContact(state, source, target, move);
     if (!contact) continue;
-    contacts.push({ source, target, move, ...contact, parried: parrying(target, source.x, source.y), action: source.action });
+    contacts.push({ source, target, move, ...contact, parried: parryType(target, source.x, source.y), action: source.action });
   }
   // Evaluate both committed strikes before applying damage so equal-tick trades are symmetric.
   for (const hit of contacts) {
     const { source, target, move, x, y, parried, action } = hit; source.attackHits.push(target.id);
     if (parried) {
-      source.action = 'stun'; source.actionFrame = 0; source.stunDuration = PARRY.stun; source.vx = source.vy = 0; target.parries++; target.stamina = Math.min(100, target.stamina + 10);
-      emit(state, 'parry', { fighter: target.id, target: source.id, x, y, facing: target.actionFacing });
+      const perfect = parried === 'perfect';
+      source.action = 'stun'; source.actionFrame = 0; source.stunDuration = perfect ? PARRY.perfectStun : PARRY.stun; source.vx = source.vy = 0; source.inputBuffer = null; source.hitConfirmed = false; source.hitTick = -1; source.comboStep = 0;
+      rewardParry(target, perfect);
+      emit(state, 'parry', { fighter: target.id, target: source.id, perfect, x, y, facing: target.actionFacing });
     } else hurt(state, source, target, move.damage, x, y, action);
   }
 }
@@ -332,10 +414,12 @@ function projectiles(state, paths) {
       if (!target) { emit(state, 'cover', { fighter: shot.owner, x, y }); continue; }
       const point = shot.bornTick === state.tick ? { x: target.x, y: target.y } : pointAt(paths[target.id], first);
       // Direction comes from the actual incoming contact, not the projectile's end position.
-      if (shot.reflections < 2 && parrying({ ...target, x: point.x, y: point.y }, x - shot.vx, y - shot.vy)) {
-        shot.owner = target.id; shot.vx = -shot.vx; shot.vy = -shot.vy; shot.x = x; shot.y = y; shot.bornTick = state.tick; shot.reflections++;
-        target.parries++; target.stamina = Math.min(100, target.stamina + 8);
-        emit(state, 'deflect', { fighter: target.id, x, y, facing: target.actionFacing }); kept.push(shot);
+      const parried = shot.reflections < 2 && parryType({ ...target, x: point.x, y: point.y }, x - shot.vx, y - shot.vy);
+      if (parried) {
+        const perfect = parried === 'perfect', speed = perfect ? PARRY.perfectReflectionSpeed : 1;
+        shot.owner = target.id; shot.vx *= -speed; shot.vy *= -speed; shot.x = x; shot.y = y; shot.bornTick = state.tick; shot.reflections++;
+        rewardParry(target, perfect);
+        emit(state, 'deflect', { fighter: target.id, perfect, x, y, facing: target.actionFacing }); kept.push(shot);
       } else hurt(state, state.fighters[shot.owner], target, shot.damage, x, y, 'kunai');
       continue;
     }
@@ -348,14 +432,14 @@ function finishRound(state, winner, reason) {
   state.phase = 'roundEnd'; state.phaseTicks = TICK_RATE * 2; state.winner = winner;
   if (winner !== null) state.fighters[winner].wins++;
   state.projectiles = [];
-  for (const f of state.fighters) { f.vx = f.vy = 0; f.invulnerable = false; f.action = f.hp <= 0 ? 'dead' : 'idle'; f.actionFrame = 0; }
+  for (const f of state.fighters) { f.vx = f.vy = 0; f.invulnerable = false; f.action = f.hp <= 0 ? 'dead' : 'idle'; f.actionFrame = 0; f.inputBuffer = null; f.hitConfirmed = false; f.hitTick = -1; f.comboStep = 0; f.parrySuccess = false; }
   emit(state, 'roundEnd', { winner, reason, x: 480, y: 320 });
 }
 export function step(state, inputs = []) {
   state.tick++;
   if (state.phase === 'lobby' || state.phase === 'matchEnd') return state;
   if (state.phase === 'countdown') {
-    for (const f of state.fighters) f.previousInput = readInput(f, inputs[f.id]);
+    for (const f of state.fighters) { f.previousInput = readInput(f, inputs[f.id]); f.inputBuffer = null; }
     if (--state.phaseTicks <= 0) { state.phase = 'fight'; state.phaseTicks = 0; emit(state, 'fight', { round: state.round }); }
     return state;
   }

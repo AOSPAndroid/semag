@@ -26,7 +26,8 @@
 .shinobi-touch-actions button[data-shinobi-action=attack]{background:#edb39c;border-color:#c98c76;color:#633d30}
 .shinobi-touch-actions button[data-shinobi-action=heavy]{background:#e5c6a4;border-color:#c6a180;color:#694b34}
 .shinobi-touch-actions button[data-shinobi-action=parry]{background:#dce9df;border-color:#9fbbaa;color:#365b4c}
-.shinobi-touch-actions button[data-shinobi-action=dash]{grid-column:1/-1;background:#dbe4e7;color:#365262}
+.shinobi-touch-actions button[data-shinobi-action=feint]{background:#e5dfec;border-color:#aea0bb;color:#5a486b}
+.shinobi-touch-actions button[data-shinobi-action=dash]{background:#dbe4e7;color:#365262}
 .shinobi-touch-actions button.is-held{background:#698e84;border-color:#486e62;color:#fffbe7;box-shadow:inset 0 1px 2px #324a6933;transform:translateY(1px)}
 .shinobi-touch-actions button:focus-visible{outline:3px solid #496f65;outline-offset:2px}
 .shinobi-mode #arena:focus-visible{outline:2px solid #93b9a3;outline-offset:-2px}

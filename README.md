@@ -10,7 +10,7 @@ A self-hosted browser hub with **27 games: fifteen solo games, ten two-player ga
 | Voxel Breach | Tactical voxel 3D FPS: 1v1 / 2v2 / 3v3 | Hold angles, plant or defuse the bomb, and win four rounds on one of seven authored maps. |
 | Voxel Royale | First-person voxel battle royale: 2–10 players | Spawn randomly, scavenge weapons and supplies, escape the shrinking storm, and be the last survivor on one of four authored maps. |
 | Shadow Lantern | Solo ninja stealth campaign | Collect guarded seals and extract across nine authored heists in three districts, using cover, sneaking, distractions and limited smoke. |
-| Shinobi Showdown | Real-time 1v1 ninja duel | Read committed katana strikes, parry or reflect kunai, and manage stamina across three arenas. |
+| Shinobi Showdown | Real-time 1v1 ninja duel | Confirm katana chains, feint heavy strikes, land precise parries and manage stamina across three arenas. |
 | Skyline Hook | Solo precision grappling platformer | Swing through twelve authored rooftops in three districts with campaign lives and a completed-run time record. |
 | Starfall Squadron | Solo bullet-hell shooter | Focus through six stages, defeat six guardians, graze shots and shape your ship with upgrades. |
 | Ironwood Tactics | Solo squad tactics roguelike | Read locked enemy intent, push and pull foes, and protect a beacon across nine missions and three biomes. |
@@ -159,11 +159,16 @@ Shinobi Showdown:
 | Aim | Mouse |
 | Quick katana cut | C / left mouse button; J still works |
 | Heavy katana cut | G / right mouse button; K still works |
+| Feint a heavy windup | R during combat; R readies up in the lobby |
 | Throw kunai | E; L still works |
 | Timed directional parry | F; I still works |
 | Dash | Space / Shift |
 
-Aim before attacking: each cut commits to its starting direction. Face an incoming attack and time a parry to stun a swordsman or reflect a kunai. Dashes cost stamina and cannot pass through cover or bodies. Three kunai recover one at a time during free movement. Touch screens provide separate movement and aim pads plus five action buttons. Both players press Ready; the first to two round wins takes the match. Rounds rotate Moonlit Rooftops, Lantern Garden and Winter Shrine and last 75 seconds. Higher remaining health wins a timeout; equal health draws. Matches end after at most five rounds, and both players must agree to a rematch.
+Aim before attacking: each cut commits to the direction chosen when you press, including a briefly buffered attack. Footwork, cuts and tools are faster. After a light cut actually damages your opponent, a fresh Cut during recovery frames 16–26 links another strike, up to three. Each link spends stamina and locks its own direction; a missed cut or the third cut completes recovery. A confirmed Dash cancel in the same window costs 36 stamina instead of the normal 28, giving you a paid retreat rather than a free escape.
+
+Press R to feint a heavy windup during frames 6–17. It costs 12 extra stamina and leaves 14 ticks of exposed recovery, so baiting a defensive reaction carries risk. Face an incoming attack and time a parry: frames 2–9 defend, while frames 2–4 with tighter facing reward a perfect parry. A successful parry recovers sooner; a perfect sword parry stuns the attacker longer, and a perfect kunai deflection sends it back faster. Failed parries remain punishable. These timings use the deterministic 120 Hz simulation. Inputs buffer for at most 10 ticks and held buttons never repeat attacks automatically. Controls held before the bell need a fresh release and press.
+
+Dashes evade during frames 3–9 and cannot pass through cover or bodies. Three kunai recover one at a time during free movement. Touch screens provide separate movement and aim pads plus six action buttons. Both players press Ready; the first to two round wins takes the match. Rounds rotate Moonlit Rooftops, Lantern Garden and Winter Shrine and last 75 seconds. Higher remaining health wins a timeout; equal health draws. Matches end after at most five rounds, and both players must agree to a rematch.
 
 Brushing another fighter blocks movement into their body while preserving sideways movement and retreat. Dash flanks use the same cover contacts, and kunai collisions follow the resulting movement path.
 
@@ -259,6 +264,8 @@ Run `python test/compact-play-browser-smoke.py http://127.0.0.1:3000` for native
 Run `python test/high-refresh-browser-smoke.py http://127.0.0.1:3000` for native gameplay, rendering, collision and pause/resume checks of the high-refresh presentation paths. Automated timing tests cover 60, 120, 144 and 240 Hz independently of the browser machine's display.
 
 Run `python test/voxel-practice-browser-smoke.py http://127.0.0.1:3000` for solo FPS setup, real combat and scavenging, keyboard/mouse and touch controls, pause/restart, fullscreen and responsive layouts.
+
+Run `python test/shinobi-browser-smoke.py http://127.0.0.1:3000` for native two-player readiness, rapid keyboard/mouse inputs, hit-confirm chains, heavy feints, parries, collisions, French and touch controls, responsive combat feedback, round transitions and rematches.
 
 With Python Playwright and Chromium installed, run `python test/voxel-polish-browser-smoke.py http://127.0.0.1:3000` for native two-client checks of confirmed blood effects, 200-HP combat, 60-HP healing, the Royale starter knife and compact desktop/mobile views.
 

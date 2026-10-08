@@ -18,6 +18,7 @@ export function createCombatKeyMap(gameId) {
       return new Map([...MOVEMENT,
         ['KeyC', 'attack'], ['KeyJ', 'attack'], ['KeyG', 'heavy'], ['KeyK', 'heavy'],
         ['KeyE', 'throw'], ['KeyL', 'throw'], ['KeyF', 'parry'], ['KeyI', 'parry'],
+        ['KeyR', 'feint'],
         ['Space', 'dash'], ['ShiftLeft', 'dash'], ['ShiftRight', 'dash'],
       ]);
     case 'vector-arena':

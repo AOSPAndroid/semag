@@ -31,7 +31,8 @@ export function presentPlanarFighter(state, previous, index, fraction, { adjacen
 }
 
 /** Network buffering delays transforms alone; damage, deaths and actions stay current. */
-export function presentNetworkPlanarFighter(state, before, after, index, targetTime) {
+export function presentNetworkPlanarFighter(state, before, after, index, targetTime, { maxDistance = 64 } = {}) {
+  const distanceLimit = Number.isFinite(maxDistance) ? Math.max(0, Math.min(128, maxDistance)) : 64;
   const fighter = state.fighters[index], older = before?.state, newer = after?.state;
   if (!fighter || !older?.fighters[index] || !newer?.fighters[index]
       || state.phase !== 'fight' || !Number.isFinite(before.time + after.time) || after.time < before.time
@@ -43,7 +44,7 @@ export function presentNetworkPlanarFighter(state, before, after, index, targetT
       && (fighter.hp == null || fighter.hp > 0) === (candidate.hp == null || candidate.hp > 0)
       && ((fighter.respawnTicks || 0) > 0) === ((candidate.respawnTicks || 0) > 0)
       && Number.isFinite(fighter.x + fighter.y + candidate.x + candidate.y)
-      && Math.hypot(fighter.x - candidate.x, fighter.y - candidate.y) <= 64;
+      && Math.hypot(fighter.x - candidate.x, fighter.y - candidate.y) <= distanceLimit;
   };
   if (!compatible(older) || !compatible(newer) || !Number.isFinite(targetTime)) return { ...fighter };
   const alpha = Math.max(0, Math.min(1, (targetTime - before.time) / Math.max(1, after.time - before.time)));

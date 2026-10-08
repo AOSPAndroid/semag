@@ -6,6 +6,7 @@ import * as checkers from '../checkers-engine.js';
 import * as cards from '../cards-engine.js';
 import * as vector from '../vector-engine.js';
 import * as shinobi from '../shinobi-engine.js';
+import { createShinobiInputQueue, createShinobiMouseButtons, SHINOBI_EDGE_ACTIONS } from '../shinobi-input.js';
 import * as brawl from '../brawl-engine.js';
 import { TopdownRenderer } from '../topdown-renderer.js';
 import { CheckersView } from '../checkers-view.js';
@@ -81,7 +82,7 @@ if (vectorMode) {
 }
 if (shinobiMode) {
   $('stage-label').textContent = 'MOONLIT ROOFTOPS / 120 HZ';
-  $('controls-panel').innerHTML = `<h2>Read their blade.</h2><div class="control-line"><span class="keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><span>Move</span></div><div class="control-line"><kbd class="wide-key">MOUSE</kbd><span>Aim</span></div><div class="control-line"><kbd class="wide-key">LMB / C</kbd><span>Quick katana cut</span></div><div class="control-line"><kbd class="wide-key">RMB / G</kbd><span>Committed heavy cut</span></div><div class="control-line"><kbd>E</kbd><span>Throw a kunai</span></div><div class="control-line"><kbd>F</kbd><span>Timed directional parry</span></div><div class="control-line"><kbd class="wide-key">SPACE</kbd><span>Dash / evade</span></div><p id="combat-tip">Aim before committing: a sword strike locks its direction. Face an incoming blade or kunai and tap Parry just before contact. A successful parry stuns a swordsman or reflects a kunai.</p><details><summary>Timing &amp; touch controls</summary><p>Quick cuts start after 10 ticks; heavy cuts after 28. Parry starts after 3 ticks and works through tick 13, then leaves you open. Dash costs 30 stamina and evades during ticks 3–12; it cannot cross bodies or cover. Three kunai recover one at a time after two seconds of free movement. Use the Move and Aim pads with five action buttons on touch screens. Arrow keys also move; Shift also dashes. Legacy J/K cuts, L kunai and I parry also work. First to two rounds across three arenas, 75 seconds per round; five rounds at most if there are draws.</p></details>`;
+  $('controls-panel').innerHTML = `<h2>Read. Confirm. Outplay.</h2><div class="control-line"><span class="keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><span>Move</span></div><div class="control-line"><kbd class="wide-key">MOUSE</kbd><span>Aim</span></div><div class="control-line"><kbd class="wide-key">LMB / C</kbd><span>Cut / link a confirmed hit</span></div><div class="control-line"><kbd class="wide-key">RMB / G</kbd><span>Committed heavy cut</span></div><div class="control-line"><kbd>R</kbd><span>Feint a heavy windup</span></div><div class="control-line"><kbd>E</kbd><span>Throw a kunai</span></div><div class="control-line"><kbd>F</kbd><span>Directional parry</span></div><div class="control-line"><kbd class="wide-key">SPACE</kbd><span>Dash / evade</span></div><p id="combat-tip">Confirm a light hit, then tap Cut again to link up to three strikes or Dash to retreat. Each cut locks your aim separately. Feint a heavy windup to bait a parry; its recovery leaves you open. Face the incoming strike and time a perfect parry for a stronger counter opening.</p><details><summary>Timing &amp; touch controls</summary><p>At 120 ticks per second, quick cuts start after ${shinobi.MOVES.light.startup} ticks and heavy cuts after ${shinobi.MOVES.heavy.startup}. A fresh press after a damaging hit can link during light frames ${shinobi.CHAIN.startFrame}–${shinobi.CHAIN.endFrame}; a missed cut and the third cut complete recovery. A confirmed retreat dash costs ${shinobi.CHAIN.dashCancelCost} stamina. R feints a heavy during frames ${shinobi.FEINT.startFrame}–${shinobi.FEINT.endFrame}, costs ${shinobi.FEINT.cost} extra stamina and leaves ${shinobi.FEINT.duration} ticks of exposed recovery. Parry works during frames ${shinobi.PARRY.startup}–${shinobi.PARRY.activeEnd}; frames ${shinobi.PARRY.startup}–${shinobi.PARRY.perfectEnd} with precise facing reward a perfect parry. Successful parries recover sooner; a failed parry stays vulnerable. Dash costs ${shinobi.DASH.cost} and evades only during frames ${shinobi.DASH.startup}–${shinobi.DASH.invulnerableEnd}; bodies and cover still block it. Three kunai recover one at a time after two seconds of free movement. A perfect deflection returns a faster kunai. Inputs buffer briefly and keep the aim chosen when you press. Use the Move and Aim pads with six action buttons on touch screens. Arrow keys move; Shift also dashes. Legacy J/K cuts, L kunai and I parry work. First to two rounds across three arenas, 75 seconds per round. R readies up in the lobby.</p></details>`;
 }
 if (coop) $('combat-tip').textContent = 'Clear nine rooms across three biomes and defeat three bosses. Between rooms, walk to a shrine and hold Guard to choose a boon. Hold Guard near a fallen ally to revive them. No friendly fire.';
 if (realtimeMode && !coop && !modernControls) $('combat-tip').textContent = 'Win two rounds across Moss Courtyard, Tide Archive, and Cinder Gallery. Face a strike to guard, tap just before impact to parry, and use each arena’s pillars as cover.';
@@ -147,6 +148,7 @@ function receiveState(message) {
     audio.playEvents([{ id: state.moves * 1000 + state.lastMove.tick, type: state.lastMove.capture == null ? 'block' : 'hit', x: 0, y: 0 }]);
   }
   if (state.phase !== previousPhase) {
+    if (shinobiInputs) { refreshKeys(); shinobiInputs.reset({ held: keys, neutral: state.phase === 'fight' }); }
     if (state.phase === 'fight' && realtimeMode) { flashUntil = performance.now() + 550; audio.fight(); }
     if (state.phase === 'lobby') { releaseKeys(); countdownLast = null; board?.resetSelection(); cardTable?.resetSelection(); }
     previousPhase = state.phase;
@@ -194,9 +196,12 @@ const keyMap = createCombatKeyMap(gameId);
 let vectorAim = { x: 1, y: 0 }, pointerTarget = null;
 const pointerButtons = { fire: false, focus: false, attack: false, heavy: false }, touchButtons = Object.create(null), touchPointers = new Map();
 const pressIntents = new Set(), actionButtonKeys = new Map();
-const latchedActions = new Set(shinobiMode ? ['attack', 'heavy', 'throw', 'parry', 'dash'] : vectorMode ? ['fire', 'dash', 'reload'] : brawlMode ? ['jump', 'attack', 'special', 'dodge'] : []);
+const latchedActions = new Set(shinobiMode ? SHINOBI_EDGE_ACTIONS : vectorMode ? ['fire', 'dash', 'reload'] : brawlMode ? ['jump', 'attack', 'special', 'dodge'] : []);
+const shinobiInputs = shinobiMode ? createShinobiInputQueue() : null;
+const shinobiMouse = shinobiMode ? createShinobiMouseButtons() : null;
 function typing(target) { return target instanceof HTMLElement && (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable); }
 function refreshKeys() {
+  const previous = keys;
   keys = combatInputFromKeys(keyMap, held.values(), emptyInput());
   if (!modernControls) return;
   for (const [key, value] of Object.entries(touchButtons)) if (value) keys[key] = true;
@@ -210,8 +215,14 @@ function refreshKeys() {
     if (length > 1) vectorAim = { x: dx / length, y: dy / length };
   }
   keys.aimX = vectorAim.x; keys.aimY = vectorAim.y;
+  if (shinobiInputs) for (const action of SHINOBI_EDGE_ACTIONS) {
+    if (keys[action] && !previous[action] && authoritative.phase === 'fight') shinobiInputs.press(action, keys);
+    if (!keys[action] && previous[action]) shinobiInputs.release(action);
+  }
 }
 function releaseKeys() {
+  shinobiInputs?.reset({ neutral: true });
+  shinobiMouse?.reset();
   held.clear(); pressIntents.clear(); actionButtonKeys.clear(); pointerButtons.fire = false; pointerButtons.focus = false; pointerButtons.attack = false; pointerButtons.heavy = false;
   for (const key of Object.keys(touchButtons)) delete touchButtons[key];
   for (const [id, control] of touchPointers) {
@@ -243,7 +254,7 @@ document.addEventListener('keydown', event => {
     const action = keyMap.get(code);
     if (!held.has(identity) && latchedActions.has(action)) pressIntents.add(action);
   }
-  if (!vectorMode && code === 'KeyR' && !event.repeat) { event.preventDefault(); $('ready-button').click(); }
+  if (!vectorMode && code === 'KeyR' && !event.repeat && (!shinobiMode || ['lobby', 'matchEnd'].includes(authoritative.phase))) { event.preventDefault(); $('ready-button').click(); }
   if (realtimeMode && keyMap.has(code)) { event.preventDefault(); held.set(identity, code); refreshKeys(); focusLost = false; }
 });
 document.addEventListener('keyup', event => {
@@ -259,10 +270,11 @@ canvas.addEventListener('pointerdown', event => {
   if ($('room-panel').open) return;
   canvas.focus(); focusLost = false;
   if (!aimMode) return;
-  event.preventDefault(); updatePointerAim(event);
+  if (!shinobiMode || event.pointerType !== 'mouse') event.preventDefault();
+  updatePointerAim(event);
   if (event.pointerType === 'mouse' || event.pointerType === 'pen') {
     if (vectorMode) { pointerButtons.fire = !!(event.buttons & 1); pointerButtons.focus = !!(event.buttons & 2); if (event.button === 0) pressIntents.add('fire'); }
-    if (shinobiMode) { pointerButtons.attack = !!(event.buttons & 1); pointerButtons.heavy = !!(event.buttons & 2); if (event.button === 0) pressIntents.add('attack'); if (event.button === 2) pressIntents.add('heavy'); }
+    if (shinobiMode) Object.assign(pointerButtons, shinobiMouse.down(event.button, event.buttons));
   }
   canvas.setPointerCapture(event.pointerId); refreshKeys();
 });
@@ -280,7 +292,7 @@ canvas.addEventListener('pointermove', event => {
   updatePointerAim(event);
   if (event.pointerType === 'mouse' || event.pointerType === 'pen') {
     if (vectorMode) { pointerButtons.fire = !!(event.buttons & 1); pointerButtons.focus = !!(event.buttons & 2); }
-    if (shinobiMode) { pointerButtons.attack = !!(event.buttons & 1); pointerButtons.heavy = !!(event.buttons & 2); }
+    if (shinobiMode) Object.assign(pointerButtons, shinobiMouse.sync(event.buttons));
   }
   refreshKeys();
 });
@@ -288,17 +300,43 @@ function releasePointer(event) {
   if (!aimMode || event.pointerType !== 'mouse' && event.pointerType !== 'pen') return;
   pointerButtons.fire = event.type === 'pointerup' && !!(event.buttons & 1);
   pointerButtons.focus = event.type === 'pointerup' && !!(event.buttons & 2);
-  pointerButtons.attack = event.type === 'pointerup' && !!(event.buttons & 1);
-  pointerButtons.heavy = event.type === 'pointerup' && !!(event.buttons & 2);
+  if (shinobiMode) Object.assign(pointerButtons, event.type === 'pointercancel' ? shinobiMouse.reset() : shinobiMouse.sync(event.buttons));
+  else {
+    pointerButtons.attack = event.type === 'pointerup' && !!(event.buttons & 1);
+    pointerButtons.heavy = event.type === 'pointerup' && !!(event.buttons & 2);
+  }
   if (event.type === 'pointercancel') for (const action of ['fire', 'attack', 'heavy']) pressIntents.delete(action);
   refreshKeys();
+  if (shinobiMode && event.type === 'pointercancel') shinobiInputs.reset({ held: keys, neutral: true });
 }
 window.addEventListener('pointerup', releasePointer);
 window.addEventListener('pointercancel', releasePointer);
-canvas.addEventListener('lostpointercapture', () => {
+canvas.addEventListener('lostpointercapture', event => {
+  if (shinobiMode) {
+    if (!['mouse', 'pen'].includes(event.pointerType)) return;
+    const hadButtons = pointerButtons.attack || pointerButtons.heavy;
+    // Chromium may release capture after a chorded partial button release.
+    // The event's remaining held bits are physical input, not cancellation.
+    Object.assign(pointerButtons, shinobiMouse.sync(event.buttons));
+    refreshKeys();
+    if (hadButtons && !(event.buttons & 3)) shinobiInputs.reset({ held: keys, neutral: true });
+    return;
+  }
   if (aimMode) { if (pointerButtons.fire) pressIntents.delete('fire'); if (pointerButtons.attack) pressIntents.delete('attack'); if (pointerButtons.heavy) pressIntents.delete('heavy'); pointerButtons.fire = false; pointerButtons.focus = false; pointerButtons.attack = false; pointerButtons.heavy = false; refreshKeys(); }
 });
 canvas.addEventListener('contextmenu', event => { if (aimMode) event.preventDefault(); });
+// Pointer events report the first pressed and final released mouse button.
+// Mouse events also preserve short second-button taps while another is held.
+canvas.addEventListener('mousedown', event => {
+  if (!shinobiMode || $('room-panel').open || event.sourceCapabilities?.firesTouchEvents) return;
+  if (![0, 2].includes(event.button)) return;
+  event.preventDefault(); canvas.focus(); focusLost = false; updatePointerAim(event);
+  Object.assign(pointerButtons, shinobiMouse.down(event.button, event.buttons)); refreshKeys();
+});
+window.addEventListener('mouseup', event => {
+  if (!shinobiMode || event.sourceCapabilities?.firesTouchEvents) return;
+  Object.assign(pointerButtons, shinobiMouse.sync(event.buttons)); refreshKeys();
+});
 setupVectorTouch();
 setupShinobiTouch();
 setupBrawl();
@@ -307,7 +345,7 @@ const keyboardLabels = [...$('controls-panel').querySelectorAll('kbd')].map(node
 const keyboardArenaLabel = brawlMode
   ? 'Oddstock Rumble. {A} and {D} move, {W} and {S} choose move direction, Space jumps, {C} attacks, {G} uses a special, {F} shields, Shift dodges. Legacy {J}, {K}, {I} and {L} controls also work.'
   : shinobiMode
-    ? 'Shinobi Showdown. {WASD} or arrow keys move, mouse aims, left mouse or {C} cuts, right mouse or {G} uses a heavy cut, {E} throws a kunai, {F} parries, Space or Shift dashes.'
+    ? 'Shinobi Showdown. {WASD} or arrow keys move, mouse aims, left mouse or {C} cuts and links confirmed hits, right mouse or {G} uses a heavy cut, {R} feints its windup, {E} throws a kunai, {F} parries, Space or Shift dashes.'
     : vectorMode
     ? 'Vector Arena. {WASD} or arrow keys move, mouse aims, left mouse or {C} fires, right mouse or {F} focuses, Space dashes, {R} reloads.'
     : 'Top-down adventure game. Use {WASD} to move, {C} to swing, {G} to shoot, Space or Shift to roll, {F} to guard. Legacy {J}, {K}, {I} and {L} controls also work.';
@@ -392,6 +430,7 @@ function setupShinobiTouch() {
       if (control.dataset.shinobiAction) touchButtons[control.dataset.shinobiAction] = false;
       if (event.type !== 'pointerup' && control.dataset.shinobiAction) pressIntents.delete(control.dataset.shinobiAction);
       refreshKeys();
+      if (event.type !== 'pointerup') shinobiInputs?.reset({ held: keys, neutral: true });
       if (control.hasPointerCapture(event.pointerId)) control.releasePointerCapture(event.pointerId);
     };
     control.addEventListener('pointerdown', event => {
@@ -549,10 +588,10 @@ $('fullscreen-button').addEventListener('click', async () => { try { if (documen
 
 function inputTick() {
   if (!realtimeMode || !connected || localId == null) return;
-  if (authoritative.phase !== 'fight') { pressIntents.clear(); return; }
+  if (authoritative.phase !== 'fight') { pressIntents.clear(); shinobiInputs?.reset({ held: keys }); return; }
   if (modernControls) refreshKeys();
-  const buttons = { ...keys };
-  if (modernControls) { for (const action of pressIntents) buttons[action] = true; pressIntents.clear(); }
+  const buttons = shinobiInputs ? shinobiInputs.sample(keys) : { ...keys };
+  if (modernControls) { if (!shinobiInputs) for (const action of pressIntents) buttons[action] = true; pressIntents.clear(); }
   const frame = { type: 'input', seq: ++sequence, buttons }; pending.push(frame); send(frame);
   if (pending.length > 180) pending.shift();
   if (predicted.phase === 'fight') {
@@ -575,8 +614,9 @@ function displayState(now, fraction) {
   let before = snapshots[0], after = snapshots.at(-1);
   for (let i = 1; i < snapshots.length; i++) if (snapshots[i].time >= target) { before = snapshots[i - 1]; after = snapshots[i]; break; }
   if (before && after && before.state.phase === 'fight' && after.state.phase === 'fight') {
-    state.fighters[1 - localId] = presentNetworkPlanarFighter(authoritative, before, after, 1 - localId, target);
+    state.fighters[1 - localId] = presentNetworkPlanarFighter(authoritative, before, after, 1 - localId, target, { maxDistance: shinobiMode ? 96 : 64 });
   }
+  if (shinobiMode) state.fighters = shinobi.sweepPresentationFighters(predicted, state.fighters);
   return state;
 }
 function cardObjective(state, names) {
@@ -613,6 +653,16 @@ function updateDungeonBuild(state) {
   if (state.roomBreak && !updateDungeonBuild.wasBreak) $('dungeon-build-details').open = true;
   updateDungeonBuild.wasBreak = state.roomBreak;
 }
+function shinobiDetail(fighter) {
+  const options = shinobi.getCombatOptions(fighter);
+  if (fighter.action === 'stun') return 'PARRIED / OPEN';
+  if (fighter.action === 'feint') return 'FEINT / EXPOSED';
+  if (options.canFeint) return 'FEINT READY';
+  if (options.canChain) return `LINK CUT ${fighter.comboStep + 1}`;
+  if (fighter.action === 'parry') return fighter.parrySuccess ? 'COUNTER OPENING' : options.perfectParryActive ? 'PERFECT WINDOW' : options.parryActive ? 'PARRY WINDOW' : 'RECOVERING';
+  if (fighter.action === 'light') return `CUT ${fighter.comboStep} / ${shinobi.CHAIN.max}`;
+  return `${fighter.kunai} / ${shinobi.KUNAI.capacity} KUNAI`;
+}
 function updateHUD(now) {
   const state = authoritative, phase = state.phase;
   setAttribute($('room-app'), 'data-phase', phase);
@@ -645,7 +695,7 @@ function updateHUD(now) {
       setStyle($(prefix + '-health'), 'width', `${Math.min(100, Math.max(0, fighter.hp) / (fighter.maxHp || 100) * 100)}%`);
       setStyle($(prefix + '-stamina'), 'width', `${Math.max(0, fighter.stamina)}%`);
       setText($(prefix + '-score'), coop ? fighter.downed ? '↓' : `${Math.ceil(fighter.hp)}` : `${fighter.wins} / 2`);
-      setText($(prefix + '-detail'), shinobiMode ? fighter.action === 'stun' ? 'PARRIED / OPEN' : fighter.action === 'parry' ? fighter.actionFrame < shinobi.PARRY.startup ? 'SETTING PARRY' : fighter.actionFrame <= shinobi.PARRY.activeEnd ? 'PARRY WINDOW' : 'RECOVERING' : `${fighter.kunai} / 3 KUNAI` : vectorMode ? fighter.reloadTicks > 0 ? `RELOAD ${(fighter.reloadTicks / 120).toFixed(1)}s` : `${fighter.ammo} / 6 SHOTS` : fighter.downed ? `REVIVE ${Math.round((fighter.reviveProgress || 0) / 180 * 100)}%` : fighter.guardBroken ? 'GUARD BROKEN' : fighter.action === 'block' ? 'GUARDING' : fighter.action === 'roll' ? 'EVADING' : 'STAMINA');
+      setText($(prefix + '-detail'), shinobiMode ? shinobiDetail(fighter) : vectorMode ? fighter.reloadTicks > 0 ? `RELOAD ${(fighter.reloadTicks / 120).toFixed(1)}s` : `${fighter.ammo} / 6 SHOTS` : fighter.downed ? `REVIVE ${Math.round((fighter.reviveProgress || 0) / 180 * 100)}%` : fighter.guardBroken ? 'GUARD BROKEN' : fighter.action === 'block' ? 'GUARDING' : fighter.action === 'roll' ? 'EVADING' : 'STAMINA');
       if (aimMode) {
         setAttribute($(prefix + '-health-track'), 'aria-label', `${names[i]} health: ${Math.ceil(fighter.hp)} of 100`);
         setAttribute($(prefix + '-stamina-track'), 'aria-label', `${names[i]} ${shinobiMode ? 'combat' : 'dash'} stamina: ${Math.round(fighter.stamina)} of 100`);
@@ -681,7 +731,7 @@ function updateHUD(now) {
   } else {
     setText($('round-label'), `ROUND ${String(state.round).padStart(2, '0')}`);
     setText($('timer'), String(Math.max(0, Math.ceil(state.roundTicks / 120))).padStart(2, '0')); setText($('hud-caption'), vectorMode ? 'FIRST TO TWO' : 'FIRST TO 2');
-    setText($('objective'), phase === 'fight' ? shinobiMode ? `${state.stageName} · Commit your blade. Face the parry. Save a dash.` : vectorMode ? `${state.stageName || 'Reclaimed Garden'} · Control an angle. Focus your shots. Keep a dash in reserve.` : state.objective || 'Use the pillars as cover. Face your attacks and watch your stamina.' : phase === 'matchEnd' ? 'A winner. A rematch. Or a different game?' : 'Both players must ready up to begin.');
+    setText($('objective'), phase === 'fight' ? shinobiMode ? `${state.stageName} · Confirm the cut. Feint the parry. Own the angle.` : vectorMode ? `${state.stageName || 'Reclaimed Garden'} · Control an angle. Focus your shots. Keep a dash in reserve.` : state.objective || 'Use the pillars as cover. Face your attacks and watch your stamina.' : phase === 'matchEnd' ? 'A winner. A rematch. Or a different game?' : 'Both players must ready up to begin.');
     setText($('objective-detail'), (aimMode ? state.stageName : state.roomName)?.toUpperCase() || '90 SECOND ROUNDS');
     setText($('stage-label'), `${aimMode ? state.stageName || 'Reclaimed Garden' : state.roomName || 'Moss Courtyard'} / 120 HZ`.toUpperCase());
   }
@@ -756,6 +806,7 @@ document.addEventListener('visibilitychange', () => {
 });
 window.firesideRoom = {
   getState: () => clone(authoritative),
+  getInputState: () => ({ buttons: { ...keys }, queued: shinobiInputs?.inspect() || null }),
   getPresentation: () => presentation && ({
     renderCount: presentation.renderCount, time: presentation.time, tick: presentation.state.tick, fraction: presentation.fraction,
     fighters: presentation.state.fighters.map(({ id, x, y }) => ({ id, x, y })),

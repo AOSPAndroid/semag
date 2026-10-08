@@ -119,7 +119,7 @@ body:has(.room-panel[open]) { overflow: hidden; }
   .room-app:is(.vector-mode, .shinobi-mode, .brawl-mode):not(.brawl-lobby-open) .game-viewport { width: min(100%, var(--room-game-width, 100%)); margin-inline: auto; }
   .room-app .vector-controls, .room-app .shinobi-controls { padding: 9px 12px; }
   .room-app .vector-touch-actions { grid-template-columns: repeat(4, minmax(0, 1fr)); max-width: none; }
-  .room-app .shinobi-touch-actions { grid-template-columns: repeat(5, minmax(0, 1fr)); max-width: none; }
+  .room-app .shinobi-touch-actions { grid-template-columns: repeat(6, minmax(0, 1fr)); max-width: none; }
   .room-app .shinobi-touch-actions [data-shinobi-action=dash] { grid-column: auto; }
   .room-app .brawl-actions { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 }

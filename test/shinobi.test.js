@@ -54,17 +54,17 @@ test('katana cannot strike through solid cover', () => {
   game.step(state, [input({ heavy: true }), input({}, 1)]); advance(state, 36); assert.equal(state.fighters[1].hp, 100);
 });
 test('a well-timed directional melee parry stuns the attacker instead of taking damage', () => {
-  const state = fighting(); game.step(state, [input({ attack: true }), input({}, 1)]); advance(state, 6);
-  game.step(state, [input(), input({ parry: true }, 1)]); advance(state, 3);
+  const state = fighting(); game.step(state, [input({ attack: true }), input({}, 1)]); advance(state, game.MOVES.light.startup - game.PARRY.startup - 1);
+  game.step(state, [input(), input({ parry: true }, 1)]); advance(state, game.PARRY.startup);
   assert.equal(state.fighters[1].hp, 100); assert.equal(state.fighters[0].action, 'stun'); assert.equal(state.fighters[1].parries, 1);
   assert.equal(state.events.at(-1).type, 'parry');
 });
 test('early, late, and wrong-facing parries leave real openings', () => {
   for (const mode of ['startup', 'late', 'wrong']) {
     const state = fighting();
-    if (mode === 'late') { game.step(state, [input(), input({ parry: true }, 1)]); advance(state, 14); }
+    if (mode === 'late') { game.step(state, [input(), input({ parry: true }, 1)]); advance(state, game.PARRY.activeEnd + 1); }
     game.step(state, [input({ attack: true }), mode === 'wrong' ? input({ parry: true, aimX: 1 }, 1) : input({}, 1)]);
-    advance(state, 8);
+    advance(state, game.MOVES.light.startup - 1);
     if (mode === 'startup') game.step(state, [input(), input({ parry: true }, 1)]);
     else game.step(state, [input(), input({}, 1)]);
     game.step(state, [input(), input({}, 1)]); assert.equal(state.fighters[1].hp, 82, mode);
@@ -76,7 +76,7 @@ test('holding parry is one commitment, not an invincible permanent guard', () =>
   assert.equal(state.events.filter(e => e.type === 'parryStart').length, 1);
 });
 test('too little stamina prevents expensive moves without negative resources', () => {
-  for (const [button, cost] of [['attack', 14], ['heavy', 26], ['parry', 20], ['dash', 30], ['throw', 6]]) {
+  for (const [button, cost] of [['attack', game.MOVES.light.cost], ['heavy', game.MOVES.heavy.cost], ['parry', game.PARRY.cost], ['dash', game.DASH.cost], ['throw', 6]]) {
     const state = fighting(); state.fighters[0].stamina = cost - .5;
     game.step(state, [input({ [button]: true }), input({}, 1)]); assert.equal(state.fighters[0].action, 'idle'); assert.ok(state.fighters[0].stamina >= 0); assert.equal(state.fighters[0].kunai, 3);
   }
@@ -84,14 +84,14 @@ test('too little stamina prevents expensive moves without negative resources', (
 test('kunai release after startup, consume one tool, and recover only during free movement', () => {
   const state = fighting({ bx: 800 }); game.step(state, [input({ throw: true }), input({}, 1)]);
   assert.equal(state.fighters[0].kunai, 2); assert.equal(state.projectiles.length, 0);
-  advance(state, 13); assert.equal(state.projectiles.length, 0); game.step(state, [input(), input({}, 1)]);
+  advance(state, game.KUNAI.startup - 1); assert.equal(state.projectiles.length, 0); game.step(state, [input(), input({}, 1)]);
   assert.equal(state.projectiles.length, 1); assert.equal(state.projectiles[0].x, state.fighters[0].x + 20); // Born at end of tick.
   advance(state, game.KUNAI.recovery + game.KUNAI.recoverTicks - 1); assert.equal(state.fighters[0].kunai, 2);
   game.step(state, [input(), input({}, 1)]); assert.equal(state.fighters[0].kunai, 3);
 });
 test('a near-wall kunai muzzle stops on the near face and never appears across cover', () => {
   const state = fighting({ ax: 384, bx: 600 }); state.obstacles = [{ id: 'thin', x: 400, y: 280, w: 8, h: 80 }];
-  game.step(state, [input({ throw: true }), input({}, 1)]); advance(state, 14);
+  game.step(state, [input({ throw: true }), input({}, 1)]); advance(state, game.KUNAI.startup);
   assert.equal(state.projectiles.length, 0); const hit = state.events.findLast(e => e.type === 'cover'); assert.equal(hit.x, 397);
 });
 test('earliest kunai body or cover contact wins, independent of obstacle iteration order', () => {
@@ -114,15 +114,16 @@ test('diagonal kunai clears the empty square outside a rounded cover corner', ()
 test('directional kunai parry reflects once at actual contact and can strike the thrower later', () => {
   const state = fighting({ ax: 200, bx: 350 }); game.step(state, [input(), input({ parry: true }, 1)]); advance(state, 3);
   kunai(state, { x: 300, vx: 80 }); game.step(state, [input(), input({}, 1)]);
-  assert.equal(state.fighters[1].hp, 100); assert.equal(state.projectiles[0].owner, 1); assert.equal(state.projectiles[0].x, 332); assert.equal(state.projectiles[0].vx, -80);
+  assert.equal(state.fighters[1].hp, 100); assert.equal(state.projectiles[0].owner, 1); assert.equal(state.projectiles[0].x, 332); assert.equal(state.projectiles[0].vx, -80 * game.PARRY.perfectReflectionSpeed);
+  assert.equal(state.events.at(-1).perfect, true);
   advance(state, 2); assert.equal(state.fighters[0].hp, 86); assert.equal(state.projectiles.length, 0);
 });
 test('dash has startup and recovery vulnerability and finite stamina', () => {
-  for (const frame of [0, 3, 13]) {
+  for (const frame of [0, game.DASH.startup, game.DASH.invulnerableEnd]) {
     const state = fighting({ ax: 150, bx: 500 }); game.step(state, [input(), input({ dash: true, up: true }, 1)]); advance(state, frame);
     const f = state.fighters[1]; kunai(state, { x: f.x - 20, y: f.y, vx: 20 });
-    game.step(state, [input(), input({}, 1)]); assert.equal(f.hp, frame === 3 ? 100 : 86);
-    assert.equal(f.stamina, 70);
+    game.step(state, [input(), input({}, 1)]); assert.equal(f.hp, frame === game.DASH.startup ? 100 : 86);
+    assert.equal(f.stamina, 100 - game.DASH.cost);
   }
 });
 test('swept dash slides along exact rounded cover without entering a wall or the boundary', () => {
@@ -143,7 +144,7 @@ test('touching opponents retain shared sideways movement instead of freezing bot
     advance(state, 10, input({ right: !mirrored, left: mirrored, down: true }), input({ right: mirrored, left: !mirrored, down: true }, 1));
     for (const [id, f] of state.fighters.entries()) {
       assert.equal(f.x, id === Number(mirrored) ? 400 : 430);
-      assert.ok(Math.abs(f.y - (320 + 10 * 2.6 / Math.SQRT2)) < 1e-6, 'body contact must preserve the requested tangential velocity');
+      assert.ok(Math.abs(f.y - (320 + 10 * game.MOVEMENT.speed / Math.SQRT2)) < 1e-6, 'body contact must preserve the requested tangential velocity');
     }
     assert.equal(Math.hypot(state.fighters[0].x - state.fighters[1].x, state.fighters[0].y - state.fighters[1].y), 30);
   }
@@ -152,18 +153,18 @@ test('one player pressing into contact cannot cancel the other player sideways e
   const state = fighting({ ax: 400, bx: 430 });
   game.step(state, [input({ right: true, down: true }), input({ up: true }, 1)]);
   assert.ok(state.fighters[0].y > 320); assert.equal(state.fighters[0].x, 400);
-  assert.ok(Math.abs(state.fighters[1].y - 317.4) < 1e-6); assert.equal(state.fighters[1].x, 430);
+  assert.ok(Math.abs(state.fighters[1].y - (320 - game.MOVEMENT.speed)) < 1e-6); assert.equal(state.fighters[1].x, 430);
   assert.ok(Math.hypot(state.fighters[0].x - state.fighters[1].x, state.fighters[0].y - state.fighters[1].y) >= 30);
 });
 test('a faster follower matches an escaping opponent pace without stopping or shoving them', () => {
   const state = fighting({ ax: 400, bx: 430 });
   for (let tick = 0; tick < 10; tick++) game.step(state, [input({ right: true, dash: tick === 0 }), input({ right: true }, 1)]);
-  assert.ok(Math.abs(state.fighters[0].x - 426) < 1e-6); assert.ok(Math.abs(state.fighters[1].x - 456) < 1e-6);
+  assert.ok(Math.abs(state.fighters[0].x - (400 + 10 * game.MOVEMENT.speed)) < 1e-6); assert.ok(Math.abs(state.fighters[1].x - (430 + 10 * game.MOVEMENT.speed)) < 1e-6);
   assert.equal(state.fighters[0].y, 320); assert.equal(state.fighters[1].y, 320);
 });
 test('outer-wall crowding cannot turn a body correction into extra movement speed', () => {
   const state = fighting({ ax: game.WORLD.maxX, ay: 54.13504471460369, bx: 882.6340124233866, by: game.WORLD.minY });
-  Object.assign(state.fighters[1], { action: 'dash', actionFrame: 21, dashX: Math.SQRT1_2, dashY: -Math.SQRT1_2 });
+  Object.assign(state.fighters[1], { action: 'dash', actionFrame: game.DASH.duration - 2, dashX: Math.SQRT1_2, dashY: -Math.SQRT1_2 });
   const before = state.fighters.map(f => ({ x: f.x, y: f.y }));
   game.step(state, [input({ left: true }), input({}, 1)]);
   for (const f of state.fighters) {
@@ -253,12 +254,12 @@ test('visible katana tells expose the whole real active sector and lock committe
   }
 });
 test('only real parry contacts create clash effects; deduplicated effects remain bounded', async () => {
-  const { ShinobiRenderer } = await import('../public/shinobi-renderer.js'), renderer = { reducedMotion: false, resetEffects: ShinobiRenderer.prototype.resetEffects };
+  const { ShinobiRenderer } = await import('../public/shinobi-renderer.js'), renderer = Object.assign(Object.create(ShinobiRenderer.prototype), { reducedMotion: false });
   renderer.resetEffects();
   const state = { tick: 1, events: [{ id: 1, type: 'parryStart', fighter: 0, x: 200, y: 200 }, { id: 2, type: 'parry', fighter: 0, x: 200, y: 200 }] };
   ShinobiRenderer.prototype.observeEvents.call(renderer, state); assert.equal(renderer.bursts.length, 0); assert.equal(renderer.particles.length, 0); assert.equal(renderer.callouts.length, 0);
-  state.events.push({ id: 3, type: 'parry', fighter: 0, target: 1, x: 220, y: 200 }); ShinobiRenderer.prototype.observeEvents.call(renderer, state); assert.equal(renderer.particles.length, 10);
-  ShinobiRenderer.prototype.observeEvents.call(renderer, state); assert.equal(renderer.particles.length, 10);
+  state.events.push({ id: 3, type: 'parry', fighter: 0, target: 1, x: 220, y: 200 }); ShinobiRenderer.prototype.observeEvents.call(renderer, state); assert.ok(renderer.particles.length > 0);
+  const count = renderer.particles.length; ShinobiRenderer.prototype.observeEvents.call(renderer, state); assert.equal(renderer.particles.length, count);
   for (let tick = 2; tick < 500; tick++) ShinobiRenderer.prototype.observeEvents.call(renderer, { tick, events: [{ id: tick + 10, type: 'hit', fighter: 0, target: 1, x: tick, y: 200 }] });
   assert.ok(renderer.particles.length <= 96); assert.ok(renderer.bursts.length <= 20); assert.ok(renderer.seenEvents.size <= 256); assert.ok(renderer.callouts.length <= 6);
 });
@@ -279,7 +280,7 @@ test('renderer effects freeze in lobby or pause and settle after finishing blows
 
 test('round changes clear old impact feedback and stale snapshot events do not replay', async () => {
   const { ShinobiRenderer } = await import('../public/shinobi-renderer.js');
-  const renderer = { reducedMotion: false, resetEffects: ShinobiRenderer.prototype.resetEffects };
+  const renderer = Object.assign(Object.create(ShinobiRenderer.prototype), { reducedMotion: false });
   renderer.resetEffects();
   const state = { tick: 200, round: 1, stageId: 'rooftop', phase: 'fight', events: [{ id: 1, tick: 199, type: 'hit', fighter: 0, target: 1, damage: 18, x: 300, y: 300 }] };
   ShinobiRenderer.prototype.observeEvents.call(renderer, state);

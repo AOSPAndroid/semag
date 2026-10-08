@@ -1,6 +1,7 @@
-import { WORLD, STAGES, MOVES, DASH, PARRY, KUNAI } from './shinobi-engine.js';
+import { WORLD, STAGES, DASH, PARRY, KUNAI, FEINT, getMove, getCombatOptions } from './shinobi-engine.js';
 
 const TAU = Math.PI * 2;
+const RESOURCE_STRIP_MAX_SCALE = 1.35;
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 const NINJAS = [
   { cloth: '#314451', shade: '#1b2b37', edge: '#6b8491', sash: '#ee9b67', pale: '#ffe6ab', ink: '#101c27' },
@@ -32,9 +33,6 @@ function ring(ctx, x, y, radius, color, width = 1) {
 }
 function canvasLayer(width = WORLD.width, height = WORLD.height) {
   const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height; return canvas;
-}
-function moveFor(action) {
-  return MOVES[action] || null;
 }
 function convexHull(points) {
   points.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
@@ -437,9 +435,9 @@ export class ShinobiRenderer {
     polygon(ctx, [[-8, 1], [-16, 2], [-20, 5], [-15, 7], [-11, 4], [-7, 5]], p.sash + 'a0');
     line(ctx, [[-12, 3], [-17, 4]], p.shade, 2);
     ctx.save(); ctx.beginPath(); ctx.arc(0, 0, WORLD.fighterRadius, 0, TAU); ctx.clip();
-    const windup = pose === 'windup', guarding = pose === 'guard', striking = pose === 'strike';
-    const lean = windup || pose === 'stun' ? -1 : striking || pose === 'throw' ? 1 : 0;
-    const shoulder = guarding ? 8 : windup ? -3 : striking ? 9 : 3;
+    const windup = pose === 'windup', guarding = pose === 'guard', striking = pose === 'strike', withdrawing = pose === 'feint';
+    const lean = withdrawing ? -2 : windup || pose === 'stun' ? -1 : striking || pose === 'throw' ? 1 : 0;
+    const shoulder = guarding ? 8 : windup || withdrawing ? -3 : striking ? 9 : 3;
     ctx.fillStyle = p.ink;
     ctx.fillRect(-13 - stride, -8, 9, 6); ctx.fillRect(-13 + stride, 3, 9, 6);
     ctx.fillStyle = p.edge;
@@ -472,6 +470,23 @@ export class ShinobiRenderer {
     this.sprites.set(key, canvas); return canvas;
   }
 
+  addCallout(fighter, event, text, color, life = .4) {
+    const fighterId = fighter?.id ?? event.fighter ?? event.owner;
+    const existing = this.callouts.filter(callout => callout.fighterId === fighterId);
+    // Fast exchanges retain separate, short-lived lines rather than piling
+    // damage and a parry confirmation into the same unreadable location.
+    if (existing.length >= 3) this.callouts.splice(this.callouts.indexOf(existing[0]), 1);
+    const occupied = new Set(this.callouts.filter(callout => callout.fighterId === fighterId).map(callout => callout.lane));
+    let lane = 0; while (occupied.has(lane)) lane++;
+    const scale = this.uiScale || 1;
+    const offset = scale > 1.5 && fighterId === 1 ? 67 : 39;
+    const originY = fighter?.y ?? event.y, above = originY - offset - lane * 12 * scale;
+    const halfWidth = text.length * 2.9 * scale;
+    this.callouts.push({ fighterId, lane, x: clamp(fighter?.x ?? event.x, halfWidth + 8, WORLD.width - halfWidth - 8),
+      y: above < 28 ? originY + 43 + lane * 12 * scale : above,
+      age: 0, life, text, color });
+  }
+
   observeEvents(state) {
     if (state.tick < this.lastTick) this.resetEffects(); this.lastTick = state.tick;
     if (this.lastRound != null && (state.round !== this.lastRound || state.stageId !== this.lastStage || state.phase === 'lobby' && this.lastPhase !== 'lobby')) {
@@ -490,18 +505,20 @@ export class ShinobiRenderer {
       const impact = event.type !== 'parry' || event.target != null;
       if (impact && (event.type === 'hit' && Number.isFinite(event.damage) || event.type === 'parry' || event.type === 'deflect')) {
         const target = state.fighters?.find(fighter => fighter.id === (event.type === 'hit' ? event.target : event.fighter));
-        const offset = (this.uiScale || 1) > 1.5 && target?.id === 1 ? 67 : 37;
-        this.callouts.push({ x: target?.x ?? event.x, y: Math.max(28, (target?.y ?? event.y) - offset), age: 0, life: .6,
-          text: event.type === 'hit' ? `−${event.damage}` : event.type === 'parry' ? 'PARRY' : 'DEFLECT',
-          color: event.type === 'hit' ? '#ffe2c1' : '#fff2ba' });
+        const text = event.type === 'hit' ? `−${event.damage}` : event.perfect ? event.type === 'deflect' ? 'PERFECT DEFLECT' : 'PERFECT' : event.type === 'parry' ? 'PARRY' : 'DEFLECT';
+        this.addCallout(target, event, text, event.type === 'hit' ? '#ffe2c1' : event.perfect ? '#dcfff0' : '#fff2ba', event.type === 'hit' ? .36 : .46);
       }
-      if (impact && ['hit', 'parry', 'deflect', 'cover', 'dash'].includes(event.type)) {
+      if (event.type === 'chain') {
+        const target = state.fighters?.find(fighter => fighter.id === event.fighter);
+        this.addCallout(target, event, `CHAIN ${event.comboStep === 3 ? 'III' : 'II'}`, p.pale, .3);
+      }
+      if (impact && ['hit', 'parry', 'deflect', 'cover', 'dash', 'dashCancel', 'feint'].includes(event.type)) {
         const clash = ['parry', 'deflect'].includes(event.type);
-        this.bursts.push({ x: event.x, y: event.y, age: 0, life: this.reducedMotion ? .12 : clash ? .26 : .18, type: event.type, color: clash ? '#fff0bb' : event.type === 'cover' ? '#d6ddd0' : p.pale, angle: event.id * .7 });
-        const count = this.reducedMotion || event.type === 'dash' ? 0 : clash ? 10 : event.type === 'hit' ? 7 : 4;
+        this.bursts.push({ x: event.x, y: event.y, age: 0, life: this.reducedMotion ? .12 : clash ? .22 : .16, type: event.type, perfect: !!event.perfect, color: clash ? event.perfect ? '#dcfff0' : '#fff0bb' : event.type === 'cover' ? '#d6ddd0' : p.pale, angle: event.facing ?? event.id * .7 });
+        const count = this.reducedMotion || ['dash', 'dashCancel', 'feint'].includes(event.type) ? 0 : clash ? 8 : event.type === 'hit' ? 6 : 4;
         for (let i = 0; i < count; i++) {
           const angle = event.id * .93 + i * 2.399, speed = clash ? 80 + i * 5 : 38 + i * 7;
-          this.particles.push({ x: event.x, y: event.y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, age: 0, life: .12 + i % 3 * .035, color: clash ? '#ffdda0' : p.pale });
+          this.particles.push({ x: event.x, y: event.y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, age: 0, life: .12 + i % 3 * .035, color: clash ? event.perfect ? '#dcfff0' : '#ffdda0' : p.pale });
         }
       }
     }
@@ -547,7 +564,8 @@ export class ShinobiRenderer {
 
   paintFighter(ctx, fighter, tick, ghost = false, obstacles = []) {
     const p = NINJAS[fighter.id] || NINJAS[0], action = fighter.action || 'idle', frame = fighter.actionFrame || 0;
-    const move = moveFor(action), committed = !!move || action === 'throw' || action === 'parry';
+    const move = fighter.hp <= 0 ? null : getMove(fighter), windows = getCombatOptions(fighter);
+    const committed = !!move || ['throw', 'parry', 'feint'].includes(action);
     const facing = committed ? fighter.actionFacing ?? fighter.facing : fighter.facing || 0;
     ctx.save(); ctx.translate(fighter.x, fighter.y);
     if (!ghost) {
@@ -559,13 +577,18 @@ export class ShinobiRenderer {
     const stride = action === 'run' && !this.reducedMotion ? Math.floor(tick / 6) % 3 - 1 : 0;
     const startup = move?.startup ?? 0, activeTicks = move?.active ?? 0;
     const active = !!move && frame >= startup && frame < startup + activeTicks;
-    const parryActive = action === 'parry' && frame >= PARRY.startup && frame <= PARRY.activeEnd;
+    const parryActive = windows.parryActive, perfectParryActive = windows.perfectParryActive;
     const pose = action === 'stun' ? 'stun' : move ? frame < startup ? 'windup' : active ? 'strike' : 'recover'
-      : action === 'parry' ? frame <= PARRY.activeEnd ? 'guard' : 'recover' : action === 'throw' ? 'throw' : 'ready';
+      : action === 'parry' ? parryActive || frame < PARRY.startup ? 'guard' : 'recover' : action === 'throw' ? 'throw' : action === 'feint' ? 'feint' : 'ready';
     ctx.drawImage(this.sprite(fighter.id, stride, pose), -32, -32);
     if (!ghost) {
       ctx.save();
       this.clipWeapons(ctx, fighter, facing, obstacles);
+      if (committed && action !== 'feint') {
+        // This short arrow marks the frozen attack direction, even while the
+        // player's freely moving crosshair is aiming the next commitment.
+        line(ctx, [[24, -3], [28, 0], [24, 3]], p.sash + 'b0', 1.5);
+      }
       if (move) {
         const cone = move.cone ?? .8, reach = move.range ?? 58;
         if (active) {
@@ -585,11 +608,12 @@ export class ShinobiRenderer {
         } else if (frame < startup) {
           const progress = clamp(frame / Math.max(1, startup), 0, 1);
           this.paintBlade(ctx, -1.65 - .5 * progress, action === 'heavy' ? 42 : 36, p);
+          // Every cut declares its locked sector before becoming dangerous.
+          // Dashes and gaps are anticipation; only a solid sweep is active.
+          ctx.setLineDash(action === 'heavy' ? [3, 5] : [2, 5]);
+          ctx.beginPath(); ctx.arc(0, 0, reach - 1, -cone, cone);
+          ctx.strokeStyle = p.sash + (progress > .6 ? 'b0' : '60'); ctx.lineWidth = 1; ctx.stroke(); ctx.setLineDash([]);
           if (action === 'heavy') {
-            // A dashed amber tell is anticipation, while the solid white sweep
-            // below denotes only the engine's actual five/seven active ticks.
-            ctx.setLineDash([3, 5]); ctx.beginPath(); ctx.arc(0, 0, reach - 1, -cone, cone);
-            ctx.strokeStyle = p.sash + (progress > .6 ? 'b0' : '60'); ctx.lineWidth = 1; ctx.stroke(); ctx.setLineDash([]);
             line(ctx, [[-17, -13], [-20, -18]], p.sash, 2);
             if (progress > .65) line(ctx, [[-10, -18], [-11, -23]], p.pale, 2);
           }
@@ -598,12 +622,20 @@ export class ShinobiRenderer {
           this.paintBlade(ctx, cone + (1.1 - cone) * progress, 39, p);
         }
       } else if (action === 'parry') {
-        const start = PARRY.activeStart ?? PARRY.startup ?? 3, end = PARRY.activeEnd ?? 13;
-        const active = frame >= start && frame <= end;
-        this.paintBlade(ctx, -.7, 34, p, active);
+        this.paintBlade(ctx, -.7, 34, p, parryActive);
         const cone = PARRY.cone ?? .95;
-        ctx.beginPath(); ctx.arc(0, 0, 24, -cone, cone); ctx.strokeStyle = active ? '#ffe9ae' : p.sash + '70'; ctx.lineWidth = active ? 3 : 1; ctx.stroke();
-        if (active) { ctx.fillStyle = '#fff4c6'; ctx.fillRect(26, -2, 4, 4); }
+        ctx.beginPath(); ctx.arc(0, 0, 24, -cone, cone); ctx.strokeStyle = parryActive ? '#ffe9ae' : p.sash + '70'; ctx.lineWidth = parryActive ? 2 : 1; ctx.stroke();
+        if (perfectParryActive) {
+          // The inner green-white gate is the actual narrower perfect cone.
+          ctx.beginPath(); ctx.arc(0, 0, 27, -PARRY.perfectCone, PARRY.perfectCone);
+          ctx.strokeStyle = '#dcfff0'; ctx.lineWidth = 3; ctx.stroke();
+        }
+        if (parryActive) { ctx.fillStyle = perfectParryActive ? '#dcfff0' : '#fff4c6'; ctx.fillRect(28, -2, 3, 4); }
+      } else if (action === 'feint') {
+        const progress = clamp(frame / Math.max(1, FEINT.duration - 1), 0, 1);
+        this.paintBlade(ctx, -2.1 + progress * .5, 31, p);
+        line(ctx, [[-17, -9], [-22, -12]], p.sash + '80');
+        line(ctx, [[-18, 4], [-24, 5]], p.sash + '50');
       } else if (action === 'throw') {
         const released = frame >= KUNAI.startup;
         ctx.fillStyle = p.sash; ctx.fillRect(released ? 10 : 3, -11, 7, 4);
@@ -615,6 +647,15 @@ export class ShinobiRenderer {
       } else if (action === 'stun') this.paintBlade(ctx, 1.8, 29, p);
       else this.paintBlade(ctx, 1.1, 33, p);
       ctx.restore();
+      if (windows.canChain || windows.canDashCancel || windows.canFeint) {
+        // Availability comes from the same helper that accepts real inputs.
+        // Small marks stay near the body, clear of the damaging weapon sector.
+        const color = windows.canFeint ? p.sash : p.pale;
+        for (let i = 0; i < (windows.canChain ? 2 : 1); i++) {
+          const x = -22 - i * 5;
+          polygon(ctx, [[x, -2], [x + 2, 0], [x, 2], [x - 2, 0]], color);
+        }
+      }
       if (this.hitFlash[fighter.id] > 0) ring(ctx, 0, 0, fighter.radius, p.pale, 2);
       if (action === 'stun') {
         for (let i = 0; i < 3; i++) {
@@ -632,15 +673,22 @@ export class ShinobiRenderer {
       ctx.fillStyle = '#40555b'; ctx.fillRect(fighter.x - 17, fighter.y - 23, 34, 2);
       ctx.fillStyle = fighter.stamina < PARRY.cost ? '#d99b7c' : '#bfcea2';
       ctx.fillRect(fighter.x - 17, fighter.y - 23, 34 * clamp(fighter.stamina / 100, 0, 1), 2);
-      const label = action === 'stun' ? 'STUN' : move ? frame < startup ? action === 'heavy' ? 'HEAVY' : 'CUT'
-        : active ? 'STRIKE' : 'RECOVER' : action === 'parry' ? parryActive ? 'PARRY' : frame < PARRY.startup ? 'GUARD' : 'OPEN' : null;
+      const suffix = fighter.comboStep > 1 ? fighter.comboStep === 3 ? ' III' : ' II' : '';
+      const label = action === 'stun' ? 'STUN' : action === 'feint' ? 'FEINT' : move ? frame < startup ? windows.canFeint ? 'FEINT READY' : action === 'heavy' ? 'HEAVY' : `CUT${suffix}`
+        : active ? `STRIKE${suffix}` : windows.canChain ? windows.canDashCancel ? 'LINK / STEP' : 'LINK' : 'RECOVER'
+        : action === 'parry' ? fighter.parrySuccess ? 'COUNTER' : perfectParryActive ? 'PERFECT' : parryActive ? 'PARRY' : frame < PARRY.startup ? 'GUARD' : 'OPEN'
+        : action === 'dash' ? fighter.invulnerable ? 'EVADE' : 'DASH' : null;
       if (label) {
         const scale = this.uiScale || 1;
-        const labelY = fighter.y + (scale > 1.5 && fighter.id === 1 ? -36 : 25 + 6 * scale);
+        let labelY = fighter.y + (scale > 1.5 && fighter.id === 1 ? -36 : 25 + 6 * scale);
+        if (labelY < 32) labelY = fighter.y + 25 + 6 * scale;
+        if (labelY > WORLD.height - 40) labelY = fighter.y - 38 - 6 * scale;
+        const halfWidth = label.length * 2.6 * scale;
+        const labelX = clamp(fighter.x, halfWidth + 8, WORLD.width - halfWidth - 8);
         ctx.textAlign = 'center'; ctx.font = `bold ${8 * scale}px Consolas, monospace`;
-        ctx.lineWidth = 3; ctx.strokeStyle = '#142835'; ctx.strokeText(label, fighter.x, labelY);
-        ctx.fillStyle = action === 'stun' ? '#f2cda5' : active || parryActive ? '#fff0c1' : pose === 'recover' ? '#c6bcab' : p.sash;
-        ctx.fillText(label, fighter.x, labelY);
+        ctx.lineWidth = 3; ctx.strokeStyle = '#142835'; ctx.strokeText(label, labelX, labelY);
+        ctx.fillStyle = action === 'stun' ? '#f2cda5' : perfectParryActive ? '#dcfff0' : active || parryActive || windows.canChain ? '#fff0c1' : pose === 'recover' ? '#c6bcab' : p.sash;
+        ctx.fillText(label, labelX, labelY);
       }
     }
   }
@@ -662,7 +710,19 @@ export class ShinobiRenderer {
     for (const effect of this.bursts) {
       ctx.save(); ctx.translate(effect.x, effect.y); ctx.globalAlpha = 1 - effect.age / effect.life;
       const clash = effect.type === 'parry' || effect.type === 'deflect';
-      if (effect.type === 'dash') ring(ctx, 0, 0, 15 + (this.reducedMotion ? 0 : effect.age * 26), effect.color + '90');
+      if (effect.type === 'dash' || effect.type === 'dashCancel') {
+        ring(ctx, 0, 0, 15 + (this.reducedMotion ? 0 : effect.age * 26), effect.color + '90', effect.type === 'dashCancel' ? 2 : 1);
+        if (effect.type === 'dashCancel') {
+          line(ctx, [[-9, -18], [-3, -18]], effect.color, 2);
+          line(ctx, [[3, -18], [9, -18]], effect.color, 2);
+        }
+      } else if (effect.type === 'feint') {
+        ctx.rotate(effect.angle);
+        const distance = this.reducedMotion ? 0 : effect.age * 34;
+        ctx.globalAlpha *= .45;
+        ctx.fillStyle = effect.color;
+        ctx.fillRect(-19 - distance, -9, 3, 2); ctx.fillRect(-17 - distance, 7, 4, 2);
+      }
       else {
         ctx.rotate(effect.angle);
         const length = clash ? 17 : effect.type === 'hit' ? 12 : 8;
@@ -670,6 +730,7 @@ export class ShinobiRenderer {
           ctx.rotate(Math.PI / 2); line(ctx, [[4, 0], [length, 0]], '#203c49', 4); line(ctx, [[4, 0], [length, 0]], effect.color, 2);
         }
         ring(ctx, 0, 0, clash ? 6 : 3, effect.color, 1);
+        if (clash && effect.perfect) ring(ctx, 0, 0, 10, effect.color, 1.5);
       }
       ctx.restore();
     }
@@ -679,7 +740,7 @@ export class ShinobiRenderer {
     for (const particle of this.particles) {
       particle.x += particle.vx * dt; particle.y += particle.vy * dt;
       ctx.globalAlpha = 1 - particle.age / particle.life; ctx.fillStyle = particle.color;
-      ctx.fillRect(Math.round(particle.x) - 1, Math.round(particle.y) - 1, 2, 2);
+      ctx.fillRect(particle.x - 1, particle.y - 1, 2, 2);
     }
     ctx.globalAlpha = 1;
     live = 0;
@@ -707,6 +768,9 @@ export class ShinobiRenderer {
       line(ctx, [[x, y - 8], [x, y - 4]], p.pale, 1); line(ctx, [[x, y + 4], [x, y + 8]], p.pale, 1);
       circle(ctx, x, y, 1, p.pale);
     }
+    // The surrounding HUD already exposes these resources. At a small arena
+    // size, a world-sized duplicate shrinks below a readable text size.
+    if ((this.uiScale || 1) > RESOURCE_STRIP_MAX_SCALE) return;
     ctx.fillStyle = SCENES[id]?.ink || SCENES.rooftop.ink; ctx.fillRect(294, 608, 372, 32);
     ctx.fillStyle = '#b5c7c465'; ctx.fillRect(294, 608, 372, 1);
     ctx.textAlign = 'left'; ctx.font = '9px Consolas, monospace'; ctx.fillStyle = '#d8e3d7'; ctx.fillText('KUNAI', 310, 627);
@@ -762,7 +826,7 @@ export class ShinobiRenderer {
     } else for (const fighter of fighters) this.paintFighter(ctx, fighter, state.tick, false, obstacles);
     this.paintEffects(ctx, dt);
     if (localId != null) this.paintLocalHUD(ctx, fighters.find(fighter => fighter.id === localId), aimTarget, state.phase, stageId);
-    else {
+    else if ((this.uiScale || 1) <= RESOURCE_STRIP_MAX_SCALE) {
       ctx.fillStyle = SCENES[stageId].light; ctx.textAlign = 'center'; ctx.font = '9px Consolas, monospace';
       ctx.fillText('READ THE BLADE  /  PARRY THE STRIKE  /  OWN THE ANGLE', WORLD.width / 2, 627);
     }

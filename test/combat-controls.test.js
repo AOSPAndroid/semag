@@ -10,7 +10,7 @@ import * as topdown from '../public/topdown-engine.js';
 
 const games = [
   ['afterimage', afterimage, [['c', 'j', 'light'], ['g', 'k', 'heavy'], ['f', 'i', 'block']]],
-  ['shinobi-showdown', shinobi, [['c', 'j', 'attack'], ['g', 'k', 'heavy'], ['f', 'i', 'parry'], ['e', 'l', 'throw']]],
+  ['shinobi-showdown', shinobi, [['c', 'j', 'attack'], ['g', 'k', 'heavy'], ['f', 'i', 'parry'], ['e', 'l', 'throw'], ['r', 'r', 'feint']]],
   ['vector-arena', vector, [['c', 'j', 'fire'], ['f', 'i', 'focus'], ['r', 'r', 'reload']]],
   ['oddstock-rumble', brawl, [['c', 'j', 'attack'], ['g', 'k', 'special'], ['f', 'i', 'shield']]],
   ['relic-duel', topdown, [['c', 'j', 'attack'], ['g', 'k', 'shoot'], ['f', 'i', 'block']]],
@@ -50,7 +50,7 @@ test('every nearby and legacy combat binding uses an existing engine action', ()
       assert.equal(keyMap.get(gameCode(event(nearby), 'wasd')), action);
       assert.equal(keyMap.get(gameCode(event(legacy), 'zqsd')), action);
     }
-    assert.equal(keyMap.has('KeyR'), gameId === 'vector-arena', 'Ready remains separate from combat');
+    assert.equal(keyMap.has('KeyR'), ['vector-arena', 'shinobi-showdown'].includes(gameId), 'R supports reload or an in-fight feint');
     assert.equal(keyMap.has('KeyQ'), false, 'Q must never become an action while French movement uses Q');
     assert.equal(keyMap.has('KeyZ'), false);
   }

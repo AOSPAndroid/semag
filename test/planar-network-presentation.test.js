@@ -6,6 +6,18 @@ import { createNetworkTimeline } from '../public/network-timeline.js';
 const state = (tick, x, patch = {}) => ({ tick, phase: 'fight', round: 1, stageId: 'garden', fighters: [{ id: 0, x: 0, y: 0, hp: 100 }, { id: 1, x, y: 0, hp: 100, action: 'run', ...patch }] });
 const sample = source => ({ state: source, time: source.tick * 1000 / 120, pose: capturePlanarPose(source) });
 
+test('fast Shinobi dashes remain buffered within their bounded distance without weakening default teleport guards', () => {
+  const before = sample(state(10, 0)), after = sample(state(12, 18.4));
+  const newest = state(18, 73.6, { hp: 25, action: 'dash', actionFrame: 7 });
+  assert.equal(presentNetworkPlanarFighter(newest, before, after, 1, 11 * 1000 / 120).x, 73.6);
+  const view = presentNetworkPlanarFighter(newest, before, after, 1, 11 * 1000 / 120, { maxDistance: 96 });
+  assert.ok(Math.abs(view.x - 9.2) < 1e-8);
+  assert.equal(view.hp, 25); assert.equal(view.action, 'dash'); assert.equal(view.actionFrame, 7);
+  const teleport = state(18, 140);
+  assert.deepEqual(presentNetworkPlanarFighter(teleport, before, after, 1, before.time, { maxDistance: 10000 }), teleport.fighters[1]);
+  assert.deepEqual(presentNetworkPlanarFighter(newest, before, after, 1, before.time, { maxDistance: NaN }), newest.fighters[1]);
+});
+
 test('buffered remote transforms preserve latest health, action, timers and authoritative events', () => {
   const before = sample(state(10, 10)), after = sample(state(12, 12));
   const newest = state(14, 14, { hp: 22, action: 'hit', hitstun: 18, damageDealt: 53 });
