@@ -12,8 +12,8 @@ const CONTEXT_FIELDS = [...MOVEMENT_FIELDS, 'alive', 'radius', 'weapon', 'slot',
 const matches = (old, next, fields) => fields.every(field => old[field] === next[field]);
 
 /** Resolve the complete displayed body batch; independent previews share no future poses. */
-export function resolvePresentationContacts(players, mapOrId) {
-  return separatePresentationBodies(players, mapOrId);
+export function resolvePresentationContacts(players, mapOrId, options) {
+  return separatePresentationBodies(players, mapOrId, options);
 }
 
 /** Simulation ticks and wire packet ordering are separate clocks. */
@@ -60,6 +60,35 @@ export function movementPresentation(player, buttons, map, remainder, predictMov
 }
 
 const remoteEndpoints = new WeakMap();
+const receivedPaths = new WeakMap();
+
+/** Use a received bracket's real swept path only when replay verifies both endpoints. */
+function receivedMovementPath(old, endpoint, from, to, map, predictMovement) {
+  if (typeof predictMovement !== 'function' || !old.previousInput || !endpoint.previousInput
+      || !matches(old.previousInput, endpoint.previousInput, INPUT_FIELDS)) return null;
+  const ticks = (to.time - from.time) * 120 / 1000, count = Math.round(ticks);
+  if (count < 1 || count > 8 || Math.abs(ticks - count) > 1e-7) return null;
+  // Constant ground velocity already describes an exact straight path. Keep
+  // its cheap existing sweep; verify only acceleration, falling or curved motion.
+  const duration = count * STEP;
+  if (old.grounded && endpoint.grounded && old.crouching === endpoint.crouching
+      && Math.abs(old.y - endpoint.y) < 1e-8 && Math.abs(old.vy) < 1e-8 && Math.abs(endpoint.vy) < 1e-8
+      && ['x', 'z'].every(axis => Math.abs(old[`v${axis}`] - endpoint[`v${axis}`]) < 1e-8 && Math.abs(old[axis] + old[`v${axis}`] * duration - endpoint[axis]) < 1e-8)) return null;
+  let cached = receivedPaths.get(old);
+  if (cached?.endpoint === endpoint && cached.count === count && cached.map === map && cached.predict === predictMovement && cached.peers === from.state.players
+      && matches(cached.source, old, CONTEXT_FIELDS) && matches(cached.target, endpoint, CONTEXT_FIELDS) && matches(cached.buttons, old.previousInput, INPUT_FIELDS)) return cached.poses;
+  const poses = [{ ...old }];
+  for (let tick = 0; tick < count; tick++) {
+    const next = { ...poses[tick] };
+    predictMovement(next, old.previousInput, map, 1, from.state.players); poses.push(next);
+  }
+  const last = poses[count];
+  const verified = ['x', 'y', 'z', 'vx', 'vy', 'vz'].every(axis => Number.isFinite(last[axis]) && Number.isFinite(endpoint[axis]) && Math.abs(last[axis] - endpoint[axis]) < 1e-6)
+    && last.crouching === endpoint.crouching && last.grounded === endpoint.grounded;
+  cached = { endpoint, count, map, predict: predictMovement, peers: from.state.players, source: { ...old }, target: { ...endpoint }, buttons: { ...old.previousInput }, poses: verified ? poses : null };
+  receivedPaths.set(old, cached); return cached.poses;
+}
+
 /** Continue a received body with the real collision sweep, including a sub-tick pose. */
 export function projectedMovement(player, buttons, map, elapsedMs, predictMovement, peers = [], source = player) {
   const ticks = clamp(finite(elapsedMs), 0, 25) * 120 / 1000;
@@ -119,14 +148,24 @@ export function interpolatedVoxelState(samples, targetTime, localId, { predictMo
     Object.assign(player, combatPresentation(player, previousCombat, 1, combatMs));
     if (player.id === localId || !player.alive || old.alive !== player.alive || endpoint.alive !== player.alive || old.team !== player.team || endpoint.team !== player.team) continue;
     if (distance(endpoint, old) > 4 || distance(player, endpoint) > 4) continue;
-    for (const axis of ['x', 'y', 'z', 'vx', 'vy', 'vz']) {
-      if (Number.isFinite(old[axis]) && Number.isFinite(endpoint[axis])) player[axis] = old[axis] + (endpoint[axis] - old[axis]) * ratio;
+    const map = newest.state.map || newest.state.mapId;
+    const path = receivedMovementPath(old, endpoint, from, to, map, predictMovement);
+    if (path) {
+      const progress = ratio * (path.length - 1), index = Math.min(path.length - 2, Math.floor(progress));
+      const pose = interpolateMovement(path[index], path[index + 1], progress - index);
+      for (const axis of ['x', 'y', 'z', 'vx', 'vy', 'vz']) player[axis] = pose[axis];
+      const swept = sweepPresentationOffset(path[index], { x: pose.x - path[index].x, y: pose.y - path[index].y, z: pose.z - path[index].z }, map, from.state.players);
+      for (const axis of ['x', 'y', 'z']) player[axis] = swept[axis];
+    } else {
+      for (const axis of ['x', 'y', 'z', 'vx', 'vy', 'vz']) {
+        if (Number.isFinite(old[axis]) && Number.isFinite(endpoint[axis])) player[axis] = old[axis] + (endpoint[axis] - old[axis]) * ratio;
+      }
+      const anchor = { ...old, crouching: old.crouching || endpoint.crouching || player.crouching };
+      const swept = sweepPresentationOffset(anchor, { x: player.x - old.x, y: player.y - old.y, z: player.z - old.z }, map, to.state.players);
+      for (const axis of ['x', 'y', 'z']) player[axis] = swept[axis];
     }
     player.yaw = wrap(finite(old.yaw) + wrap(finite(endpoint.yaw) - finite(old.yaw)) * ratio);
     player.pitch = finite(old.pitch) + (finite(endpoint.pitch) - finite(old.pitch)) * ratio;
-    const anchor = { ...old, crouching: old.crouching || endpoint.crouching || player.crouching };
-    const swept = sweepPresentationOffset(anchor, { x: player.x - old.x, y: player.y - old.y, z: player.z - old.z }, newest.state.map || newest.state.mapId, to.state.players);
-    for (const axis of ['x', 'y', 'z']) player[axis] = swept[axis];
   }
   for (const bolt of state.bolts) {
     const matchesBolt = other => other.id === bolt.id && other.playerId === bolt.playerId && other.bornTick === bolt.bornTick;

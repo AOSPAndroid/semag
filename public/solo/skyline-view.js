@@ -9,8 +9,23 @@ const setText = (e, value) => { if (e.textContent !== value) e.textContent = val
 const isForm = target => target instanceof Element && Boolean(target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"])'));
 const KEY = { a: 'left', A: 'left', ArrowLeft: 'left', d: 'right', D: 'right', ArrowRight: 'right', ' ': 'jump', Space: 'jump', e: 'hook', E: 'hook', w: 'up', W: 'up', ArrowUp: 'up', s: 'down', S: 'down', ArrowDown: 'down' };
 const elapsedText = seconds => `${Math.floor(seconds / 60)}:${(seconds % 60).toFixed(2).padStart(5, '0')}`;
+export function createSkylinePresentation() {
+  return createRenderSampling({ fields: ['elapsed', 'levelElapsed'],
+    objects: { player: { fields: ['x', 'y', 'vx', 'vy'], maxDistance: 32 },
+      hook: { fields: ['length'], guards: ['index', 'x', 'y'], limits: { length: 3 } } },
+    continuity: state => state.level });
+}
+export function skylineGatePresentation(gate, state, displayState, difficulty = 'veteran') {
+  const phase = gatePhase(gate, state.levelElapsed, difficulty);
+  const rate = DIFFICULTIES[difficulty]?.laserRate || 1;
+  const time = ((displayState.levelElapsed * rate + gate.offset) % gate.period + gate.period) % gate.period;
+  // A fresh warning starts empty. A live beam appears fully charged on its
+  // real activation tick; interpolation never postpones the lethal cue.
+  const charge = phase === 'active' ? 1 : phase === 'warning' && time <= gate.warmup ? clamp(time / gate.warmup, 0, 1) : 0;
+  return { phase, charge };
+}
 export function mount(container, { onUpdate = () => {} } = {}) {
-  const presentation = createRenderSampling({ fields: ['elapsed'], objects: { player: { fields: ['x', 'y'], maxDistance: 32 } }, continuity: s => s.level });
+  const presentation = createSkylinePresentation();
   let displayState;
   let difficulty = 'veteran', state = createState({ difficulty }), destroyed = false;
   let raf = null, previous = null, accumulator = 0, camera = 0, logicalWidth = 960, ghostClock = 0;
@@ -150,7 +165,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     }
     level.relays.forEach(([x, y], i) => { if (displayState.relays[i]) { rect(x - 3, y - 3, 6, 6, '#789f9c'); return; } ctx.strokeStyle = '#a8e5c4'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x, y - 10); ctx.lineTo(x + 8, y); ctx.lineTo(x, y + 10); ctx.lineTo(x - 8, y); ctx.closePath(); ctx.stroke(); rect(x - 2, y - 3, 4, 6, '#dfedcc'); });
     for (const g of level.gates) {
-      const phase = gatePhase(g, displayState.levelElapsed, difficulty); ctx.strokeStyle = phase === 'active' ? '#ff8b98' : phase === 'warning' ? '#ffc980' : '#62818b'; ctx.lineWidth = phase === 'active' ? 6 : 2; ctx.setLineDash(phase === 'active' ? [] : [5, 9]); ctx.beginPath(); ctx.moveTo(g.x, g.top); ctx.lineTo(g.x, g.bottom); ctx.stroke(); ctx.setLineDash([]);
+      const { phase, charge } = skylineGatePresentation(g, state, displayState, difficulty); ctx.strokeStyle = phase === 'active' ? '#ff8b98' : phase === 'warning' ? '#ffc980' : '#62818b'; ctx.lineWidth = phase === 'active' ? 6 : 2; ctx.setLineDash(phase === 'active' ? [] : [5, 9]); ctx.beginPath(); ctx.moveTo(g.x, g.top); ctx.lineTo(g.x, g.bottom); ctx.stroke(); ctx.setLineDash([]);
+      if (phase === 'warning') { ctx.strokeStyle = '#ffe4b3'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(g.x, g.bottom); ctx.lineTo(g.x, g.bottom - (g.bottom - g.top) * charge); ctx.stroke(); }
       if (phase === 'active') { rect(g.x - 1, g.top, 2, g.bottom - g.top, '#fff0dc'); } rect(g.x - 4, g.top - 5, 8, 3, phase === 'off' ? '#85d8b1' : phase === 'warning' ? '#ffc980' : '#ff8b98');
     }
     const [gx, gy] = level.goal; rect(gx - 5, gy - 43, 10, 21, displayState.relays.every(Boolean) ? '#aee7b4' : '#aa895e');

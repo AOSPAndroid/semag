@@ -2,18 +2,69 @@
 // only positions are blended, never health, actions, collisions or events.
 const CONTEXT = ['phase', 'round', 'wave', 'stageId'];
 const IDENTITY = ['id', 'characterId', 'selected', 'stocks', 'downed'];
+const PROJECTILE_IDENTITY = ['id', 'kind', 'owner', 'team', 'bornTick', 'reflections', 'reflected', 'returning'];
+const ENEMY_IDENTITY = ['id', 'type', 'variant', 'downed'];
+const sameWorld = (state, previous) => state?.phase === 'fight' && previous && CONTEXT.every(key => state[key] === previous[key]);
+const alive = entity => entity.hp == null || entity.hp > 0;
+const validPosition = entity => entity && Number.isFinite(entity.x) && Number.isFinite(entity.y);
+const sameLife = (entity, before) => alive(entity) === before.alive && ((entity.respawnTicks || 0) > 0) === before.respawning;
+const captureEntity = (entity, identity) => {
+  const result = { x: entity.x, y: entity.y, alive: alive(entity), respawning: (entity.respawnTicks || 0) > 0 };
+  for (const key of identity) result[key] = entity[key];
+  return result;
+};
+const sameEntity = (entity, before, identity, limit = 64) => before && identity.every(key => entity[key] === before[key])
+  && sameLife(entity, before) && validPosition(entity) && validPosition(before)
+  && Math.hypot(entity.x - before.x, entity.y - before.y) <= limit;
 
 export function capturePlanarPose(state) {
   if (!state?.fighters) return null;
   return {
     phase: state.phase, round: state.round, wave: state.wave, stageId: state.stageId, tick: state.tick,
-    fighters: state.fighters.map(fighter => ({
-      id: fighter.id, characterId: fighter.characterId, selected: fighter.selected,
-      stocks: fighter.stocks, downed: fighter.downed,
-      x: fighter.x, y: fighter.y, alive: fighter.hp == null || fighter.hp > 0,
-      respawning: (fighter.respawnTicks || 0) > 0,
-    })),
+    fighters: state.fighters.map(fighter => captureEntity(fighter, IDENTITY)),
+    ...(state.projectiles && { projectiles: state.projectiles.map(entity => captureEntity(entity, PROJECTILE_IDENTITY)) }),
+    ...(state.enemies && { enemies: state.enemies.map(entity => captureEntity(entity, ENEMY_IDENTITY)) }),
   };
+}
+
+/** Keep a real previous tick when a zero-error snapshot replaces prediction. */
+export function retainAdjacentPlanarPose(state, ...candidates) {
+  return candidates.find(previous => sameWorld(state, previous) && previous.tick === state.tick - 1) || null;
+}
+
+/** Reconcile the displayed pose, not the end of a discrete simulation tick. */
+export function rebasePlanarCorrection(state, previous, index, oldPresented, nextPresented, correction = {}, { maxX = 45, maxY = 45 } = {}) {
+  const fighter = state?.fighters?.[index], before = previous?.fighters?.[index];
+  if (!sameWorld(state, previous) || !fighter || state.tick < previous.tick
+      || !sameEntity(fighter, before, IDENTITY) || !validPosition(oldPresented) || !validPosition(nextPresented)) return { x: 0, y: 0 };
+  const boundX = Number.isFinite(maxX) ? Math.max(0, Math.min(64, maxX)) : 45;
+  const boundY = Number.isFinite(maxY) ? Math.max(0, Math.min(64, maxY)) : 45;
+  const x = oldPresented.x + (Number.isFinite(correction.x) ? correction.x : 0) - nextPresented.x;
+  const y = oldPresented.y + (Number.isFinite(correction.y) ? correction.y : 0) - nextPresented.y;
+  return { x: Math.max(-boundX, Math.min(boundX, x)), y: Math.max(-boundY, Math.min(boundY, y)) };
+}
+
+/** Smooth existing moving objects for one tick; births, removals and combat stay current. */
+export function presentPlanarEntities(state, previous, fraction) {
+  const result = {};
+  const compatibleWorld = sameWorld(state, previous) && previous.tick === state.tick - 1;
+  const alpha = Number.isFinite(fraction) ? Math.max(0, Math.min(1, fraction)) : 1;
+  for (const [name, identity] of [['projectiles', PROJECTILE_IDENTITY], ['enemies', ENEMY_IDENTITY]]) {
+    if (!Array.isArray(state?.[name])) continue;
+    const older = new Map();
+    for (const entity of previous?.[name] || []) {
+      if (entity.id != null) older.set(entity.id, older.has(entity.id) ? null : entity);
+    }
+    const identities = new Set(), duplicates = new Set();
+    for (const entity of state[name]) { if (identities.has(entity.id)) duplicates.add(entity.id); identities.add(entity.id); }
+    result[name] = state[name].map(entity => {
+      const before = older.get(entity.id);
+      if (!compatibleWorld || entity.id == null || duplicates.has(entity.id) || !alive(entity)
+          || entity.life != null && entity.life <= 0 || !sameEntity(entity, before, identity)) return { ...entity };
+      return { ...entity, x: before.x + (entity.x - before.x) * alpha, y: before.y + (entity.y - before.y) * alpha };
+    });
+  }
+  return result;
 }
 
 export function presentPlanarFighter(state, previous, index, fraction, { adjacentTick = true } = {}) {

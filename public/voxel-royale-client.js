@@ -8,6 +8,7 @@ import { meleeLabel, meleeProfile } from './voxel-melee.js';
 import { incomingDamageFeedback, damageFeedbackPresentation, paintDamageFeedback } from './voxel-damage-feedback.js';
 import { combatPresentation, createCorrectionPresenter, createMovementPresenter, hudTransitionKey, interpolatedVoxelState, reconcileMovement, resolvePresentationContacts, withCombatPresentation } from './voxel-presentation.js';
 import { createNetworkTimeline } from './network-timeline.js';
+import { createFpsInputQueue, releaseFpsTouchAction } from './voxel-input-queue.js';
 import { setAttribute, setDisabled, setHidden, setStyle, setText, toggleClass } from './hub/dom.js';
 
 export const LOOK_SENSITIVITY = .0025;
@@ -170,6 +171,7 @@ async function boot() {
   const touch = { actions: new Set(), move: { x: 0, y: 0 }, look: { x: 0, y: 0 } };
   const actionPointers = new Map(), padPointers = new Map(), wirePacer = createInputPacer(60);
   const presentMovement = createMovementPresenter();
+  const actionInputs = createFpsInputQueue();
   const correction = createCorrectionPresenter();
   const timeline = createNetworkTimeline({ snapshotTicks: 4 });
   let paintedHUDKey = "";
@@ -184,13 +186,19 @@ async function boot() {
   function pointerLocked() { return document.pointerLockElement === canvas; }
   function controlsActive() { return controlsAllowed({ connected, entered, paused, modalOpen, graphicsError, hidden: document.hidden, alive: ownPlayer()?.alive, phase: state?.phase, pointerLocked: pointerLocked(), fallback, touchMode }); }
   function currentInput() { return composeInput(keys, touch, mouse, aim, controlsActive()); }
-  function sendInput(buttons = currentInput(), edge = false) {
-    if (!connected || playerId == null || !wirePacer.shouldSend(performance.now(), edge)) return sequence;
-    if (sequence >= 999999000) sequence = 0;
+  function sendInput(buttons = currentInput(), edge = false, now = performance.now(), cancelActions = false, cancelPress = null) {
+    const nextSequence = sequence >= 999999000 ? 1 : sequence + 1;
+    if (cancelActions) actionInputs.reset({ held: buttons, neutral: true });
+    else {
+      if (cancelPress) actionInputs.cancel(cancelPress);
+      actionInputs.observe(buttons, now, { sequence: nextSequence });
+    }
+    if (!connected || playerId == null || !wirePacer.shouldSend(now, edge || cancelActions || cancelPress)) return null;
     // Preserve the rendered remote timeline when the trigger changes between frames.
     const viewTime = timeline.getState().renderTime;
     const viewTick = state?.phase === 'fight' && Number.isFinite(viewTime) && viewTime >= 0 ? viewTime * 120 / 1000 : null;
-    send({ type: 'input', seq: ++sequence, buttons, ...(viewTick === null ? {} : { viewTick }) }); return sequence;
+    sequence = nextSequence;
+    send({ type: 'input', seq: sequence, buttons, ...(viewTick === null ? {} : { viewTick }), ...(cancelActions ? { cancelActions: true } : {}), ...(cancelPress ? { cancelPress } : {}) }); return sequence;
   }
   function utilityFeedback(action) {
     const player = ownPlayer(); if (!player?.alive || state?.phase !== 'fight') return;
@@ -213,13 +221,13 @@ async function boot() {
   function neutralize({ pause = false, unlock = false } = {}) {
     keys.clear(); pressedKeys.clear(); mouse.fire = mouse.aim = false; rightDrag = false;
     touch.actions.clear(); touch.move = { x: 0, y: 0 }; touch.look = { x: 0, y: 0 };
-    for (const [id, element] of actionPointers) try { element.releasePointerCapture(id); } catch { /* Already cancelled. */ }
+    for (const [id, record] of actionPointers) try { record.element.releasePointerCapture(id); } catch { /* Already cancelled. */ }
     for (const [id, record] of padPointers) try { record.element.releasePointerCapture(id); } catch { /* Already cancelled. */ }
     actionPointers.clear(); padPointers.clear(); document.querySelectorAll('.touch-pad.active, .touch-actions .pressed').forEach(element => element.classList.remove('active', 'pressed'));
     document.querySelectorAll('.touch-pad i').forEach(element => { element.style.transform = ''; });
     if (pause) paused = true;
     if (unlock && pointerLocked()) document.exitPointerLock?.();
-    sendInput(neutralInput(aim.yaw, aim.pitch), true); wirePacer.reset(); pending = []; accumulator = 0; predictionTick = state?.tick || 0; correction.reset(); presentationPlayer = null; presentationPlayers = []; lastTouchLookAt = performance.now();
+    sendInput(neutralInput(aim.yaw, aim.pitch), true, performance.now(), true); wirePacer.reset(); pending = []; accumulator = 0; predictionTick = state?.tick || 0; correction.reset(); presentationPlayer = null; presentationPlayers = []; lastTouchLookAt = performance.now();
     predictedPlayer = clone(ownPlayer()); updateUI();
   }
   function updateMap(viewed) {
@@ -337,12 +345,13 @@ async function boot() {
     const rendered = interpolatedState(snapshots, timeline.time(now), playerId, { predictMovement: engine.predictLocalMovement, traceProjectile: engine.traceShot, combatTime: timeline.currentTime(now) }) || { ...state, players: state.players.map(player => ({ ...player })) };
     const local = ownPlayer();
     presentationPlayer = predictedPlayer || local;
-    if (state.phase === 'fight' && presentationPlayer?.alive) presentationPlayer = presentMovement(presentationPlayer, currentInput(), state.map, accumulator, engine.predictLocalMovement, state.players);
+    if (state.phase === 'fight' && presentationPlayer?.alive) presentationPlayer = presentMovement(presentationPlayer, actionInputs.preview(currentInput(), now), state.map, accumulator, engine.predictLocalMovement, state.players);
     const newest = snapshots[snapshots.length - 1], previous = snapshots[snapshots.length - 2];
     const visualCombat = local && combatPresentation(local, previous?.state.players.find(player => player.id === playerId) || local, 1, Math.max(0, timeline.currentTime(now) - (newest?.time || 0)));
     presentationPlayer = withCombatPresentation(presentationPlayer, visualCombat);
     presentationPlayer = correction.present(presentationPlayer, now, engine.sweepPresentationOffset, state.map, state.players);
-    presentationPlayers = resolvePresentationContacts(rendered.players.map(player => local?.alive && player.id === playerId ? presentationPlayer : player), state.map);
+    presentationPlayers = resolvePresentationContacts(rendered.players.map(player => local?.alive && player.id === playerId ? presentationPlayer : player), state.map,
+      { anchorId: local?.alive ? playerId : undefined, authoritativePlayers: state.players });
     rendered.players = presentationPlayers; rendered.fighters = presentationPlayers;
     if (local?.alive) presentationPlayer = presentationPlayers.find(player => player.id === playerId) || presentationPlayer;
     const viewed = spectatorPlayer(rendered, playerId, spectatorId);
@@ -358,7 +367,7 @@ async function boot() {
     frameId = null; if (destroyed || !activeAnimation()) { lastFrameAt = 0; return; }
     const dt = lastFrameAt ? Math.min(.0667, (now - lastFrameAt) / 1000) : 0; lastFrameAt = now; integrateTouchLook(now); accumulator += dt;
     const buttons = currentInput(); let ticks = 0;
-    while (accumulator >= 1 / 120 && ticks++ < 8) { accumulator -= 1 / 120; const tick = ++predictionTick; if (state.phase === 'fight' && predictedPlayer?.alive) { engine.predictLocalMovement(predictedPlayer, buttons, state.map, 1, state.players); pending.push({ tick, buttons: { ...buttons } }); if (pending.length > 240) pending.shift(); } }
+    while (accumulator >= 1 / 120 && ticks++ < 8) { accumulator -= 1 / 120; const tick = ++predictionTick; if (state.phase === 'fight' && predictedPlayer?.alive) { const sampled = actionInputs.sample(buttons, now).buttons; engine.predictLocalMovement(predictedPlayer, sampled, state.map, 1, state.players); pending.push({ tick, buttons: { ...sampled } }); if (pending.length > 240) pending.shift(); } }
     if (ticks) sendInput(buttons);
     if (predictedPlayer) { predictedPlayer.yaw = aim.yaw; predictedPlayer.pitch = aim.pitch; }
     draw(now); if (now - lastHUDAt >= 80) { updateUI(); lastHUDAt = now; } frameId = requestAnimationFrame(frame);
@@ -374,8 +383,9 @@ async function boot() {
     hostId = message.hostId ?? next.hostId ?? hostId;
     roster = (Array.isArray(message.players) ? message.players : Object.values(message.players || {})).map((person, id) => person ? { ...person, id: person.id ?? id } : null);
     const local = ownPlayer(), fresh = previousMatch !== state.matchId || previousPhase === 'lobby' && state.phase !== 'lobby';
+    const reconciliationTime = performance.now();
     const beforePrediction = predictedPlayer;
-    const beforePose = beforePrediction && old?.phase === 'fight' ? presentMovement(beforePrediction, currentInput(), old.map, accumulator, engine.predictLocalMovement, old.players) : beforePrediction;
+    const beforePose = beforePrediction && old?.phase === 'fight' ? presentMovement(beforePrediction, actionInputs.preview(currentInput(), reconciliationTime), old.map, accumulator, engine.predictLocalMovement, old.players) : beforePrediction;
     if (!old || predictedPlayer?.id !== playerId || fresh) { neutralize(); aim = cleanAim(local?.yaw, local?.pitch); pending = []; snapshots = []; spectatorId = null; accumulator = 0; renderer?.resetEffects(); healthView = null; damageFeedback = null; if (fresh) { eventSeen.clear(); eventOrder.length = 0; kills.length = 0; hitUntil = feedbackUntil = 0; damageFeedback = null; healthGainUntil = 0; lastCountdown = null; } sendInput(neutralInput(aim.yaw, aim.pitch), true); }
     if (previousPhase !== null && previousPhase !== state.phase) neutralize();
     if (state.phase === 'lobby' && previousPhase !== 'lobby') { neutralize({ pause: true, unlock: true }); entered = false; fallback = false; healthView = null; damageFeedback = null; snapshots = []; pending = []; audio.resetEvents(); }
@@ -385,8 +395,8 @@ async function boot() {
     if (local) {
       const result = reconcilePlayer(local, pending, ack, state.map, engine.predictLocalMovement, state.phase === 'fight', state.players, state.tick);
       predictedPlayer = result.predicted; pending = result.pending; predictionTick = result.predictionTick; predictedPlayer.yaw = aim.yaw; predictedPlayer.pitch = aim.pitch;
-      const afterPose = state.phase === 'fight' ? presentMovement(predictedPlayer, currentInput(), state.map, accumulator, engine.predictLocalMovement, state.players) : predictedPlayer;
-      correction.correct(beforePose, afterPose, performance.now(), { continuous: old?.phase === 'fight' && state.phase === 'fight' && old.matchId === state.matchId && old.mapId === state.mapId });
+      const afterPose = state.phase === 'fight' ? presentMovement(predictedPlayer, actionInputs.preview(currentInput(), reconciliationTime), state.map, accumulator, engine.predictLocalMovement, state.players) : predictedPlayer;
+      correction.correct(beforePose, afterPose, reconciliationTime, { continuous: old?.phase === 'fight' && state.phase === 'fight' && old.matchId === state.matchId && old.mapId === state.mapId });
     }
     const receivedAt = performance.now(), sample = timeline.sample(state, receivedAt, `${state.mapId}:${state.matchId}:${state.phase}`);
     if (sample) {
@@ -469,7 +479,7 @@ async function boot() {
   }
   function updateKeyLabels() { setText($('move-keys'), getKeyboardLayout().toUpperCase()); for (const label of document.querySelectorAll('[data-royale-key]')) label.textContent = displayKey(label.dataset.royaleKey); canvas.setAttribute('aria-label', `3D battle royale. ${getKeyboardLayout().toUpperCase()} or arrows move; mouse looks; left click shoots or strikes; right click aims; E picks up loot; V swaps knife and gun; ${displayKey('Q')} throws grenade; F heals; R reloads; Space jumps; Control crouches; Shift walks; Escape releases controls.`); }
   const unsubscribeLayout = subscribeKeyboardLayout(() => { neutralize({ pause: entered, unlock: true }); updateKeyLabels(); }); updateKeyLabels();
-  listen(window, 'keydown', event => { if (event.defaultPrevented || event.isComposing || event.altKey || event.metaKey) return; if (event.key === 'Escape') { if (modalOpen) { if (!$('guide-dialog').hidden) closeGuide(); else closeRoom(); } else if (entered) neutralize({ pause: true, unlock: true }); return; } if (event.key.toLowerCase() === 'p' && !isFormTarget(event.target) && entered) { event.preventDefault(); neutralize({ pause: true, unlock: true }); return; } if (!controlsActive() || isFormTarget(event.target)) return; const action = controlForKey(event); if (!action) return; event.preventDefault(); const id = event.code || event.key; if (pressedKeys.has(id)) return; pressedKeys.set(id, action); keys.add(action); utilityFeedback(action); sendInput(currentInput(), true); });
+  listen(window, 'keydown', event => { if (event.defaultPrevented || event.isComposing || event.altKey || event.metaKey) return; if (event.key === 'Escape') { if (modalOpen) { if (!$('guide-dialog').hidden) closeGuide(); else closeRoom(); } else if (entered) neutralize({ pause: true, unlock: true }); return; } if (event.key.toLowerCase() === 'p' && !isFormTarget(event.target) && entered) { event.preventDefault(); neutralize({ pause: true, unlock: true }); return; } if (!controlsActive() || isFormTarget(event.target)) return; const action = controlForKey(event); if (!action) return; event.preventDefault(); const id = event.code || event.key; if (pressedKeys.has(id) || event.repeat) return; pressedKeys.set(id, action); keys.add(action); utilityFeedback(action); sendInput(currentInput(), true); });
   listen(window, 'keyup', event => { const id = event.code || event.key, action = pressedKeys.get(id); pressedKeys.delete(id); if (action && ![...pressedKeys.values()].includes(action)) keys.delete(action); if (action) { sendInput(currentInput(), true); if (!isFormTarget(event.target)) event.preventDefault(); } });
   listen(document, 'focusin', event => { if (isFormTarget(event.target) && !actionPointers.size && !padPointers.size) neutralize(); });
   listen(window, 'blur', () => neutralize({ pause: entered, unlock: true }));
@@ -517,8 +527,20 @@ async function boot() {
     for (const name of ['pointerup', 'pointercancel', 'lostpointercapture']) listen(pad, name, end);
   }
   for (const button of document.querySelectorAll('[data-royale-action]')) {
-    listen(button, 'pointerdown', event => { if (!controlsActive()) return; event.preventDefault(); utilityFeedback(button.dataset.royaleAction); actionPointers.set(event.pointerId, button); touch.actions.add(button.dataset.royaleAction); button.classList.add('pressed'); button.setPointerCapture(event.pointerId); sendInput(currentInput(), true); });
-    const end = event => { if (actionPointers.get(event.pointerId) !== button) return; actionPointers.delete(event.pointerId); if (![...actionPointers.values()].includes(button)) { touch.actions.delete(button.dataset.royaleAction); button.classList.remove('pressed'); } sendInput(currentInput(), true); };
+    listen(button, 'pointerdown', event => {
+      if (!controlsActive()) return; event.preventDefault();
+      const action = button.dataset.royaleAction, wasHeld = currentInput()[action];
+      utilityFeedback(action);
+      const pointer = { element: button, action, pressSeq: null }; actionPointers.set(event.pointerId, pointer);
+      touch.actions.add(action); button.classList.add('pressed'); button.setPointerCapture(event.pointerId);
+      const sent = sendInput(currentInput(), true); if (!wasHeld) pointer.pressSeq = sent;
+    });
+    const end = event => {
+      const pointer = actionPointers.get(event.pointerId); if (pointer?.element !== button) return;
+      actionPointers.delete(event.pointerId);
+      const cancelPress = releaseFpsTouchAction(pointer, actionPointers, touch.actions, action => currentInput()[action], event.type !== 'pointerup');
+      sendInput(currentInput(), true, performance.now(), false, cancelPress);
+    };
     for (const name of ['pointerup', 'pointercancel', 'lostpointercapture']) listen(button, name, end); listen(button, 'contextmenu', event => event.preventDefault());
   }
   let invite = `${location.origin}/voxel-royale.html?room=${encodeURIComponent(roomId)}`; setText($('invite-address'), invite);
@@ -527,7 +549,7 @@ async function boot() {
   const pingTimer = setInterval(() => { if (connected && !document.hidden) send({ type: 'ping', time: performance.now() }); }, 1500);
   function destroy() { if (destroyed) return; neutralize({ pause: true, unlock: true }); destroyed = true; clearTimeout(reconnectTimer); clearTimeout(toastTimer); clearInterval(pingTimer); clearInterval(heartbeat); heartbeat = null; if (frameId) cancelAnimationFrame(frameId); frameId = null; socket?.close(); renderer?.destroy(); audio.destroy(); layoutPicker.destroy(); unsubscribeLayout(); for (const remove of removers) remove(); pending = []; snapshots = []; kills.length = 0; eventSeen.clear(); }
   listen(window, 'pagehide', destroy);
-  const inspect = () => { const { map, ...snapshot } = state || {}; return clone({ state: state ? snapshot : null, players: roster, playerId, hostId, input: currentInput(), predictedPlayer, presentationPlayer, presentationPlayers, predictionRemainder: accumulator, predictionTick, timeline: timeline.getState(), correction: correction.getState(), connected, controls: { pointerLocked: pointerLocked(), fallback, touch: touchMode, paused, entered, modalOpen }, queueLength: pending.length, renderCount, renderStats: renderer?.stats || null, graphicsError, spectatorId }); };
+  const inspect = () => { const { map, ...snapshot } = state || {}; return clone({ state: state ? snapshot : null, players: roster, playerId, hostId, input: currentInput(), predictedPlayer, presentationPlayer, presentationPlayers, predictionRemainder: accumulator, predictionTick, actionQueue: actionInputs.inspect(), timeline: timeline.getState(), correction: correction.getState(), connected, controls: { pointerLocked: pointerLocked(), fallback, touch: touchMode, paused, entered, modalOpen }, queueLength: pending.length, renderCount, renderStats: renderer?.stats || null, graphicsError, spectatorId }); };
   window.SemagRoyale = Object.freeze({ getState: inspect, inspect }); updateUI();
   try { const [rules, visual] = await Promise.all([import('./voxel-royale-engine.js'), import('./voxel-renderer.js')]); if (destroyed) return; engine = { ...rules, predictLocalMovement, sweepPresentationOffset, traceShot, ADS, HEAL, PLAYER_HEALTH }; renderer = new visual.VoxelRenderer(canvas); renderer.resize(); } catch (cause) { graphicsError = cause?.message || 'This game requires WebGL. Enable hardware acceleration and reload graphics.'; error(graphicsError); updateUI(); return; }
   connect();

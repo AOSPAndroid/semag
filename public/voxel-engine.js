@@ -251,8 +251,8 @@ export function sweepPresentationOffset(player, offset, mapIdOrMap = 'courtyard'
   bodyMove(body, ...delta, arena, contacts);
   return { ...copy, x: body.x, y: body.y, z: body.z };
 }
-/** Resolve a displayed crowd with the simulation's contact solver, on copies only. */
-export function separatePresentationBodies(players, mapIdOrMap = 'courtyard') {
+/** Resolve a displayed crowd on copies. A current local camera may anchor older remote poses. */
+export function separatePresentationBodies(players, mapIdOrMap = 'courtyard', { anchorId, authoritativePlayers = [] } = {}) {
   if (!Array.isArray(players)) return [];
   const copies = players.map(player => ({ ...player }));
   const arena = typeof mapIdOrMap === 'string' ? MAPS[mapIdOrMap] : mapIdOrMap;
@@ -269,7 +269,48 @@ export function separatePresentationBodies(players, mapIdOrMap = 'courtyard') {
     for (let j = i + 1; j < bodies.length; j++) if (bodyOverlapsPlayer(bodies[i], bodies[j])) { touching = true; break; }
   }
   if (!touching) return copies;
-  separatePlayers({ players: bodies }, arena);
+  const anchor = bodies.find(body => body.id === anchorId && body.alive);
+  const latest = new Map((Array.isArray(authoritativePlayers) ? authoritativePlayers : []).map(body => [body?.id, body]));
+  const legal = body => body && ['x', 'y', 'z', 'radius'].every(key => Number.isFinite(body[key])) && body.radius > 0
+    && body.y >= -EPS && body.x >= arena.bounds.minX + body.radius - EPS && body.x <= arena.bounds.maxX - body.radius + EPS
+    && body.z >= arena.bounds.minZ + body.radius - EPS && body.z <= arena.bounds.maxZ - body.radius + EPS
+    && !arena.colliders.some(rect => bodyOverlapsBox(body, rect));
+  // A protected camera must already be collision-tested against current bodies.
+  // Without that complete, legal context, preserve the original crowd contract.
+  const currentBodies = bodies.filter(body => body !== anchor && body.alive).map(body => latest.get(body.id));
+  const canAnchor = anchor && legal(anchor) && bodies.every(body => body === anchor || !body.alive
+    || legal(latest.get(body.id)) && latest.get(body.id).alive && latest.get(body.id).crouching === body.crouching && !bodyOverlapsPlayer(anchor, latest.get(body.id)))
+    && currentBodies.every((body, index) => currentBodies.slice(index + 1).every(other => !bodyOverlapsPlayer(body, other)));
+  if (!canAnchor) separatePlayers({ players: bodies }, arena);
+  else {
+    const remote = bodies.filter(body => body !== anchor);
+    const contacts = () => {
+      const pairs = [];
+      for (let i = 0; i < bodies.length; i++) for (let j = i + 1; j < bodies.length; j++) {
+        if (bodies[i].alive && bodyOverlapsPlayer(bodies[i], bodies[j])) pairs.push([bodies[i], bodies[j]]);
+      }
+      return pairs;
+    };
+    // Same-time remote contacts keep the shared solver's movement weighting.
+    // Only remote presentation yields to the already legal current camera.
+    for (let pass = 0; pass < 16 && contacts().length; pass++) {
+      separatePlayers({ players: remote }, arena);
+      for (const body of remote) if (body.alive && bodyOverlapsPlayer(body, anchor)) separatePrediction(body, [anchor], arena);
+    }
+    // A stale body can be trapped between the camera and a wall. Restore its
+    // newest legal pose instead of displacing the camera or crossing the wall.
+    // Expand only through unresolved contact neighbours, leaving other views alone.
+    const restored = new Set();
+    for (let pass = 0; pass < bodies.length; pass++) {
+      const pairs = contacts(); if (!pairs.length) break;
+      const affected = new Set(pairs.flat().filter(body => body !== anchor && !restored.has(body.id)));
+      if (!affected.size) break;
+      for (const body of affected) {
+        const current = latest.get(body.id);
+        Object.assign(body, { x: current.x, y: current.y, z: current.z }); restored.add(body.id);
+      }
+    }
+  }
   for (const { index, body } of indexed) Object.assign(copies[index], { x: body.x, y: body.y, z: body.z });
   return copies;
 }

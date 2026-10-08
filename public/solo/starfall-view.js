@@ -109,12 +109,89 @@ function background(region) {
   return canvas;
 }
 
+export function createStarfallPresentation() {
+  return createRenderSampling({ fields: ['time', 'stageTime'],
+    objects: { player: { fields: ['x', 'y'], decays: ['invulnerable'], maxDistance: 32 } },
+    collections: { enemies: { fields: ['x', 'y'], maxDistance: 32 },
+      hostileShots: { fields: ['x', 'y'], maxDistance: 32, velocityGuard: true },
+      friendlyShots: { fields: ['x', 'y'], maxDistance: 32, velocityGuard: true },
+      warnings: { fields: ['x', 'y'], decays: ['remaining'], maxDistance: 32 } },
+    continuity: state => state.stage });
+}
+
+/** Event births are immediate. Motion and fading use the same sampled clock
+ * as ships/shots, including frames with no new physics tick. */
+export function createStarfallEffects() {
+  const particles = [], rings = [], flashes = new Map(), poses = new WeakMap();
+  const frame = { particles: [], rings: [], flashes: new Set(), bombGlow: 0 };
+  let cursor = 0, bomb = null;
+  return {
+    capture(state, reducedMotion = false) {
+      const born = state.time;
+      // Expiration is monotonic and bounded; no display frame advances state.
+      for (let index = particles.length - 1; index >= 0; index--)
+        if (born - particles[index].born > particles[index].life + STEP) particles.splice(index, 1);
+      for (const event of state.events) {
+        if (event.id <= cursor) continue; cursor = event.id;
+        if (event.type === 'bomb') { bomb = { born, life: reducedMotion ? .10 : .48 }; rings.push({ x: event.x, y: event.y, born, life: .7, radius: 24, color: '#a8ece0' }); }
+        if (event.type === 'hit') rings.push({ x: event.x, y: event.y, born, life: .45, radius: 9, color: '#ffd29c' });
+        if (['destroy', 'phase', 'guardian'].includes(event.type)) rings.push({ x: event.x, y: event.y, born, life: event.boss ? .7 : .4, radius: event.boss ? 32 : 12, color: event.type === 'phase' ? '#e8badb' : '#f5cf93' });
+        if (event.type === 'spark') { const enemy = state.enemies.find(item => Math.hypot(item.x - event.x, item.y - event.y) < item.radius + 10); if (enemy) flashes.set(enemy.id, born); }
+        const count = event.type === 'destroy' ? event.boss ? 20 : 9 : event.type === 'hit' ? 10 : event.type === 'spark' ? 2 : event.type === 'graze' ? 1 : 0;
+        if (!reducedMotion) for (let index = 0; index < count && particles.length < 96; index++) {
+          const direction = ((event.id * 13 + index * 7) % 31) / 31 * Math.PI * 2;
+          const speed = event.type === 'spark' ? 22 : 28 + index % 5 * 11;
+          particles.push({ x: event.x, y: event.y, vx: Math.cos(direction) * speed, vy: Math.sin(direction) * speed,
+            born, life: event.type === 'graze' ? .18 : .32 + index % 3 * .06,
+            color: event.type === 'graze' ? '#a3efe0' : '#f6cc91', size: event.type === 'destroy' ? 3 : 2 });
+        }
+      }
+      if (rings.length > 12) rings.splice(0, rings.length - 12);
+    },
+    sample(time) {
+      frame.particles.length = 0; frame.rings.length = 0; frame.flashes.clear();
+      for (const source of particles) {
+        const age = Math.max(0, time - source.born);
+        if (age >= source.life) continue;
+        let pose = poses.get(source); if (!pose) { pose = {}; poses.set(source, pose); }
+        Object.assign(pose, source, { age, x: source.x + source.vx * age, y: source.y + source.vy * age });
+        frame.particles.push(pose);
+      }
+      for (let index = rings.length - 1; index >= 0; index--) if (time - rings[index].born >= rings[index].life) rings.splice(index, 1);
+      for (const source of rings) {
+        let pose = poses.get(source); if (!pose) { pose = {}; poses.set(source, pose); }
+        Object.assign(pose, source, { age: Math.max(0, time - source.born) }); frame.rings.push(pose);
+      }
+      for (const [id, born] of flashes) { if (time - born >= .08) flashes.delete(id); else frame.flashes.add(id); }
+      frame.bombGlow = bomb ? Math.max(0, bomb.life - Math.max(0, time - bomb.born)) : 0;
+      return frame;
+    },
+    reset(nextCursor = cursor) { cursor = nextCursor; particles.length = 0; rings.length = 0; flashes.clear(); bomb = null; frame.particles.length = 0; frame.rings.length = 0; frame.flashes.clear(); frame.bombGlow = 0; },
+    reduceMotion() { particles.length = 0; rings.length = 0; },
+  };
+}
+
+export function drawStarfallEffects(context, frame, reducedMotion = false) {
+  for (const particle of frame.particles) {
+    context.globalAlpha = 1 - particle.age / particle.life; context.fillStyle = particle.color;
+    context.fillRect(particle.x, particle.y, particle.size, particle.size);
+  }
+  for (const ring of frame.rings) {
+    context.globalAlpha = (1 - ring.age / ring.life) * .7; context.strokeStyle = ring.color; context.lineWidth = 2;
+    context.beginPath(); context.arc(ring.x, ring.y, ring.radius + ring.age * (reducedMotion ? 0 : 95), 0, Math.PI * 2); context.stroke();
+  }
+  if (frame.bombGlow > 0) {
+    context.globalAlpha = Math.min(.22, frame.bombGlow * .44); context.fillStyle = '#b9f8e5'; context.fillRect(0, 0, W, H);
+  }
+  context.globalAlpha = 1;
+}
+
 export function mount(container, { onUpdate = () => {} } = {}) {
-  const presentation = createRenderSampling({ fields: ['time'], objects: { player: { fields: ['x', 'y'], maxDistance: 32 } }, collections: { enemies: { fields: ['x', 'y'], maxDistance: 32 }, hostileShots: { fields: ['x', 'y'], maxDistance: 32, velocityGuard: true }, friendlyShots: { fields: ['x', 'y'], maxDistance: 32, velocityGuard: true }, warnings: { fields: ['x', 'y'], maxDistance: 32 } }, continuity: s => s.stage });
+  const presentation = createStarfallPresentation(), effects = createStarfallEffects();
   let displayState;
   let difficulty = 'veteran'; let state = createState({ difficulty }); let destroyed = false;
-  let raf = null; let previous = null; let accumulator = 0; let lastPublished = -1; let lastPhase = null; let lastEvent = 0;
-  let particles = []; let rings = []; let flashes = new Map(); let bombGlow = 0; let upgradeSignature = ''; let buildSignature = '';
+  let raf = null; let previous = null; let accumulator = 0; let lastPublished = -1; let lastPhase = null;
+  let upgradeSignature = ''; let buildSignature = '';
   let bombQueued = false; let stick = { x: 0, y: 0 }; const keys = new Map(); const pointers = new Map();
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
   const view = node('section', 'starfall-view'); view.setAttribute('aria-label', 'Starfall Squadron campaign');
@@ -216,23 +293,9 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     onUpdate({ phase: state.phase, result: state.result, score: state.score, record: state.phase === 'won' ? state.score : null, recordKey: recordKey(state), recordLabel: `${DIFFICULTIES[difficulty].title.toUpperCase()} CLEAR`, scoreLabel: 'SCORE', detail: detail() });
     if (changed && state.phase === 'upgrade') upgradeChoices.querySelector('button')?.focus({ preventScroll: true });
   }
-  function effects(dt) {
-    for (const event of state.events) {
-      if (event.id <= lastEvent) continue; lastEvent = event.id;
-      if (event.type === 'bomb') { bombGlow = reducedMotion.matches ? .10 : .48; rings.push({ x: event.x, y: event.y, age: 0, life: .7, radius: 24, color: '#a8ece0' }); }
-      if (event.type === 'hit') rings.push({ x: event.x, y: event.y, age: 0, life: .45, radius: 9, color: '#ffd29c' });
-      if (event.type === 'destroy' || event.type === 'phase' || event.type === 'guardian') rings.push({ x: event.x, y: event.y, age: 0, life: event.boss ? .7 : .4, radius: event.boss ? 32 : 12, color: event.type === 'phase' ? '#e8badb' : '#f5cf93' });
-      if (event.type === 'spark') { const near = state.enemies.find(enemy => Math.hypot(enemy.x - event.x, enemy.y - event.y) < enemy.radius + 10); if (near) flashes.set(near.id, .08); }
-      const count = event.type === 'destroy' ? event.boss ? 20 : 9 : event.type === 'hit' ? 10 : event.type === 'spark' ? 2 : event.type === 'graze' ? 1 : 0;
-      if (!reducedMotion.matches) for (let i = 0; i < count && particles.length < 96; i += 1) { const angle = ((event.id * 13 + i * 7) % 31) / 31 * Math.PI * 2; const speed = event.type === 'spark' ? 22 : 28 + i % 5 * 11; particles.push({ x: event.x, y: event.y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, age: 0, life: event.type === 'graze' ? .18 : .32 + i % 3 * .06, color: event.type === 'graze' ? '#a3efe0' : '#f6cc91', size: event.type === 'destroy' ? 3 : 2 }); }
-    }
-    particles = particles.filter(p => { p.age += dt; p.x += p.vx * dt; p.y += p.vy * dt; return p.age < p.life; });
-    rings = rings.filter(ring => { ring.age += dt; return ring.age < ring.life; }).slice(-12);
-    for (const [id, timer] of flashes) { if (timer <= dt) flashes.delete(id); else flashes.set(id, timer - dt); }
-    bombGlow = Math.max(0, bombGlow - dt);
-  }
   function draw(fraction = 1) {
     displayState = presentation.sample(state, fraction);
+    const effectFrame = effects.sample(displayState.time), { flashes } = effectFrame;
     const c = context; const stage = STAGES[displayState.stage - 1]; const bg = backgrounds[stage.regionId]; const scroll = reducedMotion.matches ? 0 : displayState.time * 38 % 1200;
     c.globalAlpha = 1; c.drawImage(bg, 0, scroll - 1200); c.drawImage(bg, 0, scroll);
     if (displayState.stageTime < 3) { c.fillStyle = '#a2c1c0'; c.font = 'bold 11px monospace'; c.textAlign = 'center'; c.fillText(`${stage.region} / ${String(displayState.stage).padStart(2, '0')}`, W / 2, 210); c.fillStyle = '#e9e3cf'; c.font = 'bold 21px monospace'; c.fillText(stage.name.toUpperCase(), W / 2, 242); c.textAlign = 'start'; }
@@ -266,24 +329,21 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       // The always-visible white circle is the exact physical pilot hitbox.
       c.fillStyle = '#091723'; c.beginPath(); c.arc(p.x, p.y, HITBOX + 1.4, 0, Math.PI * 2); c.fill(); c.fillStyle = '#fff4cf'; c.beginPath(); c.arc(p.x, p.y, HITBOX, 0, Math.PI * 2); c.fill();
     }
-    for (const p of particles) { c.globalAlpha = 1 - p.age / p.life; c.fillStyle = p.color; c.fillRect(p.x, p.y, p.size, p.size); }
-    for (const ring of rings) { c.globalAlpha = (1 - ring.age / ring.life) * .7; c.strokeStyle = ring.color; c.lineWidth = 2; c.beginPath(); c.arc(ring.x, ring.y, ring.radius + ring.age * (reducedMotion.matches ? 0 : 95), 0, Math.PI * 2); c.stroke(); }
-    if (bombGlow > 0) { c.globalAlpha = Math.min(.22, bombGlow * .44); c.fillStyle = '#b9f8e5'; c.fillRect(0, 0, W, H); }
-    c.globalAlpha = 1;
+    drawStarfallEffects(c, effectFrame, reducedMotion.matches);
     // Constant inset keeps hostile shots distinguishable from the decorative background.
     c.strokeStyle = '#718c8b'; c.globalAlpha = .25; c.strokeRect(1.5, 1.5, W - 3, H - 3); c.globalAlpha = 1;
   }
   function schedule() { if (!destroyed && state.phase === 'playing' && raf === null) raf = requestAnimationFrame(frame); }
-  function refresh() { if (state.phase !== 'playing' && raf !== null) { cancelAnimationFrame(raf); raf = null; } publish(true); effects(0); draw(); schedule(); }
+  function refresh() { if (state.phase !== 'playing' && raf !== null) { cancelAnimationFrame(raf); raf = null; } publish(true); effects.capture(state, reducedMotion.matches); draw(); schedule(); }
   function frame(now) {
     raf = null; const dt = previous === null ? 0 : clamp((now - previous) / 1000, 0, .08); previous = now; accumulator += dt;
     let ticks = 0;
-    while (state.phase === 'playing' && accumulator >= STEP && ticks < 10) { presentation.capture(state); step(state, input(), STEP); bombQueued = false; effects(STEP); accumulator -= STEP; ticks += 1; }
+    while (state.phase === 'playing' && accumulator >= STEP && ticks < 10) { presentation.capture(state); step(state, input(), STEP); bombQueued = false; effects.capture(state, reducedMotion.matches); accumulator -= STEP; ticks += 1; }
     if (state.phase !== 'playing') { accumulator = 0; presentation.reset(); }
     publish(); draw(tickFraction(accumulator, STEP)); schedule();
   }
   function togglePause() { if (destroyed) return; releaseControls(); pauseState(state); previous = null; accumulator = 0; presentation.reset(); refresh(); }
-  function restart() { if (destroyed) return; releaseControls(); state = createState({ difficulty }); previous = null; accumulator = 0; presentation.reset(); lastPublished = -1; lastPhase = null; lastEvent = 0; particles = []; rings = []; flashes.clear(); bombGlow = 0; upgradeSignature = ''; buildSignature = ''; refresh(); canvas.focus({ preventScroll: true }); }
+  function restart() { if (destroyed) return; releaseControls(); state = createState({ difficulty }); previous = null; accumulator = 0; presentation.reset(); lastPublished = -1; lastPhase = null; effects.reset(0); upgradeSignature = ''; buildSignature = ''; refresh(); canvas.focus({ preventScroll: true }); }
   function keydown(event) {
     if (blocksSoloShortcut(event, { allowRepeat: true }) || state.phase !== 'playing') return;
     const target = event.target instanceof Element ? event.target.closest('button,a,summary') : null;
@@ -322,12 +382,12 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     }
   }
   function pointerEnd(event) { const pointer = pointers.get(event.pointerId); if (!pointer) return; pointers.delete(event.pointerId); if (pointer.control === 'move') stick = { x: 0, y: 0 }; try { if (pointer.target.hasPointerCapture?.(event.pointerId)) pointer.target.releasePointerCapture(event.pointerId); } catch {} syncControls(); }
-  function upgradeClick(event) { const button = event.target instanceof Element ? event.target.closest('[data-starfall-upgrade]') : null; if (!button || !upgradeChoices.contains(button)) return; releaseControls(); if (!chooseUpgrade(state, button.dataset.starfallUpgrade).ok) return; previous = null; accumulator = 0; presentation.reset(); particles = []; rings = []; refresh(); canvas.focus({ preventScroll: true }); }
+  function upgradeClick(event) { const button = event.target instanceof Element ? event.target.closest('[data-starfall-upgrade]') : null; if (!button || !upgradeChoices.contains(button)) return; releaseControls(); if (!chooseUpgrade(state, button.dataset.starfallUpgrade).ok) return; previous = null; accumulator = 0; presentation.reset(); effects.reset(); refresh(); canvas.focus({ preventScroll: true }); }
   function replayClick() { if (state.phase === 'paused') togglePause(); else restart(); }
   function tierChange() { difficulty = Object.hasOwn(DIFFICULTIES, tierSelect.value) ? tierSelect.value : 'veteran'; restart(); }
   function autoChange() { releaseControls(); publish(true); }
   function hidden() { if (document.hidden) releaseControls(); }
-  function motionChange() { if (reducedMotion.matches) { particles = []; rings = []; } if (state.phase !== 'playing') draw(); }
+  function motionChange() { if (reducedMotion.matches) effects.reduceMotion(); if (state.phase !== 'playing') draw(); }
   function keyboardHints() { view.dataset.keyboardLayout = getKeyboardLayout(); canvas.setAttribute('aria-label', `Starfall Squadron. Move with ${displayKey('WASD')} or arrow keys; Shift focuses your visible three-pixel core, click or C fires, Space or E uses a finite bomb. Touch: drag to move, hold Focus, tap Nova.`); }
   const unsubscribe = subscribeKeyboardLayout(() => { releaseControls(); keyboardHints(); }); keyboardHints();
   window.addEventListener('keydown', keydown); window.addEventListener('keyup', keyup); window.addEventListener('blur', releaseControls); document.addEventListener('visibilitychange', hidden);
@@ -338,7 +398,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     destroy() { if (destroyed) return; destroyed = true; if (raf !== null) cancelAnimationFrame(raf); releaseControls(); unsubscribe();
       window.removeEventListener('keydown', keydown); window.removeEventListener('keyup', keyup); window.removeEventListener('blur', releaseControls); document.removeEventListener('visibilitychange', hidden);
       controls.removeEventListener('pointerdown', controlDown); canvas.removeEventListener('pointerdown', canvasDown); window.removeEventListener('pointermove', pointerMove); window.removeEventListener('pointerup', pointerEnd); window.removeEventListener('pointercancel', pointerEnd); view.removeEventListener('lostpointercapture', pointerEnd);
-      upgradeChoices.removeEventListener('click', upgradeClick); replay.removeEventListener('click', replayClick); tierSelect.removeEventListener('change', tierChange); autoInput.removeEventListener('change', autoChange); reducedMotion.removeEventListener('change', motionChange); sprites.clear(); flashes.clear(); particles = []; rings = []; view.remove();
+      upgradeChoices.removeEventListener('click', upgradeClick); replay.removeEventListener('click', replayClick); tierSelect.removeEventListener('change', tierChange); autoInput.removeEventListener('change', autoChange); reducedMotion.removeEventListener('change', motionChange); sprites.clear(); effects.reset(); view.remove();
     },
   };
 }

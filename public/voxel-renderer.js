@@ -1933,23 +1933,28 @@ export function stormMesh(storm) {
   return mesh.array;
 }
 
+// Fixed local proportions fit the most restrictive shooting envelope in every
+// facing direction. Keeping these independent of yaw prevents the silhouette
+// from breathing as a player turns, and leaves all uniform/helmet surface art.
+const OPERATIVE_BODY_SCALE = .93;
+const OPERATIVE_HEAD_WIDTH = .75, OPERATIVE_HEAD_DEPTH = .65;
+
 function operativeParts(mesh, player, time, freeForAll = false) {
   const crouch = player.crouching, scale = crouch ? 1.15 / 1.8 : 1;
   const yaw = finite(player.yaw), pitch = clamp(finite(player.pitch) + finite(player.recoil), -1.45, 1.45);
-  // The simulation targets axis-aligned voxel boxes. Quarter-turn silhouettes
-  // keep the visible body and exact square head inside those hitboxes at every
-  // aim angle; the held weapon still follows continuous yaw and pitch.
-  const bodyYaw = Math.round(yaw / (Math.PI / 2)) * (Math.PI / 2);
+  // Aim turns continuously; anatomy remains inside the unchanged axis-aligned
+  // hitboxes because its authored horizontal proportions have a fixed bound.
+  const bodyYaw = yaw;
   const pose = { x: player.x, y: finite(player.y), z: player.z, yaw: bodyYaw, pitch: 0 };
   const color = freeForAll ? survivorColor(player) : TEAM_COLORS[player.team === 1 ? 1 : 0];
   const team = rgba(color), uniform = mix(team, rgba('#304149'), .58), dark = '#253238', plate = '#3a4a4d';
   const box = (x, y, z, w, h, d, c) => {
     const bottom = y * scale, top = Math.min((y + h) * scale, crouch ? .83 : 1.48);
-    mesh.box(x, bottom, z, w, top - bottom, d, c, pose);
+    mesh.box(x * OPERATIVE_BODY_SCALE, bottom, z * OPERATIVE_BODY_SCALE, w * OPERATIVE_BODY_SCALE, top - bottom, d * OPERATIVE_BODY_SCALE, c, pose);
   };
   const face = (points, normal, c) => {
     const transform = point => {
-      const p = rotate([point[0], Math.min(point[1] * scale, crouch ? .83 : 1.48), point[2]], bodyYaw);
+      const p = rotate([point[0] * OPERATIVE_BODY_SCALE, Math.min(point[1] * scale, crouch ? .83 : 1.48), point[2] * OPERATIVE_BODY_SCALE], bodyYaw);
       return p.map((value, i) => value + [pose.x, pose.y, pose.z][i]);
     };
     mesh.quad(...points.map(transform), rotate(normal, bodyYaw), rgba(c));
@@ -2015,17 +2020,18 @@ function operativeParts(mesh, player, time, freeForAll = false) {
   const headPose = { ...pose, y: pose.y + headBase, pitch: 0 };
   const eyeY = .095 + Math.sin(pitch) * .018;
   const skin = ['#baab91', '#a28b75', '#c9b99c'][hash(player.id) % 3], helmet = mix(team, rgba('#4b6158'), .78);
-  mesh.box(-.19, .012, -.19, .38, .175, .38, skin, headPose);
-  mesh.box(-.193, 0, .048, .386, .179, .165, '#324746', headPose);
-  mesh.box(-.22, .175, -.214, .44, .095, .428, helmet, headPose);
-  mesh.box(-.18, .269, -.18, .36, .051, .36, '#75887b', headPose);
-  mesh.box(-.22, .166, -.22, .44, .027, .114, '#3e5653', headPose);
-  mesh.box(-.187, .082, -.211, .374, .074, .032, '#23393d', headPose);
-  mesh.box(-.22, .075, -.048, .027, .103, .110, '#536c62', headPose);
-  mesh.box(.193, .075, -.048, .027, .103, .110, '#536c62', headPose);
-  mesh.box(-.145, .020, -.211, .29, .059, .056, '#53675f', headPose);
+  const headBox = (x, y, z, w, h, d, c) => mesh.box(x * OPERATIVE_HEAD_WIDTH, y, z * OPERATIVE_HEAD_DEPTH, w * OPERATIVE_HEAD_WIDTH, h, d * OPERATIVE_HEAD_DEPTH, c, headPose);
+  headBox(-.19, .012, -.19, .38, .175, .38, skin);
+  headBox(-.193, 0, .048, .386, .179, .165, '#324746');
+  headBox(-.22, .175, -.214, .44, .095, .428, helmet);
+  headBox(-.18, .269, -.18, .36, .051, .36, '#75887b');
+  headBox(-.22, .166, -.22, .44, .027, .114, '#3e5653');
+  headBox(-.187, .082, -.211, .374, .074, .032, '#23393d');
+  headBox(-.22, .075, -.048, .027, .103, .110, '#536c62');
+  headBox(.193, .075, -.048, .027, .103, .110, '#536c62');
+  headBox(-.145, .020, -.211, .29, .059, .056, '#53675f');
   const headFace = (points, normal, c) => {
-    const transform = point => { const p = rotate(point, bodyYaw); return p.map((value, i) => value + [headPose.x, headPose.y, headPose.z][i]); };
+    const transform = point => { const p = rotate([point[0] * OPERATIVE_HEAD_WIDTH, point[1], point[2] * OPERATIVE_HEAD_DEPTH], bodyYaw); return p.map((value, i) => value + [headPose.x, headPose.y, headPose.z][i]); };
     mesh.quad(...points.map(transform), rotate(normal, bodyYaw), rgba(c));
   };
   const headFront = (x, y, z, w, h, c) => headFace([[x, y, z], [x, y + h, z], [x + w, y + h, z], [x + w, y, z]], [0, 0, -1], c);

@@ -1,4 +1,4 @@
-import { canOccupy } from './voxel-survival-engine.js';
+import { canOccupy, raycast } from './voxel-survival-engine.js';
 
 // Completed 120 Hz steps remain the authority. These reusable display poses
 // keep the camera, creatures, arrows and animation clock on one timeline.
@@ -69,14 +69,18 @@ export function createSurvivalPresentation() {
       stats.renderSamples++; stats.lastFraction = fraction;
       Object.assign(camera, state.player, { yaw: look.yaw, pitch: look.pitch });
       Object.assign(options, { displayTime: state.time, worldRevision: state.world.revision, player: state.player, enemies: state.enemies, projectiles: state.projectiles, mining: state.mining });
-      if (fraction === 1 || !previous || previous.state !== state || previous.world !== state.world || previous.revision !== state.world.revision
-        || state.paused || previous.paused !== state.paused || state.phase !== 'playing' || previous.phase !== state.phase || previous.day !== state.day) return result;
+      if (fraction === 1 || !previous || previous.state !== state || previous.world !== state.world
+        || state.paused || previous.paused !== state.paused || state.phase !== 'playing' || previous.phase !== state.phase) return result;
 
       const player = sampleBody(state.player, previousPlayer, poses, fraction);
       if (player === state.player) return result;
-      if (player !== state.player && clearBodies(state, player, state.player)) Object.assign(camera, player, { yaw: look.yaw, pitch: look.pitch });
-      options.player = player;
-      options.displayTime = mix(previous.time, state.time, fraction);
+      // Edits elsewhere in this world need not snap movement. Every candidate
+      // still clears the current terrain and living peers before it is used.
+      const playerClear = clearBodies(state, player, state.player);
+      if (playerClear) Object.assign(camera, player, { yaw: look.yaw, pitch: look.pitch });
+      options.player = playerClear ? player : state.player;
+      // A new day's lighting uses its completed clock; movement stays smooth.
+      options.displayTime = previous.day === state.day ? mix(previous.time, state.time, fraction) : state.time;
       if (state.mining && previous.mining === state.mining && previous.slot === state.selectedSlot) {
         Object.assign(miningPose, state.mining, { progress: mix(previous.miningProgress, state.mining.progress, fraction) });
         options.mining = miningPose;
@@ -94,8 +98,21 @@ export function createSurvivalPresentation() {
         if (pose === body || pose.hp <= 0) continue;
         if (overlaps(pose, camera) || enemies.some((peer, other) => other !== index && peer.hp > 0 && overlaps(pose, peer))) enemies[index] = body;
       }
-      if (enemies.some(peer => peer.hp > 0 && overlaps(camera, peer))) Object.assign(camera, state.player, { yaw: look.yaw, pitch: look.pitch });
-      for (const projectile of state.projectiles) projectiles.push(sampleBody(projectile, previousProjectiles.get(projectile), poses, fraction, 2));
+      if (enemies.some(peer => peer.hp > 0 && overlaps(camera, peer))) {
+        Object.assign(camera, state.player, { yaw: look.yaw, pitch: look.pitch }); options.player = state.player;
+      }
+      for (const projectile of state.projectiles) {
+        const pose = sampleBody(projectile, previousProjectiles.get(projectile), poses, fraction, 2);
+        // An edit may occupy an arrow's old segment even when its current tip
+        // survived the tick. Reuse the engine's exact grid ray for that segment.
+        let clear = true;
+        if (pose !== projectile && previous.revision !== state.world.revision) {
+          const direction = { x: pose.x - projectile.x, y: pose.y - projectile.y, z: pose.z - projectile.z };
+          const distance = Math.hypot(direction.x, direction.y, direction.z);
+          clear = distance <= EPS || !raycast(state, projectile, direction, distance);
+        }
+        projectiles.push(clear ? pose : projectile);
+      }
       options.enemies = enemies; options.projectiles = projectiles;
       stats.interpolatedSamples++;
       return result;

@@ -4,10 +4,12 @@ export function createParisPerspective() {
   const C = { ink:'#263d43', deep:'#294a50', paper:'#f2e3bf', cream:'#dfcba4', stone:'#b7ad95', zinc:'#738b94', zincHi:'#99a6a6', teal:'#397f78', ochre:'#d8a656', orange:'#ca7147', green:'#527d62' };
   const paintColors=['#e2d7bb','#bd6d53','#729b96','#9fa8ad','#ccac75','#8e839b'];
   const normalize = (value,count=6) => Math.abs(Math.trunc(Number(value)||0))%count;
-  function asset(key,width,height,paint) {
+  function asset(key,width,height,paint,readPixels=false) {
     if(cache.has(key))return cache.get(key);
     const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
-    const ctx=canvas.getContext('2d');ctx.imageSmoothingEnabled=false;
+    // Wall and roof pixels feed the software projection atlas. Choose their
+    // CPU backing before painting to avoid cold GPU readbacks at first use.
+    const ctx=readPixels?canvas.getContext('2d',{willReadFrequently:true}):canvas.getContext('2d');ctx.imageSmoothingEnabled=false;
     const r=(x,y,w,h,color)=>{ctx.fillStyle=color;ctx.fillRect(x,y,w,h);};
     const p=(points,color)=>{ctx.fillStyle=color;ctx.beginPath();for(let i=0;i<points.length;i++)i?ctx.lineTo(...points[i]):ctx.moveTo(...points[i]);ctx.closePath();ctx.fill();};
     paint(r,p,ctx);cache.set(key,canvas);return canvas;
@@ -129,7 +131,7 @@ export function createParisPerspective() {
         r(55,137,10,22,'#658f8d');r(59,136,1,23,'#c1c7a8');r(64,148,1,3,'#e0b975');
         for(const x of [7,86]){r(x,128,27,27,'#afaa92');r(x+2,130,23,22,'#476970');r(x+4,132,19,15,'#91aca2');r(x+12,130,1,23,'#d3d2b3');r(x+2,149,23,3,'#bac5a5');r(x-1,155,29,1,frame);}
       }
-    });
+    },true);
   }
   /** Opaque zinc material, mapped onto a separate pitched roof plane. */
   function roof(variant=0){
@@ -141,7 +143,7 @@ export function createParisPerspective() {
       for(let y=15;y<64;y+=16){r(0,y,120,1,'#5d7882');r(0,y+1,120,1,'#8fa4a6');for(let x=5;x<120;x+=12)r(x,y-1,1,1,'#bac1b4');}
       // Flush glazed skylights are material detail, never a baked roof outline.
       for(const x of [27,79]){r(x,22,14,22,'#b1b8aa');r(x+1,23,12,20,'#3b6170');r(x+2,24,10,7,'#a1bcb7');r(x+2,32,10,9,'#648a93');r(x+6,23,1,20,'#a9b6a8');r(x+1,31,12,1,'#a9b6a8');}
-    });
+    },true);
   }
   function endWall(variant=0){
     variant=normalize(variant,3);

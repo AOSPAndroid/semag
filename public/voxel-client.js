@@ -7,6 +7,7 @@ import { meleeLabel, meleeProfile } from './voxel-melee.js';
 import { incomingDamageFeedback, damageFeedbackPresentation, paintDamageFeedback } from './voxel-damage-feedback.js';
 import { combatPresentation, createCorrectionPresenter, createMovementPresenter, hudTransitionKey, interpolatedVoxelState, reconcileMovement, resolvePresentationContacts, withCombatPresentation } from './voxel-presentation.js';
 import { createNetworkTimeline } from './network-timeline.js';
+import { createFpsInputQueue, releaseFpsTouchAction } from './voxel-input-queue.js';
 import { setAttribute, setDisabled, setHidden, setStyle, setText, toggleClass } from './hub/dom.js';
 
 export const LOOK_SENSITIVITY = 0.0025;
@@ -274,6 +275,7 @@ async function boot() {
   const padInputPacer = createContinuousInputPacer(60);
   const wirePacer = createContinuousInputPacer(120);
   const presentMovement = createMovementPresenter();
+  const actionInputs = createFpsInputQueue();
   const correction = createCorrectionPresenter();
   const timeline = createNetworkTimeline({ snapshotTicks: 4 });
   let paintedHUDKey = "";
@@ -298,13 +300,19 @@ async function boot() {
       else if (!local.grounded) toast('Land before drinking your potion.');
     } else if (action === 'grenade' && !local.grenades) toast('Your frag is spent. Supplies reset next round.');
   }
-  function sendInput(buttons = currentInput(), edge = true, now = performance.now()) {
-    if (teamSwitchPending || !wirePacer.shouldSend(now, edge)) return sequence;
-    if (sequence >= 999999000) sequence = 0;
+  function sendInput(buttons = currentInput(), edge = true, now = performance.now(), cancelActions = false, cancelPress = null) {
+    const nextSequence = sequence >= 999999000 ? 1 : sequence + 1;
+    if (cancelActions) actionInputs.reset({ held: buttons, neutral: true });
+    else {
+      if (cancelPress) actionInputs.cancel(cancelPress);
+      actionInputs.observe(buttons, now, { sequence: nextSequence });
+    }
+    if (teamSwitchPending || !wirePacer.shouldSend(now, edge || cancelActions || cancelPress)) return null;
     // A shot refers to the last displayed remote frame, not a future clock estimate.
     const viewTime = timeline.getState().renderTime;
     const viewTick = state?.phase === 'fight' && Number.isFinite(viewTime) && viewTime >= 0 ? viewTime * 120 / 1000 : null;
-    send({ type: 'input', seq: ++sequence, buttons, ...(viewTick === null ? {} : { viewTick }) }); return sequence;
+    sequence = nextSequence;
+    send({ type: 'input', seq: sequence, buttons, ...(viewTick === null ? {} : { viewTick }), ...(cancelActions ? { cancelActions: true } : {}), ...(cancelPress ? { cancelPress } : {}) }); return sequence;
   }
   function integrateTouchLook(now = performance.now()) {
     const delta = Math.max(0, Math.min(.1, (now - lastTouchLookAt) / 1000)); lastTouchLookAt = now;
@@ -321,14 +329,15 @@ async function boot() {
   function neutralize({ pause = false, unlock = false } = {}) {
     keys.clear(); pressedKeys.clear(); mouse.fire = mouse.aim = false; rightDrag = false;
     touch.actions.clear(); touch.move = { x: 0, y: 0 }; touch.look = { x: 0, y: 0 };
-    for (const [pointerId, element] of actionPointers) try { element.releasePointerCapture(pointerId); } catch { /* A cancelled pointer is already released. */ }
+    for (const [pointerId, record] of actionPointers) try { record.element.releasePointerCapture(pointerId); } catch { /* A cancelled pointer is already released. */ }
     for (const [pointerId, record] of padPointers) try { record.element.releasePointerCapture(pointerId); } catch { /* A cancelled pointer is already released. */ }
     actionPointers.clear(); padPointers.clear();
     document.querySelectorAll('.pressed, .touch-pad.active').forEach(element => element.classList.remove('pressed', 'active'));
     document.querySelectorAll('.touch-pad>i').forEach(element => { element.style.transform = ''; });
     if (pause) paused = true;
     if (unlock && pointerLocked()) document.exitPointerLock?.();
-    if (connected && playerId !== null) sendInput(neutralInput(aim.yaw, aim.pitch));
+    if (connected && playerId !== null) sendInput(neutralInput(aim.yaw, aim.pitch), true, performance.now(), true);
+    else actionInputs.reset({ neutral: true });
     pending = []; accumulator = 0; predictionTick = state?.tick || 0; correction.reset(); presentationPlayer = null; presentationPlayers = [];
     padInputPacer.reset();
     lastTouchLookAt = performance.now();
@@ -705,12 +714,13 @@ async function boot() {
     const local = ownPlayer();
     if (teamSwitchPending && local?.team === requestedTeam) { teamSwitchPending = false; requestedTeam = null; }
     presentationPlayer = predictedPlayer || local;
-    if (state.phase === 'fight' && presentationPlayer?.alive) presentationPlayer = presentMovement(presentationPlayer, currentInput(), state.mapId, accumulator, engine.predictLocalMovement, state.players);
+    if (state.phase === 'fight' && presentationPlayer?.alive) presentationPlayer = presentMovement(presentationPlayer, actionInputs.preview(currentInput(), now), state.mapId, accumulator, engine.predictLocalMovement, state.players);
     const newest = snapshots[snapshots.length - 1], previous = snapshots[snapshots.length - 2];
     const visualCombat = local && combatPresentation(local, previous?.state.players.find(player => player.id === playerId) || local, 1, Math.max(0, timeline.currentTime(now) - (newest?.time || 0)));
     presentationPlayer = withCombatPresentation(presentationPlayer, visualCombat);
     presentationPlayer = correction.present(presentationPlayer, now, engine.sweepPresentationOffset, state.mapId, state.players);
-    presentationPlayers = resolvePresentationContacts(renderedState.players.map(player => local?.alive && player.id === playerId ? presentationPlayer : player), state.mapId);
+    presentationPlayers = resolvePresentationContacts(renderedState.players.map(player => local?.alive && player.id === playerId ? presentationPlayer : player), state.mapId,
+      { anchorId: local?.alive ? playerId : undefined, authoritativePlayers: state.players });
     renderedState.players = presentationPlayers; renderedState.fighters = presentationPlayers;
     if (local?.alive) presentationPlayer = presentationPlayers.find(player => player.id === playerId) || presentationPlayer;
     const viewPlayer = local?.alive ? presentationPlayer : renderedState.players.find(player => player.id === spectatorId && player.team === local?.team && player.alive) || local;
@@ -739,8 +749,9 @@ async function boot() {
       accumulator -= 1 / 120;
       const tick = ++predictionTick;
       if (state.phase === 'fight' && predictedPlayer?.alive) {
-        engine.predictLocalMovement(predictedPlayer, buttons, state.mapId, 1, state.players);
-        pending.push({ tick, buttons: { ...buttons } }); if (pending.length > 240) pending.shift();
+        const sampled = actionInputs.sample(buttons, now).buttons;
+        engine.predictLocalMovement(predictedPlayer, sampled, state.mapId, 1, state.players);
+        pending.push({ tick, buttons: { ...sampled } }); if (pending.length > 240) pending.shift();
       }
     }
     if (ticks && !teamSwitchPending) sendInput(buttons, false, now);
@@ -768,8 +779,9 @@ async function boot() {
     mapName = message.mapName || next.mapName || mapName;
     roster = (Array.isArray(message.players) ? message.players : Object.values(message.players || {})).map((player, id) => player ? { ...player, id: player.id ?? id } : null);
     const local = ownPlayer();
+    const reconciliationTime = performance.now();
     const beforePrediction = predictedPlayer;
-    const beforePose = beforePrediction && old?.phase === 'fight' ? presentMovement(beforePrediction, currentInput(), old.mapId, accumulator, engine.predictLocalMovement, old.players) : beforePrediction;
+    const beforePose = beforePrediction && old?.phase === 'fight' ? presentMovement(beforePrediction, actionInputs.preview(currentInput(), reconciliationTime), old.mapId, accumulator, engine.predictLocalMovement, old.players) : beforePrediction;
     if (!old || predictedPlayer?.id !== playerId || previousRound !== state.round || previousPhase === 'lobby' && state.phase !== 'lobby' || local?.alive && old?.players.find(player => player.id === playerId)?.alive === false) {
       neutralize();
       const spawn = local && engine.MAPS?.[state.mapId]?.spawns?.[local.team === state.attackTeam ? 0 : 1]?.[local.id % teamSize];
@@ -791,8 +803,8 @@ async function boot() {
       const reconciled = reconcilePlayer(local, pending, ack, state.mapId, engine.predictLocalMovement, state.phase === 'fight', state.players, state.tick);
       predictedPlayer = reconciled.predicted; pending = reconciled.pending; predictionTick = reconciled.predictionTick;
       predictedPlayer.yaw = aim.yaw; predictedPlayer.pitch = aim.pitch;
-      const afterPose = state.phase === 'fight' ? presentMovement(predictedPlayer, currentInput(), state.mapId, accumulator, engine.predictLocalMovement, state.players) : predictedPlayer;
-      correction.correct(beforePose, afterPose, performance.now(), { continuous: old?.phase === 'fight' && state.phase === 'fight' && old.round === state.round && old.mapId === state.mapId });
+      const afterPose = state.phase === 'fight' ? presentMovement(predictedPlayer, actionInputs.preview(currentInput(), reconciliationTime), state.mapId, accumulator, engine.predictLocalMovement, state.players) : predictedPlayer;
+      correction.correct(beforePose, afterPose, reconciliationTime, { continuous: old?.phase === 'fight' && state.phase === 'fight' && old.round === state.round && old.mapId === state.mapId });
     }
     const now = performance.now(), sample = timeline.sample(state, now, `${state.mapId}:${state.round}:${state.phase}`);
     if (sample) {
@@ -920,7 +932,7 @@ async function boot() {
     if (!controlsActive() || isFormTarget(event.target)) return;
     const action = controlForKey(event); if (!action) return;
     event.preventDefault(); const keyId = event.code || event.key;
-    if (pressedKeys.has(keyId)) return;
+    if (pressedKeys.has(keyId) || event.repeat) return;
     pressedKeys.set(keyId, action); keys.add(action); utilityFeedback(action); sendInput();
   });
   listen(window, 'keyup', event => {
@@ -1030,11 +1042,19 @@ async function boot() {
     for (const event of ['pointerup', 'pointercancel', 'lostpointercapture']) listen(pad, event, end);
   }
   for (const button of document.querySelectorAll('[data-voxel-action]')) {
-    listen(button, 'pointerdown', event => { if (!controlsActive()) return; event.preventDefault(); utilityFeedback(button.dataset.voxelAction); actionPointers.set(event.pointerId, button); touch.actions.add(button.dataset.voxelAction); button.classList.add('pressed'); button.setPointerCapture(event.pointerId); sendInput(); });
+    listen(button, 'pointerdown', event => {
+      if (!controlsActive()) return; event.preventDefault();
+      const action = button.dataset.voxelAction, wasHeld = currentInput()[action];
+      utilityFeedback(action);
+      const pointer = { element: button, action, pressSeq: null }; actionPointers.set(event.pointerId, pointer);
+      touch.actions.add(action); button.classList.add('pressed'); button.setPointerCapture(event.pointerId);
+      const sent = sendInput(currentInput(), true); if (!wasHeld) pointer.pressSeq = sent;
+    });
     const end = event => {
-      if (actionPointers.get(event.pointerId) !== button) return; actionPointers.delete(event.pointerId);
-      if (![...actionPointers.values()].includes(button)) { touch.actions.delete(button.dataset.voxelAction); button.classList.remove('pressed'); }
-      sendInput();
+      const pointer = actionPointers.get(event.pointerId); if (pointer?.element !== button) return;
+      actionPointers.delete(event.pointerId);
+      const cancelPress = releaseFpsTouchAction(pointer, actionPointers, touch.actions, action => currentInput()[action], event.type !== 'pointerup');
+      sendInput(currentInput(), true, performance.now(), false, cancelPress);
     };
     for (const event of ['pointerup', 'pointercancel', 'lostpointercapture']) listen(button, event, end);
     listen(button, 'contextmenu', event => event.preventDefault());
@@ -1053,7 +1073,7 @@ async function boot() {
     for (const remove of removers) remove(); pending = []; snapshots = []; kills.length = 0; eventSeen.clear();
   }
   listen(window, 'pagehide', destroy);
-  const inspect = () => clone({ state, players: roster, playerId, input: currentInput(), predictedPlayer, presentationPlayer, presentationPlayers, predictionRemainder: accumulator, predictionTick, timeline: timeline.getState(), correction: correction.getState(), connected, controls: { pointerLocked: pointerLocked(), fallback, touch: touchMode, paused, entered, modalOpen }, queueLength: pending.length, renderCount, renderStats: renderer?.stats || null, graphicsError, spectatorId });
+  const inspect = () => clone({ state, players: roster, playerId, input: currentInput(), predictedPlayer, presentationPlayer, presentationPlayers, predictionRemainder: accumulator, predictionTick, actionQueue: actionInputs.inspect(), timeline: timeline.getState(), correction: correction.getState(), connected, controls: { pointerLocked: pointerLocked(), fallback, touch: touchMode, paused, entered, modalOpen }, queueLength: pending.length, renderCount, renderStats: renderer?.stats || null, graphicsError, spectatorId });
   window.SemagVoxel = Object.freeze({ getState: inspect, inspect });
   updateUI();
   try {

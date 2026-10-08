@@ -75,9 +75,9 @@ export class BrawlRenderer {
       let liveTrail = 0;
       if (!reduced) for (const sample of trail) if (time - sample.time < 130) trail[liveTrail++] = sample;
       trail.length = liveTrail;
-      for (const t of this.trails[f.id]) { c.save(); c.globalAlpha = .12 * (1 - (time - t.time) / 130); c.translate(Math.round(t.x), Math.round(t.y)); c.scale(t.facing, 1); c.drawImage(t.sprite, -SPRITE_WIDTH / 2, -SPRITE_HEIGHT / 2); c.restore(); }
+      for (const t of this.trails[f.id]) { c.save(); c.globalAlpha = .12 * (1 - (time - t.time) / 130); c.translate(t.x, t.y); c.scale(t.facing, 1); c.drawImage(t.sprite, -SPRITE_WIDTH / 2, -SPRITE_HEIGHT / 2); c.restore(); }
       if (f.action === 'shield') this.shield(c, f, time, reduced, false);
-      c.save(); c.translate(Math.round(f.x), Math.round(f.y)); c.scale(f.facing, 1); c.drawImage(sprite, -SPRITE_WIDTH / 2, -SPRITE_HEIGHT / 2); c.restore();
+      c.save(); c.translate(f.x, f.y); c.scale(f.facing, 1); c.drawImage(sprite, -SPRITE_WIDTH / 2, -SPRITE_HEIGHT / 2); c.restore();
       if (f.invulnerable) { c.strokeStyle = '#fff0bb'; c.lineWidth = 1.5; c.setLineDash([4, 5]); c.strokeRect(f.x - f.width / 2 - 4, f.y - f.height / 2 - 4, f.width + 8, f.height + 8); c.setLineDash([]); }
       this.move(c, f);
       if (f.action === 'shield') this.shield(c, f, time, reduced, true);
@@ -119,7 +119,7 @@ export class BrawlRenderer {
     c.restore();
   }
   projectile(c, p, time, reduced) {
-    c.save(); c.translate(Math.round(p.x), Math.round(p.y));
+    c.save(); c.translate(p.x, p.y);
     if (p.kind === 'wrench') { c.rotate(reduced ? Math.atan2(p.vy, p.vx) : time / 80); drawWrench(c, 0, 0, .55); }
     else if (p.kind === 'leaf') { c.rotate(Math.atan2(p.vy, p.vx)); poly(c, [[-12, 0], [-3, -7], [7, -6], [13, 0], [3, 7], [-7, 5]], '#cfe0a1', INK, 1.5); line(c, [[-9, 0], [9, 0]], '#fff2bb', 1); line(c, [[-2, 0], [2, -4]], '#73945f'); }
     else if (p.kind === 'parcel') { c.rotate(reduced ? 0 : Math.floor(time / 90) * .45); rect(c, -10, -10, 20, 20, INK); rect(c, -9, -9, 18, 18, '#bd8f5f'); rect(c, -2, -9, 4, 18, '#ead6a8'); rect(c, -8, -4, 5, 4, '#fff0d0'); rect(c, 5, 4, 3, 3, '#916443'); }

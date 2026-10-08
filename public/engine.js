@@ -214,6 +214,45 @@ function separateFighters(a, b) {
   }
 }
 
+/** Render-only contact projection. Grounded body order stays solid, while the
+ * existing vertical-gap rule still permits airborne cross-ups. No velocity,
+ * jump, hitstop, animation or other gameplay state is advanced here.
+ */
+export function sweepPresentationFighters(state, desiredFighters, { anchorId = null } = {}) {
+  if (!Array.isArray(desiredFighters)) return [];
+  const copies = desiredFighters.map(f => ({ ...f }));
+  const bases = [0, 1].map(id => state?.fighters?.find(f => f.id === id));
+  const displayed = [0, 1].map(id => copies.find(f => f.id === id));
+  if (copies.length !== 2 || bases.some(f => !f || !Number.isFinite(f.x) || !Number.isFinite(f.y)) || displayed.some(f => !f)) return copies;
+  const actors = bases.map(f => ({ ...f }));
+  const offsets = actors.map(f => {
+    const target = displayed[f.id], x = target.x - f.x, y = target.y - f.y;
+    const continuous = state.phase === 'fight' && (target.hp > 0) === (f.hp > 0) && target.wins === f.wins;
+    return continuous && Number.isFinite(x) && Number.isFinite(y) && Math.hypot(x, y) <= 128 ? { x, y } : { x: 0, y: 0 };
+  });
+  const steps = Math.max(1, Math.ceil(Math.max(...offsets.map(p => Math.hypot(p.x, p.y))) / (ARENA.fighterWidth / 4)));
+  for (let step = 0; step < steps; step++) {
+    const previous = actors.map(({ x, y }) => ({ x, y }));
+    for (const f of actors) {
+      f.x = clamp(f.x + offsets[f.id].x / steps, ARENA.minX, ARENA.maxX);
+      f.y = Math.min(ARENA.floor, f.y + offsets[f.id].y / steps);
+    }
+    const anchor = actors.find(f => f.id === anchorId), point = anchor && { x: anchor.x, y: anchor.y };
+    separateFighters(...actors);
+    if (anchor) {
+      const dx = anchor.x - point.x;
+      anchor.x = point.x; anchor.y = point.y;
+      const other = actors[1 - anchor.id];
+      other.x = clamp(other.x - dx, ARENA.minX, ARENA.maxX);
+    }
+    if (Math.abs(actors[0].y - actors[1].y) <= 76 && Math.abs(actors[0].x - actors[1].x) < ARENA.fighterWidth - 1e-7) {
+      for (const f of actors) Object.assign(f, previous[f.id]);
+    }
+  }
+  for (const f of actors) { displayed[f.id].x = f.x; displayed[f.id].y = f.y; }
+  return copies;
+}
+
 function attackConnects(attacker, defender) {
   if (!isAttack(attacker) || attacker.hitTargets.includes(defender.id) || defender.hp <= 0 || defender.invulnerable) return false;
   const move = MOVES[attacker.action];

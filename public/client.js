@@ -1,12 +1,12 @@
 import { setText, setAttribute, setHidden, setDisabled, setClass, toggleClass, setStyle, setHTML } from './hub/dom.js';
 import { gameCode, displayKey, formatKeyboardText, subscribeKeyboardLayout, mountKeyboardLayoutPicker } from './keyboard-layout.js';
 import { createCombatKeyMap, combatInputFromKeys } from './combat-controls.js';
-import { createState, step, startMatch, cloneState, emptyInput, TICK_RATE } from './engine.js';
+import { createState, step, startMatch, cloneState, emptyInput, TICK_RATE, sweepPresentationFighters } from './engine.js';
 import { ArenaRenderer } from './renderer.js';
 import { botInput, TRAINING_STAGES } from './practice.js';
 import { GameAudio } from './audio.js';
 import { frameDecay, tickFraction } from './display-timing.js';
-import { capturePlanarPose, presentPlanarFighter, presentNetworkPlanarFighter } from './planar-presentation.js';
+import { capturePlanarPose, presentPlanarFighter, presentNetworkPlanarFighter, retainAdjacentPlanarPose, rebasePlanarCorrection } from './planar-presentation.js';
 import { createNetworkTimeline } from './network-timeline.js';
 
 const elements = new Map();
@@ -89,8 +89,9 @@ function receiveState(message) {
   lastSnapshotAt = performance.now();
   players = message.players || players;
   authoritative = state;
-  const oldPosition = localId == null ? null : predicted.fighters[localId];
-  const old = oldPosition ? { x: oldPosition.x, y: oldPosition.y } : null;
+  const oldPose = capturePlanarPose(predicted), oldPreviousPose = previousPose;
+  const fraction = tickFraction((accumulator + Math.max(0, lastSnapshotAt - previousTime)) / 1000);
+  const old = localId == null ? null : presentPlanarFighter(predicted, previousPose, localId, fraction);
   const ack = message.acks?.[localId] ?? -1;
   pending = pending.filter((frame) => frame.seq > ack);
   // Only combat prediction mutates state. Idle snapshots can be read directly.
@@ -105,10 +106,10 @@ function receiveState(message) {
       previousPose = capturePlanarPose(predicted);
       step(predicted, inputs);
     }
+    previousPose = retainAdjacentPlanarPose(predicted, previousPose, oldPreviousPose, oldPose);
     if (old && previousPhase === 'fight') {
-      const fighter = predicted.fighters[localId];
-      correction.x = Math.max(-45, Math.min(45, old.x + correction.x - fighter.x));
-      correction.y = Math.max(-35, Math.min(35, old.y + correction.y - fighter.y));
+      const fighter = presentPlanarFighter(predicted, previousPose, localId, fraction);
+      correction = rebasePlanarCorrection(predicted, oldPose, localId, old, fighter, correction, { maxX: 45, maxY: 35 });
     }
   } else correction = { x: 0, y: 0 };
   const context = JSON.stringify([state.phase, state.round, state.wave, state.stageId]);
@@ -378,7 +379,11 @@ function inputTick() {
 function displayState(now, fraction) {
   const deltaMs = lastDisplayTime == null ? 1000 / 60 : now - lastDisplayTime;
   lastDisplayTime = now;
-  if (practice) return { ...practiceState, fighters: practiceState.fighters.map((_, index) => presentPlanarFighter(practiceState, previousPracticePose, index, fraction)) };
+  if (practice) {
+    const state = { ...practiceState, fighters: practiceState.fighters.map((_, index) => presentPlanarFighter(practiceState, previousPracticePose, index, fraction)) };
+    state.fighters = sweepPresentationFighters(practiceState, state.fighters, { anchorId: 0 });
+    return state;
+  }
   if (authoritative.phase !== 'fight' || localId == null) return authoritative;
   // Own fighter is predicted. Opponent is interpolated behind the latest snapshot.
   const state = { ...predicted, fighters: predicted.fighters.map((f) => ({ ...f })) };
@@ -396,6 +401,7 @@ function displayState(now, fraction) {
   if (before && after && before.state.phase === 'fight' && after.state.phase === 'fight') {
     state.fighters[remote] = presentNetworkPlanarFighter(authoritative, before, after, remote, target);
   }
+  state.fighters = sweepPresentationFighters(predicted, state.fighters, { anchorId: localId });
   return state;
 }
 

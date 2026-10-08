@@ -8,8 +8,18 @@ const node = (tag, name, text) => { const e = document.createElement(tag); e.cla
 const text = (e, value) => { if (e.textContent !== value) e.textContent = value; };
 const isForm = e => e instanceof Element && Boolean(e.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"])'));
 const KEY = { w: 'up', W: 'up', ArrowUp: 'up', s: 'down', S: 'down', ArrowDown: 'down', a: 'left', A: 'left', ArrowLeft: 'left', d: 'right', D: 'right', ArrowRight: 'right', Shift: 'sneak', e: 'interact', E: 'interact', ' ': 'smoke', q: 'kunai', Q: 'kunai' };
+export function createShadowPresentation() {
+  return createRenderSampling({ fields: ['elapsed', 'levelElapsed'],
+    objects: { player: { fields: ['x', 'y'], angles: ['facing'], decays: ['invulnerable'], maxDistance: 24 },
+      channel: { fields: ['progress'], guards: ['index', 'duration', 'label'] } },
+    collections: { guards: { fields: ['x', 'y', 'suspicion'], angles: ['facing'],
+        decays: ['attack', 'turnWait'], maxDistance: 24, guards: ['attackHit', 'attackFacing'] },
+      projectiles: { fields: ['x', 'y'], maxDistance: 24, velocityGuard: true },
+      clouds: { decays: ['life'] }, noises: { decays: ['life'] } },
+    continuity: state => state.level });
+}
 export function mount(container, { onUpdate = () => {} } = {}) {
-  const presentation = createRenderSampling({ fields: ['elapsed'], objects: { player: { fields: ['x', 'y'], angles: ['facing'], maxDistance: 24 } }, collections: { guards: { fields: ['x', 'y'], angles: ['facing'], maxDistance: 24 }, projectiles: { fields: ['x', 'y'], maxDistance: 24, velocityGuard: true } }, continuity: s => s.level });
+  const presentation = createShadowPresentation();
   let displayState;
   let difficulty = 'veteran', state = createState({ difficulty }), destroyed = false, raf = null, previous = null, accumulator = 0, published = -1, publishedPhase = '', artLevel = -1, stageArt = null;
   let viewport = { width: 960, height: 640 }, camera = { x: 0, y: 0 }, pointerAim = null, stickySneak = false, eventCursor = 0, particles = [], effects = [];
@@ -124,7 +134,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       const colors = { seal: '#edddac', takedown: '#a5d6bd', wound: '#ee9b98', smoke: '#b7c7d0', cache: '#97dacd', clear: '#cfe9b6' };
       const x = Number.isFinite(e.x) ? e.x : state.player.x, y = Number.isFinite(e.y) ? e.y : state.player.y;
       if (colors[e.type]) effects.push({ type: e.type, x, y, until: state.elapsed + (e.type === 'wound' ? .55 : .9), color: colors[e.type] });
-      if (colors[e.type] && !reduced.matches) for (let i = 0; i < 9; i++) particles.push({ x, y, vx: Math.cos(i * 2.4) * 42, vy: Math.sin(i * 2.4) * 42, life: .5, color: colors[e.type] });
+      if (colors[e.type] && !reduced.matches) for (let i = 0; i < 9; i++) particles.push({ x, y, vx: Math.cos(i * 2.4) * 42, vy: Math.sin(i * 2.4) * 42, born: state.elapsed, life: .5, color: colors[e.type] });
       if (e.type === 'seal') text(status, 'Scroll seal secured. Carry every seal back to the green extraction marker.');
       if (e.type === 'alarm') text(status, `A patrol raised the alarm. ${Math.max(0, DIFFICULTIES[difficulty].alarms - state.alarm)} alarms remain across the whole campaign. Break sight behind solid cover.`);
       if (e.type === 'wound') text(status, `Guard blade connected. ${state.player.hp} ${state.player.hp === 1 ? 'wound remains' : 'wounds remain'}. The bright slash sector warns where the strike will land.`);
@@ -179,7 +189,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       if (body.guard && body.mode !== 'down') {
         if (body.suspicion > .01 || body.mode === 'alert') { movingRect(body.x - 12, body.y - 33, 24, 5, '#152938'); movingRect(body.x - 11, body.y - 32, 22 * body.suspicion, 3, body.mode === 'alert' ? '#ed968d' : '#e8c184'); }
         if (body.mode === 'investigate' || body.mode === 'alert') { movingRect(body.x - 5, body.y - 47, 10, 12, '#122634e0'); ctx.fillStyle = body.mode === 'alert' ? '#ffc0a0' : '#cce0d4'; ctx.font = 'bold 11px monospace'; ctx.fillText(body.mode === 'alert' ? '!' : '?', body.x - 3, body.y - 37); }
-        if (body.attack > 0) { const ready = body.attack <= .18; ctx.strokeStyle = ready ? '#fff1bf' : '#eea889'; ctx.fillStyle = ready ? '#efaa785c' : '#eea88926'; ctx.lineWidth = ready ? 4 : 2; ctx.beginPath(); ctx.moveTo(body.x, body.y); ctx.arc(body.x, body.y, 34, body.attackFacing - .8, body.attackFacing + .8); ctx.closePath(); ctx.fill(); ctx.stroke(); }
+        if (body.attack > 0) { const ready = state.guards[body.id]?.attack <= .18; ctx.strokeStyle = ready ? '#fff1bf' : '#eea889'; ctx.fillStyle = ready ? '#efaa785c' : '#eea88926'; ctx.lineWidth = ready ? 4 : 2; ctx.beginPath(); ctx.moveTo(body.x, body.y); ctx.arc(body.x, body.y, 34, body.attackFacing - .8, body.attackFacing + .8); ctx.closePath(); ctx.fill(); ctx.stroke(); }
       }
     }
     for (const cloud of displayState.clouds) { const alpha = Math.min(.76, cloud.life / 2); ctx.fillStyle = '#b0bdc5'; ctx.globalAlpha = alpha; ctx.beginPath(); ctx.arc(cloud.x, cloud.y, cloud.radius, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = alpha * .55; for (let i = 0; i < 7; i++) { ctx.beginPath(); ctx.arc(cloud.x + Math.cos(i * 2.4) * 35, cloud.y + Math.sin(i * 2.4) * 35, 34, 0, Math.PI * 2); ctx.fill(); } ctx.globalAlpha = 1; ctx.strokeStyle = '#d6dfde'; ctx.setLineDash([5, 8]); ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(cloud.x, cloud.y, cloud.radius, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); }
@@ -188,7 +198,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     if (displayState.channel) { ctx.strokeStyle = '#eddfaf'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(p.x, p.y, 18, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * displayState.channel.progress / displayState.channel.duration); ctx.stroke(); }
     const target = displayState.channel || interactionTarget(state); if (target) mapLabel(target.x, target.y - (target.type === 'guard' ? 58 : 38), displayState.channel ? `${Math.round(displayState.channel.progress / displayState.channel.duration * 100)}% · ${target.label.toUpperCase()}` : `HOLD E · ${target.label.toUpperCase()}`, '#efdfaa');
     effects = effects.filter(fx => fx.until > displayState.elapsed); for (const fx of effects) { const life = clamp((fx.until - displayState.elapsed) / .9, 0, 1); ctx.globalAlpha = life; ctx.strokeStyle = fx.color; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(fx.x, fx.y, reduced.matches ? 22 : 16 + (1 - life) * 22, 0, Math.PI * 2); ctx.stroke(); ctx.globalAlpha = 1; if (fx.type !== 'wound' && fx.type !== 'smoke') mapLabel(fx.x, fx.y - 37 - (reduced.matches ? 0 : (1 - life) * 10), { seal: 'SEAL SECURED', takedown: 'QUIET TAKEDOWN', cache: 'TOOLS RESTOCKED', clear: 'EXTRACTED' }[fx.type], fx.color); }
-    for (const fx of particles) { ctx.globalAlpha = Math.min(1, fx.life * 2); movingRect(fx.x, fx.y, 3, 3, fx.color); } ctx.globalAlpha = 1;
+    particles = particles.filter(fx => displayState.elapsed - fx.born < fx.life);
+    for (const fx of particles) { const age = Math.max(0, displayState.elapsed - fx.born); ctx.globalAlpha = Math.min(1, (fx.life - age) * 2); movingRect(fx.x + fx.vx * age, fx.y + fx.vy * age, 3, 3, fx.color); } ctx.globalAlpha = 1;
     if (!reduced.matches && level.district > 0) { ctx.globalAlpha = .18; ctx.strokeStyle = level.district === 1 ? '#aac8d7' : '#e1e5ef'; ctx.lineWidth = 1; ctx.beginPath(); for (let i = 0; i < 20; i++) { const x = camera.x + (i * 113 + displayState.elapsed * (level.district === 1 ? 35 : 15)) % viewport.width, y = camera.y + (i * 137 + displayState.elapsed * (level.district === 1 ? 180 : 28)) % viewport.height; ctx.moveTo(x, y); ctx.lineTo(x - 3, y + (level.district === 1 ? 10 : 2)); } ctx.stroke(); ctx.globalAlpha = 1; }
     ctx.restore();
     if (effects.some(fx => fx.type === 'wound')) { ctx.strokeStyle = '#e19b8390'; ctx.lineWidth = 6; ctx.strokeRect(3, 3, viewport.width - 6, viewport.height - 6); }
@@ -197,7 +208,6 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   function schedule() { if (!destroyed && state.phase === 'playing' && raf === null) raf = requestAnimationFrame(frame); }
   function frame(now) { raf = null; if (destroyed) return; const dt = previous === null ? 0 : clamp((now - previous) / 1000, 0, .08); previous = now;
     if (state.phase === 'playing') { accumulator += dt; let ticks = 0; while (accumulator >= FIXED_STEP && ticks++ < 6 && state.phase === 'playing') { presentation.capture(state); step(state, input(), FIXED_STEP); queued.clear(); accumulator -= FIXED_STEP; consumeEvents(); }
-      if (!reduced.matches) { for (const fx of particles) { fx.x += fx.vx * dt; fx.y += fx.vy * dt; fx.life -= dt; } particles = particles.filter(fx => fx.life > 0); }
     } else { accumulator = 0; presentation.reset(); } publish(); draw(tickFraction(accumulator, FIXED_STEP)); schedule(); }
   function refresh() { if (state.phase !== 'playing' && raf !== null) { cancelAnimationFrame(raf); raf = null; } consumeEvents(); publish(true); draw(); schedule(); }
   function togglePause() { if (destroyed) return; release(); pauseState(state); previous = null; accumulator = 0; presentation.reset(); refresh(); }

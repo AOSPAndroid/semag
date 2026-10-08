@@ -3,6 +3,7 @@ import { once } from 'node:events';
 import test from 'node:test';
 import { createServer } from '../server.js';
 import * as Voxel from '../public/voxel-engine.js';
+import { getLagCompensationDiagnostics } from '../public/voxel-lag-compensation.js';
 import { Peer, flushPeer } from './ws-helper.js';
 
 async function host(t) {
@@ -445,3 +446,217 @@ test('flagship maps and weapons round-trip through real team rooms without live 
     assert.ok((await response.text()).length > 100);
   }
 });
+
+async function quickFight(t, weaponId = 'pistol') {
+  const game = await host(t), room = await game.make(), seats = await game.fill(room);
+  seats[0].peer.send({ type: 'fps-loadout', weaponId }); await flushPeer(seats[0].peer);
+  await readyEveryone(room, seats); advance(game.app, room, 'fight');
+  return { game, room, seats };
+}
+
+test('a released WS tap fires on the first post-bell tick while latest movement packets keep the newest acknowledgment', async t => {
+  const { game, room, seats } = await quickFight(t), seat = seats[0], player = room.state.players[0];
+  const ammo = player.ammo;
+  seat.peer.send({ type: 'input', seq: 0, viewTick: room.state.tick - 1, buttons: { fire: true, up: true, yaw: .2, pitch: -.1 } });
+  seat.peer.send({ type: 'input', seq: 1, viewTick: room.state.tick, buttons: { left: true, yaw: 1.2, pitch: .3 } });
+  seat.peer.send({ type: 'input', seq: 2, buttons: { right: true, yaw: -.7, pitch: .4 } });
+  await flushPeer(seat.peer);
+  assert.equal(player.shots, 0); assert.equal(room.slots[0].queue.length, 1);
+  game.app.tick();
+  assert.equal(room.acks[0], 2); assert.equal(player.shots, 1); assert.equal(player.ammo, ammo - 1);
+  assert.equal(room.slots[0].buttons.fire, true); assert.equal(room.slots[0].buttons.right, true); assert.equal(room.slots[0].buttons.up, false); assert.equal(room.slots[0].buttons.left, false);
+  assert.equal(player.yaw, .2); assert.equal(player.pitch, -.1);
+  const after = seat.peer.messages.length; game.app.broadcast(room);
+  const snapshot = await seat.peer.untilState(message => message.acks[0] === 2, { after });
+  assert.equal(snapshot.state.players[0].shots, 1);
+  game.app.tick(); assert.equal(player.yaw, -.7); assert.equal(player.pitch, .4); assert.equal(room.slots[0].buttons.fire, false);
+  for (let index = 0; index < Voxel.WEAPONS.pistol.cooldown + 2; index++) game.app.tick();
+  assert.equal(player.shots, 1, 'latest release is retained after the one queued firing commitment');
+});
+
+test('two WS swap taps before a tick retain a release tick while continuous look stays current', async t => {
+  const { game, room, seats } = await quickFight(t), peer = seats[0].peer, player = room.state.players[0];
+  for (const [seq, buttons] of [[0, { swap: true, yaw: .1 }], [1, { yaw: .2 }], [2, { swap: true, yaw: .3 }], [3, { yaw: .4 }]]) peer.send({ type: 'input', seq, buttons });
+  await flushPeer(peer);
+  game.app.tick(); assert.equal(room.acks[0], 3); assert.equal(player.slot, 'sword'); assert.equal(player.yaw, .4);
+  game.app.tick(); assert.equal(player.slot, 'sword'); assert.equal(room.slots[0].buttons.swap, false);
+  game.app.tick(); assert.equal(player.slot, 'primary'); assert.equal(player.yaw, .4);
+  assert.equal(room.state.events.filter(event => event.type === 'swap').length, 2);
+});
+
+test('WS cancelActions discards pending commitments, validates before acknowledgment and blocks held reentry', async t => {
+  const { game, room, seats } = await quickFight(t), peer = seats[0].peer, player = room.state.players[0];
+  peer.send({ type: 'input', seq: 0, buttons: { fire: true, jump: true, grenade: true, yaw: .2 } });
+  await flushPeer(peer);
+  for (const cancelActions of [1, 'true', null, {}]) {
+    const after = peer.messages.length;
+    peer.send({ type: 'input', seq: 1, buttons: {}, cancelActions });
+    await peer.waitFor(message => message.type === 'error', { after });
+    assert.equal(room.slots[0].lastAccepted, 0); assert.equal(room.acks[0], -1);
+    assert.equal(room.slots[0].actionInputs.inspect().pending.length, 3, 'invalid metadata cannot cancel already accepted controls');
+  }
+  peer.send({ type: 'input', seq: 1, cancelActions: true, buttons: { fire: true, jump: true, yaw: .6 } }); await flushPeer(peer);
+  for (let index = 0; index < 4; index++) game.app.tick();
+  assert.equal(room.acks[0], 1); assert.equal(player.shots, 0); assert.equal(player.y, 0); assert.equal(player.grenades, 1); assert.equal(room.state.grenades.length, 0);
+  assert.equal(room.slots[0].buttons.yaw, .6); assert.equal(room.slots[0].actionInputs.inspect().pending.length, 0);
+  peer.send({ type: 'input', seq: 2, buttons: {} }); peer.send({ type: 'input', seq: 3, buttons: { fire: true } }); peer.send({ type: 'input', seq: 4, buttons: {} });
+  await flushPeer(peer); game.app.tick(); assert.equal(room.acks[0], 4); assert.equal(player.shots, 1);
+});
+
+test('WS cancellation is rejected for games that use ordered commands', async t => {
+  const game = await host(t), room = game.app.createRoom('afterimage', 'Ordered controls'), peer = game.socket(room);
+  await peer.connect(); const after = peer.messages.length;
+  peer.send({ type: 'input', seq: 0, buttons: {}, cancelActions: true });
+  await peer.waitFor(message => message.type === 'error', { after });
+  assert.equal(room.slots[0].lastAccepted, -1); assert.equal(room.slots[0].queue.length, 0);
+});
+
+for (const action of ['fire', 'jump', 'grenade']) {
+  test(`WS cancellation removes an unconsumed ${action} touch commitment without a ghost action`, async t => {
+    const { game, room, seats } = await quickFight(t), peer = seats[0].peer, player = room.state.players[0], ammo = player.ammo;
+    peer.send({ type: 'input', seq: 0, buttons: { [action]: true, yaw: .2 } });
+    peer.send({ type: 'input', seq: 1, buttons: { yaw: .6 }, cancelPress: { action, seq: 0 } });
+    await flushPeer(peer);
+    for (let index = 0; index < 4; index++) game.app.tick();
+    assert.equal(room.acks[0], 1); assert.equal(player.yaw, .6);
+    assert.equal(player.shots, 0); assert.equal(player.ammo, ammo);
+    assert.equal(player.y, 0); assert.equal(player.grenades, 1); assert.equal(room.state.grenades.length, 0);
+  });
+}
+
+test('canceling a queued touch jump preserves an independently held carbine firing stream', async t => {
+  const { game, room, seats } = await quickFight(t, 'carbine'), peer = seats[0].peer, player = room.state.players[0], ammo = player.ammo;
+  peer.send({ type: 'input', seq: 0, buttons: { fire: true, yaw: .2 } });
+  peer.send({ type: 'input', seq: 1, buttons: { fire: true, jump: true, yaw: .2 } });
+  peer.send({ type: 'input', seq: 2, buttons: { fire: true, yaw: .2 }, cancelPress: { action: 'jump', seq: 1 } });
+  await flushPeer(peer);
+  game.app.tick(); assert.equal(player.shots, 1); assert.equal(player.y, 0);
+  for (let index = 0; index < Voxel.WEAPONS.carbine.cooldown + 1; index++) game.app.tick();
+  assert.equal(room.acks[0], 2); assert.equal(player.shots, 2); assert.equal(player.ammo, ammo - 2);
+  assert.equal(player.y, 0); assert.equal(room.slots[0].buttons.fire, true);
+  peer.send({ type: 'input', seq: 3, buttons: {} }); await flushPeer(peer);
+  for (let index = 0; index < Voxel.WEAPONS.carbine.cooldown + 1; index++) game.app.tick();
+  assert.equal(player.shots, 2, 'the independent firing stream still responds to its real release');
+});
+
+test('canceling a newer touch press preserves an earlier normal released pistol tap and its aim', async t => {
+  const { game, room, seats } = await quickFight(t), peer = seats[0].peer, player = room.state.players[0], ammo = player.ammo;
+  peer.send({ type: 'input', seq: 0, buttons: { fire: true, yaw: .2, pitch: -.1 } });
+  peer.send({ type: 'input', seq: 1, buttons: { yaw: .4 } });
+  peer.send({ type: 'input', seq: 2, buttons: { fire: true, yaw: .8 } });
+  peer.send({ type: 'input', seq: 3, buttons: { yaw: 1 }, cancelPress: { action: 'fire', seq: 2 } });
+  await flushPeer(peer); game.app.tick();
+  assert.equal(room.acks[0], 3); assert.equal(player.shots, 1); assert.equal(player.ammo, ammo - 1);
+  assert.equal(player.yaw, .2); assert.equal(player.pitch, -.1);
+  for (let index = 0; index < Voxel.WEAPONS.pistol.cooldown + 3; index++) game.app.tick();
+  assert.equal(player.shots, 1, 'only the earlier valid tap reaches the weapon');
+  assert.equal(player.yaw, 1); assert.equal(room.slots[0].buttons.fire, false);
+});
+
+test('canceling an unknown or already consumed sequence does not remove a newer valid shot', async t => {
+  const { game, room, seats } = await quickFight(t), peer = seats[0].peer, player = room.state.players[0];
+  peer.send({ type: 'input', seq: 0, buttons: { fire: true, yaw: .2 } }); await flushPeer(peer); game.app.tick();
+  assert.equal(player.shots, 1);
+  peer.send({ type: 'input', seq: 1, buttons: {} }); await flushPeer(peer);
+  for (let index = 0; index < Voxel.WEAPONS.pistol.cooldown + 1; index++) game.app.tick();
+  peer.send({ type: 'input', seq: 2, buttons: { fire: true, yaw: .5 } });
+  peer.send({ type: 'input', seq: 3, buttons: {} });
+  peer.send({ type: 'input', seq: 4, buttons: {}, cancelPress: { action: 'fire', seq: 1 } });
+  peer.send({ type: 'input', seq: 5, buttons: {}, cancelPress: { action: 'fire', seq: 0 } });
+  await flushPeer(peer); game.app.tick();
+  assert.equal(room.acks[0], 5); assert.equal(player.shots, 2); assert.equal(player.yaw, .5);
+  for (let index = 0; index < Voxel.WEAPONS.pistol.cooldown + 3; index++) game.app.tick();
+  assert.equal(player.shots, 2);
+});
+
+test('malformed WS touch cancellation is rejected before acknowledgment or accepted-input mutation', async t => {
+  const { game, room, seats } = await quickFight(t), peer = seats[0].peer, player = room.state.players[0];
+  peer.send({ type: 'input', seq: 0, buttons: { jump: true, yaw: .2 } }); await flushPeer(peer);
+  for (const cancelPress of [
+    null, true, 'jump', [], {}, { action: 'jump' }, { seq: 0 },
+    { action: 'up', seq: 0 }, { action: 'fire', seq: '0' },
+    { action: 'jump', seq: -1 }, { action: 'jump', seq: .5 },
+    { action: 'jump', seq: 1 }, { action: 'jump', seq: 2 },
+    { action: 'jump', seq: 1_000_000_000 }, { action: 'jump', seq: Number.MAX_SAFE_INTEGER + 1 },
+    { action: 'jump', seq: 0, extra: true },
+  ]) {
+    const after = peer.messages.length;
+    peer.send({ type: 'input', seq: 1, buttons: { yaw: .8 }, cancelPress });
+    await peer.waitFor(message => message.type === 'error', { after });
+    assert.equal(room.slots[0].lastAccepted, 0); assert.equal(room.acks[0], -1);
+    assert.equal(room.slots[0].actionInputs.inspect().pending.length, 1, 'a malformed cancellation cannot discard the accepted jump');
+  }
+  peer.send({ type: 'input', seq: 1, buttons: { yaw: .6 }, cancelPress: { action: 'jump', seq: 0 } });
+  await flushPeer(peer); game.app.tick();
+  assert.equal(room.acks[0], 1); assert.equal(player.y, 0); assert.equal(player.yaw, .6);
+});
+
+test('WS touch cancellation is rejected for non-FPS ordered controls before sequence acceptance', async t => {
+  const game = await host(t), room = game.app.createRoom('afterimage', 'Ordered controls'), peer = game.socket(room);
+  await peer.connect(); const after = peer.messages.length;
+  peer.send({ type: 'input', seq: 1, buttons: {}, cancelPress: { action: 'jump', seq: 0 } });
+  await peer.waitFor(message => message.type === 'error', { after });
+  assert.equal(room.slots[0].lastAccepted, -1); assert.equal(room.acks[0], -1); assert.equal(room.slots[0].queue.length, 0);
+});
+
+test('a WS tap older than 120ms expires even when the newest release and movement are fresh', async t => {
+  const { game, room, seats } = await quickFight(t), peer = seats[0].peer, player = room.state.players[0];
+  peer.send({ type: 'input', seq: 0, buttons: { fire: true, yaw: .2 } });
+  peer.send({ type: 'input', seq: 1, buttons: { yaw: .3 } }); await flushPeer(peer);
+  await new Promise(resolve => setTimeout(resolve, 130));
+  peer.send({ type: 'input', seq: 2, buttons: { right: true, yaw: .4 } }); await flushPeer(peer); game.app.tick();
+  assert.equal(room.acks[0], 2); assert.equal(player.shots, 0); assert.equal(room.slots[0].buttons.right, true); assert.equal(player.yaw, .4);
+  assert.equal(room.slots[0].actionInputs.inspect().pending.length, 0);
+  peer.send({ type: 'input', seq: 3, buttons: { fire: true } }); peer.send({ type: 'input', seq: 4, buttons: {} });
+  await flushPeer(peer); game.app.tick(); assert.equal(player.shots, 1);
+});
+
+test('pre-bell held actions remain blocked while a genuinely fresh action after release starts immediately', async t => {
+  const game = await host(t), room = await game.make(), seats = await game.fill(room), peer = seats[0].peer;
+  peer.send({ type: 'fps-loadout', weaponId: 'pistol' }); await flushPeer(peer);
+  await readyEveryone(room, seats); advance(game.app, room, 'buy');
+  peer.send({ type: 'input', seq: 0, buttons: { fire: true, jump: true, grenade: true, yaw: .2 } }); await flushPeer(peer);
+  advance(game.app, room, 'fight'); game.app.tick();
+  const player = room.state.players[0];
+  assert.equal(player.shots, 0); assert.equal(player.y, 0); assert.equal(player.grenades, 1);
+  peer.send({ type: 'input', seq: 1, buttons: {} }); peer.send({ type: 'input', seq: 2, buttons: { fire: true } }); peer.send({ type: 'input', seq: 3, buttons: {} });
+  await flushPeer(peer); game.app.tick(); assert.equal(player.shots, 1); assert.equal(room.acks[0], 3);
+});
+
+test('disconnect clears every queued tap before an actual two-player ready restart', async t => {
+  const { game, room, seats } = await quickFight(t), peer = seats[0].peer;
+  peer.send({ type: 'input', seq: 0, buttons: { fire: true, grenade: true, jump: true } }); peer.send({ type: 'input', seq: 1, buttons: {} });
+  await flushPeer(peer); assert.equal(room.slots[0].actionInputs.inspect().pending.length, 3);
+  const after = peer.messages.length; seats[1].peer.socket.close();
+  await peer.untilState(message => message.state.phase === 'lobby' && message.players[1] === null, { after });
+  assert.equal(room.slots[0].actionInputs.inspect().pending.length, 0); assert.equal(room.slots[0].queue.length, 0);
+  seats[1] = await game.peer(room, 'Replacement'); await readyEveryone(room, seats); advance(game.app, room, 'fight'); game.app.tick();
+  assert.equal(room.state.players[0].shots, 0); assert.equal(room.state.players[0].grenades, 1); assert.equal(room.state.players[0].y, 0);
+});
+
+for (const metadata of ['valid', 'stale', 'future']) {
+  test(`a released WS shot retains its own ${metadata} displayed view tick after newer look metadata arrives`, async t => {
+    const { game, room, seats } = await quickFight(t, 'marksman'), [shooterSeat, targetSeat] = seats;
+    const [shooter, target] = room.state.players;
+    Object.assign(shooter, { x: -20, y: 0, z: 10, vx: 0, vy: 0, vz: 0, yaw: 0, pitch: 0, grounded: true });
+    Object.assign(target, { x: -20, y: 0, z: 0, vx: 5.4, vy: 0, vz: 0, yaw: 0, pitch: 0, grounded: true });
+    targetSeat.peer.send({ type: 'input', seq: 0, buttons: { right: true, yaw: 0, pitch: 0 } }); await flushPeer(targetSeat.peer);
+    const poses = new Map();
+    for (let index = 0; index < 24; index++) { game.app.tick(); poses.set(room.state.tick, { x: target.x, z: target.z }); }
+    const displayedTick = room.state.tick - 6, displayed = poses.get(displayedTick), yaw = Math.atan2(displayed.x - shooter.x, -(displayed.z - shooter.z));
+    const currentRay = Voxel.traceShot(room.state, 0, { x: shooter.x, y: Voxel.eyeHeight(shooter), z: shooter.z }, { x: Math.sin(yaw), y: 0, z: -Math.cos(yaw) }, 120, Voxel.MAPS.courtyard);
+    assert.equal(currentRay.playerId, null);
+    const viewTick = metadata === 'valid' ? displayedTick : metadata === 'stale' ? room.state.tick - 19 : room.state.tick + 500;
+    const hp = target.hp, x = target.x;
+    shooterSeat.peer.send({ type: 'input', seq: 0, viewTick, buttons: { fire: true, yaw, pitch: 0 } });
+    shooterSeat.peer.send({ type: 'input', seq: 1, viewTick: room.state.tick, buttons: { yaw: 1.2, pitch: .2 } });
+    await flushPeer(shooterSeat.peer); game.app.tick();
+    assert.equal(room.acks[0], 1); assert.equal(shooter.shots, 1); assert.ok(target.x > x, 'historical tracing never changes real movement');
+    const shot = room.state.events.findLast(event => event.type === 'shot' && event.playerId === 0);
+    if (metadata === 'valid') { assert.equal(shot.targetId, 1); assert.equal(shot.hitKind, 'head'); assert.equal(target.hp, hp - Voxel.WEAPONS.marksman.damage * Voxel.WEAPONS.marksman.headMultiplier); }
+    else { assert.equal(shot.targetId, null); assert.equal(target.hp, hp); assert.equal(getLagCompensationDiagnostics(room.state).viewCount, 0); }
+    shooterSeat.peer.send({ type: 'input', seq: 2, cancelActions: true, buttons: {} }); await flushPeer(shooterSeat.peer);
+    room.slots[0].lastInputTime -= 351; game.app.tick();
+    assert.equal(getLagCompensationDiagnostics(room.state).viewCount, 0); assert.equal(room.slots[0].actionInputs.inspect().pending.length, 0);
+  });
+}

@@ -232,6 +232,77 @@ function separate(state, a, b) {
   }
 }
 
+/** Project the displayed cohort through the real room/body colliders. Bounded
+ * substeps keep a corner interpolation chord from cutting through a pillar.
+ * Current attack, health, roll and revive metadata is never interpolated.
+ */
+export function sweepPresentationScene(state, desiredState, { anchorId = null } = {}) {
+  return projectPresentationScene(state, desiredState, anchorId, false);
+}
+
+/** Fighter-only callers keep latest enemies fixed, rather than letting invisible
+ * enemy corrections absorb separation from the rendered player pair.
+ */
+export function sweepPresentationFighters(state, desiredFighters, { anchorId = null } = {}) {
+  if (!Array.isArray(desiredFighters)) return [];
+  return projectPresentationScene(state, { ...state, fighters: desiredFighters }, anchorId, true).fighters;
+}
+
+function projectPresentationScene(state, desiredState, anchorId, fixedEnemies) {
+  const fighters = (Array.isArray(desiredState?.fighters) ? desiredState.fighters : []).map(f => ({ ...f }));
+  const enemies = (Array.isArray(desiredState?.enemies) ? desiredState.enemies : []).map(e => ({ ...e }));
+  const result = { ...desiredState, fighters, enemies };
+  const bases = [...(state?.fighters || []), ...(state?.enemies || [])];
+  const displayed = new Map([...fighters, ...enemies].map(entity => [entity.id, entity]));
+  if (fighters.length !== 2 || bases.length !== displayed.size || bases.some(e => !displayed.has(e.id) || !Number.isFinite(e.x) || !Number.isFinite(e.y) || !Number.isFinite(e.radius) || e.radius < 4 || e.radius > 128) || !Array.isArray(state.obstacles)) return result;
+  const actors = bases.map(entity => ({ ...entity }));
+  const players = actors.slice(0, 2), creatures = actors.slice(2);
+  const simulation = { ...state, fighters: players, enemies: creatures };
+  const offsets = actors.map(f => {
+    const target = displayed.get(f.id), x = target.x - f.x, y = target.y - f.y;
+    const continuous = state.phase === 'fight' && !state.roomBreak && alive(target) === alive(f) && target.type === f.type && target.wins === f.wins;
+    return continuous && Number.isFinite(x) && Number.isFinite(y) && Math.hypot(x, y) <= 128 ? { x, y } : { x: 0, y: 0 };
+  });
+  const steps = Math.max(1, Math.ceil(Math.max(...offsets.map(p => Math.hypot(p.x, p.y))) / (Math.min(...actors.map(f => f.radius)) / 4)));
+  // Match the authoritative hero/hero, creature/hero, creature/creature order.
+  const pairs = [[...players]];
+  for (const enemy of creatures) for (const f of players) pairs.push([enemy, f]);
+  for (let i = 0; i < creatures.length; i++) for (let j = i + 1; j < creatures.length; j++) pairs.push([creatures[i], creatures[j]]);
+  const fixed = new Set(fixedEnemies ? creatures.map(e => e.id) : []);
+  if (players.some(f => f.id === anchorId)) fixed.add(anchorId);
+  const overlaps = (a, b) => alive(a) && alive(b) && a.action !== 'roll' && b.action !== 'roll' && distance(a, b) < a.radius + b.radius - 1e-7;
+  for (let step = 0; step < steps; step++) {
+    const previous = actors.map(({ x, y }) => ({ x, y }));
+    for (let index = 0; index < actors.length; index++) {
+      const f = actors[index];
+      // These velocities exist only on collision copies, never on returned data.
+      f.vx = offsets[index].x / steps; f.vy = offsets[index].y / steps;
+      moveEntity(simulation, f);
+    }
+    for (let pass = 0; pass < 24; pass++) {
+      for (const [a, b] of pairs) {
+        if (!overlaps(a, b) || fixed.has(a.id) && fixed.has(b.id)) continue;
+        const anchor = fixed.has(a.id) ? a : fixed.has(b.id) ? b : null;
+        const point = anchor && { x: anchor.x, y: anchor.y };
+        separate(simulation, a, b);
+        if (anchor) {
+          const dx = anchor.x - point.x, dy = anchor.y - point.y;
+          anchor.x = point.x; anchor.y = point.y;
+          const other = anchor === a ? b : a;
+          other.x -= dx; other.y -= dy; resolveWalls(simulation, other);
+        }
+      }
+      if (!pairs.some(([a, b]) => overlaps(a, b))) break;
+    }
+    // A pinned crowd cannot shove the anchor or tunnel through a narrow room.
+    if (pairs.some(([a, b]) => overlaps(a, b))) {
+      for (let index = 0; index < actors.length; index++) Object.assign(actors[index], previous[index]);
+    }
+  }
+  for (const f of actors) { const target = displayed.get(f.id); target.x = f.x; target.y = f.y; }
+  return result;
+}
+
 function recordInput(state, f, raw) {
   const input = emptyInput();
   for (const key of INPUT_KEYS) input[key] = raw?.[key] === true;

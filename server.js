@@ -19,6 +19,7 @@ import * as Voxel from './public/voxel-engine.js';
 import * as Royale from './public/voxel-royale-engine.js';
 import { enableLagCompensation, isValidViewTick, setShotViewTick } from './public/voxel-lag-compensation.js';
 import * as Brawl from './public/brawl-engine.js';
+import { createFpsInputQueue, FPS_EDGE_ACTIONS } from './public/voxel-input-queue.js';
 
 const TICK_RATE = 120;
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -361,6 +362,7 @@ export function createServer(options = {}) {
     for (const slot of room.slots) {
       if (!slot) continue;
       slot.queue.length = 0; slot.buttons = freshInput(room, slot.id);
+      slot.latestButtons = slot.buttons; slot.actionInputs?.reset({ neutral: true });
       room.acks[slot.id] = slot.lastAccepted;
     }
   }
@@ -386,20 +388,32 @@ export function createServer(options = {}) {
           return freshInput(room, index);
         }
         if (room.adapter.latestInput && now - slot.lastInputTime > 350) {
-          slot.buttons = freshInput(room, index, slot.queue.at(-1)?.buttons ?? slot.buttons);
+          slot.buttons = freshInput(room, index, slot.queue.at(-1)?.buttons ?? slot.latestButtons);
+          slot.latestButtons = slot.buttons; slot.actionInputs.reset({ neutral: true });
           slot.queue.length = 0;
           room.acks[index] = slot.lastAccepted;
           if (room.adapter.compensateHitscan) setShotViewTick(room.state, index, null);
           return slot.buttons;
         }
         if (slot.queue.length) {
-          const command = slot.queue.shift(); slot.buttons = command.buttons; room.acks[index] = command.seq;
+          const command = slot.queue.shift(); slot.buttons = command.buttons; slot.latestButtons = command.buttons; room.acks[index] = command.seq;
           if (room.adapter.compensateHitscan) setShotViewTick(room.state, index, command.viewTick);
         } else if (now - slot.lastInputTime > 350) slot.buttons = freshInput(room, index, slot.buttons);
+        if (room.adapter.latestInput) {
+          if (room.state.phase !== 'fight') { slot.actionInputs.reset({ held: slot.latestButtons }); slot.buttons = { ...slot.latestButtons }; }
+          else {
+            const sampled = slot.actionInputs.sample(slot.latestButtons, now);
+            slot.buttons = sampled.buttons;
+            if (room.adapter.compensateHitscan) setShotViewTick(room.state, index, sampled.viewTick);
+          }
+        }
         return slot.buttons;
       });
       const previousPhase = room.state.phase;
       room.adapter.engine.step(room.state, inputs);
+      if (room.adapter.latestInput && previousPhase !== room.state.phase) {
+        for (const slot of room.slots) slot?.actionInputs.reset({ held: slot.latestButtons });
+      }
       if (previousPhase === 'countdown' && ['buy', 'fight', 'roundEnd', 'matchEnd'].includes(room.state.phase)) {
         for (const player of room.players) if (player) player.ready = false;
       }
@@ -470,7 +484,7 @@ export function createServer(options = {}) {
       ws.close(4403, 'Room full'); return;
     }
     const slot = {
-      id, ws, queue: [], buttons: freshInput(room, id), lastAccepted: -1,
+      id, ws, queue: [], buttons: freshInput(room, id), latestButtons: freshInput(room, id), actionInputs: room.adapter.latestInput ? createFpsInputQueue() : null, lastAccepted: -1,
       lastInputTime: performance.now(), alive: true, rateWindow: performance.now(), messages: 0,
     };
     room.slots[id] = slot;
@@ -606,15 +620,28 @@ export function createServer(options = {}) {
             Object.keys(data.buttons).some(key => !validControl(room.adapter, key, data.buttons[key]))) {
           error(ws, ['voxel-breach', 'voxel-royale'].includes(room.gameId) ? 'Use boolean controls, yaw between -π and π, and pitch between -1.35 and 1.35.' : room.adapter.numericControls ? 'Use boolean controls and finite aim components between -1 and 1.' : 'Input buttons must contain only valid boolean controls for this game.'); return;
         }
+        if (Object.hasOwn(data, 'cancelActions') && (typeof data.cancelActions !== 'boolean' || !room.adapter.latestInput)) { error(ws, 'Action cancellation must be a boolean FPS control.'); return; }
+        if (Object.hasOwn(data, 'cancelPress') && (!room.adapter.latestInput || !data.cancelPress || typeof data.cancelPress !== 'object' || Array.isArray(data.cancelPress)
+            || Object.keys(data.cancelPress).length !== 2 || !FPS_EDGE_ACTIONS.includes(data.cancelPress.action)
+            || !Number.isSafeInteger(data.cancelPress.seq) || data.cancelPress.seq < 0 || data.cancelPress.seq >= data.seq)) {
+          error(ws, 'A cancelled FPS press needs its action and earlier input sequence.'); return;
+        }
         if (data.seq <= slot.lastAccepted) return;
         if (data.seq - slot.lastAccepted > 600) { error(ws, 'Input sequence is too far ahead.'); return; }
         if (slot.queue.length >= 60) { error(ws, 'Input queue is full.'); return; }
-        const buttons = freshInput(room, id, slot.queue.at(-1)?.buttons ?? slot.buttons);
+        const buttons = freshInput(room, id, slot.queue.at(-1)?.buttons ?? (room.adapter.latestInput ? slot.latestButtons : slot.buttons));
         for (const key of room.adapter.inputKeys) buttons[key] = data.buttons[key] === true;
         for (const key of Object.keys(room.adapter.numericControls || {})) {
           if (Object.hasOwn(data.buttons, key)) buttons[key] = data.buttons[key];
         }
-        if (room.adapter.latestInput) slot.queue.length = 0;
+        if (room.adapter.latestInput) {
+          slot.queue.length = 0;
+          if (data.cancelActions) slot.actionInputs.reset({ held: buttons, neutral: true });
+          else {
+            if (data.cancelPress) slot.actionInputs.cancel(data.cancelPress);
+            slot.actionInputs.observe(buttons, now, { viewTick: data.viewTick, sequence: data.seq });
+          }
+        }
         slot.queue.push({ seq: data.seq, buttons, ...(room.adapter.compensateHitscan ? { viewTick: data.viewTick } : {}) }); slot.lastAccepted = data.seq; slot.lastInputTime = now;
       } else error(ws, 'Unknown message type.');
     });

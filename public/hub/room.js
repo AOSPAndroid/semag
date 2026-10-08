@@ -16,7 +16,7 @@ import { ShinobiRenderer } from '../shinobi-renderer.js';
 import { BrawlRenderer, drawFighterPortrait, drawStagePreview } from '../brawl-renderer.js';
 import { GameAudio } from '../audio.js';
 import { frameDecay, tickFraction } from '../display-timing.js';
-import { capturePlanarPose, presentPlanarFighter, presentNetworkPlanarFighter } from '../planar-presentation.js';
+import { capturePlanarPose, presentPlanarFighter, presentNetworkPlanarFighter, retainAdjacentPlanarPose, rebasePlanarCorrection, presentPlanarEntities } from '../planar-presentation.js';
 import { createNetworkTimeline } from '../network-timeline.js';
 import { GAMES, roomUrl, getName, saveName, hostInfo, copyText } from './shared.js';
 
@@ -112,7 +112,9 @@ function receiveState(message) {
   const state = message.state;
   if (!state || (boardMode ? !state.board : cardMode ? state.gameId !== gameId : !state.fighters)) return;
   lastSnapshotAt = performance.now(); players = message.players || players;
-  const old = realtimeMode && localId != null ? { x: predicted.fighters[localId].x, y: predicted.fighters[localId].y } : null;
+  const oldPose = realtimeMode ? capturePlanarPose(predicted) : null, oldPreviousPose = previousPose;
+  const fraction = tickFraction((accumulator + Math.max(0, lastSnapshotAt - previousTime)) / 1000);
+  const old = realtimeMode && localId != null ? presentPlanarFighter(predicted, previousPose, localId, fraction) : null;
   const phase = authoritative.phase; authoritative = state;
   if (realtimeMode) {
     pending = pending.filter(frame => frame.seq > (message.acks?.[localId] ?? -1));
@@ -127,10 +129,10 @@ function receiveState(message) {
         previousPose = capturePlanarPose(predicted);
         engine.step(predicted, inputs);
       }
+      previousPose = retainAdjacentPlanarPose(predicted, previousPose, oldPreviousPose, oldPose);
       if (old && phase === 'fight') {
-        const own = predicted.fighters[localId];
-        correction.x = Math.max(-45, Math.min(45, old.x + correction.x - own.x));
-        correction.y = Math.max(-45, Math.min(45, old.y + correction.y - own.y));
+        const own = presentPlanarFighter(predicted, previousPose, localId, fraction);
+        correction = rebasePlanarCorrection(predicted, oldPose, localId, old, own, correction);
       }
     } else correction = { x: 0, y: 0 };
     const context = JSON.stringify([state.phase, state.round, state.wave, state.stageId]);
@@ -605,7 +607,7 @@ function displayState(now, fraction) {
   const deltaMs = lastDisplayTime == null ? 1000 / 60 : now - lastDisplayTime;
   lastDisplayTime = now;
   if (authoritative.phase !== 'fight' || localId == null) return authoritative;
-  const state = { ...predicted, fighters: predicted.fighters.map(f => ({ ...f })), events: authoritative.events || [] };
+  const state = { ...predicted, ...presentPlanarEntities(predicted, previousPose, fraction), fighters: predicted.fighters.map(f => ({ ...f })), events: authoritative.events || [] };
   state.fighters[localId] = presentPlanarFighter(predicted, previousPose, localId, fraction);
   state.fighters[localId].x += correction.x; state.fighters[localId].y += correction.y;
   const decay = frameDecay(.72, deltaMs);
@@ -617,6 +619,8 @@ function displayState(now, fraction) {
     state.fighters[1 - localId] = presentNetworkPlanarFighter(authoritative, before, after, 1 - localId, target, { maxDistance: shinobiMode ? 96 : 64 });
   }
   if (shinobiMode) state.fighters = shinobi.sweepPresentationFighters(predicted, state.fighters);
+  else if (vectorMode) state.fighters = vector.sweepPresentationFighters(predicted, state.fighters, { anchorId: localId });
+  if (!aimMode && !brawlMode) return topdown.sweepPresentationScene(predicted, state, { anchorId: localId });
   return state;
 }
 function cardObjective(state, names) {

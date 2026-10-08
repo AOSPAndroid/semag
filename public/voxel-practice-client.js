@@ -19,6 +19,28 @@ const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 const copy = value => JSON.parse(JSON.stringify(value));
 const clock = seconds => `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
 
+/** Finish one action contact without erasing other held sources or valid taps. */
+export function releasePracticeTouchAction(pointer, pointers, actions, inputQueue, isHeld, cancelled = false) {
+  if (!pointer.action) return;
+  const others = [...pointers.values()].filter(other => other.action === pointer.action);
+  if (!others.length) {
+    actions.delete(pointer.action);
+    if (!isHeld(pointer.action)) {
+      if (cancelled) inputQueue.cancel(pointer.token);
+      inputQueue.release(pointer.action);
+    }
+    pointer.target.setAttribute('aria-pressed', 'false');
+  } else if (cancelled && pointer.token) {
+    // Preserve the aggregate hold; a final cancelled finger may still
+    // withdraw the original press if physics has not consumed it yet.
+    others[0].token = pointer.token;
+  } else if (!cancelled) {
+    // Any valid release preserves the aggregate tap, even when its original
+    // token belongs to a different finger that subsequently loses capture.
+    for (const other of others) other.token = null;
+  }
+}
+
 export function bootPractice() {
   const elements = new Map();
   const $ = id => { if (!elements.has(id)) elements.set(id, document.getElementById(id)); return elements.get(id); };
@@ -225,8 +247,9 @@ export function bootPractice() {
   }
   function touchDown(event) {
     const target = event.target.closest?.('[data-practice-action],[data-practice-pad]'); if (!target || !active()) return; event.preventDefault();
-    const pad = target.dataset.practicePad, action = target.dataset.practiceAction; pointers.set(event.pointerId, { target, pad, action }); try { target.setPointerCapture(event.pointerId); } catch {}
-    if (action) { const wasHeld = currentInput()[action]; touch.actions.add(action); if (state.phase === 'fight' && !wasHeld) inputQueue.press(action); target.setAttribute('aria-pressed', 'true'); } if (pad) touchMove(event); wake();
+    const pad = target.dataset.practicePad, action = target.dataset.practiceAction, pointer = { target, pad, action, token: null };
+    pointers.set(event.pointerId, pointer); try { target.setPointerCapture(event.pointerId); } catch {}
+    if (action) { const wasHeld = currentInput()[action]; touch.actions.add(action); if (state.phase === 'fight' && !wasHeld) pointer.token = inputQueue.press(action); target.setAttribute('aria-pressed', 'true'); } if (pad) touchMove(event); wake();
   }
   function touchMove(event) {
     const pointer = pointers.get(event.pointerId); if (!pointer?.pad || !active()) return; event.preventDefault();
@@ -236,7 +259,7 @@ export function bootPractice() {
   function touchEnd(event) {
     const pointer = pointers.get(event.pointerId); if (!pointer) return; pointers.delete(event.pointerId);
     if (pointer.pad) { touch[pointer.pad] = { x: 0, y: 0 }; pointer.target.querySelector('i').style.transform = 'translate(0,0)'; }
-    if (pointer.action && ![...pointers.values()].some(other => other.action === pointer.action)) { touch.actions.delete(pointer.action); if (!currentInput()[pointer.action]) inputQueue.release(pointer.action); pointer.target.setAttribute('aria-pressed', 'false'); }
+    releasePracticeTouchAction(pointer, pointers, touch.actions, inputQueue, action => currentInput()[action], event.type === 'pointercancel' || event.type === 'lostpointercapture');
     try { if (pointer.target.hasPointerCapture?.(event.pointerId)) pointer.target.releasePointerCapture(event.pointerId); } catch {}
   }
   function graphics() {

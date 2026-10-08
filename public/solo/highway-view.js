@@ -46,6 +46,59 @@ export function getDistantRoadDepths(reach, out = []) {
   return out;
 }
 
+const highwayRoadDepths = [];
+/** Close paint has fixed world endpoints, so it flows instead of changing
+ * colour in stationary depth slices. Far detail uses at most twelve scan bands. */
+export function drawHighwayRoadMarkings(ctx, { distance = 0, curve = 0, reach = 400 } = {}) {
+  const nearDepth = 16 * (CAR_Y - HORIZON) / (H - HORIZON) - 16;
+  const farDepth = Math.max(400, Number.isFinite(reach) ? reach : 400);
+  const traveled = Number.isFinite(distance) ? distance : 0;
+  const bend = Number.isFinite(curve) ? curve : 0;
+  let draws = 0;
+  function band(near, far, left, right, color) {
+    if (far <= near) return;
+    const aScale = 16 / (Math.max(nearDepth, far) + 16), bScale = 16 / (Math.max(nearDepth, near) + 16);
+    const aX = W / 2 + bend * (1 - aScale) ** 2 * 142, bX = W / 2 + bend * (1 - bScale) ** 2 * 142;
+    const aY = HORIZON + (CAR_Y - HORIZON) * aScale, bY = HORIZON + (CAR_Y - HORIZON) * bScale;
+    ctx.fillStyle = color; ctx.beginPath();
+    ctx.moveTo(aX + ROAD_HALF * aScale * left, aY); ctx.lineTo(aX + ROAD_HALF * aScale * right, aY);
+    ctx.lineTo(bX + ROAD_HALF * bScale * right, bY); ctx.lineTo(bX + ROAD_HALF * bScale * left, bY);
+    ctx.closePath(); ctx.fill(); draws++;
+  }
+  function repeats(period, length, paint) {
+    const first = Math.floor((traveled + nearDepth - length) / period) * period;
+    const count = Math.ceil((400 - nearDepth + length) / period) + 2;
+    for (let index = 0; index < count; index++) {
+      const start = first + index * period - traveled;
+      const near = Math.max(nearDepth, start), far = Math.min(400, start + length);
+      if (far > near) paint(near, far);
+    }
+  }
+  band(nearDepth, farDepth, -1.1, 1.1, '#365750');
+  band(nearDepth, farDepth, -1, 1, '#33494c');
+  repeats(24, 12, (near, far) => band(near, far, -1, 1, '#354b4e'));
+  for (const side of [-1, 1]) {
+    const curbLeft = side < 0 ? -1.07 : 1.02, curbRight = side < 0 ? -1.02 : 1.07;
+    band(nearDepth, farDepth, curbLeft, curbRight, '#487367');
+    repeats(8, 4, (near, far) => band(near, far, curbLeft, curbRight, '#d1c394'));
+  }
+  band(nearDepth, farDepth, -.985, -.976, '#8ba498');
+  band(nearDepth, farDepth, .976, .985, '#8ba498');
+  repeats(12, 5.5, (near, far) => {
+    band(near, far, -.337, -.323, '#bfcbb8'); band(near, far, .323, .337, '#bfcbb8');
+  });
+  // At these depths a whole stripe is less than one pixel high. Screen bands
+  // retain the same distant reach without a loop proportional to speed/reach.
+  const depths = getDistantRoadDepths(farDepth, highwayRoadDepths);
+  for (let index = 0; index + 1 < depths.length; index++) {
+    const far = depths[index], near = depths[index + 1], world = traveled + (near + far) / 2;
+    if (((world % 12) + 12) % 12 < 5.5) {
+      band(near, far, -.337, -.323, '#bfcbb866'); band(near, far, .323, .337, '#bfcbb866');
+    }
+  }
+  return draws;
+}
+
 const KEY_CONTROLS = {
   ArrowLeft: 'left',
   a: 'left',
@@ -372,28 +425,18 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   function rect(x, y, width, height, color) {
     ctx.fillStyle = color;
     ctx.fillRect(
-      Math.round(x),
-      Math.round(y),
-      Math.max(1, Math.round(width)),
-      Math.max(1, Math.round(height)),
+      x,
+      y,
+      Math.max(1, width),
+      Math.max(1, height),
     );
   }
   function polygon(points, color) {
     ctx.fillStyle = color;
     ctx.beginPath();
     points.forEach(([x, y], index) =>
-      index ? ctx.lineTo(Math.round(x), Math.round(y)) : ctx.moveTo(Math.round(x), Math.round(y)),
+      index ? ctx.lineTo(x, y) : ctx.moveTo(x, y),
     );
-    ctx.closePath();
-    ctx.fill();
-  }
-  function roadStrip(a, b, left, right, color) {
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.moveTo(Math.round(a.x + a.half * left), Math.round(a.y));
-    ctx.lineTo(Math.round(a.x + a.half * right), Math.round(a.y));
-    ctx.lineTo(Math.round(b.x + b.half * right), Math.round(b.y));
-    ctx.lineTo(Math.round(b.x + b.half * left), Math.round(b.y));
     ctx.closePath();
     ctx.fill();
   }
@@ -516,22 +559,6 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     }
     rect(0, HORIZON - 2, W, 5, '#67a28d');
   }
-  const distantRoadDepths = [];
-  function roadSlice(z, far, near) {
-    if (Math.round(far.y) === Math.round(near.y)) return;
-    const world = z + displayState.distance;
-    roadStrip(far, near, -1.1, 1.1, mod(Math.floor(world / 5), 2) ? '#365750' : '#3b5d54');
-    roadStrip(far, near, -1, 1, mod(Math.floor(world / 12), 2) ? '#33494c' : '#354b4e');
-    const curb = mod(world, 8) < 4 ? '#d1c394' : '#487367';
-    roadStrip(far, near, -1.07, -1.02, curb);
-    roadStrip(far, near, 1.02, 1.07, curb);
-    roadStrip(far, near, -0.985, -0.976, '#8ba498');
-    roadStrip(far, near, 0.976, 0.985, '#8ba498');
-    if (mod(world, 12) < 5.5) {
-      roadStrip(far, near, -0.337, -0.323, '#bfcbb8');
-      roadStrip(far, near, 0.323, 0.337, '#bfcbb8');
-    }
-  }
   function road() {
     rect(0, HORIZON + 3, W, H - HORIZON, getDistrict(displayState).ground);
     polygon(
@@ -542,36 +569,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       ],
       '#33494c',
     );
-    // The close road continues below the car; traffic z=0 lines up with its rear.
-    const nearest = projection(0);
-    polygon(
-      [
-        [nearest.x - nearest.half, nearest.y],
-        [nearest.x + nearest.half, nearest.y],
-        [W / 2 + ROAD_HALF * 1.16, H],
-        [W / 2 - ROAD_HALF * 1.16, H],
-      ],
-      '#33484b',
-    );
-    roadStrip(nearest, { x: W / 2, y: H, half: ROAD_HALF * 1.16 }, -1.075, -1, '#597068');
-    roadStrip(nearest, { x: W / 2, y: H, half: ROAD_HALF * 1.16 }, 1, 1.075, '#597068');
-    if (usesEndlessPace(displayState)) {
-      getDistantRoadDepths(displayState.lookAheadDistance, distantRoadDepths);
-      for (let i = 0; i < distantRoadDepths.length - 1; i++) {
-        const z = distantRoadDepths[i];
-        roadSlice(z, projection(z), projection(distantRoadDepths[i + 1]));
-      }
-    }
-    // Nearby road retains its 2m detail. At most twelve coarse screen bands
-    // bridge its 400m edge to the same far reach used by visible traffic.
-    for (let z = 400; z > 0; z -= 2)
-      roadSlice(z, projection(z), projection(Math.max(0, z - 2)));
-    // A few close lane lines continue beneath the bumper.
-    const close = { x: W / 2, y: H, half: ROAD_HALF * 1.16 };
-    if (mod(displayState.distance, 12) < 5.5) {
-      roadStrip(nearest, close, -0.337, -0.323, '#bfcbb8');
-      roadStrip(nearest, close, 0.323, 0.337, '#bfcbb8');
-    }
+    drawHighwayRoadMarkings(ctx, { distance: displayState.distance, curve: displayState.curve,
+      reach: usesEndlessPace(displayState) ? displayState.lookAheadDistance : 400 });
     const wet = getDistrict(displayState).weather === 'rain';
     for (let i = 0; i < 22; i++) {
       const z = mod(i * 13 - displayState.distance, 230) + 2,

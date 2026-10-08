@@ -5,8 +5,8 @@
 const clamp = value => Math.max(0, Math.min(1, Number.isFinite(value) ? value : 1));
 const guards = ['phase', 'mode', 'type', 'owner', 'dead'];
 const compile = (spec, identityGuard = false) => ({
-  ...spec, identityGuard, fields: spec.fields || [], angles: spec.angles || [],
-  numericKeys: [...(spec.fields || []), ...(spec.angles || [])],
+  ...spec, identityGuard, fields: spec.fields || [], angles: spec.angles || [], decays: spec.decays || [],
+  numericKeys: [...(spec.fields || []), ...(spec.angles || []), ...(spec.decays || [])],
   guardKeys: [...guards, ...(spec.guards || [])], limits: Object.entries(spec.limits || {}),
   snapshots: new WeakMap(), poses: new WeakMap(), previous: new Map(),
 });
@@ -42,6 +42,13 @@ function sampleBody(body, previous, spec, fraction) {
       const difference = Math.atan2(Math.sin(current - before), Math.cos(current - before));
       result[key] = before + difference * fraction;
     }
+  }
+  // New actions and completed timers are immediate. Only the uninterrupted
+  // positive decay between two completed ticks belongs to the display clock.
+  for (const key of spec.decays) {
+    const before = previous.values[key], current = body[key];
+    if (Number.isFinite(before) && Number.isFinite(current) && current > 0 && current <= before)
+      result[key] = before + (current - before) * fraction;
   }
   return result;
 }

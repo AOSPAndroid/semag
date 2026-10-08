@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createState, step, FIXED_STEP, canOccupy, serialize } from '../public/voxel-survival-engine.js';
+import { createState, step, FIXED_STEP, canOccupy, serialize, getBlock } from '../public/voxel-survival-engine.js';
 import { setWorldBlock } from '../public/voxel-survival-world.js';
 import { createSurvivalPresentation } from '../public/voxel-survival-presentation.js';
-import { survivalHandMotion } from '../public/voxel-survival-renderer.js';
+import { survivalHandMotion, SurvivalRenderer } from '../public/voxel-survival-renderer.js';
 
 const clone = value => structuredClone(value);
 const close = (a, b) => assert.ok(Math.abs(a - b) < 1e-9, `${a} != ${b}`);
@@ -79,18 +79,17 @@ test('terrain corner cuts and crowded body contacts fall back to real clear pose
   display.sample(state, .8); clearScene(state, display.getPresentation());
 });
 
-test('world edits, pause, new worlds, teleports, death and day changes never blend stale scenes', () => {
+test('pause, new worlds, teleports and death never blend stale scenes', () => {
   const state = fixture(), display = createSurvivalPresentation();
   const checkSnap = change => {
     state.paused = false; state.phase = 'playing'; display.capture(state); step(state, { strafe: 1 }, FIXED_STEP); change();
     const sample = display.sample(state, .1);
     close(sample.camera.x, state.player.x); assert.equal(sample.options.displayTime, state.time);
   };
-  checkSnap(() => setWorldBlock(state.world, 5, 5, 5, 4));
   checkSnap(() => { state.paused = true; });
   checkSnap(() => { state.phase = 'dead'; });
   checkSnap(() => { state.player.x += 2; });
-  checkSnap(() => { state.day++; });
+  checkSnap(() => { state.world = { ...state.world }; });
   display.reset(); const fresh = fixture(); assert.equal(display.sample(fresh, .1).options.displayTime, fresh.time);
 });
 
@@ -158,4 +157,137 @@ test('dense creature contacts, jump landings and arrows preserve identical mecha
   }
   const reference = run(60);
   for (const hz of [120, 144, 240]) assert.equal(run(hz), reference, `mechanics changed at ${hz} Hz`);
+});
+
+// Recording GL observes the real renderer's camera uniforms, terrain cache and
+// lighting. Gameplay, display sampling and mesh building remain the real code.
+function recordingRenderer() {
+  const eyes = [], times = [], daylight = [];
+  let serial = 0;
+  const functions = {
+    getShaderParameter: () => true, getProgramParameter: () => true, getAttribLocation: () => 0,
+    getUniformLocation: (_, name) => name,
+    createShader: () => ++serial, createProgram: () => ++serial, createBuffer: () => ++serial, createTexture: () => ++serial,
+    uniform3fv: (name, value) => { if (name === 'uEye') eyes.push([...value]); },
+    uniform1f: (name, value) => { if (name === 'uTime') times.push(value); if (name === 'uDaylight') daylight.push(value); },
+  };
+  const gl = new Proxy(functions, { get: (target, key) => target[key] || (String(key).toUpperCase() === key ? 1 : () => {}) });
+  const canvas = { width: 960, height: 540, getContext: () => gl, addEventListener() {}, removeEventListener() {}, getBoundingClientRect: () => ({ width: 960, height: 540 }) };
+  return { renderer: new SurvivalRenderer(canvas), eyes, times, daylight };
+}
+
+test('distant real regrowth edits retain walking/creature/arrow cadence while the renderer updates terrain immediately', () => {
+  const state = fixture(), display = createSurvivalPresentation(), { renderer, eyes } = recordingRenderer();
+  state.tick = 119; state.regrowth.push({ x: 5, y: 1, z: 5, at: state.time });
+  state.enemies.push(foe(1, 23, 20));
+  state.projectiles.push({ id: 1, x: 5, y: 3, z: 25, vx: 20, vy: 0, vz: 0, life: 3, damage: 12 });
+  renderer.render(state, state.player, { hideHands: true }); eyes.length = 0;
+  const oldFaces = renderer.chunks.get(0).faces;
+  display.capture(state); const before = clone(state), oldRevision = state.world.revision;
+  step(state, { strafe: 1, yaw: 0, pitch: 0 }, FIXED_STEP);
+  assert.equal(getBlock(state, 5, 1, 5), 13); assert.equal(state.world.revision, oldRevision + 1);
+  const authoritative = serialize(state), samples = [];
+  for (const fraction of [0, .25, .5, .75]) {
+    const sample = display.sample(state, fraction);
+    close(sample.camera.x, before.player.x + (state.player.x - before.player.x) * fraction);
+    close(sample.options.enemies[0].x, before.enemies[0].x + (state.enemies[0].x - before.enemies[0].x) * fraction);
+    close(sample.options.projectiles[0].x, before.projectiles[0].x + (state.projectiles[0].x - before.projectiles[0].x) * fraction);
+    assert.equal(sample.options.worldRevision, state.world.revision);
+    assert.equal(renderer.render(state, sample.camera, { ...sample.options, hideHands: true }), true);
+    assert.equal(renderer._lastRevision, state.world.revision);
+    assert.equal(renderer.chunks.get(0).revision, state.world.chunkRevisions[0]);
+    assert.equal(renderer.chunks.get(0).faces, oldFaces + 4, 'current shrub mesh replaces the old chunk immediately');
+    samples.push(display.getPresentation()); clearScene(state, samples.at(-1));
+    assert.equal(serialize(state), authoritative);
+  }
+  assert.equal(new Set(eyes.map(eye => eye[0])).size, 4, 'the real renderer receives four walking camera positions per tick');
+  assert.equal(new Set(samples.map(sample => sample.enemies[0].x)).size, 4);
+  renderer.destroy();
+});
+
+test('a real placement behind a moving player rejects only interpolated poses inside the current block', () => {
+  const state = fixture(), display = createSurvivalPresentation();
+  Object.assign(state.player, { x: 20.299, z: 20.5, yaw: -Math.PI / 2, pitch: 0 });
+  setWorldBlock(state.world, 18, 2, 20, 4);
+  state.inventory[0] = { id: 'stone', count: 8 };
+  display.capture(state); const beforeX = state.player.x;
+  step(state, { forward: -1, yaw: -Math.PI / 2, pitch: 0, place: true }, FIXED_STEP);
+  assert.equal(getBlock(state, 19, 2, 20), 4); assert.equal(state.stats.built, 1);
+  assert.equal(canOccupy(state, beforeX, state.player.y, state.player.z), false, 'the past eye/body now intersects the placed block');
+  assert.equal(canOccupy(state, state.player.x, state.player.y, state.player.z), true);
+  const authoritative = serialize(state);
+  for (const fraction of [0, .1]) {
+    const sample = display.sample(state, fraction);
+    close(sample.camera.x, state.player.x); assert.equal(sample.options.player, state.player);
+    clearScene(state, display.getPresentation()); assert.equal(serialize(state), authoritative);
+  }
+  const safe = display.sample(state, .75);
+  assert.ok(safe.camera.x < state.player.x, 'a validated clear pose still samples smoothly after this same edit');
+  assert.notEqual(safe.options.player, state.player);
+  clearScene(state, display.getPresentation()); assert.equal(serialize(state), authoritative);
+});
+
+test('true day rollover keeps a validated moving cohort smooth and renders current dawn lighting', () => {
+  const state = fixture(), display = createSurvivalPresentation(), { renderer, eyes, times, daylight } = recordingRenderer();
+  state.time = 180 - FIXED_STEP / 2; state.night = true; state.spawnTimer = 20;
+  state.enemies.push(foe(1, 23, 20));
+  display.capture(state); const before = clone(state);
+  step(state, { strafe: 1, yaw: 0 }, FIXED_STEP);
+  assert.equal(state.day, 2); assert.equal(state.night, false);
+  const authoritative = serialize(state);
+  for (const fraction of [0, .25, .5, .75]) {
+    const sample = display.sample(state, fraction);
+    close(sample.camera.x, before.player.x + (state.player.x - before.player.x) * fraction);
+    close(sample.options.enemies[0].x, before.enemies[0].x + (state.enemies[0].x - before.enemies[0].x) * fraction);
+    assert.equal(sample.options.displayTime, state.time);
+    renderer.render(state, sample.camera, { ...sample.options, hideHands: true });
+    clearScene(state, display.getPresentation()); assert.equal(serialize(state), authoritative);
+  }
+  assert.equal(new Set(eyes.map(eye => eye[0])).size, 4);
+  assert.ok(times.every(time => time === state.time)); assert.ok(daylight.every(amount => amount === 1));
+  renderer.destroy();
+});
+
+test('revision changes retain the current corner and crowd rejection rules and do not rewind arrow membership', () => {
+  const state = fixture(), display = createSurvivalPresentation();
+  setWorldBlock(state.world, 10, 1, 10, 4); setWorldBlock(state.world, 10, 2, 10, 4);
+  Object.assign(state.player, { x: 9.69, z: 10.15 }); display.capture(state);
+  Object.assign(state.player, { x: 10.15, z: 9.69 }); setWorldBlock(state.world, 5, 5, 5, 4);
+  let authoritative = serialize(state), sample = display.sample(state, .5);
+  close(sample.camera.x, state.player.x); close(sample.camera.z, state.player.z); assert.equal(sample.options.player, state.player);
+  clearScene(state, display.getPresentation()); assert.equal(serialize(state), authoritative);
+  Object.assign(state.player, { x: 20, z: 20 }); state.enemies.push(foe(1, 20.8, 20)); display.capture(state);
+  state.player.x = 20.18; state.enemies[0].x = 20.81; setWorldBlock(state.world, 6, 5, 5, 4);
+  authoritative = serialize(state); display.sample(state, .8); clearScene(state, display.getPresentation()); assert.equal(serialize(state), authoritative);
+
+  state.enemies.length = 0; Object.assign(state.player, { x: 20.5, z: 20.5 });
+  const arrow = { id: 1, x: 5.8, y: 3, z: 5.5, vx: 24, vy: 0, vz: 0, life: 3, damage: 12 };
+  state.projectiles = [arrow]; display.capture(state); arrow.x = 6.2; setWorldBlock(state.world, 5, 3, 5, 4);
+  const blocked = display.sample(state, .25);
+  assert.equal(blocked.options.projectiles[0], arrow, 'a newly filled old arrow segment cannot be interpolated through terrain');
+  state.projectiles.length = 0;
+  assert.equal(display.sample(state, .5).options.projectiles.length, 0);
+});
+
+test('walking through real regrowth and dawn preserves mechanics and clear nonmutating scenes at 60–240 Hz', () => {
+  function run(hz) {
+    const state = fixture(), display = createSurvivalPresentation();
+    state.time = 180 - .6; state.night = true; state.spawnTimer = 30;
+    state.regrowth.push({ x: 5, y: 1, z: 5, at: state.time }, { x: 6, y: 1, z: 5, at: state.time + 1 });
+    let tick = 0, sawEdit = false, sawDay = false, previousRevision = state.world.revision;
+    for (let frame = 1; frame <= hz * 2; frame++) {
+      const seconds = frame / hz, due = Math.floor(seconds / FIXED_STEP + 1e-9);
+      while (tick < due) {
+        display.capture(state); step(state, { strafe: tick < 100 ? 1 : -1, yaw: .2, pitch: 0, jump: tick === 20, sprint: true }, FIXED_STEP);
+        sawEdit ||= state.world.revision !== previousRevision; sawDay ||= state.day === 2; previousRevision = state.world.revision; tick++;
+      }
+      const authoritative = serialize(state);
+      display.sample(state, (seconds - tick * FIXED_STEP) / FIXED_STEP);
+      clearScene(state, display.getPresentation()); assert.equal(serialize(state), authoritative);
+    }
+    assert.ok(sawEdit && sawDay, 'real edit and day-boundary engine paths ran');
+    return serialize(state);
+  }
+  const reference = run(60);
+  for (const hz of [120, 144, 240]) assert.equal(run(hz), reference);
 });

@@ -176,6 +176,42 @@ function separateFighters(state) {
   if (remaining > 1e-7) moveFighter(state, a, -nx * remaining, -ny * remaining);
 }
 
+/** Keep render interpolation/reconciliation inside the same cover/body contacts
+ * as play. This never advances gameplay or changes fields other than x/y.
+ * anchorId prevents a delayed remote pose from pushing the local display pose.
+ */
+export function sweepPresentationFighters(state, desiredFighters, { anchorId = null } = {}) {
+  if (!Array.isArray(desiredFighters)) return [];
+  const copies = desiredFighters.map(f => ({ ...f }));
+  const bases = [0, 1].map(id => state?.fighters?.find(f => f.id === id));
+  const displayed = [0, 1].map(id => copies.find(f => f.id === id));
+  if (copies.length !== 2 || bases.some(f => !f || !Number.isFinite(f.x) || !Number.isFinite(f.y) || !Number.isFinite(f.radius) || f.radius < 4 || f.radius > 128) || displayed.some(f => !f) || !Array.isArray(state.obstacles)) return copies;
+  const actors = bases.map(f => ({ ...f })), simulation = { ...state, fighters: actors };
+  const offsets = actors.map(f => {
+    const target = displayed[f.id], x = target.x - f.x, y = target.y - f.y;
+    const continuous = state.phase === 'fight' && (target.hp > 0) === (f.hp > 0) && target.wins === f.wins;
+    return continuous && Number.isFinite(x) && Number.isFinite(y) && Math.hypot(x, y) <= 128 ? { x, y } : { x: 0, y: 0 };
+  });
+  const steps = Math.max(1, Math.ceil(Math.max(...offsets.map(p => Math.hypot(p.x, p.y))) / (Math.min(...actors.map(f => f.radius)) / 4)));
+  for (let step = 0; step < steps; step++) {
+    const previous = actors.map(({ x, y }) => ({ x, y }));
+    for (const f of actors) moveFighter(simulation, f, offsets[f.id].x / steps, offsets[f.id].y / steps);
+    const anchor = actors.find(f => f.id === anchorId), point = anchor && { x: anchor.x, y: anchor.y };
+    separateFighters(simulation);
+    if (anchor) {
+      const dx = anchor.x - point.x, dy = anchor.y - point.y;
+      anchor.x = point.x; anchor.y = point.y;
+      // Transfer the real separation response through the remote cover sweep.
+      moveFighter(simulation, actors[1 - anchor.id], -dx, -dy);
+    }
+    if (Math.hypot(actors[1].x - actors[0].x, actors[1].y - actors[0].y) < actors[0].radius + actors[1].radius - 1e-7) {
+      for (const f of actors) Object.assign(f, previous[f.id]);
+    }
+  }
+  for (const f of actors) { displayed[f.id].x = f.x; displayed[f.id].y = f.y; }
+  return copies;
+}
+
 function readInput(f, raw) {
   const input = emptyInput();
   for (const key of INPUT_KEYS) input[key] = raw?.[key] === true;

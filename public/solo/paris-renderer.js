@@ -59,7 +59,7 @@ export function createParisRenderer(ctx, { sprites, reducedMotion = false } = {}
   const motionReduced = () => typeof reducedMotion === 'object' ? reducedMotion.matches === true : reducedMotion === true;
   function rect(x, y, width, height, color) {
     ctx.fillStyle = color;
-    ctx.fillRect(Math.round(x), Math.round(y), Math.max(1, Math.round(width)), Math.max(1, Math.round(height)));
+    ctx.fillRect(x, y, Math.max(1, width), Math.max(1, height));
   }
   function quad(ax, ay, bx, by, cx, cy, dx, dy, color) {
     ctx.fillStyle = color; ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
@@ -70,8 +70,8 @@ export function createParisRenderer(ctx, { sprites, reducedMotion = false } = {}
   }
   function label(value, x, y, color, size = 10) {
     ctx.font = `bold ${size}px ui-monospace, monospace`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#173d3bdd'; ctx.fillRect(Math.round(x - ctx.measureText(value).width / 2 - 6), Math.round(y - 9), Math.ceil(ctx.measureText(value).width + 12), 18);
-    ctx.fillStyle = color; ctx.fillText(value, Math.round(x), Math.round(y + 1));
+    ctx.fillStyle = '#173d3bdd'; ctx.fillRect(x - ctx.measureText(value).width / 2 - 6, y - 9, Math.ceil(ctx.measureText(value).width + 12), 18);
+    ctx.fillStyle = color; ctx.fillText(value, x, y + 1);
   }
 
   function background(district) {

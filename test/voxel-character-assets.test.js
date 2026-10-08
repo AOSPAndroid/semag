@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
-import { createCombatPlayer, WORLD, HEAL, playerHeight } from '../public/voxel-engine.js';
+import { createCombatPlayer, WORLD, HEAL, WEAPONS, MELEE, KNIFE, playerHeight } from '../public/voxel-engine.js';
 import { MAPS as ROYALE_MAPS } from '../public/voxel-royale-maps.js';
 import { operativeMeshes, lootMeshes, VoxelRenderer } from '../public/voxel-renderer.js';
 
@@ -22,6 +22,7 @@ test('refined helmet, uniform and gear remain inside actual shooting boxes and m
       const head = y > height - .32 + 1e-6, radius = head ? .22 : .29;
       assert.ok(y >= -1e-6 && y <= height + 1e-6, `${crouching}: no anatomy above or below the real body`);
       assert.ok(Math.abs(x) <= radius + 1e-6 && Math.abs(z) <= radius + 1e-6, `${crouching}/${angle}: ${head ? 'head' : 'body'} matches the engine contact boxes`);
+      assert.ok(Math.hypot(x, z) <= radius + 1e-6, 'fixed local anatomy fits its shooting box at every possible facing, including between sampled angles');
       assert.ok(Math.hypot(x, z) <= WORLD.radius + 1e-6, 'boots, helmet, pouches and backpack fit the wall collision radius');
       crown ||= y > height - .004;
       soles ||= y < .02;
@@ -31,12 +32,43 @@ test('refined helmet, uniform and gear remain inside actual shooting boxes and m
   }
 });
 
-test('operative silhouette retains honest quarter turns while helmet reflections follow pitch', () => {
+test('operative turns continuously through the former quarter-turn boundaries without changing its shape or surface detail', () => {
   const player = operative({ yaw: 0 });
   const base = operativeMeshes(player, 1000);
-  assert.deepEqual(operativeMeshes({ ...player, yaw: .7 }, 1000), base, 'continuous aim cannot rotate square anatomy out of its hitbox');
-  assert.notEqual(digest(operativeMeshes({ ...player, yaw: Math.PI / 2 }, 1000)), digest(base), 'the visible front changes with a real quarter turn');
+  for (const yaw of [.13, .7, 1.3, -2.8]) {
+    const turned = operativeMeshes({ ...player, yaw }, 1000), cos = Math.cos(yaw), sin = Math.sin(yaw);
+    assert.notEqual(digest(turned), digest(base), 'small aim changes turn the visible operative');
+    assert.equal(turned.length, base.length, 'rotation adds no geometry');
+    for (let at = 0; at < turned.length; at += 10) {
+      const x = turned[at] - player.x, z = turned[at + 2] - player.z;
+      assert.ok(Math.abs(x * cos + z * sin - (base[at] - player.x)) < 1e-6);
+      assert.ok(Math.abs(z * cos - x * sin - (base[at + 2] - player.z)) < 1e-6, 'uniform, boots, gear and head form one rigid turn without angle-dependent shrinking');
+      assert.equal(turned[at + 1], base[at + 1]);
+      assert.deepEqual(turned.subarray(at + 6, at + 10), base.subarray(at + 6, at + 10), 'the authored paint remains intact');
+    }
+  }
+  for (const crouching of [false, true]) for (let quadrant = -2; quadrant <= 2; quadrant++) {
+    const boundary = Math.PI / 4 + quadrant * Math.PI / 2;
+    const before = operativeMeshes({ ...player, crouching, yaw: boundary - .001 }, 1000);
+    const after = operativeMeshes({ ...player, crouching, yaw: boundary + .001 }, 1000);
+    assert.equal(before.length, after.length);
+    for (let at = 0; at < before.length; at += 10) {
+      assert.ok(Math.hypot(after[at] - before[at], after[at + 2] - before[at + 2]) < .00065, 'crossing an old quadrant boundary cannot snap the body or helmet');
+      assert.ok(Math.hypot(after[at + 3] - before[at + 3], after[at + 5] - before[at + 5]) < .0021, 'lighting normals turn with the same continuous geometry');
+    }
+  }
   assert.notEqual(digest(operativeMeshes({ ...player, pitch: .9 }, 1000)), digest(base), 'visor detail responds without tilting the head outside its hitbox');
+});
+
+test('all ten moving operator identities fit the original envelopes across a complete gait cycle', () => {
+  for (const crouching of [false, true]) for (let id = 0; id < 10; id++) for (let time = 0; time <= 600; time += 25) {
+    const player = operative({ id, crouching, yaw: .371, vx: 9, vz: 9 });
+    const mesh = operativeMeshes(player, time, true), height = playerHeight(player);
+    for (const [x, y, z] of vertices(mesh)) {
+      const radius = y - player.y > height - .32 + 1e-6 ? .22 : .29;
+      assert.ok(Math.hypot(x - player.x, z - player.z) <= radius + 1e-6, 'full boot travel, plates and backpack never exceed their real shooting or wall contact envelope');
+    }
+  }
 });
 
 test('team tabs and ten survivor uniform identities remain readable and deterministic', () => {
@@ -77,9 +109,66 @@ function renderHarness() {
   const canvas = { getContext: () => gl, addEventListener() {}, removeEventListener() {}, getBoundingClientRect: () => ({ width: 960, height: 540 }) };
   const renderer = new VoxelRenderer(canvas), world = [];
   const upload = renderer._dynamic;
-  renderer._dynamic = function(array, kind = 'world') { if (kind === 'world') world.push(array); return upload.call(this, array, kind); };
+  renderer._dynamic = function(array, kind = 'world') { if (kind === 'world') world.push(array.slice()); return upload.call(this, array, kind); };
   return { renderer, world };
 }
+
+test('every remote firearm and held item follows continuous aim while body geometry and buffers remain bounded', () => {
+  const { renderer, world } = renderHarness();
+  const map = { id: 'operator-turn-fixture', theme: 'custom', colliders: [], sites: [], bounds: { minX: -8, maxX: 8, minZ: -8, maxZ: 8 } };
+  const camera = { ...createCombatPlayer(0), x: -5 };
+  const poses = [
+    ...Object.keys(WEAPONS).map(weapon => ({ weapon })),
+    { slot: 'sword', meleeWeapon: 'knife' }, { slot: 'sword', meleeWeapon: 'sword' },
+    { healing: true, healTicks: HEAL.ticks / 2 },
+  ];
+  const draw = player => {
+    renderer.render({ gameId: 'voxel-royale', map, phase: 'fight', round: 1, tick: 0, players: [camera, player], events: [] }, { localId: 0, time: 1000, hideWeapon: true });
+    return world.at(-1);
+  };
+  let bytes;
+  for (const crouching of [false, true]) for (const pitch of [-1.35, 0, 1.35]) for (const pose of poses) {
+    const player = operative({ ...pose, crouching, pitch, yaw: 0 });
+    const base = draw(player), anatomyLength = operativeMeshes(player, 1000, true).length;
+    assert.ok(base.length > anatomyLength, 'the actual world upload includes both the operative and its equipped item');
+    for (const yaw of [.7, Math.PI / 4 - .001, Math.PI / 4 + .001]) {
+      const turned = draw({ ...player, yaw }), cos = Math.cos(yaw), sin = Math.sin(yaw);
+      assert.equal(turned.length, base.length, 'continuous aiming needs no extra triangles');
+      for (let at = anatomyLength; at < turned.length; at += 10) {
+        const x = turned[at] - player.x, z = turned[at + 2] - player.z;
+        assert.ok(Math.abs(x * cos + z * sin - (base[at] - player.x)) < 1e-6);
+        assert.ok(Math.abs(z * cos - x * sin - (base[at + 2] - player.z)) < 1e-6, `${pose.weapon || pose.meleeWeapon || 'potion'}: remote hands and held item follow aim instead of the old quadrant`);
+        assert.equal(turned[at + 1], base[at + 1]);
+      }
+      assert.ok(renderer.stats.dynamicVertices < 4000 && renderer.stats.drawCalls <= 7);
+    }
+    if (pose.weapon === 'carbine' && !crouching && pitch === 0) bytes = renderer.stats.geometryBufferBytes;
+  }
+  const player = operative({ weapon: 'carbine', pitch: 0 });
+  draw(player); const steadyBytes = renderer.stats.geometryBufferBytes;
+  for (let frame = 0; frame < 240; frame++) draw({ ...player, yaw: frame * Math.PI / 120 });
+  assert.equal(renderer.stats.geometryBufferBytes, steadyBytes, 'a full smooth turn reuses the existing dynamic geometry buffers');
+  assert.equal(renderer.stats.cachedMaps, 1, 'turning does not rebuild or cache fresh world art');
+  assert.ok(bytes <= steadyBytes);
+  renderer.destroy();
+});
+
+test('a committed knife or sword keeps its original swing direction while the operative continues turning', () => {
+  const { renderer, world } = renderHarness();
+  const map = { id: 'operator-committed-melee-fixture', theme: 'custom', colliders: [], sites: [], bounds: { minX: -8, maxX: 8, minZ: -8, maxZ: 8 } };
+  const camera = { ...createCombatPlayer(0), x: -5 };
+  for (const meleeWeapon of ['knife', 'sword']) {
+    const profile = meleeWeapon === 'knife' ? KNIFE : MELEE;
+    const player = operative({ slot: 'sword', meleeWeapon, meleeTicks: profile.activeTicks + profile.recoveryTicks, meleeYaw: .4, meleePitch: -.2, yaw: -.7 });
+    const draw = yaw => {
+      const actor = { ...player, yaw };
+      renderer.render({ gameId: 'voxel-royale', map, phase: 'fight', round: 1, tick: 0, players: [camera, actor], events: [] }, { localId: 0, time: 1000, hideWeapon: true });
+      return world.at(-1).slice(operativeMeshes(actor, 1000, true).length);
+    };
+    assert.deepEqual(draw(.7), draw(-.7), 'smooth body turns cannot retarget the visible committed strike');
+  }
+  renderer.destroy();
+});
 
 test('128 of every supply kind remain below the full ten-player, twenty-frag firefight budget', () => {
   const { renderer } = renderHarness();

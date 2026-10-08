@@ -57,8 +57,20 @@ function element(tag, className, text) {
   return node;
 }
 
+export function createCircuitPresentation() {
+  return createRenderSampling({ fields: ['elapsed'], objects: { car: { fields: ['x', 'y', 'speed', 'angularVelocity'],
+    angles: ['heading'], maxDistance: 32 } }, continuity: state => state.trackId });
+}
+/** The visible steering rack follows the car's achieved turn, including tyre
+ * slip and reverse. The bounded denominator stays quiet while parking. */
+export function circuitWheelAngle(car) {
+  const speed = Number.isFinite(car.speed) ? car.speed : 0;
+  const yaw = Number.isFinite(car.angularVelocity) ? car.angularVelocity : 0;
+  const forward = Math.max(55, Math.abs(speed)) * (speed < 0 ? -1 : 1);
+  return Math.max(-.69, Math.min(.69, Math.atan(yaw * 43 / forward)));
+}
 export function mount(container, { onUpdate = () => {} } = {}) {
-  const presentation = createRenderSampling({ fields: ['elapsed'], objects: { car: { fields: ['x', 'y', 'speed'], angles: ['heading'], maxDistance: 32 } }, continuity: s => s.trackId });
+  const presentation = createCircuitPresentation();
   let displayState;
   let state = createState({ difficulty: 'veteran' });
   const sprites = createDrivingSprites();
@@ -858,7 +870,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       ctx.lineTo(12, 4);
       ctx.fill();
     }
-    const steering = held('left') === held('right') ? 0 : held('left') ? -0.3 : 0.3;
+    const steering = circuitWheelAngle(car);
     for (const x of [-8, 8]) {
       for (const side of [-1, 1]) {
         ctx.save();
