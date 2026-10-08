@@ -2,6 +2,7 @@ import { MAPS, ADS, HEAL } from './voxel-engine.js';
 import { WEAPONS, weaponAimFovRatio } from './voxel-weapons.js';
 import { grenadeCapacity } from './voxel-ordnance.js';
 import { meleeProfile, meleeWeaponId } from './voxel-melee.js';
+import { frameAlpha } from './display-timing.js';
 
 // All solid world surfaces come directly from the engine's minimum-corner
 // colliders. Decoration is either painted on those surfaces or outside bounds.
@@ -2200,14 +2201,20 @@ export class VoxelRenderer {
     const age = this.localShot?.weapon === player.weapon ? Math.max(0, time - this.localShot.born) : 10000;
     const effects = shotEffect(player.weapon), kickDuration = finite(effects.kickTicks, 28) * 1000 / 120;
     const kick = age < kickDuration ? finite(effects.kickStrength, 1) * Math.exp(-age / Math.max(25, kickDuration * .28)) * (1 - age / kickDuration) : 0;
-    if (this.lastAim) {
+    if (this.lastAim && Number.isFinite(this.lastAim.time) && time > this.lastAim.time) {
       let yawDelta = yaw - this.lastAim.yaw;
       while (yawDelta > Math.PI) yawDelta -= TAU;
       while (yawDelta < -Math.PI) yawDelta += TAU;
-      this.swayX += (clamp(-yawDelta * .19, -.027, .027) - this.swayX) * .3;
-      this.swayY += (clamp((pitch - this.lastAim.pitch) * .17, -.021, .021) - this.swayY) * .3;
+      // Normalize the look impulse and damping to elapsed time. A 240 Hz
+      // display should retain the same weight as a 60 Hz display, rather than
+      // producing quarter-sized impulses with four times as much damping.
+      const elapsed = Math.min(100, time - this.lastAim.time), referenceFrame = 1000 / 60;
+      const gain = frameAlpha(.3, elapsed);
+      const lookRate = time - this.lastAim.time <= 100 ? referenceFrame / elapsed : 0;
+      this.swayX += (clamp(-yawDelta * lookRate * .19, -.027, .027) - this.swayX) * gain;
+      this.swayY += (clamp((pitch - this.lastAim.pitch) * lookRate * .17, -.021, .021) - this.swayY) * gain;
     }
-    this.lastAim = { yaw, pitch };
+    this.lastAim = { yaw, pitch, time };
     const coverLimit = (pose, reach, padding) => {
       if (!map?.colliders?.length) return reach;
       const offset = rotate([pose.x, pose.y, pose.z], yaw, pitch), eye = [finite(player.x), finite(player.y) + (player.crouching ? .98 : 1.62), finite(player.z)];

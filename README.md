@@ -233,11 +233,15 @@ Solo games have pause and new-game controls beside the score display. Escape pau
 
 Leaving a room resets that room's match and readiness. Rooms and matches live in memory and disappear when the server stops. An empty room is eventually removed; create another room if an old invitation has expired.
 
+The action and driving games automatically use your display's refresh rate, including 120, 144 and 240 Hz. Movement is smoothed between simulation steps, and camera effects keep the same speed across refresh rates. Choose your preferred rate in your PC's display settings before playing; browsers use the active display's rate.
+
 ## Development
 
 ```sh
 npm test
 ```
+
+Run `python test/high-refresh-browser-smoke.py http://127.0.0.1:3000` for native gameplay, rendering, collision and pause/resume checks of the high-refresh presentation paths. Automated timing tests cover 60, 120, 144 and 240 Hz independently of the browser machine's display.
 
 With Python Playwright and Chromium installed, run `python test/voxel-polish-browser-smoke.py http://127.0.0.1:3000` for native two-client checks of confirmed blood effects, 200-HP combat, 60-HP healing, the Royale starter knife and compact desktop/mobile views.
 

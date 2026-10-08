@@ -1,3 +1,5 @@
+import { createRenderSampling } from './render-sampling.js';
+import { tickFraction } from '../display-timing.js';
 import {
   FIXED_DT, DISTRICTS, DIFFICULTIES,
   createState, step, togglePause as pauseState, getDistrict, getDifficulty, getSurvivalPace, usesAutomaticPace, recordScope,
@@ -30,6 +32,8 @@ function formatAlive(milliseconds) {
 }
 
 export function mount(container, { onUpdate = () => {} } = {}) {
+  const presentation = createRenderSampling({ fields: ['x', 'distance', 'lean', 'elapsed'], limits: { x: 1.5, distance: 5 }, collections: { traffic: { fields: ['x', 'z', 'width'], limits: { x: 2, z: 5 } } }, continuity: s => s.stageIndex });
+  let displayState;
   let state = createState({ mode: 'survival', difficulty: 'veteran' });
   const sprites = createParisPerspective();
   const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
@@ -216,43 +220,44 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   function hud() {
     // Keep instruments above the horizon so the rider and close gaps stay clear.
     rect(14, 14, 140, 73, '#214b4be8'); rect(17, 17, 134, 2, '#83bbaa');
-    const survival = state.mode === 'survival';
+    const survival = displayState.mode === 'survival';
     text(survival ? 'TIME ALIVE' : 'VÉLO ÉLECTRIQUE', 25, 32, 9, '#b5d4c3');
     if (survival) {
-      const time = formatAlive(Math.floor(state.elapsed * 1000));
+      const time = formatAlive(Math.floor(displayState.elapsed * 1000));
       text(time, 25, 62, Math.min(23, 120 / (time.length * 0.61)), '#faf1cf');
-      text(`${Math.round(state.speed * 3.6)} KM/H${state.assistActive ? ' · ASSIST' : ''}`, 25, 77, 9, state.assistActive ? '#e9d48d' : '#b5d4c3');
+      text(`${Math.round(displayState.speed * 3.6)} KM/H${displayState.assistActive ? ' · ASSIST' : ''}`, 25, 77, 9, displayState.assistActive ? '#e9d48d' : '#b5d4c3');
     } else {
-      text(String(Math.round(state.speed * 3.6)).padStart(2, '0'), 25, 63, 29, '#faf1cf');
+      text(String(Math.round(displayState.speed * 3.6)).padStart(2, '0'), 25, 63, 29, '#faf1cf');
       text('KM/H', 73, 61, 10, '#b5d4c3');
-      text(state.assistActive ? 'ASSIST ON' : 'PACE YOURSELF', 25, 77, 9, state.assistActive ? '#e9d48d' : '#b5d4c3');
+      text(displayState.assistActive ? 'ASSIST ON' : 'PACE YOURSELF', 25, 77, 9, displayState.assistActive ? '#e9d48d' : '#b5d4c3');
     }
     rect(W - 154, 14, 140, 73, '#214b4be8'); rect(W - 151, 17, 134, 2, '#83bbaa');
     text('BATTERY', W - 143, 32, 9, '#b5d4c3');
-    text(`${Math.round(state.battery * 100)}%`, W - 25, 32, 10, '#faf1cf', 'right');
+    text(`${Math.round(displayState.battery * 100)}%`, W - 25, 32, 10, '#faf1cf', 'right');
     rect(W - 143, 41, 118, 11, '#163c3d');
-    rect(W - 141, 43, 114 * clamp(state.battery, 0, 1), 7, state.assistActive ? '#f3cf78' : '#9cc99f');
+    rect(W - 141, 43, 114 * clamp(displayState.battery, 0, 1), 7, displayState.assistActive ? '#f3cf78' : '#9cc99f');
     text('RIDER', W - 143, 74, 9, '#b5d4c3');
     for (let i = 0; i < 3; i++) {
-      rect(W - 82 + i * 18, 63, 12, 10, i < state.health ? '#efa776' : '#557575');
-      if (i < state.health) rect(W - 80 + i * 18, 61, 8, 3, '#efa776');
+      rect(W - 82 + i * 18, 63, 12, 10, i < displayState.health ? '#efa776' : '#557575');
+      if (i < displayState.health) rect(W - 80 + i * 18, 61, 8, 3, '#efa776');
     }
     rect(W / 2 - 78, 14, 156, 57, '#214b4be8');
-    text(`${(state.distance / 1000).toFixed(2)} KM`, W / 2, 40, 18, '#faf1cf', 'center');
-    text(survival ? `PACE ${Math.round(getSurvivalPace(state) * 3.6)} KM/H` : `${Math.max(1, state.combo)}× CLEAN COMBO`, W / 2, 58, 9, '#b5d4c3', 'center');
+    text(`${(displayState.distance / 1000).toFixed(2)} KM`, W / 2, 40, 18, '#faf1cf', 'center');
+    text(survival ? `PACE ${Math.round(getSurvivalPace(displayState) * 3.6)} KM/H` : `${Math.max(1, displayState.combo)}× CLEAN COMBO`, W / 2, 58, 9, '#b5d4c3', 'center');
   }
   function drawMessage() {
-    if (message && state.elapsed < message.until) {
-      ctx.globalAlpha = Math.min(1, (message.until - state.elapsed) * 2);
+    if (message && displayState.elapsed < message.until) {
+      ctx.globalAlpha = Math.min(1, (message.until - displayState.elapsed) * 2);
       rect(W / 2 - 118, 94, 236, 29, '#214b4be8');
       text(message.text, W / 2, 114, 11, '#fff0ba', 'center'); ctx.globalAlpha = 1;
     }
   }
-  function draw() {
+  function draw(fraction = 1) {
+    displayState = presentation.sample(state, fraction);
     if (destroyed || !ctx) return;
     ctx.setTransform(backingRatio, 0, 0, backingRatio, 0, 0);
     ctx.imageSmoothingEnabled = false;
-    renderer.draw(state, { bellPulseUntil });
+    renderer.draw(displayState, { bellPulseUntil });
     if (!mobile?.matches) hud();
     drawMessage();
   }
@@ -284,11 +289,11 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     let steps = 0;
     while (accumulator >= FIXED_DT && steps < 9 && state.phase === 'playing') {
       held.bell = bellPress.consume(bellHeld);
-      step(state, held, FIXED_DT); events(); accumulator -= FIXED_DT; steps++;
+      presentation.capture(state); step(state, held, FIXED_DT); events(); accumulator -= FIXED_DT; steps++;
     }
     if (steps === 9) accumulator = Math.min(accumulator, FIXED_DT);
     if (state.phase !== 'playing') releaseControls();
-    publish(); draw(); syncAnimation();
+    publish(); draw(tickFraction(accumulator, FIXED_DT)); syncAnimation();
   }
   function syncAnimation() {
     if (destroyed || state.phase !== 'playing') {
@@ -313,13 +318,13 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     if (destroyed) return;
     releaseControls();
     if (!pauseState(state)) return;
-    previousFrame = null; accumulator = 0; publish(true); draw(); syncAnimation();
+    previousFrame = null; accumulator = 0; presentation.reset(); publish(true); draw(); syncAnimation();
   }
   function restart(options = {}) {
     if (destroyed) return;
     releaseControls();
     state = createState({ seed: state.seed, mode: options.mode || state.mode, difficulty: options.difficulty || state.difficulty });
-    previousFrame = null; accumulator = 0; lastPublished = -Infinity; lastPhase = null;
+    previousFrame = null; accumulator = 0; presentation.reset(); lastPublished = -Infinity; lastPhase = null;
     lastEventId = -1; message = null; bellPulseUntil = 0;
     publish(true); draw(); syncAnimation();
   }
@@ -384,7 +389,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   updateKeyboardHints();
   publish(true); fitViewport(); draw(); syncAnimation();
   return {
-    getState: () => JSON.parse(JSON.stringify(state)), restart, togglePause,
+    getDisplayTiming: () => presentation.getStats(), getState: () => JSON.parse(JSON.stringify(state)), restart, togglePause,
     destroy() {
       if (destroyed) return;
       unsubscribeKeyboardLayout();

@@ -1,3 +1,5 @@
+import { createRenderSampling } from './render-sampling.js';
+import { tickFraction } from '../display-timing.js';
 import {
   createState,
   step,
@@ -79,6 +81,8 @@ function node(tag, className, text) {
 }
 
 export function mount(container, { onUpdate = () => {} } = {}) {
+  const presentation = createRenderSampling({ fields: ['x', 'distance', 'curve', 'elapsed'], limits: { x: 1.5, distance: 10 }, collections: { traffic: { fields: ['x', 'z'], limits: { x: 1.5, z: 10 } }, pickups: { fields: ['x', 'z'], limits: { z: 10 } } }, continuity: s => s.districtIndex });
+  let displayState;
   let state = createState({ difficulty: 'veteran' });
   const sprites = createDrivingSprites();
   const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
@@ -360,7 +364,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     const p = highwayDepthScale(z, passingBody);
     return {
       p,
-      x: W / 2 + state.curve * (1 - p) ** 2 * 142,
+      x: W / 2 + displayState.curve * (1 - p) ** 2 * 142,
       y: HORIZON + (CAR_Y - HORIZON) * p,
       half: ROAD_HALF * p,
     };
@@ -394,11 +398,11 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     ctx.fill();
   }
   function sky() {
-    const district = getDistrict(state);
+    const district = getDistrict(displayState);
     const skyline = skylines.get(district.id);
     if (skyline?.complete && skyline.naturalWidth) {
       rect(0, 0, W, HORIZON, district.sky);
-      ctx.drawImage(skyline, -8 - state.x * 4, 0, W + 16, HORIZON);
+      ctx.drawImage(skyline, -8 - displayState.x * 4, 0, W + 16, HORIZON);
       return;
     }
     rect(0, 0, W, HORIZON, district.sky);
@@ -410,7 +414,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       const y = mod(i * 71 + 23, 130) + 8;
       rect(x, y, i % 9 ? 2 : 3, 2, i % 3 ? '#659895' : '#cfddba');
     }
-    const mx = 480 - state.x * 5;
+    const mx = 480 - displayState.x * 5;
     rect(mx + 12, 35, 28, 6, '#f2dcab');
     rect(mx + 6, 41, 40, 6, '#f2dcab');
     rect(mx, 47, 52, 28, '#f2dcab');
@@ -496,7 +500,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       for (let i = -1; i < 19; i += 1) {
         const bw = 32 + mod(i * 13 + 70, 25);
         const height = 25 + mod(i * 31 + 130 + layer * 19, layer ? 83 : 57);
-        const x = i * 43 - state.x * (layer ? 10 : 4);
+        const x = i * 43 - displayState.x * (layer ? 10 : 4);
         const y = HORIZON - height;
         rect(x, y, bw, height, layer ? '#15343a' : '#24494b');
         if (i % 4 === 0) rect(x + bw * 0.5, y - 10, 2, 10, '#386465');
@@ -515,7 +519,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   const distantRoadDepths = [];
   function roadSlice(z, far, near) {
     if (Math.round(far.y) === Math.round(near.y)) return;
-    const world = z + state.distance;
+    const world = z + displayState.distance;
     roadStrip(far, near, -1.1, 1.1, mod(Math.floor(world / 5), 2) ? '#365750' : '#3b5d54');
     roadStrip(far, near, -1, 1, mod(Math.floor(world / 12), 2) ? '#33494c' : '#354b4e');
     const curb = mod(world, 8) < 4 ? '#d1c394' : '#487367';
@@ -529,10 +533,10 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     }
   }
   function road() {
-    rect(0, HORIZON + 3, W, H - HORIZON, getDistrict(state).ground);
+    rect(0, HORIZON + 3, W, H - HORIZON, getDistrict(displayState).ground);
     polygon(
       [
-        [W / 2 + state.curve * 142, HORIZON + (usesEndlessPace(state) ? 0 : 3)],
+        [W / 2 + displayState.curve * 142, HORIZON + (usesEndlessPace(displayState) ? 0 : 3)],
         [W / 2 + ROAD_HALF, CAR_Y],
         [W / 2 - ROAD_HALF, CAR_Y],
       ],
@@ -551,8 +555,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     );
     roadStrip(nearest, { x: W / 2, y: H, half: ROAD_HALF * 1.16 }, -1.075, -1, '#597068');
     roadStrip(nearest, { x: W / 2, y: H, half: ROAD_HALF * 1.16 }, 1, 1.075, '#597068');
-    if (usesEndlessPace(state)) {
-      getDistantRoadDepths(state.lookAheadDistance, distantRoadDepths);
+    if (usesEndlessPace(displayState)) {
+      getDistantRoadDepths(displayState.lookAheadDistance, distantRoadDepths);
       for (let i = 0; i < distantRoadDepths.length - 1; i++) {
         const z = distantRoadDepths[i];
         roadSlice(z, projection(z), projection(distantRoadDepths[i + 1]));
@@ -564,13 +568,13 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       roadSlice(z, projection(z), projection(Math.max(0, z - 2)));
     // A few close lane lines continue beneath the bumper.
     const close = { x: W / 2, y: H, half: ROAD_HALF * 1.16 };
-    if (mod(state.distance, 12) < 5.5) {
+    if (mod(displayState.distance, 12) < 5.5) {
       roadStrip(nearest, close, -0.337, -0.323, '#bfcbb8');
       roadStrip(nearest, close, 0.323, 0.337, '#bfcbb8');
     }
-    const wet = getDistrict(state).weather === 'rain';
+    const wet = getDistrict(displayState).weather === 'rain';
     for (let i = 0; i < 22; i++) {
-      const z = mod(i * 13 - state.distance, 230) + 2,
+      const z = mod(i * 13 - displayState.distance, 230) + 2,
         p = projection(z);
       const lane = mod(i * 17, 9) / 5 - 0.8;
       rect(
@@ -581,14 +585,14 @@ export function mount(container, { onUpdate = () => {} } = {}) {
         wet ? '#aac6ca25' : '#9fbbad13',
       );
     }
-    const playerX = W / 2 + state.x * ROAD_HALF,
+    const playerX = W / 2 + displayState.x * ROAD_HALF,
       beamEnd = projection(27);
     polygon(
       [
         [playerX - 36, CAR_Y - 86],
         [playerX - 15, CAR_Y - 86],
-        [beamEnd.x + state.x * beamEnd.half + 48, beamEnd.y],
-        [beamEnd.x + state.x * beamEnd.half - 63, beamEnd.y],
+        [beamEnd.x + displayState.x * beamEnd.half + 48, beamEnd.y],
+        [beamEnd.x + displayState.x * beamEnd.half - 63, beamEnd.y],
       ],
       wet ? '#c8e1c218' : '#c8e1c210',
     );
@@ -596,8 +600,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       [
         [playerX + 15, CAR_Y - 86],
         [playerX + 36, CAR_Y - 86],
-        [beamEnd.x + state.x * beamEnd.half + 63, beamEnd.y],
-        [beamEnd.x + state.x * beamEnd.half - 48, beamEnd.y],
+        [beamEnd.x + displayState.x * beamEnd.half + 63, beamEnd.y],
+        [beamEnd.x + displayState.x * beamEnd.half - 48, beamEnd.y],
       ],
       wet ? '#c8e1c218' : '#c8e1c210',
     );
@@ -625,12 +629,12 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     const height = width * 1.17;
     const top = y - height * (73 / 76);
     rect(x - width * 0.48, y - height * 0.09, width * 0.96, height * 0.13, '#10263066');
-    if (getDistrict(state).weather === 'rain') {
+    if (getDistrict(displayState).weather === 'rain') {
       rect(x - width * 0.32, y + width * 0.05, width * 0.16, width * 0.05, '#d89c7744');
       rect(x + width * 0.16, y + width * 0.05, width * 0.16, width * 0.05, '#d89c7744');
     }
     ctx.drawImage(sprites.rearCar(color, player), x - width / 2, top, width, height);
-    if (player && (usesEndlessPace(state) ? state.brakeActive : input().brake)) {
+    if (player && (usesEndlessPace(displayState) ? displayState.brakeActive : input().brake)) {
       rect(x - width * (23 / 64), top + height * (53 / 76), width * (11 / 64), height * (3 / 76), '#ffd4a7');
       rect(x + width * (12 / 64), top + height * (53 / 76), width * (11 / 64), height * (3 / 76), '#ffd4a7');
     }
@@ -644,20 +648,20 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     ctx.textBaseline = 'alphabetic';
     ctx.font = 'bold 28px ui-monospace, monospace';
     ctx.fillStyle = COLORS.cream;
-    ctx.fillText(String(Math.round(state.speed)).padStart(3, '0'), 30, 54);
+    ctx.fillText(String(Math.round(displayState.speed)).padStart(3, '0'), 30, 54);
     ctx.font = 'bold 10px ui-monospace, monospace';
     ctx.fillStyle = '#8fc2ad';
     ctx.fillText('KM/H', 102, 52);
-    ctx.fillText(usesEndlessPace(state) ? `PACE ${Math.round(state.endlessPace)} KM/H` : 'NIGHT SHIFT', 30, 68);
+    ctx.fillText(usesEndlessPace(displayState) ? `PACE ${Math.round(displayState.endlessPace)} KM/H` : 'NIGHT SHIFT', 30, 68);
     ctx.fillText('DISTANCE', W - 149, 36);
     ctx.font = 'bold 21px ui-monospace, monospace';
     ctx.fillStyle = COLORS.cream;
-    ctx.fillText(`${(state.distance / 1000).toFixed(2)} KM`, W - 149, 62);
-    if (state.delivery) {
+    ctx.fillText(`${(displayState.distance / 1000).toFixed(2)} KM`, W - 149, 62);
+    if (displayState.delivery) {
       ctx.textAlign = 'center';
       ctx.font = 'bold 17px ui-monospace, monospace';
-      ctx.fillStyle = state.delivery.remaining <= 4 ? '#ffd09a' : '#d4e9bc';
-      ctx.fillText(`${state.delivery.remaining.toFixed(1)}s`, W / 2, 54);
+      ctx.fillStyle = displayState.delivery.remaining <= 4 ? '#ffd09a' : '#d4e9bc';
+      ctx.fillText(`${displayState.delivery.remaining.toFixed(1)}s`, W / 2, 54);
       ctx.font = 'bold 9px ui-monospace, monospace';
       ctx.fillText('DELIVERY CLOCK', W / 2, 69);
       ctx.textAlign = 'left';
@@ -666,30 +670,30 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     ctx.fillStyle = '#b2c7ad';
     ctx.fillText('BODY', 22, H - 38);
     for (let i = 0; i < 3; i += 1) {
-      rect(22 + i * 25, H - 27, 19, 9, i < state.health ? COLORS.orange : '#506465');
-      if (i < state.health) rect(24 + i * 25, H - 25, 15, 2, '#ffd9a0');
+      rect(22 + i * 25, H - 27, 19, 9, i < displayState.health ? COLORS.orange : '#506465');
+      if (i < displayState.health) rect(24 + i * 25, H - 25, 15, 2, '#ffd9a0');
     }
     const bx = W - 207;
-    ctx.fillStyle = state.boosting ? '#b6f5db' : '#9ec0b0';
-    ctx.fillText(state.boosting ? 'BOOST ACTIVE' : 'BOOST · SPACE', bx, H - 38);
+    ctx.fillStyle = displayState.boosting ? '#b6f5db' : '#9ec0b0';
+    ctx.fillText(displayState.boosting ? 'BOOST ACTIVE' : 'BOOST · SPACE', bx, H - 38);
     rect(bx, H - 27, 185, 9, '#294b4a');
-    rect(bx + 1, H - 26, 183 * clamp(state.boost, 0, 1), 7, state.boosting ? '#c5f6c9' : '#78bba2');
-    if (usesEndlessPace(state)) {
+    rect(bx + 1, H - 26, 183 * clamp(displayState.boost, 0, 1), 7, displayState.boosting ? '#c5f6c9' : '#78bba2');
+    if (usesEndlessPace(displayState)) {
       ctx.textAlign = 'center';
-      ctx.fillStyle = state.shoulder ? '#ffd09a' : '#b2c7ad';
-      ctx.fillText(state.shoulder ? 'RETURN TO ROAD' : state.brakeLocked ? 'BRAKE · RELEASE' : 'BRAKE BURST', W / 2, H - 38);
+      ctx.fillStyle = displayState.shoulder ? '#ffd09a' : '#b2c7ad';
+      ctx.fillText(displayState.shoulder ? 'RETURN TO ROAD' : displayState.brakeLocked ? 'BRAKE · RELEASE' : 'BRAKE BURST', W / 2, H - 38);
       rect(W / 2 - 45, H - 27, 90, 9, '#294b4a');
-      rect(W / 2 - 44, H - 26, 88 * clamp(state.brakeCharge, 0, 1), 7, state.brakeActive ? '#ffd09a' : '#78bba2');
+      rect(W / 2 - 44, H - 26, 88 * clamp(displayState.brakeCharge, 0, 1), 7, displayState.brakeActive ? '#ffd09a' : '#78bba2');
       ctx.textAlign = 'left';
     }
-    if (state.combo > 1) {
+    if (displayState.combo > 1) {
       ctx.textAlign = 'center';
       ctx.fillStyle = COLORS.cream;
       ctx.font = 'bold 12px ui-monospace, monospace';
-      ctx.fillText(`${state.combo}× CLEAN STREAK`, W / 2, 29);
+      ctx.fillText(`${displayState.combo}× CLEAN STREAK`, W / 2, 29);
     }
-    if (message && state.elapsed < message.until) {
-      const fade = clamp((message.until - state.elapsed) * 2, 0, 1);
+    if (message && displayState.elapsed < message.until) {
+      const fade = clamp((message.until - displayState.elapsed) * 2, 0, 1);
       ctx.globalAlpha = fade;
       ctx.textAlign = 'center';
       ctx.font = 'bold 19px ui-monospace, monospace';
@@ -698,21 +702,22 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       ctx.globalAlpha = 1;
     }
   }
-  function draw() {
+  function draw(fraction = 1) {
+    displayState = presentation.sample(state, fraction);
     if (destroyed || !ctx) return;
     ctx.imageSmoothingEnabled = false;
     sky();
     road();
     const scenery = [];
-    const offset = mod(state.distance, 25);
+    const offset = mod(displayState.distance, 25);
     for (let z = 300 - offset; z > 1; z -= 25) {
       scenery.push({
         z,
         draw: () => {
-          if (Math.floor((z + state.distance) / 25) % 2 === 0) {
+          if (Math.floor((z + displayState.distance) / 25) % 2 === 0) {
             for (const side of [-1, 1]) {
               const p = projection(z),
-                art = sprites.roadside(getDistrict(state).id, side, Math.floor((z + state.distance) / 50));
+                art = sprites.roadside(getDistrict(displayState).id, side, Math.floor((z + displayState.distance) / 50));
               const width = 96 * p.p,
                 height = 160 * p.p,
                 x = p.x + side * p.half * 1.6;
@@ -725,8 +730,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
         },
       });
     }
-    for (const traffic of state.traffic) {
-      if (!isHighwayTrafficVisible(traffic, state)) continue;
+    for (const traffic of displayState.traffic) {
+      if (!isHighwayTrafficVisible(traffic, displayState)) continue;
       scenery.push({
         z: traffic.z - traffic.length / 2,
         draw: () => {
@@ -765,8 +770,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
         },
       });
     }
-    for (const pickup of state.pickups) {
-      if (pickup.z < 0 || pickup.z > (usesEndlessPace(state) ? state.lookAheadDistance : 220)) continue;
+    for (const pickup of displayState.pickups) {
+      if (pickup.z < 0 || pickup.z > (usesEndlessPace(displayState) ? displayState.lookAheadDistance : 220)) continue;
       scenery.push({
         z: pickup.z,
         draw: () => {
@@ -781,14 +786,14 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       });
     }
     scenery.sort((a, b) => b.z - a.z).forEach((item) => item.draw());
-    const playerX = W / 2 + state.x * ROAD_HALF;
+    const playerX = W / 2 + displayState.x * ROAD_HALF;
     for (const particle of reducedMotion?.matches ? [] : particles) {
       ctx.globalAlpha = clamp(particle.life / particle.maxLife, 0, 1);
       rect(particle.x, particle.y, particle.size, particle.size, particle.color);
     }
     ctx.globalAlpha = 1;
-    if (state.boosting && !reducedMotion?.matches) {
-      const pulse = Math.floor(state.elapsed * 24) % 2;
+    if (displayState.boosting && !reducedMotion?.matches) {
+      const pulse = Math.floor(displayState.elapsed * 24) % 2;
       polygon(
         [
           [playerX - 25, CAR_Y - 2],
@@ -807,19 +812,19 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       );
     }
     // Flash only the body during damage immunity; its position stays readable.
-    const immune = !reducedMotion?.matches && state.crashCooldown > 0 && Math.floor(state.elapsed * 12) % 2;
+    const immune = !reducedMotion?.matches && displayState.crashCooldown > 0 && Math.floor(displayState.elapsed * 12) % 2;
     car(playerX, CAR_Y, CAR_WIDTH * ROAD_HALF, immune ? '#f7d5a0' : COLORS.orange, true);
-    if (state.crashCooldown > 1.1 && !reducedMotion?.matches) {
-      ctx.globalAlpha = Math.min(0.18, (state.crashCooldown - 1.1) * 0.18);
+    if (displayState.crashCooldown > 1.1 && !reducedMotion?.matches) {
+      ctx.globalAlpha = Math.min(0.18, (displayState.crashCooldown - 1.1) * 0.18);
       rect(0, 0, W, H, '#ed815f');
       ctx.globalAlpha = 1;
     }
     // Fast streaks stay on the shoulder, where they cannot obscure traffic.
-    if (state.speed > 160 && !reducedMotion?.matches) {
-      ctx.globalAlpha = (state.speed - 160) / 300;
+    if (displayState.speed > 160 && !reducedMotion?.matches) {
+      ctx.globalAlpha = (displayState.speed - 160) / 300;
       for (let i = 0; i < 10; i += 1) {
         const side = i % 2 ? 1 : -1;
-        const y = HORIZON + mod(i * 79 + state.distance * 5, H - HORIZON);
+        const y = HORIZON + mod(i * 79 + displayState.distance * 5, H - HORIZON);
         const spread = (y - HORIZON) / (H - HORIZON);
         polygon(
           [
@@ -832,10 +837,10 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       }
       ctx.globalAlpha = 1;
     }
-    if (getDistrict(state).weather === 'rain' && !reducedMotion?.matches) {
+    if (getDistrict(displayState).weather === 'rain' && !reducedMotion?.matches) {
       ctx.globalAlpha = 0.45;
       for (let i = 0; i < 34; i += 1)
-        rect(mod(i * 97 + state.elapsed * 45, W), mod(i * 59 + state.elapsed * 110, H), 2, 10, '#bcceda');
+        rect(mod(i * 97 + displayState.elapsed * 45, W), mod(i * 59 + displayState.elapsed * 110, H), 2, 10, '#bcceda');
       ctx.globalAlpha = 1;
     }
     hud();
@@ -912,15 +917,15 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       accumulator += elapsed;
       let steps = 0;
       while (accumulator >= 1 / 120 && steps < 10 && state.phase === 'playing') {
-        step(state, input(), 1 / 120);
+        presentation.capture(state); step(state, input(), 1 / 120);
         effects(1 / 120);
         accumulator -= 1 / 120;
         steps += 1;
       }
       if (state.phase !== 'playing') releaseControls();
       publish();
-    } else accumulator = 0;
-    draw();
+    } else { accumulator = 0; presentation.reset(); }
+    draw(tickFraction(accumulator, 1 / 120));
     syncAnimation();
   }
   function syncAnimation() {
@@ -944,7 +949,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     releaseControls();
     if (!pauseState(state)) return;
     previousFrame = null;
-    accumulator = 0;
+    accumulator = 0; presentation.reset();
     publish(true);
     draw();
     syncAnimation();
@@ -954,7 +959,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     releaseControls();
     state = createState({ mode: state.mode, difficulty: state.difficulty });
     previousFrame = null;
-    accumulator = 0;
+    accumulator = 0; presentation.reset();
     lastEventId = -1;
     lastPublished = -Infinity;
     particles = [];
@@ -1051,7 +1056,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   syncAnimation();
 
   return {
-    getState: () => JSON.parse(JSON.stringify(state)),
+    getDisplayTiming: () => presentation.getStats(), getState: () => JSON.parse(JSON.stringify(state)),
     restart,
     togglePause,
     destroy() {

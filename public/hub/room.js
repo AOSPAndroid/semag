@@ -14,6 +14,8 @@ import { VectorRenderer } from '../vector-renderer.js';
 import { ShinobiRenderer } from '../shinobi-renderer.js';
 import { BrawlRenderer, drawFighterPortrait, drawStagePreview } from '../brawl-renderer.js';
 import { GameAudio } from '../audio.js';
+import { frameDecay, tickFraction } from '../display-timing.js';
+import { capturePlanarPose, presentPlanarFighter } from '../planar-presentation.js';
 import { GAMES, roomUrl, getName, saveName, hostInfo, copyText } from './shared.js';
 
 const elements = new Map();
@@ -31,6 +33,8 @@ let authoritative = initialState();
 let predicted = clone(authoritative), players = [null, null], localId = null;
 let socket, connected = false, permanentlyClosed = false, intentionalClose = false, attempts = 0, reconnectTimer;
 let sequence = 0, pending = [], snapshots = [], keys = emptyInput(), correction = { x: 0, y: 0 };
+let previousPose = null, lastDisplayTime = null;
+let presentation = null, renderCount = 0;
 let playerName = getName(), invite = location.href, ping = null, lastSnapshotAt = 0;
 let previousPhase = 'lobby', flashUntil = 0, countdownLast = null, toastTimer, focusLost = false;
 const audio = new GameAudio();
@@ -101,10 +105,12 @@ function receiveState(message) {
     // Clone only the state that prediction will advance; received snapshots
     // remain immutable and can also serve the interpolation history directly.
     predicted = state.phase === 'fight' ? clone(state) : state;
+    previousPose = null;
     if (localId != null && state.phase === 'fight') {
       const remote = { ...emptyInput(), ...state.fighters[1 - localId].previousInput };
       for (const frame of pending) {
         const inputs = [emptyInput(), emptyInput()]; inputs[localId] = frame.buttons; inputs[1 - localId] = remote;
+        previousPose = capturePlanarPose(predicted);
         engine.step(predicted, inputs);
       }
       if (old && phase === 'fight') {
@@ -113,7 +119,7 @@ function receiveState(message) {
         correction.y = Math.max(-45, Math.min(45, old.y + correction.y - own.y));
       }
     } else correction = { x: 0, y: 0 };
-    snapshots.push({ time: lastSnapshotAt, state }); if (snapshots.length > 12) snapshots.shift();
+    snapshots.push({ time: lastSnapshotAt, state, pose: capturePlanarPose(state) }); if (snapshots.length > 12) snapshots.shift();
     audio.playEvents(shinobiMode ? (state.events || []).map(event => event.type === 'parry' && event.target == null ? { ...event, type: 'parryStart' } : event.type === 'attack' ? { ...event, type: 'swing', move: event.action } : event.type === 'throw' && event.release ? { ...event, type: 'swing', move: 'light' } : event.type === 'deflect' ? { ...event, type: 'parry' } : event.type === 'cover' ? { ...event, type: 'block' } : event.type === 'hit' ? { ...event, move: event.attack } : event) : state.events || []);
   } else if (boardMode && state.lastMove && state.lastMove.tick !== receiveState.lastMoveTick) {
     receiveState.lastMoveTick = state.lastMove.tick;
@@ -152,6 +158,7 @@ function connect() {
   });
   ws.addEventListener('close', () => {
     connected = false; localId = null; ping = null; pending = []; snapshots = []; releaseKeys();
+    previousPose = null;
     authoritative = initialState(); predicted = clone(authoritative);
     players = [null, null]; board?.resetSelection(); cardTable?.resetSelection(); renderer?.resetEffects(); updateConnection();
     if (!permanentlyClosed && !intentionalClose) {
@@ -487,21 +494,25 @@ function inputTick() {
   if (predicted.phase === 'fight') {
     const inputs = [emptyInput(), emptyInput()]; inputs[localId] = frame.buttons;
     inputs[1 - localId] = { ...emptyInput(), ...authoritative.fighters[1 - localId].previousInput };
+    previousPose = capturePlanarPose(predicted);
     engine.step(predicted, inputs);
   }
 }
-function displayState(now) {
+function displayState(now, fraction) {
+  const deltaMs = lastDisplayTime == null ? 1000 / 60 : now - lastDisplayTime;
+  lastDisplayTime = now;
   if (authoritative.phase !== 'fight' || localId == null) return authoritative;
   const state = { ...predicted, fighters: predicted.fighters.map(f => ({ ...f })), events: authoritative.events || [] };
+  state.fighters[localId] = presentPlanarFighter(predicted, previousPose, localId, fraction);
   state.fighters[localId].x += correction.x; state.fighters[localId].y += correction.y;
-  correction.x *= .72; correction.y *= .72;
+  const decay = frameDecay(.72, deltaMs);
+  correction.x *= decay; correction.y *= decay;
   const target = now - 35;
   let before = snapshots[0], after = snapshots.at(-1);
   for (let i = 1; i < snapshots.length; i++) if (snapshots[i].time >= target) { before = snapshots[i - 1]; after = snapshots[i]; break; }
   if (before && after && before.state.phase === 'fight' && after.state.phase === 'fight') {
-    const a = before.state.fighters[1 - localId], b = after.state.fighters[1 - localId];
     const alpha = Math.max(0, Math.min(1, (target - before.time) / Math.max(1, after.time - before.time)));
-    state.fighters[1 - localId] = { ...b, x: a.x + (b.x - a.x) * alpha, y: a.y + (b.y - a.y) * alpha };
+    state.fighters[1 - localId] = presentPlanarFighter(after.state, before.pose, 1 - localId, alpha, { adjacentTick: false });
   }
   return state;
 }
@@ -663,16 +674,29 @@ function animate(now) {
   if (document.hidden) { previousTime = now; accumulator = 0; return; }
   accumulator += Math.min(65, now - previousTime); previousTime = now;
   let ticks = 0; while (accumulator >= 1000 / 120 && ticks++ < 8) { inputTick(); accumulator -= 1000 / 120; }
-  renderer?.render(displayState(now), { localId, time: now, aimTarget: aimMode ? pointerTarget : null });
+  if (renderer) {
+    const fraction = tickFraction(accumulator / 1000), state = displayState(now, fraction);
+    renderer.render(state, { localId, time: now, aimTarget: aimMode ? pointerTarget : null });
+    presentation = { state, pose: previousPose, time: now, fraction, renderCount: ++renderCount };
+  }
   if (!realtimeMode || now - lastHUD > 50) { updateHUD(now); lastHUD = now; }
   if (realtimeMode) scheduleFrame();
 }
 document.addEventListener('visibilitychange', () => {
   previousTime = performance.now(); accumulator = 0;
+  previousPose = null; lastDisplayTime = null;
   if (document.hidden) { if (frameId !== null) cancelAnimationFrame(frameId); frameId = null; }
   else scheduleFrame();
 });
-window.firesideRoom = { getState: () => clone(authoritative), get playerId() { return localId; }, get connected() { return connected; }, roomId, gameId };
+window.firesideRoom = {
+  getState: () => clone(authoritative),
+  getPresentation: () => presentation && ({
+    renderCount: presentation.renderCount, time: presentation.time, tick: presentation.state.tick, fraction: presentation.fraction,
+    fighters: presentation.state.fighters.map(({ id, x, y }) => ({ id, x, y })),
+    previousPositions: presentation.pose?.fighters.map(({ id, x, y }) => ({ id, x, y })) || null,
+  }),
+  get playerId() { return localId; }, get connected() { return connected; }, roomId, gameId,
+};
 window.addEventListener('beforeunload', () => { intentionalClose = true; socket?.close(); });
 window.addEventListener('resize', () => renderer?.resize());
 setInterval(() => { if (connected) send({ type: 'ping', time: performance.now() }); }, 1000);

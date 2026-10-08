@@ -262,7 +262,7 @@ async function startSolo() {
   $('solo-rules-title').textContent = info.ruleTitle;
   $('solo-touch-help').textContent = info.touch;
   container.setAttribute('aria-label', `${info.title} game area`);
-  Object.defineProperty(window, 'firesideSolo', { configurable: true, value: Object.freeze({ gameId, getState: () => game?.getState() ?? null }) });
+  Object.defineProperty(window, 'firesideSolo', { configurable: true, value: Object.freeze({ gameId, getState: () => game?.getState() ?? null, getDisplayTiming: () => game?.getDisplayTiming?.() ?? null }) });
   if (invalidGame) {
     $('solo-notice').textContent = 'That game is not on the solo shelf. Here is Snake instead.';
     $('solo-notice').hidden = false;

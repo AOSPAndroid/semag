@@ -1,3 +1,5 @@
+import { createRenderSampling } from './render-sampling.js';
+import { tickFraction } from '../display-timing.js';
 import { ARENA, OBSTACLES, TOTAL_WAVES, UPGRADES, SECTORS, DIFFICULTIES, threatPace, chargeSpeed, enemyShotPattern, createState, step, togglePause as pauseState, chooseUpgrade } from './rift-engine.js';
 import { gameKey, getKeyboardLayout, displayKey, subscribeKeyboardLayout } from '../keyboard-layout.js';
 import { blocksSoloShortcut } from './input-shortcuts.js';
@@ -51,6 +53,8 @@ function node(tag, className, text) {
 }
 
 export function mount(container, { onUpdate = () => {} } = {}) {
+  const presentation = createRenderSampling({ fields: ['elapsed'], objects: { player: { fields: ['x', 'y'], maxDistance: 32 } }, collections: { enemies: { fields: ['x', 'y'], maxDistance: 32 }, projectiles: { fields: ['x', 'y'], maxDistance: 32, velocityGuard: true, guards: ['bounces'] } }, continuity: s => `${s.sector}:${s.wave}` });
+  let displayState;
   let difficulty = 'veteran';
   let state = createState({ difficulty });
   let destroyed = false;
@@ -611,10 +615,10 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   function telegraph(enemy) {
     if (enemy.phase !== 'windup') return;
     const angle = Math.atan2(enemy.aimY, enemy.aimX);
-    const flash = reducedMotion.matches ? .7 : .62 + .1 * Math.sin(state.elapsed * 12);
+    const flash = reducedMotion.matches ? .7 : .62 + .1 * Math.sin(displayState.elapsed * 12);
     ctx.save(); ctx.globalAlpha = flash;
     if (enemy.type === 'brute') {
-      const maximumReach = chargeSpeed(state, enemy) * .65;
+      const maximumReach = chargeSpeed(displayState, enemy) * .65;
       let reach = maximumReach;
       const half = enemy.radius + 7;
       const dx = Math.cos(angle); const dy = Math.sin(angle);
@@ -655,7 +659,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
         for (let i = 0; i < 3; i += 1) circle(enemy.x + (i - 1) * 38, enemy.y - 60, 9, '#e5a780', true, 3);
       }
     } else {
-      const { count, spread } = enemyShotPattern(state, enemy);
+      const { count, spread } = enemyShotPattern(displayState, enemy);
       for (let i = 0; i < count; i += 1) {
         const a = angle + (i - (count - 1) / 2) * spread;
         line(enemy.x + Math.cos(a) * enemy.radius, enemy.y + Math.sin(a) * enemy.radius, enemy.x + Math.cos(a) * 190, enemy.y + Math.sin(a) * 190, '#f3aaca', i === Math.floor(count / 2) ? 3 : 2);
@@ -667,7 +671,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   function guardianSprite(enemy, x, y) {
     const sectorIndex = enemy.bossSector;
     const winding = enemy.phase === 'windup' || enemy.phase === 'burst';
-    const pulse = reducedMotion.matches ? 0 : Math.sin(state.elapsed * 4) * 1.5;
+    const pulse = reducedMotion.matches ? 0 : Math.sin(displayState.elapsed * 4) * 1.5;
     ctx.save(); ctx.translate(x, y);
     const face = Math.atan2(enemy.aimY, enemy.aimX);
     if (sectorIndex === 0) {
@@ -716,7 +720,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     } else {
       // The Crown of Glass: eight angular plates around a suspended star core.
       for (let i = 0; i < 8; i += 1) {
-        ctx.save(); ctx.rotate(i * Math.PI / 4 + (reducedMotion.matches ? 0 : Math.sin(state.elapsed * .7) * .04));
+        ctx.save(); ctx.rotate(i * Math.PI / 4 + (reducedMotion.matches ? 0 : Math.sin(displayState.elapsed * .7) * .04));
         polygon([[15, -6], [28, -11], [36 + pulse, 0], [28, 11], [15, 6]], '#65517f');
         polygon([[18, -4], [28, -8], [32 + pulse, 0], [27, 6], [20, 4]], winding ? '#ead8ed' : i % 2 ? '#c3acd7' : '#a58abf');
         line(25, -5, 30, 0, '#f2dae7', 2); ctx.restore();
@@ -805,10 +809,10 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     else {
       const winding = enemy.phase === 'windup';
       const facing = enemy.type === 'chaser' && !winding
-        ? Math.atan2(state.player.y - y, state.player.x - x) : Math.atan2(enemy.aimY, enemy.aimX);
+        ? Math.atan2(displayState.player.y - y, displayState.player.x - x) : Math.atan2(enemy.aimY, enemy.aimX);
       const pose = reducedMotion.matches ? 0 : enemy.type === 'weaver'
-        ? Math.round(Math.sin(state.elapsed * 9 + enemy.id) * 2)
-        : enemy.type === 'chaser' && enemy.phase === 'seeking' ? Math.round(Math.sin(state.elapsed * 15 + enemy.id) * 2) : 0;
+        ? Math.round(Math.sin(displayState.elapsed * 9 + enemy.id) * 2)
+        : enemy.type === 'chaser' && enemy.phase === 'seeking' ? Math.round(Math.sin(displayState.elapsed * 15 + enemy.id) * 2) : 0;
       const key = `${enemy.type}:${winding}:${pose}`;
       let layer = enemyBodyLayers.get(key);
       if (!layer) {
@@ -854,7 +858,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     const x = Math.round(player.x); const y = Math.round(player.y);
     const angle = Math.atan2(player.aimY, player.aimX);
     const immune = player.invulnerable > 0 || player.damageCooldown > 0;
-    const color = immune && (reducedMotion.matches || Math.floor(state.elapsed * 10) % 2) ? '#ffddb0' : '#ecab70';
+    const color = immune && (reducedMotion.matches || Math.floor(displayState.elapsed * 10) % 2) ? '#ffddb0' : '#ecab70';
     circle(x, y + 3, 13, '#112b30');
     if (alpha === 1) circle(x, y, player.radius, '#d4c89a55', true, 1);
     ctx.translate(x, y); ctx.rotate(angle);
@@ -873,7 +877,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     if (alpha === 1 && player.focusReady) circle(x, y, 20, '#e9c493', true, 2);
   }
   function hazardMarks() {
-    for (const hazard of state.hazards) {
+    for (const hazard of displayState.hazards) {
       ctx.save();
       const warning = hazard.warning > 0;
       ctx.globalAlpha = warning ? .2 : .5;
@@ -898,10 +902,11 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       ctx.restore();
     }
   }
-  function draw() {
+  function draw(fraction = 1) {
+    displayState = presentation.sample(state, fraction);
     if (!ctx || destroyed) return;
     ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(floorLayers[state.sector], 0, 0);
+    ctx.drawImage(floorLayers[displayState.sector], 0, 0);
     for (const fragment of fragments) {
       ctx.save(); ctx.translate(fragment.x, fragment.y); ctx.rotate(fragment.angle);
       ctx.globalAlpha = Math.min(.55, fragment.life / .7);
@@ -911,9 +916,9 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       }
       circle(0, 0, 6, '#122c30'); ctx.restore();
     }
-    for (const enemy of state.enemies) telegraph(enemy);
+    for (const enemy of displayState.enemies) telegraph(enemy);
     hazardMarks();
-    ctx.drawImage(coverLayers[state.sector], 0, 0);
+    ctx.drawImage(coverLayers[displayState.sector], 0, 0);
     for (const arc of arcs) {
       ctx.globalAlpha = clamp(arc.life / .16, 0, 1);
       const midX = (arc.x + arc.toX) / 2 + 4;
@@ -929,10 +934,10 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       circle(ring.x, ring.y, ring.radius + (reducedMotion.matches ? 0 : progress * ring.growth), ring.color, true, 2);
     }
     ctx.globalAlpha = 1;
-    for (const projectile of state.projectiles) {
+    for (const projectile of displayState.projectiles) {
       const speed = Math.hypot(projectile.vx, projectile.vy) || 1;
       const trail = projectile.owner === 'player' ? 22 : 12;
-      const hue = projectile.owner === 'player' ? state.player.frost ? '#a8e5df' : '#ffe7a1' : '#f3bdd4';
+      const hue = projectile.owner === 'player' ? displayState.player.frost ? '#a8e5df' : '#ffe7a1' : '#f3bdd4';
       line(projectile.x - projectile.vx / speed * trail, projectile.y - projectile.vy / speed * trail, projectile.x, projectile.y, '#10272f', 6);
       line(projectile.x - projectile.vx / speed * trail, projectile.y - projectile.vy / speed * trail, projectile.x, projectile.y, projectile.owner === 'player' ? '#c5ad7a' : '#ac78a8', projectile.owner === 'player' ? 2 : 3);
       if (projectile.owner === 'enemy') circle(projectile.x, projectile.y, projectile.radius + 2, '#6a3e67', true, 2);
@@ -940,12 +945,13 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       if (projectile.owner === 'enemy') circle(projectile.x, projectile.y, Math.max(1.5, projectile.radius - 2), '#fff0dc');
       else circle(projectile.x, projectile.y, 1.5, '#fff4d6');
     }
-    if (enemyOrderDirty || enemyDrawOrder.length !== state.enemies.length) {
-      enemyDrawOrder = state.enemies.slice(); enemyOrderDirty = false;
-    }
+    // Keep sorting the bounded visual samples, never cached simulation bodies.
+    enemyDrawOrder.length = 0;
+    for (const enemy of displayState.enemies) enemyDrawOrder.push(enemy);
+    enemyOrderDirty = false;
     enemyDrawOrder.sort((a, b) => a.y - b.y);
     for (const enemy of enemyDrawOrder) enemySprite(enemy);
-    playerSprite(state.player);
+    playerSprite(displayState.player);
     for (const particle of particles) {
       ctx.globalAlpha = clamp(particle.life / particle.maxLife, 0, 1);
       rect(particle.x, particle.y, particle.size, particle.size, particle.color);
@@ -960,23 +966,23 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     ctx.globalAlpha = 1;
     const aim = input();
     const length = Math.hypot(aim.aimX, aim.aimY) || 1;
-    const crosshair = aimPoint || { x: state.player.x + aim.aimX / length * 95, y: state.player.y + aim.aimY / length * 95 };
-    if (state.phase === 'playing') {
+    const crosshair = aimPoint || { x: displayState.player.x + aim.aimX / length * 95, y: displayState.player.y + aim.aimY / length * 95 };
+    if (displayState.phase === 'playing') {
       circle(crosshair.x, crosshair.y, 9, '#102832', true, 4);
-      circle(crosshair.x, crosshair.y, 9, state.player.overheated ? '#e8997e' : '#e5d8a6', true, 1.5);
+      circle(crosshair.x, crosshair.y, 9, displayState.player.overheated ? '#e8997e' : '#e5d8a6', true, 1.5);
       for (const sign of [-1, 1]) {
         line(crosshair.x + sign * 12, crosshair.y, crosshair.x + sign * 5, crosshair.y, '#ffe1a1', 2);
         line(crosshair.x, crosshair.y + sign * 12, crosshair.x, crosshair.y + sign * 5, '#ffe1a1', 2);
       }
     }
-    if (!reducedMotion.matches && state.player.damageCooldown > .32) {
-      ctx.globalAlpha = Math.min(.1, (state.player.damageCooldown - .32) * .43);
+    if (!reducedMotion.matches && displayState.player.damageCooldown > .32) {
+      ctx.globalAlpha = Math.min(.1, (displayState.player.damageCooldown - .32) * .43);
       rect(0, 0, W, H, '#d47d70'); ctx.globalAlpha = 1;
     }
     ctx.font = 'bold 11px ui-monospace, monospace'; ctx.fillStyle = '#829c7f'; ctx.textAlign = 'left';
-    ctx.fillText(`${String(state.kills).padStart(2, '0')} CLEARED`, 38, H - 30);
+    ctx.fillText(`${String(displayState.kills).padStart(2, '0')} CLEARED`, 38, H - 30);
     ctx.textAlign = 'right'; ctx.fillStyle = '#c6b9a0';
-    const boss = state.enemies.find(enemy => enemy.boss);
+    const boss = displayState.enemies.find(enemy => enemy.boss);
     if (boss) ctx.fillText(boss.bossName.toUpperCase(), W - 38, H - 30);
     ctx.textAlign = 'left';
   }
@@ -1044,7 +1050,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       accumulator += dt;
       let ticks = 0;
       while (accumulator >= STEP && ticks < 10 && state.phase === 'playing') {
-        step(state, input(), STEP);
+        presentation.capture(state); step(state, input(), STEP);
         if (dashQueued || fireQueued) {
           dashQueued = false; fireQueued = false; syncControls();
         }
@@ -1052,9 +1058,9 @@ export function mount(container, { onUpdate = () => {} } = {}) {
         accumulator -= STEP;
         ticks += 1;
       }
-    } else accumulator = 0;
+    } else { accumulator = 0; presentation.reset(); }
     publish();
-    draw();
+    draw(tickFraction(accumulator, STEP));
     scheduleFrame();
   }
   function scheduleFrame() {
@@ -1068,13 +1074,13 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     if (destroyed) return;
     releaseControls();
     pauseState(state);
-    previousFrame = null; accumulator = 0;
+    previousFrame = null; accumulator = 0; presentation.reset();
     refresh();
   }
   function restart() {
     if (destroyed) return;
     releaseControls();
-    state = createState({ difficulty }); previousFrame = null; accumulator = 0;
+    state = createState({ difficulty }); previousFrame = null; accumulator = 0; presentation.reset();
     enemyOrderDirty = true;
     lastEvent = -1; lastPublished = -Infinity; lastPhase = null;
     particles = []; ghosts = []; rings = []; hitMarkers = []; arcs = []; fragments = []; enemyFlashes = []; effectTime = 0; upgradeSignature = ''; buildSignature = null;
@@ -1161,7 +1167,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     releaseControls();
     const result = chooseUpgrade(state, button.dataset.upgrade, { risk: riskInput.checked });
     if (!result.ok) return;
-    previousFrame = null; accumulator = 0;
+    previousFrame = null; accumulator = 0; presentation.reset();
     refresh(); canvas.focus({ preventScroll: true });
   }
   const visibility = () => { if (document.hidden) releaseControls(); };
@@ -1206,7 +1212,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   publish(true); draw();
   scheduleFrame();
   return {
-    getState: () => copy(state), restart, togglePause,
+    getDisplayTiming: () => presentation.getStats(), getState: () => copy(state), restart, togglePause,
     destroy() {
       if (destroyed) return;
       unsubscribeKeyboardLayout();

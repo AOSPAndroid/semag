@@ -20,7 +20,6 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   let state = createState({ mode });
   let timer = null;
   let animationFrame = null;
-  let lastPaint = 0;
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
   let destroyed = false;
   const view = element('section', 'snake-view');
@@ -189,8 +188,9 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   function animate() {
     animationFrame = null;
     if (destroyed || reducedMotion.matches || state.phase !== 'playing') return;
-    const now = performance.now();
-    if (now - lastPaint >= 40) { draw(); lastPaint = now; }
+    // Grid movement keeps its original timeout. Only the cached canvas art
+    // paints at the display's cadence; no DOM publishing runs in this loop.
+    draw();
     animationFrame = window.requestAnimationFrame(animate);
   }
   function publish() {

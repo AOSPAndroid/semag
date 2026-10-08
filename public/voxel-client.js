@@ -6,6 +6,7 @@ import { advanceBolts, MAX_BOLTS } from './voxel-projectiles.js';
 import { PLAYER_HEALTH, HEAL } from './voxel-engine.js';
 import { meleeLabel, meleeProfile } from './voxel-melee.js';
 import { incomingDamageFeedback, damageFeedbackPresentation, paintDamageFeedback } from './voxel-damage-feedback.js';
+import { combatPresentation, createMovementPresenter, projectedMovement, withCombatPresentation } from './voxel-presentation.js';
 
 export const LOOK_SENSITIVITY = 0.0025;
 export const FPS_BUTTONS = Object.freeze(['up', 'down', 'left', 'right', 'jump', 'crouch', 'walk', 'fire', 'reload', 'interact', 'aim', 'swap', 'grenade', 'heal']);
@@ -234,7 +235,8 @@ export function interpolatedState(samples, targetTime, localId, { predictMovemen
   state.fighters = state.players;
   const span = to.time - from.time;
   const ratio = span > 0 ? Math.max(0, Math.min(1, (targetTime - from.time) / span)) : 1;
-  if (from.state.phase !== to.state.phase || from.state.round !== to.state.round) return state;
+  if (from.state.phase !== to.state.phase || from.state.round !== to.state.round || from.state.mapId !== to.state.mapId) return state;
+  const projectedMs = Math.min(25, Math.max(0, maxExtrapolationMs), Math.max(0, targetTime - to.time));
   // Keep the newest membership: a hit/deleted bolt must never reappear while
   // interpolating. Birth identity also prevents a reused round ID from sliding.
   for (const bolt of state.bolts) {
@@ -246,7 +248,8 @@ export function interpolatedState(samples, targetTime, localId, { predictMovemen
   }
   for (const player of state.players) {
     const old = from.state.players.find(other => other.id === player.id);
-    if (player.id === localId || !old || old.alive !== player.alive) continue;
+    Object.assign(player, combatPresentation(player, old, ratio, projectedMs));
+    if (player.id === localId || !old || old.alive !== player.alive || old.team !== player.team) continue;
     // A respawn, team change or correction never sweeps an avatar through the map.
     if (Math.hypot(player.x - old.x, player.y - old.y, player.z - old.z) > 4) continue;
     for (const axis of ['x', 'y', 'z']) player[axis] = old[axis] + (player[axis] - old[axis]) * ratio;
@@ -256,15 +259,14 @@ export function interpolatedState(samples, targetTime, localId, { predictMovemen
   }
   // Snapshots arrive at 30 Hz. A short, collision-tested projection avoids aiming
   // at bodies rendered a full network frame behind their authoritative pose.
-  const projectedTicks = Math.floor(Math.min(maxExtrapolationMs, Math.max(0, targetTime - to.time)) * 120 / 1000);
-  if (projectedTicks && state.phase === 'fight' && typeof predictMovement === 'function') {
+  if (projectedMs > 0 && state.phase === 'fight' && typeof predictMovement === 'function') {
     // Every projection sees the same body poses; render order never moves a blocker.
-    const peers = state.players.map(player => ({ ...player }));
-    for (const player of state.players) if (player.id !== localId && player.alive) predictMovement(player, player.previousInput || neutralInput(player.yaw, player.pitch), state.mapId, projectedTicks, peers);
+    const peers = to.state.players;
+    for (const player of state.players) if (player.id !== localId && player.alive) Object.assign(player, projectedMovement(player, player.previousInput || neutralInput(player.yaw, player.pitch), state.mapId, projectedMs, predictMovement, peers, peers.find(other => other.id === player.id)));
   }
   // A short projection fills the part of the 30 Hz interval beyond the newest
   // sample. Reuse the authoritative sweep on copies, with no events or damage.
-  let boltSeconds = Math.min(25, maxExtrapolationMs, Math.max(0, targetTime - to.time)) / 1000;
+  let boltSeconds = projectedMs / 1000;
   if (boltSeconds > 0 && state.phase === 'fight' && state.bolts.length && typeof traceProjectile === 'function') {
     const projection = { ...state, tick: state.tick };
     while (boltSeconds > 1e-8 && projection.bolts.length) {
@@ -310,19 +312,21 @@ async function boot() {
   let playerName = getName(); $('player-name').value = playerName;
   let engine; let renderer; let socket; let connected = false; let playerId = null;
   let state = null; let roster = []; let capacity = 2; let teamSize = 1; let mapName = '';
-  let predictedPlayer = null; let snapshots = []; let pending = []; let sequence = 0;
+  let predictedPlayer = null; let presentationPlayer = null; let snapshots = []; let pending = []; let sequence = 0;
   let frameId = null; let lastFrameAt = 0; let accumulator = 0; let renderCount = 0;
   let destroyed = false; let reconnectTimer; let attempts = 0; let permanentError = false;
   let paused = true; let entered = false; let fallback = false; let touchMode = false;
   let rightDrag = false; let graphicsError = ''; let modalOpen = false; let spectatorId = null; let teamSwitchPending = false; let requestedTeam = null;
   let previousPhase = null; let previousRound = null; let aim = { yaw: 0, pitch: 0 };
   let hitUntil = 0; let hitKind = 'body'; let damageFeedback = null; let feedbackUntil = 0; let toastTimer; let lastCountdown = null; let lastHUDAt = 0;
-  let inputHeartbeat = null; let lastAimSendAt = 0; let lastTouchLookAt = performance.now();
+  let inputHeartbeat = null; let lastTouchLookAt = performance.now();
   const keys = new Set(); const pressedKeys = new Map();
   const mouse = { fire: false, aim: false };
   const touch = { move: { x: 0, y: 0 }, look: { x: 0, y: 0 }, actions: new Set() };
   const actionPointers = new Map(); const padPointers = new Map();
   const padInputPacer = createContinuousInputPacer(60);
+  const wirePacer = createContinuousInputPacer(120);
+  const presentMovement = createMovementPresenter();
   let healthView = null; let healthGain = 0; let healthGainUntil = 0; let previewWeapon = null;
   let squadSignature = ''; let rosterSignature = ''; let idleDrawSignature = ''; let mapPlanId = ''; const mapMarkers = new Map();
   const audio = new GameAudio(); const eventSeen = new Set(); const eventOrder = []; const kills = [];
@@ -343,7 +347,7 @@ async function boot() {
       else if (!local.grounded) toast('Land before drinking your potion.');
     } else if (action === 'grenade' && !local.grenades) toast('Your frag is spent. Supplies reset next round.');
   }
-  function sendInput(buttons = currentInput()) { if (teamSwitchPending) return sequence; if (sequence >= 999999000) sequence = 0; send({ type: 'input', seq: ++sequence, buttons }); return sequence; }
+  function sendInput(buttons = currentInput(), edge = true, now = performance.now()) { if (teamSwitchPending || !wirePacer.shouldSend(now, edge)) return sequence; if (sequence >= 999999000) sequence = 0; send({ type: 'input', seq: ++sequence, buttons }); return sequence; }
   function integrateTouchLook(now = performance.now()) {
     const delta = Math.max(0, Math.min(.1, (now - lastTouchLookAt) / 1000)); lastTouchLookAt = now;
     if (controlsActive() && touchMode) {
@@ -353,7 +357,7 @@ async function boot() {
   }
   function refreshHeartbeat() {
     const shouldRun = !destroyed && connected && !document.hidden && !teamSwitchPending && ['countdown', 'buy', 'fight'].includes(state?.phase);
-    if (shouldRun && !inputHeartbeat) inputHeartbeat = setInterval(() => { integrateTouchLook(); sendInput(); }, 50);
+    if (shouldRun && !inputHeartbeat) inputHeartbeat = setInterval(() => { integrateTouchLook(); sendInput(currentInput(), false); }, 50);
     else if (!shouldRun && inputHeartbeat) { clearInterval(inputHeartbeat); inputHeartbeat = null; }
   }
   function neutralize({ pause = false, unlock = false } = {}) {
@@ -732,9 +736,12 @@ async function boot() {
     const renderedState = interpolatedState(snapshots, now - 12, playerId, { predictMovement: engine.predictLocalMovement, traceProjectile: engine.traceShot }) || state;
     const local = ownPlayer();
     if (teamSwitchPending && local?.team === requestedTeam) { teamSwitchPending = false; requestedTeam = null; }
-    const viewPlayer = local?.alive ? predictedPlayer || local : renderedState.players.find(player => player.id === spectatorId && player.team === local?.team && player.alive) || local;
+    presentationPlayer = predictedPlayer || local;
+    if (state.phase === 'fight' && presentationPlayer?.alive) presentationPlayer = presentMovement(presentationPlayer, currentInput(), state.mapId, accumulator, engine.predictLocalMovement, state.players);
+    presentationPlayer = withCombatPresentation(presentationPlayer, renderedState.players.find(player => player.id === playerId));
+    const viewPlayer = local?.alive ? presentationPlayer : renderedState.players.find(player => player.id === spectatorId && player.team === local?.team && player.alive) || local;
     const viewAim = local?.alive ? aim : { yaw: viewPlayer?.yaw || 0, pitch: viewPlayer?.pitch || 0 };
-    renderer.render(renderedState, { playerId, localId: playerId, localPlayer: predictedPlayer, viewPlayer, cameraPlayer: viewPlayer, yaw: viewAim.yaw, pitch: viewAim.pitch + (viewPlayer?.recoil || 0), time: now });
+    renderer.render(renderedState, { playerId, localId: playerId, localPlayer: presentationPlayer, viewPlayer, cameraPlayer: viewPlayer, yaw: viewAim.yaw, pitch: viewAim.pitch + (viewPlayer?.recoil || 0), time: now });
     renderCount++;
     $('hit-marker').hidden = now >= hitUntil;
     $('hit-marker').dataset.kind = hitKind;
@@ -762,7 +769,7 @@ async function boot() {
         pending.push({ seq, buttons: { ...buttons } }); if (pending.length > 240) pending.shift();
       }
     }
-    if (ticks && !teamSwitchPending) send({ type: 'input', seq: sequence, buttons });
+    if (ticks && !teamSwitchPending && wirePacer.shouldSend(now)) send({ type: 'input', seq: sequence, buttons });
     if (predictedPlayer) { predictedPlayer.yaw = aim.yaw; predictedPlayer.pitch = aim.pitch; }
     draw(now);
     if (now - lastHUDAt > 80) { updateUI(); lastHUDAt = now; }
@@ -919,7 +926,7 @@ async function boot() {
     if (!controlsActive() || !(pointerLocked() || fallback && rightDrag)) return;
     const sensitivity = LOOK_SENSITIVITY * aimLookMultiplier(ownPlayer(), engine?.ADS);
     aim = cleanAim(aim.yaw + event.movementX * sensitivity, aim.pitch - event.movementY * sensitivity);
-    const now = performance.now(); if (now - lastAimSendAt >= 1000 / 120) { sendInput(); lastAimSendAt = now; }
+    sendInput(currentInput(), false);
   });
   listen(canvas, 'contextmenu', event => event.preventDefault());
   listen(canvas, 'click', event => { if (!entered || paused) enterArena(event); });
@@ -973,7 +980,7 @@ async function boot() {
       pad.querySelector('i').style.transform = `translate(${x * radius * .55}px, ${y * radius * .55}px)`;
       const after = currentInput();
       const digitalEdge = FPS_BUTTONS.some(action => before[action] !== after[action]);
-      if (padInputPacer.shouldSend(performance.now(), digitalEdge)) sendInput(after);
+      if (padInputPacer.shouldSend(performance.now(), digitalEdge)) sendInput(after, digitalEdge);
     }
     listen(pad, 'pointerdown', event => {
       if (!entered || paused || !ownPlayer()?.alive || modalOpen || !connected) return;
@@ -1009,7 +1016,7 @@ async function boot() {
     for (const remove of removers) remove(); pending = []; snapshots = []; kills.length = 0; eventSeen.clear();
   }
   listen(window, 'pagehide', destroy);
-  const inspect = () => clone({ state, players: roster, playerId, input: currentInput(), predictedPlayer, connected, controls: { pointerLocked: pointerLocked(), fallback, touch: touchMode, paused, entered, modalOpen }, queueLength: pending.length, renderCount, renderStats: renderer?.stats || null, graphicsError, spectatorId });
+  const inspect = () => clone({ state, players: roster, playerId, input: currentInput(), predictedPlayer, presentationPlayer, predictionRemainder: accumulator, connected, controls: { pointerLocked: pointerLocked(), fallback, touch: touchMode, paused, entered, modalOpen }, queueLength: pending.length, renderCount, renderStats: renderer?.stats || null, graphicsError, spectatorId });
   window.SemagVoxel = Object.freeze({ getState: inspect, inspect });
   updateUI();
   try {

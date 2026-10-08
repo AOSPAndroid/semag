@@ -5,6 +5,8 @@ import { createState, step, startMatch, cloneState, emptyInput, TICK_RATE } from
 import { ArenaRenderer } from './renderer.js';
 import { botInput, TRAINING_STAGES } from './practice.js';
 import { GameAudio } from './audio.js';
+import { frameDecay, tickFraction } from './display-timing.js';
+import { capturePlanarPose, presentPlanarFighter } from './planar-presentation.js';
 
 const elements = new Map();
 const $ = id => { const node = elements.get(id) || document.getElementById(id); if (node) elements.set(id, node); return node; };
@@ -23,6 +25,8 @@ let socket, localId = null, connected = false, reconnectAttempts = 0, reconnectT
 let authoritative = createState(), predicted = cloneState(authoritative), practiceState = null;
 let players = [null, null], sequence = 0, pending = [], snapshots = [];
 let keys = emptyInput(), correction = { x: 0, y: 0 }, practice = false;
+let previousPose = null, previousPracticePose = null, lastDisplayTime = null;
+let presentation = null, renderCount = 0;
 let trainingMode='open', trainingStage=0;
 const trainingProfile=()=>trainingMode==='ladder'?TRAINING_STAGES[trainingStage]:TRAINING_STAGES.find(stage=>stage.id===trainingMode);
 function trainingHUD(){
@@ -33,6 +37,7 @@ function trainingHUD(){
 }
 function restartPractice(){
   releaseKeys();audio.resetEvents();renderer.resetEffects?.();practiceState=createState();startMatch(practiceState);
+  previousPracticePose = null;
   previousPhase=practiceState.phase;countdownLast=null;canvas.focus();trainingHUD();
 }
 $('training-mode').addEventListener('change',()=>{trainingMode=$('training-mode').value;trainingStage=0;if(practice)restartPractice();});
@@ -83,12 +88,14 @@ function receiveState(message) {
   pending = pending.filter((frame) => frame.seq > ack);
   // Only combat prediction mutates state. Idle snapshots can be read directly.
   predicted = state.phase === 'fight' ? cloneState(state) : state;
+  previousPose = null;
   if (localId != null && state.phase === 'fight') {
     const remoteInput = { ...emptyInput(), ...state.fighters[1 - localId].previousInput };
     for (const frame of pending) {
       const inputs = [emptyInput(), emptyInput()];
       inputs[localId] = frame.buttons;
       inputs[1 - localId] = remoteInput;
+      previousPose = capturePlanarPose(predicted);
       step(predicted, inputs);
     }
     if (old && previousPhase === 'fight') {
@@ -97,7 +104,7 @@ function receiveState(message) {
       correction.y = Math.max(-35, Math.min(35, old.y + correction.y - fighter.y));
     }
   } else correction = { x: 0, y: 0 };
-  snapshots.push({ time: lastSnapshotAt, state });
+  snapshots.push({ time: lastSnapshotAt, state, pose: capturePlanarPose(state) });
   if (snapshots.length > 12) snapshots.shift();
   if (!practice) audio.playEvents(state.events || []);
   if (!practice && state.phase !== previousPhase) {
@@ -137,6 +144,7 @@ function connect() {
   });
   socket.addEventListener('close', () => {
     connected = false; localId = null; ping = null; keys = emptyInput(); pending = []; snapshots = [];
+    previousPose = null;
     authoritative = createState(); predicted = cloneState(authoritative);
     players = [null, null]; connectedUI();
     if (!fullRoom && !intentionalClose) {
@@ -222,6 +230,7 @@ $('practice-button').addEventListener('click', () => {
   practice = !practice;
   audio.resetEvents(); renderer.resetEffects?.();
   releaseKeys(); correction = { x: 0, y: 0 }; countdownLast = null; fightFlashUntil = 0;
+  previousPose = null; previousPracticePose = null;
   if (practice) {
     send({ type: 'ready', ready: false });
     trainingStage=0;restartPractice();
@@ -290,6 +299,7 @@ async function setInvite() {
 function inputTick() {
   if (practice) {
     const phase = practiceState.phase;
+    previousPracticePose = capturePlanarPose(practiceState);
     step(practiceState, [copyInput(), botInput(practiceState, 1, trainingProfile()?.id || 'open')]);
     audio.playEvents(practiceState.events || []);
     if (phase !== practiceState.phase) {
@@ -306,20 +316,24 @@ function inputTick() {
       const inputs = [emptyInput(), emptyInput()];
       inputs[localId] = frame.buttons;
       inputs[1 - localId] = { ...emptyInput(), ...authoritative.fighters[1 - localId].previousInput };
+      previousPose = capturePlanarPose(predicted);
       step(predicted, inputs);
     }
   }
 }
 
-function displayState(now) {
-  if (practice) return practiceState;
+function displayState(now, fraction) {
+  const deltaMs = lastDisplayTime == null ? 1000 / 60 : now - lastDisplayTime;
+  lastDisplayTime = now;
+  if (practice) return { ...practiceState, fighters: practiceState.fighters.map((_, index) => presentPlanarFighter(practiceState, previousPracticePose, index, fraction)) };
   if (authoritative.phase !== 'fight' || localId == null) return authoritative;
   // Own fighter is predicted. Opponent is interpolated behind the latest snapshot.
   const state = { ...predicted, fighters: predicted.fighters.map((f) => ({ ...f })) };
   state.events = authoritative.events || [];
-  const own = state.fighters[localId];
+  const own = state.fighters[localId] = presentPlanarFighter(predicted, previousPose, localId, fraction);
   own.x += correction.x; own.y += correction.y;
-  correction.x *= .72; correction.y *= .72;
+  const decay = frameDecay(.72, deltaMs);
+  correction.x *= decay; correction.y *= decay;
   const target = now - 35;
   const remote = 1 - localId;
   let before = snapshots[0], after = snapshots.at(-1);
@@ -327,9 +341,8 @@ function displayState(now) {
     if (snapshots[i].time >= target) { before = snapshots[i - 1]; after = snapshots[i]; break; }
   }
   if (before && after && before.state.phase === 'fight' && after.state.phase === 'fight') {
-    const a = before.state.fighters[remote], b = after.state.fighters[remote];
     const alpha = Math.max(0, Math.min(1, (target - before.time) / Math.max(1, after.time - before.time)));
-    state.fighters[remote] = { ...b, x: a.x + (b.x - a.x) * alpha, y: a.y + (b.y - a.y) * alpha };
+    state.fighters[remote] = presentPlanarFighter(after.state, before.pose, remote, alpha, { adjacentTick: false });
   }
   return state;
 }
@@ -414,13 +427,16 @@ let previousTime = performance.now(), accumulator = 0;
 function animate(now) {
   if (document.hidden) {
     previousTime = now; accumulator = 0;
+    previousPose = null; previousPracticePose = null; lastDisplayTime = null;
     requestAnimationFrame(animate); return;
   }
   // Drop long browser stalls. Never flood the server with stale catch-up inputs.
   accumulator += Math.min(65, now - previousTime); previousTime = now;
   let ticks = 0;
   while (accumulator >= STEP_MS && ticks++ < 8) { inputTick(); accumulator -= STEP_MS; }
-  renderer.render(displayState(now), { localId: practice ? 0 : localId, time: now, camera: 'crop' });
+  const fraction = tickFraction(accumulator / 1000, STEP_MS / 1000), state = displayState(now, fraction);
+  renderer.render(state, { localId: practice ? 0 : localId, time: now, camera: 'crop' });
+  presentation = { state, pose: practice ? previousPracticePose : previousPose, time: now, fraction, renderCount: ++renderCount };
   if (now - lastHUD > 50) { updateHUD(now); lastHUD = now; }
   requestAnimationFrame(animate);
 }
@@ -434,5 +450,13 @@ setInterval(() => {
 window.addEventListener('beforeunload', () => { intentionalClose = true; socket?.close(); });
 window.addEventListener('resize', () => renderer.resize());
 // A small callable surface lets browser-based verification inspect real state.
-window.afterimage = { getState: () => cloneState(practice ? practiceState : authoritative), get playerId() { return localId; }, get connected() { return connected; }, get practice() { return practice; } };
+window.afterimage = {
+  getState: () => cloneState(practice ? practiceState : authoritative),
+  getPresentation: () => presentation && ({
+    renderCount: presentation.renderCount, time: presentation.time, tick: presentation.state.tick, fraction: presentation.fraction,
+    fighters: presentation.state.fighters.map(({ id, x, y }) => ({ id, x, y })),
+    previousPositions: presentation.pose?.fighters.map(({ id, x, y }) => ({ id, x, y })) || null,
+  }),
+  get playerId() { return localId; }, get connected() { return connected; }, get practice() { return practice; },
+};
 setInvite(); connect(); connectedUI(); requestAnimationFrame(animate);

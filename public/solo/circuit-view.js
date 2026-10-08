@@ -1,3 +1,5 @@
+import { createRenderSampling } from './render-sampling.js';
+import { tickFraction } from '../display-timing.js';
 import {
   createState,
   step,
@@ -56,6 +58,8 @@ function element(tag, className, text) {
 }
 
 export function mount(container, { onUpdate = () => {} } = {}) {
+  const presentation = createRenderSampling({ fields: ['elapsed'], objects: { car: { fields: ['x', 'y', 'speed'], angles: ['heading'], maxDistance: 32 } }, continuity: s => s.trackId });
+  let displayState;
   let state = createState({ difficulty: 'veteran' });
   const sprites = createDrivingSprites();
   let course = getTrack(state),
@@ -743,11 +747,16 @@ export function mount(container, { onUpdate = () => {} } = {}) {
         x: car.x - Math.cos(car.heading) * 8 - Math.sin(car.heading) * side * 8,
         y: car.y - Math.sin(car.heading) * 8 + Math.cos(car.heading) * side * 8,
       }));
-      if (lastSkid && Math.hypot(current[0].x - lastSkid[0].x, current[0].y - lastSkid[0].y) < 15) {
-        for (let i = 0; i < 2; i += 1) skidMarks.push({ a: lastSkid[i], b: current[i] });
-        if (skidMarks.length > 360) skidMarks.splice(0, skidMarks.length - 360);
+      const traveled = lastSkid ? Math.hypot(current[0].x - lastSkid[0].x, current[0].y - lastSkid[0].y) : Infinity;
+      // Distance-based marks retain the same density and lifetime on every
+      // display, including frames that arrive before the next physics step.
+      if (traveled >= .35) {
+        if (traveled < 15) {
+          for (let i = 0; i < 2; i += 1) skidMarks.push({ a: lastSkid[i], b: current[i] });
+          if (skidMarks.length > 360) skidMarks.splice(0, skidMarks.length - 360);
+        }
+        lastSkid = current;
       }
-      lastSkid = current;
     } else lastSkid = null;
     effectClock += delta;
     if (
@@ -758,7 +767,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       Math.abs(car.speed) > 30 &&
       effectClock > 0.055
     ) {
-      effectClock = 0;
+      effectClock %= .055;
       dust.push({
         x: car.x - Math.cos(car.heading) * 13,
         y: car.y - Math.sin(car.heading) * 13,
@@ -777,7 +786,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       }
     }
   }
-  function draw() {
+  function draw(fraction = 1) {
+    displayState = presentation.sample(state, fraction);
     if (destroyed || !ctx) return;
     const ratio = Math.min(window.devicePixelRatio || 1, 2);
     const pixelWidth = Math.max(1, Math.round(canvasCssWidth * ratio));
@@ -805,13 +815,13 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     ctx.globalAlpha = 1;
     if (course.surface === 'rain' && !reducedMotion?.matches) {
       for (let i = 0; i < 42; i += 1) {
-        const x = (i * 97 + state.elapsed * 38) % WORLD.width,
-          y = (i * 71 + state.elapsed * 95) % WORLD.height;
+        const x = (i * 97 + displayState.elapsed * 38) % WORLD.width,
+          y = (i * 71 + displayState.elapsed * 95) % WORLD.height;
         rect(ctx, x, y, 2, 7, '#c1d4cf66');
       }
     }
-    if (!['won', 'stage-clear'].includes(state.phase)) {
-      const gate = GATES[state.nextGate];
+    if (!['won', 'stage-clear'].includes(displayState.phase)) {
+      const gate = GATES[displayState.nextGate];
       ctx.beginPath();
       // Mark the full legal crossing plane, including the inside racing line.
       ctx.moveTo(gate.x - gate.nx * ROAD_WIDTH / 2, gate.y - gate.ny * ROAD_WIDTH / 2);
@@ -828,9 +838,9 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       ctx.fillStyle = '#62492d';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(state.nextGate === 0 ? 'F' : String(state.nextGate), labelX, labelY + 1);
+      ctx.fillText(displayState.nextGate === 0 ? 'F' : String(displayState.nextGate), labelX, labelY + 1);
     }
-    const car = state.car;
+    const car = displayState.car;
     ctx.save();
     ctx.translate(car.x + 3, car.y + 4);
     ctx.rotate(car.heading);
@@ -882,11 +892,11 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       accumulator = Math.min(accumulator + delta, STEP * 12);
       let ticks = 0;
       while (accumulator >= STEP && ticks < 12 && state.phase === 'playing') {
-        step(state, inputs(), STEP);
+        presentation.capture(state); step(state, inputs(), STEP);
         accumulator -= STEP;
         ticks += 1;
       }
-    } else accumulator = 0;
+    } else { accumulator = 0; presentation.reset(); }
     if (state.phase !== previousPhase) releaseHeld();
     updateEffects(delta);
     if (
@@ -899,7 +909,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       lastPublish = now;
       publish();
     }
-    draw();
+    draw(tickFraction(accumulator, STEP));
     syncAnimation();
   }
   function syncAnimation() {
@@ -925,7 +935,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   function togglePause() {
     if (destroyed || !pauseState(state)) return;
     releaseHeld();
-    accumulator = 0;
+    accumulator = 0; presentation.reset();
     lastFrame = null;
     publish();
     draw();
@@ -938,6 +948,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   function resetVehicle() {
     if (destroyed || !resetCar(state)) return;
     releaseHeld();
+    accumulator = 0; presentation.reset();
+    lastFrame = null;
     lastSkid = null;
     dust.length = 0;
     announcement = 'Car reset to your last checkpoint. Three seconds added to your race and lap time.';
@@ -1036,7 +1048,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     skidMarks.length = 0;
     dust.length = 0;
     lastFrame = null;
-    accumulator = 0;
+    accumulator = 0; presentation.reset();
     lastPublish = -Infinity;
     drawTerrain();
     publish();
@@ -1055,7 +1067,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     skidMarks.length = 0;
     dust.length = 0;
     lastFrame = null;
-    accumulator = 0;
+    accumulator = 0; presentation.reset();
     lastPublish = -Infinity;
     drawTerrain();
     publish();
@@ -1079,7 +1091,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   resizeCanvas();
   syncAnimation();
   return {
-    getState: () => JSON.parse(JSON.stringify(state)),
+    getDisplayTiming: () => presentation.getStats(), getState: () => JSON.parse(JSON.stringify(state)),
     restart() {
       if (destroyed) return;
       releaseHeld();
@@ -1093,7 +1105,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       skidMarks.length = 0;
       dust.length = 0;
       effectClock = 0;
-      accumulator = 0;
+      accumulator = 0; presentation.reset();
       lastFrame = null;
       lastPublish = -Infinity;
       announcement = '';

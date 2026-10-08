@@ -1,5 +1,6 @@
 import { CHARACTERS, STAGES } from './brawl-engine.js';
 import { INK, rect, poly, line, oval, comicPose, drawComicSprite, drawWrench, paintStage } from './art/oddstock-art.js';
+import { frameAlpha } from './display-timing.js';
 export { drawComicSprite } from './art/oddstock-art.js';
 const TEAMS = ['#edb076', '#93cbb0'];
 const SPRITE_WIDTH = 160, SPRITE_HEIGHT = 128;
@@ -52,10 +53,10 @@ export class BrawlRenderer {
     if (this.effects.length > 32) this.effects.splice(0, this.effects.length - 32);
   }
   render(state, { time = performance.now(), localId = null } = {}) {
-    const c = this.ctx, reduced = this.motion.matches, dt = Math.min(.05, Math.max(0, (time - this.lastTime) / 1000)); this.lastTime = time; this.observe(state);
+    const c = this.ctx, reduced = this.motion.matches, dt = this.lastTime ? Math.min(.05, Math.max(0, (time - this.lastTime) / 1000)) : 1 / 60; this.lastTime = time; this.observe(state);
     let extentX = 500, extentY = 310;
     for (const f of state.fighters) if (f.stocks > 0 && f.respawnTicks === 0) { extentX = Math.max(extentX, Math.abs(f.x - 600) + 80); extentY = Math.max(extentY, Math.abs(f.y - 360) + 55); }
-    const targetZoom = Math.max(.55, Math.min(1, 570 / extentX, 335 / extentY)); this.zoom += (targetZoom - this.zoom) * (reduced ? 1 : .15);
+    const targetZoom = Math.max(.55, Math.min(1, 570 / extentX, 335 / extentY)); this.zoom += (targetZoom - this.zoom) * (reduced ? 1 : frameAlpha(.15, dt * 1000));
     const scale = Math.min(this.canvas.width / 1200, this.canvas.height / 720);
     const offsetX = (this.canvas.width - 1200 * scale) / 2, offsetY = (this.canvas.height - 720 * scale) / 2;
     c.setTransform(1, 0, 0, 1, 0, 0);

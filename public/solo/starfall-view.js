@@ -1,3 +1,5 @@
+import { createRenderSampling } from './render-sampling.js';
+import { tickFraction } from '../display-timing.js';
 import { ARENA, HITBOX, DIFFICULTIES, STAGES, UPGRADES, createState, step, chooseUpgrade, togglePause as pauseState, recordKey } from './starfall-engine.js';
 import { gameKey, displayKey, getKeyboardLayout, subscribeKeyboardLayout } from '../keyboard-layout.js';
 import { blocksSoloShortcut } from './input-shortcuts.js';
@@ -108,6 +110,8 @@ function background(region) {
 }
 
 export function mount(container, { onUpdate = () => {} } = {}) {
+  const presentation = createRenderSampling({ fields: ['time'], objects: { player: { fields: ['x', 'y'], maxDistance: 32 } }, collections: { enemies: { fields: ['x', 'y'], maxDistance: 32 }, hostileShots: { fields: ['x', 'y'], maxDistance: 32, velocityGuard: true }, friendlyShots: { fields: ['x', 'y'], maxDistance: 32, velocityGuard: true }, warnings: { fields: ['x', 'y'], maxDistance: 32 } }, continuity: s => s.stage });
+  let displayState;
   let difficulty = 'veteran'; let state = createState({ difficulty }); let destroyed = false;
   let raf = null; let previous = null; let accumulator = 0; let lastPublished = -1; let lastPhase = null; let lastEvent = 0;
   let particles = []; let rings = []; let flashes = new Map(); let bombGlow = 0; let upgradeSignature = ''; let buildSignature = '';
@@ -227,35 +231,36 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     for (const [id, timer] of flashes) { if (timer <= dt) flashes.delete(id); else flashes.set(id, timer - dt); }
     bombGlow = Math.max(0, bombGlow - dt);
   }
-  function draw() {
-    const c = context; const stage = STAGES[state.stage - 1]; const bg = backgrounds[stage.regionId]; const scroll = reducedMotion.matches ? 0 : state.time * 38 % 1200;
+  function draw(fraction = 1) {
+    displayState = presentation.sample(state, fraction);
+    const c = context; const stage = STAGES[displayState.stage - 1]; const bg = backgrounds[stage.regionId]; const scroll = reducedMotion.matches ? 0 : displayState.time * 38 % 1200;
     c.globalAlpha = 1; c.drawImage(bg, 0, scroll - 1200); c.drawImage(bg, 0, scroll);
-    if (state.stageTime < 3) { c.fillStyle = '#a2c1c0'; c.font = 'bold 11px monospace'; c.textAlign = 'center'; c.fillText(`${stage.region} / ${String(state.stage).padStart(2, '0')}`, W / 2, 210); c.fillStyle = '#e9e3cf'; c.font = 'bold 21px monospace'; c.fillText(stage.name.toUpperCase(), W / 2, 242); c.textAlign = 'start'; }
+    if (displayState.stageTime < 3) { c.fillStyle = '#a2c1c0'; c.font = 'bold 11px monospace'; c.textAlign = 'center'; c.fillText(`${stage.region} / ${String(displayState.stage).padStart(2, '0')}`, W / 2, 210); c.fillStyle = '#e9e3cf'; c.font = 'bold 21px monospace'; c.fillText(stage.name.toUpperCase(), W / 2, 242); c.textAlign = 'start'; }
     // Telegraphs and shots use identical source positions and direction arrays.
-    for (const warning of state.warnings) {
+    for (const warning of displayState.warnings) {
       const progress = 1 - warning.remaining / warning.duration; c.strokeStyle = '#eac383'; c.lineWidth = 1.5; c.globalAlpha = .24 + progress * .26;
       c.beginPath(); c.arc(warning.x, warning.y, warning.boss ? 39 : 23, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2); c.stroke();
       if (warning.kind === 'aim') { c.globalAlpha = .15 + progress * .16; c.setLineDash([5, 7]); for (const angle of warning.directions) { c.beginPath(); c.moveTo(warning.x, warning.y); c.lineTo(warning.x + Math.cos(angle) * 650, warning.y + Math.sin(angle) * 650); c.stroke(); } c.setLineDash([]); }
       else { c.globalAlpha = .28 + progress * .25; for (const angle of warning.directions) { c.beginPath(); c.moveTo(warning.x + Math.cos(angle) * 23, warning.y + Math.sin(angle) * 23); c.lineTo(warning.x + Math.cos(angle) * 42, warning.y + Math.sin(angle) * 42); c.stroke(); } }
     }
     c.globalAlpha = 1;
-    for (const bullet of state.friendlyShots) { c.fillStyle = bullet.focus ? '#c4f8e6' : '#69c9d4'; c.fillRect(Math.round(bullet.x) - 1.5, Math.round(bullet.y) - 4, 3, 8); c.fillStyle = '#edf8e4'; c.fillRect(Math.round(bullet.x) - 1, Math.round(bullet.y) - 4, 2, 3); }
-    for (const enemy of state.enemies) {
+    for (const bullet of displayState.friendlyShots) { c.fillStyle = bullet.focus ? '#c4f8e6' : '#69c9d4'; c.fillRect(Math.round(bullet.x) - 1.5, Math.round(bullet.y) - 4, 3, 8); c.fillStyle = '#edf8e4'; c.fillRect(Math.round(bullet.x) - 1, Math.round(bullet.y) - 4, 2, 3); }
+    for (const enemy of displayState.enemies) {
       const art = sprites.get(`${enemy.type}-${stage.regionId}-${enemy.phase}`) || sprites.get(`${enemy.type}-${stage.regionId}-1`); if (!art) continue;
       c.fillStyle = '#08111c'; c.globalAlpha = .36; c.beginPath(); c.ellipse(enemy.x + 2, enemy.y + 6, enemy.radius + 3, enemy.radius * .58, 0, 0, Math.PI * 2); c.fill(); c.globalAlpha = 1;
       c.drawImage(art, Math.round(enemy.x - art.width / 2), Math.round(enemy.y - art.height / 2));
       if (flashes.has(enemy.id)) { c.fillStyle = '#fff0bf'; c.globalAlpha = .38; c.beginPath(); c.arc(enemy.x, enemy.y, enemy.radius * .68, 0, Math.PI * 2); c.fill(); c.globalAlpha = 1; }
       if (!enemy.boss && enemy.hp < enemy.maxHp) { c.fillStyle = '#192332'; c.fillRect(enemy.x - 13, enemy.y - enemy.radius - 8, 26, 2); c.fillStyle = '#f0bd86'; c.fillRect(enemy.x - 13, enemy.y - enemy.radius - 8, 26 * Math.max(0, enemy.hp / enemy.maxHp), 2); }
     }
-    for (const bullet of state.hostileShots) {
+    for (const bullet of displayState.hostileShots) {
       c.fillStyle = '#271b29'; c.beginPath(); c.arc(bullet.x, bullet.y, bullet.radius + 1, 0, Math.PI * 2); c.fill();
       c.fillStyle = bullet.kind === 'cross' ? '#f799bc' : '#ffb27a'; c.beginPath(); c.arc(bullet.x, bullet.y, bullet.radius, 0, Math.PI * 2); c.fill();
       c.fillStyle = '#ffeaca'; c.beginPath(); c.arc(bullet.x, bullet.y, Math.max(1.5, bullet.radius * .43), 0, Math.PI * 2); c.fill();
     }
-    if (state.phase !== 'lost') {
-      const p = state.player; const shimmer = p.invulnerable > 0 && !reducedMotion.matches ? Math.floor(state.time * 14) % 2 ? .45 : 1 : 1;
+    if (displayState.phase !== 'lost') {
+      const p = displayState.player; const shimmer = p.invulnerable > 0 && !reducedMotion.matches ? Math.floor(displayState.time * 14) % 2 ? .45 : 1 : 1;
       c.globalAlpha = shimmer;
-      if (!reducedMotion.matches) { c.fillStyle = '#64bfc2'; const length = 7 + Math.floor(state.time * 24) % 3 * 2; c.fillRect(Math.round(p.x) - 11, Math.round(p.y) + 17, 4, length); c.fillRect(Math.round(p.x) + 7, Math.round(p.y) + 17, 4, length); c.fillStyle = '#d6e6b4'; c.fillRect(Math.round(p.x) - 10, Math.round(p.y) + 17, 2, length - 3); c.fillRect(Math.round(p.x) + 8, Math.round(p.y) + 17, 2, length - 3); }
+      if (!reducedMotion.matches) { c.fillStyle = '#64bfc2'; const length = 7 + Math.floor(displayState.time * 24) % 3 * 2; c.fillRect(Math.round(p.x) - 11, Math.round(p.y) + 17, 4, length); c.fillRect(Math.round(p.x) + 7, Math.round(p.y) + 17, 4, length); c.fillStyle = '#d6e6b4'; c.fillRect(Math.round(p.x) - 10, Math.round(p.y) + 17, 2, length - 3); c.fillRect(Math.round(p.x) + 8, Math.round(p.y) + 17, 2, length - 3); }
       c.drawImage(playerArt, Math.round(p.x) - 20, Math.round(p.y) - 20); c.globalAlpha = 1;
       if (p.focus) { c.strokeStyle = '#84d9cf'; c.lineWidth = 1; c.globalAlpha = .64; c.beginPath(); c.arc(p.x, p.y, 19, 0, Math.PI * 2); c.stroke(); c.globalAlpha = 1; }
       // The always-visible white circle is the exact physical pilot hitbox.
@@ -273,12 +278,12 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   function frame(now) {
     raf = null; const dt = previous === null ? 0 : clamp((now - previous) / 1000, 0, .08); previous = now; accumulator += dt;
     let ticks = 0;
-    while (state.phase === 'playing' && accumulator >= STEP && ticks < 10) { step(state, input(), STEP); bombQueued = false; effects(STEP); accumulator -= STEP; ticks += 1; }
-    if (state.phase !== 'playing') accumulator = 0;
-    publish(); draw(); schedule();
+    while (state.phase === 'playing' && accumulator >= STEP && ticks < 10) { presentation.capture(state); step(state, input(), STEP); bombQueued = false; effects(STEP); accumulator -= STEP; ticks += 1; }
+    if (state.phase !== 'playing') { accumulator = 0; presentation.reset(); }
+    publish(); draw(tickFraction(accumulator, STEP)); schedule();
   }
-  function togglePause() { if (destroyed) return; releaseControls(); pauseState(state); previous = null; accumulator = 0; refresh(); }
-  function restart() { if (destroyed) return; releaseControls(); state = createState({ difficulty }); previous = null; accumulator = 0; lastPublished = -1; lastPhase = null; lastEvent = 0; particles = []; rings = []; flashes.clear(); bombGlow = 0; upgradeSignature = ''; buildSignature = ''; refresh(); canvas.focus({ preventScroll: true }); }
+  function togglePause() { if (destroyed) return; releaseControls(); pauseState(state); previous = null; accumulator = 0; presentation.reset(); refresh(); }
+  function restart() { if (destroyed) return; releaseControls(); state = createState({ difficulty }); previous = null; accumulator = 0; presentation.reset(); lastPublished = -1; lastPhase = null; lastEvent = 0; particles = []; rings = []; flashes.clear(); bombGlow = 0; upgradeSignature = ''; buildSignature = ''; refresh(); canvas.focus({ preventScroll: true }); }
   function keydown(event) {
     if (blocksSoloShortcut(event, { allowRepeat: true }) || state.phase !== 'playing') return;
     const target = event.target instanceof Element ? event.target.closest('button,a,summary') : null;
@@ -317,7 +322,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     }
   }
   function pointerEnd(event) { const pointer = pointers.get(event.pointerId); if (!pointer) return; pointers.delete(event.pointerId); if (pointer.control === 'move') stick = { x: 0, y: 0 }; try { if (pointer.target.hasPointerCapture?.(event.pointerId)) pointer.target.releasePointerCapture(event.pointerId); } catch {} syncControls(); }
-  function upgradeClick(event) { const button = event.target instanceof Element ? event.target.closest('[data-starfall-upgrade]') : null; if (!button || !upgradeChoices.contains(button)) return; releaseControls(); if (!chooseUpgrade(state, button.dataset.starfallUpgrade).ok) return; previous = null; accumulator = 0; particles = []; rings = []; refresh(); canvas.focus({ preventScroll: true }); }
+  function upgradeClick(event) { const button = event.target instanceof Element ? event.target.closest('[data-starfall-upgrade]') : null; if (!button || !upgradeChoices.contains(button)) return; releaseControls(); if (!chooseUpgrade(state, button.dataset.starfallUpgrade).ok) return; previous = null; accumulator = 0; presentation.reset(); particles = []; rings = []; refresh(); canvas.focus({ preventScroll: true }); }
   function replayClick() { if (state.phase === 'paused') togglePause(); else restart(); }
   function tierChange() { difficulty = Object.hasOwn(DIFFICULTIES, tierSelect.value) ? tierSelect.value : 'veteran'; restart(); }
   function autoChange() { releaseControls(); publish(true); }
@@ -329,7 +334,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   controls.addEventListener('pointerdown', controlDown); canvas.addEventListener('pointerdown', canvasDown); window.addEventListener('pointermove', pointerMove); window.addEventListener('pointerup', pointerEnd); window.addEventListener('pointercancel', pointerEnd); view.addEventListener('lostpointercapture', pointerEnd);
   upgradeChoices.addEventListener('click', upgradeClick); replay.addEventListener('click', replayClick); tierSelect.addEventListener('change', tierChange); autoInput.addEventListener('change', autoChange); reducedMotion.addEventListener('change', motionChange);
   refresh();
-  return { getState: () => copy(state), restart, togglePause,
+  return { getDisplayTiming: () => presentation.getStats(), getState: () => copy(state), restart, togglePause,
     destroy() { if (destroyed) return; destroyed = true; if (raf !== null) cancelAnimationFrame(raf); releaseControls(); unsubscribe();
       window.removeEventListener('keydown', keydown); window.removeEventListener('keyup', keyup); window.removeEventListener('blur', releaseControls); document.removeEventListener('visibilitychange', hidden);
       controls.removeEventListener('pointerdown', controlDown); canvas.removeEventListener('pointerdown', canvasDown); window.removeEventListener('pointermove', pointerMove); window.removeEventListener('pointerup', pointerEnd); window.removeEventListener('pointercancel', pointerEnd); view.removeEventListener('lostpointercapture', pointerEnd);

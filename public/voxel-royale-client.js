@@ -7,6 +7,7 @@ import { predictLocalMovement, traceShot, ADS, HEAL, PLAYER_HEALTH } from './vox
 
 import { meleeLabel, meleeProfile } from './voxel-melee.js';
 import { incomingDamageFeedback, damageFeedbackPresentation, paintDamageFeedback } from './voxel-damage-feedback.js';
+import { combatPresentation, createMovementPresenter, projectedMovement, withCombatPresentation } from './voxel-presentation.js';
 
 export const LOOK_SENSITIVITY = .0025;
 export const INPUT_ACTIONS = Object.freeze(['up', 'down', 'left', 'right', 'jump', 'crouch', 'walk', 'fire', 'reload', 'interact', 'aim', 'swap', 'grenade', 'heal']);
@@ -152,11 +153,13 @@ export function interpolatedState(samples, targetTime, localId, { predictMovemen
   let from = samples[0], to = samples.at(-1);
   for (let i = 1; i < samples.length; i++) { if (samples[i].time >= targetTime) { from = samples[i - 1]; to = samples[i]; break; } from = samples[i]; }
   const state = { ...to.state, players: to.state.players.map(player => ({ ...player })), bolts: (to.state.bolts || []).slice(0, MAX_BOLTS).map(bolt => ({ ...bolt })) }; state.fighters = state.players;
-  if (from.state.phase !== to.state.phase || from.state.matchId !== to.state.matchId) return state;
+  if (from.state.phase !== to.state.phase || from.state.matchId !== to.state.matchId || from.state.mapId !== to.state.mapId) return state;
   const span = to.time - from.time, ratio = span > 0 ? clamp((targetTime - from.time) / span, 0, 1) : 1;
+  const projectedMs = clamp(targetTime - to.time, 0, Math.min(25, Math.max(0, maxExtrapolationMs)));
   for (const player of state.players) {
     const old = from.state.players.find(other => other.id === player.id);
-    if (player.id === localId || !old || old.alive !== player.alive || Math.hypot(player.x - old.x, player.y - old.y, player.z - old.z) > 4) continue;
+    Object.assign(player, combatPresentation(player, old, ratio, projectedMs));
+    if (player.id === localId || !old || old.alive !== player.alive || old.team !== player.team || Math.hypot(player.x - old.x, player.y - old.y, player.z - old.z) > 4) continue;
     for (const axis of ['x', 'y', 'z']) player[axis] = old[axis] + (player[axis] - old[axis]) * ratio;
     player.yaw = cleanAim(old.yaw + cleanAim(player.yaw - old.yaw).yaw * ratio).yaw; player.pitch = old.pitch + (player.pitch - old.pitch) * ratio;
   }
@@ -165,13 +168,15 @@ export function interpolatedState(samples, targetTime, localId, { predictMovemen
     if (!old) continue;
     for (const axis of ['x', 'y', 'z', 'vx', 'vy', 'vz']) if (Number.isFinite(old[axis]) && Number.isFinite(bolt[axis])) bolt[axis] = old[axis] + (bolt[axis] - old[axis]) * ratio;
   }
-  const projectedTicks = Math.floor(clamp(targetTime - to.time, 0, Math.min(25, maxExtrapolationMs)) * 120 / 1000);
-  if (projectedTicks && state.phase === 'fight' && typeof predictMovement === 'function') {
-    const peers = state.players.map(player => ({ ...player }));
-    for (const player of state.players) if (player.id !== localId && player.alive) predictMovement(player, player.previousInput || neutralInput(player.yaw, player.pitch), state.map, projectedTicks, peers);
+  if (projectedMs > 0 && state.phase === 'fight' && typeof predictMovement === 'function') {
+    const peers = to.state.players;
+    for (const player of state.players) if (player.id !== localId && player.alive) Object.assign(player, projectedMovement(player, player.previousInput || neutralInput(player.yaw, player.pitch), state.map, projectedMs, predictMovement, peers, peers.find(other => other.id === player.id)));
   }
-  if (projectedTicks && state.phase === 'fight' && typeof traceProjectile === 'function') {
-    for (let i = 0; i < projectedTicks && state.bolts.length; i++) { const projection = { ...state, tick: state.tick + i + 1 }; advanceBolts(projection, { dt: 1 / 120, trace: traceProjectile }); state.bolts = projection.bolts; }
+  if (projectedMs > 0 && state.phase === 'fight' && typeof traceProjectile === 'function') {
+    const projection = { ...state };
+    let seconds = projectedMs / 1000;
+    while (seconds > 1e-8 && projection.bolts.length) { const dt = Math.min(1 / 120, seconds); projection.tick++; advanceBolts(projection, { dt, trace: traceProjectile }); seconds -= dt; }
+    state.bolts = projection.bolts;
   }
   return state;
 }
@@ -183,7 +188,7 @@ async function boot() {
   const layoutPicker = mountKeyboardLayoutPicker(document.querySelector('[data-keyboard-layout-picker]'));
   let playerName = getName(); $('player-name').value = playerName;
   let engine, renderer, socket, state = null, playerId = null, hostId = null, connected = false, roster = [], capacity = 10;
-  let predictedPlayer = null, snapshots = [], pending = [], sequence = 0, aim = cleanAim();
+  let predictedPlayer = null, presentationPlayer = null, snapshots = [], pending = [], sequence = 0, aim = cleanAim();
   let paused = true, entered = false, fallback = false, touchMode = false, rightDrag = false, modalOpen = false, graphicsError = '', spectatorId = null;
   let destroyed = false, permanentError = false, reconnectTimer, reconnectAttempts = 0, frameId = null, lastFrameAt = 0, accumulator = 0, renderCount = 0;
   let heartbeat = null, lastTouchLookAt = performance.now(), lastHUDAt = 0, previousPhase = null, previousMatch = null;
@@ -192,6 +197,7 @@ async function boot() {
   const keys = new Set(), pressedKeys = new Map(), mouse = { fire: false, aim: false };
   const touch = { actions: new Set(), move: { x: 0, y: 0 }, look: { x: 0, y: 0 } };
   const actionPointers = new Map(), padPointers = new Map(), wirePacer = createInputPacer(60);
+  const presentMovement = createMovementPresenter();
   const eventSeen = new Set(), eventOrder = [], kills = [], audio = new GameAudio(), removers = [];
   function listen(target, name, callback, options) { target.addEventListener(name, callback, options); removers.push(() => target.removeEventListener(name, callback, options)); }
   function send(message) { if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message)); }
@@ -346,9 +352,12 @@ async function boot() {
     if (!renderer || !state || graphicsError || document.hidden) return;
     const rendered = interpolatedState(snapshots, now - 12, playerId, { predictMovement: engine.predictLocalMovement, traceProjectile: engine.traceShot }) || state;
     const local = ownPlayer(), viewed = spectatorPlayer(rendered, playerId, spectatorId);
-    const camera = state.phase === 'lobby' ? { ...state.map.spawnPoints[0], alive: false, id: playerId, y: finite(state.map.spawnPoints[0]?.y) } : local?.alive ? predictedPlayer || local : viewed;
+    presentationPlayer = predictedPlayer || local;
+    if (state.phase === 'fight' && presentationPlayer?.alive) presentationPlayer = presentMovement(presentationPlayer, currentInput(), state.map, accumulator, engine.predictLocalMovement, state.players);
+    presentationPlayer = withCombatPresentation(presentationPlayer, rendered.players.find(player => player.id === playerId));
+    const camera = state.phase === 'lobby' ? { ...state.map.spawnPoints[0], alive: false, id: playerId, y: finite(state.map.spawnPoints[0]?.y) } : local?.alive ? presentationPlayer : viewed;
     const viewAim = local?.alive ? aim : cleanAim(camera?.yaw, camera?.pitch);
-    renderer.render(rendered, { playerId, localId: playerId, localPlayer: predictedPlayer, viewPlayer: camera, yaw: viewAim.yaw, pitch: viewAim.pitch + finite(camera?.recoil), time: now }); renderCount++;
+    renderer.render(rendered, { playerId, localId: playerId, localPlayer: presentationPlayer, viewPlayer: camera, yaw: viewAim.yaw, pitch: viewAim.pitch + finite(camera?.recoil), time: now }); renderCount++;
     $('hit-marker').hidden = now >= hitUntil; $('hit-marker').dataset.kind = hitKind; paintDamageFeedback($('damage-cue'), damageFeedbackPresentation(damageFeedback, camera, { now, lifeKey: state.matchId, yaw: viewAim.yaw, active: state.phase === 'fight' })); $('combat-feedback').hidden = now >= feedbackUntil;
     while (kills.length && now - kills[0].at > 6000) kills.shift(); const signature = kills.map(item => item.text).join('|');
     if ($('kill-feed').dataset.signature !== signature) { $('kill-feed').dataset.signature = signature; $('kill-feed').replaceChildren(...kills.map(kill => { const item = document.createElement('li'); item.textContent = kill.text; item.classList.toggle('own-kill', kill.own); return item; })); }
@@ -453,7 +462,7 @@ async function boot() {
   const pingTimer = setInterval(() => { if (connected && !document.hidden) send({ type: 'ping', time: performance.now() }); }, 1500);
   function destroy() { if (destroyed) return; neutralize({ pause: true, unlock: true }); destroyed = true; clearTimeout(reconnectTimer); clearTimeout(toastTimer); clearInterval(pingTimer); clearInterval(heartbeat); heartbeat = null; if (frameId) cancelAnimationFrame(frameId); frameId = null; socket?.close(); renderer?.destroy(); audio.destroy(); layoutPicker.destroy(); unsubscribeLayout(); for (const remove of removers) remove(); pending = []; snapshots = []; kills.length = 0; eventSeen.clear(); }
   listen(window, 'pagehide', destroy);
-  const inspect = () => { const { map, ...snapshot } = state || {}; return clone({ state: state ? snapshot : null, players: roster, playerId, hostId, input: currentInput(), predictedPlayer, connected, controls: { pointerLocked: pointerLocked(), fallback, touch: touchMode, paused, entered, modalOpen }, queueLength: pending.length, renderCount, renderStats: renderer?.stats || null, graphicsError, spectatorId }); };
+  const inspect = () => { const { map, ...snapshot } = state || {}; return clone({ state: state ? snapshot : null, players: roster, playerId, hostId, input: currentInput(), predictedPlayer, presentationPlayer, predictionRemainder: accumulator, connected, controls: { pointerLocked: pointerLocked(), fallback, touch: touchMode, paused, entered, modalOpen }, queueLength: pending.length, renderCount, renderStats: renderer?.stats || null, graphicsError, spectatorId }); };
   window.SemagRoyale = Object.freeze({ getState: inspect, inspect }); updateUI();
   try { const [rules, visual] = await Promise.all([import('./voxel-royale-engine.js'), import('./voxel-renderer.js')]); if (destroyed) return; engine = { ...rules, predictLocalMovement, traceShot, ADS, HEAL, PLAYER_HEALTH }; renderer = new visual.VoxelRenderer(canvas); renderer.resize(); } catch (cause) { graphicsError = cause?.message || 'This game requires WebGL. Enable hardware acceleration and reload graphics.'; error(graphicsError); updateUI(); return; }
   connect();
