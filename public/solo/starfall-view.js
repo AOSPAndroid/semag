@@ -244,11 +244,11 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       else { c.globalAlpha = .28 + progress * .25; for (const angle of warning.directions) { c.beginPath(); c.moveTo(warning.x + Math.cos(angle) * 23, warning.y + Math.sin(angle) * 23); c.lineTo(warning.x + Math.cos(angle) * 42, warning.y + Math.sin(angle) * 42); c.stroke(); } }
     }
     c.globalAlpha = 1;
-    for (const bullet of displayState.friendlyShots) { c.fillStyle = bullet.focus ? '#c4f8e6' : '#69c9d4'; c.fillRect(Math.round(bullet.x) - 1.5, Math.round(bullet.y) - 4, 3, 8); c.fillStyle = '#edf8e4'; c.fillRect(Math.round(bullet.x) - 1, Math.round(bullet.y) - 4, 2, 3); }
+    for (const bullet of displayState.friendlyShots) { c.fillStyle = bullet.focus ? '#c4f8e6' : '#69c9d4'; c.fillRect(bullet.x - 1.5, bullet.y - 4, 3, 8); c.fillStyle = '#edf8e4'; c.fillRect(bullet.x - 1, bullet.y - 4, 2, 3); }
     for (const enemy of displayState.enemies) {
       const art = sprites.get(`${enemy.type}-${stage.regionId}-${enemy.phase}`) || sprites.get(`${enemy.type}-${stage.regionId}-1`); if (!art) continue;
       c.fillStyle = '#08111c'; c.globalAlpha = .36; c.beginPath(); c.ellipse(enemy.x + 2, enemy.y + 6, enemy.radius + 3, enemy.radius * .58, 0, 0, Math.PI * 2); c.fill(); c.globalAlpha = 1;
-      c.drawImage(art, Math.round(enemy.x - art.width / 2), Math.round(enemy.y - art.height / 2));
+      c.drawImage(art, enemy.x - art.width / 2, enemy.y - art.height / 2);
       if (flashes.has(enemy.id)) { c.fillStyle = '#fff0bf'; c.globalAlpha = .38; c.beginPath(); c.arc(enemy.x, enemy.y, enemy.radius * .68, 0, Math.PI * 2); c.fill(); c.globalAlpha = 1; }
       if (!enemy.boss && enemy.hp < enemy.maxHp) { c.fillStyle = '#192332'; c.fillRect(enemy.x - 13, enemy.y - enemy.radius - 8, 26, 2); c.fillStyle = '#f0bd86'; c.fillRect(enemy.x - 13, enemy.y - enemy.radius - 8, 26 * Math.max(0, enemy.hp / enemy.maxHp), 2); }
     }
@@ -260,13 +260,13 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     if (displayState.phase !== 'lost') {
       const p = displayState.player; const shimmer = p.invulnerable > 0 && !reducedMotion.matches ? Math.floor(displayState.time * 14) % 2 ? .45 : 1 : 1;
       c.globalAlpha = shimmer;
-      if (!reducedMotion.matches) { c.fillStyle = '#64bfc2'; const length = 7 + Math.floor(displayState.time * 24) % 3 * 2; c.fillRect(Math.round(p.x) - 11, Math.round(p.y) + 17, 4, length); c.fillRect(Math.round(p.x) + 7, Math.round(p.y) + 17, 4, length); c.fillStyle = '#d6e6b4'; c.fillRect(Math.round(p.x) - 10, Math.round(p.y) + 17, 2, length - 3); c.fillRect(Math.round(p.x) + 8, Math.round(p.y) + 17, 2, length - 3); }
-      c.drawImage(playerArt, Math.round(p.x) - 20, Math.round(p.y) - 20); c.globalAlpha = 1;
+      if (!reducedMotion.matches) { c.fillStyle = '#64bfc2'; const length = 7 + Math.floor(displayState.time * 24) % 3 * 2; c.fillRect(p.x - 11, p.y + 17, 4, length); c.fillRect(p.x + 7, p.y + 17, 4, length); c.fillStyle = '#d6e6b4'; c.fillRect(p.x - 10, p.y + 17, 2, length - 3); c.fillRect(p.x + 8, p.y + 17, 2, length - 3); }
+      c.drawImage(playerArt, p.x - 20, p.y - 20); c.globalAlpha = 1;
       if (p.focus) { c.strokeStyle = '#84d9cf'; c.lineWidth = 1; c.globalAlpha = .64; c.beginPath(); c.arc(p.x, p.y, 19, 0, Math.PI * 2); c.stroke(); c.globalAlpha = 1; }
       // The always-visible white circle is the exact physical pilot hitbox.
       c.fillStyle = '#091723'; c.beginPath(); c.arc(p.x, p.y, HITBOX + 1.4, 0, Math.PI * 2); c.fill(); c.fillStyle = '#fff4cf'; c.beginPath(); c.arc(p.x, p.y, HITBOX, 0, Math.PI * 2); c.fill();
     }
-    for (const p of particles) { c.globalAlpha = 1 - p.age / p.life; c.fillStyle = p.color; c.fillRect(Math.round(p.x), Math.round(p.y), p.size, p.size); }
+    for (const p of particles) { c.globalAlpha = 1 - p.age / p.life; c.fillStyle = p.color; c.fillRect(p.x, p.y, p.size, p.size); }
     for (const ring of rings) { c.globalAlpha = (1 - ring.age / ring.life) * .7; c.strokeStyle = ring.color; c.lineWidth = 2; c.beginPath(); c.arc(ring.x, ring.y, ring.radius + ring.age * (reducedMotion.matches ? 0 : 95), 0, Math.PI * 2); c.stroke(); }
     if (bombGlow > 0) { c.globalAlpha = Math.min(.22, bombGlow * .44); c.fillStyle = '#b9f8e5'; c.fillRect(0, 0, W, H); }
     c.globalAlpha = 1;

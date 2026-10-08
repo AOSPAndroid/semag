@@ -117,7 +117,7 @@ test('actual wall draws keep world UVs and a fixed work bound across camera boun
   }
 });
 
-test('typed wall and pitched-roof pixels preserve world UVs with one bounded reusable raster', () => {
+test('typed wall and pitched-roof pixels preserve world UVs with one bounded atlas upload', () => {
   let createdCanvases = 0, createdBuffers = 0, uploads = 0, composites = 0;
   const sourceReads = { wall: 0, roof: 0 };
   function encodedMaterial(kind, width, height, blue) {
@@ -139,8 +139,8 @@ test('typed wall and pitched-roof pixels preserve world UVs with one bounded reu
     putImageData(data, dx, dy, dirtyX, dirtyY, width, height) {
       uploads++; latestData = data;
       assert.equal(dx, 0); assert.equal(dy, 0); assert.equal(dirtyX, 0);
-      assert.ok(width > 0 && width <= 256 && height > 0 && height <= 520);
-      assert.ok(dirtyY >= 0 && dirtyY + height <= 520);
+      assert.ok(width > 0 && width <= 1024 && height > 0 && height <= 1040);
+      assert.equal(dirtyY, 0);
     },
   };
   const rasterCanvas = { width: 0, height: 0, getContext: () => rasterCtx };
@@ -201,12 +201,57 @@ test('typed wall and pitched-roof pixels preserve world UVs with one bounded reu
         expected: [Math.floor(materialU(rayZ, distance) * 120) + 1, Math.floor(rayV * 64) + 1, 189, 255] });
     }
     renderer.draw(state);
-    assert.ok(uploads > 0 && uploads <= 20, `unbounded cropped uploads: ${uploads}`);
-    assert.equal(composites, uploads, 'each cropped upload must retain its building paint position');
+    assert.equal(uploads, 1, 'all visible buildings must share one atlas upload');
+    assert.ok(composites > 0 && composites <= 20, `unbounded building patches: ${composites}`);
     for (const point of points)
       assert.deepEqual(observed.get(point.name), point.expected, `${point.name}, distance ${distance}, district ${stageIndex}`);
   }
   assert.equal(createdCanvases, 1); assert.equal(createdBuffers, 1);
-  assert.equal(rasterCanvas.width, 256); assert.equal(rasterCanvas.height, 520);
+  assert.equal(rasterCanvas.width, 1024); assert.equal(rasterCanvas.height, 1040);
   assert.deepEqual(sourceReads, { wall: 1, roof: 1 }, 'source pixel arrays must be cached');
+});
+
+
+test('atlas packing covers the full moving module cycle without dropping patches or growing buffers', () => {
+  let buffers = 0, uploads = 0, composites = 0, samples = 0;
+  function material(width, height) {
+    const data = new Uint8ClampedArray(width * height * 4); data.fill(255);
+    return { width, height, getContext: () => ({ getImageData: () => ({ data }) }) };
+  }
+  const wall = material(120, 160), roof = material(120, 64);
+  const rasterCtx = {
+    createImageData(width, height) {
+      buffers++; return { width, height, data: new Uint8ClampedArray(width * height * 4) };
+    },
+    putImageData(data, dx, dy, x, y, width, height) {
+      uploads++;
+      assert.ok(width <= data.width && height <= data.height, 'packed upload must fit its fixed atlas');
+    },
+  };
+  const atlas = { getContext: () => rasterCtx };
+  const ctx = new Proxy({
+    canvas: { ownerDocument: { createElement: () => atlas } },
+    createLinearGradient: () => ({ addColorStop() {} }), measureText: () => ({ width: 30 }),
+    drawImage(image, sx, sy, width, height) {
+      assert.notEqual(image, wall, 'a full atlas must not fall back to per-column wall draws');
+      assert.notEqual(image, roof, 'a full atlas must not fall back to roof triangle clips');
+      if (image !== atlas) return;
+      composites++;
+      assert.ok(sx >= 0 && sy >= 0 && sx + width <= atlas.width && sy + height <= atlas.height,
+        'each independently painted patch must stay inside the atlas');
+    },
+  }, { get: (target, key) => target[key] ?? (() => {}) });
+  const renderer = createParisRenderer(ctx, { sprites: { wall: () => wall, roof: () => roof }, reducedMotion: true });
+  const state = createState({ seed: 31, difficulty: 'veteran', mode: 'survival' }); state.traffic = [];
+  for (const stageIndex of [0, 4]) for (let offset = 0; offset < 13; offset += 0.08) {
+    state.stageIndex = stageIndex; state.distance = 130000 + offset;
+    uploads = 0; composites = 0; renderer.draw(state); samples++;
+    assert.equal(uploads, 1);
+    assert.ok(composites > 0 && composites <= 20);
+  }
+  assert.ok(samples > 300, 'sample the entire moving module cycle at both building heights');
+  assert.equal(buffers, 1, 'steady movement must not create new raster buffers');
+  state.stageIndex = 3; uploads = 0; composites = 0; renderer.draw(state);
+  assert.equal(uploads, 0, 'the open Seine district has no architecture to upload');
+  assert.equal(composites, 0);
 });

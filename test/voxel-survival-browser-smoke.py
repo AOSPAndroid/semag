@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT = Path(os.environ.get('SEMAG_SCREENSHOT_DIR', '/workspace/scratch/semag-voxel-survival-browser'))
 URL = (sys.argv[1] if len(sys.argv) > 1 else 'http://127.0.0.1:3000').rstrip('/')
 SOURCES = ('index.html', 'solo.html', 'hub/shared.js', 'solo/solo.js', 'voxel-survival-world.js', 'voxel-survival-engine.js',
-           'solo/survival-view.js', 'voxel-survival-renderer.js', 'solo/survival.css',
+           'solo/survival-view.js', 'voxel-survival-renderer.js', 'voxel-survival-presentation.js', 'solo/survival.css',
            'hub/survival-cover.svg', 'display-timing.js', 'keyboard-layout.js')
 REPORT = {'cases': [], 'errors': [], 'failed_resources': [], 'screenshots': [], 'sources': {},
           'native_gameplay_only': True, 'software_webgl_only': True}
@@ -236,6 +236,21 @@ def finite_player(snapshot):
         vertical_overlap = body['y'] < foe['y'] + foe['height'] - .001 and body['y'] + height > foe['y'] + .001
         gap = math.hypot(body['x'] - foe['x'], body['z'] - foe['z'])
         assert not vertical_overlap or gap >= body.get('radius', radius) + foe['radius'] - .001, ('Player and creature bodies overlapped', body, foe, gap)
+    shown = snapshot.get('presentation')
+    if shown and shown.get('worldRevision') == world.get('revision'):
+        scene = [shown['camera']] + [foe for foe in shown['enemies'] if foe['hp'] > 0]
+        for index, pose in enumerate(scene):
+            assert all(math.isfinite(pose[key]) for key in ('x', 'y', 'z')), ('Invalid displayed body', pose)
+            radius, height = pose['radius'], pose['height']
+            for y in range(max(0, math.floor(pose['y'] + .001)), min(world['height'], math.ceil(pose['y'] + height - .001))):
+                for z in range(max(0, math.floor(pose['z'] - radius + .001)), min(world['depth'], math.ceil(pose['z'] + radius - .001))):
+                    for x in range(max(0, math.floor(pose['x'] - radius + .001)), min(world['width'], math.ceil(pose['x'] + radius - .001))):
+                        cell = {'x': x, 'y': y, 'z': z}
+                        assert block_at(world, cell) == 0, ('Displayed body entered a solid voxel', pose, cell)
+            for peer in scene[index + 1:]:
+                vertical = pose['y'] < peer['y'] + peer['height'] - .001 and pose['y'] + height > peer['y'] + .001
+                gap = math.hypot(pose['x'] - peer['x'], pose['z'] - peer['z'])
+                assert not vertical or gap >= radius + peer['radius'] - .001, ('Displayed bodies overlapped', pose, peer)
 
 
 def blocks(snapshot):

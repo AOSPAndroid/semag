@@ -4,6 +4,7 @@ import { MAPS } from './voxel-maps.js';
 import { WEAPONS, weaponDamage, weaponSpread } from './voxel-weapons.js';
 import { launchBolt, advanceBolts, MAX_BOLTS } from './voxel-projectiles.js';
 import { MELEE, KNIFE, meleeProfile, meleeWeaponId } from './voxel-melee.js';
+import { recordLagCompensation, traceCompensatedShot } from './voxel-lag-compensation.js';
 export { MAPS, WEAPONS };
 export { MELEE, KNIFE, meleeProfile, meleeWeaponId };
 export const TICK_RATE = 120;
@@ -234,6 +235,44 @@ export function predictLocalMovement(player, raw, mapIdOrMap = 'courtyard', tick
   }
   return player;
 }
+/** A render correction uses the real body sweep without changing simulation state. */
+export function sweepPresentationOffset(player, offset, mapIdOrMap = 'courtyard', peers = []) {
+  if (!player) return player;
+  const copy = { ...player };
+  for (const axis of ['x', 'y', 'z']) if (!Number.isFinite(copy[axis])) copy[axis] = 0;
+  const arena = typeof mapIdOrMap === 'string' ? MAPS[mapIdOrMap] : mapIdOrMap;
+  const delta = ['x', 'y', 'z'].map(axis => offset?.[axis] ?? 0);
+  if (!arena || !Array.isArray(arena.colliders) || !arena.bounds
+      || !['minX', 'maxX', 'minZ', 'maxZ'].every(key => Number.isFinite(arena.bounds[key]))
+      || !delta.every(Number.isFinite) || Math.hypot(...delta) > 10000
+      || !Number.isFinite(copy.radius) || copy.radius <= 0) return copy;
+  const body = { ...copy, vx: 0, vy: 0, vz: 0 };
+  const contacts = Array.isArray(peers) ? peers.filter(peer => peer && ['x', 'y', 'z', 'radius'].every(key => Number.isFinite(peer[key])) && peer.radius > 0) : [];
+  bodyMove(body, ...delta, arena, contacts);
+  return { ...copy, x: body.x, y: body.y, z: body.z };
+}
+/** Resolve a displayed crowd with the simulation's contact solver, on copies only. */
+export function separatePresentationBodies(players, mapIdOrMap = 'courtyard') {
+  if (!Array.isArray(players)) return [];
+  const copies = players.map(player => ({ ...player }));
+  const arena = typeof mapIdOrMap === 'string' ? MAPS[mapIdOrMap] : mapIdOrMap;
+  if (!arena || !Array.isArray(arena.colliders) || !arena.bounds
+      || !['minX', 'maxX', 'minZ', 'maxZ'].every(key => Number.isFinite(arena.bounds[key]))) return copies;
+  const indexed = copies.map((source, index) => ({ source, index, body: { ...source,
+    vx: Number.isFinite(source.vx) ? source.vx : 0, vy: Number.isFinite(source.vy) ? source.vy : 0, vz: Number.isFinite(source.vz) ? source.vz : 0 } }))
+    .filter(({ body }) => ['x', 'y', 'z', 'radius'].every(key => Number.isFinite(body[key])) && body.radius > 0)
+    .sort((a, b) => (Number.isFinite(a.body.id) ? a.body.id : a.index) - (Number.isFinite(b.body.id) ? b.body.id : b.index));
+  const bodies = indexed.map(entry => entry.body);
+  // Most frames have no body contact. Avoid support/cover scans in that case.
+  let touching = false;
+  for (let i = 0; i < bodies.length && !touching; i++) if (bodies[i].alive) {
+    for (let j = i + 1; j < bodies.length; j++) if (bodyOverlapsPlayer(bodies[i], bodies[j])) { touching = true; break; }
+  }
+  if (!touching) return copies;
+  separatePlayers({ players: bodies }, arena);
+  for (const { index, body } of indexed) Object.assign(copies[index], { x: body.x, y: body.y, z: body.z });
+  return copies;
+}
 /** Slab ray/box intersection in metres. A ray starting inside cover contacts at zero. */
 export function rayBox(origin, direction, rect, maxDistance = Infinity) {
   let near = 0, far = maxDistance;
@@ -359,7 +398,7 @@ function fireRound(state, f, weapon, pendingDamage, arena) {
     // shotgun's minimum cone, so ADS cannot turn it into an eight-hit sniper.
     const pelletAngle = (pellet - 1) * Math.PI * 2 / Math.max(1, pelletCount - 1), pelletRadius = pellet ? weapon.pelletSpread : 0;
     const direction = aimDirection(yaw + Math.cos(pelletAngle) * pelletRadius, clamp(pitch + Math.sin(pelletAngle) * pelletRadius, -1.5, 1.5));
-    const hit = traceShot(state, f.id, origin, direction, weapon.range, arena);
+    const hit = traceCompensatedShot(state, f.id, origin, direction, weapon.range, arena, traceShot);
     let damage = 0;
     if (hit.playerId !== null && state.players[hit.playerId].team !== f.team) {
       damage = weaponDamage(weapon, hit.kind, hit.distance);
@@ -421,6 +460,7 @@ export function combatStep(state, rawInputs = [], arena = state.map || MAPS[stat
   for (const f of state.players) tickActions(state, f, inputs[f.id], arena);
   for (const f of state.players) movementTick(f, inputs[f.id], arena, [], state.players);
   separatePlayers(state, arena);
+  recordLagCompensation(state);
   for (const f of state.players) tickWeapon(state, f, inputs[f.id], pending, arena);
   advanceGrenades(state, arena, { emit: (type, data) => emit(state, type, data), queueDamage: hit => pending.push(hit) });
   // Traces use the same explicit arena as movement, including custom mode maps.

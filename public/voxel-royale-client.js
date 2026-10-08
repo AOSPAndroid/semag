@@ -2,12 +2,13 @@ import { displayKey, gameKey, getKeyboardLayout, mountKeyboardLayoutPicker, subs
 import { copyText, getName, hostInfo, roomUrl, saveName } from './hub/shared.js';
 import { GameAudio } from './audio.js';
 import { WEAPONS, weaponAimFovRatio, weaponSpread } from './voxel-weapons.js';
-import { advanceBolts, MAX_BOLTS } from './voxel-projectiles.js';
-import { predictLocalMovement, traceShot, ADS, HEAL, PLAYER_HEALTH } from './voxel-engine.js';
+import { predictLocalMovement, sweepPresentationOffset, traceShot, ADS, HEAL, PLAYER_HEALTH } from './voxel-engine.js';
 
 import { meleeLabel, meleeProfile } from './voxel-melee.js';
 import { incomingDamageFeedback, damageFeedbackPresentation, paintDamageFeedback } from './voxel-damage-feedback.js';
-import { combatPresentation, createMovementPresenter, projectedMovement, withCombatPresentation } from './voxel-presentation.js';
+import { combatPresentation, createCorrectionPresenter, createMovementPresenter, hudTransitionKey, interpolatedVoxelState, reconcileMovement, resolvePresentationContacts, withCombatPresentation } from './voxel-presentation.js';
+import { createNetworkTimeline } from './network-timeline.js';
+import { setAttribute, setDisabled, setHidden, setStyle, setText, toggleClass } from './hub/dom.js';
 
 export const LOOK_SENSITIVITY = .0025;
 export const INPUT_ACTIONS = Object.freeze(['up', 'down', 'left', 'right', 'jump', 'crouch', 'walk', 'fire', 'reload', 'interact', 'aim', 'swap', 'grenade', 'heal']);
@@ -143,53 +144,22 @@ export function confirmedHitGroups(events, localId) {
   return [...groups.values()].map(group => ({ ...group, label: group.headshot ? 'HEADSHOT' : group.legshot ? 'LEG HIT' : 'HIT' }));
 }
 /** Bounded copied history predicts movement only: HP, inventory and attacks stay authoritative. */
-export function reconcilePlayer(player, history, ack, map, predictMovement, allowMovement = true, peers = []) {
-  const pending = history.filter(frame => frame.seq > ack).slice(-240); const predicted = clone(player);
-  if (predicted?.alive && allowMovement) for (const frame of pending) predictMovement(predicted, frame.buttons, map, 1, peers);
-  return { predicted, pending };
+export function reconcilePlayer(player, history, ack, map, predictMovement, allowMovement = true, peers = [], authoritativeTick) {
+  return reconcileMovement(player, history, ack, map, predictMovement, allowMovement, peers, authoritativeTick);
 }
-export function interpolatedState(samples, targetTime, localId, { predictMovement, traceProjectile, maxExtrapolationMs = 25 } = {}) {
-  if (!samples.length) return null;
-  let from = samples[0], to = samples.at(-1);
-  for (let i = 1; i < samples.length; i++) { if (samples[i].time >= targetTime) { from = samples[i - 1]; to = samples[i]; break; } from = samples[i]; }
-  const state = { ...to.state, players: to.state.players.map(player => ({ ...player })), bolts: (to.state.bolts || []).slice(0, MAX_BOLTS).map(bolt => ({ ...bolt })) }; state.fighters = state.players;
-  if (from.state.phase !== to.state.phase || from.state.matchId !== to.state.matchId || from.state.mapId !== to.state.mapId) return state;
-  const span = to.time - from.time, ratio = span > 0 ? clamp((targetTime - from.time) / span, 0, 1) : 1;
-  const projectedMs = clamp(targetTime - to.time, 0, Math.min(25, Math.max(0, maxExtrapolationMs)));
-  for (const player of state.players) {
-    const old = from.state.players.find(other => other.id === player.id);
-    Object.assign(player, combatPresentation(player, old, ratio, projectedMs));
-    if (player.id === localId || !old || old.alive !== player.alive || old.team !== player.team || Math.hypot(player.x - old.x, player.y - old.y, player.z - old.z) > 4) continue;
-    for (const axis of ['x', 'y', 'z']) player[axis] = old[axis] + (player[axis] - old[axis]) * ratio;
-    player.yaw = cleanAim(old.yaw + cleanAim(player.yaw - old.yaw).yaw * ratio).yaw; player.pitch = old.pitch + (player.pitch - old.pitch) * ratio;
-  }
-  for (const bolt of state.bolts) {
-    const old = from.state.bolts?.find(other => other.id === bolt.id && other.bornTick === bolt.bornTick && other.playerId === bolt.playerId);
-    if (!old) continue;
-    for (const axis of ['x', 'y', 'z', 'vx', 'vy', 'vz']) if (Number.isFinite(old[axis]) && Number.isFinite(bolt[axis])) bolt[axis] = old[axis] + (bolt[axis] - old[axis]) * ratio;
-  }
-  if (projectedMs > 0 && state.phase === 'fight' && typeof predictMovement === 'function') {
-    const peers = to.state.players;
-    for (const player of state.players) if (player.id !== localId && player.alive) Object.assign(player, projectedMovement(player, player.previousInput || neutralInput(player.yaw, player.pitch), state.map, projectedMs, predictMovement, peers, peers.find(other => other.id === player.id)));
-  }
-  if (projectedMs > 0 && state.phase === 'fight' && typeof traceProjectile === 'function') {
-    const projection = { ...state };
-    let seconds = projectedMs / 1000;
-    while (seconds > 1e-8 && projection.bolts.length) { const dt = Math.min(1 / 120, seconds); projection.tick++; advanceBolts(projection, { dt, trace: traceProjectile }); seconds -= dt; }
-    state.bolts = projection.bolts;
-  }
-  return state;
+export function interpolatedState(samples, targetTime, localId, options = {}) {
+  return interpolatedVoxelState(samples, targetTime, localId, options);
 }
 
 async function boot() {
   const $ = id => document.getElementById(id), canvas = $('arena');
   const roomId = new URLSearchParams(location.search).get('room')?.trim().toUpperCase() || '';
-  $('room-code').textContent = /^[A-Z0-9]{6}$/.test(roomId) ? roomId : 'NO ROOM';
+  setText($('room-code'), /^[A-Z0-9]{6}$/.test(roomId) ? roomId : 'NO ROOM');
   const layoutPickerHost = document.querySelector('[data-keyboard-layout-picker]'), layoutPickerHome = layoutPickerHost.parentElement;
   const layoutPicker = mountKeyboardLayoutPicker(layoutPickerHost);
   let playerName = getName(); $('player-name').value = playerName;
   let engine, renderer, socket, state = null, playerId = null, hostId = null, connected = false, roster = [], capacity = 10;
-  let predictedPlayer = null, presentationPlayer = null, snapshots = [], pending = [], sequence = 0, aim = cleanAim();
+  let predictedPlayer = null, presentationPlayer = null, presentationPlayers = [], snapshots = [], pending = [], sequence = 0, predictionTick = 0, aim = cleanAim();
   let dialogReturnFocus = null, guideReturnToRoom = false;
   let paused = true, entered = false, fallback = false, touchMode = false, rightDrag = false, modalOpen = false, graphicsError = '', spectatorId = null;
   let destroyed = false, permanentError = false, reconnectTimer, reconnectAttempts = 0, frameId = null, lastFrameAt = 0, accumulator = 0, renderCount = 0;
@@ -200,11 +170,15 @@ async function boot() {
   const touch = { actions: new Set(), move: { x: 0, y: 0 }, look: { x: 0, y: 0 } };
   const actionPointers = new Map(), padPointers = new Map(), wirePacer = createInputPacer(60);
   const presentMovement = createMovementPresenter();
+  const correction = createCorrectionPresenter();
+  const timeline = createNetworkTimeline({ snapshotTicks: 4 });
+  let paintedHUDKey = "";
+  const hudKey = () => hudTransitionKey(state, roster, playerId);
   const eventSeen = new Set(), eventOrder = [], kills = [], audio = new GameAudio(), removers = [];
   function listen(target, name, callback, options) { target.addEventListener(name, callback, options); removers.push(() => target.removeEventListener(name, callback, options)); }
   function send(message) { if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message)); }
-  function error(message = '') { $('error-banner').textContent = message; $('error-banner').hidden = !message; }
-  function toast(message) { clearTimeout(toastTimer); $('toast').textContent = message; $('toast').hidden = false; toastTimer = setTimeout(() => { $('toast').hidden = true; }, 2800); }
+  function error(message = '') { setText($('error-banner'), message); setHidden($('error-banner'), !message); }
+  function toast(message) { clearTimeout(toastTimer); setText($('toast'), message); setHidden($('toast'), false); toastTimer = setTimeout(() => { setHidden($('toast'), true); }, 2800); }
   function ownPlayer() { return state?.players?.find(player => player.id === playerId) || null; }
   function lookupName(id) { return roster.find(person => person?.id === id)?.name || `Player ${Number(id) + 1}`; }
   function pointerLocked() { return document.pointerLockElement === canvas; }
@@ -213,7 +187,10 @@ async function boot() {
   function sendInput(buttons = currentInput(), edge = false) {
     if (!connected || playerId == null || !wirePacer.shouldSend(performance.now(), edge)) return sequence;
     if (sequence >= 999999000) sequence = 0;
-    send({ type: 'input', seq: ++sequence, buttons }); return sequence;
+    // Preserve the rendered remote timeline when the trigger changes between frames.
+    const viewTime = timeline.getState().renderTime;
+    const viewTick = state?.phase === 'fight' && Number.isFinite(viewTime) && viewTime >= 0 ? viewTime * 120 / 1000 : null;
+    send({ type: 'input', seq: ++sequence, buttons, ...(viewTick === null ? {} : { viewTick }) }); return sequence;
   }
   function utilityFeedback(action) {
     const player = ownPlayer(); if (!player?.alive || state?.phase !== 'fight') return;
@@ -231,7 +208,7 @@ async function boot() {
   }
   function integrateTouchLook(now = performance.now()) {
     const dt = clamp((now - lastTouchLookAt) / 1000, 0, .1); lastTouchLookAt = now;
-    if (touchMode && controlsActive()) { const sensitivity = aimLookMultiplier(ownPlayer(), engine?.ADS); aim = cleanAim(aim.yaw + touch.look.x * dt * 2.4 * sensitivity, aim.pitch - touch.look.y * dt * 1.85 * sensitivity); }
+    if (touchMode && controlsActive()) { const sensitivity = aimLookMultiplier(presentationPlayer || ownPlayer(), engine?.ADS); aim = cleanAim(aim.yaw + touch.look.x * dt * 2.4 * sensitivity, aim.pitch - touch.look.y * dt * 1.85 * sensitivity); }
   }
   function neutralize({ pause = false, unlock = false } = {}) {
     keys.clear(); pressedKeys.clear(); mouse.fire = mouse.aim = false; rightDrag = false;
@@ -242,11 +219,11 @@ async function boot() {
     document.querySelectorAll('.touch-pad i').forEach(element => { element.style.transform = ''; });
     if (pause) paused = true;
     if (unlock && pointerLocked()) document.exitPointerLock?.();
-    sendInput(neutralInput(aim.yaw, aim.pitch), true); wirePacer.reset(); pending = []; accumulator = 0; lastTouchLookAt = performance.now();
+    sendInput(neutralInput(aim.yaw, aim.pitch), true); wirePacer.reset(); pending = []; accumulator = 0; predictionTick = state?.tick || 0; correction.reset(); presentationPlayer = null; presentationPlayers = []; lastTouchLookAt = performance.now();
     predictedPlayer = clone(ownPlayer()); updateUI();
   }
   function updateMap(viewed) {
-    const map = state?.map; $('tactical-map').hidden = !map || !viewed || !['countdown', 'fight', 'matchEnd'].includes(state.phase); if (!map || !viewed) return;
+    const map = state?.map; setHidden($('tactical-map'), !map || !viewed || !['countdown', 'fight', 'matchEnd'].includes(state.phase)); if (!map || !viewed) return;
     const svg = $('map-plan'), node = (tag, attrs) => { const element = document.createElementNS('http://www.w3.org/2000/svg', tag); for (const [key, value] of Object.entries(attrs)) element.setAttribute(key, value); return element; };
     if (mapPlanId !== map.id) {
       mapPlanId = map.id; svg.replaceChildren(); const b = map.bounds;
@@ -261,7 +238,7 @@ async function boot() {
     }
     const pose = viewed.id === playerId ? predictedPlayer || viewed : viewed;
     mapSelf.setAttribute('transform', `translate(${pose.x} ${pose.z}) rotate(${(viewed.id === playerId ? aim.yaw : viewed.yaw) * 180 / Math.PI})`);
-    $('tactical-map').setAttribute('aria-label', `${viewed.id === playerId ? 'Your' : 'Spectated player'} position and current safe zone; opponent positions are hidden`);
+    setAttribute($('tactical-map'), 'aria-label', `${viewed.id === playerId ? 'Your' : 'Spectated player'} position and current safe zone; opponent positions are hidden`);
   }
   function renderRoster() {
     const room = roomPresentation(state, roster, capacity);
@@ -278,58 +255,59 @@ async function boot() {
     }
   }
   function updateUI() {
+    lastHUDAt = performance.now(); paintedHUDKey = hudKey();
     refreshHeartbeat(); const phase = state?.phase || 'lobby', local = ownPlayer(), room = roomPresentation(state, roster, capacity), { count } = room, isHost = playerId != null && playerId === hostId;
     document.querySelector('.royale-app').dataset.phase = phase;
-    $('connection-status').textContent = connected ? 'CONNECTED' : permanentError ? 'UNAVAILABLE' : 'RECONNECTING'; $('connection-dot').classList.toggle('online', connected);
-    $('seat-count').textContent = room.label; $('map-name').textContent = (state?.mapName || state?.map?.name || 'PRIVATE ISLAND').toUpperCase();
-    $('phase-label').textContent = ({ lobby: 'ASSEMBLING', countdown: 'SPAWNING', fight: 'LAST PLAYER STANDING', matchEnd: 'BATTLE COMPLETE' })[phase] || phase.toUpperCase();
-    $('alive-count').textContent = phase === 'lobby' ? count : aliveParticipants(state).length; $('alive-label').textContent = phase === 'lobby' ? ` / ${room.capacity} PLAYERS` : ` / ${state?.participantIds?.length || 0} ALIVE`;
-    $('player-name').disabled = !connected || phase !== 'lobby';
+    setText($('connection-status'), connected ? 'CONNECTED' : permanentError ? 'UNAVAILABLE' : 'RECONNECTING'); toggleClass($('connection-dot'), 'online', connected);
+    setText($('seat-count'), room.label); setText($('map-name'), (state?.mapName || state?.map?.name || 'PRIVATE ISLAND').toUpperCase());
+    setText($('phase-label'), ({ lobby: 'ASSEMBLING', countdown: 'SPAWNING', fight: 'LAST PLAYER STANDING', matchEnd: 'BATTLE COMPLETE' })[phase] || phase.toUpperCase());
+    setText($('alive-count'), phase === 'lobby' ? count : aliveParticipants(state).length); setText($('alive-label'), phase === 'lobby' ? ` / ${room.capacity} PLAYERS` : ` / ${state?.participantIds?.length || 0} ALIVE`);
+    setDisabled($('player-name'), !connected || phase !== 'lobby');
     const startable = canHostStart(state, roster, playerId, hostId, connected) && !graphicsError;
-    $('start-button').hidden = !isHost || phase !== 'lobby'; $('start-button').disabled = !startable;
-    $('overlay-start').hidden = !isHost || phase !== 'lobby' || !!graphicsError; $('overlay-start').disabled = !startable;
-    $('rematch-button').hidden = !isHost || phase !== 'matchEnd'; $('rematch-button').disabled = !connected;
-    $('overlay-rematch').hidden = $('rematch-button').hidden; $('overlay-rematch').disabled = $('rematch-button').disabled;
-    $('overlay-room').hidden = !connected || !['lobby', 'matchEnd'].includes(phase) || !!graphicsError;
+    setHidden($('start-button'), !isHost || phase !== 'lobby'); setDisabled($('start-button'), !startable);
+    setHidden($('overlay-start'), !isHost || phase !== 'lobby' || !!graphicsError); setDisabled($('overlay-start'), !startable);
+    setHidden($('rematch-button'), !isHost || phase !== 'matchEnd'); setDisabled($('rematch-button'), !connected);
+    setHidden($('overlay-rematch'), $('rematch-button').hidden); setDisabled($('overlay-rematch'), $('rematch-button').disabled);
+    setHidden($('overlay-room'), !connected || !['lobby', 'matchEnd'].includes(phase) || !!graphicsError);
     $('overlay-room').firstChild.textContent = phase === 'matchEnd' ? 'Room & controls ' : 'Room setup ';
-    $('host-label').textContent = isHost ? 'You host this room.' : hostId != null ? `${lookupName(hostId)} hosts this room.` : 'Waiting for the host';
-    $('start-note').textContent = phase === 'lobby' ? count < 2 ? 'Invite at least one rival. The host chooses when to start.' : count >= room.capacity ? `${count} players are here. This room is full and the host can start.` : `${count} players are here. The host can start now or invite up to ${room.capacity - count} more.` : phase === 'matchEnd' ? isHost ? 'Return everyone to the lobby, invite more rivals and start a new battle.' : 'The host can open the lobby for another battle.' : 'The battle keeps running when controls are released.';
+    setText($('host-label'), isHost ? 'You host this room.' : hostId != null ? `${lookupName(hostId)} hosts this room.` : 'Waiting for the host');
+    setText($('start-note'), phase === 'lobby' ? count < 2 ? 'Invite at least one rival. The host chooses when to start.' : count >= room.capacity ? `${count} players are here. This room is full and the host can start.` : `${count} players are here. The host can start now or invite up to ${room.capacity - count} more.` : phase === 'matchEnd' ? isHost ? 'Return everyone to the lobby, invite more rivals and start a new battle.' : 'The host can open the lobby for another battle.' : 'The battle keeps running when controls are released.');
     const viewed = spectatorPlayer(state, playerId, spectatorId), spectating = !!viewed && viewed.id !== playerId;
     if (!local?.alive) spectatorId = viewed?.alive ? viewed.id : null;
     const health = healthPresentation(viewed, healthView, { now: performance.now(), matchId: state?.matchId }); healthView = health;
-    $('combat-hud').hidden = !viewed?.alive || !['countdown', 'fight'].includes(phase);
-    $('health').textContent = Math.round(health.hp); $('health-max').textContent = `/ ${health.maxHp}`;
-    $('health-fill').style.width = `${health.percent}%`; $('health-trail').style.width = `${health.trailPercent}%`;
-    $('health-meter').setAttribute('aria-valuenow', String(health.hp)); $('health-meter').setAttribute('aria-valuemax', String(health.maxHp)); $('health-meter').setAttribute('aria-label', spectating ? `${lookupName(viewed.id)} health` : 'Your health');
-    $('health-subject').textContent = spectating ? lookupName(viewed.id).toUpperCase() : 'YOUR HEALTH'; $('health-readout').classList.toggle('low-health', health.low);
-    $('health-status').textContent = health.low ? 'LOW HEALTH · FIND COVER' : spectating ? 'SPECTATING' : 'ONE LIFE · STAY SHARP';
-    $('health-gain').hidden = spectating || performance.now() >= healthGainUntil || !healthGain; $('health-gain').textContent = `+${healthGain}`;
-    const readout = combatReadout(viewed || {}, engine); $('weapon-label').textContent = readout.label; $('ammo').textContent = readout.ammo; $('reserve').textContent = readout.reserve;
-    $('ammo-reserve').hidden = readout.sword || readout.healing; $('weapon-status').textContent = readout.status; $('inventory-label').textContent = readout.inventory;
+    setHidden($('combat-hud'), !viewed?.alive || !['countdown', 'fight'].includes(phase));
+    setText($('health'), Math.round(health.hp)); setText($('health-max'), `/ ${health.maxHp}`);
+    setStyle($('health-fill'), 'width', `${health.percent}%`); setStyle($('health-trail'), 'width', `${health.trailPercent}%`);
+    setAttribute($('health-meter'), 'aria-valuenow', String(health.hp)); setAttribute($('health-meter'), 'aria-valuemax', String(health.maxHp)); setAttribute($('health-meter'), 'aria-label', spectating ? `${lookupName(viewed.id)} health` : 'Your health');
+    setText($('health-subject'), spectating ? lookupName(viewed.id).toUpperCase() : 'YOUR HEALTH'); toggleClass($('health-readout'), 'low-health', health.low);
+    setText($('health-status'), health.low ? 'LOW HEALTH · FIND COVER' : spectating ? 'SPECTATING' : 'ONE LIFE · STAY SHARP');
+    setHidden($('health-gain'), spectating || performance.now() >= healthGainUntil || !healthGain); setText($('health-gain'), `+${healthGain}`);
+    const readout = combatReadout(viewed || {}, engine); setText($('weapon-label'), readout.label); setText($('ammo'), readout.ammo); setText($('reserve'), readout.reserve);
+    setHidden($('ammo-reserve'), readout.sword || readout.healing); setText($('weapon-status'), readout.status); setText($('inventory-label'), readout.inventory);
     $('weapon-readout').dataset.slot = readout.healing ? 'potion' : readout.sword ? 'sword' : 'primary';
-    $('reload-track').hidden = !readout.progress; $('reload-progress').style.width = `${readout.progress?.percent || 0}%`; $('reload-track').setAttribute('aria-label', readout.progress?.label || 'Weapon action'); $('reload-track').setAttribute('aria-valuenow', String(Math.round(readout.progress?.percent || 0)));
-    $('grenade-charge').textContent = readout.grenades; $('potion-charge').textContent = readout.potions;
-    const storm = stormPresentation(state, viewed); $('storm-hud').hidden = !storm.visible; $('storm-label').textContent = storm.label; $('storm-clock').textContent = storm.text; $('storm-detail').textContent = storm.detail; $('storm-hud').classList.toggle('shrinking', !!storm.shrinking); $('storm-hud').classList.toggle('outside', storm.outside); $('storm-warning').hidden = !storm.outside;
+    setHidden($('reload-track'), !readout.progress); setStyle($('reload-progress'), 'width', `${readout.progress?.percent || 0}%`); setAttribute($('reload-track'), 'aria-label', readout.progress?.label || 'Weapon action'); setAttribute($('reload-track'), 'aria-valuenow', String(Math.round(readout.progress?.percent || 0)));
+    setText($('grenade-charge'), readout.grenades); setText($('potion-charge'), readout.potions);
+    const storm = stormPresentation(state, viewed); setHidden($('storm-hud'), !storm.visible); setText($('storm-label'), storm.label); setText($('storm-clock'), storm.text); setText($('storm-detail'), storm.detail); toggleClass($('storm-hud'), 'shrinking', !!storm.shrinking); toggleClass($('storm-hud'), 'outside', storm.outside); setHidden($('storm-warning'), !storm.outside);
     updateMap(viewed);
     const nearLoot = local?.alive && phase === 'fight' && engine?.findNearbyLoot ? lootPresentation(engine.findNearbyLoot(state, playerId), local) : null;
-    $('loot-prompt').hidden = !nearLoot || paused || !entered || modalOpen; $('loot-name').textContent = nearLoot?.name || ''; $('loot-detail').textContent = nearLoot?.detail ? displayKey(nearLoot.detail) : '';
+    setHidden($('loot-prompt'), !nearLoot || paused || !entered || modalOpen); setText($('loot-name'), nearLoot?.name || ''); setText($('loot-detail'), nearLoot?.detail ? displayKey(nearLoot.detail) : '');
     const scoped = !!local?.hasGun && !!WEAPONS[local.weapon]?.scoped && aimFraction(local, engine?.ADS?.ticks) >= 14 / 18;
-    $('scope-reticle').hidden = !controlsActive() || phase !== 'fight' || !scoped; $('scope-label').textContent = `${WEAPONS[local?.weapon]?.label || 'PRECISION'} / PRECISION SIGHT`;
-    $('crosshair').hidden = !controlsActive() || phase !== 'fight' || scoped || readout.healing; $('crosshair').dataset.stance = readout.sword ? 'sword' : local?.aiming ? 'aim' : 'hip';
-    if (local) { const weapon = WEAPONS[local.weapon], ads = aimFraction(local, engine?.ADS?.ticks); const motion = weapon ? clamp((Math.hypot(finite(local.vx), finite(local.vz)) - .22) / weapon.speed, 0, 1) : 0; const spread = weapon ? (weapon.pelletSpread || 0) + weaponSpread(weapon, { motion, grounded: local.grounded, heat: local.heat, ads }, engine?.ADS) : 0; const size = readout.sword ? 18 : Math.round(20 - ads * 8 + Math.min(60, spread * canvas.clientHeight * 2)); $('crosshair').style.width = `${size}px`; $('crosshair').style.height = `${size}px`; }
+    setHidden($('scope-reticle'), !controlsActive() || phase !== 'fight' || !scoped); setText($('scope-label'), `${WEAPONS[local?.weapon]?.label || 'PRECISION'} / PRECISION SIGHT`);
+    setHidden($('crosshair'), !controlsActive() || phase !== 'fight' || scoped || readout.healing); $('crosshair').dataset.stance = readout.sword ? 'sword' : local?.aiming ? 'aim' : 'hip';
+    if (local) { const weapon = WEAPONS[local.weapon], ads = aimFraction(local, engine?.ADS?.ticks); const motion = weapon ? clamp((Math.hypot(finite(local.vx), finite(local.vz)) - .22) / weapon.speed, 0, 1) : 0; const spread = weapon ? (weapon.pelletSpread || 0) + weaponSpread(weapon, { motion, grounded: local.grounded, heat: local.heat, ads }, engine?.ADS) : 0; const size = readout.sword ? 18 : Math.round(20 - ads * 8 + Math.min(60, spread * canvas.clientHeight * 2)); setStyle($('crosshair'), 'width', `${size}px`); setStyle($('crosshair'), 'height', `${size}px`); }
     const living = aliveParticipants(state), placement = state?.placements?.find(item => item.playerId === playerId);
-    $('spectator-hud').hidden = !local || local.alive || phase !== 'fight'; $('placement-label').textContent = placement ? `PLACED #${placement.place}` : 'ELIMINATED'; $('spectator-label').textContent = spectating ? `SPECTATING ${lookupName(viewed.id).toUpperCase()}` : 'NO SURVIVORS'; $('next-spectator').hidden = living.length < 2;
-    $('pause-button').hidden = paused || !entered || !local?.alive || !['countdown', 'fight'].includes(phase); $('touch-controls').hidden = !touchMode || !entered || paused || !local?.alive || !['countdown', 'fight'].includes(phase);
+    setHidden($('spectator-hud'), !local || local.alive || phase !== 'fight'); setText($('placement-label'), placement ? `PLACED #${placement.place}` : 'ELIMINATED'); setText($('spectator-label'), spectating ? `SPECTATING ${lookupName(viewed.id).toUpperCase()}` : 'NO SURVIVORS'); setHidden($('next-spectator'), living.length < 2);
+    setHidden($('pause-button'), paused || !entered || !local?.alive || !['countdown', 'fight'].includes(phase)); setHidden($('touch-controls'), !touchMode || !entered || paused || !local?.alive || !['countdown', 'fight'].includes(phase));
     for (const button of document.querySelectorAll('[data-royale-action]')) { const action = button.dataset.royaleAction; if (action === 'swap') { button.textContent = readout.sword && local?.hasGun ? 'GUN' : 'KNIFE'; button.setAttribute('aria-label', readout.sword && local?.hasGun ? 'Switch to scavenged gun' : 'Switch to small knife'); button.setAttribute('aria-pressed', String(readout.sword)); } if (action === 'aim') button.setAttribute('aria-pressed', String(!!local?.aiming)); }
-    $('objective').textContent = phase === 'lobby' ? room.capacity === 2 ? 'Invite your rival. The host starts with both players here.' : `The host can start with 2–${room.capacity} players.` : phase === 'countdown' ? 'Random spawns. Scavenge a gun when the battle begins.' : phase === 'fight' ? local?.alive ? 'Scavenge supplies. Stay inside the zone. Be the last alive.' : 'One life spent. Watch the remaining survivors.' : 'Battle complete. The host can return everyone to the lobby.';
+    setText($('objective'), phase === 'lobby' ? room.capacity === 2 ? 'Invite your rival. The host starts with both players here.' : `The host can start with 2–${room.capacity} players.` : phase === 'countdown' ? 'Random spawns. Scavenge a gun when the battle begins.' : phase === 'fight' ? local?.alive ? 'Scavenge supplies. Stay inside the zone. Be the last alive.' : 'One life spent. Watch the remaining survivors.' : 'Battle complete. The host can return everyone to the lobby.');
     let overlay = false, title = '', kicker = '', subtitle = '', enter = false;
     if (graphicsError) { overlay = true; kicker = 'GRAPHICS UNAVAILABLE'; title = 'The island could not render.'; subtitle = graphicsError; }
     else if (!connected) { overlay = true; kicker = 'CONNECTING TO THE HOST'; title = permanentError ? 'This room is unavailable.' : 'Waiting for the host.'; subtitle = permanentError ? 'Return to the shelf to create a room or join the next battle.' : 'Your controls are released while the connection recovers.'; }
     else if (phase === 'lobby') { overlay = true; kicker = `${state?.mapName || 'PRIVATE ISLAND'} / ${count} PLAYERS`; title = isHost ? count >= 2 ? 'Your rivals are here.' : 'Gather your rivals.' : 'Waiting for the host.'; subtitle = isHost ? count >= 2 ? count >= room.capacity ? 'Everyone is here. Start when you are ready.' : `Start with the players here, or invite more. This room holds up to ${room.capacity} players.` : 'Share your invite with at least one other player. You choose when the battle begins.' : `${lookupName(hostId)} starts the battle when everyone is here. You do not need to ready up.`; }
     else if (phase === 'matchEnd') { overlay = true; const winner = state.winnerId ?? state.winner; kicker = 'BATTLE COMPLETE'; title = winner == null ? 'No one left standing.' : winner === playerId ? 'You outlasted everyone.' : `${lookupName(winner)} survives.`; subtitle = `${placement ? `You placed #${placement.place}. ` : ''}${local?.kills || 0} eliminations. ${isHost ? 'Return to the lobby to invite players and go again.' : 'The host can open the lobby for another battle.'}`; }
     else if (local?.alive && (paused || !entered) && !modalOpen) { overlay = true; kicker = entered ? 'CONTROLS RELEASED' : 'YOUR ONE LIFE STARTS HERE'; title = entered ? 'Controls released.' : 'Enter the arena.'; subtitle = 'You start with a small knife and 200 health. Find a gun and supplies, then keep moving with the safe zone. The battle keeps running while controls are released.'; enter = true; }
-    $('game-overlay').hidden = !overlay; $('overlay-kicker').textContent = kicker; $('overlay-title').textContent = title; $('overlay-subtitle').textContent = subtitle; $('enter-arena').hidden = !enter; $('retry-graphics').hidden = !graphicsError; $('aim-note').hidden = !enter; $('aim-note').textContent = touchMode ? 'Move / Look pads. Hold AIM for sights.' : 'RMB aims. If capture is unavailable, hold RMB and drag to look.';
-    $('phase-announcement').hidden = phase !== 'countdown' || overlay || modalOpen || !connected; $('countdown-number').textContent = Math.max(1, Math.ceil(finite(state?.phaseTicks) / 120)); renderRoster();
+    setHidden($('game-overlay'), !overlay); setText($('overlay-kicker'), kicker); setText($('overlay-title'), title); setText($('overlay-subtitle'), subtitle); setHidden($('enter-arena'), !enter); setHidden($('retry-graphics'), !graphicsError); setHidden($('aim-note'), !enter); setText($('aim-note'), touchMode ? 'Move / Look pads. Hold AIM for sights.' : 'RMB aims. If capture is unavailable, hold RMB and drag to look.');
+    setHidden($('phase-announcement'), phase !== 'countdown' || overlay || modalOpen || !connected); setText($('countdown-number'), Math.max(1, Math.ceil(finite(state?.phaseTicks) / 120))); renderRoster();
   }
   function playEvents(events = []) {
     const fresh = [], impactSounds = new Set();
@@ -341,7 +319,7 @@ async function boot() {
       if (['kill', 'elimination', 'death'].includes(event.type)) {
         kills.push({ at: performance.now(), own: source === playerId && target !== playerId, text: `${source == null ? 'THE STORM' : source === target ? 'SELF FRAG' : lookupName(source)} ${event.headshot ? '[HS]' : '›'} ${lookupName(target)}` }); if (kills.length > 4) kills.shift();
       }
-      if (source === playerId && ['healStart', 'healCancel', 'healComplete'].includes(event.type)) { feedbackUntil = performance.now() + 1100; $('combat-feedback').textContent = event.type === 'healComplete' ? `HEALED +${Math.round(event.amount || 0)} HP` : event.type === 'healCancel' ? 'HEALING INTERRUPTED' : 'DRINKING POTION'; if (event.type === 'healComplete') { healthGain = Math.max(0, Math.round(event.amount || 0)); healthGainUntil = performance.now() + 1400; } }
+      if (source === playerId && ['healStart', 'healCancel', 'healComplete'].includes(event.type)) { feedbackUntil = performance.now() + 1100; setText($('combat-feedback'), event.type === 'healComplete' ? `HEALED +${Math.round(event.amount || 0)} HP` : event.type === 'healCancel' ? 'HEALING INTERRUPTED' : 'DRINKING POTION'); if (event.type === 'healComplete') { healthGain = Math.max(0, Math.round(event.amount || 0)); healthGainUntil = performance.now() + 1400; } }
       if (event.type === 'lootPickup' && source === playerId) toast(event.kind === 'weapon' ? `${WEAPONS[event.weapon]?.label || 'Weapon'} equipped.` : event.kind === 'heal' ? 'Healing potion collected.' : event.kind === 'grenade' ? 'Frag grenade collected.' : 'Ammunition collected.');
       if (!audio.enabled) continue;
       try {
@@ -352,19 +330,26 @@ async function boot() {
         else if (event.type === 'healComplete' && source === playerId) audio.tone(660, .13, { end: 920, type: 'triangle', gain: .15 });
       } catch { /* Optional sound cannot interrupt the match. */ }
     }
-    const hits = confirmedHitGroups(fresh, playerId); if (hits.length) { const hit = hits.reduce((best, next) => next.damage > best.damage ? next : best); const killed = fresh.some(event => ['kill', 'elimination', 'death'].includes(event.type) && event.targetId === hit.targetId && (event.attackerId ?? event.shooterId ?? event.playerId) === playerId); feedbackUntil = performance.now() + (killed ? 1100 : 650); $('combat-feedback').textContent = `${hit.label} · ${Math.round(hit.damage)} HP${killed ? ' · ELIMINATED' : ''}`; }
+    const hits = confirmedHitGroups(fresh, playerId); if (hits.length) { const hit = hits.reduce((best, next) => next.damage > best.damage ? next : best); const killed = fresh.some(event => ['kill', 'elimination', 'death'].includes(event.type) && event.targetId === hit.targetId && (event.attackerId ?? event.shooterId ?? event.playerId) === playerId); feedbackUntil = performance.now() + (killed ? 1100 : 650); setText($('combat-feedback'), `${hit.label} · ${Math.round(hit.damage)} HP${killed ? ' · ELIMINATED' : ''}`); }
   }
   function draw(now = performance.now()) {
     if (!renderer || !state || graphicsError || document.hidden) return;
-    const rendered = interpolatedState(snapshots, now - 12, playerId, { predictMovement: engine.predictLocalMovement, traceProjectile: engine.traceShot }) || state;
-    const local = ownPlayer(), viewed = spectatorPlayer(rendered, playerId, spectatorId);
+    const rendered = interpolatedState(snapshots, timeline.time(now), playerId, { predictMovement: engine.predictLocalMovement, traceProjectile: engine.traceShot, combatTime: timeline.currentTime(now) }) || { ...state, players: state.players.map(player => ({ ...player })) };
+    const local = ownPlayer();
     presentationPlayer = predictedPlayer || local;
     if (state.phase === 'fight' && presentationPlayer?.alive) presentationPlayer = presentMovement(presentationPlayer, currentInput(), state.map, accumulator, engine.predictLocalMovement, state.players);
-    presentationPlayer = withCombatPresentation(presentationPlayer, rendered.players.find(player => player.id === playerId));
+    const newest = snapshots[snapshots.length - 1], previous = snapshots[snapshots.length - 2];
+    const visualCombat = local && combatPresentation(local, previous?.state.players.find(player => player.id === playerId) || local, 1, Math.max(0, timeline.currentTime(now) - (newest?.time || 0)));
+    presentationPlayer = withCombatPresentation(presentationPlayer, visualCombat);
+    presentationPlayer = correction.present(presentationPlayer, now, engine.sweepPresentationOffset, state.map, state.players);
+    presentationPlayers = resolvePresentationContacts(rendered.players.map(player => local?.alive && player.id === playerId ? presentationPlayer : player), state.map);
+    rendered.players = presentationPlayers; rendered.fighters = presentationPlayers;
+    if (local?.alive) presentationPlayer = presentationPlayers.find(player => player.id === playerId) || presentationPlayer;
+    const viewed = spectatorPlayer(rendered, playerId, spectatorId);
     const camera = state.phase === 'lobby' ? { ...state.map.spawnPoints[0], alive: false, id: playerId, y: finite(state.map.spawnPoints[0]?.y) } : local?.alive ? presentationPlayer : viewed;
     const viewAim = local?.alive ? aim : cleanAim(camera?.yaw, camera?.pitch);
     renderer.render(rendered, { playerId, localId: playerId, localPlayer: presentationPlayer, viewPlayer: camera, yaw: viewAim.yaw, pitch: viewAim.pitch + finite(camera?.recoil), time: now }); renderCount++;
-    $('hit-marker').hidden = now >= hitUntil; $('hit-marker').dataset.kind = hitKind; paintDamageFeedback($('damage-cue'), damageFeedbackPresentation(damageFeedback, camera, { now, lifeKey: state.matchId, yaw: viewAim.yaw, active: state.phase === 'fight' })); $('combat-feedback').hidden = now >= feedbackUntil;
+    setHidden($('hit-marker'), now >= hitUntil); setAttribute($('hit-marker'), 'data-kind', hitKind); paintDamageFeedback($('damage-cue'), damageFeedbackPresentation(damageFeedback, camera, { now, lifeKey: state.matchId, yaw: viewAim.yaw, active: state.phase === 'fight' })); setHidden($('combat-feedback'), now >= feedbackUntil);
     while (kills.length && now - kills[0].at > 6000) kills.shift(); const signature = kills.map(item => item.text).join('|');
     if ($('kill-feed').dataset.signature !== signature) { $('kill-feed').dataset.signature = signature; $('kill-feed').replaceChildren(...kills.map(kill => { const item = document.createElement('li'); item.textContent = kill.text; item.classList.toggle('own-kill', kill.own); return item; })); }
   }
@@ -373,7 +358,7 @@ async function boot() {
     frameId = null; if (destroyed || !activeAnimation()) { lastFrameAt = 0; return; }
     const dt = lastFrameAt ? Math.min(.0667, (now - lastFrameAt) / 1000) : 0; lastFrameAt = now; integrateTouchLook(now); accumulator += dt;
     const buttons = currentInput(); let ticks = 0;
-    while (accumulator >= 1 / 120 && ticks++ < 8) { accumulator -= 1 / 120; const seq = ++sequence; if (state.phase === 'fight' && predictedPlayer?.alive) { engine.predictLocalMovement(predictedPlayer, buttons, state.map, 1, state.players); pending.push({ seq, buttons: { ...buttons } }); if (pending.length > 240) pending.shift(); } }
+    while (accumulator >= 1 / 120 && ticks++ < 8) { accumulator -= 1 / 120; const tick = ++predictionTick; if (state.phase === 'fight' && predictedPlayer?.alive) { engine.predictLocalMovement(predictedPlayer, buttons, state.map, 1, state.players); pending.push({ tick, buttons: { ...buttons } }); if (pending.length > 240) pending.shift(); } }
     if (ticks) sendInput(buttons);
     if (predictedPlayer) { predictedPlayer.yaw = aim.yaw; predictedPlayer.pitch = aim.pitch; }
     draw(now); if (now - lastHUDAt >= 80) { updateUI(); lastHUDAt = now; } frameId = requestAnimationFrame(frame);
@@ -389,29 +374,43 @@ async function boot() {
     hostId = message.hostId ?? next.hostId ?? hostId;
     roster = (Array.isArray(message.players) ? message.players : Object.values(message.players || {})).map((person, id) => person ? { ...person, id: person.id ?? id } : null);
     const local = ownPlayer(), fresh = previousMatch !== state.matchId || previousPhase === 'lobby' && state.phase !== 'lobby';
+    const beforePrediction = predictedPlayer;
+    const beforePose = beforePrediction && old?.phase === 'fight' ? presentMovement(beforePrediction, currentInput(), old.map, accumulator, engine.predictLocalMovement, old.players) : beforePrediction;
     if (!old || predictedPlayer?.id !== playerId || fresh) { neutralize(); aim = cleanAim(local?.yaw, local?.pitch); pending = []; snapshots = []; spectatorId = null; accumulator = 0; renderer?.resetEffects(); healthView = null; damageFeedback = null; if (fresh) { eventSeen.clear(); eventOrder.length = 0; kills.length = 0; hitUntil = feedbackUntil = 0; damageFeedback = null; healthGainUntil = 0; lastCountdown = null; } sendInput(neutralInput(aim.yaw, aim.pitch), true); }
     if (previousPhase !== null && previousPhase !== state.phase) neutralize();
     if (state.phase === 'lobby' && previousPhase !== 'lobby') { neutralize({ pause: true, unlock: true }); entered = false; fallback = false; healthView = null; damageFeedback = null; snapshots = []; pending = []; audio.resetEvents(); }
     if (local && !local.alive && old?.players?.find(player => player.id === playerId)?.alive !== false) neutralize({ pause: true, unlock: true });
     if (state.phase === 'matchEnd' && previousPhase !== 'matchEnd') neutralize({ pause: true, unlock: true });
     const ackValue = message.acks?.[playerId], ack = typeof ackValue === 'number' ? ackValue : ackValue?.seq ?? -1;
-    if (local) { const result = reconcilePlayer(local, pending, ack, state.map, engine.predictLocalMovement, state.phase === 'fight', state.players); predictedPlayer = result.predicted; pending = result.pending; predictedPlayer.yaw = aim.yaw; predictedPlayer.pitch = aim.pitch; }
-    snapshots.push({ time: performance.now(), state }); if (snapshots.length > 12) snapshots.shift(); playEvents(state.events || message.events || []);
+    if (local) {
+      const result = reconcilePlayer(local, pending, ack, state.map, engine.predictLocalMovement, state.phase === 'fight', state.players, state.tick);
+      predictedPlayer = result.predicted; pending = result.pending; predictionTick = result.predictionTick; predictedPlayer.yaw = aim.yaw; predictedPlayer.pitch = aim.pitch;
+      const afterPose = state.phase === 'fight' ? presentMovement(predictedPlayer, currentInput(), state.map, accumulator, engine.predictLocalMovement, state.players) : predictedPlayer;
+      correction.correct(beforePose, afterPose, performance.now(), { continuous: old?.phase === 'fight' && state.phase === 'fight' && old.matchId === state.matchId && old.mapId === state.mapId });
+    }
+    const receivedAt = performance.now(), sample = timeline.sample(state, receivedAt, `${state.mapId}:${state.matchId}:${state.phase}`);
+    if (sample) {
+      const previous = snapshots[snapshots.length - 1]?.state;
+      if (previous && (previous.phase !== state.phase || previous.matchId !== state.matchId || previous.mapId !== state.mapId)) snapshots = [];
+      snapshots.push(sample); if (snapshots.length > 12) snapshots.shift();
+    } playEvents(state.events || message.events || []);
     if (state.phase === 'countdown') { const number = Math.ceil(finite(state.phaseTicks) / 120); if (number !== lastCountdown) { audio.countdown(number); lastCountdown = number; } }
-    if (state.phase === 'fight' && previousPhase !== 'fight') audio.fight(); previousPhase = state.phase; previousMatch = state.matchId; updateUI(); wake();
+    if (state.phase === 'fight' && previousPhase !== 'fight') audio.fight(); previousPhase = state.phase; previousMatch = state.matchId;
+    if (!activeAnimation() || receivedAt - lastHUDAt >= 80 || hudKey() !== paintedHUDKey) updateUI();
+    wake();
   }
   function connect() {
     clearTimeout(reconnectTimer); if (destroyed || permanentError) return;
     if (!/^[A-Z0-9]{6}$/.test(roomId)) { permanentError = true; error('This invite needs a valid room code. Return to Semag to create or join Voxel Royale.'); updateUI(); return; }
     const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws?room=${encodeURIComponent(roomId)}`); socket = ws;
-    ws.addEventListener('open', () => { if (socket !== ws) return; connected = true; reconnectAttempts = 0; sequence = 0; pending = []; snapshots = []; wirePacer.reset(); error(''); send({ type: 'join', name: playerName }); updateUI(); });
+    ws.addEventListener('open', () => { if (socket !== ws) return; connected = true; reconnectAttempts = 0; sequence = 0; pending = []; snapshots = []; wirePacer.reset(); timeline.reset(); correction.reset(); error(''); send({ type: 'join', name: playerName }); updateUI(); });
     ws.addEventListener('message', ({ data }) => { if (socket !== ws || destroyed) return; let message; try { message = JSON.parse(data); } catch { return; }
       if (message.type === 'welcome') { if (message.gameId !== 'voxel-royale') { permanentError = true; location.replace(roomUrl({ id: roomId, gameId: message.gameId })); return; } neutralize({ pause: true, unlock: true }); playerId = message.playerId; hostId = message.hostId ?? hostId; capacity = roomPresentation(null, [], message.capacity).capacity; sequence = 0; pending = []; entered = false; fallback = false; aim = cleanAim(ownPlayer()?.yaw, ownPlayer()?.pitch); updateUI(); }
       else if (message.type === 'state') receiveState(message);
-      else if (message.type === 'pong') $('ping').textContent = `${Math.max(0, Math.round(performance.now() - message.time))} ms`;
+      else if (message.type === 'pong') setText($('ping'), `${Math.max(0, Math.round(performance.now() - message.time))} ms`);
       else if (message.type === 'error') { error(message.message || 'The host could not accept that action.'); if (/room.*(?:full|not found|expired|in progress|already started)|unknown room|all.*occupied/i.test(message.message || '')) permanentError = true; }
     });
-    ws.addEventListener('close', event => { if (socket !== ws || destroyed) return; connected = false; neutralize({ pause: true, unlock: true }); playerId = null; pending = []; snapshots = []; $('ping').textContent = '— ms'; if ([4403, 4404, 4409].includes(event.code)) permanentError = true; if (frameId) cancelAnimationFrame(frameId); frameId = null; lastFrameAt = 0; updateUI(); if (!permanentError) { error('Connection lost. Reconnecting automatically. If the battle has started, join again when the host opens the lobby.'); reconnectTimer = setTimeout(connect, Math.min(5000, 750 * 2 ** reconnectAttempts++)); } });
+    ws.addEventListener('close', event => { if (socket !== ws || destroyed) return; connected = false; neutralize({ pause: true, unlock: true }); playerId = null; pending = []; snapshots = []; timeline.reset(); correction.reset(); setText($('ping'), '— ms'); if ([4403, 4404, 4409].includes(event.code)) permanentError = true; if (frameId) cancelAnimationFrame(frameId); frameId = null; lastFrameAt = 0; updateUI(); if (!permanentError) { error('Connection lost. Reconnecting automatically. If the battle has started, join again when the host opens the lobby.'); reconnectTimer = setTimeout(connect, Math.min(5000, 750 * 2 ** reconnectAttempts++)); } });
     ws.addEventListener('error', () => {});
   }
   async function enterArena(event) {
@@ -428,10 +427,10 @@ async function boot() {
   }
   function setDialog(kind) {
     modalOpen = !!kind;
-    $('room-dialog').hidden = kind !== 'room';
-    $('guide-dialog').hidden = kind !== 'guide';
+    setHidden($('room-dialog'), kind !== 'room');
+    setHidden($('guide-dialog'), kind !== 'guide');
     positionLayoutPicker();
-    $('room-panel-button').setAttribute('aria-expanded', String(kind === 'room'));
+    setAttribute($('room-panel-button'), 'aria-expanded', String(kind === 'room'));
     for (const id of ['guide-button', 'arena-guide-button']) $(id).setAttribute('aria-expanded', String(kind === 'guide'));
     // Keep the active dialog reachable in fullscreen and remove the background from Tab order.
     for (const element of document.querySelector('.royale-app').children) {
@@ -468,7 +467,7 @@ async function boot() {
     if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
   }
-  function updateKeyLabels() { $('move-keys').textContent = getKeyboardLayout().toUpperCase(); for (const label of document.querySelectorAll('[data-royale-key]')) label.textContent = displayKey(label.dataset.royaleKey); canvas.setAttribute('aria-label', `3D battle royale. ${getKeyboardLayout().toUpperCase()} or arrows move; mouse looks; left click shoots or strikes; right click aims; E picks up loot; V swaps knife and gun; ${displayKey('Q')} throws grenade; F heals; R reloads; Space jumps; Control crouches; Shift walks; Escape releases controls.`); }
+  function updateKeyLabels() { setText($('move-keys'), getKeyboardLayout().toUpperCase()); for (const label of document.querySelectorAll('[data-royale-key]')) label.textContent = displayKey(label.dataset.royaleKey); canvas.setAttribute('aria-label', `3D battle royale. ${getKeyboardLayout().toUpperCase()} or arrows move; mouse looks; left click shoots or strikes; right click aims; E picks up loot; V swaps knife and gun; ${displayKey('Q')} throws grenade; F heals; R reloads; Space jumps; Control crouches; Shift walks; Escape releases controls.`); }
   const unsubscribeLayout = subscribeKeyboardLayout(() => { neutralize({ pause: entered, unlock: true }); updateKeyLabels(); }); updateKeyLabels();
   listen(window, 'keydown', event => { if (event.defaultPrevented || event.isComposing || event.altKey || event.metaKey) return; if (event.key === 'Escape') { if (modalOpen) { if (!$('guide-dialog').hidden) closeGuide(); else closeRoom(); } else if (entered) neutralize({ pause: true, unlock: true }); return; } if (event.key.toLowerCase() === 'p' && !isFormTarget(event.target) && entered) { event.preventDefault(); neutralize({ pause: true, unlock: true }); return; } if (!controlsActive() || isFormTarget(event.target)) return; const action = controlForKey(event); if (!action) return; event.preventDefault(); const id = event.code || event.key; if (pressedKeys.has(id)) return; pressedKeys.set(id, action); keys.add(action); utilityFeedback(action); sendInput(currentInput(), true); });
   listen(window, 'keyup', event => { const id = event.code || event.key, action = pressedKeys.get(id); pressedKeys.delete(id); if (action && ![...pressedKeys.values()].includes(action)) keys.delete(action); if (action) { sendInput(currentInput(), true); if (!isFormTarget(event.target)) event.preventDefault(); } });
@@ -479,7 +478,7 @@ async function boot() {
   listen(document, 'pointerlockerror', () => { if (entered && !modalOpen) { fallback = true; paused = false; updateUI(); toast('Hold right mouse and drag to look. Left click fires.'); } });
   listen(canvas, 'mousedown', event => { if (!controlsActive()) return; event.preventDefault(); canvas.focus({ preventScroll: true }); if (event.button === 0) mouse.fire = true; if (event.button === 2) { mouse.aim = true; if (fallback) rightDrag = true; } if ([0, 2].includes(event.button)) sendInput(currentInput(), true); });
   listen(window, 'mouseup', event => { if (event.button === 0) mouse.fire = false; if (event.button === 2) { mouse.aim = false; rightDrag = false; } if (entered && [0, 2].includes(event.button)) sendInput(currentInput(), true); });
-  listen(document, 'mousemove', event => { if (!controlsActive() || !(pointerLocked() || fallback && rightDrag)) return; const sensitivity = LOOK_SENSITIVITY * aimLookMultiplier(ownPlayer(), engine?.ADS); aim = cleanAim(aim.yaw + event.movementX * sensitivity, aim.pitch - event.movementY * sensitivity); sendInput(); });
+  listen(document, 'mousemove', event => { if (!controlsActive() || !(pointerLocked() || fallback && rightDrag)) return; const sensitivity = LOOK_SENSITIVITY * aimLookMultiplier(presentationPlayer || ownPlayer(), engine?.ADS); aim = cleanAim(aim.yaw + event.movementX * sensitivity, aim.pitch - event.movementY * sensitivity); sendInput(); });
   listen(canvas, 'contextmenu', event => event.preventDefault()); listen(canvas, 'click', event => { if (!entered || paused) enterArena(event); }); listen($('enter-arena'), 'click', enterArena);
   listen($('pause-button'), 'click', () => neutralize({ pause: true, unlock: true }));
   listen($('guide-button'), 'click', openGuide); listen($('close-guide'), 'click', closeGuide); listen($('close-guide-bottom'), 'click', closeGuide); listen($('guide-dialog'), 'click', event => { if (event.target === $('guide-dialog')) closeGuide(); });
@@ -494,7 +493,7 @@ async function boot() {
   listen($('start-button'), 'click', startBattle); listen($('overlay-start'), 'click', startBattle); listen($('rematch-button'), 'click', () => send({ type: 'rematch' }));
   listen($('player-name'), 'change', () => { playerName = saveName($('player-name').value); $('player-name').value = playerName; send({ type: 'join', name: playerName }); });
   listen($('next-spectator'), 'click', () => { const alive = aliveParticipants(state); spectatorId = alive[(alive.findIndex(player => player.id === spectatorId) + 1) % Math.max(1, alive.length)]?.id ?? null; healthView = null; updateUI(); draw(); });
-  listen($('sound-button'), 'click', async () => { const enabled = await audio.setEnabled(!audio.enabled); $('sound-button').setAttribute('aria-pressed', String(enabled)); $('sound-button').setAttribute('aria-label', enabled ? 'Mute sound' : 'Enable sound'); toast(enabled ? 'Sound on.' : 'Sound off.'); });
+  listen($('sound-button'), 'click', async () => { const enabled = await audio.setEnabled(!audio.enabled); setAttribute($('sound-button'), 'aria-pressed', String(enabled)); setAttribute($('sound-button'), 'aria-label', enabled ? 'Mute sound' : 'Enable sound'); toast(enabled ? 'Sound on.' : 'Sound off.'); });
   async function toggleFullscreen() {
     neutralize({ pause: entered, unlock: true });
     try { if (document.fullscreenElement) await document.exitFullscreen(); else await $('game-shell').requestFullscreen(); }
@@ -522,15 +521,15 @@ async function boot() {
     const end = event => { if (actionPointers.get(event.pointerId) !== button) return; actionPointers.delete(event.pointerId); if (![...actionPointers.values()].includes(button)) { touch.actions.delete(button.dataset.royaleAction); button.classList.remove('pressed'); } sendInput(currentInput(), true); };
     for (const name of ['pointerup', 'pointercancel', 'lostpointercapture']) listen(button, name, end); listen(button, 'contextmenu', event => event.preventDefault());
   }
-  let invite = `${location.origin}/voxel-royale.html?room=${encodeURIComponent(roomId)}`; $('invite-address').textContent = invite;
-  hostInfo().then(info => { invite = `${info.origin}/voxel-royale.html?room=${encodeURIComponent(roomId)}`; $('invite-address').textContent = invite; }).catch(() => {});
+  let invite = `${location.origin}/voxel-royale.html?room=${encodeURIComponent(roomId)}`; setText($('invite-address'), invite);
+  hostInfo().then(info => { invite = `${info.origin}/voxel-royale.html?room=${encodeURIComponent(roomId)}`; setText($('invite-address'), invite); }).catch(() => {});
   listen($('copy-code'), 'click', async () => { try { await copyText(roomId); toast('Room code copied.'); } catch (cause) { toast(cause.message); } }); listen($('copy-invite'), 'click', async () => { try { await copyText(invite); toast('Invite link copied.'); } catch (cause) { toast(cause.message); } });
   const pingTimer = setInterval(() => { if (connected && !document.hidden) send({ type: 'ping', time: performance.now() }); }, 1500);
   function destroy() { if (destroyed) return; neutralize({ pause: true, unlock: true }); destroyed = true; clearTimeout(reconnectTimer); clearTimeout(toastTimer); clearInterval(pingTimer); clearInterval(heartbeat); heartbeat = null; if (frameId) cancelAnimationFrame(frameId); frameId = null; socket?.close(); renderer?.destroy(); audio.destroy(); layoutPicker.destroy(); unsubscribeLayout(); for (const remove of removers) remove(); pending = []; snapshots = []; kills.length = 0; eventSeen.clear(); }
   listen(window, 'pagehide', destroy);
-  const inspect = () => { const { map, ...snapshot } = state || {}; return clone({ state: state ? snapshot : null, players: roster, playerId, hostId, input: currentInput(), predictedPlayer, presentationPlayer, predictionRemainder: accumulator, connected, controls: { pointerLocked: pointerLocked(), fallback, touch: touchMode, paused, entered, modalOpen }, queueLength: pending.length, renderCount, renderStats: renderer?.stats || null, graphicsError, spectatorId }); };
+  const inspect = () => { const { map, ...snapshot } = state || {}; return clone({ state: state ? snapshot : null, players: roster, playerId, hostId, input: currentInput(), predictedPlayer, presentationPlayer, presentationPlayers, predictionRemainder: accumulator, predictionTick, timeline: timeline.getState(), correction: correction.getState(), connected, controls: { pointerLocked: pointerLocked(), fallback, touch: touchMode, paused, entered, modalOpen }, queueLength: pending.length, renderCount, renderStats: renderer?.stats || null, graphicsError, spectatorId }); };
   window.SemagRoyale = Object.freeze({ getState: inspect, inspect }); updateUI();
-  try { const [rules, visual] = await Promise.all([import('./voxel-royale-engine.js'), import('./voxel-renderer.js')]); if (destroyed) return; engine = { ...rules, predictLocalMovement, traceShot, ADS, HEAL, PLAYER_HEALTH }; renderer = new visual.VoxelRenderer(canvas); renderer.resize(); } catch (cause) { graphicsError = cause?.message || 'This game requires WebGL. Enable hardware acceleration and reload graphics.'; error(graphicsError); updateUI(); return; }
+  try { const [rules, visual] = await Promise.all([import('./voxel-royale-engine.js'), import('./voxel-renderer.js')]); if (destroyed) return; engine = { ...rules, predictLocalMovement, sweepPresentationOffset, traceShot, ADS, HEAL, PLAYER_HEALTH }; renderer = new visual.VoxelRenderer(canvas); renderer.resize(); } catch (cause) { graphicsError = cause?.message || 'This game requires WebGL. Enable hardware acceleration and reload graphics.'; error(graphicsError); updateUI(); return; }
   connect();
 }
 if (typeof document !== 'undefined' && document.querySelector('.royale-app') && document.getElementById('arena')) boot().catch(cause => { const banner = document.getElementById('error-banner'); banner.hidden = false; banner.textContent = `The game could not start: ${cause.message}. Reload to try again.`; });

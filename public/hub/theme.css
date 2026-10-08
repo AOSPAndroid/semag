@@ -208,3 +208,6 @@ kbd { color: #526b43; }
 @media (prefers-reduced-motion: reduce) {
   .help-toggle { transition: none; }
 }
+.card-practice-link { display: flex; align-items: center; justify-content: space-between; min-height: 40px; margin-top: 9px; padding: 8px 12px; border: 1px solid #d4dccb; border-radius: 4px; color: #496346; text-decoration: none; font: 12px Arial, sans-serif; }
+.card-practice-link:hover { background: #edf2e5; color: #24472e; }
+.card-practice-link:focus-visible { outline: 3px solid #ba8b4d; outline-offset: 3px; }

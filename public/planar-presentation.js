@@ -29,3 +29,24 @@ export function presentPlanarFighter(state, previous, index, fraction, { adjacen
   const alpha = Number.isFinite(fraction) ? Math.max(0, Math.min(1, fraction)) : 1;
   return { ...fighter, x: before.x + (fighter.x - before.x) * alpha, y: before.y + (fighter.y - before.y) * alpha };
 }
+
+/** Network buffering delays transforms alone; damage, deaths and actions stay current. */
+export function presentNetworkPlanarFighter(state, before, after, index, targetTime) {
+  const fighter = state.fighters[index], older = before?.state, newer = after?.state;
+  if (!fighter || !older?.fighters[index] || !newer?.fighters[index]
+      || state.phase !== 'fight' || !Number.isFinite(before.time + after.time) || after.time < before.time
+      || older.tick > newer.tick || newer.tick > state.tick
+      || CONTEXT.some(key => state[key] !== older[key] || state[key] !== newer[key])) return fighter ? { ...fighter } : fighter;
+  const compatible = sample => {
+    const candidate = sample.fighters[index];
+    return IDENTITY.every(key => fighter[key] === candidate[key])
+      && (fighter.hp == null || fighter.hp > 0) === (candidate.hp == null || candidate.hp > 0)
+      && ((fighter.respawnTicks || 0) > 0) === ((candidate.respawnTicks || 0) > 0)
+      && Number.isFinite(fighter.x + fighter.y + candidate.x + candidate.y)
+      && Math.hypot(fighter.x - candidate.x, fighter.y - candidate.y) <= 64;
+  };
+  if (!compatible(older) || !compatible(newer) || !Number.isFinite(targetTime)) return { ...fighter };
+  const alpha = Math.max(0, Math.min(1, (targetTime - before.time) / Math.max(1, after.time - before.time)));
+  const pose = presentPlanarFighter(newer, before.pose || capturePlanarPose(older), index, alpha, { adjacentTick: false });
+  return { ...fighter, x: pose.x, y: pose.y };
+}

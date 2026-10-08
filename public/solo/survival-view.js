@@ -1,5 +1,6 @@
-import { FIXED_STEP, DAY_SECONDS, DAYLIGHT_SECONDS, BLOCKS, ITEMS, RECIPES, createState, step, selectSlot, craft, canCraft, discardSelected, setPaused, snapshot, serialize, restore, canPlayerOccupy, getPlacement, getSelectedItem } from '../voxel-survival-engine.js';
+import { FIXED_STEP, DAY_SECONDS, DAYLIGHT_SECONDS, BLOCKS, ITEMS, RECIPES, createState, step, selectSlot, craft, canCraft, discardSelected, setPaused, snapshot, serialize, restore, getPlacement, getSelectedItem } from '../voxel-survival-engine.js';
 import { createSurvivalRenderer } from '../voxel-survival-renderer.js';
+import { createSurvivalPresentation } from '../voxel-survival-presentation.js';
 import { gameKey, displayKey, getKeyboardLayout, subscribeKeyboardLayout } from '../keyboard-layout.js';
 import { tickFraction } from '../display-timing.js';
 
@@ -23,11 +24,11 @@ function icon(item) {
 }
 
 export function mount(container, { onUpdate = () => {} } = {}) {
-  let state = createState({ seed: newSeed() }), destroyed = false, raf = null, previousTime = null, accumulator = 0, previousPose = null;
+  let state = createState({ seed: newSeed() }), destroyed = false, raf = null, previousTime = null, accumulator = 0;
+  const presentation = createSurvivalPresentation(), look = {}, renderOptions = {};
   let renderer = null, rendererError = '', inventoryOpen = false, pendingSave = null, choosingSave = false;
   let yaw = state.player.yaw, pitch = state.player.pitch, drag = null, ignoreLockLoss = false, pointerRequest = false;
   let lastPublish = -1, lastPublishedPhase = '', lastSave = -1, lastMessage = '', saveStatus = 'Not saved yet', storage = null, saveAvailable = false;
-  let physicsSamples = 0, renderSamples = 0, interpolatedSamples = 0, lastFraction = 1;
   let muted = false, audio = null, soundEvent = 0;
   const held = new Map(), pressed = new Set(), reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
   try { storage = window.localStorage; const raw = storage.getItem(SAVE_KEY); if (raw && raw.length <= SAVE_LIMIT) pendingSave = restore(raw); if (pendingSave?.phase === 'dead') pendingSave = null; saveAvailable = Boolean(pendingSave); } catch { storage = null; saveStatus = 'Saving unavailable in this browser'; }
@@ -75,7 +76,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   }
   function toggleSound(event) { muted = !muted; unlockSound(event); soundButton.setAttribute('aria-pressed', String(muted)); soundButton.setAttribute('aria-label', muted ? 'Enable game sound' : 'Mute game sound'); soundButton.title = muted ? 'Enable game sound' : 'Mute game sound'; soundButton.dataset.muted = String(muted); }
   function exitLook() { drag = null; pointerRequest = false; if (document.pointerLockElement === canvas) { ignoreLockLoss = true; try { document.exitPointerLock(); } catch { ignoreLockLoss = false; } } }
-  function resetPresentation() { previousTime = null; accumulator = 0; previousPose = null; lastFraction = 1; }
+  function resetPresentation() { previousTime = null; accumulator = 0; presentation.reset(); }
   function save(force = false) {
     if (!storage || choosingSave || destroyed && !force) return;
     if (!force && state.elapsed - lastSave < 15) return;
@@ -130,17 +131,15 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     onUpdate({ phase, score: Math.floor(state.elapsed), scoreLabel: 'TIME ALIVE', scoreUnit: 's', scoreDigits: 0, recordKey: 'wilds-survival-v1', record: phase === 'lost' ? Math.floor(state.elapsed) : null, recordLabel: 'LONGEST RUN', detail: state.night ? `Night ${state.day}: find cover, keep food, and defend your shelter.` : `Day ${state.day}: ${state.objective || 'build shelter before dusk.'}` });
   }
   function render(fraction = 1, deltaMs = 0) {
-    let camera = { ...state.player, yaw, pitch };
-    if (previousPose && !state.paused && state.phase === 'playing' && fraction < 1 && Math.hypot(state.player.x - previousPose.x, state.player.y - previousPose.y, state.player.z - previousPose.z) < 1) {
-      const x = previousPose.x + (state.player.x - previousPose.x) * fraction, y = previousPose.y + (state.player.y - previousPose.y) * fraction, z = previousPose.z + (state.player.z - previousPose.z) * fraction;
-      if (canPlayerOccupy(state, x, y, z)) { camera.x = x; camera.y = y; camera.z = z; interpolatedSamples++; }
-    }
-    lastFraction = fraction; renderSamples++; renderer?.render(state, camera, { fraction, deltaMs, reducedMotion: reduced.matches, hideHands: inventoryOpen, placement: getPlacement(state), selectedItem: getSelectedItem(state) });
+    look.yaw = yaw; look.pitch = pitch;
+    const sample = presentation.sample(state, fraction, look);
+    Object.assign(renderOptions, sample.options, { fraction, deltaMs, reducedMotion: reduced.matches, hideHands: inventoryOpen, placement: getPlacement(state), selectedItem: getSelectedItem(state) });
+    renderer?.render(state, sample.camera, renderOptions);
   }
   function schedule() { if (!destroyed && !state.paused && state.phase === 'playing' && raf === null && !rendererError) raf = requestAnimationFrame(frame); }
   function input() { const values = new Set(held.values()); const primary = values.has('primary'); const next = { forward: Number(values.has('forward')) - Number(values.has('back')), strafe: Number(values.has('right')) - Number(values.has('left')), yaw, pitch, jump: pressed.has('jump'), sprint: values.has('sprint'), mine: primary, attack: primary, place: pressed.has('place'), use: pressed.has('use') }; pressed.clear(); return next; }
   function frame(now) { raf = null; if (destroyed) return; const dt = previousTime === null ? 0 : clamp((now - previousTime) / 1000, 0, .1); previousTime = now;
-    if (!state.paused && state.phase === 'playing') { accumulator = Math.min(accumulator + dt, FIXED_STEP * 12); let ticks = 0; while (accumulator + 1e-10 >= FIXED_STEP && ticks++ < 12 && !state.paused && state.phase === 'playing') { previousPose = { x: state.player.x, y: state.player.y, z: state.player.z }; step(state, input(), FIXED_STEP); accumulator = Math.max(0, accumulator - FIXED_STEP); physicsSamples++; }
+    if (!state.paused && state.phase === 'playing') { accumulator = Math.min(accumulator + dt, FIXED_STEP * 12); let ticks = 0; while (accumulator + 1e-10 >= FIXED_STEP && ticks++ < 12 && !state.paused && state.phase === 'playing') { presentation.capture(state); step(state, input(), FIXED_STEP); accumulator = Math.max(0, accumulator - FIXED_STEP); }
       save(); if (state.phase === 'dead') { release(); exitLook(); resetPresentation(); save(true); }
     } else resetPresentation(); soundFeedback(); publish(); render(state.paused || state.phase !== 'playing' ? 1 : tickFraction(accumulator, FIXED_STEP), dt * 1000); schedule(); }
   function refresh(force = true) { if (state.paused || state.phase !== 'playing') { if (raf !== null) cancelAnimationFrame(raf); raf = null; } soundFeedback(); publish(force); render(); schedule(); }
@@ -193,7 +192,9 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   function discardClick() { if (!inventoryOpen) return; const selected = state.inventory[state.selectedSlot], name = selected && ITEMS[selected.id]?.name; const result = discardSelected(state, 1); setText(craftStatus, result.ok ? `Discarded one ${name || 'item'}.` : result.error || 'Choose an item to discard.'); save(true); refresh(); }
   function slotClick(event) { const button = event.target instanceof Element && event.target.closest('[data-slot],[data-pack-slot]'); if (button) { select(Number(button.dataset.slot ?? button.dataset.packSlot)); if (!inventoryOpen && !state.paused) canvas.focus({ preventScroll: true }); } }
   const unsubscribe = subscribeKeyboardLayout(() => { release(); keyboardHints(); });
-  const resize = new ResizeObserver(() => { renderer?.resize(); if (state.paused || state.phase !== 'playing') render(); }); resize.observe(board);
+  const fitViewport = () => { renderer?.resize(); if (state.paused || state.phase !== 'playing') render(); };
+  const resize = new ResizeObserver(fitViewport); resize.observe(board);
+  window.addEventListener('resize', fitViewport); document.addEventListener('fullscreenchange', fitViewport);
   const motion = () => { if (state.paused) render(); };
   window.addEventListener('keydown', keydown); window.addEventListener('keyup', keyup); window.addEventListener('blur', blur); window.addEventListener('pagehide', pagehide); document.addEventListener('visibilitychange', visibility); document.addEventListener('pointerlockchange', lockchange); document.addEventListener('pointerlockerror', lockerror);
   canvas.addEventListener('pointerdown', pointerdown); document.addEventListener('pointermove', pointermove); window.addEventListener('pointerup', pointerup); window.addEventListener('pointercancel', pointercancel); canvas.addEventListener('lostpointercapture', pointerup); canvas.addEventListener('wheel', wheel, { passive: false }); canvas.addEventListener('contextmenu', contextmenu); canvas.addEventListener('voxel-survival-renderer-error', graphicsError); canvas.addEventListener('voxel-survival-renderer-restored', graphicsRestored);
@@ -201,8 +202,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   keyboardHints(); refresh();
 
   return {
-    getState() { return { ...snapshot(state), phase: phaseOf(state), enginePhase: state.phase, paused: state.paused, day: state.day, night: state.night, world: { width: state.world.width, height: state.world.height, depth: state.world.depth, revision: state.world.revision }, target: state.target ? JSON.parse(JSON.stringify(state.target)) : null, mining: state.mining ? { ...state.mining } : null, placement: getPlacement(state), menuOpen: inventoryOpen, choosingSave, saveAvailable, saveStatus, controls: { pointerLocked: document.pointerLockElement === canvas, lookYaw: yaw, lookPitch: pitch, held: [...held.values()] }, graphicsAvailable: Boolean(renderer?.available), displayTiming: { physicsSamples, renderSamples, interpolatedSamples, lastFraction }, renderer: renderer?.getStats?.() || null }; },
-    getDisplayTiming: () => ({ physicsSamples, renderSamples, interpolatedSamples, lastFraction }), restart, togglePause, pause, resume,
-    destroy() { if (destroyed) return; save(true); destroyed = true; release(); exitLook(); if (raf !== null) cancelAnimationFrame(raf); unsubscribe(); resize.disconnect(); reduced.removeEventListener('change', motion); window.removeEventListener('keydown', keydown); window.removeEventListener('keyup', keyup); window.removeEventListener('blur', blur); window.removeEventListener('pagehide', pagehide); document.removeEventListener('visibilitychange', visibility); document.removeEventListener('pointerlockchange', lockchange); document.removeEventListener('pointerlockerror', lockerror); canvas.removeEventListener('pointerdown', pointerdown); document.removeEventListener('pointermove', pointermove); window.removeEventListener('pointerup', pointerup); window.removeEventListener('pointercancel', pointercancel); canvas.removeEventListener('lostpointercapture', pointerup); canvas.removeEventListener('wheel', wheel); canvas.removeEventListener('contextmenu', contextmenu); canvas.removeEventListener('voxel-survival-renderer-error', graphicsError); canvas.removeEventListener('voxel-survival-renderer-restored', graphicsRestored); audio?.close().catch(() => {}); renderer?.destroy(); view.remove(); },
+    getState() { return { ...snapshot(state), phase: phaseOf(state), enginePhase: state.phase, paused: state.paused, day: state.day, night: state.night, world: { width: state.world.width, height: state.world.height, depth: state.world.depth, revision: state.world.revision }, target: state.target ? JSON.parse(JSON.stringify(state.target)) : null, mining: state.mining ? { ...state.mining } : null, placement: getPlacement(state), menuOpen: inventoryOpen, choosingSave, saveAvailable, saveStatus, controls: { pointerLocked: document.pointerLockElement === canvas, lookYaw: yaw, lookPitch: pitch, held: [...held.values()] }, graphicsAvailable: Boolean(renderer?.available), displayTiming: presentation.getStats(), presentation: presentation.getPresentation(), renderer: renderer?.getStats?.() || null }; },
+    getDisplayTiming: () => presentation.getStats(), restart, togglePause, pause, resume,
+    destroy() { if (destroyed) return; save(true); destroyed = true; release(); exitLook(); if (raf !== null) cancelAnimationFrame(raf); unsubscribe(); resize.disconnect(); window.removeEventListener('resize', fitViewport); document.removeEventListener('fullscreenchange', fitViewport); reduced.removeEventListener('change', motion); window.removeEventListener('keydown', keydown); window.removeEventListener('keyup', keyup); window.removeEventListener('blur', blur); window.removeEventListener('pagehide', pagehide); document.removeEventListener('visibilitychange', visibility); document.removeEventListener('pointerlockchange', lockchange); document.removeEventListener('pointerlockerror', lockerror); canvas.removeEventListener('pointerdown', pointerdown); document.removeEventListener('pointermove', pointermove); window.removeEventListener('pointerup', pointerup); window.removeEventListener('pointercancel', pointercancel); canvas.removeEventListener('lostpointercapture', pointerup); canvas.removeEventListener('wheel', wheel); canvas.removeEventListener('contextmenu', contextmenu); canvas.removeEventListener('voxel-survival-renderer-error', graphicsError); canvas.removeEventListener('voxel-survival-renderer-restored', graphicsRestored); audio?.close().catch(() => {}); renderer?.destroy(); view.remove(); },
   };
 }

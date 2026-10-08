@@ -1,4 +1,5 @@
 import { WEAPONS } from './voxel-weapons.js';
+import { setHidden } from './hub/dom.js';
 
 export const DAMAGE_CUE_MS = 420;
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
@@ -33,11 +34,11 @@ export function damageFeedbackPresentation(feedback, player, { now = 0, lifeKey 
 
 /** Reuse one small overlay; no particles or DOM nodes are allocated while firing. */
 export function paintDamageFeedback(element, presentation) {
-  element.hidden = !presentation.visible;
+  setHidden(element, !presentation.visible);
   if (!presentation.visible) return;
-  element.dataset.kind = presentation.kind;
-  element.dataset.subject = String(presentation.subjectId);
-  element.dataset.direction = presentation.direction;
-  element.style.setProperty('--damage-opacity', String(presentation.opacity));
-  element.style.setProperty('--damage-angle', `${presentation.angle || 0}rad`);
+  const values = { kind: presentation.kind, subject: String(presentation.subjectId), direction: presentation.direction };
+  for (const [key, value] of Object.entries(values)) if (element.dataset[key] !== value) element.dataset[key] = value;
+  for (const [key, value] of [['--damage-opacity', String(presentation.opacity)], ['--damage-angle', `${presentation.angle || 0}rad`]]) {
+    if (element.style.getPropertyValue?.(key) !== value) element.style.setProperty(key, value);
+  }
 }

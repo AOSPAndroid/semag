@@ -145,7 +145,7 @@ function queen(ctx,a,t) {
 export function drawEmberActor(ctx, actor, act, time, walking = false) {
   const previousBatch=batchActorPixels;batchActorPixels=typeof Path2D!=='undefined';
   try{
-  ctx.save();ctx.translate(Math.round(actor.x/2)*2,Math.round(actor.y/2)*2);ctx.imageSmoothingEnabled=false;
+  ctx.save();ctx.translate(actor.x,actor.y);ctx.imageSmoothingEnabled=false;
   if(actor.type==='hero')adventurer(ctx,actor,time,walking);
   else if(actor.boss){if(act===1)warden(ctx,actor,time);else if(act===2)stag(ctx,actor,time);else queen(ctx,actor,time);}
   else if(actor.type==='crawler')crawler(ctx,actor,time);

@@ -2,11 +2,12 @@ import { displayKey, gameKey, getKeyboardLayout, mountKeyboardLayoutPicker, subs
 import { copyText, getName, hostInfo, roomUrl, saveName } from './hub/shared.js';
 import { GameAudio } from './audio.js';
 import { WEAPONS, WEAPON_IDS, weaponAimFovRatio, weaponSpread, weaponStats } from './voxel-weapons.js';
-import { advanceBolts, MAX_BOLTS } from './voxel-projectiles.js';
 import { PLAYER_HEALTH, HEAL } from './voxel-engine.js';
 import { meleeLabel, meleeProfile } from './voxel-melee.js';
 import { incomingDamageFeedback, damageFeedbackPresentation, paintDamageFeedback } from './voxel-damage-feedback.js';
-import { combatPresentation, createMovementPresenter, projectedMovement, withCombatPresentation } from './voxel-presentation.js';
+import { combatPresentation, createCorrectionPresenter, createMovementPresenter, hudTransitionKey, interpolatedVoxelState, reconcileMovement, resolvePresentationContacts, withCombatPresentation } from './voxel-presentation.js';
+import { createNetworkTimeline } from './network-timeline.js';
+import { setAttribute, setDisabled, setHidden, setStyle, setText, toggleClass } from './hub/dom.js';
 
 export const LOOK_SENSITIVITY = 0.0025;
 export const FPS_BUTTONS = Object.freeze(['up', 'down', 'left', 'right', 'jump', 'crouch', 'walk', 'fire', 'reload', 'interact', 'aim', 'swap', 'grenade', 'heal']);
@@ -223,69 +224,13 @@ export function weaponComparison(id) {
 }
 
 /** Smooth remote bodies and live bolts. Combat and camera aim remain authoritative. */
-export function interpolatedState(samples, targetTime, localId, { predictMovement, traceProjectile, maxExtrapolationMs = 25 } = {}) {
-  if (!samples.length) return null;
-  let from = samples[0]; let to = samples[samples.length - 1];
-  for (let i = 1; i < samples.length; i++) {
-    if (samples[i].time >= targetTime) { from = samples[i - 1]; to = samples[i]; break; }
-    from = samples[i];
-  }
-  const state = { ...to.state, players: to.state.players.map(player => ({ ...player })),
-    bolts: (to.state.bolts || []).slice(0, MAX_BOLTS).map(bolt => ({ ...bolt })) };
-  state.fighters = state.players;
-  const span = to.time - from.time;
-  const ratio = span > 0 ? Math.max(0, Math.min(1, (targetTime - from.time) / span)) : 1;
-  if (from.state.phase !== to.state.phase || from.state.round !== to.state.round || from.state.mapId !== to.state.mapId) return state;
-  const projectedMs = Math.min(25, Math.max(0, maxExtrapolationMs), Math.max(0, targetTime - to.time));
-  // Keep the newest membership: a hit/deleted bolt must never reappear while
-  // interpolating. Birth identity also prevents a reused round ID from sliding.
-  for (const bolt of state.bolts) {
-    const old = from.state.bolts?.find(other => other.id === bolt.id && other.playerId === bolt.playerId && other.bornTick === bolt.bornTick);
-    if (!old) continue;
-    for (const axis of ['x', 'y', 'z', 'vx', 'vy', 'vz']) {
-      if (Number.isFinite(old[axis]) && Number.isFinite(bolt[axis])) bolt[axis] = old[axis] + (bolt[axis] - old[axis]) * ratio;
-    }
-  }
-  for (const player of state.players) {
-    const old = from.state.players.find(other => other.id === player.id);
-    Object.assign(player, combatPresentation(player, old, ratio, projectedMs));
-    if (player.id === localId || !old || old.alive !== player.alive || old.team !== player.team) continue;
-    // A respawn, team change or correction never sweeps an avatar through the map.
-    if (Math.hypot(player.x - old.x, player.y - old.y, player.z - old.z) > 4) continue;
-    for (const axis of ['x', 'y', 'z']) player[axis] = old[axis] + (player[axis] - old[axis]) * ratio;
-    const turn = cleanAim(player.yaw - old.yaw, 0).yaw;
-    player.yaw = cleanAim(old.yaw + turn * ratio, 0).yaw;
-    player.pitch = old.pitch + (player.pitch - old.pitch) * ratio;
-  }
-  // Snapshots arrive at 30 Hz. A short, collision-tested projection avoids aiming
-  // at bodies rendered a full network frame behind their authoritative pose.
-  if (projectedMs > 0 && state.phase === 'fight' && typeof predictMovement === 'function') {
-    // Every projection sees the same body poses; render order never moves a blocker.
-    const peers = to.state.players;
-    for (const player of state.players) if (player.id !== localId && player.alive) Object.assign(player, projectedMovement(player, player.previousInput || neutralInput(player.yaw, player.pitch), state.mapId, projectedMs, predictMovement, peers, peers.find(other => other.id === player.id)));
-  }
-  // A short projection fills the part of the 30 Hz interval beyond the newest
-  // sample. Reuse the authoritative sweep on copies, with no events or damage.
-  let boltSeconds = projectedMs / 1000;
-  if (boltSeconds > 0 && state.phase === 'fight' && state.bolts.length && typeof traceProjectile === 'function') {
-    const projection = { ...state, tick: state.tick };
-    while (boltSeconds > 1e-8 && projection.bolts.length) {
-      const dt = Math.min(1 / 120, boltSeconds);
-      projection.tick++;
-      advanceBolts(projection, { dt, trace: traceProjectile });
-      boltSeconds -= dt;
-    }
-    state.bolts = projection.bolts;
-  }
-  return state;
+export function interpolatedState(samples, targetTime, localId, options = {}) {
+  return interpolatedVoxelState(samples, targetTime, localId, options);
 }
 
 /** Replay a bounded, copied movement history after the server acknowledges inputs. */
-export function reconcilePlayer(player, history, ack, mapId, predictMovement, allowMovement = true, peers = []) {
-  const pending = history.filter(frame => frame.seq > ack).slice(-240);
-  const predicted = clone(player);
-  if (predicted?.alive && allowMovement) for (const frame of pending) predictMovement(predicted, frame.buttons, mapId, 1, peers);
-  return { predicted, pending };
+export function reconcilePlayer(player, history, ack, mapId, predictMovement, allowMovement = true, peers = [], authoritativeTick) {
+  return reconcileMovement(player, history, ack, mapId, predictMovement, allowMovement, peers, authoritativeTick);
 }
 
 async function boot() {
@@ -304,16 +249,16 @@ async function boot() {
     button.append(number, document.createTextNode(` ${weapon.label}`), detail); arenaButtons.append(button);
   }
   $('loadout-select').replaceChildren(loadoutOptions); $('arena-loadouts').replaceChildren(arenaButtons);
-  $('phase-shortcuts').textContent = WEAPON_IDS.map((id, index) => `${index + 1} ${WEAPONS[id].label}`).join(' · ');
+  setText($('phase-shortcuts'), WEAPON_IDS.map((id, index) => `${index + 1} ${WEAPONS[id].label}`).join(' · '));
   const roomId = new URLSearchParams(location.search).get('room')?.trim().toUpperCase() || '';
   const roomLabel = /^[A-Z0-9]{6}$/.test(roomId) ? roomId : 'NO ROOM';
-  $('room-code').textContent = roomLabel;
+  setText($('room-code'), roomLabel);
   const layoutPickerHost = document.querySelector('[data-keyboard-layout-picker]'), layoutPickerHome = layoutPickerHost.parentElement;
   const layoutPicker = mountKeyboardLayoutPicker(layoutPickerHost);
   let playerName = getName(); $('player-name').value = playerName;
   let engine; let renderer; let socket; let connected = false; let playerId = null;
   let state = null; let roster = []; let capacity = 2; let teamSize = 1; let mapName = '';
-  let predictedPlayer = null; let presentationPlayer = null; let snapshots = []; let pending = []; let sequence = 0;
+  let predictedPlayer = null; let presentationPlayer = null; let presentationPlayers = []; let snapshots = []; let pending = []; let sequence = 0; let predictionTick = 0;
   let frameId = null; let lastFrameAt = 0; let accumulator = 0; let renderCount = 0;
   let destroyed = false; let reconnectTimer; let attempts = 0; let permanentError = false;
   let paused = true; let entered = false; let fallback = false; let touchMode = false;
@@ -329,14 +274,18 @@ async function boot() {
   const padInputPacer = createContinuousInputPacer(60);
   const wirePacer = createContinuousInputPacer(120);
   const presentMovement = createMovementPresenter();
+  const correction = createCorrectionPresenter();
+  const timeline = createNetworkTimeline({ snapshotTicks: 4 });
+  let paintedHUDKey = "";
+  const hudKey = () => hudTransitionKey(state, roster, playerId);
   let healthView = null; let healthGain = 0; let healthGainUntil = 0; let previewWeapon = null;
   let squadSignature = ''; let rosterSignature = ''; let idleDrawSignature = ''; let mapPlanId = ''; const mapMarkers = new Map();
   const audio = new GameAudio(); const eventSeen = new Set(); const eventOrder = []; const kills = [];
   const removers = [];
   function listen(target, name, handler, options) { target.addEventListener(name, handler, options); removers.push(() => target.removeEventListener(name, handler, options)); }
   function send(message) { if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message)); }
-  function error(message = '') { $('error-banner').textContent = message; $('error-banner').hidden = !message; }
-  function toast(message) { clearTimeout(toastTimer); $('toast').textContent = message; $('toast').hidden = false; toastTimer = setTimeout(() => { $('toast').hidden = true; }, 2800); }
+  function error(message = '') { setText($('error-banner'), message); setHidden($('error-banner'), !message); }
+  function toast(message) { clearTimeout(toastTimer); setText($('toast'), message); setHidden($('toast'), false); toastTimer = setTimeout(() => { setHidden($('toast'), true); }, 2800); }
   function ownPlayer() { return state?.players?.find(player => player.id === playerId) || null; }
   function pointerLocked() { return document.pointerLockElement === canvas; }
   function controlsActive() { return connected && entered && !paused && !modalOpen && !graphicsError && !document.hidden && !!ownPlayer()?.alive && ['countdown', 'buy', 'fight'].includes(state?.phase) && (pointerLocked() || fallback || touchMode); }
@@ -349,11 +298,18 @@ async function boot() {
       else if (!local.grounded) toast('Land before drinking your potion.');
     } else if (action === 'grenade' && !local.grenades) toast('Your frag is spent. Supplies reset next round.');
   }
-  function sendInput(buttons = currentInput(), edge = true, now = performance.now()) { if (teamSwitchPending || !wirePacer.shouldSend(now, edge)) return sequence; if (sequence >= 999999000) sequence = 0; send({ type: 'input', seq: ++sequence, buttons }); return sequence; }
+  function sendInput(buttons = currentInput(), edge = true, now = performance.now()) {
+    if (teamSwitchPending || !wirePacer.shouldSend(now, edge)) return sequence;
+    if (sequence >= 999999000) sequence = 0;
+    // A shot refers to the last displayed remote frame, not a future clock estimate.
+    const viewTime = timeline.getState().renderTime;
+    const viewTick = state?.phase === 'fight' && Number.isFinite(viewTime) && viewTime >= 0 ? viewTime * 120 / 1000 : null;
+    send({ type: 'input', seq: ++sequence, buttons, ...(viewTick === null ? {} : { viewTick }) }); return sequence;
+  }
   function integrateTouchLook(now = performance.now()) {
     const delta = Math.max(0, Math.min(.1, (now - lastTouchLookAt) / 1000)); lastTouchLookAt = now;
     if (controlsActive() && touchMode) {
-      const sensitivity = aimLookMultiplier(ownPlayer(), engine?.ADS);
+      const sensitivity = aimLookMultiplier(presentationPlayer || ownPlayer(), engine?.ADS);
       aim = cleanAim(aim.yaw + touch.look.x * delta * 2.4 * sensitivity, aim.pitch - touch.look.y * delta * 1.85 * sensitivity);
     }
   }
@@ -373,15 +329,15 @@ async function boot() {
     if (pause) paused = true;
     if (unlock && pointerLocked()) document.exitPointerLock?.();
     if (connected && playerId !== null) sendInput(neutralInput(aim.yaw, aim.pitch));
-    pending = []; accumulator = 0;
+    pending = []; accumulator = 0; predictionTick = state?.tick || 0; correction.reset(); presentationPlayer = null; presentationPlayers = [];
     padInputPacer.reset();
     lastTouchLookAt = performance.now();
     if (state) predictedPlayer = clone(ownPlayer());
     updateUI();
   }
   function connectionUI() {
-    $('connection-status').textContent = connected ? 'CONNECTED' : permanentError ? 'UNAVAILABLE' : 'RECONNECTING';
-    $('connection-dot').classList.toggle('online', connected);
+    setText($('connection-status'), connected ? 'CONNECTED' : permanentError ? 'UNAVAILABLE' : 'RECONNECTING');
+    toggleClass($('connection-dot'), 'online', connected);
   }
   function lookupName(id) { return roster.find(player => player?.id === id)?.name || `Player ${id + 1}`; }
   function bombState() { const value = state?.bomb || state?.objective; return value && typeof value === 'object' ? value : null; }
@@ -394,7 +350,7 @@ async function boot() {
 
   function updateTacticalMap() {
     const plan = engine?.MAPS?.[state?.mapId]; const local = ownPlayer();
-    $('tactical-map').hidden = !plan || !local || !['countdown', 'buy', 'fight', 'roundEnd'].includes(state?.phase);
+    setHidden($('tactical-map'), !plan || !local || !['countdown', 'buy', 'fight', 'roundEnd'].includes(state?.phase));
     if (!plan || !local) return;
     const svg = $('map-plan'); const svgNode = (tag, attributes) => {
       const node = document.createElementNS('http://www.w3.org/2000/svg', tag);
@@ -461,12 +417,12 @@ async function boot() {
       if (['kill', 'death', 'elimination'].includes(event.type)) {
         kills.push({ at: performance.now(), text: perspective.self ? `${lookupName(target)}  [SELF FRAG]` : `${shooter == null ? 'THE DEVICE' : lookupName(shooter)}  ${event.weapon === 'crossbow' ? event.headshot ? '[BOLT HS]' : '[BOLT]' : event.headshot ? '[HS]' : '›'}  ${lookupName(target)}`, own: perspective.outgoing, headshot: !!event.headshot });
         if (kills.length > 4) kills.shift();
-        if (perspective.outgoing) { hitUntil = performance.now() + 230; hitKind = 'elimination'; feedbackUntil = performance.now() + 1100; $('combat-feedback').textContent = event.headshot ? 'HEADSHOT · ELIMINATED' : 'ELIMINATED'; }
+        if (perspective.outgoing) { hitUntil = performance.now() + 230; hitKind = 'elimination'; feedbackUntil = performance.now() + 1100; setText($('combat-feedback'), event.headshot ? 'HEADSHOT · ELIMINATED' : 'ELIMINATED'); }
       }
       if (shooter === playerId && ['healStart', 'healComplete', 'healCancel'].includes(event.type)) {
         feedbackUntil = performance.now() + (event.type === 'healStart' ? 650 : 1100);
         if (event.type === 'healComplete') { healthGain = Math.max(0, Math.round(event.amount || 0)); healthGainUntil = performance.now() + 1400; }
-        $('combat-feedback').textContent = event.type === 'healComplete' ? `HEALED +${Math.round(event.amount || 0)} HP` : event.type === 'healCancel' ? 'HEALING INTERRUPTED' : 'DRINKING POTION';
+        setText($('combat-feedback'), event.type === 'healComplete' ? `HEALED +${Math.round(event.amount || 0)} HP` : event.type === 'healCancel' ? 'HEALING INTERRUPTED' : 'DRINKING POTION');
       }
       if (!audio.enabled) continue;
       try {
@@ -502,7 +458,7 @@ async function boot() {
       const hit = hits.reduce((best, next) => next.damage > best.damage ? next : best);
       const killed = freshEvents.some(event => ['kill', 'death', 'elimination'].includes(event.type) && combatEventPerspective(event, playerId).outgoing && combatEventPerspective(event, playerId).target === hit.targetId);
       feedbackUntil = performance.now() + (killed ? 1100 : 650);
-      $('combat-feedback').textContent = `${hit.label} · ${Math.round(hit.damage)} HP${killed ? ' · ELIMINATED' : ''}`;
+      setText($('combat-feedback'), `${hit.label} · ${Math.round(hit.damage)} HP${killed ? ' · ELIMINATED' : ''}`);
     }
   }
 
@@ -510,11 +466,11 @@ async function boot() {
     if ($('weapon-comparison').dataset.weapon === id) return;
     const data = weaponComparison(id); if (!data) return;
     $('weapon-comparison').dataset.weapon = id;
-    $('comparison-name').textContent = data.name;
-    $('comparison-description').textContent = data.description;
+    setText($('comparison-name'), data.name);
+    setText($('comparison-description'), data.description);
     for (const key of ['body', 'head', 'leg', 'rate', 'reload', 'range', 'handling']) $(`comparison-${key}`).textContent = data[key];
-    $('comparison-damage-label').textContent = data.damageLabel;
-    $('arena-weapon-stats').textContent = `${data.head} HEAD / ${data.body} BODY / ${data.leg} LEGS${WEAPONS[id].pellets > 1 ? ' · PER PELLET' : ''} · ${data.rate}`;
+    setText($('comparison-damage-label'), data.damageLabel);
+    setText($('arena-weapon-stats'), `${data.head} HEAD / ${data.body} BODY / ${data.leg} LEGS${WEAPONS[id].pellets > 1 ? ' · PER PELLET' : ''} · ${data.rate}`);
   }
 
   function renderRoster() {
@@ -549,34 +505,35 @@ async function boot() {
   }
 
   function updateUI() {
+    lastHUDAt = performance.now(); paintedHUDKey = hudKey();
     refreshHeartbeat();
     connectionUI();
     const phase = state?.phase || 'lobby'; const local = ownPlayer(); const inLobby = phase === 'lobby';
     document.querySelector('.voxel-app').dataset.phase = phase;
-    $('seat-count').textContent = `${roster.filter(player => player?.connected).length} / ${capacity} PLAYERS · ${teamSize}V${teamSize}`;
-    $('mode-tag').textContent = `${teamSize}V${teamSize} · FIRST TO FOUR`;
-    $('stage-mode').textContent = `${teamSize}V${teamSize} / FIRST TO FOUR`;
-    $('objective-mode').textContent = `${teamSize}V${teamSize} / ${mapName || 'VOXEL BREACH'}`;
-    $('player-name').disabled = !inLobby || !connected;
-    $('loadout-select').disabled = !connected || !['lobby', 'countdown', 'buy', 'roundEnd'].includes(phase);
+    setText($('seat-count'), `${roster.filter(player => player?.connected).length} / ${capacity} PLAYERS · ${teamSize}V${teamSize}`);
+    setText($('mode-tag'), `${teamSize}V${teamSize} · FIRST TO FOUR`);
+    setText($('stage-mode'), `${teamSize}V${teamSize} / FIRST TO FOUR`);
+    setText($('objective-mode'), `${teamSize}V${teamSize} / ${mapName || 'VOXEL BREACH'}`);
+    setDisabled($('player-name'), !inLobby || !connected);
+    setDisabled($('loadout-select'), !connected || !['lobby', 'countdown', 'buy', 'roundEnd'].includes(phase));
     if (local?.weapon && document.activeElement !== $('loadout-select')) $('loadout-select').value = local.weapon;
     const me = roster.find(player => player?.id === playerId);
-    $('ready-button').hidden = phase === 'matchEnd'; $('rematch-button').hidden = phase !== 'matchEnd';
+    setHidden($('ready-button'), phase === 'matchEnd'); setHidden($('rematch-button'), phase !== 'matchEnd');
     const mayCancelCountdown = phase === 'countdown' && state?.round === 1 && !(state?.scores?.[0] || state?.scores?.[1]) && !!me?.ready;
-    $('ready-button').disabled = !connected || playerId === null || !(inLobby || mayCancelCountdown) || !!graphicsError;
+    setDisabled($('ready-button'), !connected || playerId === null || !(inLobby || mayCancelCountdown) || !!graphicsError);
     if ($('ready-button').dataset.ready !== String(!!me?.ready)) {
       $('ready-button').dataset.ready = String(!!me?.ready);
       $('ready-button').replaceChildren(document.createTextNode(me?.ready ? 'Cancel ready ' : 'Ready up '));
       const readyArrow = document.createElement('span'); readyArrow.textContent = me?.ready ? '✓' : '→'; $('ready-button').append(readyArrow);
     }
-    $('ready-button').setAttribute('aria-pressed', String(!!me?.ready));
-    $('rematch-button').disabled = !connected || !allConnected() || !!graphicsError;
+    setAttribute($('ready-button'), 'aria-pressed', String(!!me?.ready));
+    setDisabled($('rematch-button'), !connected || !allConnected() || !!graphicsError);
     const overlayReady = $('overlay-ready'), readySource = phase === 'matchEnd' ? $('rematch-button') : $('ready-button');
     overlayReady.hidden = !connected || !['lobby', 'matchEnd'].includes(phase) || !!graphicsError;
     overlayReady.disabled = readySource.disabled;
     if (overlayReady.textContent !== readySource.textContent) overlayReady.replaceChildren(...[...readySource.childNodes].map(node => node.cloneNode(true)));
     overlayReady.setAttribute('aria-pressed', phase === 'matchEnd' ? 'false' : String(!!me?.ready));
-    $('overlay-room').hidden = !connected || !['lobby', 'matchEnd'].includes(phase) || !!graphicsError;
+    setHidden($('overlay-room'), !connected || !['lobby', 'matchEnd'].includes(phase) || !!graphicsError);
     $('overlay-room').firstChild.textContent = phase === 'matchEnd' ? 'Room & controls ' : 'Room setup ';
 
     for (const button of document.querySelectorAll('[data-choose-team]')) {
@@ -584,11 +541,11 @@ async function boot() {
       button.disabled = !connected || !inLobby || teamSwitchPending || local?.team === team || roster.filter(person => person?.connected && person.team === team).length >= teamSize;
       button.setAttribute('aria-pressed', String(local?.team === team));
     }
-    $('team-choice-note').textContent = inLobby ? 'Choose any team with an open seat.' : 'Teams are fixed for this match.';
-    $('ready-note').textContent = inLobby ? `All ${capacity} seats must be connected and ready. Changing loadout or team clears readiness.` : phase === 'matchEnd' ? 'Rematch returns the squad to the lobby. Every player must ready up again.' : phase === 'buy' ? 'Choose your weapon now. Movement unlocks when the round goes live.' : 'The match continues while controls are released. Escape or Help releases all inputs.';
+    setText($('team-choice-note'), inLobby ? 'Choose any team with an open seat.' : 'Teams are fixed for this match.');
+    setText($('ready-note'), inLobby ? `All ${capacity} seats must be connected and ready. Changing loadout or team clears readiness.` : phase === 'matchEnd' ? 'Rematch returns the squad to the lobby. Every player must ready up again.' : phase === 'buy' ? 'Choose your weapon now. Movement unlocks when the round goes live.' : 'The match continues while controls are released. Escape or Help releases all inputs.');
     const attackTeam = state?.attackTeam ?? 0;
-    $('team0-role').textContent = attackTeam === 0 ? 'BREACH' : 'HOLD'; $('team1-role').textContent = attackTeam === 1 ? 'BREACH' : 'HOLD';
-    $('team0-score').textContent = state?.scores?.[0] ?? 0; $('team1-score').textContent = state?.scores?.[1] ?? 0;
+    setText($('team0-role'), attackTeam === 0 ? 'BREACH' : 'HOLD'); setText($('team1-role'), attackTeam === 1 ? 'BREACH' : 'HOLD');
+    setText($('team0-score'), state?.scores?.[0] ?? 0); setText($('team1-score'), state?.scores?.[1] ?? 0);
     for (let team = 0; team < 2; team++) {
       const lives = $(`team${team}-lives`);
       const teamPlayers = state?.players?.filter(person => person.team === team) || Array(teamSize).fill({ alive: true });
@@ -601,13 +558,13 @@ async function boot() {
       }
     }
     const clock = matchClock(state);
-    $('round-label').textContent = clock.label; $('timer').textContent = clock.text;
-    $('timer').classList.toggle('urgent', clock.urgent); $('round-label').classList.toggle('device-live', clock.planted);
-    $('map-label').textContent = `${mapName || state?.mapName || 'PRIVATE ROOM'} / ${local ? `TEAM ${local.team === 0 ? 'AMBER' : 'TEAL'}` : 'CONNECTING'}`.toUpperCase();
+    setText($('round-label'), clock.label); setText($('timer'), clock.text);
+    toggleClass($('timer'), 'urgent', clock.urgent); toggleClass($('round-label'), 'device-live', clock.planted);
+    setText($('map-label'), `${mapName || state?.mapName || 'PRIVATE ROOM'} / ${local ? `TEAM ${local.team === 0 ? 'AMBER' : 'TEAL'}` : 'CONNECTING'}`.toUpperCase());
     const livingAllies = state?.players?.filter(player => player.team === local?.team && player.alive && player.id !== playerId) || [];
     if (!livingAllies.some(player => player.id === spectatorId)) spectatorId = livingAllies[0]?.id ?? null;
     const squad = tacticalSquadHealth(state, playerId, roster.filter(person => person?.connected).map(person => person.id));
-    $('squad-health').hidden = !squad.length || !['fight', 'roundEnd'].includes(phase);
+    setHidden($('squad-health'), !squad.length || !['fight', 'roundEnd'].includes(phase));
     const nextSquadSignature = JSON.stringify(squad.map(person => [person, lookupName(person.id)]));
     if (nextSquadSignature !== squadSignature) {
       squadSignature = nextSquadSignature; $('squad-health').replaceChildren();
@@ -622,48 +579,48 @@ async function boot() {
     }
     const viewed = healthHUDPlayer(state, playerId, spectatorId);
     const spectating = viewed && viewed.id !== playerId;
-    $('combat-hud').hidden = inLobby || !viewed || (!viewed.alive && !spectating) || phase === 'matchEnd';
+    setHidden($('combat-hud'), inLobby || !viewed || (!viewed.alive && !spectating) || phase === 'matchEnd');
     healthView = healthPresentation(viewed, healthView, { now: performance.now(), round: state?.round });
-    $('health').textContent = healthView.hp; $('health-max').textContent = `/ ${healthView.maxHp}`;
-    $('health-fill').style.width = `${healthView.percent}%`; $('health-trail').style.width = `${healthView.trailPercent}%`;
-    $('health-meter').setAttribute('aria-valuemax', String(healthView.maxHp)); $('health-meter').setAttribute('aria-valuenow', String(healthView.hp));
-    $('health-meter').setAttribute('aria-label', spectating ? `${lookupName(viewed.id)} health` : 'Your health');
-    $('health-subject').textContent = spectating ? lookupName(viewed.id).toUpperCase() : 'YOUR HEALTH';
-    $('health-status').textContent = healthView.dead ? 'ELIMINATED' : healthView.low ? 'LOW HEALTH · FIND COVER' : spectating ? 'TEAMMATE' : 'COMBAT READY';
-    $('health-readout').classList.toggle('low-health', healthView.low); $('health-readout').classList.toggle('is-spectating', !!spectating);
-    $('health-gain').hidden = spectating || performance.now() >= healthGainUntil || !healthGain;
-    $('health-gain').textContent = `+${healthGain} HP`;
+    setText($('health'), healthView.hp); setText($('health-max'), `/ ${healthView.maxHp}`);
+    setStyle($('health-fill'), 'width', `${healthView.percent}%`); setStyle($('health-trail'), 'width', `${healthView.trailPercent}%`);
+    setAttribute($('health-meter'), 'aria-valuemax', String(healthView.maxHp)); setAttribute($('health-meter'), 'aria-valuenow', String(healthView.hp));
+    setAttribute($('health-meter'), 'aria-label', spectating ? `${lookupName(viewed.id)} health` : 'Your health');
+    setText($('health-subject'), spectating ? lookupName(viewed.id).toUpperCase() : 'YOUR HEALTH');
+    setText($('health-status'), healthView.dead ? 'ELIMINATED' : healthView.low ? 'LOW HEALTH · FIND COVER' : spectating ? 'TEAMMATE' : 'COMBAT READY');
+    toggleClass($('health-readout'), 'low-health', healthView.low); toggleClass($('health-readout'), 'is-spectating', !!spectating);
+    setHidden($('health-gain'), spectating || performance.now() >= healthGainUntil || !healthGain);
+    setText($('health-gain'), `+${healthGain} HP`);
     const readout = combatReadout(viewed, WEAPONS, engine);
     if (!previewWeapon) renderWeaponComparison(local?.weapon || 'carbine');
     const weapon = WEAPONS[viewed?.weapon];
     const pose = spectating ? viewed : predictedPlayer || local;
-    $('position-status').textContent = !pose?.grounded ? 'AIRBORNE' : pose.y >= .75 ? 'HIGH GROUND' : 'GROUND LEVEL';
-    $('position-status').classList.toggle('elevated', !!pose && pose.y >= .75);
-    $('weapon-label').textContent = readout.label; $('ammo').textContent = readout.ammo; $('reserve').textContent = readout.reserve;
+    setText($('position-status'), !pose?.grounded ? 'AIRBORNE' : pose.y >= .75 ? 'HIGH GROUND' : 'GROUND LEVEL');
+    toggleClass($('position-status'), 'elevated', !!pose && pose.y >= .75);
+    setText($('weapon-label'), readout.label); setText($('ammo'), readout.ammo); setText($('reserve'), readout.reserve);
     $('weapon-readout').dataset.slot = readout.healing ? 'potion' : readout.sword ? 'sword' : 'primary';
-    $('weapon-readout').classList.toggle('healing', readout.healing);
-    $('ammo-reserve').hidden = readout.sword || readout.healing;
-    $('reload-track').hidden = !readout.progress; $('reload-progress').style.width = `${readout.progress?.percent || 0}%`;
-    $('reload-track').setAttribute('aria-label', readout.progress?.label || 'Weapon action');
-    $('reload-track').setAttribute('aria-valuenow', String(Math.round(readout.progress?.percent || 0)));
-    $('reload-track').setAttribute('aria-valuetext', `${((readout.progress?.remaining || 0) / 120).toFixed(1)} seconds remaining`);
-    $('weapon-status').textContent = readout.status;
-    $('ammo').classList.toggle('low-ammo', !readout.sword && !readout.reloading && !!weapon && viewed?.ammo <= Math.max(2, Math.floor(weapon.magazine / 4)));
-    $('grenade-charge').textContent = readout.grenades; $('potion-charge').textContent = readout.potions;
-    $('grenade-utility').classList.toggle('spent', !readout.grenades);
-    $('potion-utility').classList.toggle('spent', !readout.potions);
-    $('potion-utility').classList.toggle('channeling', readout.healing);
+    toggleClass($('weapon-readout'), 'healing', readout.healing);
+    setHidden($('ammo-reserve'), readout.sword || readout.healing);
+    setHidden($('reload-track'), !readout.progress); setStyle($('reload-progress'), 'width', `${readout.progress?.percent || 0}%`);
+    setAttribute($('reload-track'), 'aria-label', readout.progress?.label || 'Weapon action');
+    setAttribute($('reload-track'), 'aria-valuenow', String(Math.round(readout.progress?.percent || 0)));
+    setAttribute($('reload-track'), 'aria-valuetext', `${((readout.progress?.remaining || 0) / 120).toFixed(1)} seconds remaining`);
+    setText($('weapon-status'), readout.status);
+    toggleClass($('ammo'), 'low-ammo', !readout.sword && !readout.reloading && !!weapon && viewed?.ammo <= Math.max(2, Math.floor(weapon.magazine / 4)));
+    setText($('grenade-charge'), readout.grenades); setText($('potion-charge'), readout.potions);
+    toggleClass($('grenade-utility'), 'spent', !readout.grenades);
+    toggleClass($('potion-utility'), 'spent', !readout.potions);
+    toggleClass($('potion-utility'), 'channeling', readout.healing);
     const scoped = !!local?.alive && local.slot !== 'sword' && !readout.healing && !!weapon?.scoped && aimFraction(local, engine?.ADS?.ticks) >= 14 / 18;
-    $('scope-reticle').hidden = !controlsActive() || phase !== 'fight' || !scoped;
-    $('scope-label').textContent = `${weapon?.label || 'PRECISION'} / PRECISION SIGHT`;
-    $('crosshair').hidden = !controlsActive() || phase !== 'fight' || scoped || readout.healing;
+    setHidden($('scope-reticle'), !controlsActive() || phase !== 'fight' || !scoped);
+    setText($('scope-label'), `${weapon?.label || 'PRECISION'} / PRECISION SIGHT`);
+    setHidden($('crosshair'), !controlsActive() || phase !== 'fight' || scoped || readout.healing);
     $('crosshair').dataset.stance = readout.sword ? 'sword' : local?.aiming ? 'aim' : 'hip';
     if (local) {
       const motion = weapon ? Math.max(0, Math.min(1, (Math.hypot(local.vx, local.vz) - .22) / weapon.speed)) : 0;
       const ads = aimFraction(local, engine?.ADS?.ticks);
       const spread = weapon ? (weapon.pelletSpread || 0) + weaponSpread(weapon, { motion, grounded: local.grounded, heat: local.heat, ads }, engine?.ADS) : 0;
       const size = readout.sword ? 27 : Math.round(22 - ads * 8 + Math.min(64, spread * canvas.clientHeight * 2));
-      $('crosshair').style.width = `${size}px`; $('crosshair').style.height = `${size}px`;
+      setStyle($('crosshair'), 'width', `${size}px`); setStyle($('crosshair'), 'height', `${size}px`);
     }
     for (const button of document.querySelectorAll('[data-voxel-action]')) {
       const action = button.dataset.voxelAction;
@@ -672,16 +629,16 @@ async function boot() {
       if (action === 'grenade') { button.textContent = `FRAG ${readout.grenades}`; button.setAttribute('aria-label', `Throw fragmentation grenade: ${readout.grenades} remaining`); button.classList.toggle('unavailable', !readout.grenades); }
       if (action === 'heal') { button.textContent = readout.healing ? 'DRINKING' : `POTION ${readout.potions}`; button.setAttribute('aria-label', `Drink healing potion: ${readout.potions} remaining; restores up to ${engine?.HEAL?.amount || HEAL.amount} health after two seconds; interruption spends the potion`); button.classList.toggle('unavailable', (!readout.potions && !readout.healing) || local?.hp >= (local?.maxHp || PLAYER_HEALTH)); }
     }
-    $('pause-button').hidden = paused || inLobby || phase === 'matchEnd' || !entered;
-    $('touch-controls').hidden = !touchMode || !entered || !['countdown', 'buy', 'fight'].includes(phase) || !local?.alive;
-    $('spectator-hud').hidden = !local || local.alive || !['fight', 'roundEnd'].includes(phase);
+    setHidden($('pause-button'), paused || inLobby || phase === 'matchEnd' || !entered);
+    setHidden($('touch-controls'), !touchMode || !entered || !['countdown', 'buy', 'fight'].includes(phase) || !local?.alive);
+    setHidden($('spectator-hud'), !local || local.alive || !['fight', 'roundEnd'].includes(phase));
     const allies = state?.players?.filter(player => player.team === local?.team && player.alive && player.id !== playerId) || [];
     if (!allies.some(player => player.id === spectatorId)) spectatorId = allies[0]?.id ?? null;
-    $('spectator-label').textContent = spectatorId !== null ? `SPECTATING ${lookupName(spectatorId).toUpperCase()}` : 'YOUR TEAM IS ELIMINATED';
-    $('next-spectator').hidden = allies.length < 2;
+    setText($('spectator-label'), spectatorId !== null ? `SPECTATING ${lookupName(spectatorId).toUpperCase()}` : 'YOUR TEAM IS ELIMINATED');
+    setHidden($('next-spectator'), allies.length < 2);
     const bomb = bombState();
-    $('objective-hud').hidden = !bomb || phase !== 'fight';
-    $('interaction-track').hidden = true;
+    setHidden($('objective-hud'), !bomb || phase !== 'fight');
+    setHidden($('interaction-track'), true);
     if (bomb) {
       let label; let detail;
       if (bomb.status === 'planted') { label = `SITE ${String(bomb.siteId || 'A').toUpperCase()} / DEVICE PLANTED`; detail = `${Math.ceil((bomb.timerTicks || 0) / 120)}S TO DETONATION`; }
@@ -694,22 +651,22 @@ async function boot() {
         const ticks = planting ? bomb.plantTicks : bomb.defuseTicks; const total = planting ? 360 : 600;
         detail = `${((total - ticks) / 120).toFixed(1)} SECONDS REMAINING`;
         const progress = Math.min(100, ticks / total * 100);
-        $('interaction-track').hidden = false; $('interaction-progress').style.width = `${progress}%`;
-        $('interaction-track').setAttribute('aria-valuenow', String(Math.round(progress)));
-        $('interaction-track').setAttribute('aria-label', planting ? 'Planting device' : 'Defusing device');
-        $('interaction-track').setAttribute('aria-valuetext', `${((total - ticks) / 120).toFixed(1)} seconds remaining`);
+        setHidden($('interaction-track'), false); setStyle($('interaction-progress'), 'width', `${progress}%`);
+        setAttribute($('interaction-track'), 'aria-valuenow', String(Math.round(progress)));
+        setAttribute($('interaction-track'), 'aria-label', planting ? 'Planting device' : 'Defusing device');
+        setAttribute($('interaction-track'), 'aria-valuetext', `${((total - ticks) / 120).toFixed(1)} seconds remaining`);
       } else if (phase === 'fight' && local?.alive && local.grounded && bomb.status === 'carried' && bomb.carrierId === playerId) {
         const nearSite = engine.MAPS?.[state.mapId]?.sites?.find(site => Math.hypot(local.x - site.x, local.z - site.z) <= site.radius);
         if (nearSite) detail = `SITE ${nearSite.id} · STOP AND HOLD E TO PLANT`;
       } else if (phase === 'fight' && local?.alive && local.team !== attackTeam && bomb.status === 'planted' && Math.hypot(local.x - bomb.x, local.z - bomb.z) <= 1.6) {
         detail = engine.canInteractWithBomb?.(state, local) ? 'STOP AND HOLD E TO DEFUSE' : 'Find a clear angle to the device';
       }
-      $('objective-label').textContent = label; $('objective-detail').textContent = detail;
-      $('objective-hud').classList.toggle('interacting', planting || defusing);
-      $('objective-hud').classList.toggle('device-live', bomb.status === 'planted');
+      setText($('objective-label'), label); setText($('objective-detail'), detail);
+      toggleClass($('objective-hud'), 'interacting', planting || defusing);
+      toggleClass($('objective-hud'), 'device-live', bomb.status === 'planted');
     }
     const roles = local?.team === attackTeam ? 'Breach' : 'Hold';
-    $('objective').textContent = inLobby ? `All ${capacity} players must be connected and ready.` : phase === 'buy' ? `${roles}: choose your weapon. Movement is locked during setup.` : phase === 'fight' ? local?.alive ? `${roles}: ${local.team === attackTeam ? 'plant at A or B, or eliminate Hold.' : 'protect the sites; hold E to defuse.'}` : 'Eliminated. Watch your own team until the next round.' : phase === 'roundEnd' ? state?.objective || 'Round complete. The next round is on its way.' : phase === 'matchEnd' ? 'Match complete. Rematch returns to lobby; everyone must ready up.' : 'Round begins shortly. Enter the arena when ready.';
+    setText($('objective'), inLobby ? `All ${capacity} players must be connected and ready.` : phase === 'buy' ? `${roles}: choose your weapon. Movement is locked during setup.` : phase === 'fight' ? local?.alive ? `${roles}: ${local.team === attackTeam ? 'plant at A or B, or eliminate Hold.' : 'protect the sites; hold E to defuse.'}` : 'Eliminated. Watch your own team until the next round.' : phase === 'roundEnd' ? state?.objective || 'Round complete. The next round is on its way.' : phase === 'matchEnd' ? 'Match complete. Rematch returns to lobby; everyone must ready up.' : 'Round begins shortly. Enter the arena when ready.');
     let overlay = false; let kicker = ''; let title = ''; let subtitle = ''; let enter = false;
     if (graphicsError) { overlay = true; kicker = 'GRAPHICS UNAVAILABLE'; title = 'The arena could not render.'; subtitle = graphicsError; }
     else if (!connected) { overlay = true; kicker = 'CONNECTING TO THE HOST'; title = permanentError ? 'This room is unavailable.' : 'Waiting for the host.'; subtitle = permanentError ? 'Return to the game shelf and create or join a room.' : 'Your controls are released while the connection recovers.'; }
@@ -721,43 +678,49 @@ async function boot() {
     }
     else if (phase === 'matchEnd') { overlay = true; kicker = 'MATCH COMPLETE'; title = state.winner === local?.team ? 'Your team takes the match.' : 'A hard-fought match.'; subtitle = `${state.scores?.[0] || 0} — ${state.scores?.[1] || 0}. Rematch returns everyone to the lobby. All players must ready up again.`; }
     else if (local?.alive && ['countdown', 'buy', 'fight'].includes(phase) && (paused || !entered) && !modalOpen) { overlay = true; kicker = phase === 'countdown' || phase === 'buy' ? `${roles.toUpperCase()} / ROUND ${String(state.round).padStart(2, '0')}` : 'CONTROLS RELEASED'; title = !entered ? 'Enter the arena.' : 'Controls released.'; subtitle = phase === 'countdown' || phase === 'buy' ? `${roles}: ${local.team === attackTeam ? 'plant at A or B.' : 'protect A and B, then defuse.'} Choose a weapon; movement unlocks when live.` : 'The multiplayer round keeps running. Return when you are ready.'; enter = true; }
-    $('game-overlay').hidden = !overlay; $('overlay-kicker').textContent = kicker; $('overlay-title').textContent = title; $('overlay-subtitle').textContent = subtitle;
-    $('enter-arena').hidden = !enter; $('retry-graphics').hidden = !graphicsError;
-    $('arena-loadouts').hidden = !enter || !['countdown', 'buy'].includes(phase);
-    $('arena-weapon-stats').hidden = $('arena-loadouts').hidden;
+    setHidden($('game-overlay'), !overlay); setText($('overlay-kicker'), kicker); setText($('overlay-title'), title); setText($('overlay-subtitle'), subtitle);
+    setHidden($('enter-arena'), !enter); setHidden($('retry-graphics'), !graphicsError);
+    setHidden($('arena-loadouts'), !enter || !['countdown', 'buy'].includes(phase));
+    setHidden($('arena-weapon-stats'), $('arena-loadouts').hidden);
     for (const button of document.querySelectorAll('[data-arena-loadout]')) {
       button.setAttribute('aria-pressed', String(button.dataset.arenaLoadout === local?.weapon));
       button.disabled = !connected || !['countdown', 'buy'].includes(phase);
     }
-    $('aim-note').hidden = !enter; $('aim-note').textContent = touchMode ? 'Touch: Move / Look pads. Hold AIM for sights; tap SWORD, FRAG or POTION.' : 'RMB aims. If mouse capture is unavailable, hold RMB and drag to look.';
+    setHidden($('aim-note'), !enter); setText($('aim-note'), touchMode ? 'Touch: Move / Look pads. Hold AIM for sights; tap SWORD, FRAG or POTION.' : 'RMB aims. If mouse capture is unavailable, hold RMB and drag to look.');
     const result = roundResult(state, local?.team);
-    $('phase-announcement').hidden = !connected || !!graphicsError || modalOpen || overlay || !['countdown', 'buy', 'roundEnd'].includes(phase);
+    setHidden($('phase-announcement'), !connected || !!graphicsError || modalOpen || overlay || !['countdown', 'buy', 'roundEnd'].includes(phase));
     $('phase-announcement').dataset.phase = phase;
     $('phase-announcement').dataset.outcome = result?.won ? 'won' : 'lost';
-    $('phase-kicker').textContent = phase === 'roundEnd' && result ? `${result.team} / ${result.role} · ROUND ${String(state.round).padStart(2, '0')}` : `${roles.toUpperCase()} / ROUND ${String(state?.round || 1).padStart(2, '0')}`;
-    $('phase-title').textContent = phase === 'roundEnd' ? result?.title || 'Round complete.' : phase === 'buy' ? 'Choose your weapon.' : 'Take your angle.';
-    $('phase-detail').textContent = phase === 'roundEnd' ? `${result?.reason || ''} Next round in ${clock.seconds}s.${state.round === 3 ? ' Teams switch roles.' : ''}` : phase === 'buy' ? `${clock.seconds}s until live · ${(local?.weapon || 'carbine').toUpperCase()} selected` : `${clock.seconds}s until setup · ${roles === 'Breach' ? 'Plant at A or B.' : 'Protect both sites.'}`;
-    $('phase-shortcuts').hidden = phase === 'roundEnd' || touchMode;
+    setText($('phase-kicker'), phase === 'roundEnd' && result ? `${result.team} / ${result.role} · ROUND ${String(state.round).padStart(2, '0')}` : `${roles.toUpperCase()} / ROUND ${String(state?.round || 1).padStart(2, '0')}`);
+    setText($('phase-title'), phase === 'roundEnd' ? result?.title || 'Round complete.' : phase === 'buy' ? 'Choose your weapon.' : 'Take your angle.');
+    setText($('phase-detail'), phase === 'roundEnd' ? `${result?.reason || ''} Next round in ${clock.seconds}s.${state.round === 3 ? ' Teams switch roles.' : ''}` : phase === 'buy' ? `${clock.seconds}s until live · ${(local?.weapon || 'carbine').toUpperCase()} selected` : `${clock.seconds}s until setup · ${roles === 'Breach' ? 'Plant at A or B.' : 'Protect both sites.'}`);
+    setHidden($('phase-shortcuts'), phase === 'roundEnd' || touchMode);
     updateTacticalMap();
     renderRoster();
   }
 
   function draw(now = performance.now()) {
     if (!renderer || !state || graphicsError || document.hidden) return;
-    const renderedState = interpolatedState(snapshots, now - 12, playerId, { predictMovement: engine.predictLocalMovement, traceProjectile: engine.traceShot }) || state;
+    const renderedState = interpolatedState(snapshots, timeline.time(now), playerId, { predictMovement: engine.predictLocalMovement, traceProjectile: engine.traceShot, combatTime: timeline.currentTime(now) }) || { ...state, players: state.players.map(player => ({ ...player })) };
     const local = ownPlayer();
     if (teamSwitchPending && local?.team === requestedTeam) { teamSwitchPending = false; requestedTeam = null; }
     presentationPlayer = predictedPlayer || local;
     if (state.phase === 'fight' && presentationPlayer?.alive) presentationPlayer = presentMovement(presentationPlayer, currentInput(), state.mapId, accumulator, engine.predictLocalMovement, state.players);
-    presentationPlayer = withCombatPresentation(presentationPlayer, renderedState.players.find(player => player.id === playerId));
+    const newest = snapshots[snapshots.length - 1], previous = snapshots[snapshots.length - 2];
+    const visualCombat = local && combatPresentation(local, previous?.state.players.find(player => player.id === playerId) || local, 1, Math.max(0, timeline.currentTime(now) - (newest?.time || 0)));
+    presentationPlayer = withCombatPresentation(presentationPlayer, visualCombat);
+    presentationPlayer = correction.present(presentationPlayer, now, engine.sweepPresentationOffset, state.mapId, state.players);
+    presentationPlayers = resolvePresentationContacts(renderedState.players.map(player => local?.alive && player.id === playerId ? presentationPlayer : player), state.mapId);
+    renderedState.players = presentationPlayers; renderedState.fighters = presentationPlayers;
+    if (local?.alive) presentationPlayer = presentationPlayers.find(player => player.id === playerId) || presentationPlayer;
     const viewPlayer = local?.alive ? presentationPlayer : renderedState.players.find(player => player.id === spectatorId && player.team === local?.team && player.alive) || local;
     const viewAim = local?.alive ? aim : { yaw: viewPlayer?.yaw || 0, pitch: viewPlayer?.pitch || 0 };
     renderer.render(renderedState, { playerId, localId: playerId, localPlayer: presentationPlayer, viewPlayer, cameraPlayer: viewPlayer, yaw: viewAim.yaw, pitch: viewAim.pitch + (viewPlayer?.recoil || 0), time: now });
     renderCount++;
-    $('hit-marker').hidden = now >= hitUntil;
-    $('hit-marker').dataset.kind = hitKind;
+    setHidden($('hit-marker'), now >= hitUntil);
+    setAttribute($('hit-marker'), 'data-kind', hitKind);
     paintDamageFeedback($('damage-cue'), damageFeedbackPresentation(damageFeedback, viewPlayer, { now, lifeKey: state.round, yaw: viewAim.yaw, active: state.phase === 'fight' }));
-    $('combat-feedback').hidden = now >= feedbackUntil;
+    setHidden($('combat-feedback'), now >= feedbackUntil);
     while (kills.length && now - kills[0].at > 6000) kills.shift();
     const feed = $('kill-feed');
     if (feed.dataset.signature !== kills.map(item => item.text).join('|')) {
@@ -774,13 +737,13 @@ async function boot() {
     accumulator += delta; let ticks = 0; let buttons = currentInput();
     while (accumulator >= 1 / 120 && ticks++ < 8) {
       accumulator -= 1 / 120;
-      const seq = ++sequence;
+      const tick = ++predictionTick;
       if (state.phase === 'fight' && predictedPlayer?.alive) {
         engine.predictLocalMovement(predictedPlayer, buttons, state.mapId, 1, state.players);
-        pending.push({ seq, buttons: { ...buttons } }); if (pending.length > 240) pending.shift();
+        pending.push({ tick, buttons: { ...buttons } }); if (pending.length > 240) pending.shift();
       }
     }
-    if (ticks && !teamSwitchPending && wirePacer.shouldSend(now)) send({ type: 'input', seq: sequence, buttons });
+    if (ticks && !teamSwitchPending) sendInput(buttons, false, now);
     if (predictedPlayer) { predictedPlayer.yaw = aim.yaw; predictedPlayer.pitch = aim.pitch; }
     draw(now);
     if (now - lastHUDAt > 80) { updateUI(); lastHUDAt = now; }
@@ -805,6 +768,8 @@ async function boot() {
     mapName = message.mapName || next.mapName || mapName;
     roster = (Array.isArray(message.players) ? message.players : Object.values(message.players || {})).map((player, id) => player ? { ...player, id: player.id ?? id } : null);
     const local = ownPlayer();
+    const beforePrediction = predictedPlayer;
+    const beforePose = beforePrediction && old?.phase === 'fight' ? presentMovement(beforePrediction, currentInput(), old.mapId, accumulator, engine.predictLocalMovement, old.players) : beforePrediction;
     if (!old || predictedPlayer?.id !== playerId || previousRound !== state.round || previousPhase === 'lobby' && state.phase !== 'lobby' || local?.alive && old?.players.find(player => player.id === playerId)?.alive === false) {
       neutralize();
       const spawn = local && engine.MAPS?.[state.mapId]?.spawns?.[local.team === state.attackTeam ? 0 : 1]?.[local.id % teamSize];
@@ -823,16 +788,24 @@ async function boot() {
     const ackValue = message.acks?.[playerId];
     const ack = typeof ackValue === 'number' ? ackValue : ackValue?.seq ?? -1;
     if (local) {
-      const reconciled = reconcilePlayer(local, pending, ack, state.mapId, engine.predictLocalMovement, state.phase === 'fight', state.players);
-      predictedPlayer = reconciled.predicted; pending = reconciled.pending;
+      const reconciled = reconcilePlayer(local, pending, ack, state.mapId, engine.predictLocalMovement, state.phase === 'fight', state.players, state.tick);
+      predictedPlayer = reconciled.predicted; pending = reconciled.pending; predictionTick = reconciled.predictionTick;
       predictedPlayer.yaw = aim.yaw; predictedPlayer.pitch = aim.pitch;
+      const afterPose = state.phase === 'fight' ? presentMovement(predictedPlayer, currentInput(), state.mapId, accumulator, engine.predictLocalMovement, state.players) : predictedPlayer;
+      correction.correct(beforePose, afterPose, performance.now(), { continuous: old?.phase === 'fight' && state.phase === 'fight' && old.round === state.round && old.mapId === state.mapId });
     }
-    const now = performance.now(); snapshots.push({ time: now, state }); if (snapshots.length > 12) snapshots.shift();
+    const now = performance.now(), sample = timeline.sample(state, now, `${state.mapId}:${state.round}:${state.phase}`);
+    if (sample) {
+      const previous = snapshots[snapshots.length - 1]?.state;
+      if (previous && (previous.phase !== state.phase || previous.round !== state.round || previous.mapId !== state.mapId)) snapshots = [];
+      snapshots.push(sample); if (snapshots.length > 12) snapshots.shift();
+    }
     playEvents(state.events || message.events || []);
     if (state.phase === 'countdown') { const number = Math.ceil((state.phaseTicks || 0) / 120); if (number !== lastCountdown) { audio.countdown(number); lastCountdown = number; } }
     if (state.phase === 'fight' && previousPhase !== 'fight') audio.fight();
     previousPhase = state.phase; previousRound = state.round;
-    updateUI(); wake();
+    if (!activeAnimation() || now - lastHUDAt >= 80 || hudKey() !== paintedHUDKey) updateUI();
+    wake();
   }
 
   function connect() {
@@ -840,7 +813,7 @@ async function boot() {
     if (destroyed || permanentError) return;
     if (!/^[A-Z0-9]{6}$/.test(roomId)) { permanentError = true; error('This invite has no valid room code. Return to Semag and choose Voxel Breach.'); updateUI(); return; }
     const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws?room=${encodeURIComponent(roomId)}`); socket = ws;
-    ws.addEventListener('open', () => { if (socket !== ws) return; connected = true; attempts = 0; sequence = 0; pending = []; snapshots = []; error(''); send({ type: 'join', name: playerName }); updateUI(); });
+    ws.addEventListener('open', () => { if (socket !== ws) return; connected = true; attempts = 0; sequence = 0; pending = []; snapshots = []; timeline.reset(); correction.reset(); error(''); send({ type: 'join', name: playerName }); updateUI(); });
     ws.addEventListener('message', ({ data }) => {
       if (socket !== ws || destroyed) return;
       let message; try { message = JSON.parse(data); } catch { return; }
@@ -850,7 +823,7 @@ async function boot() {
         mapName = message.mapName || mapName; sequence = 0; pending = []; entered = false; fallback = false;
         aim = cleanAim(ownPlayer()?.yaw, ownPlayer()?.pitch); teamSwitchPending = false; requestedTeam = null; updateUI();
       } else if (message.type === 'state') receiveState(message);
-      else if (message.type === 'pong') $('ping').textContent = `${Math.max(0, Math.round(performance.now() - message.time))} ms`;
+      else if (message.type === 'pong') setText($('ping'), `${Math.max(0, Math.round(performance.now() - message.time))} ms`);
       else if (message.type === 'error') {
         teamSwitchPending = false; requestedTeam = null;
         error(message.message || 'The host could not accept that action.');
@@ -859,7 +832,7 @@ async function boot() {
     });
     ws.addEventListener('close', event => {
       if (socket !== ws || destroyed) return;
-      connected = false; neutralize({ pause: true, unlock: true }); playerId = null; pending = []; snapshots = []; $('ping').textContent = '— ms';
+      connected = false; neutralize({ pause: true, unlock: true }); playerId = null; pending = []; snapshots = []; timeline.reset(); correction.reset(); setText($('ping'), '— ms');
       if (event.code === 4403 || event.code === 4404) permanentError = true;
       if (frameId) cancelAnimationFrame(frameId); frameId = null; lastFrameAt = 0;
       updateUI();
@@ -891,10 +864,10 @@ async function boot() {
   }
   function setDialog(kind) {
     modalOpen = !!kind;
-    $('room-dialog').hidden = kind !== 'room';
-    $('guide-dialog').hidden = kind !== 'guide';
+    setHidden($('room-dialog'), kind !== 'room');
+    setHidden($('guide-dialog'), kind !== 'guide');
     positionLayoutPicker();
-    $('room-panel-button').setAttribute('aria-expanded', String(kind === 'room'));
+    setAttribute($('room-panel-button'), 'aria-expanded', String(kind === 'room'));
     for (const id of ['guide-button', 'arena-guide-button']) $(id).setAttribute('aria-expanded', String(kind === 'guide'));
     // Keep the active dialog reachable in fullscreen and remove the background from Tab order.
     for (const element of document.querySelector('.voxel-app').children) {
@@ -933,7 +906,7 @@ async function boot() {
   }
   function updateKeyLabels() {
     const layout = getKeyboardLayout();
-    $('move-keys').textContent = layout.toUpperCase();
+    setText($('move-keys'), layout.toUpperCase());
     for (const label of document.querySelectorAll('[data-voxel-key]')) label.textContent = displayKey(label.dataset.voxelKey, layout);
     canvas.setAttribute('aria-label', `3D tactical shooter. ${layout.toUpperCase()} or arrows to move, mouse to look, left click to shoot or strike, right click to aim, V switch sword, ${displayKey('Q', layout)} grenade, F healing potion, R reload, hold E to plant or defuse, Space jump between crates and ledges, Control crouch, Shift walk. Choose nine weapons with number keys 1 to 9 during setup.`);
   }
@@ -977,7 +950,7 @@ async function boot() {
   listen(window, 'mouseup', event => { if (event.button === 0) mouse.fire = false; if (event.button === 2) { mouse.aim = false; rightDrag = false; } if (entered && [0, 2].includes(event.button)) sendInput(); });
   listen(document, 'mousemove', event => {
     if (!controlsActive() || !(pointerLocked() || fallback && rightDrag)) return;
-    const sensitivity = LOOK_SENSITIVITY * aimLookMultiplier(ownPlayer(), engine?.ADS);
+    const sensitivity = LOOK_SENSITIVITY * aimLookMultiplier(presentationPlayer || ownPlayer(), engine?.ADS);
     aim = cleanAim(aim.yaw + event.movementX * sensitivity, aim.pitch - event.movementY * sensitivity);
     sendInput(currentInput(), false);
   });
@@ -1011,7 +984,7 @@ async function boot() {
     spectatorId = allies[(allies.findIndex(player => player.id === spectatorId) + 1) % Math.max(1, allies.length)]?.id ?? null; updateUI(); draw();
   });
   listen($('sound-button'), 'click', async () => {
-    const enabled = await audio.setEnabled(!audio.enabled); $('sound-button').setAttribute('aria-pressed', String(enabled)); $('sound-button').setAttribute('aria-label', enabled ? 'Mute sound' : 'Enable sound'); $('sound-button').title = enabled ? 'Mute sound' : 'Enable sound'; toast(enabled ? 'Sound on.' : 'Sound off.');
+    const enabled = await audio.setEnabled(!audio.enabled); setAttribute($('sound-button'), 'aria-pressed', String(enabled)); setAttribute($('sound-button'), 'aria-label', enabled ? 'Mute sound' : 'Enable sound'); $('sound-button').title = enabled ? 'Mute sound' : 'Enable sound'; toast(enabled ? 'Sound on.' : 'Sound off.');
   });
   async function toggleFullscreen() {
     neutralize({ pause: entered, unlock: true });
@@ -1067,8 +1040,8 @@ async function boot() {
     listen(button, 'contextmenu', event => event.preventDefault());
   }
 
-  let invite = `${location.origin}/voxel.html?room=${encodeURIComponent(roomId)}`; $('invite-address').textContent = invite;
-  hostInfo().then(info => { invite = `${info.origin}/voxel.html?room=${encodeURIComponent(roomId)}`; $('invite-address').textContent = invite; }).catch(() => {});
+  let invite = `${location.origin}/voxel.html?room=${encodeURIComponent(roomId)}`; setText($('invite-address'), invite);
+  hostInfo().then(info => { invite = `${info.origin}/voxel.html?room=${encodeURIComponent(roomId)}`; setText($('invite-address'), invite); }).catch(() => {});
   listen($('copy-code'), 'click', async () => { try { await copyText(roomId); toast('Room code copied.'); } catch (cause) { toast(cause.message); } });
   listen($('copy-invite'), 'click', async () => { try { await copyText(invite); toast('Invite link copied.'); } catch (cause) { toast(cause.message); } });
   const pingTimer = setInterval(() => { if (connected && !document.hidden) send({ type: 'ping', time: performance.now() }); }, 1500);
@@ -1080,7 +1053,7 @@ async function boot() {
     for (const remove of removers) remove(); pending = []; snapshots = []; kills.length = 0; eventSeen.clear();
   }
   listen(window, 'pagehide', destroy);
-  const inspect = () => clone({ state, players: roster, playerId, input: currentInput(), predictedPlayer, presentationPlayer, predictionRemainder: accumulator, connected, controls: { pointerLocked: pointerLocked(), fallback, touch: touchMode, paused, entered, modalOpen }, queueLength: pending.length, renderCount, renderStats: renderer?.stats || null, graphicsError, spectatorId });
+  const inspect = () => clone({ state, players: roster, playerId, input: currentInput(), predictedPlayer, presentationPlayer, presentationPlayers, predictionRemainder: accumulator, predictionTick, timeline: timeline.getState(), correction: correction.getState(), connected, controls: { pointerLocked: pointerLocked(), fallback, touch: touchMode, paused, entered, modalOpen }, queueLength: pending.length, renderCount, renderStats: renderer?.stats || null, graphicsError, spectatorId });
   window.SemagVoxel = Object.freeze({ getState: inspect, inspect });
   updateUI();
   try {

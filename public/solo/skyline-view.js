@@ -139,8 +139,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     camera = displayState.phase === 'playing' && !reduced.matches
       ? camera + (goalCamera - camera) * frameAlpha(.18, deltaMs) : goalCamera;
     ctx.clearRect(0, 0, logicalWidth, WORLD.height); ctx.imageSmoothingEnabled = false;
-    const parallax = Math.floor(camera * .22); ctx.drawImage(skyLayers[level.district], parallax, 0, logicalWidth, 580, 0, 0, logicalWidth, 580);
-    ctx.save(); ctx.translate(-Math.floor(camera), 0); ctx.drawImage(stageArt, 0, 0);
+    const parallax = camera * .22; ctx.drawImage(skyLayers[level.district], parallax, 0, logicalWidth, 580, 0, 0, logicalWidth, 580);
+    ctx.save(); ctx.translate(-camera, 0); ctx.drawImage(stageArt, 0, 0);
     if (!reduced.matches && level.district === 1) { ctx.strokeStyle = '#8bb0bd'; ctx.globalAlpha = .18; ctx.lineWidth = 1; ctx.beginPath(); for (let i = 0; i < 24; i++) { const x = camera + (i * 97 + displayState.elapsed * 80) % logicalWidth, y = (i * 109 + displayState.elapsed * 280) % 560; ctx.moveTo(x, y); ctx.lineTo(x - 7, y + 16); } ctx.stroke(); ctx.globalAlpha = 1; }
     const target = targetAnchor(state, input());
     for (const [i, a] of level.anchors.entries()) {
@@ -156,12 +156,12 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     const [gx, gy] = level.goal; rect(gx - 5, gy - 43, 10, 21, displayState.relays.every(Boolean) ? '#aee7b4' : '#aa895e');
     if (displayState.hook) { const rope = displayState.hook; ctx.strokeStyle = '#263244'; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(p.x + 4 * p.facing, p.y - 6); ctx.lineTo(rope.x, rope.y); ctx.stroke(); ctx.strokeStyle = '#e4d7b1'; ctx.lineWidth = 2; ctx.stroke(); }
     else if (target && displayState.phase === 'playing') { ctx.strokeStyle = '#a3b9ad'; ctx.globalAlpha = .2; ctx.lineWidth = 1; ctx.setLineDash([3, 12]); ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(target.x, target.y); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1; }
-    if (!reduced.matches) for (const g of ghost) { ctx.globalAlpha = g.life / .3 * .18; ctx.drawImage(sprite('air', g.facing), Math.round(g.x - 13.5), Math.round(g.y - 15.75), 27, 33); } ctx.globalAlpha = 1;
+    if (!reduced.matches) for (const g of ghost) { ctx.globalAlpha = g.life / .3 * .18; ctx.drawImage(sprite('air', g.facing), g.x - 13.5, g.y - 15.75, 27, 33); } ctx.globalAlpha = 1;
     // Ground contact shadow stays on the actual body footprint, never on thin air.
-    if (p.grounded) { ctx.fillStyle = '#182533'; ctx.fillRect(Math.round(p.x - 10), Math.round(p.y + 12), 20, 3); }
+    if (p.grounded) { ctx.fillStyle = '#182533'; ctx.fillRect(p.x - 10, p.y + 12, 20, 3); }
     const pose = displayState.hook ? 'hook' : !p.grounded ? 'air' : Math.abs(p.vx) > 40 ? Math.floor(displayState.elapsed * 12) % 2 ? 'run1' : 'run2' : 'idle';
-    ctx.drawImage(sprite(pose, p.facing), Math.round(p.x - 13.5), Math.round(p.y - 15.75), 27, 33);
-    for (const fx of particles) { ctx.globalAlpha = Math.min(1, fx.life * 3); rect(fx.x, fx.y, 3, 3, fx.color); } ctx.globalAlpha = 1;
+    ctx.drawImage(sprite(pose, p.facing), p.x - 13.5, p.y - 15.75, 27, 33);
+    for (const fx of particles) { ctx.globalAlpha = Math.min(1, fx.life * 3); ctx.fillStyle = fx.color; ctx.fillRect(fx.x, fx.y, 3, 3); } ctx.globalAlpha = 1;
     ctx.restore();
     rect(14, 14, 108, 28, '#1a293bea'); ctx.fillStyle = '#d3dfd2'; ctx.font = 'bold 12px monospace'; ctx.fillText(elapsedText(displayState.elapsed), 24, 33);
     if (displayState.hook) { rect(logicalWidth - 112, 14, 98, 28, '#1a293bea'); ctx.fillStyle = '#cfdeca'; ctx.fillText(`ROPE ${Math.round(displayState.hook.length)}`, logicalWidth - 102, 33); }

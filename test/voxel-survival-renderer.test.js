@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createWorld, getWorldBlock, setWorldBlock } from '../public/voxel-survival-world.js';
-import { buildSurvivalChunkMesh, createSurvivalAtlas, SurvivalRenderer } from '../public/voxel-survival-renderer.js';
+import { buildSurvivalChunkMesh, createSurvivalAtlas, SurvivalRenderer, SurvivalDynamicMesh } from '../public/voxel-survival-renderer.js';
 
 const fixtureWorld = (width = 2, height = 2, depth = 2) => ({ width, height, depth, chunkSize: 8, revision: 1, chunkRevisions: new Uint32Array(Math.ceil(width / 8) * Math.ceil(depth / 8)).fill(1), blocks: new Uint8Array(width * height * depth) });
 const put = (world, x, y, z, id = 4) => { world.blocks[x + world.width * (z + world.depth * y)] = id; };
@@ -92,4 +92,48 @@ test('event dust is capped, deduplicated and expires on simulation time', () => 
   assert.equal(renderer.particles.length, 64);
   SurvivalRenderer.prototype._events.call(renderer, { time: 10.5, events: [] });
   assert.equal(renderer.particles.length, 0);
+});
+
+test('pooled moving body meshes preserve outward normals and transformed cube surfaces', () => {
+  const mesh = new SurvivalDynamicMesh();
+  const pose = { x: 12, y: 4, z: 8, yaw: .73, pitch: -.31, scale: .7 };
+  mesh.box(-.2, .1, -.3, .4, .8, .6, [.4, .5, .6], pose);
+  const array = mesh.array();
+  assert.equal(array.length, 36 * 12); assert.ok(array.every(Number.isFinite));
+  for (let index = 0; index < array.length; index += 36) {
+    const a = array.slice(index, index + 3), b = array.slice(index + 12, index + 15), c = array.slice(index + 24, index + 27);
+    const ab = b.map((v, axis) => v - a[axis]), ac = c.map((v, axis) => v - a[axis]);
+    const cross = [ab[1] * ac[2] - ab[2] * ac[1], ab[2] * ac[0] - ab[0] * ac[2], ab[0] * ac[1] - ab[1] * ac[0]];
+    const normal = array.slice(index + 3, index + 6);
+    assert.ok(Math.abs(Math.hypot(...normal) - 1) < 1e-6);
+    assert.ok(cross.reduce((sum, value, axis) => sum + value * normal[axis], 0) > 0, 'moving face retains outward winding');
+    for (const offset of [0, 12, 24]) {
+      // Invert the authored yaw/pitch to verify every point stays on its real
+      // cube surface, rather than using the same forward transform as drawing.
+      const x = array[index + offset] - pose.x, y = array[index + offset + 1] - pose.y, z = array[index + offset + 2] - pose.z;
+      const localX = (x * Math.cos(pose.yaw) + z * Math.sin(pose.yaw)) / pose.scale;
+      const rotatedZ = -x * Math.sin(pose.yaw) + z * Math.cos(pose.yaw);
+      const localY = (y * Math.cos(pose.pitch) + rotatedZ * Math.sin(pose.pitch)) / pose.scale;
+      const localZ = (-y * Math.sin(pose.pitch) + rotatedZ * Math.cos(pose.pitch)) / pose.scale;
+      assert.ok(Math.min(Math.abs(localX + .2), Math.abs(localX - .2)) < 2e-6);
+      assert.ok(Math.min(Math.abs(localY - .1), Math.abs(localY - .9)) < 2e-6);
+      assert.ok(Math.min(Math.abs(localZ + .3), Math.abs(localZ - .3)) < 2e-6);
+    }
+  }
+});
+
+test('dense moving geometry reuses its typed backing store after warmup without stale vertices', () => {
+  const mesh = new SurvivalDynamicMesh();
+  const draw = boxes => {
+    mesh.reset();
+    for (let index = 0; index < boxes; index++) mesh.box(index % 12, 1, Math.floor(index / 12), .4, .6, .4, [.4, .5, .6], { x: 0, y: 0, z: 0, yaw: index * .1 });
+    return mesh.array();
+  };
+  const dense = draw(144), buffer = dense.buffer;
+  assert.equal(dense.length, 144 * 36 * 12);
+  for (let frame = 0; frame < 240; frame++) {
+    const result = draw(frame % 2 ? 144 : 12);
+    assert.equal(result.buffer, buffer, 'display Hz cannot allocate a new geometry backing store');
+    assert.equal(result.length, (frame % 2 ? 144 : 12) * 36 * 12, 'reset hides all old vertices');
+  }
 });

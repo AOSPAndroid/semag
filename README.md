@@ -240,6 +240,14 @@ Leaving a room resets that room's match and readiness. Rooms and matches live in
 
 The action and driving games automatically use your display's refresh rate, including 120, 144 and 240 Hz. Movement is smoothed between simulation steps, and camera effects keep the same speed across refresh rates. Choose your preferred rate in your PC's display settings before playing; browsers use the active display's rate.
 
+**FPS practice:** choose **Practice solo vs bots** on the Voxel Breach or Voxel Royale card, or **Practice vs bots** inside a room's controls panel. Choose any map, 1–5 opponents, moving targets or bots that return fire, and Rookie, Regular or Veteran bot pace, then press Start. Practice runs locally with the same movement, cover, weapons and damage rules as multiplayer. Breach offers an elimination drill with all nine gun choices; Royale keeps its knife start, scavenging, storm and last-survivor result. Escape releases controls and pauses practice. Restart or return to setup to begin another drill. Practice uses no multiplayer connection and does not write solo records.
+
+Network games render opponent movement using server simulation ticks and a small adaptive buffer rather than packet arrival spacing. Local aiming and confirmed gameplay feedback stay immediate. Small FPS prediction corrections settle over elapsed time and use the real body collision sweep; deaths, new rounds and large discontinuities reset them. Wilds samples creatures, arrows and its camera together between physics steps, while the pixel action games keep fractional world positions without changing their pixel artwork. Voxel renderers reuse typed geometry storage and pickup models, and Paris Pedal uploads its authored building raster once per frame while retaining its painter order.
+
+Online hitscan guns use the displayed simulation tick to check compatible player positions within a bounded 150 ms server history. This keeps shots on moving targets aligned with the buffered view. Cover, ammunition, spread and damage stay authoritative; stale timestamps and new lives cannot reuse an obsolete target pose. Crossbow bolts and grenades retain their real flight simulation. Local practice uses current positions and needs no network history.
+
+WebAssembly is supported by modern browsers, but this release keeps the simulation in JavaScript. Profiling found repeated geometry construction, canvas transfers, layout reads and presentation timing to be the larger costs. A WASM physics module would leave those costs in place. The current improvements require no new runtime dependency or browser isolation headers; heavy simulation or meshing kernels remain candidates for a future measured WASM implementation.
+
 ## Development
 
 ```sh
@@ -249,6 +257,8 @@ npm test
 Run `python test/compact-play-browser-smoke.py http://127.0.0.1:3000` for native checks of the compact layouts, controls panels, readiness, pause, fullscreen and responsive play areas.
 
 Run `python test/high-refresh-browser-smoke.py http://127.0.0.1:3000` for native gameplay, rendering, collision and pause/resume checks of the high-refresh presentation paths. Automated timing tests cover 60, 120, 144 and 240 Hz independently of the browser machine's display.
+
+Run `python test/voxel-practice-browser-smoke.py http://127.0.0.1:3000` for solo FPS setup, real combat and scavenging, keyboard/mouse and touch controls, pause/restart, fullscreen and responsive layouts.
 
 With Python Playwright and Chromium installed, run `python test/voxel-polish-browser-smoke.py http://127.0.0.1:3000` for native two-client checks of confirmed blood effects, 200-HP combat, 60-HP healing, the Royale starter knife and compact desktop/mobile views.
 

@@ -31,9 +31,9 @@ for module in (assets, assets.fixture, assets.native, assets.royale):
     module.OUT, module.URL = OUT, URL
 
 SOURCES = ('display-timing.js', 'voxel-client.js', 'voxel-royale-client.js',
-           'voxel-renderer.js', 'voxel-presentation.js', 'client.js',
+           'voxel-renderer.js', 'voxel-presentation.js', 'voxel-damage-feedback.js', 'network-timeline.js', 'client.js',
            'planar-presentation.js', 'brawl-renderer.js', 'hub/room.js',
-           'solo/render-sampling.js', 'solo/shadow-view.js', 'solo/paris-view.js',
+           'solo/render-sampling.js', 'solo/shadow-view.js', 'solo/paris-view.js', 'solo/paris-renderer.js',
            'solo/skyline-view.js', 'solo/circuit-view.js', 'solo/snake-view.js', 'solo/solo.js')
 REPORT = {'cases': [], 'errors': [], 'failed_resources': [], 'screenshots': [],
           'headless_display_only': True, 'sources': {}}
@@ -206,7 +206,7 @@ def afterimage_case(browser):
         wait(host, 'window.afterimage?.connected && window.afterimage.playerId === 0')
         peer.goto(host.url)
         wait(peer, 'window.afterimage?.connected && window.afterimage.playerId === 1')
-        host.locator('#practice-button').click()
+        click_control(host, '#practice-button')
         wait(host, 'window.afterimage.practice && window.afterimage.getState().phase === "fight"')
         host.locator('#arena').focus()
         before = host.evaluate('window.afterimage.getState().fighters[0].x')
@@ -223,7 +223,7 @@ def afterimage_case(browser):
         host.wait_for_timeout(120)
         assert host.evaluate('window.afterimage.getPresentation().renderCount') > count
         screenshot(host, 'refresh-afterimage-practice', '#arena')
-        host.locator('#practice-button').click()
+        click_control(host, '#practice-button')
         wait(host, '!window.afterimage.practice && window.afterimage.getState().phase === "lobby"')
         click_control(host, '#ready-button')
         host.wait_for_timeout(100)
@@ -231,12 +231,14 @@ def afterimage_case(browser):
         click_control(peer, '#ready-button')
         wait(host, 'window.afterimage.getState().phase === "fight"', timeout=12000)
         wait(peer, 'window.afterimage.getState().phase === "fight"')
+        host.bring_to_front()
         before = host.evaluate('window.afterimage.getState().fighters[0].x')
         host.locator('#arena').focus()
         host.keyboard.down('d')
-        host.wait_for_timeout(220)
-        host.keyboard.up('d')
-        wait(host, 'x=>window.afterimage.getState().fighters[0].x>x+15', before)
+        try:
+            wait(host, 'x=>window.afterimage.getState().fighters[0].x>x+15', before)
+        finally:
+            host.keyboard.up('d')
         wait(peer, 'x=>window.afterimage.getState().fighters[0].x>x+15', before)
         REPORT['cases'].append({'game': 'afterimage', 'native_practice_and_two_ready': True,
                                 'copied_presentation_samples': len(views), 'between_tick_fraction': True,

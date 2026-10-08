@@ -178,3 +178,5 @@
  .tactical-map>small,.map-caption{font-size:4px;line-height:1.1;margin-top:2px}
  .stage-info{top:8px;left:82px;right:8px}
 }
+
+.practice-link{display:inline-flex;align-items:center;justify-content:space-between;gap:12px;text-decoration:none;min-height:40px}

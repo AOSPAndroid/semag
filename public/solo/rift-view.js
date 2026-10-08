@@ -802,7 +802,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     }
   }
   function enemySprite(enemy) {
-    const x = Math.round(enemy.x); const y = Math.round(enemy.y);
+    const x = enemy.x; const y = enemy.y;
     const r = enemy.radius;
     circle(x, y + 3, r + 1, '#10282d');
     if (enemy.boss) guardianSprite(enemy, x, y);
@@ -855,7 +855,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   }
   function playerSprite(player, alpha = 1) {
     ctx.save(); ctx.globalAlpha = alpha;
-    const x = Math.round(player.x); const y = Math.round(player.y);
+    const x = player.x; const y = player.y;
     const angle = Math.atan2(player.aimY, player.aimX);
     const immune = player.invulnerable > 0 || player.damageCooldown > 0;
     const color = immune && (reducedMotion.matches || Math.floor(displayState.elapsed * 10) % 2) ? '#ffddb0' : '#ecab70';

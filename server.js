@@ -17,6 +17,7 @@ import * as Vector from './public/vector-engine.js';
 import * as Shinobi from './public/shinobi-engine.js';
 import * as Voxel from './public/voxel-engine.js';
 import * as Royale from './public/voxel-royale-engine.js';
+import { enableLagCompensation, isValidViewTick, setShotViewTick } from './public/voxel-lag-compensation.js';
 import * as Brawl from './public/brawl-engine.js';
 
 const TICK_RATE = 120;
@@ -48,13 +49,13 @@ const GAMES = {
   'voxel-breach': {
     title: 'Voxel Breach', engine: Voxel, makeState: settings => Voxel.createState(settings), inputKeys: Voxel.INPUT_KEYS,
     numericControls: { yaw: { min: -Math.PI, max: Math.PI, default: 0 }, pitch: { min: -1.35, max: 1.35, default: 0 } },
-    latestInput: true, snapshotInterval: 4,
+    latestInput: true, snapshotInterval: 4, compensateHitscan: true,
     snapshotState: state => ({ ...state, fighters: undefined }),
   },
   'voxel-royale': {
     title: 'Voxel Royale', engine: Royale, makeState: settings => Royale.createState(settings), inputKeys: Royale.INPUT_KEYS,
     numericControls: { yaw: { min: -Math.PI, max: Math.PI, default: 0 }, pitch: { min: -1.35, max: 1.35, default: 0 } },
-    latestInput: true, snapshotInterval: 4,
+    latestInput: true, snapshotInterval: 4, compensateHitscan: true,
     snapshotState: state => ({ ...state, map: undefined, fighters: undefined }),
   },
   'oddstock-rumble': { title: 'Oddstock Rumble', engine: Brawl, makeState: () => Brawl.createState(), inputKeys: Brawl.INPUT_KEYS, selectionComplete: Brawl.selectionComplete },
@@ -220,12 +221,15 @@ export function createServer(options = {}) {
     const capacity = gameId === 'voxel-royale' ? settings.capacity : teamSize * 2;
     const mapId = ['voxel-breach', 'voxel-royale'].includes(gameId) ? settings.mapId : undefined;
     const maps = gameId === 'voxel-royale' ? Royale.MAPS : Voxel.MAPS;
+    const state = adapter.makeState({ teamSize, capacity, mapId });
+    // Pose history belongs to authoritative rooms and never enters snapshots or practice.
+    if (adapter.compensateHitscan) enableLagCompensation(state);
     return {
       id, gameId, name: cleanName(name || adapter.title, 48) || adapter.title,
       capacity, teamSize, mapId, mapName: mapId === undefined ? undefined : maps[mapId].name,
       ...(gameId === 'voxel-royale' ? { hostId: null } : {}),
       adapter, createdAt, emptySince: createdAt, hadPlayers: false, sessionId: randomUUID(),
-      state: adapter.makeState({ teamSize, capacity, mapId }), players: Array(capacity).fill(null), slots: Array(capacity).fill(null), acks: Array(capacity).fill(-1),
+      state, players: Array(capacity).fill(null), slots: Array(capacity).fill(null), acks: Array(capacity).fill(-1),
       lastBroadcastTick: -12, lastBroadcastRevision: -1,
     };
   }
@@ -353,6 +357,7 @@ export function createServer(options = {}) {
     }
   }
   function resetInputs(room) {
+    if (room.adapter.compensateHitscan) for (const player of room.state.players) setShotViewTick(room.state, player.id, null);
     for (const slot of room.slots) {
       if (!slot) continue;
       slot.queue.length = 0; slot.buttons = freshInput(room, slot.id);
@@ -376,15 +381,20 @@ export function createServer(options = {}) {
     const now = performance.now();
     for (const room of occupiedRooms) {
       const inputs = room.slots.map((slot, index) => {
-        if (!slot) return freshInput(room, index);
+        if (!slot) {
+          if (room.adapter.compensateHitscan) setShotViewTick(room.state, index, null);
+          return freshInput(room, index);
+        }
         if (room.adapter.latestInput && now - slot.lastInputTime > 350) {
           slot.buttons = freshInput(room, index, slot.queue.at(-1)?.buttons ?? slot.buttons);
           slot.queue.length = 0;
           room.acks[index] = slot.lastAccepted;
+          if (room.adapter.compensateHitscan) setShotViewTick(room.state, index, null);
           return slot.buttons;
         }
         if (slot.queue.length) {
           const command = slot.queue.shift(); slot.buttons = command.buttons; room.acks[index] = command.seq;
+          if (room.adapter.compensateHitscan) setShotViewTick(room.state, index, command.viewTick);
         } else if (now - slot.lastInputTime > 350) slot.buttons = freshInput(room, index, slot.buttons);
         return slot.buttons;
       });
@@ -589,6 +599,9 @@ export function createServer(options = {}) {
       } else if (data.type === 'input') {
         if (!room.adapter.inputKeys.length) { error(ws, room.gameId === 'checkers' ? 'Checkers uses board moves instead of realtime controls.' : 'Card games use card actions instead of realtime controls.'); return; }
         if (!Number.isSafeInteger(data.seq) || data.seq < 0 || data.seq > 1_000_000_000) { error(ws, 'Invalid input sequence.'); return; }
+        if (room.adapter.compensateHitscan && Object.hasOwn(data, 'viewTick') && !isValidViewTick(data.viewTick)) {
+          error(ws, 'View tick must be a finite nonnegative simulation tick.'); return;
+        }
         if (!data.buttons || typeof data.buttons !== 'object' || Array.isArray(data.buttons) ||
             Object.keys(data.buttons).some(key => !validControl(room.adapter, key, data.buttons[key]))) {
           error(ws, ['voxel-breach', 'voxel-royale'].includes(room.gameId) ? 'Use boolean controls, yaw between -π and π, and pitch between -1.35 and 1.35.' : room.adapter.numericControls ? 'Use boolean controls and finite aim components between -1 and 1.' : 'Input buttons must contain only valid boolean controls for this game.'); return;
@@ -602,7 +615,7 @@ export function createServer(options = {}) {
           if (Object.hasOwn(data.buttons, key)) buttons[key] = data.buttons[key];
         }
         if (room.adapter.latestInput) slot.queue.length = 0;
-        slot.queue.push({ seq: data.seq, buttons }); slot.lastAccepted = data.seq; slot.lastInputTime = now;
+        slot.queue.push({ seq: data.seq, buttons, ...(room.adapter.compensateHitscan ? { viewTick: data.viewTick } : {}) }); slot.lastAccepted = data.seq; slot.lastInputTime = now;
       } else error(ws, 'Unknown message type.');
     });
     ws.on('close', () => {

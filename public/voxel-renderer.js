@@ -1,4 +1,4 @@
-import { MAPS, ADS, HEAL } from './voxel-engine.js';
+import { MAPS, ADS, HEAL, WORLD } from './voxel-engine.js';
 import { WEAPONS, weaponAimFovRatio } from './voxel-weapons.js';
 import { grenadeCapacity } from './voxel-ordnance.js';
 import { meleeProfile, meleeWeaponId } from './voxel-melee.js';
@@ -165,30 +165,72 @@ function viewMatrix(eye, yaw, pitch) {
 }
 const IDENTITY = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
 
+// Face order and vertex winding match the authored meshes. Rigid boxes write
+// directly into reusable typed storage, without per-face points or transforms.
+const BOX_FACES = [
+  { corners: [2, 6, 7, 3], normal: [0, 1, 0], shade: 1.075 },
+  { corners: [0, 1, 5, 4], normal: [0, -1, 0], shade: .83 },
+  { corners: [0, 2, 3, 1], normal: [0, 0, -1], shade: 1 },
+  { corners: [5, 7, 6, 4], normal: [0, 0, 1], shade: .93 },
+  { corners: [4, 6, 2, 0], normal: [-1, 0, 0], shade: .94 },
+  { corners: [1, 3, 7, 5], normal: [1, 0, 0], shade: .98 },
+];
+const BOX_TRIANGLES = [0, 1, 2, 0, 2, 3];
+const boxColorCache = new Map();
+function boxColors(color) {
+  if (typeof color === 'string' && boxColorCache.has(color)) return boxColorCache.get(color);
+  const base = rgba(color), colors = BOX_FACES.map(face => face.shade === 1 ? base : shade(base, face.shade));
+  if (typeof color === 'string') {
+    boxColorCache.set(color, colors);
+    if (boxColorCache.size > 256) boxColorCache.delete(boxColorCache.keys().next().value);
+  }
+  return colors;
+}
 class Mesh {
-  constructor() { this.vertices = []; }
-  append(array) { for (const value of array) this.vertices.push(value); }
-  vertex(position, normal, color) { this.vertices.push(...position, ...normal, ...color); }
+  constructor() { this.storage = new Float32Array(2048); this.length = 0; }
+  reset() { this.length = 0; return this; }
+  ensure(addition) {
+    const required = this.length + addition;
+    if (required <= this.storage.length) return;
+    let capacity = this.storage.length;
+    while (capacity < required) capacity *= 2;
+    const grown = new Float32Array(capacity); grown.set(this.storage.subarray(0, this.length)); this.storage = grown;
+  }
+  append(array) { this.ensure(array.length); this.storage.set(array, this.length); this.length += array.length; }
+  vertex(position, normal, color) {
+    this.ensure(VERTEX_STRIDE); const out = this.storage; let at = this.length;
+    out[at++] = position[0]; out[at++] = position[1]; out[at++] = position[2];
+    out[at++] = normal[0]; out[at++] = normal[1]; out[at++] = normal[2];
+    out[at++] = color[0]; out[at++] = color[1]; out[at++] = color[2]; out[at++] = color[3]; this.length = at;
+  }
   quad(a, b, c, d, normal, color) {
     this.vertex(a, normal, color); this.vertex(b, normal, color); this.vertex(c, normal, color);
     this.vertex(a, normal, color); this.vertex(c, normal, color); this.vertex(d, normal, color);
   }
   box(x, y, z, w, h, d, color, pose = null) {
     if (w <= 0 || h <= 0 || d <= 0) return;
-    const c = rgba(color), cy = shade(c, 1.075), low = shade(c, .83);
-    const transform = point => {
-      if (!pose) return point;
-      const p = rotate(pose.scale ? point.map(value => value * pose.scale) : point, pose.yaw, pose.pitch);
-      return [p[0] + pose.x, p[1] + pose.y, p[2] + pose.z];
-    };
-    const normal = value => pose ? rotate(value, pose.yaw, pose.pitch) : value;
-    const face = (points, n, tint) => this.quad(...points.map(transform), normal(n), tint);
-    face([[x, y + h, z], [x, y + h, z + d], [x + w, y + h, z + d], [x + w, y + h, z]], [0, 1, 0], cy);
-    face([[x, y, z], [x + w, y, z], [x + w, y, z + d], [x, y, z + d]], [0, -1, 0], low);
-    face([[x, y, z], [x, y + h, z], [x + w, y + h, z], [x + w, y, z]], [0, 0, -1], c);
-    face([[x + w, y, z + d], [x + w, y + h, z + d], [x, y + h, z + d], [x, y, z + d]], [0, 0, 1], shade(c, .93));
-    face([[x, y, z + d], [x, y + h, z + d], [x, y + h, z], [x, y, z]], [-1, 0, 0], shade(c, .94));
-    face([[x + w, y, z], [x + w, y + h, z], [x + w, y + h, z + d], [x + w, y, z + d]], [1, 0, 0], shade(c, .98));
+    this.ensure(36 * VERTEX_STRIDE);
+    const colors = boxColors(color), out = this.storage;
+    const scale = pose?.scale || 1, cp = Math.cos(pose?.pitch || 0), sp = Math.sin(pose?.pitch || 0), cy = Math.cos(pose?.yaw || 0), sy = Math.sin(pose?.yaw || 0);
+    let at = this.length;
+    for (let face = 0; face < BOX_FACES.length; face++) {
+      const { corners, normal } = BOX_FACES[face], tint = colors[face];
+      let nx = normal[0], ny = normal[1], nz = normal[2];
+      if (pose) { const py = ny * cp - nz * sp, pz = ny * sp + nz * cp; nx = normal[0] * cy - pz * sy; ny = py; nz = normal[0] * sy + pz * cy; }
+      for (let i = 0; i < BOX_TRIANGLES.length; i++) {
+        const corner = corners[BOX_TRIANGLES[i]];
+        let px = corner & 1 ? x + w : x, py = corner & 2 ? y + h : y, pz = corner & 4 ? z + d : z;
+        if (pose) {
+          px *= scale; py *= scale; pz *= scale;
+          const ry = py * cp - pz * sp, rz = py * sp + pz * cp;
+          pz = px * sy + rz * cy + pose.z; py = ry + pose.y; px = px * cy - rz * sy + pose.x;
+        }
+        out[at++] = px; out[at++] = py; out[at++] = pz;
+        out[at++] = nx; out[at++] = ny; out[at++] = nz;
+        out[at++] = tint[0]; out[at++] = tint[1]; out[at++] = tint[2]; out[at++] = tint[3];
+      }
+    }
+    this.length = at;
   }
   beam(a, b, width, color) {
     const delta = b.map((value, i) => value - a[i]), length = Math.hypot(...delta);
@@ -237,7 +279,7 @@ class Mesh {
     const offset = side.map(value => value * width / length);
     this.quad(a.map((v, i) => v - offset[i]), b.map((v, i) => v - offset[i]), b.map((v, i) => v + offset[i]), a.map((v, i) => v + offset[i]), [0, 1, 0], rgba(color));
   }
-  get array() { return new Float32Array(this.vertices); }
+  get array() { return this.storage.subarray(0, this.length); }
 }
 
 const VERTEX_SHADER = `
@@ -337,6 +379,29 @@ function rayCoverDistance(origin, direction, colliders, maximum, padding = 0) {
     if (valid && exit >= 0) nearest = Math.min(nearest, Math.max(0, entry));
   }
   return nearest;
+}
+
+/** Smooth stance height without delaying movement, aim or authoritative collision. */
+export function createEyeHeightPresenter() {
+  let previous = null;
+  const present = (player, map, time, contextKey) => {
+    const target = player?.crouching ? WORLD.crouchEyeHeight : WORLD.eyeHeight;
+    const x = finite(player?.x), y = finite(player?.y), z = finite(player?.z);
+    const valid = player && Number.isFinite(time) && [player.x, player.y, player.z].every(Number.isFinite);
+    const reset = !valid || !previous || previous.map !== map || previous.contextKey !== contextKey || previous.id !== player.id || previous.alive !== player.alive || player.alive === false || time < previous.time || time - previous.time > 150 || Math.hypot(x - previous.x, y - previous.y, z - previous.z) > 2;
+    let height = reset ? target : target + (previous.height - target) * Math.exp(-(time - previous.time) / 45);
+    height = clamp(height, WORLD.crouchEyeHeight, WORLD.eyeHeight);
+    const delta = height - target;
+    if (Math.abs(delta) > 1e-8 && map?.colliders?.length) {
+      const distance = Math.abs(delta), direction = [0, Math.sign(delta), 0];
+      const contact = rayCoverDistance([x, y + target, z], direction, map.colliders, distance, .04);
+      if (contact < distance) height = target + Math.sign(delta) * Math.max(0, contact - .005);
+    }
+    previous = valid ? { x, y, z, time, height, map, contextKey, id: player.id, alive: player.alive } : null;
+    return [x, y + height, z];
+  };
+  present.reset = () => { previous = null; };
+  return present;
 }
 
 /** Cosmetic fragments remain on the visible side of real collision surfaces. */
@@ -1778,7 +1843,7 @@ function lootGun(mesh, weapon, pose) {
 const validLoot = item => item && ['weapon', 'heal', 'ammo', 'grenade'].includes(item.kind) && [item.x, item.y, item.z].every(Number.isFinite) && (item.kind !== 'weapon' || !!WEAPONS[item.weapon]);
 
 /** Pickups are deliberately small display props, not misleading solid cover. */
-export function lootMeshes(items = [], time = 0) {
+function buildLootMeshes(items = [], time = 0, movingRanges = null) {
   const opaque = new Mesh(), contacts = new Mesh();
   let count = 0;
   for (const item of items) {
@@ -1789,6 +1854,7 @@ export function lootMeshes(items = [], time = 0) {
     const tint = item.kind === 'heal' ? '#a3e6b7' : item.kind === 'weapon' ? '#edd494' : item.kind === 'grenade' ? '#deb39c' : '#94c8da';
     contacts.floorRing(x, z, .23, .275, rgba(tint, .64), y + .018, 8);
     const bob = Math.sin(finite(time) * .0023 + seed % 13) * .016;
+    const movingStart = opaque.length; let movingEnd = movingStart;
     if (item.kind === 'weapon') {
       const length = weaponLength(item.weapon);
       const yaw = (seed % 4) * Math.PI / 2 + .45;
@@ -1796,10 +1862,11 @@ export function lootMeshes(items = [], time = 0) {
       // crate or a wall that a player could use as cover.
       const offset = rotate([0, 0, length * .22], yaw);
       lootGun(opaque, item.weapon, { x: x + offset[0], y: y + .27 + bob, z: z + offset[2], yaw, pitch: 0, scale: .44 });
+      movingEnd = opaque.length;
       opaque.floor(x - .15, z - .15, .30, .30, '#6f6d51', y + .022);
     } else if (item.kind === 'heal') {
       const pose = { x, y: y + .15 + bob, z, yaw: .32, pitch: 0, scale: 1.10 };
-      potionParts(opaque, pose);
+      potionParts(opaque, pose); movingEnd = opaque.length;
     } else if (item.kind === 'ammo') {
       opaque.box(x - .14, y + .025, z - .11, .28, .18, .22, '#49666a');
       opaque.box(x - .15, y + .205, z - .12, .30, .032, .24, '#8da699');
@@ -1816,9 +1883,44 @@ export function lootMeshes(items = [], time = 0) {
     } else {
       // The intact brass pin distinguishes a safe pickup from a live frag.
       grenadeParts(opaque, { x, y: y + .15 + bob, z, yaw: .30, pitch: 0, scale: 1 }, .12, 288, time, true);
+      movingEnd = opaque.length;
     }
+    if (movingRanges && movingEnd > movingStart) movingRanges.push({ start: movingStart, end: movingEnd, bob, seed });
   }
   return { opaque: opaque.array, contacts: contacts.array, count };
+}
+
+/** Pure pickup assembly remains available for asset validation and previews. */
+export function lootMeshes(items = [], time = 0) { return buildLootMeshes(items, time); }
+
+/** Reuse pickup art across network snapshots; only the little bob changes. */
+export function createLootPresenter() {
+  const cache = new Map(), opaque = new Mesh(), contacts = new Mesh();
+  let builds = 0;
+  const present = (items = [], time = 0) => {
+    opaque.reset(); contacts.reset(); const kept = new Set(); let count = 0;
+    for (const item of items) {
+      if (count >= MAX_LOOT) break;
+      if (!validLoot(item)) continue;
+      const key = item.id ?? `slot-${count}`;
+      let entry = cache.get(key);
+      if (!entry || ['id', 'kind', 'weapon', 'x', 'y', 'z'].some(field => entry.source[field] !== item[field])) {
+        const ranges = [], mesh = buildLootMeshes([item], 0, ranges);
+        entry = { source: { id: item.id, kind: item.kind, weapon: item.weapon, x: item.x, y: item.y, z: item.z }, base: mesh.opaque, animated: mesh.opaque.slice(), contacts: mesh.contacts, ranges };
+        cache.set(key, entry); builds++;
+      }
+      for (const range of entry.ranges) {
+        const offset = Math.sin(finite(time) * .0023 + range.seed % 13) * .016 - range.bob;
+        for (let at = range.start + 1; at < range.end; at += VERTEX_STRIDE) entry.animated[at] = entry.base[at] + offset;
+      }
+      opaque.append(entry.animated); contacts.append(entry.contacts); kept.add(key); count++;
+    }
+    for (const key of cache.keys()) if (!kept.has(key)) cache.delete(key);
+    return { opaque: opaque.array, contacts: contacts.array, count };
+  };
+  present.reset = () => { cache.clear(); opaque.reset(); contacts.reset(); builds = 0; };
+  present.getStats = () => ({ cachedItems: cache.size, builds, bufferBytes: opaque.storage.byteLength + contacts.storage.byteLength, templateBytes: [...cache.values()].reduce((bytes, entry) => bytes + entry.base.buffer.byteLength + entry.animated.byteLength + entry.contacts.buffer.byteLength, 0) });
+  return present;
 }
 
 /** The circle is a ground projection; outside danger comes from surface haze. */
@@ -1992,6 +2094,8 @@ export class VoxelRenderer {
     this.mapCache = new Map(); this.mapId = null; this.effectMap = null; this.effectGameId = null; this.effectRound = null; this.effectPhase = null; this.eventIds = new Set(); this.eventQueue = [];
     this.particles = []; this.tracers = []; this.localShot = null; this.localReload = null;
     this.lastAim = null; this.swayX = 0; this.swayY = 0;
+    this.frameMeshes = { world: new Mesh(), contact: new Mesh(), tracer: new Mesh(), weapon: new Mesh() };
+    this.presentLoot = createLootPresenter(); this.presentEye = createEyeHeightPresenter(); this.resizeReads = 0;
     this._frameDrawCalls = 0; this._frameDynamicVertices = 0; this._mapVertices = 0; this._lootItems = 0; this._stormVertices = 0;
     this._onLost = event => {
       event.preventDefault(); this.contextLost = true; this.available = false;
@@ -2001,12 +2105,19 @@ export class VoxelRenderer {
     this._onRestored = () => {
       if (this.destroyed) return;
       try {
-        this.mapCache.clear(); this._createResources(); this.contextLost = false; this.available = true; this.error = null; this.resetEffects();
+        this.mapCache.clear(); this._createResources(); this.contextLost = false; this.available = true; this.error = null; this.resetEffects(); this.resize();
         this.canvas.dispatchEvent(new CustomEvent('voxel-renderer-restored'));
       } catch (error) { this.error = error.message; this.available = false; this._notify(this.error, false); }
     };
     canvas.addEventListener('webglcontextlost', this._onLost, false);
     canvas.addEventListener('webglcontextrestored', this._onRestored, false);
+    this._onResize = () => this.resize();
+    if (typeof ResizeObserver === 'function') {
+      this.resizeObserver = new ResizeObserver(entries => { const entry = entries.find(item => item.target === canvas); if (entry) this.resize(entry.contentRect); });
+      this.resizeObserver.observe(canvas);
+    }
+    if (typeof window !== 'undefined') window.addEventListener('resize', this._onResize);
+    if (typeof document !== 'undefined') document.addEventListener('fullscreenchange', this._onResize);
     try { this._createResources(); this.resize(); } catch (error) { this.destroy(); throw error; }
   }
   _notify(message, recoverable) {
@@ -2037,9 +2148,10 @@ export class VoxelRenderer {
     gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK); gl.frontFace(gl.CCW);
     gl.disable(gl.DITHER);
   }
-  resize() {
+  resize(measuredRect = null) {
     if (this.destroyed || this.contextLost) return;
-    const rect = this.canvas.getBoundingClientRect();
+    const rect = measuredRect || this.canvas.getBoundingClientRect();
+    if (!measuredRect) this.resizeReads++;
     const width = Math.max(1, rect.width || this.canvas.clientWidth || 960), height = Math.max(1, rect.height || this.canvas.clientHeight || 540);
     const ratio = Math.min(1.75, typeof devicePixelRatio === 'number' ? devicePixelRatio : 1);
     // Keep large/retina screens within a fixed pixel budget rather than scaling
@@ -2194,8 +2306,8 @@ export class VoxelRenderer {
       mesh.box(-.006, -.042, .32, .012, .084, .09, feather, pose);
     }
   }
-  _viewModel(player, yaw, pitch, time, freeForAll = false, map = null) {
-    const mesh = new Mesh(), team = freeForAll ? survivorColor(player) : TEAM_COLORS[player.team === 1 ? 1 : 0];
+  _viewModel(player, yaw, pitch, time, freeForAll = false, map = null, viewEye = null) {
+    const mesh = this.frameMeshes?.weapon?.reset() || new Mesh(), team = freeForAll ? survivorColor(player) : TEAM_COLORS[player.team === 1 ? 1 : 0];
     const speed = Math.hypot(finite(player.vx), finite(player.vz));
     const walking = clamp(speed / 5.5, 0, 1), step = time * .011;
     const age = this.localShot?.weapon === player.weapon ? Math.max(0, time - this.localShot.born) : 10000;
@@ -2217,7 +2329,7 @@ export class VoxelRenderer {
     this.lastAim = { yaw, pitch, time };
     const coverLimit = (pose, reach, padding) => {
       if (!map?.colliders?.length) return reach;
-      const offset = rotate([pose.x, pose.y, pose.z], yaw, pitch), eye = [finite(player.x), finite(player.y) + (player.crouching ? .98 : 1.62), finite(player.z)];
+      const offset = rotate([pose.x, pose.y, pose.z], yaw, pitch), eye = viewEye || [finite(player.x), finite(player.y) + (player.crouching ? WORLD.crouchEyeHeight : WORLD.eyeHeight), finite(player.z)];
       const origin = eye.map((value, axis) => value + offset[axis]);
       const direction = rotate(rotate([0, 0, -1], pose.yaw, pose.pitch), yaw, pitch);
       let limit = Math.max(0, rayCoverDistance(origin, direction, map.colliders, reach * pose.scale, padding) - .025) / pose.scale;
@@ -2346,10 +2458,9 @@ export class VoxelRenderer {
     this._events(state, time, localId);
     const yaw = finite(options.aimYaw ?? options.yaw, finite(cameraPlayer.yaw));
     const pitch = clamp(finite(options.aimPitch ?? options.pitch, finite(cameraPlayer.pitch)), -1.48, 1.48);
-    const eye = [finite(cameraPlayer.x), finite(cameraPlayer.y) + (cameraPlayer.crouching ? .98 : 1.62), finite(cameraPlayer.z)];
+    const eye = this.presentEye(cameraPlayer, map, time); this.cameraEyeHeight = eye[1] - finite(cameraPlayer.y);
     const gl = this.gl;
     this._frameDrawCalls = 0; this._frameDynamicVertices = 0;
-    this.resize();
     const aim = aimProgress(cameraPlayer), zoom = weaponAimFovRatio(cameraPlayer.weapon, ADS);
     const fov = clamp(finite(options.fov, 70), 55, 95) * lerp(1, zoom, aim) * Math.PI / 180;
     const projection = perspective(fov, this.aspect || 16 / 9, .025, 110), view = viewMatrix(eye, yaw, pitch);
@@ -2379,7 +2490,7 @@ export class VoxelRenderer {
     this._draw(cached.opaque);
     gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false);
     this._draw(cached.shadows); gl.depthMask(true); gl.disable(gl.BLEND);
-    const dynamic = new Mesh(), contacts = new Mesh(), local = players.find(player => player.id === localId) || cameraPlayer;
+    const dynamic = this.frameMeshes.world.reset(), contacts = this.frameMeshes.contact.reset(), local = players.find(player => player.id === localId) || cameraPlayer;
     for (const player of players) {
       if (!player.alive || player.id === cameraPlayer.id || !Number.isFinite(player.x) || !Number.isFinite(player.z)) continue;
       playerMesh(dynamic, player, map, time, !freeForAll && player.team === local.team, freeForAll);
@@ -2395,7 +2506,7 @@ export class VoxelRenderer {
     }
     this._lootItems = 0; this._stormVertices = 0;
     if (freeForAll) {
-      const loot = lootMeshes(state.loot || [], time), boundary = stormMesh(storm);
+      const loot = this.presentLoot(state.loot || [], time), boundary = stormMesh(storm);
       dynamic.append(loot.opaque); contacts.append(loot.contacts); contacts.append(boundary);
       this._lootItems = loot.count; this._stormVertices = boundary.length / VERTEX_STRIDE;
     }
@@ -2414,12 +2525,12 @@ export class VoxelRenderer {
       if (particle.material === 'blood') this._visibleBloodParticles++;
     }
     this._draw(this._dynamic(dynamic.array));
-    if (contacts.vertices.length) {
+    if (contacts.length) {
       gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false);
       this._draw(this._dynamic(contacts.array, 'contact')); gl.depthMask(true); gl.disable(gl.BLEND);
     }
     if (this.tracers.length) {
-      const traces = new Mesh();
+      const traces = this.frameMeshes.tracer.reset();
       for (const trace of this.tracers) {
         // Start local tracers just beyond the eye to avoid a giant full-screen
         // quad when a shot originates inside the camera's near plane.
@@ -2442,23 +2553,28 @@ export class VoxelRenderer {
       // The hands use a stable soft key light so turning into map shade cannot
       // hide the weapon's sights or the magazine during a reload.
       gl.uniform3fv(this.uniforms.lightdirection, [-.30, .70, .62]); gl.uniform3fv(this.uniforms.sun, [.43, .43, .40]); gl.uniform3fv(this.uniforms.ambient, [.64, .68, .72]);
-      this._draw(this._dynamic(this._viewModel(cameraPlayer, yaw, pitch, time, freeForAll, map), 'weapon'));
+      this._draw(this._dynamic(this._viewModel(cameraPlayer, yaw, pitch, time, freeForAll, map, eye), 'weapon'));
     }
     return true;
   }
   get stats() {
-    return Object.freeze({ mapId: this.mapId, mapVertices: this._mapVertices, cachedMaps: this.mapCache.size, drawCalls: this._frameDrawCalls, dynamicVertices: this._frameDynamicVertices, lootItems: this._lootItems, stormVertices: this._stormVertices, bloodParticles: this.particles.filter(particle => particle.material === 'blood').length, visibleBloodParticles: this._visibleBloodParticles || 0 });
+    const loot = this.presentLoot?.getStats();
+    return Object.freeze({ mapId: this.mapId, mapVertices: this._mapVertices, cachedMaps: this.mapCache.size, drawCalls: this._frameDrawCalls, dynamicVertices: this._frameDynamicVertices, lootItems: this._lootItems, stormVertices: this._stormVertices, bloodParticles: this.particles.filter(particle => particle.material === 'blood').length, visibleBloodParticles: this._visibleBloodParticles || 0, cachedLootItems: loot?.cachedItems || 0, lootGeometryBuilds: loot?.builds || 0, geometryBufferBytes: Object.values(this.frameMeshes || {}).reduce((bytes, mesh) => bytes + mesh.storage.byteLength, 0) + (loot?.bufferBytes || 0) + (loot?.templateBytes || 0), cameraEyeHeight: this.cameraEyeHeight, resizeReads: this.resizeReads });
   }
   resetEffects() {
     this.eventIds.clear(); this.eventQueue.length = 0; this.particles.length = 0; this.tracers.length = 0;
     this._visibleBloodParticles = 0;
     this.localShot = null; this.localReload = null; this.lastAim = null; this.swayX = 0; this.swayY = 0;
+    this.presentLoot?.reset(); this.presentEye?.reset();
   }
   destroy() {
     if (this.destroyed) return;
     this.destroyed = true; this.available = false;
     this.canvas.removeEventListener('webglcontextlost', this._onLost);
     this.canvas.removeEventListener('webglcontextrestored', this._onRestored);
+    this.resizeObserver?.disconnect();
+    if (typeof window !== 'undefined') window.removeEventListener('resize', this._onResize);
+    if (typeof document !== 'undefined') document.removeEventListener('fullscreenchange', this._onResize);
     const gl = this.gl;
     if (!this.contextLost) {
       for (const cached of this.mapCache.values()) { gl.deleteBuffer(cached.opaque.buffer); gl.deleteBuffer(cached.shadows.buffer); }
@@ -2470,6 +2586,6 @@ export class VoxelRenderer {
       if (this.program) gl.deleteProgram(this.program);
       if (this.skyProgram) gl.deleteProgram(this.skyProgram);
     }
-    this.mapCache.clear(); this.resetEffects();
+    this.mapCache.clear(); this.resetEffects(); this.frameMeshes = null;
   }
 }

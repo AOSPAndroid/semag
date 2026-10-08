@@ -144,11 +144,6 @@ export function createSurvivalAtlas() {
   return { width: ATLAS_SIZE, height: ATLAS_SIZE, pixels };
 }
 
-function rotate(point, yaw = 0, pitch = 0) {
-  const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
-  const y = point[1] * cp - point[2] * sp, z = point[1] * sp + point[2] * cp;
-  return [point[0] * cy - z * sy, y, point[0] * sy + z * cy];
-}
 function projection(fov, aspect) {
   const f = 1 / Math.tan(fov / 2), near = .045, far = 110, out = new Float32Array(16);
   out[0] = f / aspect; out[5] = f; out[10] = (far + near) / (near - far); out[11] = -1; out[14] = 2 * far * near / (near - far);
@@ -160,22 +155,37 @@ function viewMatrix(eye, yaw, pitch) {
   const dot = vector => vector[0] * eye[0] + vector[1] * eye[1] + vector[2] * eye[2];
   return new Float32Array([right[0], up[0], -forward[0], 0, right[1], up[1], -forward[1], 0, right[2], up[2], -forward[2], 0, -dot(right), -dot(up), dot(forward), 1]);
 }
-class Mesh {
-  constructor() { this.vertices = []; }
-  quad(points, normal, rgb, alpha = 0) {
-    const uv = atlasUV(0, .5, .5);
-    for (const index of [0, 1, 2, 0, 2, 3]) this.vertices.push(...points[index], ...normal, ...rgb, ...uv, alpha);
+const QUAD_ORDER = [0, 1, 2, 0, 2, 3];
+const WHITE_UV = atlasUV(0, .5, .5);
+export class SurvivalDynamicMesh {
+  constructor() { this.vertices = new Float32Array(8192); this.length = 0; }
+  reset() { this.length = 0; return this; }
+  reserve(amount) {
+    if (this.length + amount <= this.vertices.length) return;
+    const next = new Float32Array(Math.max(this.vertices.length * 2, Math.ceil((this.length + amount) / 8192) * 8192));
+    next.set(this.vertices.subarray(0, this.length)); this.vertices = next;
+  }
+  vertex(x, y, z, nx, ny, nz, rgb, emission) {
+    const array = this.vertices, offset = this.length;
+    array[offset] = x; array[offset + 1] = y; array[offset + 2] = z;
+    array[offset + 3] = nx; array[offset + 4] = ny; array[offset + 5] = nz;
+    array[offset + 6] = rgb[0]; array[offset + 7] = rgb[1]; array[offset + 8] = rgb[2];
+    array[offset + 9] = WHITE_UV[0]; array[offset + 10] = WHITE_UV[1]; array[offset + 11] = emission;
+    this.length += STRIDE;
   }
   box(x, y, z, width, height, depth, rgb, pose = null, emission = 0) {
-    const transform = point => {
-      if (!pose) return point;
-      const p = rotate(pose.scale ? point.map(value => value * pose.scale) : point, pose.yaw, pose.pitch);
-      return [p[0] + pose.x, p[1] + pose.y, p[2] + pose.z];
-    };
+    this.reserve(36 * STRIDE);
+    const cy = pose ? Math.cos(pose.yaw || 0) : 1, sy = pose ? Math.sin(pose.yaw || 0) : 0;
+    const cp = pose ? Math.cos(pose.pitch || 0) : 1, sp = pose ? Math.sin(pose.pitch || 0) : 0;
+    const scale = pose?.scale || 1;
     for (const face of FACES) {
-      const points = face.corners.map(point => transform([x + point[0] * width, y + point[1] * height, z + point[2] * depth]));
-      const normal = pose ? rotate(face.normal, pose.yaw, pose.pitch) : face.normal;
-      this.quad(points, normal, rgb, emission);
+      const [nx, ny, nz] = face.normal, rotatedY = ny * cp - nz * sp, rotatedZ = ny * sp + nz * cp;
+      const normalX = nx * cy - rotatedZ * sy, normalZ = nx * sy + rotatedZ * cy;
+      for (const index of QUAD_ORDER) {
+        const point = face.corners[index], px = (x + point[0] * width) * scale, py = (y + point[1] * height) * scale, pz = (z + point[2] * depth) * scale;
+        const ry = py * cp - pz * sp, rz = py * sp + pz * cp;
+        this.vertex(px * cy - rz * sy + (pose?.x || 0), ry + (pose?.y || 0), px * sy + rz * cy + (pose?.z || 0), normalX, rotatedY, normalZ, rgb, emission);
+      }
     }
   }
   line(a, b, width, rgb, emission = .3) {
@@ -185,8 +195,9 @@ class Mesh {
       x: a[0], y: a[1], z: a[2], yaw: Math.atan2(-delta[0], delta[2]), pitch: Math.atan2(Math.hypot(delta[0], delta[2]), delta[1]),
     }, emission);
   }
-  array() { return new Float32Array(this.vertices); }
+  array() { return this.vertices.subarray(0, this.length); }
 }
+const Mesh = SurvivalDynamicMesh;
 const VERTEX = `
 attribute vec3 aPosition;
 attribute vec3 aNormal;
@@ -340,13 +351,23 @@ function enemyMesh(mesh, enemy, time, reducedMotion) {
     }
   }
 }
-function handMesh(state, camera, item, options) {
-  const mesh = new Mesh(), player = state.player || camera;
+/** Action-relative hands start at the same pose regardless of world time. */
+export function survivalHandMotion(state, camera, options = {}) {
+  const player = options.player || state.player || camera;
+  const time = finite(options.displayTime, finite(state.time));
   const moving = Math.hypot(finite(camera.vx), finite(camera.vz));
-  const bob = options.reducedMotion ? 0 : Math.sin(finite(state.time) * 9) * Math.min(.011, moving * .0018);
-  const mining = state.mining && finite(state.mining.progress) > 0;
+  const bob = options.reducedMotion ? 0 : Math.sin(time * 9) * Math.min(.011, moving * .0018);
+  const miningState = options.mining === undefined ? state.mining : options.mining;
+  const mining = miningState && finite(miningState.progress) > 0;
   const swinging = finite(player.swingTime) > 0 || mining;
-  const swing = options.reducedMotion ? (swinging ? .06 : 0) : swinging ? Math.sin(finite(state.time) * (mining ? 18 : 22)) * .09 : 0;
+  const progress = clamp(1 - finite(player.swingTime) / .22, 0, 1);
+  const swing = options.reducedMotion ? (swinging ? .06 : 0)
+    : player.swingTime > 0 ? Math.sin(progress * Math.PI) * .14
+    : mining ? Math.sin(finite(miningState.progress) * 18) * .09 : 0;
+  return { bob, swing };
+}
+function handMesh(state, camera, item, options, mesh) {
+  const { bob, swing } = survivalHandMotion(state, camera, options);
   const pose = { x: .36 - swing * .30, y: -.38 + bob - Math.abs(swing) * .50, z: -.74 - Math.max(0, swing), yaw: -.20 - swing * 2.8, pitch: -.12 + swing * 2.1, scale: .70 };
   mesh.box(-.078, -.20, -.02, .15, .27, .16, color('#52614d'), pose);
   mesh.box(-.08, .01, -.04, .16, .14, .18, color('#c9a37b'), pose);
@@ -393,6 +414,7 @@ export class SurvivalRenderer {
     this.available = true; this.contextLost = false; this.destroyed = false; this.error = null;
     this.world = null; this.chunks = new Map(); this.lamps = []; this.particles = []; this.eventIds = new Set(); this.eventQueue = [];
     this.frameStats = {}; this._lastRevision = -1; this._lampCell = null; this._nearestLamps = []; this._lampArray = new Float32Array(16);
+    this._dynamicMesh = new Mesh(); this._outlineMesh = new Mesh(); this._ghostMesh = new Mesh(); this._handMesh = new Mesh();
     this._onLost = event => {
       event.preventDefault(); this.available = false; this.contextLost = true;
       this.error = 'Graphics interrupted. Waiting for the browser to restore WebGL.';
@@ -402,7 +424,7 @@ export class SurvivalRenderer {
       if (this.destroyed) return;
       try {
         this.chunks.clear(); this.world = null; this._lastRevision = -1; this._resources();
-        this.contextLost = false; this.available = true; this.error = null;
+        this.contextLost = false; this.available = true; this.error = null; this.resize();
         if (typeof CustomEvent === 'function') canvas.dispatchEvent(new CustomEvent('voxel-survival-renderer-restored'));
       } catch (error) { this.error = error.message; this.available = false; }
     };
@@ -496,16 +518,18 @@ export class SurvivalRenderer {
           vx: ((seed % 99) / 99 - .5) * 1.5, vy: .9 + ((seed >> 9) % 99) / 99, vz: (((seed >> 17) % 99) / 99 - .5) * 1.5, tint });
       }
     }
-    this.particles = this.particles.filter(particle => time - particle.born < .43 && time >= particle.born);
+    let count = 0;
+    for (const particle of this.particles) if (time - particle.born < .43 && time >= particle.born) this.particles[count++] = particle;
+    this.particles.length = count;
   }
   /** Camera x/z are center, y is feet. Set camera.eye to an eye-height override. */
   render(state, camera = state?.player, options = {}) {
     if (!this.available || this.destroyed || this.contextLost || !state?.world?.blocks || !camera) return false;
-    this.resize(); this.frameStats = { uploadedChunks: 0, drawCalls: 0, dynamicVertices: 0, staticVertices: 0, chunks: 0, particles: 0 };
+    this.frameStats = { uploadedChunks: 0, drawCalls: 0, dynamicVertices: 0, staticVertices: 0, chunks: 0, particles: 0 };
     this._updateWorld(state.world); this._events(state);
     const gl = this.gl, yaw = finite(camera.yaw), pitch = clamp(finite(camera.pitch), -1.54, 1.54);
     const eye = [finite(camera.x), finite(camera.y) + finite(camera.eye, 1.62), finite(camera.z)];
-    const time = finite(state.time), dayTime = ((time % 180) + 180) % 180;
+    const time = finite(options.displayTime, finite(state.time)), dayTime = ((time % 180) + 180) % 180;
     // Twilight gives a useful transition before the engine's night attack wave.
     let daylight = state.night ? .10 : 1;
     if (dayTime > 100 && dayTime < 118) daylight = lerp(1, .10, (dayTime - 100) / 18);
@@ -556,13 +580,17 @@ export class SurvivalRenderer {
     }
     gl.uniform4fv(u.lamps, lampArray);
     for (const chunk of this.chunks.values()) { this._draw(chunk); this.frameStats.staticVertices += chunk.count; this.frameStats.chunks++; }
-    const dynamic = new Mesh();
-    for (const enemy of (options.enemies || state.enemies || []).slice(0, MAX_ENEMIES)) {
+    const dynamic = this._dynamicMesh.reset();
+    const enemies = options.enemies || state.enemies || [];
+    for (let index = 0; index < Math.min(enemies.length, MAX_ENEMIES); index++) {
+      const enemy = enemies[index];
       if (enemy.hp <= 0 || !Number.isFinite(enemy.x) || !Number.isFinite(enemy.z)) continue;
       enemyMesh(dynamic, enemy, time, options.reducedMotion);
     }
-    for (const arrow of (options.projectiles || state.projectiles || []).slice(0, 24)) {
-      if (![arrow.x, arrow.y, arrow.z].every(Number.isFinite) || arrow.life <= 0) continue;
+    const arrows = options.projectiles || state.projectiles || [];
+    for (let index = 0; index < Math.min(arrows.length, 24); index++) {
+      const arrow = arrows[index];
+      if (!Number.isFinite(arrow.x) || !Number.isFinite(arrow.y) || !Number.isFinite(arrow.z) || arrow.life <= 0) continue;
       const speed = Math.hypot(finite(arrow.vx), finite(arrow.vy), finite(arrow.vz));
       if (speed < .001) continue;
       const tip = [arrow.x, arrow.y, arrow.z], tail = tip.map((value, axis) => value - [arrow.vx, arrow.vy, arrow.vz][axis] / speed * .32);
@@ -570,7 +598,7 @@ export class SurvivalRenderer {
       dynamic.box(tip[0] - .017, tip[1] - .017, tip[2] - .017, .034, .034, .034, color('#cad4c2'), null, .18);
     }
     if (!options.reducedMotion) for (const particle of this.particles) {
-      const age = time - particle.born, amount = .043 * (1 - age / .43);
+      const age = Math.max(0, time - particle.born), amount = .043 * (1 - age / .43);
       const x = particle.x + particle.vx * age, y = particle.y + particle.vy * age - 3.6 * age * age, z = particle.z + particle.vz * age;
       // Dust remains inside clear cells instead of appearing through a ledge.
       if (survivalBlockAt(state.world, Math.floor(x), Math.floor(y), Math.floor(z))) continue;
@@ -578,27 +606,28 @@ export class SurvivalRenderer {
       this.frameStats.particles++;
     }
     this._draw(this._dynamic(dynamic.array()));
-    const outline = new Mesh(), target = options.target || state.target;
+    const outline = this._outlineMesh.reset(), target = options.target || state.target;
     if (target) {
-      const mining = state.mining, progress = mining && mining.x === target.x && mining.y === target.y && mining.z === target.z ? clamp(finite(mining.progress) / Math.max(.001, finite(mining.total, 1)), 0, 1) : 0;
+      const mining = options.mining === undefined ? state.mining : options.mining, progress = mining && mining.x === target.x && mining.y === target.y && mining.z === target.z ? clamp(finite(mining.progress) / Math.max(.001, finite(mining.total, 1)), 0, 1) : 0;
       targetOutline(outline, target, color(progress ? '#d6b776' : '#d2d9b2'), progress);
     }
     const placement = options.placement || state.placement;
     if (placement) targetOutline(outline, placement, color(placement.valid ? '#8bc8ac' : '#d68575'));
     this._draw(this._dynamic(outline.array(), 'overlay'));
     if (placement) {
-      const ghost = new Mesh(); ghost.box(placement.x + .006, placement.y + .006, placement.z + .006, .988, .988, .988, color(placement.valid ? '#8ac5a8' : '#ca806d'), null, .15);
+      const ghost = this._ghostMesh.reset(); ghost.box(placement.x + .006, placement.y + .006, placement.z + .006, .988, .988, .988, color(placement.valid ? '#8ac5a8' : '#ca806d'), null, .15);
       gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false); gl.uniform1f(u.opacity, .16);
       this._draw(this._dynamic(ghost.array(), 'overlay')); gl.depthMask(true); gl.disable(gl.BLEND); gl.uniform1f(u.opacity, 1);
     }
     if (!options.hideHands && state.phase !== 'dead') {
       gl.clear(gl.DEPTH_BUFFER_BIT); gl.uniformMatrix4fv(u.view, false, IDENTITY); gl.uniform3fv(u.eye, [0, 0, 0]); gl.uniform1f(u.fogstrength, 0);
       gl.uniform3fv(u.light, [-.36, .66, .62]); gl.uniform3fv(u.ambient, [.65, .68, .61]); gl.uniform3fv(u.sun, [.32, .31, .27]); gl.uniform4fv(u.lamps, new Float32Array(16));
-      this._draw(this._dynamic(handMesh(state, camera, item, options), 'hand'));
+      this._draw(this._dynamic(handMesh(state, camera, item, options, this._handMesh.reset()), 'hand'));
     }
     return true;
   }
-  getStats() { return Object.freeze({ ...this.frameStats, cachedChunks: this.chunks.size, maxParticles: MAX_PARTICLES, maxEnemies: MAX_ENEMIES, pixelWidth: this.canvas.width, pixelHeight: this.canvas.height }); }
+  getStats() { return Object.freeze({ ...this.frameStats, cachedChunks: this.chunks.size, maxParticles: MAX_PARTICLES, maxEnemies: MAX_ENEMIES, pixelWidth: this.canvas.width, pixelHeight: this.canvas.height,
+    dynamicScratchBytes: this._dynamicMesh.vertices.byteLength + this._outlineMesh.vertices.byteLength + this._ghostMesh.vertices.byteLength + this._handMesh.vertices.byteLength }); }
   get stats() { return this.getStats(); }
   destroy() {
     if (this.destroyed) return;

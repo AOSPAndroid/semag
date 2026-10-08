@@ -15,7 +15,8 @@ import { ShinobiRenderer } from '../shinobi-renderer.js';
 import { BrawlRenderer, drawFighterPortrait, drawStagePreview } from '../brawl-renderer.js';
 import { GameAudio } from '../audio.js';
 import { frameDecay, tickFraction } from '../display-timing.js';
-import { capturePlanarPose, presentPlanarFighter } from '../planar-presentation.js';
+import { capturePlanarPose, presentPlanarFighter, presentNetworkPlanarFighter } from '../planar-presentation.js';
+import { createNetworkTimeline } from '../network-timeline.js';
 import { GAMES, roomUrl, getName, saveName, hostInfo, copyText } from './shared.js';
 
 const elements = new Map();
@@ -33,6 +34,8 @@ let authoritative = initialState();
 let predicted = clone(authoritative), players = [null, null], localId = null;
 let socket, connected = false, permanentlyClosed = false, intentionalClose = false, attempts = 0, reconnectTimer;
 let sequence = 0, pending = [], snapshots = [], keys = emptyInput(), correction = { x: 0, y: 0 };
+const timeline = createNetworkTimeline({ tickRate: engine.TICK_RATE || 120, snapshotTicks: 2 });
+let snapshotContext = null;
 let previousPose = null, lastDisplayTime = null;
 let presentation = null, renderCount = 0;
 let playerName = getName(), invite = location.href, ping = null, lastSnapshotAt = 0;
@@ -129,7 +132,15 @@ function receiveState(message) {
         correction.y = Math.max(-45, Math.min(45, old.y + correction.y - own.y));
       }
     } else correction = { x: 0, y: 0 };
-    snapshots.push({ time: lastSnapshotAt, state, pose: capturePlanarPose(state) }); if (snapshots.length > 12) snapshots.shift();
+    const context = JSON.stringify([state.phase, state.round, state.wave, state.stageId]);
+    if (context !== snapshotContext) { timeline.reset(); snapshots = []; correction = { x: 0, y: 0 }; snapshotContext = context; }
+    const sample = timeline.sample(state, lastSnapshotAt, context);
+    if (sample) {
+      const next = { ...sample, pose: capturePlanarPose(state) };
+      if (snapshots.at(-1)?.time === next.time) snapshots[snapshots.length - 1] = next;
+      else snapshots.push(next);
+      if (snapshots.length > 12) snapshots.shift();
+    }
     audio.playEvents(shinobiMode ? (state.events || []).map(event => event.type === 'parry' && event.target == null ? { ...event, type: 'parryStart' } : event.type === 'attack' ? { ...event, type: 'swing', move: event.action } : event.type === 'throw' && event.release ? { ...event, type: 'swing', move: 'light' } : event.type === 'deflect' ? { ...event, type: 'parry' } : event.type === 'cover' ? { ...event, type: 'block' } : event.type === 'hit' ? { ...event, move: event.attack } : event) : state.events || []);
   } else if (boardMode && state.lastMove && state.lastMove.tick !== receiveState.lastMoveTick) {
     receiveState.lastMoveTick = state.lastMove.tick;
@@ -149,7 +160,7 @@ function connect() {
   const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws?room=${encodeURIComponent(roomId)}`);
   socket = ws;
   ws.addEventListener('open', () => {
-    connected = true; attempts = 0; sequence = 0; pending = []; snapshots = []; ping = null;
+    connected = true; attempts = 0; sequence = 0; pending = []; snapshots = []; timeline.reset(); snapshotContext = null; ping = null;
     lastSnapshotAt = performance.now(); send({ type: 'join', name: playerName }); error(''); updateConnection();
   });
   ws.addEventListener('message', ({ data }) => {
@@ -167,7 +178,7 @@ function connect() {
     }
   });
   ws.addEventListener('close', () => {
-    connected = false; localId = null; ping = null; pending = []; snapshots = []; releaseKeys();
+    connected = false; localId = null; ping = null; pending = []; snapshots = []; timeline.reset(); snapshotContext = null; releaseKeys();
     previousPose = null;
     authoritative = initialState(); predicted = clone(authoritative);
     players = [null, null]; board?.resetSelection(); cardTable?.resetSelection(); renderer?.resetEffects(); updateConnection();
@@ -560,12 +571,11 @@ function displayState(now, fraction) {
   state.fighters[localId].x += correction.x; state.fighters[localId].y += correction.y;
   const decay = frameDecay(.72, deltaMs);
   correction.x *= decay; correction.y *= decay;
-  const target = now - 35;
+  const target = timeline.time(now);
   let before = snapshots[0], after = snapshots.at(-1);
   for (let i = 1; i < snapshots.length; i++) if (snapshots[i].time >= target) { before = snapshots[i - 1]; after = snapshots[i]; break; }
   if (before && after && before.state.phase === 'fight' && after.state.phase === 'fight') {
-    const alpha = Math.max(0, Math.min(1, (target - before.time) / Math.max(1, after.time - before.time)));
-    state.fighters[1 - localId] = presentPlanarFighter(after.state, before.pose, 1 - localId, alpha, { adjacentTick: false });
+    state.fighters[1 - localId] = presentNetworkPlanarFighter(authoritative, before, after, 1 - localId, target);
   }
   return state;
 }

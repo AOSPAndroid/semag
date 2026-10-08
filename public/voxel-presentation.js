@@ -1,5 +1,6 @@
 import { tickFraction } from './display-timing.js';
-import { ADS } from './voxel-engine.js';
+import { ADS, separatePresentationBodies, sweepPresentationOffset } from './voxel-engine.js';
+import { advanceBolts, MAX_BOLTS } from './voxel-projectiles.js';
 
 const STEP = 1 / 120;
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
@@ -9,6 +10,20 @@ const INPUT_FIELDS = ['up', 'down', 'left', 'right', 'jump', 'crouch', 'walk', '
 const MOVEMENT_FIELDS = ['x', 'y', 'z', 'vx', 'vy', 'vz', 'yaw', 'pitch', 'grounded', 'crouching', 'jumpBufferTicks', 'previousInput'];
 const CONTEXT_FIELDS = [...MOVEMENT_FIELDS, 'alive', 'radius', 'weapon', 'slot', 'reloadTicks', 'healTicks', 'grenadeThrowTicks', 'meleeWeapon'];
 const matches = (old, next, fields) => fields.every(field => old[field] === next[field]);
+
+/** Resolve the complete displayed body batch; independent previews share no future poses. */
+export function resolvePresentationContacts(players, mapOrId) {
+  return separatePresentationBodies(players, mapOrId);
+}
+
+/** Simulation ticks and wire packet ordering are separate clocks. */
+export function reconcileMovement(player, history, ack, map, predictMovement, allowMovement = true, peers = [], authoritativeTick) {
+  const timed = Number.isSafeInteger(authoritativeTick) && authoritativeTick >= 0;
+  const pending = history.filter(frame => timed && Number.isSafeInteger(frame.tick) ? frame.tick > authoritativeTick : frame.seq > ack).slice(-240);
+  const predicted = structuredClone(player);
+  if (predicted?.alive && allowMovement) for (const frame of pending) predictMovement(predicted, frame.buttons, map, 1, peers);
+  return { predicted, pending, predictionTick: timed ? Math.max(authoritativeTick, ...pending.map(frame => Number.isSafeInteger(frame.tick) ? frame.tick : authoritativeTick)) : undefined };
+}
 
 function interpolateMovement(player, next, fraction) {
   const pose = { ...player };
@@ -72,6 +87,71 @@ export function projectedMovement(player, buttons, map, elapsedMs, predictMoveme
   return interpolateMovement(pose, endpoint.next, fraction);
 }
 
+/** Buffer transforms on simulation time while publishing newest gameplay immediately. */
+export function interpolatedVoxelState(samples, targetTime, localId, { predictMovement, traceProjectile, maxExtrapolationMs = 25, combatTime = targetTime } = {}) {
+  if (!samples.length) return null;
+  const newest = samples[samples.length - 1];
+  let from = samples[0], to = newest;
+  for (let i = 1; i < samples.length; i++) {
+    if (samples[i].time >= targetTime) { from = samples[i - 1]; to = samples[i]; break; }
+    from = samples[i];
+  }
+  const state = { ...newest.state, players: newest.state.players.map(player => ({ ...player })),
+    bolts: (newest.state.bolts || []).slice(0, MAX_BOLTS).map(bolt => ({ ...bolt })) };
+  state.fighters = state.players;
+  const compatible = sample => ['phase', 'round', 'matchId', 'mapId'].every(field => sample.state[field] === newest.state[field]);
+  if (!compatible(from) || !compatible(to)) return state;
+  const span = to.time - from.time;
+  const ratio = span > 0 ? clamp((targetTime - from.time) / span, 0, 1) : 1;
+  const projectedMs = clamp(targetTime - newest.time, 0, Math.min(25, Math.max(0, maxExtrapolationMs)));
+  const combatMs = clamp(combatTime - newest.time, 0, 25);
+  const previousNewest = samples[samples.length - 2] || newest;
+  const wrap = angle => ((angle + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
+  const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+
+  for (const player of state.players) {
+    const endpoint = to.state.players.find(other => other.id === player.id);
+    const old = from.state.players.find(other => other.id === player.id);
+    if (!endpoint || !old) continue;
+    const previousCombat = previousNewest.state.players.find(other => other.id === player.id) || player;
+    // Action starts, cancellation and completion come from the newest state,
+    // independently of the older bracket used to smooth an opponent's body.
+    Object.assign(player, combatPresentation(player, previousCombat, 1, combatMs));
+    if (player.id === localId || !player.alive || old.alive !== player.alive || endpoint.alive !== player.alive || old.team !== player.team || endpoint.team !== player.team) continue;
+    if (distance(endpoint, old) > 4 || distance(player, endpoint) > 4) continue;
+    for (const axis of ['x', 'y', 'z', 'vx', 'vy', 'vz']) {
+      if (Number.isFinite(old[axis]) && Number.isFinite(endpoint[axis])) player[axis] = old[axis] + (endpoint[axis] - old[axis]) * ratio;
+    }
+    player.yaw = wrap(finite(old.yaw) + wrap(finite(endpoint.yaw) - finite(old.yaw)) * ratio);
+    player.pitch = finite(old.pitch) + (finite(endpoint.pitch) - finite(old.pitch)) * ratio;
+    const anchor = { ...old, crouching: old.crouching || endpoint.crouching || player.crouching };
+    const swept = sweepPresentationOffset(anchor, { x: player.x - old.x, y: player.y - old.y, z: player.z - old.z }, newest.state.map || newest.state.mapId, to.state.players);
+    for (const axis of ['x', 'y', 'z']) player[axis] = swept[axis];
+  }
+  for (const bolt of state.bolts) {
+    const matchesBolt = other => other.id === bolt.id && other.playerId === bolt.playerId && other.bornTick === bolt.bornTick;
+    const endpoint = to.state.bolts?.find(matchesBolt), old = from.state.bolts?.find(matchesBolt);
+    if (!endpoint || !old) continue;
+    for (const axis of ['x', 'y', 'z', 'vx', 'vy', 'vz']) if (Number.isFinite(old[axis]) && Number.isFinite(endpoint[axis])) bolt[axis] = old[axis] + (endpoint[axis] - old[axis]) * ratio;
+  }
+  if (projectedMs > 0 && state.phase === 'fight' && typeof predictMovement === 'function') {
+    const peers = newest.state.players, map = newest.state.map || newest.state.mapId;
+    for (const player of state.players) if (player.id !== localId && player.alive) {
+      const source = peers.find(other => other.id === player.id);
+      Object.assign(player, projectedMovement(player, source.previousInput || source, map, projectedMs, predictMovement, peers, source));
+    }
+  }
+  let seconds = projectedMs / 1000;
+  if (seconds > 0 && state.phase === 'fight' && state.bolts.length && typeof traceProjectile === 'function') {
+    const projection = { ...state, tick: state.tick };
+    while (seconds > 1e-8 && projection.bolts.length) { const dt = Math.min(1 / 120, seconds); projection.tick++; advanceBolts(projection, { dt, trace: traceProjectile }); seconds -= dt; }
+    state.bolts = projection.bolts;
+  }
+  state.players = resolvePresentationContacts(state.players, newest.state.map || newest.state.mapId);
+  state.fighters = state.players;
+  return state;
+}
+
 const sameEquipment = (player, old) => old && player.id === old.id && player.alive === old.alive && player.team === old.team && player.weapon === old.weapon && player.slot === old.slot && player.meleeWeapon === old.meleeWeapon;
 
 /** Smooth only visual combat values; health, inventory and action results stay newest. */
@@ -101,4 +181,50 @@ export function withCombatPresentation(player, visual) {
   const pose = { ...player };
   for (const field of COMBAT_FIELDS) if (Number.isFinite(visual[field])) pose[field] = visual[field];
   return pose;
+}
+
+/** A short display correction; input aim and authoritative gameplay never enter it. */
+export function createCorrectionPresenter({ halfLifeMs = 40, maxOffset = .5, snapDistance = 1, maxAgeMs = 240 } = {}) {
+  let offset = { x: 0, y: 0, z: 0 }, at = 0, corrections = 0, snaps = 0, lastDistance = 0;
+  const reset = () => { offset = { x: 0, y: 0, z: 0 }; at = 0; };
+  const decayed = now => {
+    const age = Math.max(0, finite(now) - at);
+    const amount = age >= maxAgeMs ? 0 : Math.pow(.5, age / Math.max(1, halfLifeMs));
+    return Object.fromEntries(['x', 'y', 'z'].map(axis => [axis, offset[axis] * amount]));
+  };
+  function correct(before, after, now, { continuous = true } = {}) {
+    const compatible = continuous && before?.alive && after?.alive && before.id === after.id && before.team === after.team;
+    if (!compatible || !['x', 'y', 'z'].every(axis => Number.isFinite(before[axis]) && Number.isFinite(after[axis]))) { reset(); snaps++; return false; }
+    const previous = decayed(now);
+    const next = Object.fromEntries(['x', 'y', 'z'].map(axis => [axis, before[axis] + previous[axis] - after[axis]]));
+    lastDistance = Math.hypot(before.x - after.x, before.y - after.y, before.z - after.z);
+    if (lastDistance >= snapDistance || Math.hypot(next.x, next.y, next.z) > maxOffset) { reset(); snaps++; return false; }
+    offset = next; at = finite(now); corrections++; return true;
+  }
+  function present(player, now, sweep, map, peers = []) {
+    if (!player?.alive || typeof sweep !== 'function') { reset(); return player; }
+    const visualOffset = decayed(now);
+    if (Math.hypot(visualOffset.x, visualOffset.y, visualOffset.z) < .00001) { reset(); return player; }
+    const pose = sweep(player, visualOffset, map, peers);
+    if (!pose) { reset(); return player; }
+    const actual = Object.fromEntries(['x', 'y', 'z'].map(axis => [axis, finite(pose[axis]) - finite(player[axis])]));
+    if (Math.hypot(actual.x - visualOffset.x, actual.y - visualOffset.y, actual.z - visualOffset.z) > .00001) {
+      // A correction clipped by a wall must not reappear after turning its corner.
+      offset = actual; at = finite(now);
+    }
+    return pose;
+  }
+  return Object.freeze({ correct, present, reset, getState: () => ({ offset: { ...offset }, at, corrections, snaps, lastDistance }) });
+}
+
+/** Urgent HUD changes bypass periodic painting; movement/countdowns use its cadence. */
+export function hudTransitionKey(state, roster, playerId, context = '') {
+  const players = state?.players?.map(player => [player.id, player.team, player.alive, player.hp, player.maxHp,
+    player.weapon, player.slot, player.hasGun, player.ammo, player.reserve, player.potions, player.grenades,
+    !!player.reloadTicks, !!player.healTicks, !!player.grenadeThrowTicks, player.meleePhase, player.aiming, player.aimTicks >= 14, player.grounded]);
+  const bomb = state?.bomb;
+  return JSON.stringify([context, playerId, state?.phase, state?.round, state?.matchId, state?.mapId,
+    state?.scores, state?.attackTeam, state?.winner, state?.winnerId, state?.placements, state?.participantIds,
+    state?.storm?.mode, players, roster, bomb && [bomb.status, bomb.carrierId, bomb.siteId, bomb.plantPlayerId,
+      bomb.defusePlayerId, !!bomb.plantTicks, !!bomb.defuseTicks]]);
 }

@@ -6,7 +6,8 @@ import { ArenaRenderer } from './renderer.js';
 import { botInput, TRAINING_STAGES } from './practice.js';
 import { GameAudio } from './audio.js';
 import { frameDecay, tickFraction } from './display-timing.js';
-import { capturePlanarPose, presentPlanarFighter } from './planar-presentation.js';
+import { capturePlanarPose, presentPlanarFighter, presentNetworkPlanarFighter } from './planar-presentation.js';
+import { createNetworkTimeline } from './network-timeline.js';
 
 const elements = new Map();
 const $ = id => { const node = elements.get(id) || document.getElementById(id); if (node) elements.set(id, node); return node; };
@@ -25,6 +26,8 @@ $('player-name').value = playerName;
 let socket, localId = null, connected = false, reconnectAttempts = 0, reconnectTimer;
 let authoritative = createState(), predicted = cloneState(authoritative), practiceState = null;
 let players = [null, null], sequence = 0, pending = [], snapshots = [];
+const timeline = createNetworkTimeline({ tickRate: TICK_RATE, snapshotTicks: 2 });
+let snapshotContext = null;
 let keys = emptyInput(), correction = { x: 0, y: 0 }, practice = false;
 let previousPose = null, previousPracticePose = null, lastDisplayTime = null;
 let presentation = null, renderCount = 0;
@@ -108,8 +111,15 @@ function receiveState(message) {
       correction.y = Math.max(-35, Math.min(35, old.y + correction.y - fighter.y));
     }
   } else correction = { x: 0, y: 0 };
-  snapshots.push({ time: lastSnapshotAt, state, pose: capturePlanarPose(state) });
-  if (snapshots.length > 12) snapshots.shift();
+  const context = JSON.stringify([state.phase, state.round, state.wave, state.stageId]);
+  if (context !== snapshotContext) { timeline.reset(); snapshots = []; correction = { x: 0, y: 0 }; snapshotContext = context; }
+  const sample = timeline.sample(state, lastSnapshotAt, context);
+  if (sample) {
+    const next = { ...sample, pose: capturePlanarPose(state) };
+    if (snapshots.at(-1)?.time === next.time) snapshots[snapshots.length - 1] = next;
+    else snapshots.push(next);
+    if (snapshots.length > 12) snapshots.shift();
+  }
   if (!practice) audio.playEvents(state.events || []);
   if (!practice && state.phase !== previousPhase) {
     if (state.phase === 'fight') { fightFlashUntil = performance.now() + 650; audio.fight(); }
@@ -123,7 +133,7 @@ function connect() {
   if (fullRoom || intentionalClose) return;
   socket = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws${roomId ? '?room=' + encodeURIComponent(roomId) : ''}`);
   socket.addEventListener('open', () => {
-    connected = true; reconnectAttempts = 0; sequence = 0; pending = []; snapshots = [];
+    connected = true; reconnectAttempts = 0; sequence = 0; pending = []; snapshots = []; timeline.reset(); snapshotContext = null;
     ping = null; lastSnapshotAt = performance.now();
     send({ type: 'join', name: playerName });
     error(''); connectedUI();
@@ -147,7 +157,7 @@ function connect() {
     }
   });
   socket.addEventListener('close', () => {
-    connected = false; localId = null; ping = null; keys = emptyInput(); pending = []; snapshots = [];
+    connected = false; localId = null; ping = null; keys = emptyInput(); pending = []; snapshots = []; timeline.reset(); snapshotContext = null;
     previousPose = null;
     authoritative = createState(); predicted = cloneState(authoritative);
     players = [null, null]; connectedUI();
@@ -377,15 +387,14 @@ function displayState(now, fraction) {
   own.x += correction.x; own.y += correction.y;
   const decay = frameDecay(.72, deltaMs);
   correction.x *= decay; correction.y *= decay;
-  const target = now - 35;
+  const target = timeline.time(now);
   const remote = 1 - localId;
   let before = snapshots[0], after = snapshots.at(-1);
   for (let i = 1; i < snapshots.length; i++) {
     if (snapshots[i].time >= target) { before = snapshots[i - 1]; after = snapshots[i]; break; }
   }
   if (before && after && before.state.phase === 'fight' && after.state.phase === 'fight') {
-    const alpha = Math.max(0, Math.min(1, (target - before.time) / Math.max(1, after.time - before.time)));
-    state.fighters[remote] = presentPlanarFighter(after.state, before.pose, remote, alpha, { adjacentTick: false });
+    state.fighters[remote] = presentNetworkPlanarFighter(authoritative, before, after, remote, target);
   }
   return state;
 }
