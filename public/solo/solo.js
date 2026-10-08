@@ -2,6 +2,7 @@ import { mountKeyboardLayoutPicker, subscribeKeyboardLayout, displayKey } from '
 import { soloSessionShortcut } from './input-shortcuts.js';
 import { setText, setAttribute, setDisabled, setHTML } from '../hub/dom.js';
 const SOLO_COVERS = {
+  'voxel-wilds': 'survival',
   'shadow-lantern': 'shadow',
   'skyline-hook': 'skyline', 'starfall-squadron': 'starfall', 'ironwood-tactics': 'ironwood',
   'paris-pedal': 'paris', 'ember-delve': 'ember', deckbound: 'deckbound',
@@ -17,6 +18,14 @@ const PARIS_DELIVERY_SCOPES = ['standard-delivery', 'veteran-delivery', 'nightma
 const PARIS_RUSH_SCOPES = ['standard-rush', 'veteran-rush', 'nightmare-rush', 'veteran-rush-v3', 'nightmare-rush-v3'];
 const baseScope = scope => scope.replace(/-v\d+$/, '');
 const GAME_INFO = {
+  'voxel-wilds': {
+    title: 'Voxel Wilds', category: 'VOXEL / MINING, BUILDING & SURVIVAL', description: 'Make a home in the wild. Earn another sunrise.',
+    module: '/solo/survival-view.js', ruleTitle: 'Prepare before the light fades.',
+    recordPolicy: { scopes: ['wilds-survival-v1'], onlyLost: true, unit: 's', digits: 0 },
+    controls: [[['W', 'A', 'S', 'D', '↑', '←', '↓', '→'], 'Move'], [['Mouse'], 'Look / drag to look'], [['Click', 'C'], 'Hold to mine / attack'], [['Right click', 'E'], 'Place selected block'], [['Space'], 'Jump'], [['Shift'], 'Sprint'], [['F'], 'Eat / use selected item'], [['1–8', 'Wheel'], 'Choose inventory slot'], [['Tab'], 'Inventory & crafting']],
+    touch: 'Designed for a keyboard and mouse. Click the world to capture the mouse, or drag to look if capture is unavailable.',
+    rules: ['Explore a seeded woodland with editable hills, trees, underground ore, and old stone ruins. Hold mine on a block until it breaks; changing targets resets progress.', 'Eight inventory slots hold your tools, gathered materials, food, and crafted supplies. Stack space matters: make room before gathering. Select a block and place it on a face within reach; blocks cannot overlap you.', 'Turn logs into planks, then craft a workbench, better picks, a sword, and survival supplies. Some recipes need a nearby workbench. Stronger tools unlock tougher ore and faster mining.', 'Gather food and build shelter before night. Hunger drains during active play, sprinting costs more, and long falls hurt. Every night brings stronger threats; watch for enemies that break through weak walls.', 'Tab opens crafting and freezes survival. Escape pauses, leaving the tab pauses, and resuming always requires your action.', 'Your world is saved in this browser when storage is available. Choose Continue after starting to return to it. New game replaces the expedition; your best survival record remains.'],
+  },
   'shadow-lantern': {
     title: 'Shadow Lantern', category: 'NINJA / NINE STEALTH HEISTS', description: 'Watch the patrol. Take the seal. Leave no trail.',
     module: '/solo/shadow-view.js', ruleTitle: 'Leave the lanterns undisturbed.',
@@ -158,13 +167,14 @@ export function recordDetails(gameId, update) {
   return {
     scope,
     direction: policy.direction === 'min' ? 'min' : 'max',
-    candidate: !knownScope ? null : policy.onlyCrashed ? (update.phase === 'lost' && update.result === 'crashed' ? update.record : null) : policy.onlyWon ? (won ? update.record : null) : (update.record ?? update.score),
+    candidate: !knownScope ? null : policy.onlyCrashed ? (update.phase === 'lost' && update.result === 'crashed' ? update.record : null) : policy.onlyLost ? (update.phase === 'lost' ? update.record : null) : policy.onlyWon ? (won ? update.record : null) : (update.record ?? update.score),
     unit: policy.unit || '', digits: policy.digits,
   };
 }
 
 function recordNote(gameId, scope, direction) {
   scope = baseScope(scope);
+  if (gameId === 'voxel-wilds') return 'Longest survival counts active play until the expedition ends. Crafting and pauses freeze the clock. Your saved world and record stay in this browser, on this host.';
   if (gameId === 'shadow-lantern') {
     const tier = scope.endsWith('nightmare') ? 'Nightmare' : scope.endsWith('veteran') ? 'Veteran' : 'Standard';
     return `${tier} best score requires all nine heists. Pauses do not count; difficulties and other campaigns stay separate.`;

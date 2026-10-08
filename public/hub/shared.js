@@ -1,4 +1,5 @@
 export const GAMES = {
+  'voxel-wilds': { title: 'Voxel Wilds', category: 'VOXEL / BUILD & SURVIVE', kind: 'solo', genre: 'action', theme: 'voxel', icon: '▧', description: 'Mine the hillside. Build a shelter. Endure the night.', color: '#769274' },
   'voxel-breach': { title: 'Voxel Breach', category: 'VOXEL / TACTICAL 3D FPS', kind: 'team', genre: 'action', theme: 'voxel', maxPlayers: 6, icon: '⌗', description: 'Hold an angle. Breach a site. Win together.', color: '#628b88' },
   'voxel-royale': { title: 'Voxel Royale', category: 'VOXEL / BATTLE ROYALE', kind: 'battle-royale', genre: 'action', theme: 'voxel', maxPlayers: 10, icon: '◈', description: 'Find your kit. Escape the storm. Be the last alive.', color: '#75957b' },
   'shadow-lantern': { title: 'Shadow Lantern', category: 'NINJA / STEALTH CAMPAIGN', kind: 'solo', genre: 'action', theme: 'ninja', icon: '☾', description: 'Watch the patrol. Take the seal. Leave no trail.', color: '#7b8198' },

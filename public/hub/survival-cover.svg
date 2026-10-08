@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="320" viewBox="0 0 600 320">
+  <defs>
+    <linearGradient id="sky" x2="0" y2="1"><stop stop-color="#273f52"/><stop offset=".62" stop-color="#b6ae86"/><stop offset="1" stop-color="#e5c398"/></linearGradient>
+    <linearGradient id="ground" x2="0" y2="1"><stop stop-color="#7f9874"/><stop offset="1" stop-color="#294b46"/></linearGradient>
+    <radialGradient id="glow"><stop stop-color="#ffc578" stop-opacity=".43"/><stop offset="1" stop-color="#edab6d" stop-opacity="0"/></radialGradient>
+    <g id="pine"><path d="M-6 0V-65H6V0" fill="#6b6552"/><path d="m-39-28 12-25h-4l12-26h-4l23-41 23 41h-4l12 26h-4l12 25z" fill="#254c49"/><path d="M0-120v92h39l-12-25h4L19-79h4z" fill="#1f403e"/><path d="m0-120-23 41h15l-12 26h16l-18 25H0" fill="#41635b"/></g>
+    <g id="block"><path d="m0 0 20-11 20 11-20 11z" fill="#a6b389"/><path d="M0 0v21l20 11V11" fill="#718766"/><path d="M20 11v21l20-11V0" fill="#516a58"/></g>
+  </defs>
+  <path fill="url(#sky)" d="M0 0h600v320H0z"/>
+  <path d="M456 38h28v7h7v28h-7v7h-28v-7h-7V45h7z" fill="#eccea0"/>
+  <path d="M0 140h36v-17h26v-11h59v16h34v18h43v-12h40v-17h31v17h41v19h38v-23h29v-13h52v16h28v16h45v-9h57v12h42v168H0z" fill="#627e73"/>
+  <path d="M0 174h53v-14h44v14h40v15h48v-23h43v13h35v18h46v-27h40v-18h35v23h36v-12h40v17h28v18h39v-17h52v139H0z" fill="#41655d"/>
+  <path d="M0 222 305 151l295 80v89H0z" fill="url(#ground)"/>
+  <path d="m105 237 178-66 216 58-80 29-196-51-105 42" fill="#93a67a" opacity=".52"/>
+  <path d="m0 285 85-33 64 17 27-11 27 8 33-11 46 11 40-12 51 14 43-17 67 19 48-16 69 26v40H0z" fill="#33554b"/>
+  <g opacity=".78"><use href="#pine" x="62" y="217" transform="translate(20 38) scale(.8)"/><use href="#pine" x="540" y="198" transform="translate(0 29) scale(.9)"/><use href="#pine" x="460" y="202" transform="translate(60 15) scale(.85)"/></g>
+  <use href="#pine" x="100" y="267"/><use href="#pine" x="510" y="276" transform="translate(-35 -52) scale(1.2)"/>
+  <g>
+    <path d="m226 180 84-35 73 36-84 36z" fill="#536c58"/>
+    <path d="M226 180v64l73 36v-63z" fill="#a08458"/>
+    <path d="M299 217v63l84-36v-63z" fill="#79694b"/>
+    <path d="m226 185 73 36m-73-23 73 36m-73-23 73 36m-73-23 73 36M299 222l84-36m-84 50 84-36m-84 50 84-36m-84 50 84-36" stroke="#403e32" stroke-width="2" opacity=".35"/>
+    <path d="m253 222 22 11v34l-22-11z" fill="#263f3b"/>
+    <path d="m326 223 21-9v20l-21 9z" fill="#e5bd77"/><path d="m336 218 1 20m-11-5 21-9" stroke="#695841" stroke-width="3"/>
+    <path d="m217 177 83-51 93 46-10 14-83-40-73 44z" fill="#3c554a"/>
+    <path d="m300 126 93 46-10 14-83-40z" fill="#29463f"/>
+    <path d="m230 175 70-41 79 38m-127-6 48-28 55 26" fill="none" stroke="#64806a" stroke-width="3"/>
+  </g>
+  <use href="#block" x="169" y="240"/><use href="#block" x="184" y="224"/><use href="#block" x="425" y="254"/>
+  <ellipse cx="376" cy="269" rx="91" ry="60" fill="url(#glow)"/>
+  <path d="m354 270 36-11 8 5-36 12z" fill="#72553c"/><path d="m356 257 35 13-3 7-35-13z" fill="#8e6b46"/>
+  <path d="M360 262v-9h6v-12h6v-12h6v12h7v11h6v10h-10v7h-13v-7z" fill="#e7974f"/><path d="M369 260v-9h6v-10h5v12h6v10h-7v4h-10z" fill="#f8d18a"/>
+  <path d="M373 217h3v4h-3zm8-14h3v3h-3zm-16 24h3v3h-3z" fill="#eed097"/>
+  <g fill="#d3d7b7" opacity=".7"><path d="M32 33h2v2h-2zm94 21h2v2h-2zm127-22h2v2h-2zm96 21h2v2h-2zm183-24h2v2h-2z"/></g>
+  <path d="M21 294h125v1H21z" fill="#cad4b1" opacity=".45"/><text x="21" y="288" font-family="monospace" font-size="10" letter-spacing="2" fill="#dce3c9">EARN ANOTHER SUNRISE</text>
+</svg>
