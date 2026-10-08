@@ -282,15 +282,17 @@ test('full seven-round normal-input match preserves scores, switches sides and r
 test('authored maps have two reachable sites and distinct geometry for every mode', () => {
   for (const mapId of Object.keys(game.MAPS)) for (const siteIndex of [0, 1]) {
     const arena = game.MAPS[mapId], state = fighting({ mapId }); const f = state.players[0];
-    // Travel the outer west lane using only ordinary direction buttons, then plant.
+    // Use each arena's ground flank with ordinary direction buttons, then plant.
     const driveTo = (x, z) => {
-      for (let i = 0; i < 2500 && Math.hypot(f.x - x, f.z - z) > .13; i++) {
+      for (let i = 0; i < 2500 && Math.hypot(f.x - x, f.z - z) > .25; i++) {
         const dx = x - f.x, dz = z - f.z, keys = neutral(state); keys[0] = input({ up: Math.hypot(dx, dz) > .25, walk: Math.hypot(dx, dz) < 1, yaw: Math.atan2(dx, -dz) }, f); game.step(state, keys);
       }
       advance(state, 18); assert.ok(Math.hypot(f.x - x, f.z - z) < .3, `${mapId} route stopped ${f.x},${f.z}`);
     };
-    const flank = siteIndex ? 20 : -20, crossing = siteIndex && mapId === 'depot' ? -10 : -7, site = arena.sites[siteIndex];
-    driveTo(flank, 18); driveTo(flank, crossing); driveTo(site.x, crossing); driveTo(site.x, site.z); hold(state, 0, 360); assert.equal(state.bomb.status, 'planted', `${mapId} ${site.id}`);
+    const paris = mapId === 'paris', flank = (siteIndex ? 1 : -1) * (paris ? 23 : 20), crossing = paris ? -21 : siteIndex && mapId === 'depot' ? -10 : -7, site = arena.sites[siteIndex];
+    // Paris delivery stairs occupy the inner lane, so skirt them at the perimeter.
+    if (paris) driveTo(f.x, 20.5);
+    driveTo(flank, paris ? 20.5 : 18); driveTo(flank, crossing); driveTo(site.x, crossing); driveTo(site.x, site.z); hold(state, 0, 360); assert.equal(state.bomb.status, 'planted', `${mapId} ${site.id}`);
   }
   assert.equal(new Set(Object.values(game.MAPS).map(map => JSON.stringify(map.colliders))).size, Object.keys(game.MAPS).length);
 });

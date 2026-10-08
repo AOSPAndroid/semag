@@ -11,7 +11,7 @@ const vertices = array => Array.from({ length: array.length / 10 }, (_, index) =
 const pickup = (patch = {}) => ({ id: 1, kind: 'weapon', weapon: 'carbine', x: 0, y: 0, z: 0, ...patch });
 const near = (a, b) => Math.abs(a - b) < 1e-4;
 
-test('all three survival maps keep every real solid and fit the 100k static budget', () => {
+test('all four survival maps keep every real solid and fit the 100k static budget', () => {
   const signatures = new Set();
   for (const map of Object.values(MAPS)) {
     const meshes = mapMeshes(map), points = vertices(meshes.opaque);
@@ -27,7 +27,7 @@ test('all three survival maps keep every real solid and fit the 100k static budg
       }
     }
   }
-  assert.equal(signatures.size, 3, 'forest, ruins and desert have distinct geometry and artwork');
+  assert.equal(signatures.size, 4, 'forest, ruins, desert and Paris have distinct geometry and artwork');
 });
 
 test('survival backdrops are forest, cliff and dune silhouettes rather than city windows', () => {

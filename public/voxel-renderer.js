@@ -23,6 +23,7 @@ const ATMOSPHERE = Object.freeze({
   forest: { sun: [-.48, .78, .38], direct: [.53, .55, .36], ambient: [.44, .54, .48], top: '#749fac', horizon: '#d6ddbc', sunColor: '#fff0bd' },
   maze: { sun: [.40, .82, -.36], direct: [.52, .50, .42], ambient: [.47, .52, .60], top: '#7a9dab', horizon: '#d9dfcf', sunColor: '#efe9c8' },
   desert: { sun: [-.34, .90, -.28], direct: [.68, .57, .39], ambient: [.52, .55, .60], top: '#6ca9ba', horizon: '#eed9b7', sunColor: '#fff1c6' },
+  paris: { sun: [-.47, .76, .45], direct: [.64, .56, .43], ambient: [.47, .53, .61], top: '#789eaf', horizon: '#ecd6b5', sunColor: '#ffebbd' },
 });
 const ART = Object.freeze({
   courtyard: { paving: '#d7c7aa', accent: '#cc9d76', skyline: '#748b90', cloud: '#f4dcc0', tile: 2.5 },
@@ -34,6 +35,7 @@ const ART = Object.freeze({
   forest: { paving: '#657b48', accent: '#bdd19c', skyline: '#47674f', cloud: '#edf0dc', tile: 4 },
   maze: { paving: '#899783', accent: '#9cc6bd', skyline: '#718d78', cloud: '#e5e9de', tile: 4 },
   desert: { paving: '#d7ba83', accent: '#51aca5', skyline: '#bd9867', cloud: '#f6e9c8', tile: 4 },
+  paris: { paving: '#b9b4a7', accent: '#68847d', skyline: '#b3a894', cloud: '#f0e3cd', tile: 3 },
 });
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const finite = (value, fallback = 0) => Number.isFinite(value) ? value : fallback;
@@ -162,6 +164,13 @@ class Mesh {
     face([[x + w, y, z + d], [x + w, y + h, z + d], [x, y + h, z + d], [x, y, z + d]], [0, 0, 1], shade(c, .93));
     face([[x, y, z + d], [x, y + h, z + d], [x, y + h, z], [x, y, z]], [-1, 0, 0], shade(c, .94));
     face([[x + w, y, z], [x + w, y + h, z], [x + w, y + h, z + d], [x + w, y, z + d]], [1, 0, 0], shade(c, .98));
+  }
+  beam(a, b, width, color) {
+    const delta = b.map((value, i) => value - a[i]), length = Math.hypot(...delta);
+    if (length <= 0) return;
+    this.box(-width / 2, 0, -width / 2, width, length, width, color, {
+      x: a[0], y: a[1], z: a[2], yaw: Math.atan2(-delta[0], delta[2]), pitch: Math.atan2(Math.hypot(delta[0], delta[2]), delta[1]),
+    });
   }
   floor(x, z, w, d, color, y = .008) {
     this.quad([x, y, z], [x, y, z + d], [x + w, y, z + d], [x + w, y, z], [0, 1, 0], rgba(color));
@@ -437,7 +446,116 @@ function paintRoyaleCollider(mesh, collider, theme) {
   } else mesh.floor(x + .025, z + .025, Math.max(.01, w - .05), Math.max(.01, d - .05), pale, y + h + .002);
 }
 
+function paintParisCollider(mesh, collider) {
+  const { x, y, z, w, h, d } = collider, id = String(collider.id || '');
+  const material = String(collider.material || 'stone').toLowerCase();
+  if (id.startsWith('paris-bus-stop-')) {
+    mesh.box(x, y, z, w, h, d, collider.color);
+    for (const face of ['north', 'south', 'west', 'east']) {
+      const width = face === 'north' || face === 'south' ? w : d;
+      wallPatch(mesh, collider, face, .04, .09, width - .08, .065, '#354e49', .004);
+      wallPatch(mesh, collider, face, .07, .58, width - .14, 1.04, '#d9d6be', .005);
+      const routeWidth = Math.max(.04, width - .32);
+      wallPatch(mesh, collider, face, .16, .86, routeWidth, .025, '#738f75', .008);
+      wallPatch(mesh, collider, face, width / 2 - .012, .74, .024, .52, '#877ca0', .008);
+      for (const fraction of [.29, .52, .77]) wallPatch(mesh, collider, face, width / 2 - .032, .74 + fraction * .52, .064, .037, '#47665f', .010);
+      wallPatch(mesh, collider, face, .07, 1.78, width - .14, .32, '#334f49', .005);
+      const label = width > 1 ? 'METRO' : 'M', height = .23, textWidth = (label.length * 6 - 1) * height / 7;
+      wallText(mesh, collider, face, label, (width - textWidth) / 2, 1.82, height, '#e6d1a0', .011);
+      wallPatch(mesh, collider, face, .04, h - .065, width - .08, .025, '#c0b486', .008);
+    }
+    return;
+  }
+  if (id === 'paris-bus-body' || id === 'paris-bus-top') {
+    mesh.box(x, y, z, w, h, d, collider.color);
+    if (id === 'paris-bus-top') return;
+    for (const face of ['east', 'west']) {
+      wallPatch(mesh, collider, face, .05, .60, d - .10, .17, '#c9ccbc', .004);
+      for (let left = .36; left < d - .70; left += .90) {
+        wallPatch(mesh, collider, face, left, 1.0, .74, .50, '#253d47', .006);
+        wallPatch(mesh, collider, face, left + .045, 1.07, .65, .36, '#87a4aa', .008);
+        wallPatch(mesh, collider, face, left + .06, 1.30, .62, .035, '#bdcfca', .010);
+      }
+      for (const left of [.45, d - 1.0]) {
+        wallPatch(mesh, collider, face, left, .05, .62, .43, '#283537', .007);
+        wallPatch(mesh, collider, face, left + .17, .15, .28, .23, '#abb5b0', .009);
+      }
+      wallText(mesh, collider, face, 'BUS', d / 2 - .33, .31, .25, '#e4dfbc', .011);
+    }
+    for (const face of ['north', 'south']) {
+      wallPatch(mesh, collider, face, .26, .98, w - .52, .50, '#304a53', .006);
+      wallPatch(mesh, collider, face, .33, 1.06, w - .66, .34, '#8aa6aa', .008);
+      wallPatch(mesh, collider, face, w / 2 - .13, .40, .26, .12, '#e6ddc1', .006);
+      for (const left of [.15, w - .38]) wallPatch(mesh, collider, face, left, .67, .23, .13, face === 'north' ? '#efe1b7' : '#b0715b', .008);
+    }
+    return;
+  }
+  if (/foliage|bark/.test(material)) return paintRoyaleCollider(mesh, collider, 'forest');
+  if (/wood|crate|metal/.test(material)) return paintRoyaleCollider(mesh, collider, 'paris');
+  const slate = material === 'slate' || /roof|chimney/.test(id);
+  const color = rgba(collider.color || (slate ? '#536574' : '#d6c7ae'));
+  mesh.box(x, y, z, w, h, d, color);
+  if (h < .08) return;
+  const dark = mix(color, rgba(slate ? '#253b48' : '#887d6b'), .35), pale = mix(color, rgba('#f0e3c9'), .42);
+  const buildingWall = /paris-(opera|atelier|cafe|librairie)-/.test(id) && !/climb|roof|chimney/.test(id);
+  for (const face of ['north', 'south', 'west', 'east']) {
+    const width = face === 'north' || face === 'south' ? w : d;
+    if (width < .12) continue;
+    const patch = (left, bottom, patchWidth, patchHeight, tint, offset = .005) => {
+      // Thin lintels and split door jambs receive only paint that fits their
+      // actual face. Detail must never bridge a doorway or shifted roof tier.
+      if (left >= .02 && bottom >= .02 && left + patchWidth <= width - .02 && bottom + patchHeight <= h - .02) wallPatch(mesh, collider, face, left, bottom, patchWidth, patchHeight, tint, offset);
+    };
+    if (slate) {
+      patch(.03, Math.max(.03, h * .15), width - .06, Math.min(.05, h * .18), '#85959d');
+      for (let left = .32; left < width - .10; left += 1.25) patch(left, .04, .016, Math.max(.01, h - .08), dark);
+      continue;
+    }
+    patch(.03, .04, width - .06, Math.min(.13, h / 4), dark);
+    patch(.03, h - .16, width - .06, .08, pale);
+    // Align cornices and window rows in world coordinates, including the
+    // separate left/right pieces around each genuine open entrance.
+    for (let level = 1.45; level < y + h; level += 1.9) patch(.03, level - y, width - .06, .045, pale);
+    if (!buildingWall) {
+      for (let level = .62; level < y + h; level += .72) patch(.03, level - y, width - .06, .012, dark);
+      continue;
+    }
+    const origin = face === 'north' || face === 'south' ? x : z, spacing = 2.6;
+    const first = Math.ceil((origin + .23) / spacing) * spacing - origin;
+    for (let left = first; left + 1.02 < width - .20; left += spacing) {
+      for (let level = 2.12; level + 1.09 < y + h; level += 1.9) {
+        const bottom = level - y;
+        if (bottom < .05) continue;
+        patch(left, bottom, .98, 1.04, '#756f65', .005);
+        patch(left + .08, bottom + .07, .82, .88, '#4c6672', .008);
+        patch(left + .09, bottom + .60, .79, .065, '#8da6aa', .011);
+        patch(left + .465, bottom + .07, .045, .88, pale, .012);
+        patch(left + .08, bottom + .47, .82, .038, pale, .012);
+        for (const shutter of [left + .04, left + .88]) {
+          patch(shutter, bottom + .05, .06, .95, '#506e66', .013);
+          for (let line = 0; line < 3; line++) patch(shutter, bottom + .22 + line * .22, .06, .012, '#a0b4a1', .014);
+        }
+        // Wrought-iron balcony impressions are surface paint, not invisible
+        // protruding platforms that players could mistake for jump targets.
+        patch(left + .02, bottom - .025, .94, .035, '#293e40', .018);
+        for (const fraction of [.12, .39, .66, .86]) patch(left + fraction, bottom + .01, .024, .20, '#293e40', .019);
+        patch(left + .02, bottom + .19, .94, .035, '#293e40', .020);
+        patch(left - .03, bottom - .08, 1.04, .045, pale, .016);
+      }
+    }
+  }
+  if (slate && w > .2 && d > .2) {
+    for (let row = .12; row < d - .12; row += .72) mesh.floor(x + .06, z + row, w - .12, .018, dark, y + h + .002);
+    for (let column = .20; column < w - .12; column += 1.30) mesh.floor(x + column, z + .06, .018, d - .12, '#8b9c9f', y + h + .003);
+  }
+  if (/planter/.test(id) && w > .20 && d > .20) {
+    mesh.floor(x + .08, z + .08, w - .16, d - .16, '#617b54', y + h + .002);
+    for (let i = 0; i < 7; i++) mesh.floor(x + .15 + i % 3 * (w - .30) / 3, z + .15 + Math.floor(i / 3) * (d - .30) / 3, .055, .055, i % 2 ? '#d6c292' : '#b68f7d', y + h + .003);
+  }
+}
+
 function paintCollider(mesh, collider, theme) {
+  if (theme === 'paris') return paintParisCollider(mesh, collider);
   if (ROYALE_THEMES.has(theme)) return paintRoyaleCollider(mesh, collider, theme);
   const { x, y, z, w, h, d } = collider;
   const original = rgba(collider.color || (theme === 'canal' ? '#b6b0a2' : '#8d9b9b'));
@@ -652,7 +770,44 @@ function mapPaint(mesh, map, theme) {
     const column = siteColumn(site.id) || map.colliders.filter(collider => collider.h >= 2.5 && collider.y < .1 && collider.w >= .8 && collider.d >= .8 && !String(collider.id).startsWith('wall-')).sort((a, b) => Math.hypot(a.x + a.w / 2 - site.x, a.z + a.d / 2 - site.z) - Math.hypot(b.x + b.w / 2 - site.x, b.z + b.d / 2 - site.z))[0];
     if (column) siteSign(mesh, column, site.id);
   }
-  if (theme === 'courtyard') {
+  if (theme === 'paris') {
+    for (const decoration of map.decorations || []) {
+      const { kind, x, z, w, d } = decoration;
+      if (![x, z, w, d].every(Number.isFinite) || w <= 0 || d <= 0) continue;
+      if (kind === 'road') {
+        mesh.floor(x, z, w, d, decoration.color || '#667076', .003);
+        const vertical = d > w;
+        const length = vertical ? d : w;
+        for (let cursor = .8; cursor < length - .8; cursor += 3.6) {
+          if (vertical) mesh.floor(x + w / 2 - .045, z + cursor, .09, Math.min(1.35, length - cursor), '#e3d6af', .004);
+          else mesh.floor(x + cursor, z + d / 2 - .045, Math.min(1.35, length - cursor), .09, '#e3d6af', .004);
+        }
+      } else if (kind === 'crosswalk') {
+        for (let cursor = .15; cursor < d - .20; cursor += .68) mesh.floor(x + .25, z + cursor, Math.max(.01, w - .50), Math.min(.30, d - cursor), '#e9e2cd', .004);
+      } else if (kind === 'park') {
+        mesh.floor(x, z, w, d, decoration.color || '#829465', .003);
+        for (let i = 0; i < 14; i++) {
+          const seed = hash(`${map.id}:park:${x}:${z}:${i}`), xx = x + .25 + seed % 90 / 100 * Math.max(0, w - .5), zz = z + .25 + (seed >>> 8) % 90 / 100 * Math.max(0, d - .5);
+          mesh.floor(xx, zz, .045, .045, i % 3 ? '#d4c489' : '#b98377', .004);
+        }
+      } else if (kind === 'sidewalk' || kind === 'cafe') {
+        mesh.floor(x, z, w, d, decoration.color || (kind === 'cafe' ? '#c6b292' : '#c7c1b1'), .003);
+        for (let row = .12; row < d - .12; row += 1.2) mesh.floor(x + .04, z + row, w - .08, .014, '#a49d8e', .004);
+      }
+    }
+    for (const building of map.buildings || []) {
+      const label = ({ 'paris-opera': 'OPERA', 'paris-atelier': 'ATELIER', 'paris-cafe': 'CAFE', 'paris-librairie': 'LIVRES' })[building.id] || 'PARIS';
+      for (const sign of map.colliders.filter(collider => building.wallIds?.includes(collider.id) && /lintel/.test(collider.id))) {
+        const face = /north/.test(sign.id) ? 'north' : 'south';
+        if (sign.w < 1 || sign.h < .50) continue;
+        const height = Math.min(.30, sign.h - .30), textWidth = (label.length * 6 - 1) * height / 7;
+        if (textWidth > sign.w - .30) continue;
+        wallPatch(mesh, sign, face, .09, .10, sign.w - .18, .46, building.facade?.accent || '#57746b', .016);
+        wallText(mesh, sign, face, label, (sign.w - textWidth) / 2, .19, height, '#eddfbd', .024);
+        wallPatch(mesh, sign, face, .13, .13, sign.w - .26, .016, '#bcaa84', .026);
+      }
+    }
+  } else if (theme === 'courtyard') {
     for (const side of ['west', 'east']) {
       const collider = find(`${side}-arcade`), color = side === 'west' ? '#dfa962' : '#68aaa2';
       if (!collider) continue;
@@ -798,7 +953,7 @@ export function mapMeshes(map) {
   // create misleading obstacles, routes, or peek-through decorative windows.
   const skylineColor = rgba(art.skyline);
   const backdrop = (axis, side, start, length) => {
-    for (let i = 0; i < length; i += ROYALE_THEMES.has(theme) ? 8 : 4.5) {
+    for (let i = 0; i < length; i += theme === 'paris' ? 7 : ROYALE_THEMES.has(theme) ? 8 : 4.5) {
       const seed = hash(`${map.id}:${axis}:${side}:${i}`), h = 6 + seed % 7;
       const x = axis === 'x' ? side : start + i;
       const z = axis === 'z' ? side : start + i;
@@ -819,6 +974,29 @@ export function mapMeshes(map) {
       }
       if (theme === 'maze') {
         for (let tier = 0; tier < 3; tier++) opaque.box(x + tier * .18, -.10 + tier * 1.6, z + tier * .18, 5.6 - tier * .36, 1.8, 5.6 - tier * .36, shade(c, .84 + tier * .09));
+        continue;
+      }
+      if (theme === 'paris') {
+        const building = { x, y: -.05, z, w, h, d };
+        opaque.box(x, -.05, z, w, h, d, c);
+        for (const face of ['north', 'south', 'west', 'east']) {
+          const faceWidth = face === 'north' || face === 'south' ? w : d;
+          wallPatch(opaque, building, face, .04, h - .24, faceWidth - .08, .10, '#e0d3b8', .004);
+          for (let level = 2.12; level < h - 1.12; level += 1.9) {
+            wallPatch(opaque, building, face, .04, level - .13, faceWidth - .08, .032, shade(c, 1.12), .004);
+            for (let slot = .45; slot < faceWidth - .95; slot += 1.75) {
+              wallPatch(opaque, building, face, slot, level, .73, .98, '#716e65', .005);
+              wallPatch(opaque, building, face, slot + .06, level + .06, .61, .84, '#526e76', .007);
+              wallPatch(opaque, building, face, slot + .33, level + .06, .025, .84, '#d1c4aa', .009);
+              wallPatch(opaque, building, face, slot + .06, level + .43, .61, .025, '#d1c4aa', .009);
+            }
+          }
+        }
+        // Stepped zinc mansards and dormers are outside the playable perimeter.
+        // Inside the arena, every rooftop remains the exact shared collider.
+        for (let tier = 0; tier < 3; tier++) opaque.box(x + tier * .31, h + tier * .39, z + tier * .31, w - tier * .62, .43, d - tier * .62, shade(rgba('#576b79'), .95 + tier * .06));
+        opaque.box(x + .58, h + .23, z + .45, .54, .65, .63, '#c4bba7');
+        opaque.box(x + w - 1.10, h + .35, z + d - 1.00, .47, 1.08, .51, '#a2917b');
         continue;
       }
       opaque.box(x, -.05, z, w, h, d, c);
@@ -857,6 +1035,7 @@ export function mapMeshes(map) {
   backdrop('z', maxZ + 7, minX - 8, width + 16);
   backdrop('x', minX - 11, minZ - 8, depth + 16);
   backdrop('x', maxX + 7, minZ - 8, depth + 16);
+  if (theme === 'paris') opaque.append(parisLandmarkMesh(bounds));
   const cloud = rgba(art.cloud);
   for (let i = 0; i < 6; i++) {
     const seed = hash(`${map.id}:cloud:${i}`), xx = minX - 22 + i * 17, zz = minZ - 28 + (seed % 35), yy = 23 + seed % 7;
@@ -865,6 +1044,40 @@ export function mapMeshes(map) {
     opaque.box(xx + 7, yy - .35, zz + .45, 4.5, .40, 2.5, shade(cloud, .94));
   }
   return { opaque: opaque.array, shadows: shadows.array };
+}
+
+/** Original low-cost Eiffel silhouette: all of it stays beyond the north wall. */
+export function parisLandmarkMesh(bounds) {
+  const mesh = new Mesh(), centerX = (bounds.minX + bounds.maxX) / 2 - 9, centerZ = bounds.minZ - 24;
+  const iron = '#716a58', warm = '#91846b', dark = '#575b51';
+  const corner = (sx, sz, spread, y) => [centerX + sx * spread, y, centerZ + sz * spread];
+  const levels = [{ y: 0, spread: 6.7 }, { y: 3, spread: 5.6 }, { y: 6, spread: 4.3 }, { y: 9, spread: 3.1 }, { y: 13.5, spread: 2.1 }, { y: 18, spread: 1.25 }, { y: 22, spread: .70 }, { y: 26, spread: .32 }];
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    mesh.box(centerX + sx * 6.7 - .72, 0, centerZ + sz * 6.7 - .72, 1.44, .42, 1.44, '#b8ab8e');
+    for (let i = 1; i < levels.length; i++) {
+      const a = levels[i - 1], b = levels[i];
+      mesh.beam(corner(sx, sz, a.spread, a.y), corner(sx, sz, b.spread, b.y), i < 4 ? .52 : .31, sx === sz ? warm : iron);
+    }
+  }
+  // Leave the recognizable ground arch open below the first platform.
+  for (let level = 3; level < levels.length; level++) {
+    const below = levels[level - 1], above = levels[level];
+    for (const side of [-1, 1]) {
+      mesh.beam(corner(-1, side, below.spread, below.y + .18), corner(1, side, above.spread, above.y), .12, dark);
+      mesh.beam(corner(1, side, below.spread, below.y + .18), corner(-1, side, above.spread, above.y), .12, dark);
+      mesh.beam(corner(side, -1, below.spread, below.y + .18), corner(side, 1, above.spread, above.y), .12, iron);
+      mesh.beam(corner(side, 1, below.spread, below.y + .18), corner(side, -1, above.spread, above.y), .12, iron);
+    }
+  }
+  for (const { y, spread } of [levels[3], levels[5]]) {
+    mesh.box(centerX - spread - .32, y - .22, centerZ - spread - .32, spread * 2 + .64, .40, spread * 2 + .64, warm);
+    for (const sx of [-1, 1]) mesh.box(centerX + sx * (spread + .22) - .04, y + .18, centerZ - spread - .26, .08, .33, spread * 2 + .52, dark);
+    for (const sz of [-1, 1]) mesh.box(centerX - spread - .26, y + .18, centerZ + sz * (spread + .22) - .04, spread * 2 + .52, .33, .08, dark);
+  }
+  mesh.box(centerX - .40, 25.8, centerZ - .40, .80, 1.18, .80, warm);
+  mesh.box(centerX - .19, 26.98, centerZ - .19, .38, 2.05, .38, iron);
+  mesh.box(centerX - .055, 29.03, centerZ - .055, .11, 2.58, .11, dark);
+  return mesh.array;
 }
 
 const weaponLength = weapon => ({ pistol: .42, smg: .68, marksman: 1.04, shotgun: 1.02, burst: .87, sniper: 1.26, lmg: 1.08, crossbow: .83 })[weapon] || .92;
@@ -1283,7 +1496,7 @@ export class VoxelRenderer {
     this.gl = canvas.getContext('webgl', { alpha: false, antialias: false, depth: true, powerPreference: 'high-performance', preserveDrawingBuffer: false }) || canvas.getContext('experimental-webgl');
     if (!this.gl) throw new Error('Voxel Breach needs WebGL. Enable hardware acceleration in your browser and reopen the game.');
     this.available = true; this.contextLost = false; this.error = null; this.destroyed = false;
-    this.mapCache = new Map(); this.mapId = null; this.effectRound = null; this.effectPhase = null; this.eventIds = new Set(); this.eventQueue = [];
+    this.mapCache = new Map(); this.mapId = null; this.effectMap = null; this.effectGameId = null; this.effectRound = null; this.effectPhase = null; this.eventIds = new Set(); this.eventQueue = [];
     this.particles = []; this.tracers = []; this.localShot = null; this.localReload = null;
     this.lastAim = null; this.swayX = 0; this.swayY = 0;
     this._frameDrawCalls = 0; this._frameDynamicVertices = 0; this._mapVertices = 0; this._lootItems = 0; this._stormVertices = 0;
@@ -1349,11 +1562,13 @@ export class VoxelRenderer {
     return { buffer, count: array.length / VERTEX_STRIDE };
   }
   _getMap(map) {
-    if (this.mapCache.has(map.id)) return this.mapCache.get(map.id);
+    // The immutable catalog object distinguishes mode variants that share an
+    // id, such as the differently sized Breach and Royale Paris districts.
+    if (this.mapCache.has(map)) return this.mapCache.get(map);
     const meshes = mapMeshes(map);
     const result = { opaque: this._staticMesh(meshes.opaque), shadows: this._staticMesh(meshes.shadows) };
-    this.mapCache.set(map.id, result);
-    // A bounded cache keeps six authored maps from doubling resident memory.
+    this.mapCache.set(map, result);
+    // A bounded cache keeps authored maps from doubling resident memory.
     while (this.mapCache.size > 3) {
       const [key, old] = this.mapCache.entries().next().value;
       this.gl.deleteBuffer(old.opaque.buffer); this.gl.deleteBuffer(old.shadows.buffer); this.mapCache.delete(key);
@@ -1591,8 +1806,8 @@ export class VoxelRenderer {
     const time = finite(options.time, typeof performance !== 'undefined' ? performance.now() : 0);
     const freshRound = Number.isFinite(state.round) && state.round !== this.effectRound;
     const setupTransition = state.phase !== this.effectPhase && ['lobby', 'countdown', 'buy'].includes(state.phase);
-    if (map.id !== this.mapId || freshRound || setupTransition) this.resetEffects();
-    this.mapId = map.id; this.effectRound = state.round; this.effectPhase = state.phase;
+    if (map !== this.effectMap || state.gameId !== this.effectGameId || freshRound || setupTransition) this.resetEffects();
+    this.mapId = map.id; this.effectMap = map; this.effectGameId = state.gameId; this.effectRound = state.round; this.effectPhase = state.phase;
     this._events(state, time, localId);
     const yaw = finite(options.aimYaw ?? options.yaw, finite(cameraPlayer.yaw));
     const pitch = clamp(finite(options.aimPitch ?? options.pitch, finite(cameraPlayer.pitch)), -1.48, 1.48);

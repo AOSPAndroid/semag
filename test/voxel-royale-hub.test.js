@@ -13,8 +13,8 @@ test('Royale routing and variable room capacity coexist with existing duel and t
   assert.equal(roomUrl({ gameId: 'voxel-breach', id: 'ABC123' }), '/voxel.html?room=ABC123');
 });
 
-test('Royale setup admits three authored maps and an integer two-to-ten player ceiling', () => {
-  for (const map of ['forest', 'maze', 'desert']) for (let capacity = 2; capacity <= 10; capacity++) assert.equal(validRoyaleSettings(map, capacity), true);
+test('Royale setup admits four authored maps and an integer two-to-ten player ceiling', () => {
+  for (const map of ['forest', 'maze', 'desert', 'paris']) for (let capacity = 2; capacity <= 10; capacity++) assert.equal(validRoyaleSettings(map, capacity), true);
   for (const map of ['courtyard', '__proto__', '', null]) assert.equal(validRoyaleSettings(map, 10), false);
   for (const capacity of [1, 11, 2.5, '10', NaN, Infinity, null]) assert.equal(validRoyaleSettings('forest', capacity), false);
 });

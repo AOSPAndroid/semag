@@ -91,7 +91,7 @@ test('Royale rejects malformed capacity, unavailable maps and team or client aut
     assert.equal(response.status, 400, JSON.stringify(extra));
     assert.equal(game.app.rooms.size, 0);
   }
-  for (const capacity of [2, 10]) for (const mapId of ['forest', 'maze', 'desert']) {
+  for (const capacity of [2, 10]) for (const mapId of ['forest', 'maze', 'desert', 'paris']) {
     const room = await game.make(capacity, mapId);
     assert.equal(room.capacity, capacity); assert.equal(room.mapName, Royale.MAPS[mapId].name);
   }

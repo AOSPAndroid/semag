@@ -1,3 +1,5 @@
+import { createParisMap } from './voxel-paris.js';
+
 /** Authored, shared collision and rendering geometry for Voxel Breach. */
 const box = (id, x, y, z, w, h, d, color = '#647780', material = 'stone') => Object.freeze({ id, x, y, z, w, h, d, color, material });
 const perimeter = (w = 50, d = 44, color = '#b8a993') => [box('wall-west', -w / 2 - 1, 0, -d / 2 - 1, 1, 4.2, d + 2, color), box('wall-east', w / 2, 0, -d / 2 - 1, 1, 4.2, d + 2, color), box('wall-north', -w / 2, 0, -d / 2 - 1, w, 4.2, 1, color), box('wall-south', -w / 2, 0, d / 2, w, 4.2, 1, color)];
@@ -177,5 +179,5 @@ const bastionClimbs = [
 const bastion = expanded(bastionBase, bastionClimbs);
 
 /** Single catalog consumed by server validation, prediction, setup and rendering. */
-export const MAPS = Object.freeze({ courtyard, depot, canal, rooftops, foundry, bastion });
+export const MAPS = Object.freeze({ courtyard, depot, canal, rooftops, foundry, bastion, paris: createParisMap('breach') });
 export const MAP_IDS = Object.freeze(Object.keys(MAPS));

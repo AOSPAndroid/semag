@@ -14,7 +14,7 @@ const digest = array => createHash('sha256').update(new Uint8Array(array.buffer,
 const viewModel = (weapon, patch = {}, context = {}) => VoxelRenderer.prototype._viewModel.call({ lastAim: null, swayX: 0, swayY: 0, localShot: null, ...context }, { weapon, ammo: WEAPONS[weapon].magazine, alive: true, team: 0, aimTicks: 0, ...patch }, 0, 0, 1000);
 
 test('all authored vertical maps remain finite and fit the static geometry budget', () => {
-  assert.equal(Object.keys(MAPS).length, 6);
+  assert.equal(Object.keys(MAPS).length, 7);
   const signatures = new Set();
   for (const map of Object.values(MAPS)) {
     const meshes = mapMeshes(map);
@@ -27,7 +27,7 @@ test('all authored vertical maps remain finite and fit the static geometry budge
     assert.ok(vertices > 0 && vertices <= 150000, `${map.id}: ${vertices} vertices`);
     signatures.add(digest(meshes.opaque));
   }
-  assert.equal(signatures.size, 6, 'each map builds its own geometry and surface artwork');
+  assert.equal(signatures.size, 7, 'each map builds its own geometry and surface artwork');
 });
 
 test('empty and custom maps do not require hardcoded theme collider IDs', () => {

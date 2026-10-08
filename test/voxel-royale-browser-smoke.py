@@ -22,6 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT = Path(os.environ.get('SEMAG_SCREENSHOT_DIR', '/workspace/scratch/semag-royale-browser'))
 URL = (sys.argv[1] if len(sys.argv) > 1 else 'http://127.0.0.1:3000').rstrip('/')
 MAP_IDS = ('forest', 'maze', 'desert')
+CATALOG_MAP_IDS = (*MAP_IDS, 'paris')
 spec = importlib.util.spec_from_file_location('voxel_native', ROOT / 'test' / 'voxel-browser-smoke.py')
 native = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(native)
@@ -338,10 +339,10 @@ def create_room(page, map_id, capacity=10):
     page.goto(URL)
     wait(page, 'document.querySelector("#host-status").textContent === "Host is online"')
     page.locator('[data-create-game="voxel-royale"]').click()
-    assert page.locator('#royale-map option').evaluate_all('(nodes)=>nodes.map(node=>node.value)') == list(MAP_IDS)
+    assert page.locator('#royale-map option').evaluate_all('(nodes)=>nodes.map(node=>node.value)') == list(CATALOG_MAP_IDS)
     if not SETUP_CAPTURED:
         previews = []
-        for ident in MAP_IDS:
+        for ident in CATALOG_MAP_IDS:
             select_native(page, '#royale-map', ident)
             arena = geometry(page, ident)
             assert page.locator('[data-royale-map-note]').inner_text() == arena['description']

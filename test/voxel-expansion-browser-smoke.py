@@ -22,6 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT = Path(os.environ.get('SEMAG_SCREENSHOT_DIR', ROOT / 'test-results' / 'voxel-expansion'))
 URL = (sys.argv[1] if len(sys.argv) > 1 else 'http://127.0.0.1:3000').rstrip('/')
 MAP_IDS = ('courtyard', 'depot', 'canal', 'rooftops', 'foundry', 'bastion')
+CATALOG_MAP_IDS = (*MAP_IDS, 'paris')
 WEAPON_IDS = ('carbine', 'smg', 'marksman', 'pistol', 'shotgun', 'burst', 'sniper', 'lmg', 'crossbow')
 spec = importlib.util.spec_from_file_location('voxel_native_fixture', ROOT / 'test' / 'voxel-browser-smoke.py')
 native = importlib.util.module_from_spec(spec)
@@ -90,10 +91,10 @@ def create_room(page, size, map_id):
     wait(page, 'document.querySelector("#host-status").textContent === "Host is online"')
     page.locator('[data-create-game="voxel-breach"]').click()
     page.locator(f'#voxel-setup [name=teamSize][value="{size}"]').check()
-    assert page.locator('#voxel-map option').evaluate_all('(nodes)=>nodes.map(node=>node.value)') == list(MAP_IDS)
+    assert page.locator('#voxel-map option').evaluate_all('(nodes)=>nodes.map(node=>node.value)') == list(CATALOG_MAP_IDS)
     if not SETUP_CAPTURED:
         checks = []
-        for preview_id in MAP_IDS:
+        for preview_id in CATALOG_MAP_IDS:
             select_native(page, '#voxel-map', preview_id)
             arena = geometry(page, preview_id)
             note = page.locator('[data-map-note]').inner_text()

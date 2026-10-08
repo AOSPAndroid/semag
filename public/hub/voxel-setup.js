@@ -18,6 +18,12 @@ export function chooseVoxelRoom(dialog) {
   const map = form.elements.namedItem('mapId');
   const note = dialog.querySelector('[data-map-note]');
   const preview = dialog.querySelector('[data-map-preview]');
+  const selectedMap = map.value;
+  map.replaceChildren(...Object.values(MAPS).map(arena => {
+    const option = document.createElement('option');
+    option.value = arena.id; option.textContent = arena.name; return option;
+  }));
+  if (Object.hasOwn(MAPS, selectedMap)) map.value = selectedMap;
   const updateMap = () => {
     const arena = MAPS[map.value];
     note.textContent = arena ? `${arena.description} ${arena.routes.length} climb routes; two bomb sites.` : '';
