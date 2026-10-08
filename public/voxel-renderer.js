@@ -427,7 +427,7 @@ function paintRoyaleCollider(mesh, collider, theme) {
   const { x, y, z, w, h, d } = collider;
   const color = rgba(collider.color || (theme === 'desert' ? '#c8a574' : theme === 'forest' ? '#6f7c52' : '#8c9788'));
   const material = String(collider.material || 'stone').toLowerCase();
-  const id = String(collider.id || ''), dark = shade(color, .78), pale = shade(color, 1.10);
+  const id = String(collider.id || ''), dark = mix(color, rgba('#263b33'), .31), pale = mix(color, rgba('#ead7ae'), .25);
   // The complete base box is always emitted; painted detail can never erase
   // collision surfaces or replace a physical doorway with decoration.
   mesh.box(x, y, z, w, h, d, color);
@@ -436,38 +436,96 @@ function paintRoyaleCollider(mesh, collider, theme) {
   const trunk = /bark|trunk/.test(`${material}:${id}`);
   for (const face of ['north', 'south', 'west', 'east']) {
     const width = face === 'north' || face === 'south' ? w : d;
+    const patch = (left, bottom, ww, hh, tint, offset = .004) => {
+      if (left >= .015 && bottom >= .015 && left + ww <= width - .015 && bottom + hh <= h - .015) wallPatch(mesh, collider, face, left, bottom, ww, hh, tint, offset);
+    };
     if (leaves) {
-      for (let i = 0; i < 3; i++) {
-        const seed = hash(`${id}:${face}:${i}`), left = (.12 + (seed % 60) / 100) * width;
-        wallPatch(mesh, collider, face, left, h * (.18 + i * .22), Math.min(width - left, width * .19), h * .16, seed % 2 ? pale : dark, .003);
+      // Interlocking leaf clusters retain the real cuboid canopy silhouette.
+      // Warm upper edges and cool low pockets give foliage depth without
+      // adding branches or transparent cover that the engine cannot hit.
+      for (let i = 0; i < 4; i++) {
+        const seed = hash(`${id}:${face}:${i}`), left = width * (.06 + i * .22);
+        const bottom = h * (.12 + (seed % 4) * .15), ww = width * .18, hh = h * .18;
+        patch(left, bottom, ww, hh, i % 2 ? mix(color, rgba('#123d34'), .28) : mix(color, rgba('#a5b66f'), .30));
+        patch(left + ww * .20, bottom + hh, ww * .57, hh * .35, mix(color, rgba('#b9c984'), .23));
       }
     } else if (trunk) {
-      for (const fraction of [.22, .63]) wallPatch(mesh, collider, face, width * fraction, .03, Math.min(.07, width * .13), Math.max(.01, h - .06), dark, .003);
+      for (const fraction of [.16, .43, .76]) {
+        patch(width * fraction, .035, Math.min(.048, width * .08), h - .07, dark);
+        patch(width * fraction + .045, .12, Math.min(.024, width * .045), h - .24, pale, .005);
+      }
+      const knotY = h * (.37 + hash(id + face) % 3 * .08), knotX = width * .47;
+      patch(knotX - .055, knotY, .11, .18, dark, .006);
+      patch(knotX - .024, knotY + .045, .048, .09, '#ad8158', .007);
+      patch(.025, .02, width - .05, Math.min(.32, h * .18), mix(color, rgba('#698356'), .43), .008);
     } else if (/wood|crate/.test(material)) {
-      const rows = clamp(Math.round(h / .42), 1, 7);
-      for (let i = 1; i < rows; i++) wallPatch(mesh, collider, face, .01, h * i / rows, Math.max(.01, width - .02), .015, dark, .003);
-      for (const fraction of [.14, .84]) wallPatch(mesh, collider, face, width * fraction, h * .12, .025, Math.max(.01, h * .76), pale, .004);
+      const rows = clamp(Math.round(h / .42), 1, theme === 'paris' ? 4 : 7);
+      for (let i = 0; i < rows; i++) {
+        const bottom = h * i / rows + .023, boardHeight = h / rows - .046;
+        patch(.025, bottom, width - .05, boardHeight, shade(color, .90 + hash(`${id}:${face}:board:${i}`) % 4 * .065));
+        if (width > .8 && boardHeight > .09 && (theme !== 'paris' || i % 2 === 0)) patch(width * (.16 + i % 3 * .17), bottom + boardHeight * .48, Math.min(width * .34, .90), .012, dark, .005);
+      }
+      if (!/roof/.test(id)) for (const fraction of [.13, .84]) {
+        patch(width * fraction, .045, Math.min(.065, width * .06), h - .09, pale, .006);
+        for (const bottom of theme === 'paris' ? [fraction < .5 ? .11 : h - .15] : [.11, h - .15]) patch(width * fraction + .017, bottom, .022, .022, '#3d4136', .008);
+      }
+      if (/fallen/.test(id) && width < 1.2 && h > .4) {
+        patch(width * .12, h * .16, width * .76, h * .67, '#b79967', .009);
+        patch(width * .21, h * .23, width * .58, h * .53, '#805c3d', .010);
+        patch(width * .29, h * .31, width * .42, h * .37, '#c0a176', .011);
+        patch(width * .41, h * .40, width * .18, h * .19, '#966d48', .012);
+      }
     } else {
       // Broad stone blocks use a bounded number of masonry seams. A 200-box
       // survival map must not inherit the city renderer's dense window art.
       const rows = clamp(Math.round(h / .72), 1, 4);
       for (let i = 1; i < rows; i++) {
-        wallPatch(mesh, collider, face, .01, h * i / rows, Math.max(.01, width - .02), .014, dark, .003);
-        for (const fraction of [.26, .66]) wallPatch(mesh, collider, face, width * fraction + (i % 2) * .11, h * (i - 1) / rows + .025, .015, Math.max(.01, h / rows - .04), dark, .003);
+        patch(.02, h * i / rows, width - .04, .016, dark);
+        for (const fraction of [.26, .66]) patch(width * fraction + (i % 2) * .11, h * (i - 1) / rows + .025, .015, Math.max(.01, h / rows - .04), dark);
       }
       if (h > 1.1 && width > .65) {
-        wallPatch(mesh, collider, face, .03, Math.max(.03, h - .18), width - .06, .055, pale, .004);
-        if (theme === 'desert' && /temple|column|pyramid|shrine/.test(id)) {
+        patch(.03, h - .18, width - .06, .055, pale);
+        patch(.03, .08, width - .06, .055, dark);
+        if (theme === 'desert' && /temple|column|pyramid|shrine|obelisk|gate/.test(id)) {
           const turquoise = mix(color, rgba('#428f91'), .58);
-          wallPatch(mesh, collider, face, .03, Math.min(h * .64, h - .27), width - .06, .075, turquoise, .004);
-          for (const fraction of [.25, .55, .80]) wallPatch(mesh, collider, face, width * fraction, Math.min(h * .64, h - .27) + .025, .033, .025, '#e9cb85', .006);
+          const bandY = Math.min(h * .64, h - .27);
+          patch(.03, bandY, width - .06, .12, turquoise, .006);
+          for (let left = .16; left < width - .20; left += .58) {
+            patch(left, bandY + .025, .16, .022, '#efd59a', .008);
+            patch(left + .07, bandY + .047, .025, .055, '#efd59a', .008);
+          }
+          if (/column|obelisk/.test(id) && h > 2) for (const bottom of [.55, 1.12, 1.69]) {
+            patch(width / 2 - .10, bottom, .20, .027, dark, .006);
+            patch(width / 2 - .022, bottom - .12, .044, .24, dark, .006);
+            patch(width / 2 - .075, bottom + .095, .15, .04, pale, .007);
+          }
+        } else if (theme === 'maze' && !id.startsWith('boundary') && width > 1.8) {
+          const bandY = Math.min(h * .57, h - .40), moss = mix(color, rgba('#4f7769'), .46);
+          patch(.04, bandY, width - .08, .24, moss, .006);
+          for (let left = .18; left < width - .35; left += .72) {
+            patch(left, bandY + .04, .29, .025, pale, .008);
+            patch(left, bandY + .04, .025, .12, pale, .008);
+            patch(left + .265, bandY + .04, .025, .12, pale, .008);
+            patch(left + .10, bandY + .16, .29, .025, pale, .008);
+          }
         }
+      }
+      // Local chips and moss remain tonal paint on the same collision face.
+      if (width > 1 && h > .5 && !id.startsWith('boundary')) for (let i = 0; i < 2; i++) {
+        const seed = hash(`${id}:${face}:weather:${i}`);
+        patch(width * (.14 + i * .48), .17 + (seed % 5) * Math.min(.13, h * .08), Math.min(.45, width * .17), .08, theme === 'maze' ? mix(color, rgba('#658269'), .42) : pale, .009);
       }
     }
   }
   if (leaves) {
-    for (let i = 0; i < 3; i++) mesh.floor(x + w * (.06 + i * .30), z + d * .13, w * .23, d * .69, i % 2 ? dark : pale, y + h + .002);
-  } else mesh.floor(x + .025, z + .025, Math.max(.01, w - .05), Math.max(.01, d - .05), pale, y + h + .002);
+    for (let row = 0; row < 2; row++) for (let column = 0; column < 3; column++) mesh.floor(x + w * (.04 + column * .32), z + d * (.04 + row * .47), w * .27, d * .40, shade(color, .94 + (column + row) % 3 * .09), y + h + .002);
+  } else if (/roof/.test(id) && material === 'wood') {
+    mesh.floor(x + .025, z + .025, w - .05, d - .05, '#496c61', y + h + .002);
+    for (let left = .24; left < w - .10; left += .82) mesh.floor(x + left, z + .045, .025, d - .09, '#789389', y + h + .003);
+  } else {
+    mesh.floor(x + .025, z + .025, Math.max(.01, w - .05), Math.max(.01, d - .05), pale, y + h + .002);
+    if (/wood|crate/.test(material) && w > .6 && d > .6) for (let row = .22; row < d - .08; row += .43) mesh.floor(x + .045, z + row, w - .09, .018, dark, y + h + .003);
+  }
 }
 
 function paintParisCollider(mesh, collider) {
@@ -492,14 +550,31 @@ function paintParisCollider(mesh, collider) {
   }
   if (id === 'paris-bus-body' || id === 'paris-bus-top') {
     mesh.box(x, y, z, w, h, d, collider.color);
-    if (id === 'paris-bus-top') return;
-    for (const face of ['east', 'west']) {
-      wallPatch(mesh, collider, face, .05, .60, d - .10, .17, '#c9ccbc', .004);
-      for (let left = .36; left < d - .70; left += .90) {
-        wallPatch(mesh, collider, face, left, 1.0, .74, .50, '#253d47', .006);
-        wallPatch(mesh, collider, face, left + .045, 1.07, .65, .36, '#87a4aa', .008);
-        wallPatch(mesh, collider, face, left + .06, 1.30, .62, .035, '#bdcfca', .010);
+    if (id === 'paris-bus-top') {
+      mesh.floor(x + .19, z + .18, w - .38, d - .36, '#b6beb4', y + h + .002);
+      for (const zz of [z + .55, z + d - 1.1]) {
+        mesh.floor(x + .68, zz, w - 1.36, .54, '#768d89', y + h + .003);
+        for (let row = 0; row < 4; row++) mesh.floor(x + .73, zz + .08 + row * .10, w - 1.46, .022, '#adbcb1', y + h + .004);
       }
+      for (const face of ['north', 'south', 'east', 'west']) wallPatch(mesh, collider, face, .07, .07, (face === 'north' || face === 'south' ? w : d) - .14, .06, '#829c95', .006);
+      return;
+    }
+    for (const face of ['east', 'west']) {
+      wallPatch(mesh, collider, face, .05, .68, d - .10, .13, '#e0decb', .004);
+      wallPatch(mesh, collider, face, .05, .10, d - .10, .09, '#345e60', .005);
+      for (let left = .36; left < d - .70; left += .90) {
+        wallPatch(mesh, collider, face, left, .94, .74, .58, '#203b42', .006);
+        wallPatch(mesh, collider, face, left + .045, 1.00, .65, .45, '#668e95', .008);
+        wallPatch(mesh, collider, face, left + .06, 1.30, .62, .07, '#a6c0bc', .010);
+        wallPatch(mesh, collider, face, left + .36, 1.00, .03, .45, '#b2c6bd', .011);
+      }
+      // Sliding passenger doors are paint on solid vehicle cover, with narrow
+      // frames and a handle; no open-door silhouette suggests a walk-in bus.
+      const doorLeft = d - 1.19;
+      wallPatch(mesh, collider, face, doorLeft, .27, .82, 1.20, '#356368', .012);
+      wallPatch(mesh, collider, face, doorLeft + .065, .83, .69, .57, '#668e95', .014);
+      wallPatch(mesh, collider, face, doorLeft + .39, .30, .025, 1.09, '#d7d9c5', .015);
+      wallPatch(mesh, collider, face, doorLeft + .48, .68, .14, .025, '#dfd9bb', .016);
       for (const left of [.45, d - 1.0]) {
         wallPatch(mesh, collider, face, left, .05, .62, .43, '#283537', .007);
         wallPatch(mesh, collider, face, left + .17, .15, .28, .23, '#abb5b0', .009);
@@ -507,21 +582,39 @@ function paintParisCollider(mesh, collider) {
       wallText(mesh, collider, face, 'BUS', d / 2 - .33, .31, .25, '#e4dfbc', .011);
     }
     for (const face of ['north', 'south']) {
-      wallPatch(mesh, collider, face, .26, .98, w - .52, .50, '#304a53', .006);
-      wallPatch(mesh, collider, face, .33, 1.06, w - .66, .34, '#8aa6aa', .008);
+      wallPatch(mesh, collider, face, .24, .80, w - .48, .71, '#203b42', .006);
+      wallPatch(mesh, collider, face, .31, .87, w - .62, .55, '#668e95', .008);
+      wallPatch(mesh, collider, face, .36, 1.29, w - .72, .06, '#a9c3bd', .010);
+      wallPatch(mesh, collider, face, .05, .10, w - .10, .08, '#345357', .010);
+      wallPatch(mesh, collider, face, w / 2 - .10, .18, .20, .09, '#d2d6c4', .012);
       wallPatch(mesh, collider, face, w / 2 - .13, .40, .26, .12, '#e6ddc1', .006);
       for (const left of [.15, w - .38]) wallPatch(mesh, collider, face, left, .67, .23, .13, face === 'north' ? '#efe1b7' : '#b0715b', .008);
+      wallPatch(mesh, collider, face, .34, 1.40, .58, .18, '#233936', .011);
+      wallText(mesh, collider, face, '38', .39, 1.425, .13, '#e8d698', .013);
+      for (const left of [.63, 1.32]) wallPatch(mesh, collider, face, left, .86, .38, .018, '#334d51', .012);
     }
     return;
   }
   if (/foliage|bark/.test(material)) return paintRoyaleCollider(mesh, collider, 'forest');
-  if (/wood|crate|metal/.test(material)) return paintRoyaleCollider(mesh, collider, 'paris');
-  const slate = material === 'slate' || /roof|chimney/.test(id);
+  if (/wood|crate|metal/.test(material)) {
+    paintRoyaleCollider(mesh, collider, 'paris');
+    if (/terrace-table/.test(id)) {
+      mesh.floor(x + .08, z + .08, w - .16, d - .16, '#d0c4aa', y + h + .004);
+      for (let row = .25; row < d - .10; row += .35) mesh.floor(x + .12, z + row, w - .24, .013, '#abac97', y + h + .005);
+      mesh.floor(x + .16, z + .16, .48, .27, '#715652', y + h + .006);
+      mesh.floor(x + w - .55, z + d - .42, .39, .23, '#715652', y + h + .006);
+    } else if (/bench/.test(id)) {
+      for (let row = .10; row < d - .05; row += .20) mesh.floor(x + .05, z + row, w - .10, .025, '#564937', y + h + .004);
+    }
+    return;
+  }
+  const slate = material === 'slate' || /roof/.test(id), chimney = /chimney/.test(id);
   const color = rgba(collider.color || (slate ? '#536574' : '#d6c7ae'));
   mesh.box(x, y, z, w, h, d, color);
   if (h < .08) return;
   const dark = mix(color, rgba(slate ? '#253b48' : '#887d6b'), .35), pale = mix(color, rgba('#f0e3c9'), .42);
   const buildingWall = /paris-(opera|atelier|cafe|librairie)-/.test(id) && !/climb|roof|chimney/.test(id);
+  const innerFace = !buildingWall ? null : /-north-/.test(id) ? 'south' : /-south-/.test(id) ? 'north' : id.endsWith('-west') ? 'east' : id.endsWith('-east') ? 'west' : null;
   for (const face of ['north', 'south', 'west', 'east']) {
     const width = face === 'north' || face === 'south' ? w : d;
     if (width < .12) continue;
@@ -535,16 +628,40 @@ function paintParisCollider(mesh, collider) {
       for (let left = .32; left < width - .10; left += 1.25) patch(left, .04, .016, Math.max(.01, h - .08), dark);
       continue;
     }
+    if (face === innerFace) {
+      // Interior walls deliberately differ from the street frontage. Panelled
+      // skirting and warm plaster sit on the actual inner collision faces.
+      patch(.025, .025, width - .05, h - .05, '#dfd0b4', .003);
+      if (y < .1) {
+        patch(.03, .04, width - .06, .69, '#9a927b', .005);
+        patch(.03, .71, width - .06, .055, '#786e5b', .006);
+        for (let left = .16; left < width - .30; left += .85) patch(left, .11, .022, .52, '#b6ab91', .007);
+      }
+      patch(.03, h - .15, width - .06, .06, pale, .006);
+      continue;
+    }
     patch(.03, .04, width - .06, Math.min(.13, h / 4), dark);
     patch(.03, h - .16, width - .06, .08, pale);
     // Align cornices and window rows in world coordinates, including the
     // separate left/right pieces around each genuine open entrance.
     for (let level = 1.45; level < y + h; level += 1.9) patch(.03, level - y, width - .06, .045, pale);
     if (!buildingWall) {
-      for (let level = .62; level < y + h; level += .72) patch(.03, level - y, width - .06, .012, dark);
+      const course = chimney ? .24 : .72;
+      for (let level = Math.ceil((y + .02) / course) * course; level < y + h; level += course) patch(.03, level - y, width - .06, .012, dark);
+      if (chimney) for (let left = .24; left < width - .09; left += .40) patch(left, .04, .014, h - .08, dark);
       continue;
     }
+    // Dressed limestone courses use a shared world grid on neighboring jambs.
+    for (const level of [.62, 1.18, 1.78, 3.30]) patch(.03, level - y, width - .06, .012, dark);
     const origin = face === 'north' || face === 'south' ? x : z, spacing = 2.6;
+    for (let left = Math.ceil((origin + .12) / 1.3) * 1.3 - origin; left < width - .06; left += 1.3) {
+      patch(left, Math.max(.03, .10 - y), .012, Math.min(.47, h - .06), dark);
+      patch(left + .18, 1.18 - y, .012, .56, dark);
+    }
+    for (const left of [.07, width - .15]) {
+      patch(left, .20, .07, Math.max(.01, h - .48), pale, .006);
+      patch(left + .02, .20, .015, Math.max(.01, h - .48), dark, .007);
+    }
     const first = Math.ceil((origin + .23) / spacing) * spacing - origin;
     for (let left = first; left + 1.02 < width - .20; left += spacing) {
       for (let level = 2.12; level + 1.09 < y + h; level += 1.9) {
@@ -569,8 +686,14 @@ function paintParisCollider(mesh, collider) {
     }
   }
   if (slate && w > .2 && d > .2) {
-    for (let row = .12; row < d - .12; row += .72) mesh.floor(x + .06, z + row, w - .12, .018, dark, y + h + .002);
-    for (let column = .20; column < w - .12; column += 1.30) mesh.floor(x + column, z + .06, .018, d - .12, '#8b9c9f', y + h + .003);
+    for (let row = .08, index = 0; row < d - .12; row += .62, index++) {
+      const depth = Math.min(.58, d - row - .06);
+      mesh.floor(x + .07, z + row, w - .14, depth, shade(color, index % 2 ? 1.055 : .97), y + h + .002);
+      mesh.floor(x + .07, z + row + depth - .022, w - .14, .022, dark, y + h + .003);
+      for (let column = .25 + index % 2 * .59; column < w - .10; column += 1.18) mesh.floor(x + column, z + row, .014, depth, '#8b9c9f', y + h + .004);
+    }
+    for (const zz of [z + .03, z + d - .08]) mesh.floor(x + .03, zz, w - .06, .05, '#a2afa9', y + h + .005);
+    for (const xx of [x + .03, x + w - .08]) mesh.floor(xx, z + .03, .05, d - .06, '#a2afa9', y + h + .005);
   }
   if (/planter/.test(id) && w > .20 && d > .20) {
     mesh.floor(x + .08, z + .08, w - .16, d - .16, '#617b54', y + h + .002);
@@ -806,6 +929,13 @@ function mapPaint(mesh, map, theme) {
           if (vertical) mesh.floor(x + w / 2 - .045, z + cursor, .09, Math.min(1.35, length - cursor), '#e3d6af', .004);
           else mesh.floor(x + cursor, z + d / 2 - .045, Math.min(1.35, length - cursor), .09, '#e3d6af', .004);
         }
+        if (vertical) for (const xx of [x + .13, x + w - .18]) {
+          mesh.floor(xx, z + .05, .05, d - .10, '#b7b8a5', .005);
+          for (let cursor = 2.5; cursor < d - 1; cursor += 9) {
+            mesh.floor(xx + (xx < x + w / 2 ? .10 : -.28), z + cursor, .18, .42, '#596d70', .005);
+            for (let grate = 0; grate < 4; grate++) mesh.floor(xx + (xx < x + w / 2 ? .11 : -.27), z + cursor + .06 + grate * .085, .16, .022, '#919e97', .006);
+          }
+        }
       } else if (kind === 'crosswalk') {
         for (let cursor = .15; cursor < d - .20; cursor += .68) mesh.floor(x + .25, z + cursor, Math.max(.01, w - .50), Math.min(.30, d - cursor), '#e9e2cd', .004);
       } else if (kind === 'park') {
@@ -817,10 +947,59 @@ function mapPaint(mesh, map, theme) {
       } else if (kind === 'sidewalk' || kind === 'cafe') {
         mesh.floor(x, z, w, d, decoration.color || (kind === 'cafe' ? '#c6b292' : '#c7c1b1'), .003);
         for (let row = .12; row < d - .12; row += 1.2) mesh.floor(x + .04, z + row, w - .08, .014, '#a49d8e', .004);
+        if (kind === 'cafe') {
+          for (let xx = .16; xx < w - .20; xx += .8) for (let zz = .16; zz < d - .20; zz += .8) {
+            if ((Math.round(xx / .8) + Math.round(zz / .8)) % 2 === 0) mesh.floor(x + xx, z + zz, Math.min(.58, w - xx - .08), Math.min(.58, d - zz - .08), '#b79f82', .005);
+          }
+        } else for (let row = .15; row < d - .2; row += .60) mesh.floor(x + .07, z + row, .14, .32, '#ccc5b0', .005);
       }
     }
     for (const building of map.buildings || []) {
       const label = ({ 'paris-opera': 'OPERA', 'paris-atelier': 'ATELIER', 'paris-cafe': 'CAFE', 'paris-librairie': 'LIVRES' })[building.id] || 'PARIS';
+      const interior = building.interior;
+      if (interior && [interior.minX, interior.maxX, interior.minZ, interior.maxZ].every(Number.isFinite)) {
+        const ix = interior.minX + .025, iz = interior.minZ + .025, iw = interior.maxX - interior.minX - .05, id = interior.maxZ - interior.minZ - .05;
+        mesh.floor(ix, iz, iw, id, building.id === 'paris-cafe' ? '#c0ad8d' : '#a99272', .003);
+        // Floorboards and tile inlays are entirely flat. Both genuine door
+        // thresholds remain open and there are no decorative interior props.
+        for (let row = .06, index = 0; row < id - .08; row += .48, index++) {
+          mesh.floor(ix + .025, iz + row, iw - .05, Math.min(.45, id - row - .025), index % 2 ? '#af9978' : '#b9a584', .004);
+          for (let column = .55 + index % 2 * .86; column < iw - .05; column += 1.72) mesh.floor(ix + column, iz + row, .014, Math.min(.45, id - row - .025), '#827661', .005);
+        }
+        mesh.floor(ix + .08, iz + .08, iw - .16, .045, '#6f7b69', .006);
+        mesh.floor(ix + .08, iz + id - .125, iw - .16, .045, '#6f7b69', .006);
+        for (const xx of [ix + .08, ix + iw - .125]) mesh.floor(xx, iz + .08, .045, id - .16, '#6f7b69', .006);
+        for (const side of ['west', 'east']) {
+          const wall = find(`${building.id}-${side}`);
+          if (!wall || wall.d < 3 || wall.h < 2.8) continue;
+          const face = side === 'west' ? 'east' : 'west', left = (wall.d - 2.10) / 2;
+          wallPatch(mesh, wall, face, left, 1.05, 2.10, 1.29, '#756954', .012);
+          wallPatch(mesh, wall, face, left + .055, 1.10, 1.99, 1.18, building.id === 'paris-cafe' ? '#344e49' : '#d6c6a2', .014);
+          if (building.id === 'paris-cafe') {
+            wallText(mesh, wall, face, 'CAFE', left + .51, 1.78, .23, '#e6d9b3', .018);
+            for (let row = 0; row < 4; row++) {
+              wallPatch(mesh, wall, face, left + .23, 1.31 + row * .11, .87 - row % 2 * .14, .020, '#b7c2a4', .018);
+              wallPatch(mesh, wall, face, left + 1.40, 1.31 + row * .11, .24, .020, '#d9cba7', .018);
+            }
+          } else if (building.id === 'paris-librairie') {
+            // A flat reading-room mural: colored book spines sit on the wall,
+            // without introducing a shelf players cannot collide with.
+            for (let row = 0; row < 2; row++) for (let column = 0; column < 8; column++) {
+              const palette = ['#647c6c', '#9b6854', '#708794', '#b69868'];
+              const hh = .31 + column % 3 * .025, bookX = left + .19 + column * .22, bookY = 1.20 + row * .49;
+              wallPatch(mesh, wall, face, bookX, bookY, .15, hh, palette[(column + row) % palette.length], .018);
+              wallPatch(mesh, wall, face, bookX + .025, bookY + hh - .09, .10, .018, '#e6d7b4', .020);
+            }
+          } else {
+            wallPatch(mesh, wall, face, left + .17, 1.20, .78, .93, '#5c7d81', .018);
+            wallPatch(mesh, wall, face, left + 1.03, 1.20, .88, .93, '#b48768', .018);
+            wallPatch(mesh, wall, face, left + .26, 1.31, .19, .69, '#d6c7a3', .020);
+            wallPatch(mesh, wall, face, left + .45, 1.31, .34, .16, '#b49a72', .020);
+            wallPatch(mesh, wall, face, left + 1.15, 1.44, .57, .38, '#d8c6a0', .020);
+            wallPatch(mesh, wall, face, left + 1.40, 1.32, .12, .64, '#6f7e6b', .022);
+          }
+        }
+      }
       for (const sign of map.colliders.filter(collider => building.wallIds?.includes(collider.id) && /lintel/.test(collider.id))) {
         const face = /north/.test(sign.id) ? 'north' : 'south';
         if (sign.w < 1 || sign.h < .50) continue;
@@ -829,6 +1008,34 @@ function mapPaint(mesh, map, theme) {
         wallPatch(mesh, sign, face, .09, .10, sign.w - .18, .46, building.facade?.accent || '#57746b', .016);
         wallText(mesh, sign, face, label, (sign.w - textWidth) / 2, .19, height, '#eddfbd', .024);
         wallPatch(mesh, sign, face, .13, .13, sign.w - .26, .016, '#bcaa84', .026);
+      }
+    }
+  } else if (ROYALE_THEMES.has(theme)) {
+    for (const building of map.buildings || []) {
+      const room = building.interior;
+      if (!room) continue;
+      const x = room.minX + .025, z = room.minZ + .025, w = room.maxX - room.minX - .05, d = room.maxZ - room.minZ - .05;
+      const wood = theme === 'forest', base = wood ? '#98805a' : theme === 'desert' ? '#c0a174' : '#9da58c';
+      mesh.floor(x, z, w, d, base, .003);
+      for (let row = .05, index = 0; row < d - .05; row += wood ? .44 : .95, index++) {
+        if (wood) {
+          mesh.floor(x + .025, z + row, w - .05, Math.min(.40, d - row - .025), index % 2 ? '#a18b64' : '#8f7854', .004);
+          for (let column = .6 + index % 2 * 1.1; column < w - .03; column += 2.2) mesh.floor(x + column, z + row, .014, Math.min(.40, d - row - .025), '#625a44', .005);
+        } else for (let column = .05; column < w - .05; column += .95) mesh.floor(x + column, z + row, Math.min(.89, w - column - .025), Math.min(.89, d - row - .025), shade(rgba(base), (Math.round(column / .95) + index) % 2 ? .95 : 1.035), .004);
+      }
+      const side = find(`${building.id}-west`), face = 'east';
+      if (side && side.d > 4) {
+        wallPatch(mesh, side, face, 2.30, 1.04, 2.15, 1.16, wood ? '#584e3a' : '#776d54', .010);
+        wallPatch(mesh, side, face, 2.36, 1.10, 2.03, 1.04, wood ? '#b9bd90' : '#c7bb8e', .012);
+        if (wood) {
+          for (const fraction of [.20, .52, .76]) {
+            wallPatch(mesh, side, face, 2.47 + fraction * 1.65, 1.30, .11, .61, '#61826b', .014);
+            wallPatch(mesh, side, face, 2.41 + fraction * 1.65, 1.57, .23, .19, '#61826b', .014);
+          }
+          wallPatch(mesh, side, face, 2.52, 1.25, 1.51, .024, '#8d7350', .016);
+        } else {
+          for (let row = 0; row < 4; row++) for (let column = 0; column < 6; column++) if ((row + column) % 3 !== 0) wallPatch(mesh, side, face, 2.52 + column * .26, 1.24 + row * .18, .13, .055, theme === 'desert' ? '#927346' : '#698979', .015);
+        }
       }
     }
   } else if (theme === 'courtyard') {
@@ -977,7 +1184,7 @@ export function mapMeshes(map) {
   // create misleading obstacles, routes, or peek-through decorative windows.
   const skylineColor = rgba(art.skyline);
   const backdrop = (axis, side, start, length) => {
-    for (let i = 0; i < length; i += theme === 'paris' ? 7 : ROYALE_THEMES.has(theme) ? 8 : 4.5) {
+    for (let i = 0; i < length; i += theme === 'paris' ? 9 : ROYALE_THEMES.has(theme) ? 8 : 4.5) {
       const seed = hash(`${map.id}:${axis}:${side}:${i}`), h = 6 + seed % 7;
       const x = axis === 'x' ? side : start + i;
       const z = axis === 'z' ? side : start + i;
@@ -1105,6 +1312,12 @@ export function parisLandmarkMesh(bounds) {
 }
 
 const weaponLength = weapon => ({ pistol: .42, smg: .68, marksman: 1.04, shotgun: 1.02, burst: .87, sniper: 1.26, lmg: 1.08, crossbow: .83 })[weapon] || .92;
+const reloadMagazineDrop = progress => progress > .04 && progress < .64 ? Math.sin((progress - .04) / .60 * Math.PI) * .25 : 0;
+const weaponCoverPadding = (weapon, scale = 1, reloadProgress = 0) => {
+  const width = weapon === 'crossbow' ? .51 : weapon === 'lmg' ? .28 : weapon === 'sniper' ? .18 : .11;
+  const height = (weapon === 'pistol' ? .22 : weapon === 'lmg' ? .30 : .29) + reloadMagazineDrop(reloadProgress);
+  return Math.max(width, height) * scale;
+};
 
 function weaponParts(mesh, weapon, pose, options = {}) {
   const pistol = weapon === 'pistol', shotgun = weapon === 'shotgun', burst = weapon === 'burst';
@@ -1112,8 +1325,9 @@ function weaponParts(mesh, weapon, pose, options = {}) {
   const scoped = !!WEAPONS[weapon]?.scoped;
   const length = weaponLength(weapon);
   const limit = options.limit ?? length + .20;
-  const body = rgba(options.body || (smg ? '#506f76' : sniper ? '#62706a' : lmg ? '#79764f' : marksman ? '#465d62' : shotgun ? '#7d6248' : burst ? '#765b52' : pistol ? '#63788a' : '#57675e')), trim = '#202d32', metal = '#b2bfb7';
-  const reload = clamp(finite(options.reloadProgress), 0, 1), magazineDrop = reload > .04 && reload < .64 ? Math.sin((reload - .04) / .60 * Math.PI) * .25 : 0;
+  const body = rgba(options.body || (smg ? '#4f747c' : sniper ? '#677961' : lmg ? '#76764d' : marksman ? '#526976' : shotgun ? '#7b5f43' : burst ? '#805b4f' : pistol ? '#607b91' : '#56685f')), trim = '#202d32', metal = '#b2bfb7';
+  const stock = rgba(options.stock || (shotgun ? '#a37a4f' : sniper ? '#7e8c70' : '#8a927d'));
+  const reload = clamp(finite(options.reloadProgress), 0, 1), magazineDrop = reloadMagazineDrop(reload);
   const part = (x, y, z, w, h, d, color) => {
     // The weapon points down local -Z. Clamp each part at the first solid
     // cover contact so a barrel cannot reappear through a thin wall.
@@ -1121,7 +1335,20 @@ function weaponParts(mesh, weapon, pose, options = {}) {
     const clippedDepth = z + d - clippedZ;
     if (clippedDepth > 0) mesh.box(x, y, clippedZ, w, h, clippedDepth, color, pose);
   };
+  const detail = (points, normal, color) => {
+    if (points.every(point => point[2] < -limit)) return;
+    const transform = point => {
+      const clipped = [point[0], point[1], Math.max(point[2], -limit)];
+      const rotated = rotate(pose.scale ? clipped.map(value => value * pose.scale) : clipped, pose.yaw, pose.pitch);
+      return rotated.map((value, axis) => value + [pose.x, pose.y, pose.z][axis]);
+    };
+    mesh.quad(...points.map(transform), rotate(normal, pose.yaw, pose.pitch), rgba(color));
+  };
+  const side = (x, y, z, h, d, color) => detail([[x, y, z], [x, y + h, z], [x, y + h, z + d], [x, y, z + d]], [x < 0 ? -1 : 1, 0, 0], color);
+  const top = (x, y, z, w, d, color) => detail([[x, y, z], [x, y, z + d], [x + w, y, z + d], [x + w, y, z]], [0, 1, 0], color);
+  const bore = (width, height, z, y = -.008) => detail([[-width / 2, y, z], [-width / 2, y + height, z], [width / 2, y + height, z], [width / 2, y, z]], [0, 0, -1], '#101d21');
   const string = (a, b, width, color) => {
+    if (Math.max(a[2], b[2]) < -limit) return;
     const dx = b[0] - a[0], dz = b[2] - a[2], length = Math.hypot(dx, dz) || 1;
     const offset = [-dz / length * width / 2, 0, dx / length * width / 2];
     const transform = point => {
@@ -1143,13 +1370,21 @@ function weaponParts(mesh, weapon, pose, options = {}) {
     part(-.055, -.061, -.62, .11, .132, .68, '#676d52');
     part(-.065, -.012, -.65, .13, .080, .51, '#354844');
     part(-.045, .069, -.72, .09, .020, .63, '#a0ac8a');
-    part(-.067, -.060, -.055, .134, .13, .26, options.stock || '#ad9170');
+    part(-.067, -.060, -.055, .134, .13, .26, '#826f52');
+    part(-.071, -.057, .17, .142, .12, .033, trim);
+    side(-.068, -.035, .018, .065, .112, stock);
+    side(.068, -.035, .018, .065, .112, stock);
     part(-.034, -.20, -.01, .068, .15, .075, '#31433d');
     // The horizontal limbs and thin cocking string distinguish this weapon
     // from a rifle. A real loaded bolt disappears as soon as ammo is spent.
     part(-.44, -.014, -.69, .88, .052, .085, '#6f8d79');
     part(-.49, -.010, -.76, .17, .046, .084, '#a2b59a');
     part(.32, -.010, -.76, .17, .046, .084, '#a2b59a');
+    part(-.497, -.021, -.746, .035, .068, .055, '#293d3a');
+    part(.462, -.021, -.746, .035, .068, .055, '#293d3a');
+    part(-.087, -.044, -.63, .174, .082, .07, '#42574e');
+    top(-.037, .091, -.60, .074, .35, '#bbc5a8');
+    for (const x of [-.077, .077]) side(x, -.018, -.47, .022, .027, '#b9c3a5');
     string([-.45, .014, -.69], [0, .014, stringZ], .009, '#d7d3b1');
     string([0, .014, stringZ], [.45, .014, -.69], .009, '#d7d3b1');
     if (loaded) {
@@ -1165,7 +1400,7 @@ function weaponParts(mesh, weapon, pose, options = {}) {
   }
   if (rifle) {
     part(-.067, -.055, -.44, .134, .145, .45, body);
-    part(-.055, -.032, -.64, .11, .10, .24, trim);
+    part(-.055, -.032, smg ? -.575 : -.64, .11, .10, smg ? .175 : .24, trim);
     part(-.025, -.014, -length, .05, .054, length - .60 + .04, metal);
     part(-.041, -.02, -length - .035, .082, .075, .06, trim);
     part(-.049, .080, -.36, .098, .033, .30, '#262f35');
@@ -1174,18 +1409,37 @@ function weaponParts(mesh, weapon, pose, options = {}) {
       part(-.045, -.25 - magazineDrop, magazineZ + magazineDrop * .16, .09, .20, .105, trim);
       part(-.045, -.23 - magazineDrop, magazineZ - .002 + magazineDrop * .16, .09, .04, .109, burst ? '#bb8878' : '#738b80');
     }
-    part(-.06, -.067, -.06, .12, .125, .25, options.stock || '#b39872');
-    part(-.033, -.19, -.035, .066, .13, .09, '#6a746d');
+    part(-.06, -.067, -.06, .12, .125, .25, shotgun ? '#a37a4f' : sniper ? '#6b7b60' : '#47564f');
+    part(-.066, -.083, .167, .132, .154, .045, trim);
+    side(-.061, -.045, .03, .064, .107, mix(stock, rgba('#697666'), .50));
+    side(.061, -.045, .03, .064, .107, mix(stock, rgba('#697666'), .50));
+    part(-.033, -.19, -.035, .066, .13, .09, '#42564d');
+    part(-.037, -.17, -.099, .074, .020, .073, trim);
+    part(-.043, -.080, -.12, .013, .020, .09, trim);
+    part(.030, -.080, -.12, .013, .020, .09, trim);
     part(-.072, .016, -.51, .144, .014, .045, '#c6a474');
-    part(-.071, -.016, -.36, .008, .07, .13, '#9ba99c');
-    part(.067, -.016, -.34, .008, .060, .18, '#293c3e');
-    for (let i = 0; i < 4; i++) part(-.06, .026, -.61 + i * .045, .12, .012, .017, '#667f78');
+    side(-.068, -.012, -.35, .048, .12, '#8d9d90');
+    side(.068, -.008, -.32, .045, .135, '#293c3e');
+    side(.069, .001, -.305, .029, .078, '#151f24');
+    top(-.045, .091, -.435, .09, .060, '#a8b6a5');
+    for (const x of [-.069, .069]) {
+      side(x, -.023, -.415, .015, .018, '#bcc5b6');
+      side(x, -.023, -.175, .015, .018, '#bcc5b6');
+    }
+    // Handguard vent paint sits on its actual top. Four mostly enclosed
+    // cubes would spend triangles on hidden faces in every remote rifle.
+    for (let i = 0; i < 4; i++) top(-.055, .069, (smg ? -.555 : -.61) + i * .045, .11, .017, '#667f78');
     const bolt = options.bolt || (reload > .72 && reload < .90 ? Math.sin((reload - .72) / .18 * Math.PI) : 0);
     part(.061, .022, -.23 + bolt * .09, .046, .025, .06, metal);
+    bore(.044, .042, -length - .036);
     if (smg) {
       part(-.079, -.04, -.50, .016, .082, .14, '#77a9a5');
       part(.063, -.04, -.50, .016, .082, .14, '#77a9a5');
       part(-.073, -.014, .15, .146, .055, .055, '#748a80');
+      part(-.036, -.032, -.72, .072, .077, .068, '#647c80');
+      part(-.063, -.056, .03, .018, .021, .11, '#202f34');
+      part(.045, -.056, .03, .018, .021, .11, '#202f34');
+      for (let i = 0; i < 3; i++) side(-.080, -.010, -.475 + i * .035, .045, .016, '#253c44');
     }
     if (burst) {
       part(-.08, -.045, -.50, .16, .10, .18, '#5a4441');
@@ -1193,6 +1447,10 @@ function weaponParts(mesh, weapon, pose, options = {}) {
       part(-.075, -.03, -.66, .15, .036, .14, '#c39e84');
       for (let i = 0; i < 3; i++) part(.075, -.01, -.40 + i * .035, .008, .035, .019, '#d7b399');
       part(-.060, -.048, .15, .12, .095, .075, '#795c52');
+      part(-.051, -.046, -.73, .102, .087, .082, '#383c39');
+      top(-.052, .082, -.407, .104, .22, '#936d5d');
+      side(-.081, -.023, -.49, .061, .116, '#ad846b');
+      side(.081, -.023, -.49, .061, .116, '#ad846b');
     }
     if (shotgun) {
       // A pump, tubular magazine and shell saddle make the close-range gun
@@ -1211,6 +1469,9 @@ function weaponParts(mesh, weapon, pose, options = {}) {
         part(-.10 - shell * .025, -.11 - (1 - shell) * .06, -.25, .033, .075, .033, '#b36f47');
         part(-.10 - shell * .025, -.039 - (1 - shell) * .06, -.25, .033, .015, .033, '#d5b871');
       }
+      part(-.05, -.034, -1.055, .10, .079, .047, '#657067');
+      side(-.061, -.035, .02, .052, .12, '#ba9468');
+      for (let i = 0; i < 3; i++) side(.068, -.018, -.30 + i * .033, .048, .016, '#ba9773');
     }
     if (lmg) {
       part(-.090, -.068, -.51, .18, .17, .37, '#536250');
@@ -1226,17 +1487,24 @@ function weaponParts(mesh, weapon, pose, options = {}) {
       part(-.032, -.038, -1.11, .064, .073, .082, '#293830');
       const spin = clamp(finite(options.spin), 0, 1);
       for (let i = 0; i < 3; i++) part(.102, .062, -.20 + i * .034, .006, .018, .022, spin >= (i + 1) / 3 ? '#d4dba2' : '#35483c');
+      part(-.12, .154, -.34, .025, .035, .17, '#28362f');
+      part(.095, .154, -.34, .025, .035, .17, '#28362f');
+      part(-.12, .175, -.24, .24, .025, .062, '#475742');
+      for (let i = 0; i < 4; i++) side(-.051, -.077, -.90 + i * .062, .036, .031, '#1e332c');
     }
     if (sniper) {
       part(-.071, -.025, -.58, .142, .11, .46, '#718170');
       part(-.044, -.01, -1.18, .088, .075, .29, '#344740');
       part(-.065, -.018, -1.30, .13, .095, .14, '#43594f');
-      part(-.075, .02, .10, .15, .16, .17, '#7e8b70');
+      part(-.075, .02, .10, .15, .135, .17, '#7e8b70');
       part(-.030, -.040, -1.01, .022, .11, .035, '#516055');
       part(.008, -.040, -1.01, .022, .11, .035, '#516055');
       const recovery = clamp(finite(options.cycle), 0, 1), bolt = Math.sin(recovery * Math.PI) * .15;
       part(.065, .013, -.28 + bolt, .087, .023, .037, '#b7c6b6');
       part(.13, -.025 + Math.sin(recovery * Math.PI) * .055, -.28 + bolt, .045, .07, .045, '#31483e');
+      part(-.081, .079, .083, .162, .068, .105, '#879572');
+      part(-.073, -.018, -.80, .146, .039, .26, '#4b6053');
+      for (let i = 0; i < 3; i++) side(-.075, -.010, -.765 + i * .060, .025, .033, '#213a32');
     }
     if (scoped) {
       part(-.050, .105, -.36, .10, .023, .19, '#2c3f43');
@@ -1253,12 +1521,28 @@ function weaponParts(mesh, weapon, pose, options = {}) {
       part(.043, .139, front + .045, .017, .063, -front - .18, '#31464a');
       part(-.03, -.023, -.68, .06, .025, .05, '#bca6de');
       part(.057, .160, -.29, .029, .035, .065, '#a1bdb1');
+      part(-.018, .233, -.29, .036, .031, .052, '#32484b');
+      top(-.021, .265, -.289, .042, .048, '#8da99f');
+      for (const z of [front + .013, -.127]) {
+        side(-.064, .133, z, .061, .011, '#72948c');
+        side(.064, .133, z, .061, .011, '#72948c');
+      }
       if (finite(options.aim) < .2) {
         part(-.040, .132, front - .004, .08, .075, .004, '#73aaa7');
         part(-.040, .132, -.094, .08, .075, .004, '#5f9c9d');
         part(-.007, .132, -.089, .004, .075, .002, '#203d40');
         part(-.040, .171, -.089, .08, .004, .002, '#203d40');
       }
+    }
+    if (marksman) {
+      part(-.061, -.016, -.835, .122, .075, .165, '#3c565b');
+      part(-.065, .056, .052, .13, .058, .127, '#778b80');
+      for (let i = 0; i < 3; i++) side(-.062, .001, -.805 + i * .049, .038, .021, '#a0b4a5');
+    }
+    if (weapon === 'carbine') {
+      part(-.076, -.022, -.675, .152, .072, .235, '#455c53');
+      part(-.042, -.060, -.89, .084, .094, .081, '#3a4843');
+      for (let i = 0; i < 3; i++) side(-.077, -.005, -.642 + i * .064, .038, .032, '#263d38');
     }
   } else {
     const slide = clamp(finite(options.bolt), 0, 1) * .053;
@@ -1270,6 +1554,13 @@ function weaponParts(mesh, weapon, pose, options = {}) {
     part(.033, -.08, -.115, .008, .066, .086, '#a4b1ae');
     part(-.040, -.19 - magazineDrop, -.113, .08, .015, .109, '#8eb0bd');
     for (let i = 0; i < 4; i++) part(.046, .066, -.17 + slide + i * .02, .006, .035, .008, '#596e79');
+    part(-.052, -.023, -.15, .104, .030, .087, '#283d46');
+    part(-.050, -.165, -.10, .011, .091, .074, '#3c5361');
+    part(.039, -.165, -.10, .011, .091, .074, '#3c5361');
+    top(-.033, .108, -.34 + slide, .066, .23, '#91a8b3');
+    side(-.048, .069, -.275 + slide, .020, .077, '#415766');
+    for (const x of [-.052, .052]) side(x, -.140, -.087, .014, .017, '#a9bec4');
+    bore(.032, .035, -.441, -.013);
   }
   if (!scoped) {
     // A genuine open rear notch and luminous front post share the same
@@ -1283,6 +1574,11 @@ function weaponParts(mesh, weapon, pose, options = {}) {
     part(.021, .137, rear + .036, .010, .010, .004, '#bdd4ae');
   }
   return length;
+}
+
+/** Pure geometry for render budgets and the same clipped world-gun assembly. */
+export function weaponMeshes(weapon, pose = {}, options = {}) {
+  const mesh = new Mesh(); weaponParts(mesh, weapon, { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, ...pose }, options); return mesh.array;
 }
 
 function swordParts(mesh, pose, options = {}) {
@@ -1304,6 +1600,8 @@ function swordParts(mesh, pose, options = {}) {
   part(-.011, -.026, -.82, .022, .052, .70, '#748d96');
   part(-.065, -.026, -.81, .011, .052, .69, '#e5eadd');
   part(.054, -.026, -.81, .011, .052, .69, '#e5eadd');
+  part(-.024, .036, -.087, .048, .009, .040, '#e0c78c');
+  part(-.018, .048, .176, .036, .008, .024, '#516b72');
 }
 
 const meleeLength = player => meleeWeaponId(player) === 'knife' ? .48 : 1.24;
@@ -1320,12 +1618,17 @@ function meleeParts(mesh, player, pose, options = {}) {
   for (let i = 0; i < 3; i++) part(-.028, -.033, .003 + i * .040, .056, .066, .013, '#5c7469');
   part(-.032, -.035, .142, .064, .070, .023, '#8fa6a3');
   part(-.071, -.028, -.056, .142, .056, .030, '#8fa6a3');
-  const blade = options.active ? '#e3ece5' : '#b9cccc';
+  const blade = options.active ? '#d5e3dc' : '#a0b9bc';
   part(-.044, -.014, -.34, .088, .028, .29, blade);
   part(-.030, -.012, -.42, .060, .024, .09, blade);
   part(-.012, -.009, -.47, .024, .018, .06, '#e2ebe0');
   part(-.048, -.015, -.34, .010, .030, .285, '#edf0df');
   part(.028, -.015, -.33, .010, .030, .27, '#738d94');
+  part(-.015, .033, .010, .030, .005, .018, '#aebcaf');
+  part(-.015, .033, .091, .030, .005, .018, '#aebcaf');
+  part(-.030, -.036, .145, .060, .072, .017, '#34443f');
+  part(-.045, -.017, -.105, .090, .034, .052, '#6b868b');
+  part(-.016, .014, -.320, .014, .003, .180, '#68878c');
 }
 
 /** The same clipped blade geometry is used by both first and third person. */
@@ -1334,20 +1637,29 @@ export function meleeMeshes(player, pose = {}, options = {}) {
 }
 
 function potionParts(mesh, pose, progress = 0) {
-  // An opaque faceted bottle avoids translucent sorting and makes the
-  // consumable readable in the same low-cost batch as the operative's hands.
-  mesh.box(-.066, -.082, -.059, .132, .175, .118, '#547e72', pose);
-  mesh.box(-.051, -.068, -.064, .102, .125, .128, '#7fb5a0', pose);
-  mesh.box(-.041, .086, -.04, .082, .044, .080, '#b8d4b6', pose);
-  mesh.box(-.031, .123, -.031, .062, .059, .062, '#90b59c', pose);
-  if (progress < .13 || progress > .94) mesh.box(-.037, .174, -.037, .074, .039, .074, '#bb9762', pose);
-  mesh.box(-.018, -.037, -.066, .036, .074, .005, '#e9e4be', pose);
-  mesh.box(-.041, -.014, -.066, .082, .026, .005, '#e9e4be', pose);
-  mesh.box(-.047, -.049, .061, .094, .054, .005, '#314e4a', pose);
-  mesh.box(-.063, .052, -.030, .014, .028, .049, '#c9ded0', pose);
+  // Opaque sea-glass, stepped shoulders and a ribbed brass seal read clearly
+  // in a hand or on a shelf, without another transparency pass.
+  mesh.box(-.066, -.082, -.059, .132, .154, .118, '#5e947f', pose);
+  mesh.box(-.052, .071, -.046, .104, .032, .092, '#8fbba3', pose);
+  mesh.box(-.031, .097, -.031, .062, .082, .062, '#9dc5ad', pose);
+  if (progress < .13 || progress > .94) mesh.box(-.037, .170, -.037, .074, .039, .074, '#bd9a62', pose);
+  const face = (x, y, z, w, h, color, back = false) => {
+    const points = [[x, y, z], [x, y + h, z], [x + w, y + h, z], [x + w, y, z]];
+    if (back) points.reverse();
+    const transform = point => { const p = rotate(point.map(value => value * finite(pose.scale, 1)), pose.yaw, pose.pitch); return p.map((value, i) => value + [pose.x, pose.y, pose.z][i]); };
+    mesh.quad(...points.map(transform), rotate([0, 0, back ? 1 : -1], pose.yaw, pose.pitch), rgba(color));
+  };
+  face(-.047, -.060, -.0594, .094, .105, '#304f46');
+  face(-.016, -.042, -.0598, .032, .069, '#f2edcf');
+  face(-.035, -.020, -.0599, .070, .025, '#f2edcf');
+  face(-.056, .015, -.0595, .012, .041, '#b9d9c3');
+  face(-.047, -.045, .0594, .094, .051, '#304f46', true);
+  face(-.028, -.029, .0598, .056, .007, '#bd9a62', true);
+  face(-.031, .140, -.0314, .062, .027, '#617f6b');
+  face(-.031, .140, .0314, .062, .027, '#617f6b', true);
 }
 
-function grenadeParts(mesh, pose, radius, fuseTicks, time) {
+function grenadeParts(mesh, pose, radius, fuseTicks, time, intact = false) {
   const r = clamp(finite(radius, .12), .04, .25), scale = r / .12;
   const blinkPeriod = lerp(70, 320, clamp(finite(fuseTicks) / 288, 0, 1));
   const lit = Math.floor(time / blinkPeriod) % 2 === 0;
@@ -1357,48 +1669,108 @@ function grenadeParts(mesh, pose, radius, fuseTicks, time) {
   // rounded shell without the corners of a large cube becoming false cover.
   part(-.069, -.069, -.069, .138, .138, .138, shell);
   part(-.104, -.034, -.034, .208, .068, .068, shell);
-  part(-.034, -.104, -.034, .068, .208, .068, shell);
+  if (!intact) part(-.034, -.104, -.034, .068, .208, .068, shell);
   part(-.034, -.034, -.104, .068, .068, .208, shell);
-  part(-.079, -.052, -.049, .015, .104, .098, '#263b37');
-  part(.064, -.052, -.049, .015, .104, .098, '#263b37');
-  part(-.024, .071, -.027, .048, .035, .054, '#859287');
-  part(-.022, .105, -.020, .044, .009, .040, lit ? '#efb86a' : '#aa7a4f');
+  part(-.024, .070, -.027, .048, .035, .054, '#91a397');
+  const face = (points, normal, color) => {
+    const transform = point => { const p = rotate(point.map(value => value * scale * finite(pose.scale, 1)), pose.yaw, pose.pitch); return p.map((value, i) => value + [pose.x, pose.y, pose.z][i]); };
+    mesh.quad(...points.map(transform), rotate(normal, pose.yaw, pose.pitch), rgba(color));
+  };
+  if (intact) face([[.039, .070, -.0164], [.039, .096, -.0164], [.052, .096, -.0164], [.052, .070, -.0164]], [0, 0, -1], '#a2aa94');
+  else part(.039, .025, -.016, .013, .071, .032, '#a2aa94');
+  // Painted grooves subdivide the shell while all corners, lever and pin stay
+  // inside the actual collision sphere, including when the grenade tumbles.
+  for (const side of intact ? [-1] : [-1, 1]) {
+    const z = side * .0693;
+    for (const y of [-.033, .025]) {
+      const points = [[-.063, y, z], [-.063, y + .008, z], [.063, y + .008, z], [.063, y, z]];
+      if (side > 0) points.reverse();
+      face(points, [0, 0, side], '#2c493d');
+    }
+    for (const x of intact ? [-.024, .017] : [-.004]) {
+      const points = [[x, -.064, z], [x, .064, z], [x + .008, .064, z], [x + .008, -.064, z]];
+      if (side > 0) points.reverse();
+      face(points, [0, 0, side], '#2c493d');
+    }
+  }
+  if (intact) {
+    for (const [x, y, w, h] of [[.026, .070, .037, .006], [.026, .089, .037, .006], [.026, .070, .006, .025], [.057, .070, .006, .025]]) {
+      face([[x, y, -.037], [x, y + h, -.037], [x + w, y + h, -.037], [x + w, y, -.037]], [0, 0, -1], '#dcc391');
+    }
+  } else {
+    for (const side of [-1, 1]) {
+      const x = side * .0693;
+      for (const y of [-.033, .025]) {
+        const points = [[x, y, -.063], [x, y + .008, -.063], [x, y + .008, .063], [x, y, .063]];
+        if (side < 0) points.reverse();
+        face(points, [side, 0, 0], '#2c493d');
+      }
+      const points = [[x, -.064, -.004], [x, .064, -.004], [x, .064, .004], [x, -.064, .004]];
+      if (side < 0) points.reverse();
+      face(points, [side, 0, 0], '#2c493d');
+    }
+    face([[-.014, .1054, -.019], [-.014, .1054, .019], [.014, .1054, .019], [.014, .1054, -.019]], [0, 1, 0], lit ? '#efb86a' : '#aa7a4f');
+  }
 }
 
 function lootGun(mesh, weapon, pose) {
   const part = (...values) => mesh.box(...values, pose);
-  const metal = '#bcc5b6', trim = '#2a3b3d', body = weapon === 'shotgun' ? '#ad8057' : weapon === 'lmg' ? '#8b9161' : weapon === 'sniper' ? '#80937e' : '#698779';
+  const metal = '#acbdb5', trim = '#25363b';
+  const body = ({ pistol: '#607b91', smg: '#4f747c', marksman: '#526976', shotgun: '#926b43', burst: '#805b4f', sniper: '#677961', lmg: '#76764d', crossbow: '#7b8765' })[weapon] || '#56685f';
+  const face = (points, normal, color) => {
+    const transform = vector => { const p = rotate(vector.map(value => value * finite(pose.scale, 1)), pose.yaw, pose.pitch); return p.map((value, axis) => value + [pose.x, pose.y, pose.z][axis]); };
+    mesh.quad(...points.map(transform), rotate(normal, pose.yaw, pose.pitch), rgba(color));
+  };
+  const top = (x, y, z, w, d, color) => face([[x, y, z], [x, y, z + d], [x + w, y, z + d], [x + w, y, z]], [0, 1, 0], color);
   if (weapon === 'crossbow') {
-    part(-.045, -.045, -.52, .09, .10, .62, '#8d9970');
-    part(-.39, -.02, -.55, .78, .04, .08, '#9ac2a0');
-    part(-.009, .06, -.65, .018, .018, .64, '#eddbad');
-    part(-.06, -.04, .05, .12, .11, .17, '#987954');
-    part(-.025, -.16, -.07, .05, .12, .06, trim);
+    part(-.052, -.045, -.62, .104, .115, .68, body);
+    part(-.46, -.02, -.70, .92, .045, .082, '#8eb298');
+    part(-.064, -.04, -.02, .128, .12, .22, '#967951');
+    part(-.026, -.17, -.01, .052, .13, .069, trim);
+    top(-.009, .084, -.82, .018, .67, '#eddbad');
+    face([[0, .074, -.82], [0, .093, -.82], [0, .093, -.15], [0, .074, -.15]], [1, 0, 0], '#eddbad');
+    const center = [0, .028, -.18];
+    for (const end of [[-.45, .028, -.68], [.45, .028, -.68]]) {
+      const points = [end, [end[0], .028, end[2] + .009], [center[0], .028, center[2] + .009], center];
+      face(points, [0, 1, 0], '#dad9b8');
+      face([...points].reverse(), [0, -1, 0], '#dad9b8');
+    }
+    top(-.035, .071, -.58, .07, .35, '#bec9ad');
     return;
   }
-  const pistol = weapon === 'pistol', length = weaponLength(weapon), barrel = pistol ? .34 : length * .88;
-  part(-.07, -.045, -.47, .14, .12, .42, body);
-  if (pistol) part(-.045, .075, -.47, .09, .04, .36, metal);
-  part(-.025, -.005, -barrel, .05, .05, Math.max(.03, barrel - .44), trim);
-  part(-.035, -.19, -.14, .07, .16, .09, trim);
-  if (pistol) return;
-  part(-.06, -.06, -.03, .12, .12, .23, '#aa9370');
+  const pistol = weapon === 'pistol', length = weaponLength(weapon);
+  if (pistol) {
+    part(-.048, -.025, -.37, .096, .088, .34, body);
+    part(-.046, .063, -.38, .092, .044, .34, metal);
+    part(-.022, -.018, -.44, .044, .044, .065, trim);
+    part(-.039, -.18, -.10, .078, .17, .093, '#3c5361');
+    top(-.033, .108, -.34, .066, .20, '#92adb6');
+    face([[-.014, -.011, -.441], [-.014, .018, -.441], [.014, .018, -.441], [.014, -.011, -.441]], [0, 0, -1], '#13242b');
+    return;
+  }
+  const wide = weapon === 'smg' || weapon === 'burst';
+  part(wide ? -.077 : -.065, -.045, wide ? -.52 : -.44, wide ? .154 : .13, .135, wide ? .53 : .45, body);
+  part(-.026, -.006, -length - .023, .052, .054, Math.max(.06, length - .54), metal);
+  if (weapon !== 'marksman') part(-.034, -.19, -.035, .068, .13, .09, trim);
+  part(-.06, -.06, -.05, .12, .12, .25, weapon === 'shotgun' ? '#b48a59' : weapon === 'sniper' ? '#8a9871' : '#526650');
   if (weapon === 'shotgun') {
-    part(-.025, -.065, -.86, .05, .05, .43, trim);
-    part(-.065, -.08, -.69, .13, .08, .23, '#bc9060');
+    part(-.071, -.081, -.72, .142, .09, .25, '#9a7046');
+    top(-.067, .011, -.695, .134, .022, '#dbb477');
   } else if (weapon === 'lmg') {
-    part(-.095, -.21, -.31, .19, .20, .23, '#5b7153');
-    part(-.15, .09, -.29, .07, .025, .19, '#dcc37c');
+    part(-.095, -.24, -.28, .19, .21, .24, '#5c6a45');
+    top(-.20, .075, -.29, .15, .059, '#cab976');
   } else {
-    part(-.055, -.21, -.29, .11, .17, .12, trim);
-    if (weapon === 'smg') part(-.085, -.03, -.57, .17, .08, .19, '#6aafa5');
-    if (weapon === 'burst') part(-.079, .048, -.56, .158, .035, .21, '#b88870');
+    // A bolt-action rifle's small flush magazine stays in its receiver at
+    // miniature scale, preserving the long stock/scope silhouette cheaply.
+    if (weapon !== 'sniper') part(-.045, -.24, weapon === 'burst' ? -.11 : -.20, .09, .20, .105, trim);
+    if (weapon === 'carbine') top(-.048, .091, -.41, .096, .22, '#91aa8e');
+    if (weapon === 'smg') top(-.070, .048, -.514, .14, .038, '#bfd3b7');
+    if (weapon === 'burst') top(-.056, .088, -.40, .112, .21, '#d6ad87');
   }
   if (weapon === 'marksman' || weapon === 'sniper') {
-    part(-.06, .12, -.48, .12, .10, weapon === 'sniper' ? .37 : .27, trim);
-    // The glass is one painted face instead of another six-sided box.
-    const point = vector => { const rotated = rotate(vector.map(value => value * pose.scale), pose.yaw, pose.pitch); return rotated.map((value, axis) => value + [pose.x, pose.y, pose.z][axis]); };
-    mesh.quad(...[[-.052, .132, -.482], [-.052, .207, -.482], [.052, .207, -.482], [.052, .132, -.482]].map(point), rotate([0, 0, -1], pose.yaw, pose.pitch), rgba('#a2cbd0'));
+    const front = weapon === 'sniper' ? -.57 : -.465;
+    part(-.06, .115, front, .12, .11, -front - .13, trim);
+    face([[-.044, .133, front - .001], [-.044, .207, front - .001], [.044, .207, front - .001], [.044, .133, front - .001]], [0, 0, -1], '#83b3b5');
   }
 }
 
@@ -1426,27 +1798,23 @@ export function lootMeshes(items = [], time = 0) {
       opaque.floor(x - .15, z - .15, .30, .30, '#6f6d51', y + .022);
     } else if (item.kind === 'heal') {
       const pose = { x, y: y + .15 + bob, z, yaw: .32, pitch: 0, scale: 1.10 };
-      opaque.box(-.066, -.082, -.059, .132, .175, .118, '#71af8e', pose);
-      opaque.box(-.039, .086, -.039, .078, .079, .078, '#b2d2aa', pose);
-      opaque.box(-.037, .164, -.037, .074, .038, .074, '#bd9a66', pose);
-      opaque.box(-.017, -.037, -.063, .034, .074, .005, '#f3edcb', pose);
-      opaque.box(-.041, -.014, -.063, .082, .026, .005, '#f3edcb', pose);
-      opaque.box(-.047, -.049, .060, .094, .054, .005, '#314e4a', pose);
+      potionParts(opaque, pose);
     } else if (item.kind === 'ammo') {
-      opaque.box(x - .14, y + .025, z - .11, .28, .18, .22, '#496b71');
-      opaque.box(x - .15, y + .205, z - .12, .30, .035, .24, '#9fbdb6');
+      opaque.box(x - .14, y + .025, z - .11, .28, .18, .22, '#49666a');
+      opaque.box(x - .15, y + .205, z - .12, .30, .032, .24, '#8da699');
+      opaque.box(x - .018, y + .182, z - .126, .036, .040, .013, '#d3bf8c');
+      opaque.box(x - .046, y + .238, z - .028, .092, .008, .056, '#304b50');
+      const front = (xx, yy, w, h, color, zz = -.111) => opaque.quad([x + xx, y + yy, z + zz], [x + xx, y + yy + h, z + zz], [x + xx + w, y + yy + h, z + zz], [x + xx + w, y + yy, z + zz], [0, 0, -1], rgba(color));
+      front(-.092, .058, .184, .098, '#2a454d');
       for (let i = 0; i < 3; i++) {
-        opaque.box(x - .075 + i * .06, y + .06, z - .118, .025, .08, .018, '#e3c77e');
+        front(-.068 + i * .053, .074, .024, .057, '#dbc185', -.1114);
+        front(-.064 + i * .053, .131, .016, .012, '#eee0ab', -.1115);
       }
+      front(-.121, .039, .011, .147, '#8fa393');
+      front(.110, .039, .011, .147, '#8fa393');
     } else {
-      // A ground pickup has an intact pin and no live fuse blink.
-      const bottom = y + .035 + bob;
-      opaque.box(x - .069, bottom, z - .069, .138, .17, .138, '#5e7f60');
-      opaque.box(x - .095, bottom + .042, z - .042, .19, .085, .084, '#4d6c52');
-      opaque.box(x - .042, bottom + .042, z - .095, .084, .085, .19, '#4d6c52');
-      opaque.box(x - .025, bottom + .17, z - .027, .05, .043, .054, '#afbb9b');
-      opaque.box(x - .015, bottom + .201, z - .02, .06, .014, .04, '#ceb980');
-      opaque.box(x + .015, bottom + .16, z - .047, .029, .032, .06, '#e4d8b0');
+      // The intact brass pin distinguishes a safe pickup from a live frag.
+      grenadeParts(opaque, { x, y: y + .15 + bob, z, yaw: .30, pitch: 0, scale: 1 }, .12, 288, time, true);
     }
   }
   return { opaque: opaque.array, contacts: contacts.array, count };
@@ -1462,7 +1830,7 @@ export function stormMesh(storm) {
   return mesh.array;
 }
 
-function playerMesh(mesh, player, map, time, allied, freeForAll = false) {
+function operativeParts(mesh, player, time, freeForAll = false) {
   const crouch = player.crouching, scale = crouch ? 1.15 / 1.8 : 1;
   const yaw = finite(player.yaw), pitch = clamp(finite(player.pitch) + finite(player.recoil), -1.45, 1.45);
   // The simulation targets axis-aligned voxel boxes. Quarter-turn silhouettes
@@ -1471,45 +1839,118 @@ function playerMesh(mesh, player, map, time, allied, freeForAll = false) {
   const bodyYaw = Math.round(yaw / (Math.PI / 2)) * (Math.PI / 2);
   const pose = { x: player.x, y: finite(player.y), z: player.z, yaw: bodyYaw, pitch: 0 };
   const color = freeForAll ? survivorColor(player) : TEAM_COLORS[player.team === 1 ? 1 : 0];
-  const team = rgba(color), uniform = mix(team, rgba('#27373e'), .33), dark = '#202f36', plate = '#34484f';
+  const team = rgba(color), uniform = mix(team, rgba('#304149'), .58), dark = '#253238', plate = '#3a4a4d';
   const box = (x, y, z, w, h, d, c) => {
     const bottom = y * scale, top = Math.min((y + h) * scale, crouch ? .83 : 1.48);
     mesh.box(x, bottom, z, w, top - bottom, d, c, pose);
   };
+  const face = (points, normal, c) => {
+    const transform = point => {
+      const p = rotate([point[0], Math.min(point[1] * scale, crouch ? .83 : 1.48), point[2]], bodyYaw);
+      return p.map((value, i) => value + [pose.x, pose.y, pose.z][i]);
+    };
+    mesh.quad(...points.map(transform), rotate(normal, bodyYaw), rgba(c));
+  };
+  const front = (x, y, z, w, h, c) => face([[x, y, z], [x, y + h, z], [x + w, y + h, z], [x + w, y, z]], [0, 0, -1], c);
+  const back = (x, y, z, w, h, c) => face([[x + w, y, z], [x + w, y + h, z], [x, y + h, z], [x, y, z]], [0, 0, 1], c);
   const speed = Math.hypot(finite(player.vx), finite(player.vz));
-  const step = Math.sin(time * .011 + (hash(player.id) % 30)) * clamp(speed / 6, 0, 1) * .075;
-  box(-.245, .018, -.18 + step, .205, .18, .33, dark);
-  box(.04, .018, -.18 - step, .205, .18, .33, dark);
-  box(-.22, .17, -.11 + step, .18, .62, .23, uniform);
-  box(.04, .17, -.11 - step, .18, .62, .23, uniform);
-  box(-.24, .47, -.132 + step, .20, .15, .036, plate);
-  box(.035, .47, -.132 - step, .20, .15, .036, plate);
-  box(-.29, .78, -.20, .58, .62, .40, uniform);
-  box(-.25, .87, -.25, .50, .39, .065, plate);
-  box(-.21, 1.25, -.255, .42, .075, .035, team);
-  for (const xx of [-.18, -.025, .13]) box(xx, .97, -.29, .11, .18, .08, '#79897c');
-  box(-.29, .80, -.23, .58, .075, .46, '#2d393c');
-  box(-.21, .89, .16, .42, .35, .12, '#465b5b');
-  box(-.29, 1.16, -.12, .10, .22, .22, uniform);
-  box(.19, 1.16, -.12, .10, .22, .22, uniform);
-  box(-.285, 1.28, -.245, .09, .065, .025, team);
-  box(.195, 1.28, -.245, .09, .065, .025, team);
-  box(-.13, 1.40, -.13, .26, .09, .26, '#344a4c');
-  // Head width and top match the engine's real ±.22, top 1.8/1.15 box.
+  const step = Math.sin(time * .011 + (hash(player.id) % 30)) * clamp(speed / 6, 0, 1) * .055;
+  // Separate toe caps, boot collars and knee pads give a readable gait. Body
+  // corners also fit the .32 movement radius, so gear never pokes into a wall.
+  for (const [xx, stride] of [[-.23, step], [.05, -step]]) {
+    box(xx, .018, -.145 + stride, .18, .17, .25, dark);
+    box(xx + .013, .17, -.088 + stride, .154, .64, .187, uniform);
+    box(xx + .004, .465, -.116 + stride, .172, .16, .036, plate);
+    front(xx + .006, .028, -.1454 + stride, .168, .024, '#a39d86');
+    front(xx + .014, .103, -.1455 + stride, .152, .038, '#4d5a52');
+    front(xx + .014, .184, -.0884 + stride, .152, .072, '#3b4b48');
+    front(xx + .025, .487, -.1164 + stride, .13, .016, '#8a9b8b');
+    front(xx + .025, .554, -.1164 + stride, .13, .011, '#26383c');
+    front(xx + .026, .286, -.0884 + stride, .018, .146, '#526559');
+  }
+  box(-.25, .81, -.17, .50, .57, .34, uniform);
+  front(-.215, .882, -.206, .43, .39, plate);
+  face([[-.215, .882, -.17], [-.215, 1.272, -.17], [-.215, 1.272, -.206], [-.215, .882, -.206]], [-1, 0, 0], '#2f4045');
+  face([[.215, .882, -.206], [.215, 1.272, -.206], [.215, 1.272, -.17], [.215, .882, -.17]], [1, 0, 0], '#42554f');
+  box(-.27, .80, -.154, .54, .075, .308, '#2c3c3c');
+  front(-.028, .817, -.1544, .056, .035, '#a99c74');
+  for (const xx of [-.20, -.058, .084]) {
+    if (xx === -.058) front(xx, .938, -.2062, .116, .161, '#708577');
+    else box(xx, .938, -.231, .116, .161, .046, '#708577');
+    const surfaceZ = xx === -.058 ? -.2066 : -.2314;
+    front(xx + .005, 1.056, surfaceZ, .106, .021, '#b2b698');
+    front(xx + .050, .969, surfaceZ - .0001, .015, .040, '#334b47');
+  }
+  for (const xx of [-.185, .130]) {
+    front(xx, 1.10, -.2064, .055, .174, '#8c9b87');
+    front(xx + .015, 1.190, -.2068, .025, .033, '#3d5350');
+  }
+  front(-.095, 1.309, -.1704, .190, .036, team);
+  front(-.016, 1.317, -.1708, .032, .019, '#e0dec3');
+  front(-.085, 1.126, -.2065, .17, .035, '#283a3d');
+  front(-.078, 1.137, -.2069, .046, .013, team);
+  box(-.18, .917, .155, .36, .355, .098, '#4e6760');
+  back(-.18, 1.176, .2532, .36, .078, '#81947e');
+  back(-.137, .937, .2534, .028, .225, '#b0b297');
+  back(.109, .937, .2534, .028, .225, '#b0b297');
+  back(-.10, 1.033, .2535, .20, .039, team);
+  back(-.014, 1.037, .2539, .028, .031, '#374d49');
+  box(.244, .862, -.081, .041, .162, .162, '#607669');
+  for (const xx of [-.29, .215]) {
+    box(xx, 1.156, -.099, .075, .232, .198, uniform);
+    front(xx + .005, 1.295, -.0994, .065, .074, plate);
+    const outer = xx < 0 ? -.29 : .29;
+    const points = [[outer, 1.295, -.099], [outer, 1.369, -.099], [outer, 1.369, .099], [outer, 1.295, .099]];
+    if (xx < 0) points.reverse();
+    face(points, [xx < 0 ? -1 : 1, 0, 0], plate);
+    front(xx + .013, 1.317, -.0998, .049, .027, team);
+  }
+  box(-.13, 1.379, -.12, .26, .101, .24, '#354b4b');
+  // Stepped helmet, cheek/visor separation and ear protection remain inside
+  // the engine's real ±.22, .32-high head at every aim angle and crouch.
   const headBase = crouch ? .83 : 1.48;
   const headPose = { ...pose, y: pose.y + headBase, pitch: 0 };
   const eyeY = .095 + Math.sin(pitch) * .018;
-  mesh.box(-.22, 0, -.22, .44, .32, .44, '#344a4d', headPose);
-  mesh.box(-.22, .19, -.22, .44, .13, .44, mix(team, rgba('#5a736c'), .52), headPose);
-  mesh.box(-.185, .072, -.22, .37, .07, .006, '#bdc6ac', headPose);
-  mesh.box(-.155, eyeY, -.22, .12, .022, .009, '#121f26', headPose);
-  mesh.box(.038, eyeY, -.22, .12, .022, .009, '#121f26', headPose);
-  mesh.box(-.20, 0, -.22, .40, .067, .006, '#22383c', headPose);
-  mesh.box(-.22, .088, -.13, .031, .15, .15, '#25383c', headPose);
-  mesh.box(.189, .088, -.13, .031, .15, .15, '#25383c', headPose);
-  mesh.box(-.07, .23, -.22, .14, .04, .006, team, headPose);
-  mesh.box(-.22, .235, -.12, .006, .035, .24, team, headPose);
-  mesh.box(.214, .235, -.12, .006, .035, .24, team, headPose);
+  const skin = ['#baab91', '#a28b75', '#c9b99c'][hash(player.id) % 3], helmet = mix(team, rgba('#4b6158'), .78);
+  mesh.box(-.19, .012, -.19, .38, .175, .38, skin, headPose);
+  mesh.box(-.193, 0, .048, .386, .179, .165, '#324746', headPose);
+  mesh.box(-.22, .175, -.214, .44, .095, .428, helmet, headPose);
+  mesh.box(-.18, .269, -.18, .36, .051, .36, '#75887b', headPose);
+  mesh.box(-.22, .166, -.22, .44, .027, .114, '#3e5653', headPose);
+  mesh.box(-.187, .082, -.211, .374, .074, .032, '#23393d', headPose);
+  mesh.box(-.22, .075, -.048, .027, .103, .110, '#536c62', headPose);
+  mesh.box(.193, .075, -.048, .027, .103, .110, '#536c62', headPose);
+  mesh.box(-.145, .020, -.211, .29, .059, .056, '#53675f', headPose);
+  const headFace = (points, normal, c) => {
+    const transform = point => { const p = rotate(point, bodyYaw); return p.map((value, i) => value + [headPose.x, headPose.y, headPose.z][i]); };
+    mesh.quad(...points.map(transform), rotate(normal, bodyYaw), rgba(c));
+  };
+  const headFront = (x, y, z, w, h, c) => headFace([[x, y, z], [x, y + h, z], [x + w, y + h, z], [x + w, y, z]], [0, 0, -1], c);
+  for (const xx of [-.166, .014]) {
+    headFront(xx, .093, -.2114, .152, .049, '#637e73');
+    headFront(xx + .018, eyeY + .012, -.2118, .10, .009, '#abc8b1');
+    headFront(xx + .031, .103, -.2119, .071, .006, '#314e4f');
+  }
+  headFront(-.079, .034, -.2114, .158, .012, '#293f40');
+  headFront(-.048, .057, -.2115, .096, .008, '#93a48f');
+  headFront(-.076, .213, -.2144, .152, .034, team);
+  headFront(-.025, .220, -.2148, .050, .019, '#d4d6b8');
+  for (const side of [-1, 1]) {
+    const x = side * .2198;
+    const points = [[x, .216, -.077], [x, .250, -.077], [x, .250, .090], [x, .216, .090]];
+    if (side < 0) points.reverse();
+    headFace(points, [side, 0, 0], team);
+  }
+  return { crouch, yaw, pitch, pose, color, team, uniform };
+}
+
+/** Body/head art is inspectable separately from the continuously aimed gun. */
+export function operativeMeshes(player, time = 0, freeForAll = false) {
+  const mesh = new Mesh(); operativeParts(mesh, player, finite(time), freeForAll); return mesh.array;
+}
+
+function playerMesh(mesh, player, map, time, allied, freeForAll = false) {
+  const { crouch, yaw, pitch, pose, color, team, uniform } = operativeParts(mesh, player, time, freeForAll);
   const healing = finite(player.healTicks) > 0;
   const sword = player.slot === 'sword', knife = sword && meleeWeaponId(player) === 'knife', motion = meleeMotion(player);
   const heldYaw = sword && player.meleeTicks > 0 ? finite(player.meleeYaw, yaw) : yaw;
@@ -1519,7 +1960,7 @@ function playerMesh(mesh, player, map, time, allied, freeForAll = false) {
   const reloadTilt = Math.sin(reloadProgress * Math.PI);
   const gunPose = { x: pose.x + handOffset[0], y: pose.y + handOffset[1] - reloadTilt * .12, z: pose.z + handOffset[2], yaw: heldYaw + (sword ? motion.yaw : 0), pitch: heldPitch + (sword ? motion.pitch : -reloadTilt * .24), scale: sword && !healing ? knife ? 1.15 : 1.35 : 1 };
   const direction = [Math.sin(gunPose.yaw) * Math.cos(gunPose.pitch), Math.sin(gunPose.pitch), -Math.cos(gunPose.yaw) * Math.cos(gunPose.pitch)];
-  const limit = Math.max(0, rayCoverDistance([gunPose.x, gunPose.y, gunPose.z], direction, map.colliders || [], sword ? meleeLength(player) * gunPose.scale : weaponLength(player.weapon) + .12, sword ? knife ? .055 : .088 : 0) - .025) / gunPose.scale;
+  const limit = Math.max(0, rayCoverDistance([gunPose.x, gunPose.y, gunPose.z], direction, map.colliders || [], sword ? meleeLength(player) * gunPose.scale : weaponLength(player.weapon) + .12, sword ? (knife ? .08 : .18) * gunPose.scale : weaponCoverPadding(player.weapon, gunPose.scale, reloadProgress)) - .025) / gunPose.scale;
   if (healing) {
     const progress = clamp(1 - player.healTicks / HEAL.ticks, 0, 1), drink = Math.sin(progress * Math.PI);
     const bottlePose = { ...gunPose, pitch: drink * .72 };
@@ -1767,13 +2208,54 @@ export class VoxelRenderer {
       this.swayY += (clamp((pitch - this.lastAim.pitch) * .17, -.021, .021) - this.swayY) * .3;
     }
     this.lastAim = { yaw, pitch };
+    const coverLimit = (pose, reach, padding) => {
+      if (!map?.colliders?.length) return reach;
+      const offset = rotate([pose.x, pose.y, pose.z], yaw, pitch), eye = [finite(player.x), finite(player.y) + (player.crouching ? .98 : 1.62), finite(player.z)];
+      const origin = eye.map((value, axis) => value + offset[axis]);
+      const direction = rotate(rotate([0, 0, -1], pose.yaw, pose.pitch), yaw, pitch);
+      let limit = Math.max(0, rayCoverDistance(origin, direction, map.colliders, reach * pose.scale, padding) - .025) / pose.scale;
+      const anchorDistance = Math.hypot(...offset), anchorDirection = normalized(offset);
+      const anchorCover = rayCoverDistance(eye, anchorDirection, map.colliders, anchorDistance, padding);
+      if (anchorCover < anchorDistance) {
+        const alignment = anchorDirection.reduce((dot, value, axis) => dot + value * direction[axis], 0);
+        // During a sideways committed melee swing the axial cut plane cannot
+        // represent the wall behind this anchor. Stow the occluded item until
+        // the anchor clears cover instead of painting a blade through it.
+        if (alignment < .75) return -reach - 1;
+        // A thin wall can lie between the eye and the view-model anchor.
+        // Allow the local cut plane to move behind that anchor; otherwise a
+        // forward-only ray could recreate the held item on the far side.
+        const contact = eye.map((value, axis) => value + anchorDirection[axis] * Math.max(0, anchorCover - .025));
+        limit = Math.min(limit, contact.reduce((distance, value, axis) => distance + (value - origin[axis]) * direction[axis], 0) / pose.scale);
+      }
+      return limit;
+    };
+    const glove = (pose, x, y, z, grip = 'gun', limit = Infinity) => {
+      const fabric = mix(rgba(team), rgba('#485e55'), .68), palm = '#435b52', fingers = '#61776c';
+      const part = (dx, dy, dz, w, h, d, color) => {
+        const clippedZ = Math.max(z + dz, -limit), depth = z + dz + d - clippedZ;
+        if (depth > 0) mesh.box(x + dx, y + dy, clippedZ, w, h, depth, color, pose);
+      };
+      // A narrower palm, bent thumb and three finger segments read as a
+      // gripping glove. The short wrist/cuff leave the sight line open.
+      part(-.046, -.054, -.046, .092, .108, .104, palm);
+      part(-.052, .015, -.032, .104, .034, .086, '#344d47');
+      const left = grip === 'support', blade = grip === 'blade';
+      part(left ? -.076 : .044, -.006, -.059, .032, .060, .062, fingers);
+      for (let i = 0; i < 3; i++) {
+        if (blade) part(-.049, -.067, -.046 + i * .034, .104, .039, .027, fingers);
+        else part(-.048, -.050 + i * .032, -.065, .098, .025, .042, fingers);
+      }
+      part(-.037, -.049, .044, .074, .085, .068, '#4e695e');
+      part(-.047, -.059, .101, .094, .101, .054, fabric);
+      part(-.044, -.065, .146, .088, .107, .145, '#415b50');
+      part(-.033, .043, .110, .066, .005, .033, '#91a28a');
+    };
     if (finite(player.healTicks) > 0) {
       const progress = clamp(1 - player.healTicks / HEAL.ticks, 0, 1), drink = Math.sin(progress * Math.PI);
       const pose = { x: -.14 - drink * .025, y: -.22 + drink * .11, z: -.43 + drink * .08, yaw: .12, pitch: drink * .72, scale: .93 };
       potionParts(mesh, pose, progress);
-      mesh.box(-.078, -.119, -.042, .156, .123, .15, '#526661', pose);
-      mesh.box(-.063, -.22, -.019, .132, .16, .17, '#435952', pose);
-      mesh.box(-.067, -.28, .026, .141, .095, .115, mix(rgba(team), rgba('#64796b'), .24), pose);
+      glove(pose, 0, -.081, .025, 'blade');
       return mesh.array;
     }
     if (player.slot === 'sword') {
@@ -1785,17 +2267,9 @@ export class VoxelRenderer {
       while (committedYaw < -Math.PI) committedYaw += TAU;
       const committedPitch = player.meleeTicks > 0 ? finite(player.meleePitch, pitch) - pitch : 0;
       const pose = { x: (knife ? .22 : .27) + this.swayX * .5, y: (knife ? -.28 : -.32) - Math.abs(Math.cos(step)) * .007 * walking, z: -.42 - motion.extension * .12, yaw: motion.yaw + committedYaw, pitch: motion.pitch + committedPitch, scale: .90 };
-      let limit = meleeLength(player);
-      if (map?.colliders?.length) {
-        const offset = rotate([pose.x, pose.y, pose.z], yaw, pitch), eye = [finite(player.x), finite(player.y) + (player.crouching ? .98 : 1.62), finite(player.z)];
-        const origin = eye.map((value, axis) => value + offset[axis]);
-        const direction = rotate(rotate([0, 0, -1], pose.yaw, pose.pitch), yaw, pitch);
-        limit = Math.max(0, rayCoverDistance(origin, direction, map.colliders, limit * pose.scale, knife ? .055 : .088) - .025) / pose.scale;
-      }
+      const limit = coverLimit(pose, meleeLength(player), (knife ? .08 : .18) * pose.scale);
       meleeParts(mesh, player, pose, { limit, active: motion.active });
-      mesh.box(-.085, -.09, -.026, .17, .18, .20, '#526661', pose);
-      mesh.box(-.072, -.13, .17, .15, .19, .27, '#435952', pose);
-      mesh.box(-.077, -.145, .31, .16, .20, .11, mix(rgba(team), rgba('#64796b'), .24), pose);
+      glove(pose, .003, -.057, knife ? .071 : .087, 'blade', limit);
       return mesh.array;
     }
     const reloadActive = finite(player.reloadTicks) > 0;
@@ -1817,36 +2291,30 @@ export class VoxelRenderer {
       scale: .74,
     };
     const pump = player.weapon === 'shotgun' && age > 80 && age < 640 ? Math.sin((age - 80) / 560 * Math.PI) : 0;
-    const length = weaponParts(mesh, player.weapon, pose, { stock: team, reloadProgress, bolt: kick * .75, pump, aim, loaded: player.ammo > 0, spin: finite(player.spinTicks) / (WEAPONS[player.weapon]?.spinupTicks || 1), cycle: 1 - finite(player.shotCooldown) / (WEAPONS[player.weapon]?.cooldown || 1) });
+    const limit = coverLimit(pose, weaponLength(player.weapon) + .20, weaponCoverPadding(player.weapon, pose.scale, reloadProgress));
+    const length = weaponParts(mesh, player.weapon, pose, { stock: team, limit, reloadProgress, bolt: kick * .75, pump, aim, loaded: player.ammo > 0, spin: finite(player.spinTicks) / (WEAPONS[player.weapon]?.spinupTicks || 1), cycle: 1 - finite(player.shotCooldown) / (WEAPONS[player.weapon]?.cooldown || 1) });
     const handShift = reload * .30, handDrop = reload * .17;
     if (player.weapon === 'pistol') {
-      mesh.box(-.15, -.17 - handDrop, -.19 + handShift, .12, .13, .17, '#526661', pose);
-      mesh.box(-.17, -.23 - handDrop, -.12 + handShift, .14, .14, .22, '#435952', pose);
-      mesh.box(-.175, -.235 - handDrop, .01 + handShift, .15, .15, .10, mix(rgba(team), rgba('#64796b'), .24), pose);
+      glove(pose, -.071, -.148 - handDrop, -.060 + handShift, 'support', limit);
     } else {
-      mesh.box(-.17, -.09 - handDrop, -.52 + handShift + pump * .12, .15, .12, .30, '#526661', pose);
-      mesh.box(-.20, -.15 - handDrop, -.27 + handShift + pump * .12, .17, .17, .32, '#435952', pose);
-      mesh.box(-.205, -.14 - handDrop, -.11 + handShift + pump * .12, .18, .17, .12, mix(rgba(team), rgba('#64796b'), .24), pose);
-      mesh.box(-.178, -.073 - handDrop, -.46 + handShift + pump * .12, .126, .026, .23, '#72887b', pose);
+      glove(pose, -.063, -.084 - handDrop, -.502 + handShift + pump * .12, 'support', limit);
     }
-    mesh.box(-.065, -.16, -.06, .13, .13, .16, '#526661', pose);
-    mesh.box(.015, -.22, -.01, .17, .17, .32, '#435952', pose);
-    mesh.box(.07, -.235, .12, .15, .18, .10, mix(rgba(team), rgba('#64796b'), .24), pose);
-    mesh.box(.078, -.057, .13, .126, .018, .083, '#2a4143', pose);
-    mesh.box(.113, -.038, .16, .062, .006, .039, '#79d0c0', pose);
+    glove(pose, .004, -.131, .002, 'gun', limit);
     if (throwing > 0) {
       const hand = { x: -.20, y: -.17 - (1 - throwing) * .22, z: -.39 - throwing * .18, yaw: .17, pitch: -.16, scale: .74 };
-      mesh.box(-.061, -.073, -.092, .122, .145, .184, '#526661', hand);
-      mesh.box(-.071, -.08, .085, .142, .163, .28, '#435952', hand);
-      mesh.box(-.075, -.085, .26, .15, .175, .09, mix(rgba(team), rgba('#64796b'), .24), hand);
+      glove(hand, 0, -.015, .028, 'blade', coverLimit(hand, .35, .085));
     }
     const flashDuration = finite(effects.muzzleTicks, 5) * 1000 / 120;
     if (age < flashDuration && !reloadActive && !throwing && finite(effects.muzzleStrength, 1) > 0 && player.weapon !== 'crossbow') {
       const flare = (1 - age / flashDuration) * finite(effects.muzzleStrength, 1);
       const flash = (.025 + flare * .036) * finite(effects.muzzleSize, 1);
       const glow = rgba(effects.muzzleColor), core = mix(glow, rgba('#fff8dc'), .60);
-      mesh.box(-flash / 2, -.015, -length - .070, flash, flash, .05 + flare * .04, glow, pose);
-      mesh.box(-flash * .95, -.013 + flash * .2, -length - .055, flash * 1.9, flash * .38, .028, core, pose);
+      const flashPart = (x, y, z, w, h, d, color) => {
+        const clippedZ = Math.max(z, -limit), depth = z + d - clippedZ;
+        if (depth > 0) mesh.box(x, y, clippedZ, w, h, depth, color, pose);
+      };
+      flashPart(-flash / 2, -.015, -length - .070, flash, flash, .05 + flare * .04, glow);
+      flashPart(-flash * .95, -.013 + flash * .2, -length - .055, flash * 1.9, flash * .38, .028, core);
     }
     return mesh.array;
   }
