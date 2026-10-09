@@ -26,11 +26,7 @@ CASES = [
     ("night-drive", "difficulty", "veteran", "default", "veteran-default-v4", "321"),
     ("deckbound", "difficulty", "veteran", "default", "veteran-v3", "321"),
     ("rift-survivor", "difficulty", "veteran", "veteran", "veteran-v4", "321"),
-    ("apex-circuit", "difficulty", "veteran", "three-laps", "veteran-three-laps-v3", "321.00s"),
     ("prism-shift", "profile", "veteran", "marathon", "veteran-marathon-v3", "321"),
-    ("snake", "mode", "gauntlet", "gardens", "gauntlet-v3", "321"),
-    ("2048", "mode", "master", "puzzles", "master-v3", "321"),
-    ("minesweeper", "difficulty", "master", "beginner", "master-v3", "321s"),
 ]
 
 
@@ -42,24 +38,12 @@ def assert_known_record(page, game, scope, rendered=None):
         const {recordDetails} = await import('/solo/solo.js');
         return recordDetails(game, {recordKey:scope, record:4242, score:4242,
           phase:game==='paris-pedal'?'lost':'won',
-          result:game==='paris-pedal'?'crashed':game==='2048'?'tour':null});
+          result:game==='paris-pedal'?'crashed':null});
     }""", [game, scope])
     assert details["scope"] == scope and details["candidate"] == 4242, (game, "unrecognized record scope", details)
     if rendered is not None:
         assert page.locator("#solo-record").inner_text() == rendered, (game, "view emitted wrong scope", page.locator("#solo-record").inner_text())
     assert page.locator("#solo-status-label").inner_text() == "PAUSED", (game, "unrecognized paused status")
-
-
-def select_native(page, selector, value):
-    select = page.locator(selector)
-    values = select.locator("option").evaluate_all("options => options.map(option => option.value)")
-    assert value in values, (selector, value, values)
-    select.click()
-    page.keyboard.press("Home")
-    for _ in range(values.index(value)):
-        page.keyboard.press("ArrowDown")
-    page.keyboard.press("Enter")
-
 
 
 def state(page):
@@ -106,19 +90,17 @@ def run(url):
                 # Preserve easier/older records and seed the expected new scope
                 # to prove the actual view reads the recognized current policy.
                 historical = {legacy, re.sub(r"-v\d+$", "", scope)}
-                practice_scope = "default" if game in ("rift-survivor", "snake", "2048") else legacy
+                practice_scope = "default" if game == "rift-survivor" else legacy
                 historical.add(practice_scope)
                 if game == "paris-pedal": historical.add("veteran-survival-v1")
                 if game == "rift-survivor": historical.add("veteran-v2")
                 if game == "rift-survivor": historical.add("veteran-v3")
                 if game == "night-drive": historical.add("veteran-default-v3")
-                if game == "minesweeper": historical.add("expert")
                 record_value = 321000 if game == "paris-pedal" else 321
                 initial_records = {f"fireside-solo-best:{game}:{key}": 999999 for key in historical}
                 initial_records[f"fireside-solo-best:{game}:{scope}"] = record_value
                 if default == "veteran":
                     initial_records[f"fireside-solo-best:{game}:{scope.replace('veteran', 'nightmare', 1)}"] = record_value
-                if game == "minesweeper": initial_records[f"fireside-solo-best:{game}:intermediate"] = record_value
                 context.add_init_script("try { for (const [key,value] of Object.entries(" + json.dumps(initial_records) + ")) localStorage.setItem(key, JSON.stringify(value)); } catch {}")
                 page = context.new_page()
                 page.on("pageerror", lambda error, game=game: errors.append(f"{game}: {error}"))
@@ -139,16 +121,6 @@ def run(url):
                         assert page.locator("#solo-record").inner_text() == rendered_best, "An easier survival time leaked into Veteran"
                     assert "999999" not in page.locator("#solo-record").inner_text(), f"{game}: easier best leaked into challenge"
                     assert_known_record(page, game, scope, rendered_best)
-                    if game == "minesweeper":
-                        assert initial["rows"] == 16 and initial["cols"] == 24 and initial["mines"] == 90
-                        assert initial["logicOnly"] and initial["timeLimit"] == 360
-                        assert page.locator(".minesweeper-clock").inner_text() == "6:00"
-                    if game == "2048":
-                        assert initial["rewindsLeft"] == 2 and initial["retriesLeft"] == 2
-                        assert "17" in page.locator(".tiles-2048-budget").inner_text()
-                    if game == "snake":
-                        assert len(initial["snake"]) == 8 and initial["fruitMoves"] >= 64
-                        assert "168 fruit" in page.locator(".snake-hint").inner_text()
                     before = state(page)
                     page.wait_for_timeout(250)
                     assert state(page) == before, f"{game}: paused challenge advanced"
@@ -161,11 +133,11 @@ def run(url):
                     for width, height in [(1440, 1000), (1366, 768), (390, 900), (320, 900)]:
                         page.set_viewport_size({"width": width, "height": height})
                         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth"), (game, width, "overflow")
-                        if width >= 951 and game in ["ember-delve", "night-drive", "rift-survivor", "apex-circuit", "prism-shift", "paris-pedal"]:
+                        if width >= 951 and game in ["ember-delve", "night-drive", "rift-survivor", "prism-shift", "paris-pedal"]:
                             page.wait_for_function("height => { const r=document.querySelector('#solo-game canvas[tabindex]').getBoundingClientRect(); return r.bottom<=height; }", arg=height, timeout=3000)
                             canvas = page.locator("#solo-game canvas[tabindex]").first.bounding_box()
                             assert canvas and canvas["y"] + canvas["height"] <= height, (game, "playfield extends below the first screen", canvas)
-                            if game in ["night-drive", "apex-circuit", "paris-pedal"]:
+                            if game in ["night-drive", "paris-pedal"]:
                                 assert canvas["width"] >= 300, (game, "driving scene too small to read", canvas)
                         page.screenshot(path=str(SHOTS / f"{game}-{width}.png"), full_page=True, animations="disabled")
                     page.set_viewport_size({"width": 1440, "height": 1000})
@@ -180,25 +152,7 @@ def run(url):
                             assert state(page)[field] == difficulty, f"{game}: restart lost difficulty"
                             pause_if_running(page)
                             selected_scope = practice_scope if difficulty == "standard" else scope.replace("veteran", difficulty, 1)
-                            selected_display = rendered_best if difficulty != "standard" else ("16:39.99" if game == "paris-pedal" else "999999.00s" if game == "apex-circuit" else "999999")
-                            assert_known_record(page, game, selected_scope, selected_display)
-                    elif field == "mode":
-                        press_button(page, '#solo-game [data-mode="classic"]')
-                        assert state(page)[field] == "classic"
-                        pause_if_running(page)
-                        assert_known_record(page, game, "default", "999999")
-                        press_button(page, f'#solo-game [data-mode="{default}"]')
-                        assert state(page)[field] == default
-                        pause_if_running(page)
-                    else:
-                        for difficulty in ["beginner", "intermediate", "expert", "master"]:
-                            select_native(page, ".minesweeper-difficulty", difficulty)
-                            assert state(page)[field] == difficulty
-                            press_button(page, "#solo-restart")
-                            assert state(page)[field] == difficulty, "Mines restart lost selected mode"
-                            pause_if_running(page)
-                            selected_scope = "master-v3" if difficulty == "master" else difficulty
-                            selected_display = "999999s" if difficulty in ("beginner", "expert") else "321s"
+                            selected_display = rendered_best if difficulty != "standard" else ("16:39.99" if game == "paris-pedal" else "999999")
                             assert_known_record(page, game, selected_scope, selected_display)
                     # A fresh ready screen starts challenge defaults on explicit Start.
                     page.reload()

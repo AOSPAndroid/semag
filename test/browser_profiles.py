@@ -15,24 +15,15 @@ def start_solo(page, game):
 
 
 def standard_profile(page, game):
-    if game in ("snake", "2048"):
-        button = page.locator('#solo-game [data-mode="classic"]')
+    expected_field = "profile" if game == "prism-shift" else "difficulty"
+    expected = "standard"
+    select = page.locator("#solo-game select").filter(has=page.locator('option[value="standard"]'))
+    if select.count():
+        select.first.click()
+        page.keyboard.press("Home")
+        page.keyboard.press("Enter")
+    else:
+        button = page.locator(f'#solo-game [data-{expected_field}="standard"]')
         button.focus()
         page.keyboard.press("Space", delay=20)
-        expected_field, expected = "mode", "classic"
-    else:
-        expected_field = "profile" if game == "prism-shift" else "difficulty"
-        expected = "beginner" if game == "minesweeper" else "standard"
-        if game == "minesweeper":
-            select = page.locator(".minesweeper-difficulty")
-        else:
-            select = page.locator("#solo-game select").filter(has=page.locator('option[value="standard"]'))
-        if select.count():
-            select.first.click()
-            page.keyboard.press("Home")
-            page.keyboard.press("Enter")
-        else:
-            button = page.locator(f'#solo-game [data-{expected_field}="standard"]')
-            button.focus()
-            page.keyboard.press("Space", delay=20)
     page.wait_for_function("([field, value]) => window.firesideSolo.getState()[field] === value", arg=[expected_field, expected])

@@ -22,8 +22,8 @@ OUT = Path(os.environ.get('SEMAG_SCREENSHOT_DIR', ROOT / 'test-results' / 'ergon
 URL = (sys.argv[1] if len(sys.argv) > 1 else 'http://127.0.0.1:3000').rstrip('/')
 ERRORS, RESOURCES, CHECKS = [], [], []
 SOLOS = ('shadow-lantern', 'skyline-hook', 'starfall-squadron', 'ironwood-tactics',
-         'paris-pedal', 'ember-delve', 'deckbound', 'snake', 'minesweeper', '2048',
-         'apex-circuit', 'night-drive', 'prism-shift', 'rift-survivor')
+         'paris-pedal', 'ember-delve', 'deckbound', 'night-drive', 'prism-shift',
+         'rift-survivor')
 ROOM_ACTIONS = {
     'shinobi-showdown': [('c', 'attack'), ('g', 'heavy'), ('e', 'throw'), ('f', 'parry')],
     'relic-duel': [('c', 'attack'), ('g', 'shoot'), ('f', 'block')],

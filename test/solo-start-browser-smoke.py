@@ -22,11 +22,7 @@ GAMES = {
     'night-drive': ('highway', 'highway-view.js'),
     'deckbound': ('deckbound', 'deckbound-view.js'),
     'rift-survivor': ('rift', 'rift-view.js'),
-    'apex-circuit': ('circuit', 'circuit-view.js'),
     'prism-shift': ('prism', 'prism-view.js'),
-    'snake': ('snake', 'snake-view.js'),
-    '2048': ('tiles-2048', '2048-view.js'),
-    'minesweeper': ('minesweeper', 'minesweeper-view.js'),
 }
 INSTRUMENT = r'''() => {
     const stats = window.__soloStartQA = {rafCalls:0, rafCallbacks:0, pendingRaf:[], rafStacks:[], recordWrites:[], idleKeys:[]};
@@ -66,7 +62,7 @@ def ready(page, game):
     assert page.locator('#solo-start').is_visible() and page.locator('#solo-start').is_enabled()
     assert page.locator('#solo-status-label').inner_text() == 'READY'
     assert not page.locator('.solo-session-actions').is_visible(), 'Session actions exposed before Start'
-    assert page.locator('#solo-game canvas,#solo-game [role="grid"],#solo-game .minesweeper-tile').count() == 0
+    assert page.locator('#solo-game canvas,#solo-game [role="grid"]').count() == 0
     page.wait_for_function('document.getElementById("solo-preview").complete && document.getElementById("solo-preview").naturalWidth > 0', polling=50)
 
 
@@ -119,7 +115,7 @@ def start(page, game, activation, module_requests):
     assert page.locator('#solo-launch').count() == 0
     assert page.locator('.solo-session-actions').is_visible()
     assert page.locator('#solo-restart').is_enabled() and page.locator('#solo-pause').is_enabled()
-    view = '#solo-game > .' + GAMES[game][0] + ('-view' if game not in ('2048',) else '')
+    view = '#solo-game > .' + GAMES[game][0] + '-view'
     # The highway view uses highway-view; all other roots follow their prefix.
     assert page.locator(view).count() == 1, (game, 'Expected exactly one mounted view', view)
     expected_module = '/solo/' + GAMES[game][1]
@@ -127,42 +123,18 @@ def start(page, game, activation, module_requests):
     assert page.locator('#solo-game [data-control][aria-pressed="true"],#solo-game [data-input][aria-pressed="true"]').count() == 0, (game, 'A pre-Start key stayed held')
     initial = state(page)
     assert initial['phase'] != 'paused', (game, 'Start did not begin play')
-    if game == '2048':
-        assert initial['moves'] == 0
-    if game == 'snake':
-        assert initial['queuedDirection'] is None and initial['direction'] == 'right'
-    if game == 'minesweeper':
-        assert not initial['generated'] and initial['opened'] == 0
     if game == 'prism-shift':
         assert initial['active']['x'] == 3
 
 
 def native_play(page, game):
     initial = state(page)
-    if game == '2048':
-        page.locator('.tiles-2048-grid').focus()
-        page.keyboard.press('ArrowLeft')
-        assert state(page)['moves'] == 1 and state(page)['board'] != initial['board']
-    elif game == 'minesweeper':
-        page.locator('.minesweeper-tile[data-index="0"]').click()
-        assert state(page)['generated'] and state(page)['opened'] > 0
-        page.wait_for_function('window.firesideSolo.getState().elapsed > 0')
-    elif game == 'deckbound':
+    if game == 'deckbound':
         page.locator('.deckbound-path-combat').first.click()
         page.wait_for_function('window.firesideSolo.getState().phase === "battle"')
         turn = state(page)['turn']
         page.locator('#solo-game [data-action="end-turn"]').click()
         assert state(page)['turn'] == turn + 1
-    elif game == 'snake':
-        page.wait_for_function('ticks => window.firesideSolo.getState().ticks > ticks', arg=initial['ticks'])
-        assert state(page)['snake'][0] != initial['snake'][0]
-    elif game == 'apex-circuit':
-        page.wait_for_function('window.firesideSolo.getState().startDelay <= 0')
-        page.locator('.circuit-canvas').focus()
-        page.keyboard.down('ArrowUp')
-        page.wait_for_timeout(160)
-        page.keyboard.up('ArrowUp')
-        assert state(page)['car']['speed'] > 0
     else:
         page.wait_for_function('elapsed => window.firesideSolo.getState().elapsed > elapsed + 0.1', arg=initial['elapsed'])
     assert state(page)['phase'] not in ('paused', 'lost', 'won'), (game, 'Native play did not remain active')
@@ -180,10 +152,7 @@ def session_controls(page, game):
     fresh = state(page)
     assert fresh['phase'] not in ('paused', 'lost', 'won')
     assert page.locator('#solo-start').count() == 0, (game, 'Restart reopened the initial gate')
-    if game == '2048': assert fresh['moves'] == 0
-    if game == 'minesweeper': assert not fresh['generated'] and fresh['opened'] == 0
     if game == 'deckbound': assert fresh['phase'] == 'route' and fresh['floor'] == 1
-    if game == 'apex-circuit': assert fresh['startDelay'] > 0 and fresh['penalty'] == 0
 
 
 def run(url):

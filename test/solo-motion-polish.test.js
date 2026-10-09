@@ -5,11 +5,9 @@ import { createParisRenderer } from '../public/solo/paris-renderer.js';
 import { createSkylinePresentation, skylineGatePresentation } from '../public/solo/skyline-view.js';
 import { createShadowPresentation } from '../public/solo/shadow-view.js';
 import { createStarfallPresentation, createStarfallEffects, drawStarfallEffects } from '../public/solo/starfall-view.js';
-import { createCircuitPresentation, circuitWheelAngle } from '../public/solo/circuit-view.js';
 import * as skyline from '../public/solo/skyline-engine.js';
 import * as shadow from '../public/solo/shadow-engine.js';
 import * as starfall from '../public/solo/starfall-engine.js';
-import * as circuit from '../public/solo/circuit-engine.js';
 import * as paris from '../public/solo/paris-engine.js';
 
 const close = (actual, expected, tolerance = 1e-9) => assert.ok(Math.abs(actual - expected) <= tolerance, `${actual} != ${expected}`);
@@ -204,28 +202,10 @@ test('Starfall warnings and stage clock sample while real firing removes the war
   assert.ok(state.hostileShots.length > 0, 'authoritative firing and shot membership are preserved');
 });
 
-test('Circuit visible wheel pose follows actual turn momentum through steering reversal and reverse, independently of display cadence', () => {
-  const state = circuit.createState({ difficulty: 'veteran' }), presentation = createCircuitPresentation(); state.startDelay = 0;
-  for (let ticks = 0; ticks < 90; ticks++) circuit.step(state, { throttle: true, right: true });
-  presentation.capture(state); const before = structuredClone(state);
-  circuit.step(state, { throttle: true, left: true }); const original = structuredClone(state), angles = [];
-  for (const fraction of [0, .25, .5, .75]) {
-    const frame = presentation.sample(state, fraction);
-    close(frame.car.angularVelocity, mix(before.car.angularVelocity, state.car.angularVelocity, fraction));
-    const expected = Math.atan(frame.car.angularVelocity * 43 / Math.max(55, Math.abs(frame.car.speed)) * (frame.car.speed < 0 ? -1 : 1));
-    close(circuitWheelAngle(frame.car), Math.max(-.69, Math.min(.69, expected))); angles.push(circuitWheelAngle(frame.car));
-    assert.deepEqual(state, original);
-  }
-  assert.equal(new Set(angles).size, 4); assert.ok(angles.every(angle => angle > 0), 'fresh Left cannot instantly draw right-turn momentum as a left-turning rack');
-  close(circuitWheelAngle({ speed: -80, angularVelocity: -.4 }), circuitWheelAngle({ speed: 80, angularVelocity: .4 }));
-  assert.equal(circuitWheelAngle({ speed: 0, angularVelocity: 0 }), 0);
-});
-
 for (const [name, engine, factory, controls] of [
   ['Skyline', skyline, createSkylinePresentation, { right: true, jump: true }],
   ['Shadow', shadow, createShadowPresentation, { right: true, sneak: true }],
   ['Starfall', starfall, createStarfallPresentation, { fire: true, focus: true, up: true }],
-  ['Circuit', circuit, createCircuitPresentation, { throttle: true, right: true }],
 ]) test(`${name} final view sampler preserves real motion, resources, damage, RNG and clocks at 60/144/240 Hz`, () => {
   function run(hz) {
     const state = engine.createState({ seed: 1729, difficulty: 'veteran' }), display = factory();

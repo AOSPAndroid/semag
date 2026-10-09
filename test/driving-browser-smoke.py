@@ -1,13 +1,11 @@
-"""Optional real-browser driving QA: python test/driving-browser-smoke.py [URL].
+"""Optional real-browser Night Drive QA: python test/driving-browser-smoke.py [URL].
 
 Requires Python Playwright and Chromium. Without a URL, starts and stops an
 isolated local server. Drives through actual keyboard and touch controls;
-window.firesideSolo.getState() is read-only, never modified. Circuit route
-coordinates are read from its static track asset to steer with physical keys.
+window.firesideSolo.getState() is read-only, never modified.
 Set FIRESIDE_SCREENSHOT_DIR to select preview output.
 """
 import json
-import math
 import os
 from pathlib import Path
 import subprocess
@@ -64,25 +62,24 @@ def room_ids(url):
 
 
 def stored_record(page, game):
-    scope = "three-laps" if game == "apex-circuit" else "default"
-    return page.evaluate("([game, scope]) => JSON.parse(localStorage.getItem(`fireside-solo-best:${game}:${scope}`))", [game, scope])
+    return page.evaluate("game => JSON.parse(localStorage.getItem(`fireside-solo-best:${game}:default`))", game)
 
 
 def check_catalog(page):
-    assert page.locator("[data-create-game]").count() == 11
-    assert page.locator("[data-play-solo]").count() == 14
-    assert page.locator("[data-create-game]:visible").count() == 11
-    assert page.locator("[data-play-solo]:visible").count() == 14
+    assert page.locator("[data-create-game]").count() == 13
+    assert page.locator("[data-play-solo]").count() == 12
+    assert page.locator("[data-create-game]:visible").count() == 13
+    assert page.locator("[data-play-solo]:visible").count() == 12
     page.locator('[data-filter="driving"]').click()
     assert page.locator("[data-create-game]:visible").count() == 0
-    assert page.locator("[data-play-solo]:visible").count() == 3
-    assert page.locator('[data-play-solo="apex-circuit"]:visible').count() == 1
+    assert page.locator("[data-play-solo]:visible").count() == 2
+    assert page.locator('[data-play-solo="paris-pedal"]:visible').count() == 1
     assert page.locator('[data-play-solo="night-drive"]:visible').count() == 1
     page.locator('[data-filter="solo"]').click()
     assert page.locator("[data-create-game]:visible").count() == 0
-    assert page.locator("[data-play-solo]:visible").count() == 14
+    assert page.locator("[data-play-solo]:visible").count() == 12
     page.locator('[data-filter="friends"]').click()
-    assert page.locator("[data-create-game]:visible").count() == 11
+    assert page.locator("[data-create-game]:visible").count() == 13
     assert page.locator("[data-play-solo]:visible").count() == 0
     page.locator('[data-filter="all"]').click()
 
@@ -172,12 +169,10 @@ def touch_hold_cancel(page, context, selector, assertion, cancel=True):
         session.detach()
 
 
-def focused_hold_controls(page, game, selector):
+def focused_hold_controls(page, selector):
     """Accessible control buttons use their own action with Space and Enter."""
     for key in ("Space", "Enter"):
         page.locator("#solo-restart").click()
-        if game == "apex-circuit":
-            page.wait_for_function(f"{SURFACE}.getState().startDelay === 0")
         button = page.locator(selector)
         button.focus()
         before = state(page)
@@ -185,10 +180,7 @@ def focused_hold_controls(page, game, selector):
         assert button.get_attribute("aria-pressed") == "true", f"Focused {key} did not hold its button"
         page.wait_for_timeout(400)
         held = state(page)
-        if game == "apex-circuit":
-            assert held["car"]["speed"] > before["car"]["speed"] + 40
-        else:
-            assert held["boosting"] and held["boost"] < before["boost"] - .07
+        assert held["boosting"] and held["boost"] < before["boost"] - .07
         page.keyboard.up(key)
         assert button.get_attribute("aria-pressed") == "false", f"Focused {key} remained held after release"
     page.locator("#solo-restart").click()
@@ -232,150 +224,6 @@ def browser_back(page, url, game):
     page.locator("#solo-restart").click()
     assert state(page)["phase"] == "playing", "Controls failed after browser Back"
     print(f"  {game}: hub backlink → browser Back, cached restore={cached}, active controls", flush=True)
-
-
-def circuit(page, context):
-    canvas = page.locator(".circuit-canvas")
-    keyboard = Keyboard(page)
-    assert stored_record(page, "apex-circuit") is None, "An unfinished race stored a best time"
-    canvas.focus()
-    page.wait_for_function(f"{SURFACE}.getState().startDelay === 0")
-    first = state(page)
-    keyboard.set({"ArrowUp"})
-    page.wait_for_timeout(750)
-    accelerated = state(page)
-    assert accelerated["car"]["speed"] > 60
-    assert math.hypot(accelerated["car"]["x"] - first["car"]["x"], accelerated["car"]["y"] - first["car"]["y"]) > 15
-    keyboard.set({"ArrowUp", "ArrowRight"})
-    page.wait_for_timeout(220)
-    turning = state(page)
-    assert turning["car"]["heading"] > accelerated["car"]["heading"] + .03, "Held steering did not turn the car"
-    keyboard.set({"Space"})
-    page.wait_for_timeout(300)
-    handbraked = state(page)
-    assert handbraked["car"]["speed"] < turning["car"]["speed"], "Handbrake did not slow the car"
-    keyboard.set({"ArrowDown"})
-    page.wait_for_timeout(450)
-    assert state(page)["car"]["speed"] < handbraked["car"]["speed"] - 20, "Brake did not slow or reverse the car"
-    keyboard.release()
-    before_reset = state(page)
-    page.keyboard.press("q")
-    reset = state(page)
-    assert reset["penalty"] == before_reset["penalty"] + 3
-    assert 3 <= reset["elapsed"] - before_reset["elapsed"] < 3.25
-    assert reset["onRoad"] and abs(reset["car"]["speed"]) < 5
-    assert reset["nextGate"] == before_reset["nextGate"], "Recovery granted an unearned checkpoint"
-
-    page.locator("#solo-restart").click()
-    page.wait_for_function(f"{SURFACE}.getState().startDelay === 0")
-    keyboard.set({"ArrowUp"})
-    page.wait_for_timeout(700)
-    pause_checks(page, keyboard)
-    coast_start = state(page)
-    page.wait_for_timeout(500)
-    coasting = state(page)
-    assert coasting["car"]["speed"] < coast_start["car"]["speed"], "Paused throttle remained stuck on resume"
-    keyboard.release()
-    blur_checks(page, context, keyboard)
-    page.locator("#solo-restart").click()
-    page.wait_for_function(f"{SURFACE}.getState().startDelay === 0")
-
-    def touch_accelerated(before, held):
-        assert held["car"]["speed"] > before["car"]["speed"] + 45, "Touch throttle did not accelerate"
-
-    held, released = touch_hold_cancel(page, context, '.circuit-control[data-input="throttle"]', touch_accelerated)
-    assert released["car"]["speed"] < held["car"]["speed"], "Cancelled touch throttle remained held"
-    page.locator("#solo-restart").click()
-    page.wait_for_function(f"{SURFACE}.getState().startDelay === 0")
-    held, released = touch_hold_cancel(page, context, '.circuit-control[data-input="throttle"]', touch_accelerated, cancel=False)
-    assert released["car"]["speed"] < held["car"]["speed"], "Released touch throttle remained held"
-    focused_hold_controls(page, "apex-circuit", '.circuit-control[data-input="throttle"]')
-    page.locator("#solo-restart").click()
-    assert state(page)["lapsCompleted"] == 0 and state(page)["penalty"] == 0
-    assert stored_record(page, "apex-circuit") is None, "Restart saved an unfinished zero-time race"
-    canvas.focus()
-
-    # Import only immutable map data into Python. Driving below never invokes
-    # browser engine methods or changes state: every action is a held key.
-    raw_track = subprocess.check_output(["node", "--input-type=module", "--eval", "import {TRACK,TRACK_LENGTH} from './public/solo/circuit-engine.js'; console.log(JSON.stringify({points:TRACK,length:TRACK_LENGTH}));"], cwd=ROOT, text=True)
-    route = json.loads(raw_track)
-    points, length = route["points"], route["length"]
-
-    def wrap_angle(angle):
-        return math.atan2(math.sin(angle), math.cos(angle))
-
-    def road_point(s):
-        scaled = s % length / length * len(points)
-        index, fraction = math.floor(scaled), scaled % 1
-        a, b = points[index], points[(index + 1) % len(points)]
-        tx = a["tx"] + (b["tx"] - a["tx"]) * fraction
-        ty = a["ty"] + (b["ty"] - a["ty"]) * fraction
-        return {"x": a["x"] + (b["x"] - a["x"]) * fraction,
-                "y": a["y"] + (b["y"] - a["y"]) * fraction,
-                "heading": math.atan2(ty, tx)}
-
-    def road_distance(car):
-        best, s = math.inf, 0
-        for index, a in enumerate(points):
-            b = points[(index + 1) % len(points)]
-            dx, dy = b["x"] - a["x"], b["y"] - a["y"]
-            portion = max(0, min(1, ((car["x"] - a["x"]) * dx + (car["y"] - a["y"]) * dy) / (dx * dx + dy * dy)))
-            distance = (car["x"] - a["x"] - dx * portion) ** 2 + (car["y"] - a["y"] - dy * portion) ** 2
-            if distance < best:
-                best, s = distance, length * (index + portion) / len(points)
-        return s
-
-    deadline, completed, observed_gates = time.monotonic() + 130, 0, set()
-    gameplay_captured = False
-    while time.monotonic() < deadline:
-        current = state(page)
-        if current["phase"] == "won":
-            break
-        assert current["phase"] == "playing", current
-        car = current["car"]
-        s = road_distance(car)
-        target = road_point(s + max(28, abs(car["speed"]) * .27))
-        error = wrap_angle(math.atan2(target["y"] - car["y"], target["x"] - car["x"]) - car["heading"])
-        curvature = abs(wrap_angle(road_point(s + 95)["heading"] - road_point(s + 25)["heading"]))
-        desired_speed = max(75, 205 - curvature * 140)
-        keys = set()
-        if abs(car["speed"]) < desired_speed:
-            keys.add("ArrowUp")
-        elif abs(car["speed"]) > desired_speed + 10 and abs(car["speed"]) > 80:
-            keys.add("ArrowDown")
-        if error < -.03:
-            keys.add("ArrowLeft")
-        elif error > .03:
-            keys.add("ArrowRight")
-        keyboard.set(keys)
-        observed_gates.add((current["lapsCompleted"], current["gateProgress"]))
-        if not gameplay_captured and current["gateProgress"] == 3:
-            keyboard.release()
-            screenshot(page, "fireside-apex-circuit.png")
-            gameplay_captured = True
-        if current["lapsCompleted"] > completed:
-            completed = current["lapsCompleted"]
-            assert stored_record(page, "apex-circuit") is None, "A partial race became a best time"
-            print(f"  Circuit: real keyboard driving completed lap {completed}/3 in {current['elapsed']:.2f}s", flush=True)
-        page.wait_for_timeout(40)
-    keyboard.release()
-    finished = state(page)
-    assert finished["phase"] == "won", f"Keyboard race did not finish: {finished}"
-    assert finished["lapsCompleted"] == 3 and len(finished["lapTimes"]) == 3
-    assert len(observed_gates) >= 30, "Race finished without traversing its checkpoints"
-    assert finished["raceTime"] > 0 and finished["penalty"] == 0
-    best = stored_record(page, "apex-circuit")
-    assert best == finished["raceTime"], "Completed race time was not saved"
-    assert page.locator("#solo-record").inner_text().endswith("s")
-    assert abs(float(page.locator("#solo-record").inner_text()[:-1]) - best) <= .0051
-    page.wait_for_timeout(500)
-    assert state(page) == finished, "Finished race kept advancing"
-    screenshot(page, "fireside-apex-circuit-finish.png")
-    page.locator("#solo-restart").click()
-    assert state(page)["lapsCompleted"] == 0 and state(page)["raceTime"] is None
-    assert stored_record(page, "apex-circuit") == best, "A new race replaced the best with zero"
-    persistent_record(page, context, "apex-circuit", best)
-    print("  Circuit: throttle/steer/brake/handbrake, recovery penalty, touch cancellation, pause/tab pause, legitimate three-lap finish, final-only persistent time", flush=True)
 
 
 def night_drive(page, context):
@@ -424,7 +272,7 @@ def night_drive(page, context):
     page.locator("#solo-restart").click()
     held, released = touch_hold_cancel(page, context, '.highway-control[data-control="boost"]', touch_boosted, cancel=False)
     assert not released["boosting"] and released["boost"] > held["boost"], "Released touch boost stayed engaged"
-    focused_hold_controls(page, "night-drive", '.highway-control[data-control="boost"]')
+    focused_hold_controls(page, '.highway-control[data-control="boost"]')
     page.locator("#solo-restart").click()
     canvas.focus()
 
@@ -496,7 +344,7 @@ def run(url):
             options["executable_path"] = "/usr/bin/chromium"
         browser = playwright.chromium.launch(**options, ignore_default_args=["--disable-back-forward-cache"])
         try:
-            for game, exercise in (("apex-circuit", circuit), ("night-drive", night_drive)):
+            for game, exercise in (("night-drive", night_drive),):
                 context = browser.new_context(viewport={"width": 1440, "height": 1100}, has_touch=True)
                 context.add_init_script("window.addEventListener('pageshow', event => { window.__qaPageShowPersisted = event.persisted; });")
                 page = context.new_page()
@@ -507,9 +355,8 @@ def run(url):
                     check_catalog(page)
                     page.locator('[data-filter="driving"]').click()
                     page.wait_for_timeout(220)
-                    if game == "apex-circuit":
-                        screenshot(page, "fireside-driving-hub.png")
-                        mobile_previews(page, "driving-hub")
+                    screenshot(page, "fireside-driving-hub.png")
+                    mobile_previews(page, "driving-hub")
                     page.locator(f'[data-play-solo="{game}"]').click()
                     page.wait_for_url(f"**/solo.html?game={game}")
                     start_solo(page, game)
@@ -540,7 +387,7 @@ def run(url):
             assert not failed_resources, failed_resources
             assert not room_mutations, room_mutations
             assert not sockets, sockets
-            print(json.dumps({"games_tested": 2, "rooms_before": before_rooms, "rooms_after": room_ids(url), "browser_exceptions": errors, "console_errors": console_errors, "failed_resources": failed_resources, "room_mutations": room_mutations, "websockets": sockets, "screenshots": str(SCREENSHOTS)}), flush=True)
+            print(json.dumps({"games_tested": 1, "rooms_before": before_rooms, "rooms_after": room_ids(url), "browser_exceptions": errors, "console_errors": console_errors, "failed_resources": failed_resources, "room_mutations": room_mutations, "websockets": sockets, "screenshots": str(SCREENSHOTS)}), flush=True)
         finally:
             browser.close()
 

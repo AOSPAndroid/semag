@@ -37,7 +37,7 @@ test('Skyline fastest completed campaigns survive reload and stay separate by di
   assert.equal(save('veteran', 'won', 230.2), 230.2);
   assert.equal(formatValue(230.2, 2, 's'), '230.20s');
   assert.equal(store.read('skyline-hook', 'standard-campaign-v1'), 100);
-  assert.equal(store.read('apex-circuit', 'veteran-three-laps-v3'), null);
+  assert.equal(store.read('prism-shift', 'veteran-sprint-v3'), null);
 });
 
 test('Starfall, Ironwood and Shadow completed scores remain isolated across difficulties and games', () => {
@@ -73,44 +73,25 @@ function browserStorage() {
 test('solo best scores survive a new store and never drop when a run restarts', () => {
   const storage = browserStorage();
   const first = createBestStore(storage);
-  assert.equal(first.update('snake', 70), 70);
-  assert.equal(first.update('snake', 0), 70);
-  assert.equal(first.update('2048', 256), 256);
+  assert.equal(first.update('rift-survivor', 70), 70);
+  assert.equal(first.update('rift-survivor', 0), 70);
+  assert.equal(first.update('ember-delve', 256), 256);
   const reloaded = createBestStore(storage);
-  assert.equal(reloaded.read('snake'), 70);
-  assert.equal(reloaded.read('2048'), 256);
-  assert.equal(reloaded.update('snake', 90), 90);
+  assert.equal(reloaded.read('rift-survivor'), 70);
+  assert.equal(reloaded.read('ember-delve'), 256);
+  assert.equal(reloaded.update('rift-survivor', 90), 90);
 });
 
-test('Minesweeper saves faster times separately for each difficulty', () => {
+test('Prism saves faster times separately for Sprint and Excavation', () => {
   const records = createBestStore(browserStorage());
-  const beginner = { scope: 'beginner', direction: 'min' };
-  const intermediate = { scope: 'intermediate', direction: 'min' };
-  assert.equal(records.update('minesweeper', 42, beginner), 42);
-  assert.equal(records.update('minesweeper', 60, beginner), 42);
-  assert.equal(records.update('minesweeper', 31, beginner), 31);
-  assert.equal(records.update('minesweeper', 150, intermediate), 150);
-  assert.equal(records.read('minesweeper', 'beginner'), 31);
-  assert.equal(records.read('minesweeper', 'intermediate'), 150);
-});
-
-test('Apex Circuit records require a completed race and retain the fastest time after reload', () => {
-  const storage = browserStorage();
-  const records = createBestStore(storage);
-  const save = (update, store = records) => {
-    const { candidate, scope, direction } = recordDetails('apex-circuit', update);
-    return store.update('apex-circuit', candidate, { scope, direction });
-  };
-  for (const phase of ['playing', 'paused', 'lost']) {
-    assert.equal(save({ phase, score: 0, record: 0 }), null);
-  }
-  assert.equal(save({ phase: 'won', score: 49.27, record: 49.27 }), 49.27);
-  assert.equal(save({ phase: 'playing', score: 1, record: 1 }), 49.27);
-  assert.equal(save({ phase: 'won', score: 52.19, record: 52.19 }), 49.27);
-  assert.equal(save({ phase: 'won', score: 44.63, record: 44.63 }), 44.63);
-  const reloaded = createBestStore(storage);
-  assert.equal(reloaded.read('apex-circuit', 'three-laps'), 44.63);
-  assert.equal(save({ phase: 'playing', score: 0 }, reloaded), 44.63);
+  const sprint = { scope: 'sprint', direction: 'min' };
+  const excavation = { scope: 'dig', direction: 'min' };
+  assert.equal(records.update('prism-shift', 42, sprint), 42);
+  assert.equal(records.update('prism-shift', 60, sprint), 42);
+  assert.equal(records.update('prism-shift', 31, sprint), 31);
+  assert.equal(records.update('prism-shift', 150, excavation), 150);
+  assert.equal(records.read('prism-shift', 'sprint'), 31);
+  assert.equal(records.read('prism-shift', 'dig'), 150);
 });
 
 test('Night Drive saves a growing best score independently from timed games', () => {
@@ -122,11 +103,11 @@ test('Night Drive saves a growing best score independently from timed games', ()
   assert.equal(save('night-drive', { phase: 'playing', score: 125 }), 125);
   assert.equal(save('night-drive', { phase: 'lost', score: 480 }), 480);
   assert.equal(save('night-drive', { phase: 'playing', score: 0 }), 480);
-  assert.equal(save('minesweeper', { phase: 'playing', recordKey: 'intermediate', record: 1 }), null);
-  assert.equal(save('minesweeper', { phase: 'won', recordKey: 'intermediate', record: 103 }), 103);
-  assert.equal(save('minesweeper', { phase: 'won', recordKey: 'intermediate', record: 88 }), 88);
+  assert.equal(save('prism-shift', { phase: 'playing', recordKey: 'sprint', record: 1 }), null);
+  assert.equal(save('prism-shift', { phase: 'won', recordKey: 'sprint', record: 103 }), 103);
+  assert.equal(save('prism-shift', { phase: 'won', recordKey: 'sprint', record: 88 }), 88);
   assert.equal(records.read('night-drive'), 480);
-  assert.equal(records.read('minesweeper', 'intermediate'), 88);
+  assert.equal(records.read('prism-shift', 'sprint'), 88);
 });
 
 test('Prism marathon scores and completed sprint times compete under separate policies', () => {
@@ -162,17 +143,17 @@ test('Rift Survivor records persist across waves and upgrades without replacing 
 
 test('invalid stored records do not poison future scores', () => {
   const storage = browserStorage();
-  const key = 'fireside-solo-best:snake:default';
+  const key = 'fireside-solo-best:rift-survivor:default';
   for (const raw of ['null', 'true', '"80"', '{}', '-1', 'Infinity', 'NaN', '', ' 80 ']) {
     storage.values.set(key, raw);
     const records = createBestStore(storage);
-    assert.equal(records.read('snake'), null, raw);
-    assert.equal(records.update('snake', 80), 80, raw);
+    assert.equal(records.read('rift-survivor'), null, raw);
+    assert.equal(records.update('rift-survivor', 80), 80, raw);
     assert.equal(storage.values.get(key), '80', raw);
   }
   const records = createBestStore(storage);
   for (const invalid of [null, '90', -1, NaN, Infinity, undefined]) {
-    assert.equal(records.update('snake', invalid), 80);
+    assert.equal(records.update('rift-survivor', invalid), 80);
   }
 });
 
@@ -181,28 +162,28 @@ test('blocked browser storage retains records in memory without interrupting pla
     getItem() { throw new Error('Storage blocked'); },
     setItem() { throw new Error('Storage blocked'); },
   });
-  assert.equal(unavailable.update('snake', 30), 30);
-  assert.equal(unavailable.read('snake'), 30);
-  assert.equal(unavailable.update('snake', 10), 30);
+  assert.equal(unavailable.update('rift-survivor', 30), 30);
+  assert.equal(unavailable.read('rift-survivor'), 30);
+  assert.equal(unavailable.update('rift-survivor', 10), 30);
   const absent = createBestStore(undefined);
-  assert.equal(absent.update('2048', 16), 16);
-  assert.equal(absent.read('2048'), 16);
+  assert.equal(absent.update('ember-delve', 16), 16);
+  assert.equal(absent.read('ember-delve'), 16);
 });
 
 test('losing storage write access mid-run preserves the existing record and new best', () => {
   const storage = browserStorage();
-  storage.values.set('fireside-solo-best:snake:default', '40');
+  storage.values.set('fireside-solo-best:rift-survivor:default', '40');
   const records = createBestStore(storage);
-  assert.equal(records.read('snake'), 40);
+  assert.equal(records.read('rift-survivor'), 40);
   storage.setItem = () => { throw new Error('Write access revoked'); };
-  assert.equal(records.update('snake', 60), 60);
-  assert.equal(records.read('snake'), 60);
-  assert.equal(records.update('snake', 20), 60);
+  assert.equal(records.update('rift-survivor', 60), 60);
+  assert.equal(records.read('rift-survivor'), 60);
+  assert.equal(records.update('rift-survivor', 20), 60);
 });
 
 
 test('expanded courses, challenge roads and tiers keep independent records',()=>{
- for(const [game,keys] of [['snake',['default','gardens']],['2048',['default','puzzles']],['minesweeper',['beginner','intermediate','expert']],['apex-circuit',['three-laps','harbor-ring-three-laps','rain-pass-three-laps','championship']],['night-drive',['default','tour']],['rift-survivor',['default','veteran']]]){
+ for(const [game,keys] of [['night-drive',['default','tour']],['rift-survivor',['default','veteran']]]){
   const store=createBestStore();
   keys.forEach((key,index)=>{const policy=recordDetails(game,{phase:'won',score:100+index,record:100+index,recordKey:key});assert.equal(policy.scope,key);store.update(game,policy.candidate,policy);});
   keys.forEach((key,index)=>assert.equal(store.read(game,key),100+index));
@@ -221,8 +202,6 @@ test('challenge records never replace easier or historical bests', () => {
     ['ember-delve', ['default', 'veteran', 'nightmare']],
     ['deckbound', ['default', 'veteran', 'nightmare']],
     ['rift-survivor', ['default', 'veteran', 'veteran-v2', 'nightmare']],
-    ['snake', ['default', 'gardens', 'gauntlet']],
-    ['2048', ['default', 'puzzles', 'master']],
     ['night-drive', ['default', 'tour', 'veteran-default', 'veteran-tour', 'nightmare-default', 'nightmare-tour']],
     ['prism-shift', ['marathon', 'veteran-marathon', 'nightmare-marathon']],
   ];
@@ -241,7 +220,6 @@ test('challenge records never replace easier or historical bests', () => {
 
 test('timed challenge records require qualifying finishes in every tier', () => {
   const games = [
-    ['apex-circuit', ['three-laps', 'harbor-ring-three-laps', 'rain-pass-three-laps', 'championship']],
     ['prism-shift', ['sprint', 'dig']],
   ];
   for (const [game, modes] of games) {
@@ -368,8 +346,6 @@ test('rebalanced solo records survive reload without competing against historica
     ['ember-delve', 'veteran', 'veteran-v3'], ['ember-delve', 'nightmare', 'nightmare-v3'],
     ['rift-survivor', 'veteran-v2', 'veteran-v3'], ['rift-survivor', 'nightmare', 'nightmare-v3'],
     ['deckbound', 'veteran', 'veteran-v3'], ['deckbound', 'nightmare', 'nightmare-v3'],
-    ['snake', 'gauntlet', 'gauntlet-v3'], ['minesweeper', 'expert', 'master-v3'],
-    ['2048', 'master', 'master-v3'],
   ];
   for (const [game, previous, current] of cases) {
     const storage = browserStorage(), store = createBestStore(storage);
@@ -386,7 +362,6 @@ test('rebalanced solo records survive reload without competing against historica
 test('versioned driving and Prism records retain completed-only and time policies', () => {
   for (const tier of ['veteran', 'nightmare']) {
     for (const [game, modes, direction, unit] of [
-      ['apex-circuit', ['three-laps', 'harbor-ring-three-laps', 'rain-pass-three-laps', 'championship'], 'min', 's'],
       ['prism-shift', ['sprint', 'dig'], 'min', 's'],
       ['night-drive', ['tour'], 'max', ''],
       ['paris-pedal', ['delivery'], 'max', ''],
@@ -408,15 +383,6 @@ test('versioned driving and Prism records retain completed-only and time policie
     assert.equal(finished.scope, survival); assert.equal(finished.unit, 'duration-ms'); assert.equal(finished.candidate, 60123);
     assert.equal(recordDetails('paris-pedal', { recordKey: survival, phase: 'lost', result: 'delivery-late', record: 60000 }).candidate, null);
   }
-});
-
-test('the new Master tour record requires all six trials, not an individual puzzle win', () => {
-  for (const result of [null, undefined, 'puzzle', 'budget'])
-    assert.equal(recordDetails('2048', { recordKey: 'master-v3', phase: 'won', result, record: 9000 }).candidate, null);
-  for (const phase of ['playing', 'paused', 'lost'])
-    assert.equal(recordDetails('2048', { recordKey: 'master-v3', phase, result: 'tour', record: 9000 }).candidate, null);
-  assert.equal(recordDetails('2048', { recordKey: 'master-v3', phase: 'won', result: 'tour', record: 9000 }).candidate, 9000);
-  assert.equal(recordDetails('2048', { recordKey: 'master', phase: 'playing', score: 999 }).candidate, 999, 'historical scope retains its original meaning');
 });
 
 test('accelerating survival records are recognized and isolated from earlier fixed-pace scores', () => {

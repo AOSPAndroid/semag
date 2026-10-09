@@ -11,8 +11,8 @@ Paris Pedal has a daytime perspective street view, with Haussmann facades, cafe
 awnings, a courier seen from behind on an e-bike, buses, and cyclists. Its stone
 walls and zinc roofs use separate materials, with straight floor bands and
 window bays mapped into the street perspective. Night Drive's roadside
-buildings face the road and meet the ground. Night Drive and Apex Circuit share
-painted car bodies, glass, tyres and rear lights. These cached materials,
+buildings face the road and meet the ground. Its vehicles use painted car
+bodies, glass, tyres and rear lights. These cached materials,
 skyline art, and vehicle sprites ship with the host.
 
 Skyline Hook uses three layered rooftop palettes, detailed runners, signal

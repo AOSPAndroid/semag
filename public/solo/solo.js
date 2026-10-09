@@ -6,12 +6,10 @@ const SOLO_COVERS = {
   'shadow-lantern': 'shadow',
   'skyline-hook': 'skyline', 'starfall-squadron': 'starfall', 'ironwood-tactics': 'ironwood',
   'paris-pedal': 'paris', 'ember-delve': 'ember', deckbound: 'deckbound',
-  snake: 'snake', minesweeper: 'minesweeper', '2048': '2048',
-  'apex-circuit': 'circuit', 'night-drive': 'highway', 'prism-shift': 'prism', 'rift-survivor': 'rift',
+  'night-drive': 'highway', 'prism-shift': 'prism', 'rift-survivor': 'rift',
 };
 const ACTION_SCOPES = ['default', 'veteran', 'nightmare', 'veteran-v3', 'nightmare-v3'];
 const tierScopes = scopes => [...scopes, ...['veteran', 'nightmare'].flatMap(tier => scopes.flatMap(scope => [`${tier}-${scope}`, `${tier}-${scope}-v3`]))];
-const RACE_SCOPES = tierScopes(['three-laps', 'harbor-ring-three-laps', 'rain-pass-three-laps', 'championship']);
 const PRISM_SCOPES = tierScopes(['marathon', 'sprint', 'dig']);
 const PARIS_SURVIVAL_SCOPES = [...['standard', 'veteran', 'nightmare'].map(tier => `${tier}-survival-v1`), 'veteran-survival-v3', 'nightmare-survival-v3'];
 const PARIS_DELIVERY_SCOPES = ['standard-delivery', 'veteran-delivery', 'nightmare-delivery', 'veteran-delivery-v3', 'nightmare-delivery-v3'];
@@ -86,39 +84,6 @@ const GAME_INFO = {
     touch: 'Tap a card to play it. Choose an enemy target when several foes are present. Route, reward, camp, and shop choices use buttons.',
     rules: ['Complete eighteen encounters across three acts. Enemy intent shows the next attack and any ally shields.', 'Spend energy on damage, block, and status effects; unused block expires at your next turn.', 'Shape your deck with card rewards, upgrades, removal, shops, and relics.', 'Elite roads offer stronger rewards and tougher battles. Rest stops can heal or upgrade a card. Veteran requires three road battles per act; Nightmare requires four. Card healing has a visible battle allowance, and prolonged fights grow more dangerous.', 'Veteran is the default. Standard, Veteran, and Nightmare have separate records; changing difficulty begins a fresh expedition.', 'Defeat all three bosses. Death ends the expedition; replay its seed or begin a fresh route.'],
   },
-  snake: {
-    recordPolicy: { scopes: ['default', 'gardens', 'gauntlet', 'gauntlet-v3'] },
-    title: 'Snake', category: 'SOLO ARCADE / SPEED & ROUTES', description: 'Six tight gardens. Longer trails. A 168-fruit Gauntlet.',
-    module: '/solo/snake-view.js', ruleTitle: 'Keep it growing.',
-    controls: [[['↑', '←', '↓', '→'], 'Steer'], [['W', 'A', 'S', 'D'], 'Also steer']],
-    touch: 'Use the direction buttons below the board on a phone or tablet.',
-    rules: ['Eat apples to grow your snake and build your score.', 'Plan your turns. Hitting a wall, hedge, or your own tail ends the run.', 'You cannot reverse straight into yourself. Keep some room to turn.', 'Gauntlet starts by default: six denser obstacle gardens with faster turns, longer starting trails, and 168 fruit to collect.', 'Reach each apple within its movement allowance. Circling forever spends that allowance, so choose a route around your moving tail.', 'Choose Classic for an endless practice run or Six gardens for the gentler road. The new Gauntlet keeps its own records.'],
-  },
-  minesweeper: {
-    title: 'Minesweeper', category: 'SOLO PUZZLE / MASTER DEDUCTIONS', description: 'Ninety mines. Overlapping clues. Six active minutes.',
-    module: '/solo/minesweeper-view.js', ruleTitle: 'Read between the mines.',
-    recordPolicy: { direction: 'min', scopes: ['beginner', 'intermediate', 'expert', 'master-v3'], unit: 's', onlyWon: true },
-    controls: [[['Click'], 'Reveal a tile'], [['Right click'], 'Place a flag'], [['↑', '←', '↓', '→'], 'Explore the board'], [['Enter'], 'Reveal'], [['F'], 'Flag']],
-    touch: 'Switch Flag mode on to flag tiles with a tap. Pick Master, Expert, Intermediate, or Beginner for a fresh board.',
-    rules: ['Numbers tell you how many mines touch a tile, including diagonals.', 'Reveal every safe tile to win. Flags help you keep track of suspected mines.', 'Master starts by default: a 24 × 16 field with 90 mines and six minutes of active play.', 'Master boards are verified solvable from their visible clues. Compare overlapping clues to deduce mines and safe cells; your first reveal and its neighbors are safe.', 'Pause stops the clock. Expert, Intermediate, and Beginner are practice alternatives; completed times stay separate.'],
-  },
-  '2048': {
-    recordPolicy: { scopes: ['default', 'puzzles', 'master', 'master-v3'], variants: { 'master-v3': { onlyWon: true, completionResult: 'tour' } } },
-    title: '2048', category: 'SOLO PUZZLE / CLASSIC & MASTER', description: 'Six exacting trials. Two rewinds. Reach 16,384.',
-    module: '/solo/2048-view.js', ruleTitle: 'Leave room to grow.',
-    controls: [[['↑', '←', '↓', '→'], 'Slide all tiles'], [['W', 'A', 'S', 'D'], 'Also slide']],
-    touch: 'Swipe across the board to slide. Master gives you two one-step rewinds across the whole tour.',
-    rules: ['Slide the board. Equal tiles merge into one tile with twice the value.', 'Master starts by default with six dense boards, exact move budgets, and targets reaching 16,384. Every trial has a verified solution.', 'No random tiles are added in puzzles. Plan ahead: Master allows only two rewinds and two retries across the entire tour, with no refill between trials.', 'Finish all six Master trials to set a record. If your retries are spent, begin a new tour.', 'Classic offers the familiar random-tile game; Six puzzles is the gentler practice road. Their records and historical Master scores stay separate.'],
-  },
-  'apex-circuit': {
-    title: 'Apex Circuit', category: 'DRIVING / TIME TRIAL', description: 'Beat the deadline. Keep a clean line. Earn the championship.',
-    module: '/solo/circuit-view.js', ruleTitle: 'Find your racing line.',
-    scoreDigits: 2, scoreUnit: 's',
-    recordPolicy: { direction: 'min', scopes: RACE_SCOPES, unit: 's', digits: 2, onlyWon: true },
-    controls: [[['W', '↑'], 'Accelerate'], [['S', '↓'], 'Brake / reverse'], [['A', 'D', '←', '→'], 'Steer'], [['Space'], 'Handbrake'], [['Q'], 'Reset car (+3s)']],
-    touch: 'Hold the pedal and steering buttons below the track. The handbrake helps rotate the car through a tight corner.',
-    rules: ['Complete three laps. Follow the direction arrows and pass each checkpoint in order.', 'Veteran starts by default. Beat each progressively tighter lap target and the track deadline while staying within the off-track and reset allowances.', 'Brake before a corner, then accelerate out. Tyres lose grip if you keep full throttle through tight corners. Grass slows you down. Use Q or Reset car to recover; each reset adds three seconds.', 'Select Meadow Loop, Harbor Ring, or Rain Pass. Slick zones and grip change the handling.', 'Standard practice has no qualifying deadline. Nightmare asks for a faster, cleaner racing line.', 'Championship links all three races. Only completed qualifying runs set records, separately for each track, championship, and difficulty.'],
-  },
   'night-drive': {
     recordPolicy: { scopes: [...tierScopes(['default', 'tour']), 'veteran-default-v4', 'nightmare-default-v4'], variants: {
       'veteran-tour': { onlyWon: true },
@@ -156,7 +121,7 @@ function validRecord(value) {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0;
 }
 
-/** Each game qualifies its own records: finished races, survival deaths, or growing scores. */
+/** Each game qualifies its own records: finished campaigns, survival deaths, or growing scores. */
 export function recordDetails(gameId, update) {
   const base = GAME_INFO[gameId]?.recordPolicy || {};
   const scopes = base.scopes || ['default'];
@@ -190,9 +155,6 @@ function recordNote(gameId, scope, direction) {
     if (scope.endsWith('-survival')) return `${tier} longest survival counts active riding time until the third impact. Pauses do not count; other difficulties and older challenge records stay separate.`;
     return scope.endsWith('-delivery') ? `${tier} Delivery records require all five districts and stay separate from Survival.` : `${tier} historical Rush points stay separate from Survival and Delivery.`;
   }
-  if (gameId === 'minesweeper') return `Best ${scope} time stays in this browser, on this host.`;
-  if (gameId === '2048' && scope === 'master') return 'The current Master record requires all six trials in one tour. Two rewinds and two retries cover the entire tour; practice and older records stay separate.';
-  if (gameId === 'apex-circuit') return `${tier} completed times are saved separately for each track and championship.`;
   if (gameId === 'night-drive' && scope.endsWith('-tour')) return `${tier} Tour records require a full five-district finish and stay separate from Endless.`;
   if (gameId === 'prism-shift' && direction === 'min') return `${tier} completed ${scope.endsWith('sprint') ? '40-line Sprint' : 'Excavation'} time stays in this browser, on this host.`;
   if (['ember-delve', 'deckbound', 'rift-survivor', 'night-drive', 'prism-shift'].includes(gameId)) return `${tier} best scores are saved separately from other difficulties and modes.`;
@@ -245,7 +207,7 @@ async function startSolo() {
   const $ = (id) => document.getElementById(id);
   const query = new URLSearchParams(location.search);
   const requested = query.get('game');
-  const gameId = Object.hasOwn(GAME_INFO, requested) ? requested : 'snake';
+  const gameId = Object.hasOwn(GAME_INFO, requested) ? requested : 'ember-delve';
   const info = GAME_INFO[gameId];
   const invalidGame = requested !== null && !Object.hasOwn(GAME_INFO, requested);
   let storage;
@@ -282,7 +244,7 @@ async function startSolo() {
   container.setAttribute('aria-label', `${info.title} game area`);
   Object.defineProperty(window, 'firesideSolo', { configurable: true, value: Object.freeze({ gameId, getState: () => game?.getState() ?? null, getDisplayTiming: () => game?.getDisplayTiming?.() ?? null }) });
   if (invalidGame) {
-    $('solo-notice').textContent = 'That game is not on the solo shelf. Here is Snake instead.';
+    $('solo-notice').textContent = 'That game is not on the solo shelf. Here is Ember Delve instead.';
     $('solo-notice').hidden = false;
   }
   for (const [keys, label] of info.controls) {
@@ -320,7 +282,7 @@ async function startSolo() {
     const scoreUnit = update.scoreUnit ?? (gameId === 'paris-pedal' && unit === 'duration-ms' ? unit : info.scoreUnit);
     setText($('solo-score'), formatValue(validRecord(update.score) ? update.score : 0, update.scoreDigits ?? info.scoreDigits, scoreUnit));
     setText($('solo-score-label'), update.scoreLabel || 'SCORE');
-    setText($('solo-record-label'), update.recordLabel || (gameId === 'minesweeper' ? 'BEST TIME' : 'BEST SCORE'));
+    setText($('solo-record-label'), update.recordLabel || 'BEST SCORE');
     setText($('solo-detail'), update.detail || (phase === 'paused' ? 'Take your time. Resume when you are ready.' : 'A new personal best is only a game away.'));
     const best = validRecord(candidate) ? records.update(gameId, candidate, { scope, direction }) : records.read(gameId, scope);
     setText($('solo-record'), best === null ? '—' : formatValue(best, digits, unit));

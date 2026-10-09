@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRenderSampling } from '../public/solo/render-sampling.js';
 import { tickFraction } from '../public/display-timing.js';
-import * as circuit from '../public/solo/circuit-engine.js';
 import * as highway from '../public/solo/highway-engine.js';
 import * as paris from '../public/solo/paris-engine.js';
 import * as ember from '../public/solo/ember-engine.js';
@@ -81,7 +80,6 @@ test('pause, reset, new lives, map transitions and teleports never blend stale p
 });
 
 const games = [
-  ['Circuit', circuit, () => circuit.createState({ difficulty: 'veteran' }), { throttle: true }],
   ['Night Drive', highway, () => highway.createState({ difficulty: 'veteran', random: random() }), { throttle: true }],
   ['Paris Pedal', paris, () => paris.createState({ difficulty: 'veteran', seed: 1729 }), { throttle: true }],
   ['Ember Delve', ember, () => ember.createState({ difficulty: 'veteran', seed: 1729 }), { right: true, melee: true, aimX: 1, aimY: 0 }],

@@ -15,26 +15,12 @@ GAMES = {
     'rift-survivor': ('rift', 'rift-canvas'),
     'night-drive': ('highway', 'highway-canvas'),
     'paris-pedal': ('paris', 'paris-canvas'),
-    'apex-circuit': ('circuit', 'circuit-canvas'),
     'prism-shift': ('prism', 'prism-canvas'),
-    'snake': ('snake', 'snake-canvas'),
-    '2048': ('tiles-2048', 'tiles-2048-grid'),
 }
 
 
 def state(page):
     return page.evaluate('window.firesideSolo.getState()')
-
-
-def expected_2048_move(page, direction):
-    # The engine stores undo internals in a WeakMap, so create an independent
-    # engine-owned fixture before copying the read-only visible game state.
-    return page.evaluate('''async direction => {
-        const {createState, move} = await import('/solo/2048-engine.js');
-        const visible = window.firesideSolo.getState();
-        const copy = Object.assign(createState({mode:visible.mode}), visible);
-        move(copy, direction); return copy;
-    }''', direction)
 
 
 def layout(page, value):
@@ -59,8 +45,7 @@ def mismatch(page, key, code, kind='keydown'):
 
 
 def left_button(prefix):
-    attr = 'data-input' if prefix == 'circuit' else 'data-control'
-    return f'.{prefix}-controls [{attr}="left"]'
+    return f'.{prefix}-controls [data-control="left"]'
 
 
 def run(url):
@@ -90,11 +75,7 @@ def run(url):
                     assert view.get_attribute('data-keyboard-layout') == selected
                     label = 'Z Q S D' if selected == 'zqsd' else 'W A S D'
                     spoken = canvas.get_attribute('aria-label')
-                    if game == 'apex-circuit':
-                        accelerator, steering, reset = ('Z', 'Q', 'A') if selected == 'zqsd' else ('W', 'A', 'Q')
-                        assert f'{accelerator} or Up accelerates' in spoken and f'{steering} and D' in spoken and f'{reset} resets' in spoken, (game, spoken)
-                    else:
-                        assert label in spoken or label.replace(' ', '') in spoken, (game, spoken)
+                    assert label in spoken or label.replace(' ', '') in spoken, (game, spoken)
                     toggle_pause(page)
                     canvas.focus()
                     left = 'q' if selected == 'zqsd' else 'a'
@@ -105,13 +86,13 @@ def run(url):
                         page.wait_for_timeout(150)
                         page.keyboard.up(left)
                         assert state(page)['player']['x'] < x - 8, (game, selected, 'Native left did not move')
-                    elif game in ('night-drive', 'paris-pedal', 'apex-circuit'):
+                    elif game in ('night-drive', 'paris-pedal'):
                         button = page.locator(left_button(prefix))
                         page.keyboard.down(left)
                         assert button.get_attribute('aria-pressed') == 'true', (game, selected, 'Native left not held')
                         page.keyboard.up(left)
                         assert button.get_attribute('aria-pressed') == 'false', (game, selected, 'Native left not released')
-                        throttle = page.locator(f'.{prefix}-controls [{"data-input" if prefix == "circuit" else "data-control"}="throttle"]')
+                        throttle = page.locator(f'.{prefix}-controls [data-control="throttle"]')
                         page.keyboard.down(up)
                         assert throttle.get_attribute('aria-pressed') == 'true', (game, selected, 'Native up not held')
                         page.keyboard.up(up)
@@ -130,16 +111,6 @@ def run(url):
                         page.keyboard.press(reverse)
                         assert state(page)['active']['rotation'] == rotation, (game, selected, 'Counterrotation conflict')
                         assert page.locator('.prism-control[data-action="rotateCCW"] .prism-control-key').inner_text() == reverse.upper()
-                    elif game == 'snake':
-                        page.keyboard.press(up)
-                        value = state(page)
-                        assert value['queuedDirection'] == 'up' or value['direction'] == 'up', (game, selected, value)
-                    elif game == '2048':
-                        for direction, letter in [('left', left), ('up', up)]:
-                            expected = expected_2048_move(page, direction)
-                            assert expected['moves'] > state(page)['moves'], 'Exercise a changed board'
-                            page.keyboard.press(letter)
-                            assert state(page) == expected, (game, selected, 'Native letter move differs from '+direction)
                     # Typing in editable UI is never converted into game input.
                     toggle_pause(page)
                     before = state(page)
@@ -156,7 +127,7 @@ def run(url):
                 layout(page, 'zqsd')
                 toggle_pause(page)
                 canvas.focus()
-                if game in ('night-drive', 'paris-pedal', 'apex-circuit'):
+                if game in ('night-drive', 'paris-pedal'):
                     button = page.locator(left_button(prefix))
                     assert mismatch(page, 'q', 'KeyA')
                     assert button.get_attribute('aria-pressed') == 'true', (game, 'AZERTY left ignored')
@@ -192,28 +163,6 @@ def run(url):
                     page.wait_for_timeout(350)
                     assert state(page)['active']['x'] == x, 'Prism auto-repeat survived layout change'
                     page.keyboard.up('q')
-                elif game == 'snake':
-                    page.locator('#solo-restart').click()
-                    canvas.focus()
-                    assert mismatch(page, 'z', 'KeyW')
-                    mismatch(page, 'z', 'KeyW', 'keyup')
-                    value = state(page)
-                    assert value['queuedDirection'] == 'up' or value['direction'] == 'up'
-                elif game == '2048':
-                    page.locator('#solo-restart').click()
-                    canvas.focus()
-                    expected = expected_2048_move(page, 'left')
-                    assert mismatch(page, 'q', 'KeyA')
-                    mismatch(page, 'q', 'KeyA', 'keyup')
-                    assert state(page) == expected
-                if game == 'apex-circuit':
-                    layout(page, 'zqsd')
-                    canvas.focus()
-                    page.wait_for_function('window.firesideSolo.getState().startDelay <= 0')
-                    penalty = state(page)['penalty']
-                    page.keyboard.press('a')
-                    assert state(page)['penalty'] == penalty + 3, 'Apex French reset must use A'
-                    assert page.locator('.circuit-reset b').inner_text().endswith('A')
                 print(json.dumps({'game': game, 'native_layouts': 2, 'azerty_event_shape': True}), flush=True)
             assert not errors, errors
             assert not failed_resources, failed_resources

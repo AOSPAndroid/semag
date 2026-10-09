@@ -1,4 +1,4 @@
-"""Native collision/graphics smoke QA for the five polished solo games.
+"""Native collision/graphics smoke QA for the four polished solo games.
 
 python test/collision-polish-browser-smoke.py [server URL]
 Requires Python Playwright and Chromium. Starts an isolated host without a URL.
@@ -23,7 +23,6 @@ OUT = Path(os.environ.get('SEMAG_SCREENSHOT_DIR', ROOT / 'test-results' / 'colli
 CASES = {
     'night-drive': ('highway', 'highway-canvas'),
     'paris-pedal': ('paris', 'paris-canvas'),
-    'apex-circuit': ('circuit', 'circuit-canvas'),
     'ember-delve': ('ember', 'ember-canvas'),
     'rift-survivor': ('rift', 'rift-canvas'),
 }
@@ -241,21 +240,6 @@ def action_contacts(page, game, selector, keyboard, profile):
     return {'cover_impact':cover,'enemy_hit':hit,'contact_state':state(page)}
 
 
-def circuit_run(page, selector, keyboard, profile):
-    wait(page,'window.firesideSolo.getState().startDelay <= 0')
-    keyboard.set({'z'});page.wait_for_timeout(650)
-    current=state(page)
-    assert current['car']['speed']>0,'French throttle did not accelerate Apex'
-    heading=current['car']['heading']
-    keyboard.set({'z','d'});page.wait_for_timeout(180)
-    assert abs(state(page)['car']['heading']-heading)>.01,'French steering did not turn Apex'
-    keyboard.set({'s'});page.wait_for_timeout(250);keyboard.release()
-    canvas_export(page,selector,f'apex-circuit-{profile}-car-body-canvas.png')
-    page.locator('#solo-pause').click();wait(page,'window.firesideSolo.getState().phase === "paused"')
-    page.screenshot(path=str(OUT/f'apex-circuit-{profile}-car-body-page.png'),full_page=True)
-    return {'contact_state':state(page),'native_throttle_steer_brake':True}
-
-
 def distribution(values):
     ordered=sorted(values)
     return {'count':len(ordered),'p50':ordered[len(ordered)//2] if ordered else None,
@@ -295,10 +279,8 @@ def run(url):
                             before=state(page)['x'];keyboard.set({'d'});page.wait_for_timeout(120);keyboard.release()
                             assert state(page)['x']>before+.015,(tag,'French steering failed')
                             evidence=driving_contacts(page,game,selector,keyboard,profile)
-                        elif game in ('ember-delve','rift-survivor'):
-                            evidence=action_contacts(page,game,selector,keyboard,profile)
                         else:
-                            evidence=circuit_run(page,selector,keyboard,profile)
+                            evidence=action_contacts(page,game,selector,keyboard,profile)
                         paint=painted(page,selector)
                         paused=state(page);page.wait_for_timeout(200)
                         assert state(page)==paused,(tag,'Paused contacts or recovery moved')

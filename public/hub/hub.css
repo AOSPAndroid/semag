@@ -47,19 +47,7 @@
 .shelf-filters button[aria-pressed=true] span{color:#c1d5a5}
 .shelf-filters button:hover{border-color:#8aa273}
 .solo-preview{display:flex;align-items:center;justify-content:center}
-.circuit-art{background:#809269}.highway-art{background:#203c4a}
+.highway-art{background:#203c4a}
 .driving-mini{display:block;width:100%;height:100%;object-fit:cover}
 .skill-mini{display:block;width:100%;height:100%;object-fit:cover}.vector-arena-art{background:#254747}.prism-shift-art{background:#716981}.rift-survivor-art{background:#3c404a}
-.snake-art{background:#749067}
-.snake-mini{display:block;width:270px;max-width:82%;height:auto;border:8px solid #3b6044;outline:1px solid #bdd39877;box-shadow:0 8px 22px #243b283b;transform:rotate(-7deg);shape-rendering:crispEdges}
-.mines-art{background:#a9b5a0}
-.mine-mini{display:grid;grid-template-columns:repeat(5,28px);gap:2px;padding:7px;background:#7b8d77;box-shadow:0 9px 20px #42523a40;transform:rotate(-10deg)}
-.mine-mini>span{display:grid;place-items:center;width:28px;height:25px;background:#e5ebd8;border-top:3px solid #f6f8e9;border-left:3px solid #f6f8e9;border-right:3px solid #9ba98f;border-bottom:3px solid #9ba98f;font:700 16px var(--mono);color:#627b80}
-.mine-mini>span.open{background:#c7d3bb;border:1px solid #a5b59a}
-.mine-mini>span.two{color:#51744d}.mine-mini>span.flag{color:#b56a48}
-.tiles-art{background:#c2aa88}
-.tiles-mini{display:grid;grid-template-columns:repeat(4,36px);gap:5px;padding:8px;background:#9d947c;border-radius:4px;box-shadow:0 9px 20px #66523933;transform:rotate(-8deg)}
-.tiles-mini>span{display:grid;place-items:center;width:36px;height:32px;background:#f4efde;border-radius:2px;font:700 13px var(--mono);color:#8b805e}
-.tiles-mini>span:empty{background:#b8b099}.tiles-mini>.tile-16{background:#d9a175;color:#fff6e4}.tiles-mini>.tile-32{background:#ba7f56;color:#fff6e4}.tiles-mini>.tile-128{background:#e2c676;color:#665636;font-size:11px}.tiles-mini>.tile-2048{background:#edda89;color:#665636;font-size:10px}
-@media(max-width:600px){.shelf-filters{gap:6px;margin-bottom:19px}.shelf-filters button{font-size:11px;padding:8px 10px;gap:8px}.mine-mini{transform:rotate(-10deg) scale(.77)}.tiles-mini{transform:rotate(-8deg) scale(.74)}.snake-mini{border-width:5px}}
-@media(max-width:430px){.mine-mini{transform:rotate(-10deg) scale(.65)}.tiles-mini{transform:rotate(-8deg) scale(.62)}}
+@media(max-width:600px){.shelf-filters{gap:6px;margin-bottom:19px}.shelf-filters button{font-size:11px;padding:8px 10px;gap:8px}}

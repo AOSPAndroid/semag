@@ -1,7 +1,7 @@
 """Native browser smoke checks for monitor-paced presentation.
 
 python test/high-refresh-browser-smoke.py http://127.0.0.1:3000
-SEMAG_REFRESH_CASES selects breach,royale,afterimage,shadow,paris,skyline,circuit,snake.
+SEMAG_REFRESH_CASES selects breach,royale,afterimage,shadow,paris,skyline.
 SEMAG_SCREENSHOT_DIR selects the inspectable report directory.
 
 Gameplay uses native browser/CDP keyboard and mouse events only. Copied debug
@@ -34,7 +34,7 @@ SOURCES = ('display-timing.js', 'voxel-client.js', 'voxel-royale-client.js',
            'voxel-renderer.js', 'voxel-presentation.js', 'voxel-damage-feedback.js', 'network-timeline.js', 'client.js',
            'planar-presentation.js', 'brawl-renderer.js', 'hub/room.js',
            'solo/render-sampling.js', 'solo/shadow-view.js', 'solo/paris-view.js', 'solo/paris-renderer.js',
-           'solo/skyline-view.js', 'solo/circuit-view.js', 'solo/snake-view.js', 'solo/solo.js')
+           'solo/skyline-view.js', 'solo/solo.js')
 REPORT = {'cases': [], 'errors': [], 'failed_resources': [], 'screenshots': [],
           'headless_display_only': True, 'sources': {}}
 
@@ -50,19 +50,6 @@ PAINT_OBSERVER = r'''() => {
       const item = paints[name] ||= {count: 0, times: []};
       item.count++; item.times.push(performance.now());
       if (item.times.length > 360) item.times.shift();
-      if (name === 'circuit-canvas' && window.firesideSolo?.getState()) {
-        const state = window.firesideSolo.getState();
-        const frames = item.frames ||= [];
-        frames.push({elapsed: state.elapsed, car: {x:state.car.x,y:state.car.y},
-                     timing: window.firesideSolo.getDisplayTiming()});
-        if (frames.length > 180) frames.shift();
-      }
-      if (name === 'snake-canvas' && window.firesideSolo?.getState()) {
-        const state = window.firesideSolo.getState();
-        const frames = item.frames ||= [];
-        frames.push({ticks:state.ticks, phase:state.phase, time:performance.now()});
-        if (frames.length > 180) frames.shift();
-      }
     }
     return result;
   };
@@ -335,129 +322,21 @@ def solo_case(browser, game, canvas_name, direction):
         context.close()
 
 
-def snake_case(browser):
-    context = browser.new_context(viewport={'width': 1280, 'height': 1100})
-    context.add_init_script('(' + PAINT_OBSERVER + ')();')
-    page = context.new_page()
-    observe(page, 'snake')
-    try:
-        page.goto(URL + '/solo.html?game=snake')
-        wait(page, 'window.firesideSolo && document.getElementById("solo-app").dataset.phase === "ready"')
-        assert solo_state(page) is None
-        page.locator('#solo-start').click()
-        wait(page, 'window.firesideSolo.getState()?.phase === "playing"')
-        page.locator('[data-mode="classic"]').click()
-        wait(page, 'window.firesideSolo.getState().mode === "classic"')
-        page.locator('.snake-canvas').focus()
-        page.keyboard.press('ArrowDown')
-        start = page.evaluate('({state:window.firesideSolo.getState(),paint:window.__refreshPaint["snake-canvas"],now:performance.now()})')
-        page.wait_for_timeout(630)
-        end = page.evaluate('({state:window.firesideSolo.getState(),paint:window.__refreshPaint["snake-canvas"],now:performance.now()})')
-        assert end['state']['phase'] == 'playing' and end['state']['ticks'] > start['state']['ticks'], (start, end)
-        paints = end['paint']['count'] - start['paint']['count']
-        elapsed = (end['now'] - start['now']) / 1000
-        paint_rate = paints / elapsed
-        grid_steps = end['state']['ticks'] - start['state']['ticks']
-        assert paints > grid_steps, ('Canvas did not paint between simulation grid steps', paints, grid_steps)
-        frames = [frame for frame in end['paint']['frames'] if start['now'] <= frame['time'] <= end['now'] and frame['phase'] == 'playing']
-        assert any(first['ticks'] == second['ticks'] and second['time'] > first['time']
-                   for first, second in zip(frames, frames[1:])), ('No naturally painted intermediate grid frame', frames)
-        page.locator('.snake-canvas').focus()
-        page.keyboard.press('ArrowLeft')
-        wait(page, 'window.firesideSolo.getState().direction === "left"')
-        page.locator('#solo-pause').click()
-        wait(page, 'window.firesideSolo.getState().phase === "paused"')
-        before = solo_state(page)
-        page.wait_for_timeout(230)
-        assert solo_state(page) == before
-        page.locator('#solo-pause').click()
-        wait(page, 'window.firesideSolo.getState().phase === "playing"')
-        page.locator('#solo-restart').click()
-        wait(page, 'window.firesideSolo.getState().ticks <= 1')
-        screenshot(page, 'refresh-snake')
-        REPORT['cases'].append({'game': 'snake', 'native_start_steer_pause_resume_restart': True,
-                                'observed_headless_paints_per_second': paint_rate,
-                                'observed_paints': paints, 'observation_seconds': elapsed,
-                                'simulation_grid_steps': grid_steps,
-                                'native_paints_between_unchanged_grid_steps': True,
-                                'hardware_refresh_rate_not_verified': True})
-        log('native-refresh-pass', game='snake', observed_headless_paints_per_second=paint_rate)
-    finally:
-        context.close()
-
-
-def circuit_case(browser):
-    context = browser.new_context(viewport={'width': 1280, 'height': 1100})
-    context.add_init_script('(' + PAINT_OBSERVER + ')();')
-    page = context.new_page()
-    observe(page, 'apex-circuit')
-    try:
-        page.goto(URL + '/solo.html?game=apex-circuit')
-        wait(page, 'window.firesideSolo && document.getElementById("solo-app").dataset.phase === "ready"')
-        assert solo_state(page) is None
-        page.locator('#solo-start').click()
-        wait(page, 'window.firesideSolo.getState()?.startDelay === 0')
-        initial = solo_state(page)
-        page.locator('.circuit-canvas').focus()
-        page.keyboard.down('ArrowUp')
-        try:
-            views = sample(page, '({state:window.firesideSolo.getState(),timing:window.firesideSolo.getDisplayTiming()})', .75)
-        finally:
-            page.keyboard.up('ArrowUp')
-        before = solo_state(page)
-        assert before['car']['speed'] > 0 and math.hypot(before['car']['x'] - initial['car']['x'], before['car']['y'] - initial['car']['y']) > 5
-        assert views[-1]['timing']['interpolatedSamples'] > 0 and any(0 < item['timing']['lastFraction'] < 1 for item in views)
-        page.keyboard.press('q')
-        after = solo_state(page)
-        assert after['penalty'] == before['penalty'] + 3
-        assert 3 <= after['elapsed'] - before['elapsed'] <= 3.2
-        assert math.hypot(after['car']['x'] - initial['car']['x'], after['car']['y'] - initial['car']['y']) < .01
-        assert after['car']['speed'] == 0
-        frames = page.evaluate('window.__refreshPaint["circuit-canvas"].frames')
-        reset_frames = [frame for frame in frames if before['elapsed'] + 3 - 1e-7 <= frame['elapsed'] <= after['elapsed'] + 1e-7
-                        and frame['timing']['lastFraction'] == 1]
-        assert reset_frames, ('Manual reset did not draw the exact reset pose immediately', frames)
-        assert all(math.hypot(frame['car']['x'] - initial['car']['x'], frame['car']['y'] - initial['car']['y']) < .01 for frame in reset_frames)
-        page.locator('#solo-pause').click()
-        wait(page, 'window.firesideSolo.getState().phase === "paused"')
-        paused = solo_state(page)
-        assert page.evaluate('window.firesideSolo.getDisplayTiming().lastFraction') == 1
-        challenge = paused.get('challenge')
-        if challenge and challenge['resets'] >= challenge['resetLimit']:
-            assert page.locator('[data-action="reset-car"]').is_disabled(), 'Finite Veteran reset allowance was bypassed'
-            reset_paused = paused
-        else:
-            page.locator('[data-action="reset-car"]').click()
-            reset_paused = solo_state(page)
-            assert reset_paused['phase'] == 'paused' and reset_paused['elapsed'] == paused['elapsed'] + 3
-            assert page.evaluate('window.firesideSolo.getDisplayTiming().lastFraction') == 1
-        page.wait_for_timeout(160)
-        assert solo_state(page) == reset_paused
-        page.locator('#solo-pause').click()
-        wait(page, 'window.firesideSolo.getState().phase === "playing"')
-        screenshot(page, 'refresh-apex-circuit')
-        REPORT['cases'].append({'game': 'apex-circuit', 'native_acceleration_interpolation': True,
-                                'native_q_reset': True, 'reset_button_respects_finite_allowance': True,
-                                'each_reset_penalty_seconds': 3,
-                                'manual_reset_immediate_exact_pose_and_fraction_one': True,
-                                'timing': views[-1]['timing']})
-        log('native-refresh-pass', game='apex-circuit', exact_reset_frame=reset_frames[-1])
-    finally:
-        context.close()
-
-
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     REPORT['sources'] = {name: hashlib.sha256((ROOT / 'public' / name).read_bytes()).hexdigest()
                          for name in SOURCES if (ROOT / 'public' / name).exists()}
     selected = set(filter(None, os.environ.get('SEMAG_REFRESH_CASES', '').split(',')))
+    supported = {'breach', 'royale', 'afterimage', 'shadow', 'paris', 'skyline'}
+    assert selected <= supported, ('Unsupported refresh cases', sorted(selected - supported))
     if selected and os.environ.get('SEMAG_REFRESH_APPEND') == '1' and (OUT / 'report.json').exists():
         previous = json.loads((OUT / 'report.json').read_text())
         assert previous['sources'] == REPORT['sources'], 'Cannot merge native proof from different presentation sources'
         names = {'breach': 'voxel-breach', 'royale': 'voxel-royale', 'shadow': 'shadow-lantern',
-                 'paris': 'paris-pedal', 'skyline': 'skyline-hook', 'circuit': 'apex-circuit'}
+                 'paris': 'paris-pedal', 'skyline': 'skyline-hook', 'afterimage': 'afterimage'}
         replaced = {names.get(name, name) for name in selected}
-        REPORT['cases'] = [case for case in previous['cases'] if case['game'] not in replaced]
+        REPORT['cases'] = [case for case in previous['cases']
+                           if case['game'] in names.values() and case['game'] not in replaced]
         for case in REPORT['cases']:
             presentation = case.get('presentation', {})
             if 'maximum_subtick_displacement' in presentation:
@@ -482,10 +361,6 @@ def main():
                                                 ('skyline', 'skyline-hook', 'skyline-canvas', 'ArrowRight')):
                     if not selected or case in selected:
                         solo_case(browser, game, canvas, key)
-                if not selected or 'circuit' in selected:
-                    circuit_case(browser)
-                if not selected or 'snake' in selected:
-                    snake_case(browser)
             finally:
                 browser.close()
     finally:

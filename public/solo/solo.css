@@ -122,7 +122,7 @@
   #solo-app .skyline-view{gap:10px}
   #solo-app .skyline-tier-bar{padding-block:9px}
   #solo-app .prism-stage{grid-template-columns:minmax(0,clamp(180px,calc((100dvh - 320px) / 2),300px)) minmax(0,1fr)}
-  #solo-app .skyline-controls,#solo-app .shadow-controls,#solo-app .paris-controls,#solo-app .highway-controls,#solo-app .circuit-controls,#solo-app .snake-controls{display:none}
+  #solo-app .skyline-controls,#solo-app .shadow-controls,#solo-app .paris-controls,#solo-app .highway-controls{display:none}
   #solo-app .shadow-view{max-width:1200px;margin-inline:auto}
   #solo-app .shadow-tier-bar{padding:7px 12px;gap:15px}
   #solo-app .shadow-tier-bar label{display:flex;align-items:center;gap:9px;font-size:8px;letter-spacing:.8px}
