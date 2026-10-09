@@ -1,6 +1,6 @@
 import { GameAudio } from './audio.js';
 import { gameKey, displayKey, getKeyboardLayout, mountKeyboardLayoutPicker, subscribeKeyboardLayout } from './keyboard-layout.js';
-import { ADS, HEAL, PLAYER_HEALTH, predictLocalMovement } from './voxel-engine.js';
+import { ADS, HEAL, PLAYER_HEALTH, predictLocalMovement, findNearbyLoot as findNearbyBreachLoot } from './voxel-engine.js';
 import { MAPS as BREACH_MAPS } from './voxel-maps.js';
 import { MAPS as ROYALE_MAPS } from './voxel-royale-maps.js';
 import { findNearbyLoot } from './voxel-royale-engine.js';
@@ -13,6 +13,7 @@ import { setHidden, setAttribute, setStyle, setDisabled } from './hub/dom.js';
 import { createPractice, startPractice, stepPractice, pausePractice, resumePractice, getPracticeStats, TICK_RATE } from './voxel-practice-engine.js';
 import { tickFraction } from './display-timing.js';
 import { createPracticeInputQueue } from './voxel-practice-input.js';
+import { inventoryLootPresentation, inventoryEventFeedback, inventorySwapPresentation, mountInventoryHotbar } from './voxel-inventory-ui.js';
 
 const STEP = 1 / TICK_RATE;
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
@@ -62,6 +63,11 @@ export function bootPractice() {
   const locked = () => document.pointerLockElement === canvas;
   const active = () => !destroyed && !modalOpen && ['countdown', 'fight'].includes(state?.phase);
   const currentInput = () => composeInput(keys, touch, mouse, aim, active());
+  const inventory = mountInventoryHotbar($('practice-inventory'), actions => {
+    if (!active() || state?.phase !== 'fight') return;
+    for (const action of actions) inputQueue.press(action);
+    canvas.focus({ preventScroll: true }); wake();
+  });
   const mapMarkers = new Map(); let playerMarker, stormMarker;
 
   setText('practice-title', royale ? 'Voxel Royale' : 'Voxel Breach'); document.title = `${royale ? 'Voxel Royale' : 'Voxel Breach'} Practice — Semag`;
@@ -75,7 +81,7 @@ export function bootPractice() {
   function hints() {
     const layout = getKeyboardLayout(); app.dataset.keyboardLayout = layout;
     setText('practice-move-keys', displayKey('WASD')); setText('practice-grenade-key', displayKey('Q')); setText('practice-guide-grenade', displayKey('Q'));
-    canvas.setAttribute('aria-label', `First-person ${royale ? 'Royale' : 'Breach'} practice. ${displayKey('WASD')} or arrows move, mouse looks, left click or C fires, right click aims, Space jumps, Control crouches, Shift walks, R reloads, V switches blade, ${displayKey('Q')} throws a grenade, F heals, E picks up supplies, Escape pauses.`);
+    canvas.setAttribute('aria-label', `First-person ${royale ? 'Royale' : 'Breach'} practice. ${displayKey('WASD')} or arrows move, mouse looks, left click or C uses your selected item, right click aims, Space jumps, Control crouches, Shift walks, R reloads, 1 to 4 equip inventory slots, X drops your selected item, V switches blade, ${displayKey('Q')} throws a grenade, F heals, E picks up supplies, Escape pauses.`);
     setText('practice-look-hint', fallback ? 'DRAG TO LOOK · ESC PAUSE' : `${displayKey('WASD')} MOVE · RMB AIM · ESC PAUSE`);
   }
   function stopFrame() { if (frameId !== null) cancelAnimationFrame(frameId); frameId = null; previousFrame = null; accumulator = 0; }
@@ -101,7 +107,7 @@ export function bootPractice() {
     const svg = $('practice-map-plan'), map = state.map, { minX, maxX, minZ, maxZ } = map.bounds;
     svg.replaceChildren(); svg.setAttribute('viewBox', `${minX - 2} ${minZ - 2} ${maxX - minX + 4} ${maxZ - minZ + 4}`); mapMarkers.clear();
     const make = (tag, attrs) => { const element = document.createElementNS('http://www.w3.org/2000/svg', tag); for (const [name, value] of Object.entries(attrs)) element.setAttribute(name, value); svg.append(element); return element; };
-    for (const box of map.colliders) if (box.y >= -.01 && box.h > .25) make('rect', { x: box.x, y: box.z, width: box.w, height: box.d });
+    for (const box of map.colliders) if (!box.overhead && box.y >= -.01 && box.h > .25) make('rect', { x: box.x, y: box.z, width: box.w, height: box.d });
     if (royale) stormMarker = make('circle', { class: 'practice-map-storm', cx: state.storm.x, cy: state.storm.z, r: state.storm.radius });
     for (const peer of state.players) if (peer.bot) mapMarkers.set(peer.id, make('circle', { cx: peer.x, cy: peer.z, r: (maxX - minX) / 60 }));
     playerMarker = make('circle', { class: 'practice-map-self', cx: state.players[0].x, cy: state.players[0].z, r: (maxX - minX) / 46 });
@@ -142,6 +148,7 @@ export function bootPractice() {
       }
       if (['kill', 'elimination'].includes(event.type) && perspective.outgoing) { hitUntil = now + 230; feedback(event.headshot ? 'HEADSHOT · TARGET DOWN' : 'TARGET DOWN', now); }
       if (event.type === 'lootPickup' && perspective.source === 0) feedback(event.kind === 'weapon' ? `PICKED UP ${WEAPONS[event.weapon]?.label || 'WEAPON'}` : `PICKED UP ${event.kind.toUpperCase()}`, now);
+      const inventoryFeedback = perspective.source === 0 ? inventoryEventFeedback(event) : null; if (inventoryFeedback) feedback(inventoryFeedback, now);
       if (event.type === 'healComplete' && perspective.source === 0) feedback(`HEALED +${Math.round(event.amount || 0)} HP`, now);
       if (event.type === 'healCancel' && perspective.source === 0) feedback('HEALING INTERRUPTED', now);
       if (audio.enabled && hasGunshotReport(event)) audio.gunshot(event.weapon, { gain: perspective.source === 0 ? 1 : .28 });
@@ -154,15 +161,17 @@ export function bootPractice() {
     if (!force && phase === lastPhase && signature === urgentHud && now - lastHudAt < 80) return;
     urgentHud = signature; const changed = phase !== lastPhase; lastPhase = phase; lastHudAt = now; setAttribute(app, 'data-phase', phase);
     const stats = getPracticeStats(state), player = state.players[0], readout = combatReadout(player, WEAPONS, { ADS, HEAL, PLAYER_HEALTH });
+    inventory.update(player, { visible: activeSession && player.alive, interactive: active() && phase === 'fight' });
+    const swap = inventorySwapPresentation(player), swapButton = document.querySelector('[data-practice-action="swap"]'); if (swap && swapButton) { swapButton.textContent = swap.label; swapButton.setAttribute('aria-label', swap.ariaLabel); }
     setText('practice-map-label', state.mapName); setText('practice-mode-label', state.practice.config.mode === 'targets' ? 'MOVING TARGETS' : 'RETURN FIRE'); setText('practice-bots-left', stats.botsRemaining); setText('practice-hits', stats.hits); setText('practice-clock', clock(stats.seconds));
     setHidden($('practice-overlay'), phase === 'fight'); setHidden($('practice-setup-form'), phase !== 'ready'); setHidden($('practice-pause-card'), phase !== 'paused'); setHidden($('practice-result-card'), phase !== 'matchEnd'); setHidden($('practice-countdown'), phase !== 'countdown');
     setHidden($('practice-combat'), !activeSession); setHidden($('practice-radar'), !activeSession); setDisabled($('practice-pause'), !['fight', 'countdown', 'paused'].includes(phase));
     setText('practice-pause', phase === 'paused' ? '▶' : 'Ⅱ'); setAttribute($('practice-pause'), 'aria-label', phase === 'paused' ? 'Resume practice' : 'Pause practice');
     setDisabled($('practice-start'), !renderer?.available || !!graphicsError);
     setText('practice-health', player.hp); setText('practice-health-max', `/ ${player.maxHp}`); setStyle($('practice-health-fill'), 'width', `${clamp(player.hp / player.maxHp, 0, 1) * 100}%`); setAttribute($('practice-health-rail'), 'aria-valuenow', String(player.hp)); setAttribute($('practice-health-rail'), 'aria-valuemax', String(player.maxHp)); setAttribute($('practice-health-rail'), 'data-low', String(player.hp <= 60));
-    setText('practice-grenades', readout.grenades); setText('practice-potions', readout.potions); setText('practice-weapon-name', readout.label); setText('practice-ammo', readout.ammo); setText('practice-reserve', readout.sword || readout.healing ? '' : `/ ${readout.reserve}`); setText('practice-weapon-status', readout.status); setAttribute(document.querySelector('.practice-weapon'), 'data-sword', String(readout.sword || readout.healing));
+    setText('practice-grenades', readout.grenades); setText('practice-potions', readout.potions); setText('practice-weapon-name', readout.label); setText('practice-ammo', readout.ammo); setText('practice-reserve', readout.sword || readout.healing || readout.utility ? '' : `/ ${readout.reserve}`); setText('practice-weapon-status', readout.status); setAttribute(document.querySelector('.practice-weapon'), 'data-sword', String(readout.sword || readout.healing || readout.utility));
     setHidden($('practice-action-track'), !readout.progress); if (readout.progress) setStyle($('practice-action-fill'), 'width', `${readout.progress.percent}%`);
-    const loot = royale ? findNearbyLoot(state, 0) : null; setHidden($('practice-pickup'), !loot || phase !== 'fight'); if (loot) setText('practice-pickup-name', loot.kind === 'weapon' ? WEAPONS[loot.weapon].name : loot.kind === 'heal' ? 'Healing potion' : loot.kind === 'grenade' ? 'Frag grenade' : 'Ammunition');
+    const loot = (royale ? findNearbyLoot : findNearbyBreachLoot)(state, 0), lootView = inventoryLootPresentation(loot, player); setHidden($('practice-pickup'), !lootView || phase !== 'fight'); if (lootView) { setText('practice-pickup-name', lootView.name); setText('practice-pickup-detail', displayKey(lootView.detail)); }
     if (playerMarker) { setAttribute(playerMarker, 'cx', player.x); setAttribute(playerMarker, 'cy', player.z); }
     for (const [id, marker] of mapMarkers) { const peer = state.players[id]; setAttribute(marker, 'cx', peer.x); setAttribute(marker, 'cy', peer.z); setStyle(marker, 'display', peer.alive && state.practice.config.mode === 'targets' ? '' : 'none'); }
     if (stormMarker && royale) { setAttribute(stormMarker, 'r', state.storm.radius); setStyle(stormMarker, 'display', state.storm.active ? '' : 'none'); }
@@ -271,7 +280,7 @@ export function bootPractice() {
     try { if (document.fullscreenElement) await document.exitFullscreen(); else await shell.requestFullscreen(); } catch { feedback('Fullscreen is unavailable in this browser.', performance.now()); }
   }
   function destroy() {
-    if (destroyed) return; destroyed = true; stopFrame(); release(); unlock(); for (const remove of listeners) remove(); unsubscribe(); picker.destroy(); audio.destroy(); renderer?.destroy(); movement.clear();
+    if (destroyed) return; destroyed = true; stopFrame(); release(); unlock(); for (const remove of listeners) remove(); unsubscribe(); picker.destroy(); audio.destroy(); inventory.destroy(); renderer?.destroy(); movement.clear();
   }
   listen($('practice-setup-form'), 'submit', event => { event.preventDefault(); start(); });
   for (const id of ['practice-map', 'practice-count', 'practice-mode', 'practice-difficulty', 'practice-weapon']) listen($(id), 'change', preview);

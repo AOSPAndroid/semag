@@ -1,5 +1,5 @@
 /** Local drills use the shipped movement, weapons, damage and Royale rules at 120 Hz. */
-import { MAPS as BREACH_MAPS, createState as createBreachState, createCombatPlayer, combatStep, emptyInput, eyeHeight, playerHeight, aimDirection, traceShot, emitCombatEvent, TICK_RATE, WORLD } from './voxel-engine.js';
+import { MAPS as BREACH_MAPS, createState as createBreachState, createCombatPlayer, combatStep, emptyInput, eyeHeight, playerHeight, aimDirection, traceShot, emitCombatEvent, TICK_RATE, WORLD, findNearbyLoot, pickupCombatLoot, advanceInventoryLoot } from './voxel-engine.js';
 import * as Royale from './voxel-royale-engine.js';
 import { WEAPONS } from './voxel-weapons.js';
 
@@ -173,7 +173,7 @@ export function pausePractice(state) {
 export function resumePractice(state) {
   if (!state?.practice || state.phase !== 'paused') return state;
   state.phase = state.practice.pausedPhase || 'fight'; state.practice.pausedPhase = null;
-  state.practice.inputFence = ['fire', 'jump', 'swap', 'grenade', 'heal', 'interact', 'reload'];
+  state.practice.inputFence = ['fire', 'jump', 'swap', 'grenade', 'heal', 'interact', 'reload', 'slot1', 'slot2', 'slot3', 'slot4', 'drop'];
   neutralize(state); return state;
 }
 function visibleEnemy(state, bot, enemy) {
@@ -332,7 +332,10 @@ export function stepPractice(state, localInput = {}) {
       if (--state.phaseTicks <= 0) { state.phase = 'fight'; state.phaseTicks = 0; player.triggerBlocked = inputs[0].fire === true; emitCombatEvent(state, 'fight', { practice: true }); }
       return state;
     }
+    const previous = state.players.map(player => ({ ...player.previousInput }));
     state.roundTicks = Math.max(0, state.roundTicks - 1); combatStep(state, inputs, state.map);
+    for (const player of state.players) if (player.alive && inputs[player.id].interact && !previous[player.id].interact && !inputs[player.id].fire && !player.healTicks && !player.reloadTicks && !player.meleeTicks && !player.grenadeThrowTicks) { const loot = findNearbyLoot(state, player.id, state.map); if (loot) pickupCombatLoot(state, player, loot, inputs[player.id]); }
+    advanceInventoryLoot(state, state.map);
   }
   if (state.phase === 'countdown') return state;
   // The countdown-to-fight transition has not simulated any active time yet.

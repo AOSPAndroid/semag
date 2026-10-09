@@ -1,5 +1,5 @@
 /** Native action edges wait for the next 120 Hz step; presentation stays read only. */
-export const PRACTICE_EDGE_ACTIONS = Object.freeze(['fire', 'jump', 'reload', 'interact', 'swap', 'grenade', 'heal']);
+export const PRACTICE_EDGE_ACTIONS = Object.freeze(['slot1', 'slot2', 'slot3', 'slot4', 'drop', 'fire', 'jump', 'reload', 'interact', 'swap', 'grenade', 'heal']);
 
 export function createPracticeInputQueue() {
   const pending = new Map(), pendingTokens = new Map(), sampled = new Map(), blocked = new Set();

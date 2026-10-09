@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT = Path(os.environ.get('SEMAG_SCREENSHOT_DIR', '/workspace/scratch/semag-royale-browser'))
 URL = (sys.argv[1] if len(sys.argv) > 1 else 'http://127.0.0.1:3000').rstrip('/')
 MAP_IDS = ('forest', 'maze', 'desert')
-CATALOG_MAP_IDS = (*MAP_IDS, 'paris')
+CATALOG_MAP_IDS = (*MAP_IDS, 'paris', 'snow', 'sewers', 'trading')
 spec = importlib.util.spec_from_file_location('voxel_native', ROOT / 'test' / 'voxel-browser-smoke.py')
 native = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(native)

@@ -10,9 +10,10 @@ import { combatPresentation, createCorrectionPresenter, createMovementPresenter,
 import { createNetworkTimeline } from './network-timeline.js';
 import { createFpsInputQueue, releaseFpsTouchAction } from './voxel-input-queue.js';
 import { setAttribute, setDisabled, setHidden, setStyle, setText, toggleClass } from './hub/dom.js';
+import { inventoryControlForKey, inventoryItemReadout, inventoryLootPresentation, inventoryEventFeedback, inventorySlots, inventorySwapPresentation, mountInventoryHotbar } from './voxel-inventory-ui.js';
 
 export const LOOK_SENSITIVITY = .0025;
-export const INPUT_ACTIONS = Object.freeze(['up', 'down', 'left', 'right', 'jump', 'crouch', 'walk', 'fire', 'reload', 'interact', 'aim', 'swap', 'grenade', 'heal']);
+export const INPUT_ACTIONS = Object.freeze(['up', 'down', 'left', 'right', 'jump', 'crouch', 'walk', 'fire', 'reload', 'interact', 'aim', 'swap', 'grenade', 'heal', 'slot1', 'slot2', 'slot3', 'slot4', 'drop']);
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const finite = (n, fallback = 0) => Number.isFinite(n) ? n : fallback;
 const clone = value => value == null ? value : structuredClone(value);
@@ -26,7 +27,7 @@ export function neutralInput(yaw = 0, pitch = 0) {
 }
 export function controlForKey(event, layout = getKeyboardLayout()) {
   if (event.defaultPrevented || event.isComposing || event.altKey || event.metaKey) return null;
-  return ({ w: 'up', s: 'down', a: 'left', d: 'right', arrowup: 'up', arrowdown: 'down', arrowleft: 'left', arrowright: 'right', ' ': 'jump', control: 'crouch', shift: 'walk', r: 'reload', e: 'interact', v: 'swap', q: 'grenade', g: 'grenade', f: 'heal', h: 'heal' })[gameKey(event, layout).toLowerCase()] || null;
+  return inventoryControlForKey(event) || ({ w: 'up', s: 'down', a: 'left', d: 'right', arrowup: 'up', arrowdown: 'down', arrowleft: 'left', arrowright: 'right', ' ': 'jump', control: 'crouch', shift: 'walk', r: 'reload', e: 'interact', v: 'swap', q: 'grenade', g: 'grenade', f: 'heal', h: 'heal' })[gameKey(event, layout).toLowerCase()] || null;
 }
 export function isFormTarget(target) {
   return !!(target?.isContentEditable || target?.closest?.('input, select, textarea, button, a, [contenteditable]:not([contenteditable="false"]), [role="dialog"]'));
@@ -71,6 +72,7 @@ export function spectatorPlayer(state, localId, spectatorId) {
 /** Pickup eligibility and line of sight come from the shared authoritative helper. */
 export function lootPresentation(loot, player) {
   if (!loot || !player?.alive) return null;
+  if (Array.isArray(player.inventory)) return inventoryLootPresentation(loot, player);
   if (loot.kind === 'weapon') {
     const weapon = WEAPONS[loot.weapon]; if (!weapon) return null;
     const exchange = player.hasGun && player.weapon !== loot.weapon;
@@ -106,7 +108,7 @@ export function healthPresentation(player, previous = null, { now = 0, matchId =
   return { id: player?.id, matchId, hp, maxHp, trailHp, trailFrom, damageAt, percent: hp / maxHp * 100, trailPercent: trailHp / maxHp * 100, low: hp > 0 && hp / maxHp <= .3, dead: player?.alive === false || hp === 0 };
 }
 export function aimFraction(player, ticks = 18) {
-  if (!player?.hasGun || player?.alive === false || player?.slot === 'sword' || player?.healTicks > 0 || player?.reloadTicks > 0 || player?.grenadeThrowTicks > 0) return 0;
+  if (!player?.hasGun || player?.alive === false || ['sword', 'potion', 'grenade', 'empty'].includes(player?.slot) || player?.healTicks > 0 || player?.reloadTicks > 0 || player?.grenadeThrowTicks > 0) return 0;
   return clamp(finite(player.aimTicks) / Math.max(1, ticks), 0, 1);
 }
 export function aimLookMultiplier(player, ads = {}) {
@@ -132,7 +134,7 @@ export function combatReadout(player, rules = {}) {
   if (!sword && player.shotCooldown > 0 && ['bolt', 'pump', 'burst'].includes(weapon.mode) && !player.reloadTicks) status = ({ bolt: 'CYCLING BOLT', pump: 'PUMPING', burst: 'BURST RECOVERY' })[weapon.mode];
   if (healing) { label = 'HEALING POTION'; ammo = `+${Math.min(rules.HEAL?.amount || HEAL.amount, Math.max(0, (player.maxHp || PLAYER_HEALTH) - player.hp))}`; status = 'DRINKING · STAY IN COVER'; progress = { remaining: player.healTicks, total: rules.HEAL?.ticks || 240, label: 'Drinking healing potion' }; }
   if (progress) progress.percent = clamp(100 - progress.remaining / progress.total * 100, 0, 100);
-  return { label, ammo, reserve: Math.max(0, finite(player?.reserve)), sword, healing, status, progress, inventory: weapon ? `${weapon.label} + ${bladeLabel}` : `${bladeLabel} ONLY · SCAVENGE A GUN`, grenades: Math.max(0, finite(player?.grenades)), potions: Math.max(0, finite(player?.potions)) };
+  return { label, ammo, reserve: Math.max(0, finite(player?.reserve)), sword, healing, status, progress, inventory: Array.isArray(player?.inventory) ? inventorySlots(player).filter(slot => slot.kind !== 'empty').map(slot => slot.label).join(' · ') : weapon ? `${weapon.label} + ${bladeLabel}` : `${bladeLabel} ONLY · SCAVENGE A GUN`, grenades: Math.max(0, finite(player?.grenades)), potions: Math.max(0, finite(player?.potions)), ...inventoryItemReadout(player) };
 }
 export function confirmedHitGroups(events, localId) {
   const groups = new Map();
@@ -186,6 +188,11 @@ async function boot() {
   function pointerLocked() { return document.pointerLockElement === canvas; }
   function controlsActive() { return controlsAllowed({ connected, entered, paused, modalOpen, graphicsError, hidden: document.hidden, alive: ownPlayer()?.alive, phase: state?.phase, pointerLocked: pointerLocked(), fallback, touchMode }); }
   function currentInput() { return composeInput(keys, touch, mouse, aim, controlsActive()); }
+  const inventory = mountInventoryHotbar($('royale-inventory'), actions => {
+    if (!controlsActive() || state?.phase !== 'fight') return;
+    const fresh = actions.filter(action => !keys.has(action)); fresh.forEach(action => keys.add(action)); sendInput(currentInput(), true);
+    fresh.forEach(action => keys.delete(action)); sendInput(currentInput(), true); canvas.focus({ preventScroll: true });
+  });
   function sendInput(buttons = currentInput(), edge = false, now = performance.now(), cancelActions = false, cancelPress = null) {
     const nextSequence = sequence >= 999999000 ? 1 : sequence + 1;
     if (cancelActions) actionInputs.reset({ held: buttons, neutral: true });
@@ -237,7 +244,7 @@ async function boot() {
       mapPlanId = map.id; svg.replaceChildren(); const b = map.bounds;
       svg.setAttribute('viewBox', `${b.minX - 2} ${b.minZ - 2} ${b.maxX - b.minX + 4} ${b.maxZ - b.minZ + 4}`);
       svg.append(node('rect', { x: b.minX, y: b.minZ, width: b.maxX - b.minX, height: b.maxZ - b.minZ, class: 'map-floor' }));
-      for (const box of map.colliders) if (box.h >= .3) svg.append(node('rect', { x: box.x, y: box.z, width: box.w, height: box.d, class: 'map-cover' }));
+      for (const box of map.colliders) if (!box.overhead && box.h >= .3) svg.append(node('rect', { x: box.x, y: box.z, width: box.w, height: box.d, class: 'map-cover' }));
       zoneCircle = node('circle', { class: 'map-storm' }); nextCircle = node('circle', { class: 'map-next' }); mapSelf = node('path', { d: 'M0 -2 L1.6 1.5 L0 .8 L-1.6 1.5 Z', class: 'map-self' });
       svg.append(nextCircle, zoneCircle, mapSelf);
     }
@@ -291,8 +298,9 @@ async function boot() {
     setText($('health-status'), health.low ? 'LOW HEALTH · FIND COVER' : spectating ? 'SPECTATING' : 'ONE LIFE · STAY SHARP');
     setHidden($('health-gain'), spectating || performance.now() >= healthGainUntil || !healthGain); setText($('health-gain'), `+${healthGain}`);
     const readout = combatReadout(viewed || {}, engine); setText($('weapon-label'), readout.label); setText($('ammo'), readout.ammo); setText($('reserve'), readout.reserve);
-    setHidden($('ammo-reserve'), readout.sword || readout.healing); setText($('weapon-status'), readout.status); setText($('inventory-label'), readout.inventory);
-    $('weapon-readout').dataset.slot = readout.healing ? 'potion' : readout.sword ? 'sword' : 'primary';
+    inventory.update(viewed, { visible: !!viewed?.alive && ['countdown', 'fight'].includes(phase), interactive: !spectating && controlsActive() && phase === 'fight' });
+    setHidden($('ammo-reserve'), readout.sword || readout.healing || readout.utility); setText($('weapon-status'), readout.status); setText($('inventory-label'), readout.inventory);
+    $('weapon-readout').dataset.slot = readout.utility ? viewed?.slot || 'empty' : readout.healing ? 'potion' : readout.sword ? 'sword' : 'primary';
     setHidden($('reload-track'), !readout.progress); setStyle($('reload-progress'), 'width', `${readout.progress?.percent || 0}%`); setAttribute($('reload-track'), 'aria-label', readout.progress?.label || 'Weapon action'); setAttribute($('reload-track'), 'aria-valuenow', String(Math.round(readout.progress?.percent || 0)));
     setText($('grenade-charge'), readout.grenades); setText($('potion-charge'), readout.potions);
     const storm = stormPresentation(state, viewed); setHidden($('storm-hud'), !storm.visible); setText($('storm-label'), storm.label); setText($('storm-clock'), storm.text); setText($('storm-detail'), storm.detail); toggleClass($('storm-hud'), 'shrinking', !!storm.shrinking); toggleClass($('storm-hud'), 'outside', storm.outside); setHidden($('storm-warning'), !storm.outside);
@@ -306,7 +314,7 @@ async function boot() {
     const living = aliveParticipants(state), placement = state?.placements?.find(item => item.playerId === playerId);
     setHidden($('spectator-hud'), !local || local.alive || phase !== 'fight'); setText($('placement-label'), placement ? `PLACED #${placement.place}` : 'ELIMINATED'); setText($('spectator-label'), spectating ? `SPECTATING ${lookupName(viewed.id).toUpperCase()}` : 'NO SURVIVORS'); setHidden($('next-spectator'), living.length < 2);
     setHidden($('pause-button'), paused || !entered || !local?.alive || !['countdown', 'fight'].includes(phase)); setHidden($('touch-controls'), !touchMode || !entered || paused || !local?.alive || !['countdown', 'fight'].includes(phase));
-    for (const button of document.querySelectorAll('[data-royale-action]')) { const action = button.dataset.royaleAction; if (action === 'swap') { button.textContent = readout.sword && local?.hasGun ? 'GUN' : 'KNIFE'; button.setAttribute('aria-label', readout.sword && local?.hasGun ? 'Switch to scavenged gun' : 'Switch to small knife'); button.setAttribute('aria-pressed', String(readout.sword)); } if (action === 'aim') button.setAttribute('aria-pressed', String(!!local?.aiming)); }
+    for (const button of document.querySelectorAll('[data-royale-action]')) { const action = button.dataset.royaleAction; if (action === 'swap') { const swap = inventorySwapPresentation(local); button.textContent = swap?.label || (readout.sword && local?.hasGun ? 'GUN' : 'KNIFE'); button.setAttribute('aria-label', swap?.ariaLabel || (readout.sword && local?.hasGun ? 'Switch to scavenged gun' : 'Switch to small knife')); button.setAttribute('aria-pressed', String(readout.sword)); } if (action === 'aim') button.setAttribute('aria-pressed', String(!!local?.aiming)); }
     setText($('objective'), phase === 'lobby' ? room.capacity === 2 ? 'Invite your rival. The host starts with both players here.' : `The host can start with 2–${room.capacity} players.` : phase === 'countdown' ? 'Random spawns. Scavenge a gun when the battle begins.' : phase === 'fight' ? local?.alive ? 'Scavenge supplies. Stay inside the zone. Be the last alive.' : 'One life spent. Watch the remaining survivors.' : 'Battle complete. The host can return everyone to the lobby.');
     let overlay = false, title = '', kicker = '', subtitle = '', enter = false;
     if (graphicsError) { overlay = true; kicker = 'GRAPHICS UNAVAILABLE'; title = 'The island could not render.'; subtitle = graphicsError; }
@@ -323,6 +331,7 @@ async function boot() {
       const id = event.id ?? `${state?.tick}:${event.type}:${event.playerId ?? event.attackerId ?? ''}:${event.targetId ?? ''}`;
       if (eventSeen.has(id)) continue; eventSeen.add(id); eventOrder.push(id); fresh.push(event); if (eventOrder.length > 512) eventSeen.delete(eventOrder.shift());
       const source = event.shooterId ?? event.attackerId ?? event.playerId ?? event.ownerId, target = event.targetId;
+      const inventoryFeedback = source === playerId ? inventoryEventFeedback(event) : null; if (inventoryFeedback) toast(inventoryFeedback);
       if (event.type === 'damage' && event.damage > 0) { if (source === playerId && target !== playerId) { hitUntil = performance.now() + 150; hitKind = event.headshot ? 'headshot' : 'body'; } const incoming = incomingDamageFeedback(event, spectatorPlayer(state, playerId, spectatorId), state.players, { now: performance.now(), lifeKey: state.matchId, friendlyFire: true }); if (incoming) damageFeedback = incoming; }
       if (['kill', 'elimination', 'death'].includes(event.type)) {
         kills.push({ at: performance.now(), own: source === playerId && target !== playerId, text: `${source == null ? 'THE STORM' : source === target ? 'SELF FRAG' : lookupName(source)} ${event.headshot ? '[HS]' : '›'} ${lookupName(target)}` }); if (kills.length > 4) kills.shift();
@@ -477,7 +486,7 @@ async function boot() {
     if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
   }
-  function updateKeyLabels() { setText($('move-keys'), getKeyboardLayout().toUpperCase()); for (const label of document.querySelectorAll('[data-royale-key]')) label.textContent = displayKey(label.dataset.royaleKey); canvas.setAttribute('aria-label', `3D battle royale. ${getKeyboardLayout().toUpperCase()} or arrows move; mouse looks; left click shoots or strikes; right click aims; E picks up loot; V swaps knife and gun; ${displayKey('Q')} throws grenade; F heals; R reloads; Space jumps; Control crouches; Shift walks; Escape releases controls.`); }
+  function updateKeyLabels() { setText($('move-keys'), getKeyboardLayout().toUpperCase()); for (const label of document.querySelectorAll('[data-royale-key]')) label.textContent = displayKey(label.dataset.royaleKey); canvas.setAttribute('aria-label', `3D battle royale. ${getKeyboardLayout().toUpperCase()} or arrows move; mouse looks; left click uses your selected item; right click aims; 1 to 4 equip inventory slots; X drops the selected item; E picks up loot; V swaps blade and gun; ${displayKey('Q')} throws grenade; F heals; R reloads; Space jumps; Control crouches; Shift walks; Escape releases controls.`); }
   const unsubscribeLayout = subscribeKeyboardLayout(() => { neutralize({ pause: entered, unlock: true }); updateKeyLabels(); }); updateKeyLabels();
   listen(window, 'keydown', event => { if (event.defaultPrevented || event.isComposing || event.altKey || event.metaKey) return; if (event.key === 'Escape') { if (modalOpen) { if (!$('guide-dialog').hidden) closeGuide(); else closeRoom(); } else if (entered) neutralize({ pause: true, unlock: true }); return; } if (event.key.toLowerCase() === 'p' && !isFormTarget(event.target) && entered) { event.preventDefault(); neutralize({ pause: true, unlock: true }); return; } if (!controlsActive() || isFormTarget(event.target)) return; const action = controlForKey(event); if (!action) return; event.preventDefault(); const id = event.code || event.key; if (pressedKeys.has(id) || event.repeat) return; pressedKeys.set(id, action); keys.add(action); utilityFeedback(action); sendInput(currentInput(), true); });
   listen(window, 'keyup', event => { const id = event.code || event.key, action = pressedKeys.get(id); pressedKeys.delete(id); if (action && ![...pressedKeys.values()].includes(action)) keys.delete(action); if (action) { sendInput(currentInput(), true); if (!isFormTarget(event.target)) event.preventDefault(); } });
@@ -547,7 +556,7 @@ async function boot() {
   hostInfo().then(info => { invite = `${info.origin}/voxel-royale.html?room=${encodeURIComponent(roomId)}`; setText($('invite-address'), invite); }).catch(() => {});
   listen($('copy-code'), 'click', async () => { try { await copyText(roomId); toast('Room code copied.'); } catch (cause) { toast(cause.message); } }); listen($('copy-invite'), 'click', async () => { try { await copyText(invite); toast('Invite link copied.'); } catch (cause) { toast(cause.message); } });
   const pingTimer = setInterval(() => { if (connected && !document.hidden) send({ type: 'ping', time: performance.now() }); }, 1500);
-  function destroy() { if (destroyed) return; neutralize({ pause: true, unlock: true }); destroyed = true; clearTimeout(reconnectTimer); clearTimeout(toastTimer); clearInterval(pingTimer); clearInterval(heartbeat); heartbeat = null; if (frameId) cancelAnimationFrame(frameId); frameId = null; socket?.close(); renderer?.destroy(); audio.destroy(); layoutPicker.destroy(); unsubscribeLayout(); for (const remove of removers) remove(); pending = []; snapshots = []; kills.length = 0; eventSeen.clear(); }
+  function destroy() { if (destroyed) return; neutralize({ pause: true, unlock: true }); destroyed = true; clearTimeout(reconnectTimer); clearTimeout(toastTimer); clearInterval(pingTimer); clearInterval(heartbeat); heartbeat = null; if (frameId) cancelAnimationFrame(frameId); frameId = null; socket?.close(); renderer?.destroy(); audio.destroy(); inventory.destroy(); layoutPicker.destroy(); unsubscribeLayout(); for (const remove of removers) remove(); pending = []; snapshots = []; kills.length = 0; eventSeen.clear(); }
   listen(window, 'pagehide', destroy);
   const inspect = () => { const { map, ...snapshot } = state || {}; return clone({ state: state ? snapshot : null, players: roster, playerId, hostId, input: currentInput(), predictedPlayer, presentationPlayer, presentationPlayers, predictionRemainder: accumulator, predictionTick, actionQueue: actionInputs.inspect(), timeline: timeline.getState(), correction: correction.getState(), connected, controls: { pointerLocked: pointerLocked(), fallback, touch: touchMode, paused, entered, modalOpen }, queueLength: pending.length, renderCount, renderStats: renderer?.stats || null, audio: audio.inspectGunshots(), graphicsError, spectatorId }); };
   window.SemagRoyale = Object.freeze({ getState: inspect, inspect }); updateUI();

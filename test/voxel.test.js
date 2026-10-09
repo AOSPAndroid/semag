@@ -15,7 +15,7 @@ test('room modes create stable teams, unique spawns and bounded state', () => {
   for (const teamSize of [1, 2, 3]) for (const mapId of Object.keys(game.MAPS)) {
     const state = game.createState({ teamSize, mapId }); assert.equal(state.players.length, 2 * teamSize); assert.equal(state.capacity, 2 * teamSize); assert.equal(state.players, state.fighters); assert.equal(state.phase, 'lobby');
     assert.deepEqual(state.players.map(f => f.team), [...Array(teamSize).fill(0), ...Array(teamSize).fill(1)]);
-    for (const player of state.players) { assert.equal(player.hp, 200); assert.equal(player.maxHp, 200); assert.equal(player.meleeWeapon, 'sword'); }
+    for (const player of state.players) { assert.equal(player.hp, 200); assert.equal(player.maxHp, 200); assert.equal(player.meleeWeapon, 'knife'); }
     assert.equal(new Set(state.players.map(f => `${f.x},${f.z}`)).size, teamSize * 2);
     for (const f of state.players) assert.equal(game.traceShot(state, f.id, { x: f.x, y: f.y + game.eyeHeight(f), z: f.z }, { x: 0, y: -1, z: 0 }).colliderId, 'floor');
   }
@@ -295,9 +295,16 @@ test('authored maps have two reachable sites and distinct geometry for every mod
       advance(state, 18); assert.ok(Math.hypot(f.x - x, f.z - z) < .3, `${mapId} route stopped ${f.x},${f.z}`);
     };
     const paris = mapId === 'paris', flank = (siteIndex ? 1 : -1) * (paris ? 23 : 20), crossing = paris ? -21 : siteIndex && mapId === 'depot' ? -10 : -7, site = arena.sites[siteIndex];
-    // Paris delivery stairs occupy the inner lane, so skirt them at the perimeter.
-    if (paris) driveTo(f.x, 20.5);
-    driveTo(flank, paris ? 20.5 : 18); driveTo(flank, crossing); driveTo(site.x, crossing); driveTo(site.x, site.z); hold(state, 0, 360); assert.equal(state.bomb.status, 'planted', `${mapId} ${site.id}`);
+    if (arena.groundRoutes) {
+      const route = arena.groundRoutes.find(route => route.siteId === site.id);
+      assert.ok(route, `${mapId} authored ground flank to ${site.id}`);
+      for (const point of route.waypoints) driveTo(point.x, point.z);
+    } else {
+      // Paris delivery stairs occupy the inner lane, so skirt them at the perimeter.
+      if (paris) driveTo(f.x, 20.5);
+      driveTo(flank, paris ? 20.5 : 18); driveTo(flank, crossing); driveTo(site.x, crossing); driveTo(site.x, site.z);
+    }
+    hold(state, 0, 360); assert.equal(state.bomb.status, 'planted', `${mapId} ${site.id}`);
   }
   assert.equal(new Set(Object.values(game.MAPS).map(map => JSON.stringify(map.colliders))).size, Object.keys(game.MAPS).length);
 });
@@ -316,9 +323,9 @@ test('invalid input cannot poison finite player state or invent keypresses', () 
   for (const f of state.players) for (const key of ['x', 'y', 'z', 'vx', 'vy', 'vz', 'yaw', 'pitch', 'hp', 'ammo']) assert.ok(Number.isFinite(f[key]));
 });
 
-test('all nine primary loadouts keep finite ammunition and refill only between rounds', () => {
+test('all thirteen primary loadouts keep finite ammunition and refill only between rounds', () => {
   const state = game.createState();
-  assert.deepEqual(Object.keys(game.WEAPONS), ['carbine', 'smg', 'marksman', 'pistol', 'shotgun', 'burst', 'sniper', 'lmg', 'crossbow']);
+  assert.deepEqual(Object.keys(game.WEAPONS), ['carbine', 'smg', 'marksman', 'pistol', 'shotgun', 'burst', 'sniper', 'lmg', 'crossbow', 'revolver', 'pdw', 'autoshotgun', 'battlerifle']);
   for (const weapon of Object.values(game.WEAPONS)) {
     assert.equal(game.selectLoadout(state, 0, weapon.id).ok, true);
     assert.equal(state.players[0].ammo, weapon.magazine); assert.equal(state.players[0].reserve, weapon.reserve);
@@ -386,7 +393,8 @@ test('ADS settles over eighteen ticks, reduces spread and recoil, and prediction
   assert.ok(Math.abs(adsShot.dz) < Math.abs(hipShot.dz)); assert.ok(f.recoil < hip.players[0].recoil);
   advance(state, 9); assert.equal(f.aiming, false); assert.equal(f.aimTicks, 0);
 });
-const swordReady = state => { const f = state.players[0]; game.step(state, [input({ swap: true }, f), ...neutral(state).slice(1)]); advance(state, 1); assert.equal(f.slot, 'sword'); return f; };
+const equipSword = f => { f.meleeWeapon = 'sword'; f.inventory[0].weapon = 'sword'; return f; };
+const swordReady = state => { const f = equipSword(state.players[0]); game.step(state, [input({ swap: true }, f), ...neutral(state).slice(1)]); advance(state, 1); assert.equal(f.slot, 'sword'); return f; };
 test('sword windup, active contact and recovery apply one hit per swing without spending gun ammunition', () => {
   const state = lane(fighting(), { az: .7, bz: -.7 }), f = swordReady(state), ammo = f.ammo;
   shot(state); assert.equal(f.meleePhase, 'startup'); assert.equal(f.meleeTicks, 72); assert.equal(state.players[1].hp, 200);
@@ -406,7 +414,7 @@ test('sword commits attack direction and cannot reach through solid cover, allie
   const high = lane(fighting(), { az: .7, bz: -.7 }); Object.assign(high.players[1], { y: 4, grounded: false }); swordReady(high); shot(high); advance(high, 18); assert.equal(high.players[1].hp, 200);
 });
 test('sword attacks trade in the same authoritative active tick and swap cannot bypass recovery', () => {
-  const trade = lane(fighting(), { az: .7, bz: -.7 }); for (const f of trade.players) { f.slot = 'sword'; f.hp = 50; }
+  const trade = lane(fighting(), { az: .7, bz: -.7 }); for (const f of trade.players) { equipSword(f); f.slot = 'sword'; f.hp = 50; }
   game.step(trade, trade.players.map(f => input({ fire: true }, f))); advance(trade, game.MELEE.startupTicks);
   assert.deepEqual(trade.players.map(f => f.alive), [false, false]); assert.deepEqual(trade.players.map(f => f.kills), [1, 1]);
   const state = lane(fighting()), f = swordReady(state); shot(state, 0, { yaw: Math.PI / 2 });
@@ -459,7 +467,7 @@ test('round reset refills the full kit, clears actions and live grenades, and pr
   state.grenades.push({ id: 999, playerId: 0, team: 0, x: 20, y: .12, z: 10, vx: 0, vy: 0, vz: 0, radius: .12, fuseTicks: 2, bornTick: state.tick - 1, bounces: 0 });
   state.roundTicks = 1; game.step(state, neutral(state)); assert.equal(state.phase, 'roundEnd'); assert.equal(state.grenades.length, 0); assert.equal(f.meleeTicks, 0); assert.equal(f.aimTicks, 0);
   advance(state, 4 * game.TICK_RATE); const next = state.players[0]; assert.equal(next.slot, 'primary'); assert.equal(next.weapon, 'pistol'); assert.equal(next.ammo, 12); assert.equal(next.potions, 1); assert.equal(next.grenades, 1); assert.equal(next.kills, 2); assert.equal(next.damageDealt, 140);
-  assert.equal(next.hp, 200); assert.equal(next.maxHp, 200); assert.equal(next.meleeWeapon, 'sword');
+  assert.equal(next.hp, 200); assert.equal(next.maxHp, 200); assert.equal(next.meleeWeapon, 'knife');
   assert.equal(next.meleeTicks, 0); assert.equal(next.healTicks, 0); assert.equal(next.aimTicks, 0); assert.equal(state.grenades.length, 0);
 });
 
@@ -509,7 +517,7 @@ test('six shotgun volleys preserve every player fire event through a four-tick u
       game.step(state, neutral(state));
     }
     assert.ok(state.events.length <= game.EVENT_LIMIT);
-    assert.equal(state.eventId - startId, 120, 'the higher-HP blast retains partial contacts while the full volley still fits the finite event history');
+    assert.equal(state.eventId - startId, detonate ? 144 : 120, 'combat and twenty-four physical inventory drops fit the finite event history without losing shots');
     for (const f of state.players) assert.equal(state.events.filter(e => e.id > startId && e.type === 'shot' && e.playerId === f.id).length, 8, `seat ${f.id} keeps muzzle, sound and pellet feedback`);
     if (detonate) {
       assert.equal(state.events.filter(e => e.id > startId && e.type === 'grenadeExplosion').length, 6);

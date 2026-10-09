@@ -2,10 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createCombatPlayer, predictLocalMovement, emptyInput, PLAYER_HEALTH } from '../public/voxel-engine.js';
 import { WEAPONS } from '../public/voxel-weapons.js';
+import { initializeInventory } from '../public/voxel-inventory.js';
 import { cleanAim, neutralInput, controlForKey, controlsAllowed, composeInput, createInputPacer, aliveParticipants, canHostStart, roomPresentation, spectatorPlayer, lootPresentation, stormPresentation, healthPresentation, combatReadout, aimFraction, confirmedHitGroups, reconcilePlayer, interpolatedState } from '../public/voxel-royale-client.js';
 
 const arena = { id: 'test-island', bounds: { minX: -20, maxX: 20, minZ: -20, maxZ: 20 }, colliders: [{ id: 'cover', x: -3, y: 0, z: -3, w: 6, h: 3, d: 1 }] };
-const player = (id = 0, values = {}) => ({ ...createCombatPlayer(id), team: id, hasGun: false, meleeWeapon: 'knife', slot: 'sword', ammo: 0, reserve: 0, potions: 0, grenades: 0, ...values });
+const player = (id = 0, values = {}) => {
+  const own = { ...createCombatPlayer(id), team: id };
+  initializeInventory(own, { weapon: values.weapon || 'carbine', knifeOnly: values.hasGun !== true });
+  return Object.assign(own, values);
+};
 const active = { connected: true, entered: true, paused: false, modalOpen: false, graphicsError: '', hidden: false, alive: true, phase: 'fight', pointerLocked: true, fallback: false, touchMode: false };
 
 test('French printed movement and close-hand utilities work while Control crouches', () => {
@@ -67,7 +72,7 @@ test('living HUD remains own, eliminated spectators can follow any living partic
 
 test('gun placeholder does not become owned inventory or sights until scavenged', () => {
   const unarmed = player(0, { weapon: 'sniper', aimTicks: 18, slot: 'primary' });
-  const sword = combatReadout(unarmed); assert.equal(sword.label, 'KNIFE'); assert.equal(sword.ammo, 'READY'); assert.match(sword.inventory, /KNIFE ONLY/); assert.equal(aimFraction(unarmed), 0);
+  const sword = combatReadout(unarmed); assert.equal(sword.label, 'KNIFE'); assert.equal(sword.ammo, 'READY'); assert.equal(sword.inventory, 'KNIFE'); assert.equal(aimFraction(unarmed), 0);
   const gun = player(0, { hasGun: true, weapon: 'shotgun', slot: 'primary', ammo: 4, reserve: 12 });
   const armed = combatReadout(gun); assert.equal(armed.label, WEAPONS.shotgun.label); assert.equal(armed.ammo, 4); assert.equal(armed.reserve, 12);
   assert.equal(aimFraction({ ...gun, aimTicks: 18 }), 1);
@@ -78,17 +83,17 @@ test('small-knife progress uses its quicker profile and remains in inventory aft
   const own = player(0, { meleeTicks: 22, meleePhase: 'startup' });
   let readout = combatReadout(own);
   assert.equal(readout.label, 'KNIFE'); assert.equal(readout.progress.total, 44); assert.equal(readout.progress.percent, 50); assert.equal(readout.progress.label, 'Knife attack and recovery');
-  readout = combatReadout({ ...own, hasGun: true, weapon: 'smg', slot: 'primary', meleeTicks: 0 });
-  assert.equal(readout.inventory, `${WEAPONS.smg.label} + KNIFE`);
+  readout = combatReadout(player(0, { hasGun: true, weapon: 'smg', slot: 'primary', meleeTicks: 0 }));
+  assert.equal(readout.inventory, `KNIFE · ${WEAPONS.smg.label} · POTION · FRAG`);
 });
 
 test('pickup readout explains gun exchanges, consumables and ammunition without inventing availability', () => {
   const own = player(0, { hasGun: true, weapon: 'carbine' });
   const exchange = lootPresentation({ id: 'sniper-cache', kind: 'weapon', weapon: 'sniper', ammo: 2, reserve: 8 }, own);
-  assert.equal(exchange.name, WEAPONS.sniper.name); assert.match(exchange.detail, /EXCHANGE CARBINE.*2 \/ 8/);
-  assert.match(lootPresentation({ id: 1, kind: 'weapon', weapon: 'smg' }, player()).detail, /PICK UP/);
+  assert.equal(exchange.name, WEAPONS.sniper.name); assert.match(exchange.detail, /Replace Kestrel Carbine.*slot 2.*2 \/ 8/);
+  assert.match(lootPresentation({ id: 1, kind: 'weapon', weapon: 'smg' }, player()).detail, /Pick up/);
   assert.match(lootPresentation({ id: 1, kind: 'ammo', amount: 24 }, own).detail, /\+24 RESERVE/);
-  assert.match(lootPresentation({ id: 1, kind: 'heal' }, own).detail, /60 HP/);
+  assert.match(lootPresentation({ id: 1, kind: 'heal' }, own).detail, /STACK TO 2.*F TO HEAL/);
   assert.equal(lootPresentation(null, own), null);
   assert.equal(lootPresentation({ kind: 'weapon', weapon: 'unknown' }, own), null);
   assert.equal(lootPresentation({ kind: 'heal' }, { ...own, alive: false }), null);

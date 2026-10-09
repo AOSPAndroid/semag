@@ -74,8 +74,8 @@ function climb(player, map, route) {
   }
 }
 
-test('Royale has four distinct immutable authored arenas with bounded geometry and spread spawn choices', () => {
-  assert.deepEqual(MAP_IDS, ['forest', 'maze', 'desert', 'paris']);
+test('Royale has seven distinct immutable authored arenas with bounded geometry and spread spawn choices', () => {
+  assert.deepEqual(MAP_IDS, ['forest', 'maze', 'desert', 'paris', 'snow', 'sewers', 'trading']);
   assert.ok(Object.isFrozen(MAPS) && Object.isFrozen(MAP_IDS));
   const skies = new Set(), floors = new Set(), shapes = new Set();
   for (const map of Object.values(MAPS)) {
@@ -103,7 +103,7 @@ test('Royale has four distinct immutable authored arenas with bounded geometry a
     assert.ok(clear(map, map.stormCenter), `${map.id} final circle has clear standing ground`);
     skies.add(map.skyColor); floors.add(map.floorColor); shapes.add(JSON.stringify(map.colliders));
   }
-  assert.equal(skies.size, 4); assert.equal(floors.size, 4); assert.equal(shapes.size, 4);
+  assert.equal(skies.size, MAP_IDS.length); assert.equal(floors.size, MAP_IDS.length); assert.equal(shapes.size, MAP_IDS.length);
 });
 
 for (const map of Object.values(MAPS)) {

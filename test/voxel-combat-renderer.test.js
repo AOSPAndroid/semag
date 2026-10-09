@@ -138,7 +138,7 @@ test('round resets clear confirmed blood and setup snapshots cannot recreate it'
 });
 
 test('short knives and long swords have distinct finite clipped first and third person geometry', () => {
-  const player = { ...createCombatPlayer(0), slot: 'sword' };
+  const player = { ...createCombatPlayer(0), slot: 'sword', meleeWeapon: 'sword' };
   const sword = meleeMeshes(player), knife = meleeMeshes({ ...player, meleeWeapon: 'knife' });
   const reach = mesh => -Math.min(...vertices(mesh).map(([, , z]) => z));
   assert.ok(reach(sword) > 1.1 && reach(knife) < .48);

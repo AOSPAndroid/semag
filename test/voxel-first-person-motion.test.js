@@ -88,7 +88,7 @@ test('pause freezes the displayed stride and lifecycle transitions discard old m
   assert.equal(resumed.bobY, 0); assert.equal(resumed.roll, 0);
 });
 
-test('all nine guns have a distinct fast strike followed by an analytic smooth recovery', () => {
+test('all catalog guns have a distinct fast strike followed by an analytic smooth recovery', () => {
   const signatures = new Set();
   for (const weapon of Object.keys(WEAPONS)) {
     const start = weaponShotPose(weapon, 0), peak = [];
@@ -102,7 +102,7 @@ test('all nine guns have a distinct fast strike followed by an analytic smooth r
     signatures.add(JSON.stringify(maximum));
     for (const [, pose] of peak) assert.ok(Object.values(pose).every(Number.isFinite));
   }
-  assert.equal(signatures.size, 9);
+  assert.equal(signatures.size, Object.keys(WEAPONS).length);
 });
 
 test('shot poses at the same elapsed time are identical across display schedules and ADS damps them', () => {

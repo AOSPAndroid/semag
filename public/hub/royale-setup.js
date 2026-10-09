@@ -8,7 +8,7 @@ export function validRoyaleSettings(mapId, capacity) {
 export function royaleOverview(arena) {
   const { minX, minZ, maxX, maxZ } = arena.bounds;
   const width = maxX - minX, depth = maxZ - minZ;
-  const cover = arena.colliders.filter(box => !box.id.startsWith('wall-')).map(box =>
+  const cover = arena.colliders.filter(box => !box.overhead && !box.id.startsWith('wall-')).map(box =>
     `<rect x="${box.x - minX}" y="${box.z - minZ}" width="${box.w}" height="${box.d}" fill="${box.y > 0 ? '#a98961' : box.h >= 2.4 ? '#5f7c6c' : '#b1b79a'}" stroke="#fffdf8" stroke-width=".16"/>`).join('');
   const routes = (arena.routes || []).map(route => `<polyline points="${[route.start, ...route.steps].map(point => `${point.x - minX},${point.z - minZ}`).join(' ')}" fill="none" stroke="#aa794d" stroke-width=".4" stroke-dasharray=".7 .45"/>`).join('');
   return `<svg viewBox="-1 -1 ${width + 2} ${depth + 2}" aria-hidden="true"><rect width="${width}" height="${depth}" rx=".4" fill="#e4e8d7"/>${cover}${routes}</svg><span>EXPLORE THE TERRAIN<br>Houses, cover and climb routes.<br><b>Spawns and supplies change each match.</b></span>`;

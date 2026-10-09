@@ -124,6 +124,7 @@ test('real gun, sword and frag kills produce one kill credit and one bounded dro
     if (attack === 'gun') {
       for (let tick = 0; tick < 200 && monster.alive; tick++) Horde.step(state, [aimAt(human, monster)]);
     } else if (attack === 'sword') {
+      human.meleeWeapon = 'sword'; human.inventory[0].weapon = 'sword';
       pose(human, { x: 0, z: 1.5, yaw: 0 }); pose(monster, { x: 0, z: 0 });
       Horde.step(state, [{ swap: true }]); assert.equal(human.slot, 'sword');
       for (let hit = 0; hit < 2; hit++) { Horde.step(state, [{ fire: true, yaw: 0 }]); advance(state, 72); }

@@ -4,6 +4,7 @@ import { createPractice, startPractice, stepPractice, pausePractice, resumePract
 import { MAPS as BREACH_MAPS, WORLD, PLAYER_HEALTH, eyeHeight } from '../public/voxel-engine.js';
 import * as Royale from '../public/voxel-royale-engine.js';
 import { WEAPONS, weaponDamage } from '../public/voxel-weapons.js';
+import { initializeInventory, selectInventorySlot } from '../public/voxel-inventory.js';
 
 const openArena = Object.freeze({ id: 'practice-fixture', bounds: { minX: -20, maxX: 20, minZ: -20, maxZ: 20 }, colliders: [], sites: [] });
 function advance(state, ticks, input = {}) {
@@ -33,7 +34,7 @@ function bodyClear(arena, player) {
   }
 }
 function equip(player, weapon = 'carbine') {
-  Object.assign(player, { hasGun: true, slot: 'primary', weapon, ammo: WEAPONS[weapon].magazine, reserve: WEAPONS[weapon].reserve });
+  initializeInventory(player, { weapon, potions: player.potions, grenades: player.grenades, melee: player.meleeWeapon });
 }
 
 test('local practice is explicitly started, with valid map options and 1–5 bots', () => {
@@ -132,7 +133,8 @@ test('a genuinely body-blocked melee bot detects the contact and chooses a recov
   const state = fight({ mode: 'combat', difficulty: 'rookie' });
   state.map = { ...openArena, bounds: { minX: -.5, maxX: .5, minZ: -5, maxZ: 5 } };
   Object.assign(state.players[0], { x: 0, z: -2, hp: 5000, maxHp: 5000 });
-  Object.assign(state.players[1], { x: 0, z: 0, yaw: 0, slot: 'sword', meleeCooldown: 100000 });
+  selectInventorySlot(state.players[1], 0);
+  Object.assign(state.players[1], { x: 0, z: 0, yaw: 0, meleeCooldown: 100000 });
   advance(state, 450);
   assert.ok(state.practice.brains[0].blockedCount > 0);
   assert.ok(Math.hypot(state.players[0].x - state.players[1].x, state.players[0].z - state.players[1].z) >= WORLD.radius * 2 - 1e-6);

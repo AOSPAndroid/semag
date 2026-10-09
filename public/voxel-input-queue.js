@@ -1,5 +1,5 @@
 /** Fresh FPS presses survive packet coalescing; movement and look remain current. */
-export const FPS_EDGE_ACTIONS = Object.freeze(['fire', 'jump', 'reload', 'interact', 'swap', 'grenade', 'heal']);
+export const FPS_EDGE_ACTIONS = Object.freeze(['slot1', 'slot2', 'slot3', 'slot4', 'drop', 'fire', 'jump', 'reload', 'interact', 'swap', 'grenade', 'heal']);
 
 /** Release one touch source while preserving valid taps and surviving aliases. */
 export function releaseFpsTouchAction(pointer, pointers, actions, isHeld, cancelled = false) {
@@ -41,6 +41,7 @@ export function createFpsInputQueue({ maxPending = 16, maxAgeMs = 120 } = {}) {
       else if (sampled.has(edge.action)) buttons[edge.action] = false;
       else {
         buttons[edge.action] = true; discard++;
+        if (edge.action === 'drop' && edge.inventorySlot) buttons[edge.inventorySlot] = true;
         if (edge.action === 'fire' || edge.action === 'grenade') {
           selectedViewTick = edge.viewTick;
           if (Number.isFinite(edge.yaw)) buttons.yaw = edge.yaw;
@@ -53,10 +54,18 @@ export function createFpsInputQueue({ maxPending = 16, maxAgeMs = 120 } = {}) {
   return Object.freeze({
     observe(input, now = 0, context = {}) {
       latest = { ...input }; viewTick = Number.isFinite(context.viewTick) ? context.viewTick : null;
+      const inventoryCommit = ['slot1', 'slot2', 'slot3', 'slot4', 'drop'].some(action => input[action] === true && observed[action] !== true && !blocked.has(action));
+      if (inventoryCommit) {
+        // A slot/drop commitment supersedes an unconsumed attack and fences a
+        // still-held physical trigger until a genuine release is observed.
+        for (let index = pending.length - 1; index >= 0; index--) if (pending[index].action === 'fire') pending.splice(index, 1);
+        if (input.fire === true) blocked.add('fire');
+      }
       for (const action of FPS_EDGE_ACTIONS) {
         if (input[action] !== true) blocked.delete(action);
         if (input[action] === true && observed[action] !== true && !blocked.has(action) && pending.length < limit) {
-          pending.push({ action, at: finiteTime(now), yaw: input.yaw, pitch: input.pitch, viewTick,
+      pending.push({ action, at: finiteTime(now), yaw: input.yaw, pitch: input.pitch, viewTick,
+            ...(action === 'drop' ? { inventorySlot: ['slot1', 'slot2', 'slot3', 'slot4'].find(key => input[key] === true) || null } : {}),
             ...(Number.isSafeInteger(context.sequence) && context.sequence >= 0 ? { seq: context.sequence } : {}) });
         }
       }

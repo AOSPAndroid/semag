@@ -92,7 +92,7 @@ test('visual combat smoothing preserves newest health, inventory, action cancell
   near(ahead.aimTicks, 11); near(ahead.reloadTicks, 83);
   const stopped = combatPresentation({ ...newest, reloadTicks: 0, healTicks: 0, meleeTicks: 0, recoil: .1 }, old, .1, 0);
   assert.equal(stopped.reloadTicks, 0); assert.equal(stopped.healTicks, 0); assert.equal(stopped.meleeTicks, 0); assert.equal(stopped.recoil, .1);
-  for (const change of [{ weapon: 'pistol' }, { slot: 'sword' }, { meleeWeapon: 'knife' }, { alive: false }, { team: 1 }]) {
+  for (const change of [{ weapon: 'pistol' }, { slot: 'sword' }, { meleeWeapon: 'sword' }, { alive: false }, { team: 1 }]) {
     const reset = { ...newest, ...change };
     assert.equal(combatPresentation(reset, old, .5, 25), reset);
   }

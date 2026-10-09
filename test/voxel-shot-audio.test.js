@@ -39,7 +39,7 @@ test('each catalog weapon has an immediate finite, distinct report with a silent
     assert.deepEqual(createVoxelShotSamples(id), samples, 'cached timbre is repeatable without per-frame noise');
     reports.add(`${samples.length}:${energy(samples)}:${samples[8]}`);
   }
-  assert.equal(reports.size, 9);
+  assert.equal(reports.size, Object.keys(WEAPONS).length);
 });
 
 test('heavy guns carry a longer stronger body; the crossbow remains a quiet string report', () => {
@@ -89,6 +89,24 @@ test('each shell uses one source and a cached buffer, with quiet remote reports 
   assert.equal(audio.gunshot('pistol', { gain: 99 }), true); assert.equal(ctx.buffers.length, 2);
   assert.equal(ctx.sources.at(-1).connections[0].gain.value, 1, 'arbitrary callers cannot exceed local report volume');
   const stats = audio.inspectGunshots(); assert.ok(Object.isFrozen(stats)); assert.equal(stats.cachedBuffers, 2);
+});
+
+test('four expanded guns schedule their distinct cached reports only after sound opt-in', () => {
+  const ids = ['revolver', 'pdw', 'autoshotgun', 'battlerifle'], muted = new GameAudio();
+  for (const id of ids) assert.equal(muted.gunshot(id), false);
+  assert.equal(muted.context, null); assert.equal(muted.inspectGunshots().cachedBuffers, 0);
+  const { audio, ctx } = enabled();
+  for (const id of ids) for (let report = 0; report < 2; report++) assert.equal(audio.gunshot(id), true);
+  assert.equal(ctx.buffers.length, 4); assert.equal(ctx.sources.length, 8);
+  const reportBuffers = new Set();
+  for (let index = 0; index < ids.length; index++) {
+    const [first, second] = ctx.sources.slice(index * 2, index * 2 + 2);
+    assert.equal(first.buffer, second.buffer, `${ids[index]} reuses its own buffer`);
+    assert.equal(first.buffer.duration, Math.ceil(VOXEL_SHOT_AUDIO[ids[index]].duration * ctx.sampleRate) / ctx.sampleRate);
+    reportBuffers.add(first.buffer); assert.ok(first.buffer.getChannelData(0).every(Number.isFinite));
+  }
+  assert.equal(reportBuffers.size, 4, 'none of the expanded guns falls back to another report');
+  assert.equal(audio.inspectGunshots().played, 8);
 });
 
 test('dense firefights, natural source endings and double callbacks stay bounded', () => {

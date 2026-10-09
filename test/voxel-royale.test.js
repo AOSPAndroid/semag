@@ -4,6 +4,7 @@ import * as Royale from '../public/voxel-royale-engine.js';
 import { createState as breachState, combatStep, traceShot, emitCombatEvent, WORLD, HEAL } from '../public/voxel-engine.js';
 import { KNIFE, meleeProfile } from '../public/voxel-melee.js';
 import { WEAPONS, WEAPON_IDS } from '../public/voxel-weapons.js';
+import { initializeInventory, createInventoryGun, refreshInventory, selectInventorySlot, inventoryCanTake } from '../public/voxel-inventory.js';
 
 const openArena = { bounds: { minX: -32, maxX: 32, minZ: -32, maxZ: 32 }, colliders: [], sites: [] };
 function tick(state, count = 1, controls = {}) {
@@ -17,7 +18,9 @@ function fight(ids = [0, 1, 2], options = {}) {
   return state;
 }
 function equip(player, weapon = 'carbine', ammo = WEAPONS[weapon].magazine, reserve = WEAPONS[weapon].reserve) {
-  Object.assign(player, { hasGun: true, slot: 'primary', weapon, ammo, reserve });
+  initializeInventory(player, { weapon, potions: player.potions, grenades: player.grenades, melee: player.meleeWeapon || 'knife' });
+  player.inventory[1] = createInventoryGun(weapon, { ammo, reserve });
+  refreshInventory(player);
 }
 function nearLoot(state, playerId, details) {
   const player = state.players[playerId], item = { id: ++state.lootId, x: player.x, y: player.y, z: player.z, ...details };
@@ -103,24 +106,35 @@ test('loot prompts and authoritative pickups reject walls, remote heights, range
   state.loot[0].weapon = 'carbine'; assert.equal(Royale.findNearbyLoot(state, 0)?.kind, 'ammo');
 });
 
-test('weapon exchanges drop the actual old magazine and reserve and preserve firing recovery', () => {
+test('additional guns retain separate magazines and cooldowns, and full-backpack exchanges conserve the old gun', () => {
   const state = fight(), player = state.players[0]; equip(player, 'sniper', 2, 7); player.shotCooldown = 122;
   const incoming = nearLoot(state, 0, { kind: 'weapon', weapon: 'pistol', ammo: 5, reserve: 12 });
   tick(state, 1, { 0: { interact: true } });
-  assert.equal(player.weapon, 'pistol'); assert.equal(player.ammo, 5); assert.equal(player.reserve, 12); assert.equal(player.shotCooldown, 121);
+  assert.equal(player.weapon, 'pistol'); assert.equal(player.ammo, 5); assert.equal(player.reserve, 12); assert.equal(player.shotCooldown, 0);
   assert.ok(!state.loot.some(loot => loot.id === incoming.id));
-  const old = state.loot.find(loot => loot.kind === 'weapon'); assert.equal(old.weapon, 'sniper'); assert.equal(old.ammo, 2); assert.equal(old.reserve, 7);
-  tick(state, 1, { 0: { fire: true } }); assert.equal(player.shots, 0); assert.equal(player.ammo, 5);
+  assert.equal(state.loot.length, 0); assert.equal(player.inventory[1].weapon, 'sniper');
+  assert.equal(player.inventory[1].ammo, 2); assert.equal(player.inventory[1].reserve, 7); assert.equal(player.inventory[1].shotCooldown, 121);
+  tick(state, 1, { 0: { slot2: true } }); tick(state); tick(state, 1, { 0: { fire: true } });
+  assert.equal(player.shots, 0); assert.equal(player.ammo, 2); assert.equal(player.shotCooldown, 118);
+  player.inventory[3] = createInventoryGun('smg'); refreshInventory(player);
+  nearLoot(state, 0, { kind: 'weapon', weapon: 'carbine', ammo: 8, reserve: 19 });
+  tick(state, 1, { 0: { interact: true } });
+  assert.equal(player.weapon, 'carbine'); assert.equal(player.ammo, 8); assert.equal(player.reserve, 19);
+  const old = state.loot.find(loot => loot.kind === 'weapon');
+  assert.equal(old.weapon, 'sniper'); assert.equal(old.ammo, 2); assert.equal(old.reserve, 7); assert.equal(old.item.shotCooldown, 118);
 });
 
 test('supply stacks and weapon-specific ammo conserve amounts and respect inventory limits', () => {
-  const state = fight(), player = state.players[0]; equip(player, 'carbine', 9, 70);
+  const state = fight(), player = state.players[0], reserveCap = WEAPONS.carbine.reserve * 2; equip(player, 'carbine', 9, reserveCap - 2);
   const ammo = nearLoot(state, 0, { kind: 'ammo', weapon: 'carbine', amount: 24 });
-  tick(state, 1, { 0: { interact: true } }); assert.equal(player.reserve, 72); assert.equal(ammo.amount, 22); assert.equal(player.ammo, 9);
+  tick(state, 1, { 0: { interact: true } }); assert.equal(player.reserve, reserveCap); assert.equal(ammo.amount, 22); assert.equal(player.ammo, 9);
   state.loot = []; const heal = nearLoot(state, 0, { kind: 'heal', amount: 5 }); tick(state); tick(state, 1, { 0: { interact: true } });
-  assert.equal(player.potions, 3); assert.equal(heal.amount, 2); assert.equal(Royale.findNearbyLoot(state, 0), null);
+  assert.equal(player.potions, 4); assert.equal(heal.amount, 1); assert.equal(inventoryCanTake(player, heal), false);
+  tick(state); tick(state, 1, { 0: { interact: true } }); assert.equal(heal.amount, 1); assert.equal(player.potions, 4);
+  assert.deepEqual(player.inventory.slice(2).map(item => item.amount), [2, 2]);
+  tick(state, 1, { 0: { slot4: true } }); tick(state, 1, { 0: { drop: true } }); assert.equal(player.potions, 2);
   state.loot = []; const frag = nearLoot(state, 0, { kind: 'grenade', amount: 4 }); tick(state); tick(state, 1, { 0: { interact: true } });
-  assert.equal(player.grenades, 2); assert.equal(frag.amount, 2); assert.equal(Royale.findNearbyLoot(state, 0), null);
+  assert.equal(player.grenades, 2); assert.equal(frag.amount, 2); assert.equal(inventoryCanTake(player, frag), false);
 });
 
 test('swapping off a committed knife swing then collecting a gun cannot erase melee recovery', () => {
@@ -134,7 +148,7 @@ test('swapping off a committed knife swing then collecting a gun cannot erase me
   assert.equal(player.meleePhase, 'idle'); assert.equal(state.events.filter(event => event.type === 'meleeStart').length, 1); assert.equal(target.hp, 172); assert.equal(player.meleeWeapon, 'knife');
 });
 
-test('all nine gun damage profiles and delayed bolts reuse Breach contacts in free-for-all combat', () => {
+test('every gun damage profile and delayed bolt reuses Breach contacts in free-for-all combat', () => {
   for (const weapon of WEAPON_IDS) {
     const state = fight(), shooter = state.players[0], target = state.players[1]; equip(shooter, weapon);
     Object.assign(shooter, { x: 0, z: 4, yaw: 0, pitch: Math.atan2(.9 - WORLD.eyeHeight, 4) }); Object.assign(target, { x: 0, z: 0 });
@@ -180,7 +194,8 @@ test('death drops supplied inventory exactly once without refills and only the l
   tick(state, 1, { 0: { fire: true } });
   assert.equal(victim.alive, false); assert.equal(shooter.kills, 1); assert.equal(state.phase, 'matchEnd'); assert.equal(state.winnerId, 0); assert.equal(state.aliveCount, 1);
   assert.deepEqual(state.placements.map(entry => [entry.playerId, entry.place]), [[1, 2], [0, 1]]);
-  assert.deepEqual(state.loot.filter(loot => loot.droppedBy === 1).map(loot => [loot.kind, loot.ammo, loot.reserve, loot.amount]), [['weapon', 7, 13, undefined], ['heal', undefined, undefined, 2], ['grenade', undefined, undefined, 1]]);
+  assert.deepEqual(state.loot.filter(loot => loot.droppedBy === 1).map(loot => [loot.kind, loot.ammo, loot.reserve, loot.amount]), [['melee', undefined, undefined, undefined], ['weapon', 7, 13, undefined], ['heal', undefined, undefined, 2], ['grenade', undefined, undefined, 1]]);
+  assert.equal(state.loot.find(loot => loot.droppedBy === 1 && loot.kind === 'melee').weapon, 'knife');
   const count = state.loot.length; tick(state, 200); Royale.eliminateParticipant(state, 1); assert.equal(state.loot.length, count); assert.equal(victim.hasGun, false);
 });
 
@@ -199,15 +214,16 @@ test('airborne death drops fall onto the real raised support instead of floating
   state.map = { ...openArena, colliders: [{ id: 'raised-support', x: -2, y: 1.2, z: -2, w: 4, h: .3, d: 4 }] };
   Object.assign(player, { x: 0, y: 4, z: 0, grounded: false }); equip(player, 'carbine', 7, 12); player.potions = 2;
   Royale.eliminateParticipant(state, 1); assert.equal(state.phase, 'fight');
-  const drops = state.loot.filter(loot => loot.droppedBy === 1); assert.equal(drops.length, 2); assert.ok(drops.every(loot => loot.y === 4 && loot.falling));
+  const drops = state.loot.filter(loot => loot.droppedBy === 1); assert.equal(drops.length, 3); assert.ok(drops.every(loot => loot.y === 4 && loot.falling));
   tick(state, 120); assert.ok(drops.every(loot => loot.y === 1.5 && !loot.falling && loot.vy === 0));
-  assert.equal(drops[0].ammo, 7); assert.equal(drops[0].reserve, 12); assert.equal(drops[1].amount, 2); finiteState(state);
+  const gun = drops.find(loot => loot.kind === 'weapon'), heal = drops.find(loot => loot.kind === 'heal');
+  assert.equal(gun.ammo, 7); assert.equal(gun.reserve, 12); assert.equal(heal.amount, 2); finiteState(state);
 });
 
 test('disconnections eliminate during countdown or combat without free kill credit, and multiple survivors continue', () => {
   const state = fight(); equip(state.players[1], 'shotgun', 2, 4);
   Royale.eliminateParticipant(state, 1); assert.equal(state.phase, 'fight'); assert.equal(state.aliveCount, 2); assert.equal(state.players[1].alive, false);
-  assert.ok(state.players.every(player => player.kills === 0)); assert.equal(state.loot.filter(loot => loot.droppedBy === 1).length, 1);
+  assert.ok(state.players.every(player => player.kills === 0)); assert.equal(state.loot.filter(loot => loot.droppedBy === 1).length, 2);
   Royale.eliminateParticipant(state, 2); assert.equal(state.phase, 'matchEnd'); assert.equal(state.winnerId, 0);
   const countdown = Royale.createState({ seed: 2 }); Royale.startMatch(countdown, [0, 1]); Royale.eliminateParticipant(countdown, 0);
   assert.equal(countdown.phase, 'matchEnd'); assert.equal(countdown.winnerId, 1); assert.equal(countdown.players[1].kills, 0);
@@ -273,7 +289,7 @@ test('Royale snapshots remain isolated and bounded, with shared static geometry 
   const state = fight(); const copy = Royale.cloneState(state); copy.players[0].hp = 1;
   assert.equal(state.players[0].hp, 200); assert.equal(copy.map, state.map); assert.equal(copy.fighters, copy.players);
   for (let index = 0; index < 400; index++) emitCombatEvent(state, 'probe'); assert.equal(state.events.length, 256);
-  const breach = breachState(); for (let index = 0; index < 400; index++) emitCombatEvent(breach, 'probe'); assert.equal(breach.events.length, 128);
+  const breach = breachState(); for (let index = 0; index < 400; index++) emitCombatEvent(breach, 'probe'); assert.equal(breach.events.length, 160);
   tick(state, 50, { 0: { yaw: Infinity, pitch: NaN, up: 1, jump: 'true' } }); finiteState(state);
 });
 
@@ -282,7 +298,7 @@ test('shared physical combat respects an explicitly supplied arena for hitscan, 
   for (const weapon of ['carbine', 'crossbow', 'sword']) {
     const state = breachState(), attacker = state.players[0], target = state.players[1];
     Object.assign(attacker, { x: 20, y: 0, z: weapon === 'sword' ? 2.6 : 4, yaw: 0, pitch: 0 }); Object.assign(target, { x: 20, y: 0, z: weapon === 'sword' ? 1.1 : 0 });
-    if (weapon === 'sword') attacker.slot = 'sword'; else equip(attacker, weapon);
+    if (weapon === 'sword') { initializeInventory(attacker, { melee: 'sword' }); selectInventorySlot(attacker, 0); } else equip(attacker, weapon);
     assert.equal(traceShot(state, 0, { x: 20, y: 1.62, z: 4 }, { x: 0, y: 0, z: -1 }, 10, arena).colliderId, wall.id);
     state.tick++; combatStep(state, state.players.map(player => ({ ...Royale.emptyInput(player), fire: player.id === 0 })), arena);
     for (let index = 0; index < 35; index++) { state.tick++; combatStep(state, state.players.map(player => Royale.emptyInput(player)), arena); }

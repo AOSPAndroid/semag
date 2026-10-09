@@ -4,7 +4,7 @@ import { MAPS } from '../voxel-maps.js';
 export function mapOverview(arena) {
   const { minX, minZ, maxX, maxZ } = arena.bounds;
   const width = maxX - minX, depth = maxZ - minZ;
-  const rects = arena.colliders.filter(box => !box.id.startsWith('wall-')).map(box =>
+  const rects = arena.colliders.filter(box => !box.overhead && !box.id.startsWith('wall-')).map(box =>
     `<rect x="${box.x - minX}" y="${box.z - minZ}" width="${box.w}" height="${box.d}" fill="${box.y > 0 ? '#bc8a58' : box.h >= 2.4 ? '#5c7c73' : '#b4b893'}" stroke="#fffdf8" stroke-width=".16"/>`).join('');
   const routes = arena.routes.map(route => `<polyline points="${[route.start, ...route.steps].map(point => `${point.x - minX},${point.z - minZ}`).join(' ')}" fill="none" stroke="#bc623c" stroke-width=".42" stroke-dasharray=".7 .45"/>`).join('');
   const sites = arena.sites.map(site => `<circle cx="${site.x - minX}" cy="${site.z - minZ}" r="${site.radius}" fill="#edf1db" stroke="#547252" stroke-width=".25"/><text x="${site.x - minX}" y="${site.z - minZ + .65}" text-anchor="middle" fill="#36543d" font-size="2" font-family="monospace">${site.id}</text>`).join('');

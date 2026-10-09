@@ -109,7 +109,7 @@ test('Paris is tactical or free-for-all according to the game, with no theme-bas
   const state = { gameId: 'voxel-breach', map: BREACH_MAPS.paris, mapId: 'paris', phase: 'fight', round: 1, tick: 100, players: survivors(), events: [], loot: [pickup(1)], storm: { active: true, x: 0, z: 9, radius: 20 } };
   renderer.render(state, { localId: 0, time: 1000, hideWeapon: true });
   const baseline = buffers.find(buffer => buffer.kind === 'world').array.length;
-  assert.equal(renderer.stats.lootItems, 0);
+  assert.equal(renderer.stats.lootItems, 1, 'physical inventory drops render in Breach as well as Royale');
   assert.equal(renderer.stats.stormVertices, 0);
   assert.equal(uniforms.get('uStormStrength'), 0);
   buffers.length = 0;

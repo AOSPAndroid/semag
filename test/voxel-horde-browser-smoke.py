@@ -24,7 +24,7 @@ from playwright.sync_api import sync_playwright
 ROOT = Path(__file__).resolve().parents[1]
 OUT = Path(os.environ.get('SEMAG_SCREENSHOT_DIR', '/workspace/scratch/semag-horde-native'))
 URL = (sys.argv[1] if len(sys.argv) > 1 else 'http://127.0.0.1:3100').rstrip('/')
-MAP_IDS = ('courtyard', 'depot', 'canal', 'rooftops', 'foundry', 'bastion', 'paris')
+MAP_IDS = ('courtyard', 'depot', 'canal', 'rooftops', 'foundry', 'bastion', 'paris', 'snow', 'sewers', 'trading')
 WEAPON_IDS = ('carbine', 'smg', 'marksman', 'pistol', 'shotgun', 'burst', 'sniper', 'lmg', 'crossbow')
 REPORT = {'cases': [], 'failures': [], 'screenshots': [], 'errors': [], 'failed_resources': [],
           'working_bytes': [], 'input_policy': 'Trusted native browser input; copied read-only state; no WS/RAF/clock/game replacement',

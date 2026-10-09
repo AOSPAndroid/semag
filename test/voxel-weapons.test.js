@@ -4,8 +4,8 @@ import { WEAPONS, WEAPON_IDS, weaponAimFovRatio, weaponDamage, weaponSpread } fr
 
 const close = (a, b) => assert.ok(Math.abs(a - b) < 1e-12, `${a} != ${b}`);
 
-test('loadout order remains stable, with three distinct finite new roles after the existing six', () => {
-  assert.deepEqual(WEAPON_IDS, ['carbine', 'smg', 'marksman', 'pistol', 'shotgun', 'burst', 'sniper', 'lmg', 'crossbow']);
+test('loadout order remains stable, with four distinct finite roles after the existing nine', () => {
+  assert.deepEqual(WEAPON_IDS, ['carbine', 'smg', 'marksman', 'pistol', 'shotgun', 'burst', 'sniper', 'lmg', 'crossbow', 'revolver', 'pdw', 'autoshotgun', 'battlerifle']);
   assert.ok(Object.isFrozen(WEAPON_IDS));
   assert.ok(Object.isFrozen(WEAPONS));
   for (const id of WEAPON_IDS) {

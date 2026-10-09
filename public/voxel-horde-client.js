@@ -4,6 +4,7 @@ import { copyText, getName, hostInfo, roomUrl, saveName } from './hub/shared.js'
 import { ADS, HEAL, PLAYER_HEALTH, predictLocalMovement, sweepPresentationOffset, traceShot } from './voxel-engine.js';
 import { WEAPONS, WEAPON_IDS } from './voxel-weapons.js';
 import { cleanAim, composeInput, controlForKey, aimFraction, aimLookMultiplier, combatReadout, isFormTarget, hasGunshotReport, combatEventPerspective, createContinuousInputPacer as createInputPacer, LOOK_SENSITIVITY } from './voxel-client.js';
+import { inventoryLootPresentation, inventoryEventFeedback, inventorySwapPresentation, mountInventoryHotbar } from './voxel-inventory-ui.js';
 import { combatPresentation, createCorrectionPresenter, createMovementPresenter, interpolatedVoxelState, reconcileMovement, resolvePresentationContacts, withCombatPresentation } from './voxel-presentation.js';
 import { incomingDamageFeedback, damageFeedbackPresentation, paintDamageFeedback } from './voxel-damage-feedback.js';
 import { createFpsInputQueue, FPS_EDGE_ACTIONS, releaseFpsTouchAction } from './voxel-input-queue.js';
@@ -114,6 +115,11 @@ export async function bootHorde() {
   const running = () => !destroyed && connected && !!state && !graphicsError && !document.hidden && LIVE_PHASES.includes(state.phase);
   const controlsActive = () => running() && entered && !paused && !modalOpen && localPlayer()?.alive && (locked() || fallback || touchMode);
   const currentInput = () => composeInput(keys, touch, mouse, aim, controlsActive());
+  const inventory = mountInventoryHotbar($('horde-inventory'), actions => {
+    if (!controlsActive() || !MOVEMENT_PHASES.includes(state?.phase)) return;
+    const fresh = actions.filter(action => !keys.has(action)); fresh.forEach(action => keys.add(action)); sendInput(currentInput(), true);
+    fresh.forEach(action => keys.delete(action)); sendInput(currentInput(), true); canvas.focus({ preventScroll: true }); wake();
+  });
   const nameFor = id => roster.find(person => person?.id === id)?.name || (solo && id === 0 ? 'You' : `Player ${Number(id) + 1}`);
   const send = message => { if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message)); };
   function error(message = '') { text('horde-error-text', message); hide('horde-error', !message); hide('horde-retry', !graphicsError); }
@@ -121,7 +127,7 @@ export async function bootHorde() {
   function hints() {
     app.dataset.keyboardLayout = getKeyboardLayout(); text('horde-guide-move', displayKey('WASD')); text('horde-grenade-key', displayKey('Q')); text('horde-guide-grenade', displayKey('Q'));
     text('horde-look-hint', fallback ? 'DRAG TO LOOK · ESC RELEASE' : `${displayKey('WASD')} MOVE · RMB AIM · ESC ${solo ? 'PAUSE' : 'RELEASE'}`);
-    canvas.setAttribute('aria-label', `First-person monster survival. ${displayKey('WASD')} or arrows move, mouse looks, left click or C fires, right click aims, Space jumps, Control crouches, R reloads, V switches blade, ${displayKey('Q')} throws a grenade, F heals, E picks up supplies or holds to revive. Escape ${solo ? 'pauses' : 'releases your controls'}.`);
+    canvas.setAttribute('aria-label', `First-person monster survival. ${displayKey('WASD')} or arrows move, mouse looks, left click or C uses your selected item, right click aims, Space jumps, Control crouches, R reloads, 1 to 4 equip inventory slots, X drops the selected item, V switches blade, ${displayKey('Q')} throws a grenade, F heals, E picks up supplies or holds to revive. Escape ${solo ? 'pauses' : 'releases your controls'}.`);
   }
   function sendInput(buttons = currentInput(), edge = false, now = performance.now(), cancelActions = false, cancelPress = null) {
     const nextSequence = sequence >= 999999000 ? 1 : sequence + 1;
@@ -197,7 +203,8 @@ export async function bootHorde() {
         const incoming = incomingDamageFeedback(event, localPlayer(), state.players, { now, lifeKey: `${state.matchId}:${localPlayer()?.lifeId}`, friendlyFire: false }); if (incoming) damageFeedback = incoming;
       }
       if (['kill', 'elimination'].includes(event.type) && perspective.outgoing) { hitUntil = now + 230; feedback(event.headshot ? 'HEADSHOT · HOSTILE DOWN' : 'HOSTILE DOWN', now, 850); }
-      if (event.type === 'loot' && perspective.source === playerId) feedback(event.kind === 'heal' ? `RECOVERED +${Math.round(event.amount || 0)} HP` : 'AMMUNITION PICKED UP', now);
+      if (['loot', 'lootPickup'].includes(event.type) && perspective.source === playerId) feedback(event.kind === 'weapon' ? `PICKED UP ${WEAPONS[event.weapon]?.label || 'WEAPON'}` : event.kind === 'heal' ? event.amount > 2 ? `RECOVERED +${Math.round(event.amount || 0)} HP` : 'POTION COLLECTED' : event.kind === 'grenade' ? 'FRAG COLLECTED' : 'AMMUNITION PICKED UP', now);
+      const inventoryFeedback = perspective.source === playerId ? inventoryEventFeedback(event) : null; if (inventoryFeedback) feedback(inventoryFeedback, now);
       if (event.type === 'healComplete' && perspective.source === playerId) feedback(`HEALED +${Math.round(event.amount || 0)} HP`, now);
       if (event.type === 'healCancel' && perspective.source === playerId) feedback('HEALING INTERRUPTED', now);
       if (event.type === 'hordeRevive') feedback(`${nameFor(event.targetId)} IS BACK IN THE FIGHT`, now);
@@ -234,6 +241,8 @@ export async function bootHorde() {
     if (!state) { hide('horde-setup', true); hide('horde-pause-card', true); hide('horde-result', true); hide('horde-countdown', true); hide('horde-connection-card', false); hide('horde-overlay', false); text('horde-connection-title', permanentError ? 'Room unavailable.' : 'Connecting…'); text('horde-connection-copy', permanentError ? 'This room is full, closed or already fighting. Return to Semag to join the next run.' : 'Finding your squad on the host.'); return; }
     if (!force && now - lastHUDAt < 70) return; lastHUDAt = now;
     const phase = state.phase, player = localPlayer(), wave = hordeWavePresentation(state, engine.TICK_RATE), readout = player ? combatReadout(player, WEAPONS, { ADS, HEAL, PLAYER_HEALTH }) : null;
+    inventory.update(player, { visible: !!player?.alive && !['lobby', 'matchEnd'].includes(phase), interactive: controlsActive() && MOVEMENT_PHASES.includes(phase) });
+    const swap = inventorySwapPresentation(player), swapButton = document.querySelector('[data-horde-action="swap"]'); if (swap && swapButton) { swapButton.textContent = swap.label; swapButton.setAttribute('aria-label', swap.ariaLabel); }
     app.dataset.phase = phase; text('horde-map-label', state.mapName || state.map?.name || state.mapId); text('horde-wave', wave.wave || '—'); text('horde-threat', wave.threats); text('horde-clock', clock(wave.elapsed)); text('horde-status', phase === 'intermission' ? 'RESUPPLY & REPOSITION' : phase === 'fight' ? 'SURVIVE THE HORDE' : phase === 'paused' ? 'WORLD PAUSED' : phase === 'matchEnd' ? 'OVERRUN' : 'HOLD YOUR GROUND');
     text('horde-connection', solo ? 'SOLO' : connected ? `${roomId} · CO-OP` : 'DISCONNECTED');
     const disconnected = !solo && !connected, lobby = phase === 'lobby', card = hordeOverlayPresentation(state, { solo, connected, entered, paused, alive: player?.alive });
@@ -248,13 +257,13 @@ export async function bootHorde() {
     else updateRoster();
     if (player && readout) {
       text('horde-health', Math.ceil(player.hp)); text('horde-health-max', `/ ${player.maxHp || PLAYER_HEALTH}`); $('horde-health-fill').style.width = `${clamp(player.hp / (player.maxHp || PLAYER_HEALTH), 0, 1) * 100}%`; $('horde-health-rail').setAttribute('aria-valuenow', String(player.hp)); $('horde-health-rail').setAttribute('aria-valuemax', String(player.maxHp || PLAYER_HEALTH)); $('horde-health-rail').dataset.low = String(player.hp < (player.maxHp || PLAYER_HEALTH) * .3);
-      text('horde-grenades', readout.grenades); text('horde-potions', readout.potions); text('horde-weapon-name', readout.label); text('horde-ammo', readout.ammo); text('horde-reserve', readout.sword || readout.healing ? '' : `/ ${readout.reserve}`); text('horde-weapon-status', phase === 'intermission' && !readout.progress ? 'E SUPPLIES · REPOSITION · NO ATTACKS' : readout.status); $('horde-weapon-panel').dataset.sword = String(readout.sword || readout.healing); hide('horde-action-track', !readout.progress); if (readout.progress) $('horde-action-fill').style.width = `${readout.progress.percent}%`;
+      text('horde-grenades', readout.grenades); text('horde-potions', readout.potions); text('horde-weapon-name', readout.label); text('horde-ammo', readout.ammo); text('horde-reserve', readout.sword || readout.healing || readout.utility ? '' : `/ ${readout.reserve}`); text('horde-weapon-status', phase === 'intermission' && !readout.progress ? 'E SUPPLIES · X DROP · REPOSITION' : readout.status); $('horde-weapon-panel').dataset.sword = String(readout.sword || readout.healing || readout.utility); hide('horde-action-track', !readout.progress); if (readout.progress) $('horde-action-fill').style.width = `${readout.progress.percent}%`;
     }
     const loot = player?.alive && MOVEMENT_PHASES.includes(phase) ? engine.findNearbyLoot?.(state, playerId) : null, revive = player?.alive && phase === 'fight' ? engine.findReviveTarget?.(state, playerId) : null;
     const reviveView = hordeRevivePresentation(player, revive, { reviveTicks: engine.HORDE_RULES.reviveTicks, tickRate: engine.TICK_RATE });
     hide('horde-revive-track', !reviveView?.active);
     if (reviveView?.active) { $('horde-revive-fill').style.width = `${reviveView.percent}%`; $('horde-revive-track').setAttribute('aria-valuenow', String(reviveView.percent)); }
-    hide('horde-pickup', !loot && !revive || paused || modalOpen); if (revive) { text('horde-pickup-name', `Revive ${nameFor(revive.id)}`); text('horde-pickup-detail', reviveView.text); } else if (loot) { text('horde-pickup-name', loot.kind === 'heal' || loot.type === 'health' ? 'Healing supply' : 'Ammunition'); text('horde-pickup-detail', loot.kind === 'heal' || loot.type === 'health' ? `E to recover up to ${Math.round(loot.amount || 0)} HP` : 'E to refill reserve'); }
+    hide('horde-pickup', !loot && !revive || paused || modalOpen); if (revive) { text('horde-pickup-name', `Revive ${nameFor(revive.id)}`); text('horde-pickup-detail', reviveView.text); } else if (loot) { const lootView = inventoryLootPresentation(loot, player); text('horde-pickup-name', lootView?.name || 'Supply'); text('horde-pickup-detail', lootView?.detail ? displayKey(lootView.detail) : 'E to pick up'); }
     const downCopy = player?.revivesThisWave >= 1 ? 'Your revive is spent for this wave. Clear it to return to the fight.' : 'Hold on — teammates can revive you. Clear the wave to return.';
     const spectatorHint = $('horde-spectator').querySelector('span'); if (spectatorHint.textContent !== downCopy) spectatorHint.textContent = downCopy;
     const spectating = !player?.alive && phase === 'fight'; hide('horde-spectator', !spectating || disconnected); const viewed = hordeSpectatorPlayer(state, playerId, spectatorId); text('horde-spectator-name', viewed?.alive ? `WATCHING ${nameFor(viewed.id).toUpperCase()}` : 'SQUAD DOWN');
@@ -405,7 +414,7 @@ export async function bootHorde() {
   }
   let rendererClass;
   function destroy() {
-    if (destroyed) return; clearInputs(); destroyed = true; stopFrame(); clearTimeout(reconnectTimer); clearInterval(heartbeat); unlock(); socket?.close(); for (const remove of listeners) remove(); unsubscribe(); picker.destroy(); audio.destroy(); renderer?.destroy(); movement.clear(); pending = []; snapshots = [];
+    if (destroyed) return; clearInputs(); destroyed = true; stopFrame(); clearTimeout(reconnectTimer); clearInterval(heartbeat); unlock(); socket?.close(); for (const remove of listeners) remove(); unsubscribe(); picker.destroy(); audio.destroy(); inventory.destroy(); renderer?.destroy(); movement.clear(); pending = []; snapshots = [];
   }
   const unsubscribe = subscribeKeyboardLayout(() => { clearInputs(); hints(); });
   text('horde-mode', solo ? 'SOLO SURVIVAL' : '1–3 PLAYER CO-OP'); text('horde-room-code', roomId); $('horde-name').value = getName(); hide('horde-name-field', solo); hide('horde-lobby', solo); hide('horde-map-field', !solo); hide('horde-difficulty-field', !solo);

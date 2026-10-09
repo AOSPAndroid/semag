@@ -52,6 +52,10 @@ const SHOT_PROFILES = Object.freeze({
   sniper: { attack: 9, decay: 48, duration: 385, push: .155, pitch: .155, side: .006, yaw: .012, lift: .006 },
   lmg: { attack: 7, decay: 29, duration: 235, push: .086, pitch: .073, side: .006, yaw: .011, lift: .003 },
   crossbow: { attack: 6, decay: 24, duration: 200, push: .036, pitch: .034, side: .002, yaw: .005, lift: .002 },
+  revolver: { attack: 7, decay: 34, duration: 280, push: .095, pitch: .150, side: .006, yaw: .017, lift: .009 },
+  pdw: { attack: 5, decay: 17, duration: 145, push: .038, pitch: .046, side: .0025, yaw: .006, lift: .002 },
+  autoshotgun: { attack: 8, decay: 36, duration: 295, push: .115, pitch: .116, side: .006, yaw: .012, lift: .006 },
+  battlerifle: { attack: 8, decay: 35, duration: 280, push: .108, pitch: .112, side: .005, yaw: .013, lift: .005 },
 });
 
 /** A fast attack and analytic damped recovery are identical at every refresh rate. */

@@ -3,6 +3,7 @@ import test from 'node:test';
 import { ADS, combatStep, createCombatPlayer, createState, emptyInput, KNIFE, MELEE, WEAPONS } from '../public/voxel-engine.js';
 import { weaponDamage } from '../public/voxel-weapons.js';
 import { enableLagCompensation, setShotViewTick } from '../public/voxel-lag-compensation.js';
+import { selectInventorySlot } from '../public/voxel-inventory.js';
 
 const arena = { id: 'lag-combat-test', bounds: { minX: -100, maxX: 100, minZ: -100, maxZ: 100 }, colliders: [] };
 function combatState(weapon = 'carbine', target = {}) {
@@ -44,6 +45,7 @@ for (const weapon of Object.values(WEAPONS)) test(`${weapon.id}: unenabled pract
 
 for (const metadata of [false, true]) test(`real grenade, heal and moving-target sword combat retain full state/event parity ${metadata ? 'with valid rewind metadata' : 'without metadata'}`, () => {
   const initial = combatState();
+  initial.players[0].inventory[0].weapon = 'sword';
   initial.players[0].hp = 70;
   const states = pair(initial);
   for (let tick = 0; tick < 460; tick++) {
@@ -83,7 +85,8 @@ test('valid rewind metadata never turns a crossbow into hitscan or moves its rea
 
 for (const [weapon, profile] of [['sword', MELEE], ['knife', KNIFE]]) test(`valid rewind metadata preserves real ${weapon} startup, movement, reach and damage`, () => {
   const initial = combatState('carbine', { z: -.8 });
-  Object.assign(initial.players[0], { slot: 'sword', meleeWeapon: weapon });
+  initial.players[0].inventory[0].weapon = weapon;
+  selectInventorySlot(initial.players[0], 0);
   const states = pair(initial);
   for (let tick = 0; tick < 80; tick++) runPair(states, [input({ fire: tick === 6 }), input({ right: tick > 6 && tick < 24 })], true);
   assert.ok(states.server.events.some(event => event.type === 'meleeStart' && event.weapon === weapon));

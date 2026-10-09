@@ -64,7 +64,7 @@ test('ground-level leg aim still stops at the first real cover or allied silhoue
   assert.equal(allied.state.events.findLast(event => event.type === 'shot').damage, 0);
 });
 
-test('all nine loadouts apply reduced leg damage through real gun or ballistic contacts', () => {
+test('every loadout applies reduced leg damage through real gun or ballistic contacts', () => {
   for (const id of WEAPON_IDS) {
     const { state, shooter, target } = lane({ weapon: id });
     const pitch = Math.atan2(.25 - WORLD.eyeHeight, 4);
@@ -123,7 +123,7 @@ test('crossbow leg damage is delayed, snapshotted by value, ally blocked and exa
 
 test('a sword contacting an elevated leg keeps its fixed 55 damage and body feedback', () => {
   const { state, shooter, target } = lane({ targetY: 1.6, distance: 1.4 });
-  shooter.slot = 'sword'; shooter.pitch = .35;
+  shooter.inventory[0].weapon = 'sword'; shooter.slot = 'sword'; shooter.meleeWeapon = 'sword'; shooter.pitch = .35;
   ticks(state, 1, { 0: { fire: true } }); ticks(state, 31);
   const contact = state.events.findLast(event => event.type === 'meleeHit'), damage = state.events.findLast(event => event.type === 'damage');
   assert.ok(contact, 'the deliberate upward sword swing must contact the falling opponent');
@@ -166,7 +166,7 @@ test('distinct frozen audiovisual profiles leave physical damage and projectile 
     for (const field of ['noiseDuration', 'noiseVolume', 'frequency', 'toneDuration', 'toneVolume', 'lowpass']) assert.ok(Number.isFinite(sound[field]) && sound[field] > 0, `${id}.${field}`);
     effectProfiles.add(JSON.stringify(effects)); soundProfiles.add(JSON.stringify(sound));
   }
-  assert.equal(effectProfiles.size, 9); assert.equal(soundProfiles.size, 9);
+  assert.equal(effectProfiles.size, WEAPON_IDS.length); assert.equal(soundProfiles.size, WEAPON_IDS.length);
   assert.equal(WEAPONS.crossbow.effects.muzzleStrength, 0); assert.equal(WEAPONS.crossbow.effects.tracerTicks, 0);
   assert.ok(WEAPONS.sniper.effects.kickStrength > WEAPONS.smg.effects.kickStrength);
   for (const id of ['smg', 'shotgun']) for (const distance of [0, 8, 20, 36, 70]) {

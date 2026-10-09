@@ -46,7 +46,7 @@ test('the real swept movement reaches every authored high-ground route, includin
     assert.ok(result.path.filter(point => point.jump).length >= 4, `${route.id} did not use a real climb chain`);
     assert.ok(result.jumps >= 4); climbs++;
   }
-  assert.equal(climbs, 34);
+  assert.equal(climbs, 58);
 });
 
 test('low .8, .9, and 1 m cover can be climbed instead of trapping melee pursuers below campers', () => {

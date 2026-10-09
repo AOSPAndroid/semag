@@ -9,6 +9,10 @@ export const VOXEL_SHOT_AUDIO = Object.freeze(Object.fromEntries(Object.entries(
   sniper: { duration: .58, crack: .81, crackDecay: .0100, body: .43, frequency: 52, bodyDecay: .078, report: .36, reportDecay: .105, brightness: 1850, mechanism: .105, click: .075 },
   lmg: { duration: .34, crack: .73, crackDecay: .0080, body: .32, frequency: 85, bodyDecay: .043, report: .31, reportDecay: .059, brightness: 2250, mechanism: .049, click: .085 },
   crossbow: { duration: .30, string: true, crack: .13, crackDecay: .0025, body: .14, frequency: 186, bodyDecay: .041, report: .075, reportDecay: .037, brightness: 1400, mechanism: .021, click: .035 },
+  revolver: { duration: .36, crack: .75, crackDecay: .0068, body: .33, frequency: 92, bodyDecay: .040, report: .28, reportDecay: .062, brightness: 2750, mechanism: .057, click: .095 },
+  pdw: { duration: .16, crack: .24, crackDecay: .0027, body: .11, frequency: 176, bodyDecay: .016, report: .09, reportDecay: .024, brightness: 1700, mechanism: .021, click: .062 },
+  autoshotgun: { duration: .38, crack: .72, crackDecay: .0100, body: .35, frequency: 73, bodyDecay: .046, report: .30, reportDecay: .066, brightness: 1800, mechanism: .060, click: .090 },
+  battlerifle: { duration: .37, crack: .76, crackDecay: .0087, body: .35, frequency: 82, bodyDecay: .046, report: .30, reportDecay: .065, brightness: 2300, mechanism: .052, click: .080 },
 }).map(([id, profile]) => [id, Object.freeze(profile)])));
 
 /** No live DSP or repeated noise allocation is needed once a weapon buffer is cached. */

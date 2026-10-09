@@ -14,7 +14,6 @@ const digest = array => createHash('sha256').update(new Uint8Array(array.buffer,
 const viewModel = (weapon, patch = {}, context = {}) => VoxelRenderer.prototype._viewModel.call({ lastAim: null, swayX: 0, swayY: 0, localShot: null, ...context }, { weapon, ammo: WEAPONS[weapon].magazine, alive: true, team: 0, aimTicks: 0, ...patch }, 0, 0, 1000);
 
 test('all authored vertical maps remain finite and fit the static geometry budget', () => {
-  assert.equal(Object.keys(MAPS).length, 7);
   const signatures = new Set();
   for (const map of Object.values(MAPS)) {
     const meshes = mapMeshes(map);
@@ -27,7 +26,7 @@ test('all authored vertical maps remain finite and fit the static geometry budge
     assert.ok(vertices > 0 && vertices <= 150000, `${map.id}: ${vertices} vertices`);
     signatures.add(digest(meshes.opaque));
   }
-  assert.equal(signatures.size, 7, 'each map builds its own geometry and surface artwork');
+  assert.equal(signatures.size, Object.keys(MAPS).length, 'each map builds its own geometry and surface artwork');
 });
 
 test('empty and custom maps do not require hardcoded theme collider IDs', () => {
@@ -79,8 +78,7 @@ test('jump-route paint stays flat on real landing tops and within their bounds',
   }
 });
 
-test('all nine weapon view models stay finite through aim, reload and throw poses', () => {
-  assert.equal(Object.keys(WEAPONS).length, 9);
+test('every weapon view model stays finite through aim, reload and throw poses', () => {
   const silhouettes = new Set();
   for (const weapon of Object.values(WEAPONS)) {
     silhouettes.add(digest(viewModel(weapon.id)));
@@ -91,7 +89,7 @@ test('all nine weapon view models stay finite through aim, reload and throw pose
       assert.ok(array.length / 10 < 3000, `${weapon.id}: bounded view model`);
     }
   }
-  assert.equal(silhouettes.size, 9);
+  assert.equal(silhouettes.size, Object.keys(WEAPONS).length);
   for (const scoped of ['marksman', 'sniper']) assert.ok(viewModel(scoped, { aimTicks: 18 }).length < viewModel(scoped).length, 'scope glass clears its actual aperture during ADS');
 });
 
@@ -135,7 +133,7 @@ test('weapon tracers use distinct profiles and end at the authoritative contact'
     processEffects(renderer, [], 1000 + weapon.effects.tracerTicks * 1000 / 120 + 1);
     assert.equal(renderer.tracers.length, 0, 'beam disappears after its weapon-specific duration');
   }
-  assert.equal(signatures.size, 8);
+  assert.equal(signatures.size, Object.values(WEAPONS).filter(weapon => !weapon.projectile).length);
 });
 
 test('each gun has a finite distinct firing model; switching weapons clears stale flashes', () => {
@@ -150,7 +148,7 @@ test('each gun has a finite distinct firing model; switching weapons clears stal
     if (weapon.projectile) assert.equal(fired.length, viewModel(weapon.id).length);
     else assert.equal(fired.length - viewModel(weapon.id).length, 72 * 10, 'exactly one two-part flash per report');
   }
-  assert.equal(signatures.size, 9);
+  assert.equal(signatures.size, Object.keys(WEAPONS).length);
   const smgLate = viewModel('smg', {}, { localShot: { born: 960, weapon: 'smg' } });
   const sniperLate = viewModel('sniper', {}, { localShot: { born: 960, weapon: 'sniper' } });
   assert.equal(smgLate.length, viewModel('smg').length, 'SMG flash is already gone');

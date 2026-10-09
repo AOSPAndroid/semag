@@ -9,9 +9,10 @@ import { combatPresentation, createCorrectionPresenter, createMovementPresenter,
 import { createNetworkTimeline } from './network-timeline.js';
 import { createFpsInputQueue, releaseFpsTouchAction } from './voxel-input-queue.js';
 import { setAttribute, setDisabled, setHidden, setStyle, setText, toggleClass } from './hub/dom.js';
+import { inventoryControlForKey, inventoryItemReadout, inventoryLootPresentation, inventoryEventFeedback, inventorySwapPresentation, mountInventoryHotbar } from './voxel-inventory-ui.js';
 
 export const LOOK_SENSITIVITY = 0.0025;
-export const FPS_BUTTONS = Object.freeze(['up', 'down', 'left', 'right', 'jump', 'crouch', 'walk', 'fire', 'reload', 'interact', 'aim', 'swap', 'grenade', 'heal']);
+export const FPS_BUTTONS = Object.freeze(['up', 'down', 'left', 'right', 'jump', 'crouch', 'walk', 'fire', 'reload', 'interact', 'aim', 'swap', 'grenade', 'heal', 'slot1', 'slot2', 'slot3', 'slot4', 'drop']);
 const TAU = Math.PI * 2;
 const clone = value => value == null ? value : structuredClone(value);
 
@@ -27,7 +28,7 @@ export function neutralInput(yaw = 0, pitch = 0) {
 export function controlForKey(event, layout = getKeyboardLayout()) {
   if (event.defaultPrevented || event.isComposing || event.altKey || event.metaKey) return null;
   const key = gameKey(event, layout).toLowerCase();
-  const action = ({ w: 'up', arrowup: 'up', s: 'down', arrowdown: 'down', a: 'left', arrowleft: 'left', d: 'right', arrowright: 'right', ' ': 'jump', control: 'crouch', shift: 'walk', r: 'reload', e: 'interact', v: 'swap', q: 'grenade', g: 'grenade', f: 'heal', h: 'heal' })[key] || null;
+  const action = inventoryControlForKey(event) || ({ w: 'up', arrowup: 'up', s: 'down', arrowdown: 'down', a: 'left', arrowleft: 'left', d: 'right', arrowright: 'right', ' ': 'jump', control: 'crouch', shift: 'walk', r: 'reload', e: 'interact', v: 'swap', q: 'grenade', g: 'grenade', f: 'heal', h: 'heal' })[key] || null;
   // Ctrl is the crouch control, so captured gameplay actions must work while it is held.
   return action;
 }
@@ -102,7 +103,7 @@ export function loadoutForKey(event, phase) {
 
 /** Scope and look cues use the same finite authoritative ADS transition as the camera. */
 export function aimFraction(player, ticks = 18) {
-  if (player?.alive === false || player?.slot === 'sword' || player?.healing || player?.healTicks > 0 || player?.reloadTicks > 0 || player?.grenadeThrowTicks > 0) return 0;
+  if (player?.alive === false || ['sword', 'potion', 'grenade', 'empty'].includes(player?.slot) || player?.healing || player?.healTicks > 0 || player?.reloadTicks > 0 || player?.grenadeThrowTicks > 0) return 0;
   return Math.max(0, Math.min(1, Number.isFinite(player?.aimTicks) ? player.aimTicks / Math.max(1, ticks) : 0));
 }
 
@@ -115,6 +116,7 @@ export function aimLookMultiplier(player, ads = {}) {
 /** Action progress always comes from the simulation; readiness never anticipates a hit. */
 export function combatReadout(player, weapons = WEAPONS, rules = {}) {
   const weapon = weapons[player?.weapon]; const sword = player?.slot === 'sword';
+  const swap = inventorySwapPresentation(player);
   const ticks = Math.max(0, Number.isFinite(player?.meleeTicks) ? player.meleeTicks : 0, Number.isFinite(player?.meleeCooldown) ? player.meleeCooldown : 0);
   const meleePhase = ticks && !(player?.meleeTicks > 0) ? 'recovery' : player?.meleePhase || 'idle';
   const melee = (player?.meleeWeapon === 'knife' ? rules.KNIFE : rules.MELEE) || meleeProfile(player);
@@ -124,7 +126,7 @@ export function combatReadout(player, weapons = WEAPONS, rules = {}) {
   let ammo = sword ? ({ startup: 'WINDUP', active: 'STRIKE', recovery: 'RECOVER' })[meleePhase] || 'READY' : player?.ammo ?? '—';
   let status; let progress = null;
   if (sword) {
-    status = ticks ? `${(ticks / 120).toFixed(1)}S · ${meleePhase === 'startup' ? 'COMMITTING' : meleePhase === 'active' ? 'BLADE ACTIVE' : 'RECOVERING'}` : 'LMB STRIKE · V GUN';
+    status = ticks ? `${(ticks / 120).toFixed(1)}S · ${meleePhase === 'startup' ? 'COMMITTING' : meleePhase === 'active' ? 'BLADE ACTIVE' : 'RECOVERING'}` : `LMB STRIKE · ${swap?.shortcut || 'V GUN'}`;
     if (ticks) progress = { label: `${meleeLabel(player) === 'KNIFE' ? 'Knife' : 'Sword'} attack and recovery`, remaining: ticks, total: meleeTotal };
   } else if (player?.ammo === 0) status = player.reserve > 0 ? weapon?.projectile ? 'R TO RELOAD BOLT' : 'R TO RELOAD' : 'OUT OF AMMUNITION';
   else if (weapon?.spinupTicks && player?.spinTicks > 0 && player.spinTicks < weapon.spinupTicks) {
@@ -141,7 +143,7 @@ export function combatReadout(player, weapons = WEAPONS, rules = {}) {
   else if (!player?.grounded) status = 'AIRBORNE / UNSTEADY';
   else if (player?.aiming) status = Math.hypot(player.vx || 0, player.vz || 0) > .22 ? 'AIMING / MOVING' : 'AIMING / STEADY';
   else if (player?.crouching) status = Math.hypot(player.vx || 0, player.vz || 0) > .22 ? 'CROUCHED / MOVING' : 'CROUCHED / STEADY';
-  else status = weapon?.projectile ? 'LEAD TARGET · CLICK EACH BOLT' : weapon?.spinupTicks ? 'HOLD FIRE · WIND-UP' : ({ semi: 'CLICK EACH SHOT', burst: 'CLICK EACH BURST', pump: 'CLICK EACH SHELL', bolt: 'SETTLE INTO SCOPE' })[weapon?.mode] || 'RMB AIM · V SWORD';
+  else status = weapon?.projectile ? 'LEAD TARGET · CLICK EACH BOLT' : weapon?.spinupTicks ? 'HOLD FIRE · WIND-UP' : ({ semi: 'CLICK EACH SHOT', burst: 'CLICK EACH BURST', pump: 'CLICK EACH SHELL', bolt: 'SETTLE INTO SCOPE' })[weapon?.mode] || `RMB AIM · ${swap?.shortcut || 'V SWORD'}`;
   if (reloading) { status = `RELOADING ${(player.reloadTicks / 120).toFixed(1)}S`; progress = { label: 'Reload', remaining: player.reloadTicks, total: weapon?.reloadTicks || player.reloadTicks }; }
   if (player?.grenadeThrowTicks > 0) status = `THROWING ${(player.grenadeThrowTicks / 120).toFixed(1)}S`;
   if (healing) {
@@ -151,7 +153,7 @@ export function combatReadout(player, weapons = WEAPONS, rules = {}) {
   }
   if (progress) progress.percent = Math.max(0, Math.min(100, 100 - progress.remaining / progress.total * 100));
   return { label, ammo, reserve: player?.reserve ?? '—', sword, healing, reloading, status, progress,
-    grenades: Math.max(0, player?.grenades ?? 0), potions: Math.max(0, player?.potions ?? 0) };
+    grenades: Math.max(0, player?.grenades ?? 0), potions: Math.max(0, player?.potions ?? 0), ...inventoryItemReadout(player) };
 }
 
 /** A shotgun shell reports once; every pellet still supplies its own contact feedback. */
@@ -244,13 +246,13 @@ async function boot() {
     const caption = weapon.projectile ? 'Lead + bolt drop' : weapon.spinupTicks ? 'Hold fire to wind up' : weapon.mode === 'bolt' ? 'Settle into scope' : weapon.mode === 'burst' ? 'Three-shot volleys' : weapon.mode === 'pump' ? 'Close-range spread' : weapon.mode === 'semi' ? 'Fast single shots' : weapon.scoped ? 'Precise headshots' : weapon.magazine >= 30 ? 'Close quarters' : 'Measured bursts';
     const option = document.createElement('option'); option.value = id; option.textContent = `${weapon.label} · ${caption}`; loadoutOptions.append(option);
     const button = document.createElement('button'); button.dataset.arenaLoadout = id; button.setAttribute('aria-pressed', 'false');
-    button.setAttribute('aria-label', `${index + 1}: ${weapon.name}. ${weapon.description}`); button.title = weapon.description;
-    const number = document.createElement('b'); number.textContent = String(index + 1);
+    button.setAttribute('aria-label', `${index < 9 ? `${index + 1}: ` : ''}${weapon.name}. ${weapon.description}`); button.title = weapon.description;
+    const number = document.createElement('b'); number.textContent = index < 9 ? String(index + 1) : '↗';
     const detail = document.createElement('small'); detail.textContent = caption;
     button.append(number, document.createTextNode(` ${weapon.label}`), detail); arenaButtons.append(button);
   }
   $('loadout-select').replaceChildren(loadoutOptions); $('arena-loadouts').replaceChildren(arenaButtons);
-  setText($('phase-shortcuts'), WEAPON_IDS.map((id, index) => `${index + 1} ${WEAPONS[id].label}`).join(' · '));
+  setText($('phase-shortcuts'), 'SETUP 1–9 · CLICK ANY WEAPON · IN PLAY: 1–4 EQUIP, X DROP');
   const roomId = new URLSearchParams(location.search).get('room')?.trim().toUpperCase() || '';
   const roomLabel = /^[A-Z0-9]{6}$/.test(roomId) ? roomId : 'NO ROOM';
   setText($('room-code'), roomLabel);
@@ -292,6 +294,11 @@ async function boot() {
   function pointerLocked() { return document.pointerLockElement === canvas; }
   function controlsActive() { return connected && entered && !paused && !modalOpen && !graphicsError && !document.hidden && !!ownPlayer()?.alive && ['countdown', 'buy', 'fight'].includes(state?.phase) && (pointerLocked() || fallback || touchMode); }
   function currentInput() { return composeInput(keys, touch, mouse, aim, controlsActive()); }
+  const inventory = mountInventoryHotbar($('voxel-inventory'), actions => {
+    if (!controlsActive() || state?.phase !== 'fight') return;
+    const fresh = actions.filter(action => !keys.has(action)); fresh.forEach(action => keys.add(action)); sendInput(currentInput(), true);
+    fresh.forEach(action => keys.delete(action)); sendInput(currentInput(), true); canvas.focus({ preventScroll: true });
+  });
   function utilityFeedback(action) {
     const local = ownPlayer(); if (state?.phase !== 'fight' || !local?.alive) return;
     if (action === 'heal' && !local.healTicks) {
@@ -372,6 +379,7 @@ async function boot() {
       svg.setAttribute('viewBox', `${bounds.minX - 2} ${bounds.minZ - 2} ${bounds.maxX - bounds.minX + 4} ${bounds.maxZ - bounds.minZ + 4}`);
       svg.append(svgNode('rect', { x: bounds.minX, y: bounds.minZ, width: bounds.maxX - bounds.minX, height: bounds.maxZ - bounds.minZ, class: 'map-floor' }));
       for (const box of plan.colliders) {
+        if (box.overhead) continue;
         const top = box.y + box.h;
         const cover = svgNode('rect', { x: box.x, y: box.z, width: box.w, height: box.d, class: `map-cover${top < 1.3 ? ' low' : top >= 2.5 && !box.id.startsWith('wall-') ? ' elevated' : ''}` });
         svg.append(cover);
@@ -417,6 +425,8 @@ async function boot() {
       if (eventOrder.length > 512) eventSeen.delete(eventOrder.shift());
       const perspective = combatEventPerspective(event, playerId);
       const shooter = perspective.source; const target = perspective.target;
+      const inventoryFeedback = shooter === playerId ? inventoryEventFeedback(event) : null; if (inventoryFeedback) toast(inventoryFeedback);
+      if (shooter === playerId && event.type === 'lootPickup') toast(`PICKED UP ${event.kind === 'weapon' ? WEAPONS[event.weapon]?.label || 'WEAPON' : event.kind === 'heal' ? 'POTION' : event.kind === 'grenade' ? 'FRAG' : 'SUPPLIES'}`);
       if (event.type === 'damage' && event.damage > 0) {
         if (perspective.outgoing) { hitUntil = performance.now() + 150; hitKind = event.headshot ? 'headshot' : 'body'; }
         const viewed = healthHUDPlayer(state, playerId, spectatorId);
@@ -596,15 +606,19 @@ async function boot() {
     setHidden($('health-gain'), spectating || performance.now() >= healthGainUntil || !healthGain);
     setText($('health-gain'), `+${healthGain} HP`);
     const readout = combatReadout(viewed, WEAPONS, engine);
+    inventory.update(viewed, { visible: !inLobby && !!viewed?.alive && ['buy', 'fight', 'roundEnd'].includes(phase), interactive: !spectating && controlsActive() && phase === 'fight' });
+    const nearLoot = local?.alive && phase === 'fight' && engine?.findNearbyLoot ? inventoryLootPresentation(engine.findNearbyLoot(state, playerId), local) : null;
+    const activeObjective = !!local?.interaction;
+    setHidden($('voxel-pickup'), !nearLoot || activeObjective || paused || !entered || modalOpen); setText($('voxel-pickup-name'), nearLoot?.name || ''); setText($('voxel-pickup-detail'), nearLoot?.detail ? displayKey(nearLoot.detail) : '');
     if (!previewWeapon) renderWeaponComparison(local?.weapon || 'carbine');
     const weapon = WEAPONS[viewed?.weapon];
     const pose = spectating ? viewed : predictedPlayer || local;
     setText($('position-status'), !pose?.grounded ? 'AIRBORNE' : pose.y >= .75 ? 'HIGH GROUND' : 'GROUND LEVEL');
     toggleClass($('position-status'), 'elevated', !!pose && pose.y >= .75);
     setText($('weapon-label'), readout.label); setText($('ammo'), readout.ammo); setText($('reserve'), readout.reserve);
-    $('weapon-readout').dataset.slot = readout.healing ? 'potion' : readout.sword ? 'sword' : 'primary';
+    $('weapon-readout').dataset.slot = readout.utility ? viewed?.slot || 'empty' : readout.healing ? 'potion' : readout.sword ? 'sword' : 'primary';
     toggleClass($('weapon-readout'), 'healing', readout.healing);
-    setHidden($('ammo-reserve'), readout.sword || readout.healing);
+    setHidden($('ammo-reserve'), readout.sword || readout.healing || readout.utility);
     setHidden($('reload-track'), !readout.progress); setStyle($('reload-progress'), 'width', `${readout.progress?.percent || 0}%`);
     setAttribute($('reload-track'), 'aria-label', readout.progress?.label || 'Weapon action');
     setAttribute($('reload-track'), 'aria-valuenow', String(Math.round(readout.progress?.percent || 0)));
@@ -615,7 +629,7 @@ async function boot() {
     toggleClass($('grenade-utility'), 'spent', !readout.grenades);
     toggleClass($('potion-utility'), 'spent', !readout.potions);
     toggleClass($('potion-utility'), 'channeling', readout.healing);
-    const scoped = !!local?.alive && local.slot !== 'sword' && !readout.healing && !!weapon?.scoped && aimFraction(local, engine?.ADS?.ticks) >= 14 / 18;
+    const scoped = !!local?.alive && local.slot === 'primary' && !readout.healing && !!weapon?.scoped && aimFraction(local, engine?.ADS?.ticks) >= 14 / 18;
     setHidden($('scope-reticle'), !controlsActive() || phase !== 'fight' || !scoped);
     setText($('scope-label'), `${weapon?.label || 'PRECISION'} / PRECISION SIGHT`);
     setHidden($('crosshair'), !controlsActive() || phase !== 'fight' || scoped || readout.healing);
@@ -629,7 +643,7 @@ async function boot() {
     }
     for (const button of document.querySelectorAll('[data-voxel-action]')) {
       const action = button.dataset.voxelAction;
-      if (action === 'swap') { button.textContent = readout.sword ? 'GUN' : 'SWORD'; button.setAttribute('aria-label', readout.sword ? 'Switch to primary gun' : 'Switch to sword'); button.setAttribute('aria-pressed', String(readout.sword)); }
+      if (action === 'swap') { const swap = inventorySwapPresentation(local); button.textContent = swap?.label || (readout.sword ? 'GUN' : 'SWORD'); button.setAttribute('aria-label', swap?.ariaLabel || (readout.sword ? 'Switch to primary gun' : 'Switch to sword')); button.setAttribute('aria-pressed', String(readout.sword)); }
       if (action === 'aim') button.setAttribute('aria-pressed', String(!!local?.aiming));
       if (action === 'grenade') { button.textContent = `FRAG ${readout.grenades}`; button.setAttribute('aria-label', `Throw fragmentation grenade: ${readout.grenades} remaining`); button.classList.toggle('unavailable', !readout.grenades); }
       if (action === 'heal') { button.textContent = readout.healing ? 'DRINKING' : `POTION ${readout.potions}`; button.setAttribute('aria-label', `Drink healing potion: ${readout.potions} remaining; restores up to ${engine?.HEAL?.amount || HEAL.amount} health after two seconds; interruption spends the potion`); button.classList.toggle('unavailable', (!readout.potions && !readout.healing) || local?.hp >= (local?.maxHp || PLAYER_HEALTH)); }
@@ -691,7 +705,7 @@ async function boot() {
       button.setAttribute('aria-pressed', String(button.dataset.arenaLoadout === local?.weapon));
       button.disabled = !connected || !['countdown', 'buy'].includes(phase);
     }
-    setHidden($('aim-note'), !enter); setText($('aim-note'), touchMode ? 'Touch: Move / Look pads. Hold AIM for sights; tap SWORD, FRAG or POTION.' : 'RMB aims. If mouse capture is unavailable, hold RMB and drag to look.');
+    setHidden($('aim-note'), !enter); setText($('aim-note'), touchMode ? 'Touch: Move / Look pads. Hold AIM for sights; tap a slot to equip, or use FRAG and POTION.' : 'RMB aims. If mouse capture is unavailable, hold RMB and drag to look.');
     const result = roundResult(state, local?.team);
     setHidden($('phase-announcement'), !connected || !!graphicsError || modalOpen || overlay || !['countdown', 'buy', 'roundEnd'].includes(phase));
     $('phase-announcement').dataset.phase = phase;
@@ -916,7 +930,7 @@ async function boot() {
     const layout = getKeyboardLayout();
     setText($('move-keys'), layout.toUpperCase());
     for (const label of document.querySelectorAll('[data-voxel-key]')) label.textContent = displayKey(label.dataset.voxelKey, layout);
-    canvas.setAttribute('aria-label', `3D tactical shooter. ${layout.toUpperCase()} or arrows to move, mouse to look, left click to shoot or strike, right click to aim, V switch sword, ${displayKey('Q', layout)} grenade, F healing potion, R reload, hold E to plant or defuse, Space jump between crates and ledges, Control crouch, Shift walk. Choose nine weapons with number keys 1 to 9 during setup.`);
+    canvas.setAttribute('aria-label', `3D tactical shooter. ${layout.toUpperCase()} or arrows to move, mouse to look, left click to use your selected item, right click to aim, 1 to 4 equip inventory slots, X drops the selected item, V switches blade and gun, ${displayKey('Q', layout)} grenade, F healing potion, R reload, E picks up loot or holds to plant or defuse, Space jumps, Control crouches, Shift walks. Choose any weapon in setup; number keys 1 to 9 select the first nine.`);
   }
   function updateLayout() { neutralize({ pause: entered, unlock: true }); updateKeyLabels(); }
   const unsubscribeLayout = subscribeKeyboardLayout(updateLayout); updateKeyLabels();
@@ -1065,7 +1079,7 @@ async function boot() {
     if (destroyed) return; neutralize({ pause: true, unlock: true }); destroyed = true;
     clearTimeout(reconnectTimer); clearTimeout(toastTimer); clearInterval(pingTimer);
     clearInterval(inputHeartbeat); inputHeartbeat = null;
-    if (frameId) cancelAnimationFrame(frameId); frameId = null; socket?.close(); renderer?.destroy(); audio.destroy(); layoutPicker.destroy(); unsubscribeLayout();
+    if (frameId) cancelAnimationFrame(frameId); frameId = null; socket?.close(); renderer?.destroy(); audio.destroy(); inventory.destroy(); layoutPicker.destroy(); unsubscribeLayout();
     for (const remove of removers) remove(); pending = []; snapshots = []; kills.length = 0; eventSeen.clear();
   }
   listen(window, 'pagehide', destroy);

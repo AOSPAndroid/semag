@@ -1,0 +1,31 @@
+/* Four flexible slots fit between the existing health and ammunition readouts. */
+.voxel-inventory{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;width:352px;max-width:calc(100% - 24px);z-index:4;font-family:Arial,sans-serif;pointer-events:auto;user-select:none}
+.voxel-inventory[hidden]{display:none!important}
+.inventory-slot{display:flex;min-width:0;background:#15291ee8;border:1px solid #c5d4b63d;border-radius:3px;overflow:hidden;color:#d2dec5}
+.inventory-slot.selected{border-color:#e5cf8d;background:#334832ed;box-shadow:inset 0 2px #e5cf8d}
+.inventory-slot[data-kind=empty]{opacity:.65;border-style:dashed}
+.voxel-inventory button{border:0;border-radius:0;color:inherit;min-height:44px;padding:0;background:transparent;font-family:inherit;touch-action:manipulation}
+.voxel-inventory button:disabled{opacity:.7;cursor:default}
+.voxel-inventory button:focus-visible{outline:2px solid #f8e4ad;outline-offset:-2px}
+.inventory-select{position:relative;display:grid;grid-template-columns:13px 1fr;grid-template-rows:20px 11px 10px;align-items:center;flex:1;min-width:0;text-align:left;padding:2px 3px!important}
+.inventory-select kbd{grid-column:1;grid-row:1;font-size:8px;padding:2px;background:#d8e2c720;color:inherit;border:1px solid #d8e2c744;border-radius:2px;text-align:center}
+.inventory-select svg{grid-column:2;grid-row:1;justify-self:center;width:28px;height:21px;fill:none;stroke:currentColor;stroke-width:1.4;stroke-linejoin:miter;image-rendering:pixelated}
+.inventory-select b{grid-column:1/3;grid-row:2;font-weight:500;font-size:7px;line-height:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.inventory-select small{grid-column:1/3;grid-row:3;font-size:7px;line-height:9px;color:#a8b89c;white-space:nowrap}
+.inventory-drop{flex:0 0 24px;border-left:1px solid #c5d4b624!important;font-size:18px!important;color:#c6d4b6!important}
+.inventory-drop:hover:enabled{color:#ffdaa3!important;background:#8f674833}
+.inventory-hint{position:absolute;bottom:calc(100% + 3px);left:0;right:0;font-size:6px;letter-spacing:.7px;line-height:8px;color:#d4dfc3;text-align:center;text-shadow:0 1px 3px #102217;pointer-events:none}
+.viewport .utility-readout,.viewport .utilities,.practice-health>small{display:none}
+.viewport #loot-prompt,.viewport #voxel-pickup,.practice-viewport .practice-pickup{bottom:88px}
+#voxel-pickup{position:absolute;left:50%;transform:translateX(-50%);display:flex;gap:9px;align-items:center;max-width:340px;border:1px solid #eed99c6b;border-radius:3px;background:#162c23eb;color:#f3e6bf;padding:7px 11px;pointer-events:none;font:10px/1.4 Arial,sans-serif}
+#voxel-pickup[hidden]{display:none}
+#voxel-pickup strong,#voxel-pickup small{display:block}
+#voxel-pickup small{font-size:7px;color:#b9c7a6;line-height:1.6}
+@media(max-width:740px){
+ .voxel-inventory{bottom:8px;gap:3px;width:352px;max-width:calc(100% - 16px)}
+ .viewport .combat-hud,.practice-viewport .practice-combat{bottom:68px}
+ .viewport #loot-prompt,.viewport #voxel-pickup,.practice-viewport .practice-pickup{bottom:143px;max-width:calc(100% - 24px)}
+ .viewport .spectator-hud,.horde-spectator{bottom:140px}
+}
+@media(pointer:coarse){.inventory-drop{flex-basis:28px}}
+@media(max-width:360px){.inventory-select b,.inventory-select small{font-size:6px}.inventory-drop{flex-basis:22px}.inventory-select svg{width:24px}}

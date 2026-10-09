@@ -1,4 +1,5 @@
 import { createParisMap } from './voxel-paris.js';
+import { createExpansionMap } from './voxel-expansion-maps.js';
 
 /** Authored, shared collision and rendering geometry for Voxel Breach. */
 const box = (id, x, y, z, w, h, d, color = '#647780', material = 'stone') => Object.freeze({ id, x, y, z, w, h, d, color, material });
@@ -179,5 +180,5 @@ const bastionClimbs = [
 const bastion = expanded(bastionBase, bastionClimbs);
 
 /** Single catalog consumed by server validation, prediction, setup and rendering. */
-export const MAPS = Object.freeze({ courtyard, depot, canal, rooftops, foundry, bastion, paris: createParisMap('breach') });
+export const MAPS = Object.freeze({ courtyard, depot, canal, rooftops, foundry, bastion, paris: createParisMap('breach'), snow: createExpansionMap('snow'), sewers: createExpansionMap('sewers'), trading: createExpansionMap('trading') });
 export const MAP_IDS = Object.freeze(Object.keys(MAPS));

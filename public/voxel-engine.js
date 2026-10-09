@@ -5,14 +5,15 @@ import { WEAPONS, weaponDamage, weaponSpread } from './voxel-weapons.js';
 import { launchBolt, advanceBolts, MAX_BOLTS } from './voxel-projectiles.js';
 import { MELEE, KNIFE, meleeProfile, meleeWeaponId } from './voxel-melee.js';
 import { recordLagCompensation, traceCompensatedShot } from './voxel-lag-compensation.js';
+import { INVENTORY_ACTIONS, initializeInventory, ensureInventory, refreshInventory, selectedInventoryItem, selectInventorySlot, storeInventoryGun, tickHolsteredInventory, consumeInventoryStack, pickupInventoryItem, inventoryCanTake, dropInventoryItem, lootFromInventoryItem, setInventoryLoadout } from './voxel-inventory.js';
 export { MAPS, WEAPONS };
 export { MELEE, KNIFE, meleeProfile, meleeWeaponId };
 export const TICK_RATE = 120;
 // Keep every pellet contact from a six-player shotgun volley through the next
 // network snapshot, including utility and damage feedback in the same interval.
-export const EVENT_LIMIT = 128;
+export const EVENT_LIMIT = 160;
 export const WORLD = Object.freeze({ radius: .32, standHeight: 1.8, crouchHeight: 1.15, eyeHeight: 1.62, crouchEyeHeight: .98, gravity: 18.4, jumpSpeed: 6.4, jumpBufferTicks: 10, roundSeconds: 100, bombSeconds: 35, plantSeconds: 3, defuseSeconds: 5, buySeconds: 8, winsToMatch: 4 });
-export const INPUT_KEYS = Object.freeze(['up', 'down', 'left', 'right', 'jump', 'crouch', 'walk', 'fire', 'reload', 'interact', 'aim', 'swap', 'grenade', 'heal']);
+export const INPUT_KEYS = Object.freeze(['up', 'down', 'left', 'right', 'jump', 'crouch', 'walk', 'fire', 'reload', 'interact', 'aim', 'swap', 'grenade', 'heal', ...INVENTORY_ACTIONS]);
 export const ADS = Object.freeze({ ticks: 18, speedMultiplier: .65, spreadMultiplier: .4, recoilMultiplier: .62, fovRatio: 54 / 70, scopedFovRatio: 40 / 70 });
 export const PLAYER_HEALTH = 200;
 export const HEAL = Object.freeze({ ticks: 240, amount: 60, speedMultiplier: .3 });
@@ -24,7 +25,8 @@ export const emptyInput = (aim = {}) => ({ ...Object.fromEntries(INPUT_KEYS.map(
 export function cloneState(state) { const copy = JSON.parse(JSON.stringify(state)); if (copy.players) copy.fighters = copy.players; return copy; }
 export function createCombatPlayer(id, teamSize = 1, loadout = 'carbine') {
   const weapon = Object.hasOwn(WEAPONS, loadout) ? loadout : 'carbine', w = WEAPONS[weapon];
-  return { id, team: Math.floor(id / teamSize), x: 0, y: 0, z: 0, yaw: 0, pitch: 0, vx: 0, vy: 0, vz: 0, radius: WORLD.radius, grounded: true, jumpBufferTicks: 0, crouching: false, alive: true, hp: PLAYER_HEALTH, maxHp: PLAYER_HEALTH, weapon, slot: 'primary', meleeWeapon: 'sword', ammo: w.magazine, reserve: w.reserve, reloadTicks: 0, shotCooldown: 0, burstRemaining: 0, spinTicks: 0, recoil: 0, heat: 0, shotIndex: 0, shots: 0, kills: 0, deaths: 0, damageDealt: 0, lastHitTick: -1000, triggerBlocked: false, aiming: false, aimTicks: 0, meleeTicks: 0, meleeCooldown: 0, meleeYaw: 0, meleePitch: 0, meleePhase: 'idle', meleeHitIds: [], healing: false, healTicks: 0, healStartTick: -1, potions: 1, grenades: 1, grenadeThrowTicks: 0, interaction: null, interactTicks: 0, previousInput: emptyInput() };
+  const player = { id, team: Math.floor(id / teamSize), x: 0, y: 0, z: 0, yaw: 0, pitch: 0, vx: 0, vy: 0, vz: 0, radius: WORLD.radius, grounded: true, jumpBufferTicks: 0, crouching: false, alive: true, hp: PLAYER_HEALTH, maxHp: PLAYER_HEALTH, weapon, slot: 'primary', meleeWeapon: 'knife', ammo: w.magazine, reserve: w.reserve, reloadTicks: 0, shotCooldown: 0, burstRemaining: 0, spinTicks: 0, recoil: 0, heat: 0, shotIndex: 0, shots: 0, kills: 0, deaths: 0, damageDealt: 0, lastHitTick: -1000, triggerBlocked: false, aiming: false, aimTicks: 0, meleeTicks: 0, meleeCooldown: 0, meleeYaw: 0, meleePitch: 0, meleePhase: 'idle', meleeHitIds: [], healing: false, healTicks: 0, healStartTick: -1, potions: 1, grenades: 1, grenadeThrowTicks: 0, interaction: null, interactTicks: 0, previousInput: emptyInput() };
+  return initializeInventory(player, { weapon });
 }
 const newPlayer = createCombatPlayer;
 function freshBomb() { return { status: 'carried', carrierId: 0, x: 0, y: 0, z: 0, vy: 0, siteId: null, plantPlayerId: null, plantTicks: 0, defusePlayerId: null, defuseTicks: 0, timerTicks: 0 }; }
@@ -32,7 +34,7 @@ export function createState({ teamSize = 1, mapId = 'courtyard' } = {}) {
   if (![1, 2, 3].includes(teamSize)) throw new RangeError('teamSize must be 1, 2 or 3.');
   if (!Object.hasOwn(MAPS, mapId)) throw new RangeError('Unknown Voxel Breach map.');
   const players = Array.from({ length: teamSize * 2 }, (_, id) => newPlayer(id, teamSize));
-  const state = { gameId: 'voxel-breach', teamSize, capacity: teamSize * 2, mapId, mapName: MAPS[mapId].name, tick: 0, phase: 'lobby', phaseTicks: 0, round: 1, maxRounds: 7, roundTicks: WORLD.roundSeconds * TICK_RATE, scores: [0, 0], attackTeam: 0, winner: null, roundWinner: null, roundReason: null, players, fighters: players, bomb: freshBomb(), grenades: [], grenadeId: 0, bolts: [], boltId: 0, events: [], eventId: 0, objective: 'Attackers plant at A or B. Defenders deny the plant or defuse. First to four rounds.' };
+  const state = { gameId: 'voxel-breach', teamSize, capacity: teamSize * 2, mapId, mapName: MAPS[mapId].name, tick: 0, phase: 'lobby', phaseTicks: 0, round: 1, maxRounds: 7, roundTicks: WORLD.roundSeconds * TICK_RATE, scores: [0, 0], attackTeam: 0, winner: null, roundWinner: null, roundReason: null, players, fighters: players, bomb: freshBomb(), grenades: [], grenadeId: 0, bolts: [], boltId: 0, loot: [], lootId: 0, events: [], eventId: 0, objective: 'Attackers plant at A or B. Defenders deny the plant or defuse. First to four rounds.' };
   spawnPlayers(state, false); return state;
 }
 export function emitCombatEvent(state, type, data = {}) {
@@ -50,7 +52,7 @@ function spawnPlayers(state, preserveStats = true) {
     return f;
   });
   state.fighters = state.players;
-  state.grenades = []; state.bolts = []; state.boltId = 0;
+  state.grenades = []; state.bolts = []; state.boltId = 0; state.loot = [];
   state.bomb = freshBomb(); state.bomb.carrierId = state.players.find(f => f.team === state.attackTeam).id; const carrier = state.players[state.bomb.carrierId];
   Object.assign(state.bomb, { x: carrier.x, y: carrier.y, z: carrier.z });
 }
@@ -68,7 +70,7 @@ export function startMatch(state) {
 export function resetLobby(state) {
   const tick = state.tick, eventId = state.eventId, loadouts = state.players.map(f => f.weapon);
   Object.assign(state, createState({ teamSize: state.teamSize, mapId: state.mapId }), { tick, eventId });
-  for (const f of state.players) { f.weapon = loadouts[f.id] || 'carbine'; const w = WEAPONS[f.weapon]; f.ammo = w.magazine; f.reserve = w.reserve; }
+  for (const f of state.players) setInventoryLoadout(f, loadouts[f.id] || 'carbine');
   return state;
 }
 export function selectLoadout(state, playerId, weaponId) {
@@ -76,8 +78,8 @@ export function selectLoadout(state, playerId, weaponId) {
   if (!f || !Number.isInteger(playerId)) return { ok: false, changed: false, error: 'Unknown player.' };
   if (!Object.hasOwn(WEAPONS, weaponId)) return { ok: false, changed: false, error: 'Choose a weapon from the loadout list.' };
   if (!['lobby', 'countdown', 'buy', 'roundEnd'].includes(state.phase)) return { ok: false, changed: false, error: 'Weapons can be changed between rounds.' };
-  if (f.weapon === weaponId) return { ok: true, changed: false };
-  const w = WEAPONS[weaponId]; Object.assign(f, { weapon: weaponId, slot: 'primary', ammo: w.magazine, reserve: w.reserve, reloadTicks: 0, shotCooldown: 0, burstRemaining: 0, spinTicks: 0, recoil: 0, heat: 0, shotIndex: 0, aiming: false, aimTicks: 0 });
+  if (f.hasGun && f.weapon === weaponId) return { ok: true, changed: false };
+  setInventoryLoadout(f, weaponId);
   emit(state, 'loadout', { playerId, weapon: weaponId }); return { ok: true, changed: true };
 }
 export const setLoadout = selectLoadout;
@@ -194,7 +196,7 @@ function movementTick(f, input, arena, peers = [], headroomPeers = peers) {
   let strafe = Number(input.right) - Number(input.left), forward = Number(input.up) - Number(input.down); const length = Math.hypot(strafe, forward);
   if (length > 0) { strafe /= length; forward /= length; }
   const primarySpeed = f.slot === 'sword' ? meleeProfile(f).speed : WEAPONS[f.weapon].speed;
-  const ads = input.aim && f.slot !== 'sword' && !f.reloadTicks && !f.healTicks && !f.grenadeThrowTicks;
+  const ads = input.aim && f.slot === 'primary' && !f.reloadTicks && !f.healTicks && !f.grenadeThrowTicks;
   const speed = (f.crouching ? 2.35 : input.walk ? 2.8 : primarySpeed) * (f.healTicks ? HEAL.speedMultiplier : ads ? ADS.speedMultiplier : 1);
   const targetX = (Math.sin(f.yaw) * forward + Math.cos(f.yaw) * strafe) * speed, targetZ = (-Math.cos(f.yaw) * forward + Math.sin(f.yaw) * strafe) * speed;
   const accel = f.grounded ? (length ? 43 : 58) : 7;
@@ -357,30 +359,100 @@ function cancelHeal(state, f, reason) {
   emit(state, 'healCancel', { playerId: f.id, reason });
 }
 function clearMelee(f) { f.meleeTicks = 0; f.meleePhase = 'idle'; f.meleeHitIds = []; }
+export function addInventoryLoot(state, player, item) {
+  if (!item) return null;
+  state.loot ||= [];
+  const limit = state.horde ? 20 : 128;
+  if (state.loot.length >= limit) state.loot.splice(0, 1);
+  const id = state.horde ? ++state.horde.lootId : (state.lootId = (state.lootId || 0) + 1);
+  const loot = { id, ...lootFromInventoryItem(item), x: player.x, y: player.y, z: player.z, droppedBy: player.id, falling: true, vy: 0, spawnTick: state.tick, expiresTick: state.tick + 5400 };
+  state.loot.push(loot);
+  emit(state, 'inventoryDrop', { playerId: player.id, lootId: id, kind: loot.kind, weapon: loot.weapon || null, amount: loot.amount || 1, x: loot.x, y: loot.y, z: loot.z });
+  return loot;
+}
+export function dropCombatInventory(state, player) {
+  ensureInventory(player);
+  for (let index = 0; index < 4; index++) addInventoryLoot(state, player, dropInventoryItem(player, index));
+}
+export function findNearbyLoot(state, playerId, arena = state.map || MAPS[state.mapId]) {
+  const player = state.players[playerId]; if (!player?.alive || !arena || !['fight', 'intermission'].includes(state.phase)) return null;
+  const origin = { x: player.x, y: player.y + eyeHeight(player), z: player.z };
+  let nearest = null, range = 1.7;
+  for (const loot of state.loot || []) {
+    if (!['weapon', 'melee', 'heal', 'grenade', 'ammo'].includes(loot.kind) || ![loot.x, loot.y, loot.z].every(Number.isFinite) || Math.abs(loot.y - player.y) > 1.2) continue;
+    if (loot.kind === 'ammo' && !inventoryCanTake(player, loot)) continue;
+    const horizontal = Math.hypot(loot.x - player.x, loot.z - player.z); if (horizontal > range + EPS) continue;
+    const dx = loot.x - origin.x, dy = loot.y + .3 - origin.y, dz = loot.z - origin.z, distance = Math.hypot(dx, dy, dz), direction = distance > EPS ? { x: dx / distance, y: dy / distance, z: dz / distance } : { x: 0, y: 0, z: 0 };
+    if (distance > EPS && arena.colliders.some(box => { const at = rayBox(origin, direction, box, distance); return at !== null && at < distance - EPS; })) continue;
+    if (!nearest || horizontal < range - EPS || Math.abs(horizontal - range) < EPS && loot.id < nearest.id) { nearest = loot; range = horizontal; }
+  }
+  return nearest;
+}
+export function pickupCombatLoot(state, player, loot, input = {}) {
+  const result = pickupInventoryItem(player, loot);
+  if (!result.ok) { emit(state, 'inventoryFull', { playerId: player.id, lootId: loot.id }); return false; }
+  if (result.dropped) addInventoryLoot(state, player, result.dropped);
+  if (loot.kind === 'heal' || loot.kind === 'grenade' || loot.kind === 'ammo') loot.amount -= result.amount;
+  if (!['heal', 'grenade', 'ammo'].includes(loot.kind) || loot.amount <= 0) state.loot = state.loot.filter(item => item.id !== loot.id);
+  player.triggerBlocked = input.fire === true || player.triggerBlocked;
+  clearMelee(player); cancelHeal(state, player, 'pickup');
+  emit(state, 'lootPickup', { playerId: player.id, lootId: loot.id, kind: loot.kind, weapon: loot.weapon || null, amount: result.amount, inventoryIndex: result.index ?? player.inventoryIndex, x: loot.x, y: loot.y, z: loot.z });
+  return true;
+}
+export function advanceInventoryLoot(state, arena = state.map || MAPS[state.mapId]) {
+  for (const loot of state.loot || []) {
+    if (!loot.falling) continue;
+    const oldY = loot.y; loot.vy = (loot.vy || 0) - WORLD.gravity / TICK_RATE;
+    const nextY = oldY + loot.vy / TICK_RATE; let floor = 0;
+    for (const box of arena.colliders) { const top = box.y + box.h; if (top > oldY + EPS || top < nextY - EPS) continue; const dx = loot.x - clamp(loot.x, box.x, box.x + box.w), dz = loot.z - clamp(loot.z, box.z, box.z + box.d); if (dx * dx + dz * dz < .12 * .12) floor = Math.max(floor, top); }
+    if (nextY <= floor) { loot.y = floor; loot.vy = 0; loot.falling = false; } else loot.y = nextY;
+  }
+}
 function tickActions(state, f, input, arena) {
   if (!f.alive) return;
+  ensureInventory(f);
   f.yaw = input.yaw; f.pitch = input.pitch;
   f.grenadeThrowTicks = Math.max(0, f.grenadeThrowTicks - 1);
-  f.meleeCooldown = Math.max(0, f.meleeCooldown - 1);
   if (!input.fire) f.triggerBlocked = false;
-  if (f.healTicks && (input.fire || input.swap || input.grenade || input.jump || input.interact || input.reload)) cancelHeal(state, f, 'action');
+  const selecting = INVENTORY_ACTIONS.some(key => input[key] && !f.previousInput[key]);
+  const attackInterrupt = input.fire && (!f.previousInput.fire || f.slot === 'primary' || f.slot === 'sword');
+  if (f.healTicks && (attackInterrupt || input.swap || input.grenade || input.jump || input.interact || input.reload || selecting)) cancelHeal(state, f, 'action');
+  for (let index = 0; index < 4; index++) if (input[`slot${index + 1}`] && !f.previousInput[`slot${index + 1}`] && !input.interact) {
+    const changed = selectInventorySlot(f, index);
+    clearMelee(f); f.triggerBlocked = input.fire || f.triggerBlocked;
+    emit(state, changed ? 'inventorySelect' : f.inventory[index] ? 'inventorySelect' : 'inventoryEmpty', { playerId: f.id, inventoryIndex: f.inventoryIndex, requestedIndex: index, slot: f.slot });
+    break;
+  }
   if (input.swap && !f.previousInput.swap && !input.interact) {
-    f.slot = f.slot === 'sword' ? 'primary' : 'sword';
-    f.reloadTicks = 0; f.burstRemaining = 0; f.spinTicks = 0; clearMelee(f); cancelHeal(state, f, 'swap');
+    const desired = f.slot === 'sword' ? 'weapon' : 'melee', index = f.inventory.findIndex(item => item?.kind === desired);
+    if (index >= 0) selectInventorySlot(f, index);
+    else { const next = [1, 2, 3, 4].map(offset => (f.inventoryIndex + offset) % 4).find(slot => f.inventory[slot]); if (Number.isInteger(next)) selectInventorySlot(f, next); }
+    clearMelee(f); cancelHeal(state, f, 'swap');
     f.triggerBlocked = input.fire;
     emit(state, 'swap', { playerId: f.id, slot: f.slot });
   }
-  if (input.grenade && !f.previousInput.grenade && !input.interact && !f.grenadeThrowTicks) {
+  if (input.drop && !f.previousInput.drop && !input.interact) {
+    const item = dropInventoryItem(f); if (item) addInventoryLoot(state, f, item);
+    clearMelee(f); cancelHeal(state, f, 'drop'); f.triggerBlocked = input.fire || f.triggerBlocked;
+  }
+  const held = selectedInventoryItem(f), useGrenade = input.grenade && !f.previousInput.grenade || held?.kind === 'grenade' && input.fire && !f.previousInput.fire && !f.triggerBlocked;
+  if (useGrenade && !input.interact && !f.grenadeThrowTicks) {
     const grenade = throwGrenade(state, f, arena, (type, data) => emit(state, type, data));
     if (grenade) {
+      // Ordnance validates the throw before the selected physical stack is spent.
+      // Restore its aggregate decrement, then spend once from the held stack first.
+      f.grenades++; storeInventoryGun(f); consumeInventoryStack(f, 'grenade');
       f.reloadTicks = 0; f.burstRemaining = 0; f.spinTicks = 0; clearMelee(f); cancelHeal(state, f, 'grenade');
       f.grenadeThrowTicks = 24; f.triggerBlocked = input.fire;
     }
   }
-  if (input.heal && !f.previousInput.heal && f.potions > 0 && f.hp < f.maxHp && !f.healTicks && !f.meleeTicks && !f.grenadeThrowTicks && !input.fire && !input.jump && !input.swap && !input.grenade && !input.interact && !input.reload && f.grounded) {
-    f.potions--; f.healTicks = HEAL.ticks; f.healStartTick = state.tick; f.healing = true; f.reloadTicks = 0; f.burstRemaining = 0; f.spinTicks = 0;
+  const potionFire = held?.kind === 'heal' && input.fire && !f.previousInput.fire && !f.triggerBlocked;
+  if ((input.heal && !f.previousInput.heal || potionFire) && f.potions > 0 && f.hp < f.maxHp && !f.healTicks && !f.meleeTicks && !f.grenadeThrowTicks && (!input.fire || potionFire) && !input.jump && !input.swap && !input.grenade && !input.interact && !input.reload && !selecting && f.grounded) {
+    storeInventoryGun(f); consumeInventoryStack(f, 'heal'); f.healTicks = HEAL.ticks; f.healStartTick = state.tick; f.healing = true; f.reloadTicks = 0; f.burstRemaining = 0; f.spinTicks = 0;
     emit(state, 'healStart', { playerId: f.id, x: f.x, y: f.y + eyeHeight(f), z: f.z });
   }
+  tickHolsteredInventory(f);
+  const heldMelee = selectedInventoryItem(f); if (heldMelee?.kind === 'melee') f.meleeCooldown = heldMelee.meleeCooldown || 0;
   f.aiming = input.aim && f.slot === 'primary' && !f.reloadTicks && !f.healTicks && !f.grenadeThrowTicks && !input.interact;
   f.aimTicks = clamp(f.aimTicks + (f.aiming ? 1 : -2), 0, ADS.ticks);
 }
@@ -458,6 +530,7 @@ function tickWeapon(state, f, input, pendingDamage, arena) {
   }
   if (f.healTicks || f.grenadeThrowTicks) { f.spinTicks = 0; return; }
   if (f.slot === 'sword') { f.spinTicks = 0; tickMelee(state, f, input, pendingDamage, arena); return; }
+  if (f.slot !== 'primary') { f.spinTicks = 0; return; }
   if (input.reload && !f.previousInput.reload && !f.reloadTicks && f.ammo < weapon.magazine && f.reserve > 0) { f.reloadTicks = weapon.reloadTicks; f.burstRemaining = 0; f.spinTicks = 0; f.aiming = false; emit(state, 'reload', { playerId: f.id, weapon: f.weapon }); }
   if (input.interact) { f.burstRemaining = 0; f.spinTicks = 0; }
   // Wind-up advances while the trigger is held, including between shots. Any
@@ -491,6 +564,7 @@ export function applyCombatDamage(state, pending) {
     const killer = lethalHits.get(f.id), attacker = killer && state.players[killer.playerId];
     if (attacker && attacker.id !== f.id && attacker.team !== f.team) attacker.kills++;
     emit(state, 'kill', { playerId: killer?.playerId ?? null, targetId: f.id, hitKind: killer?.hitKind ?? 'body', headshot: killer?.headshot || false, attack: killer?.attack || 'gun', weapon: killer?.weapon ?? (killer?.attack === 'grenade' ? 'grenade' : null), x: f.x, y: f.y, z: f.z });
+    if (state.gameId === 'voxel-breach') dropCombatInventory(state, f);
     if (state.bomb?.status === 'carried' && state.bomb.carrierId === f.id) { Object.assign(state.bomb, { status: 'dropped', carrierId: null, x: f.x, y: f.y, z: f.z, plantPlayerId: null, plantTicks: 0 }); emit(state, 'bombDrop', { playerId: f.id, x: f.x, y: f.y, z: f.z }); }
   }
 }
@@ -511,7 +585,7 @@ export function combatStep(state, rawInputs = [], arena = state.map || MAPS[stat
   pending.push(...(typeof additionalDamage === 'function' ? additionalDamage(state) : additionalDamage));
   applyCombatDamage(state, pending);
   for (const f of state.players) tickHealing(state, f);
-  for (const f of state.players) f.previousInput = inputs[f.id];
+  for (const f of state.players) { storeInventoryGun(f); refreshInventory(f); f.previousInput = inputs[f.id]; }
   return state;
 }
 function separatePlayers(state, arena) {
@@ -614,7 +688,10 @@ export function step(state, rawInputs = []) {
   if (state.phase !== 'fight') return state;
   state.roundTicks = Math.max(0, state.roundTicks - 1);
   if (state.bomb.status === 'planted') { state.bomb.timerTicks = Math.max(0, state.bomb.timerTicks - 1); if (!state.bomb.timerTicks) { resolveRound(state); return state; } }
+  const previous = state.players.map(f => ({ ...f.previousInput }));
   combatStep(state, inputs, MAPS[state.mapId]);
   updateBomb(state, inputs); resolveRound(state);
+  if (state.phase === 'fight') for (const f of state.players) if (f.alive && inputs[f.id].interact && !previous[f.id].interact && !f.interaction && !f.healTicks && !f.reloadTicks && !f.meleeTicks && !f.grenadeThrowTicks && !inputs[f.id].fire) { const loot = findNearbyLoot(state, f.id); if (loot) pickupCombatLoot(state, f, loot, inputs[f.id]); }
+  advanceInventoryLoot(state);
   return state;
 }

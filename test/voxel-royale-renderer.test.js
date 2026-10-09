@@ -11,7 +11,7 @@ const vertices = array => Array.from({ length: array.length / 10 }, (_, index) =
 const pickup = (patch = {}) => ({ id: 1, kind: 'weapon', weapon: 'carbine', x: 0, y: 0, z: 0, ...patch });
 const near = (a, b) => Math.abs(a - b) < 1e-4;
 
-test('all four survival maps keep every real solid and fit the 100k static budget', () => {
+test('every survival map keeps every real solid and fits the 100k static budget', () => {
   const signatures = new Set();
   for (const map of Object.values(MAPS)) {
     const meshes = mapMeshes(map), points = vertices(meshes.opaque);
@@ -27,7 +27,7 @@ test('all four survival maps keep every real solid and fit the 100k static budge
       }
     }
   }
-  assert.equal(signatures.size, 4, 'forest, ruins, desert and Paris have distinct geometry and artwork');
+  assert.equal(signatures.size, Object.keys(MAPS).length, 'every survival map has distinct geometry and artwork');
 });
 
 test('survival backdrops are forest, cliff and dune silhouettes rather than city windows', () => {
@@ -43,7 +43,7 @@ test('survival backdrops are forest, cliff and dune silhouettes rather than city
   assert.equal(signatures.size, 3);
 });
 
-test('nine gun pickups and three supply kinds have distinct small finite silhouettes', () => {
+test('every gun pickup and three supply kinds have distinct small finite silhouettes', () => {
   const signatures = new Set();
   for (const patch of [...WEAPON_IDS.map(weapon => ({ weapon })), ...['heal', 'ammo', 'grenade'].map(kind => ({ kind }))]) {
     const mesh = lootMeshes([pickup(patch)], 1000);
@@ -53,7 +53,7 @@ test('nine gun pickups and three supply kinds have distinct small finite silhoue
     assert.ok(vertices(mesh.opaque).every(([x, y, z]) => Math.abs(x) < .8 && Math.abs(z) < .8 && y > 0 && y < .5), 'pickup cannot resemble a wall or waist-high crate');
     signatures.add(digest(mesh.opaque));
   }
-  assert.equal(signatures.size, 12);
+  assert.equal(signatures.size, WEAPON_IDS.length + 3);
   const elevated = lootMeshes([pickup({ kind: 'heal', y: 3.36 })], 1000);
   assert.ok(vertices(elevated.opaque).every(([, y]) => y > 3.36 && y < 3.86), 'roof loot stays above its actual support');
 });

@@ -1,10 +1,11 @@
 /** Voxel Royale: one-life scavenging rules around the shared Breach combat simulation. */
 import { MAPS, MAP_IDS } from './voxel-royale-maps.js';
 import { WEAPONS, WEAPON_IDS } from './voxel-weapons.js';
-import { TICK_RATE, INPUT_KEYS, emptyInput, WORLD, eyeHeight, rayBox, createCombatPlayer, combatStep, applyCombatDamage, emitCombatEvent } from './voxel-engine.js';
+import { TICK_RATE, INPUT_KEYS, emptyInput, WORLD, eyeHeight, rayBox, createCombatPlayer, combatStep, applyCombatDamage, emitCombatEvent, pickupCombatLoot, dropCombatInventory } from './voxel-engine.js';
+import { initializeInventory, ensureInventory, inventoryCanTake } from './voxel-inventory.js';
 export { MAPS, MAP_IDS, WEAPONS, INPUT_KEYS, emptyInput, TICK_RATE };
 
-export const ROYALE = Object.freeze({ maxPlayers: 10, minPlayers: 2, countdownTicks: 3 * TICK_RATE, pickupRadius: 1.7, pickupHeight: 1.2, potionCapacity: 3, grenadeCapacity: 2, maxLoot: 128, eventLimit: 256 });
+export const ROYALE = Object.freeze({ maxPlayers: 10, minPlayers: 2, countdownTicks: 3 * TICK_RATE, pickupRadius: 1.7, pickupHeight: 1.2, potionCapacity: 2, grenadeCapacity: 2, maxLoot: 128, eventLimit: 256 });
 // Every contraction is announced before it moves. The last circle disappears
 // after four minutes, so even perfectly overlapping final survivors resolve.
 export const STORM_STAGES = Object.freeze([
@@ -35,7 +36,8 @@ function shuffled(state, items) {
   return result;
 }
 function inactivePlayer(id) {
-  return { ...createCombatPlayer(id), team: id, alive: false, hp: 0, slot: 'sword', meleeWeapon: 'knife', hasGun: false, ammo: 0, reserve: 0, potions: 0, grenades: 0, participating: false, inventoryDropped: false };
+  const player = { ...createCombatPlayer(id), team: id, alive: false, hp: 0, slot: 'sword', meleeWeapon: 'knife', hasGun: false, ammo: 0, reserve: 0, potions: 0, grenades: 0, participating: false, inventoryDropped: false };
+  return initializeInventory(player, { knifeOnly: true });
 }
 function initialStorm(arena) {
   const center = arena.stormCenter || { x: (arena.bounds.minX + arena.bounds.maxX) / 2, z: (arena.bounds.minZ + arena.bounds.maxZ) / 2 };
@@ -76,7 +78,7 @@ function addLoot(state, details) {
 }
 function seedLoot(state) {
   const points = shuffled(state, state.map.lootPoints), weapons = shuffled(state, WEAPON_IDS);
-  const gunCount = Math.max(10, Math.ceil(points.length * .44));
+  const gunCount = Math.max(ROYALE.maxPlayers, WEAPON_IDS.length, Math.ceil(points.length * .44));
   for (let index = 0; index < Math.min(points.length, ROYALE.maxLoot); index++) {
     const point = points[index], position = { x: point.x, y: point.y, z: point.z };
     // A complete catalogue and at least one gun per possible participant are
@@ -111,11 +113,7 @@ export function startMatch(state, participantIds) {
   return state;
 }
 function canTakeLoot(player, loot) {
-  if (loot.kind === 'weapon') return Object.hasOwn(WEAPONS, loot.weapon);
-  if (loot.kind === 'heal') return player.potions < ROYALE.potionCapacity && finite(loot.amount) > 0;
-  if (loot.kind === 'grenade') return player.grenades < ROYALE.grenadeCapacity && finite(loot.amount) > 0;
-  if (loot.kind === 'ammo') return player.hasGun && (!loot.weapon || loot.weapon === player.weapon) && player.reserve < WEAPONS[player.weapon].reserve && finite(loot.amount) > 0;
-  return false;
+  return loot.kind === 'ammo' ? inventoryCanTake(player, loot) : ['weapon', 'melee', 'heal', 'grenade'].includes(loot.kind);
 }
 /** Pure prompt/pickup predicate: no through-wall or vertically remote supplies. */
 export function findNearbyLoot(state, playerId) {
@@ -134,31 +132,12 @@ export function findNearbyLoot(state, playerId) {
   }
   return nearest;
 }
-function dropGun(state, player) {
-  if (!player.hasGun) return;
-  addLoot(state, { kind: 'weapon', weapon: player.weapon, ammo: player.ammo, reserve: player.reserve, x: player.x, y: player.y, z: player.z, droppedBy: player.id });
-}
 function pickup(state, player, loot, input) {
-  if (loot.kind === 'weapon') {
-    state.loot = state.loot.filter(item => item.id !== loot.id);
-    dropGun(state, player);
-    const weapon = WEAPONS[loot.weapon];
-    Object.assign(player, { hasGun: true, weapon: loot.weapon, slot: 'primary', ammo: clamp(Math.floor(finite(loot.ammo)), 0, weapon.magazine), reserve: clamp(Math.floor(finite(loot.reserve)), 0, weapon.reserve), reloadTicks: 0, burstRemaining: 0, spinTicks: 0, recoil: 0, heat: 0, shotIndex: 0, aiming: false, aimTicks: 0, meleeTicks: 0, meleePhase: 'idle', meleeHitIds: [], triggerBlocked: input.fire === true });
-  } else {
-    const property = loot.kind === 'heal' ? 'potions' : loot.kind === 'grenade' ? 'grenades' : 'reserve';
-    const maximum = loot.kind === 'heal' ? ROYALE.potionCapacity : loot.kind === 'grenade' ? ROYALE.grenadeCapacity : WEAPONS[player.weapon].reserve;
-    const amount = Math.min(maximum - player[property], Math.max(0, Math.floor(finite(loot.amount))));
-    player[property] += amount; loot.amount -= amount;
-    if (loot.amount <= 0) state.loot = state.loot.filter(item => item.id !== loot.id);
-  }
-  emitCombatEvent(state, 'lootPickup', { playerId: player.id, lootId: loot.id, kind: loot.kind, weapon: loot.weapon || null, x: loot.x, y: loot.y, z: loot.z });
+  return pickupCombatLoot(state, player, loot, input);
 }
 function dropInventory(state, player) {
   if (player.inventoryDropped) return;
-  player.inventoryDropped = true; dropGun(state, player);
-  if (player.potions > 0) addLoot(state, { kind: 'heal', amount: player.potions, x: player.x, y: player.y, z: player.z, droppedBy: player.id });
-  if (player.grenades > 0) addLoot(state, { kind: 'grenade', amount: player.grenades, x: player.x, y: player.y, z: player.z, droppedBy: player.id });
-  player.hasGun = false; player.ammo = player.reserve = player.potions = player.grenades = 0;
+  player.inventoryDropped = true; dropCombatInventory(state, player);
 }
 function advanceDroppedLoot(state) {
   const arena = state.map || MAPS[state.mapId], radius = .12;
@@ -246,7 +225,7 @@ export function step(state, rawInputs = []) {
   if (state.phase !== 'fight') return state;
   state.matchTicks++; state.roundTicks = Math.max(0, 240 * TICK_RATE - state.matchTicks);
   const previouslyAlive = state.participantIds.filter(id => state.players[id].alive);
-  const inputs = state.players.map(player => ({ ...(rawInputs[player.id] || {}), swap: player.hasGun && rawInputs[player.id]?.swap === true }));
+  const inputs = state.players.map(player => { ensureInventory(player); return { ...(rawInputs[player.id] || {}), swap: player.hasGun && rawInputs[player.id]?.swap === true }; });
   for (const player of state.players) {
     const input = inputs[player.id];
     if (player.alive && input.interact === true && !player.previousInput.interact && !player.healTicks && !player.reloadTicks && !player.meleeTicks && !player.grenadeThrowTicks && input.fire !== true) {

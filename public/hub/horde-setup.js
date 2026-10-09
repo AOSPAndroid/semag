@@ -8,7 +8,7 @@ export function validHordeSettings(mapId, difficulty, capacity = 3) {
 export function hordeOverview(arena) {
   const { minX, minZ, maxX, maxZ } = arena.bounds;
   const width = maxX - minX, depth = maxZ - minZ;
-  const cover = arena.colliders.filter(box => !box.id.startsWith('wall-')).map(box =>
+  const cover = arena.colliders.filter(box => !box.overhead && !box.id.startsWith('wall-')).map(box =>
     `<rect x="${box.x - minX}" y="${box.z - minZ}" width="${box.w}" height="${box.d}" fill="${box.y > 0 ? '#b59163' : box.h >= 2.4 ? '#6d8077' : '#b4b69a'}" stroke="#fffdf8" stroke-width=".16"/>`).join('');
   const routes = arena.routes.map(route => `<polyline points="${[route.start, ...route.steps].map(point => `${point.x - minX},${point.z - minZ}`).join(' ')}" fill="none" stroke="#b76f4c" stroke-width=".42" stroke-dasharray=".7 .45"/>`).join('');
   return `<svg viewBox="-1 -1 ${width + 2} ${depth + 2}" aria-hidden="true"><rect width="${width}" height="${depth}" rx=".4" fill="#e4e8d7"/>${cover}${routes}</svg><span>FIND YOUR HOLDOUT<br>Cover breaks enemy sight lines.<br><b>Dashed paths mark climb routes.</b></span>`;

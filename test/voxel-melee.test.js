@@ -20,6 +20,7 @@ function encounter(distance = 1.5) {
 
 test('shared melee profiles preserve the Breach sword and identify the smaller Royale knife', () => {
   const sword = Breach.createCombatPlayer(0), knife = encounter().players[0];
+  sword.meleeWeapon = 'sword'; sword.inventory[0].weapon = 'sword';
   assert.equal(Breach.MELEE, MELEE); assert.equal(Breach.KNIFE, KNIFE);
   assert.ok(Object.isFrozen(MELEE) && Object.isFrozen(KNIFE));
   assert.equal(meleeProfile(sword), MELEE); assert.equal(meleeWeaponId(sword), 'sword'); assert.equal(meleeLabel(sword), 'SWORD');
