@@ -1,11 +1,14 @@
 /** Cached navigation for the shipped voxel body and authored, tested climb routes. */
 import { WORLD, rayBox } from './voxel-engine.js';
+import { monsterBodyProfile } from './voxel-monster-bodies.js';
 
 const EPS = 1e-7, CELL = 1.25, MAX_NODES = 6000, MAX_RISE = 1.01, MAX_DROP = 4.2;
 const caches = new WeakMap();
 const collisionIndexes = new WeakMap();
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 const footY = point => Number.isFinite(point?.y) ? point.y : 0;
+const humanBody = Object.freeze({ id: 'human', radius: WORLD.radius, height: WORLD.standHeight, jumpSpeed: WORLD.jumpSpeed });
+const navigationBody = actor => monsterBodyProfile(actor) || humanBody;
 
 function validMap(map) {
   return map && Array.isArray(map.colliders) && map.bounds
@@ -32,7 +35,8 @@ function nearbyColliders(map, minX, maxX, minZ, maxZ) {
 }
 
 /** Matches the engine's circular body and standing headroom, rather than inflated boxes. */
-export function navigationCanOccupy(map, point, { radius = WORLD.radius, height = WORLD.standHeight } = {}) {
+export function navigationCanOccupy(map, point, options) {
+  const { radius = WORLD.radius, height = WORLD.standHeight } = options || navigationBody(point);
   if (!validMap(map) || !Number.isFinite(point?.x) || !Number.isFinite(point?.z) || (point?.y !== undefined && !Number.isFinite(point.y)) || !Number.isFinite(radius) || !Number.isFinite(height) || radius <= 0 || height <= 0) return false;
   const y = footY(point), { minX, maxX, minZ, maxZ } = map.bounds;
   if (y < -EPS || point.x < minX + radius - EPS || point.x > maxX - radius + EPS || point.z < minZ + radius - EPS || point.z > maxZ - radius + EPS) return false;
@@ -43,31 +47,31 @@ export function navigationCanOccupy(map, point, { radius = WORLD.radius, height 
   });
 }
 
-function supported(map, point, spatial = false) {
-  if (spatial) map = { bounds: map.bounds, colliders: nearbyColliders(map, point.x - WORLD.radius, point.x + WORLD.radius, point.z - WORLD.radius, point.z + WORLD.radius) };
+function supported(map, point, spatial = false, body = humanBody) {
+  if (spatial) map = { bounds: map.bounds, colliders: nearbyColliders(map, point.x - body.radius, point.x + body.radius, point.z - body.radius, point.z + body.radius) };
   const y = footY(point);
-  if (!navigationCanOccupy(map, point)) return false;
+  if (!navigationCanOccupy(map, point, body)) return false;
   if (Math.abs(y) <= EPS) return true;
   return map.colliders.some(box => Math.abs(box.y + box.h - y) <= EPS
-    && point.x >= box.x + WORLD.radius - EPS && point.x <= box.x + box.w - WORLD.radius + EPS
-    && point.z >= box.z + WORLD.radius - EPS && point.z <= box.z + box.d - WORLD.radius + EPS);
+    && point.x >= box.x + body.radius - EPS && point.x <= box.x + box.w - body.radius + EPS
+    && point.z >= box.z + body.radius - EPS && point.z <= box.z + box.d - body.radius + EPS);
 }
 
-function contactSupported(map, point) {
+function contactSupported(map, point, body = humanBody) {
   return map.colliders.some(box => {
     if (Math.abs(box.y + box.h - point.y) > EPS) return false;
     const dx = point.x - clamp(point.x, box.x, box.x + box.w), dz = point.z - clamp(point.z, box.z, box.z + box.d);
-    return dx * dx + dz * dz < WORLD.radius ** 2 - EPS;
+    return dx * dx + dz * dz < body.radius ** 2 - EPS;
   });
 }
 
-function floorPoint(map, point) {
-  if (point.y <= EPS || contactSupported(map, point)) return point;
-  const boxes = nearbyColliders(map, point.x - WORLD.radius, point.x + WORLD.radius, point.z - WORLD.radius, point.z + WORLD.radius);
+function floorPoint(map, point, body = humanBody) {
+  if (point.y <= EPS || contactSupported(map, point, body)) return point;
+  const boxes = nearbyColliders(map, point.x - body.radius, point.x + body.radius, point.z - body.radius, point.z + body.radius);
   const heights = [...new Set([0, ...boxes.map(box => box.y + box.h).filter(y => y <= point.y + EPS)])].sort((a, b) => b - a);
   for (const y of heights) {
     const candidate = { ...point, y };
-    if (navigationCanOccupy(map, candidate) && (y <= EPS || contactSupported(map, candidate))) return candidate;
+    if (navigationCanOccupy(map, candidate, body) && (y <= EPS || contactSupported(map, candidate, body))) return candidate;
   }
   return point;
 }
@@ -84,13 +88,13 @@ export function navigationVisible(map, origin, target) {
   });
 }
 
-function clearWalk(map, from, to, trustedEndpoints = false) {
-  if (Math.abs(footY(from) - footY(to)) > EPS || (!trustedEndpoints && (!navigationCanOccupy(map, from) || !navigationCanOccupy(map, to)))) return false;
-  const dx = to.x - from.x, dz = to.z - from.z, lengthSquared = dx * dx + dz * dz, y = footY(from), radius = WORLD.radius;
+function clearWalk(map, from, to, trustedEndpoints = false, body = humanBody) {
+  if (Math.abs(footY(from) - footY(to)) > EPS || (!trustedEndpoints && (!navigationCanOccupy(map, from, body) || !navigationCanOccupy(map, to, body)))) return false;
+  const dx = to.x - from.x, dz = to.z - from.z, lengthSquared = dx * dx + dz * dz, y = footY(from), radius = body.radius;
   if (lengthSquared < EPS * EPS) return true;
   const boxes = nearbyColliders(map, Math.min(from.x, to.x) - radius, Math.max(from.x, to.x) + radius, Math.min(from.z, to.z) - radius, Math.max(from.z, to.z) + radius);
   for (const box of boxes) {
-    if (y >= box.y + box.h - EPS || y + WORLD.standHeight <= box.y + EPS) continue;
+    if (y >= box.y + box.h - EPS || y + body.height <= box.y + EPS) continue;
     if (Math.max(from.x, to.x) + radius < box.x || Math.min(from.x, to.x) - radius > box.x + box.w || Math.max(from.z, to.z) + radius < box.z || Math.min(from.z, to.z) - radius > box.z + box.d) continue;
     let near = 0, far = 1;
     for (const [start, delta, low, high] of [[from.x, dx, box.x, box.x + box.w], [from.z, dz, box.z, box.z + box.d]]) {
@@ -106,23 +110,23 @@ function clearWalk(map, from, to, trustedEndpoints = false) {
   if (y > EPS) {
     const steps = Math.ceil(Math.sqrt(lengthSquared) / .18);
     const localMap = { bounds: map.bounds, colliders: boxes };
-    for (let step = 0; step <= steps; step++) if (!contactSupported(localMap, { x: from.x + dx * step / steps, y, z: from.z + dz * step / steps })) return false;
+    for (let step = 0; step <= steps; step++) if (!contactSupported(localMap, { x: from.x + dx * step / steps, y, z: from.z + dz * step / steps }, body)) return false;
   }
   return true;
 }
 
-function transition(map, from, to) {
+function transition(map, from, to, body = humanBody) {
   const rise = footY(to) - footY(from), distance = Math.hypot(to.x - from.x, to.z - from.z);
-  if (Math.abs(rise) <= EPS) return clearWalk(map, from, to) ? { jump: false } : null;
-  if (rise > MAX_RISE + EPS || rise < -MAX_DROP - EPS || distance > 2.6 || !supported(map, from) || !supported(map, to)) return null;
+  if (Math.abs(rise) <= EPS) return clearWalk(map, from, to, false, body) ? { jump: false } : null;
+  if (rise > MAX_RISE + EPS || rise < -MAX_DROP - EPS || distance > 2.6 || !supported(map, from, false, body) || !supported(map, to, false, body)) return null;
   // Graph construction uses bounded geometric clearance. Real movement through
   // every authored climb is verified separately; never run physics in AI planning.
-  const radius = WORLD.radius;
+  const radius = body.radius;
   const corridor = { minX: Math.min(from.x, to.x), maxX: Math.max(from.x, to.x), minZ: Math.min(from.z, to.z), maxZ: Math.max(from.z, to.z) };
-  const ceiling = Math.max(footY(from), footY(to)) + WORLD.jumpSpeed ** 2 / (2 * WORLD.gravity) + WORLD.standHeight;
+  const ceiling = Math.max(footY(from), footY(to)) + body.jumpSpeed ** 2 / (2 * WORLD.gravity) + body.height;
   const localMap = { bounds: map.bounds, colliders: nearbyColliders(map, corridor.minX - radius, corridor.maxX + radius, corridor.minZ - radius, corridor.maxZ + radius).filter(box => box.y <= ceiling && box.y + box.h >= Math.min(footY(from), footY(to)) - EPS) };
   const duration = rise > EPS ? 0 : Math.sqrt(-2 * rise / WORLD.gravity);
-  const apex = footY(from) + WORLD.jumpSpeed ** 2 / (2 * WORLD.gravity) - .025;
+  const apex = footY(from) + body.jumpSpeed ** 2 / (2 * WORLD.gravity) - .025;
   for (let sample = 1; sample < 18; sample++) {
     const fraction = sample / 18, time = fraction * duration, point = { x: from.x + (to.x - from.x) * fraction, z: from.z + (to.z - from.z) * fraction };
     // A bot can press against a low ledge during the rise; testing an invented
@@ -138,21 +142,23 @@ function transition(map, from, to) {
       }
       point.y = Math.max(support, footY(from) - .5 * WORLD.gravity * time * time);
     }
-    if (!navigationCanOccupy(localMap, point)) return null;
+    if (!navigationCanOccupy(localMap, point, body)) return null;
   }
-  if (rise > EPS) for (let sample = 1; sample <= 8; sample++) if (!navigationCanOccupy(localMap, { x: from.x, y: footY(from) + (apex - footY(from)) * sample / 8, z: from.z })) return null;
+  if (rise > EPS) for (let sample = 1; sample <= 8; sample++) if (!navigationCanOccupy(localMap, { x: from.x, y: footY(from) + (apex - footY(from)) * sample / 8, z: from.z }, body)) return null;
   return { jump: rise > EPS };
 }
 
-function navigationFor(map) {
-  if (caches.has(map)) return caches.get(map);
-  const radius = WORLD.radius;
+function navigationFor(map, body = humanBody) {
+  let variants = caches.get(map);
+  if (!variants) { variants = new Map(); caches.set(map, variants); }
+  if (variants.has(body.id)) return variants.get(body.id);
+  const radius = body.radius;
   const width = map.bounds.maxX - map.bounds.minX, depth = map.bounds.maxZ - map.bounds.minZ;
   // Preserve a bounded build budget even for a caller-provided oversized arena.
   const cell = Math.max(CELL, Math.sqrt(width * depth / (MAX_NODES * .7)));
   const nodes = [], buckets = new Map(), coordinates = new Map(), edges = new Map(), verticalLinks = new Map();
   function add(point) {
-    if (nodes.length >= MAX_NODES || !supported(map, point, true)) return -1;
+    if (nodes.length >= MAX_NODES || !supported(map, point, true, body)) return -1;
     const key = `${point.x.toFixed(5)}:${footY(point).toFixed(5)}:${point.z.toFixed(5)}`;
     if (coordinates.has(key)) return coordinates.get(key);
     const node = Object.freeze({ x: point.x, y: footY(point), z: point.z });
@@ -164,7 +170,7 @@ function navigationFor(map) {
   function connect(from, to) {
     if (from < 0 || to < 0 || from === to) return;
     for (const [first, second] of [[from, to], [to, from]]) {
-      const edge = transition(map, nodes[first], nodes[second]);
+      const edge = transition(map, nodes[first], nodes[second], body);
       if (!edge) continue;
       if (!verticalLinks.has(first)) verticalLinks.set(first, []);
       const a = nodes[first], b = nodes[second];
@@ -201,14 +207,14 @@ function navigationFor(map) {
   for (let z = map.bounds.minZ + cell / 2; z < map.bounds.maxZ; z += cell) for (let x = map.bounds.minX + cell / 2; x < map.bounds.maxX; x += cell) {
     add({ x, y: 0, z });
     const heights = new Set();
-    for (const box of nearbyColliders(map, x - radius, x + radius, z - radius, z + radius)) if (box.y + box.h > EPS && x >= box.x + WORLD.radius - EPS && x <= box.x + box.w - WORLD.radius + EPS && z >= box.z + WORLD.radius - EPS && z <= box.z + box.d - WORLD.radius + EPS) heights.add(box.y + box.h);
+    for (const box of nearbyColliders(map, x - radius, x + radius, z - radius, z + radius)) if (box.y + box.h > EPS && x >= box.x + radius - EPS && x <= box.x + box.w - radius + EPS && z >= box.z + radius - EPS && z <= box.z + box.d - radius + EPS) heights.add(box.y + box.h);
     for (const y of heights) add({ x, y, z });
   }
-  const result = { nodes: Object.freeze(nodes), buckets, edges, verticalLinks, cell }; caches.set(map, result); return result;
+  const result = { nodes: Object.freeze(nodes), buckets, edges, verticalLinks, cell, body }; variants.set(body.id, result); return result;
 }
 
 /** Immutable standable points are reusable for choosing separated, reachable spawns. */
-export function navigationPoints(map) { return validMap(map) ? navigationFor(map).nodes : Object.freeze([]); }
+export function navigationPoints(map, actor) { return validMap(map) ? navigationFor(map, navigationBody(actor)).nodes : Object.freeze([]); }
 
 function neighbors(map, nav, id) {
   if (nav.edges.has(id)) return nav.edges.get(id);
@@ -218,7 +224,7 @@ function neighbors(map, nav, id) {
     if (next === id) continue;
     const target = nav.nodes[next], distance = Math.hypot(target.x - node.x, target.z - node.z);
     if (distance > Math.max(nav.cell * 1.45, 2.6) || Math.abs(target.y - node.y) > EPS) continue;
-    const edge = clearWalk(map, node, target, true) ? { jump: false } : null;
+    const edge = clearWalk(map, node, target, true, nav.body) ? { jump: false } : null;
     if (edge) result.push({ id: next, jump: edge.jump, cost: distance + Math.abs(target.y - node.y) * .4 + (edge.jump ? .6 : 0) });
   }
   nav.edges.set(id, result); return result;
@@ -229,7 +235,7 @@ function nearest(map, nav, point, toward) {
   for (let id = 0; id < nav.nodes.length; id++) {
     const node = nav.nodes[id], distance = Math.hypot(node.x - point.x, node.z - point.z) + Math.abs(node.y - footY(point)) * 3;
     if (distance >= best || Math.abs(node.y - footY(point)) > .025) continue;
-    const edge = toward ? transition(map, node, point) : transition(map, point, node);
+    const edge = toward ? transition(map, node, point, nav.body) : transition(map, point, node, nav.body);
     if (edge) { selected = id; best = distance; connection = edge; }
   }
   return { id: selected, connection };
@@ -255,14 +261,30 @@ class MinHeap {
 
 /** Fresh waypoints; a jump waypoint is consumed only after its landing height is reached. */
 export function navigationPath(map, from, target) {
-  if (!validMap(map) || !navigationCanOccupy(map, from) || !navigationCanOccupy(map, target)) return [];
+  const body = navigationBody(from);
+  if (!validMap(map) || !navigationCanOccupy(map, from, body)) return [];
+  let destination = target;
+  if (!navigationCanOccupy(map, target, body)) {
+    if (body === humanBody || ![target?.x, target?.z].every(Number.isFinite) || target.y !== undefined && !Number.isFinite(target.y)) return [];
+    // A human can stand closer to a wall than the longer dog. Approach a real
+    // nearby bite position instead of forgetting that human's route entirely.
+    destination = null;
+    for (const distance of [.25, .5, .75]) {
+      for (let angle = 0; angle < 16; angle++) {
+        const point = { x: target.x + Math.sin(angle * Math.PI / 8) * distance, y: footY(target), z: target.z + Math.cos(angle * Math.PI / 8) * distance };
+        if (navigationCanOccupy(map, point, body) && navigationVisible(map, { ...point, y: point.y + body.eyeHeight }, { x: target.x, y: footY(target) + .6, z: target.z })) { destination = point; break; }
+      }
+      if (destination) break;
+    }
+    if (!destination) return [];
+  }
   // A short human jump does not make the whole pursuing pack forget its route.
-  const origin = floorPoint(map, { x: from.x, y: footY(from), z: from.z }), goal = floorPoint(map, { x: target.x, y: footY(target), z: target.z });
+  const origin = floorPoint(map, { x: from.x, y: footY(from), z: from.z }, body), goal = floorPoint(map, { x: destination.x, y: footY(destination), z: destination.z }, body);
   // Vertical travel uses the prepared short entrances and authored platform
   // chains. An arbitrary long diagonal toward a high target is not a jump link.
-  const direct = Math.abs(origin.y - goal.y) <= EPS ? transition(map, origin, goal) : null;
+  const direct = Math.abs(origin.y - goal.y) <= EPS ? transition(map, origin, goal, body) : null;
   if (direct) return [{ ...goal, jump: direct.jump }];
-  const nav = navigationFor(map), start = nearest(map, nav, origin, false), end = nearest(map, nav, goal, true);
+  const nav = navigationFor(map, body), start = nearest(map, nav, origin, false), end = nearest(map, nav, goal, true);
   if (start.id < 0 || end.id < 0) return [];
   const costs = new Float64Array(nav.nodes.length).fill(Infinity), parents = new Int32Array(nav.nodes.length).fill(-1), jumps = new Uint8Array(nav.nodes.length), closed = new Uint8Array(nav.nodes.length), heap = new MinHeap();
   costs[start.id] = 0; jumps[start.id] = Number(start.connection.jump); heap.push({ id: start.id, priority: 0 });

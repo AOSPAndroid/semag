@@ -6,6 +6,7 @@ import * as Horde from '../public/voxel-horde-engine.js';
 import * as Voxel from '../public/voxel-engine.js';
 import { getLagCompensationDiagnostics } from '../public/voxel-lag-compensation.js';
 import { applyCombatDamage } from '../public/voxel-engine.js';
+import { monsterBodyBoxes, monsterBodyProfile } from '../public/voxel-monster-bodies.js';
 import { Peer, flushPeer } from './ws-helper.js';
 
 async function host(t) {
@@ -220,7 +221,12 @@ test('Last Stand validates loadouts and controls, preserves short taps and cance
 function aimAt(shooter, target, offset = 0) {
   const dx = target.x - shooter.x, dz = target.z - shooter.z, distance = Math.hypot(dx, dz);
   const origin = { x: shooter.x, y: shooter.y + Voxel.eyeHeight(shooter), z: shooter.z };
-  const point = { x: target.x - dz / distance * offset, y: target.y + Voxel.playerHeight(target) - .16, z: target.z + dx / distance * offset };
+  const head = monsterBodyBoxes(target)?.find(box => box.kind === 'head');
+  const localX = head ? head.x + head.w / 2 : 0, localZ = head ? head.z + head.d / 2 : 0;
+  const c = Math.cos(target.yaw), s = Math.sin(target.yaw);
+  const point = { x: target.x + c * localX - s * localZ - dz / distance * offset,
+    y: target.y + (head ? head.y + head.h / 2 : Voxel.playerHeight(target) - .16),
+    z: target.z + s * localX + c * localZ + dx / distance * offset };
   const length = Math.hypot(point.x - origin.x, point.y - origin.y, point.z - origin.z);
   const direction = { x: (point.x - origin.x) / length, y: (point.y - origin.y) / length, z: (point.z - origin.z) / length };
   return { origin, direction, yaw: Math.atan2(direction.x, -direction.z), pitch: Math.asin(direction.y) };
@@ -244,12 +250,15 @@ async function movingMonsterShot(t, compensate) {
     const frame = frames.get(room.state.tick - 6); if (!frame) continue;
     const historical = { ...room.state, players: room.state.players.map(player => {
       const old = frame[player.id];
-      return old?.alive && old.lifeId === player.lifeId ? { ...player, x: old.x, y: old.y, z: old.z } : player;
+      return old?.alive && old.lifeId === player.lifeId ? { ...player, x: old.x, y: old.y, z: old.z, ...(monsterBodyProfile(player) ? { yaw: old.yaw } : {}) } : player;
     }) };
     for (const target of room.state.players.filter(player => player.monster && player.alive && !player.emergenceTicks)) {
       const old = frame[target.id]; if (!old?.alive || old.lifeId !== target.lifeId) continue;
-      for (const offset of [0, -.18, .18, -.12, .12]) {
-        const aim = aimAt(room.state.players[0], { ...target, x: old.x, y: old.y, z: old.z }, offset);
+      // The new dog's forward head is narrower than the humanoid target. Scan
+      // real points across the small head silhouette so this observer can find
+      // an actual crossing without enlarging boxes or replacing natural AI.
+      for (const offset of [0, ...Array.from({ length: 64 }, (_, index) => (index < 32 ? -1 : 1) * (index % 32 + 1) * .01)]) {
+        const aim = aimAt(room.state.players[0], { ...target, x: old.x, y: old.y, z: old.z, ...(monsterBodyProfile(target) ? { yaw: old.yaw } : {}) }, offset);
         const historicalHit = Voxel.traceShot(historical, 0, aim.origin, aim.direction, 120);
         const currentHit = Voxel.traceShot(room.state, 0, aim.origin, aim.direction, 120);
         if (historicalHit.playerId === target.id && historicalHit.kind === 'head' && currentHit.playerId !== target.id) {
@@ -293,29 +302,40 @@ test('A recycled monster slot gets a fresh life and cannot inherit a killed mons
   const game = await host(t), room = await game.make(), seat = await game.peer(room);
   seat.peer.send({ type: 'fps-loadout', weaponId: 'marksman' }); await flushPeer(seat.peer);
   await ready([seat]); await start(room, seat); advance(game.app, room, 'fight');
-  let candidate;
+  let candidate, inputSequence = 0;
   for (let tick = 0; tick < 1600 && room.state.phase === 'fight' && !candidate; tick++) {
+    if (tick % 8 === 0) {
+      seat.peer.send({ type: 'input', seq: inputSequence++, buttons: {} });
+      await flushPeer(seat.peer);
+    }
     game.app.tick();
-    if (!room.state.spawnWarnings.some(warning => warning.ticksLeft >= 2 && warning.ticksLeft <= 10)) continue;
+    const warnings = room.state.spawnWarnings.filter(warning => warning.ticksLeft >= 2 && warning.ticksLeft <= 10);
+    if (!warnings.length) continue;
     for (const target of room.state.players.filter(player => player.monster && player.alive && !player.emergenceTicks)) {
+      // The generation negative control must keep the same anatomy. Moving a
+      // short new hound onto a dead humanoid's position cannot prove lifetime
+      // isolation, because the old high head ray already misses the low body.
+      if (!warnings.some(warning => warning.monsterType === target.monsterType)) continue;
       const aim = aimAt(room.state.players[0], target);
       if (Voxel.traceShot(room.state, 0, aim.origin, aim.direction, 120).playerId === target.id) { candidate = { target, aim, viewTick: room.state.tick }; break; }
     }
   }
   assert.ok(candidate, 'an actual visible monster and imminent spawn warning must overlap');
-  const { target: old, aim, viewTick } = candidate, oldPosition = { x: old.x, y: old.y, z: old.z };
+  const { target: old, aim, viewTick } = candidate, oldPosition = { x: old.x, y: old.y, z: old.z, ...(monsterBodyProfile(old) ? { yaw: old.yaw } : {}) };
   applyCombatDamage(room.state, [{ targetId: old.id, playerId: 0, damage: old.maxHp + 1 }]);
   assert.equal(old.alive, false);
   let ticks = 0;
   while (room.state.players[old.id] === old && ticks++ < 12) game.app.tick();
   const replacement = room.state.players[old.id];
   assert.notEqual(replacement, old); assert.ok(replacement.alive); assert.ok(replacement.lifeId > old.lifeId);
+  assert.equal(replacement.monsterType, old.monsterType, 'the lifetime control compares identical anatomy across different lives');
   assert.ok(room.state.tick - viewTick < 18, 'the historical view is still within the accepted rewind window');
   assert.notEqual(Voxel.traceShot(room.state, 0, aim.origin, aim.direction, 120).playerId, replacement.id);
   const unsafeHistory = { ...room.state, players: room.state.players.map(player => player === replacement ? { ...player, ...oldPosition } : player) };
   assert.equal(Voxel.traceShot(unsafeHistory, 0, aim.origin, aim.direction, 120).playerId, replacement.id, 'reusing old transforms without the generation guard would invent a hit');
   const hp = replacement.hp;
-  seat.peer.send({ type: 'input', seq: 0, viewTick, buttons: { fire: true, yaw: aim.yaw, pitch: aim.pitch } });
+  assert.equal(room.slots[0].actionInputs.inspect().neutral, false, 'the active lifetime test client is outside stale-input recovery');
+  seat.peer.send({ type: 'input', seq: inputSequence++, viewTick, buttons: { fire: true, yaw: aim.yaw, pitch: aim.pitch } });
   await flushPeer(seat.peer); game.app.tick();
   const shot = room.state.events.findLast(event => event.type === 'shot' && event.playerId === 0);
   assert.ok(shot); assert.notEqual(shot.targetId, replacement.id); assert.equal(replacement.hp, hp);

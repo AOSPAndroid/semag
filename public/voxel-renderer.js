@@ -5,6 +5,7 @@ import { MELEE_WEAPONS, meleeProfile, meleeWeaponId } from './voxel-melee.js';
 import { frameAlpha } from './display-timing.js';
 import { createPlayerAnimationPresenter, playerAnimationPose } from './voxel-player-animation.js';
 import { createFirstPersonMotionPresenter, createWeaponShotPresenter, weaponShotPose } from './voxel-first-person-motion.js';
+import { MONSTER_BODIES, monsterBodyProfile } from './voxel-monster-bodies.js';
 
 // All solid world surfaces come directly from the engine's minimum-corner
 // colliders. Decoration is either painted on those surfaces or outside bounds.
@@ -2677,15 +2678,163 @@ const MONSTER_ART = Object.freeze({
   brute: { skin: '#837a6b', shadow: '#443e3c', armor: '#7c6350', eye: '#ffb077', width: .47, head: '#665244' },
   gunner: { skin: '#839e97', shadow: '#324b4e', armor: '#476975', eye: '#a6f0df', width: .40, head: '#4e6970' },
   sniper: { skin: '#8b92a3', shadow: '#303f57', armor: '#536582', eye: '#a5d5ff', width: .35, head: '#3e506d' },
+  hound: { skin: '#796859', shadow: '#363331', armor: '#514d40', eye: '#f4a767', width: .38, head: '#938171' },
+  leaper: { skin: '#a4ad8c', shadow: '#4b5445', armor: '#67735a', eye: '#e5e98b', width: .29, head: '#9da783' },
+  screecher: { skin: '#917e8c', shadow: '#463d4b', armor: '#665668', eye: '#efa6c5', width: .40, head: '#786577' },
 });
 
-function monsterParts(mesh, player, time) {
+const CREATURE_TYPES = new Set(['hound', 'leaper', 'screecher']);
+const monsterCycleLength = type => type === 'hound' ? 1.28 : type === 'leaper' ? 2.05 : type === 'screecher' ? 1.85 : type === 'runner' ? 1.75 : 3;
+
+/** Pure anatomy inspection fallback; live gait integrates presented travel below. */
+export function monsterAnimationPose(player, time = 0) {
+  const speed = player?.alive === false ? 0 : Math.min(14, Math.hypot(finite(player?.vx), finite(player?.vz)));
+  const phase = speed ? (finite(time) * .001 * speed * TAU / monsterCycleLength(player?.monsterType) + hash(player?.id) % 13) % TAU : 0;
+  return { phase, stride: clamp(speed / 5, 0, 1), speed };
+}
+
+/** Bounded, independent creature gaits observe the final rendered positions. */
+export function createMonsterAnimationPresenter({ maxMonsters = 20 } = {}) {
+  const capacity = clamp(Number.isSafeInteger(maxMonsters) ? maxMonsters : 20, 1, 32), histories = new Map();
+  const present = (player, time, context = null, { paused = false } = {}) => {
+    const id = player?.id;
+    if (!Number.isSafeInteger(id) || id < 0 || ![player?.x, player?.y, player?.z, time].every(Number.isFinite) || player?.alive === false || !Object.hasOwn(MONSTER_ART, player?.monsterType)) {
+      histories.delete(id); return { phase: 0, stride: 0, speed: 0 };
+    }
+    let history = histories.get(id);
+    const elapsed = history ? time - history.time : 0;
+    const dx = history ? player.x - history.x : 0, dz = history ? player.z - history.z : 0;
+    const reset = !history || history.context !== context || history.lifeId !== player.lifeId || history.type !== player.monsterType
+      || elapsed < 0 || elapsed > 1000 && !paused && !history.paused || Math.hypot(dx, dz) > Math.max(.5, elapsed * .020);
+    if (reset) {
+      history = { x: player.x, z: player.z, gaitX: player.x, gaitZ: player.z, time, context, lifeId: player.lifeId, type: player.monsterType, paused, pose: { phase: hash(id) % 13, stride: 0, speed: 0 } };
+      histories.delete(id);
+      while (histories.size >= capacity) histories.delete(histories.keys().next().value);
+      histories.set(id, history);
+    }
+    if (paused || history.paused) {
+      // A tab resuming from pause keeps its held pose and discards elapsed wall time.
+      history.x = history.gaitX = player.x; history.z = history.gaitZ = player.z; history.time = time; history.paused = paused;
+      return history.pose;
+    }
+    if (!reset && elapsed > 0) {
+      const travelled = Math.hypot(player.x - history.gaitX, player.z - history.gaitZ), distance = travelled > .001 ? travelled : 0;
+      const speed = distance ? Math.min(14, Math.hypot(dx, dz) * 1000 / elapsed) : 0;
+      const amount = 1 - Math.exp(-elapsed / (speed > .05 ? 45 : 70));
+      const stride = history.pose.stride + (clamp(speed / 5, 0, 1) - history.pose.stride) * amount;
+      history.pose = { phase: (history.pose.phase + distance * TAU / monsterCycleLength(player.monsterType)) % TAU, stride: stride < .00001 ? 0 : stride, speed };
+      if (distance) { history.gaitX = player.x; history.gaitZ = player.z; }
+    }
+    history.x = player.x; history.z = player.z; history.time = time;
+    histories.delete(id); histories.set(id, history);
+    return history.pose;
+  };
+  present.retain = ids => { const retained = new Set(ids); for (const id of histories.keys()) if (!retained.has(id)) histories.delete(id); };
+  present.reset = () => histories.clear();
+  Object.defineProperty(present, 'size', { get: () => histories.size });
+  return present;
+}
+
+function creatureParts(mesh, player, type, art, pose, front, animation) {
+  const box = (x, y, z, w, h, d, color) => mesh.box(x, y, z, w, h, d, color, pose);
+  const phase = finite(animation.phase), stride = clamp(finite(animation.stride), 0, 1);
+  const windup = ['windup', 'lungeWindup'].includes(player.monsterState) ? smooth(1 - clamp(finite(player.attackTicks) / Math.max(1, finite(player.attackDuration, 1)), 0, 1)) : 0;
+  const leap = player.monsterState === 'leap' && finite(player.lungeTicks) > 0;
+  const roaring = player.monsterState === 'roar' && finite(player.roarTicks) > 0;
+  const roar = roaring ? smooth(1 - clamp(finite(player.roarTicks) / Math.max(1, finite(player.roarDuration, 1)), 0, 1)) : 0;
+  const rally = finite(player.monsterRallyTicks) > 0, eye = windup > .45 || leap || roaring ? '#ffe0a3' : art.eye;
+  if (type === 'hound') {
+    // The four independently planted paws, short docked tail, ears and muzzle
+    // occupy the same oriented head/torso/leg boxes used by authoritative hits.
+    const body = monsterBodyProfile(player), crown = (body || MONSTER_BODIES.hound).height;
+    box(-.175, .30, -.17, .35, .255, .475, art.skin);
+    box(-.13, .555, -.125, .26, .075, .36, art.shadow);
+    box(-.18, .365, -.195, .36, .19, .07, art.head);
+    box(-.15, .32, .235, .30, .16, .09, art.armor);
+    for (const side of [-1, 1]) for (const end of [-1, 1]) {
+      const centerX = side * .13, centerZ = end < 0 ? -.19 : .21;
+      // Diagonal pairs trot together; each entire pose fits its own leg box.
+      const swing = Math.sin(phase + (side === end ? 0 : Math.PI)), travel = swing * stride * .016;
+      const lift = Math.max(0, Math.cos(phase + (side === end ? 0 : Math.PI))) * stride * .052;
+      box(centerX - .046, .16, centerZ - .048 + travel, .092, .16, .096, art.skin);
+      box(centerX - .038, .055 + lift, centerZ - .038 + travel, .076, .13, .076, art.shadow);
+      box(centerX - .056, .006 + lift, centerZ - .072 + travel, .112, .05, .144, art.armor);
+    }
+    box(-.135, .555, -.38, .27, .155, .20, art.head);
+    box(-.107, .587, -.445, .214, .070, .118, art.skin);
+    box(-.11, .516 - windup * .012, -.448, .22, .054, .125, art.shadow);
+    box(-.063, .628, -.455, .126, .041, .040, '#302e2c');
+    front(-.093, .568, -.449, .186, .022, '#e1cbb0');
+    for (const x of [-.105, .035]) {
+      box(x, .701, -.324, .07, crown - .701, .066, art.skin);
+      front(x + .015, .730, -.3245, .04, .044, art.shadow);
+      front(x - .006, .673, -.381, .084, .028, art.shadow);
+      front(x + .006, .681, -.3815, .055, .011 + windup * .008, eye);
+    }
+    // A compact bony stump stays inside the real torso, rather than drawing a
+    // long unhittable appendage outside the dog's body.
+    box(-.032, .476, .268, .064, .086, .065, art.shadow);
+    box(-.023, .558, .273, .046, .061, .056, art.head);
+    front(-.025, .447, -.196, .05, .052, rally ? '#aff0b4' : '#cab89d');
+    return;
+  }
+  const crouch = type === 'leaper' ? windup * .055 + (leap ? .035 : 0) : .018 + roar * .025;
+  const legStride = Math.sin(phase) * stride * .028;
+  for (const side of [-1, 1]) {
+    const x = side < 0 ? -.184 : .084, travel = side * legStride;
+    box(x, .018, -.13 + travel, .10, .11, .26, art.shadow);
+    box(x + .011, .126, -.085 + travel, .078, .38, .15, art.skin);
+    box(x - .004, .476, -.102 + travel, .108, .30 - crouch, .19, art.armor);
+    front(x + .027, .183, -.086 + travel, .022, .245, type === 'leaper' ? '#d6d5b9' : '#b09cae');
+  }
+  const width = type === 'leaper' ? .28 : .40;
+  box(-width / 2, .752 - crouch, -.128, width, .53, .26, art.skin);
+  box(-.186, 1.135 - crouch, type === 'screecher' ? -.065 : -.109, .372, .265, .237, art.armor);
+  box(-.105, 1.378 - crouch, -.088, .21, .11 + crouch, .176, art.shadow);
+  for (let rib = 0; rib < 4; rib++) {
+    const ribWidth = width * .78 - rib * .020;
+    front(-ribWidth / 2, .834 + rib * .075 - crouch, -.1285, ribWidth, .019, art.shadow);
+  }
+  for (const side of [-1, 1]) {
+    const x = side < 0 ? -.236 : .172;
+    const lift = type === 'leaper' ? windup * .23 + (leap ? .18 : 0) : roar * .14;
+    // Longer bare forearms and small real claws stay within .29 body / .32
+    // movement bounds; lunge travel belongs to the swept engine body itself.
+    box(x, .803 + lift - crouch, -.115, .064, .395, .13, art.skin);
+    box(x + .003, .618 + lift - crouch, -.15, .058, .20, .16, art.shadow);
+    for (let claw = 0; claw < 2; claw++) box(x + .009 + claw * .022, .545 + lift - crouch, -.158, .013, .107, .027, '#dbd2b9');
+  }
+  const headBottom = 1.486, headWidth = type === 'leaper' ? .26 : .29, headFront = type === 'screecher' ? -.158 : -.13;
+  box(-headWidth / 2, headBottom, headFront, headWidth, .224 - crouch * .4, .25, art.head);
+  box(-headWidth / 2 + .019, 1.710 - crouch * .4, headFront + .020, headWidth - .038, .09 - crouch * .6, .218, art.skin);
+  for (const x of [-.112, .026]) {
+    front(x, 1.636 - crouch * .25, headFront - .0005, .086, .029, art.shadow);
+    front(x + .013, 1.644 - crouch * .25, headFront - .001, .060, .012 + windup * .008 + roar * .007, eye);
+  }
+  if (type === 'leaper') {
+    front(-.091, 1.509, -.1305, .182, .066, art.shadow);
+    for (const x of [-.076, -.019, .039]) front(x, 1.516, -.131, .037, .017, '#e0d6b9');
+    front(-.018, 1.653 - crouch * .25, -.131, .036, .053, art.shadow);
+    front(-.025, .86 - crouch, -.129, .05, .275, rally ? '#aff0b4' : '#d2d6a8');
+  } else {
+    // Oversized black mouth and exposed luminous throat distinguish the
+    // support ghoul. Mouth grows only during its real interruptible roar.
+    const mouthHeight = .083 + roar * .052;
+    front(-.104, 1.500, headFront - .001, .208, mouthHeight, '#272c31');
+    front(-.055, 1.513, headFront - .0015, .110, .042 + roar * .022, roaring ? '#ffc2d2' : '#bd718e');
+    for (const x of [-.090, -.036, .018, .072]) front(x, 1.572 + roar * .021, headFront - .002, .022, .016, '#ded0ca');
+    front(-.045, 1.396 - crouch, -.0885, .09, .076, roaring ? '#f4b1cf' : rally ? '#aff0b4' : '#b57494');
+    front(-.038, .886 - crouch, -.1285, .076, .19, rally ? '#aff0b4' : '#b993ab');
+  }
+}
+
+function monsterParts(mesh, player, time, animation = null) {
   const type = MONSTER_ART[player.monsterType] ? player.monsterType : 'stalker', art = MONSTER_ART[type];
   const yaw = finite(player.yaw), pose = { x: player.x, y: finite(player.y), z: player.z, yaw };
   const windup = player.monsterState === 'windup' ? 1 - clamp(finite(player.attackTicks) / Math.max(1, finite(player.attackDuration, 1)), 0, 1) : 0;
   const aiming = player.monsterState === 'aiming', armed = type === 'gunner' || type === 'sniper';
   const speed = Math.hypot(finite(player.vx), finite(player.vz));
-  const stride = Math.sin(finite(time) * (type === 'runner' ? .018 : .011) + hash(player.id) % 30) * clamp(speed / 6, 0, 1) * .025;
+  const stride = animation ? Math.sin(finite(animation.phase)) * clamp(finite(animation.stride), 0, 1) * .025 : Math.sin(finite(time) * (type === 'runner' ? .018 : .011) + hash(player.id) % 30) * clamp(speed / 6, 0, 1) * .025;
   const box = (x, y, z, w, h, d, color) => mesh.box(x, y, z, w, h, d, color, pose);
   const front = (x, y, z, w, h, color) => {
     const points = [[x, y, z], [x, y + h, z], [x + w, y + h, z], [x + w, y, z]].map(point => {
@@ -2693,6 +2842,10 @@ function monsterParts(mesh, player, time) {
     });
     mesh.quad(...points, rotate([0, 0, -1], yaw), rgba(color));
   };
+  if (CREATURE_TYPES.has(type)) {
+    creatureParts(mesh, player, type, art, pose, front, animation || monsterAnimationPose(player, time));
+    return { type, armed: false, art, pose, yaw, pitch: 0 };
+  }
   // Every moving anatomical corner stays inside the shared .29 body and .22
   // head shooting boxes at every yaw, including the claw windup. Bigger armor
   // fills that envelope; it does not imply an unhittable oversized brute.
@@ -2731,6 +2884,7 @@ function monsterParts(mesh, player, time) {
       front(-.138, 1.28, -.1855, .276, .018, '#a998c8');
     }
   }
+  if (finite(player.monsterRallyTicks) > 0) front(-.027, 1.31, -.1508, .054, .036, '#aff0b4');
   for (const side of [-1, 1]) {
     const x = side < 0 ? -.235 : .165;
     const lift = armed ? .09 : windup * .20, forward = -.116 - windup * .030;
@@ -2769,12 +2923,12 @@ function monsterParts(mesh, player, time) {
 }
 
 /** Inspectable anatomy excludes the gun, which uses the same real cover sweep as operators. */
-export function monsterMeshes(player, time = 0) {
-  const mesh = new Mesh(); monsterParts(mesh, player, finite(time)); return mesh.array;
+export function monsterMeshes(player, time = 0, animation = null) {
+  const mesh = new Mesh(); monsterParts(mesh, player, finite(time), animation); return mesh.array;
 }
 
-function monsterMesh(mesh, player, map, time) {
-  const { armed, art, pose, yaw, pitch } = monsterParts(mesh, player, time);
+function monsterMesh(mesh, player, map, time, animation = null) {
+  const { armed, art, pose, yaw, pitch } = monsterParts(mesh, player, time, animation);
   if (!armed) return;
   const offset = rotate([.12, 1.24, -.18], yaw), reloadProgress = player.reloadTicks > 0 ? clamp(1 - player.reloadTicks / (WEAPONS[player.weapon]?.reloadTicks || 252), 0, 1) : 0;
   const gunPose = { x: pose.x + offset[0], y: pose.y + offset[1], z: pose.z + offset[2], yaw, pitch, scale: .84 };
@@ -3064,7 +3218,7 @@ export class VoxelRenderer {
     this.particles = []; this.tracers = []; this.localShot = null; this.localReload = null; this.shotContext = null;
     this.lastAim = null; this.swayX = 0; this.swayY = 0;
     this.frameMeshes = { world: new Mesh(), contact: new Mesh(), tracer: new Mesh(), weapon: new Mesh() };
-    this.presentLoot = createLootPresenter(); this.presentWarnings = createSpawnWarningPresenter(); this.presentEye = createEyeHeightPresenter(); this.presentHumans = createPlayerAnimationPresenter(); this.presentHead = createFirstPersonMotionPresenter(); this.presentShots = createWeaponShotPresenter(); this.firstPersonMotion = null; this.shotMotion = null; this.humanPoses = new Map(); this.resizeReads = 0;
+    this.presentLoot = createLootPresenter(); this.presentWarnings = createSpawnWarningPresenter(); this.presentEye = createEyeHeightPresenter(); this.presentHumans = createPlayerAnimationPresenter(); this.presentMonsters = createMonsterAnimationPresenter(); this.presentHead = createFirstPersonMotionPresenter(); this.presentShots = createWeaponShotPresenter(); this.firstPersonMotion = null; this.shotMotion = null; this.humanPoses = new Map(); this.resizeReads = 0;
     this._frameDrawCalls = 0; this._frameDynamicVertices = 0; this._mapVertices = 0; this._lootItems = 0; this._stormVertices = 0;
     this._onLost = event => {
       event.preventDefault(); this.contextLost = true; this.available = false;
@@ -3546,6 +3700,7 @@ export class VoxelRenderer {
     const humanContext = `${state.gameId || 'voxel-breach'}:${map.id}:${state.matchId ?? ''}:${state.round ?? ''}`;
     this.humanPoses.clear();
     this.presentHumans.retain(players.filter(player => !player.monsterType).map(player => player.id));
+    this.presentMonsters.retain(horde ? players.filter(player => Object.hasOwn(MONSTER_ART, player.monsterType) && player.alive).map(player => player.id) : []);
     for (const player of players) {
       if (!Number.isFinite(player.x) || !Number.isFinite(player.z)) continue;
       const humanAnimation = !player.monsterType ? this.presentHumans(player, time, humanContext, { paused: state.phase === 'paused' || !!options.paused }) : null;
@@ -3555,7 +3710,7 @@ export class VoxelRenderer {
         continue;
       }
       if (player.id === cameraPlayer.id) continue;
-      if (horde && player.monsterType) monsterMesh(dynamic, player, map, time);
+      if (horde && player.monsterType) monsterMesh(dynamic, player, map, time, this.presentMonsters(player, time, humanContext, { paused: state.phase === 'paused' || !!options.paused }));
       else playerMesh(dynamic, player, map, time, !freeForAll && player.team === local.team, freeForAll, humanAnimation);
       const support = surfaceBelow(map.colliders, player.x, player.z, finite(player.y) + .045);
       const ground = support ? support.y + support.h : 0;
@@ -3634,7 +3789,7 @@ export class VoxelRenderer {
     this.eventIds.clear(); this.eventQueue.length = 0; this.particles.length = 0; this.tracers.length = 0;
     this._visibleBloodParticles = 0;
     this.localShot = null; this.localReload = null; this.shotContext = null; this.lastAim = null; this.swayX = 0; this.swayY = 0;
-    this.presentLoot?.reset(); this.presentWarnings?.reset(); this.presentEye?.reset(); this.presentHumans?.reset(); this.presentHead?.reset(); this.presentShots?.reset(); this.firstPersonMotion = null; this.shotMotion = null; this.humanPoses?.clear(); this._spawnWarnings = 0;
+    this.presentLoot?.reset(); this.presentWarnings?.reset(); this.presentEye?.reset(); this.presentHumans?.reset(); this.presentMonsters?.reset(); this.presentHead?.reset(); this.presentShots?.reset(); this.firstPersonMotion = null; this.shotMotion = null; this.humanPoses?.clear(); this._spawnWarnings = 0;
   }
   destroy() {
     if (this.destroyed) return;

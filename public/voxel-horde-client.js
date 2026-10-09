@@ -50,6 +50,20 @@ export function hordeSpectatorPlayer(state, playerId, spectatorId) {
   return living.find(player => player.id === spectatorId) || living[0] || local || null;
 }
 
+/** Creature tells follow committed nearby events, never an inferred body pose. */
+export function hordeMonsterSoundGain(event, listener) {
+  if (!event || event.id == null || !listener) return 0;
+  const hound = event.type === 'monsterWindup' && event.monsterType === 'hound';
+  const leaper = event.type === 'monsterLungeWindup' && event.monsterType === 'leaper';
+  const roar = event.type === 'monsterRoar' && ['windup', 'release'].includes(event.stage);
+  if (!hound && !leaper && !roar) return ['monsterWindup', 'monsterAim'].includes(event.type) && event.targetId === listener.id ? 1 : 0;
+  if (!['x', 'y', 'z'].every(axis => Number.isFinite(event[axis]) && Number.isFinite(listener[axis]))) return 0;
+  const radius = hound ? 12 : leaper ? 16 : 18, distance = Math.hypot(event.x - listener.x, event.y - listener.y, event.z - listener.z);
+  if (distance >= radius) return 0;
+  const gain = .35 + .65 * (1 - distance / radius);
+  return event.targetId === listener.id ? Math.max(.8, gain) : gain * .7;
+}
+
 /** Spawned bodies keep their new pose even if an array slot was used last wave. */
 export function hordeInterpolationSamples(samples) {
   const newest = samples.at(-1)?.state;
@@ -205,7 +219,12 @@ export async function bootHorde() {
       freshEvents.push(event);
       if (eventSeen.size > 512) eventSeen.delete(eventSeen.values().next().value);
       const perspective = combatEventPerspective(event, playerId);
-      if (['hordeFight', 'hordeClear', 'hordeRevive', 'hordeEnd'].includes(event.type) || ['monsterWindup', 'monsterAim'].includes(event.type) && event.targetId === playerId) audio.playEvents([event]);
+      if (['hordeFight', 'hordeClear', 'hordeRevive', 'hordeEnd'].includes(event.type)) audio.playEvents([event]);
+      else if (event.type === 'monsterRoar' && event.stage === 'interrupted' || ['kill', 'elimination'].includes(event.type) && state.players[event.targetId]?.monster) audio.playEvents([event]);
+      else if (['monsterWindup', 'monsterAim', 'monsterLungeWindup', 'monsterRoar'].includes(event.type)) {
+        const gain = hordeMonsterSoundGain(event, hordeSpectatorPlayer(state, playerId, spectatorId));
+        if (gain > 0) audio.playEvents([event], { gain });
+      }
       if (event.type === 'damage' && event.damage > 0) {
         const incoming = incomingDamageFeedback(event, localPlayer(), state.players, { now, lifeKey: `${state.matchId}:${localPlayer()?.lifeId}`, friendlyFire: false }); if (incoming) damageFeedback = incoming;
       }
@@ -466,7 +485,7 @@ export async function bootHorde() {
     if (solo) preview(); graphics(); if (!solo) { connect(); hostInfo().then(info => { invite = `${info.origin}/voxel-horde.html?room=${encodeURIComponent(roomId)}`; }).catch(() => {}); }
   } catch (cause) { graphicsError = cause?.message || 'The game could not load.'; error(`Voxel Last Stand could not load: ${graphicsError}`); }
   heartbeat = setInterval(() => { if (!solo && connected && !document.hidden && LIVE_PHASES.includes(state?.phase)) sendInput(); }, 50);
-  const inspect = () => copy({ state: state ? { ...state, map: undefined, fighters: undefined } : null, solo, playerId, hostId, aim, paused: paused || state?.phase === 'paused', connected, roomPlayers: roster, pendingInputs: pending, queuedActions: inputQueue.inspect(), presentationPlayer, presentationPlayers, controls: { pointerLocked: locked(), fallback, touch: touchMode, entered, modalOpen }, renderCount, renderStats: renderer?.stats || null, audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), graphicsError, displayTiming: { physicsSamples, renderSamples: renderCount, lastFraction }, timeline: timeline.getState(), spectatorId });
+  const inspect = () => copy({ state: state ? { ...state, map: undefined, fighters: undefined } : null, solo, playerId, hostId, aim, paused: paused || state?.phase === 'paused', connected, roomPlayers: roster, pendingInputs: pending, queuedActions: inputQueue.inspect(), presentationPlayer, presentationPlayers, controls: { pointerLocked: locked(), fallback, touch: touchMode, entered, modalOpen }, renderCount, renderStats: renderer?.stats || null, audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), monsterAudio: audio.inspectMonsters(), graphicsError, displayTiming: { physicsSamples, renderSamples: renderCount, lastFraction }, timeline: timeline.getState(), spectatorId });
   window.semagHorde = Object.freeze({ getState: inspect, getDebugState: inspect, getDisplayTiming: () => ({ physicsSamples, renderSamples: renderCount, lastFraction }) });
   return { destroy, inspect };
 }

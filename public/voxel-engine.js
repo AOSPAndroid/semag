@@ -5,6 +5,7 @@ import { WEAPONS, weaponDamage, weaponSpread, weaponHand } from './voxel-weapons
 import { launchBolt, advanceBolts, MAX_BOLTS } from './voxel-projectiles.js';
 import { MELEE, KNIFE, MELEE_WEAPONS, meleeProfile, meleeWeaponId, meleeHand } from './voxel-melee.js';
 import { recordLagCompensation, traceCompensatedShot } from './voxel-lag-compensation.js';
+import { monsterBodyProfile, monsterBodyBoxes, monsterClosestPoint, monsterAttackOrigin, monsterMovementSpeed, monsterMovementMultiplier } from './voxel-monster-bodies.js';
 import { INVENTORY_ACTIONS, initializeInventory, ensureInventory, refreshInventory, selectedInventoryItem, selectInventorySlot, storeInventoryGun, tickHolsteredInventory, consumeInventoryStack, pickupInventoryItem, inventoryCanTake, dropInventoryItem, lootFromInventoryItem, setInventoryLoadout, setInventoryMeleeLoadout } from './voxel-inventory.js';
 export { MAPS, WEAPONS };
 export { MELEE, KNIFE, MELEE_WEAPONS, meleeProfile, meleeWeaponId };
@@ -19,8 +20,8 @@ export const PLAYER_HEALTH = 200;
 export const HEAL = Object.freeze({ ticks: 240, amount: 60, speedMultiplier: .3 });
 const EPS = 1e-8, DT = 1 / TICK_RATE;
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
-export const eyeHeight = player => player.crouching ? WORLD.crouchEyeHeight : WORLD.eyeHeight;
-export const playerHeight = player => player.crouching ? WORLD.crouchHeight : WORLD.standHeight;
+export const eyeHeight = player => monsterBodyProfile(player)?.eyeHeight ?? (player.crouching ? WORLD.crouchEyeHeight : WORLD.eyeHeight);
+export const playerHeight = player => monsterBodyProfile(player)?.height ?? (player.crouching ? WORLD.crouchHeight : WORLD.standHeight);
 export const emptyInput = (aim = {}) => ({ ...Object.fromEntries(INPUT_KEYS.map(key => [key, false])), yaw: Number.isFinite(aim.yaw) ? clamp(aim.yaw, -Math.PI, Math.PI) : 0, pitch: Number.isFinite(aim.pitch) ? clamp(aim.pitch, -1.35, 1.35) : 0 });
 export function cloneState(state) { const copy = JSON.parse(JSON.stringify(state)); if (copy.players) copy.fighters = copy.players; return copy; }
 export function createCombatPlayer(id, teamSize = 1, loadout = 'carbine') {
@@ -195,19 +196,21 @@ function refreshGrounded(f, arena) { f.grounded = f.alive && f.vy <= EPS && Math
 function movementTick(f, input, arena, peers = [], headroomPeers = peers) {
   f.yaw = input.yaw; f.pitch = input.pitch;
   if (!f.alive) { f.vx = f.vy = f.vz = 0; f.jumpBufferTicks = 0; return; }
-  if (input.crouch) f.crouching = true;
+  const monsterBody = monsterBodyProfile(f);
+  if (monsterBody) { f.radius = monsterBody.radius; f.crouching = false; }
+  else if (input.crouch) f.crouching = true;
   else if (!arena.colliders.some(rect => bodyOverlapsBox(f, rect, WORLD.standHeight)) && !headroomPeers.some(peer => bodyOverlapsPlayer(f, peer, WORLD.standHeight))) f.crouching = false;
   // Queue only a fresh press. It may survive a short descent onto the next
   // platform, but holding jump never repeats and leaving a ledge grants no lift.
   if (input.jump && !f.previousInput?.jump) f.jumpBufferTicks = WORLD.jumpBufferTicks;
   if (f.grounded && f.jumpBufferTicks > 0 && !f.crouching) {
-    f.vy = WORLD.jumpSpeed; f.grounded = false; f.jumpBufferTicks = 0;
+    f.vy = monsterBody?.jumpSpeed ?? WORLD.jumpSpeed; f.grounded = false; f.jumpBufferTicks = 0;
   } else f.jumpBufferTicks = Math.max(0, (f.jumpBufferTicks || 0) - 1);
   let strafe = Number(input.right) - Number(input.left), forward = Number(input.up) - Number(input.down); const length = Math.hypot(strafe, forward);
   if (length > 0) { strafe /= length; forward /= length; }
-  const primarySpeed = f.slot === 'sword' ? meleeProfile(f).speed : WEAPONS[f.weapon].speed;
+  const primarySpeed = monsterMovementSpeed(f) ?? (f.slot === 'sword' ? meleeProfile(f).speed : WEAPONS[f.weapon].speed);
   const ads = input.aim && f.slot === 'primary' && !f.reloadTicks && !f.healTicks && !f.grenadeThrowTicks;
-  const speed = (f.crouching ? 2.35 : input.walk ? 2.8 : primarySpeed) * (f.healTicks ? HEAL.speedMultiplier : ads ? ADS.speedMultiplier : 1);
+  const speed = (f.crouching ? 2.35 : input.walk ? 2.8 : primarySpeed) * (f.healTicks ? HEAL.speedMultiplier : ads ? ADS.speedMultiplier : 1) * monsterMovementMultiplier(f);
   const targetX = (Math.sin(f.yaw) * forward + Math.cos(f.yaw) * strafe) * speed, targetZ = (-Math.cos(f.yaw) * forward + Math.sin(f.yaw) * strafe) * speed;
   const accel = f.grounded ? (length ? 43 : 58) : 7;
   const velocityX = targetX - f.vx, velocityZ = targetZ - f.vz, velocityDelta = Math.hypot(velocityX, velocityZ), accelerationFraction = velocityDelta > EPS ? Math.min(1, accel * DT / velocityDelta) : 0;
@@ -356,8 +359,15 @@ export function traceShot(state, playerId, origin, direction, maxDistance = 120,
   if (direction.y < -EPS) { const distance = -origin.y / direction.y; if (distance >= 0 && distance <= result.distance + EPS) result = { distance, kind: 'wall', playerId: null, colliderId: 'floor' }; }
   for (const f of state.players) {
     if (f.id === playerId || !f.alive) continue;
-    for (const rect of playerBoxes(f)) {
-      const distance = rayBox(origin, direction, rect, maxDistance);
+    const monsterBoxes = monsterBodyBoxes(f);
+    let rayOrigin = origin, rayDirection = direction;
+    if (monsterBoxes) {
+      const yaw = Number.isFinite(f.yaw) ? f.yaw : 0, c = Math.cos(yaw), s = Math.sin(yaw), dx = origin.x - f.x, dz = origin.z - f.z;
+      rayOrigin = { x: c * dx + s * dz, y: origin.y - f.y, z: -s * dx + c * dz };
+      rayDirection = { x: c * direction.x + s * direction.z, y: direction.y, z: -s * direction.x + c * direction.z };
+    }
+    for (const rect of monsterBoxes || playerBoxes(f)) {
+      const distance = rayBox(rayOrigin, rayDirection, rect, maxDistance);
       if (distance !== null && distance < result.distance - EPS) result = { distance, kind: rect.kind, playerId: f.id, colliderId: null };
     }
   }
@@ -485,14 +495,15 @@ function tickMelee(state, f, input, pendingDamage, arena, { meleeDamageScale } =
     emit(state, 'meleeStart', { playerId: f.id, weapon: meleeWeapon, hand: f.meleeHand, x: f.x, y: f.y + eyeHeight(f), z: f.z, yaw: f.yaw });
   }
   if (f.meleePhase !== 'active') return;
-  const origin = { x: f.x, y: f.y + eyeHeight(f) * .76, z: f.z }, forward = aimDirection(f.meleeYaw, f.meleePitch);
+  const origin = monsterAttackOrigin(f) || { x: f.x, y: f.y + eyeHeight(f) * .76, z: f.z }, forward = aimDirection(f.meleeYaw, f.meleePitch);
   for (const target of state.players) {
     if (!target.alive || target.id === f.id || target.team === f.team || f.meleeHitIds.includes(target.id)) continue;
     // Contact the closest point on the target's upright body, including crouched
     // or elevated targets. The rendered blade does not extend its physical reach.
-    const dx = target.x - origin.x, dz = target.z - origin.z, horizontal = Math.hypot(dx, dz);
-    const targetY = clamp(origin.y, target.y + .18, target.y + playerHeight(target) - .16), dy = targetY - origin.y;
-    const contactDistance = Math.hypot(Math.max(0, horizontal - target.radius), dy);
+    const flesh = monsterClosestPoint(target, origin);
+    const dx = (flesh?.x ?? target.x) - origin.x, dz = (flesh?.z ?? target.z) - origin.z, horizontal = Math.hypot(dx, dz);
+    const targetY = flesh?.y ?? clamp(origin.y, target.y + .18, target.y + playerHeight(target) - .16), dy = targetY - origin.y;
+    const contactDistance = flesh?.distance ?? Math.hypot(Math.max(0, horizontal - target.radius), dy);
     const centerDistance = Math.hypot(dx, dy, dz);
     if (contactDistance > melee.reach || centerDistance <= EPS) continue;
     const direction = { x: dx / centerDistance, y: dy / centerDistance, z: dz / centerDistance };

@@ -2,6 +2,33 @@ import { createVoxelShotSamples, createVoxelMeleeSamples } from './voxel-shot-au
 
 const MAX_GUNSHOT_VOICES = 24;
 
+// Small cached creature tells use the same voice budget as firearm reports.
+export const VOXEL_MONSTER_AUDIO = Object.freeze({
+  hound: Object.freeze({ duration: .22, low: 138, high: 72, rasp: .28, seed: 71 }),
+  leaper: Object.freeze({ duration: .4, low: 84, high: 194, rasp: .18, seed: 193 }),
+  screechWindup: Object.freeze({ duration: .58, low: 210, high: 540, rasp: .12, seed: 389 }),
+  screechRelease: Object.freeze({ duration: .28, low: 570, high: 240, rasp: .2, seed: 563 }),
+});
+
+/** Quiet deterministic growls and rasps, without downloads or per-frame synthesis. */
+export function createVoxelMonsterSamples(id, sampleRate = 48000) {
+  if (typeof id !== 'string' || !Object.hasOwn(VOXEL_MONSTER_AUDIO, id) || !Number.isFinite(sampleRate) || sampleRate < 8000 || sampleRate > 192000) return null;
+  const profile = VOXEL_MONSTER_AUDIO[id], samples = new Float32Array(Math.ceil(sampleRate * profile.duration));
+  let seed = profile.seed, phase = 0, filtered = 0;
+  for (let index = 1; index < samples.length - 1; index++) {
+    const progress = index / (samples.length - 1), time = index / sampleRate;
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    filtered += ((seed / 2147483648 - 1) - filtered) * .08;
+    const frequency = profile.low + (profile.high - profile.low) * progress;
+    phase += Math.PI * 2 * frequency / sampleRate;
+    const throat = Math.sin(phase) * .65 + Math.sin(phase * 2) * .19 + Math.sin(phase * 3.01) * .08;
+    const pulse = id === 'hound' ? .65 + .35 * Math.cos(time * Math.PI * 18) : .84 + .16 * Math.sin(time * Math.PI * 32);
+    const envelope = Math.sin(Math.PI * progress) ** 1.65;
+    samples[index] = (throat * (1 - profile.rasp) + filtered * profile.rasp) * pulse * envelope * .26;
+  }
+  return samples;
+}
+
 /** Procedural sound; AudioContext is only created by an explicit sound toggle. */
 export class GameAudio {
   constructor() {
@@ -15,10 +42,12 @@ export class GameAudio {
     this.toggleVersion = 0;
     this.gunshotBuffers = new Map();
     this.meleeBuffers = new Map();
+    this.monsterBuffers = new Map();
     this.gunshotVoices = new Set();
     this.gunshotVariation = 0;
     this.gunshotReports = 0;
     this.meleeReports = 0;
+    this.monsterReports = 0;
   }
 
   async setEnabled(enabled) {
@@ -33,6 +62,7 @@ export class GameAudio {
       if (!this.context || this.context.state === 'closed') {
         this.gunshotBuffers.clear();
         this.meleeBuffers.clear();
+        this.monsterBuffers.clear();
         this.context = new AudioContext({ latencyHint: 'interactive' });
         const compressor = this.context.createDynamicsCompressor();
         compressor.threshold.value = -20;
@@ -63,14 +93,18 @@ export class GameAudio {
     return this.playVoxelReport(weaponId, { gain, melee: true });
   }
 
-  playVoxelReport(weaponId, { gain = 1, melee = false } = {}) {
+  monsterTell(id, { gain = 1, playerId = null } = {}) {
+    return this.playVoxelReport(id, { gain, monster: true, playerId });
+  }
+
+  playVoxelReport(weaponId, { gain = 1, melee = false, monster = false, playerId = null } = {}) {
     if (!this.enabled || this.destroyed || this.context?.state !== 'running' || !Number.isFinite(gain) || gain <= 0) return false;
     let source, envelope, voice;
     try {
-      const buffers = melee ? this.meleeBuffers : this.gunshotBuffers;
+      const buffers = monster ? this.monsterBuffers : melee ? this.meleeBuffers : this.gunshotBuffers;
       let buffer = buffers.get(weaponId);
       if (!buffer) {
-        const samples = melee ? createVoxelMeleeSamples(weaponId, this.context.sampleRate) : createVoxelShotSamples(weaponId, this.context.sampleRate);
+        const samples = monster ? createVoxelMonsterSamples(weaponId, this.context.sampleRate) : melee ? createVoxelMeleeSamples(weaponId, this.context.sampleRate) : createVoxelShotSamples(weaponId, this.context.sampleRate);
         if (!samples) return false;
         buffer = this.context.createBuffer(1, samples.length, this.context.sampleRate);
         buffer.getChannelData(0).set(samples);
@@ -83,13 +117,13 @@ export class GameAudio {
       source.playbackRate.value = [.994, 1.008, .985, 1.003, 1.014, .999][this.gunshotVariation++ % 6];
       envelope.gain.value = Math.min(1, gain);
       source.connect(envelope); envelope.connect(this.master);
-      voice = { source, envelope, ended: false };
+      voice = { source, envelope, ended: false, monsterKey: monster ? weaponId : null, monsterPlayerId: monster ? playerId : null };
       this.gunshotVoices.add(voice);
       source.onended = () => this.endGunshot(voice);
       source.start(this.context.currentTime);
       // Buffer expiry ends the source naturally; this fence also bounds faulty contexts.
       source.stop(this.context.currentTime + buffer.duration / source.playbackRate.value + .02);
-      if (melee) this.meleeReports += 1; else this.gunshotReports += 1;
+      if (monster) this.monsterReports += 1; else if (melee) this.meleeReports += 1; else this.gunshotReports += 1;
       return true;
     } catch {
       if (voice) this.endGunshot(voice, true);
@@ -110,12 +144,21 @@ export class GameAudio {
     for (const voice of this.gunshotVoices) this.endGunshot(voice, true);
   }
 
+  stopMonsterTells(playerId, windupOnly = false) {
+    if (!Number.isInteger(playerId)) return;
+    for (const voice of this.gunshotVoices) if (voice.monsterKey && voice.monsterPlayerId === playerId && (!windupOnly || voice.monsterKey === 'screechWindup')) this.endGunshot(voice, true);
+  }
+
   inspectGunshots() {
     return Object.freeze({ enabled: this.enabled, cachedBuffers: this.gunshotBuffers.size, activeVoices: this.gunshotVoices.size, maxVoices: MAX_GUNSHOT_VOICES, played: this.gunshotReports });
   }
 
   inspectMelee() {
     return Object.freeze({ enabled: this.enabled, cachedBuffers: this.meleeBuffers.size, activeVoices: this.gunshotVoices.size, maxVoices: MAX_GUNSHOT_VOICES, played: this.meleeReports });
+  }
+
+  inspectMonsters() {
+    return Object.freeze({ enabled: this.enabled, cachedBuffers: this.monsterBuffers.size, activeVoices: this.gunshotVoices.size, maxVoices: MAX_GUNSHOT_VOICES, played: this.monsterReports });
   }
 
   // Each voice ends and disconnects itself, keeping long sessions bounded.
@@ -160,7 +203,7 @@ export class GameAudio {
     source.stop(start + duration + 0.01);
   }
 
-  playEvents(events = []) {
+  playEvents(events = [], { gain = 1 } = {}) {
     for (const event of events) {
       if (event.id == null || this.seen.has(event.id)) continue;
       this.seen.add(event.id);
@@ -235,8 +278,21 @@ export class GameAudio {
             this.tone(110, 0.48, { delay: 0.15, end: 55, type: 'triangle', gain: 0.16 });
             break;
           case 'monsterWindup':
+            if (event.monsterType === 'hound') { this.monsterTell('hound', { gain, playerId: event.playerId }); break; }
             this.noise(0.12, { highpass: 65, lowpass: 950, gain: 0.12 });
             this.tone(event.monsterType === 'brute' ? 82 : 128, 0.16, { end: 48, type: 'sawtooth', gain: 0.06 });
+            break;
+          case 'monsterLungeWindup':
+            if (event.monsterType === 'leaper') this.monsterTell('leaper', { gain, playerId: event.playerId });
+            break;
+          case 'monsterRoar':
+            if (event.stage === 'windup') this.monsterTell('screechWindup', { gain, playerId: event.playerId });
+            else if (event.stage === 'release') { this.stopMonsterTells(event.playerId, true); this.monsterTell('screechRelease', { gain, playerId: event.playerId }); }
+            else if (event.stage === 'interrupted') this.stopMonsterTells(event.playerId, true);
+            break;
+          case 'kill':
+          case 'elimination':
+            this.stopMonsterTells(event.targetId);
             break;
           case 'monsterAim':
             this.tone(540, 0.11, { end: 810, type: 'triangle', gain: 0.1 });
@@ -280,6 +336,7 @@ export class GameAudio {
     this.resetEvents();
     this.gunshotBuffers.clear();
     this.meleeBuffers.clear();
+    this.monsterBuffers.clear();
     try {
       if (this.context && this.context.state !== 'closed') this.context.close().catch(() => {});
     } catch { /* A detached or unsupported context may already be unavailable. */ }

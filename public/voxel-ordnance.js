@@ -1,4 +1,5 @@
 /** Deterministic, server-owned frag grenades. Distances are metres; one step is 1/120s. */
+import { monsterBodySamplePoints, monsterClosestPoint } from './voxel-monster-bodies.js';
 export const GRENADE = Object.freeze({ radius: .12, fuseTicks: 288, blastRadius: 5.5, damage: 120, speed: 11.5, loft: 3.1, gravity: 18.4, restitution: .48, capacity: 6 });
 export const MAX_GRENADES = 20;
 const DT = 1 / 120, EPS = 1e-9, SKIN = 1e-7;
@@ -160,24 +161,35 @@ function visible(origin, point, arena) {
   return !arena.colliders.some(box => { const contact = rayBox(origin, direction, box, distance); return contact !== null && contact < distance - EPS; });
 }
 
-/** Exact cover rays to chest, head, legs and shoulders; a hidden body is never damaged. */
+/** Cover rays end inside real flesh; a hidden body is never damaged. */
 export function grenadeBlastHits(state, grenade, arena) {
   const hits = [];
   for (const player of state.players ?? []) {
     if (!player.alive || (player.team === grenade.team && player.id !== grenade.playerId)) continue;
-    const height = player.crouching ? 1.15 : 1.8, radius = finite(player.radius, .32);
-    const horizontal = Math.hypot(player.x - grenade.x, player.z - grenade.z), distanceXz = Math.max(0, horizontal - radius);
-    const distanceY = grenade.y < player.y ? player.y - grenade.y : grenade.y > player.y + height ? grenade.y - player.y - height : 0;
-    const distance = Math.hypot(distanceXz, distanceY); if (distance >= GRENADE.blastRadius) continue;
-    const sideX = horizontal > EPS ? -(player.z - grenade.z) / horizontal * radius * .8 : radius * .8;
-    const sideZ = horizontal > EPS ? (player.x - grenade.x) / horizontal * radius * .8 : 0;
-    const samples = [
-      { x: player.x, y: player.y + height * .52, z: player.z },
-      { x: player.x, y: player.y + height * .9, z: player.z },
-      { x: player.x, y: player.y + height * .16, z: player.z },
-      { x: player.x + sideX, y: player.y + height * .55, z: player.z + sideZ },
-      { x: player.x - sideX, y: player.y + height * .55, z: player.z - sideZ },
-    ];
+    let samples = monsterBodySamplePoints(player), distance;
+    if (samples) {
+      // A hound has no phantom human head above cover, or shoulders outside
+      // its narrow silhouette. Blast range uses the same yaw-oriented flesh.
+      const contact = monsterClosestPoint(player, grenade);
+      if (!contact) continue;
+      distance = contact.distance;
+    } else {
+      // Preserve the original human stance, cover samples and damage falloff.
+      const height = player.crouching ? 1.15 : 1.8, radius = finite(player.radius, .32);
+      const horizontal = Math.hypot(player.x - grenade.x, player.z - grenade.z), distanceXz = Math.max(0, horizontal - radius);
+      const distanceY = grenade.y < player.y ? player.y - grenade.y : grenade.y > player.y + height ? grenade.y - player.y - height : 0;
+      distance = Math.hypot(distanceXz, distanceY);
+      const sideX = horizontal > EPS ? -(player.z - grenade.z) / horizontal * radius * .8 : radius * .8;
+      const sideZ = horizontal > EPS ? (player.x - grenade.x) / horizontal * radius * .8 : 0;
+      samples = [
+        { x: player.x, y: player.y + height * .52, z: player.z },
+        { x: player.x, y: player.y + height * .9, z: player.z },
+        { x: player.x, y: player.y + height * .16, z: player.z },
+        { x: player.x + sideX, y: player.y + height * .55, z: player.z + sideZ },
+        { x: player.x - sideX, y: player.y + height * .55, z: player.z - sideZ },
+      ];
+    }
+    if (distance >= GRENADE.blastRadius) continue;
     const exposed = samples.filter(point => visible(grenade, point, arena)).length; if (!exposed) continue;
     const falloff = Math.max(0, 1 - distance / GRENADE.blastRadius);
     const damage = Math.round(GRENADE.damage * falloff * (.3 + .7 * exposed / samples.length));

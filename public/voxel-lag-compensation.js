@@ -1,4 +1,5 @@
 /** Server-only, bounded pose history for hitscan traces. Nothing enters snapshots. */
+import { monsterBodyProfile } from './voxel-monster-bodies.js';
 export const MAX_REWIND_TICKS = 18; // 150 ms at the shared 120 Hz simulation rate.
 const MAX_TELEPORT_DISTANCE = 4;
 const histories = new WeakMap();
@@ -11,6 +12,7 @@ const validPosition = player => Number.isFinite(player?.x) && Number.isFinite(pl
 const samePosition = (a, b) => a.x === b.x && a.y === b.y && a.z === b.z;
 const movedTooFar = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z) > MAX_TELEPORT_DISTANCE;
 const contextFor = state => [state.gameId, state.phase, state.mapId, state.round, state.matchId, state.map];
+const bodyKey = player => monsterBodyProfile(player)?.id || null;
 
 function synchronizeContext(state, history) {
   const next = contextFor(state);
@@ -61,13 +63,13 @@ export function recordLagCompensation(state) {
   for (const player of state.players || []) {
     if (!validPosition(player)) continue;
     let actor = history.actors.get(player.id);
-    if (!actor || actor.ref !== player || actor.team !== player.team || actor.alive !== player.alive || movedTooFar(actor, player)) {
+    if (!actor || actor.ref !== player || actor.team !== player.team || actor.alive !== player.alive || actor.bodyKey !== bodyKey(player) || movedTooFar(actor, player)) {
       if (actor) history.views.delete(player.id);
       actor = { generation: ++history.generation };
     }
-    Object.assign(actor, { ref: player, team: player.team, alive: player.alive, x: player.x, y: player.y, z: player.z });
+    Object.assign(actor, { ref: player, team: player.team, alive: player.alive, x: player.x, y: player.y, z: player.z, bodyKey: bodyKey(player), yaw: player.yaw });
     history.actors.set(player.id, actor);
-    poses.set(player.id, { generation: actor.generation, alive: player.alive, x: player.x, y: player.y, z: player.z });
+    poses.set(player.id, { generation: actor.generation, alive: player.alive, x: player.x, y: player.y, z: player.z, ...(actor.bodyKey ? { yaw: player.yaw } : {}) });
   }
   for (const id of history.actors.keys()) if (!poses.has(id)) {
     history.actors.delete(id);
@@ -97,10 +99,14 @@ export function traceCompensatedShot(state, shooterId, origin, direction, maxDis
   const players = state.players.map(player => {
     if (player.id === shooterId || !player.alive || !validPosition(player)) return player;
     const actor = history.actors.get(player.id), a = before.poses.get(player.id), b = after.poses.get(player.id);
-    if (!actor || actor.ref !== player || actor.team !== player.team || actor.alive !== player.alive || !samePosition(actor, player) || !a?.alive || !b?.alive || a.generation !== actor.generation || b.generation !== actor.generation || movedTooFar(a, b)) return player;
+    if (!actor || actor.ref !== player || actor.team !== player.team || actor.alive !== player.alive || actor.bodyKey !== bodyKey(player) || !samePosition(actor, player) || (actor.bodyKey && actor.yaw !== player.yaw) || !a?.alive || !b?.alive || a.generation !== actor.generation || b.generation !== actor.generation || movedTooFar(a, b)) return player;
     // Preserve newest membership, stance, team, health and combat fields. Only
     // positional transforms follow the same older timeline as the remote view.
-    return { ...player, x: a.x + (b.x - a.x) * ratio, y: a.y + (b.y - a.y) * ratio, z: a.z + (b.z - a.z) * ratio };
+    // A quadruped's narrow front head depends on yaw. Rewind only that body's
+    // orientation along the short arc; human stance and yaw stay newest as before.
+    const yaw = actor.bodyKey && Number.isFinite(a.yaw) && Number.isFinite(b.yaw)
+      ? a.yaw + Math.atan2(Math.sin(b.yaw - a.yaw), Math.cos(b.yaw - a.yaw)) * ratio : player.yaw;
+    return { ...player, x: a.x + (b.x - a.x) * ratio, y: a.y + (b.y - a.y) * ratio, z: a.z + (b.z - a.z) * ratio, ...(actor.bodyKey ? { yaw } : {}) };
   });
   return traceShot({ ...state, players, fighters: players }, shooterId, origin, direction, maxDistance, arena);
 }
