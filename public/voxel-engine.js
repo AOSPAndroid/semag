@@ -6,7 +6,7 @@ import { advanceWeaponFireClock } from './voxel-fire-modes.js';
 import { launchBolt, advanceBolts, MAX_BOLTS } from './voxel-projectiles.js';
 import { MELEE, KNIFE, KNIFE_SECONDARY, MELEE_WEAPONS, meleeProfile, meleeWeaponId, meleeHand, meleeSlashOrigin, meleeSlashPhase, meleeSlashGeometry, meleeSegmentBoxContact, parryProfile, parryPhase, parryFacesOrigin, resetMeleeDefense } from './voxel-melee.js';
 import { recordLagCompensation, traceCompensatedShot } from './voxel-lag-compensation.js';
-import { monsterBodyProfile, monsterBodyBoxes, monsterMovementSpeed, monsterMovementMultiplier } from './voxel-monster-bodies.js';
+import { monsterTypeId, monsterBodyProfile, monsterBodyBoxes, monsterMovementSpeed, monsterMovementMultiplier } from './voxel-monster-bodies.js';
 import { INVENTORY_ACTIONS, initializeInventory, ensureInventory, refreshInventory, selectedInventoryItem, selectInventorySlot, storeInventoryGun, tickHolsteredInventory, consumeInventoryStack, pickupInventoryItem, inventoryCanTake, dropInventoryItem, lootFromInventoryItem, setInventoryLoadout, setInventoryMeleeLoadout } from './voxel-inventory.js';
 export { MAPS, WEAPONS };
 export { MELEE, KNIFE, KNIFE_SECONDARY, MELEE_WEAPONS, meleeProfile, meleeWeaponId, parryProfile, parryPhase, resetMeleeDefense };
@@ -987,7 +987,16 @@ export function applyCombatDamage(state, pending, { onMeleeHit, arena = state.ma
     f.alive = false; f.deaths++; f.vx = f.vy = f.vz = 0; clearKnockback(f); resetSprint(f, { refill: false }); f.jumpBufferTicks = 0; f.reloadTicks = 0; f.burstRemaining = 0; f.spinTicks = f.pendingFireTicks = 0; f.aiming = false; f.aimTicks = 0; f.healing = false; f.healTicks = 0; f.grenadeThrowTicks = 0; clearMelee(f); f.interaction = null; f.interactTicks = 0;
     const killer = lethalHits.get(f.id), attacker = killer && state.players[killer.playerId];
     if (attacker && attacker.id !== f.id && attacker.team !== f.team) attacker.kills++;
-    emit(state, 'kill', { playerId: killer?.playerId ?? null, targetId: f.id, hitKind: killer?.hitKind ?? 'body', headshot: killer?.headshot || false, attack: killer?.attack || 'gun', weapon: killer?.weapon ?? (killer?.attack === 'grenade' ? 'grenade' : null), x: f.x, y: f.y, z: f.z });
+    // Horde slots can be reused before the next network snapshot. Preserve the
+    // defeated monster's identity and pose for presentation, independently of
+    // its replacement; corpses never become combat actors or delay loot.
+    const monsterDeath = state.gameId === 'voxel-horde' && monsterTypeId(f) ? {
+      targetLifeId: f.lifeId || 0, monsterType: f.monsterType, yaw: f.yaw,
+      dx: Number.isFinite(killer?.dx) ? killer.dx : attacker ? f.x - attacker.x : 0,
+      dy: Number.isFinite(killer?.dy) ? killer.dy : 0,
+      dz: Number.isFinite(killer?.dz) ? killer.dz : attacker ? f.z - attacker.z : 0,
+    } : {};
+    emit(state, 'kill', { playerId: killer?.playerId ?? null, targetId: f.id, hitKind: killer?.hitKind ?? 'body', headshot: killer?.headshot || false, attack: killer?.attack || 'gun', weapon: killer?.weapon ?? (killer?.attack === 'grenade' ? 'grenade' : null), x: f.x, y: f.y, z: f.z, ...monsterDeath });
     if (state.gameId === 'voxel-breach') {
       ensureInventory(f); const carriedHeal = f.inventory.some(item => item?.kind === 'heal' && item.amount > 0);
       dropCombatInventory(state, f);

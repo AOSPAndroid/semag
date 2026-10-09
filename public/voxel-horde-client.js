@@ -145,6 +145,7 @@ export async function bootHorde() {
   const locked = () => document.pointerLockElement === canvas;
   const localPlayer = () => state?.players?.find(player => player.id === playerId) || null;
   const running = () => !destroyed && connected && !!state && !graphicsError && !document.hidden && LIVE_PHASES.includes(state.phase);
+  const finishingMonsterDeaths = () => !destroyed && connected && !graphicsError && !document.hidden && state?.phase === 'matchEnd' && renderer?.stats?.monsterDeaths?.activeCorpses > 0;
   const labelsActive = () => running() && !modalOpen && (localPlayer()?.alive ? entered && !paused : !!hordeSpectatorPlayer(state, playerId, spectatorId)?.alive);
   const controlsActive = () => running() && entered && !paused && !modalOpen && localPlayer()?.alive && (locked() || fallback || touchMode);
   const currentInput = () => composeInput(keys, touch, mouse, aim, controlsActive());
@@ -369,7 +370,7 @@ export async function bootHorde() {
     }
     presentationPlayers = view.players; view.fighters = view.players;
     const camera = hordeSpectatorPlayer(view, playerId, spectatorId) || presentationPlayer || state.players[0], viewAim = camera?.id === playerId && camera.alive ? aim : cleanAim(camera?.yaw, camera?.pitch);
-    renderer.render(view, { acceptedPlayers: state.players, playerId, localId: playerId, localPlayer: presentationPlayer, viewPlayer: camera, cameraPlayer: camera, yaw: viewAim.yaw, pitch: viewAim.pitch + finite(camera?.recoil), time: live ? now : lastDrawAt || now, roster });
+    renderer.render(view, { acceptedPlayers: state.players, playerId, localId: playerId, localPlayer: presentationPlayer, viewPlayer: camera, cameraPlayer: camera, yaw: viewAim.yaw, pitch: viewAim.pitch + finite(camera?.recoil), time: live || state.phase === 'matchEnd' ? now : lastDrawAt || now, roster });
     worldLabels.paint(renderer.worldLabels, { active: labelsActive() });
     paintVitals(camera, camera?.id !== playerId ? `${nameFor(camera?.id)}’s` : 'Your', labelsActive());
     reloadAudio.observe(state.players.find(player => player.id === camera?.id), { tick: state.tick, context: `${state.mapId}:${state.matchId}:${state.round}`, active: connected && !paused && !modalOpen && state.phase === 'fight' }); renderCount++; lastFraction = tickFraction(accumulator, 1 / engine.TICK_RATE);
@@ -392,8 +393,8 @@ export async function bootHorde() {
     if (state.phase === 'countdown') { const value = Math.ceil(finite(state.phaseTicks) / engine.TICK_RATE); if (value !== lastCountdown) { lastCountdown = value; audio.countdown(value); } }
     if (state.phase === 'matchEnd' && oldPhase !== 'matchEnd') {
       clearInputs(); entered = false; paused = false; unlock();
-      // This is the last solo frame: a throttled refresh could otherwise leave
-      // the fight HUD visible forever after its animation loop stops.
+      // Commit the result on the final simulation frame. A short presentation
+      // tail may finish monster collapses without advancing combat or input.
       updateHUD(true, now);
       if (solo) { stopFrame(); $('horde-replay').focus({ preventScroll: true }); }
     }
@@ -402,7 +403,12 @@ export async function bootHorde() {
     previousPhase = state.phase;
   }
   function frame(now) {
-    frameId = null; if (!running()) { previousFrame = null; return; }
+    frameId = null;
+    if (!running()) {
+      previousFrame = null;
+      if (finishingMonsterDeaths()) { draw(now); wake(); }
+      return;
+    }
     weaponWheel.flush();
     const dt = previousFrame == null ? 0 : clamp((now - previousFrame) / 1000, 0, .0667); previousFrame = now;
     if (controlsActive() && (touch.look.x || touch.look.y)) { const multiplier = aimLookMultiplier(presentationPlayer || localPlayer(), ADS); aim = cleanAim(aim.yaw + touch.look.x * dt * 2.6 * multiplier, aim.pitch - touch.look.y * dt * 2.2 * multiplier); }
@@ -423,7 +429,7 @@ export async function bootHorde() {
     if (!solo && predictedPlayer) { predictedPlayer.yaw = aim.yaw; predictedPlayer.pitch = aim.pitch; }
     consumeEvents(now); updateHUD(false, now); draw(now); wake();
   }
-  function wake() { if (running() && frameId === null) frameId = requestAnimationFrame(frame); }
+  function wake() { if ((running() || finishingMonsterDeaths()) && frameId === null) frameId = requestAnimationFrame(frame); }
   function receiveState(message) {
     const next = message.state; if (!next?.players || !engine.MAPS[next.mapId]) return;
     const old = state, now = performance.now(), before = predictedPlayer && MOVEMENT_PHASES.includes(old?.phase) ? (movement.get(playerId) || (() => predictedPlayer))(predictedPlayer, inputQueue.preview(hordeInputForPhase(currentInput(), old.phase), now), old.map, accumulator, predictLocalMovement, old.players) : predictedPlayer;

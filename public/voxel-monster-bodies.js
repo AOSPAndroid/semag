@@ -15,6 +15,8 @@ const trustedType = player => player?.monster === true && player.human !== true 
 const timed = (value, maximum) => Number.isInteger(value) && value > 0 && value <= maximum;
 const leaping = player => trustedType(player) === 'leaper' && player.monsterState === 'leap' && timed(player.lungeTicks, 30);
 
+/** Recognized authority-owned type, including humanoids using the default body. */
+export function monsterTypeId(player) { return trustedType(player); }
 /** Input commands cannot supply a body. Only an authoritative, recognized actor can. */
 export function monsterBodyProfile(player) { const type = trustedType(player); return type && Object.hasOwn(MONSTER_BODIES, type) ? MONSTER_BODIES[type] : null; }
 /** Immutable local boxes face negative Z; tracing rotates the ray, never inflates them. */
