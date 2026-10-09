@@ -4,6 +4,30 @@
 
 A self-hosted browser hub with **24 games**, including solo challenges, duels, a tactical team FPS, battle royale, and three-player co-op wave survival. Pick **Open game** to preview a solo game, then press **Start game** when ready, or create a room and share your PC address or room link with a colleague. Voxel Royale holds up to ten players; the host starts with any two or more connected players. Voxel Last Stand supports solo play or co-op with up to three players: everyone connected presses **Ready**, then the host explicitly starts. Voxel Breach has two, four or six seats and requires every seat to be ready; the remaining multiplayer rooms have two. The server can run several independent rooms at once.
 
+[Run on your PC](#run-on-your-pc)
+
+## Screenshots
+
+Click an image to open it at full size.
+
+**Game hub**
+
+[![Semag game shelf with the available games and room controls](docs/screenshots/game-hub.jpg)](docs/screenshots/game-hub.jpg)
+
+**Voxel Breach**
+
+[![Voxel Breach solo practice on the Barclays Trading Floor with trading-screen cover](docs/screenshots/voxel-breach.jpg)](docs/screenshots/voxel-breach.jpg)
+
+| Voxel Last Stand | Voxel Royale |
+| --- | --- |
+| [![Voxel Last Stand courtyard with a monster and its visible health bar](docs/screenshots/voxel-last-stand.jpg)](docs/screenshots/voxel-last-stand.jpg) | [![Voxel Royale desert practice with a knife and four inventory slots](docs/screenshots/voxel-royale.jpg)](docs/screenshots/voxel-royale.jpg) |
+| **Voxel Wilds** | **Paris Pedal** |
+| [![Voxel Wilds forest terrain, ores and survival inventory](docs/screenshots/voxel-wilds.jpg)](docs/screenshots/voxel-wilds.jpg) | [![Paris Pedal e-bike gameplay on a busy Paris street](docs/screenshots/paris-pedal.jpg)](docs/screenshots/paris-pedal.jpg) |
+| **Shinobi Showdown** | **Deckbound** |
+| [![Shinobi Showdown two-player ninja duel](docs/screenshots/shinobi-showdown.jpg)](docs/screenshots/shinobi-showdown.jpg) | [![Deckbound card battle showing the hand and enemy intent](docs/screenshots/deckbound.jpg)](docs/screenshots/deckbound.jpg) |
+
+## Games
+
 | Game | Mode | Goal |
 | --- | --- | --- |
 | Voxel Wilds | Solo first-person voxel survival | Mine editable woodland terrain, craft tools and supplies, build shelter, and survive escalating nights with an eight-slot inventory and a saved world. |
