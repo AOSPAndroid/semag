@@ -48,28 +48,28 @@ const SHOT_PROFILES = Object.freeze({
   smg: { attack: 5, decay: 19, duration: 155, push: .050, pitch: .076, side: .004, yaw: .011, lift: .003 },
   marksman: { attack: 8, decay: 34, duration: 275, push: .116, pitch: .139, side: .005, yaw: .015, lift: .008 },
   pistol: { attack: 6, decay: 27, duration: 220, push: .082, pitch: .205, side: .007, yaw: .021, lift: .012 },
-  shotgun: { attack: 9, decay: 42, duration: 340, push: .148, pitch: .172, side: .009, yaw: .020, lift: .011 },
+  shotgun: { strike: .68, attack: 7, decay: 37, duration: 330, push: .156, pitch: .205, side: .007, yaw: .018, lift: .018 },
   burst: { attack: 6, decay: 23, duration: 190, push: .074, pitch: .095, side: .005, yaw: .013, lift: .005 },
   sniper: { attack: 9, decay: 48, duration: 385, push: .158, pitch: .200, side: .008, yaw: .018, lift: .011 },
   lmg: { attack: 7, decay: 29, duration: 235, push: .101, pitch: .105, side: .008, yaw: .017, lift: .006 },
   crossbow: { attack: 6, decay: 24, duration: 200, push: .042, pitch: .046, side: .003, yaw: .007, lift: .003 },
   revolver: { attack: 7, decay: 34, duration: 280, push: .112, pitch: .225, side: .008, yaw: .023, lift: .015 },
   pdw: { attack: 5, decay: 17, duration: 145, push: .045, pitch: .065, side: .0035, yaw: .010, lift: .004 },
-  autoshotgun: { attack: 8, decay: 36, duration: 295, push: .129, pitch: .156, side: .008, yaw: .018, lift: .010 },
+  autoshotgun: { strike: .62, attack: 6, decay: 30, duration: 250, push: .139, pitch: .178, side: .005, yaw: .014, lift: .012 },
   battlerifle: { attack: 8, decay: 35, duration: 280, push: .122, pitch: .156, side: .007, yaw: .019, lift: .009 },
   dualpistols: { attack: 6, decay: 24, duration: 205, push: .075, pitch: .184, side: .008, yaw: .023, lift: .013 },
   dualsmg: { attack: 5, decay: 18, duration: 150, push: .049, pitch: .084, side: .006, yaw: .017, lift: .005 },
-  slugshotgun: { attack: 9, decay: 44, duration: 350, push: .154, pitch: .188, side: .008, yaw: .022, lift: .013 },
+  slugshotgun: { strike: .65, attack: 8, decay: 42, duration: 350, push: .159, pitch: .220, side: .006, yaw: .019, lift: .018 },
   classic: { attack: 6, decay: 25, duration: 205, push: .077, pitch: .183, side: .005, yaw: .018, lift: .010 },
-  shorty: { attack: 8, decay: 38, duration: 310, push: .136, pitch: .202, side: .008, yaw: .021, lift: .013 },
+  shorty: { strike: .76, attack: 6, decay: 30, duration: 255, push: .133, pitch: .245, side: .009, yaw: .024, lift: .016 },
   frenzy: { attack: 5, decay: 19, duration: 155, push: .047, pitch: .102, side: .004, yaw: .014, lift: .006 },
   ghost: { attack: 6, decay: 26, duration: 215, push: .067, pitch: .157, side: .004, yaw: .014, lift: .009 },
   sheriff: { attack: 8, decay: 37, duration: 300, push: .128, pitch: .249, side: .008, yaw: .025, lift: .017 },
   bandit: { attack: 7, decay: 30, duration: 245, push: .092, pitch: .211, side: .006, yaw: .020, lift: .013 },
   stinger: { attack: 4, decay: 18, duration: 130, push: .040, pitch: .075, side: .005, yaw: .014, lift: .004 },
   spectre: { attack: 5, decay: 19, duration: 155, push: .045, pitch: .068, side: .003, yaw: .009, lift: .003 },
-  bucky: { attack: 9, decay: 44, duration: 350, push: .158, pitch: .188, side: .009, yaw: .022, lift: .014 },
-  judge: { attack: 8, decay: 34, duration: 280, push: .126, pitch: .155, side: .008, yaw: .019, lift: .010 },
+  bucky: { strike: .70, attack: 8, decay: 40, duration: 340, push: .158, pitch: .216, side: .007, yaw: .018, lift: .017 },
+  judge: { strike: .66, attack: 6, decay: 28, duration: 235, push: .137, pitch: .170, side: .006, yaw: .015, lift: .012 },
   bulldog: { attack: 6, decay: 24, duration: 195, push: .083, pitch: .110, side: .005, yaw: .014, lift: .006 },
   guardian: { attack: 8, decay: 36, duration: 290, push: .127, pitch: .163, side: .005, yaw: .017, lift: .010 },
   phantom: { attack: 6, decay: 22, duration: 180, push: .074, pitch: .086, side: .004, yaw: .010, lift: .005 },
@@ -86,9 +86,10 @@ const SHOT_PROFILES = Object.freeze({
 export function weaponShotPose(weapon, age, aim = 0, side = 1) {
   const profile = Object.hasOwn(SHOT_PROFILES, weapon) ? SHOT_PROFILES[weapon] : SHOT_PROFILES.carbine;
   const t = finite(age, Infinity);
-  const peakTime = profile.decay - .42 * profile.attack;
+  const strike = profile.strike ?? .42;
+  const peakTime = profile.decay - strike * profile.attack;
   const maximum = (profile.decay / profile.attack) * Math.exp(-peakTime / profile.decay);
-  const envelope = t >= 0 && t < profile.duration ? ((.42 + t / profile.attack) * Math.exp(-t / profile.decay) / maximum) * (1 - smooth((t - profile.duration * .65) / (profile.duration * .35))) : 0;
+  const envelope = t >= 0 && t < profile.duration ? ((strike + t / profile.attack) * Math.exp(-t / profile.decay) / maximum) * (1 - smooth((t - profile.duration * .65) / (profile.duration * .35))) : 0;
   const steady = 1 - clamp(finite(aim), 0, 1) * .72, sideways = Math.sign(finite(side, 1)) || 1;
   // A small analytic return dip gives the weapon a spring-like settle without
   // accumulating frame impulses or moving the camera's authoritative aim.

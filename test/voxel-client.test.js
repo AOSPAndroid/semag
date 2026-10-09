@@ -504,7 +504,7 @@ test('all nine loadout comparison cards state damage, firing rhythm and real fal
     assert.match(card.reload, / s$/); assert.ok(card.rate.length); assert.ok(card.handling.length);
   }
   const shotgun = weaponComparison('shotgun');
-  assert.equal(shotgun.body, 12); assert.match(shotgun.damageLabel, /PELLET.*8 PELLETS/);
+  assert.equal(shotgun.body, 28); assert.match(shotgun.damageLabel, /PELLET.*8 PELLETS/);
   assert.match(shotgun.range, /8 m.*25%/);
   assert.match(weaponComparison('crossbow').handling, /48 m\/s.*9 m\/s²/);
   assert.match(weaponComparison('lmg').handling, /0.20 s wind-up/);

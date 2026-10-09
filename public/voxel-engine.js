@@ -849,9 +849,11 @@ function fireRound(state, f, weapon, pendingDamage, arena, fire = null) {
   if (weapon.projectile) return true;
   if (weapon.valorant) state.eventLimit = 256;
   for (let pellet = 0; pellet < pelletCount; pellet++) {
-    // One centered pellet keeps close precise aim meaningful; the ring fixes the
-    // shotgun's minimum cone, so ADS cannot turn it into an eight-hit sniper.
-    const pelletAngle = (pellet - 1) * Math.PI * 2 / Math.max(1, pelletCount - 1), pelletRadius = pellet ? pelletSpread : 0;
+    // A centered pellet plus an equal-area spiral fills the cone rather than
+    // leaving a hollow ring. Rotate the pattern by the accepted shell index;
+    // its exact outer bound stays fixed, including while aiming down sights.
+    const pelletAngle = angle + (pellet - 1) * 2.399963229728653;
+    const pelletRadius = pellet ? pelletSpread * Math.sqrt(pellet / Math.max(1, pelletCount - 1)) : 0;
     const direction = aimDirection(yaw + Math.cos(pelletAngle) * pelletRadius, clamp(pitch + Math.sin(pelletAngle) * pelletRadius, -1.5, 1.5));
     const trace = weapon.valorant ? (snapshot, id, start, vector, distance, map) => traceWeaponShot(snapshot, id, start, vector, distance, map, weapon) : traceShot;
     const hit = traceCompensatedShot(state, f.id, origin, direction, range, arena, trace);

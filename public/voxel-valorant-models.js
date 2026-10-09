@@ -7,7 +7,7 @@ const box = (x, y, z, w, h, d, color = STEEL, motion = null) => ({ x, y, z, w, h
 const side = (x, y, z, h, d, color = DARK) => ({ kind: 'side', args: [x, y, z, h, d, color] });
 const top = (x, y, z, w, d, color = LIGHT) => ({ kind: 'top', args: [x, y, z, w, d, color] });
 const front = (x, y, z, w, h, color = DARK) => ({ kind: 'front', args: [x, y, z, w, h, color] });
-const grip = () => [box(-.033, -.176, -.029, .066, .133, .088, RUBBER), box(-.046, -.118, -.16, .012, .065, .10, DARK), box(.034, -.118, -.16, .012, .065, .10, DARK), box(-.046, -.126, -.16, .092, .015, .10, DARK)];
+const grip = (color = RUBBER) => [box(-.033, -.176, -.029, .066, .133, .088, color), box(-.046, -.118, -.16, .012, .065, .10, DARK), box(.034, -.118, -.16, .012, .065, .10, DARK), box(-.046, -.126, -.16, .092, .015, .10, DARK)];
 const stock = (length = .25, color = DARK) => [box(-.049, .012, .014, .098, .055, length, color), box(-.044, -.068, .076, .088, .045, length - .06, color), box(-.057, -.080, length - .008, .114, .16, .042, RUBBER)];
 const magazine = (z = -.20, height = .21, color = DARK) => [box(-.040, -.045 - height, z, .080, height, .114, color, 'magazine'), box(-.043, -.048 - height, z - .002, .086, .024, .118, LIGHT, 'magazine')];
 const scope = (frontZ = -.56, backZ = -.12, large = false) => {
@@ -18,7 +18,12 @@ const vents = (width, y, start, count, gap = .065) => Array.from({ length: count
 const finish = (id, data) => {
   const ports = data.muzzlePorts || [{ x: 0, y: .012, z: -data.length }];
   const hinge = id === 'shorty' ? -.22 : id === 'outlaw' ? -.44 : null;
-  const details = [...data.details.map(detail => id === 'bucky' && detail.kind === 'side' && Math.abs(detail.args[0]) > .075 ? { ...detail, motion: 'pump' } : detail), ...ports.map(port => ({ ...front(port.x - .017, port.y - .015, port.z - .001, .034, .032, '#0c2029'), ...(hinge !== null ? { motion: 'break' } : {}) }))];
+  const details = [...data.details.map(detail => {
+    if (id === 'shorty' && detail.args[2] < hinge - .06) return { ...detail, motion: 'break' };
+    if (id === 'bucky' && detail.kind === 'side' && Math.abs(detail.args[0]) > .075) return { ...detail, motion: 'pump' };
+    if (['judge', 'autoshotgun'].includes(id) && detail.kind === 'side' && Math.abs(detail.args[0]) >= .12 && detail.args[1] < -.1) return { ...detail, motion: 'magazine' };
+    return detail;
+  }), ...ports.map(port => ({ ...front(port.x - .017, port.y - .015, port.z - .001, .034, .032, '#0c2029'), ...(hinge !== null ? { motion: 'break' } : {}) }))];
   return Object.freeze({ id, breakHingeZ: hinge, sightHeight: data.scoped ? .175 : .152, coverPadding: data.scoped ? .34 : .30, ...data,
     parts: Object.freeze(data.parts.map(part => Object.freeze(hinge !== null && part.z <= (id === 'shorty' ? -.30 : -.75) ? { ...part, motion: 'break' } : part))), details: Object.freeze(details.map(detail => Object.freeze({ ...detail, args: Object.freeze(detail.args) }))),
     muzzlePorts: Object.freeze(ports.map(port => Object.freeze(port))), lootParts: Object.freeze(data.lootParts.map(part => Object.freeze(part))) });
@@ -29,9 +34,17 @@ const add = (id, data) => { models[id] = finish(id, data); };
 add('classic', { family: 'pistol', length: .38, parts: [
   box(-.047, -.035, -.34, .094, .095, .32, '#687f8b'), box(-.043, .060, -.363, .086, .050, .34, LIGHT, 'bolt'), box(-.027, -.196, -.084, .054, .173, .090, RUBBER, 'magazine'), box(-.048, -.029, -.175, .096, .022, .060, DARK), ...grip(),
 ], details: [side(-.048, -.005, -.28, .037, .061, '#b8c7c5'), side(.048, -.006, -.30, .040, .075), ...vents(.080, .111, -.30, 3, .047)], lootParts: [box(-.047, -.02, -.38, .094, .13, .36, LIGHT), box(-.032, -.18, -.083, .064, .16, .09, DARK)] });
-add('shorty', { family: 'shotgun', length: .46, muzzlePorts: [{ x: 0, y: .035, z: -.46 }, { x: 0, y: -.040, z: -.46 }], parts: [
-  box(-.050, -.043, -.29, .10, .135, .27, '#6e6d60'), box(-.037, .006, -.46, .074, .059, .24, LIGHT), box(-.035, -.069, -.46, .070, .059, .24, STEEL), box(-.058, -.081, -.32, .116, .05, .14, '#896e4b'), box(-.030, -.194, -.035, .060, .164, .087, '#6f5541'), ...grip(), box(-.043, .087, -.10, .086, .014, .08, '#b6ac8f'),
-], details: [side(-.059, -.074, -.30, .032, .10, '#c7ae79'), side(.059, -.074, -.30, .032, .10, '#c7ae79')], lootParts: [box(-.039, -.075, -.46, .078, .145, .32, LIGHT), box(-.048, -.043, -.14, .096, .127, .14, '#716651'), box(-.030, -.188, -.048, .060, .154, .083, '#88674a')] });
+// Warm grips, satin receiver planes and darker barrel mouths keep these
+// close-range silhouettes readable without bright skins or extra passes.
+add('shorty', { family: 'shotgun', length: .46, frontSightBase: .079, muzzlePorts: [{ x: 0, y: .035, z: -.46 }, { x: 0, y: -.040, z: -.46 }], parts: [
+  box(-.052, -.043, -.29, .104, .135, .27, '#465054'), box(-.043, .072, -.22, .086, .023, .19, '#a8afa9'),
+  box(-.037, .006, -.46, .074, .059, .24, '#8b9594'), box(-.035, -.069, -.46, .070, .059, .24, '#667574'),
+  box(-.043, -.075, -.46, .086, .147, .022, '#4a5758'), box(-.025, .069, -.44, .050, .010, .21, '#b6b9ad'),
+  box(-.058, -.091, -.365, .116, .035, .145, '#986b4b', 'break'), ...grip('#805c43'), box(-.035, -.179, -.027, .070, .028, .088, '#423f37'),
+], details: [side(-.053, -.006, -.23, .047, .103, '#626f70'), side(.053, -.006, -.23, .047, .103, '#29363b'),
+  side(-.059, -.084, -.35, .024, .111, '#b08b61'), side(.059, -.084, -.35, .024, .111, '#b08b61'),
+  ...[0, 1, 2].flatMap(i => [side(-.034, -.142 + i * .020, -.021, .005, .063, '#af8559'), side(.034, -.142 + i * .020, -.021, .005, .063, '#af8559')])],
+  lootParts: [box(-.039, -.075, -.46, .078, .145, .25, '#a6b0a6'), box(-.052, -.043, -.22, .104, .137, .22, '#465054'), box(-.058, -.091, -.365, .116, .035, .145, '#ad8154'), box(-.033, -.188, -.027, .066, .154, .083, '#986b4b')] });
 add('frenzy', { family: 'pistol', length: .43, parts: [
   box(-.050, -.028, -.36, .10, .135, .34, '#657d7f'), box(-.047, .107, -.363, .094, .020, .33, LIGHT, 'bolt'), box(-.032, .011, -.43, .064, .052, .09, DARK), ...grip(), ...magazine(-.083, .245, '#4b666a'), box(-.056, -.051, -.30, .112, .04, .061, DARK),
 ], details: [side(-.051, .023, -.27, .045, .10), side(.051, .023, -.27, .045, .10), ...vents(.086, .128, -.30, 3, .051)], lootParts: [box(-.050, -.025, -.43, .10, .15, .40, '#8caaac'), box(-.034, -.28, -.086, .068, .255, .093, DARK), box(-.055, -.052, -.29, .11, .035, .052, DARK)] });
@@ -51,12 +64,28 @@ add('stinger', { family: 'smg', length: .66, parts: [
 add('spectre', { family: 'smg', length: .91, parts: [
   box(-.059, -.042, -.45, .118, .137, .45, '#4f666f'), box(-.053, -.005, -.91, .106, .090, .40, '#30464e'), box(-.052, -.018, -.57, .104, .084, .16, '#7b9699'), box(-.047, .095, -.38, .094, .026, .35, LIGHT), ...grip(), ...magazine(-.21, .223), ...stock(.24, '#4b656b'), box(-.048, -.071, -.45, .096, .055, .17, DARK),
 ], details: [...vents(.089, .069, -.87, 3, .12), side(-.060, .004, -.31, .048, .11, '#b3c2b8'), side(.060, .004, -.31, .048, .11)], lootParts: [box(-.058, -.04, -.51, .116, .137, .52, STEEL), box(-.05, -.005, -.91, .10, .09, .40, DARK), box(-.04, -.26, -.20, .08, .22, .114, DARK), box(-.05, -.035, .01, .10, .09, .24, DARK)] });
-add('bucky', { family: 'shotgun', length: 1.01, parts: [
-  box(-.062, -.047, -.42, .124, .142, .44, '#626c70'), box(-.029, .008, -1.01, .058, .061, .62, LIGHT), box(-.034, -.066, -.92, .068, .05, .48, DARK), box(-.075, -.076, -.78, .15, .101, .25, '#776957', 'pump'), ...grip(), ...stock(.28, '#7d705c'), box(-.025, .095, -.31, .050, .024, .27, STEEL), box(.058, .026, -.28, .042, .024, .07, LIGHT, 'bolt'),
-], details: [side(.063, -.002, -.33, .055, .15), ...[0, 1, 2, 3].flatMap(i => [side(-.076, -.056, -.76 + i * .05, .062, .017, '#b4a584'), side(.076, -.056, -.76 + i * .05, .062, .017, '#b4a584')])], lootParts: [box(-.062, -.04, -.43, .124, .137, .46, STEEL), box(-.029, .008, -1.01, .058, .061, .60, LIGHT), box(-.07, -.068, -.78, .14, .083, .24, '#8e7757'), box(-.05, -.044, .01, .10, .12, .28, '#7d705c')] });
-add('judge', { family: 'shotgun', length: .93, coverPadding: .36, parts: [
-  box(-.07, -.048, -.47, .14, .158, .48, '#566c79'), box(-.038, .002, -.93, .076, .076, .47, LIGHT), box(-.074, -.034, -.72, .148, .106, .29, '#3a505e'), box(-.10, -.298, -.26, .20, .238, .20, '#425a67', 'magazine'), box(-.132, -.247, -.24, .264, .140, .16, '#7a8c91', 'magazine'), ...grip(), ...stock(.27), box(-.052, .11, -.41, .104, .016, .38, STEEL),
-], details: [side(-.133, -.222, -.225, .087, .126, '#b9c6be'), side(.133, -.222, -.225, .087, .126, '#b9c6be'), ...vents(.126, .073, -.70, 3, .071)], lootParts: [box(-.068, -.04, -.74, .136, .15, .76, STEEL), box(-.037, .002, -.93, .074, .076, .21, LIGHT), box(-.13, -.284, -.26, .26, .24, .20, DARK), box(-.05, -.04, .01, .10, .12, .27, DARK)] });
+add('bucky', { family: 'shotgun', length: 1.01, frontSightBase: .069, parts: [
+  box(-.062, -.047, -.42, .124, .142, .44, '#48585b'), box(-.050, .095, -.38, .100, .018, .34, '#94a19b'),
+  box(-.031, .008, -1.01, .062, .061, .62, '#849590'), box(-.034, -.066, -.92, .068, .05, .48, '#314449'),
+  box(-.041, -.004, -1.01, .082, .085, .032, '#596e70'), box(-.018, .070, -.966, .036, .015, .54, '#a9b5a9'),
+  box(-.075, -.076, -.78, .15, .101, .25, '#886346', 'pump'), box(-.059, -.077, -.79, .118, .015, .26, '#413c35', 'pump'),
+  ...grip('#5f5042'), ...stock(.28, '#736654'), box(.058, .026, -.28, .042, .024, .07, '#b8c0b2', 'bolt'),
+], details: [side(.063, -.002, -.33, .055, .15, '#24353c'), side(-.063, -.002, -.36, .059, .18, '#687b7c'),
+  ...[0, 1, 2, 3].flatMap(i => [side(-.076, -.060, -.758 + i * .050, .066, .014, '#4c443b'), side(.076, -.060, -.758 + i * .050, .066, .014, '#4c443b')]),
+  ...[0, 1, 2].flatMap(i => [side(-.064, -.036, -.29 + i * .050, .039, .030, '#a27558'), side(-.064, .003, -.29 + i * .050, .008, .030, '#c2ae78')])],
+  lootParts: [box(-.062, -.04, -.43, .124, .137, .46, '#6d8381'), box(-.031, .008, -1.01, .062, .061, .60, '#a7b3a9'), box(-.07, -.068, -.78, .14, .083, .24, '#a1744e'), box(-.05, -.044, .01, .10, .12, .28, '#897659'), box(-.034, -.181, -.027, .068, .132, .089, '#594d40')] });
+add('judge', { family: 'shotgun', length: .93, coverPadding: .36, frontSightBase: .078, parts: [
+  box(-.07, -.048, -.47, .14, .158, .48, '#53625c'), box(-.038, .002, -.93, .076, .076, .47, '#919f97'),
+  box(-.046, -.008, -.93, .092, .091, .041, '#52676a'), box(-.074, -.034, -.72, .148, .106, .29, '#34494b'),
+  box(-.056, .072, -.70, .112, .015, .23, '#8b978b'), box(-.10, -.298, -.26, .20, .238, .20, '#34484a', 'magazine'),
+  box(-.132, -.247, -.24, .264, .140, .16, '#617268', 'magazine'), box(-.08, -.280, -.258, .16, .202, .195, '#839183', 'magazine'),
+  ...grip('#6d5847'), ...stock(.27, '#485e58'), box(-.052, .11, -.41, .104, .016, .38, '#afbaa8'),
+  box(-.037, -.134, -.56, .074, .101, .062, '#3c4844'), box(.066, .024, -.27, .037, .023, .065, '#b8bba6', 'bolt'),
+], details: [side(-.133, -.220, -.225, .081, .126, '#2a3c3e'), side(.133, -.220, -.225, .081, .126, '#2a3c3e'),
+  side(-.134, -.197, -.20, .035, .078, '#a4af96'), side(.134, -.197, -.20, .035, .078, '#a4af96'),
+  side(.071, -.004, -.36, .058, .17, '#28383c'), side(-.071, -.002, -.39, .058, .18, '#7c9183'),
+  ...vents(.126, .073, -.70, 3, .071)],
+  lootParts: [box(-.068, -.04, -.72, .136, .15, .74, '#788d7e'), box(-.038, .002, -.93, .076, .076, .21, '#abb5a5'), box(-.13, -.284, -.26, .26, .24, .20, '#4b645b'), box(-.05, -.04, .01, .10, .12, .27, '#485e58'), box(-.034, -.181, -.027, .068, .132, .089, '#8a684a')] });
 
 add('bulldog', { family: 'rifle', length: .86, parts: [
   box(-.071, -.047, -.55, .142, .151, .76, '#646f7d'), box(-.055, -.015, -.75, .11, .089, .24, '#435663'), box(-.035, .006, -.86, .07, .068, .15, LIGHT), ...grip(), ...magazine(.055, .198), box(-.068, -.075, .177, .136, .174, .052, DARK), box(-.046, .104, -.47, .092, .021, .56, STEEL), box(-.057, -.051, -.39, .114, .034, .13, DARK),
@@ -93,3 +122,44 @@ add('warden', { family: 'rifle', length: 1.21, scoped: true, parts: [
 export const VALORANT_MODELS = Object.freeze(models);
 export const VALORANT_MODEL_IDS = Object.freeze(Object.keys(models));
 export const valorantModel = id => typeof id === 'string' && Object.hasOwn(VALORANT_MODELS, id) ? VALORANT_MODELS[id] : null;
+
+/** Original Semag shotguns retain their accepted metre scale and sight anchors. */
+export const LEGACY_SHOTGUN_MODELS = Object.freeze({
+  shotgun: finish('shotgun', { family: 'shotgun', length: 1.02, coverPadding: .29, frontSightBase: .079, pumpTravel: .12, muzzlePorts: [{ x: 0, y: .013, z: -1.055 }], parts: [
+    box(-.065, -.045, -.44, .130, .139, .45, '#566562'), box(-.049, .094, -.39, .098, .018, .34, '#acb6a7'),
+    box(-.029, -.006, -1.055, .058, .059, .68, '#8b9d97'), box(-.043, -.019, -1.055, .086, .083, .034, '#4d6468'),
+    box(-.018, .054, -1.012, .036, .025, .57, '#a9b7a7'), box(-.035, -.078, -.96, .070, .052, .53, '#314849'),
+    box(-.073, -.085, -.73, .146, .104, .26, '#926644', 'pump'), box(-.063, -.088, -.735, .126, .019, .27, '#4c3e32', 'pump'),
+    ...grip('#7f5a3f'), box(-.06, -.067, -.06, .12, .125, .25, '#896342'), box(-.066, -.083, .167, .132, .154, .045, '#2e3e3e'),
+    box(.060, .020, -.24, .041, .024, .055, '#b9c2ae', 'bolt'),
+  ], details: [side(.066, -.005, -.34, .053, .139, '#253b3d'), side(-.066, -.012, -.35, .054, .18, '#768b7d'),
+    side(-.061, -.047, .02, .061, .132, '#b38655'), side(.061, -.047, .02, .061, .132, '#b38655'),
+    ...Array.from({ length: 5 }, (_, i) => ({ ...side(-.074, -.066, -.71 + i * .043, .071, .013, '#4c3e32'), motion: 'pump' })),
+    ...Array.from({ length: 5 }, (_, i) => ({ ...side(.074, -.066, -.71 + i * .043, .071, .013, '#4c3e32'), motion: 'pump' })),
+    ...Array.from({ length: 4 }, (_, i) => side(-.067, -.033, -.35 + i * .043, .041, .026, '#a56a51')),
+    ...Array.from({ length: 4 }, (_, i) => side(-.067, .008, -.35 + i * .043, .010, .026, '#c5b178')),
+  ], lootParts: [box(-.065, -.044, -.44, .130, .139, .45, '#73887a'), box(-.029, -.006, -1.055, .058, .059, .65, '#b7c2b0'), box(-.073, -.085, -.73, .146, .104, .26, '#ac7b4c'), box(-.060, -.06, -.05, .120, .12, .25, '#966f48'), box(-.034, -.18, -.027, .068, .13, .089, '#594d40')] }),
+  autoshotgun: finish('autoshotgun', { family: 'shotgun', length: .93, coverPadding: .36, frontSightBase: .052, muzzlePorts: [{ x: 0, y: .019, z: -.965 }], parts: [
+    box(-.069, -.055, -.43, .138, .145, .45, '#655b4b'), box(-.048, .090, -.35, .096, .022, .31, '#b0ab95'),
+    box(-.068, -.038, -.705, .136, .106, .32, '#455e5d'), box(-.030, -.011, -.965, .060, .063, .27, '#9eaba0'),
+    box(-.046, -.019, -.965, .092, .079, .041, '#41585c'), box(-.039, .068, -.70, .078, .019, .27, '#859488'),
+    box(-.098, -.290, -.26, .196, .219, .193, '#2f4748', 'magazine'), box(-.126, -.250, -.243, .252, .135, .159, '#536e66', 'magazine'),
+    box(-.080, -.277, -.258, .160, .202, .195, '#738b77', 'magazine'), ...grip('#6b533d'), ...stock(.25, '#7d694e'),
+    box(-.038, -.135, -.55, .076, .106, .062, '#344b4a'), box(.065, .019, -.245, .041, .024, .061, '#bcc3af', 'bolt'),
+  ], details: [side(.070, -.013, -.33, .053, .135, '#223c41'), side(-.070, -.018, -.35, .063, .23, '#a28f6d'),
+    side(-.127, -.228, -.231, .085, .132, '#263f43'), side(.127, -.228, -.231, .085, .132, '#263f43'),
+    side(-.128, -.208, -.204, .032, .077, '#9aac8f'), side(.128, -.208, -.204, .032, .077, '#9aac8f'), ...vents(.105, .069, -.655, 4, .057),
+  ], lootParts: [box(-.069, -.045, -.44, .138, .14, .46, '#837964'), box(-.030, -.011, -.965, .06, .063, .27, '#bac4af'), box(-.126, -.282, -.26, .252, .223, .193, '#536e66'), box(-.057, -.044, .014, .114, .12, .25, '#968362'), box(-.068, -.038, -.705, .136, .106, .30, '#455e5d')] }),
+  slugshotgun: finish('slugshotgun', { family: 'shotgun', length: 1.12, coverPadding: .29, frontSightBase: .082, muzzlePorts: [{ x: 0, y: .015, z: -1.146 }], parts: [
+    box(-.060, -.040, -.43, .120, .150, .45, '#746653'), box(-.051, .110, -.43, .102, .026, .42, '#c0b89b'),
+    box(-.029, .003, -1.145, .058, .067, .74, '#91a7a3'), box(-.025, -.061, -1.02, .050, .043, .62, '#3f595d'),
+    box(-.043, -.008, -1.146, .086, .078, .060, '#38525a'), box(-.018, .070, -1.09, .036, .012, .62, '#a6b5a6'),
+    box(-.072, -.071, -.79, .144, .094, .24, '#486467', 'pump'), ...grip('#4c5551'), ...stock(.25, '#657774'),
+    box(.057, .028, -.255, .042, .025, .050, '#c5c3ac', 'bolt'),
+  ], details: [side(.061, .011, -.336, .058, .114, '#263d43'), side(-.061, .008, -.40, .066, .24, '#a99d79'),
+    ...Array.from({ length: 4 }, (_, i) => ({ ...side(-.073, -.052, -.76 + i * .047, .045, .013, '#99a28c'), motion: 'pump' })),
+    ...Array.from({ length: 4 }, (_, i) => ({ ...side(.073, -.052, -.76 + i * .047, .045, .013, '#99a28c'), motion: 'pump' })),
+    ...Array.from({ length: 3 }, (_, i) => side(-.062, -.028, -.337 + i * .065, .046, .032, '#bd975f')),
+  ], lootParts: [box(-.060, -.040, -.43, .120, .15, .45, '#988363'), box(-.029, .003, -1.146, .058, .067, .74, '#b8c7b8'), box(-.072, -.071, -.79, .144, .094, .24, '#5a7b7b'), box(-.053, -.039, .014, .106, .11, .25, '#657774'), box(-.034, -.18, -.027, .068, .132, .089, '#4c5551')] }),
+});
+export const legacyShotgunModel = id => typeof id === 'string' && Object.hasOwn(LEGACY_SHOTGUN_MODELS, id) ? LEGACY_SHOTGUN_MODELS[id] : null;

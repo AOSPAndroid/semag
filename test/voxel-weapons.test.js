@@ -21,7 +21,7 @@ test('loadout order remains stable, with four distinct finite roles after the ex
   assert.equal(WEAPONS.crossbow.magazine, 1);
 });
 
-test('old damage matches exact SMG and shotgun falloff, rounding and head contacts', () => {
+test('original SMG and rebalanced shotgun retain exact falloff, rounding and head contacts', () => {
   for (const id of WEAPON_IDS.slice(0, 6)) for (const distance of [0, 8, 10, 20, 24, 35, 70, 100]) for (const kind of ['body', 'head']) {
     const weapon = WEAPONS[id];
     const falloff = id === 'smg' ? Math.max(.65, Math.min(1, 1 - Math.max(0, distance - 20) / 70)) : id === 'shotgun' ? Math.max(.25, Math.min(1, 1 - Math.max(0, distance - 8) / 24)) : 1;
@@ -29,8 +29,8 @@ test('old damage matches exact SMG and shotgun falloff, rounding and head contac
   }
   assert.equal(weaponDamage('smg', 'body', 20), 20);
   assert.equal(weaponDamage('smg', 'body', 100), 13);
-  assert.equal(weaponDamage('shotgun', 'body', 8), 12);
-  assert.equal(weaponDamage('shotgun', 'body', 100), 3);
+  assert.equal(weaponDamage('shotgun', 'body', 8), 28);
+  assert.equal(weaponDamage('shotgun', 'body', 100), 7);
   assert.ok(Object.isFrozen(WEAPONS.smg.falloff));
 });
 

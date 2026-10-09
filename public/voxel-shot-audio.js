@@ -4,28 +4,28 @@ export const VOXEL_SHOT_AUDIO = Object.freeze(Object.fromEntries(Object.entries(
   smg: { duration: .19, crack: .58, crackDecay: .0045, body: .19, frequency: 145, bodyDecay: .020, report: .20, reportDecay: .032, brightness: 3600, mechanism: .024, click: .050 },
   marksman: { duration: .40, crack: .75, crackDecay: .0080, body: .34, frequency: 78, bodyDecay: .048, report: .29, reportDecay: .070, brightness: 2100, mechanism: .063, click: .078 },
   pistol: { duration: .25, crack: .66, crackDecay: .0048, body: .23, frequency: 132, bodyDecay: .026, report: .22, reportDecay: .043, brightness: 3300, mechanism: .034, click: .082 },
-  shotgun: { duration: .45, crack: .77, crackDecay: .0120, body: .40, frequency: 64, bodyDecay: .059, report: .35, reportDecay: .082, brightness: 1600, mechanism: .085, click: .074 },
+  shotgun: { shotgun: true, duration: .58, crack: .84, crackDecay: .0065, body: .49, frequency: 62, bodyDecay: .067, report: .31, reportDecay: .063, brightness: 2450, mechanism: .155, click: .12, rackEnd: .245, lock: .485, lockLevel: .105, harmonic: .18 },
   burst: { duration: .26, crack: .64, crackDecay: .0057, body: .25, frequency: 116, bodyDecay: .031, report: .24, reportDecay: .046, brightness: 2800, mechanism: .035, click: .060 },
   sniper: { duration: .58, crack: .81, crackDecay: .0100, body: .43, frequency: 52, bodyDecay: .078, report: .36, reportDecay: .105, brightness: 1850, mechanism: .105, click: .075 },
   lmg: { duration: .34, crack: .73, crackDecay: .0080, body: .32, frequency: 85, bodyDecay: .043, report: .31, reportDecay: .059, brightness: 2250, mechanism: .049, click: .085 },
   crossbow: { duration: .30, string: true, crack: .13, crackDecay: .0025, body: .14, frequency: 186, bodyDecay: .041, report: .075, reportDecay: .037, brightness: 1400, mechanism: .021, click: .035 },
   revolver: { duration: .36, crack: .75, crackDecay: .0068, body: .33, frequency: 92, bodyDecay: .040, report: .28, reportDecay: .062, brightness: 2750, mechanism: .057, click: .095 },
   pdw: { duration: .16, crack: .24, crackDecay: .0027, body: .11, frequency: 176, bodyDecay: .016, report: .09, reportDecay: .024, brightness: 1700, mechanism: .021, click: .062 },
-  autoshotgun: { duration: .38, crack: .72, crackDecay: .0100, body: .35, frequency: 73, bodyDecay: .046, report: .30, reportDecay: .066, brightness: 1800, mechanism: .060, click: .090 },
+  autoshotgun: { shotgun: true, duration: .32, crack: .80, crackDecay: .0052, body: .42, frequency: 79, bodyDecay: .046, report: .27, reportDecay: .052, brightness: 2820, mechanism: .039, click: .13, lock: .077, lockLevel: .075, harmonic: .14 },
   battlerifle: { duration: .37, crack: .76, crackDecay: .0087, body: .35, frequency: 82, bodyDecay: .046, report: .30, reportDecay: .065, brightness: 2300, mechanism: .052, click: .080 },
   dualpistols: { duration: .23, crack: .65, crackDecay: .0042, body: .215, frequency: 139, bodyDecay: .023, report: .205, reportDecay: .038, brightness: 3500, mechanism: .029, click: .077 },
   dualsmg: { duration: .17, crack: .57, crackDecay: .0038, body: .175, frequency: 157, bodyDecay: .018, report: .18, reportDecay: .028, brightness: 3800, mechanism: .020, click: .053 },
-  slugshotgun: { duration: .49, crack: .79, crackDecay: .0114, body: .42, frequency: 58, bodyDecay: .066, report: .34, reportDecay: .088, brightness: 1720, mechanism: .091, click: .089 },
+  slugshotgun: { shotgun: true, duration: .59, crack: .87, crackDecay: .0072, body: .51, frequency: 53, bodyDecay: .075, report: .29, reportDecay: .070, brightness: 2660, mechanism: .167, click: .115, rackEnd: .245, lock: .490, lockLevel: .12, harmonic: .21 },
   classic: { fadeSeconds: .04, duration: 0.25, crack: 0.66, crackDecay: 0.0048, body: 0.23, frequency: 132, bodyDecay: 0.026, report: 0.22, reportDecay: 0.043, brightness: 3300, mechanism: 0.034, click: 0.082 },
-  shorty: { fadeSeconds: .04, duration: 0.38, crack: 0.77, crackDecay: 0.012, body: 0.32, frequency: 66.1, bodyDecay: 0.059, report: 0.35, reportDecay: 0.082, brightness: 1611, mechanism: 0.0856, click: 0.074 },
+  shorty: { shotgun: true, fadeSeconds: .018, duration: .30, crack: .91, crackDecay: .0043, body: .39, frequency: 96, bodyDecay: .039, report: .28, reportDecay: .048, brightness: 3350, mechanism: .025, click: .071, harmonic: .23 },
   frenzy: { fadeSeconds: .04, duration: 0.18, crack: 0.58, crackDecay: 0.0045, body: 0.17, frequency: 149.2, bodyDecay: 0.02, report: 0.2, reportDecay: 0.032, brightness: 3622, mechanism: 0.0252, click: 0.05 },
   ghost: { fadeSeconds: .04, duration: 0.19, crack: 0.25, crackDecay: 0.0029, body: 0.13, frequency: 174.3, bodyDecay: 0.021, report: 0.1, reportDecay: 0.028, brightness: 1733, mechanism: 0.0278, click: 0.067 },
   sheriff: { fadeSeconds: .04, duration: 0.36, crack: 0.66, crackDecay: 0.0048, body: 0.34, frequency: 92, bodyDecay: 0.04, report: 0.22, reportDecay: 0.043, brightness: 3344, mechanism: 0.057, click: 0.082 },
   bandit: { fadeSeconds: .04, duration: 0.25, crack: 0.66, crackDecay: 0.0048, body: 0.29, frequency: 118, bodyDecay: 0.026, report: 0.22, reportDecay: 0.043, brightness: 3355, mechanism: 0.037, click: 0.082 },
   stinger: { fadeSeconds: .04, duration: 0.19, crack: 0.58, crackDecay: 0.0045, body: 0.19, frequency: 157.6, bodyDecay: 0.02, report: 0.2, reportDecay: 0.032, brightness: 3666, mechanism: 0.0276, click: 0.05 },
   spectre: { fadeSeconds: .04, duration: 0.19, crack: 0.25, crackDecay: 0.0029, body: 0.13, frequency: 182.7, bodyDecay: 0.021, report: 0.1, reportDecay: 0.028, brightness: 1777, mechanism: 0.0302, click: 0.067 },
-  bucky: { fadeSeconds: .04, duration: 0.45, crack: 0.77, crackDecay: 0.012, body: 0.4, frequency: 80.8, bodyDecay: 0.059, report: 0.35, reportDecay: 0.082, brightness: 1688, mechanism: 0.0898, click: 0.074 },
-  judge: { fadeSeconds: .04, duration: 0.36, crack: 0.77, crackDecay: 0.012, body: 0.33, frequency: 82.9, bodyDecay: 0.059, report: 0.35, reportDecay: 0.082, brightness: 1699, mechanism: 0.0904, click: 0.074 },
+  bucky: { shotgun: true, fadeSeconds: .018, duration: .57, crack: .86, crackDecay: .0061, body: .50, frequency: 69, bodyDecay: .070, report: .33, reportDecay: .066, brightness: 2290, mechanism: .145, click: .132, rackEnd: .245, lock: .480, lockLevel: .115, harmonic: .16 },
+  judge: { shotgun: true, fadeSeconds: .018, duration: .29, crack: .83, crackDecay: .0049, body: .43, frequency: 86, bodyDecay: .043, report: .29, reportDecay: .047, brightness: 2980, mechanism: .031, click: .146, lock: .074, lockLevel: .090, harmonic: .19 },
   bulldog: { fadeSeconds: .04, duration: 0.3, crack: 0.7, crackDecay: 0.0065, body: 0.27, frequency: 126, bodyDecay: 0.035, report: 0.27, reportDecay: 0.05, brightness: 2710, mechanism: 0.046, click: 0.065 },
   guardian: { fadeSeconds: .04, duration: 0.38, crack: 0.7, crackDecay: 0.0065, body: 0.35, frequency: 82, bodyDecay: 0.035, report: 0.27, reportDecay: 0.05, brightness: 2721, mechanism: 0.0466, click: 0.065 },
   phantom: { fadeSeconds: .04, duration: 0.25, crack: 0.25, crackDecay: 0.0029, body: 0.21, frequency: 123, bodyDecay: 0.021, report: 0.1, reportDecay: 0.028, brightness: 1832, mechanism: 0.0332, click: 0.067 },
@@ -58,12 +58,23 @@ export function createVoxelShotSamples(weaponId, sampleRate = 48000) {
     phase += 2 * Math.PI * profile.frequency * (1 + (profile.string ? 0 : .62 * Math.exp(-time / .012))) / sampleRate;
     const body = profile.string
       ? (Math.sin(phase) + .30 * Math.sin(phase * 2.01) + .13 * Math.sin(phase * 3.97)) * profile.body * bodyEnvelope
-      : (Math.sin(phase) * .72 + bass * 1.8) * profile.body * bodyEnvelope;
+      : (Math.sin(phase) * .72 + bass * 1.8 + (profile.shotgun ? Math.sin(phase * 1.997) * profile.harmonic : 0)) * profile.body * bodyEnvelope;
     const report = (low - bass + bass * .35) * profile.report * Math.exp(-time / profile.reportDecay);
     const actionTime = time - profile.mechanism;
-    const mechanism = actionTime >= 0
+    let mechanism = actionTime >= 0
       ? ((white - low) * .8 + Math.sin(actionTime * 2 * Math.PI * (profile.string ? 680 : 1730)) * .2) * profile.click * Math.exp(-actionTime / .008)
       : 0;
+    if (profile.shotgun) {
+      // The rack and closing clack belong to this one shell's cached buffer.
+      // Pump actions match the accepted-shot fore-end stroke; a break-action
+      // Shorty has no invented rack and automatics only have their short bolt.
+      if (profile.rackEnd && time >= profile.mechanism && time < profile.rackEnd) {
+        const progress = (time - profile.mechanism) / (profile.rackEnd - profile.mechanism);
+        mechanism += (low - bass) * Math.sin(Math.PI * progress) ** 2 * profile.click * .56;
+      }
+      const lockTime = time - (profile.lock ?? Infinity);
+      if (lockTime >= 0) mechanism += ((white - low) * .62 + Math.sin(lockTime * Math.PI * 2 * 910) * .38) * profile.lockLevel * Math.exp(-lockTime / .010);
+    }
     // A tiny fade at the end prevents a discontinuity, even at unusual sample rates.
     const fade = Math.min(1, (length - index - 1) / (sampleRate * (profile.fadeSeconds || .006)));
     const value = (crack + body + report + mechanism) * fade;

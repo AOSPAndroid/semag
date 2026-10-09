@@ -119,13 +119,14 @@ test('automatic paired SMGs alternate accepted hands at exact cadence and share 
 });
 
 test('slug shotgun emits one contact per shell, preserves press cadence, rewards headshots and falls off', () => {
-  for (const [pitch, kind, damage] of [[0, 'head', 131], [-.08, 'body', 82]]) {
+  for (const [pitch, kind, damage] of [[0, 'head', 216], [-.08, 'body', 120]]) {
     const state = encounter({ weapon: 'slugshotgun', distance: 8 });
     ticks(state, 110, { 0: { fire: true, pitch } });
     assert.equal(shots(state).length, 1); assert.equal(shots(state)[0].pelletCount, 1); assert.equal(shots(state)[0].hitKind, kind);
-    assert.equal(state.players[1].hp, 200 - damage); assert.equal(state.players[0].ammo, 4);
+    assert.equal(state.players[1].hp, Math.max(0, 200 - damage)); assert.equal(state.players[0].ammo, 4);
   }
   assert.ok(weaponDamage('slugshotgun', 'body', 60) < weaponDamage('slugshotgun', 'body', 8));
+  assert.equal(weaponDamage('slugshotgun', 'head', 8), 216, 'a precise close headshot can defeat a full-health player');
 });
 
 test('real cover blocks both paired guns and slug damage without consuming a second round', () => {

@@ -1,6 +1,6 @@
 import { MAPS, ADS, HEAL, WORLD } from './voxel-engine.js';
 import { WEAPONS, weaponAimFovRatio } from './voxel-weapons.js';
-import { valorantModel } from './voxel-valorant-models.js';
+import { valorantModel, legacyShotgunModel } from './voxel-valorant-models.js';
 import { weaponReloadDuration } from './voxel-fire-modes.js';
 import { grenadeCapacity } from './voxel-ordnance.js';
 import { MELEE_WEAPONS, meleeProfile, meleeWeaponId, meleeSlashOrigin, meleeSlashGeometry, meleeSlashPhase, parryPhase } from './voxel-melee.js';
@@ -2001,10 +2001,11 @@ function hingedWeaponPart(mesh, item, pose, limit, hinge, angle) {
   }
 }
 
-const weaponLength = weapon => valorantModel(weapon)?.length || ({ pistol: .42, smg: .68, marksman: 1.04, shotgun: 1.02, burst: .87, sniper: 1.26, lmg: 1.08, crossbow: .83, revolver: .51, pdw: .80, autoshotgun: .93, battlerifle: 1.14, dualpistols: .46, dualsmg: .61, slugshotgun: 1.12 })[weapon] || .92;
+const weaponVisualModel = weapon => valorantModel(weapon) || legacyShotgunModel(weapon);
+const weaponLength = weapon => weaponVisualModel(weapon)?.length || ({ pistol: .42, smg: .68, marksman: 1.04, shotgun: 1.02, burst: .87, sniper: 1.26, lmg: 1.08, crossbow: .83, revolver: .51, pdw: .80, autoshotgun: .93, battlerifle: 1.14, dualpistols: .46, dualsmg: .61, slugshotgun: 1.12 })[weapon] || .92;
 const reloadMagazineDrop = (weapon, progress) => Math.max(...[0, 1].map(hand => weaponReloadPose(weapon, progress, { active: progress > 0, hand }).magazineDrop));
 const weaponCoverPadding = (weapon, scale = 1, reloadProgress = 0) => {
-  const authored = valorantModel(weapon);
+  const authored = weaponVisualModel(weapon);
   if (authored) {
     const open = weaponReloadPose(weapon, reloadProgress, { active: reloadProgress > 0 }).breakOpen || 0;
     return (authored.coverPadding + reloadMagazineDrop(weapon, reloadProgress) + open * Math.sin(.42) * (authored.length + finite(authored.breakHingeZ))) * scale;
@@ -2068,22 +2069,27 @@ function weaponParts(mesh, weapon, pose, options = {}) {
     mesh.quad(...points, normal, tint);
     mesh.quad(...[...points].reverse(), normal.map(value => -value), tint);
   };
-  const ironSights = (front, rear = -.15, hinge = null) => {
+  const ironSights = (front, rear = -.15, hinge = null, frontBase = .109) => {
+    // Authored shotgun stalks reach their actual rib/barrel surface. The same
+    // existing box keeps its exact .152m tip and open sight line; no floating
+    // post, additional pedestal geometry or changed muzzle/cover budget.
+    const frontHeight = frontBase === .109 ? .043 : .152 - frontBase;
+    const frontMetal = frontBase === .109 ? '#c3d2bc' : '#53686a';
     part(-.036, .112, rear, .017, .040, .035, '#253237');
     part(.019, .112, rear, .017, .040, .035, '#253237');
     if (hinge) {
-      hingedWeaponPart(mesh, { x: -.008, y: .109, z: front, w: .016, h: .043, d: .025, color: '#c3d2bc' }, pose, limit, hinge.z, hinge.angle);
+      hingedWeaponPart(mesh, { x: -.008, y: frontBase, z: front, w: .016, h: frontHeight, d: .025, color: frontMetal }, pose, limit, hinge.z, hinge.angle);
       hingedWeaponPart(mesh, { x: -.004, y: .142, z: front - .002, w: .008, h: .010, d: .005, color: '#c8e6b4' }, pose, limit, hinge.z, hinge.angle);
     } else {
-      part(-.008, .109, front, .016, .043, .025, '#c3d2bc');
+      part(-.008, frontBase, front, .016, frontHeight, .025, frontMetal);
       part(-.004, .142, front - .002, .008, .010, .005, '#c8e6b4');
     }
     part(-.031, .137, rear + .036, .010, .010, .004, '#bdd4ae');
     part(.021, .137, rear + .036, .010, .010, .004, '#bdd4ae');
   };
-  const authored = valorantModel(weapon);
+  const authored = weaponVisualModel(weapon);
   if (authored) {
-    const breakAngle = -.42 * finite(reloadMotion.breakOpen);
+    const breakAngle = -.42 * finite(reloadMotion.breakOpen), pumpTravel = finite(authored.pumpTravel, .16);
     // All new weapons share the proven cut plane and pooled batches, but their
     // authored silhouettes, magazines, scopes and barrel ports are independent.
     for (const item of authored.parts) {
@@ -2091,24 +2097,34 @@ function weaponParts(mesh, weapon, pose, options = {}) {
       if (item.motion === 'magazine' && !reloadMotion.magazineVisible) continue;
       const x = item.x - (item.motion === 'cylinder' ? reloadMotion.cylinder * .15 : 0);
       const y = item.y - (item.motion === 'magazine' ? magazineDrop : 0) + (item.motion === 'lid' ? reloadMotion.lid * .13 : 0);
-      const z = item.z + (item.motion === 'bolt' ? mechanicalBolt * .09 : item.motion === 'pump' ? mechanicalPump * .16 : item.motion === 'magazine' ? magazineDrop * .12 : item.motion === 'lid' ? reloadMotion.lid * .04 : 0);
+      const z = item.z + (item.motion === 'bolt' ? mechanicalBolt * .09 : item.motion === 'pump' ? mechanicalPump * pumpTravel : item.motion === 'magazine' ? magazineDrop * .12 : item.motion === 'lid' ? reloadMotion.lid * .04 : 0);
       part(x, y, z, item.w, item.h, item.d, item.color);
     }
     for (const item of authored.details) {
+      if (item.motion === 'magazine' && !reloadMotion.magazineVisible) continue;
       const args = item.args, shiftX = item.motion === 'cylinder' ? -reloadMotion.cylinder * .15 : 0;
-      const shiftZ = item.motion === 'pump' ? mechanicalPump * .16 : 0;
-      if (item.kind === 'side') side(args[0] + shiftX, args[1], args[2] + shiftZ, args[3], args[4], args[5]);
-      else if (item.kind === 'top') top(args[0] + shiftX, args[1], args[2] + shiftZ, args[3], args[4], args[5]);
-      else if (item.kind === 'front') {
-        const [x, y, z, w, h, color] = args;
-        const points = [[x + shiftX, y, z], [x + shiftX, y + h, z], [x + w + shiftX, y + h, z], [x + w + shiftX, y, z]];
-        if (item.motion === 'break' && breakAngle) {
-          const transformed = points.map(point => { const p = rotate([point[0], point[1], point[2] - authored.breakHingeZ], 0, breakAngle); p[2] += authored.breakHingeZ; return p; });
-          detail(transformed, rotate([0, 0, -1], 0, breakAngle), color);
-        } else detail(points, [0, 0, -1], color);
+      const shiftY = item.motion === 'magazine' ? -magazineDrop : 0;
+      const shiftZ = item.motion === 'pump' ? mechanicalPump * pumpTravel : item.motion === 'magazine' ? magazineDrop * .12 : 0;
+      const [x, y, z, a, b, color] = args;
+      let points, normal;
+      if (item.kind === 'side') {
+        points = [[x, y, z], [x, y + a, z], [x, y + a, z + b], [x, y, z + b]];
+        normal = [x < 0 ? -1 : 1, 0, 0];
+      } else if (item.kind === 'top') {
+        points = [[x, y, z], [x, y, z + b], [x + a, y, z + b], [x + a, y, z]];
+        normal = [0, 1, 0];
+      } else if (item.kind === 'front') {
+        points = [[x, y, z], [x, y + b, z], [x + a, y + b, z], [x + a, y, z]];
+        normal = [0, 0, -1];
+      } else continue;
+      points = points.map(point => [point[0] + shiftX, point[1] + shiftY, point[2] + shiftZ]);
+      if (item.motion === 'break' && breakAngle) {
+        points = points.map(point => { const p = rotate([point[0], point[1], point[2] - authored.breakHingeZ], 0, breakAngle); p[2] += authored.breakHingeZ; return p; });
+        normal = rotate(normal, 0, breakAngle);
       }
+      detail(points, normal, color);
     }
-    if (!authored.scoped) ironSights(-authored.length + .042, -.073, breakAngle ? { z: authored.breakHingeZ, angle: breakAngle } : null);
+    if (!authored.scoped) ironSights(-authored.length + .042, -.073, breakAngle ? { z: authored.breakHingeZ, angle: breakAngle } : null, finite(authored.frontSightBase, .109));
     if (authored.breakHingeZ !== null && reloadMotion.shellVisible) {
       for (let shell = 0; shell < 2; shell++) {
         const y = (shell === 0 ? .035 : -.034) - (1 - reloadMotion.shell) * .13;
@@ -2116,6 +2132,13 @@ function weaponParts(mesh, weapon, pose, options = {}) {
         part(-.018, y - .017, z, .036, .034, depth, '#a88a5f');
         part(-.019, y - .018, z + depth - .010, .038, .036, .012, '#d3ba7e');
       }
+    }
+    if (authored.family === 'shotgun' && authored.breakHingeZ === null && reloadMotion.shellVisible) {
+      // Tube-fed guns insert one visible hull at the accepted loading hand;
+      // their brass rim travels with it rather than floating on the receiver.
+      const shell = reloadMotion.shell;
+      part(-.09, -.20 + shell * .067, -.25 + shell * .04, .033, .073, .033, '#a76f4e');
+      part(-.091, -.132 + shell * .067, -.25 + shell * .04, .035, .014, .035, '#c5b17b');
     }
     if (weapon === 'sheriff') {
       for (let chamber = 0; chamber < 6; chamber++) {
@@ -2151,37 +2174,6 @@ function weaponParts(mesh, weapon, pose, options = {}) {
     ironSights(-length + .053, -.072);
     return length;
   }
-  if (weapon === 'slugshotgun') {
-    // A heavy long slug barrel, copper receiver, skeletal shoulder stock and
-    // pump running under the barrel distinguish it from the pellet shotgun.
-    part(-.060, -.040, -.43, .120, .150, .45, '#7a624b');
-    part(-.051, .110, -.43, .102, .026, .42, '#c1b99d');
-    part(-.029, .003, -length - .025, .058, .067, .74, '#aebbb5');
-    part(-.025, -.061, -1.02, .050, .043, .62, '#4d6567');
-    part(-.043, -.008, -length - .026, .086, .078, .06, '#344c51');
-    part(-.072, -.071, -.79 + mechanicalPump * .16, .144, .094, .24, '#536d6e');
-    for (let rib = 0; rib < 4; rib++) {
-      side(-.073, -.052, -.76 + rib * .047 + mechanicalPump * .16, .045, .013, '#afae91');
-      side(.073, -.052, -.76 + rib * .047 + mechanicalPump * .16, .045, .013, '#afae91');
-    }
-    part(-.035, -.175, -.025, .070, .134, .090, '#3c5155');
-    part(-.064, .035, .015, .128, .041, .24, '#637b78');
-    part(-.053, -.032, .015, .106, .030, .24, '#637b78');
-    part(-.065, -.051, .220, .130, .139, .043, '#273f42');
-    part(-.058, -.110, -.188, .015, .057, .116, trim);
-    part(.043, -.110, -.188, .015, .057, .116, trim);
-    part(-.058, -.122, -.188, .116, .017, .116, trim);
-    side(.061, .011, -.336, .058, .114, '#263d43');
-    part(.057, .028, -.255 + mechanicalBolt * .076, .042, .025, .050, '#d2d0b6');
-    for (let shell = 0; shell < 3; shell++) side(-.061, -.018, -.337 + shell * .065, .060, .032, '#c7a46a');
-    if (reloadMotion.shellVisible) {
-      part(-.085, -.20 + reloadMotion.shell * .07, -.25, .033, .073, .033, '#bb8258');
-      part(-.085, -.132 + reloadMotion.shell * .07, -.25, .033, .015, .033, '#d5bc7e');
-    }
-    bore(.041, .050, -length - .027, .006);
-    ironSights(-1.03, -.135);
-    return length;
-  }
   if (weapon === 'revolver') {
     // An exposed six chamber cylinder, brushed steel frame and walnut grip
     // give this hand cannon a silhouette distinct from the magazine pistol.
@@ -2212,10 +2204,10 @@ function weaponParts(mesh, weapon, pose, options = {}) {
     ironSights(-.48, -.06);
     return length;
   }
-  if (['pdw', 'autoshotgun', 'battlerifle'].includes(weapon)) {
-    const compact = weapon === 'pdw', drum = weapon === 'autoshotgun';
-    const receiver = compact ? '#477d88' : drum ? '#695847' : '#4f627e';
-    const lengthBody = compact ? .36 : drum ? .43 : .47;
+  if (['pdw', 'battlerifle'].includes(weapon)) {
+    const compact = weapon === 'pdw';
+    const receiver = compact ? '#477d88' : '#4f627e';
+    const lengthBody = compact ? .36 : .47;
     part(-.069, -.055, -lengthBody, .138, .145, lengthBody + .02, receiver);
     part(-.048, .080, -.34, .096, .032, .29, '#293f49');
     part(-.030, -.177, -.026, .060, .126, .086, '#334c55');
@@ -2223,7 +2215,7 @@ function weaponParts(mesh, weapon, pose, options = {}) {
     part(.023, -.126, -.117, .012, .067, .107, trim);
     part(-.035, -.129, -.117, .070, .013, .107, trim);
     const stockDepth = compact ? .14 : .25;
-    part(-.058, -.047, -.010, .116, .113, stockDepth, compact ? '#689397' : drum ? '#92745a' : '#748297');
+    part(-.058, -.047, -.010, .116, .113, stockDepth, compact ? '#689397' : '#748297');
     part(-.065, -.060, stockDepth - .035, .130, .138, .040, trim);
     side(-.059, -.036, .021, .072, stockDepth - .085, stock);
     side(.059, -.036, .021, .072, stockDepth - .085, stock);
@@ -2241,24 +2233,6 @@ function weaponParts(mesh, weapon, pose, options = {}) {
       side(.070, -.013, -.23, .060, .105, '#183a43');
       part(.066, .014, -.18 + mechanicalBolt * .04, .035, .022, .038, '#abc1bf');
       bore(.050, .045, -length - .036, .010);
-    } else if (drum) {
-      // The automatic shotgun uses a broad detachable drum rather than a
-      // pump. Reload drops and reseats that complete drum, not loose shells.
-      part(-.067, -.038, -.705, .134, .106, .32, '#796c56');
-      part(-.030, -.011, -length - .034, .060, .063, .26, '#93a09d');
-      part(-.047, -.019, -length - .035, .094, .079, .065, '#475654');
-      magazine(-.098, -.290 - magazineDrop, -.26 + magazineDrop * .11, .196, .219, .193, '#394f51');
-      magazine(-.126, -.250 - magazineDrop, -.243 + magazineDrop * .11, .252, .135, .159, '#4b6463');
-      if (reloadMotion.magazineVisible) {
-        side(-.127, -.232 - magazineDrop, -.231 + magazineDrop * .11, .096, .132, '#92a89a');
-        side(.127, -.232 - magazineDrop, -.231 + magazineDrop * .11, .096, .132, '#92a89a');
-      }
-      part(-.037, -.132, -.55, .074, .105, .082, '#374c4e');
-      for (let vent = 0; vent < 4; vent++) top(-.049, .070, -.65 + vent * .057, .098, .015, '#c1b29b');
-      side(.070, -.013, -.33, .053, .135, '#273e42');
-      part(.065, .019, -.245 + mechanicalBolt * .08, .041, .024, .061, metal);
-      part(-.079, -.027, -.095, .018, .068, .085, '#bb996c');
-      bore(.056, .050, -length - .036, .002);
     } else {
       // A long ventilated handguard, substantial box magazine and broad
       // shoulder stock distinguish the heavy battle rifle from the carbine.
@@ -2369,27 +2343,6 @@ function weaponParts(mesh, weapon, pose, options = {}) {
       top(-.052, .082, -.407, .104, .22, '#936d5d');
       side(-.081, -.023, -.49, .061, .116, '#ad846b');
       side(.081, -.023, -.49, .061, .116, '#ad846b');
-    }
-    if (shotgun) {
-      // A pump, tubular magazine and shell saddle make the close-range gun
-      // readable without adding another material or rendering pass.
-      const pump = mechanicalPump * .12;
-      part(-.040, -.088, -.91, .08, .063, .43, '#303a3c');
-      part(-.073, -.087, -.72 + pump, .146, .105, .26, '#996f48');
-      for (let i = 0; i < 5; i++) part(-.075, -.084, -.69 + pump + i * .04, .15, .098, .012, '#523f32');
-      part(-.087, -.013, -.34, .020, .055, .19, '#473b35');
-      for (let i = 0; i < 4; i++) {
-        part(-.103, -.026, -.33 + i * .045, .030, .068, .032, '#a65c45');
-        part(-.104, .033, -.33 + i * .045, .032, .014, .033, '#d1b36b');
-      }
-      if (reloadMotion.shellVisible) {
-        const shell = reloadMotion.shell;
-        part(-.10 - shell * .025, -.11 - (1 - shell) * .06, -.25, .033, .075, .033, '#b36f47');
-        part(-.10 - shell * .025, -.039 - (1 - shell) * .06, -.25, .033, .015, .033, '#d5b871');
-      }
-      part(-.05, -.034, -1.055, .10, .079, .047, '#657067');
-      side(-.061, -.035, .02, .052, .12, '#ba9468');
-      for (let i = 0; i < 3; i++) side(.068, -.018, -.30 + i * .033, .048, .016, '#ba9773');
     }
     if (lmg) {
       part(-.090, -.068, -.51, .18, .17, .37, '#536250');
@@ -2734,7 +2687,7 @@ function grenadeParts(mesh, pose, radius, fuseTicks, time, intact = false, limit
 }
 
 function lootGun(mesh, weapon, pose) {
-  const authored = valorantModel(weapon);
+  const authored = weaponVisualModel(weapon);
   if (authored) {
     for (const item of authored.lootParts) mesh.box(item.x, item.y, item.z, item.w, item.h, item.d, item.color, pose);
     return;
@@ -2764,16 +2717,7 @@ function lootGun(mesh, weapon, pose) {
     mesh.quad(...points.map(transform), rotate(normal, pose.yaw, pose.pitch), rgba(color));
   };
   const top = (x, y, z, w, d, color) => face([[x, y, z], [x, y, z + d], [x + w, y, z + d], [x + w, y, z]], [0, 1, 0], color);
-  if (weapon === 'slugshotgun') {
-    part(-.062, -.045, -.42, .124, .150, .44, '#897051');
-    part(-.031, .004, -1.145, .062, .064, .74, '#b9c4b9');
-    part(-.069, -.069, -.78, .138, .081, .22, '#4d7174');
-    part(-.057, -.032, .018, .114, .080, .235, '#496269');
-    top(-.041, .106, -.41, .082, .24, '#ccb88b');
-    face([[-.017, .016, -1.146], [-.017, .054, -1.146], [.017, .054, -1.146], [.017, .016, -1.146]], [0, 0, -1], '#18313b');
-    return;
-  }
-  if (['revolver', 'pdw', 'autoshotgun', 'battlerifle'].includes(weapon)) {
+  if (['revolver', 'pdw', 'battlerifle'].includes(weapon)) {
     const length = weaponLength(weapon);
     if (weapon === 'revolver') {
       part(-.039, -.030, -.30, .078, .127, .28, '#9eaeb1');
@@ -2791,14 +2735,6 @@ function lootGun(mesh, weapon, pose) {
       part(-.009, .108, -.50, .018, .044, .041, '#a5c2b8');
       top(-.052, .098, -.30, .104, .10, '#b3cecb');
       face([[-.024, .010, -length - .036], [-.024, .056, -length - .036], [.024, .056, -length - .036], [.024, .010, -length - .036]], [0, 0, -1], '#16333d');
-    } else if (weapon === 'autoshotgun') {
-      part(-.069, -.042, -.44, .138, .140, .46, '#79654d');
-      part(-.036, -.015, -length - .035, .072, .068, .51, '#a5b4ac');
-      part(-.122, -.283, -.24, .244, .223, .184, '#54716b');
-      part(-.059, -.047, .02, .118, .114, .232, '#9c805c');
-      part(-.061, -.030, -.69, .122, .094, .29, '#4c5f57');
-      top(-.052, .071, -.64, .104, .14, '#cab99a');
-      face([[-.027, .001, -length - .036], [-.027, .050, -length - .036], [.027, .050, -length - .036], [.027, .001, -length - .036]], [0, 0, -1], '#273933');
     } else {
       part(-.062, -.042, -.77, .124, .140, .79, '#526f8b');
       part(-.029, -.010, -length - .035, .058, .060, .40, '#b3c3c4');
@@ -2841,10 +2777,7 @@ function lootGun(mesh, weapon, pose) {
   part(-.026, -.006, -length - .023, .052, .054, Math.max(.06, length - .54), metal);
   if (weapon !== 'marksman') part(-.034, -.19, -.035, .068, .13, .09, trim);
   part(-.06, -.06, -.05, .12, .12, .25, weapon === 'shotgun' ? '#b48a59' : weapon === 'sniper' ? '#8a9871' : '#526650');
-  if (weapon === 'shotgun') {
-    part(-.071, -.081, -.72, .142, .09, .25, '#9a7046');
-    top(-.067, .011, -.695, .134, .022, '#dbb477');
-  } else if (weapon === 'lmg') {
+  if (weapon === 'lmg') {
     part(-.095, -.24, -.28, .19, .21, .24, '#5c6a45');
     top(-.20, .075, -.29, .15, .059, '#cab976');
   } else {
@@ -4073,7 +4006,7 @@ export class VoxelRenderer {
     const limit = coverLimit(pose, weaponLength(player.weapon) + .20, weaponCoverPadding(player.weapon, pose.scale, visualReloadProgress));
     const length = weaponParts(mesh, player.weapon, pose, { stock: team, limit, reloadProgress, reloadMotion: reloadPose, bolt: cyclePose.bolt, pump, aim, loaded: player.ammo > 0, spin: finite(player.spinTicks) / (WEAPONS[player.weapon]?.spinupTicks || 1), cycle: 1 - finite(player.shotCooldown) / (WEAPONS[player.weapon]?.cooldown || 1) });
     const support = reloadPose.support;
-    glove(pose, support[0], support[1], support[2] + (reloadActive ? reloadPose.pump : cyclePose.pump) * .12, 'support', limit);
+    glove(pose, support[0], support[1], support[2] + (reloadActive ? reloadPose.pump : cyclePose.pump) * finite(weaponVisualModel(player.weapon)?.pumpTravel, .16), 'support', limit);
     glove(pose, .004, -.131, .002, 'gun', limit);
     if (throwing > 0) {
       const hand = { x: -.20, y: -.17 - (1 - throwing) * .22, z: -.39 - throwing * .18, yaw: .17, pitch: -.16, scale: .74 };
@@ -4088,7 +4021,7 @@ export class VoxelRenderer {
         const clippedZ = Math.max(z, -limit), depth = z + d - clippedZ;
         if (depth > 0) mesh.box(x, y, clippedZ, w, h, depth, color, pose);
       };
-      const ports = valorantModel(player.weapon)?.muzzlePorts;
+      const ports = weaponVisualModel(player.weapon)?.muzzlePorts;
       const port = ports?.[Math.max(0, Math.floor(finite(this.localShot?.shotIndex, 1)) - 1) % ports.length];
       const muzzleX = port?.x || 0, muzzleY = port ? port.y - .012 : 0;
       flashPart(muzzleX - flash / 2, muzzleY - .015, -length - .070, flash, flash, .05 + flare * .04, glow);

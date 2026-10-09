@@ -531,14 +531,19 @@ test('bomb channels cannot overlap sword startup, grenade release or potion acti
 test('six shotgun volleys preserve every player fire event through a four-tick utility-heavy snapshot interval', () => {
   for (const detonate of [false, true]) {
     const state = fighting({ teamSize: 3 });
-    for (const f of state.players) Object.assign(f, { x: 18 + f.id % 3 * 2, y: 0, z: f.team ? -1 : 1, yaw: f.team ? Math.PI : 0, pitch: Math.atan2(.85 - 1.62, 2), weapon: 'shotgun', ammo: 6 });
+    // This event-retention fixture must survive the stronger 224-HP shell so
+    // all six actors can still execute the following utility commitments.
+    const fixtureHp = 328, shellDamage = game.WEAPONS.shotgun.pellets * game.WEAPONS.shotgun.damage;
+    assert.equal(shellDamage, 224);
+    for (const f of state.players) Object.assign(f, { x: 18 + f.id % 3 * 2, y: 0, z: f.team ? -1 : 1, yaw: f.team ? Math.PI : 0, pitch: Math.atan2(.85 - 1.62, 2), weapon: 'shotgun', ammo: 6, hp: fixtureHp, maxHp: fixtureHp });
     for (const f of state.players) collectUtility(state, f);
     if (detonate) for (const f of state.players) state.grenades.push({ id: f.id + 1, playerId: f.id, team: f.team, x: f.x, y: .12, z: f.z, vx: 0, vy: 0, vz: 0, radius: .12, fuseTicks: 3, bornTick: state.tick - 1, bounces: 0 });
     const startId = state.eventId;
     game.step(state, state.players.map(f => input({ fire: true }, f)));
-    assert.deepEqual(state.players.map(f => f.hp), [104, 104, 104, 104, 104, 104]);
+    assert.deepEqual(state.players.map(f => f.hp), Array(6).fill(fixtureHp - shellDamage));
     assert.equal(state.events.filter(e => e.id > startId && e.type === 'shot').length, 48);
     assert.equal(state.events.filter(e => e.id > startId && e.type === 'damage').length, 48);
+    assert.ok(state.events.filter(e => e.id > startId && e.type === 'damage').every(e => e.damage === 28 && e.hitKind === 'body'), 'all forty-eight real pellets retain their full body damage');
     if (detonate) advance(state, 3);
     else {
       game.step(state, state.players.map(f => input({ heal: true }, f)));
@@ -552,5 +557,33 @@ test('six shotgun volleys preserve every player fire event through a four-tick u
       assert.equal(state.events.filter(e => e.id > startId && e.type === 'grenadeExplosion').length, 6);
       assert.equal(state.events.filter(e => e.id > startId && e.type === 'kill').length, 6);
     } else assert.equal(state.events.filter(e => e.id > startId && e.type === 'healCancel').length, 6);
+  }
+});
+
+test('six full-health players can simultaneously trade pump kills while every pellet, death and carried drop survives the snapshot interval', () => {
+  const state = game.createState({ teamSize: 3 });
+  for (const player of state.players) assert.equal(game.selectLoadout(state, player.id, 'shotgun').ok, true);
+  game.startMatch(state); advance(state, 11 * game.TICK_RATE);
+  assert.equal(state.phase, 'fight');
+  for (const player of state.players) {
+    Object.assign(player, { x: 18 + player.id % 3 * 2, y: 0, z: player.team ? -1 : 1, yaw: player.team ? Math.PI : 0, pitch: Math.atan2(.85 - 1.62, 2) });
+    assert.equal(player.hp, game.PLAYER_HEALTH); assert.equal(player.maxHp, game.PLAYER_HEALTH);
+    collectUtility(state, player);
+  }
+  const startId = state.eventId;
+  game.step(state, state.players.map(player => input({ fire: true }, player)));
+  advance(state, 3);
+  const reports = state.events.filter(event => event.id > startId), damage = reports.filter(event => event.type === 'damage');
+  assert.ok(state.events.length <= game.EVENT_LIMIT);
+  assert.equal(reports.filter(event => event.type === 'shot').length, 48);
+  assert.equal(damage.length, 48);
+  assert.equal(reports.filter(event => event.type === 'kill').length, 6);
+  assert.equal(reports.filter(event => event.type === 'inventoryDrop').length, 24);
+  for (const player of state.players) {
+    assert.equal(player.alive, false); assert.equal(player.hp, 0);
+    assert.equal(player.damageDealt, game.PLAYER_HEALTH); assert.equal(player.kills, 1); assert.equal(player.deaths, 1);
+    assert.equal(reports.filter(event => event.type === 'shot' && event.playerId === player.id).length, 8);
+    assert.equal(reports.filter(event => event.type === 'inventoryDrop' && event.playerId === player.id).length, 4);
+    assert.deepEqual(damage.filter(event => event.targetId === player.id).map(event => event.damage), [...Array(7).fill(28), 4], 'the last real pellet clamps to remaining HP without dropping its damage event');
   }
 });

@@ -7,11 +7,13 @@ const close = (a, b) => assert.ok(Math.abs(a - b) < 1e-9, `${a} != ${b}`);
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const ids = ['classic', 'shorty', 'frenzy', 'ghost', 'sheriff', 'bandit', 'stinger', 'spectre', 'bucky', 'judge', 'bulldog', 'guardian', 'phantom', 'vandal', 'warden', 'marshal', 'outlaw', 'operator', 'ares', 'odin'];
 
-// Fixed independently captured pre-change fingerprints cover every legacy field,
-// including effects/sound and the complete helper result, rather than selected stats.
-test('all 16 existing gun profiles and comparison contracts retain their baseline values', () => {
-  assert.equal(hash(Object.fromEntries(LEGACY_WEAPON_IDS.map(id => [id, WEAPONS[id]]))), 'e1f2187b335f5025eff2bb25fd8f9a4cb907e8aa6ed3774aaf0fffe8d98d8ab2');
-  assert.equal(hash(LEGACY_WEAPON_IDS.map(id => weaponStats(id))), '3beef15dbc59dd3bfb3217de41fcb2f89346f2facdbff90657e799fd0351f2d0');
+// Independently captured from release 863978c. The three original shotguns are
+// intentionally rebalanced in 3.40.0; every other original contract stays fixed.
+test('all 13 other original gun profiles and comparison contracts retain their baseline values', () => {
+  const preserved = LEGACY_WEAPON_IDS.filter(id => !['shotgun', 'autoshotgun', 'slugshotgun'].includes(id));
+  assert.equal(preserved.length, 13);
+  assert.equal(hash(Object.fromEntries(preserved.map(id => [id, WEAPONS[id]]))), 'd3133b95d3c5e0df3a5549a616a84d7db1ae04b2a5696d094e99f6dee7f018b3');
+  assert.equal(hash(preserved.map(id => weaponStats(id))), '4b67dd4e4a3f6eba96968d3a111c1020d9724f84072da473234f180897d13c56');
   assert.deepEqual(WEAPON_IDS.slice(0, 16), LEGACY_WEAPON_IDS);
 });
 
