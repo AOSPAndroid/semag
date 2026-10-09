@@ -9,6 +9,9 @@ import { VoxelRenderer } from './voxel-renderer.js';
 import { createMovementPresenter, combatPresentation, withCombatPresentation, resolvePresentationContacts } from './voxel-presentation.js';
 import { cleanAim, composeInput, controlForKey, aimFraction, aimLookMultiplier, combatReadout, isFormTarget, hasGunshotReport, combatEventPerspective, LOOK_SENSITIVITY } from './voxel-client.js';
 import { incomingDamageFeedback, damageFeedbackPresentation } from './voxel-damage-feedback.js';
+import { createHitFeedback, paintHitFeedback } from './voxel-hit-feedback.js';
+import { MELEE_WEAPONS, MELEE_IDS } from './voxel-melee.js';
+import { meleeLoadoutNote } from './hub/horde-setup.js';
 import { setHidden, setAttribute, setStyle, setDisabled } from './hub/dom.js';
 import { createPractice, startPractice, stepPractice, pausePractice, resumePractice, getPracticeStats, TICK_RATE } from './voxel-practice-engine.js';
 import { tickFraction } from './display-timing.js';
@@ -51,7 +54,9 @@ export function bootPractice() {
   const royale = game === 'voxel-royale', maps = royale ? ROYALE_MAPS : BREACH_MAPS;
   let renderer = null, graphicsError = '', destroyed = false, frameId = null, previousFrame = null, accumulator = 0;
   let state, aim = { yaw: 0, pitch: 0 }, previousPlayers = [], presentationPlayer = null, lastHudAt = -Infinity, lastPhase = '';
-  let urgentHud = '', eventCursor = 0, hitUntil = 0, feedbackUntil = 0, damageFeedback = null, lastDrawAt = 0, fallback = false, modalOpen = false;
+  const hitFeedback = createHitFeedback(), hitMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  const hitElements = { crosshair: $('practice-crosshair'), scope: $('practice-scope'), marker: $('practice-hit') };
+  let urgentHud = '', eventCursor = 0, feedbackUntil = 0, damageFeedback = null, lastDrawAt = 0, fallback = false, modalOpen = false;
   let renderCount = 0, physicsSamples = 0, lastFraction = 0, activeSession = false, lastCountdown = null, returnFocus = null;
   const listeners = [], keys = new Set(), physicalKeys = new Map(), mouse = { fire: false, aim: false }, inputQueue = createPracticeInputQueue();
   const touch = { move: { x: 0, y: 0 }, look: { x: 0, y: 0 }, actions: new Set() }, pointers = new Map(), movement = new Map();
@@ -71,13 +76,15 @@ export function bootPractice() {
   const mapMarkers = new Map(); let playerMarker, stormMarker;
 
   setText('practice-title', royale ? 'Voxel Royale' : 'Voxel Breach'); document.title = `${royale ? 'Voxel Royale' : 'Voxel Breach'} Practice — Semag`;
-  if (royale) { setText('practice-setup-title', 'Find your next opening.'); setText('practice-setup-copy', 'Start with a knife. Scavenge the real maps while bots move, loot and fight for the last safe ground.'); setHidden($('practice-loadout-field'), true); }
+  if (royale) { setText('practice-setup-title', 'Find your next opening.'); setText('practice-setup-copy', 'Start with a knife. Scavenge the real maps while bots move, loot and fight for the last safe ground.'); setHidden($('practice-loadout-field'), true); setHidden($('practice-melee-field'), true); setHidden($('practice-melee-note'), true); }
   try { const target = new URL(params.get('return') || '/', location.origin); if (target.origin === location.origin && /^\/(?:voxel(?:-royale)?(?:\/|\.html|$)|$)/.test(target.pathname)) $('practice-online').href = target.href; } catch {}
   for (const [id, map] of Object.entries(maps)) { const option = document.createElement('option'); option.value = id; option.textContent = map.name; $('practice-map').append(option); }
   $('practice-map').value = Object.hasOwn(maps, params.get('map')) ? params.get('map') : royale ? 'forest' : 'courtyard';
   for (const id of WEAPON_IDS) { const option = document.createElement('option'); option.value = id; option.textContent = WEAPONS[id].name; $('practice-weapon').append(option); }
   $('practice-weapon').value = 'carbine';
-  function config() { return { game, mapId: $('practice-map').value, bots: Number($('practice-count').value), mode: $('practice-mode').value, difficulty: $('practice-difficulty').value, weapon: $('practice-weapon').value }; }
+  for (const id of MELEE_IDS) { const option = document.createElement('option'); option.value = id; option.textContent = MELEE_WEAPONS[id].name; $('practice-melee').append(option); }
+  $('practice-melee').value = !royale && Object.hasOwn(MELEE_WEAPONS, params.get('melee')) ? params.get('melee') : 'knife';
+  function config() { return { game, mapId: $('practice-map').value, bots: Number($('practice-count').value), mode: $('practice-mode').value, difficulty: $('practice-difficulty').value, weapon: $('practice-weapon').value, melee: royale ? 'knife' : $('practice-melee').value }; }
   function hints() {
     const layout = getKeyboardLayout(); app.dataset.keyboardLayout = layout;
     setText('practice-move-keys', displayKey('WASD')); setText('practice-grenade-key', displayKey('Q')); setText('practice-guide-grenade', displayKey('Q'));
@@ -86,6 +93,7 @@ export function bootPractice() {
   }
   function stopFrame() { if (frameId !== null) cancelAnimationFrame(frameId); frameId = null; previousFrame = null; accumulator = 0; }
   function release() {
+    hitFeedback.reset(); paintHitFeedback(hitElements, { visible: false });
     inputQueue.reset();
     keys.clear(); physicalKeys.clear(); mouse.fire = mouse.aim = false; touch.move = { x: 0, y: 0 }; touch.look = { x: 0, y: 0 }; touch.actions.clear();
     for (const [id, value] of pointers) try { if (value.target.hasPointerCapture?.(id)) value.target.releasePointerCapture(id); } catch {}
@@ -99,7 +107,7 @@ export function bootPractice() {
     try { const result = canvas.requestPointerLock(); result?.catch?.(() => { fallback = true; hints(); }); } catch { fallback = true; hints(); }
   }
   function resetView() {
-    release(); stopFrame(); previousPlayers = []; presentationPlayer = null; movement.clear(); eventCursor = 0; hitUntil = feedbackUntil = 0; damageFeedback = null;
+    release(); stopFrame(); previousPlayers = []; presentationPlayer = null; movement.clear(); eventCursor = 0; feedbackUntil = 0; hitFeedback.reset({ clearHistory: true }); damageFeedback = null;
     lastCountdown = null; lastHudAt = -Infinity; lastPhase = ''; renderCount = physicsSamples = 0; lastFraction = 0; audio.resetEvents(); renderer?.resetEffects();
     aim = cleanAim(state.players[0]?.yaw, state.players[0]?.pitch); lastDrawAt = performance.now();
   }
@@ -115,6 +123,7 @@ export function bootPractice() {
   function preview() {
     activeSession = false; modalOpen = false; setHidden($('practice-guide'), true); unlock(); state = createPractice(config()); resetView(); buildRadar();
     setText('practice-weapon-note', royale ? 'Knife start · 200 health · weapons, ammo and healing are found in structures.' : WEAPONS[state.practice.config.weapon].description);
+    setText('practice-melee-note', meleeLoadoutNote($('practice-melee').value));
     updateHud(performance.now(), true); draw(performance.now());
   }
   function start() {
@@ -138,22 +147,25 @@ export function bootPractice() {
   }
   function feedback(message, now, duration = 900) { setText('practice-feedback', message); feedbackUntil = now + duration; }
   function consumeEvents(now) {
+    const freshEvents = [];
     for (const event of state.events) {
       if (event.id <= eventCursor) continue; eventCursor = event.id;
+      freshEvents.push(event);
       const perspective = combatEventPerspective(event, 0);
       if (event.type === 'damage' && event.damage > 0) {
-        if (perspective.outgoing) { hitUntil = now + 170; $('practice-hit').dataset.kind = event.headshot ? 'headshot' : 'body'; }
         const incoming = incomingDamageFeedback(event, state.players[0], state.players, { now, lifeKey: state.practice.sessionId, friendlyFire: royale }); if (incoming) damageFeedback = incoming;
         if (audio.enabled && (perspective.outgoing || perspective.incoming)) audio.tone(perspective.outgoing ? 940 : 140, .055, { end: perspective.outgoing ? 690 : 70, gain: .18, type: 'triangle' });
       }
-      if (['kill', 'elimination'].includes(event.type) && perspective.outgoing) { hitUntil = now + 230; feedback(event.headshot ? 'HEADSHOT · TARGET DOWN' : 'TARGET DOWN', now); }
+      if (['kill', 'elimination'].includes(event.type) && perspective.outgoing) feedback(event.headshot ? 'HEADSHOT · TARGET DOWN' : 'TARGET DOWN', now);
       if (event.type === 'lootPickup' && perspective.source === 0) feedback(event.kind === 'weapon' ? `PICKED UP ${WEAPONS[event.weapon]?.label || 'WEAPON'}` : `PICKED UP ${event.kind.toUpperCase()}`, now);
       const inventoryFeedback = perspective.source === 0 ? inventoryEventFeedback(event) : null; if (inventoryFeedback) feedback(inventoryFeedback, now);
       if (event.type === 'healComplete' && perspective.source === 0) feedback(`HEALED +${Math.round(event.amount || 0)} HP`, now);
       if (event.type === 'healCancel' && perspective.source === 0) feedback('HEALING INTERRUPTED', now);
+      if (audio.enabled && event.type === 'meleeStart') audio.meleeSwing(event.weapon, { gain: perspective.source === 0 ? 1 : .28 });
       if (audio.enabled && hasGunshotReport(event)) audio.gunshot(event.weapon, { gain: perspective.source === 0 ? 1 : .28 });
       if (audio.enabled && event.type === 'grenadeExplosion') { audio.noise(.4, { highpass: 40, lowpass: 1500, gain: .3 }); audio.tone(70, .3, { end: 25, gain: .2 }); }
     }
+    hitFeedback.consume(freshEvents, state.players[0], state.players, { now, lifeKey: `${state.mapId}:${state.practice.sessionId}`, active: state.phase === 'fight' && !modalOpen });
   }
   function updateHud(now, force = false) {
     const phase = state.phase, local = state.players[0];
@@ -198,7 +210,7 @@ export function bootPractice() {
     view.fighters = view.players; presentationPlayer = view.players[0]; renderer.render(view, { playerId: 0, localId: 0, localPlayer: presentationPlayer, cameraPlayer: presentationPlayer, yaw: aim.yaw, pitch: aim.pitch + (presentationPlayer.recoil || 0), time: live ? now : lastDrawAt }); renderCount++; lastFraction = tickFraction(accumulator, STEP);
     const scoped = state.phase === 'fight' && presentationPlayer.alive && !modalOpen && presentationPlayer.slot !== 'sword' && WEAPONS[presentationPlayer.weapon]?.scoped && aimFraction(presentationPlayer, ADS.ticks) >= 14 / 18;
     setHidden($('practice-scope'), !scoped); setHidden($('practice-crosshair'), state.phase !== 'fight' || modalOpen || scoped || presentationPlayer.healing);
-    setHidden($('practice-hit'), now >= hitUntil || state.phase !== 'fight'); setHidden($('practice-feedback'), now >= feedbackUntil || state.phase !== 'fight');
+    paintHitFeedback(hitElements, hitFeedback.present(state.players[0], { now, lifeKey: `${state.mapId}:${state.practice.sessionId}`, active: state.phase === 'fight' && !modalOpen, reducedMotion: hitMotion.matches })); setHidden($('practice-feedback'), now >= feedbackUntil || state.phase !== 'fight');
     const cue = damageFeedbackPresentation(damageFeedback, state.players[0], { now, lifeKey: state.practice.sessionId, yaw: aim.yaw, active: state.phase === 'fight' }), element = $('practice-damage');
     setHidden(element, !cue.visible);
     if (cue.visible) {
@@ -283,7 +295,7 @@ export function bootPractice() {
     if (destroyed) return; destroyed = true; stopFrame(); release(); unlock(); for (const remove of listeners) remove(); unsubscribe(); picker.destroy(); audio.destroy(); inventory.destroy(); renderer?.destroy(); movement.clear();
   }
   listen($('practice-setup-form'), 'submit', event => { event.preventDefault(); start(); });
-  for (const id of ['practice-map', 'practice-count', 'practice-mode', 'practice-difficulty', 'practice-weapon']) listen($(id), 'change', preview);
+  for (const id of ['practice-map', 'practice-count', 'practice-mode', 'practice-difficulty', 'practice-weapon', 'practice-melee']) listen($(id), 'change', preview);
   listen($('practice-pause'), 'click', () => state.phase === 'paused' ? resume() : pause()); listen($('practice-touch-pause'), 'click', pause);
   listen($('practice-resume'), 'click', resume); listen($('practice-restart'), 'click', start); listen($('practice-replay'), 'click', start);
   listen($('practice-change-setup'), 'click', setup); listen($('practice-result-setup'), 'click', setup);
@@ -302,7 +314,7 @@ export function bootPractice() {
   listen(window, 'blur', () => { if (active()) pause(); else release(); }); listen(document, 'visibilitychange', () => { if (document.hidden && active()) pause(); }); listen(window, 'pagehide', destroy);
   listen(canvas, 'voxel-renderer-error', event => { if (event.detail?.message) { graphicsError = event.detail.message; if (active()) pause(); setHidden($('practice-error'), false); setText('practice-error-text', graphicsError); } else { graphicsError = ''; setHidden($('practice-error'), true); updateHud(performance.now(), true); draw(performance.now()); } });
   const unsubscribe = subscribeKeyboardLayout(() => { release(); hints(); }); hints(); preview(); graphics();
-  const inspect = () => copy({ state: { ...state, map: undefined, fighters: undefined }, stats: getPracticeStats(state), input: currentInput(), queuedActions: inputQueue.inspect(), presentationPlayer, controls: { pointerLocked: locked(), fallback, modalOpen, paused: state.phase === 'paused', entered: activeSession, touch: touchMode }, renderCount, renderStats: renderer?.stats || null, audio: audio.inspectGunshots(), graphicsError, displayTiming: { physicsSamples, renderSamples: renderCount, lastFraction } });
+  const inspect = () => copy({ state: { ...state, map: undefined, fighters: undefined }, stats: getPracticeStats(state), input: currentInput(), queuedActions: inputQueue.inspect(), presentationPlayer, controls: { pointerLocked: locked(), fallback, modalOpen, paused: state.phase === 'paused', entered: activeSession, touch: touchMode }, renderCount, renderStats: renderer?.stats || null, audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), graphicsError, displayTiming: { physicsSamples, renderSamples: renderCount, lastFraction } });
   const api = Object.freeze({ getState: inspect, getDisplayTiming: () => ({ physicsSamples, renderSamples: renderCount, lastFraction }) }); window.firesidePractice = api;
   return { destroy, inspect };
 }

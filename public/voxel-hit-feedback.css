@@ -1,0 +1,40 @@
+/* Confirmed hits tint the existing aim point; aim position and spread stay intact. */
+[data-hit-kind=headshot]{--hit-color:#ffd45a;--hit-glow:#fff4c0;--hit-duration:240ms}
+[data-hit-kind=body]{--hit-color:#f47738;--hit-glow:#ffc192;--hit-duration:180ms}
+[data-hit-role=crosshair][data-hit-kind]:not([data-hit-kind=""])>i,
+[data-hit-role=crosshair][data-hit-kind]:not([data-hit-kind=""])>b,
+[data-hit-role=crosshair][data-hit-kind]:not([data-hit-kind=""])>em,
+[data-hit-role=crosshair][data-hit-kind]:not([data-hit-kind=""])>span{background:var(--hit-color);box-shadow:0 0 4px var(--hit-glow)}
+[data-hit-role=crosshair]>i{--hit-arm-x:0px;--hit-arm-y:-2px}
+[data-hit-role=crosshair]>b{--hit-arm-x:0px;--hit-arm-y:2px}
+[data-hit-role=crosshair]>em{--hit-arm-x:-2px;--hit-arm-y:0px}
+[data-hit-role=crosshair]>span{--hit-arm-x:2px;--hit-arm-y:0px}
+[data-hit-role=scope][data-hit-kind]:not([data-hit-kind=""]) svg{stroke:var(--hit-color);filter:drop-shadow(0 0 2px var(--hit-glow))}
+[data-hit-role=scope][data-hit-kind]:not([data-hit-kind=""]) circle{fill:var(--hit-color)}
+[data-hit-role=scope][data-hit-kind]:not([data-hit-kind=""])>strong{color:var(--hit-color);text-shadow:0 0 4px var(--hit-glow),0 1px 2px #121b13}
+[data-hit-role=marker][data-hit-kind]:not([data-hit-kind=""]){color:var(--hit-color);font:26px/1 Arial,sans-serif;text-shadow:0 0 5px var(--hit-glow),0 1px 2px #19130d}
+[data-hit-role=marker][data-hit-kind=headshot]{font-size:24px}
+[data-hit-role=crosshair][data-hit-kind=headshot]::after,
+[data-hit-role=scope][data-hit-kind=headshot]::after{content:"";position:absolute;left:50%;top:50%;width:2px;height:2px;margin:-1px 0 0 -1px;background:#fff4c0;box-shadow:-10px -10px 0 var(--hit-color),10px -10px 0 var(--hit-color),-10px 10px 0 var(--hit-color),10px 10px 0 var(--hit-color);pointer-events:none}
+[data-hit-role=crosshair][data-hit-kind=headshot][data-hit-pulse="0"]>*,
+[data-hit-role=crosshair][data-hit-kind=headshot][data-hit-pulse="0"]::after{animation:fps-head-confirm-a 240ms ease-out both}
+[data-hit-role=crosshair][data-hit-kind=headshot][data-hit-pulse="1"]>*,
+[data-hit-role=crosshair][data-hit-kind=headshot][data-hit-pulse="1"]::after{animation:fps-head-confirm-b 240ms ease-out both}
+[data-hit-role=crosshair][data-hit-kind=body][data-hit-pulse="0"]>*{animation:fps-body-confirm-a 180ms ease-out both}
+[data-hit-role=crosshair][data-hit-kind=body][data-hit-pulse="1"]>*{animation:fps-body-confirm-b 180ms ease-out both}
+[data-hit-role=marker][data-hit-kind=headshot][data-hit-pulse="0"],
+[data-hit-role=scope][data-hit-kind=headshot][data-hit-pulse="0"]::after{animation:fps-head-marker-a 240ms ease-out both}
+[data-hit-role=marker][data-hit-kind=headshot][data-hit-pulse="1"],
+[data-hit-role=scope][data-hit-kind=headshot][data-hit-pulse="1"]::after{animation:fps-head-marker-b 240ms ease-out both}
+[data-hit-role=marker][data-hit-kind=body][data-hit-pulse="0"]{animation:fps-body-marker-a 180ms ease-out both}
+[data-hit-role=marker][data-hit-kind=body][data-hit-pulse="1"]{animation:fps-body-marker-b 180ms ease-out both}
+@keyframes fps-head-confirm-a{0%{scale:1.25;filter:brightness(1.7);translate:0 0}35%{scale:.8;filter:brightness(1.4);translate:calc(var(--hit-arm-x,0px) * -1) calc(var(--hit-arm-y,0px) * -1)}100%{scale:1;filter:brightness(1);translate:0 0}}
+@keyframes fps-head-confirm-b{0%{scale:1.25;filter:brightness(1.7);translate:0 0}35%{scale:.8;filter:brightness(1.4);translate:calc(var(--hit-arm-x,0px) * -1) calc(var(--hit-arm-y,0px) * -1)}100%{scale:1;filter:brightness(1);translate:0 0}}
+@keyframes fps-body-confirm-a{0%{scale:1.05;translate:0 0}35%{scale:1.4;translate:var(--hit-arm-x,0px) var(--hit-arm-y,0px)}100%{scale:1;translate:0 0}}
+@keyframes fps-body-confirm-b{0%{scale:1.05;translate:0 0}35%{scale:1.4;translate:var(--hit-arm-x,0px) var(--hit-arm-y,0px)}100%{scale:1;translate:0 0}}
+@keyframes fps-head-marker-a{0%{transform:translate(-50%,-50%) scale(1.35) rotate(-18deg);filter:brightness(1.7)}40%{transform:translate(-50%,-50%) scale(.85) rotate(0)}100%{transform:translate(-50%,-50%) scale(1);filter:brightness(1)}}
+@keyframes fps-head-marker-b{0%{transform:translate(-50%,-50%) scale(1.35) rotate(-18deg);filter:brightness(1.7)}40%{transform:translate(-50%,-50%) scale(.85) rotate(0)}100%{transform:translate(-50%,-50%) scale(1);filter:brightness(1)}}
+@keyframes fps-body-marker-a{0%{transform:translate(-50%,-50%) scale(.65);opacity:.8}35%{transform:translate(-50%,-50%) scale(1.2);opacity:1}100%{transform:translate(-50%,-50%) scale(1);opacity:1}}
+@keyframes fps-body-marker-b{0%{transform:translate(-50%,-50%) scale(.65);opacity:.8}35%{transform:translate(-50%,-50%) scale(1.2);opacity:1}100%{transform:translate(-50%,-50%) scale(1);opacity:1}}
+[data-hit-motion=reduced], [data-hit-motion=reduced]>*, [data-hit-motion=reduced]::after{animation:none!important}
+@media(prefers-reduced-motion:reduce){[data-hit-role], [data-hit-role]>*, [data-hit-role]::after{animation:none!important}}

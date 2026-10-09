@@ -139,11 +139,12 @@ test('weapon tracers use distinct profiles and end at the authoritative contact'
 test('each gun has a finite distinct firing model; switching weapons clears stale flashes', () => {
   const signatures = new Set();
   for (const weapon of Object.values(WEAPONS)) {
-    const fired = viewModel(weapon.id, {}, { localShot: { born: 990, weapon: weapon.id } });
+    // Accepted gun reports always identify the physical firing hand.
+    const fired = viewModel(weapon.id, {}, { localShot: { born: 990, weapon: weapon.id, hand: 0 } });
     assert.ok(fired.every(Number.isFinite));
     assert.ok(fired.length / 10 < 3000);
     signatures.add(digest(fired));
-    const staleShot = viewModel(weapon.id, {}, { localShot: { born: 990, weapon: weapon.id === 'pistol' ? 'smg' : 'pistol' } });
+    const staleShot = viewModel(weapon.id, {}, { localShot: { born: 990, weapon: weapon.id === 'pistol' ? 'smg' : 'pistol', hand: 0 } });
     assert.equal(digest(staleShot), digest(viewModel(weapon.id)), `${weapon.id}: a previous weapon's flash cannot leak into the new model`);
     if (weapon.projectile) assert.equal(fired.length, viewModel(weapon.id).length);
     else assert.equal(fired.length - viewModel(weapon.id).length, 72 * 10, 'exactly one two-part flash per report');

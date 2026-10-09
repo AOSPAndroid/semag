@@ -29,8 +29,8 @@ const setGunField = (player, field, value) => {
 };
 const energy = samples => samples.reduce((total, value) => total + value * value, 0);
 
-test('four new roles append to the unchanged loadout order with honest display stats', () => {
-  assert.equal(WEAPON_IDS.length, 13); assert.deepEqual(WEAPON_IDS.slice(9), NEW_GUNS);
+test('the previous four roles retain their loadout positions and honest display stats', () => {
+  assert.equal(WEAPON_IDS.length, 16); assert.deepEqual(WEAPON_IDS.slice(9, 13), NEW_GUNS);
   const expected = { revolver: [6, 64, 128, 'semi'], pdw: [32, 18, 45, 'auto'], autoshotgun: [8, 10, 12, 'auto'], battlerifle: [20, 37, 100, 'auto'] };
   for (const id of NEW_GUNS) {
     const weapon = WEAPONS[id], stats = weaponStats(id);

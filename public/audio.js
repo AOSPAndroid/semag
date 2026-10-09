@@ -1,4 +1,4 @@
-import { createVoxelShotSamples } from './voxel-shot-audio.js';
+import { createVoxelShotSamples, createVoxelMeleeSamples } from './voxel-shot-audio.js';
 
 const MAX_GUNSHOT_VOICES = 24;
 
@@ -14,9 +14,11 @@ export class GameAudio {
     this.destroyed = false;
     this.toggleVersion = 0;
     this.gunshotBuffers = new Map();
+    this.meleeBuffers = new Map();
     this.gunshotVoices = new Set();
     this.gunshotVariation = 0;
     this.gunshotReports = 0;
+    this.meleeReports = 0;
   }
 
   async setEnabled(enabled) {
@@ -30,6 +32,7 @@ export class GameAudio {
       if (!AudioContext) return false;
       if (!this.context || this.context.state === 'closed') {
         this.gunshotBuffers.clear();
+        this.meleeBuffers.clear();
         this.context = new AudioContext({ latencyHint: 'interactive' });
         const compressor = this.context.createDynamicsCompressor();
         compressor.threshold.value = -20;
@@ -52,16 +55,26 @@ export class GameAudio {
 
   /** Exactly one cached source per shell; quiet remote reports use the same timbre. */
   gunshot(weaponId, { gain = 1 } = {}) {
+    return this.playVoxelReport(weaponId, { gain });
+  }
+
+  /** A confirmed swing has its own short whoosh and shares the bounded voice pool. */
+  meleeSwing(weaponId, { gain = 1 } = {}) {
+    return this.playVoxelReport(weaponId, { gain, melee: true });
+  }
+
+  playVoxelReport(weaponId, { gain = 1, melee = false } = {}) {
     if (!this.enabled || this.destroyed || this.context?.state !== 'running' || !Number.isFinite(gain) || gain <= 0) return false;
     let source, envelope, voice;
     try {
-      let buffer = this.gunshotBuffers.get(weaponId);
+      const buffers = melee ? this.meleeBuffers : this.gunshotBuffers;
+      let buffer = buffers.get(weaponId);
       if (!buffer) {
-        const samples = createVoxelShotSamples(weaponId, this.context.sampleRate);
+        const samples = melee ? createVoxelMeleeSamples(weaponId, this.context.sampleRate) : createVoxelShotSamples(weaponId, this.context.sampleRate);
         if (!samples) return false;
         buffer = this.context.createBuffer(1, samples.length, this.context.sampleRate);
         buffer.getChannelData(0).set(samples);
-        this.gunshotBuffers.set(weaponId, buffer);
+        buffers.set(weaponId, buffer);
       }
       while (this.gunshotVoices.size >= MAX_GUNSHOT_VOICES) this.endGunshot(this.gunshotVoices.values().next().value, true);
       source = this.context.createBufferSource(); envelope = this.context.createGain();
@@ -76,7 +89,7 @@ export class GameAudio {
       source.start(this.context.currentTime);
       // Buffer expiry ends the source naturally; this fence also bounds faulty contexts.
       source.stop(this.context.currentTime + buffer.duration / source.playbackRate.value + .02);
-      this.gunshotReports += 1;
+      if (melee) this.meleeReports += 1; else this.gunshotReports += 1;
       return true;
     } catch {
       if (voice) this.endGunshot(voice, true);
@@ -99,6 +112,10 @@ export class GameAudio {
 
   inspectGunshots() {
     return Object.freeze({ enabled: this.enabled, cachedBuffers: this.gunshotBuffers.size, activeVoices: this.gunshotVoices.size, maxVoices: MAX_GUNSHOT_VOICES, played: this.gunshotReports });
+  }
+
+  inspectMelee() {
+    return Object.freeze({ enabled: this.enabled, cachedBuffers: this.meleeBuffers.size, activeVoices: this.gunshotVoices.size, maxVoices: MAX_GUNSHOT_VOICES, played: this.meleeReports });
   }
 
   // Each voice ends and disconnects itself, keeping long sessions bounded.
@@ -262,6 +279,7 @@ export class GameAudio {
     this.toggleVersion += 1;
     this.resetEvents();
     this.gunshotBuffers.clear();
+    this.meleeBuffers.clear();
     try {
       if (this.context && this.context.state !== 'closed') this.context.close().catch(() => {});
     } catch { /* A detached or unsupported context may already be unavailable. */ }

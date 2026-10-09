@@ -2,6 +2,8 @@
 import { MAPS as BREACH_MAPS, createState as createBreachState, createCombatPlayer, combatStep, emptyInput, eyeHeight, playerHeight, aimDirection, traceShot, emitCombatEvent, TICK_RATE, WORLD, findNearbyLoot, pickupCombatLoot, advanceInventoryLoot } from './voxel-engine.js';
 import * as Royale from './voxel-royale-engine.js';
 import { WEAPONS } from './voxel-weapons.js';
+import { MELEE_WEAPONS } from './voxel-melee.js';
+import { setInventoryMeleeLoadout } from './voxel-inventory.js';
 
 export { TICK_RATE, emptyInput };
 export const PRACTICE_DIFFICULTIES = Object.freeze({
@@ -28,13 +30,15 @@ function normalize(options = {}) {
   const maps = game === 'voxel' ? BREACH_MAPS : Royale.MAPS;
   const mapId = options.mapId ?? (game === 'voxel' ? 'courtyard' : 'forest');
   const bots = options.bots ?? 3, mode = options.mode ?? 'combat', weapon = options.weapon ?? 'carbine', difficulty = options.difficulty ?? 'regular';
+  const melee = options.melee ?? 'knife';
   if (!Object.hasOwn(maps, mapId)) throw new RangeError('Unknown practice map.');
   if (!Number.isInteger(bots) || bots < 1 || bots > 5) throw new RangeError('Practice supports 1–5 bots.');
   if (!['targets', 'combat'].includes(mode)) throw new RangeError('Choose moving targets or combat bots.');
   if (!Object.hasOwn(WEAPONS, weapon)) throw new RangeError('Unknown practice weapon.');
+  if (typeof melee !== 'string' || !Object.hasOwn(MELEE_WEAPONS, melee)) throw new RangeError('Unknown practice close-combat weapon.');
   if (!Object.hasOwn(PRACTICE_DIFFICULTIES, difficulty)) throw new RangeError('Unknown bot difficulty.');
   if (options.seed !== undefined && !Number.isInteger(options.seed)) throw new RangeError('Practice seed must be an integer.');
-  return { game, mapId, bots, mode, weapon, difficulty, seed: options.seed === undefined ? (Date.now() ^ Math.floor(Math.random() * 0x100000000)) >>> 0 : options.seed >>> 0 };
+  return { game, mapId, bots, mode, weapon, melee: game === 'voxel-royale' ? 'knife' : melee, difficulty, seed: options.seed === undefined ? (Date.now() ^ Math.floor(Math.random() * 0x100000000)) >>> 0 : options.seed >>> 0 };
 }
 function freeGround(arena, point, radius = WORLD.radius + .065) {
   if (!Number.isFinite(point.x) || !Number.isFinite(point.z)) return false;
@@ -128,6 +132,7 @@ function spawnBreach(state, config) {
   const arena = state.map, localSpawn = arena.spawns[0][0];
   const players = Array.from({ length: config.bots + 1 }, (_, id) => ({ ...createCombatPlayer(id, 1, id ? 'carbine' : config.weapon), team: id ? 1 : 0, bot: id > 0 }));
   Object.assign(players[0], localSpawn, { y: localSpawn.y || 0 });
+  setInventoryMeleeLoadout(players[0], config.melee); players[0].meleeLoadout = config.melee;
   const candidates = [...arena.spawns[1], ...navigationFor(arena).nodes.slice().sort((a, b) => (a.x - arena.spawns[1][0].x) ** 2 + (a.z - arena.spawns[1][0].z) ** 2 - ((b.x - arena.spawns[1][0].x) ** 2 + (b.z - arena.spawns[1][0].z) ** 2))];
   for (let id = 1; id < players.length; id++) {
     const spawn = candidates.find(point => freeGround(arena, point, WORLD.radius) && players.slice(0, id).every(player => Math.hypot(player.x - point.x, player.z - point.z) > 1.1));

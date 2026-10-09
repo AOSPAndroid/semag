@@ -3,8 +3,10 @@ import { copyText, getName, hostInfo, roomUrl, saveName } from './hub/shared.js'
 import { GameAudio } from './audio.js';
 import { WEAPONS, WEAPON_IDS, weaponAimFovRatio, weaponSpread, weaponStats } from './voxel-weapons.js';
 import { PLAYER_HEALTH, HEAL } from './voxel-engine.js';
-import { meleeLabel, meleeProfile } from './voxel-melee.js';
+import { meleeLabel, meleeProfile, MELEE_WEAPONS, MELEE_IDS } from './voxel-melee.js';
+import { meleeLoadoutNote } from './hub/horde-setup.js';
 import { incomingDamageFeedback, damageFeedbackPresentation, paintDamageFeedback } from './voxel-damage-feedback.js';
+import { createHitFeedback, paintHitFeedback } from './voxel-hit-feedback.js';
 import { combatPresentation, createCorrectionPresenter, createMovementPresenter, hudTransitionKey, interpolatedVoxelState, reconcileMovement, resolvePresentationContacts, withCombatPresentation } from './voxel-presentation.js';
 import { createNetworkTimeline } from './network-timeline.js';
 import { createFpsInputQueue, releaseFpsTouchAction } from './voxel-input-queue.js';
@@ -119,7 +121,7 @@ export function combatReadout(player, weapons = WEAPONS, rules = {}) {
   const swap = inventorySwapPresentation(player);
   const ticks = Math.max(0, Number.isFinite(player?.meleeTicks) ? player.meleeTicks : 0, Number.isFinite(player?.meleeCooldown) ? player.meleeCooldown : 0);
   const meleePhase = ticks && !(player?.meleeTicks > 0) ? 'recovery' : player?.meleePhase || 'idle';
-  const melee = (player?.meleeWeapon === 'knife' ? rules.KNIFE : rules.MELEE) || meleeProfile(player);
+  const melee = (player?.meleeWeapon === 'knife' ? rules.KNIFE : !player?.meleeWeapon || player.meleeWeapon === 'sword' ? rules.MELEE : null) || meleeProfile(player);
   const meleeTotal = melee.startupTicks + melee.activeTicks + melee.recoveryTicks;
   const healing = player?.healTicks > 0; const reloading = !sword && player?.reloadTicks > 0;
   let label = sword ? meleeLabel(player) : weapon?.label || (player?.weapon || 'carbine').toUpperCase();
@@ -127,7 +129,7 @@ export function combatReadout(player, weapons = WEAPONS, rules = {}) {
   let status; let progress = null;
   if (sword) {
     status = ticks ? `${(ticks / 120).toFixed(1)}S · ${meleePhase === 'startup' ? 'COMMITTING' : meleePhase === 'active' ? 'BLADE ACTIVE' : 'RECOVERING'}` : `LMB STRIKE · ${swap?.shortcut || 'V GUN'}`;
-    if (ticks) progress = { label: `${meleeLabel(player) === 'KNIFE' ? 'Knife' : 'Sword'} attack and recovery`, remaining: ticks, total: meleeTotal };
+    if (ticks) progress = { label: `${meleeLabel(player).toLowerCase().replace(/\b\w/g, letter => letter.toUpperCase())} attack and recovery`, remaining: ticks, total: meleeTotal };
   } else if (player?.ammo === 0) status = player.reserve > 0 ? weapon?.projectile ? 'R TO RELOAD BOLT' : 'R TO RELOAD' : 'OUT OF AMMUNITION';
   else if (weapon?.spinupTicks && player?.spinTicks > 0 && player.spinTicks < weapon.spinupTicks) {
     status = 'SPINNING UP · HOLD FIRE';
@@ -223,7 +225,7 @@ export function weaponComparison(id) {
     damageLabel: stats.pellets > 1 ? `DAMAGE / PELLET · ${stats.pellets} PELLETS PER SHELL` : 'DAMAGE / HIT · CLOSE RANGE',
     rate: stats.fireRateLabel, reload: `${stats.reloadSeconds.toFixed(2)} s`,
     range: stats.falloffStart != null ? `Falls after ${stats.falloffStart} m · minimum ${Math.round(stats.falloffMinimum * 100)}%` : `Full damage to ${stats.effectiveRange} m`,
-    handling: stats.projectileSpeed ? `Bolts ${stats.projectileSpeed} m/s · gravity ${stats.projectileGravity} m/s²` : stats.windupSeconds ? `${stats.windupSeconds.toFixed(2)} s wind-up before fire` : weapon.scoped ? 'Scoped precision · settle before firing' : weapon.mode === 'burst' ? 'Three-shot volley · release between bursts' : ['semi', 'pump', 'bolt'].includes(weapon.mode) ? 'One shot per click · release between shots' : 'Automatic fire · control recoil' };
+    handling: weapon.dualWield ? `Alternating barrels · RMB steadies the pair · ${weapon.mode === 'semi' ? 'one shot per click' : 'control close-range spread'}` : stats.projectileSpeed ? `Bolts ${stats.projectileSpeed} m/s · gravity ${stats.projectileGravity} m/s²` : stats.windupSeconds ? `${stats.windupSeconds.toFixed(2)} s wind-up before fire` : weapon.scoped ? 'Scoped precision · settle before firing' : weapon.mode === 'burst' ? 'Three-shot volley · release between bursts' : ['semi', 'pump', 'bolt'].includes(weapon.mode) ? 'One shot per click · release between shots' : 'Automatic fire · control recoil' };
 }
 
 /** Smooth remote bodies and live bolts. Combat and camera aim remain authoritative. */
@@ -243,7 +245,7 @@ async function boot() {
   const loadoutOptions = document.createDocumentFragment(), arenaButtons = document.createDocumentFragment();
   for (const [index, id] of WEAPON_IDS.entries()) {
     const weapon = WEAPONS[id];
-    const caption = weapon.projectile ? 'Lead + bolt drop' : weapon.spinupTicks ? 'Hold fire to wind up' : weapon.mode === 'bolt' ? 'Settle into scope' : weapon.mode === 'burst' ? 'Three-shot volleys' : weapon.mode === 'pump' ? 'Close-range spread' : weapon.mode === 'semi' ? 'Fast single shots' : weapon.scoped ? 'Precise headshots' : weapon.magazine >= 30 ? 'Close quarters' : 'Measured bursts';
+    const caption = weapon.dualWield ? 'Alternating barrels' : weapon.projectile ? 'Lead + bolt drop' : weapon.spinupTicks ? 'Hold fire to wind up' : weapon.mode === 'bolt' ? 'Settle into scope' : weapon.mode === 'burst' ? 'Three-shot volleys' : weapon.mode === 'pump' ? 'Close-range spread' : weapon.mode === 'semi' ? 'Fast single shots' : weapon.scoped ? 'Precise headshots' : weapon.magazine >= 30 ? 'Close quarters' : 'Measured bursts';
     const option = document.createElement('option'); option.value = id; option.textContent = `${weapon.label} · ${caption}`; loadoutOptions.append(option);
     const button = document.createElement('button'); button.dataset.arenaLoadout = id; button.setAttribute('aria-pressed', 'false');
     button.setAttribute('aria-label', `${index < 9 ? `${index + 1}: ` : ''}${weapon.name}. ${weapon.description}`); button.title = weapon.description;
@@ -252,6 +254,10 @@ async function boot() {
     button.append(number, document.createTextNode(` ${weapon.label}`), detail); arenaButtons.append(button);
   }
   $('loadout-select').replaceChildren(loadoutOptions); $('arena-loadouts').replaceChildren(arenaButtons);
+  for (const name of ['melee-select', 'arena-melee-select']) {
+    const selector = $(name); selector.replaceChildren(...MELEE_IDS.map(id => { const option = document.createElement('option'); option.value = id; option.textContent = MELEE_WEAPONS[id].name; return option; })); selector.value = 'knife';
+  }
+  setText($('arena-melee-note'), meleeLoadoutNote('knife'));
   setText($('phase-shortcuts'), 'SETUP 1–9 · CLICK ANY WEAPON · IN PLAY: 1–4 EQUIP, X DROP');
   const roomId = new URLSearchParams(location.search).get('room')?.trim().toUpperCase() || '';
   const roomLabel = /^[A-Z0-9]{6}$/.test(roomId) ? roomId : 'NO ROOM';
@@ -268,7 +274,9 @@ async function boot() {
   let dialogReturnFocus = null; let guideReturnToRoom = false;
   let rightDrag = false; let graphicsError = ''; let modalOpen = false; let spectatorId = null; let teamSwitchPending = false; let requestedTeam = null;
   let previousPhase = null; let previousRound = null; let aim = { yaw: 0, pitch: 0 };
-  let hitUntil = 0; let hitKind = 'body'; let damageFeedback = null; let feedbackUntil = 0; let toastTimer; let lastCountdown = null; let lastHUDAt = 0;
+  const hitFeedback = createHitFeedback(), hitMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  const hitElements = { crosshair: $('crosshair'), scope: $('scope-reticle'), marker: $('hit-marker') };
+  let damageFeedback = null; let feedbackUntil = 0; let toastTimer; let lastCountdown = null; let lastHUDAt = 0;
   let inputHeartbeat = null; let lastTouchLookAt = performance.now();
   const keys = new Set(); const pressedKeys = new Map();
   const mouse = { fire: false, aim: false };
@@ -334,6 +342,7 @@ async function boot() {
     else if (!shouldRun && inputHeartbeat) { clearInterval(inputHeartbeat); inputHeartbeat = null; }
   }
   function neutralize({ pause = false, unlock = false } = {}) {
+    hitFeedback.reset(); paintHitFeedback(hitElements, { visible: false });
     keys.clear(); pressedKeys.clear(); mouse.fire = mouse.aim = false; rightDrag = false;
     touch.actions.clear(); touch.move = { x: 0, y: 0 }; touch.look = { x: 0, y: 0 };
     for (const [pointerId, record] of actionPointers) try { record.element.releasePointerCapture(pointerId); } catch { /* A cancelled pointer is already released. */ }
@@ -428,7 +437,6 @@ async function boot() {
       const inventoryFeedback = shooter === playerId ? inventoryEventFeedback(event) : null; if (inventoryFeedback) toast(inventoryFeedback);
       if (shooter === playerId && event.type === 'lootPickup') toast(`PICKED UP ${event.kind === 'weapon' ? WEAPONS[event.weapon]?.label || 'WEAPON' : event.kind === 'heal' ? 'POTION' : event.kind === 'grenade' ? 'FRAG' : 'SUPPLIES'}`);
       if (event.type === 'damage' && event.damage > 0) {
-        if (perspective.outgoing) { hitUntil = performance.now() + 150; hitKind = event.headshot ? 'headshot' : 'body'; }
         const viewed = healthHUDPlayer(state, playerId, spectatorId);
         const incoming = incomingDamageFeedback(event, viewed, state.players, { now: performance.now(), lifeKey: state.round });
         if (incoming) damageFeedback = incoming;
@@ -436,7 +444,7 @@ async function boot() {
       if (['kill', 'death', 'elimination'].includes(event.type)) {
         kills.push({ at: performance.now(), text: perspective.self ? `${lookupName(target)}  [SELF FRAG]` : `${shooter == null ? 'THE DEVICE' : lookupName(shooter)}  ${event.weapon === 'crossbow' ? event.headshot ? '[BOLT HS]' : '[BOLT]' : event.headshot ? '[HS]' : '›'}  ${lookupName(target)}`, own: perspective.outgoing, headshot: !!event.headshot });
         if (kills.length > 4) kills.shift();
-        if (perspective.outgoing) { hitUntil = performance.now() + 230; hitKind = 'elimination'; feedbackUntil = performance.now() + 1100; setText($('combat-feedback'), event.headshot ? 'HEADSHOT · ELIMINATED' : 'ELIMINATED'); }
+        if (perspective.outgoing) { feedbackUntil = performance.now() + 1100; setText($('combat-feedback'), event.headshot ? 'HEADSHOT · ELIMINATED' : 'ELIMINATED'); }
       }
       if (shooter === playerId && ['healStart', 'healComplete', 'healCancel'].includes(event.type)) {
         feedbackUntil = performance.now() + (event.type === 'healStart' ? 650 : 1100);
@@ -457,8 +465,7 @@ async function boot() {
         } else if (['plant', 'planted', 'defuse', 'defused', 'bombPlant', 'bombDefuse'].includes(event.type)) {
           audio.tone(640, 0.13, { gain: 0.18 }); audio.tone(880, 0.12, { gain: 0.12, delay: 0.13 });
         } else if (event.type === 'meleeStart') {
-          audio.noise(.13, { highpass: 1600, lowpass: 4500, gain: shooter === playerId ? .14 : .045 });
-          audio.tone(170, .13, { end: 70, type: 'triangle', gain: shooter === playerId ? .10 : .035 });
+          audio.meleeSwing(event.weapon, { gain: shooter === playerId ? 1 : .3 });
         } else if (event.type === 'grenadeThrow' && shooter === playerId) {
           audio.noise(.06, { highpass: 1800, lowpass: 3900, gain: .12 });
         } else if (event.type === 'healComplete' && shooter === playerId) {
@@ -468,6 +475,7 @@ async function boot() {
         }
       } catch { /* Optional sound cannot interrupt gameplay. */ }
     }
+    hitFeedback.consume(freshEvents, ownPlayer(), state.players, { now: performance.now(), lifeKey: `${state.mapId}:${state.round}:${ownPlayer()?.lifeId || 0}`, active: state.phase === 'fight' && !paused && !modalOpen && connected });
     const hits = confirmedHitGroups(freshEvents, playerId);
     if (hits.length) {
       const hit = hits.reduce((best, next) => next.damage > best.damage ? next : best);
@@ -532,6 +540,9 @@ async function boot() {
     setDisabled($('player-name'), !inLobby || !connected);
     setDisabled($('loadout-select'), !connected || !['lobby', 'countdown', 'buy', 'roundEnd'].includes(phase));
     if (local?.weapon && document.activeElement !== $('loadout-select')) $('loadout-select').value = local.weapon;
+    const meleeId = local?.meleeLoadout || 'knife';
+    for (const id of ['melee-select', 'arena-melee-select']) { setDisabled($(id), !connected || !['lobby', 'countdown', 'buy', 'roundEnd'].includes(phase)); if (document.activeElement !== $(id)) $(id).value = meleeId; }
+    setText($('arena-melee-note'), meleeLoadoutNote($('arena-melee-select').value));
     const me = roster.find(player => player?.id === playerId);
     setHidden($('ready-button'), phase === 'matchEnd'); setHidden($('rematch-button'), phase !== 'matchEnd');
     const mayCancelCountdown = phase === 'countdown' && state?.round === 1 && !(state?.scores?.[0] || state?.scores?.[1]) && !!me?.ready;
@@ -701,6 +712,7 @@ async function boot() {
     setHidden($('enter-arena'), !enter); setHidden($('retry-graphics'), !graphicsError);
     setHidden($('arena-loadouts'), !enter || !['countdown', 'buy'].includes(phase));
     setHidden($('arena-weapon-stats'), $('arena-loadouts').hidden);
+    setHidden($('arena-melee-field'), $('arena-loadouts').hidden); setHidden($('arena-melee-note'), $('arena-loadouts').hidden);
     for (const button of document.querySelectorAll('[data-arena-loadout]')) {
       button.setAttribute('aria-pressed', String(button.dataset.arenaLoadout === local?.weapon));
       button.disabled = !connected || !['countdown', 'buy'].includes(phase);
@@ -737,8 +749,7 @@ async function boot() {
     const viewAim = local?.alive ? aim : { yaw: viewPlayer?.yaw || 0, pitch: viewPlayer?.pitch || 0 };
     renderer.render(renderedState, { playerId, localId: playerId, localPlayer: presentationPlayer, viewPlayer, cameraPlayer: viewPlayer, yaw: viewAim.yaw, pitch: viewAim.pitch + (viewPlayer?.recoil || 0), time: now });
     renderCount++;
-    setHidden($('hit-marker'), now >= hitUntil);
-    setAttribute($('hit-marker'), 'data-kind', hitKind);
+    paintHitFeedback(hitElements, hitFeedback.present(local, { now, lifeKey: `${state.mapId}:${state.round}:${local?.lifeId || 0}`, active: state.phase === 'fight' && !paused && !modalOpen && connected, reducedMotion: hitMotion.matches }));
     paintDamageFeedback($('damage-cue'), damageFeedbackPresentation(damageFeedback, viewPlayer, { now, lifeKey: state.round, yaw: viewAim.yaw, active: state.phase === 'fight' }));
     setHidden($('combat-feedback'), now >= feedbackUntil);
     while (kills.length && now - kills[0].at > 6000) kills.shift();
@@ -804,7 +815,7 @@ async function boot() {
     if (previousPhase !== state.phase && previousPhase !== null) neutralize();
     if (state.phase === 'lobby' && previousPhase !== 'lobby') {
       neutralize({ pause: true, unlock: true }); entered = false; fallback = false;
-      eventSeen.clear(); eventOrder.length = 0; kills.length = 0; healthView = null; healthGainUntil = 0; hitUntil = feedbackUntil = 0; damageFeedback = null; lastCountdown = null; audio.resetEvents();
+      eventSeen.clear(); eventOrder.length = 0; kills.length = 0; healthView = null; healthGainUntil = 0; feedbackUntil = 0; hitFeedback.reset({ clearHistory: true }); damageFeedback = null; lastCountdown = null; audio.resetEvents();
     }
     if (local && !local.alive && old?.players.find(player => player.id === playerId)?.alive !== false) neutralize({ pause: true, unlock: true });
     const ackValue = message.acks?.[playerId];
@@ -993,6 +1004,7 @@ async function boot() {
   listen($('overlay-ready'), 'click', () => (state?.phase === 'matchEnd' ? $('rematch-button') : $('ready-button')).click());
   listen($('player-name'), 'change', () => { playerName = saveName($('player-name').value); $('player-name').value = playerName; send({ type: 'join', name: playerName }); });
   listen($('loadout-select'), 'change', () => { previewWeapon = null; renderWeaponComparison($('loadout-select').value); neutralize(); send({ type: 'fps-loadout', weaponId: $('loadout-select').value }); });
+  for (const id of ['melee-select', 'arena-melee-select']) listen($(id), 'change', () => { const meleeId = $(id).value; neutralize(); send({ type: 'fps-loadout', meleeId }); });
   for (const button of document.querySelectorAll('[data-arena-loadout]')) {
     listen(button, 'click', () => { previewWeapon = null; renderWeaponComparison(button.dataset.arenaLoadout); selectArenaLoadout(button.dataset.arenaLoadout); });
     listen(button, 'mouseenter', () => { previewWeapon = button.dataset.arenaLoadout; renderWeaponComparison(previewWeapon); });
@@ -1083,7 +1095,7 @@ async function boot() {
     for (const remove of removers) remove(); pending = []; snapshots = []; kills.length = 0; eventSeen.clear();
   }
   listen(window, 'pagehide', destroy);
-  const inspect = () => clone({ state, players: roster, playerId, input: currentInput(), predictedPlayer, presentationPlayer, presentationPlayers, predictionRemainder: accumulator, predictionTick, actionQueue: actionInputs.inspect(), timeline: timeline.getState(), correction: correction.getState(), connected, controls: { pointerLocked: pointerLocked(), fallback, touch: touchMode, paused, entered, modalOpen }, queueLength: pending.length, renderCount, renderStats: renderer?.stats || null, audio: audio.inspectGunshots(), graphicsError, spectatorId });
+  const inspect = () => clone({ state, players: roster, playerId, input: currentInput(), predictedPlayer, presentationPlayer, presentationPlayers, predictionRemainder: accumulator, predictionTick, actionQueue: actionInputs.inspect(), timeline: timeline.getState(), correction: correction.getState(), connected, controls: { pointerLocked: pointerLocked(), fallback, touch: touchMode, paused, entered, modalOpen }, queueLength: pending.length, renderCount, renderStats: renderer?.stats || null, audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), graphicsError, spectatorId });
   window.SemagVoxel = Object.freeze({ getState: inspect, inspect });
   updateUI();
   try {

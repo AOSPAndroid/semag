@@ -22,7 +22,7 @@ document.querySelectorAll('[data-play-solo]').forEach(button => button.addEventL
   if (gameId === 'voxel-horde') {
     const settings = await chooseHordeSettings($('horde-setup'), { solo: true });
     if (!settings) return;
-    updateName(); location.href = `${soloUrl(gameId)}&map=${encodeURIComponent(settings.mapId)}&difficulty=${encodeURIComponent(settings.difficulty)}`; return;
+    updateName(); location.href = `${soloUrl(gameId)}&map=${encodeURIComponent(settings.mapId)}&difficulty=${encodeURIComponent(settings.difficulty)}&melee=${encodeURIComponent(settings.melee)}`; return;
   }
   updateName(); location.href = soloUrl(gameId);
 }));

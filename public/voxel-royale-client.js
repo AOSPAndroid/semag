@@ -6,6 +6,7 @@ import { predictLocalMovement, sweepPresentationOffset, traceShot, ADS, HEAL, PL
 
 import { meleeLabel, meleeProfile } from './voxel-melee.js';
 import { incomingDamageFeedback, damageFeedbackPresentation, paintDamageFeedback } from './voxel-damage-feedback.js';
+import { createHitFeedback, paintHitFeedback } from './voxel-hit-feedback.js';
 import { combatPresentation, createCorrectionPresenter, createMovementPresenter, hudTransitionKey, interpolatedVoxelState, reconcileMovement, resolvePresentationContacts, withCombatPresentation } from './voxel-presentation.js';
 import { createNetworkTimeline } from './network-timeline.js';
 import { createFpsInputQueue, releaseFpsTouchAction } from './voxel-input-queue.js';
@@ -125,7 +126,7 @@ export function combatReadout(player, rules = {}) {
   let status = sword ? player.hasGun ? 'LMB STRIKE · V GUN' : 'LMB STRIKE · FIND A GUN' : 'RMB AIM · R RELOAD';
   let progress = null;
   const melee = Math.max(finite(player?.meleeTicks), finite(player?.meleeCooldown));
-  if (sword && melee) { ammo = ({ startup: 'WINDUP', active: 'STRIKE' })[player.meleePhase] || 'RECOVER'; status = `${(melee / 120).toFixed(1)}S · COMMITTED ATTACK`; progress = { remaining: melee, total: profile.startupTicks + profile.activeTicks + profile.recoveryTicks, label: `${bladeLabel === 'KNIFE' ? 'Knife' : 'Sword'} attack and recovery` }; }
+  if (sword && melee) { ammo = ({ startup: 'WINDUP', active: 'STRIKE' })[player.meleePhase] || 'RECOVER'; status = `${(melee / 120).toFixed(1)}S · COMMITTED ATTACK`; progress = { remaining: melee, total: profile.startupTicks + profile.activeTicks + profile.recoveryTicks, label: `${bladeLabel.toLowerCase().replace(/\b\w/g, letter => letter.toUpperCase())} attack and recovery` }; }
   if (!sword && !player.ammo) status = player.reserve ? 'R TO RELOAD' : 'NO AMMUNITION';
   if (!sword && weapon.spinupTicks && player.spinTicks > 0 && player.spinTicks < weapon.spinupTicks) {
     status = 'HOLD FIRE · WINDING UP'; progress = { remaining: weapon.spinupTicks - player.spinTicks, total: weapon.spinupTicks, label: 'Weapon wind-up' };
@@ -167,7 +168,9 @@ async function boot() {
   let paused = true, entered = false, fallback = false, touchMode = false, rightDrag = false, modalOpen = false, graphicsError = '', spectatorId = null;
   let destroyed = false, permanentError = false, reconnectTimer, reconnectAttempts = 0, frameId = null, lastFrameAt = 0, accumulator = 0, renderCount = 0;
   let heartbeat = null, lastTouchLookAt = performance.now(), lastHUDAt = 0, previousPhase = null, previousMatch = null;
-  let toastTimer, hitUntil = 0, damageFeedback = null, feedbackUntil = 0, hitKind = 'body', healthView = null, healthGain = 0, healthGainUntil = 0, lastCountdown = null;
+  const hitFeedback = createHitFeedback(), hitMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  const hitElements = { crosshair: $('crosshair'), scope: $('scope-reticle'), marker: $('hit-marker') };
+  let toastTimer, damageFeedback = null, feedbackUntil = 0, healthView = null, healthGain = 0, healthGainUntil = 0, lastCountdown = null;
   let rosterSignature = '', mapPlanId = '', mapSelf = null, zoneCircle = null, nextCircle = null, idleSignature = '';
   const keys = new Set(), pressedKeys = new Map(), mouse = { fire: false, aim: false };
   const touch = { actions: new Set(), move: { x: 0, y: 0 }, look: { x: 0, y: 0 } };
@@ -226,6 +229,7 @@ async function boot() {
     if (touchMode && controlsActive()) { const sensitivity = aimLookMultiplier(presentationPlayer || ownPlayer(), engine?.ADS); aim = cleanAim(aim.yaw + touch.look.x * dt * 2.4 * sensitivity, aim.pitch - touch.look.y * dt * 1.85 * sensitivity); }
   }
   function neutralize({ pause = false, unlock = false } = {}) {
+    hitFeedback.reset(); paintHitFeedback(hitElements, { visible: false });
     keys.clear(); pressedKeys.clear(); mouse.fire = mouse.aim = false; rightDrag = false;
     touch.actions.clear(); touch.move = { x: 0, y: 0 }; touch.look = { x: 0, y: 0 };
     for (const [id, record] of actionPointers) try { record.element.releasePointerCapture(id); } catch { /* Already cancelled. */ }
@@ -332,7 +336,7 @@ async function boot() {
       if (eventSeen.has(id)) continue; eventSeen.add(id); eventOrder.push(id); fresh.push(event); if (eventOrder.length > 512) eventSeen.delete(eventOrder.shift());
       const source = event.shooterId ?? event.attackerId ?? event.playerId ?? event.ownerId, target = event.targetId;
       const inventoryFeedback = source === playerId ? inventoryEventFeedback(event) : null; if (inventoryFeedback) toast(inventoryFeedback);
-      if (event.type === 'damage' && event.damage > 0) { if (source === playerId && target !== playerId) { hitUntil = performance.now() + 150; hitKind = event.headshot ? 'headshot' : 'body'; } const incoming = incomingDamageFeedback(event, spectatorPlayer(state, playerId, spectatorId), state.players, { now: performance.now(), lifeKey: state.matchId, friendlyFire: true }); if (incoming) damageFeedback = incoming; }
+      if (event.type === 'damage' && event.damage > 0) { const incoming = incomingDamageFeedback(event, spectatorPlayer(state, playerId, spectatorId), state.players, { now: performance.now(), lifeKey: state.matchId, friendlyFire: true }); if (incoming) damageFeedback = incoming; }
       if (['kill', 'elimination', 'death'].includes(event.type)) {
         kills.push({ at: performance.now(), own: source === playerId && target !== playerId, text: `${source == null ? 'THE STORM' : source === target ? 'SELF FRAG' : lookupName(source)} ${event.headshot ? '[HS]' : '›'} ${lookupName(target)}` }); if (kills.length > 4) kills.shift();
       }
@@ -342,11 +346,12 @@ async function boot() {
       try {
         if (['shot', 'fire', 'boltLaunch'].includes(event.type) && (event.pellet == null || event.pellet === 0)) audio.gunshot(event.weapon, { gain: source === playerId ? 1 : .3 });
         else if (event.type === 'damage' && (source === playerId || target === playerId)) { const key = `${event.tick}:${target === playerId ? 'in' : 'out'}`; if (impactSounds.has(key)) continue; impactSounds.add(key); audio.tone(target === playerId ? 130 : 920, .055, { end: target === playerId ? 70 : 620, type: 'triangle', gain: .22 }); }
-        else if (event.type === 'meleeStart') audio.noise(.13, { highpass: 1600, lowpass: 4500, gain: source === playerId ? .14 : .04 });
+        else if (event.type === 'meleeStart') audio.meleeSwing(event.weapon, { gain: source === playerId ? 1 : .3 });
         else if (event.type === 'explosion' || event.type === 'grenadeExplosion') { audio.noise(.45, { highpass: 30, lowpass: 1700, gain: .4 }); audio.tone(65, .42, { end: 28, gain: .22 }); }
         else if (event.type === 'healComplete' && source === playerId) audio.tone(660, .13, { end: 920, type: 'triangle', gain: .15 });
       } catch { /* Optional sound cannot interrupt the match. */ }
     }
+    hitFeedback.consume(fresh, ownPlayer(), state.players, { now: performance.now(), lifeKey: `${state.mapId}:${state.matchId}:${ownPlayer()?.lifeId || 0}`, active: state.phase === 'fight' && !paused && !modalOpen && connected });
     const hits = confirmedHitGroups(fresh, playerId); if (hits.length) { const hit = hits.reduce((best, next) => next.damage > best.damage ? next : best); const killed = fresh.some(event => ['kill', 'elimination', 'death'].includes(event.type) && event.targetId === hit.targetId && (event.attackerId ?? event.shooterId ?? event.playerId) === playerId); feedbackUntil = performance.now() + (killed ? 1100 : 650); setText($('combat-feedback'), `${hit.label} · ${Math.round(hit.damage)} HP${killed ? ' · ELIMINATED' : ''}`); }
   }
   function draw(now = performance.now()) {
@@ -367,7 +372,7 @@ async function boot() {
     const camera = state.phase === 'lobby' ? { ...state.map.spawnPoints[0], alive: false, id: playerId, y: finite(state.map.spawnPoints[0]?.y) } : local?.alive ? presentationPlayer : viewed;
     const viewAim = local?.alive ? aim : cleanAim(camera?.yaw, camera?.pitch);
     renderer.render(rendered, { playerId, localId: playerId, localPlayer: presentationPlayer, viewPlayer: camera, yaw: viewAim.yaw, pitch: viewAim.pitch + finite(camera?.recoil), time: now }); renderCount++;
-    setHidden($('hit-marker'), now >= hitUntil); setAttribute($('hit-marker'), 'data-kind', hitKind); paintDamageFeedback($('damage-cue'), damageFeedbackPresentation(damageFeedback, camera, { now, lifeKey: state.matchId, yaw: viewAim.yaw, active: state.phase === 'fight' })); setHidden($('combat-feedback'), now >= feedbackUntil);
+    paintHitFeedback(hitElements, hitFeedback.present(local, { now, lifeKey: `${state.mapId}:${state.matchId}:${local?.lifeId || 0}`, active: state.phase === 'fight' && !paused && !modalOpen && connected, reducedMotion: hitMotion.matches })); paintDamageFeedback($('damage-cue'), damageFeedbackPresentation(damageFeedback, camera, { now, lifeKey: state.matchId, yaw: viewAim.yaw, active: state.phase === 'fight' })); setHidden($('combat-feedback'), now >= feedbackUntil);
     while (kills.length && now - kills[0].at > 6000) kills.shift(); const signature = kills.map(item => item.text).join('|');
     if ($('kill-feed').dataset.signature !== signature) { $('kill-feed').dataset.signature = signature; $('kill-feed').replaceChildren(...kills.map(kill => { const item = document.createElement('li'); item.textContent = kill.text; item.classList.toggle('own-kill', kill.own); return item; })); }
   }
@@ -395,7 +400,7 @@ async function boot() {
     const reconciliationTime = performance.now();
     const beforePrediction = predictedPlayer;
     const beforePose = beforePrediction && old?.phase === 'fight' ? presentMovement(beforePrediction, actionInputs.preview(currentInput(), reconciliationTime), old.map, accumulator, engine.predictLocalMovement, old.players) : beforePrediction;
-    if (!old || predictedPlayer?.id !== playerId || fresh) { neutralize(); aim = cleanAim(local?.yaw, local?.pitch); pending = []; snapshots = []; spectatorId = null; accumulator = 0; renderer?.resetEffects(); healthView = null; damageFeedback = null; if (fresh) { eventSeen.clear(); eventOrder.length = 0; kills.length = 0; hitUntil = feedbackUntil = 0; damageFeedback = null; healthGainUntil = 0; lastCountdown = null; } sendInput(neutralInput(aim.yaw, aim.pitch), true); }
+    if (!old || predictedPlayer?.id !== playerId || fresh) { neutralize(); aim = cleanAim(local?.yaw, local?.pitch); pending = []; snapshots = []; spectatorId = null; accumulator = 0; renderer?.resetEffects(); healthView = null; damageFeedback = null; if (fresh) { eventSeen.clear(); eventOrder.length = 0; kills.length = 0; feedbackUntil = 0; hitFeedback.reset({ clearHistory: true }); damageFeedback = null; healthGainUntil = 0; lastCountdown = null; } sendInput(neutralInput(aim.yaw, aim.pitch), true); }
     if (previousPhase !== null && previousPhase !== state.phase) neutralize();
     if (state.phase === 'lobby' && previousPhase !== 'lobby') { neutralize({ pause: true, unlock: true }); entered = false; fallback = false; healthView = null; damageFeedback = null; snapshots = []; pending = []; audio.resetEvents(); }
     if (local && !local.alive && old?.players?.find(player => player.id === playerId)?.alive !== false) neutralize({ pause: true, unlock: true });
@@ -558,7 +563,7 @@ async function boot() {
   const pingTimer = setInterval(() => { if (connected && !document.hidden) send({ type: 'ping', time: performance.now() }); }, 1500);
   function destroy() { if (destroyed) return; neutralize({ pause: true, unlock: true }); destroyed = true; clearTimeout(reconnectTimer); clearTimeout(toastTimer); clearInterval(pingTimer); clearInterval(heartbeat); heartbeat = null; if (frameId) cancelAnimationFrame(frameId); frameId = null; socket?.close(); renderer?.destroy(); audio.destroy(); inventory.destroy(); layoutPicker.destroy(); unsubscribeLayout(); for (const remove of removers) remove(); pending = []; snapshots = []; kills.length = 0; eventSeen.clear(); }
   listen(window, 'pagehide', destroy);
-  const inspect = () => { const { map, ...snapshot } = state || {}; return clone({ state: state ? snapshot : null, players: roster, playerId, hostId, input: currentInput(), predictedPlayer, presentationPlayer, presentationPlayers, predictionRemainder: accumulator, predictionTick, actionQueue: actionInputs.inspect(), timeline: timeline.getState(), correction: correction.getState(), connected, controls: { pointerLocked: pointerLocked(), fallback, touch: touchMode, paused, entered, modalOpen }, queueLength: pending.length, renderCount, renderStats: renderer?.stats || null, audio: audio.inspectGunshots(), graphicsError, spectatorId }); };
+  const inspect = () => { const { map, ...snapshot } = state || {}; return clone({ state: state ? snapshot : null, players: roster, playerId, hostId, input: currentInput(), predictedPlayer, presentationPlayer, presentationPlayers, predictionRemainder: accumulator, predictionTick, actionQueue: actionInputs.inspect(), timeline: timeline.getState(), correction: correction.getState(), connected, controls: { pointerLocked: pointerLocked(), fallback, touch: touchMode, paused, entered, modalOpen }, queueLength: pending.length, renderCount, renderStats: renderer?.stats || null, audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), graphicsError, spectatorId }); };
   window.SemagRoyale = Object.freeze({ getState: inspect, inspect }); updateUI();
   try { const [rules, visual] = await Promise.all([import('./voxel-royale-engine.js'), import('./voxel-renderer.js')]); if (destroyed) return; engine = { ...rules, predictLocalMovement, sweepPresentationOffset, traceShot, ADS, HEAL, PLAYER_HEALTH }; renderer = new visual.VoxelRenderer(canvas); renderer.resize(); } catch (cause) { graphicsError = cause?.message || 'This game requires WebGL. Enable hardware acceleration and reload graphics.'; error(graphicsError); updateUI(); return; }
   connect();

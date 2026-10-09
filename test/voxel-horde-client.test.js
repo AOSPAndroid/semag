@@ -153,6 +153,8 @@ test('intermission uses real movement and health pickup while combat previews st
   Object.assign(player, { x: 0, y: 0, z: 0, yaw: 0, hp: 100, vx: 0, vy: 0, vz: 0, grounded: true });
   state.horde.pending = 0; state.horde.nextSpawnTick = 1e9; Horde.step(state);
   assert.equal(state.phase, 'intermission');
+  // Isolate this health-pickup fixture from the separate wave-clear blade cache.
+  state.loot = [];
   state.loot.push({ id: 55, type: 'health', kind: 'heal', amount: 30, x: .5, y: 0, z: 0, expiresTick: state.tick + 1000 });
   const inventory = { ammo: player.ammo, grenades: player.grenades, potions: player.potions, shots: player.shots };
   const raw = { up: true, aim: true, fire: true, grenade: true, heal: true, reload: true, swap: true, yaw: 0, pitch: .2 }, rawCopy = { ...raw };
@@ -164,7 +166,7 @@ test('intermission uses real movement and health pickup while combat previews st
   assert.ok(player.z < -.1); for (const axis of ['x', 'y', 'z']) assert.ok(Math.abs(player[axis] - predicted[axis]) < 1e-8, 'real regroup movement matches the reused prediction');
   assert.equal(Horde.findNearbyLoot(state, 0).id, 55);
   const hp = player.hp; Horde.step(state, [{ interact: true, yaw: 0, pitch: .2 }]);
-  assert.equal(player.hp, hp + 30); assert.equal(state.loot.length, 0);
+  assert.equal(player.hp, hp + 30); assert.equal(state.loot.some(loot => loot.id === 55), false);
   assert.deepEqual({ ammo: player.ammo, grenades: player.grenades, potions: player.potions, shots: player.shots }, inventory);
   assert.equal(hordeInputForPhase(raw, 'fight'), raw, 'combat controls resume unchanged in the real fight');
 });

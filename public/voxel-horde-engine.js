@@ -1,11 +1,15 @@
 /** Voxel Last Stand: deterministic, shared 120 Hz solo / three-player wave survival. */
 import { createCombatPlayer, combatStep, emitCombatEvent, emptyInput, INPUT_KEYS, TICK_RATE, MAPS, WEAPONS, WORLD, PLAYER_HEALTH, eyeHeight, playerHeight, aimDirection, traceShot, pickupCombatLoot, addInventoryLoot, advanceInventoryLoot } from './voxel-engine.js';
 import { navigationPoints, navigationPath, navigationCanOccupy, navigationVisible } from './voxel-navigation.js';
-import { INVENTORY_ACTIONS, createInventoryGun, ensureInventory, refreshInventory, storeInventoryGun, addInventoryStack, setInventoryLoadout } from './voxel-inventory.js';
+import { INVENTORY_ACTIONS, createInventoryGun, createInventoryMelee, ensureInventory, refreshInventory, storeInventoryGun, addInventoryStack, setInventoryLoadout, setInventoryMeleeLoadout } from './voxel-inventory.js';
+import { MELEE_WEAPONS } from './voxel-melee.js';
 
 export { emptyInput, INPUT_KEYS, TICK_RATE, MAPS, WEAPONS };
 export const HORDE_RULES = Object.freeze({ maxMonsters: 20, maxLoot: 20, maxWarnings: 4, spawnWarningTicks: 90, emergenceTicks: 54, countdownTicks: 360, intermissionTicks: 960, reviveTicks: 360, reviveHealth: 75, pickupRange: 1.65, lootLifetimeTicks: 5400 });
 export const HORDE_DIFFICULTIES = Object.freeze({ veteran: Object.freeze({ health: 1, spawn: 1, gunRest: 1, damage: 1 }), nightmare: Object.freeze({ health: 1.28, spawn: .78, gunRest: .8, damage: 1.18 }) });
+// Only the first three waves grant a close-combat damage opening. Monsters keep
+// their full health, movement and attack damage; later armed waves stay demanding.
+export const HORDE_MELEE_RULES = Object.freeze({ damageScales: Object.freeze([1.6, 1.4, 1.2]), staggerRecoveryTicks: 84, staggerTicks: Object.freeze({ knife: 18, sword: 28, katana: 32, axe: 44, tonfas: 16 }), supplyWeapons: Object.freeze(['tonfas', 'axe', 'sword', 'katana']) });
 export const MONSTER_TYPES = Object.freeze({
   stalker: Object.freeze({ label: 'Ash Stalker', health: 90, damage: 28, reach: 1.5, windup: 48, recovery: 72, weapon: 'carbine', walk: true }),
   runner: Object.freeze({ label: 'Rift Runner', health: 65, damage: 18, reach: 1.15, windup: 30, recovery: 54, weapon: 'smg', walk: false }),
@@ -33,16 +37,18 @@ function random(state) {
   state.horde.randomState = value >>> 0;
   return (value >>> 0) / 4294967296;
 }
-function normalizedOptions({ capacity = 3, mapId = 'courtyard', seed = 0x73656d61, difficulty = 'veteran' } = {}) {
+function normalizedOptions({ capacity = 3, mapId = 'courtyard', seed = 0x73656d61, difficulty = 'veteran', melee = 'katana' } = {}) {
   if (![1, 2, 3].includes(capacity)) throw new RangeError('Last Stand supports one to three human seats.');
   if (!Object.hasOwn(MAPS, mapId)) throw new RangeError('Choose a Last Stand map.');
   if (!Object.hasOwn(HORDE_DIFFICULTIES, difficulty)) throw new RangeError('Choose Veteran or Nightmare difficulty.');
+  if (typeof melee !== 'string' || !Object.hasOwn(MELEE_WEAPONS, melee)) throw new RangeError('Choose a close-combat weapon from the loadout list.');
   if (!Number.isInteger(seed) || seed < 0 || seed > 0xffffffff) throw new RangeError('Choose a finite unsigned 32-bit seed.');
-  return { capacity, mapId, seed, difficulty };
+  return { capacity, mapId, seed, difficulty, melee };
 }
 function humanPlayer(state, id, old = null) {
   const player = createCombatPlayer(id, 1, old?.weapon || 'carbine'), spawn = arenaFor(state).spawns[0][id];
-  Object.assign(player, spawn, { y: spawn.y || 0, team: 0, human: true, monster: false, connected: old?.connected ?? id === 0, participating: false, lifeId: (old?.lifeId || 0) + 1, revivesThisWave: 0 });
+  Object.assign(player, spawn, { y: spawn.y || 0, team: 0, human: true, monster: false, connected: old?.connected ?? id === 0, participating: false, lifeId: (old?.lifeId || 0) + 1, revivesThisWave: 0, hordeMelee: old?.hordeMelee || state.horde.config.melee });
+  setInventoryMeleeLoadout(player, player.hordeMelee);
   player.alive = player.connected; player.previousInput = emptyInput(player);
   if (old) for (const key of ['kills', 'deaths', 'damageDealt', 'shots']) player[key] = old[key];
   return player;
@@ -81,6 +87,16 @@ export function selectLoadout(state, id, weapon) {
   if (player.hasGun && player.weapon === weapon) return { ok: true, changed: false };
   setInventoryLoadout(player, weapon);
   emitCombatEvent(state, 'loadout', { playerId: id, weapon });
+  return { ok: true, changed: true };
+}
+export function chooseMelee(state, id, melee) {
+  if (!humanSlot(state, id)) return { ok: false, changed: false, error: 'Unknown survivor.' };
+  if (typeof melee !== 'string' || !Object.hasOwn(MELEE_WEAPONS, melee)) return { ok: false, changed: false, error: 'Choose a close-combat weapon from the loadout list.' };
+  if (!['lobby', 'countdown', 'intermission', 'matchEnd'].includes(state.phase)) return { ok: false, changed: false, error: 'Change weapons between waves.' };
+  const player = state.players[id];
+  if (player.hordeMelee === melee && player.inventory[0]?.kind === 'melee' && player.inventory[0]?.weapon === melee) return { ok: true, changed: false };
+  setInventoryMeleeLoadout(player, melee, { equip: player.inventoryIndex === 0 }); player.hordeMelee = melee;
+  emitCombatEvent(state, 'meleeLoadout', { playerId: id, weapon: melee });
   return { ok: true, changed: true };
 }
 function neutralize(state, { stop = true } = {}) {
@@ -163,7 +179,34 @@ function spawnPoint(state) {
   return choices[Math.floor(random(state) * choices.length)];
 }
 function newBrain(state, player) {
-  return { id: player.id, lifeId: player.lifeId, targetId: null, path: [], nextPlanTick: state.tick + player.id % 12, nextSightTick: 0, visible: false, firstSeenTick: -1, attackTargetId: null, attackYaw: 0, attackPitch: 0, attackTicks: 0, attackReady: false, recoverTicks: 0, gunTicks: 0, burstUntil: 0, nextBurstTick: 0, lastX: player.x, lastZ: player.z, lastMotionTick: state.tick, stuckTicks: 0, aimYaw: player.yaw, aimPitch: 0 };
+  return { id: player.id, lifeId: player.lifeId, targetId: null, path: [], nextPlanTick: state.tick + player.id % 12, nextSightTick: 0, visible: false, firstSeenTick: -1, attackTargetId: null, attackYaw: 0, attackPitch: 0, attackTicks: 0, attackReady: false, recoverTicks: 0, staggerTicks: 0, staggerReadyTick: 0, gunTicks: 0, burstUntil: 0, nextBurstTick: 0, lastX: player.x, lastZ: player.z, lastMotionTick: state.tick, stuckTicks: 0, aimYaw: player.yaw, aimPitch: 0 };
+}
+function survivorMelee(state, attacker, target) {
+  return humanSlot(state, attacker?.id) && attacker.human && attacker.connected && attacker.participating && target?.monster && target.team !== attacker.team;
+}
+function meleeDamageScale(state, attacker, target) {
+  return survivorMelee(state, attacker, target) ? HORDE_MELEE_RULES.damageScales[state.horde.wave - 1] || 1 : 1;
+}
+function onMeleeHit(state, hit, attacker, target) {
+  if (!survivorMelee(state, attacker, target) || target.hp <= 0 || target.emergenceTicks > 0) return;
+  const brain = state.horde.brains[target.id];
+  if (!brain || brain.recoverTicks > 0 || state.tick < brain.staggerReadyTick) return;
+  const wave = state.horde.wave, duration = HORDE_MELEE_RULES.staggerTicks[hit.weapon];
+  if (!duration) return;
+  const waveResistance = wave === 1 ? 1 : wave === 2 ? .9 : wave === 3 ? .7 : wave === 4 ? .45 : .35;
+  const armorResistance = target.monsterType === 'brute' ? hit.weapon === 'axe' ? .8 : .45 : 1;
+  const ticks = Math.max(6, Math.round(duration * waveResistance * armorResistance));
+  const monster = MONSTER_TYPES[target.monsterType];
+  const attackWindow = monster.gun ? monster.windup + Math.round(monster.rest * settingsFor(state).gunRest) + 24 : monster.windup + 24;
+  brain.staggerTicks = ticks; brain.staggerReadyTick = state.tick + ticks + Math.max(HORDE_MELEE_RULES.staggerRecoveryTicks, attackWindow);
+  // This contact cancels a readable commitment, not an impact already resolved
+  // this tick. A follow-up hit during immunity still deals damage but cannot
+  // cancel another windup; coordinated blades cannot stun-lock a brute.
+  brain.attackTicks = brain.gunTicks = brain.burstUntil = 0; brain.attackReady = false; brain.attackTargetId = null;
+  brain.recoverTicks = Math.max(brain.recoverTicks, 12); brain.nextBurstTick = Math.max(brain.nextBurstTick, state.tick + ticks + 12);
+  target.attackTicks = target.aimWindupTicks = 0; target.aiming = false; target.aimTicks = 0; target.monsterState = 'stagger';
+  target.vx *= .2; target.vz *= .2;
+  emitCombatEvent(state, 'monsterStagger', { playerId: attacker.id, targetId: target.id, weapon: hit.weapon, ticks, x: target.x, y: target.y, z: target.z });
 }
 function spawnMonster(state, warning) {
   const point = { x: warning.x, y: warning.y, z: warning.z }, map = arenaFor(state);
@@ -217,6 +260,7 @@ function monsterInput(state, player, brain) {
   const input = emptyInput(player), profile = MONSTER_TYPES[player.monsterType];
   if (!player.alive) return input;
   if (player.emergenceTicks > 0) { player.emergenceTicks--; player.monsterState = 'emerging'; return input; }
+  if (brain.staggerTicks > 0) { brain.staggerTicks--; player.monsterState = 'stagger'; return input; }
   const humans = activeHumans(state), target = humans.reduce((nearest, candidate) => !nearest || Math.hypot(candidate.x - player.x, candidate.z - player.z) < Math.hypot(nearest.x - player.x, nearest.z - player.z) ? candidate : nearest, null);
   if (!target) return input;
   if (brain.targetId !== target.id) { brain.targetId = target.id; brain.nextPlanTick = 0; brain.firstSeenTick = -1; brain.visible = false; }
@@ -336,7 +380,7 @@ function humanInteractions(state, inputs, previous) {
         const position = safeHumanPosition(state, revive, 1.8);
         if (!position) { player.interactTicks = HORDE_RULES.reviveTicks; continue; }
         const fresh = createCombatPlayer(revive.id, 1, revive.weapon);
-        for (const key of ['x', 'y', 'z', 'yaw', 'pitch', 'kills', 'deaths', 'damageDealt', 'shots', 'connected', 'participating', 'lifeId']) fresh[key] = revive[key];
+        for (const key of ['x', 'y', 'z', 'yaw', 'pitch', 'kills', 'deaths', 'damageDealt', 'shots', 'connected', 'participating', 'lifeId', 'hordeMelee']) fresh[key] = revive[key];
         Object.assign(fresh, position, { team: 0, human: true, monster: false, hp: HORDE_RULES.reviveHealth, potions: 0, grenades: 0, revivesThisWave: revive.revivesThisWave + 1, lifeId: revive.lifeId + 1, triggerBlocked: true });
         fresh.inventory = revive.inventory.map(item => item ? { ...item } : null); fresh.inventoryIndex = revive.inventoryIndex; fresh.inventoryGunIndex = revive.inventoryGunIndex;
         // A revive preserves carried weapons but never replenishes utility charges.
@@ -364,8 +408,14 @@ function dropLoot(state, event) {
     if (item) { item.reserve = Math.min(item.reserve, WEAPONS[item.weapon].reserve); item.reloadTicks = item.burstRemaining = item.spinTicks = 0; const weaponDrop = addInventoryLoot(state, monster, item); if (weaponDrop) emitCombatEvent(state, 'hordeDrop', { ...weaponDrop }); }
   }
   const needsHeal = activeHumans(state).some(player => player.hp < 150), roll = random(state);
-  let type = roll < (needsHeal ? .36 : .19) || horde.killsSinceHeal >= 5 ? 'health' : roll < .72 ? 'ammo' : null;
+  let type = roll < (needsHeal ? .36 : .19) || horde.killsSinceHeal >= 5 ? 'health' : roll < .72 ? 'ammo' : roll < .78 ? 'melee' : null;
   if (!type) return;
+  if (type === 'melee') {
+    const weapon = monster.monsterType === 'brute' ? 'axe' : monster.monsterType === 'runner' ? 'tonfas' : 'katana';
+    const drop = addInventoryLoot(state, monster, createInventoryMelee(weapon));
+    if (drop) emitCombatEvent(state, 'hordeDrop', { ...drop });
+    return;
+  }
   if (type === 'health') horde.killsSinceHeal = 0;
   const drop = { id: ++horde.lootId, type, kind: type === 'health' ? 'heal' : 'ammo', x: event.x, y: event.y, z: event.z, amount: type === 'health' ? 45 : 1.5, spawnTick: state.tick, expiresTick: state.tick + HORDE_RULES.lootLifetimeTicks };
   if (state.loot.length >= HORDE_RULES.maxLoot) state.loot.splice(0, 1);
@@ -397,7 +447,15 @@ function beginIntermission(state) {
     if (horde.wave % 2 === 0 && player.potions < 2) addInventoryStack(player, 'heal', 1);
     refreshInventory(player); player.interaction = null; player.interactTicks = 0;
   }
-  state.fighters = state.players; state.objective = 'Wave cleared. Catch your breath, regroup and choose your next loadout.';
+  // Supplies are physical, optional pickups. A player who trades their blade
+  // slot for another gun keeps that choice; never overwrite a living inventory.
+  const supplier = activeHumans(state)[0];
+  if (supplier) {
+    const weapon = HORDE_MELEE_RULES.supplyWeapons[(horde.wave - 1) % HORDE_MELEE_RULES.supplyWeapons.length];
+    const cache = addInventoryLoot(state, supplier, createInventoryMelee(weapon));
+    if (cache) { cache.source = 'wave-clear'; emitCombatEvent(state, 'hordeSupply', { ...cache, wave: horde.wave }); }
+  }
+  state.fighters = state.players; state.objective = 'Wave cleared. Regroup, collect the close-combat supply and choose your next loadout.';
   for (const id of horde.participantIds) horde.inputFences[id] = ACTIONS.filter(key => state.players[id].previousInput[key]);
   neutralize(state, { stop: false }); emitCombatEvent(state, 'hordeClear', { wave: horde.wave, seconds: horde.waveTicks / TICK_RATE });
 }
@@ -419,6 +477,7 @@ export function step(state, rawInputs = []) {
     });
     combatStep(state, inputs, arenaFor(state));
     humanInteractions(state, inputs, previous);
+    advanceInventoryLoot(state, arenaFor(state));
     state.loot = state.loot.filter(drop => drop.expiresTick > state.tick);
     if (--state.phaseTicks <= 0) {
       captureFence(state, rawInputs); prepareWave(state); state.phase = 'fight'; state.phaseTicks = 0;
@@ -446,7 +505,7 @@ export function step(state, rawInputs = []) {
     const brain = state.horde.brains[player.id] ||= newBrain(state, player);
     return monsterInput(state, player, brain);
   });
-  combatStep(state, inputs, arenaFor(state), { additionalDamage: monsterDamage });
+  combatStep(state, inputs, arenaFor(state), { additionalDamage: monsterDamage, meleeDamageScale, onMeleeHit });
   recordCombat(state); humanInteractions(state, inputs, previous);
   advanceInventoryLoot(state, arenaFor(state));
   state.horde.alive = state.players.filter(player => player.monster && player.alive).length;

@@ -1,7 +1,7 @@
 import { MAPS, ADS, HEAL, WORLD } from './voxel-engine.js';
 import { WEAPONS, weaponAimFovRatio } from './voxel-weapons.js';
 import { grenadeCapacity } from './voxel-ordnance.js';
-import { meleeProfile, meleeWeaponId } from './voxel-melee.js';
+import { MELEE_WEAPONS, meleeProfile, meleeWeaponId } from './voxel-melee.js';
 import { frameAlpha } from './display-timing.js';
 import { createPlayerAnimationPresenter, playerAnimationPose } from './voxel-player-animation.js';
 import { createFirstPersonMotionPresenter, createWeaponShotPresenter, weaponShotPose } from './voxel-first-person-motion.js';
@@ -66,12 +66,12 @@ function aimProgress(player) {
 }
 
 export function meleeMotion(player) {
-  const profile = meleeProfile(player), knife = meleeWeaponId(player) === 'knife';
+  const profile = meleeProfile(player), id = meleeWeaponId(player), knife = id === 'knife', hand = id === 'tonfas' && player.meleeHand === 1 ? -1 : 1;
   const total = profile.startupTicks + profile.activeTicks + profile.recoveryTicks;
   const remaining = clamp(finite(player.meleeTicks), 0, total), elapsed = total - remaining;
-  const idleYaw = knife ? -.10 : -.18, idlePitch = knife ? .22 : .48;
-  const windYaw = knife ? -.43 : -.64, endYaw = knife ? .43 : .64;
-  const windPitch = knife ? .12 : .30, endPitch = knife ? -.12 : -.30;
+  const idleYaw = (knife ? -.10 : id === 'axe' ? -.13 : id === 'tonfas' ? -.08 : -.18) * hand, idlePitch = knife ? .22 : id === 'axe' ? .60 : id === 'tonfas' ? .12 : .48;
+  const windYaw = (knife ? -.43 : id === 'katana' ? -.56 : id === 'axe' ? -.28 : id === 'tonfas' ? -.38 : -.64) * hand, endYaw = (knife ? .43 : id === 'katana' ? .56 : id === 'axe' ? .28 : id === 'tonfas' ? .38 : .64) * hand;
+  const windPitch = knife ? .12 : id === 'axe' ? .95 : id === 'tonfas' ? .08 : .30, endPitch = knife ? -.12 : id === 'axe' ? -.68 : id === 'tonfas' ? -.16 : -.30;
   if (!remaining) return { yaw: idleYaw, pitch: idlePitch, extension: 0, active: false };
   if (elapsed < profile.startupTicks) {
     const progress = smooth(elapsed / profile.startupTicks);
@@ -79,7 +79,7 @@ export function meleeMotion(player) {
   }
   if (elapsed < profile.startupTicks + profile.activeTicks) {
     const progress = smooth((elapsed - profile.startupTicks) / profile.activeTicks);
-    return { yaw: lerp(windYaw, endYaw, progress), pitch: lerp(windPitch, endPitch, progress), extension: Math.sin(progress * Math.PI) * (knife ? .16 : .37), active: true };
+    return { yaw: lerp(windYaw, endYaw, progress), pitch: lerp(windPitch, endPitch, progress), extension: Math.sin(progress * Math.PI) * (knife ? .16 : id === 'tonfas' ? .22 : .37), active: true };
   }
   const progress = smooth((elapsed - profile.startupTicks - profile.activeTicks) / profile.recoveryTicks);
   return { yaw: lerp(endYaw, idleYaw, progress), pitch: lerp(endPitch, idlePitch, progress), extension: 0, active: false };
@@ -1818,7 +1818,7 @@ export function parisLandmarkMesh(bounds) {
   return mesh.array;
 }
 
-const weaponLength = weapon => ({ pistol: .42, smg: .68, marksman: 1.04, shotgun: 1.02, burst: .87, sniper: 1.26, lmg: 1.08, crossbow: .83, revolver: .51, pdw: .80, autoshotgun: .93, battlerifle: 1.14 })[weapon] || .92;
+const weaponLength = weapon => ({ pistol: .42, smg: .68, marksman: 1.04, shotgun: 1.02, burst: .87, sniper: 1.26, lmg: 1.08, crossbow: .83, revolver: .51, pdw: .80, autoshotgun: .93, battlerifle: 1.14, dualpistols: .46, dualsmg: .61, slugshotgun: 1.12 })[weapon] || .92;
 const reloadMagazineDrop = progress => progress > .04 && progress < .64 ? Math.sin((progress - .04) / .60 * Math.PI) * .25 : 0;
 const weaponCoverPadding = (weapon, scale = 1, reloadProgress = 0) => {
   const width = weapon === 'crossbow' ? .51 : weapon === 'lmg' ? .28 : weapon === 'sniper' ? .18 : weapon === 'revolver' ? .26 : weapon === 'autoshotgun' ? .18 : .11;
@@ -1827,6 +1827,13 @@ const weaponCoverPadding = (weapon, scale = 1, reloadProgress = 0) => {
 };
 
 function weaponParts(mesh, weapon, pose, options = {}) {
+  if (WEAPONS[weapon]?.dualWield && !Number.isInteger(options.hand)) {
+    for (const hand of [0, 1]) {
+      const offset = rotate([hand === 0 ? .15 : -.15, 0, 0], pose.yaw, pose.pitch).map(value => value * finite(pose.scale, 1));
+      weaponParts(mesh, weapon, { ...pose, x: pose.x + offset[0], y: pose.y + offset[1], z: pose.z + offset[2] }, { ...options, hand });
+    }
+    return weaponLength(weapon);
+  }
   const pistol = weapon === 'pistol', shotgun = weapon === 'shotgun', burst = weapon === 'burst';
   const rifle = !pistol, smg = weapon === 'smg', marksman = weapon === 'marksman', sniper = weapon === 'sniper', lmg = weapon === 'lmg';
   const scoped = !!WEAPONS[weapon]?.scoped;
@@ -1878,6 +1885,59 @@ function weaponParts(mesh, weapon, pose, options = {}) {
     part(-.031, .137, rear + .036, .010, .010, .004, '#bdd4ae');
     part(.021, .137, rear + .036, .010, .010, .004, '#bdd4ae');
   };
+  if (weapon === 'dualpistols' || weapon === 'dualsmg') {
+    const automatic = weapon === 'dualsmg', slide = clamp(finite(options.bolt), 0, 1) * .046;
+    const casing = automatic ? '#576d79' : '#b7c0b6', accent = automatic ? '#b49162' : '#907454';
+    // Each hand has a complete compact firearm. Flush vent paint and a small
+    // number of solid parts keep ten paired loadouts below the shared budget.
+    part(-.047, -.026, automatic ? -.44 : -.39, .094, automatic ? .128 : .09, automatic ? .43 : .35, casing);
+    part(-.047, automatic ? .102 : .064, (automatic ? -.435 : -.395) + slide, .094, .031, automatic ? .37 : .35, automatic ? '#7e969e' : '#d4d9cd');
+    part(-.032, -.19, -.087, .064, .172, .089, '#324650');
+    part(-.034, -.190 - magazineDrop, -.085, .068, .043, .088, accent);
+    part(-.046, -.098, -.19, .013, .067, .102, trim);
+    part(.033, -.098, -.19, .013, .067, .102, trim);
+    part(-.046, -.108, -.19, .092, .015, .102, trim);
+    part(-.028, .006, -length - .022, .056, .047, automatic ? .18 : .078, '#455963');
+    if (automatic) {
+      part(-.032, -.253 - magazineDrop, -.285, .064, .230, .098, '#394f58');
+      part(-.033, -.253 - magazineDrop, -.286, .066, .026, .10, accent);
+      part(-.053, -.040, -.39, .106, .045, .066, '#384e57');
+    }
+    for (const xx of [-.0475, .0475]) {
+      side(xx, automatic ? .034 : .07, -.30 + slide, .014, .062, '#2a414b');
+      side(xx, -.126, -.064, .041, .034, accent);
+    }
+    bore(.027, .032, -length - .023, .012);
+    ironSights(-length + .053, -.072);
+    return length;
+  }
+  if (weapon === 'slugshotgun') {
+    // A heavy long slug barrel, copper receiver, skeletal shoulder stock and
+    // pump running under the barrel distinguish it from the pellet shotgun.
+    part(-.060, -.040, -.43, .120, .150, .45, '#7a624b');
+    part(-.051, .110, -.43, .102, .026, .42, '#c1b99d');
+    part(-.029, .003, -length - .025, .058, .067, .74, '#aebbb5');
+    part(-.025, -.061, -1.02, .050, .043, .62, '#4d6567');
+    part(-.043, -.008, -length - .026, .086, .078, .06, '#344c51');
+    part(-.072, -.071, -.79 + finite(options.pump) * .16, .144, .094, .24, '#536d6e');
+    for (let rib = 0; rib < 4; rib++) {
+      side(-.073, -.052, -.76 + rib * .047 + finite(options.pump) * .16, .045, .013, '#afae91');
+      side(.073, -.052, -.76 + rib * .047 + finite(options.pump) * .16, .045, .013, '#afae91');
+    }
+    part(-.035, -.175, -.025, .070, .134, .090, '#3c5155');
+    part(-.064, .035, .015, .128, .041, .24, '#637b78');
+    part(-.053, -.032, .015, .106, .030, .24, '#637b78');
+    part(-.065, -.051, .220, .130, .139, .043, '#273f42');
+    part(-.058, -.110, -.188, .015, .057, .116, trim);
+    part(.043, -.110, -.188, .015, .057, .116, trim);
+    part(-.058, -.122, -.188, .116, .017, .116, trim);
+    side(.061, .011, -.336, .058, .114, '#263d43');
+    part(.057, .028, -.255 + finite(options.bolt) * .076, .042, .025, .050, '#d2d0b6');
+    for (let shell = 0; shell < 3; shell++) side(-.061, -.018, -.337 + shell * .065, .060, .032, '#c7a46a');
+    bore(.041, .050, -length - .027, .006);
+    ironSights(-1.03, -.135);
+    return length;
+  }
   if (weapon === 'revolver') {
     // An exposed six chamber cylinder, brushed steel frame and walnut grip
     // give this hand cannon a silhouette distinct from the magazine pistol.
@@ -2211,14 +2271,69 @@ function swordParts(mesh, pose, options = {}) {
   part(-.018, .048, .176, .036, .008, .024, '#516b72');
 }
 
-const meleeLength = player => meleeWeaponId(player) === 'knife' ? .48 : 1.24;
+const meleeLength = player => ({ knife: .48, sword: 1.24, katana: 1.42, axe: 1.03, tonfas: .76 })[meleeWeaponId(player)] || 1.24;
+const meleePadding = player => ({ knife: .08, sword: .18, katana: .16, axe: .32, tonfas: .13 })[meleeWeaponId(player)] || .18;
 function meleeParts(mesh, player, pose, options = {}) {
-  if (meleeWeaponId(player) !== 'knife') { swordParts(mesh, pose, options); return; }
-  const limit = finite(options.limit, .48);
+  const id = meleeWeaponId(player);
+  if (id === 'tonfas' && !Number.isInteger(options.hand)) {
+    for (const hand of [0, 1]) {
+      const offset = rotate([hand === 0 ? .16 : -.16, 0, 0], pose.yaw, pose.pitch).map(value => value * finite(pose.scale, 1));
+      meleeParts(mesh, player, { ...pose, x: pose.x + offset[0], y: pose.y + offset[1], z: pose.z + offset[2] }, { ...options, hand });
+    }
+    return;
+  }
+  if (id === 'sword') { swordParts(mesh, pose, options); return; }
+  const limit = finite(options.limit, meleeLength(player));
   const part = (x, y, z, w, h, d, color) => {
     const clippedZ = Math.max(z, -limit), clippedDepth = z + d - clippedZ;
     if (clippedDepth > 0) mesh.box(x, y, clippedZ, w, h, clippedDepth, color, pose);
   };
+  if (id === 'katana') {
+    part(-.028, -.030, -.047, .056, .060, .28, '#303c3c');
+    for (let wrap = 0; wrap < 5; wrap++) part(-.029, -.031, -.020 + wrap * .044, .058, .062, .017, '#9a735b');
+    part(-.033, -.033, .215, .066, .066, .038, '#c5b98c');
+    part(-.116, -.034, -.098, .232, .068, .032, '#857548');
+    part(-.081, -.051, -.099, .162, .102, .033, '#aa9a60');
+    part(-.043, -.032, -.15, .086, .064, .052, '#d2b67f');
+    // Six stepped single-edge blade segments describe the katana's gentle
+    // curve. A narrow dark spine and bright edge remain actual clipped parts.
+    for (let segment = 0; segment < 6; segment++) {
+      const curve = segment * segment * .0025, z = -.35 - segment * .175;
+      const width = segment === 5 ? .041 : .068;
+      part(-.032 + curve, -.015, z, width, .030, .205, options.active ? '#e5eddf' : '#c3d1cf');
+      part(-.034 + curve, -.016, z, .011, .032, .205, '#f2efd8');
+      part(.025 + curve, -.016, z, .011, .032, .205, '#66848a');
+    }
+    part(.044, -.011, -1.405, .018, .022, .185, '#ecf0df');
+    return;
+  }
+  if (id === 'axe') {
+    part(-.027, -.030, -.96, .054, .060, 1.20, '#6c5141');
+    part(-.031, -.034, .015, .062, .068, .22, '#3e514c');
+    for (let wrap = 0; wrap < 4; wrap++) part(-.033, -.036, .025 + wrap * .046, .066, .072, .014, '#a38a59');
+    part(-.038, -.040, .211, .076, .080, .041, '#a7b5a3');
+    part(-.090, -.054, -.912, .180, .108, .19, '#53686c');
+    part(-.305, -.049, -.935, .255, .098, .155, '#bec9c5');
+    part(-.283, -.040, -.991, .200, .080, .071, '#d6decd');
+    part(-.302, -.041, -.802, .169, .082, .152, '#a9bbb8');
+    part(-.318, -.044, -.991, .024, .088, .240, '#f2eddb');
+    part(.069, -.042, -.905, .129, .084, .112, '#95a9a9');
+    part(.166, -.029, -.891, .074, .058, .085, '#cad2c7');
+    part(-.034, -.055, -.951, .068, .110, .024, '#b29b69');
+    return;
+  }
+  if (id === 'tonfas') {
+    // T-handled batons, one in each hand, instead of a recoloured short sword.
+    part(-.039, .022, -.68, .078, .076, .90, '#334c54');
+    part(-.047, .014, -.736, .094, .092, .075, '#b6c4b7');
+    part(-.047, .014, .192, .094, .092, .06, '#8ea7a4');
+    part(-.032, -.154, -.062, .064, .197, .072, '#5b6e68');
+    part(-.039, -.167, -.068, .078, .024, .084, '#bba679');
+    for (let wrap = 0; wrap < 3; wrap++) part(-.034, -.130 + wrap * .045, -.064, .068, .012, .076, '#a49474');
+    part(-.041, .015, -.20, .082, .090, .016, '#788f89');
+    part(-.041, .015, -.51, .082, .090, .016, '#788f89');
+    return;
+  }
   // A short single-edged utility knife. Its silhouette, scale and quicker cut
   // make the unarmed scavenger clearly different from Breach's long sword.
   part(-.026, -.030, -.023, .052, .060, .175, '#344943');
@@ -2327,6 +2442,23 @@ function grenadeParts(mesh, pose, radius, fuseTicks, time, intact = false, limit
 }
 
 function lootGun(mesh, weapon, pose) {
+  if (WEAPONS[weapon]?.dualWield) {
+    const automatic = weapon === 'dualsmg';
+    for (const side of [-1, 1]) {
+      const offset = rotate([side * .17 * finite(pose.scale, 1), 0, 0], pose.yaw, pose.pitch);
+      const handPose = { ...pose, x: pose.x + offset[0], y: pose.y + offset[1], z: pose.z + offset[2] };
+      mesh.box(-.048, -.025, -weaponLength(weapon), .096, .112, weaponLength(weapon) - .022, automatic ? '#728892' : '#c2c9ba', handPose);
+      mesh.box(-.034, automatic ? -.255 : -.183, automatic ? -.26 : -.087, .068, automatic ? .231 : .160, .092, '#425960', handPose);
+      const paint = (z, y, color) => {
+        const points = [[-.048, y, z], [-.048, y + .032, z], [.048, y + .032, z], [.048, y, z]];
+        const world = points.map(point => { const p = rotate(point.map(value => value * finite(pose.scale, 1)), pose.yaw, pose.pitch); return p.map((value, i) => value + [handPose.x, handPose.y, handPose.z][i]); });
+        mesh.quad(...world, rotate([0, 0, -1], pose.yaw, pose.pitch), rgba(color));
+      };
+      paint(-weaponLength(weapon) - .0005, .018, '#192f37');
+      paint(automatic ? -.261 : -.088, -.122, '#b99c67');
+    }
+    return;
+  }
   const part = (...values) => mesh.box(...values, pose);
   const metal = '#acbdb5', trim = '#25363b';
   const body = ({ pistol: '#607b91', smg: '#4f747c', marksman: '#526976', shotgun: '#926b43', burst: '#805b4f', sniper: '#677961', lmg: '#76764d', crossbow: '#7b8765' })[weapon] || '#56685f';
@@ -2335,6 +2467,15 @@ function lootGun(mesh, weapon, pose) {
     mesh.quad(...points.map(transform), rotate(normal, pose.yaw, pose.pitch), rgba(color));
   };
   const top = (x, y, z, w, d, color) => face([[x, y, z], [x, y, z + d], [x + w, y, z + d], [x + w, y, z]], [0, 1, 0], color);
+  if (weapon === 'slugshotgun') {
+    part(-.062, -.045, -.42, .124, .150, .44, '#897051');
+    part(-.031, .004, -1.145, .062, .064, .74, '#b9c4b9');
+    part(-.069, -.069, -.78, .138, .081, .22, '#4d7174');
+    part(-.057, -.032, .018, .114, .080, .235, '#496269');
+    top(-.041, .106, -.41, .082, .24, '#ccb88b');
+    face([[-.017, .016, -1.146], [-.017, .054, -1.146], [.017, .054, -1.146], [.017, .016, -1.146]], [0, 0, -1], '#18313b');
+    return;
+  }
   if (['revolver', 'pdw', 'autoshotgun', 'battlerifle'].includes(weapon)) {
     const length = weaponLength(weapon);
     if (weapon === 'revolver') {
@@ -2424,7 +2565,7 @@ function lootGun(mesh, weapon, pose) {
   }
 }
 
-const validLoot = item => item && ['weapon', 'melee', 'heal', 'ammo', 'grenade'].includes(item.kind) && [item.x, item.y, item.z].every(Number.isFinite) && (item.kind !== 'weapon' || !!WEAPONS[item.weapon]) && (item.kind !== 'melee' || ['knife', 'sword'].includes(item.weapon));
+const validLoot = item => item && ['weapon', 'melee', 'heal', 'ammo', 'grenade'].includes(item.kind) && [item.x, item.y, item.z].every(Number.isFinite) && (item.kind !== 'weapon' || Object.hasOwn(WEAPONS, item.weapon)) && (item.kind !== 'melee' || Object.hasOwn(MELEE_WEAPONS, item.weapon));
 
 /** Pickups are deliberately small display props, not misleading solid cover. */
 function buildLootMeshes(items = [], time = 0, movingRanges = null) {
@@ -2436,18 +2577,30 @@ function buildLootMeshes(items = [], time = 0, movingRanges = null) {
     count++;
     const x = item.x, y = item.y, z = item.z, seed = hash(item.id);
     const tint = item.kind === 'heal' ? '#a3e6b7' : item.kind === 'weapon' || item.kind === 'melee' ? '#edd494' : item.kind === 'grenade' ? '#deb39c' : '#94c8da';
-    contacts.floorRing(x, z, .23, .275, rgba(tint, .64), y + .018, 8);
+    contacts.floorRing(x, z, .23, .275, rgba(tint, .64), y + .018, WEAPONS[item.weapon]?.dualWield ? 6 : 8);
     const bob = Math.sin(finite(time) * .0023 + seed % 13) * .016;
     const movingStart = opaque.length; let movingEnd = movingStart;
     if (item.kind === 'melee') {
-      const knife = item.weapon === 'knife', length = knife ? .49 : 1.12, yaw = (seed % 4) * Math.PI / 2 + .45, offset = rotate([0, 0, length * .19], yaw);
+      const id = item.weapon, knife = id === 'knife', length = meleeLength({ meleeWeapon: id });
+      const yaw = (seed % 4) * Math.PI / 2 + .45, offset = rotate([0, 0, length * .19], yaw);
       const pose = { x: x + offset[0], y: y + .22 + bob, z: z + offset[2], yaw, pitch: 0, scale: knife ? .60 : .44 };
       const part = (...values) => opaque.box(...values, pose);
-      part(-.019, -.012, -length, .038, .024, length - .11, '#bdcbd0');
-      part(-.011, -.010, -length - .08, .022, .020, .08, '#d9e3e4');
-      part(-.035, -.028, -.11, .07, .056, .15, knife ? '#566c5c' : '#5d574e');
-      part(knife ? -.054 : -.13, -.025, -.12, knife ? .108 : .26, .05, .025, '#ac986a');
-      part(-.039, -.029, .025, .078, .058, .025, '#536c71');
+      if (id === 'axe') {
+        part(-.024, -.029, -.98, .048, .058, 1.20, '#7d5c44');
+        part(-.26, -.045, -.97, .33, .09, .23, '#c4d0c5');
+        part(-.29, -.04, -.99, .04, .08, .29, '#e5e8cd');
+        part(-.034, -.033, .02, .068, .066, .20, '#465b53');
+      } else if (id === 'tonfas') {
+        for (const side of [-1, 1]) {
+          part(side * .16 - .032, .012, -.73, .064, .072, .95, '#718e90');
+          part(side * .16 - .029, -.135, -.052, .058, .18, .074, '#ad996c');
+        }
+      } else {
+        part(-.019, -.012, -length + .10, .038, .024, length - .21, '#bdcbd0');
+        part(id === 'katana' ? .004 : -.011, -.010, -length, .022, .020, .12, '#e4e8d7');
+        part(-.035, -.028, -.11, .07, .056, .30, knife ? '#566c5c' : id === 'katana' ? '#965f49' : '#5d574e');
+        part(knife ? -.054 : id === 'katana' ? -.10 : -.13, -.025, -.12, knife ? .108 : id === 'katana' ? .20 : .26, .05, .025, '#ac986a');
+      }
       movingEnd = opaque.length;
       opaque.floor(x - .15, z - .15, .30, .30, '#6f6d51', y + .022);
     } else if (item.kind === 'weapon') {
@@ -2734,18 +2887,19 @@ export function operativePose(player, animation = playerAnimationPose(player, 0)
     return { hip, knee, ankle, foot, lift };
   });
   const aiming = aimProgress(player), reload = finite(player.reloadTicks) > 0 ? Math.sin(clamp(1 - player.reloadTicks / (WEAPONS[player.weapon]?.reloadTicks || 252), 0, 1) * Math.PI) : 0;
-  const healing = finite(player.healTicks) > 0, potion = healing || player.slot === 'potion', melee = player.slot === 'sword', single = melee || potion || player.slot === 'grenade' || player.slot === 'empty', swing = meleeMotion(player);
+  const healing = finite(player.healTicks) > 0, potion = healing || player.slot === 'potion', melee = player.slot === 'sword', dual = !potion && (melee ? !!meleeProfile(player).dualWield : gunHeld(player) && !!WEAPONS[player.weapon]?.dualWield), single = melee || potion || player.slot === 'grenade' || player.slot === 'empty', swing = meleeMotion(player);
   const throwLift = finite(player.grenadeThrowTicks) > 0 ? .085 : 0;
   const arms = [-1, 1].map((side, index) => {
     const armSwing = Math.sin(phase + index * Math.PI + Math.PI) * stride * .027 * (1 - aiming * .75);
     const shoulder = [side * .211, lerp(1.295, .767, crouch) + bob, .012];
     const elbow = [side * .192, lerp(1.065, .638, crouch) + bob + aiming * .020, -.053 + armSwing];
     const hand = [side * (side < 0 ? .106 : .125), lerp(1.145, .735, crouch) + bob + aiming * .070 - (side < 0 ? reload * .110 : 0), -.185 + armSwing * .42];
-    if (!single && side < 0) { hand[0] = .074 - reload * .100; hand[1] += .015; hand[2] = -.215 + armSwing * .30; }
+    if (!single && !dual && side < 0) { hand[0] = .074 - reload * .100; hand[1] += .015; hand[2] = -.215 + armSwing * .30; }
     if (player.slot === 'empty') { hand[0] = side * .193; hand[1] -= .11; hand[2] = -.035 + armSwing; elbow[2] += .015; }
     if (potion && !healing && side < 0) { hand[0] = -.125; hand[2] = -.17; }
     if (healing && side < 0) { hand[0] = -.114; hand[1] = lerp(1.415, .792, crouch); hand[2] = -.105; elbow[1] += .035; }
-    if (melee && side > 0) { hand[0] += Math.sin(swing.yaw) * .028; hand[1] += -.035 + Math.sin(-swing.pitch) * .035; hand[2] -= Math.min(.025, swing.extension * .07); elbow[2] -= .025; }
+    if (dual) { hand[0] = side * .185; hand[1] -= reload * .085; hand[2] = -.22 + armSwing * .3; elbow[0] = side * .202; }
+    if (melee && (dual ? index === (player.meleeHand === 1 ? 0 : 1) : side > 0)) { hand[0] += Math.sin(swing.yaw) * .028; hand[1] += -.035 + Math.sin(-swing.pitch) * .035; hand[2] -= Math.min(.025, swing.extension * .07); elbow[2] -= .025; }
     if (throwLift && side < 0) { hand[1] += throwLift * (1 - crouch * .65); hand[2] += .025; elbow[1] += .055 * (1 - crouch * .6); }
     hand[1] = Math.min((player.crouching ? .83 : 1.48) - .044, hand[1]);
     return { shoulder, elbow, hand };
@@ -2844,7 +2998,7 @@ export function operativeMeshes(player, time = 0, freeForAll = false, animation 
 }
 
 function playerMesh(mesh, player, map, time, allied, freeForAll = false, animation = null) {
-  const { crouch, yaw, pitch, pose, color, team, uniform, art } = operativeParts(mesh, player, time, freeForAll, animation);
+  const { crouch, yaw, pitch, pose, color, team, uniform, art, joints } = operativeParts(mesh, player, time, freeForAll, animation);
   const healing = finite(player.healTicks) > 0;
   const potion = healing || player.slot === 'potion', grenade = player.slot === 'grenade', empty = player.slot === 'empty';
   const sword = player.slot === 'sword', knife = sword && meleeWeaponId(player) === 'knife', motion = meleeMotion(player);
@@ -2855,7 +3009,7 @@ function playerMesh(mesh, player, map, time, allied, freeForAll = false, animati
   const reloadTilt = Math.sin(reloadProgress * Math.PI);
   const gunPose = { x: pose.x + handOffset[0], y: pose.y + handOffset[1] - reloadTilt * .12, z: pose.z + handOffset[2], yaw: heldYaw + (sword ? motion.yaw : 0), pitch: heldPitch + (sword ? motion.pitch : -reloadTilt * .24), scale: sword && !healing ? knife ? 1.15 : 1.35 : 1 };
   const direction = [Math.sin(gunPose.yaw) * Math.cos(gunPose.pitch), Math.sin(gunPose.pitch), -Math.cos(gunPose.yaw) * Math.cos(gunPose.pitch)];
-  const limit = Math.max(0, rayCoverDistance([gunPose.x, gunPose.y, gunPose.z], direction, map.colliders || [], sword ? meleeLength(player) * gunPose.scale : weaponLength(player.weapon) + .12, sword ? (knife ? .08 : .18) * gunPose.scale : weaponCoverPadding(player.weapon, gunPose.scale, reloadProgress)) - .025) / gunPose.scale;
+  const limit = Math.max(0, rayCoverDistance([gunPose.x, gunPose.y, gunPose.z], direction, map.colliders || [], sword ? meleeLength(player) * gunPose.scale : weaponLength(player.weapon) + .12, sword ? meleePadding(player) * gunPose.scale : weaponCoverPadding(player.weapon, gunPose.scale, reloadProgress)) - .025) / gunPose.scale;
   if (potion) {
     const progress = healing ? clamp(1 - player.healTicks / HEAL.ticks, 0, 1) : 0, drink = healing ? Math.sin(progress * Math.PI) : 0;
     const bottlePose = { ...gunPose, pitch: drink * .72 };
@@ -2866,10 +3020,29 @@ function playerMesh(mesh, player, map, time, allied, freeForAll = false, animati
     const limit = Math.max(0, rayCoverDistance([gunPose.x, gunPose.y, gunPose.z], direction, map.colliders || [], .24, .14) - .015);
     grenadeParts(mesh, gunPose, .12, 288, time, true, limit);
     mesh.box(-.050, -.10, -.024, .10, .095, .12, art.skin, gunPose);
+  } else if (sword && meleeProfile(player).dualWield) {
+    for (const hand of [0, 1]) {
+      const arm = joints.arms[hand === 0 ? 1 : 0], offset = rotate(arm.hand, yaw);
+      const swing = meleeMotion(hand === (player.meleeHand === 1 ? 1 : 0) ? player : { ...player, meleeTicks: 0, meleeHand: hand });
+      const handPose = { x: pose.x + offset[0], y: pose.y + offset[1] + .085, z: pose.z + offset[2] - .016, yaw: heldYaw + swing.yaw, pitch: heldPitch + swing.pitch, scale: 1.15 };
+      const forward = rotate([0, 0, -1], handPose.yaw, handPose.pitch), limit = Math.max(0, rayCoverDistance([handPose.x, handPose.y, handPose.z], forward, map.colliders || [], meleeLength(player) * handPose.scale, meleePadding(player) * handPose.scale) - .025) / handPose.scale;
+      meleeParts(mesh, player, handPose, { hand, limit, active: swing.active });
+      mesh.box(-.043, -.142, -.048, .086, .108, .11, art.skin, handPose);
+    }
   } else if (sword) {
     meleeParts(mesh, player, gunPose, { limit, active: motion.active });
     mesh.box(-.047, -.080, -.025, .094, .110, .160, art.skin, gunPose);
     mesh.box(-.060, -.075, .15, .12, .15, .27, uniform, gunPose);
+  } else if (!empty && gunHeld(player) && WEAPONS[player.weapon]?.dualWield) {
+    const age = player.shotCooldown > 0 ? (WEAPONS[player.weapon].cooldown - player.shotCooldown) * 1000 / 120 : Infinity;
+    for (const hand of [0, 1]) {
+      const arm = joints.arms[hand === 0 ? 1 : 0], offset = rotate(arm.hand, yaw);
+      const kick = weaponShotPose(player.weapon, hand === player.lastShotHand ? age : Infinity, aimProgress(player), hand === 0 ? 1 : -1);
+      const handPose = { x: pose.x + offset[0], y: pose.y + offset[1] + .12 + kick.y, z: pose.z + offset[2], yaw: heldYaw + kick.yaw, pitch: heldPitch + kick.pitch - reloadTilt * .19, scale: 1 };
+      const forward = rotate([0, 0, -1], handPose.yaw, handPose.pitch), limit = Math.max(0, rayCoverDistance([handPose.x, handPose.y, handPose.z], forward, map.colliders || [], weaponLength(player.weapon) + .12, weaponCoverPadding(player.weapon, 1, reloadProgress)) - .025);
+      weaponParts(mesh, player.weapon, handPose, { hand, limit, reloadProgress, bolt: kick.kick, aim: aimProgress(player) });
+      mesh.box(-.043, -.128, -.041, .086, .108, .10, art.skin, handPose);
+    }
   } else if (!empty && gunHeld(player)) {
     weaponParts(mesh, player.weapon, gunPose, { limit, stock: color, reloadProgress, aim: aimProgress(player), loaded: player.ammo > 0, spin: finite(player.spinTicks) / (WEAPONS[player.weapon]?.spinupTicks || 1), cycle: 1 - finite(player.shotCooldown) / (WEAPONS[player.weapon]?.cooldown || 1) });
     mesh.box(-.067, -.135, -.11, .104, .115, .140, art.skin, gunPose);
@@ -3018,7 +3191,7 @@ export class VoxelRenderer {
         this.tracers.push({ origin, end, born: time, team: event.team, local: event.playerId === localId, width: effects.tracerWidth, color: effects.tracerColor, life: effects.tracerTicks * 1000 / 120, weapon: event.weapon });
         if (event.playerId === localId && localAlive && (!event.pellet || event.pelletCount === 1)) {
           this.presentShots ||= createWeaponShotPresenter();
-          if (this.presentShots.report(event, time)) this.localShot = { born: time, weapon: event.weapon };
+          if (this.presentShots.report(event, time)) this.localShot = { born: time, weapon: event.weapon, hand: event.hand === 1 ? 1 : 0 };
         }
         if (event.hitKind && event.hitKind !== 'none') {
           this.particles.push(...impactParticles(event, end, direction, map, time, key));
@@ -3193,8 +3366,19 @@ export class VoxelRenderer {
       while (committedYaw > Math.PI) committedYaw -= TAU;
       while (committedYaw < -Math.PI) committedYaw += TAU;
       const committedPitch = player.meleeTicks > 0 ? finite(player.meleePitch, pitch) - pitch : 0;
+      if (meleeProfile(player).dualWield) {
+        for (const hand of [0, 1]) {
+          const side = hand === 0 ? 1 : -1, activeHand = hand === (player.meleeHand === 1 ? 1 : 0);
+          const swing = activeHand ? motion : meleeMotion({ ...player, meleeTicks: 0, meleeHand: hand });
+          const pose = { x: side * .245 + this.swayX * .5, y: -.285 + finite(this.firstPersonMotion?.weaponY), z: -.43 - swing.extension * .22, yaw: swing.yaw + committedYaw, pitch: swing.pitch + committedPitch, scale: .90 };
+          const limit = coverLimit(pose, meleeLength(player), meleePadding(player) * pose.scale);
+          meleeParts(mesh, player, pose, { hand, limit, active: swing.active });
+          glove(pose, 0, -.105, -.014, hand === 0 ? 'blade' : 'support', limit);
+        }
+        return mesh.array;
+      }
       const pose = { x: (knife ? .22 : .27) + this.swayX * .5, y: (knife ? -.28 : -.32) + finite(this.firstPersonMotion?.weaponY), z: -.42 - motion.extension * .12, yaw: motion.yaw + committedYaw, pitch: motion.pitch + committedPitch, scale: .90 };
-      const limit = coverLimit(pose, meleeLength(player), (knife ? .08 : .18) * pose.scale);
+      const limit = coverLimit(pose, meleeLength(player), meleePadding(player) * pose.scale);
       meleeParts(mesh, player, pose, { limit, active: motion.active });
       glove(pose, .003, -.057, knife ? .071 : .087, 'blade', limit);
       return mesh.array;
@@ -3224,6 +3408,25 @@ export class VoxelRenderer {
     }
     const steady = 1 - aim * .92;
     const throwing = Math.sin(clamp(finite(player.grenadeThrowTicks) / 24, 0, 1) * Math.PI);
+    if (WEAPONS[player.weapon]?.dualWield) {
+      for (const hand of [0, 1]) {
+        const side = hand === 0 ? 1 : -1;
+        const handShot = this.presentShots ? this.presentShots.sample(player.weapon, time, aim, hand) : weaponShotPose(player.weapon, this.localShot?.hand === hand ? age : Infinity, aim, side);
+        const pose = { x: side * lerp(.275, .175, aim) + (this.swayX + motion.weaponX) * steady + handShot.x, y: lerp(-.29, -.212, aim) + (this.swayY + motion.weaponY) * steady + handShot.y - reload * .11 - throwing * .15, z: lerp(-.49, -.405, aim) + handShot.z + reload * .055, yaw: -side * lerp(.08, .055, aim) + this.swayX * 2 * steady + handShot.yaw + reload * side * .17, pitch: handShot.pitch - reload * .24 - throwing * .20, scale: .74 };
+        const handReload = reloadActive ? clamp(reloadProgress + (hand === 0 ? .05 : -.05), 0, 1) : 0;
+        const limit = coverLimit(pose, weaponLength(player.weapon) + .20, weaponCoverPadding(player.weapon, pose.scale, handReload));
+        const length = weaponParts(mesh, player.weapon, pose, { hand, limit, reloadProgress: handReload, bolt: handShot.kick * .75, aim });
+        glove(pose, 0, -.122, -.010, hand === 0 ? 'gun' : 'support', limit);
+        const flashDuration = finite(effects.muzzleTicks, 5) * 1000 / 120;
+        if (this.localShot?.hand === hand && age < flashDuration && !reloadActive && !throwing && finite(effects.muzzleStrength, 1) > 0) {
+          const flare = (1 - age / flashDuration) * finite(effects.muzzleStrength, 1), flash = (.025 + flare * .036) * finite(effects.muzzleSize, 1), glow = rgba(effects.muzzleColor), core = mix(glow, rgba('#fff8dc'), .60);
+          const flashPart = (x, y, z, w, h, d, color) => { const zz = Math.max(z, -limit), dd = z + d - zz; if (dd > 0) mesh.box(x, y, zz, w, h, dd, color, pose); };
+          flashPart(-flash / 2, -.015, -length - .070, flash, flash, .05 + flare * .04, glow);
+          flashPart(-flash * .95, -.013 + flash * .2, -length - .055, flash * 1.9, flash * .38, .028, core);
+        }
+      }
+      return mesh.array;
+    }
     const pose = {
       x: lerp(.29, 0, aim) + (this.swayX + motion.weaponX) * steady + firing.x,
       y: lerp(-.29, -(WEAPONS[player.weapon]?.adsSightHeight || .152) * .74, aim) + (this.swayY + motion.weaponY) * steady + firing.y - reload * .105 - throwing * .15,
@@ -3232,7 +3435,7 @@ export class VoxelRenderer {
       pitch: firing.pitch - reload * .23 - throwing * .20,
       scale: .74,
     };
-    const pump = player.weapon === 'shotgun' && age > 80 && age < 640 ? Math.sin((age - 80) / 560 * Math.PI) : 0;
+    const pump = ['shotgun', 'slugshotgun'].includes(player.weapon) && age > 80 && age < 640 ? Math.sin((age - 80) / 560 * Math.PI) : 0;
     const limit = coverLimit(pose, weaponLength(player.weapon) + .20, weaponCoverPadding(player.weapon, pose.scale, reloadProgress));
     const length = weaponParts(mesh, player.weapon, pose, { stock: team, limit, reloadProgress, bolt: kick * .75, pump, aim, loaded: player.ammo > 0, spin: finite(player.spinTicks) / (WEAPONS[player.weapon]?.spinupTicks || 1), cycle: 1 - finite(player.shotCooldown) / (WEAPONS[player.weapon]?.cooldown || 1) });
     const handShift = reload * .30, handDrop = reload * .17;

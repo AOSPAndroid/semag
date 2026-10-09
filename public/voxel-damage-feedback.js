@@ -1,4 +1,5 @@
 import { WEAPONS } from './voxel-weapons.js';
+import { MELEE_WEAPONS } from './voxel-melee.js';
 import { setHidden } from './hub/dom.js';
 
 export const DAMAGE_CUE_MS = 420;
@@ -11,7 +12,7 @@ export function incomingDamageFeedback(event, player, players = [], { now = 0, l
   const sourceId = event.shooterId ?? event.attackerId ?? event.playerId ?? event.ownerId ?? event.attacker;
   const source = players.find(other => other.id === sourceId);
   if (!friendlyFire && source && source.id !== player.id && source.team != null && source.team === player.team) return null;
-  const blade = ['sword', 'knife'].includes(event.weapon) || ['sword', 'knife'].includes(event.attack);
+  const blade = Object.hasOwn(MELEE_WEAPONS, event.weapon) || Object.hasOwn(MELEE_WEAPONS, event.attack);
   const blood = blade || ['gun', 'bolt'].includes(event.attack) || !!WEAPONS[event.weapon];
   const maxHp = Number.isFinite(player.maxHp) && player.maxHp > 0 ? player.maxHp : 200;
   // A delayed bolt keeps its incoming trajectory even if its owner moves away.

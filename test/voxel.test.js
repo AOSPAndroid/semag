@@ -323,9 +323,9 @@ test('invalid input cannot poison finite player state or invent keypresses', () 
   for (const f of state.players) for (const key of ['x', 'y', 'z', 'vx', 'vy', 'vz', 'yaw', 'pitch', 'hp', 'ammo']) assert.ok(Number.isFinite(f[key]));
 });
 
-test('all thirteen primary loadouts keep finite ammunition and refill only between rounds', () => {
+test('all sixteen primary loadouts keep finite ammunition and refill only between rounds', () => {
   const state = game.createState();
-  assert.deepEqual(Object.keys(game.WEAPONS), ['carbine', 'smg', 'marksman', 'pistol', 'shotgun', 'burst', 'sniper', 'lmg', 'crossbow', 'revolver', 'pdw', 'autoshotgun', 'battlerifle']);
+  assert.deepEqual(Object.keys(game.WEAPONS), ['carbine', 'smg', 'marksman', 'pistol', 'shotgun', 'burst', 'sniper', 'lmg', 'crossbow', 'revolver', 'pdw', 'autoshotgun', 'battlerifle', 'dualpistols', 'dualsmg', 'slugshotgun']);
   for (const weapon of Object.values(game.WEAPONS)) {
     assert.equal(game.selectLoadout(state, 0, weapon.id).ok, true);
     assert.equal(state.players[0].ammo, weapon.magazine); assert.equal(state.players[0].reserve, weapon.reserve);

@@ -56,6 +56,9 @@ const SHOT_PROFILES = Object.freeze({
   pdw: { attack: 5, decay: 17, duration: 145, push: .038, pitch: .046, side: .0025, yaw: .006, lift: .002 },
   autoshotgun: { attack: 8, decay: 36, duration: 295, push: .115, pitch: .116, side: .006, yaw: .012, lift: .006 },
   battlerifle: { attack: 8, decay: 35, duration: 280, push: .108, pitch: .112, side: .005, yaw: .013, lift: .005 },
+  dualpistols: { attack: 6, decay: 24, duration: 205, push: .064, pitch: .128, side: .006, yaw: .018, lift: .008 },
+  dualsmg: { attack: 5, decay: 18, duration: 150, push: .041, pitch: .062, side: .004, yaw: .011, lift: .003 },
+  slugshotgun: { attack: 9, decay: 44, duration: 350, push: .145, pitch: .143, side: .006, yaw: .015, lift: .008 },
 });
 
 /** A fast attack and analytic damped recovery are identical at every refresh rate. */
@@ -81,15 +84,19 @@ export function createWeaponShotPresenter() {
     if (seen.has(key)) return false;
     seen.add(key); order.push(key);
     while (order.length > 256) seen.delete(order.shift());
-    shots.push({ born: time, weapon, side: ++accepted % 2 ? 1 : -1 });
+    const dual = weapon === 'dualpistols' || weapon === 'dualsmg';
+    const hand = event.hand === 1 ? 1 : event.hand === 0 ? 0 : dual && Number.isInteger(event.shotIndex) ? Math.max(0, event.shotIndex - 1) % 2 : 0;
+    const side = dual ? hand === 0 ? 1 : -1 : (accepted + 1) % 2 ? 1 : -1;
+    accepted++;
+    shots.push({ born: time, weapon, side, hand });
     while (shots.length > 16) shots.shift();
     return true;
   };
-  const sample = (weapon, time, aim = 0) => {
+  const sample = (weapon, time, aim = 0, hand = null) => {
     for (let i = shots.length - 1; i >= 0; i--) if (time < shots[i].born || time - shots[i].born >= 400) shots.splice(i, 1);
     const pose = { kick: 0, x: 0, y: 0, z: 0, yaw: 0, pitch: 0 };
     for (const shot of shots) {
-      if (shot.weapon !== weapon) continue;
+      if (shot.weapon !== weapon || hand !== null && shot.hand !== hand) continue;
       const impulse = weaponShotPose(weapon, time - shot.born, aim, shot.side);
       for (const field of Object.keys(pose)) pose[field] += impulse[field];
     }

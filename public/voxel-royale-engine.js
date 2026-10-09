@@ -1,6 +1,7 @@
 /** Voxel Royale: one-life scavenging rules around the shared Breach combat simulation. */
 import { MAPS, MAP_IDS } from './voxel-royale-maps.js';
 import { WEAPONS, WEAPON_IDS } from './voxel-weapons.js';
+import { MELEE_IDS } from './voxel-melee.js';
 import { TICK_RATE, INPUT_KEYS, emptyInput, WORLD, eyeHeight, rayBox, createCombatPlayer, combatStep, applyCombatDamage, emitCombatEvent, pickupCombatLoot, dropCombatInventory } from './voxel-engine.js';
 import { initializeInventory, ensureInventory, inventoryCanTake } from './voxel-inventory.js';
 export { MAPS, MAP_IDS, WEAPONS, INPUT_KEYS, emptyInput, TICK_RATE };
@@ -77,7 +78,7 @@ function addLoot(state, details) {
   state.loot.push(loot); return loot;
 }
 function seedLoot(state) {
-  const points = shuffled(state, state.map.lootPoints), weapons = shuffled(state, WEAPON_IDS);
+  const points = shuffled(state, state.map.lootPoints), weapons = shuffled(state, WEAPON_IDS), blades = shuffled(state, MELEE_IDS.filter(id => id !== 'knife'));
   const gunCount = Math.max(ROYALE.maxPlayers, WEAPON_IDS.length, Math.ceil(points.length * .44));
   for (let index = 0; index < Math.min(points.length, ROYALE.maxLoot); index++) {
     const point = points[index], position = { x: point.x, y: point.y, z: point.z };
@@ -86,8 +87,10 @@ function seedLoot(state) {
     if (index < gunCount) {
       const weapon = weapons[index % weapons.length], stats = WEAPONS[weapon];
       addLoot(state, { ...position, kind: 'weapon', weapon, ammo: stats.magazine, reserve: Math.min(stats.reserve, stats.magazine * 2) });
+    } else if (index < gunCount + blades.length) {
+      addLoot(state, { ...position, kind: 'melee', weapon: blades[index - gunCount] });
     } else {
-      const tail = index - gunCount, scheduled = ['heal', 'ammo', 'heal', 'grenade'][tail % 4];
+      const tail = index - gunCount - blades.length, scheduled = ['heal', 'ammo', 'heal', 'grenade'][tail % 4];
       const kind = tail >= 4 && (point.kind === 'heal' || point.kind === 'ammo' || point.kind === 'grenade') ? point.kind : scheduled;
       if (kind === 'ammo') { const weapon = weapons[tail % weapons.length]; addLoot(state, { ...position, kind, weapon, amount: WEAPONS[weapon].magazine }); }
       else addLoot(state, { ...position, kind, amount: 1 });

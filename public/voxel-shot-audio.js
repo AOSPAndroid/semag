@@ -13,6 +13,9 @@ export const VOXEL_SHOT_AUDIO = Object.freeze(Object.fromEntries(Object.entries(
   pdw: { duration: .16, crack: .24, crackDecay: .0027, body: .11, frequency: 176, bodyDecay: .016, report: .09, reportDecay: .024, brightness: 1700, mechanism: .021, click: .062 },
   autoshotgun: { duration: .38, crack: .72, crackDecay: .0100, body: .35, frequency: 73, bodyDecay: .046, report: .30, reportDecay: .066, brightness: 1800, mechanism: .060, click: .090 },
   battlerifle: { duration: .37, crack: .76, crackDecay: .0087, body: .35, frequency: 82, bodyDecay: .046, report: .30, reportDecay: .065, brightness: 2300, mechanism: .052, click: .080 },
+  dualpistols: { duration: .23, crack: .65, crackDecay: .0042, body: .215, frequency: 139, bodyDecay: .023, report: .205, reportDecay: .038, brightness: 3500, mechanism: .029, click: .077 },
+  dualsmg: { duration: .17, crack: .57, crackDecay: .0038, body: .175, frequency: 157, bodyDecay: .018, report: .18, reportDecay: .028, brightness: 3800, mechanism: .020, click: .053 },
+  slugshotgun: { duration: .49, crack: .79, crackDecay: .0114, body: .42, frequency: 58, bodyDecay: .066, report: .34, reportDecay: .088, brightness: 1720, mechanism: .091, click: .089 },
 }).map(([id, profile]) => [id, Object.freeze(profile)])));
 
 /** No live DSP or repeated noise allocation is needed once a weapon buffer is cached. */
@@ -45,6 +48,34 @@ export function createVoxelShotSamples(weaponId, sampleRate = 48000) {
     const fade = Math.min(1, (length - index - 1) / (sampleRate * .006));
     const value = (crack + body + report + mechanism) * fade;
     samples[index] = value / (1 + Math.abs(value) * .65);
+  }
+  return samples;
+}
+
+/** Quiet committed swings: the sweep peaks around the blade's active phase. */
+export const VOXEL_MELEE_AUDIO = Object.freeze(Object.fromEntries(Object.entries({
+  knife: { duration: .22, peak: .102, width: .037, brightness: 3500, air: .27, body: .035, frequency: 230 },
+  sword: { duration: .34, peak: .180, width: .056, brightness: 2600, air: .36, body: .055, frequency: 170 },
+  katana: { duration: .28, peak: .134, width: .046, brightness: 4600, air: .37, body: .036, frequency: 280 },
+  axe: { duration: .43, peak: .278, width: .064, brightness: 1700, air: .34, body: .10, frequency: 103 },
+  tonfas: { duration: .19, peak: .082, width: .032, brightness: 1150, air: .27, body: .075, frequency: 330 },
+}).map(([id, profile]) => [id, Object.freeze(profile)])));
+
+/** One bounded deterministic sample buffer is cached per melee weapon. */
+export function createVoxelMeleeSamples(weaponId, sampleRate = 48000) {
+  const profile = typeof weaponId === 'string' && Object.hasOwn(VOXEL_MELEE_AUDIO, weaponId) ? VOXEL_MELEE_AUDIO[weaponId] : null;
+  if (!profile || !Number.isFinite(sampleRate) || sampleRate < 8000 || sampleRate > 192000) return null;
+  const length = Math.ceil(sampleRate * profile.duration), samples = new Float32Array(length);
+  let seed = 0x9e3779b9, low = 0, slow = 0;
+  for (let index = 0; index < weaponId.length; index++) seed = Math.imul(seed ^ weaponId.charCodeAt(index), 16777619);
+  const alpha = 1 - Math.exp(-2 * Math.PI * profile.brightness / sampleRate), slowAlpha = 1 - Math.exp(-2 * Math.PI * 160 / sampleRate);
+  for (let index = 0; index < length; index++) {
+    seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5;
+    const white = (seed >>> 0) / 2147483648 - 1, time = index / sampleRate;
+    low += alpha * (white - low); slow += slowAlpha * (white - slow);
+    const envelope = Math.exp(-(((time - profile.peak) / profile.width) ** 2)) * Math.min(1, time / .008, (length - index - 1) / (sampleRate * .009));
+    const sweep = (low - slow) * profile.air + Math.sin(time * 2 * Math.PI * profile.frequency) * profile.body;
+    samples[index] = sweep * envelope || 0;
   }
   return samples;
 }

@@ -121,7 +121,7 @@ def inventory_case(browser):
         horde.solo(page, map_id='snow', weapon='revolver', layout='zqsd')
         before = horde.actor(page)
         assert [item['kind'] for item in before['inventory']] == ['melee', 'weapon', 'heal', 'grenade']
-        assert before['inventory'][0]['weapon'] == 'knife'
+        assert before['inventory'][0]['weapon'] == 'katana'
         assert before['inventory'][1]['weapon'] == 'revolver'
         touch_click(page, '#horde-start')
         horde.phase(page, 'fight', timeout=15000)

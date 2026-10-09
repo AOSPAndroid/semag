@@ -7,6 +7,9 @@ import { cleanAim, composeInput, controlForKey, aimFraction, aimLookMultiplier, 
 import { inventoryLootPresentation, inventoryEventFeedback, inventorySwapPresentation, mountInventoryHotbar } from './voxel-inventory-ui.js';
 import { combatPresentation, createCorrectionPresenter, createMovementPresenter, interpolatedVoxelState, reconcileMovement, resolvePresentationContacts, withCombatPresentation } from './voxel-presentation.js';
 import { incomingDamageFeedback, damageFeedbackPresentation, paintDamageFeedback } from './voxel-damage-feedback.js';
+import { createHitFeedback, paintHitFeedback } from './voxel-hit-feedback.js';
+import { MELEE_WEAPONS, MELEE_IDS } from './voxel-melee.js';
+import { meleeLoadoutNote } from './hub/horde-setup.js';
 import { createFpsInputQueue, FPS_EDGE_ACTIONS, releaseFpsTouchAction } from './voxel-input-queue.js';
 import { createNetworkTimeline } from './network-timeline.js';
 import { tickFraction } from './display-timing.js';
@@ -101,7 +104,9 @@ export async function bootHorde() {
   let aim = cleanAim(), predictedPlayer = null, presentationPlayer = null, presentationPlayers = [], snapshots = [], pending = [], previousPlayers = [];
   let entered = false, paused = false, modalOpen = false, fallback = false, spectatorId = null, frameId = null, previousFrame = null, accumulator = 0;
   let predictionTick = 0, sequence = 0, renderCount = 0, physicsSamples = 0, lastFraction = 0, lastHUDAt = -Infinity, lastDrawAt = 0, previousPhase = null;
-  let hitUntil = 0, feedbackUntil = 0, damageFeedback = null, lastCountdown = null, lastWave = 0, waveBannerUntil = 0, returnFocus = null, heartbeat = null;
+  const hitFeedback = createHitFeedback(), hitMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  const hitElements = { crosshair: $('horde-crosshair'), scope: $('horde-scope'), marker: $('horde-hit') };
+  let feedbackUntil = 0, damageFeedback = null, lastCountdown = null, lastWave = 0, waveBannerUntil = 0, returnFocus = null, heartbeat = null;
   const keys = new Set(), physicalKeys = new Map(), mouse = { fire: false, aim: false }, touch = { move: { x: 0, y: 0 }, look: { x: 0, y: 0 }, actions: new Set() };
   const actionPointers = new Map(), padPointers = new Map(), inputQueue = createFpsInputQueue(), pacer = createInputPacer(60), movement = new Map();
   const correction = createCorrectionPresenter(), timeline = createNetworkTimeline({ snapshotTicks: 4 }), audio = new GameAudio(), listeners = [], eventSeen = new Set();
@@ -141,6 +146,7 @@ export async function bootHorde() {
   }
   function stopFrame() { if (frameId !== null) cancelAnimationFrame(frameId); frameId = null; previousFrame = null; accumulator = 0; }
   function clearInputs({ fence = false } = {}) {
+    hitFeedback.reset(); paintHitFeedback(hitElements, { visible: false });
     const held = currentInput(); keys.clear(); physicalKeys.clear(); mouse.fire = mouse.aim = false; touch.actions.clear(); touch.move = { x: 0, y: 0 }; touch.look = { x: 0, y: 0 };
     // Remove records before releasing capture: synchronous loss cannot replay a tap.
     const pointers = [...actionPointers, ...padPointers]; actionPointers.clear(); padPointers.clear();
@@ -174,10 +180,10 @@ export async function bootHorde() {
   }
   function resetPresentation() {
     clearInputs(); stopFrame(); previousPlayers = []; snapshots = []; movement.clear(); timeline.reset(); correction.reset(); damageFeedback = null;
-    hitUntil = feedbackUntil = waveBannerUntil = 0; eventSeen.clear(); renderer?.resetEffects(); audio.resetEvents(); lastCountdown = null; lastWave = 0; previousPhase = null;
+    feedbackUntil = waveBannerUntil = 0; hitFeedback.reset({ clearHistory: true }); eventSeen.clear(); renderer?.resetEffects(); audio.resetEvents(); lastCountdown = null; lastWave = 0; previousPhase = null;
     renderCount = physicsSamples = 0; lastFraction = 0; lastHUDAt = -Infinity; aim = cleanAim(localPlayer()?.yaw, localPlayer()?.pitch); predictedPlayer = copy(localPlayer());
   }
-  function config() { return { capacity: 3, mapId: $('horde-map').value, difficulty: $('horde-difficulty').value }; }
+  function config() { return { capacity: 3, mapId: $('horde-map').value, difficulty: $('horde-difficulty').value, melee: $('horde-melee').value }; }
   function preview() {
     if (!solo || !engine || destroyed) return; entered = paused = false; unlock(); state = engine.createState(config()); engine.selectLoadout(state, 0, $('horde-weapon').value);
     state.map = engine.MAPS[state.mapId];
@@ -193,27 +199,30 @@ export async function bootHorde() {
   }
   function hideHelp() { modalOpen = false; hide('horde-guide', true); $('horde-help').setAttribute('aria-expanded', 'false'); (paused ? $('horde-resume') : returnFocus)?.focus?.({ preventScroll: true }); updateHUD(true); }
   function consumeEvents(now) {
+    const freshEvents = [];
     for (const event of state?.events || []) {
       const identity = `${state.matchId}:${event.id}`; if (eventSeen.has(identity)) continue; eventSeen.add(identity);
+      freshEvents.push(event);
       if (eventSeen.size > 512) eventSeen.delete(eventSeen.values().next().value);
       const perspective = combatEventPerspective(event, playerId);
       if (['hordeFight', 'hordeClear', 'hordeRevive', 'hordeEnd'].includes(event.type) || ['monsterWindup', 'monsterAim'].includes(event.type) && event.targetId === playerId) audio.playEvents([event]);
       if (event.type === 'damage' && event.damage > 0) {
-        if (perspective.outgoing) { hitUntil = now + 170; $('horde-hit').dataset.kind = event.headshot ? 'headshot' : 'body'; }
         const incoming = incomingDamageFeedback(event, localPlayer(), state.players, { now, lifeKey: `${state.matchId}:${localPlayer()?.lifeId}`, friendlyFire: false }); if (incoming) damageFeedback = incoming;
       }
-      if (['kill', 'elimination'].includes(event.type) && perspective.outgoing) { hitUntil = now + 230; feedback(event.headshot ? 'HEADSHOT · HOSTILE DOWN' : 'HOSTILE DOWN', now, 850); }
+      if (['kill', 'elimination'].includes(event.type) && perspective.outgoing) feedback(event.headshot ? 'HEADSHOT · HOSTILE DOWN' : 'HOSTILE DOWN', now, 850);
       if (['loot', 'lootPickup'].includes(event.type) && perspective.source === playerId) feedback(event.kind === 'weapon' ? `PICKED UP ${WEAPONS[event.weapon]?.label || 'WEAPON'}` : event.kind === 'heal' ? event.amount > 2 ? `RECOVERED +${Math.round(event.amount || 0)} HP` : 'POTION COLLECTED' : event.kind === 'grenade' ? 'FRAG COLLECTED' : 'AMMUNITION PICKED UP', now);
       const inventoryFeedback = perspective.source === playerId ? inventoryEventFeedback(event) : null; if (inventoryFeedback) feedback(inventoryFeedback, now);
       if (event.type === 'healComplete' && perspective.source === playerId) feedback(`HEALED +${Math.round(event.amount || 0)} HP`, now);
       if (event.type === 'healCancel' && perspective.source === playerId) feedback('HEALING INTERRUPTED', now);
       if (event.type === 'hordeRevive') feedback(`${nameFor(event.targetId)} IS BACK IN THE FIGHT`, now);
       if (audio.enabled) try {
-        if (hasGunshotReport(event)) audio.gunshot(event.weapon, { gain: perspective.source === playerId ? 1 : .22 });
+        if (event.type === 'meleeStart') audio.meleeSwing(event.weapon, { gain: perspective.source === playerId ? 1 : .22 });
+        else if (hasGunshotReport(event)) audio.gunshot(event.weapon, { gain: perspective.source === playerId ? 1 : .22 });
         else if (event.type === 'grenadeExplosion') { audio.noise(.4, { highpass: 40, lowpass: 1500, gain: .28 }); audio.tone(70, .3, { end: 25, gain: .18 }); }
         else if (event.type === 'damage' && (perspective.outgoing || perspective.incoming)) audio.tone(perspective.outgoing ? 940 : 140, .055, { end: perspective.outgoing ? 690 : 70, gain: .13, type: 'triangle' });
       } catch {}
     }
+    hitFeedback.consume(freshEvents, localPlayer(), state.players, { now, lifeKey: `${state.mapId}:${state.matchId}:${localPlayer()?.lifeId}`, active: state.phase === 'fight' && !paused && !modalOpen && connected });
   }
   function updateRoster() {
     const lobby = hordeLobbyPresentation(state, roster, playerId, hostId, connected);
@@ -241,6 +250,11 @@ export async function bootHorde() {
     if (!state) { hide('horde-setup', true); hide('horde-pause-card', true); hide('horde-result', true); hide('horde-countdown', true); hide('horde-connection-card', false); hide('horde-overlay', false); text('horde-connection-title', permanentError ? 'Room unavailable.' : 'Connecting…'); text('horde-connection-copy', permanentError ? 'This room is full, closed or already fighting. Return to Semag to join the next run.' : 'Finding your squad on the host.'); return; }
     if (!force && now - lastHUDAt < 70) return; lastHUDAt = now;
     const phase = state.phase, player = localPlayer(), wave = hordeWavePresentation(state, engine.TICK_RATE), readout = player ? combatReadout(player, WEAPONS, { ADS, HEAL, PLAYER_HEALTH }) : null;
+    for (const [id, value] of [['horde-weapon', player?.weapon], ['horde-melee', player?.hordeMelee || state.horde?.config.melee]]) {
+      $(id).disabled = !solo && (!connected || !['lobby', 'countdown', 'intermission', 'matchEnd'].includes(phase));
+      if (!solo && value && document.activeElement !== $(id)) $(id).value = value;
+    }
+    weaponNote(); meleeNote();
     inventory.update(player, { visible: !!player?.alive && !['lobby', 'matchEnd'].includes(phase), interactive: controlsActive() && MOVEMENT_PHASES.includes(phase) });
     const swap = inventorySwapPresentation(player), swapButton = document.querySelector('[data-horde-action="swap"]'); if (swap && swapButton) { swapButton.textContent = swap.label; swapButton.setAttribute('aria-label', swap.ariaLabel); }
     app.dataset.phase = phase; text('horde-map-label', state.mapName || state.map?.name || state.mapId); text('horde-wave', wave.wave || '—'); text('horde-threat', wave.threats); text('horde-clock', clock(wave.elapsed)); text('horde-status', phase === 'intermission' ? 'RESUPPLY & REPOSITION' : phase === 'fight' ? 'SURVIVE THE HORDE' : phase === 'paused' ? 'WORLD PAUSED' : phase === 'matchEnd' ? 'OVERRUN' : 'HOLD YOUR GROUND');
@@ -299,11 +313,12 @@ export async function bootHorde() {
     renderer.render(view, { playerId, localId: playerId, localPlayer: presentationPlayer, viewPlayer: camera, cameraPlayer: camera, yaw: viewAim.yaw, pitch: viewAim.pitch + finite(camera?.recoil), time: live ? now : lastDrawAt || now }); renderCount++; lastFraction = tickFraction(accumulator, 1 / engine.TICK_RATE);
     const scoped = MOVEMENT_PHASES.includes(state.phase) && camera?.alive && !modalOpen && !paused && camera.slot !== 'sword' && WEAPONS[camera.weapon]?.scoped && aimFraction(camera, ADS.ticks) >= 14 / 18;
     hide('horde-scope', !scoped); hide('horde-crosshair', state.phase !== 'fight' || modalOpen || paused || !camera?.alive || scoped || camera.healing);
-    hide('horde-hit', now >= hitUntil || state.phase !== 'fight'); hide('horde-feedback', now >= feedbackUntil || !LIVE_PHASES.includes(state.phase));
+    paintHitFeedback(hitElements, hitFeedback.present(localPlayer(), { now, lifeKey: `${state.mapId}:${state.matchId}:${localPlayer()?.lifeId}`, active: state.phase === 'fight' && !paused && !modalOpen && connected, reducedMotion: hitMotion.matches })); hide('horde-feedback', now >= feedbackUntil || !LIVE_PHASES.includes(state.phase));
     paintDamageFeedback($('horde-damage'), damageFeedbackPresentation(damageFeedback, localPlayer(), { now, lifeKey: `${state.matchId}:${localPlayer()?.lifeId}`, yaw: aim.yaw, active: state.phase === 'fight' && !paused }));
   }
   function phaseTransition(oldPhase, oldLife, now) {
     if (state.phase !== oldPhase || localPlayer()?.lifeId !== oldLife) {
+      hitFeedback.reset();
       const held = currentInput(); pending = []; predictionTick = state.tick; accumulator = 0; correction.reset(); movement.clear();
       if (!solo) sendInput(composeInput(keys, touch, mouse, aim, false), true, now, true);
       inputQueue.reset({ held });
@@ -343,7 +358,7 @@ export async function bootHorde() {
     state = { ...next, map: engine.MAPS[next.mapId] }; state.fighters = state.players; hostId = message.hostId ?? state.hostId ?? hostId;
     roster = (Array.isArray(message.players) ? message.players : Object.values(message.players || {})).map((person, id) => person ? { ...person, id: person.id ?? id } : null);
     const local = localPlayer(), fresh = !old || old.matchId !== state.matchId || old.phase === 'lobby' && state.phase !== 'lobby';
-    if (fresh) { aim = cleanAim(local?.yaw, local?.pitch); pending = []; snapshots = []; timeline.reset(); correction.reset(); movement.clear(); eventSeen.clear(); damageFeedback = null; renderer?.resetEffects(); lastCountdown = null; }
+    if (fresh) { aim = cleanAim(local?.yaw, local?.pitch); pending = []; snapshots = []; timeline.reset(); correction.reset(); movement.clear(); eventSeen.clear(); hitFeedback.reset({ clearHistory: true }); damageFeedback = null; renderer?.resetEffects(); lastCountdown = null; }
     phaseTransition(old?.phase, old?.players.find(player => player.id === playerId)?.lifeId, now);
     if (local) {
       const ack = typeof message.acks?.[playerId] === 'number' ? message.acks[playerId] : message.acks?.[playerId]?.seq ?? -1;
@@ -420,10 +435,12 @@ export async function bootHorde() {
   text('horde-mode', solo ? 'SOLO SURVIVAL' : '1–3 PLAYER CO-OP'); text('horde-room-code', roomId); $('horde-name').value = getName(); hide('horde-name-field', solo); hide('horde-lobby', solo); hide('horde-map-field', !solo); hide('horde-difficulty-field', !solo);
   text('horde-start-label', solo ? 'Start survival' : 'Start squad survival'); if (!solo) text('horde-setup-copy', 'One squad, up to three players. Everyone readies; the host starts. Clear waves to recover, share supplies, and bring fallen teammates back.');
   for (const id of WEAPON_IDS) { const option = document.createElement('option'); option.value = id; option.textContent = WEAPONS[id].name; $('horde-weapon').append(option); } $('horde-weapon').value = 'carbine';
+  for (const id of MELEE_IDS) { const option = document.createElement('option'); option.value = id; option.textContent = MELEE_WEAPONS[id].name; $('horde-melee').append(option); } $('horde-melee').value = Object.hasOwn(MELEE_WEAPONS, params.get('melee')) ? params.get('melee') : 'katana';
   function weaponNote() { text('horde-weapon-note', WEAPONS[$('horde-weapon').value]?.description || ''); }
+  function meleeNote() { text('horde-melee-note', meleeLoadoutNote($('horde-melee').value)); }
   listen($('horde-setup'), 'submit', event => { event.preventDefault(); if (solo) startSolo(); else { if (!hordeLobbyPresentation(state, roster, playerId, hostId, connected).canStart) return; clearInputs(); entered = true; paused = false; canvas.focus({ preventScroll: true }); requestCapture(); send({ type: 'start' }); } });
   for (const id of ['horde-map', 'horde-difficulty']) listen($(id), 'change', preview);
-  listen($('horde-weapon'), 'change', () => { weaponNote(); if (solo) preview(); else send({ type: 'fps-loadout', weaponId: $('horde-weapon').value }); });
+  for (const id of ['horde-weapon', 'horde-melee']) listen($(id), 'change', () => { weaponNote(); meleeNote(); if (solo) preview(); else send({ type: 'fps-loadout', weaponId: $('horde-weapon').value, meleeId: $('horde-melee').value }); });
   listen($('horde-name'), 'change', () => { $('horde-name').value = saveName($('horde-name').value); send({ type: 'join', name: $('horde-name').value }); });
   listen($('horde-ready'), 'click', () => { const lobby = hordeLobbyPresentation(state, roster, playerId, hostId, connected); send({ type: 'ready', ready: !lobby.ready }); });
   listen($('horde-pause'), 'click', () => paused || state?.phase === 'paused' ? resume() : pause()); listen($('horde-touch-pause'), 'click', pause); listen($('horde-resume'), 'click', resume); listen($('horde-enter'), 'click', enter);
@@ -441,7 +458,7 @@ export async function bootHorde() {
   listen(window, 'resize', () => { renderer?.resize(); if (!running()) draw(); }); listen(window, 'blur', () => { if (running()) pause(); else clearInputs(); }); listen(document, 'visibilitychange', () => { if (document.hidden && running()) pause(); }); listen(window, 'pagehide', destroy);
   listen(canvas, 'voxel-renderer-error', event => { graphicsError = event.detail?.message || ''; if (graphicsError) { if (LIVE_PHASES.includes(state?.phase)) pause(); error(graphicsError); } else { error(''); renderer?.resize(); updateHUD(true); draw(); } });
   listen(canvas, 'voxel-renderer-restored', () => { graphicsError = ''; error(''); renderer?.resize(); updateHUD(true); draw(); wake(); });
-  hints(); weaponNote(); updateHUD(true);
+  hints(); weaponNote(); meleeNote(); updateHUD(true);
   try {
     const [rules, visual] = await Promise.all([import('./voxel-horde-engine.js'), import('./voxel-renderer.js')]); if (destroyed) return null; engine = rules; rendererClass = visual.VoxelRenderer;
     for (const [id, map] of Object.entries(engine.MAPS)) { const option = document.createElement('option'); option.value = id; option.textContent = map.name; $('horde-map').append(option); }
@@ -449,7 +466,7 @@ export async function bootHorde() {
     if (solo) preview(); graphics(); if (!solo) { connect(); hostInfo().then(info => { invite = `${info.origin}/voxel-horde.html?room=${encodeURIComponent(roomId)}`; }).catch(() => {}); }
   } catch (cause) { graphicsError = cause?.message || 'The game could not load.'; error(`Voxel Last Stand could not load: ${graphicsError}`); }
   heartbeat = setInterval(() => { if (!solo && connected && !document.hidden && LIVE_PHASES.includes(state?.phase)) sendInput(); }, 50);
-  const inspect = () => copy({ state: state ? { ...state, map: undefined, fighters: undefined } : null, solo, playerId, hostId, aim, paused: paused || state?.phase === 'paused', connected, roomPlayers: roster, pendingInputs: pending, queuedActions: inputQueue.inspect(), presentationPlayer, presentationPlayers, controls: { pointerLocked: locked(), fallback, touch: touchMode, entered, modalOpen }, renderCount, renderStats: renderer?.stats || null, audio: audio.inspectGunshots(), graphicsError, displayTiming: { physicsSamples, renderSamples: renderCount, lastFraction }, timeline: timeline.getState(), spectatorId });
+  const inspect = () => copy({ state: state ? { ...state, map: undefined, fighters: undefined } : null, solo, playerId, hostId, aim, paused: paused || state?.phase === 'paused', connected, roomPlayers: roster, pendingInputs: pending, queuedActions: inputQueue.inspect(), presentationPlayer, presentationPlayers, controls: { pointerLocked: locked(), fallback, touch: touchMode, entered, modalOpen }, renderCount, renderStats: renderer?.stats || null, audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), graphicsError, displayTiming: { physicsSamples, renderSamples: renderCount, lastFraction }, timeline: timeline.getState(), spectatorId });
   window.semagHorde = Object.freeze({ getState: inspect, getDebugState: inspect, getDisplayTiming: () => ({ physicsSamples, renderSamples: renderCount, lastFraction }) });
   return { destroy, inspect };
 }

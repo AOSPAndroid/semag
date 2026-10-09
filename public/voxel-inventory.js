@@ -1,26 +1,31 @@
 /** Four physical inventory slots shared by every voxel FPS mode. */
 import { WEAPONS } from './voxel-weapons.js';
+import { MELEE_WEAPONS } from './voxel-melee.js';
 
 export const INVENTORY_SIZE = 4;
 export const ITEM_STACK_LIMIT = 2;
 export const INVENTORY_ACTIONS = Object.freeze(['slot1', 'slot2', 'slot3', 'slot4', 'drop']);
-const GUN_FIELDS = Object.freeze(['ammo', 'reserve', 'reloadTicks', 'shotCooldown', 'burstRemaining', 'spinTicks', 'recoil', 'heat', 'shotIndex']);
+const GUN_FIELDS = Object.freeze(['ammo', 'reserve', 'reloadTicks', 'shotCooldown', 'burstRemaining', 'spinTicks', 'recoil', 'heat', 'shotIndex', 'lastShotHand', 'pendingFireTicks']);
 const finite = (value, fallback = 0) => Number.isFinite(value) ? value : fallback;
 const count = (value, maximum = 2) => Math.max(0, Math.min(maximum, Math.floor(finite(value))));
 const copy = value => value ? { ...value } : null;
 
 export function createInventoryGun(weapon = 'carbine', source = {}) {
-  if (!Object.hasOwn(WEAPONS, weapon)) return null;
+  if (typeof weapon !== 'string' || !Object.hasOwn(WEAPONS, weapon)) return null;
   const catalog = WEAPONS[weapon], item = { kind: 'weapon', weapon };
   for (const field of GUN_FIELDS) item[field] = Math.max(0, finite(source[field]));
   item.ammo = count(source.ammo ?? catalog.magazine, catalog.magazine);
   item.reserve = count(source.reserve ?? catalog.reserve, catalog.reserve * 8);
   return item;
 }
+export function createInventoryMelee(weapon = 'knife', source = {}) {
+  if (typeof weapon !== 'string' || !Object.hasOwn(MELEE_WEAPONS, weapon)) return null;
+  return { kind: 'melee', weapon, meleeCooldown: Math.max(0, finite(source.meleeCooldown)), meleeIndex: Math.max(0, Math.floor(finite(source.meleeIndex))), meleeHand: source.meleeHand === 1 ? 1 : 0 };
+}
 export function itemFromLoot(loot) {
   if (!loot) return null;
   if (loot.kind === 'weapon') return createInventoryGun(loot.weapon, loot.item || loot);
-  if (loot.kind === 'melee' && ['knife', 'sword'].includes(loot.weapon)) return { kind: 'melee', weapon: loot.weapon, meleeCooldown: Math.max(0, finite(loot.item?.meleeCooldown)) };
+  if (loot.kind === 'melee') return createInventoryMelee(loot.weapon, loot.item || loot);
   if (loot.kind === 'heal' || loot.kind === 'grenade') {
     const amount = count(loot.amount ?? loot.item?.amount ?? 1);
     return amount ? { kind: loot.kind, amount } : null;
@@ -41,14 +46,15 @@ export function refreshInventory(player) {
   const item = selectedInventoryItem(player);
   player.slot = item?.kind === 'weapon' ? 'primary' : item?.kind === 'melee' ? 'sword' : item?.kind === 'heal' ? 'potion' : item?.kind === 'grenade' ? 'grenade' : 'empty';
   if (item?.kind === 'weapon') applyGun(player, player.inventoryIndex);
-  else if (item?.kind === 'melee') { player.meleeWeapon = item.weapon; player.meleeCooldown = item.meleeCooldown || 0; }
-  if (!player.hasGun) { player.inventoryGunIndex = -1; player.ammo = player.reserve = player.reloadTicks = player.burstRemaining = player.spinTicks = 0; }
+  else if (item?.kind === 'melee') { player.meleeWeapon = item.weapon; player.meleeCooldown = item.meleeCooldown || 0; player.meleeIndex = item.meleeIndex || 0; player.meleeHand = item.meleeHand || 0; }
+  if (!player.hasGun) { player.inventoryGunIndex = -1; player.ammo = player.reserve = player.reloadTicks = player.burstRemaining = player.spinTicks = player.pendingFireTicks = 0; }
   else if (player.inventory[player.inventoryGunIndex]?.kind !== 'weapon') applyGun(player, player.inventory.findIndex(item => item?.kind === 'weapon'));
   player.inventoryPotions = player.potions; player.inventoryGrenades = player.grenades;
   return player;
 }
 export function initializeInventory(player, { weapon = player.weapon || 'carbine', knifeOnly = false, potions = 1, grenades = 1, melee = 'knife' } = {}) {
-  player.inventory = [{ kind: 'melee', weapon: melee, meleeCooldown: 0 }, knifeOnly ? null : createInventoryGun(weapon), knifeOnly || !potions ? null : { kind: 'heal', amount: count(potions) }, knifeOnly || !grenades ? null : { kind: 'grenade', amount: count(grenades) }];
+  melee = typeof melee === 'string' && Object.hasOwn(MELEE_WEAPONS, melee) ? melee : 'knife';
+  player.inventory = [createInventoryMelee(melee), knifeOnly ? null : createInventoryGun(weapon), knifeOnly || !potions ? null : { kind: 'heal', amount: count(potions) }, knifeOnly || !grenades ? null : { kind: 'grenade', amount: count(grenades) }];
   player.inventoryIndex = knifeOnly ? 0 : 1; player.inventoryGunIndex = knifeOnly ? -1 : 1;
   player.meleeWeapon = melee;
   return refreshInventory(player);
@@ -57,11 +63,11 @@ export function initializeInventory(player, { weapon = player.weapon || 'carbine
 export function storeInventoryGun(player) {
   const item = player.inventory?.[player.inventoryGunIndex];
   if (item?.kind === 'weapon') {
-    if (Object.hasOwn(WEAPONS, player.weapon)) item.weapon = player.weapon;
+    if (typeof player.weapon === 'string' && Object.hasOwn(WEAPONS, player.weapon)) item.weapon = player.weapon;
     for (const field of GUN_FIELDS) item[field] = Math.max(0, finite(player[field]));
   }
   const held = selectedInventoryItem(player);
-  if (held?.kind === 'melee') { held.weapon = ['knife', 'sword'].includes(player.meleeWeapon) ? player.meleeWeapon : held.weapon; held.meleeCooldown = Math.max(0, finite(player.meleeCooldown)); }
+  if (held?.kind === 'melee') { held.weapon = typeof player.meleeWeapon === 'string' && Object.hasOwn(MELEE_WEAPONS, player.meleeWeapon) ? player.meleeWeapon : held.weapon; held.meleeCooldown = Math.max(0, finite(player.meleeCooldown)); held.meleeIndex = Math.max(0, Math.floor(finite(player.meleeIndex))); held.meleeHand = player.meleeHand === 1 ? 1 : 0; }
 }
 function adjustLegacyCount(player, kind, requested) {
   let amount = count(requested, INVENTORY_SIZE * ITEM_STACK_LIMIT), current = inventoryTotal(player, kind);
@@ -93,9 +99,9 @@ export function selectInventorySlot(player, index) {
   if (player.inventoryIndex === index) return false;
   storeInventoryGun(player);
   const old = selectedInventoryItem(player);
-  if (old?.kind === 'weapon') { old.reloadTicks = 0; old.burstRemaining = 0; old.spinTicks = 0; }
+  if (old?.kind === 'weapon') { old.reloadTicks = 0; old.burstRemaining = 0; old.spinTicks = 0; old.pendingFireTicks = 0; }
   player.inventoryIndex = index;
-  player.reloadTicks = player.burstRemaining = player.spinTicks = 0;
+  player.reloadTicks = player.burstRemaining = player.spinTicks = player.pendingFireTicks = 0;
   player.aiming = false; player.aimTicks = 0;
   refreshInventory(player);
   return true;
@@ -133,11 +139,12 @@ export function inventoryCanTake(player, loot, { replace = true } = {}) {
   const item = itemFromLoot(loot); if (!item) return false;
   if (player.inventory.some(slot => !slot)) return true;
   if (item.kind === 'heal' || item.kind === 'grenade') return player.inventory.some(slot => slot?.kind === item.kind && slot.amount < ITEM_STACK_LIMIT);
-  return replace && item.kind === 'weapon' && selectedInventoryItem(player)?.kind === 'weapon';
+  return replace && (item.kind === 'weapon' || item.kind === 'melee') && selectedInventoryItem(player)?.kind === item.kind;
 }
 export function inventoryPickupHint(player, loot) {
   if (!inventoryCanTake(player, loot)) return 'Inventory full · drop an item (X)';
   if (loot.kind === 'weapon' && player.inventory.every(Boolean)) return `Replace ${WEAPONS[selectedInventoryItem(player).weapon].name} · slot ${player.inventoryIndex + 1}`;
+  if (loot.kind === 'melee' && player.inventory.every(Boolean)) return `Replace ${MELEE_WEAPONS[selectedInventoryItem(player).weapon].name} · slot ${player.inventoryIndex + 1}`;
   return 'Pick up';
 }
 export function pickupInventoryItem(player, loot, { replace = true, equip = true } = {}) {
@@ -152,7 +159,8 @@ export function pickupInventoryItem(player, loot, { replace = true, equip = true
   const item = itemFromLoot(loot);
   if (item.kind === 'heal' || item.kind === 'grenade') { const added = addInventoryStack(player, item.kind, Math.max(0, Math.floor(finite(loot.amount, item.amount)))); refreshInventory(player); return { ok: added > 0, amount: added, dropped: null }; }
   let index = player.inventory.findIndex(slot => !slot), dropped = null;
-  if (index < 0) { index = player.inventoryIndex; dropped = copy(player.inventory[index]); }
+  if (index < 0) { index = player.inventoryIndex; dropped = copy(player.inventory[index]); if (dropped?.kind === 'weapon') dropped.pendingFireTicks = 0; }
+  if (item.kind === 'weapon') item.pendingFireTicks = 0;
   storeInventoryGun(player); player.inventory[index] = item;
   if (equip) { player.inventoryIndex = index; player.aiming = false; player.aimTicks = 0; }
   refreshInventory(player); return { ok: true, amount: 1, dropped, index };
@@ -160,7 +168,7 @@ export function pickupInventoryItem(player, loot, { replace = true, equip = true
 export function dropInventoryItem(player, index = player.inventoryIndex) {
   if (!Number.isInteger(index) || index < 0 || index >= INVENTORY_SIZE || !player.inventory[index]) return null;
   storeInventoryGun(player); const item = copy(player.inventory[index]);
-  if (item.kind === 'weapon') item.reloadTicks = item.burstRemaining = item.spinTicks = 0;
+  if (item.kind === 'weapon') item.reloadTicks = item.burstRemaining = item.spinTicks = item.pendingFireTicks = 0;
   player.inventory[index] = null;
   // Dropping the held item leaves empty hands; it never silently equips and fires another gun.
   refreshInventory(player); player.aiming = false; player.aimTicks = 0;
@@ -168,7 +176,16 @@ export function dropInventoryItem(player, index = player.inventoryIndex) {
 }
 export function lootFromInventoryItem(item) { return item ? { kind: item.kind, weapon: item.weapon, ...(item.kind === 'weapon' ? { ammo: item.ammo, reserve: item.reserve } : {}), ...(item.amount ? { amount: item.amount } : {}), item: copy(item) } : null; }
 export function setInventoryLoadout(player, weapon) {
+  const item = createInventoryGun(weapon); if (!item) return false;
   ensureInventory(player); storeInventoryGun(player);
-  const target = 1; player.inventory[target] = createInventoryGun(weapon); player.inventoryIndex = target;
+  const target = 1; player.inventory[target] = item; player.inventoryIndex = target;
   player.aiming = false; player.aimTicks = 0; refreshInventory(player); return true;
+}
+/** Starting blades occupy physical slot one without consuming another gun slot. */
+export function setInventoryMeleeLoadout(player, weapon, { equip = false } = {}) {
+  const item = createInventoryMelee(weapon); if (!item) return false;
+  ensureInventory(player); storeInventoryGun(player); player.inventory[0] = item;
+  player.meleeWeapon = weapon; player.meleeCooldown = player.meleeIndex = player.meleeHand = player.meleeTicks = 0; player.meleePhase = 'idle'; player.meleeHitIds = [];
+  if (equip) { player.inventoryIndex = 0; player.reloadTicks = player.burstRemaining = player.spinTicks = player.pendingFireTicks = 0; player.aiming = false; player.aimTicks = 0; }
+  refreshInventory(player); return true;
 }

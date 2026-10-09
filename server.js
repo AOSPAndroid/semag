@@ -18,6 +18,7 @@ import * as Shinobi from './public/shinobi-engine.js';
 import * as Voxel from './public/voxel-engine.js';
 import * as Royale from './public/voxel-royale-engine.js';
 import * as Horde from './public/voxel-horde-engine.js';
+import { MELEE_WEAPONS } from './public/voxel-melee.js';
 import { enableLagCompensation, isValidViewTick, setShotViewTick } from './public/voxel-lag-compensation.js';
 import * as Brawl from './public/brawl-engine.js';
 import { createFpsInputQueue, FPS_EDGE_ACTIONS } from './public/voxel-input-queue.js';
@@ -230,13 +231,14 @@ export function createServer(options = {}) {
     const mapId = ['voxel-breach', 'voxel-royale', 'voxel-horde'].includes(gameId) ? settings.mapId : undefined;
     const maps = gameId === 'voxel-horde' ? Horde.MAPS : gameId === 'voxel-royale' ? Royale.MAPS : Voxel.MAPS;
     const difficulty = gameId === 'voxel-horde' ? settings.difficulty : undefined;
-    const state = adapter.makeState({ teamSize, capacity, mapId, difficulty });
+    const melee = gameId === 'voxel-horde' ? settings.melee : undefined;
+    const state = adapter.makeState({ teamSize, capacity, mapId, difficulty, ...(gameId === 'voxel-horde' ? { melee } : {}) });
     if (gameId === 'voxel-horde') for (let id = 0; id < capacity; id++) Horde.setConnected(state, id, false);
     // Pose history belongs to authoritative rooms and never enters snapshots or practice.
     if (adapter.compensateHitscan) enableLagCompensation(state);
     return {
       id, gameId, name: cleanName(name || adapter.title, 48) || adapter.title,
-      capacity, teamSize, difficulty, mapId, mapName: mapId === undefined ? undefined : maps[mapId].name,
+      capacity, teamSize, difficulty, melee, mapId, mapName: mapId === undefined ? undefined : maps[mapId].name,
       ...(['voxel-royale', 'voxel-horde'].includes(gameId) ? { hostId: null } : {}),
       adapter, createdAt, emptySince: createdAt, hadPlayers: false, sessionId: randomUUID(),
       state, players: Array(capacity).fill(null), slots: Array(capacity).fill(null), acks: Array(capacity).fill(-1),
@@ -246,7 +248,7 @@ export function createServer(options = {}) {
   const legacyRoom = makeRoom(null, 'afterimage', 'Afterimage Duel');
   const roomSettings = room => ({ capacity: room.capacity, teamSize: room.teamSize, mapId: room.mapId, mapName: room.mapName,
     ...(['voxel-royale', 'voxel-horde'].includes(room.gameId) ? { hostId: room.hostId } : {}),
-    ...(room.gameId === 'voxel-horde' ? { difficulty: room.difficulty } : {}),
+    ...(room.gameId === 'voxel-horde' ? { difficulty: room.difficulty, melee: room.melee } : {}),
   });
   const summary = room => ({ id: room.id, gameId: room.gameId, name: room.name, ...roomSettings(room), players: room.players, phase: room.state.phase, createdAt: room.createdAt });
   function reapRooms(now = Date.now()) {
@@ -277,14 +279,16 @@ export function createServer(options = {}) {
       if (typeof mapId !== 'string' || !Object.hasOwn(Royale.MAPS, mapId)) throw Object.assign(new Error('Choose an available Voxel Royale map.'), { status: 400 });
       settings = { capacity, mapId };
     } else if (gameId === 'voxel-horde') {
-      if (Object.keys(settings).some(key => !['capacity', 'mapId', 'difficulty'].includes(key))) throw Object.assign(new Error('Choose only a map and difficulty for this three-player co-op room.'), { status: 400 });
+      if (Object.keys(settings).some(key => !['capacity', 'mapId', 'difficulty', 'melee'].includes(key))) throw Object.assign(new Error('Choose only a map and difficulty, plus a starting blade, for this three-player co-op room.'), { status: 400 });
       const capacity = Object.hasOwn(settings, 'capacity') ? settings.capacity : 3;
       const mapId = Object.hasOwn(settings, 'mapId') ? settings.mapId : 'courtyard';
       const difficulty = Object.hasOwn(settings, 'difficulty') ? settings.difficulty : 'veteran';
+      const melee = Object.hasOwn(settings, 'melee') ? settings.melee : 'katana';
       if (capacity !== 3) throw Object.assign(new Error('Voxel Last Stand supports up to three teammates.'), { status: 400 });
       if (typeof mapId !== 'string' || !Object.hasOwn(Horde.MAPS, mapId)) throw Object.assign(new Error('Choose an available Voxel Last Stand map.'), { status: 400 });
       if (typeof difficulty !== 'string' || !Object.hasOwn(Horde.HORDE_DIFFICULTIES, difficulty)) throw Object.assign(new Error('Choose Veteran or Nightmare difficulty.'), { status: 400 });
-      settings = { capacity, mapId, difficulty };
+      if (typeof melee !== 'string' || !Object.hasOwn(MELEE_WEAPONS, melee)) throw Object.assign(new Error('Choose an available close-combat weapon.'), { status: 400 });
+      settings = { capacity, mapId, difficulty, melee };
     } else if (Object.hasOwn(settings, 'teamSize') || Object.hasOwn(settings, 'mapId')) {
       throw Object.assign(new Error('Team and map settings are only available in Voxel Breach.'), { status: 400 });
     }
@@ -327,13 +331,14 @@ export function createServer(options = {}) {
         if (data.gameId === 'voxel-royale' && Object.keys(data).some(key => !['gameId', 'name', 'capacity', 'mapId'].includes(key))) {
           throw Object.assign(new Error('Choose only a room name, player capacity, and map.'), { status: 400 });
         }
-        if (data.gameId === 'voxel-horde' && Object.keys(data).some(key => !['gameId', 'name', 'capacity', 'mapId', 'difficulty'].includes(key))) {
-          throw Object.assign(new Error('Choose only a room name, map, and difficulty for Voxel Last Stand.'), { status: 400 });
+        if (data.gameId === 'voxel-horde' && Object.keys(data).some(key => !['gameId', 'name', 'capacity', 'mapId', 'difficulty', 'melee'].includes(key))) {
+          throw Object.assign(new Error('Choose only a room name, map, difficulty, and starting blade for Voxel Last Stand.'), { status: 400 });
         }
         const settings = {};
         for (const key of ['teamSize', 'mapId']) if (Object.hasOwn(data, key)) settings[key] = data[key];
         if (['voxel-royale', 'voxel-horde'].includes(data.gameId) && Object.hasOwn(data, 'capacity')) settings.capacity = data.capacity;
         if (data.gameId === 'voxel-horde' && Object.hasOwn(data, 'difficulty')) settings.difficulty = data.difficulty;
+        if (data.gameId === 'voxel-horde' && Object.hasOwn(data, 'melee')) settings.melee = data.melee;
         const room = createRoom(data.gameId, data.name, settings);
         json(res, 201, { room: summary(room) });
       } catch (error) { if (!res.writableEnded) json(res, error.status || 400, { error: error.message }); }
@@ -618,12 +623,21 @@ export function createServer(options = {}) {
       } else if (data.type === 'fps-loadout') {
         if (room.gameId === 'voxel-royale') { error(ws, 'Pick up weapons in the arena; Voxel Royale has no loadout selection.'); return; }
         if (!['voxel-breach', 'voxel-horde'].includes(room.gameId)) { error(ws, 'Weapon selection is only available in Voxel Breach and Voxel Last Stand.'); return; }
-        if (Object.keys(data).some(key => !['type', 'weaponId'].includes(key)) || typeof data.weaponId !== 'string') {
+        const hasGun = Object.hasOwn(data, 'weaponId'), hasMelee = Object.hasOwn(data, 'meleeId');
+        if (Object.keys(data).some(key => !['type', 'weaponId', 'meleeId'].includes(key)) || !hasGun && !hasMelee ||
+            hasGun && (typeof data.weaponId !== 'string' || !Object.hasOwn(Voxel.WEAPONS, data.weaponId)) ||
+            hasMelee && (typeof data.meleeId !== 'string' || !Object.hasOwn(MELEE_WEAPONS, data.meleeId))) {
           error(ws, 'Choose a valid weapon loadout.'); return;
         }
-        const result = room.adapter.engine.selectLoadout(state, id, data.weaponId);
-        if (!result.ok) { error(ws, result.error || 'That weapon loadout is not available.'); return; }
-        if (result.changed && state.phase === 'lobby') room.players[id].ready = false;
+        // Validate the complete request before applying either part of a paired loadout.
+        const phases = room.gameId === 'voxel-horde' ? ['lobby', 'countdown', 'intermission', 'matchEnd'] : ['lobby', 'countdown', 'buy', 'roundEnd'];
+        if (!phases.includes(state.phase)) { error(ws, room.gameId === 'voxel-horde' ? 'Change weapons between waves.' : 'Weapons can be changed between rounds.'); return; }
+        const results = [];
+        if (hasGun) results.push(room.adapter.engine.selectLoadout(state, id, data.weaponId));
+        if (hasMelee) results.push(room.gameId === 'voxel-horde' ? Horde.chooseMelee(state, id, data.meleeId) : Voxel.selectMeleeLoadout(state, id, data.meleeId));
+        const failure = results.find(result => !result.ok);
+        if (failure) { error(ws, failure.error || 'That weapon loadout is not available.'); return; }
+        if (results.some(result => result.changed) && state.phase === 'lobby') room.players[id].ready = false;
         broadcast(room);
       } else if (data.type === 'ping') {
         if (typeof data.time !== 'number' || !Number.isFinite(data.time)) { error(ws, 'Invalid ping timestamp.'); return; }
