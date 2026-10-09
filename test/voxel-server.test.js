@@ -641,21 +641,30 @@ for (const metadata of ['valid', 'stale', 'future']) {
     Object.assign(shooter, { x: -20, y: 0, z: 10, vx: 0, vy: 0, vz: 0, yaw: 0, pitch: 0, grounded: true });
     Object.assign(target, { x: -20, y: 0, z: 0, vx: 5.4, vy: 0, vz: 0, yaw: 0, pitch: 0, grounded: true });
     targetSeat.peer.send({ type: 'input', seq: 0, buttons: { right: true, yaw: 0, pitch: 0 } }); await flushPeer(targetSeat.peer);
-    const poses = new Map();
-    for (let index = 0; index < 24; index++) { game.app.tick(); poses.set(room.state.tick, { x: target.x, z: target.z }); }
+    const poses = new Map(); let inputSequence = 0;
+    // A live browser sends neutral inputs every 50 ms while standing still.
+    // Keep this displayed-view test outside the separate inactivity fence.
+    for (let index = 0; index < 24; index++) {
+      if (index % 6 === 0) {
+        shooterSeat.peer.send({ type: 'input', seq: inputSequence++, buttons: {} });
+        await flushPeer(shooterSeat.peer);
+      }
+      game.app.tick(); poses.set(room.state.tick, { x: target.x, z: target.z });
+    }
     const displayedTick = room.state.tick - 6, displayed = poses.get(displayedTick), yaw = Math.atan2(displayed.x - shooter.x, -(displayed.z - shooter.z));
     const currentRay = Voxel.traceShot(room.state, 0, { x: shooter.x, y: Voxel.eyeHeight(shooter), z: shooter.z }, { x: Math.sin(yaw), y: 0, z: -Math.cos(yaw) }, 120, Voxel.MAPS.courtyard);
     assert.equal(currentRay.playerId, null);
     const viewTick = metadata === 'valid' ? displayedTick : metadata === 'stale' ? room.state.tick - 19 : room.state.tick + 500;
-    const hp = target.hp, x = target.x;
-    shooterSeat.peer.send({ type: 'input', seq: 0, viewTick, buttons: { fire: true, yaw, pitch: 0 } });
-    shooterSeat.peer.send({ type: 'input', seq: 1, viewTick: room.state.tick, buttons: { yaw: 1.2, pitch: .2 } });
+    const hp = target.hp, x = target.x, ammo = shooter.ammo;
+    assert.equal(room.slots[0].actionInputs.inspect().neutral, false, 'a healthy standing shooter is outside stale-input recovery');
+    shooterSeat.peer.send({ type: 'input', seq: inputSequence++, viewTick, buttons: { fire: true, yaw, pitch: 0 } });
+    shooterSeat.peer.send({ type: 'input', seq: inputSequence++, viewTick: room.state.tick, buttons: { yaw: 1.2, pitch: .2 } });
     await flushPeer(shooterSeat.peer); game.app.tick();
-    assert.equal(room.acks[0], 1); assert.equal(shooter.shots, 1); assert.ok(target.x > x, 'historical tracing never changes real movement');
+    assert.equal(room.acks[0], inputSequence - 1); assert.equal(shooter.shots, 1); assert.equal(shooter.ammo, ammo - 1); assert.ok(target.x > x, 'historical tracing never changes real movement');
     const shot = room.state.events.findLast(event => event.type === 'shot' && event.playerId === 0);
     if (metadata === 'valid') { assert.equal(shot.targetId, 1); assert.equal(shot.hitKind, 'head'); assert.equal(target.hp, hp - Voxel.WEAPONS.marksman.damage * Voxel.WEAPONS.marksman.headMultiplier); }
     else { assert.equal(shot.targetId, null); assert.equal(target.hp, hp); assert.equal(getLagCompensationDiagnostics(room.state).viewCount, 0); }
-    shooterSeat.peer.send({ type: 'input', seq: 2, cancelActions: true, buttons: {} }); await flushPeer(shooterSeat.peer);
+    shooterSeat.peer.send({ type: 'input', seq: inputSequence++, cancelActions: true, buttons: {} }); await flushPeer(shooterSeat.peer);
     room.slots[0].lastInputTime -= 351; game.app.tick();
     assert.equal(getLagCompensationDiagnostics(room.state).viewCount, 0); assert.equal(room.slots[0].actionInputs.inspect().pending.length, 0);
   });

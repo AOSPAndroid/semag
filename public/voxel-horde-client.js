@@ -431,6 +431,7 @@ export async function bootHorde() {
   listen(document, 'fullscreenchange', () => { const full = document.fullscreenElement === shell; $('horde-fullscreen').setAttribute('aria-pressed', String(full)); $('horde-fullscreen').setAttribute('aria-label', full ? 'Exit fullscreen' : 'Enter fullscreen'); renderer?.resize(); draw(); });
   listen(window, 'resize', () => { renderer?.resize(); if (!running()) draw(); }); listen(window, 'blur', () => { if (running()) pause(); else clearInputs(); }); listen(document, 'visibilitychange', () => { if (document.hidden && running()) pause(); }); listen(window, 'pagehide', destroy);
   listen(canvas, 'voxel-renderer-error', event => { graphicsError = event.detail?.message || ''; if (graphicsError) { if (LIVE_PHASES.includes(state?.phase)) pause(); error(graphicsError); } else { error(''); renderer?.resize(); updateHUD(true); draw(); } });
+  listen(canvas, 'voxel-renderer-restored', () => { graphicsError = ''; error(''); renderer?.resize(); updateHUD(true); draw(); wake(); });
   hints(); weaponNote(); updateHUD(true);
   try {
     const [rules, visual] = await Promise.all([import('./voxel-horde-engine.js'), import('./voxel-renderer.js')]); if (destroyed) return null; engine = rules; rendererClass = visual.VoxelRenderer;

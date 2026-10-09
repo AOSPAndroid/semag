@@ -3,6 +3,7 @@ import { WEAPONS, weaponAimFovRatio } from './voxel-weapons.js';
 import { grenadeCapacity } from './voxel-ordnance.js';
 import { meleeProfile, meleeWeaponId } from './voxel-melee.js';
 import { frameAlpha } from './display-timing.js';
+import { createPlayerAnimationPresenter, playerAnimationPose } from './voxel-player-animation.js';
 
 // All solid world surfaces come directly from the engine's minimum-corner
 // colliders. Decoration is either painted on those surfaces or outside bounds.
@@ -2100,138 +2101,160 @@ export function stormMesh(storm) {
   return mesh.array;
 }
 
-// Fixed local proportions fit the most restrictive shooting envelope in every
-// facing direction. Keeping these independent of yaw prevents the silhouette
-// from breathing as a player turns, and leaves all uniform/helmet surface art.
-const OPERATIVE_BODY_SCALE = .93;
-const OPERATIVE_HEAD_WIDTH = .75, OPERATIVE_HEAD_DEPTH = .65;
+// Human appearances are deterministic presentation data, shared by the arena,
+// battle royale, monster survival and their practice modes. Team colours are
+// small cloth tabs; a player always retains their own skin, hair and clothes.
+const HUMAN_SKIN = ['#dfb18d', '#b47b57', '#8e593e', '#edc7a2', '#c9956d', '#70452f'];
+const HUMAN_HAIR = ['#342a26', '#573a2a', '#241f21', '#9d7045', '#40332d', '#b49b73'];
+const HUMAN_SHIRTS = ['#65736f', '#697789', '#82745c', '#6b7770', '#756681', '#8a7063'];
+const HUMAN_PANTS = ['#444b47', '#3d4650', '#525043', '#424e47', '#4e464f', '#4f463f'];
 
-function operativeParts(mesh, player, time, freeForAll = false) {
-  const crouch = player.crouching, scale = crouch ? 1.15 / 1.8 : 1;
-  const yaw = finite(player.yaw), pitch = clamp(finite(player.pitch) + finite(player.recoil), -1.45, 1.45);
-  // Aim turns continuously; anatomy remains inside the unchanged axis-aligned
-  // hitboxes because its authored horizontal proportions have a fixed bound.
-  const bodyYaw = yaw;
-  const pose = { x: player.x, y: finite(player.y), z: player.z, yaw: bodyYaw, pitch: 0 };
-  const color = freeForAll ? survivorColor(player) : TEAM_COLORS[player.team === 1 ? 1 : 0];
-  const team = rgba(color), uniform = mix(team, rgba('#304149'), .58), dark = '#253238', plate = '#3a4a4d';
-  const box = (x, y, z, w, h, d, c) => {
-    const bottom = y * scale, top = Math.min((y + h) * scale, crouch ? .83 : 1.48);
-    mesh.box(x * OPERATIVE_BODY_SCALE, bottom, z * OPERATIVE_BODY_SCALE, w * OPERATIVE_BODY_SCALE, top - bottom, d * OPERATIVE_BODY_SCALE, c, pose);
+export function humanAppearance(player = {}, freeForAll = false) {
+  const identity = Number.isInteger(player.id) ? Math.abs(player.id) : hash(player.id ?? 'spectator');
+  const skin = HUMAN_SKIN[identity % HUMAN_SKIN.length], hair = HUMAN_HAIR[(identity * 3 + Math.floor(identity / 3)) % HUMAN_HAIR.length];
+  const accent = freeForAll ? survivorColor(player) : TEAM_COLORS[player.team === 1 ? 1 : 0];
+  return { skin, skinShadow: shade(rgba(skin), .78), hair, eyes: ['#46615b', '#4c3f32', '#40566b'][identity % 3],
+    shirt: HUMAN_SHIRTS[identity % HUMAN_SHIRTS.length], pants: HUMAN_PANTS[identity % HUMAN_PANTS.length],
+    vest: '#394849', accent, style: identity % 4, beard: identity % 3 === 1,
+    face: { front: -.126, eyesY: .178, mouthY: .096, exposed: true } };
+}
+
+/** Articulated joints in player-local metres: +X right, +Y up, -Z forward. */
+export function operativePose(player, animation = playerAnimationPose(player, 0)) {
+  // Structural height follows the actual stance. Only joint flex settles after
+  // standing up, so a transitioning body never acquires a stretched neck.
+  const crouch = player.crouching ? 1 : 0, crouchBlend = player.crouching ? 1 : clamp(finite(animation.crouch), 0, 1), airborne = !!animation.airborne;
+  const phase = finite(animation.phase), stride = clamp(finite(animation.stride), 0, 1);
+  const forward = clamp(finite(animation.forward, 1), -1, 1), strafe = clamp(finite(animation.strafe), -1, 1);
+  const bob = clamp(finite(animation.bodyBob), -.028, 0), land = clamp(finite(animation.land), 0, 1);
+  const hipY = lerp(.81, .53, crouch) + bob - land * .014, chestY = lerp(1.12, .68, crouch) + bob;
+  const legs = [-1, 1].map((side, index) => {
+    const swing = Math.sin(phase + index * Math.PI), lift = airborne ? .055 + finite(animation.jump) * .050 : Math.max(0, swing) * stride * lerp(.105, .046, crouch);
+    const travel = swing * stride * lerp(.075, .040, crouch);
+    const foot = [side * .108 + strafe * travel * .55, .018 + lift, -.012 - forward * travel];
+    const ankle = [foot[0], foot[1] + .112, foot[2] + .015];
+    const hip = [side * .098, hipY, .024 + crouch * .036];
+    // The raised swing foot bends its knee; the planted leg remains extended.
+    // Crouch bends both knees forward rather than shrinking two rigid poles.
+    const knee = [side * .111 + strafe * travel * .28, lerp(.445, .295, crouch) + lift * .55 + bob * .5 - land * .010,
+      -.020 - crouchBlend * .090 - forward * travel * .28 - lift * .52];
+    return { hip, knee, ankle, foot, lift };
+  });
+  const aiming = aimProgress(player), reload = finite(player.reloadTicks) > 0 ? Math.sin(clamp(1 - player.reloadTicks / (WEAPONS[player.weapon]?.reloadTicks || 252), 0, 1) * Math.PI) : 0;
+  const healing = finite(player.healTicks) > 0, melee = player.slot === 'sword', swing = meleeMotion(player);
+  const throwLift = finite(player.grenadeThrowTicks) > 0 ? .085 : 0;
+  const arms = [-1, 1].map((side, index) => {
+    const armSwing = Math.sin(phase + index * Math.PI + Math.PI) * stride * .027 * (1 - aiming * .75);
+    const shoulder = [side * .211, lerp(1.295, .767, crouch) + bob, .012];
+    const elbow = [side * .192, lerp(1.065, .638, crouch) + bob + aiming * .020, -.053 + armSwing];
+    const hand = [side * (side < 0 ? .106 : .125), lerp(1.145, .735, crouch) + bob + aiming * .070 - (side < 0 ? reload * .110 : 0), -.185 + armSwing * .42];
+    if (!melee && !healing && side < 0) { hand[0] = .074 - reload * .100; hand[1] += .015; hand[2] = -.215 + armSwing * .30; }
+    if (healing && side < 0) { hand[0] = -.114; hand[1] = lerp(1.415, .792, crouch); hand[2] = -.105; elbow[1] += .035; }
+    if (melee && side > 0) { hand[0] += Math.sin(swing.yaw) * .028; hand[1] += -.035 + Math.sin(-swing.pitch) * .035; hand[2] -= Math.min(.025, swing.extension * .07); elbow[2] -= .025; }
+    if (throwLift && side < 0) { hand[1] += throwLift * (1 - crouch * .65); hand[2] += .025; elbow[1] += .055 * (1 - crouch * .6); }
+    hand[1] = Math.min((player.crouching ? .83 : 1.48) - .044, hand[1]);
+    return { shoulder, elbow, hand };
+  });
+  return { phase, crouch, airborne, stride, legs, arms, torso: { hipY, chestY, bob }, head: { base: player.crouching ? .83 : 1.48 } };
+}
+
+function operativeParts(mesh, player, time, freeForAll = false, animation = null) {
+  const crouch = !!player.crouching, yaw = finite(player.yaw), pitch = clamp(finite(player.pitch) + finite(player.recoil), -1.45, 1.45);
+  const art = humanAppearance(player, freeForAll), joints = operativePose(player, animation || playerAnimationPose(player, time / 1000));
+  const pose = { x: finite(player.x), y: finite(player.y), z: finite(player.z), yaw, pitch: 0 };
+  const color = art.accent, team = rgba(color), uniform = rgba(art.shirt), headBase = crouch ? .83 : 1.48;
+  const world = point => { const p = rotate(point, yaw); return [pose.x + p[0], pose.y + p[1], pose.z + p[2]]; };
+  const box = (x, y, z, w, h, d, c) => mesh.box(x, y, z, w, h, d, c, pose);
+  const paint = (points, normal, c) => mesh.quad(...points.map(world), rotate(normal, yaw), rgba(c));
+  const front = (x, y, z, w, h, c) => paint([[x, y, z], [x, y + h, z], [x + w, y + h, z], [x + w, y, z]], [0, 0, -1], c);
+  const back = (x, y, z, w, h, c) => paint([[x + w, y, z], [x + w, y + h, z], [x, y + h, z], [x, y, z]], [0, 0, 1], c);
+  const limb = (a, b, width, depth, c) => {
+    const aa = world(a), bb = world(b), dx = bb[0] - aa[0], dy = bb[1] - aa[1], dz = bb[2] - aa[2], horizontal = Math.hypot(dx, dz), length = Math.hypot(horizontal, dy);
+    mesh.box(-width / 2, 0, -depth / 2, width, length, depth, c, { x: aa[0], y: aa[1], z: aa[2], yaw: horizontal > 1e-7 ? Math.atan2(-dx, dz) : yaw, pitch: Math.atan2(horizontal, dy) });
   };
-  const face = (points, normal, c) => {
-    const transform = point => {
-      const p = rotate([point[0] * OPERATIVE_BODY_SCALE, Math.min(point[1] * scale, crouch ? .83 : 1.48), point[2] * OPERATIVE_BODY_SCALE], bodyYaw);
-      return p.map((value, i) => value + [pose.x, pose.y, pose.z][i]);
-    };
-    mesh.quad(...points.map(transform), rotate(normal, bodyYaw), rgba(c));
+  for (const leg of joints.legs) {
+    limb(leg.hip, leg.knee, .129, .139, art.pants);
+    limb(leg.knee, leg.ankle, .112, .121, art.pants);
+    box(leg.foot[0] - .064, leg.foot[1], leg.foot[2] - .088, .128, .112, .176, '#303532');
+    front(leg.foot[0] - .057, leg.foot[1] + .009, leg.foot[2] - .0885, .114, .019, '#968778');
+    front(leg.foot[0] - .050, leg.foot[1] + .068, leg.foot[2] - .0885, .100, .017, '#5a6156');
+  }
+  const hipY = joints.torso.hipY, torsoTop = lerp(1.375, .812, joints.crouch) + joints.torso.bob;
+  box(-.168, hipY - .060, -.121, .336, .106, .258, art.pants);
+  box(-.178, hipY + .024, -.134, .356, torsoTop - hipY - .024, .268, art.shirt);
+  box(-.057, torsoTop, -.056, .114, Math.max(.018, headBase + .043 - torsoTop), .112, art.skin);
+  // A compact cloth carrier, three printed pockets and straps keep the human
+  // silhouette readable without spending triangles on hidden enclosed gear.
+  const vestBottom = hipY + .073, vestTop = torsoTop - .058, vestHeight = Math.max(.08, vestTop - vestBottom);
+  box(-.155, vestBottom, -.162, .310, vestHeight, .029, art.vest);
+  box(-.117, vestBottom + .010, .134, .234, Math.max(.08, vestHeight - .018), .067, '#4a5550');
+  front(-.159, hipY - .021, -.1215, .318, .031, '#303735');
+  front(-.018, hipY - .017, -.122, .036, .023, '#b6aa81');
+  for (const x of [-.135, -.039, .057]) {
+    front(x, vestBottom + vestHeight * .16, -.1915, .078, vestHeight * .36, '#697769');
+    front(x + .009, vestBottom + vestHeight * .41, -.192, .060, .013, '#a7ad91');
+  }
+  for (const x of [-.130, .099]) front(x, vestBottom + vestHeight * .51, -.1915, .030, vestHeight * .46, '#809181');
+  front(-.078, vestTop - .045, -.192, .156, .025, team);
+  back(-.083, vestBottom + vestHeight * .57, .2015, .166, .023, team);
+  back(-.097, vestBottom + .012, .2015, .017, Math.max(.02, vestHeight - .045), '#87947f');
+  back(.080, vestBottom + .012, .2015, .017, Math.max(.02, vestHeight - .045), '#87947f');
+  for (const [index, arm] of joints.arms.entries()) {
+    limb(arm.shoulder, arm.elbow, .079, .090, art.shirt);
+    limb(arm.elbow, arm.hand, .063, .069, art.skin);
+    box(arm.hand[0] - .037, arm.hand[1] - .037, arm.hand[2] - .037, .074, .074, .074, art.skin);
+    const side = index ? 1 : -1;
+    // The stitched team stripe lies on the sleeve, so it remains depth-tested.
+    const stripe = [[side * .253, arm.shoulder[1] - .069, -.028], [side * .253, arm.shoulder[1] - .035, -.028], [side * .253, arm.shoulder[1] - .035, .040], [side * .253, arm.shoulder[1] - .069, .040]];
+    if (side < 0) stripe.reverse();
+    paint(stripe, [side, 0, 0], team);
+  }
+  const headPose = { ...pose, y: pose.y + headBase };
+  const headBox = (x, y, z, w, h, d, c) => mesh.box(x, y, z, w, h, d, c, headPose);
+  const headPaint = (points, normal, c) => {
+    const transform = point => { const p = rotate(point, yaw); return [headPose.x + p[0], headPose.y + p[1], headPose.z + p[2]]; };
+    mesh.quad(...points.map(transform), rotate(normal, yaw), rgba(c));
   };
-  const front = (x, y, z, w, h, c) => face([[x, y, z], [x, y + h, z], [x + w, y + h, z], [x + w, y, z]], [0, 0, -1], c);
-  const back = (x, y, z, w, h, c) => face([[x + w, y, z], [x + w, y + h, z], [x, y + h, z], [x, y, z]], [0, 0, 1], c);
-  const speed = Math.hypot(finite(player.vx), finite(player.vz));
-  const step = Math.sin(time * .011 + (hash(player.id) % 30)) * clamp(speed / 6, 0, 1) * .055;
-  // Separate toe caps, boot collars and knee pads give a readable gait. Body
-  // corners also fit the .32 movement radius, so gear never pokes into a wall.
-  for (const [xx, stride] of [[-.23, step], [.05, -step]]) {
-    box(xx, .018, -.145 + stride, .18, .17, .25, dark);
-    box(xx + .013, .17, -.088 + stride, .154, .64, .187, uniform);
-    box(xx + .004, .465, -.116 + stride, .172, .16, .036, plate);
-    front(xx + .006, .028, -.1454 + stride, .168, .024, '#a39d86');
-    front(xx + .014, .103, -.1455 + stride, .152, .038, '#4d5a52');
-    front(xx + .014, .184, -.0884 + stride, .152, .072, '#3b4b48');
-    front(xx + .025, .487, -.1164 + stride, .13, .016, '#8a9b8b');
-    front(xx + .025, .554, -.1164 + stride, .13, .011, '#26383c');
-    front(xx + .026, .286, -.0884 + stride, .018, .146, '#526559');
+  const headFront = (x, y, z, w, h, c) => headPaint([[x, y, z], [x, y + h, z], [x + w, y + h, z], [x + w, y, z]], [0, 0, -1], c);
+  headBox(-.137, .018, -.125, .274, .255, .236, art.skin);
+  headBox(-.143, .267, -.128, .286, .053, .244, art.hair);
+  headBox(-.020, .119, -.151, .040, .058, .028, art.skin);
+  headBox(-.163, .126, -.043, .027, .083, .067, art.skin);
+  headBox(.136, .126, -.043, .027, .083, .067, art.skin);
+  const gaze = Math.sin(pitch) * .010, eyeY = .172 + gaze;
+  // Exposed cheeks, sclera, dark pupils and separate eyebrows replace the old
+  // opaque visor. Only these flush pixels follow pitch, inside real head bounds.
+  for (const x of [-.106, .041]) {
+    headFront(x, eyeY, -.1258, .065, .031, '#ece2ca');
+    headFront(x + .019, eyeY + .002, -.1264, .027, .026, art.eyes);
+    headFront(x + .027, eyeY + .004, -.1269, .012, .021, '#282725');
+    headFront(x - .002, eyeY + .041, -.1261, .069, .014, art.hair);
   }
-  box(-.25, .81, -.17, .50, .57, .34, uniform);
-  front(-.215, .882, -.206, .43, .39, plate);
-  face([[-.215, .882, -.17], [-.215, 1.272, -.17], [-.215, 1.272, -.206], [-.215, .882, -.206]], [-1, 0, 0], '#2f4045');
-  face([[.215, .882, -.206], [.215, 1.272, -.206], [.215, 1.272, -.17], [.215, .882, -.17]], [1, 0, 0], '#42554f');
-  box(-.27, .80, -.154, .54, .075, .308, '#2c3c3c');
-  front(-.028, .817, -.1544, .056, .035, '#a99c74');
-  for (const xx of [-.20, -.058, .084]) {
-    if (xx === -.058) front(xx, .938, -.2062, .116, .161, '#708577');
-    else box(xx, .938, -.231, .116, .161, .046, '#708577');
-    const surfaceZ = xx === -.058 ? -.2066 : -.2314;
-    front(xx + .005, 1.056, surfaceZ, .106, .021, '#b2b698');
-    front(xx + .050, .969, surfaceZ - .0001, .015, .040, '#334b47');
-  }
-  for (const xx of [-.185, .130]) {
-    front(xx, 1.10, -.2064, .055, .174, '#8c9b87');
-    front(xx + .015, 1.190, -.2068, .025, .033, '#3d5350');
-  }
-  front(-.095, 1.309, -.1704, .190, .036, team);
-  front(-.016, 1.317, -.1708, .032, .019, '#e0dec3');
-  front(-.085, 1.126, -.2065, .17, .035, '#283a3d');
-  front(-.078, 1.137, -.2069, .046, .013, team);
-  box(-.18, .917, .155, .36, .355, .098, '#4e6760');
-  back(-.18, 1.176, .2532, .36, .078, '#81947e');
-  back(-.137, .937, .2534, .028, .225, '#b0b297');
-  back(.109, .937, .2534, .028, .225, '#b0b297');
-  back(-.10, 1.033, .2535, .20, .039, team);
-  back(-.014, 1.037, .2539, .028, .031, '#374d49');
-  box(.244, .862, -.081, .041, .162, .162, '#607669');
-  for (const xx of [-.29, .215]) {
-    box(xx, 1.156, -.099, .075, .232, .198, uniform);
-    front(xx + .005, 1.295, -.0994, .065, .074, plate);
-    const outer = xx < 0 ? -.29 : .29;
-    const points = [[outer, 1.295, -.099], [outer, 1.369, -.099], [outer, 1.369, .099], [outer, 1.295, .099]];
-    if (xx < 0) points.reverse();
-    face(points, [xx < 0 ? -1 : 1, 0, 0], plate);
-    front(xx + .013, 1.317, -.0998, .049, .027, team);
-  }
-  box(-.13, 1.379, -.12, .26, .101, .24, '#354b4b');
-  // Stepped helmet, cheek/visor separation and ear protection remain inside
-  // the engine's real ±.22, .32-high head at every aim angle and crouch.
-  const headBase = crouch ? .83 : 1.48;
-  const headPose = { ...pose, y: pose.y + headBase, pitch: 0 };
-  const eyeY = .095 + Math.sin(pitch) * .018;
-  const skin = ['#baab91', '#a28b75', '#c9b99c'][hash(player.id) % 3], helmet = mix(team, rgba('#4b6158'), .78);
-  const headBox = (x, y, z, w, h, d, c) => mesh.box(x * OPERATIVE_HEAD_WIDTH, y, z * OPERATIVE_HEAD_DEPTH, w * OPERATIVE_HEAD_WIDTH, h, d * OPERATIVE_HEAD_DEPTH, c, headPose);
-  headBox(-.19, .012, -.19, .38, .175, .38, skin);
-  headBox(-.193, 0, .048, .386, .179, .165, '#324746');
-  headBox(-.22, .175, -.214, .44, .095, .428, helmet);
-  headBox(-.18, .269, -.18, .36, .051, .36, '#75887b');
-  headBox(-.22, .166, -.22, .44, .027, .114, '#3e5653');
-  headBox(-.187, .082, -.211, .374, .074, .032, '#23393d');
-  headBox(-.22, .075, -.048, .027, .103, .110, '#536c62');
-  headBox(.193, .075, -.048, .027, .103, .110, '#536c62');
-  headBox(-.145, .020, -.211, .29, .059, .056, '#53675f');
-  const headFace = (points, normal, c) => {
-    const transform = point => { const p = rotate([point[0] * OPERATIVE_HEAD_WIDTH, point[1], point[2] * OPERATIVE_HEAD_DEPTH], bodyYaw); return p.map((value, i) => value + [headPose.x, headPose.y, headPose.z][i]); };
-    mesh.quad(...points.map(transform), rotate(normal, bodyYaw), rgba(c));
-  };
-  const headFront = (x, y, z, w, h, c) => headFace([[x, y, z], [x, y + h, z], [x + w, y + h, z], [x + w, y, z]], [0, 0, -1], c);
-  for (const xx of [-.166, .014]) {
-    headFront(xx, .093, -.2114, .152, .049, '#637e73');
-    headFront(xx + .018, eyeY + .012, -.2118, .10, .009, '#abc8b1');
-    headFront(xx + .031, .103, -.2119, .071, .006, '#314e4f');
-  }
-  headFront(-.079, .034, -.2114, .158, .012, '#293f40');
-  headFront(-.048, .057, -.2115, .096, .008, '#93a48f');
-  headFront(-.076, .213, -.2144, .152, .034, team);
-  headFront(-.025, .220, -.2148, .050, .019, '#d4d6b8');
-  for (const side of [-1, 1]) {
-    const x = side * .2198;
-    const points = [[x, .216, -.077], [x, .250, -.077], [x, .250, .090], [x, .216, .090]];
-    if (side < 0) points.reverse();
-    headFace(points, [side, 0, 0], team);
-  }
-  return { crouch, yaw, pitch, pose, color, team, uniform };
+  headFront(-.052, .089, -.1261, .104, .009, '#915e4a');
+  headFront(-.044, .098, -.1265, .088, .009, '#be927a');
+  headFront(-.126, .118, -.1257, .061, .019, art.skinShadow);
+  headFront(.065, .118, -.1257, .061, .019, art.skinShadow);
+  headFront(-.135, .229, -.1259, .270, .034, art.hair);
+  headFront(-.135, .206, -.126, .031, .058, art.hair);
+  headFront(.104, .206, -.126, .031, .058, art.hair);
+  headFront(art.style % 2 ? -.059 : .042, .239, -.1264, .066, .022, art.skin);
+  // A subtle stubble wash remains below the mouth, never a face-covering mask.
+  headFront(-.084, .028, -.1259, .168, .039, art.beard ? mix(rgba(art.skin), rgba(art.hair), .38) : art.skin);
+  return { crouch, yaw, pitch, pose, color, team, uniform, art, joints };
 }
 
 /** Body/head art is inspectable separately from the continuously aimed gun. */
-export function operativeMeshes(player, time = 0, freeForAll = false) {
-  const mesh = new Mesh(); operativeParts(mesh, player, finite(time), freeForAll); return mesh.array;
+export function operativeMeshes(player, time = 0, freeForAll = false, animation = null) {
+  const mesh = new Mesh(); operativeParts(mesh, player, finite(time), freeForAll, animation); return mesh.array;
 }
 
-function playerMesh(mesh, player, map, time, allied, freeForAll = false) {
-  const { crouch, yaw, pitch, pose, color, team, uniform } = operativeParts(mesh, player, time, freeForAll);
+function playerMesh(mesh, player, map, time, allied, freeForAll = false, animation = null) {
+  const { crouch, yaw, pitch, pose, color, team, uniform, art } = operativeParts(mesh, player, time, freeForAll, animation);
   const healing = finite(player.healTicks) > 0;
   const sword = player.slot === 'sword', knife = sword && meleeWeaponId(player) === 'knife', motion = meleeMotion(player);
   const heldYaw = sword && player.meleeTicks > 0 ? finite(player.meleeYaw, yaw) : yaw;
   const heldPitch = sword && player.meleeTicks > 0 ? finite(player.meleePitch, pitch) : pitch;
-  const handOffset = rotate([healing ? -.16 : .21, healing ? (crouch ? .87 : 1.42) : (crouch ? .82 : 1.24), healing ? -.34 : -.24 - (sword ? motion.extension : 0)], heldYaw);
+  const handOffset = rotate([healing ? -.16 : sword ? .21 : .14, healing ? (crouch ? .87 : 1.42) : (crouch ? .82 : 1.24), healing ? -.34 : sword ? -.24 - motion.extension : -.14], heldYaw);
   const reloadProgress = player.reloadTicks > 0 ? clamp(1 - player.reloadTicks / (WEAPONS[player.weapon]?.reloadTicks || 252), 0, 1) : 0;
   const reloadTilt = Math.sin(reloadProgress * Math.PI);
   const gunPose = { x: pose.x + handOffset[0], y: pose.y + handOffset[1] - reloadTilt * .12, z: pose.z + handOffset[2], yaw: heldYaw + (sword ? motion.yaw : 0), pitch: heldPitch + (sword ? motion.pitch : -reloadTilt * .24), scale: sword && !healing ? knife ? 1.15 : 1.35 : 1 };
@@ -2241,15 +2264,14 @@ function playerMesh(mesh, player, map, time, allied, freeForAll = false) {
     const progress = clamp(1 - player.healTicks / HEAL.ticks, 0, 1), drink = Math.sin(progress * Math.PI);
     const bottlePose = { ...gunPose, pitch: drink * .72 };
     potionParts(mesh, bottlePose, progress);
-    mesh.box(-.084, -.105, -.037, .17, .093, .17, '#526662', bottlePose);
+    mesh.box(-.055, -.095, -.030, .110, .085, .130, art.skin, bottlePose);
   } else if (sword) {
     meleeParts(mesh, player, gunPose, { limit, active: motion.active });
-    mesh.box(-.070, -.085, -.025, .14, .16, .20, '#526662', gunPose);
+    mesh.box(-.047, -.080, -.025, .094, .110, .160, art.skin, gunPose);
     mesh.box(-.060, -.075, .15, .12, .15, .27, uniform, gunPose);
   } else {
     weaponParts(mesh, player.weapon, gunPose, { limit, stock: color, reloadProgress, aim: aimProgress(player), loaded: player.ammo > 0, spin: finite(player.spinTicks) / (WEAPONS[player.weapon]?.spinupTicks || 1), cycle: 1 - finite(player.shotCooldown) / (WEAPONS[player.weapon]?.cooldown || 1) });
-    mesh.box(-.33, -.072, -.43, .17, .14, .26, '#526662', gunPose);
-    mesh.box(-.08, -.14, -.11, .13, .14, .17, '#526662', gunPose);
+    mesh.box(-.067, -.135, -.11, .104, .115, .140, art.skin, gunPose);
   }
   if (allied) {
     // A small in-world team tab is depth-tested like every other triangle.
@@ -2268,7 +2290,7 @@ export class VoxelRenderer {
     this.particles = []; this.tracers = []; this.localShot = null; this.localReload = null;
     this.lastAim = null; this.swayX = 0; this.swayY = 0;
     this.frameMeshes = { world: new Mesh(), contact: new Mesh(), tracer: new Mesh(), weapon: new Mesh() };
-    this.presentLoot = createLootPresenter(); this.presentWarnings = createSpawnWarningPresenter(); this.presentEye = createEyeHeightPresenter(); this.resizeReads = 0;
+    this.presentLoot = createLootPresenter(); this.presentWarnings = createSpawnWarningPresenter(); this.presentEye = createEyeHeightPresenter(); this.presentHumans = createPlayerAnimationPresenter(); this.humanPoses = new Map(); this.resizeReads = 0;
     this._frameDrawCalls = 0; this._frameDynamicVertices = 0; this._mapVertices = 0; this._lootItems = 0; this._stormVertices = 0;
     this._onLost = event => {
       event.preventDefault(); this.contextLost = true; this.available = false;
@@ -2480,7 +2502,7 @@ export class VoxelRenderer {
     }
   }
   _viewModel(player, yaw, pitch, time, freeForAll = false, map = null, viewEye = null) {
-    const mesh = this.frameMeshes?.weapon?.reset() || new Mesh(), team = freeForAll ? survivorColor(player) : TEAM_COLORS[player.team === 1 ? 1 : 0];
+    const mesh = this.frameMeshes?.weapon?.reset() || new Mesh(), team = freeForAll ? survivorColor(player) : TEAM_COLORS[player.team === 1 ? 1 : 0], art = humanAppearance(player, freeForAll);
     const speed = Math.hypot(finite(player.vx), finite(player.vz));
     const walking = clamp(speed / 5.5, 0, 1), step = time * .011;
     const age = this.localShot?.weapon === player.weapon ? Math.max(0, time - this.localShot.born) : 10000;
@@ -2523,7 +2545,7 @@ export class VoxelRenderer {
       return limit;
     };
     const glove = (pose, x, y, z, grip = 'gun', limit = Infinity) => {
-      const fabric = mix(rgba(team), rgba('#485e55'), .68), palm = '#435b52', fingers = '#61776c';
+      const fabric = art.shirt, palm = art.skinShadow, fingers = art.skin;
       const part = (dx, dy, dz, w, h, d, color) => {
         const clippedZ = Math.max(z + dz, -limit), depth = z + dz + d - clippedZ;
         if (depth > 0) mesh.box(x + dx, y + dy, clippedZ, w, h, depth, color, pose);
@@ -2531,16 +2553,16 @@ export class VoxelRenderer {
       // A narrower palm, bent thumb and three finger segments read as a
       // gripping glove. The short wrist/cuff leave the sight line open.
       part(-.046, -.054, -.046, .092, .108, .104, palm);
-      part(-.052, .015, -.032, .104, .034, .086, '#344d47');
+      part(-.052, .015, -.032, .104, .034, .086, art.skin);
       const left = grip === 'support', blade = grip === 'blade';
       part(left ? -.076 : .044, -.006, -.059, .032, .060, .062, fingers);
       for (let i = 0; i < 3; i++) {
         if (blade) part(-.049, -.067, -.046 + i * .034, .104, .039, .027, fingers);
         else part(-.048, -.050 + i * .032, -.065, .098, .025, .042, fingers);
       }
-      part(-.037, -.049, .044, .074, .085, .068, '#4e695e');
+      part(-.037, -.049, .044, .074, .085, .068, art.skin);
       part(-.047, -.059, .101, .094, .101, .054, fabric);
-      part(-.044, -.065, .146, .088, .107, .145, '#415b50');
+      part(-.044, -.065, .146, .088, .107, .145, art.shirt);
       part(-.033, .043, .110, .066, .005, .033, '#91a28a');
     };
     if (finite(player.healTicks) > 0) {
@@ -2670,15 +2692,20 @@ export class VoxelRenderer {
     gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false);
     this._draw(cached.shadows); gl.depthMask(true); gl.disable(gl.BLEND);
     const dynamic = this.frameMeshes.world.reset(), contacts = this.frameMeshes.contact.reset(), local = players.find(player => player.id === localId) || cameraPlayer;
+    const humanContext = `${state.gameId || 'voxel-breach'}:${map.id}:${state.matchId ?? ''}:${state.round ?? ''}`;
+    this.humanPoses.clear();
+    this.presentHumans.retain(players.filter(player => !player.monsterType).map(player => player.id));
     for (const player of players) {
       if (!Number.isFinite(player.x) || !Number.isFinite(player.z)) continue;
+      const humanAnimation = !player.monsterType ? this.presentHumans(player, time, humanContext, { paused: state.phase === 'paused' || !!options.paused }) : null;
+      if (humanAnimation) this.humanPoses.set(player.id, { animation: humanAnimation, joints: operativePose(player, humanAnimation) });
       if (!player.alive) {
         if (horde && player.human && player.connected && player.participating && player.revivesThisWave < 1 && ['fight', 'paused'].includes(state.phase)) fallenSurvivorKit(dynamic, contacts, player, yaw);
         continue;
       }
       if (player.id === cameraPlayer.id) continue;
       if (horde && player.monsterType) monsterMesh(dynamic, player, map, time);
-      else playerMesh(dynamic, player, map, time, !freeForAll && player.team === local.team, freeForAll);
+      else playerMesh(dynamic, player, map, time, !freeForAll && player.team === local.team, freeForAll, humanAnimation);
       const support = surfaceBelow(map.colliders, player.x, player.z, finite(player.y) + .045);
       const ground = support ? support.y + support.h : 0;
       const altitude = Math.max(0, finite(player.y) - ground), spread = .26 + Math.min(.22, altitude * .08), opacity = .15 / (1 + altitude);
@@ -2750,13 +2777,14 @@ export class VoxelRenderer {
   }
   get stats() {
     const loot = this.presentLoot?.getStats(), warnings = this.presentWarnings?.getStats();
-    return Object.freeze({ mapId: this.mapId, mapVertices: this._mapVertices, cachedMaps: this.mapCache.size, drawCalls: this._frameDrawCalls, dynamicVertices: this._frameDynamicVertices, lootItems: this._lootItems, stormVertices: this._stormVertices, spawnWarnings: this._spawnWarnings || 0, cachedSpawnWarnings: warnings?.cachedItems || 0, spawnWarningBuilds: warnings?.builds || 0, bloodParticles: this.particles.filter(particle => particle.material === 'blood').length, visibleBloodParticles: this._visibleBloodParticles || 0, cachedLootItems: loot?.cachedItems || 0, lootGeometryBuilds: loot?.builds || 0, geometryBufferBytes: Object.values(this.frameMeshes || {}).reduce((bytes, mesh) => bytes + mesh.storage.byteLength, 0) + (loot?.bufferBytes || 0) + (loot?.templateBytes || 0) + (warnings?.bufferBytes || 0) + (warnings?.templateBytes || 0), cameraEyeHeight: this.cameraEyeHeight, resizeReads: this.resizeReads });
+    const humanAnimation = Object.freeze({ cachedPlayers: this.presentHumans?.size || 0, poses: Object.freeze([...this.humanPoses].map(([id, { animation, joints }]) => Object.freeze({ id, phase: animation.phase, stride: animation.stride, speed: animation.speed, forward: animation.forward, strafe: animation.strafe, crouch: animation.crouch, airborne: animation.airborne, jump: animation.jump, land: animation.land, bodyBob: animation.bodyBob, knees: Object.freeze(joints.legs.map(leg => Object.freeze([...leg.knee]))), feet: Object.freeze(joints.legs.map(leg => Object.freeze([...leg.foot]))) }))) });
+    return Object.freeze({ mapId: this.mapId, mapVertices: this._mapVertices, cachedMaps: this.mapCache.size, drawCalls: this._frameDrawCalls, dynamicVertices: this._frameDynamicVertices, lootItems: this._lootItems, stormVertices: this._stormVertices, spawnWarnings: this._spawnWarnings || 0, cachedSpawnWarnings: warnings?.cachedItems || 0, spawnWarningBuilds: warnings?.builds || 0, bloodParticles: this.particles.filter(particle => particle.material === 'blood').length, visibleBloodParticles: this._visibleBloodParticles || 0, cachedLootItems: loot?.cachedItems || 0, lootGeometryBuilds: loot?.builds || 0, geometryBufferBytes: Object.values(this.frameMeshes || {}).reduce((bytes, mesh) => bytes + mesh.storage.byteLength, 0) + (loot?.bufferBytes || 0) + (loot?.templateBytes || 0) + (warnings?.bufferBytes || 0) + (warnings?.templateBytes || 0), cameraEyeHeight: this.cameraEyeHeight, resizeReads: this.resizeReads, humanAnimation });
   }
   resetEffects() {
     this.eventIds.clear(); this.eventQueue.length = 0; this.particles.length = 0; this.tracers.length = 0;
     this._visibleBloodParticles = 0;
     this.localShot = null; this.localReload = null; this.lastAim = null; this.swayX = 0; this.swayY = 0;
-    this.presentLoot?.reset(); this.presentWarnings?.reset(); this.presentEye?.reset(); this._spawnWarnings = 0;
+    this.presentLoot?.reset(); this.presentWarnings?.reset(); this.presentEye?.reset(); this.presentHumans?.reset(); this.humanPoses?.clear(); this._spawnWarnings = 0;
   }
   destroy() {
     if (this.destroyed) return;

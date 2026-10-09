@@ -22,6 +22,11 @@ Tactics uses biome tiles, hero and enemy portraits, and exact intent overlays.
 Their original artwork is drawn locally and bundled with the host, including
 the shelf covers.
 
+The voxel FPS games share original human player models with exposed faces,
+varied hair and skin tones, layered clothing, and articulated movement.
+Their procedural meshes and animation code ship with the host; no character
+models or textures need to load from another service.
+
 Static environments and reusable portraits are cached by their renderers.
 Animated poses and effects follow the game state; artwork never changes movement,
 collision, attack range, card identity, or the multiplayer rules.
