@@ -1,6 +1,7 @@
 import { displayKey, gameKey, getKeyboardLayout, mountKeyboardLayoutPicker, subscribeKeyboardLayout } from './keyboard-layout.js';
 import { copyText, getName, hostInfo, roomUrl, saveName } from './hub/shared.js';
 import { GameAudio } from './audio.js';
+import { createMeleeImpactReporter } from './voxel-client.js';
 import { WEAPONS, weaponAimFovRatio, weaponSpread } from './voxel-weapons.js';
 import { predictLocalMovement, sweepPresentationOffset, traceShot, ADS, HEAL, PLAYER_HEALTH } from './voxel-engine.js';
 
@@ -182,6 +183,7 @@ async function boot() {
   let paintedHUDKey = "";
   const hudKey = () => hudTransitionKey(state, roster, playerId);
   const eventSeen = new Set(), eventOrder = [], kills = [], audio = new GameAudio(), removers = [];
+  const meleeImpacts = createMeleeImpactReporter(audio);
   function listen(target, name, callback, options) { target.addEventListener(name, callback, options); removers.push(() => target.removeEventListener(name, callback, options)); }
   function send(message) { if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message)); }
   function error(message = '') { setText($('error-banner'), message); setHidden($('error-banner'), !message); }
@@ -331,10 +333,12 @@ async function boot() {
   }
   function playEvents(events = []) {
     const fresh = [], impactSounds = new Set();
+    const impactOptions = { lifeKey: `${state?.mapId}:${state?.matchId}`, viewedId: spectatorPlayer(state, playerId, spectatorId)?.id, gain: .22 };
     for (const event of events) {
       const id = event.id ?? `${state?.tick}:${event.type}:${event.playerId ?? event.attackerId ?? ''}:${event.targetId ?? ''}`;
       if (eventSeen.has(id)) continue; eventSeen.add(id); eventOrder.push(id); fresh.push(event); if (eventOrder.length > 512) eventSeen.delete(eventOrder.shift());
       const source = event.shooterId ?? event.attackerId ?? event.playerId ?? event.ownerId, target = event.targetId;
+      const meleeImpact = meleeImpacts.consume(event, playerId, impactOptions);
       const inventoryFeedback = source === playerId ? inventoryEventFeedback(event) : null; if (inventoryFeedback) toast(inventoryFeedback);
       if (event.type === 'damage' && event.damage > 0) { const incoming = incomingDamageFeedback(event, spectatorPlayer(state, playerId, spectatorId), state.players, { now: performance.now(), lifeKey: state.matchId, friendlyFire: true }); if (incoming) damageFeedback = incoming; }
       if (['kill', 'elimination', 'death'].includes(event.type)) {
@@ -345,7 +349,7 @@ async function boot() {
       if (!audio.enabled) continue;
       try {
         if (['shot', 'fire', 'boltLaunch'].includes(event.type) && (event.pellet == null || event.pellet === 0)) audio.gunshot(event.weapon, { gain: source === playerId ? 1 : .3 });
-        else if (event.type === 'damage' && (source === playerId || target === playerId)) { const key = `${event.tick}:${target === playerId ? 'in' : 'out'}`; if (impactSounds.has(key)) continue; impactSounds.add(key); audio.tone(target === playerId ? 130 : 920, .055, { end: target === playerId ? 70 : 620, type: 'triangle', gain: .22 }); }
+        else if (event.type === 'damage' && !meleeImpact && (source === playerId || target === playerId)) { const key = `${event.tick}:${target === playerId ? 'in' : 'out'}`; if (impactSounds.has(key)) continue; impactSounds.add(key); audio.tone(target === playerId ? 130 : 920, .055, { end: target === playerId ? 70 : 620, type: 'triangle', gain: .22 }); }
         else if (event.type === 'meleeStart') audio.meleeSwing(event.weapon, { gain: source === playerId ? 1 : .3 });
         else if (event.type === 'explosion' || event.type === 'grenadeExplosion') { audio.noise(.45, { highpass: 30, lowpass: 1700, gain: .4 }); audio.tone(65, .42, { end: 28, gain: .22 }); }
         else if (event.type === 'healComplete' && source === playerId) audio.tone(660, .13, { end: 920, type: 'triangle', gain: .15 });
@@ -400,9 +404,9 @@ async function boot() {
     const reconciliationTime = performance.now();
     const beforePrediction = predictedPlayer;
     const beforePose = beforePrediction && old?.phase === 'fight' ? presentMovement(beforePrediction, actionInputs.preview(currentInput(), reconciliationTime), old.map, accumulator, engine.predictLocalMovement, old.players) : beforePrediction;
-    if (!old || predictedPlayer?.id !== playerId || fresh) { neutralize(); aim = cleanAim(local?.yaw, local?.pitch); pending = []; snapshots = []; spectatorId = null; accumulator = 0; renderer?.resetEffects(); healthView = null; damageFeedback = null; if (fresh) { eventSeen.clear(); eventOrder.length = 0; kills.length = 0; feedbackUntil = 0; hitFeedback.reset({ clearHistory: true }); damageFeedback = null; healthGainUntil = 0; lastCountdown = null; } sendInput(neutralInput(aim.yaw, aim.pitch), true); }
+    if (!old || predictedPlayer?.id !== playerId || fresh) { neutralize(); aim = cleanAim(local?.yaw, local?.pitch); pending = []; snapshots = []; spectatorId = null; accumulator = 0; renderer?.resetEffects(); healthView = null; damageFeedback = null; if (fresh) { eventSeen.clear(); eventOrder.length = 0; kills.length = 0; feedbackUntil = 0; hitFeedback.reset({ clearHistory: true }); damageFeedback = null; meleeImpacts.reset(); healthGainUntil = 0; lastCountdown = null; } sendInput(neutralInput(aim.yaw, aim.pitch), true); }
     if (previousPhase !== null && previousPhase !== state.phase) neutralize();
-    if (state.phase === 'lobby' && previousPhase !== 'lobby') { neutralize({ pause: true, unlock: true }); entered = false; fallback = false; healthView = null; damageFeedback = null; snapshots = []; pending = []; audio.resetEvents(); }
+    if (state.phase === 'lobby' && previousPhase !== 'lobby') { neutralize({ pause: true, unlock: true }); entered = false; fallback = false; healthView = null; damageFeedback = null; snapshots = []; pending = []; audio.resetEvents(); meleeImpacts.reset(); }
     if (local && !local.alive && old?.players?.find(player => player.id === playerId)?.alive !== false) neutralize({ pause: true, unlock: true });
     if (state.phase === 'matchEnd' && previousPhase !== 'matchEnd') neutralize({ pause: true, unlock: true });
     const ackValue = message.acks?.[playerId], ack = typeof ackValue === 'number' ? ackValue : ackValue?.seq ?? -1;
@@ -563,7 +567,7 @@ async function boot() {
   const pingTimer = setInterval(() => { if (connected && !document.hidden) send({ type: 'ping', time: performance.now() }); }, 1500);
   function destroy() { if (destroyed) return; neutralize({ pause: true, unlock: true }); destroyed = true; clearTimeout(reconnectTimer); clearTimeout(toastTimer); clearInterval(pingTimer); clearInterval(heartbeat); heartbeat = null; if (frameId) cancelAnimationFrame(frameId); frameId = null; socket?.close(); renderer?.destroy(); audio.destroy(); inventory.destroy(); layoutPicker.destroy(); unsubscribeLayout(); for (const remove of removers) remove(); pending = []; snapshots = []; kills.length = 0; eventSeen.clear(); }
   listen(window, 'pagehide', destroy);
-  const inspect = () => { const { map, ...snapshot } = state || {}; return clone({ state: state ? snapshot : null, players: roster, playerId, hostId, input: currentInput(), predictedPlayer, presentationPlayer, presentationPlayers, predictionRemainder: accumulator, predictionTick, actionQueue: actionInputs.inspect(), timeline: timeline.getState(), correction: correction.getState(), connected, controls: { pointerLocked: pointerLocked(), fallback, touch: touchMode, paused, entered, modalOpen }, queueLength: pending.length, renderCount, renderStats: renderer?.stats || null, audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), graphicsError, spectatorId }); };
+  const inspect = () => { const { map, ...snapshot } = state || {}; return clone({ state: state ? snapshot : null, players: roster, playerId, hostId, input: currentInput(), predictedPlayer, presentationPlayer, presentationPlayers, predictionRemainder: accumulator, predictionTick, actionQueue: actionInputs.inspect(), timeline: timeline.getState(), correction: correction.getState(), connected, controls: { pointerLocked: pointerLocked(), fallback, touch: touchMode, paused, entered, modalOpen }, queueLength: pending.length, renderCount, renderStats: renderer?.stats || null, audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), meleeImpactAudio: meleeImpacts.inspect(), graphicsError, spectatorId }); };
   window.SemagRoyale = Object.freeze({ getState: inspect, inspect }); updateUI();
   try { const [rules, visual] = await Promise.all([import('./voxel-royale-engine.js'), import('./voxel-renderer.js')]); if (destroyed) return; engine = { ...rules, predictLocalMovement, sweepPresentationOffset, traceShot, ADS, HEAL, PLAYER_HEALTH }; renderer = new visual.VoxelRenderer(canvas); renderer.resize(); } catch (cause) { graphicsError = cause?.message || 'This game requires WebGL. Enable hardware acceleration and reload graphics.'; error(graphicsError); updateUI(); return; }
   connect();

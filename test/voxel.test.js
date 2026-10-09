@@ -399,24 +399,36 @@ test('sword windup, active contact and recovery apply one hit per swing without 
   const state = lane(fighting(), { az: .7, bz: -.7 }), f = swordReady(state), ammo = f.ammo;
   shot(state); assert.equal(f.meleePhase, 'startup'); assert.equal(f.meleeTicks, 72); assert.equal(state.players[1].hp, 200);
   advance(state, game.MELEE.startupTicks - 1); assert.equal(state.players[1].hp, 200);
-  advance(state, 1); assert.equal(f.meleePhase, 'active'); assert.equal(state.players[1].hp, 145);
-  advance(state, game.MELEE.activeTicks); assert.equal(f.meleePhase, 'recovery'); assert.equal(state.players[1].hp, 145);
+  advance(state, 1); assert.equal(f.meleePhase, 'active'); assert.equal(f.meleeTicks, game.MELEE.activeTicks + game.MELEE.recoveryTicks);
+  assert.equal(state.players[1].hp, 200, 'the central target is hit when the finite blade path reaches it');
+  advance(state, game.MELEE.activeTicks - 1); assert.equal(f.meleePhase, 'active'); assert.equal(state.players[1].hp, 145);
+  const contact = state.events.find(e => e.type === 'meleeHit'), commitment = state.events.find(e => e.type === 'meleeStart');
+  assert.ok(contact.tick >= commitment.tick + game.MELEE.startupTicks && contact.tick < commitment.tick + game.MELEE.startupTicks + game.MELEE.activeTicks);
+  advance(state, 1); assert.equal(f.meleePhase, 'recovery'); assert.equal(f.meleeTicks, game.MELEE.recoveryTicks); assert.equal(state.players[1].hp, 145);
   advance(state, game.MELEE.recoveryTicks); assert.equal(f.meleePhase, 'idle'); assert.equal(f.meleeTicks, 0); assert.equal(f.ammo, ammo);
   assert.equal(state.events.filter(e => e.type === 'meleeHit').length, 1);
 });
 test('sword commits attack direction and cannot reach through solid cover, allies or vertical gaps', () => {
-  const turn = lane(fighting(), { az: .7, bz: -.7 }), f = swordReady(turn); shot(turn, 0, { yaw: Math.PI }); advance(turn, game.MELEE.startupTicks, [input({ yaw: 0 }, f), input({}, turn.players[1])]); assert.equal(turn.players[1].hp, 200, 'turning after windup does not rotate a committed strike');
+  const fullSwing = game.MELEE.startupTicks + game.MELEE.activeTicks;
+  const turn = lane(fighting(), { az: .7, bz: -.7 }), f = swordReady(turn); shot(turn, 0, { yaw: Math.PI }); advance(turn, fullSwing, [input({ yaw: 0 }, f), input({}, turn.players[1])]); assert.equal(turn.players[1].hp, 200, 'turning after windup does not rotate a committed strike');
   const covered = lane(fighting({ mapId: 'canal' }), { ax: 5.27, az: -4.8, bx: 7.33, bz: -4.8 });
-  Object.assign(covered.players[0], { yaw: Math.PI / 2 }); swordReady(covered); shot(covered); advance(covered, 20);
+  Object.assign(covered.players[0], { yaw: Math.PI / 2 }); swordReady(covered); shot(covered); advance(covered, fullSwing);
   assert.ok(Math.hypot(covered.players[0].x - covered.players[1].x, covered.players[0].z - covered.players[1].z) < game.MELEE.reach, 'target is within the sword range across the narrow stone pillar');
   assert.equal(covered.players[1].hp, 200);
-  const team = lane(fighting({ teamSize: 2 }), { az: 1.4, bz: -.65 }); Object.assign(team.players[1], { x: 20, z: .6 }); Object.assign(team.players[3], { x: -20, z: -18 }); swordReady(team); shot(team); advance(team, 20); assert.equal(team.players[1].hp, 200); assert.equal(team.players[2].hp, 200, 'nearest friendly body blocks sword contact');
-  const high = lane(fighting(), { az: .7, bz: -.7 }); Object.assign(high.players[1], { y: 4, grounded: false }); swordReady(high); shot(high); advance(high, 18); assert.equal(high.players[1].hp, 200);
+  const team = lane(fighting({ teamSize: 2 }), { az: 1.4, bz: -.65 }); Object.assign(team.players[1], { x: 20, z: .6 }); Object.assign(team.players[3], { x: -20, z: -18 }); swordReady(team); shot(team); advance(team, fullSwing); assert.equal(team.players[1].hp, 200); assert.equal(team.players[2].hp, 200, 'nearest friendly body blocks sword contact');
+  const high = lane(fighting(), { az: .7, bz: -.7 }); Object.assign(high.players[1], { y: 4, grounded: false }); swordReady(high); shot(high); advance(high, fullSwing); assert.equal(high.players[1].hp, 200);
 });
 test('sword attacks trade in the same authoritative active tick and swap cannot bypass recovery', () => {
   const trade = lane(fighting(), { az: .7, bz: -.7 }); for (const f of trade.players) { equipSword(f); f.slot = 'sword'; f.hp = 50; }
-  game.step(trade, trade.players.map(f => input({ fire: true }, f))); advance(trade, game.MELEE.startupTicks);
+  game.step(trade, trade.players.map(f => input({ fire: true }, f))); const commitmentTick = trade.tick;
+  advance(trade, game.MELEE.startupTicks - 1); assert.deepEqual(trade.players.map(f => f.alive), [true, true]);
+  advance(trade, 1); assert.ok(trade.players.every(f => f.meleePhase === 'active'));
+  for (let tick = 1; tick < game.MELEE.activeTicks && trade.phase === 'fight'; tick++) advance(trade, 1);
   assert.deepEqual(trade.players.map(f => f.alive), [false, false]); assert.deepEqual(trade.players.map(f => f.kills), [1, 1]);
+  const contacts = trade.events.filter(e => e.type === 'damage' && e.attack === 'sword');
+  assert.equal(contacts.length, 2); assert.equal(contacts[0].tick, contacts[1].tick, 'both accepted contacts resolve before either lethal hit removes the opposing attack');
+  assert.ok(contacts[0].tick >= commitmentTick + game.MELEE.startupTicks && contacts[0].tick < commitmentTick + game.MELEE.startupTicks + game.MELEE.activeTicks);
+  assert.deepEqual(contacts.map(e => e.damage), [50, 50]); assert.deepEqual(trade.players.map(f => f.hp), [0, 0]);
   const state = lane(fighting()), f = swordReady(state); shot(state, 0, { yaw: Math.PI / 2 });
   advance(state, 1); game.step(state, [input({ swap: true }, f), input({}, state.players[1])]); advance(state, 1); game.step(state, [input({ swap: true }, f), input({}, state.players[1])]); advance(state, 1); shot(state, 0, { yaw: Math.PI / 2 });
   assert.equal(state.events.filter(e => e.type === 'meleeStart').length, 1); assert.ok(f.meleeCooldown > 0);

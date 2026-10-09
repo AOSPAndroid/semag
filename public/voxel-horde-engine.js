@@ -239,6 +239,8 @@ function onMeleeHit(state, hit, attacker, target) {
   brain.lungeTicks = 0; brain.lungeDamageReady = false; target.lungeTicks = 0;
   brain.recoverTicks = Math.max(brain.recoverTicks, 12); brain.nextBurstTick = Math.max(brain.nextBurstTick, state.tick + ticks + 12);
   target.attackTicks = target.aimWindupTicks = 0; target.aiming = false; target.aimTicks = 0; target.monsterState = 'stagger';
+  // Slow the ordinary gait only. Shared combat applies its independent,
+  // collision-swept blade impulse after this confirmed-contact hook.
   target.vx *= .2; target.vz *= .2;
   emitCombatEvent(state, 'monsterStagger', { playerId: attacker.id, targetId: target.id, weapon: hit.weapon, ticks, x: target.x, y: target.y, z: target.z });
 }
@@ -529,7 +531,7 @@ function beginIntermission(state) {
     const old = state.players[id];
     if (!old.alive) { const restored = humanPlayer(state, id, old), position = safeHumanPosition(state, restored); if (!position) continue; Object.assign(restored, position); restored.participating = true; restored.hp = 150; state.players[id] = restored; }
     else { old.hp = Math.min(old.maxHp, old.hp + 35); ensureInventory(old); if (old.healTicks) addInventoryStack(old, 'heal', 1); old.reloadTicks = old.healTicks = old.meleeTicks = old.meleeCooldown = old.grenadeThrowTicks = old.burstRemaining = old.spinTicks = 0; old.healing = false; old.meleePhase = 'idle'; }
-    const player = state.players[id]; storeInventoryGun(player);
+    const player = state.players[id]; player.knockbackX = player.knockbackZ = player.knockbackTicks = player.knockbackReadyTicks = 0; player.meleeHitIds = []; player.meleeHitLives = []; player.meleeStartTick = 0; storeInventoryGun(player);
     for (const item of player.inventory) if (item?.kind === 'weapon') { const weapon = WEAPONS[item.weapon]; item.ammo = weapon.magazine; item.reserve = Math.min(weapon.reserve * 2, item.reserve + weapon.magazine * 2); item.reloadTicks = item.burstRemaining = item.spinTicks = 0; }
     if (player.grenades < 2) addInventoryStack(player, 'grenade', 1);
     if (horde.wave % 2 === 0 && player.potions < 2) addInventoryStack(player, 'heal', 1);
@@ -550,6 +552,7 @@ function beginIntermission(state) {
 function finish(state) {
   state.phase = 'matchEnd'; state.phaseTicks = 0; state.horde.phaseTicks = 0; state.horde.result = 'lost'; state.winner = 1; state.roundWinner = 1; state.roundReason = 'The squad fell.';
   state.objective = 'The squad fell. Compare your waves survived, regroup and try another run.';
+  for (const player of state.players) player.knockbackX = player.knockbackZ = player.knockbackTicks = player.knockbackReadyTicks = 0;
   neutralize(state); emitCombatEvent(state, 'hordeEnd', { wave: state.horde.wave, wavesCleared: state.horde.wavesCleared, kills: state.horde.totalKills, elapsedTicks: state.horde.elapsedTicks });
 }
 export function step(state, rawInputs = []) {

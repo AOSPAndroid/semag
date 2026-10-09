@@ -131,8 +131,11 @@ for (const weapon of MELEE_IDS) test(`${weapon}: a committed swing waits its win
   const profile = MELEE_WEAPONS[weapon], state = meleeFixture(weapon, Math.min(1.4, profile.reach));
   tick(state, 1, { 0: { fire: true } }); tick(state, profile.startupTicks - 1, { 0: { fire: true } });
   assert.equal(state.players[1].hp, 10000, 'windup cannot deal anticipatory damage');
-  tick(state, 1, { 0: { fire: true } }); assert.equal(state.players[1].hp, 10000 - profile.damage);
-  tick(state, profile.activeTicks + profile.recoveryTicks + 50, { 0: { fire: true } });
+  tick(state, 1, { 0: { fire: true } }); assert.equal(state.players[0].meleePhase, 'active');
+  tick(state, profile.activeTicks - 1, { 0: { fire: true } }); assert.equal(state.players[1].hp, 10000 - profile.damage);
+  const contact = state.events.find(event => event.type === 'meleeHit');
+  assert.ok(contact.tick >= 1 + profile.startupTicks && contact.tick < 1 + profile.startupTicks + profile.activeTicks, 'the finite blade path contacts during the original active window');
+  tick(state, profile.recoveryTicks + 50, { 0: { fire: true } });
   assert.equal(state.players[1].hp, 10000 - profile.damage); assert.equal(state.events.filter(event => event.type === 'meleeStart').length, 1);
   const turned = meleeFixture(weapon); tick(turned, 1, { 0: { fire: true, yaw: Math.PI / 2 } }); tick(turned, profile.startupTicks + profile.activeTicks, { 0: { yaw: 0 } });
   assert.equal(turned.players[1].hp, 10000);
@@ -221,7 +224,10 @@ test('six-player mixed arsenal combat and three-survivor Horde snapshots remain 
 
 test('rapid tonfa follow-ups cannot indefinitely cancel a living monster attack during stagger immunity', () => {
   const { state, human, monster } = hordeFixture(1, 'tonfas');
-  for (let index = 0; index < 210 && human.alive; index++) Horde.step(state, [{ fire: index % 34 === 0 }]);
+  for (let index = 0; index < 210 && human.alive; index++) {
+    const dx = monster.x - human.x, dz = monster.z - human.z;
+    Horde.step(state, [{ fire: index % 34 === 0, yaw: Math.atan2(dx, -dz), up: Math.hypot(dx, dz) > 1 }]);
+  }
   const hits = state.events.filter(event => event.type === 'damage' && event.playerId === 0 && event.targetId === monster.id);
   const staggers = state.events.filter(event => event.type === 'monsterStagger' && event.targetId === monster.id);
   assert.ok(hits.length >= 4, 'several genuine fast physical impacts must exercise resistance');

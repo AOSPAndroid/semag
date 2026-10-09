@@ -313,7 +313,7 @@ function finishPractice(state, result, reason) {
     if (state.gameId === 'voxel-royale') state.winner = state.winnerId = state.roundWinner = null;
     emitCombatEvent(state, 'practiceEnd', { result, reason });
   }
-  for (const player of state.players) Object.assign(player, { vx: 0, vy: 0, vz: 0, aiming: false, aimTicks: 0 });
+  for (const player of state.players) Object.assign(player, { vx: 0, vy: 0, vz: 0, knockbackX: 0, knockbackZ: 0, knockbackTicks: 0, knockbackReadyTicks: 0, meleeTicks: 0, meleePhase: 'idle', meleeHitIds: [], meleeHitLives: [], meleeStartTick: 0, aiming: false, aimTicks: 0 });
   neutralize(state); state.objective = result === 'won' ? 'Drill cleared. Review your accuracy or start another run.' : result === 'lost' ? 'Your run is over. Change the drill or try again.' : 'Time limit reached. Review your results or try again.';
 }
 export function stepPractice(state, localInput = {}) {

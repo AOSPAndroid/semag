@@ -173,6 +173,44 @@ export function combatEventPerspective(event, localId) {
     incoming: localId != null && target === localId };
 }
 
+/** Cleaves report one real impact across target contacts and snapshot batches. */
+export function createMeleeImpactReporter(audio) {
+  const swings = new Set(), limit = 512;
+  let context, reports = 0;
+  function reset() { context = undefined; swings.clear(); reports = 0; }
+  return Object.freeze({
+    consume(event, localId, { lifeKey = 0, viewedId = localId, gain = .16 } = {}) {
+      if (event?.type !== 'damage' || !(MELEE_IDS.includes(event.attack) || event.attack === 'melee' && MELEE_IDS.includes(event.weapon))) return false;
+      const perspective = combatEventPerspective(event, localId);
+      const watched = viewedId != null && viewedId !== localId && perspective.source === viewedId && perspective.target != null && perspective.target !== viewedId && perspective.target !== localId;
+      if (!perspective.outgoing && !watched) return false;
+      // Invalid or merely speculative melee contacts cannot fall back to a hit tone.
+      if (!Number.isFinite(event.damage) || event.damage <= 0 || !Number.isFinite(event.hp) || event.hp < 0) return true;
+      if (context !== lifeKey) { context = lifeKey; swings.clear(); }
+      const integer = (value, minimum = 0) => Number.isSafeInteger(value) && value >= minimum ? value : null;
+      const index = integer(event.meleeIndex, 1), start = integer(event.meleeStartTick), tick = integer(event.tick);
+      // Older single-contact journals retain their trigger-tick grouping. Modern
+      // committed indices keep staggered cleave contacts on the same report.
+      const identity = start ?? (index === null ? tick ?? event.id : null);
+      const weapon = MELEE_IDS.includes(event.weapon) ? event.weapon : event.attack;
+      const key = JSON.stringify([context, perspective.source, integer(event.attackerLifeId) ?? 0, integer(event.attackerDeaths) ?? 0, identity, index, weapon]);
+      if (swings.has(key)) return true;
+      swings.add(key); while (swings.size > limit) swings.delete(swings.values().next().value);
+      // Consume while muted so enabling sound cannot replay a partial old swing.
+      if (audio?.enabled && Number.isFinite(gain) && gain > 0) try {
+        const heavy = weapon === 'axe';
+        const frequency = ({ knife: 285, sword: 195, katana: 225, axe: 155, tonfas: 255 })[weapon] || 195;
+        const volume = Math.min(.3, gain);
+        audio.tone(frequency, heavy ? .085 : .065, { end: heavy ? 55 : 75, type: 'triangle', gain: volume }); reports++;
+        audio.noise(heavy ? .04 : .028, { highpass: 100, lowpass: 1500, gain: volume * .38 });
+      } catch { /* Optional impact sound cannot interrupt any combat feedback. */ }
+      return true;
+    },
+    reset,
+    inspect: () => Object.freeze({ reports, trackedSwings: swings.size, limit }),
+  });
+}
+
 /** The HUD follows the same allied camera as the renderer; enemy health is never shown. */
 export function healthHUDPlayer(state, localId, spectatorId) {
   const local = state?.players?.find(player => player.id === localId);
@@ -295,6 +333,7 @@ async function boot() {
   let healthView = null; let healthGain = 0; let healthGainUntil = 0; let previewWeapon = null;
   let squadSignature = ''; let rosterSignature = ''; let idleDrawSignature = ''; let mapPlanId = ''; const mapMarkers = new Map();
   const audio = new GameAudio(); const eventSeen = new Set(); const eventOrder = []; const kills = [];
+  const meleeImpacts = createMeleeImpactReporter(audio);
   const removers = [];
   function listen(target, name, handler, options) { target.addEventListener(name, handler, options); removers.push(() => target.removeEventListener(name, handler, options)); }
   function send(message) { if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message)); }
@@ -435,12 +474,14 @@ async function boot() {
 
   function playEvents(events = []) {
     const impactSounds = new Set(); const freshEvents = [];
+    const impactOptions = { lifeKey: `${state?.mapId}:${state?.round}`, viewedId: healthHUDPlayer(state, playerId, spectatorId)?.id, gain: .23 };
     for (const event of events) {
       const eventId = event.id ?? `${state?.tick}:${event.type}:${event.playerId ?? event.attackerId ?? ''}:${event.targetId ?? ''}`;
       if (eventSeen.has(eventId)) continue;
       eventSeen.add(eventId); eventOrder.push(eventId); freshEvents.push(event);
       if (eventOrder.length > 512) eventSeen.delete(eventOrder.shift());
       const perspective = combatEventPerspective(event, playerId);
+      const meleeImpact = meleeImpacts.consume(event, playerId, impactOptions);
       const shooter = perspective.source; const target = perspective.target;
       const inventoryFeedback = shooter === playerId ? inventoryEventFeedback(event) : null; if (inventoryFeedback) toast(inventoryFeedback);
       if (shooter === playerId && event.type === 'lootPickup') toast(`PICKED UP ${event.kind === 'weapon' ? WEAPONS[event.weapon]?.label || 'WEAPON' : event.kind === 'heal' ? 'POTION' : event.kind === 'grenade' ? 'FRAG' : 'SUPPLIES'}`);
@@ -465,7 +506,7 @@ async function boot() {
           const own = shooter === playerId;
           const gain = own ? 1 : .34;
           audio.gunshot(event.weapon, { gain });
-        } else if (event.type === 'damage' && (shooter === playerId || target === playerId)) {
+        } else if (event.type === 'damage' && !meleeImpact && (shooter === playerId || target === playerId)) {
           const soundKey = `${event.tick ?? state?.tick}:${perspective.incoming ? 'incoming' : 'outgoing'}`;
           if (impactSounds.has(soundKey)) continue;
           impactSounds.add(soundKey);
@@ -825,7 +866,7 @@ async function boot() {
     if (previousPhase !== state.phase && previousPhase !== null) neutralize();
     if (state.phase === 'lobby' && previousPhase !== 'lobby') {
       neutralize({ pause: true, unlock: true }); entered = false; fallback = false;
-      eventSeen.clear(); eventOrder.length = 0; kills.length = 0; healthView = null; healthGainUntil = 0; feedbackUntil = 0; hitFeedback.reset({ clearHistory: true }); damageFeedback = null; lastCountdown = null; audio.resetEvents();
+      eventSeen.clear(); eventOrder.length = 0; kills.length = 0; healthView = null; healthGainUntil = 0; feedbackUntil = 0; hitFeedback.reset({ clearHistory: true }); damageFeedback = null; lastCountdown = null; audio.resetEvents(); meleeImpacts.reset();
     }
     if (local && !local.alive && old?.players.find(player => player.id === playerId)?.alive !== false) neutralize({ pause: true, unlock: true });
     const ackValue = message.acks?.[playerId];
@@ -1106,7 +1147,7 @@ async function boot() {
     for (const remove of removers) remove(); pending = []; snapshots = []; kills.length = 0; eventSeen.clear();
   }
   listen(window, 'pagehide', destroy);
-  const inspect = () => clone({ state, players: roster, playerId, input: currentInput(), predictedPlayer, presentationPlayer, presentationPlayers, predictionRemainder: accumulator, predictionTick, actionQueue: actionInputs.inspect(), timeline: timeline.getState(), correction: correction.getState(), connected, controls: { pointerLocked: pointerLocked(), fallback, touch: touchMode, paused, entered, modalOpen }, queueLength: pending.length, renderCount, renderStats: renderer?.stats || null, worldLabels: worldLabels.inspect(), audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), graphicsError, spectatorId });
+  const inspect = () => clone({ state, players: roster, playerId, input: currentInput(), predictedPlayer, presentationPlayer, presentationPlayers, predictionRemainder: accumulator, predictionTick, actionQueue: actionInputs.inspect(), timeline: timeline.getState(), correction: correction.getState(), connected, controls: { pointerLocked: pointerLocked(), fallback, touch: touchMode, paused, entered, modalOpen }, queueLength: pending.length, renderCount, renderStats: renderer?.stats || null, worldLabels: worldLabels.inspect(), audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), meleeImpactAudio: meleeImpacts.inspect(), graphicsError, spectatorId });
   window.SemagVoxel = Object.freeze({ getState: inspect, inspect });
   updateUI();
   try {

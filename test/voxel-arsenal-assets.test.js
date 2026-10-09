@@ -95,7 +95,7 @@ test('tonfa hands alternate real short committed cuts; all five profiles honor t
   const right = meleeMotion({ meleeWeapon: 'tonfas', meleeHand: 0, meleeTicks });
   const left = meleeMotion({ meleeWeapon: 'tonfas', meleeHand: 1, meleeTicks });
   assert.equal(right.yaw, -left.yaw);
-  assert.equal(right.pitch, left.pitch);
+  assert.equal(right.pitch, -left.pitch, 'opposite hands mirror the same diagonal finite sweep plane');
 });
 
 test('two visible world guns follow separate human hands and all new supplies fit the existing small prop cache', () => {

@@ -7,7 +7,7 @@ import { MELEE, KNIFE, meleeProfile, meleeWeaponId, meleeLabel } from '../public
 const arena = { bounds: { minX: -32, maxX: 32, minZ: -32, maxZ: 32 }, colliders: [], sites: [] };
 const controls = (state, buttons = {}) => state.players.map(player => ({ ...Breach.emptyInput(player), ...(buttons[player.id] || {}) }));
 function ticks(state, count = 1, buttons = {}) {
-  for (let index = 0; index < count; index++) Royale.step(state, controls(state, buttons));
+  for (let index = 0; index < count; index++) Royale.step(state, controls(state, typeof buttons === 'function' ? buttons(state, index) : buttons));
 }
 function encounter(distance = 1.5) {
   const state = Royale.createState({ seed: 81 }); Royale.startMatch(state, [0, 1, 2]);
@@ -43,9 +43,9 @@ test('knife windup lasts ten ticks, contacts once, and cannot repeat from a held
 });
 
 test('the knife uses its actual short reach and solid cover blocks a reachable strike', () => {
-  for (const [distance, expected] of [[1.61, 172], [1.63, 200]]) {
+  for (const [distance, expected] of [[1.58, 172], [1.60, 200]]) {
     const state = encounter(distance); ticks(state, 1, { 0: { fire: true } }); ticks(state, 20);
-    assert.equal(state.players[1].hp, expected, `${distance}: target radius is included without extending the knife reach`);
+    assert.equal(state.players[1].hp, expected, `${distance}: the actual flesh surface must fit inside the knife reach`);
   }
   const covered = encounter(1.5);
   covered.map = { ...arena, colliders: [{ id: 'thin-partition', x: -.5, y: 0, z: .74, w: 1, h: 2, d: .02 }] };
@@ -64,9 +64,13 @@ test('a knife commits aim at startup and the closest physical body blocks a clea
 
 test('a full-health Royale survivor requires eight committed knife hits and damage is clamped honestly', () => {
   const state = encounter(), [attacker, target] = state.players;
-  for (let hit = 0; hit < 7; hit++) { ticks(state, 1, { 0: { fire: true } }); ticks(state, 44); }
+  const approach = () => ({ 0: { yaw: Math.atan2(target.x - attacker.x, -(target.z - attacker.z)), up: Math.hypot(target.x - attacker.x, target.z - attacker.z) > 1 } });
+  for (let hit = 0; hit < 7; hit++) {
+    ticks(state, 1, { 0: { fire: true, yaw: approach()[0].yaw } });
+    ticks(state, 44, approach);
+  }
   assert.equal(target.hp, 4); assert.equal(target.alive, true);
-  ticks(state, 1, { 0: { fire: true } }); ticks(state, 10);
+  ticks(state, 1, { 0: { fire: true, yaw: approach()[0].yaw } }); ticks(state, 10);
   assert.equal(target.hp, 0); assert.equal(target.alive, false); assert.equal(attacker.kills, 1); assert.equal(attacker.damageDealt, 200);
   assert.equal(state.events.findLast(event => event.type === 'damage').damage, 4);
   const kill = state.events.findLast(event => event.type === 'kill'); assert.equal(kill.weapon, 'knife'); assert.equal(kill.attack, 'knife');

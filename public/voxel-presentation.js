@@ -7,7 +7,7 @@ const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const finite = value => Number.isFinite(value) ? value : 0;
 const COMBAT_FIELDS = ['aimTicks', 'recoil', 'reloadTicks', 'healTicks', 'grenadeThrowTicks', 'meleeTicks', 'meleeCooldown', 'shotCooldown'];
 const INPUT_FIELDS = ['up', 'down', 'left', 'right', 'jump', 'crouch', 'walk', 'aim', 'yaw', 'pitch'];
-const MOVEMENT_FIELDS = ['x', 'y', 'z', 'vx', 'vy', 'vz', 'yaw', 'pitch', 'grounded', 'crouching', 'jumpBufferTicks', 'previousInput'];
+const MOVEMENT_FIELDS = ['x', 'y', 'z', 'vx', 'vy', 'vz', 'yaw', 'pitch', 'grounded', 'crouching', 'jumpBufferTicks', 'knockbackX', 'knockbackZ', 'knockbackTicks', 'knockbackReadyTicks', 'previousInput'];
 const CONTEXT_FIELDS = [...MOVEMENT_FIELDS, 'alive', 'radius', 'weapon', 'slot', 'reloadTicks', 'healTicks', 'grenadeThrowTicks', 'meleeWeapon'];
 const matches = (old, next, fields) => fields.every(field => old[field] === next[field]);
 

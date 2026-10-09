@@ -1,7 +1,7 @@
 import { MAPS, ADS, HEAL, WORLD } from './voxel-engine.js';
 import { WEAPONS, weaponAimFovRatio } from './voxel-weapons.js';
 import { grenadeCapacity } from './voxel-ordnance.js';
-import { MELEE_WEAPONS, meleeProfile, meleeWeaponId } from './voxel-melee.js';
+import { MELEE_WEAPONS, meleeProfile, meleeWeaponId, meleeSlashOrigin, meleeSlashGeometry, meleeSlashPhase } from './voxel-melee.js';
 import { frameAlpha } from './display-timing.js';
 import { createPlayerAnimationPresenter, playerAnimationPose } from './voxel-player-animation.js';
 import { createFirstPersonMotionPresenter, createWeaponShotPresenter, weaponShotPose } from './voxel-first-person-motion.js';
@@ -14,6 +14,10 @@ const VERTEX_STRIDE = 10;
 const MAX_PARTICLES = 84;
 const MAX_TRACERS = 14;
 const MAX_EVENT_IDS = 256;
+const MAX_MELEE_TRAILS = 10;
+const MAX_MELEE_TRAIL_SAMPLES = 49;
+const MELEE_TRAIL_FADE_TICKS = 6;
+const MAX_MELEE_TRAIL_VERTICES = MAX_MELEE_TRAILS * (MAX_MELEE_TRAIL_SAMPLES - 1) * 18;
 const TEAM_COLORS = ['#efad64', '#66d3c8'];
 const SURVIVOR_COLORS = ['#cfb785', '#94bca3', '#c69e8f', '#a9b6d5', '#b4a0c3', '#d2aa6e', '#8bb7b8', '#c5bd8b', '#9bac80', '#c897b1'];
 const ROYALE_THEMES = new Set(['forest', 'maze', 'desert']);
@@ -69,22 +73,29 @@ function aimProgress(player) {
 
 export function meleeMotion(player) {
   const profile = meleeProfile(player), id = meleeWeaponId(player), knife = id === 'knife', hand = id === 'tonfas' && player.meleeHand === 1 ? -1 : 1;
+  const phase = meleeSlashPhase(player);
   const total = profile.startupTicks + profile.activeTicks + profile.recoveryTicks;
-  const remaining = clamp(finite(player.meleeTicks), 0, total), elapsed = total - remaining;
-  const idleYaw = (knife ? -.10 : id === 'axe' ? -.13 : id === 'tonfas' ? -.08 : -.18) * hand, idlePitch = knife ? .22 : id === 'axe' ? .60 : id === 'tonfas' ? .12 : .48;
-  const windYaw = (knife ? -.43 : id === 'katana' ? -.56 : id === 'axe' ? -.28 : id === 'tonfas' ? -.38 : -.64) * hand, endYaw = (knife ? .43 : id === 'katana' ? .56 : id === 'axe' ? .28 : id === 'tonfas' ? .38 : .64) * hand;
-  const windPitch = knife ? .12 : id === 'axe' ? .95 : id === 'tonfas' ? .08 : .30, endPitch = knife ? -.12 : id === 'axe' ? -.68 : id === 'tonfas' ? -.16 : -.30;
-  if (!remaining) return { yaw: idleYaw, pitch: idlePitch, extension: 0, active: false };
-  if (elapsed < profile.startupTicks) {
-    const progress = smooth(elapsed / profile.startupTicks);
-    return { yaw: lerp(idleYaw, windYaw, progress), pitch: lerp(idlePitch, windPitch, progress), extension: 0, active: false };
+  const elapsed = total - clamp(finite(player.meleeTicks), 0, total);
+  const idleYaw = (knife ? -.10 : id === 'axe' ? -.13 : id === 'tonfas' ? -.08 : -.18) * hand;
+  const idlePitch = knife ? .22 : id === 'axe' ? .60 : id === 'tonfas' ? .12 : .48;
+  if (phase.phase === 'idle') return { yaw: idleYaw, pitch: idlePitch, extension: 0, active: false, phase: 'idle', progress: 0, grip: 0 };
+  const pathProgress = phase.phase === 'startup' ? 0 : phase.phase === 'active' ? phase.progress : 1;
+  const sample = meleeSlashGeometry(player, { from: pathProgress, to: pathProgress }).samples[0];
+  const yaw = Math.atan2(sample.direction.x, -sample.direction.z), pitch = Math.asin(clamp(sample.direction.y, -1, 1));
+  let relativeYaw = yaw - finite(player.meleeYaw, finite(player.yaw));
+  while (relativeYaw > Math.PI) relativeYaw -= TAU;
+  while (relativeYaw < -Math.PI) relativeYaw += TAU;
+  const relativePitch = pitch - finite(player.meleePitch, finite(player.pitch));
+  if (phase.phase === 'startup') {
+    // A heavy blade loads slowly, with a distinct pull back before its cut.
+    const progress = smooth(elapsed / profile.startupTicks), weight = id === 'axe' ? progress ** 1.3 : progress;
+    return { yaw: lerp(idleYaw, relativeYaw, weight), pitch: lerp(idlePitch, relativePitch, weight), extension: -progress * (knife ? .10 : id === 'axe' ? .13 : .07), active: false, phase: 'startup', progress, grip: weight };
   }
-  if (elapsed < profile.startupTicks + profile.activeTicks) {
-    const progress = smooth((elapsed - profile.startupTicks) / profile.activeTicks);
-    return { yaw: lerp(windYaw, endYaw, progress), pitch: lerp(windPitch, endPitch, progress), extension: Math.sin(progress * Math.PI) * (knife ? .16 : id === 'tonfas' ? .22 : .37), active: true };
+  if (phase.phase === 'active') {
+    return { yaw: relativeYaw, pitch: relativePitch, extension: knife ? .48 - phase.progress * .12 : Math.sin(phase.progress * Math.PI) * (id === 'tonfas' ? .19 : .28), active: true, phase: 'active', progress: phase.progress, grip: 1 };
   }
   const progress = smooth((elapsed - profile.startupTicks - profile.activeTicks) / profile.recoveryTicks);
-  return { yaw: lerp(endYaw, idleYaw, progress), pitch: lerp(endPitch, idlePitch, progress), extension: 0, active: false };
+  return { yaw: lerp(relativeYaw, idleYaw, progress), pitch: lerp(relativePitch, idlePitch, progress), extension: knife ? .36 * (1 - progress) : 0, active: false, phase: 'recovery', progress, grip: 1 - progress };
 }
 
 function rgba(value, alpha = 1) {
@@ -392,6 +403,77 @@ function rayCoverDistance(origin, direction, colliders, maximum, padding = 0) {
     if (valid && exit >= 0) nearest = Math.min(nearest, Math.max(0, entry));
   }
   return nearest;
+}
+
+/** The last few authoritative blade slices, clipped before solid cover. */
+export function meleeTrailPath(player, colliders = []) {
+  if (!player || player.alive === false || player.monsterType || player.slot !== 'sword') return null;
+  const profile = meleeProfile(player), phase = meleeSlashPhase(player);
+  const total = profile.startupTicks + profile.activeTicks + profile.recoveryTicks;
+  const elapsed = total - clamp(finite(player.meleeTicks), 0, total);
+  const recoveryAge = elapsed - profile.startupTicks - profile.activeTicks;
+  if (phase.phase === 'idle' || phase.phase === 'startup' || recoveryAge >= MELEE_TRAIL_FADE_TICKS) return null;
+  const to = phase.phase === 'active' ? phase.to : 1;
+  const fade = phase.phase === 'active' ? 1 : 1 - recoveryAge / MELEE_TRAIL_FADE_TICKS;
+  const path = meleeSlashGeometry(player, { from: Math.max(0, to - .55), to });
+  const origin = [path.origin.x, path.origin.y, path.origin.z];
+  const reach = path.reach + .05;
+  const cover = colliders.filter(box => box && [box.x, box.y, box.z, box.w, box.h, box.d].every(Number.isFinite) && box.w > 0 && box.h > 0 && box.d > 0 && box.x < origin[0] + reach && box.x + box.w > origin[0] - reach && box.y < origin[1] + reach && box.y + box.h > origin[1] - reach && box.z < origin[2] + reach && box.z + box.d > origin[2] - reach);
+  const samples = path.samples.slice(0, MAX_MELEE_TRAIL_SAMPLES).map(sample => {
+    const direction = [sample.direction.x, sample.direction.y, sample.direction.z];
+    const rawLength = Math.hypot(sample.outer.x - origin[0], sample.outer.y - origin[1], sample.outer.z - origin[2]);
+    const length = Math.max(0, Math.min(rawLength, rayCoverDistance(origin, direction, cover, rawLength + .025, .012) - .025));
+    return { progress: sample.progress, inner: [sample.inner.x, sample.inner.y, sample.inner.z], outer: origin.map((value, axis) => value + direction[axis] * length), direction, length, clipped: length < rawLength - .001 };
+  });
+  return { kind: path.kind, origin, radius: path.radius, from: path.from, to: path.to, fade, samples, cover };
+}
+
+function quadTouchesCover(points, colliders) {
+  // A conservative AABB test also catches thin cover wholly inside a ribbon,
+  // where merely testing its edge rays would let a triangle bridge a wall.
+  const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+  for (const point of points) for (let axis = 0; axis < 3; axis++) { lo[axis] = Math.min(lo[axis], point[axis]); hi[axis] = Math.max(hi[axis], point[axis]); }
+  return colliders.some(box => hi[0] >= box.x && lo[0] <= box.x + box.w && hi[1] >= box.y && lo[1] <= box.y + box.h && hi[2] >= box.z && lo[2] <= box.z + box.d);
+}
+
+function meleeTrailParts(mesh, player, colliders, camera) {
+  const path = meleeTrailPath(player, colliders);
+  if (!path || !path.samples.length) return 0;
+  const start = mesh.length;
+  const id = meleeWeaponId(player), warm = id === 'axe';
+  const core = warm ? [1, .92, .76, 1] : [.90, 1, .95, 1];
+  const ribbon = warm ? [.95, .67, .36, 1] : [.59, .86, .90, 1];
+  if (path.kind === 'stab') {
+    const sample = path.samples.at(-1);
+    if (sample.length > .21) {
+      mesh.line(sample.inner, sample.outer, .026, [ribbon[0], ribbon[1], ribbon[2], .15 * path.fade], camera);
+      mesh.line(sample.inner, sample.outer, .006, [core[0], core[1], core[2], .62 * path.fade], camera);
+    }
+    return (mesh.length - start) / VERTEX_STRIDE;
+  }
+  for (let index = 1; index < path.samples.length; index++) {
+    const a = path.samples[index - 1], b = path.samples[index];
+    if (a.length <= .21 || b.length <= .21) continue;
+    const full = [a.inner, a.outer, b.outer, b.inner];
+    if (quadTouchesCover(full, path.cover)) continue;
+    const age = (a.progress + b.progress) / 2 - path.from;
+    const span = Math.max(.001, path.to - path.from);
+    const fade = path.fade * (.14 + .86 * clamp(age / span, 0, 1) ** 1.6);
+    const edgeDepth = Math.min(path.radius * .5, a.length - .19, b.length - .19);
+    const innerA = a.outer.map((value, axis) => value - a.direction[axis] * edgeDepth);
+    const innerB = b.outer.map((value, axis) => value - b.direction[axis] * edgeDepth);
+    // A faint finite blade band, a narrow tip ribbon and a bright thin edge.
+    // All three layers follow the actual sampled cut, never a projectile.
+    mesh.quad(...full, [0, 1, 0], [ribbon[0], ribbon[1], ribbon[2], .036 * fade]);
+    mesh.quad(innerA, a.outer, b.outer, innerB, [0, 1, 0], [ribbon[0], ribbon[1], ribbon[2], .20 * fade]);
+    mesh.line(a.outer, b.outer, .008, [core[0], core[1], core[2], .86 * fade], camera);
+  }
+  return (mesh.length - start) / VERTEX_STRIDE;
+}
+
+/** Inspect the same finite trail assembly without creating a WebGL context. */
+export function meleeTrailMeshes(player, colliders = [], camera = [0, 1.62, 0]) {
+  const mesh = new Mesh(); meleeTrailParts(mesh, player, colliders, camera); return mesh.array;
 }
 
 /** Smooth stance height without delaying movement, aim or authoritative collision. */
@@ -2275,6 +2357,43 @@ function swordParts(mesh, pose, options = {}) {
 
 const meleeLength = player => ({ knife: .48, sword: 1.24, katana: 1.42, axe: 1.03, tonfas: .76 })[meleeWeaponId(player)] || 1.24;
 const meleePadding = player => ({ knife: .08, sword: .18, katana: .16, axe: .32, tonfas: .13 })[meleeWeaponId(player)] || .18;
+const meleeTipLength = player => ({ knife: .47, sword: 1.14, katana: 1.405, axe: .991, tonfas: .736 })[meleeWeaponId(player)] || 1.14;
+
+/** The active world blade shares its pivot, orientation and tip with damage. */
+export function meleeWorldPose(player, motion = meleeMotion(player)) {
+  const id = meleeWeaponId(player), profile = meleeProfile(player), knife = id === 'knife';
+  const locked = finite(player.meleeTicks) > 0;
+  const yaw = (locked ? finite(player.meleeYaw, finite(player.yaw)) : finite(player.yaw)) + motion.yaw;
+  const pitch = (locked ? finite(player.meleePitch, finite(player.pitch)) : finite(player.pitch)) + motion.pitch;
+  const direction = rotate([0, 0, -1], yaw, pitch);
+  const origin = meleeSlashOrigin(player), outer = profile.reach - profile.slashRadius;
+  const activeScale = knife ? 1.05 : profile.dualWield ? 1.15 : (outer - .18) / meleeTipLength(player);
+  const gripDistance = knife || profile.dualWield ? outer - meleeTipLength(player) * activeScale : .18;
+  const ready = rotate([profile.dualWield && player.meleeHand === 1 ? -.21 : .21, player.crouching ? .82 : 1.24, -.24 - Math.max(0, motion.extension) * .25], locked ? finite(player.meleeYaw, finite(player.yaw)) : finite(player.yaw));
+  const grip = clamp(finite(motion.grip), 0, 1);
+  return {
+    x: lerp(finite(player.x) + ready[0], origin.x + direction[0] * gripDistance, grip),
+    y: lerp(finite(player.y) + ready[1], origin.y + direction[1] * gripDistance, grip),
+    z: lerp(finite(player.z) + ready[2], origin.z + direction[2] * gripDistance, grip),
+    yaw, pitch, scale: lerp(knife ? 1.15 : profile.dualWield ? 1.15 : 1.35, activeScale, grip),
+  };
+}
+
+function meleeWorldCoverLimit(player, pose, colliders) {
+  const origin = meleeSlashOrigin(player), pivot = [origin.x, origin.y, origin.z];
+  const grip = [pose.x, pose.y, pose.z], delta = grip.map((value, axis) => value - pivot[axis]);
+  const distance = Math.hypot(...delta), padding = meleePadding(player) * pose.scale;
+  if (distance > .001 && rayCoverDistance(pivot, delta.map(value => value / distance), colliders, distance, padding) < distance) return -meleeLength(player) - 1;
+  return Math.max(0, rayCoverDistance(grip, rotate([0, 0, -1], pose.yaw, pose.pitch), colliders, meleeLength(player) * pose.scale, padding) - .025) / pose.scale;
+}
+
+function meleeViewAngles(player, motion, yaw, pitch, roll) {
+  const locked = finite(player.meleeTicks) > 0;
+  const direction = rotate([0, 0, -1], (locked ? finite(player.meleeYaw, finite(player.yaw)) : yaw) + motion.yaw, (locked ? finite(player.meleePitch, finite(player.pitch)) : pitch) + motion.pitch);
+  const local = rotate(rotate(rotate(direction, -yaw), 0, -pitch), 0, 0, -roll);
+  return { yaw: Math.atan2(local[0], -local[2]), pitch: Math.asin(clamp(local[1], -1, 1)) };
+}
+
 function meleeParts(mesh, player, pose, options = {}) {
   const id = meleeWeaponId(player);
   if (id === 'tonfas' && !Number.isInteger(options.hand)) {
@@ -3054,9 +3173,16 @@ export function operativePose(player, animation = playerAnimationPose(player, 0)
     if (potion && !healing && side < 0) { hand[0] = -.125; hand[2] = -.17; }
     if (healing && side < 0) { hand[0] = -.114; hand[1] = lerp(1.415, .792, crouch); hand[2] = -.105; elbow[1] += .035; }
     if (dual) { hand[0] = side * .185; hand[1] -= reload * .085; hand[2] = -.22 + armSwing * .3; elbow[0] = side * .202; }
-    if (melee && (dual ? index === (player.meleeHand === 1 ? 0 : 1) : side > 0)) { hand[0] += Math.sin(swing.yaw) * .028; hand[1] += -.035 + Math.sin(-swing.pitch) * .035; hand[2] -= Math.min(.025, swing.extension * .07); elbow[2] -= .025; }
+    if (melee && (dual ? index === (player.meleeHand === 1 ? 0 : 1) : side > 0)) {
+      if (swing.phase !== 'idle') {
+        const grip = meleeWorldPose(player, swing);
+        const local = rotate([grip.x - finite(player.x), grip.y - finite(player.y) - .025, grip.z - finite(player.z)], -finite(player.yaw));
+        hand[0] = local[0]; hand[1] = local[1]; hand[2] = local[2];
+        elbow[0] = lerp(shoulder[0], hand[0], .55); elbow[1] = lerp(shoulder[1], hand[1], .48) - .09; elbow[2] = hand[2] * .48;
+      } else { hand[0] += Math.sin(swing.yaw) * .028; hand[1] += -.035 + Math.sin(-swing.pitch) * .035; elbow[2] -= .025; }
+    }
     if (throwLift && side < 0) { hand[1] += throwLift * (1 - crouch * .65); hand[2] += .025; elbow[1] += .055 * (1 - crouch * .6); }
-    hand[1] = Math.min((player.crouching ? .83 : 1.48) - .044, hand[1]);
+    if (!(melee && swing.phase !== 'idle' && (dual ? index === (player.meleeHand === 1 ? 0 : 1) : side > 0))) hand[1] = Math.min((player.crouching ? .83 : 1.48) - .044, hand[1]);
     return { shoulder, elbow, hand };
   });
   return { phase, crouch, airborne, stride, legs, arms, torso: { hipY, chestY, bob }, head: { base: player.crouching ? .83 : 1.48 } };
@@ -3162,9 +3288,9 @@ function playerMesh(mesh, player, map, time, allied, freeForAll = false, animati
   const handOffset = rotate([potion ? -.14 : sword ? .21 : .14, healing ? (crouch ? .87 : 1.42) : potion || grenade ? (crouch ? .71 : 1.14) : (crouch ? .82 : 1.24), healing ? -.34 : potion || grenade ? -.23 : sword ? -.24 - motion.extension : -.14], heldYaw);
   const reloadProgress = player.reloadTicks > 0 ? clamp(1 - player.reloadTicks / (WEAPONS[player.weapon]?.reloadTicks || 252), 0, 1) : 0;
   const reloadTilt = Math.sin(reloadProgress * Math.PI);
-  const gunPose = { x: pose.x + handOffset[0], y: pose.y + handOffset[1] - reloadTilt * .12, z: pose.z + handOffset[2], yaw: heldYaw + (sword ? motion.yaw : 0), pitch: heldPitch + (sword ? motion.pitch : -reloadTilt * .24), scale: sword && !healing ? knife ? 1.15 : 1.35 : 1 };
+  const gunPose = sword && !healing ? meleeWorldPose(player, motion) : { x: pose.x + handOffset[0], y: pose.y + handOffset[1] - reloadTilt * .12, z: pose.z + handOffset[2], yaw: heldYaw, pitch: heldPitch - reloadTilt * .24, scale: 1 };
   const direction = [Math.sin(gunPose.yaw) * Math.cos(gunPose.pitch), Math.sin(gunPose.pitch), -Math.cos(gunPose.yaw) * Math.cos(gunPose.pitch)];
-  const limit = Math.max(0, rayCoverDistance([gunPose.x, gunPose.y, gunPose.z], direction, map.colliders || [], sword ? meleeLength(player) * gunPose.scale : weaponLength(player.weapon) + .12, sword ? meleePadding(player) * gunPose.scale : weaponCoverPadding(player.weapon, gunPose.scale, reloadProgress)) - .025) / gunPose.scale;
+  const limit = sword ? meleeWorldCoverLimit(player, gunPose, map.colliders || []) : Math.max(0, rayCoverDistance([gunPose.x, gunPose.y, gunPose.z], direction, map.colliders || [], weaponLength(player.weapon) + .12, weaponCoverPadding(player.weapon, gunPose.scale, reloadProgress)) - .025) / gunPose.scale;
   if (potion) {
     const progress = healing ? clamp(1 - player.healTicks / HEAL.ticks, 0, 1) : 0, drink = healing ? Math.sin(progress * Math.PI) : 0;
     const bottlePose = { ...gunPose, pitch: drink * .72 };
@@ -3179,8 +3305,8 @@ function playerMesh(mesh, player, map, time, allied, freeForAll = false, animati
     for (const hand of [0, 1]) {
       const arm = joints.arms[hand === 0 ? 1 : 0], offset = rotate(arm.hand, yaw);
       const swing = meleeMotion(hand === (player.meleeHand === 1 ? 1 : 0) ? player : { ...player, meleeTicks: 0, meleeHand: hand });
-      const handPose = { x: pose.x + offset[0], y: pose.y + offset[1] + .085, z: pose.z + offset[2] - .016, yaw: heldYaw + swing.yaw, pitch: heldPitch + swing.pitch, scale: 1.15 };
-      const forward = rotate([0, 0, -1], handPose.yaw, handPose.pitch), limit = Math.max(0, rayCoverDistance([handPose.x, handPose.y, handPose.z], forward, map.colliders || [], meleeLength(player) * handPose.scale, meleePadding(player) * handPose.scale) - .025) / handPose.scale;
+      const handPose = swing.phase !== 'idle' ? meleeWorldPose(player, swing) : { x: pose.x + offset[0], y: pose.y + offset[1] + .085, z: pose.z + offset[2] - .016, yaw: heldYaw + swing.yaw, pitch: heldPitch + swing.pitch, scale: 1.15 };
+      const limit = meleeWorldCoverLimit(player, handPose, map.colliders || []);
       meleeParts(mesh, player, handPose, { hand, limit, active: swing.active });
       mesh.box(-.043, -.142, -.048, .086, .108, .11, art.skin, handPose);
     }
@@ -3219,6 +3345,7 @@ export class VoxelRenderer {
     this.particles = []; this.tracers = []; this.localShot = null; this.localReload = null; this.shotContext = null;
     this.lastAim = null; this.swayX = 0; this.swayY = 0;
     this.frameMeshes = { world: new Mesh(), contact: new Mesh(), tracer: new Mesh(), weapon: new Mesh() };
+    this.frameMeshes.tracer.ensure((MAX_MELEE_TRAIL_VERTICES + MAX_TRACERS * 6) * VERTEX_STRIDE);
     this.presentLoot = createLootPresenter(); this.presentWarnings = createSpawnWarningPresenter(); this.presentEye = createEyeHeightPresenter(); this.presentHumans = createPlayerAnimationPresenter(); this.presentMonsters = createMonsterAnimationPresenter(); this.presentHead = createFirstPersonMotionPresenter(); this.presentShots = createWeaponShotPresenter(); this.firstPersonMotion = null; this.shotMotion = null; this.humanPoses = new Map(); this.resizeReads = 0;
     this._frameDrawCalls = 0; this._frameDynamicVertices = 0; this._mapVertices = 0; this._lootItems = 0; this._stormVertices = 0;
     this._worldLabels = EMPTY_WORLD_LABELS;
@@ -3262,7 +3389,9 @@ export class VoxelRenderer {
     this.uniforms = Object.fromEntries(['Projection', 'View', 'Eye', 'Fog', 'FogStrength', 'LightDirection', 'Sun', 'Ambient', 'StormCircle', 'StormStrength'].map(name => [name.toLowerCase(), gl.getUniformLocation(program, `u${name}`)]));
     this.dynamicBuffer = gl.createBuffer(); this.weaponBuffer = gl.createBuffer(); this.contactBuffer = gl.createBuffer();
     this.tracerBuffer = gl.createBuffer();
-    this.dynamicCapacity = 0; this.weaponCapacity = 0; this.tracerCapacity = 0; this.contactCapacity = 0;
+    this.dynamicCapacity = 0; this.weaponCapacity = 0; this.contactCapacity = 0;
+    this.tracerCapacity = this.frameMeshes.tracer.storage.byteLength;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.tracerBuffer); gl.bufferData(gl.ARRAY_BUFFER, this.tracerCapacity, gl.DYNAMIC_DRAW);
     const skyVertex = shader(gl, gl.VERTEX_SHADER, SKY_VERTEX_SHADER), skyFragment = shader(gl, gl.FRAGMENT_SHADER, SKY_FRAGMENT_SHADER);
     this.skyProgram = gl.createProgram(); gl.attachShader(this.skyProgram, skyVertex); gl.attachShader(this.skyProgram, skyFragment); gl.linkProgram(this.skyProgram);
     gl.deleteShader(skyVertex); gl.deleteShader(skyFragment);
@@ -3365,10 +3494,10 @@ export class VoxelRenderer {
       } else if (event.type === 'reload' && event.playerId === localId) this.localReload = { born: time, weapon: event.weapon };
       else if (event.type === 'grenadeBounce' || event.type === 'meleeHit' || event.type === 'healComplete') {
         const origin = [finite(event.x), finite(event.y, .2), finite(event.z)], heal = event.type === 'healComplete';
-        const count = heal ? 8 : 4;
+        const count = heal ? 8 : event.type === 'meleeHit' ? 6 : 4;
         for (let i = 0; i < count; i++) {
           const angle = i * 2.39996 + hash(key) % 7;
-          this.particles.push({ origin, born: time, vx: Math.sin(angle) * (heal ? .25 : .48) + finite(event.nx) * .45, vy: heal ? .35 + i * .04 : .25 + finite(event.ny) * .40, vz: Math.cos(angle) * (heal ? .25 : .48) + finite(event.nz) * .45, color: heal ? '#a9d6b9' : event.type === 'grenadeBounce' ? '#bfa47b' : '#e4c286', life: heal ? 360 + i * 15 : 180 + i * 12, gravity: heal ? 0 : 3, cover: true });
+          this.particles.push({ origin, born: time, vx: Math.sin(angle) * (heal ? .25 : .48) + finite(event.nx) * .45, vy: heal ? .35 + i * .04 : .25 + finite(event.ny) * .40, vz: Math.cos(angle) * (heal ? .25 : .48) + finite(event.nz) * .45, color: heal ? '#a9d6b9' : event.type === 'grenadeBounce' ? '#bfa47b' : '#e4c286', life: heal ? 360 + i * 15 : event.type === 'meleeHit' ? 140 + i * 11 : 180 + i * 12, gravity: heal ? 0 : 3, cover: true, size: event.type === 'meleeHit' ? .015 : undefined });
         }
       } else if (event.type === 'explosion' || event.type === 'grenadeExplosion') {
         const origin = [finite(event.x), finite(event.y, .25), finite(event.z)];
@@ -3516,24 +3645,22 @@ export class VoxelRenderer {
     }
     if (player.slot === 'sword') {
       const motion = meleeMotion(player), knife = meleeWeaponId(player) === 'knife';
-      // The committed attack direction stays fixed for the full swing. Camera
-      // motion can inspect its recovery without visually steering the blade.
-      let committedYaw = player.meleeTicks > 0 ? finite(player.meleeYaw, yaw) - yaw : 0;
-      while (committedYaw > Math.PI) committedYaw -= TAU;
-      while (committedYaw < -Math.PI) committedYaw += TAU;
-      const committedPitch = player.meleeTicks > 0 ? finite(player.meleePitch, pitch) - pitch : 0;
+      // Convert the locked world direction into the current camera basis.
+      // Looking away cannot rotate the committed blade or its real trail.
       if (meleeProfile(player).dualWield) {
         for (const hand of [0, 1]) {
           const side = hand === 0 ? 1 : -1, activeHand = hand === (player.meleeHand === 1 ? 1 : 0);
           const swing = activeHand ? motion : meleeMotion({ ...player, meleeTicks: 0, meleeHand: hand });
-          const pose = { x: side * .245 + this.swayX * .5, y: -.285 + finite(this.firstPersonMotion?.weaponY), z: -.43 - swing.extension * .22, yaw: swing.yaw + committedYaw, pitch: swing.pitch + committedPitch, scale: .90 };
+          const angles = meleeViewAngles(player, swing, yaw, pitch, viewRoll);
+          const pose = { x: side * .245 + this.swayX * .5 + Math.sin(swing.yaw) * .055 * swing.grip, y: -.285 + finite(this.firstPersonMotion?.weaponY) - Math.sin(swing.pitch) * .035 * swing.grip, z: -.43 - swing.extension * .5, ...angles, scale: .90 };
           const limit = coverLimit(pose, meleeLength(player), meleePadding(player) * pose.scale);
           meleeParts(mesh, player, pose, { hand, limit, active: swing.active });
           glove(pose, 0, -.105, -.014, hand === 0 ? 'blade' : 'support', limit);
         }
         return mesh.array;
       }
-      const pose = { x: (knife ? .22 : .27) + this.swayX * .5, y: (knife ? -.28 : -.32) + finite(this.firstPersonMotion?.weaponY), z: -.42 - motion.extension * .12, yaw: motion.yaw + committedYaw, pitch: motion.pitch + committedPitch, scale: .90 };
+      const angles = meleeViewAngles(player, motion, yaw, pitch, viewRoll);
+      const pose = { x: (knife ? .22 : .27) + this.swayX * .5 + Math.sin(motion.yaw) * (knife ? .03 : .12) * motion.grip, y: (knife ? -.28 : -.32) + finite(this.firstPersonMotion?.weaponY) - Math.sin(motion.pitch) * .06 * motion.grip, z: -.42 - motion.extension * (knife ? .70 : .25), ...angles, scale: .90 };
       const limit = coverLimit(pose, meleeLength(player), meleePadding(player) * pose.scale);
       meleeParts(mesh, player, pose, { limit, active: motion.active });
       glove(pose, .003, -.057, knife ? .071 : .087, 'blade', limit);
@@ -3755,8 +3882,15 @@ export class VoxelRenderer {
       gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false);
       this._draw(this._dynamic(contacts.array, 'contact')); gl.depthMask(true); gl.disable(gl.BLEND);
     }
-    if (this.tracers.length) {
-      const traces = this.frameMeshes.tracer.reset();
+    const traces = this.frameMeshes.tracer.reset();
+    this._meleeTrailVertices = 0; this._meleeTrailActors = 0;
+    for (const player of players) {
+      if (this._meleeTrailActors >= MAX_MELEE_TRAILS) break;
+      const actor = player.id === cameraPlayer.id ? cameraPlayer : player;
+      const count = meleeTrailParts(traces, actor, map.colliders || [], eye);
+      this._meleeTrailVertices += count; if (count) this._meleeTrailActors++;
+    }
+    if (this.tracers.length || traces.length) {
       for (const trace of this.tracers) {
         // Start local tracers just beyond the eye to avoid a giant full-screen
         // quad when a shot originates inside the camera's near plane.
@@ -3788,12 +3922,12 @@ export class VoxelRenderer {
     const loot = this.presentLoot?.getStats(), warnings = this.presentWarnings?.getStats();
     const humanAnimation = Object.freeze({ cachedPlayers: this.presentHumans?.size || 0, poses: Object.freeze([...this.humanPoses].map(([id, { animation, joints }]) => Object.freeze({ id, phase: animation.phase, stride: animation.stride, speed: animation.speed, forward: animation.forward, strafe: animation.strafe, crouch: animation.crouch, airborne: animation.airborne, jump: animation.jump, land: animation.land, bodyBob: animation.bodyBob, knees: Object.freeze(joints.legs.map(leg => Object.freeze([...leg.knee]))), feet: Object.freeze(joints.legs.map(leg => Object.freeze([...leg.foot]))) }))) });
     const firstPerson = this.firstPersonMotion ? Object.freeze({ ...this.firstPersonMotion, eye: Object.freeze([...this.firstPersonMotion.eye]), shot: Object.freeze({ ...this.shotMotion }), ...this.presentShots.getStats() }) : null;
-    return Object.freeze({ mapId: this.mapId, mapVertices: this._mapVertices, cachedMaps: this.mapCache.size, drawCalls: this._frameDrawCalls, dynamicVertices: this._frameDynamicVertices, lootItems: this._lootItems, stormVertices: this._stormVertices, spawnWarnings: this._spawnWarnings || 0, cachedSpawnWarnings: warnings?.cachedItems || 0, spawnWarningBuilds: warnings?.builds || 0, bloodParticles: this.particles.filter(particle => particle.material === 'blood').length, visibleBloodParticles: this._visibleBloodParticles || 0, cachedLootItems: loot?.cachedItems || 0, lootGeometryBuilds: loot?.builds || 0, geometryBufferBytes: Object.values(this.frameMeshes || {}).reduce((bytes, mesh) => bytes + mesh.storage.byteLength, 0) + (loot?.bufferBytes || 0) + (loot?.templateBytes || 0) + (warnings?.bufferBytes || 0) + (warnings?.templateBytes || 0), cameraEyeHeight: this.cameraEyeHeight, resizeReads: this.resizeReads, humanAnimation, firstPerson });
+    return Object.freeze({ mapId: this.mapId, mapVertices: this._mapVertices, cachedMaps: this.mapCache.size, drawCalls: this._frameDrawCalls, dynamicVertices: this._frameDynamicVertices, lootItems: this._lootItems, stormVertices: this._stormVertices, spawnWarnings: this._spawnWarnings || 0, meleeTrailVertices: this._meleeTrailVertices || 0, meleeTrailActors: this._meleeTrailActors || 0, cachedSpawnWarnings: warnings?.cachedItems || 0, spawnWarningBuilds: warnings?.builds || 0, bloodParticles: this.particles.filter(particle => particle.material === 'blood').length, visibleBloodParticles: this._visibleBloodParticles || 0, cachedLootItems: loot?.cachedItems || 0, lootGeometryBuilds: loot?.builds || 0, geometryBufferBytes: Object.values(this.frameMeshes || {}).reduce((bytes, mesh) => bytes + mesh.storage.byteLength, 0) + (loot?.bufferBytes || 0) + (loot?.templateBytes || 0) + (warnings?.bufferBytes || 0) + (warnings?.templateBytes || 0), cameraEyeHeight: this.cameraEyeHeight, resizeReads: this.resizeReads, humanAnimation, firstPerson });
   }
   resetEffects() {
     this._worldLabels = EMPTY_WORLD_LABELS;
     this.eventIds.clear(); this.eventQueue.length = 0; this.particles.length = 0; this.tracers.length = 0;
-    this._visibleBloodParticles = 0;
+    this._visibleBloodParticles = 0; this._meleeTrailVertices = 0; this._meleeTrailActors = 0;
     this.localShot = null; this.localReload = null; this.shotContext = null; this.lastAim = null; this.swayX = 0; this.swayY = 0;
     this.presentLoot?.reset(); this.presentWarnings?.reset(); this.presentEye?.reset(); this.presentHumans?.reset(); this.presentMonsters?.reset(); this.presentHead?.reset(); this.presentShots?.reset(); this.firstPersonMotion = null; this.shotMotion = null; this.humanPoses?.clear(); this._spawnWarnings = 0;
   }

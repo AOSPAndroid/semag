@@ -40,16 +40,21 @@ test('five immutable melee profiles preserve baseline knife and sword numbers an
 
 for (const blade of ['katana', 'axe', 'tonfas']) test(`${blade} uses real startup, once-per-swing contact, committed aim, reach and ally/cover blockers`, () => {
   const profile = MELEE_WEAPONS[blade];
-  const state = encounter({ blade, distance: profile.reach + .31, melee: true });
+  const state = encounter({ blade, distance: profile.reach + .28, melee: true });
   ticks(state, 1, { 0: { fire: true } });
   ticks(state, profile.startupTicks - 1, { 0: { fire: true } });
   assert.equal(state.players[1].hp, 200, 'windup cannot apply early damage');
   ticks(state, 1, { 0: { fire: true } });
+  assert.equal(state.players[0].meleePhase, 'active');
+  assert.equal(state.players[1].hp, 200, 'the blade has not crossed this far central target on its first active slice');
+  ticks(state, profile.activeTicks - 1, { 0: { fire: true } });
   assert.equal(state.players[1].hp, 200 - profile.damage);
-  ticks(state, profile.activeTicks + profile.recoveryTicks + 10, { 0: { fire: true } });
+  const contact = state.events.find(event => event.type === 'meleeHit');
+  assert.ok(contact.tick >= 1 + profile.startupTicks && contact.tick < 1 + profile.startupTicks + profile.activeTicks, 'contact must resolve inside the original active window');
+  ticks(state, profile.recoveryTicks + 10, { 0: { fire: true } });
   assert.equal(state.players[1].hp, 200 - profile.damage, 'held trigger and active frames never duplicate contact');
   assert.equal(state.events.filter(event => event.type === 'meleeHit').length, 1);
-  const distant = encounter({ blade, distance: profile.reach + .33, melee: true });
+  const distant = encounter({ blade, distance: profile.reach + .30, melee: true });
   ticks(distant, 1, { 0: { fire: true } }); ticks(distant, profile.startupTicks + profile.activeTicks);
   assert.equal(distant.players[1].hp, 200);
   const covered = encounter({ blade, distance: 1.2, melee: true });

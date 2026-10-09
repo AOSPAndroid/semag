@@ -7,7 +7,7 @@ import { findNearbyLoot } from './voxel-royale-engine.js';
 import { WEAPONS, WEAPON_IDS } from './voxel-weapons.js';
 import { VoxelRenderer } from './voxel-renderer.js';
 import { createMovementPresenter, combatPresentation, withCombatPresentation, resolvePresentationContacts } from './voxel-presentation.js';
-import { cleanAim, composeInput, controlForKey, aimFraction, aimLookMultiplier, combatReadout, isFormTarget, hasGunshotReport, combatEventPerspective, LOOK_SENSITIVITY } from './voxel-client.js';
+import { cleanAim, composeInput, controlForKey, aimFraction, aimLookMultiplier, combatReadout, isFormTarget, hasGunshotReport, combatEventPerspective, createMeleeImpactReporter, LOOK_SENSITIVITY } from './voxel-client.js';
 import { incomingDamageFeedback, damageFeedbackPresentation } from './voxel-damage-feedback.js';
 import { createHitFeedback, paintHitFeedback } from './voxel-hit-feedback.js';
 import { MELEE_WEAPONS, MELEE_IDS } from './voxel-melee.js';
@@ -61,6 +61,7 @@ export function bootPractice() {
   const listeners = [], keys = new Set(), physicalKeys = new Map(), mouse = { fire: false, aim: false }, inputQueue = createPracticeInputQueue();
   const touch = { move: { x: 0, y: 0 }, look: { x: 0, y: 0 }, actions: new Set() }, pointers = new Map(), movement = new Map();
   const audio = new GameAudio(), picker = mountKeyboardLayoutPicker($('practice-keyboard'), { id: 'practice-keyboard-select' });
+  const meleeImpacts = createMeleeImpactReporter(audio);
   // Secondary touch hardware does not decide how a player uses the mouse.
   let touchMode = matchMedia('(pointer: coarse)').matches;
   const setText = (id, value) => { const element = $(id); if (element.textContent !== String(value)) element.textContent = String(value); };
@@ -108,7 +109,7 @@ export function bootPractice() {
   }
   function resetView() {
     release(); stopFrame(); previousPlayers = []; presentationPlayer = null; movement.clear(); eventCursor = 0; feedbackUntil = 0; hitFeedback.reset({ clearHistory: true }); damageFeedback = null;
-    lastCountdown = null; lastHudAt = -Infinity; lastPhase = ''; renderCount = physicsSamples = 0; lastFraction = 0; audio.resetEvents(); renderer?.resetEffects();
+    lastCountdown = null; lastHudAt = -Infinity; lastPhase = ''; renderCount = physicsSamples = 0; lastFraction = 0; audio.resetEvents(); meleeImpacts.reset(); renderer?.resetEffects();
     aim = cleanAim(state.players[0]?.yaw, state.players[0]?.pitch); lastDrawAt = performance.now();
   }
   function buildRadar() {
@@ -148,13 +149,15 @@ export function bootPractice() {
   function feedback(message, now, duration = 900) { setText('practice-feedback', message); feedbackUntil = now + duration; }
   function consumeEvents(now) {
     const freshEvents = [];
+    const impactOptions = { lifeKey: `${state.mapId}:${state.practice.sessionId}`, gain: .18 };
     for (const event of state.events) {
       if (event.id <= eventCursor) continue; eventCursor = event.id;
       freshEvents.push(event);
       const perspective = combatEventPerspective(event, 0);
+      const meleeImpact = meleeImpacts.consume(event, 0, impactOptions);
       if (event.type === 'damage' && event.damage > 0) {
         const incoming = incomingDamageFeedback(event, state.players[0], state.players, { now, lifeKey: state.practice.sessionId, friendlyFire: royale }); if (incoming) damageFeedback = incoming;
-        if (audio.enabled && (perspective.outgoing || perspective.incoming)) audio.tone(perspective.outgoing ? 940 : 140, .055, { end: perspective.outgoing ? 690 : 70, gain: .18, type: 'triangle' });
+        if (audio.enabled && !meleeImpact && (perspective.outgoing || perspective.incoming)) audio.tone(perspective.outgoing ? 940 : 140, .055, { end: perspective.outgoing ? 690 : 70, gain: .18, type: 'triangle' });
       }
       if (['kill', 'elimination'].includes(event.type) && perspective.outgoing) feedback(event.headshot ? 'HEADSHOT · TARGET DOWN' : 'TARGET DOWN', now);
       if (event.type === 'lootPickup' && perspective.source === 0) feedback(event.kind === 'weapon' ? `PICKED UP ${WEAPONS[event.weapon]?.label || 'WEAPON'}` : `PICKED UP ${event.kind.toUpperCase()}`, now);
@@ -314,7 +317,7 @@ export function bootPractice() {
   listen(window, 'blur', () => { if (active()) pause(); else release(); }); listen(document, 'visibilitychange', () => { if (document.hidden && active()) pause(); }); listen(window, 'pagehide', destroy);
   listen(canvas, 'voxel-renderer-error', event => { if (event.detail?.message) { graphicsError = event.detail.message; if (active()) pause(); setHidden($('practice-error'), false); setText('practice-error-text', graphicsError); } else { graphicsError = ''; setHidden($('practice-error'), true); updateHud(performance.now(), true); draw(performance.now()); } });
   const unsubscribe = subscribeKeyboardLayout(() => { release(); hints(); }); hints(); preview(); graphics();
-  const inspect = () => copy({ state: { ...state, map: undefined, fighters: undefined }, stats: getPracticeStats(state), input: currentInput(), queuedActions: inputQueue.inspect(), presentationPlayer, controls: { pointerLocked: locked(), fallback, modalOpen, paused: state.phase === 'paused', entered: activeSession, touch: touchMode }, renderCount, renderStats: renderer?.stats || null, audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), graphicsError, displayTiming: { physicsSamples, renderSamples: renderCount, lastFraction } });
+  const inspect = () => copy({ state: { ...state, map: undefined, fighters: undefined }, stats: getPracticeStats(state), input: currentInput(), queuedActions: inputQueue.inspect(), presentationPlayer, controls: { pointerLocked: locked(), fallback, modalOpen, paused: state.phase === 'paused', entered: activeSession, touch: touchMode }, renderCount, renderStats: renderer?.stats || null, audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), meleeImpactAudio: meleeImpacts.inspect(), graphicsError, displayTiming: { physicsSamples, renderSamples: renderCount, lastFraction } });
   const api = Object.freeze({ getState: inspect, getDisplayTiming: () => ({ physicsSamples, renderSamples: renderCount, lastFraction }) }); window.firesidePractice = api;
   return { destroy, inspect };
 }

@@ -70,9 +70,14 @@ test('a confirmed blade contact interrupts a current monster windup and expires 
   const { state, human, monster, brain } = fixture({ melee: 'knife' });
   assert.ok(brain.attackTicks > 0); strike(state, human, MELEE_WEAPONS.knife.startupTicks);
   const stagger = state.events.findLast(event => event.type === 'monsterStagger'); assert.equal(stagger.ticks, 18);
+  const push = state.events.findLast(event => event.type === 'meleeKnockback'), impactZ = monster.z;
+  assert.equal(push.targetId, monster.id); assert.equal(push.speed, MELEE_WEAPONS.knife.pushSpeed); assert.equal(monster.knockbackTicks, 36);
   assert.equal(monster.monsterState, 'stagger'); assert.equal(brain.attackTicks, 0); assert.equal(brain.attackReady, false);
   advance(state, stagger.ticks); assert.equal(brain.staggerTicks, 0); assert.equal(human.hp, human.maxHp);
+  assert.ok(monster.z < impactZ - .15, 'the actual stagger hook must preserve visible outward motion');
+  assert.ok(monster.knockbackZ < 0 && monster.knockbackTicks === 18, 'AI gait and stagger timers do not erase the independent impulse');
   advance(state, 90); assert.ok(human.hp < human.maxHp, 'the interruption must leave a subsequent real attack opportunity');
+  assert.equal(monster.knockbackTicks, 0); assert.equal(monster.knockbackReadyTicks, 0);
 });
 
 test('rapid paired tonfas cannot permanently stagger a late armored brute', () => {
@@ -172,7 +177,8 @@ test('seeded sparse co-op close combat and melee supply rewards replay exactly',
   const first = fixture({ melee: 'tonfas', capacity: 3, participants: [0, 2], seed: 291 }), second = fixture({ melee: 'tonfas', capacity: 3, participants: [0, 2], seed: 291 });
   pose(first.state.players[2], 4, 1); pose(second.state.players[2], 4, 1);
   for (let tick = 0; tick < 220; tick++) {
-    const input = [{ fire: tick % 34 === 0, yaw: 0 }, emptyInput(), { right: tick < 30, yaw: 0 }];
+    const dx = first.monster.x - first.human.x, dz = first.monster.z - first.human.z;
+    const input = [{ fire: tick % 34 === 0, yaw: Math.atan2(dx, -dz), up: first.monster.alive && Math.hypot(dx, dz) > 1 }, emptyInput(), { right: tick < 30, yaw: 0 }];
     Horde.step(first.state, input); Horde.step(second.state, input);
   }
   assert.equal(JSON.stringify(first.state), JSON.stringify(second.state)); assert.equal(first.human.kills, 1);
