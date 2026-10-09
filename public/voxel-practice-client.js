@@ -15,9 +15,25 @@ import { setHidden, setAttribute, setStyle, setDisabled } from './hub/dom.js';
 import { createPractice, startPractice, stepPractice, pausePractice, resumePractice, getPracticeStats, TICK_RATE } from './voxel-practice-engine.js';
 import { tickFraction } from './display-timing.js';
 import { createPracticeInputQueue } from './voxel-practice-input.js';
-import { inventoryLootPresentation, inventoryEventFeedback, inventorySwapPresentation, mountInventoryHotbar } from './voxel-inventory-ui.js';
+import { inventoryLootPresentation, inventoryEventFeedback, inventorySwapPresentation, mountInventoryHotbar, mountWeaponWheel } from './voxel-inventory-ui.js';
 
 const STEP = 1 / TICK_RATE;
+
+/** Coalesce only wheel-owned presses; keyboard and touch keep their own tokens. */
+export function createPracticeWheelDispatch(queue, getInput, wake = () => {}) {
+  const inventoryActions = ['slot1', 'slot2', 'slot3', 'slot4', 'drop', 'swap'];
+  let token = null;
+  const cancel = () => { if (token) queue.cancel(token); token = null; };
+  return {
+    cancel,
+    dispatch(action) {
+      const input = getInput(); cancel();
+      const pending = queue.inspect();
+      if (inventoryActions.some(action => input[action] || pending[action] > 0)) return false;
+      token = queue.press(action, input); wake(); return !!token;
+    },
+  };
+}
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 const copy = value => JSON.parse(JSON.stringify(value));
 const clock = seconds => `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
@@ -71,8 +87,15 @@ export function bootPractice() {
   const locked = () => document.pointerLockElement === canvas;
   const active = () => !destroyed && !modalOpen && ['countdown', 'fight'].includes(state?.phase);
   const currentInput = () => composeInput(keys, touch, mouse, aim, active());
+  const wheelInput = createPracticeWheelDispatch(inputQueue, currentInput, wake);
+  const weaponWheel = mountWeaponWheel(canvas, {
+    context: () => ({ player: state?.players?.[0], active: active() && state?.phase === 'fight' && !graphicsError && !!renderer?.available && !document.hidden, pointerLocked: locked(), fallback, crouchHeld: keys.has('crouch') }),
+    cancelPending: wheelInput.cancel,
+    dispatch: wheelInput.dispatch,
+  });
   const inventory = mountInventoryHotbar($('practice-inventory'), actions => {
     if (!active() || state?.phase !== 'fight') return;
+    weaponWheel.reset();
     for (const action of actions) inputQueue.press(action, currentInput());
     canvas.focus({ preventScroll: true }); wake();
   });
@@ -89,11 +112,12 @@ export function bootPractice() {
   function hints() {
     const layout = getKeyboardLayout(); app.dataset.keyboardLayout = layout;
     setText('practice-move-keys', displayKey('WASD')); setText('practice-grenade-key', displayKey('Q')); setText('practice-guide-grenade', displayKey('Q'));
-    canvas.setAttribute('aria-label', `First-person ${royale ? 'Royale' : 'Breach'} practice. ${displayKey('WASD')} or arrows move, mouse looks, left click or B / J uses your selected item, right click aims guns, stabs with a knife or parries with other blades, Space jumps, Control crouches, Shift sprints, C walks quietly, R reloads, 1 to 4 equip inventory slots, X drops your selected item, V switches blade, ${displayKey('Q')} throws a grenade, F heals, E picks up supplies, Escape pauses.`);
+    canvas.setAttribute('aria-label', `First-person ${royale ? 'Royale' : 'Breach'} practice. ${displayKey('WASD')} or arrows move, mouse looks, left click or B / J uses your selected item, right click aims guns, stabs with a knife or parries with other blades, Space jumps, Control crouches, Shift sprints, C walks quietly, R reloads, 1 to 4 equip inventory slots, wheel up or down switches carried weapons, X drops your selected item, V switches blade, ${displayKey('Q')} throws a grenade, F heals, E picks up supplies, Escape pauses.`);
     setText('practice-look-hint', fallback ? 'DRAG TO LOOK · ESC PAUSE' : `${displayKey('WASD')} MOVE · RMB SECONDARY · ESC PAUSE`);
   }
   function stopFrame() { if (frameId !== null) cancelAnimationFrame(frameId); frameId = null; previousFrame = null; accumulator = 0; }
   function release() {
+    weaponWheel.reset();
     reloadAudio.suspend(); paintVitals(null, 'Your', false);
     hitFeedback.reset(); paintHitFeedback(hitElements, { visible: false });
     inputQueue.reset();
@@ -231,6 +255,7 @@ export function bootPractice() {
     }
   }
   function frame(now) {
+    weaponWheel.flush();
     frameId = null; if (!active()) return;
     const dt = previousFrame === null ? 0 : clamp((now - previousFrame) / 1000, 0, .1); previousFrame = now;
     if (touch.look.x || touch.look.y) { const multiplier = aimLookMultiplier(presentationPlayer || state.players[0], ADS); aim = cleanAim(aim.yaw + touch.look.x * dt * 2.6 * multiplier, aim.pitch - touch.look.y * dt * 2.2 * multiplier); }
@@ -255,6 +280,7 @@ export function bootPractice() {
     if (!active() || isFormTarget(event.target) || event.isComposing || event.altKey || event.metaKey) return;
     const action = controlForKey(event);
     if (!action) return; event.preventDefault(); const physical = event.code || event.key; if (event.repeat && !physicalKeys.has(physical)) return;
+    if (/^slot[1-4]$/.test(action) || ['drop', 'swap'].includes(action)) weaponWheel.reset();
     const wasHeld = currentInput()[action]; physicalKeys.set(physical, action); keys.add(action);
     if (state.phase === 'fight' && !wasHeld) inputQueue.press(action, currentInput()); wake();
   }
@@ -282,7 +308,7 @@ export function bootPractice() {
     const target = event.target.closest?.('[data-practice-action],[data-practice-pad]'); if (!target || !active()) return; event.preventDefault();
     const pad = target.dataset.practicePad, action = target.dataset.practiceAction, pointer = { target, pad, action, token: null };
     pointers.set(event.pointerId, pointer); try { target.setPointerCapture(event.pointerId); } catch {}
-    if (action) { const wasHeld = currentInput()[action]; touch.actions.add(action); if (state.phase === 'fight' && !wasHeld) pointer.token = inputQueue.press(action, currentInput()); target.setAttribute('aria-pressed', 'true'); } if (pad) touchMove(event); wake();
+    if (action) { if (/^slot[1-4]$/.test(action) || ['drop', 'swap'].includes(action)) weaponWheel.reset(); const wasHeld = currentInput()[action]; touch.actions.add(action); if (state.phase === 'fight' && !wasHeld) pointer.token = inputQueue.press(action, currentInput()); target.setAttribute('aria-pressed', 'true'); } if (pad) touchMove(event); wake();
   }
   function touchMove(event) {
     const pointer = pointers.get(event.pointerId); if (!pointer?.pad || !active()) return; event.preventDefault();
@@ -304,7 +330,7 @@ export function bootPractice() {
     try { if (document.fullscreenElement) await document.exitFullscreen(); else await shell.requestFullscreen(); } catch { feedback('Fullscreen is unavailable in this browser.', performance.now()); }
   }
   function destroy() {
-    if (destroyed) return; destroyed = true; stopFrame(); release(); unlock(); for (const remove of listeners) remove(); unsubscribe(); picker.destroy(); audio.destroy(); inventory.destroy(); renderer?.destroy(); movement.clear();
+    if (destroyed) return; destroyed = true; stopFrame(); release(); unlock(); for (const remove of listeners) remove(); unsubscribe(); picker.destroy(); audio.destroy(); inventory.destroy(); weaponWheel.destroy(); renderer?.destroy(); movement.clear();
   }
   listen($('practice-setup-form'), 'submit', event => { event.preventDefault(); start(); });
   for (const id of ['practice-map', 'practice-count', 'practice-mode', 'practice-difficulty', 'practice-weapon']) listen($(id), 'change', preview);
@@ -326,7 +352,7 @@ export function bootPractice() {
   listen(window, 'blur', () => { if (active()) pause(); else release(); }); listen(document, 'visibilitychange', () => { if (document.hidden && active()) pause(); }); listen(window, 'pagehide', destroy);
   listen(canvas, 'voxel-renderer-error', event => { if (event.detail?.message) { graphicsError = event.detail.message; if (active()) pause(); setHidden($('practice-error'), false); setText('practice-error-text', graphicsError); } else { graphicsError = ''; setHidden($('practice-error'), true); updateHud(performance.now(), true); draw(performance.now()); } });
   const unsubscribe = subscribeKeyboardLayout(() => { release(); hints(); }); hints(); preview(); graphics();
-  const inspect = () => copy({ state: { ...state, map: undefined, fighters: undefined }, stats: getPracticeStats(state), input: currentInput(), queuedActions: inputQueue.inspect(), presentationPlayer, controls: { pointerLocked: locked(), fallback, modalOpen, paused: state.phase === 'paused', entered: activeSession, touch: touchMode }, renderCount, renderStats: renderer?.stats || null, audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), meleeImpactAudio: meleeImpacts.inspect(), reloadAudio: reloadAudio.inspect(), reloadSounds: audio.inspectReloads(), gunImpactAudio: gunImpacts.inspect(), parryAudio: parryAudio.inspect(), parrySounds: audio.inspectParries(), stamina: staminaView, graphicsError, displayTiming: { physicsSamples, renderSamples: renderCount, lastFraction } });
+  const inspect = () => copy({ state: { ...state, map: undefined, fighters: undefined }, stats: getPracticeStats(state), input: currentInput(), queuedActions: inputQueue.inspect(), presentationPlayer, controls: { pointerLocked: locked(), fallback, modalOpen, paused: state.phase === 'paused', entered: activeSession, touch: touchMode }, renderCount, renderStats: renderer?.stats || null, audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), meleeImpactAudio: meleeImpacts.inspect(), reloadAudio: reloadAudio.inspect(), reloadSounds: audio.inspectReloads(), gunImpactAudio: gunImpacts.inspect(), parryAudio: parryAudio.inspect(), parrySounds: audio.inspectParries(), stamina: staminaView, weaponWheel: weaponWheel.inspect(), graphicsError, displayTiming: { physicsSamples, renderSamples: renderCount, lastFraction } });
   const api = Object.freeze({ getState: inspect, getDisplayTiming: () => ({ physicsSamples, renderSamples: renderCount, lastFraction }) }); window.firesidePractice = api;
   return { destroy, inspect };
 }

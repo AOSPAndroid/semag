@@ -13,7 +13,7 @@ import { combatPresentation, createCorrectionPresenter, createMovementPresenter,
 import { createNetworkTimeline } from './network-timeline.js';
 import { createFpsInputQueue, releaseFpsTouchAction } from './voxel-input-queue.js';
 import { setAttribute, setDisabled, setHidden, setStyle, setText, toggleClass } from './hub/dom.js';
-import { inventoryControlForKey, inventoryItemReadout, inventoryLootPresentation, inventoryEventFeedback, inventorySlots, inventorySwapPresentation, mountInventoryHotbar } from './voxel-inventory-ui.js';
+import { inventoryControlForKey, inventoryItemReadout, inventoryLootPresentation, inventoryEventFeedback, inventorySlots, inventorySwapPresentation, mountInventoryHotbar, mountWeaponWheel } from './voxel-inventory-ui.js';
 
 export const LOOK_SENSITIVITY = .0025;
 export const INPUT_ACTIONS = Object.freeze(['up', 'down', 'left', 'right', 'jump', 'crouch', 'walk', 'sprint', 'fire', 'reload', 'interact', 'aim', 'swap', 'grenade', 'heal', 'slot1', 'slot2', 'slot3', 'slot4', 'drop']);
@@ -194,8 +194,13 @@ async function boot() {
   function pointerLocked() { return document.pointerLockElement === canvas; }
   function controlsActive() { return controlsAllowed({ connected, entered, paused, modalOpen, graphicsError, hidden: document.hidden, alive: ownPlayer()?.alive, phase: state?.phase, pointerLocked: pointerLocked(), fallback, touchMode }); }
   function currentInput() { return composeInput(keys, touch, mouse, aim, controlsActive()); }
+  const weaponWheel = mountWeaponWheel(canvas, {
+    context: () => ({ player: ownPlayer(), active: !destroyed && controlsActive() && state?.phase === 'fight', pointerLocked: pointerLocked(), fallback, crouchHeld: keys.has('crouch') }),
+    dispatch: action => { const input = currentInput(); if (input[action]) return false; sendInput({ ...input, [action]: true }, true); sendInput(input, true); return true; },
+  });
   const inventory = mountInventoryHotbar($('royale-inventory'), actions => {
     if (!controlsActive() || state?.phase !== 'fight') return;
+    weaponWheel.reset();
     const fresh = actions.filter(action => !keys.has(action)); fresh.forEach(action => keys.add(action)); sendInput(currentInput(), true);
     fresh.forEach(action => keys.delete(action)); sendInput(currentInput(), true); canvas.focus({ preventScroll: true });
   });
@@ -232,6 +237,7 @@ async function boot() {
     if (touchMode && controlsActive()) { const sensitivity = aimLookMultiplier(presentationPlayer || ownPlayer(), engine?.ADS); aim = cleanAim(aim.yaw + touch.look.x * dt * 2.4 * sensitivity, aim.pitch - touch.look.y * dt * 1.85 * sensitivity); }
   }
   function neutralize({ pause = false, unlock = false } = {}) {
+    weaponWheel.reset();
     reloadAudio.suspend(); paintVitals(null, 'Your', false);
     hitFeedback.reset(); paintHitFeedback(hitElements, { visible: false });
     keys.clear(); pressedKeys.clear(); mouse.fire = mouse.aim = false; rightDrag = false;
@@ -392,6 +398,7 @@ async function boot() {
   function activeAnimation() { return connected && state && !document.hidden && !graphicsError && ['countdown', 'fight'].includes(state.phase); }
   function frame(now) {
     frameId = null; if (destroyed || !activeAnimation()) { lastFrameAt = 0; return; }
+    weaponWheel.flush();
     const dt = lastFrameAt ? Math.min(.0667, (now - lastFrameAt) / 1000) : 0; lastFrameAt = now; integrateTouchLook(now); accumulator += dt;
     const buttons = currentInput(); let ticks = 0;
     while (accumulator >= 1 / 120 && ticks++ < 8) { accumulator -= 1 / 120; const tick = ++predictionTick; if (state.phase === 'fight' && predictedPlayer?.alive) { const sampled = actionInputs.sample(buttons, now).buttons; engine.predictLocalMovement(predictedPlayer, sampled, state.map, 1, state.players); pending.push({ tick, buttons: { ...sampled } }); if (pending.length > 240) pending.shift(); } }
@@ -504,9 +511,9 @@ async function boot() {
     if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
   }
-  function updateKeyLabels() { setText($('move-keys'), getKeyboardLayout().toUpperCase()); for (const label of document.querySelectorAll('[data-royale-key]')) label.textContent = displayKey(label.dataset.royaleKey); canvas.setAttribute('aria-label', `3D battle royale. ${getKeyboardLayout().toUpperCase()} or arrows move; mouse looks; left click uses your selected item; right click aims guns, stabs with a knife or parries with other blades; 1 to 4 equip inventory slots; X drops the selected item; E picks up loot; V swaps blade and gun; ${displayKey('Q')} throws grenade; F heals; R reloads; Space jumps; Control crouches; Shift sprints, C walks quietly; Escape releases controls.`); }
+  function updateKeyLabels() { setText($('move-keys'), getKeyboardLayout().toUpperCase()); for (const label of document.querySelectorAll('[data-royale-key]')) label.textContent = displayKey(label.dataset.royaleKey); canvas.setAttribute('aria-label', `3D battle royale. ${getKeyboardLayout().toUpperCase()} or arrows move; mouse looks; left click uses your selected item; right click aims guns, stabs with a knife or parries with other blades; 1 to 4 equip inventory slots; wheel up or down switches carried weapons; X drops the selected item; E picks up loot; V swaps blade and gun; ${displayKey('Q')} throws grenade; F heals; R reloads; Space jumps; Control crouches; Shift sprints, C walks quietly; Escape releases controls.`); }
   const unsubscribeLayout = subscribeKeyboardLayout(() => { neutralize({ pause: entered, unlock: true }); updateKeyLabels(); }); updateKeyLabels();
-  listen(window, 'keydown', event => { if (event.defaultPrevented || event.isComposing || event.altKey || event.metaKey) return; if (event.key === 'Escape') { if (modalOpen) { if (!$('guide-dialog').hidden) closeGuide(); else closeRoom(); } else if (entered) neutralize({ pause: true, unlock: true }); return; } if (event.key.toLowerCase() === 'p' && !isFormTarget(event.target) && entered) { event.preventDefault(); neutralize({ pause: true, unlock: true }); return; } if (!controlsActive() || isFormTarget(event.target)) return; const action = controlForKey(event); if (!action) return; event.preventDefault(); const id = event.code || event.key; if (pressedKeys.has(id) || event.repeat) return; pressedKeys.set(id, action); keys.add(action); utilityFeedback(action); sendInput(currentInput(), true); });
+  listen(window, 'keydown', event => { if (event.defaultPrevented || event.isComposing || event.altKey || event.metaKey) return; if (event.key === 'Escape') { if (modalOpen) { if (!$('guide-dialog').hidden) closeGuide(); else closeRoom(); } else if (entered) neutralize({ pause: true, unlock: true }); return; } if (event.key.toLowerCase() === 'p' && !isFormTarget(event.target) && entered) { event.preventDefault(); neutralize({ pause: true, unlock: true }); return; } if (!controlsActive() || isFormTarget(event.target)) return; const action = controlForKey(event); if (!action) return; event.preventDefault(); const id = event.code || event.key; if (pressedKeys.has(id) || event.repeat) return; if (/^slot[1-4]$/.test(action) || ['drop', 'swap'].includes(action)) weaponWheel.reset(); pressedKeys.set(id, action); keys.add(action); utilityFeedback(action); sendInput(currentInput(), true); });
   listen(window, 'keyup', event => { const id = event.code || event.key, action = pressedKeys.get(id); pressedKeys.delete(id); if (action && ![...pressedKeys.values()].includes(action)) keys.delete(action); if (action) { sendInput(currentInput(), true); if (!isFormTarget(event.target)) event.preventDefault(); } });
   listen(document, 'focusin', event => { if (isFormTarget(event.target) && !actionPointers.size && !padPointers.size) neutralize(); });
   listen(window, 'blur', () => neutralize({ pause: entered, unlock: true }));
@@ -557,6 +564,7 @@ async function boot() {
     listen(button, 'pointerdown', event => {
       if (!controlsActive()) return; event.preventDefault();
       const action = button.dataset.royaleAction, wasHeld = currentInput()[action];
+      if (/^slot[1-4]$/.test(action) || ['drop', 'swap'].includes(action)) weaponWheel.reset();
       utilityFeedback(action);
       const pointer = { element: button, action, pressSeq: null }; actionPointers.set(event.pointerId, pointer);
       touch.actions.add(action); button.classList.add('pressed'); button.setPointerCapture(event.pointerId);
@@ -574,9 +582,9 @@ async function boot() {
   hostInfo().then(info => { invite = `${info.origin}/voxel-royale.html?room=${encodeURIComponent(roomId)}`; setText($('invite-address'), invite); }).catch(() => {});
   listen($('copy-code'), 'click', async () => { try { await copyText(roomId); toast('Room code copied.'); } catch (cause) { toast(cause.message); } }); listen($('copy-invite'), 'click', async () => { try { await copyText(invite); toast('Invite link copied.'); } catch (cause) { toast(cause.message); } });
   const pingTimer = setInterval(() => { if (connected && !document.hidden) send({ type: 'ping', time: performance.now() }); }, 1500);
-  function destroy() { if (destroyed) return; neutralize({ pause: true, unlock: true }); destroyed = true; clearTimeout(reconnectTimer); clearTimeout(toastTimer); clearInterval(pingTimer); clearInterval(heartbeat); heartbeat = null; if (frameId) cancelAnimationFrame(frameId); frameId = null; socket?.close(); renderer?.destroy(); audio.destroy(); inventory.destroy(); layoutPicker.destroy(); unsubscribeLayout(); for (const remove of removers) remove(); pending = []; snapshots = []; kills.length = 0; eventSeen.clear(); }
+  function destroy() { if (destroyed) return; neutralize({ pause: true, unlock: true }); destroyed = true; clearTimeout(reconnectTimer); clearTimeout(toastTimer); clearInterval(pingTimer); clearInterval(heartbeat); heartbeat = null; if (frameId) cancelAnimationFrame(frameId); frameId = null; socket?.close(); renderer?.destroy(); audio.destroy(); inventory.destroy(); weaponWheel.destroy(); layoutPicker.destroy(); unsubscribeLayout(); for (const remove of removers) remove(); pending = []; snapshots = []; kills.length = 0; eventSeen.clear(); }
   listen(window, 'pagehide', destroy);
-  const inspect = () => { const { map, ...snapshot } = state || {}; return clone({ state: state ? snapshot : null, players: roster, playerId, hostId, input: currentInput(), predictedPlayer, presentationPlayer, presentationPlayers, predictionRemainder: accumulator, predictionTick, actionQueue: actionInputs.inspect(), timeline: timeline.getState(), correction: correction.getState(), connected, controls: { pointerLocked: pointerLocked(), fallback, touch: touchMode, paused, entered, modalOpen }, queueLength: pending.length, renderCount, renderStats: renderer?.stats || null, audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), meleeImpactAudio: meleeImpacts.inspect(), reloadAudio: reloadAudio.inspect(), reloadSounds: audio.inspectReloads(), gunImpactAudio: gunImpacts.inspect(), parryAudio: parryAudio.inspect(), parrySounds: audio.inspectParries(), stamina: staminaView, graphicsError, spectatorId }); };
+  const inspect = () => { const { map, ...snapshot } = state || {}; return clone({ state: state ? snapshot : null, players: roster, playerId, hostId, input: currentInput(), predictedPlayer, presentationPlayer, presentationPlayers, predictionRemainder: accumulator, predictionTick, actionQueue: actionInputs.inspect(), timeline: timeline.getState(), correction: correction.getState(), connected, controls: { pointerLocked: pointerLocked(), fallback, touch: touchMode, paused, entered, modalOpen }, queueLength: pending.length, renderCount, renderStats: renderer?.stats || null, audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), meleeImpactAudio: meleeImpacts.inspect(), reloadAudio: reloadAudio.inspect(), reloadSounds: audio.inspectReloads(), gunImpactAudio: gunImpacts.inspect(), parryAudio: parryAudio.inspect(), parrySounds: audio.inspectParries(), stamina: staminaView, weaponWheel: weaponWheel.inspect(), graphicsError, spectatorId }); };
   window.SemagRoyale = Object.freeze({ getState: inspect, inspect }); updateUI();
   try { const [rules, visual] = await Promise.all([import('./voxel-royale-engine.js'), import('./voxel-renderer.js')]); if (destroyed) return; engine = { ...rules, predictLocalMovement, sweepPresentationOffset, traceShot, ADS, HEAL, PLAYER_HEALTH }; renderer = new visual.VoxelRenderer(canvas); renderer.resize(); } catch (cause) { graphicsError = cause?.message || 'This game requires WebGL. Enable hardware acceleration and reload graphics.'; error(graphicsError); updateUI(); return; }
   connect();

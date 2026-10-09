@@ -5,7 +5,7 @@ import { copyText, getName, hostInfo, roomUrl, saveName } from './hub/shared.js'
 import { ADS, HEAL, PLAYER_HEALTH, predictLocalMovement, sweepPresentationOffset, traceShot } from './voxel-engine.js';
 import { WEAPONS, WEAPON_IDS } from './voxel-weapons.js';
 import { cleanAim, composeInput, controlForKey, aimFraction, aimLookMultiplier, combatReadout, isFormTarget, hasGunshotReport, combatEventPerspective, createMeleeImpactReporter, createContinuousInputPacer as createInputPacer, LOOK_SENSITIVITY } from './voxel-client.js';
-import { inventoryLootPresentation, inventoryEventFeedback, inventorySwapPresentation, mountInventoryHotbar } from './voxel-inventory-ui.js';
+import { inventoryLootPresentation, inventoryEventFeedback, inventorySwapPresentation, mountInventoryHotbar, mountWeaponWheel } from './voxel-inventory-ui.js';
 import { combatPresentation, createCorrectionPresenter, createMovementPresenter, interpolatedVoxelState, reconcileMovement, resolvePresentationContacts, withCombatPresentation } from './voxel-presentation.js';
 import { incomingDamageFeedback, damageFeedbackPresentation, paintDamageFeedback } from './voxel-damage-feedback.js';
 import { createHitFeedback, paintHitFeedback } from './voxel-hit-feedback.js';
@@ -140,8 +140,13 @@ export async function bootHorde() {
   const labelsActive = () => running() && !modalOpen && (localPlayer()?.alive ? entered && !paused : !!hordeSpectatorPlayer(state, playerId, spectatorId)?.alive);
   const controlsActive = () => running() && entered && !paused && !modalOpen && localPlayer()?.alive && (locked() || fallback || touchMode);
   const currentInput = () => composeInput(keys, touch, mouse, aim, controlsActive());
+  const weaponWheel = mountWeaponWheel(canvas, {
+    context: () => ({ player: localPlayer(), active: controlsActive() && state?.phase === 'fight', pointerLocked: locked(), fallback, crouchHeld: keys.has('crouch') }),
+    dispatch: action => { const input = currentInput(); if (input[action]) return false; sendInput({ ...input, [action]: true }, true); sendInput(input, true); wake(); return true; },
+  });
   const inventory = mountInventoryHotbar($('horde-inventory'), actions => {
     if (!controlsActive() || !MOVEMENT_PHASES.includes(state?.phase)) return;
+    weaponWheel.reset();
     const fresh = actions.filter(action => !keys.has(action)); fresh.forEach(action => keys.add(action)); sendInput(currentInput(), true);
     fresh.forEach(action => keys.delete(action)); sendInput(currentInput(), true); canvas.focus({ preventScroll: true }); wake();
   });
@@ -152,7 +157,7 @@ export async function bootHorde() {
   function hints() {
     app.dataset.keyboardLayout = getKeyboardLayout(); text('horde-guide-move', displayKey('WASD')); text('horde-grenade-key', displayKey('Q')); text('horde-guide-grenade', displayKey('Q'));
     text('horde-look-hint', fallback ? 'DRAG TO LOOK · ESC RELEASE' : `${displayKey('WASD')} MOVE · RMB SECONDARY · ESC ${solo ? 'PAUSE' : 'RELEASE'}`);
-    canvas.setAttribute('aria-label', `First-person monster survival. ${displayKey('WASD')} or arrows move, mouse looks, left click or B / J uses your selected item, right click aims guns, stabs with a knife or parries with other blades, Space jumps, Control crouches, Shift sprints, C walks quietly, R reloads, 1 to 4 equip inventory slots, X drops the selected item, V switches blade, ${displayKey('Q')} throws a grenade, F heals, E picks up supplies or holds to revive. Escape ${solo ? 'pauses' : 'releases your controls'}.`);
+    canvas.setAttribute('aria-label', `First-person monster survival. ${displayKey('WASD')} or arrows move, mouse looks, left click or B / J uses your selected item, right click aims guns, stabs with a knife or parries with other blades, Space jumps, Control crouches, Shift sprints, C walks quietly, R reloads, 1 to 4 equip inventory slots, wheel up or down switches carried weapons, X drops the selected item, V switches blade, ${displayKey('Q')} throws a grenade, F heals, E picks up supplies or holds to revive. Escape ${solo ? 'pauses' : 'releases your controls'}.`);
   }
   function sendInput(buttons = currentInput(), edge = false, now = performance.now(), cancelActions = false, cancelPress = null) {
     const nextSequence = sequence >= 999999000 ? 1 : sequence + 1;
@@ -166,6 +171,7 @@ export async function bootHorde() {
   }
   function stopFrame() { if (frameId !== null) cancelAnimationFrame(frameId); frameId = null; previousFrame = null; accumulator = 0; }
   function clearInputs({ fence = false } = {}) {
+    weaponWheel.reset();
     reloadAudio.suspend(); paintVitals(null, 'Your', false);
     worldLabels.clear();
     hitFeedback.reset(); paintHitFeedback(hitElements, { visible: false });
@@ -372,6 +378,7 @@ export async function bootHorde() {
   }
   function frame(now) {
     frameId = null; if (!running()) { previousFrame = null; return; }
+    weaponWheel.flush();
     const dt = previousFrame == null ? 0 : clamp((now - previousFrame) / 1000, 0, .0667); previousFrame = now;
     if (controlsActive() && (touch.look.x || touch.look.y)) { const multiplier = aimLookMultiplier(presentationPlayer || localPlayer(), ADS); aim = cleanAim(aim.yaw + touch.look.x * dt * 2.6 * multiplier, aim.pitch - touch.look.y * dt * 2.2 * multiplier); }
     accumulator += dt; const buttons = currentInput(); sendInput(buttons, false, now); let ticks = 0;
@@ -433,6 +440,7 @@ export async function bootHorde() {
     if (!controlsActive() || isFormTarget(event.target) || event.isComposing || event.altKey || event.metaKey) return;
     const action = controlForKey(event); if (!action) return;
     event.preventDefault(); const physical = event.code || event.key; if (event.repeat || physicalKeys.has(physical)) return;
+    if (/^slot[1-4]$/.test(action) || ['drop', 'swap'].includes(action)) weaponWheel.reset();
     physicalKeys.set(physical, action); keys.add(action); sendInput(currentInput(), true); wake();
   }
   function keyboardUp(event) { const physical = event.code || event.key, action = physicalKeys.get(physical); physicalKeys.delete(physical); if (action && ![...physicalKeys.values()].includes(action)) keys.delete(action); if (action) sendInput(currentInput(), true); }
@@ -445,7 +453,7 @@ export async function bootHorde() {
   function touchDown(event) {
     const element = event.target.closest?.('[data-horde-action],[data-horde-pad]'); if (!element || !controlsActive()) return;
     event.preventDefault(); const action = element.dataset.hordeAction, pad = element.dataset.hordePad;
-    if (action) { const wasHeld = currentInput()[action], pointer = { element, action, pressSeq: null }; actionPointers.set(event.pointerId, pointer); touch.actions.add(action); const sent = sendInput(currentInput(), true); if (!wasHeld && FPS_EDGE_ACTIONS.includes(action)) pointer.pressSeq = sent; element.classList.add('pressed'); element.setAttribute('aria-pressed', 'true'); }
+    if (action) { if (/^slot[1-4]$/.test(action) || ['drop', 'swap'].includes(action)) weaponWheel.reset(); const wasHeld = currentInput()[action], pointer = { element, action, pressSeq: null }; actionPointers.set(event.pointerId, pointer); touch.actions.add(action); const sent = sendInput(currentInput(), true); if (!wasHeld && FPS_EDGE_ACTIONS.includes(action)) pointer.pressSeq = sent; element.classList.add('pressed'); element.setAttribute('aria-pressed', 'true'); }
     else { if ([...padPointers.values()].some(pointer => pointer.pad === pad)) return; padPointers.set(event.pointerId, { element, pad }); touchMove(event); }
     try { element.setPointerCapture(event.pointerId); } catch {} wake();
   }
@@ -469,7 +477,7 @@ export async function bootHorde() {
   }
   let rendererClass;
   function destroy() {
-    if (destroyed) return; clearInputs(); destroyed = true; stopFrame(); clearTimeout(reconnectTimer); clearInterval(heartbeat); unlock(); socket?.close(); for (const remove of listeners) remove(); unsubscribe(); picker.destroy(); audio.destroy(); inventory.destroy(); renderer?.destroy(); worldLabels.destroy(); movement.clear(); pending = []; snapshots = [];
+    if (destroyed) return; clearInputs(); destroyed = true; stopFrame(); clearTimeout(reconnectTimer); clearInterval(heartbeat); unlock(); socket?.close(); for (const remove of listeners) remove(); unsubscribe(); picker.destroy(); audio.destroy(); inventory.destroy(); weaponWheel.destroy(); renderer?.destroy(); worldLabels.destroy(); movement.clear(); pending = []; snapshots = [];
   }
   const unsubscribe = subscribeKeyboardLayout(() => { clearInputs(); hints(); });
   text('horde-mode', solo ? 'SOLO SURVIVAL' : '1–3 PLAYER CO-OP'); text('horde-room-code', roomId); $('horde-name').value = getName(); hide('horde-name-field', solo); hide('horde-lobby', solo); hide('horde-map-field', !solo); hide('horde-difficulty-field', !solo);
@@ -504,7 +512,7 @@ export async function bootHorde() {
     if (solo) preview(); graphics(); if (!solo) { connect(); hostInfo().then(info => { invite = `${info.origin}/voxel-horde.html?room=${encodeURIComponent(roomId)}`; }).catch(() => {}); }
   } catch (cause) { graphicsError = cause?.message || 'The game could not load.'; error(`Voxel Last Stand could not load: ${graphicsError}`); }
   heartbeat = setInterval(() => { if (!solo && connected && !document.hidden && LIVE_PHASES.includes(state?.phase)) sendInput(); }, 50);
-  const inspect = () => copy({ state: state ? { ...state, map: undefined, fighters: undefined } : null, solo, playerId, hostId, aim, paused: paused || state?.phase === 'paused', connected, roomPlayers: roster, pendingInputs: pending, queuedActions: inputQueue.inspect(), presentationPlayer, presentationPlayers, controls: { pointerLocked: locked(), fallback, touch: touchMode, entered, modalOpen }, renderCount, renderStats: renderer?.stats || null, worldLabels: worldLabels.inspect(), audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), meleeImpactAudio: meleeImpacts.inspect(), reloadAudio: reloadAudio.inspect(), reloadSounds: audio.inspectReloads(), gunImpactAudio: gunImpacts.inspect(), parryAudio: parryAudio.inspect(), parrySounds: audio.inspectParries(), stamina: staminaView, monsterAudio: audio.inspectMonsters(), graphicsError, displayTiming: { physicsSamples, renderSamples: renderCount, lastFraction }, timeline: timeline.getState(), spectatorId });
+  const inspect = () => copy({ state: state ? { ...state, map: undefined, fighters: undefined } : null, solo, playerId, hostId, aim, paused: paused || state?.phase === 'paused', connected, roomPlayers: roster, pendingInputs: pending, queuedActions: inputQueue.inspect(), presentationPlayer, presentationPlayers, controls: { pointerLocked: locked(), fallback, touch: touchMode, entered, modalOpen }, renderCount, renderStats: renderer?.stats || null, worldLabels: worldLabels.inspect(), audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), meleeImpactAudio: meleeImpacts.inspect(), reloadAudio: reloadAudio.inspect(), reloadSounds: audio.inspectReloads(), gunImpactAudio: gunImpacts.inspect(), parryAudio: parryAudio.inspect(), parrySounds: audio.inspectParries(), stamina: staminaView, weaponWheel: weaponWheel.inspect(), monsterAudio: audio.inspectMonsters(), graphicsError, displayTiming: { physicsSamples, renderSamples: renderCount, lastFraction }, timeline: timeline.getState(), spectatorId });
   window.semagHorde = Object.freeze({ getState: inspect, getDebugState: inspect, getDisplayTiming: () => ({ physicsSamples, renderSamples: renderCount, lastFraction }) });
   return { destroy, inspect };
 }

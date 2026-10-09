@@ -12,7 +12,7 @@ import { combatPresentation, createCorrectionPresenter, createMovementPresenter,
 import { createNetworkTimeline } from './network-timeline.js';
 import { createFpsInputQueue, releaseFpsTouchAction } from './voxel-input-queue.js';
 import { setAttribute, setDisabled, setHidden, setStyle, setText, toggleClass } from './hub/dom.js';
-import { inventoryControlForKey, inventoryItemReadout, inventoryLootPresentation, inventoryEventFeedback, inventorySwapPresentation, mountInventoryHotbar } from './voxel-inventory-ui.js';
+import { inventoryControlForKey, inventoryItemReadout, inventoryLootPresentation, inventoryEventFeedback, inventorySwapPresentation, mountInventoryHotbar, mountWeaponWheel } from './voxel-inventory-ui.js';
 import { mountVoxelLabelOverlay } from './voxel-label-overlay.js';
 
 export const LOOK_SENSITIVITY = 0.0025;
@@ -335,8 +335,13 @@ async function boot() {
   function pointerLocked() { return document.pointerLockElement === canvas; }
   function controlsActive() { return connected && entered && !paused && !modalOpen && !graphicsError && !document.hidden && !!ownPlayer()?.alive && ['countdown', 'buy', 'fight'].includes(state?.phase) && (pointerLocked() || fallback || touchMode); }
   function currentInput() { return composeInput(keys, touch, mouse, aim, controlsActive()); }
+  const weaponWheel = mountWeaponWheel(canvas, {
+    context: () => ({ player: ownPlayer(), active: !destroyed && controlsActive() && !teamSwitchPending && state?.phase === 'fight', pointerLocked: pointerLocked(), fallback, crouchHeld: keys.has('crouch') }),
+    dispatch: action => { const input = currentInput(); if (input[action]) return false; sendInput({ ...input, [action]: true }, true); sendInput(input, true); return true; },
+  });
   const inventory = mountInventoryHotbar($('voxel-inventory'), actions => {
     if (!controlsActive() || state?.phase !== 'fight') return;
+    weaponWheel.reset();
     const fresh = actions.filter(action => !keys.has(action)); fresh.forEach(action => keys.add(action)); sendInput(currentInput(), true);
     fresh.forEach(action => keys.delete(action)); sendInput(currentInput(), true); canvas.focus({ preventScroll: true });
   });
@@ -375,6 +380,7 @@ async function boot() {
     else if (!shouldRun && inputHeartbeat) { clearInterval(inputHeartbeat); inputHeartbeat = null; }
   }
   function neutralize({ pause = false, unlock = false } = {}) {
+    weaponWheel.reset();
     reloadAudio.suspend(); paintVitals(null, 'Your', false);
     worldLabels.clear();
     hitFeedback.reset(); paintHitFeedback(hitElements, { visible: false });
@@ -808,6 +814,7 @@ async function boot() {
   function frame(now) {
     frameId = null;
     if (destroyed || !activeAnimation()) { lastFrameAt = 0; return; }
+    weaponWheel.flush();
     const delta = lastFrameAt ? Math.min(0.0667, (now - lastFrameAt) / 1000) : 0; lastFrameAt = now;
     integrateTouchLook(now);
     accumulator += delta; let ticks = 0; let buttons = currentInput();
@@ -987,7 +994,7 @@ async function boot() {
     const layout = getKeyboardLayout();
     setText($('move-keys'), layout.toUpperCase());
     for (const label of document.querySelectorAll('[data-voxel-key]')) label.textContent = displayKey(label.dataset.voxelKey, layout);
-    canvas.setAttribute('aria-label', `3D tactical shooter. ${layout.toUpperCase()} or arrows to move, mouse to look, left click to use your selected item, right click to aim guns, stab with a knife or parry with other blades, 1 to 4 equip inventory slots, X drops the selected item, V switches blade and gun, ${displayKey('Q', layout)} grenade, F healing potion, R reload, E picks up loot or holds to plant or defuse, Space jumps, Control crouches, Shift sprints, C walks quietly. Choose any weapon in setup; number keys 1 to 9 select the first nine.`);
+    canvas.setAttribute('aria-label', `3D tactical shooter. ${layout.toUpperCase()} or arrows to move, mouse to look, left click to use your selected item, right click to aim guns, stab with a knife or parry with other blades, 1 to 4 equip inventory slots, wheel up or down switches carried weapons, X drops the selected item, V switches blade and gun, ${displayKey('Q', layout)} grenade, F healing potion, R reload, E picks up loot or holds to plant or defuse, Space jumps, Control crouches, Shift sprints, C walks quietly. Choose any weapon in setup; number keys 1 to 9 select the first nine.`);
   }
   function updateLayout() { neutralize({ pause: entered, unlock: true }); updateKeyLabels(); }
   const unsubscribeLayout = subscribeKeyboardLayout(updateLayout); updateKeyLabels();
@@ -1000,6 +1007,7 @@ async function boot() {
     const action = controlForKey(event); if (!action) return;
     event.preventDefault(); const keyId = event.code || event.key;
     if (pressedKeys.has(keyId) || event.repeat) return;
+    if (/^slot[1-4]$/.test(action) || ['drop', 'swap'].includes(action)) weaponWheel.reset();
     pressedKeys.set(keyId, action); keys.add(action); utilityFeedback(action); sendInput();
   });
   listen(window, 'keyup', event => {
@@ -1112,6 +1120,7 @@ async function boot() {
     listen(button, 'pointerdown', event => {
       if (!controlsActive()) return; event.preventDefault();
       const action = button.dataset.voxelAction, wasHeld = currentInput()[action];
+      if (/^slot[1-4]$/.test(action) || ['drop', 'swap'].includes(action)) weaponWheel.reset();
       utilityFeedback(action);
       const pointer = { element: button, action, pressSeq: null }; actionPointers.set(event.pointerId, pointer);
       touch.actions.add(action); button.classList.add('pressed'); button.setPointerCapture(event.pointerId);
@@ -1136,11 +1145,11 @@ async function boot() {
     if (destroyed) return; neutralize({ pause: true, unlock: true }); destroyed = true;
     clearTimeout(reconnectTimer); clearTimeout(toastTimer); clearInterval(pingTimer);
     clearInterval(inputHeartbeat); inputHeartbeat = null;
-    if (frameId) cancelAnimationFrame(frameId); frameId = null; socket?.close(); renderer?.destroy(); worldLabels.destroy(); audio.destroy(); inventory.destroy(); layoutPicker.destroy(); unsubscribeLayout();
+    if (frameId) cancelAnimationFrame(frameId); frameId = null; socket?.close(); renderer?.destroy(); worldLabels.destroy(); audio.destroy(); inventory.destroy(); weaponWheel.destroy(); layoutPicker.destroy(); unsubscribeLayout();
     for (const remove of removers) remove(); pending = []; snapshots = []; kills.length = 0; eventSeen.clear();
   }
   listen(window, 'pagehide', destroy);
-  const inspect = () => clone({ state, players: roster, playerId, input: currentInput(), predictedPlayer, presentationPlayer, presentationPlayers, predictionRemainder: accumulator, predictionTick, actionQueue: actionInputs.inspect(), timeline: timeline.getState(), correction: correction.getState(), connected, controls: { pointerLocked: pointerLocked(), fallback, touch: touchMode, paused, entered, modalOpen }, queueLength: pending.length, renderCount, renderStats: renderer?.stats || null, worldLabels: worldLabels.inspect(), audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), meleeImpactAudio: meleeImpacts.inspect(), reloadAudio: reloadAudio.inspect(), reloadSounds: audio.inspectReloads(), gunImpactAudio: gunImpacts.inspect(), parryAudio: parryAudio.inspect(), parrySounds: audio.inspectParries(), stamina: staminaView, graphicsError, spectatorId });
+  const inspect = () => clone({ state, players: roster, playerId, input: currentInput(), predictedPlayer, presentationPlayer, presentationPlayers, predictionRemainder: accumulator, predictionTick, actionQueue: actionInputs.inspect(), timeline: timeline.getState(), correction: correction.getState(), connected, controls: { pointerLocked: pointerLocked(), fallback, touch: touchMode, paused, entered, modalOpen }, queueLength: pending.length, renderCount, renderStats: renderer?.stats || null, worldLabels: worldLabels.inspect(), audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), meleeImpactAudio: meleeImpacts.inspect(), reloadAudio: reloadAudio.inspect(), reloadSounds: audio.inspectReloads(), gunImpactAudio: gunImpacts.inspect(), parryAudio: parryAudio.inspect(), parrySounds: audio.inspectParries(), stamina: staminaView, weaponWheel: weaponWheel.inspect(), graphicsError, spectatorId });
   window.SemagVoxel = Object.freeze({ getState: inspect, inspect });
   updateUI();
   try {

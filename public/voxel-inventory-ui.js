@@ -40,6 +40,79 @@ export function inventoryControlForKey(event) {
   return digit ? `slot${digit}` : (event.key || '').toLowerCase() === 'x' || event.code === 'KeyX' ? 'drop' : null;
 }
 
+/** Wheel intent stays separate from the accepted inventory and other inputs. */
+export function createWeaponWheelController({ onReset = () => {} } = {}) {
+  const interval = 24, threshold = 40;
+  let signature = '', pendingIndex = null, queuedIndex = null, lastDispatchedIndex = null;
+  let accumulatedDelta = 0, lastDispatchAt = -Infinity, lastIntentAt = -Infinity, requests = 0, dispatches = 0;
+  function reset() {
+    onReset();
+    signature = ''; pendingIndex = queuedIndex = lastDispatchedIndex = null;
+    accumulatedDelta = 0; lastDispatchAt = lastIntentAt = -Infinity;
+  }
+  function sync(player, now) {
+    const next = JSON.stringify([player?.id, player?.lifeId, player?.deaths,
+      Array.from({ length: 4 }, (_, index) => { const item = player?.inventory?.[index]; return item ? [item.kind, item.weapon || null] : null; })]);
+    if (signature !== next || pendingIndex !== null && now - lastIntentAt > 750 && queuedIndex === null) { reset(); signature = next; }
+  }
+  function flush(player, now) {
+    sync(player, now);
+    if (queuedIndex === null || now - lastDispatchAt < interval) return null;
+    const index = queuedIndex; queuedIndex = null; lastDispatchedIndex = index; lastDispatchAt = now; dispatches++;
+    return `slot${index + 1}`;
+  }
+  return {
+    consume(event, player, { now = 0, crouchHeld = false } = {}) {
+      const dy = event?.deltaY, dx = event?.deltaX ?? 0;
+      if (!player?.alive || !Array.isArray(player.inventory) || !Number.isFinite(now) || event?.defaultPrevented || event?.ctrlKey && !crouchHeld || event?.altKey || event?.metaKey || !Number.isFinite(dy) || !Number.isFinite(dx) || !dy || Math.abs(dx) > Math.abs(dy)) return { handled: false, action: null };
+      sync(player, now);
+      const scale = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? threshold : 1;
+      const delta = Math.max(-threshold, Math.min(threshold, dy * scale));
+      if (Math.sign(delta) !== Math.sign(accumulatedDelta)) accumulatedDelta = 0;
+      accumulatedDelta = Math.max(-threshold, Math.min(threshold, accumulatedDelta + delta));
+      if (Math.abs(accumulatedDelta) < threshold) return { handled: true, action: null };
+      const direction = Math.sign(accumulatedDelta); accumulatedDelta = 0;
+      const slots = player.inventory.slice(0, 4).flatMap((item, index) => item?.kind === 'weapon' && catalogItem(WEAPONS, item.weapon) || item?.kind === 'melee' && catalogItem(MELEE_WEAPONS, item.weapon) ? [index] : []);
+      const start = pendingIndex ?? (Number.isInteger(player.inventoryIndex) ? player.inventoryIndex : 0);
+      let target = null;
+      for (let offset = 1; offset <= 4; offset++) { const index = (start + direction * offset + 8) % 4; if (slots.includes(index)) { target = index; break; } }
+      if (target === null || target === start) return { handled: true, action: null };
+      pendingIndex = target; lastIntentAt = now; requests++;
+      // A full wrap must still finish earlier dispatched intents, even when
+      // the desired slot happens to match a stale accepted snapshot.
+      queuedIndex = target === lastDispatchedIndex ? null : target;
+      return { handled: true, action: flush(player, now) };
+    },
+    flush,
+    reset,
+    inspect: () => Object.freeze({ pendingIndex, queuedIndex, accumulatedDelta, requests, dispatches }),
+  };
+}
+
+/** Only the owned, active canvas consumes wheel events; no timers or layout reads. */
+export function mountWeaponWheel(canvas, { context, dispatch, cancelPending, now = () => performance.now() }) {
+  const controller = createWeaponWheelController({ onReset: cancelPending }); let destroyed = false;
+  function current() {
+    const value = context();
+    return value?.active && value.player?.alive && (value.pointerLocked || value.fallback && canvas.ownerDocument?.activeElement === canvas) ? value : null;
+  }
+  function send(action) { if (action && dispatch(action) === false) controller.reset(); }
+  const wheel = event => {
+    const value = current();
+    if (destroyed || event.target !== canvas || !value) { controller.reset(); return; }
+    const result = controller.consume(event, value.player, { now: now(), crouchHeld: !!value.crouchHeld });
+    if (result.handled) event.preventDefault();
+    send(result.action);
+  };
+  canvas.addEventListener('wheel', wheel, { passive: false });
+  return {
+    flush() { const value = !destroyed && current(); if (value) send(controller.flush(value.player, now())); else controller.reset(); },
+    reset: controller.reset,
+    inspect: controller.inspect,
+    destroy() { if (destroyed) return; destroyed = true; controller.reset(); canvas.removeEventListener('wheel', wheel); },
+  };
+}
+
 /** Consumables and empty hands must never display the last gun's ammunition. */
 export function inventoryItemReadout(player) {
   if (!Array.isArray(player?.inventory) || player.healTicks > 0) return null;
@@ -103,7 +176,7 @@ export function mountInventoryHotbar(host, onActions, { label = 'Four inventory 
     const drop = document.createElement('button'); drop.type = 'button'; drop.className = 'inventory-drop'; drop.dataset.inventoryDrop = String(index + 1); drop.textContent = '↓';
     card.append(select, drop); host.append(card); records.push({ card, select, path, name, detail, drop });
   }
-  const hint = document.createElement('span'); hint.className = 'inventory-hint'; hint.textContent = '1–4 EQUIP · X DROP'; host.append(hint);
+  const hint = document.createElement('span'); hint.className = 'inventory-hint'; hint.textContent = '1–4 / WHEEL · X DROP'; host.append(hint);
   let signature = '', enabled = false;
   const click = event => {
     const drop = event.target.closest?.('[data-inventory-drop]'), select = event.target.closest?.('[data-inventory-slot]');

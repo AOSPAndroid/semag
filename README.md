@@ -152,6 +152,7 @@ Voxel Breach:
 | Aim down sights with a gun | Hold right mouse button; aiming reduces mouse speed |
 | Committed knife thrust / timed melee parry | Press right mouse button with a blade; release before another action |
 | Select inventory slot | 1–4 (physical keys work on French layouts), or click/tap a slot |
+| Cycle carried weapons | Mouse wheel up: previous; down: next. Wraps through guns and blades, skipping empty and supply slots |
 | Drop selected item | X, or the drop button beside an inventory slot |
 | Quick blade / gun swap; cycle items without a blade | V |
 | Throw frag grenade | Q (A in ZQSD); G still works |
@@ -183,6 +184,8 @@ Dual pistols alternate one shot between hands per click, and dual SMGs alternate
 Right-click with a knife commits a stronger, narrower thrust: 60 base damage, 1.75 metres of reach and a longer recovery than the quick left-click stab. Right-click with a sword, katana, axe or dual tonfas raises a timed directional parry. Face an incoming melee attack and commit just before contact; a successful guard blocks one contact, with a visible clash and optional sound. Parries cost sprint stamina, have weapon-specific timing and cooldowns, and cannot block bullets, grenades or the storm. Attack direction locks when you commit. Holding right-click never repeats melee actions, and switching or dropping a weapon preserves its cooldown. These actions share the same rules across Breach, Last Stand, Royale and practice. Touch players see **STAB** or **PARRY** on the existing aim button.
 
 Gun aiming smoothly lowers mouse sensitivity as the sights settle. At full aim, a carbine turns at about 42% of hip-fire mouse speed; magnified marksman and sniper sights turn more slowly. The same scaling applies to captured mouse look, right-button dragging and touch look. Selecting a blade restores normal look speed.
+
+Use the **mouse wheel** during play to cycle carried guns and blades: scroll up for the previous weapon and down for the next. Cycling wraps through the four inventory slots and skips empty slots, potions and grenades. Number keys and the hotbar still select any carried item. This works in Breach, Last Stand, Royale and practice; menus and paused games keep normal page scrolling.
 
 Confirmed enemy head damage briefly turns the crosshair shiny gold with a tight sparkle pulse. Body and leg damage use a bloody-orange outward pulse. Scoped sights receive the same feedback. One shell or swing produces one pulse, even if several pellets hit; misses, cover, friendly contacts and self damage do not flash a successful hit. The cue expires quickly, clears when controls are paused or a life changes, and retains distinct colors and shapes when reduced motion is enabled.
 
