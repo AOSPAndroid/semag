@@ -320,17 +320,17 @@ test('ADS and utility controls compose independent sources and clear every new a
   for (const action of ['aim', 'swap', 'grenade', 'heal']) assert.equal(neutralInput()[action], false);
 });
 
-test('aim sensitivity follows the finite camera zoom throughout ADS and release', () => {
+test('aim sensitivity smoothly adds fine control to weapon zoom throughout ADS and release', () => {
   assert.equal(aimFraction({ aimTicks: Infinity }), 0);
   assert.equal(aimFraction({ aimTicks: -5 }), 0); assert.equal(aimFraction({ aimTicks: 50 }), 1);
   assert.equal(aimLookMultiplier({ weapon: 'carbine', aimTicks: 0 }), 1);
-  assert.equal(aimLookMultiplier({ weapon: 'carbine', aimTicks: 18 }), 54 / 70);
-  assert.equal(aimLookMultiplier({ weapon: 'marksman', aimTicks: 18 }), 40 / 70);
-  assert.ok(Math.abs(aimLookMultiplier({ weapon: 'sniper', aimTicks: 18 }) - 32 / 70) < 1e-12);
+  assert.ok(Math.abs(aimLookMultiplier({ weapon: 'carbine', aimTicks: 18 }) - 54 / 70 * .55) < 1e-12);
+  assert.ok(Math.abs(aimLookMultiplier({ weapon: 'marksman', aimTicks: 18 }) - 40 / 70 * .55) < 1e-12);
+  assert.ok(Math.abs(aimLookMultiplier({ weapon: 'sniper', aimTicks: 18 }) - 32 / 70 * .55) < 1e-12);
   assert.ok(aimLookMultiplier({ weapon: 'sniper', aimTicks: 9 }) < aimLookMultiplier({ weapon: 'marksman', aimTicks: 9 }));
-  assert.equal(aimLookMultiplier({ weapon: 'carbine', aimTicks: 9, aiming: false }), 1 + (54 / 70 - 1) / 2, 'releasing aim keeps look aligned with the still narrowing view');
+  assert.equal(aimLookMultiplier({ weapon: 'carbine', aimTicks: 9, aiming: false }), 1 + (54 / 70 * .55 - 1) / 2, 'releasing aim smoothly restores hip speed with the narrowing view');
   assert.ok(aimLookMultiplier({ weapon: 'marksman', aimTicks: 9 }) < aimLookMultiplier({ weapon: 'carbine', aimTicks: 9 }));
-  assert.equal(aimLookMultiplier({ weapon: 'marksman', aimTicks: 5 }, { ticks: 5, scopedFovRatio: .5 }), .5);
+  assert.ok(Math.abs(aimLookMultiplier({ weapon: 'marksman', aimTicks: 5 }, { ticks: 5, scopedFovRatio: .5 }) - .5 * .55) < 1e-12);
   for (const blocked of [{ slot: 'sword' }, { healing: true }, { healTicks: 20 }, { reloadTicks: 20 }, { grenadeThrowTicks: 10 }, { alive: false }]) {
     assert.equal(aimFraction({ aimTicks: 18, ...blocked }), 0);
     assert.equal(aimLookMultiplier({ weapon: 'marksman', aimTicks: 18, ...blocked }), 1, 'look and scope release whenever the camera returns to hip fire');

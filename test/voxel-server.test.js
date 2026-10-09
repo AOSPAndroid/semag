@@ -238,6 +238,8 @@ test('Voxel unready cancels a six-player countdown and disconnect/rejoin resets 
 test('Voxel requires all six players to accept a rematch and preserves the room mode and map', async t => {
   const game = await host(t), room = await game.make(3, 'depot'), seats = await game.fill(room);
   await readyEveryone(room, seats); advance(game.app, room, 'fight');
+  // Drain the real snapshots before a manual terminal phase can emit its sole reply.
+  await Promise.all(seats.map(({ peer }) => flushPeer(peer)));
   room.state.phase = 'matchEnd';
   const after = seats[0].peer.messages.length;
   seats[0].peer.send({ type: 'rematch' });
@@ -245,6 +247,7 @@ test('Voxel requires all six players to accept a rematch and preserves the room 
   for (let id = 1; id < 5; id++) seats[id].peer.send({ type: 'rematch' });
   await flushPeer(seats[4].peer);
   for (let tick = 0; tick < 400; tick++) game.app.tick();
+  await Promise.all(seats.map(({ peer }) => flushPeer(peer)));
   assert.equal(room.state.phase, 'lobby');
   assert.equal(room.players[5].ready, false);
   const finalAfter = seats[0].peer.messages.length;

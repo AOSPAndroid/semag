@@ -125,7 +125,7 @@ test('intermission permits real movement and E resupply while all combat commitm
   advance(state, 25); player.hp = 100;
   state.loot.push({ id: 100, type: 'potion', kind: 'heal', x: player.x + .5, y: player.y, z: player.z, amount: 1, expiresTick: state.tick + 1000 });
   step(state, [{ interact: true }]); assert.equal(player.hp, 100);assert.equal(player.potions,1); assert.equal(state.loot.some(loot => loot.id === 100), false);
-  step(state, [{ jump: true, aim: true }]); assert.ok(player.y > 0); assert.equal(player.aiming, true);
+  step(state, [{ jump: true, aim: true }]); assert.ok(player.y > 0); assert.equal(player.aiming, false); assert.equal(player.parryTicks, 0); assert.equal(player.meleeTicks, 0);
   advance(state, state.phaseTicks, [{ fire: true, jump: true }]); assert.equal(state.phase, 'fight'); assert.equal(state.horde.wave, 2);
   const shots = player.shots; step(state, [{ fire: true, jump: true }]); assert.equal(player.shots, shots, 'held respite trigger escaped its fence');
   step(state); step(state, [{ fire: true }]); assert.equal(player.shots, shots + 1);

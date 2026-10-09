@@ -159,8 +159,8 @@ test('intermission permits a real carried-potion pickup while combat previews st
   const inventory = { ammo: player.ammo, grenades: player.grenades, potions: player.potions, shots: player.shots };
   const raw = { up: true, aim: true, fire: true, grenade: true, heal: true, reload: true, swap: true, yaw: 0, pitch: .2 }, rawCopy = { ...raw };
   const preview = hordeInputForPhase(raw, state.phase);
-  for (const action of ['fire', 'grenade', 'heal', 'reload', 'swap']) assert.equal(preview[action], false);
-  assert.equal(preview.up, true); assert.equal(preview.aim, true); assert.equal(preview.pitch, .2); assert.deepEqual(raw, rawCopy);
+  for (const action of ['fire', 'aim', 'grenade', 'heal', 'reload', 'swap']) assert.equal(preview[action], false);
+  assert.equal(preview.up, true); assert.equal(preview.pitch, .2); assert.deepEqual(raw, rawCopy);
   const predicted = structuredClone(player);
   for (let tick = 0; tick < 16; tick++) { predictLocalMovement(predicted, preview, state.map, 1, state.players); Horde.step(state, [raw]); }
   assert.ok(player.z < -.1); for (const axis of ['x', 'y', 'z']) assert.ok(Math.abs(player[axis] - predicted[axis]) < 1e-8, 'real regroup movement matches the reused prediction');

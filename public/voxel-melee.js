@@ -13,19 +13,54 @@ export const MELEE_WEAPONS = Object.freeze({
   axe: Object.freeze({ id: 'axe', name: 'Bulwark Axe', label: 'AXE', startupTicks: 28, activeTicks: 12, recoveryTicks: 58, damage: 88, reach: 2.05, arcRadians: .72, speed: 5.1, slashRadius: .26, slashTilt: -.72, pushSpeed: 10, description: 'A heavy committed chop. High impact trades wind-up, recovery and movement speed.' }),
   tonfas: Object.freeze({ id: 'tonfas', name: 'Twin Tonfas', label: 'DUAL TONFAS', startupTicks: 7, activeTicks: 7, recoveryTicks: 18, damage: 24, reach: 1.45, arcRadians: .58, speed: 6.15, dualWield: true, slashRadius: .20, slashTilt: -.20, pushSpeed: 3.3, description: 'Alternate short, fast strikes with both hands. Close distance carefully; each press is one blow.' }),
 });
+/** A precise RMB commitment; the quick knife profile remains unchanged. */
+export const KNIFE_SECONDARY = Object.freeze({ ...KNIFE, startupTicks: 20, activeTicks: 6, recoveryTicks: 54, damage: 60, reach: 1.75, slashRadius: .10, pushSpeed: 3.2 });
+const guard = (startupTicks, activeTicks, recoveryTicks, cooldownTicks, staminaCost, halfAngle) => Object.freeze({ startupTicks, activeTicks, recoveryTicks, cooldownTicks, staminaCost, halfAngle });
+export const PARRY_PROFILES = Object.freeze({ sword: guard(4, 12, 24, 72, 12, .75), katana: guard(4, 12, 24, 72, 12, .75), axe: guard(7, 8, 38, 96, 16, .6), tonfas: guard(3, 14, 22, 66, 10, .8) });
 export const MELEE_IDS = Object.freeze(Object.keys(MELEE_WEAPONS));
 export const MELEE_WEAPON_IDS = MELEE_IDS;
 export const meleeWeaponId = playerOrId => {
   const id = typeof playerOrId === 'string' ? playerOrId : playerOrId?.meleeWeapon;
   return typeof id === 'string' && Object.hasOwn(MELEE_WEAPONS, id) ? id : 'sword';
 };
-export const meleeProfile = playerOrId => MELEE_WEAPONS[meleeWeaponId(playerOrId)];
+export const meleeProfile = playerOrId => meleeWeaponId(playerOrId) === 'knife' && playerOrId?.meleeAction === 'secondary' ? KNIFE_SECONDARY : MELEE_WEAPONS[meleeWeaponId(playerOrId)];
 export const meleeLabel = playerOrId => meleeProfile(playerOrId).label;
 export const meleeHand = (playerOrId, swingIndex = 1) => meleeProfile(playerOrId).dualWield && Math.max(1, Math.floor(Number.isFinite(swingIndex) ? swingIndex : 1)) % 2 === 0 ? 1 : 0;
+export const parryProfile = playerOrId => PARRY_PROFILES[meleeWeaponId(playerOrId)] || null;
 
 const finite = (value, fallback = 0) => Number.isFinite(value) ? value : fallback;
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 const point = (x, y, z) => ({ x, y, z });
+
+/** Cancel transient defense; genuine physical-item and global recovery survive. */
+export function resetMeleeDefense(player, { clearCooldown = false, blockAim = player.meleeAimBlocked === true } = {}) {
+  player.parryTicks = 0; player.parryYaw = 0; player.parryPitch = 0; player.parryStartTick = 0; player.parryConsumed = false; player.meleeAction = 'primary'; player.meleeAimBlocked = blockAim === true;
+  if (clearCooldown) {
+    player.parryCooldown = player.meleeSecondaryCooldown = 0;
+    for (const item of player.inventory || []) if (item?.kind === 'melee') item.parryCooldown = 0;
+  }
+  return player;
+}
+
+/** Accepted guard timers are shared with world/first-person presentation. */
+export function parryPhase(player) {
+  const profile = parryProfile(player), total = profile ? profile.startupTicks + profile.activeTicks + profile.recoveryTicks : 0;
+  const remaining = clamp(finite(player?.parryTicks), 0, total);
+  if (!remaining || !profile) return { phase: 'idle', progress: 0 };
+  if (remaining > profile.activeTicks + profile.recoveryTicks) return { phase: 'startup', progress: (total - remaining) / profile.startupTicks };
+  if (remaining > profile.recoveryTicks && !player.parryConsumed) return { phase: 'active', progress: (profile.activeTicks + profile.recoveryTicks - remaining) / profile.activeTicks };
+  return { phase: 'recovery', progress: clamp((profile.recoveryTicks - remaining) / profile.recoveryTicks, 0, 1) };
+}
+
+/** Face the true attack origin using the committed three-dimensional guard. */
+export function parryFacesOrigin(player, origin) {
+  const profile = parryProfile(player), pivot = meleeSlashOrigin(player);
+  if (!profile || ![origin?.x, origin?.y, origin?.z].every(Number.isFinite)) return false;
+  const dx = origin.x - pivot.x, dy = origin.y - pivot.y, dz = origin.z - pivot.z, distance = Math.hypot(dx, dy, dz);
+  if (distance <= 1e-8) return false;
+  const yaw = finite(player.parryYaw), pitch = clamp(finite(player.parryPitch), -1.35, 1.35), cp = Math.cos(pitch);
+  return (dx * Math.sin(yaw) * cp + dy * Math.sin(pitch) - dz * Math.cos(yaw) * cp) / distance >= Math.cos(profile.halfAngle);
+}
 
 /** The committed blade pivots at the same physical chest height in every mode. */
 export function meleeSlashOrigin(player) {

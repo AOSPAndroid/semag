@@ -69,6 +69,7 @@ test('a rapid jump reaches real movement once while ordinary movement remains he
 test('held auto fire and ADS stay continuous after the first queued press', () => {
   const state = fight(), queue = createPracticeInputQueue(), player = state.players[0];
   queue.press('fire');
+  queue.press('aim', { yaw: 0, pitch: 0 });
   for (let index = 0; index < 36; index++) {
     const input = tick(state, queue, { fire: true, aim: true, up: true });
     assert.equal(input.fire, true); assert.equal(input.aim, true); assert.equal(input.up, true);
@@ -298,4 +299,66 @@ test('render previews leave cancellable token ownership and release fences uncha
   controls.end(1, true); assert.equal(controls.queue.cancel(jump.token), false, 'only the cancellation consumed ownership');
   assert.equal(controls.queue.inspect().fire, 1);
   tick(state, controls.queue, controls.held()); assert.equal(player.y, 0); assert.equal(player.shots, 1);
+});
+
+test('a quick RMB press keeps its captured direction and only one sampled edge across high refresh previews', () => {
+  const queue = createPracticeInputQueue(), token = queue.press('aim', { yaw: .7, pitch: -.25 }); queue.release('aim');
+  const latest = { ...emptyInput({ yaw: 2.1, pitch: .4 }), up: true }, counts = queue.inspect();
+  for (const hz of [60, 144, 240]) for (let frame = 0; frame < hz; frame++) {
+    const preview = queue.preview(latest); assert.equal(preview.aim, true); assert.equal(preview.yaw, .7); assert.equal(preview.pitch, -.25); assert.equal(preview.up, true);
+  }
+  assert.deepEqual(queue.inspect(), counts); assert.ok(Object.isFrozen(token));
+  const accepted = queue.sample(latest); assert.equal(accepted.aim, true); assert.equal(accepted.yaw, .7); assert.equal(accepted.pitch, -.25);
+  assert.equal(queue.sample(latest).aim, false); assert.equal(queue.cancel(token), false);
+});
+
+test('cancelled RMB touch, held aliases and bounded rapid repeats retain real token ownership', () => {
+  const controls = touchControls();
+  controls.down(1, 'aim'); controls.end(1, true); assert.equal(controls.queue.inspect().aim, 0); assert.equal(controls.queue.sample(controls.held()).aim, false);
+  controls.down(2, 'aim'); controls.mouse.aim = true; controls.end(2, true);
+  assert.equal(controls.queue.inspect().aim, 1); assert.equal(controls.queue.sample(controls.held()).aim, true);
+  for (let tick = 0; tick < 100; tick++) assert.equal(controls.queue.sample(controls.held()).aim, true, 'an ADS hold stays continuous without generating queued repeats');
+  controls.mouse.aim = false; controls.queue.release('aim'); controls.queue.sample(controls.held());
+  const tokens = Array.from({ length: 8 }, (_, index) => { const token = controls.queue.press('aim', { yaw: index / 10, pitch: 0 }); controls.queue.release('aim'); return token; });
+  assert.equal(controls.queue.press('aim'), null); assert.equal(controls.queue.inspect().aim, 8); assert.equal(controls.queue.cancel({ action: 'aim' }), false);
+  assert.equal(controls.queue.cancel(tokens[3]), true); assert.equal(controls.queue.inspect().aim, 7);
+  const directions = [];
+  for (let tick = 0; tick < 16; tick++) { const input = controls.queue.sample(controls.held()); if (input.aim) directions.push(input.yaw); }
+  assert.deepEqual(directions, [0, .1, .2, .4, .5, .6, .7]);
+});
+
+test('inventory changes and pause/countdown resets discard stale RMB taps and fence a held secondary', () => {
+  for (const action of ['swap', 'slot1', 'slot2', 'slot3', 'slot4', 'drop']) {
+    const queue = createPracticeInputQueue(), stale = queue.press('aim', { yaw: .4 });
+    queue.press(action, { aim: true }); assert.equal(queue.inspect().aim, 0); assert.equal(queue.cancel(stale), false);
+    assert.equal(queue.sample({ aim: true }).aim, false); assert.equal(queue.press('aim'), null);
+    queue.release('aim'); assert.ok(queue.press('aim', { yaw: .9 })); assert.equal(queue.sample({ aim: true }).aim, true);
+  }
+  const queue = createPracticeInputQueue(), stale = queue.press('aim', { yaw: .4 });
+  queue.reset({ held: { aim: true }, neutral: true }); assert.equal(queue.cancel(stale), false);
+  for (let frame = 0; frame < 240; frame++) assert.equal(queue.preview({ aim: true }).aim, false);
+  queue.sample({ aim: true }); assert.equal(queue.sample({ aim: true }).aim, false);
+  queue.release('aim'); queue.press('aim'); assert.equal(queue.sample({ aim: true }).aim, true);
+});
+
+test('a released practice RMB tap starts one real heavy knife stab at its press direction', () => {
+  const state = fight(), queue = createPracticeInputQueue(), player = state.players[0];
+  shortPress(queue, 'swap'); tick(state, queue); tick(state, queue); assert.equal(player.meleeWeapon, 'knife'); assert.equal(player.slot, 'sword');
+  const before = player.meleeIndex;
+  queue.press('aim', { yaw: .7, pitch: -.25 }); queue.release('aim'); tick(state, queue, { yaw: 2.1, pitch: .4 });
+  assert.equal(player.meleeAction, 'secondary'); assert.equal(player.meleeTicks, 80); assert.equal(player.meleeIndex, before + 1); assert.equal(player.meleeYaw, .7); assert.equal(player.meleePitch, -.25);
+  for (let step = 0; step < 100; step++) tick(state, queue, { aim: true, yaw: 2.1, pitch: .4 });
+  assert.equal(player.meleeIndex, before + 1, 'holding RMB through recovery cannot repeat the committed stab');
+});
+
+test('a practice RMB tap with a collected katana starts one real stamina-funded guard', () => {
+  const state = fight(), queue = createPracticeInputQueue(), player = state.players[0];
+  shortPress(queue, 'swap'); tick(state, queue); tick(state, queue);
+  const loot = { id: ++state.lootId, kind: 'melee', weapon: 'katana', x: player.x, y: player.y, z: player.z };
+  state.loot.push(loot); assert.equal(pickupCombatLoot(state, player, loot), true); assert.equal(player.meleeWeapon, 'katana');
+  const stamina = player.stamina;
+  queue.press('aim', { yaw: -.6, pitch: .2 }); queue.release('aim'); tick(state, queue);
+  assert.equal(player.parryIndex, 1); assert.equal(player.parryTicks, 40); assert.equal(player.stamina, stamina - 12); assert.equal(player.parryYaw, -.6); assert.equal(player.parryPitch, .2);
+  for (let step = 0; step < 100; step++) tick(state, queue, { aim: true });
+  assert.equal(player.parryIndex, 1, 'a held guard remains a single commitment after its physical cooldown');
 });

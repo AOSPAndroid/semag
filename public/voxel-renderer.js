@@ -1,7 +1,7 @@
 import { MAPS, ADS, HEAL, WORLD } from './voxel-engine.js';
 import { WEAPONS, weaponAimFovRatio } from './voxel-weapons.js';
 import { grenadeCapacity } from './voxel-ordnance.js';
-import { MELEE_WEAPONS, meleeProfile, meleeWeaponId, meleeSlashOrigin, meleeSlashGeometry, meleeSlashPhase } from './voxel-melee.js';
+import { MELEE_WEAPONS, meleeProfile, meleeWeaponId, meleeSlashOrigin, meleeSlashGeometry, meleeSlashPhase, parryPhase } from './voxel-melee.js';
 import { frameAlpha } from './display-timing.js';
 import { createPlayerAnimationPresenter, playerAnimationPose, weaponReloadPose, createWeaponReloadPresenter } from './voxel-player-animation.js';
 import { createFirstPersonMotionPresenter, createWeaponShotPresenter, weaponShotPose, weaponCyclePose } from './voxel-first-person-motion.js';
@@ -80,12 +80,23 @@ function aimProgress(player) {
 
 export function meleeMotion(player) {
   const profile = meleeProfile(player), id = meleeWeaponId(player), knife = id === 'knife', hand = id === 'tonfas' && player.meleeHand === 1 ? -1 : 1;
+  const secondary = knife && player.meleeAction === 'secondary';
   const phase = meleeSlashPhase(player);
   const total = profile.startupTicks + profile.activeTicks + profile.recoveryTicks;
   const elapsed = total - clamp(finite(player.meleeTicks), 0, total);
   const idleYaw = (knife ? -.10 : id === 'axe' ? -.13 : id === 'tonfas' ? -.08 : -.18) * hand;
   const idlePitch = knife ? .22 : id === 'axe' ? .60 : id === 'tonfas' ? .12 : .48;
-  if (phase.phase === 'idle') return { yaw: idleYaw, pitch: idlePitch, extension: 0, active: false, phase: 'idle', progress: 0, grip: 0 };
+  const defense = player.slot === 'sword' && player.alive !== false && !player.monsterType && phase.phase === 'idle' ? parryPhase(player) : { phase: 'idle' };
+  if (defense.phase !== 'idle') {
+    const progress = smooth(defense.progress), weight = defense.phase === 'startup' ? progress : defense.phase === 'active' ? 1 : 1 - progress;
+    // The blade crosses the committed frontal guard. Paired batons meet in
+    // a raised V; the visible hold ends with the real short defense timer.
+    const guardYaw = (id === 'tonfas' ? -.70 : id === 'axe' ? -.80 : -.94) * hand;
+    const guardPitch = id === 'tonfas' ? .82 : id === 'axe' ? .70 : .58;
+    return { yaw: lerp(idleYaw, guardYaw, weight), pitch: lerp(idlePitch, guardPitch, weight), extension: .03 * weight, active: false, phase: `parry-${defense.phase}`, progress: defense.progress, grip: weight, guarding: true, guardActive: defense.phase === 'active', action: 'parry' };
+  }
+  const action = secondary ? 'secondary' : 'primary';
+  if (phase.phase === 'idle') return { yaw: idleYaw, pitch: idlePitch, extension: 0, active: false, phase: 'idle', progress: 0, grip: 0, action };
   const pathProgress = phase.phase === 'startup' ? 0 : phase.phase === 'active' ? phase.progress : 1;
   const sample = meleeSlashGeometry(player, { from: pathProgress, to: pathProgress }).samples[0];
   const yaw = Math.atan2(sample.direction.x, -sample.direction.z), pitch = Math.asin(clamp(sample.direction.y, -1, 1));
@@ -96,13 +107,14 @@ export function meleeMotion(player) {
   if (phase.phase === 'startup') {
     // A heavy blade loads slowly, with a distinct pull back before its cut.
     const progress = smooth(elapsed / profile.startupTicks), weight = id === 'axe' ? progress ** 1.3 : progress;
-    return { yaw: lerp(idleYaw, relativeYaw, weight), pitch: lerp(idlePitch, relativePitch, weight), extension: -progress * (knife ? .10 : id === 'axe' ? .13 : .07), active: false, phase: 'startup', progress, grip: weight };
+    const extension = secondary ? -.18 * progress + .88 * smooth((progress - .72) / .28) : -progress * (knife ? .10 : id === 'axe' ? .13 : .07);
+    return { yaw: lerp(idleYaw, relativeYaw, weight), pitch: lerp(idlePitch, relativePitch, weight), extension, active: false, phase: 'startup', progress, grip: weight, action };
   }
   if (phase.phase === 'active') {
-    return { yaw: relativeYaw, pitch: relativePitch, extension: knife ? .48 - phase.progress * .12 : Math.sin(phase.progress * Math.PI) * (id === 'tonfas' ? .19 : .28), active: true, phase: 'active', progress: phase.progress, grip: 1 };
+    return { yaw: relativeYaw, pitch: relativePitch, extension: knife ? (secondary ? .70 : .48) - phase.progress * (secondary ? .10 : .12) : Math.sin(phase.progress * Math.PI) * (id === 'tonfas' ? .19 : .28), active: true, phase: 'active', progress: phase.progress, grip: 1, action };
   }
   const progress = smooth((elapsed - profile.startupTicks - profile.activeTicks) / profile.recoveryTicks);
-  return { yaw: lerp(relativeYaw, idleYaw, progress), pitch: lerp(relativePitch, idlePitch, progress), extension: knife ? .36 * (1 - progress) : 0, active: false, phase: 'recovery', progress, grip: 1 - progress };
+  return { yaw: lerp(relativeYaw, idleYaw, progress), pitch: lerp(relativePitch, idlePitch, progress), extension: knife ? (secondary ? .60 : .36) * (1 - progress) : 0, active: false, phase: 'recovery', progress, grip: 1 - progress, action };
 }
 
 function rgba(value, alpha = 1) {
@@ -2375,18 +2387,27 @@ const meleeLength = player => ({ knife: .48, sword: 1.24, katana: 1.42, axe: 1.0
 const meleePadding = player => ({ knife: .08, sword: .18, katana: .16, axe: .32, tonfas: .13 })[meleeWeaponId(player)] || .18;
 const meleeTipLength = player => ({ knife: .47, sword: 1.14, katana: 1.405, axe: .991, tonfas: .736 })[meleeWeaponId(player)] || 1.14;
 
+function meleeCommittedAim(player, motion, yaw = finite(player.yaw), pitch = finite(player.pitch)) {
+  if (motion.guarding) return { yaw: finite(player.parryYaw, yaw), pitch: clamp(finite(player.parryPitch, pitch), -1.35, 1.35) };
+  return finite(player.meleeTicks) > 0 ? { yaw: finite(player.meleeYaw, yaw), pitch: finite(player.meleePitch, pitch) } : { yaw, pitch };
+}
+
 /** The active world blade shares its pivot, orientation and tip with damage. */
 export function meleeWorldPose(player, motion = meleeMotion(player)) {
   const id = meleeWeaponId(player), profile = meleeProfile(player), knife = id === 'knife';
-  const locked = finite(player.meleeTicks) > 0;
-  const yaw = (locked ? finite(player.meleeYaw, finite(player.yaw)) : finite(player.yaw)) + motion.yaw;
-  const pitch = (locked ? finite(player.meleePitch, finite(player.pitch)) : finite(player.pitch)) + motion.pitch;
+  const aim = meleeCommittedAim(player, motion), yaw = aim.yaw + motion.yaw, pitch = aim.pitch + motion.pitch;
   const direction = rotate([0, 0, -1], yaw, pitch);
   const origin = meleeSlashOrigin(player), outer = profile.reach - profile.slashRadius;
   const activeScale = knife ? 1.05 : profile.dualWield ? 1.15 : (outer - .18) / meleeTipLength(player);
-  const gripDistance = knife || profile.dualWield ? outer - meleeTipLength(player) * activeScale : .18;
-  const ready = rotate([profile.dualWield && player.meleeHand === 1 ? -.21 : .21, player.crouching ? .82 : 1.24, -.24 - Math.max(0, motion.extension) * .25], locked ? finite(player.meleeYaw, finite(player.yaw)) : finite(player.yaw));
+  let gripDistance = knife || profile.dualWield ? outer - meleeTipLength(player) * activeScale : .18;
+  if (motion.action === 'secondary' && motion.phase === 'startup') gripDistance = .16 + (gripDistance - .16) * smooth((motion.progress - .72) / .28);
+  const side = profile.dualWield && player.meleeHand === 1 ? -1 : 1;
+  const ready = rotate([side * .21, player.crouching ? .82 : 1.24, -.24 - Math.max(0, motion.extension) * .25], aim.yaw);
   const grip = clamp(finite(motion.grip), 0, 1);
+  if (motion.guarding) {
+    const guard = rotate([side * .19, -.07, -.34], aim.yaw, aim.pitch);
+    return { x: lerp(finite(player.x) + ready[0], origin.x + guard[0], grip), y: lerp(finite(player.y) + ready[1], origin.y + guard[1], grip), z: lerp(finite(player.z) + ready[2], origin.z + guard[2], grip), yaw, pitch, scale: lerp(profile.dualWield ? 1.15 : 1.35, id === 'axe' ? 1.08 : 1.15, grip) };
+  }
   return {
     x: lerp(finite(player.x) + ready[0], origin.x + direction[0] * gripDistance, grip),
     y: lerp(finite(player.y) + ready[1], origin.y + direction[1] * gripDistance, grip),
@@ -2404,8 +2425,8 @@ function meleeWorldCoverLimit(player, pose, colliders) {
 }
 
 function meleeViewAngles(player, motion, yaw, pitch, roll) {
-  const locked = finite(player.meleeTicks) > 0;
-  const direction = rotate([0, 0, -1], (locked ? finite(player.meleeYaw, finite(player.yaw)) : yaw) + motion.yaw, (locked ? finite(player.meleePitch, finite(player.pitch)) : pitch) + motion.pitch);
+  const aim = meleeCommittedAim(player, motion, yaw, pitch);
+  const direction = rotate([0, 0, -1], aim.yaw + motion.yaw, aim.pitch + motion.pitch);
   const local = rotate(rotate(rotate(direction, -yaw), 0, -pitch), 0, 0, -roll);
   return { yaw: Math.atan2(local[0], -local[2]), pitch: Math.asin(clamp(local[1], -1, 1)) };
 }
@@ -3195,16 +3216,18 @@ export function operativePose(player, animation = playerAnimationPose(player, 0)
       hand[0] = side * (melee ? .185 : .128); hand[1] -= handReload.weight * .085; hand[2] = (melee ? -.22 : -.140) + armSwing * .3 + handReload.weight * .035; elbow[0] = side * .202;
     }
     if (sprint > 0) { hand[1] -= sprint * .040; hand[2] += sprint * .018; elbow[2] += sprint * .016; }
-    if (melee && (dual ? index === (player.meleeHand === 1 ? 0 : 1) : side > 0)) {
+    const posedBladeArm = melee && (dual ? swing.guarding || index === (player.meleeHand === 1 ? 0 : 1) : side > 0);
+    if (posedBladeArm) {
       if (swing.phase !== 'idle') {
-        const grip = meleeWorldPose(player, swing);
+        const heldPlayer = dual && swing.guarding ? { ...player, meleeHand: side > 0 ? 0 : 1 } : player;
+        const grip = meleeWorldPose(heldPlayer, heldPlayer === player ? swing : meleeMotion(heldPlayer));
         const local = rotate([grip.x - finite(player.x), grip.y - finite(player.y) - .025, grip.z - finite(player.z)], -finite(player.yaw));
         hand[0] = local[0]; hand[1] = local[1]; hand[2] = local[2];
         elbow[0] = lerp(shoulder[0], hand[0], .55); elbow[1] = lerp(shoulder[1], hand[1], .48) - .09; elbow[2] = hand[2] * .48;
       } else { hand[0] += Math.sin(swing.yaw) * .028; hand[1] += -.035 + Math.sin(-swing.pitch) * .035; elbow[2] -= .025; }
     }
     if (throwLift && side < 0) { hand[1] += throwLift * (1 - crouch * .65); hand[2] += .025; elbow[1] += .055 * (1 - crouch * .6); }
-    if (!(melee && swing.phase !== 'idle' && (dual ? index === (player.meleeHand === 1 ? 0 : 1) : side > 0))) hand[1] = Math.min((player.crouching ? .83 : 1.48) - .044, hand[1]);
+    if (!(posedBladeArm && swing.phase !== 'idle')) hand[1] = Math.min((player.crouching ? .83 : 1.48) - .044, hand[1]);
     return { shoulder, elbow, hand };
   });
   return { phase, crouch, airborne, stride, legs, arms, torso: { hipY, chestY, bob }, head: { base: player.crouching ? .83 : 1.48 } };
@@ -3328,14 +3351,15 @@ function playerMesh(mesh, player, map, time, allied, freeForAll = false, animati
   } else if (sword && meleeProfile(player).dualWield) {
     for (const hand of [0, 1]) {
       const arm = joints.arms[hand === 0 ? 1 : 0], offset = rotate(arm.hand, yaw);
-      const swing = meleeMotion(hand === (player.meleeHand === 1 ? 1 : 0) ? player : { ...player, meleeTicks: 0, meleeHand: hand });
-      const handPose = swing.phase !== 'idle' ? meleeWorldPose(player, swing) : { x: pose.x + offset[0], y: pose.y + offset[1] + .085, z: pose.z + offset[2] - .016, yaw: heldYaw + swing.yaw, pitch: heldPitch + swing.pitch, scale: 1.15 };
+      const heldPlayer = motion.guarding ? { ...player, meleeHand: hand } : hand === (player.meleeHand === 1 ? 1 : 0) ? player : { ...player, meleeTicks: 0, meleeHand: hand };
+      const swing = meleeMotion(heldPlayer);
+      const handPose = swing.phase !== 'idle' ? meleeWorldPose(heldPlayer, swing) : { x: pose.x + offset[0], y: pose.y + offset[1] + .085, z: pose.z + offset[2] - .016, yaw: heldYaw + swing.yaw, pitch: heldPitch + swing.pitch, scale: 1.15 };
       const limit = meleeWorldCoverLimit(player, handPose, map.colliders || []);
-      meleeParts(mesh, player, handPose, { hand, limit, active: swing.active });
+      meleeParts(mesh, player, handPose, { hand, limit, active: swing.active || swing.guardActive });
       mesh.box(-.043, -.142, -.048, .086, .108, .11, art.skin, handPose);
     }
   } else if (sword) {
-    meleeParts(mesh, player, gunPose, { limit, active: motion.active });
+    meleeParts(mesh, player, gunPose, { limit, active: motion.active || motion.guardActive });
     mesh.box(-.047, -.080, -.025, .094, .110, .160, art.skin, gunPose);
     mesh.box(-.060, -.075, .15, .12, .15, .27, uniform, gunPose);
   } else if (!empty && gunHeld(player) && WEAPONS[player.weapon]?.dualWield) {
@@ -3516,6 +3540,14 @@ export class VoxelRenderer {
         this.particles.push(...impactParticles(event, origin, [-finite(event.nx), -finite(event.ny), -finite(event.nz)], map, time, key));
       } else if (event.type === 'damage') {
         this.particles.push(...bloodParticles(event, state, time, key));
+      } else if (event.type === 'meleeParry' && [event.x, event.y, event.z].every(Number.isFinite)) {
+        // A confirmed blade contact emits a tiny depth-tested clash. Guard
+        // startup/holding never manufactures a contact, flash or camera kick.
+        const origin = [event.x, event.y, event.z];
+        for (let i = 0; i < 4; i++) {
+          const angle = i * 2.39996 + hash(key) % 7;
+          this.particles.push({ origin, born: time, vx: Math.sin(angle) * .55, vy: .32 + i * .055, vz: Math.cos(angle) * .55, color: i % 2 ? '#e8be78' : '#d9eee5', life: 100 + i * 13, gravity: 3, cover: true, radius: .22, size: .012, material: 'parry', shrink: true });
+        }
       } else if (event.type === 'reload' && event.playerId === localId) this.localReload = { born: time, weapon: event.weapon };
       else if (event.type === 'grenadeBounce' || event.type === 'meleeHit' || event.type === 'healComplete') {
         const origin = [finite(event.x), finite(event.y, .2), finite(event.z)], heal = event.type === 'healComplete';
@@ -3599,7 +3631,7 @@ export class VoxelRenderer {
       const fallback = playerAnimationPose(player, time / 1000);
       motion = { weaponX: Math.sin(fallback.phase) * .009 * fallback.stride, weaponY: -(1 - Math.cos(fallback.phase * 2)) * .004 * fallback.stride };
     }
-    this.reloadMotion = null;
+    this.reloadMotion = null; this.meleePose = null;
     const aim = aimProgress(player);
     const age = this.presentShots ? this.presentShots.age(player.weapon, time) : this.localShot?.weapon === player.weapon ? Math.max(0, time - this.localShot.born) : Infinity;
     const effects = shotEffect(player.weapon), firing = gunHeld(player) ? (this.presentShots ? this.presentShots.sample(player.weapon, time, aim) : weaponShotPose(player.weapon, age, aim)) : weaponShotPose(player.weapon, Infinity, 0);
@@ -3671,24 +3703,25 @@ export class VoxelRenderer {
     }
     if (player.slot === 'sword') {
       const motion = meleeMotion(player), knife = meleeWeaponId(player) === 'knife';
+      this.meleePose = { weapon: meleeWeaponId(player), ...motion };
       // Convert the locked world direction into the current camera basis.
       // Looking away cannot rotate the committed blade or its real trail.
       if (meleeProfile(player).dualWield) {
         for (const hand of [0, 1]) {
           const side = hand === 0 ? 1 : -1, activeHand = hand === (player.meleeHand === 1 ? 1 : 0);
-          const swing = activeHand ? motion : meleeMotion({ ...player, meleeTicks: 0, meleeHand: hand });
+          const swing = motion.guarding ? meleeMotion({ ...player, meleeHand: hand }) : activeHand ? motion : meleeMotion({ ...player, meleeTicks: 0, meleeHand: hand });
           const angles = meleeViewAngles(player, swing, yaw, pitch, viewRoll);
-          const pose = { x: side * .245 + this.swayX * .5 + Math.sin(swing.yaw) * .055 * swing.grip, y: -.285 + finite(this.firstPersonMotion?.weaponY) - Math.sin(swing.pitch) * .035 * swing.grip, z: -.43 - swing.extension * .5, ...angles, scale: .90 };
+          const pose = { x: side * (.245 - (swing.guarding ? swing.grip * .035 : 0)) + this.swayX * .5 + Math.sin(swing.yaw) * .055 * swing.grip, y: -.285 + (swing.guarding ? swing.grip * .13 : 0) + finite(this.firstPersonMotion?.weaponY) - Math.sin(swing.pitch) * .035 * swing.grip, z: -.43 - swing.extension * .5, ...angles, scale: .90 };
           const limit = coverLimit(pose, meleeLength(player), meleePadding(player) * pose.scale);
-          meleeParts(mesh, player, pose, { hand, limit, active: swing.active });
+          meleeParts(mesh, player, pose, { hand, limit, active: swing.active || swing.guardActive });
           glove(pose, 0, -.105, -.014, hand === 0 ? 'blade' : 'support', limit);
         }
         return mesh.array;
       }
       const angles = meleeViewAngles(player, motion, yaw, pitch, viewRoll);
-      const pose = { x: (knife ? .22 : .27) + this.swayX * .5 + Math.sin(motion.yaw) * (knife ? .03 : .12) * motion.grip, y: (knife ? -.28 : -.32) + finite(this.firstPersonMotion?.weaponY) - Math.sin(motion.pitch) * .06 * motion.grip, z: -.42 - motion.extension * (knife ? .70 : .25), ...angles, scale: .90 };
+      const pose = { x: (knife ? .22 - (motion.action === 'secondary' ? .10 * motion.grip : 0) : .27) + this.swayX * .5 + Math.sin(motion.yaw) * (knife ? .03 : .12) * motion.grip, y: (knife ? -.28 : -.32) + (motion.guarding ? .18 * motion.grip : motion.action === 'secondary' ? .055 * motion.grip : 0) + finite(this.firstPersonMotion?.weaponY) - Math.sin(motion.pitch) * .06 * motion.grip, z: -.42 - motion.extension * (knife ? .70 : .25), ...angles, scale: .90 };
       const limit = coverLimit(pose, meleeLength(player), meleePadding(player) * pose.scale);
-      meleeParts(mesh, player, pose, { limit, active: motion.active });
+      meleeParts(mesh, player, pose, { limit, active: motion.active || motion.guardActive });
       glove(pose, .003, -.057, knife ? .071 : .087, 'blade', limit);
       return mesh.array;
     }
@@ -3958,7 +3991,7 @@ export class VoxelRenderer {
   get stats() {
     const loot = this.presentLoot?.getStats(), warnings = this.presentWarnings?.getStats();
     const humanAnimation = Object.freeze({ cachedPlayers: this.presentHumans?.size || 0, poses: Object.freeze([...this.humanPoses].map(([id, { animation, joints }]) => Object.freeze({ id, phase: animation.phase, stride: animation.stride, speed: animation.speed, sprint: animation.sprint, forward: animation.forward, strafe: animation.strafe, crouch: animation.crouch, airborne: animation.airborne, jump: animation.jump, land: animation.land, bodyBob: animation.bodyBob, knees: Object.freeze(joints.legs.map(leg => Object.freeze([...leg.knee]))), feet: Object.freeze(joints.legs.map(leg => Object.freeze([...leg.foot]))) }))) });
-    const firstPerson = this.firstPersonMotion ? Object.freeze({ ...this.firstPersonMotion, eye: Object.freeze([...this.firstPersonMotion.eye]), shot: Object.freeze({ ...this.shotMotion }), reload: this.reloadMotion ? Object.freeze({ ...this.reloadMotion, hands: Object.freeze(this.reloadMotion.hands.map(hand => Object.freeze({ ...hand }))) }) : null, ...this.presentShots.getStats() }) : null;
+    const firstPerson = this.firstPersonMotion ? Object.freeze({ ...this.firstPersonMotion, eye: Object.freeze([...this.firstPersonMotion.eye]), shot: Object.freeze({ ...this.shotMotion }), melee: this.meleePose ? Object.freeze({ ...this.meleePose }) : null, reload: this.reloadMotion ? Object.freeze({ ...this.reloadMotion, hands: Object.freeze(this.reloadMotion.hands.map(hand => Object.freeze({ ...hand }))) }) : null, ...this.presentShots.getStats() }) : null;
     return Object.freeze({ mapId: this.mapId, mapVertices: this._mapVertices, cachedMaps: this.mapCache.size, drawCalls: this._frameDrawCalls, dynamicVertices: this._frameDynamicVertices, lootItems: this._lootItems, stormVertices: this._stormVertices, spawnWarnings: this._spawnWarnings || 0, meleeTrailVertices: this._meleeTrailVertices || 0, meleeTrailActors: this._meleeTrailActors || 0, cachedSpawnWarnings: warnings?.cachedItems || 0, spawnWarningBuilds: warnings?.builds || 0, bloodParticles: this.particles.filter(particle => particle.material === 'blood').length, visibleBloodParticles: this._visibleBloodParticles || 0, cachedLootItems: loot?.cachedItems || 0, lootGeometryBuilds: loot?.builds || 0, geometryBufferBytes: Object.values(this.frameMeshes || {}).reduce((bytes, mesh) => bytes + mesh.storage.byteLength, 0) + (loot?.bufferBytes || 0) + (loot?.templateBytes || 0) + (warnings?.bufferBytes || 0) + (warnings?.templateBytes || 0), cameraEyeHeight: this.cameraEyeHeight, resizeReads: this.resizeReads, humanAnimation, firstPerson });
   }
   resetEffects() {
@@ -3966,7 +3999,7 @@ export class VoxelRenderer {
     this.eventIds.clear(); this.eventQueue.length = 0; this.particles.length = 0; this.tracers.length = 0;
     this._visibleBloodParticles = 0; this._meleeTrailVertices = 0; this._meleeTrailActors = 0;
     this.localShot = null; this.localReload = null; this.shotContext = null; this.lastAim = null; this.swayX = 0; this.swayY = 0;
-    this.presentLoot?.reset(); this.presentWarnings?.reset(); this.presentEye?.reset(); this.presentHumans?.reset(); this.presentMonsters?.reset(); this.presentHead?.reset(); this.presentShots?.reset(); this.presentReloads?.reset(); this.cameraReload = null; this.firstPersonMotion = null; this.shotMotion = null; this.reloadMotion = null; this.humanPoses?.clear(); this._spawnWarnings = 0;
+    this.presentLoot?.reset(); this.presentWarnings?.reset(); this.presentEye?.reset(); this.presentHumans?.reset(); this.presentMonsters?.reset(); this.presentHead?.reset(); this.presentShots?.reset(); this.presentReloads?.reset(); this.cameraReload = null; this.firstPersonMotion = null; this.shotMotion = null; this.reloadMotion = null; this.meleePose = null; this.humanPoses?.clear(); this._spawnWarnings = 0;
   }
   destroy() {
     if (this.destroyed) return;

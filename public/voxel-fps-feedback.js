@@ -1,6 +1,91 @@
 import { SPRINT } from './voxel-engine.js';
-import { WEAPONS } from './voxel-weapons.js';
+import { WEAPONS, weaponAimFovRatio } from './voxel-weapons.js';
 import { weaponReloadPose } from './voxel-player-animation.js';
+import { KNIFE_SECONDARY, PARRY_PROFILES, meleeLabel, meleeProfile, parryProfile, parryPhase } from './voxel-melee.js';
+
+/** Keep hip turn speed; ADS adds deliberate fine control to the weapon's zoom. */
+export const ADS_LOOK_CONTROL = Object.freeze({ precisionMultiplier: .55 });
+
+export function aimFraction(player, ticks = 18, { requireGun = false } = {}) {
+  if (!player || player.alive === false || player.hasGun === false || requireGun && !player.hasGun || player.slot != null && player.slot !== 'primary' || player.healing || player.healTicks > 0 || player.reloadTicks > 0 || player.grenadeThrowTicks > 0) return 0;
+  const duration = Number.isFinite(ticks) && ticks > 0 ? ticks : 18;
+  return Math.max(0, Math.min(1, Number.isFinite(player.aimTicks) ? player.aimTicks / duration : 0));
+}
+
+export function aimLookMultiplier(player, ads = {}, options = {}) {
+  if (typeof player?.weapon !== 'string' || !Object.hasOwn(WEAPONS, player.weapon)) return 1;
+  const progress = aimFraction(player, ads.ticks, options), smooth = progress * progress * (3 - 2 * progress);
+  const aimed = weaponAimFovRatio(player.weapon, ads) * ADS_LOOK_CONTROL.precisionMultiplier;
+  return 1 + (aimed - 1) * smooth;
+}
+
+const finiteTicks = value => Number.isFinite(value) ? Math.max(0, value) : 0;
+const actionProgress = (label, remaining, total) => ({ label, remaining, total, percent: Math.max(0, Math.min(100, 100 - remaining / total * 100)) });
+
+/** One existing weapon line and action rail show accepted melee timing. */
+export function meleeActionReadout(player, profile = meleeProfile(player)) {
+  if (player?.slot !== 'sword' || player.alive === false || player.healing || player.healTicks > 0) return null;
+  const bladeName = meleeLabel(player).toLowerCase().replace(/\b\w/g, letter => letter.toUpperCase());
+  const guard = parryProfile(player), guardTicks = finiteTicks(player.parryTicks), attackTicks = Math.max(finiteTicks(player.meleeTicks), finiteTicks(player.meleeCooldown));
+  const secondary = profile.id === 'knife' && player.meleeAction === 'secondary';
+  if (guard && guardTicks) {
+    const phase = parryPhase(player).phase;
+    return { state: phase, ammo: player.parryConsumed ? 'PARRIED' : ({ startup: 'SET', active: 'PARRY', recovery: 'RECOVER' })[phase] || 'RECOVER',
+      status: `${(guardTicks / 120).toFixed(1)}S · ${player.parryConsumed ? 'PARRIED / RECOVERING' : phase === 'startup' ? 'SETTING GUARD' : phase === 'active' ? 'PARRY WINDOW' : 'GUARD RECOVERY'}`,
+      progress: actionProgress(`${bladeName} parry and recovery`, guardTicks, guard.startupTicks + guard.activeTicks + guard.recoveryTicks) };
+  }
+  if (attackTicks) {
+    const phase = player.meleeTicks > 0 ? player.meleePhase : 'recovery';
+    return { state: phase || 'recovery', ammo: ({ startup: 'WINDUP', active: secondary ? 'STAB' : 'STRIKE', recovery: 'RECOVER' })[phase] || 'RECOVER',
+      status: `${(attackTicks / 120).toFixed(1)}S · ${phase === 'startup' ? secondary ? 'COMMITTING STAB' : 'COMMITTING' : phase === 'active' ? secondary ? 'STAB ACTIVE' : 'BLADE ACTIVE' : 'RECOVERING'}`,
+      progress: actionProgress(`${bladeName} ${secondary ? 'stab' : 'attack'} and recovery`, attackTicks, profile.startupTicks + profile.activeTicks + profile.recoveryTicks) };
+  }
+  const cooldown = Math.max(finiteTicks(player.parryCooldown), finiteTicks(player.meleeSecondaryCooldown));
+  const action = guard ? 'PARRY' : 'STAB';
+  if (cooldown) return { state: 'cooldown', ammo: 'READY', status: `${action} ${(cooldown / 120).toFixed(1)}S · LMB STRIKE`, progress: actionProgress(`${bladeName} ${action.toLowerCase()} cooldown`, cooldown, Math.max(cooldown, guard?.cooldownTicks || KNIFE_SECONDARY.startupTicks + KNIFE_SECONDARY.activeTicks + KNIFE_SECONDARY.recoveryTicks)) };
+  if (guard && Number.isFinite(player.stamina) && player.stamina < guard.staminaCost) return { state: 'stamina', ammo: 'READY', status: `PARRY NEEDS ${guard.staminaCost} STAMINA`, progress: null };
+  if (player.meleeAimBlocked) return { state: 'release', ammo: 'READY', status: `RELEASE RMB · LMB STRIKE`, progress: null };
+  return { state: 'ready', ammo: 'READY', status: guard ? 'LMB STRIKE · RMB PARRY' : 'LMB QUICK · RMB STAB', progress: null };
+}
+
+/** RMB keeps one wire action; the selected physical item gives it its meaning. */
+export function secondaryActionPresentation(player, { active = true, requireGun = false } = {}) {
+  const valid = active && !!player && player.alive !== false && !player.healing && !(player.healTicks > 0) && !(player.reloadTicks > 0) && !(player.grenadeThrowTicks > 0);
+  if (valid && player.slot === 'sword') {
+    const kind = meleeProfile(player).id === 'knife' ? 'stab' : 'parry', readout = meleeActionReadout(player);
+    const pressed = kind === 'stab' ? player.meleeAction === 'secondary' && finiteTicks(player.meleeTicks) > 0 : finiteTicks(player.parryTicks) > 0;
+    const instruction = kind === 'stab' ? 'Press for a stronger knife stab; release before the next stab' : `Press to parry an incoming melee attack; face it and time the press; costs ${parryProfile(player).staminaCost} stamina; release before the next parry`;
+    return Object.freeze({ kind, label: kind.toUpperCase(), pressed, state: readout.state, detail: readout.status, ariaLabel: `${instruction}. ${readout.status}` });
+  }
+  if (valid && (!requireGun || player.hasGun) && player.hasGun !== false && (player.slot == null || player.slot === 'primary') && typeof player.weapon === 'string' && Object.hasOwn(WEAPONS, player.weapon)) return Object.freeze({ kind: 'aim', label: 'AIM', pressed: !!player.aiming, state: player.aiming ? 'aiming' : 'ready', detail: 'Hold for gun sights and slower, precise look control', ariaLabel: 'Hold to aim down sights; slower, precise look control' });
+  return Object.freeze({ kind: 'none', label: 'AIM', pressed: false, state: 'inactive', detail: 'Equip a gun or blade in combat', ariaLabel: 'Aim, knife stab or blade parry; equip a gun or blade in combat' });
+}
+
+/** No layout reads, input changes or new HUD elements. */
+export function paintSecondaryAction(button, presentation) {
+  if (!button) return;
+  if (button.textContent !== presentation.label) button.textContent = presentation.label;
+  for (const [name, value] of Object.entries({ 'aria-label': presentation.ariaLabel, 'aria-pressed': String(presentation.pressed), 'data-secondary': presentation.kind, 'data-secondary-state': presentation.state, title: presentation.detail })) if (button.getAttribute(name) !== value) button.setAttribute(name, value);
+}
+
+/** A physical clash requires its accepted event; a held guard never makes sound. */
+export function createParryAudioReporter(audio) {
+  const seen = new Set(), limit = 512;
+  let reports = 0;
+  return {
+    consume(events, localId, { context = '', viewedId = localId, active = true } = {}) {
+      for (const event of events || []) {
+        if (event?.type !== 'meleeParry' || event.playerId == null || event.targetId == null || event.playerId === event.targetId || ![localId, viewedId].some(id => id != null && (id === event.playerId || id === event.targetId)) || typeof event.weapon !== 'string' || !Object.hasOwn(PARRY_PROFILES, event.weapon) || ![event.x, event.y, event.z].every(Number.isFinite) || !Number.isSafeInteger(event.parryIndex) || event.parryIndex < 0 || !Number.isSafeInteger(event.parryStartTick) || event.parryStartTick < 0) continue;
+        const key = JSON.stringify([context, event.playerId, event.defenderLifeId ?? 0, event.defenderDeaths ?? 0, event.parryIndex, event.parryStartTick, event.weapon]);
+        if (seen.has(key)) continue;
+        seen.add(key); if (seen.size > limit) seen.delete(seen.values().next().value);
+        if (active && audio?.enabled) try { if (audio.meleeParry?.(event.weapon) === true) reports++; } catch { /* Optional sound. */ }
+      }
+    },
+    reset() { seen.clear(); },
+    inspect() { return Object.freeze({ reports, trackedParries: seen.size, limit }); },
+  };
+}
 
 /** The small blue rail reflects the same actor as the first-person camera. */
 export function staminaPresentation(player, { name = 'Your', active = true } = {}) {

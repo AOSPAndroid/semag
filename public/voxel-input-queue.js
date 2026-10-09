@@ -1,5 +1,5 @@
 /** Fresh FPS presses survive packet coalescing; movement and look remain current. */
-export const FPS_EDGE_ACTIONS = Object.freeze(['slot1', 'slot2', 'slot3', 'slot4', 'drop', 'fire', 'jump', 'reload', 'interact', 'swap', 'grenade', 'heal']);
+export const FPS_EDGE_ACTIONS = Object.freeze(['slot1', 'slot2', 'slot3', 'slot4', 'drop', 'fire', 'aim', 'jump', 'reload', 'interact', 'swap', 'grenade', 'heal']);
 
 /** Release one touch source while preserving valid taps and surviving aliases. */
 export function releaseFpsTouchAction(pointer, pointers, actions, isHeld, cancelled = false) {
@@ -32,20 +32,28 @@ export function createFpsInputQueue({ maxPending = 16, maxAgeMs = 120 } = {}) {
     for (const action of FPS_EDGE_ACTIONS) if (prime || isBlocked(action)) buttons[action] = false;
     let discard = 0, selectedViewTick = viewTick;
     while (discard < pending.length && finiteTime(now) - pending[discard].at > lifetime) discard++;
+    // ADS remains a continuous hold. A held aim already delivered beside another
+    // commitment needs no synthetic release or second journal-only physics tick.
+    while (discard < pending.length && pending[discard].action === 'aim' && sampled.has('aim') && input.aim === true && !isBlocked('aim')) discard++;
     if (!prime && discard < pending.length) {
       // Keep existing holds but serialize fresh commitments. Two rapid taps
       // of one action need a real release step between their rising edges.
-      for (const action of FPS_EDGE_ACTIONS) buttons[action] = !isBlocked(action) && sampled.has(action) && input[action] === true;
+      for (const action of FPS_EDGE_ACTIONS) buttons[action] = !isBlocked(action) && (action === 'aim' || sampled.has(action)) && input[action] === true;
+      const freshAim = buttons.aim && !sampled.has('aim') ? pending.slice(discard).find(edge => edge.action === 'aim') : null;
       const edge = pending[discard];
       if (isBlocked(edge.action)) discard++;
       else if (sampled.has(edge.action)) buttons[edge.action] = false;
       else {
         buttons[edge.action] = true; discard++;
         if (edge.action === 'drop' && edge.inventorySlot) buttons[edge.inventorySlot] = true;
-        if (edge.action === 'fire' || edge.action === 'grenade') {
+        if (edge.action === 'fire' || edge.action === 'grenade' || edge.action === 'aim') {
           selectedViewTick = edge.viewTick;
           if (Number.isFinite(edge.yaw)) buttons.yaw = edge.yaw;
           if (Number.isFinite(edge.pitch)) buttons.pitch = edge.pitch;
+        } else if (freshAim) {
+          selectedViewTick = freshAim.viewTick;
+          if (Number.isFinite(freshAim.yaw)) buttons.yaw = freshAim.yaw;
+          if (Number.isFinite(freshAim.pitch)) buttons.pitch = freshAim.pitch;
         }
       }
     }
@@ -55,11 +63,13 @@ export function createFpsInputQueue({ maxPending = 16, maxAgeMs = 120 } = {}) {
     observe(input, now = 0, context = {}) {
       latest = { ...input }; viewTick = Number.isFinite(context.viewTick) ? context.viewTick : null;
       const inventoryCommit = ['slot1', 'slot2', 'slot3', 'slot4', 'drop'].some(action => input[action] === true && observed[action] !== true && !blocked.has(action));
-      if (inventoryCommit) {
+      const handChange = inventoryCommit || input.swap === true && observed.swap !== true && !blocked.has('swap');
+      if (handChange) {
         // A slot/drop commitment supersedes an unconsumed attack and fences a
         // still-held physical trigger until a genuine release is observed.
-        for (let index = pending.length - 1; index >= 0; index--) if (pending[index].action === 'fire') pending.splice(index, 1);
-        if (input.fire === true) blocked.add('fire');
+        for (let index = pending.length - 1; index >= 0; index--) if (pending[index].action === 'aim' || inventoryCommit && pending[index].action === 'fire') pending.splice(index, 1);
+        if (inventoryCommit && input.fire === true) blocked.add('fire');
+        if (input.aim === true) blocked.add('aim');
       }
       for (const action of FPS_EDGE_ACTIONS) {
         if (input[action] !== true) blocked.delete(action);

@@ -1,7 +1,7 @@
 /** Voxel Royale: one-life scavenging rules around the shared Breach combat simulation. */
 import { MAPS, MAP_IDS } from './voxel-royale-maps.js';
 import { WEAPONS, WEAPON_IDS } from './voxel-weapons.js';
-import { MELEE_IDS } from './voxel-melee.js';
+import { MELEE_IDS, resetMeleeDefense } from './voxel-melee.js';
 import { TICK_RATE, INPUT_KEYS, emptyInput, WORLD, eyeHeight, rayBox, createCombatPlayer, combatStep, applyCombatDamage, emitCombatEvent, pickupCombatLoot, dropCombatInventory, resetSprint } from './voxel-engine.js';
 import { initializeInventory, ensureInventory, inventoryCanTake } from './voxel-inventory.js';
 export { MAPS, MAP_IDS, WEAPONS, INPUT_KEYS, emptyInput, TICK_RATE };
@@ -172,7 +172,7 @@ function finishMatch(state, winnerId, reason) {
   if (state.phase === 'matchEnd' || state.phase === 'lobby') return;
   state.phase = 'matchEnd'; state.phaseTicks = 0; state.winner = state.winnerId = state.roundWinner = winnerId; state.roundReason = reason;
   state.grenades = []; state.bolts = [];
-  for (const player of state.players) {Object.assign(player, { vx: 0, vy: 0, vz: 0, knockbackX: 0, knockbackZ: 0, knockbackTicks: 0, knockbackReadyTicks: 0, jumpBufferTicks: 0, reloadTicks: 0, burstRemaining: 0, spinTicks: 0, aiming: false, aimTicks: 0, healing: false, healTicks: 0, grenadeThrowTicks: 0, meleeTicks: 0, meleePhase: 'idle', meleeHitIds: [], meleeHitLives: [], meleeStartTick: 0, interaction: null, interactTicks: 0 });resetSprint(player,{refill:player.alive});}
+  for (const player of state.players) {Object.assign(player, { vx: 0, vy: 0, vz: 0, knockbackX: 0, knockbackZ: 0, knockbackTicks: 0, knockbackReadyTicks: 0, jumpBufferTicks: 0, reloadTicks: 0, burstRemaining: 0, spinTicks: 0, aiming: false, aimTicks: 0, healing: false, healTicks: 0, grenadeThrowTicks: 0, meleeTicks: 0, meleePhase: 'idle', meleeHitIds: [], meleeHitLives: [], meleeStartTick: 0, interaction: null, interactTicks: 0 });resetSprint(player,{refill:player.alive});resetMeleeDefense(player, { blockAim: true });}
   if (winnerId !== null) state.placements.push({ playerId: winnerId, place: 1, reason: 'survivor' });
   state.objective = winnerId === null ? 'No survivors. The host can start a new expedition.' : 'Last survivor standing. The host can start a new expedition.';
   emitCombatEvent(state, 'matchEnd', { winner: winnerId, winnerId, reason, placements: state.placements.map(entry => ({ ...entry })) });

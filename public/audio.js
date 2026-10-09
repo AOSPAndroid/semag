@@ -1,6 +1,23 @@
 import { createVoxelShotSamples, createVoxelMeleeSamples, createVoxelReloadSamples, createVoxelImpactSamples } from './voxel-shot-audio.js';
+import { PARRY_PROFILES } from './voxel-melee.js';
 
 const MAX_GUNSHOT_VOICES = 24;
+
+/** A short metal contact, cached once and played only for an accepted parry. */
+export function createVoxelParrySamples(sampleRate = 48000) {
+  if (!Number.isFinite(sampleRate) || sampleRate < 8000 || sampleRate > 192000) return null;
+  const samples = new Float32Array(Math.ceil(sampleRate * .14));
+  let seed = 419;
+  for (let index = 1; index < samples.length - 1; index++) {
+    const time = index / sampleRate, progress = index / (samples.length - 1);
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    const contact = Math.sin(time * Math.PI * 2 * 1260) + .43 * Math.sin(time * Math.PI * 2 * 2130) + .26 * Math.sin(time * Math.PI * 2 * 3370);
+    const transient = (seed / 2147483648 - 1) * .24 * Math.exp(-time * 180);
+    const envelope = Math.min(1, time / .0015) * Math.exp(-time * 35) * (1 - progress) ** 2;
+    samples[index] = (contact + transient) * envelope * .2;
+  }
+  return samples;
+}
 
 // Small cached creature tells use the same voice budget as firearm reports.
 export const VOXEL_MONSTER_AUDIO = Object.freeze({
@@ -52,6 +69,7 @@ export class GameAudio {
     this.monsterReports = 0;
     this.reloadReports = 0;
     this.impactReports = 0;
+    this.parryReports = 0;
   }
 
   async setEnabled(enabled) {
@@ -99,6 +117,11 @@ export class GameAudio {
     return this.playVoxelReport(weaponId, { gain, melee: true });
   }
 
+  meleeParry(weaponId, { gain = .52 } = {}) {
+    if (typeof weaponId !== 'string' || !Object.hasOwn(PARRY_PROFILES, weaponId)) return false;
+    return this.playVoxelReport('parry', { gain, parry: true });
+  }
+
   monsterTell(id, { gain = 1, playerId = null } = {}) {
     return this.playVoxelReport(id, { gain, monster: true, playerId });
   }
@@ -111,15 +134,15 @@ export class GameAudio {
     return this.playVoxelReport(kind, { gain, impact: true });
   }
 
-  playVoxelReport(weaponId, { gain = 1, melee = false, monster = false, reload = false, impact = false, phase = null, playerId = null } = {}) {
+  playVoxelReport(weaponId, { gain = 1, melee = false, parry = false, monster = false, reload = false, impact = false, phase = null, playerId = null } = {}) {
     if (!this.enabled || this.destroyed || this.context?.state !== 'running' || !Number.isFinite(gain) || gain <= 0) return false;
     let source, envelope, voice;
     try {
-      const buffers = reload ? this.reloadBuffers : impact ? this.impactBuffers : monster ? this.monsterBuffers : melee ? this.meleeBuffers : this.gunshotBuffers;
-      const bufferKey = reload ? `${weaponId}:${phase}` : weaponId;
+      const buffers = reload ? this.reloadBuffers : impact ? this.impactBuffers : monster ? this.monsterBuffers : melee || parry ? this.meleeBuffers : this.gunshotBuffers;
+      const bufferKey = parry ? 'parry' : reload ? `${weaponId}:${phase}` : weaponId;
       let buffer = buffers.get(bufferKey);
       if (!buffer) {
-        const samples = reload ? createVoxelReloadSamples(weaponId, phase, this.context.sampleRate) : impact ? createVoxelImpactSamples(weaponId, this.context.sampleRate) : monster ? createVoxelMonsterSamples(weaponId, this.context.sampleRate) : melee ? createVoxelMeleeSamples(weaponId, this.context.sampleRate) : createVoxelShotSamples(weaponId, this.context.sampleRate);
+        const samples = reload ? createVoxelReloadSamples(weaponId, phase, this.context.sampleRate) : impact ? createVoxelImpactSamples(weaponId, this.context.sampleRate) : monster ? createVoxelMonsterSamples(weaponId, this.context.sampleRate) : parry ? createVoxelParrySamples(this.context.sampleRate) : melee ? createVoxelMeleeSamples(weaponId, this.context.sampleRate) : createVoxelShotSamples(weaponId, this.context.sampleRate);
         if (!samples) return false;
         buffer = this.context.createBuffer(1, samples.length, this.context.sampleRate);
         buffer.getChannelData(0).set(samples);
@@ -138,7 +161,7 @@ export class GameAudio {
       source.start(this.context.currentTime);
       // Buffer expiry ends the source naturally; this fence also bounds faulty contexts.
       source.stop(this.context.currentTime + buffer.duration / source.playbackRate.value + .02);
-      if (reload) this.reloadReports += 1; else if (impact) this.impactReports += 1; else if (monster) this.monsterReports += 1; else if (melee) this.meleeReports += 1; else this.gunshotReports += 1;
+      if (reload) this.reloadReports += 1; else if (impact) this.impactReports += 1; else if (monster) this.monsterReports += 1; else if (parry) this.parryReports += 1; else if (melee) this.meleeReports += 1; else this.gunshotReports += 1;
       return true;
     } catch {
       if (voice) this.endGunshot(voice, true);
@@ -165,6 +188,7 @@ export class GameAudio {
 
   inspectReloads() { return Object.freeze({ enabled: this.enabled, cachedBuffers: this.reloadBuffers.size, activeVoices: [...this.gunshotVoices].filter(voice => voice.reload).length, maxVoices: MAX_GUNSHOT_VOICES, played: this.reloadReports }); }
   inspectImpacts() { return Object.freeze({ enabled: this.enabled, cachedBuffers: this.impactBuffers.size, maxVoices: MAX_GUNSHOT_VOICES, played: this.impactReports }); }
+  inspectParries() { return Object.freeze({ enabled: this.enabled, cachedBuffers: this.meleeBuffers.has('parry') ? 1 : 0, maxVoices: MAX_GUNSHOT_VOICES, played: this.parryReports }); }
 
   stopMonsterTells(playerId, windupOnly = false) {
     if (!Number.isInteger(playerId)) return;

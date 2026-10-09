@@ -1,8 +1,9 @@
-import { staminaPresentation, paintStamina, createReloadAudioPresenter, createGunImpactReporter } from './voxel-fps-feedback.js';
+import { aimFraction, aimLookMultiplier, meleeActionReadout, secondaryActionPresentation, paintSecondaryAction, staminaPresentation, paintStamina, createReloadAudioPresenter, createGunImpactReporter, createParryAudioReporter } from './voxel-fps-feedback.js';
+export { aimFraction, aimLookMultiplier } from './voxel-fps-feedback.js';
 import { displayKey, gameKey, getKeyboardLayout, mountKeyboardLayoutPicker, subscribeKeyboardLayout } from './keyboard-layout.js';
 import { copyText, getName, hostInfo, roomUrl, saveName } from './hub/shared.js';
 import { GameAudio } from './audio.js';
-import { WEAPONS, WEAPON_IDS, weaponAimFovRatio, weaponSpread, weaponStats } from './voxel-weapons.js';
+import { WEAPONS, WEAPON_IDS, weaponSpread, weaponStats } from './voxel-weapons.js';
 import { PLAYER_HEALTH, HEAL } from './voxel-engine.js';
 import { meleeLabel, meleeProfile, MELEE_IDS } from './voxel-melee.js';
 import { incomingDamageFeedback, damageFeedbackPresentation, paintDamageFeedback } from './voxel-damage-feedback.js';
@@ -104,33 +105,19 @@ export function loadoutForKey(event, phase) {
   return digit ? WEAPON_IDS[Number(digit) - 1] || null : null;
 }
 
-/** Scope and look cues use the same finite authoritative ADS transition as the camera. */
-export function aimFraction(player, ticks = 18) {
-  if (player?.alive === false || ['sword', 'potion', 'grenade', 'empty'].includes(player?.slot) || player?.healing || player?.healTicks > 0 || player?.reloadTicks > 0 || player?.grenadeThrowTicks > 0) return 0;
-  return Math.max(0, Math.min(1, Number.isFinite(player?.aimTicks) ? player.aimTicks / Math.max(1, ticks) : 0));
-}
-
-export function aimLookMultiplier(player, ads = {}) {
-  const progress = aimFraction(player, ads.ticks); const smooth = progress * progress * (3 - 2 * progress);
-  const zoom = weaponAimFovRatio(player?.weapon, ads);
-  return 1 + (zoom - 1) * smooth;
-}
-
 /** Action progress always comes from the simulation; readiness never anticipates a hit. */
 export function combatReadout(player, weapons = WEAPONS, rules = {}) {
   const weapon = weapons[player?.weapon]; const sword = player?.slot === 'sword';
   const swap = inventorySwapPresentation(player);
-  const ticks = Math.max(0, Number.isFinite(player?.meleeTicks) ? player.meleeTicks : 0, Number.isFinite(player?.meleeCooldown) ? player.meleeCooldown : 0);
-  const meleePhase = ticks && !(player?.meleeTicks > 0) ? 'recovery' : player?.meleePhase || 'idle';
-  const melee = (player?.meleeWeapon === 'knife' ? rules.KNIFE : !player?.meleeWeapon || player.meleeWeapon === 'sword' ? rules.MELEE : null) || meleeProfile(player);
-  const meleeTotal = melee.startupTicks + melee.activeTicks + melee.recoveryTicks;
+  const melee = (player?.meleeAction !== 'secondary' && (player?.meleeWeapon === 'knife' ? rules.KNIFE : !player?.meleeWeapon || player.meleeWeapon === 'sword' ? rules.MELEE : null)) || meleeProfile(player);
+  const bladeAction = sword ? meleeActionReadout(player, melee) : null;
   const healing = player?.healTicks > 0; const reloading = !sword && player?.reloadTicks > 0;
   let label = sword ? meleeLabel(player) : weapon?.label || (player?.weapon || 'carbine').toUpperCase();
-  let ammo = sword ? ({ startup: 'WINDUP', active: 'STRIKE', recovery: 'RECOVER' })[meleePhase] || 'READY' : player?.ammo ?? '—';
+  let ammo = sword ? bladeAction?.ammo || 'READY' : player?.ammo ?? '—';
   let status; let progress = null;
   if (sword) {
-    status = ticks ? `${(ticks / 120).toFixed(1)}S · ${meleePhase === 'startup' ? 'COMMITTING' : meleePhase === 'active' ? 'BLADE ACTIVE' : 'RECOVERING'}` : `LMB STRIKE · ${swap?.shortcut || 'V GUN'}`;
-    if (ticks) progress = { label: `${meleeLabel(player).toLowerCase().replace(/\b\w/g, letter => letter.toUpperCase())} attack and recovery`, remaining: ticks, total: meleeTotal };
+    status = bladeAction?.status || `LMB STRIKE · ${swap?.shortcut || 'V GUN'}`;
+    progress = bladeAction?.progress || null;
   } else if (player?.ammo === 0) status = player.reserve > 0 ? weapon?.projectile ? 'R TO RELOAD BOLT' : 'R TO RELOAD' : 'OUT OF AMMUNITION';
   else if (weapon?.spinupTicks && player?.spinTicks > 0 && player.spinTicks < weapon.spinupTicks) {
     status = 'SPINNING UP · HOLD FIRE';
@@ -330,7 +317,7 @@ async function boot() {
   let healthView = null; let healthGain = 0; let healthGainUntil = 0; let previewWeapon = null;
   let squadSignature = ''; let rosterSignature = ''; let idleDrawSignature = ''; let mapPlanId = ''; const mapMarkers = new Map();
   const audio = new GameAudio(); const eventSeen = new Set(); const eventOrder = []; const kills = [];
-  const meleeImpacts = createMeleeImpactReporter(audio), gunImpacts = createGunImpactReporter(audio);
+  const meleeImpacts = createMeleeImpactReporter(audio), gunImpacts = createGunImpactReporter(audio), parryAudio = createParryAudioReporter(audio);
   const reloadAudio = createReloadAudioPresenter(audio), staminaElements = { meter: $('stamina-meter'), fill: $('stamina-fill') };
   let staminaView = staminaPresentation(null, { active: false });
   function paintVitals(player, name = 'Your', active = true) { staminaView = staminaPresentation(player, { name, active }); paintStamina(staminaElements.meter, staminaElements.fill, staminaView); }
@@ -394,6 +381,7 @@ async function boot() {
     keys.clear(); pressedKeys.clear(); mouse.fire = mouse.aim = false; rightDrag = false;
     touch.actions.clear(); touch.move = { x: 0, y: 0 }; touch.look = { x: 0, y: 0 };
     for (const button of document.querySelectorAll('[data-voxel-action="sprint"], [data-voxel-action="walk"], [data-voxel-action="crouch"]')) button.setAttribute('aria-pressed', 'false');
+    paintSecondaryAction(document.querySelector('[data-voxel-action="aim"]'), secondaryActionPresentation(null, { active: false }));
     for (const [pointerId, record] of actionPointers) try { record.element.releasePointerCapture(pointerId); } catch { /* A cancelled pointer is already released. */ }
     for (const [pointerId, record] of padPointers) try { record.element.releasePointerCapture(pointerId); } catch { /* A cancelled pointer is already released. */ }
     actionPointers.clear(); padPointers.clear();
@@ -527,6 +515,7 @@ async function boot() {
       } catch { /* Optional sound cannot interrupt gameplay. */ }
     }
     gunImpacts.consume(freshEvents, playerId, { context: `${state?.mapId}:${state?.matchId}:${state?.round}`, viewedId: healthHUDPlayer(state, playerId, spectatorId)?.id });
+    parryAudio.consume(freshEvents, playerId, { context: `${state?.mapId}:${state?.matchId}:${state?.round}`, viewedId: healthHUDPlayer(state, playerId, spectatorId)?.id, active: connected && !paused && !modalOpen && state.phase === 'fight' });
     hitFeedback.consume(freshEvents, ownPlayer(), state.players, { now: performance.now(), lifeKey: `${state.mapId}:${state.round}:${ownPlayer()?.lifeId || 0}`, active: state.phase === 'fight' && !paused && !modalOpen && connected });
     const hits = confirmedHitGroups(freshEvents, playerId);
     if (hits.length) {
@@ -707,7 +696,7 @@ async function boot() {
     for (const button of document.querySelectorAll('[data-voxel-action]')) {
       const action = button.dataset.voxelAction;
       if (action === 'swap') { const swap = inventorySwapPresentation(local); button.textContent = swap?.label || (readout.sword ? 'GUN' : 'SWORD'); button.setAttribute('aria-label', swap?.ariaLabel || (readout.sword ? 'Switch to primary gun' : 'Switch to sword')); button.setAttribute('aria-pressed', String(readout.sword)); }
-      if (action === 'aim') button.setAttribute('aria-pressed', String(!!local?.aiming));
+      if (action === 'aim') paintSecondaryAction(button, secondaryActionPresentation(local, { active: controlsActive() && phase === 'fight' }));
       if (['sprint', 'walk', 'crouch'].includes(action)) button.setAttribute('aria-pressed', String(!!currentInput()[action]));
       if (action === 'grenade') { button.textContent = `FRAG ${readout.grenades}`; button.setAttribute('aria-label', `Throw fragmentation grenade: ${readout.grenades} remaining`); button.classList.toggle('unavailable', !readout.grenades); }
       if (action === 'heal') { button.textContent = readout.healing ? 'DRINKING' : `POTION ${readout.potions}`; button.setAttribute('aria-label', `Drink healing potion: ${readout.potions} remaining; restores up to ${engine?.HEAL?.amount || HEAL.amount} health after two seconds; interruption spends the potion`); button.classList.toggle('unavailable', (!readout.potions && !readout.healing) || local?.hp >= (local?.maxHp || PLAYER_HEALTH)); }
@@ -770,7 +759,7 @@ async function boot() {
       button.setAttribute('aria-pressed', String(button.dataset.arenaLoadout === local?.weapon));
       button.disabled = !connected || !['countdown', 'buy'].includes(phase);
     }
-    setHidden($('aim-note'), !enter); setText($('aim-note'), touchMode ? 'Touch: Move / Look pads. Hold AIM for sights; tap a slot to equip, or use FRAG and POTION.' : 'RMB aims. If mouse capture is unavailable, hold RMB and drag to look.');
+    setHidden($('aim-note'), !enter); setText($('aim-note'), touchMode ? 'Touch: Move / Look pads. AIM becomes STAB with a knife or PARRY with another blade; tap a slot to equip.' : 'RMB: gun sights / knife stab / blade parry. If mouse capture is unavailable, hold RMB and drag to look.');
     const result = roundResult(state, local?.team);
     setHidden($('phase-announcement'), !connected || !!graphicsError || modalOpen || overlay || !['countdown', 'buy', 'roundEnd'].includes(phase));
     $('phase-announcement').dataset.phase = phase;
@@ -871,7 +860,7 @@ async function boot() {
     if (previousPhase !== state.phase && previousPhase !== null) neutralize();
     if (state.phase === 'lobby' && previousPhase !== 'lobby') {
       neutralize({ pause: true, unlock: true }); entered = false; fallback = false;
-      eventSeen.clear(); eventOrder.length = 0; kills.length = 0; healthView = null; healthGainUntil = 0; feedbackUntil = 0; hitFeedback.reset({ clearHistory: true }); damageFeedback = null; lastCountdown = null; audio.resetEvents(); meleeImpacts.reset(); gunImpacts.reset(); reloadAudio.reset();
+      eventSeen.clear(); eventOrder.length = 0; kills.length = 0; healthView = null; healthGainUntil = 0; feedbackUntil = 0; hitFeedback.reset({ clearHistory: true }); damageFeedback = null; lastCountdown = null; audio.resetEvents(); meleeImpacts.reset(); gunImpacts.reset(); parryAudio.reset(); reloadAudio.reset();
     }
     if (local && !local.alive && old?.players.find(player => player.id === playerId)?.alive !== false) neutralize({ pause: true, unlock: true });
     const ackValue = message.acks?.[playerId];
@@ -998,7 +987,7 @@ async function boot() {
     const layout = getKeyboardLayout();
     setText($('move-keys'), layout.toUpperCase());
     for (const label of document.querySelectorAll('[data-voxel-key]')) label.textContent = displayKey(label.dataset.voxelKey, layout);
-    canvas.setAttribute('aria-label', `3D tactical shooter. ${layout.toUpperCase()} or arrows to move, mouse to look, left click to use your selected item, right click to aim, 1 to 4 equip inventory slots, X drops the selected item, V switches blade and gun, ${displayKey('Q', layout)} grenade, F healing potion, R reload, E picks up loot or holds to plant or defuse, Space jumps, Control crouches, Shift sprints, C walks quietly. Choose any weapon in setup; number keys 1 to 9 select the first nine.`);
+    canvas.setAttribute('aria-label', `3D tactical shooter. ${layout.toUpperCase()} or arrows to move, mouse to look, left click to use your selected item, right click to aim guns, stab with a knife or parry with other blades, 1 to 4 equip inventory slots, X drops the selected item, V switches blade and gun, ${displayKey('Q', layout)} grenade, F healing potion, R reload, E picks up loot or holds to plant or defuse, Space jumps, Control crouches, Shift sprints, C walks quietly. Choose any weapon in setup; number keys 1 to 9 select the first nine.`);
   }
   function updateLayout() { neutralize({ pause: entered, unlock: true }); updateKeyLabels(); }
   const unsubscribeLayout = subscribeKeyboardLayout(updateLayout); updateKeyLabels();
@@ -1151,7 +1140,7 @@ async function boot() {
     for (const remove of removers) remove(); pending = []; snapshots = []; kills.length = 0; eventSeen.clear();
   }
   listen(window, 'pagehide', destroy);
-  const inspect = () => clone({ state, players: roster, playerId, input: currentInput(), predictedPlayer, presentationPlayer, presentationPlayers, predictionRemainder: accumulator, predictionTick, actionQueue: actionInputs.inspect(), timeline: timeline.getState(), correction: correction.getState(), connected, controls: { pointerLocked: pointerLocked(), fallback, touch: touchMode, paused, entered, modalOpen }, queueLength: pending.length, renderCount, renderStats: renderer?.stats || null, worldLabels: worldLabels.inspect(), audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), meleeImpactAudio: meleeImpacts.inspect(), reloadAudio: reloadAudio.inspect(), reloadSounds: audio.inspectReloads(), gunImpactAudio: gunImpacts.inspect(), stamina: staminaView, graphicsError, spectatorId });
+  const inspect = () => clone({ state, players: roster, playerId, input: currentInput(), predictedPlayer, presentationPlayer, presentationPlayers, predictionRemainder: accumulator, predictionTick, actionQueue: actionInputs.inspect(), timeline: timeline.getState(), correction: correction.getState(), connected, controls: { pointerLocked: pointerLocked(), fallback, touch: touchMode, paused, entered, modalOpen }, queueLength: pending.length, renderCount, renderStats: renderer?.stats || null, worldLabels: worldLabels.inspect(), audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), meleeImpactAudio: meleeImpacts.inspect(), reloadAudio: reloadAudio.inspect(), reloadSounds: audio.inspectReloads(), gunImpactAudio: gunImpacts.inspect(), parryAudio: parryAudio.inspect(), parrySounds: audio.inspectParries(), stamina: staminaView, graphicsError, spectatorId });
   window.SemagVoxel = Object.freeze({ getState: inspect, inspect });
   updateUI();
   try {

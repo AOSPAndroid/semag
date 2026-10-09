@@ -2,7 +2,7 @@
 import { createCombatPlayer, combatStep, emitCombatEvent, emptyInput, INPUT_KEYS, TICK_RATE, MAPS, WEAPONS, WORLD, PLAYER_HEALTH, eyeHeight, playerHeight, aimDirection, traceShot, pickupCombatLoot, addInventoryLoot, advanceInventoryLoot, resetSprint } from './voxel-engine.js';
 import { navigationPoints, navigationPath, navigationCanOccupy, navigationVisible } from './voxel-navigation.js';
 import { INVENTORY_ACTIONS, createInventoryGun, createInventoryMelee, ensureInventory, refreshInventory, storeInventoryGun, inventoryCanTake, setInventoryLoadout, setInventoryMeleeLoadout } from './voxel-inventory.js';
-import { MELEE_WEAPONS } from './voxel-melee.js';
+import { MELEE_WEAPONS, resetMeleeDefense } from './voxel-melee.js';
 import { monsterBodyProfile, monsterAttackHeight } from './voxel-monster-bodies.js';
 
 export { emptyInput, INPUT_KEYS, TICK_RATE, MAPS, WEAPONS };
@@ -23,7 +23,7 @@ export const MONSTER_TYPES = Object.freeze({
 });
 export const HORDE_RALLY_RULES = Object.freeze({ speedMultiplier: 1.18, maxTicks: 180 });
 const EPS = 1e-7, clamp = (n, low, high) => Math.max(low, Math.min(high, n));
-const ACTIONS = Object.freeze(['fire', 'jump', 'reload', 'interact', 'swap', 'grenade', 'heal', 'sprint', ...INVENTORY_ACTIONS]);
+const ACTIONS = Object.freeze(['fire', 'aim', 'jump', 'reload', 'interact', 'swap', 'grenade', 'heal', 'sprint', ...INVENTORY_ACTIONS]);
 const groundSpawns = new WeakMap();
 const wrap = angle => Math.atan2(Math.sin(angle), Math.cos(angle));
 const arenaFor = state => state.map || MAPS[state.mapId];
@@ -77,6 +77,7 @@ export function setConnected(state, id, connected) {
   else if (!player.connected) {
     player.alive = false; player.participating = false; player.hp = 0; player.vx = player.vy = player.vz = 0;
     resetSprint(player,{refill:false});
+    resetMeleeDefense(player, { blockAim: true });
     state.horde.participantIds = state.horde.participantIds.filter(peer => peer !== id);
     state.horde.inputFences[id] = []; player.previousInput = emptyInput(player);
   }
@@ -217,7 +218,7 @@ function meleeDamageScale(state, attacker, target) {
   return survivorMelee(state, attacker, target) ? HORDE_MELEE_RULES.damageScales[state.horde.wave - 1] || 1 : 1;
 }
 function onMeleeHit(state, hit, attacker, target) {
-  if (!survivorMelee(state, attacker, target) || target.hp <= 0 || target.emergenceTicks > 0) return;
+  if (!(hit.damage > 0) || !survivorMelee(state, attacker, target) || target.hp <= 0 || target.emergenceTicks > 0) return;
   const brain = state.horde.brains[target.id];
   if (!brain) return;
   const monster = MONSTER_TYPES[target.monsterType], staggerImmune = brain.recoverTicks > 0 || state.tick < brain.staggerReadyTick;
@@ -428,9 +429,10 @@ function monsterDamage(state) {
     const direction = aimDirection(brain.attackYaw, brain.attackPitch);
     let hit = false;
     if (distance > EPS && Math.hypot(Math.max(0, Math.hypot(dx, dz) - target.radius), dy) <= profile.reach && (dx * direction.x + dy * direction.y + dz * direction.z) / distance >= Math.cos(.65)) {
-      hit = traceShot(state, player.id, origin, { x: dx / distance, y: dy / distance, z: dz / distance }, distance + .01, arenaFor(state)).playerId === target.id;
+      const contact = traceShot(state, player.id, origin, { x: dx / distance, y: dy / distance, z: dz / distance }, distance + .01, arenaFor(state));
+      hit = contact.playerId === target.id;
       if (hit) {
-        hits.push({ playerId: player.id, targetId: target.id, damage: Math.round(profile.damage * settingsFor(state).damage), hitKind: 'body', headshot: false, attack: 'monster', weapon: player.monsterType });
+        hits.push({ playerId: player.id, targetId: target.id, damage: Math.round(profile.damage * settingsFor(state).damage), hitKind: 'body', headshot: false, attack: 'monster', weapon: player.monsterType, attackX: origin.x, attackY: origin.y, attackZ: origin.z, hitX: contact.x, hitY: contact.y, hitZ: contact.z });
         if (lunge) { brain.lungeTicks = 0; player.lungeTicks = 0; brain.recoverTicks = profile.recovery; player.monsterState = 'recover'; player.vx *= .15; player.vz *= .15; }
       }
     }
@@ -482,6 +484,7 @@ function humanInteractions(state, inputs, previous) {
         for (const item of fresh.inventory) if (item?.kind === 'weapon') item.reloadTicks = item.burstRemaining = item.spinTicks = 0;
         refreshInventory(fresh);
         fresh.previousInput = emptyInput(fresh); state.players[revive.id] = fresh;
+        resetMeleeDefense(fresh, { blockAim: true });
         state.horde.inputFences[revive.id] = ACTIONS.slice(); state.horde.revives++; state.horde.teamstats.revives++;
         player.interaction = null; player.interactTicks = 0;
         emitCombatEvent(state, 'hordeRevive', { playerId: player.id, targetId: fresh.id, hp: fresh.hp, x: fresh.x, y: fresh.y, z: fresh.z });
@@ -541,6 +544,7 @@ function beginIntermission(state) {
     else { old.hp = Math.min(old.maxHp, old.hp + 35); ensureInventory(old); old.reloadTicks = old.healTicks = old.meleeTicks = old.meleeCooldown = old.grenadeThrowTicks = old.burstRemaining = old.spinTicks = 0; old.healing = false; old.meleePhase = 'idle'; }
     const player = state.players[id]; player.knockbackX = player.knockbackZ = player.knockbackTicks = player.knockbackReadyTicks = 0; player.meleeHitIds = []; player.meleeHitLives = []; player.meleeStartTick = 0; storeInventoryGun(player);
     resetSprint(player);
+    resetMeleeDefense(player, { blockAim: true });
     for (const item of player.inventory) if (item?.kind === 'weapon') { const weapon = WEAPONS[item.weapon]; item.ammo = weapon.magazine; item.reserve = Math.min(weapon.reserve * 2, item.reserve + weapon.magazine * 2); item.reloadTicks = item.burstRemaining = item.spinTicks = 0; }
     refreshInventory(player); player.interaction = null; player.interactTicks = 0;
   }
@@ -559,7 +563,7 @@ function beginIntermission(state) {
 function finish(state) {
   state.phase = 'matchEnd'; state.phaseTicks = 0; state.horde.phaseTicks = 0; state.horde.result = 'lost'; state.winner = 1; state.roundWinner = 1; state.roundReason = 'The squad fell.';
   state.objective = 'The squad fell. Compare your waves survived, regroup and try another run.';
-  for (const player of state.players) {player.knockbackX = player.knockbackZ = player.knockbackTicks = player.knockbackReadyTicks = 0;resetSprint(player,{refill:false});}
+  for (const player of state.players) {player.knockbackX = player.knockbackZ = player.knockbackTicks = player.knockbackReadyTicks = 0;resetSprint(player,{refill:false});resetMeleeDefense(player, { blockAim: true });}
   neutralize(state); emitCombatEvent(state, 'hordeEnd', { wave: state.horde.wave, wavesCleared: state.horde.wavesCleared, kills: state.horde.totalKills, elapsedTicks: state.horde.elapsedTicks });
 }
 export function step(state, rawInputs = []) {
@@ -570,7 +574,7 @@ export function step(state, rawInputs = []) {
     const previous = state.players.slice(0, state.capacity).map(player => ({ ...player.previousInput }));
     const inputs = state.players.map(player => {
       const input = !player.monster && player.participating && player.connected ? lookInput(state, player, rawInputs[player.id]) : emptyInput(player);
-      for (const key of ['fire', 'grenade', 'heal', 'swap', 'reload']) input[key] = false;
+      for (const key of ['fire', 'aim', 'grenade', 'heal', 'swap', 'reload']) input[key] = false;
       return input;
     });
     combatStep(state, inputs, arenaFor(state));

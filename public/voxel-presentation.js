@@ -5,10 +5,10 @@ import { advanceBolts, MAX_BOLTS } from './voxel-projectiles.js';
 const STEP = 1 / 120;
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const finite = value => Number.isFinite(value) ? value : 0;
-const COMBAT_FIELDS = ['aimTicks', 'recoil', 'reloadTicks', 'healTicks', 'grenadeThrowTicks', 'meleeTicks', 'meleeCooldown', 'shotCooldown'];
+const COMBAT_FIELDS = ['aimTicks', 'recoil', 'reloadTicks', 'healTicks', 'grenadeThrowTicks', 'meleeTicks', 'meleeCooldown', 'shotCooldown', 'parryTicks', 'parryCooldown', 'meleeSecondaryCooldown'];
 const INPUT_FIELDS = [...INPUT_KEYS, 'yaw', 'pitch'];
 const MOVEMENT_FIELDS = ['x', 'y', 'z', 'vx', 'vy', 'vz', 'yaw', 'pitch', 'grounded', 'crouching', 'jumpBufferTicks', 'knockbackX', 'knockbackZ', 'knockbackTicks', 'knockbackReadyTicks', 'stamina', 'staminaRegenTicks', 'sprintExhausted', 'sprinting', 'previousInput'];
-const CONTEXT_FIELDS = [...MOVEMENT_FIELDS, 'alive', 'radius', 'weapon', 'slot', 'reloadTicks', 'healTicks', 'grenadeThrowTicks', 'meleeTicks', 'burstRemaining', 'pendingFireTicks', 'shotCooldown', 'triggerBlocked', 'ammo', 'reserve', 'lifeId', 'deaths', 'meleeStartTick', 'healStartTick', 'interaction', 'interactTicks', 'meleeWeapon', 'bot', 'monster'];
+const CONTEXT_FIELDS = [...MOVEMENT_FIELDS, 'alive', 'radius', 'weapon', 'slot', 'reloadTicks', 'healTicks', 'grenadeThrowTicks', 'meleeTicks', 'meleeCooldown', 'meleeAction', 'meleeSecondaryCooldown', 'meleeAimBlocked', 'parryTicks', 'parryCooldown', 'parryYaw', 'parryPitch', 'parryStartTick', 'parryIndex', 'parryConsumed', 'burstRemaining', 'pendingFireTicks', 'shotCooldown', 'triggerBlocked', 'ammo', 'reserve', 'lifeId', 'deaths', 'meleeStartTick', 'healStartTick', 'interaction', 'interactTicks', 'meleeWeapon', 'bot', 'monster'];
 const matches = (old, next, fields) => fields.every(field => old[field] === next[field]);
 
 /** Resolve the complete displayed body batch; independent previews share no future poses. */
@@ -208,6 +208,7 @@ export function combatPresentation(player, old, ratio, elapsedMs = 0) {
   for (const field of COMBAT_FIELDS.slice(2)) {
     if (!(player[field] > 0)) continue;
     if (field === 'healTicks' && player.healStartTick !== old.healStartTick) continue;
+    if (field === 'parryTicks' && player.parryStartTick !== old.parryStartTick) continue;
     const ongoing = old[field] >= player[field] && old[field] > 0;
     // Keep the current action visible until authority confirms its completion.
     pose[field] = Math.max(.001, (ongoing ? interpolate(field) : player[field]) - extra);
@@ -261,7 +262,7 @@ export function createCorrectionPresenter({ halfLifeMs = 40, maxOffset = .5, sna
 export function hudTransitionKey(state, roster, playerId, context = '') {
   const players = state?.players?.map(player => [player.id, player.team, player.alive, player.hp, player.maxHp,
     player.weapon, player.slot, player.hasGun, player.ammo, player.reserve, player.potions, player.grenades,
-    !!player.reloadTicks, !!player.healTicks, !!player.grenadeThrowTicks, player.meleePhase, player.aiming, player.aimTicks >= 14, player.grounded]);
+    !!player.reloadTicks, !!player.healTicks, !!player.grenadeThrowTicks, player.meleePhase, player.meleeAction, !!player.parryTicks, !!player.parryCooldown, !!player.meleeSecondaryCooldown, player.parryConsumed, player.aiming, player.aimTicks >= 14, player.grounded]);
   const bomb = state?.bomb;
   return JSON.stringify([context, playerId, state?.phase, state?.round, state?.matchId, state?.mapId,
     state?.scores, state?.attackTeam, state?.winner, state?.winnerId, state?.placements, state?.participantIds,

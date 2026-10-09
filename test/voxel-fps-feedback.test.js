@@ -1,14 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
-import { staminaPresentation, paintStamina, createReloadAudioPresenter, createGunImpactReporter } from '../public/voxel-fps-feedback.js';
-import { controlForKey, composeInput, FPS_BUTTONS } from '../public/voxel-client.js';
-import { controlForKey as royaleKey, INPUT_ACTIONS } from '../public/voxel-royale-client.js';
+import { aimLookMultiplier, secondaryActionPresentation, paintSecondaryAction, meleeActionReadout, staminaPresentation, paintStamina, createReloadAudioPresenter, createGunImpactReporter, createParryAudioReporter } from '../public/voxel-fps-feedback.js';
+import { aimLookMultiplier as breachLook, combatReadout, controlForKey, composeInput, FPS_BUTTONS } from '../public/voxel-client.js';
+import { aimLookMultiplier as royaleLook, controlForKey as royaleKey, INPUT_ACTIONS } from '../public/voxel-royale-client.js';
 import { SPRINT, emptyInput, applyCombatDamage } from '../public/voxel-engine.js';
-import { WEAPONS } from '../public/voxel-weapons.js';
+import { WEAPONS, weaponAimFovRatio } from '../public/voxel-weapons.js';
+import { KNIFE_SECONDARY, PARRY_PROFILES } from '../public/voxel-melee.js';
 import { createPractice, startPractice, stepPractice, pausePractice, resumePractice } from '../public/voxel-practice-engine.js';
 import { createVoxelReloadSamples, createVoxelImpactSamples } from '../public/voxel-shot-audio.js';
-import { GameAudio } from '../public/audio.js';
+import { GameAudio, createVoxelParrySamples } from '../public/audio.js';
 
 function fight(weapon = 'carbine') {
   const state = createPractice({ weapon, bots: 1, mode: 'targets', seed: 637 });
@@ -54,6 +55,56 @@ test('small stamina meter paints truthful accessible values with no reads or rep
   assert.equal(attrs.get('aria-valuenow'), '36'); assert.equal(attrs.get('aria-valuemax'), '100'); assert.match(attrs.get('aria-valuetext'), /36 of 100/); assert.equal(fill.style.transform, 'scaleX(0.3620)');
   const writes = meter.writes; for (let frame = 0; frame < 240; frame++) paintStamina(meter, fill, view);
   assert.equal(meter.writes, writes); paintStamina(meter, fill, staminaPresentation(null)); assert.equal(meter.hidden, true);
+});
+
+test('shared ADS makes every gun deliberately slower while preserving hip speed, camera zoom and mode guards', () => {
+  for (const weapon of Object.keys(WEAPONS)) {
+    const player = { weapon, hasGun: true, alive: true, slot: 'primary', aimTicks: 0 }, zoom = weaponAimFovRatio(weapon);
+    let previous = 1;
+    for (let tick = 0; tick <= 18; tick++) {
+      player.aimTicks = tick; const before = structuredClone(player), value = aimLookMultiplier(player);
+      assert.ok(Number.isFinite(value) && value > 0 && value <= previous);
+      assert.equal(breachLook(player), value); assert.equal(royaleLook(player), value); assert.deepEqual(player, before);
+      assert.equal(weaponAimFovRatio(weapon), zoom, 'precision control does not change camera or scope magnification'); previous = value;
+    }
+    assert.ok(Math.abs(previous - zoom * .55) < 1e-12); assert.ok(previous < .5, `${weapon} aimed turn speed is below half hip speed`);
+    for (const blocked of [{ slot: 'sword', parryTicks: 12 }, { slot: 'potion' }, { slot: 'grenade' }, { slot: 'empty' }, { hasGun: false }, { alive: false }, { healTicks: 1 }, { healing: true }, { reloadTicks: 1 }, { grenadeThrowTicks: 1 }]) assert.equal(aimLookMultiplier({ ...player, ...blocked }), 1);
+    for (const aimTicks of [NaN, Infinity, -1, undefined]) assert.equal(aimLookMultiplier({ ...player, aimTicks }), 1);
+  }
+  assert.equal(aimLookMultiplier({ weapon: '__proto__', aimTicks: 18 }), 1);
+  assert.equal(royaleLook({ weapon: 'sniper', aimTicks: 18, slot: 'primary' }), 1, 'an unowned Royale gun placeholder has no sights');
+});
+
+test('one compact melee readout reflects accepted stab and parry timers, stamina and cooldown', () => {
+  const knife = { alive: true, slot: 'sword', meleeWeapon: 'knife', weapon: 'carbine', stamina: 100, meleeAction: 'secondary', meleePhase: 'startup', meleeTicks: 80, meleeCooldown: 80 };
+  const before = structuredClone(knife), view = combatReadout(knife);
+  assert.equal(view.progress.total, KNIFE_SECONDARY.startupTicks + KNIFE_SECONDARY.activeTicks + KNIFE_SECONDARY.recoveryTicks); assert.equal(view.progress.remaining, 80); assert.match(view.status, /COMMITTING STAB/); assert.match(view.progress.label, /Knife stab/);
+  assert.deepEqual(knife, before); assert.equal(secondaryActionPresentation(knife).label, 'STAB'); assert.equal(secondaryActionPresentation(knife).pressed, true);
+  for (const [blade, guard] of Object.entries(PARRY_PROFILES)) {
+    const player = { ...knife, meleeWeapon: blade, meleeTicks: 0, meleeCooldown: 0, meleeAction: 'primary', parryTicks: guard.activeTicks + guard.recoveryTicks, parryCooldown: guard.cooldownTicks };
+    const readout = meleeActionReadout(player), aim = secondaryActionPresentation(player);
+    assert.equal(aim.label, 'PARRY'); assert.equal(aim.pressed, true); assert.equal(aim.state, 'active'); assert.match(readout.status, /PARRY WINDOW/); assert.equal(readout.progress.remaining, player.parryTicks); assert.match(aim.ariaLabel, new RegExp(`costs ${guard.staminaCost} stamina`));
+    assert.equal(secondaryActionPresentation({ ...player, parryConsumed: true }).state, 'recovery'); assert.equal(meleeActionReadout({ ...player, parryConsumed: true }).ammo, 'PARRIED');
+    player.parryTicks = 0; assert.equal(secondaryActionPresentation(player).pressed, false); assert.match(meleeActionReadout(player).status, /PARRY.*S/);
+    player.parryCooldown = 0; player.stamina = guard.staminaCost - 1; assert.equal(secondaryActionPresentation(player).state, 'stamina'); assert.match(meleeActionReadout(player).status, /NEEDS.*STAMINA/);
+    player.stamina = guard.staminaCost; player.meleeAimBlocked = true; assert.equal(secondaryActionPresentation(player).state, 'release');
+    player.meleeAimBlocked = false; assert.equal(secondaryActionPresentation(player).state, 'ready');
+  }
+});
+
+test('secondary touch labels never turn utilities, pauses or spectators into a melee action', () => {
+  const blade = { alive: true, slot: 'sword', meleeWeapon: 'katana', weapon: 'sniper', aimTicks: 18, parryTicks: 32, stamina: 100 };
+  for (const change of [{ slot: 'potion' }, { slot: 'grenade' }, { slot: 'empty' }, { alive: false }, { healTicks: 1 }, { reloadTicks: 1 }]) {
+    const view = secondaryActionPresentation({ ...blade, ...change }); assert.equal(view.kind, 'none'); assert.equal(view.pressed, false);
+  }
+  assert.equal(secondaryActionPresentation(blade, { active: false }).kind, 'none');
+  const gun = { ...blade, hasGun: true, slot: 'primary', aiming: true };
+  assert.equal(meleeActionReadout(gun), null); assert.equal(secondaryActionPresentation(gun).kind, 'aim', 'stale melee timers cannot turn a selected gun into a guard');
+  const attrs = new Map(), button = { textContent: '', writes: 0, getAttribute: key => attrs.get(key), setAttribute(key, value) { this.writes++; attrs.set(key, value); }, getBoundingClientRect() { throw Error('layout read'); } };
+  const view = secondaryActionPresentation(blade); assert.ok(Object.isFrozen(view)); paintSecondaryAction(button, view);
+  assert.equal(button.textContent, 'PARRY'); assert.equal(attrs.get('aria-pressed'), 'true'); assert.equal(attrs.get('data-secondary'), 'parry');
+  const writes = button.writes; for (let frame = 0; frame < 240; frame++) paintSecondaryAction(button, view); assert.equal(button.writes, writes);
+  paintSecondaryAction(button, secondaryActionPresentation(null, { active: false })); assert.equal(button.textContent, 'AIM'); assert.equal(attrs.get('aria-pressed'), 'false'); assert.equal(attrs.get('data-secondary-state'), 'inactive');
 });
 
 test('real accepted magazine reload produces each shared mechanical phase once at every display rate', () => {
@@ -125,6 +176,20 @@ test('impact grouping stays bounded, journals muted shells, and cannot suppress 
   assert.equal(feedback.inspect().trackedShells, 512); assert.ok(Object.isFrozen(feedback.inspect())); feedback.reset(); assert.equal(feedback.inspect().trackedShells, 0);
 });
 
+test('parry sound requires an accepted physical clash, deduplicates its guard and journals muted contacts', () => {
+  const sound = { enabled: true, calls: [], meleeParry(weapon) { this.calls.push(weapon); return true; } }, feedback = createParryAudioReporter(sound);
+  const event = { type: 'meleeParry', playerId: 1, targetId: 0, weapon: 'katana', attackWeapon: 'knife', parryIndex: 2, parryStartTick: 40, defenderLifeId: 3, x: 1, y: 1.2, z: -1 }, before = structuredClone(event);
+  feedback.consume([event, event], 0, { context: 'round1' }); assert.deepEqual(sound.calls, ['katana']); assert.deepEqual(event, before);
+  feedback.consume([event], 0, { context: 'round1' }); assert.equal(sound.calls.length, 1);
+  for (const invalid of [{ type: 'meleeHit' }, { weapon: 'knife' }, { weapon: '__proto__' }, { parryIndex: Infinity }, { parryStartTick: undefined }, { x: NaN }, { playerId: 0 }, { playerId: 7, targetId: 8 }]) feedback.consume([{ ...event, ...invalid }], 0);
+  assert.equal(sound.calls.length, 1);
+  sound.enabled = false; const muted = { ...event, parryIndex: 3 }; feedback.consume([muted], 0, { context: 'round1' }); sound.enabled = true; feedback.consume([muted], 0, { context: 'round1' }); assert.equal(sound.calls.length, 1);
+  const paused = { ...event, parryIndex: 4 }; feedback.consume([paused], 0, { context: 'round1', active: false }); feedback.consume([paused], 0, { context: 'round1' }); assert.equal(sound.calls.length, 1);
+  feedback.consume([{ ...event, defenderLifeId: 4 }], 0, { context: 'round1' }); feedback.consume([{ ...event, playerId: 7, targetId: 8 }], 0, { context: 'round1', viewedId: 7 }); assert.equal(sound.calls.length, 3);
+  for (let parryIndex = 5; parryIndex < 1000; parryIndex++) feedback.consume([{ ...event, parryIndex }], 0);
+  assert.equal(feedback.inspect().trackedParries, 512); assert.ok(Object.isFrozen(feedback.inspect())); feedback.reset(); assert.equal(feedback.inspect().trackedParries, 0);
+});
+
 function audioContext() {
   const sources = [], buffers = [], node = () => ({ connect() {}, disconnect() {} });
   return { sources, buffers, state: 'running', sampleRate: 8000, currentTime: 10,
@@ -140,4 +205,19 @@ test('reload and confirmed impact cache voices share the firearm cap and never c
   assert.equal(audio.gunshotVoices.size, 24); assert.equal(ctx.buffers.length, 4); assert.equal(audio.inspectGunshots().played, 500); assert.equal(audio.inspectReloads().played, 500); assert.equal(audio.inspectImpacts().played, 500);
   audio.stopReloads(); assert.equal(audio.inspectReloads().activeVoices, 0); assert.ok(audio.gunshotVoices.size > 0);
   audio.resetEvents(); assert.equal(audio.gunshotVoices.size, 0); audio.destroy(); assert.equal(audio.reloadBuffers.size, 0); assert.equal(audio.impactBuffers.size, 0);
+});
+
+test('accepted parry metal contact is finite, cached once and shares the existing 24-voice cap', () => {
+  for (const rate of [8000, 44100, 48000, 192000]) {
+    const samples = createVoxelParrySamples(rate); assert.ok(samples.length <= Math.ceil(rate * .15)); assert.ok(samples.every(value => Number.isFinite(value) && Math.abs(value) < .5)); assert.equal(samples[0], 0); assert.equal(samples.at(-1), 0);
+  }
+  for (const rate of [NaN, Infinity, 0, 7999, 192001]) assert.equal(createVoxelParrySamples(rate), null);
+  const audio = new GameAudio(); assert.equal(audio.meleeParry('katana'), false); assert.equal(audio.context, null);
+  const ctx = audioContext(); audio.context = ctx; audio.master = ctx.createGain(); audio.enabled = true;
+  for (let index = 0; index < 500; index++) { audio.gunshot('carbine'); assert.equal(audio.meleeParry(Object.keys(PARRY_PROFILES)[index % 4]), true); }
+  assert.equal(ctx.buffers.length, 2); assert.equal(audio.gunshotVoices.size, 24); assert.equal(audio.inspectParries().played, 500); assert.equal(audio.inspectParries().cachedBuffers, 1);
+  for (let index = 0; index < 100; index++) audio.playVoxelReport(`ignored-${index}`, { parry: true });
+  assert.equal(ctx.buffers.length, 2); assert.equal(audio.meleeBuffers.size, 1, 'the clash category cannot create arbitrary cache entries');
+  for (const weapon of ['knife', '__proto__', null, {}]) assert.equal(audio.meleeParry(weapon), false);
+  audio.resetEvents(); assert.equal(audio.gunshotVoices.size, 0); audio.destroy(); assert.equal(audio.inspectParries().cachedBuffers, 0);
 });

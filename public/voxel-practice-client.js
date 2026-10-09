@@ -1,4 +1,4 @@
-import { staminaPresentation, paintStamina, createReloadAudioPresenter, createGunImpactReporter } from './voxel-fps-feedback.js';
+import { secondaryActionPresentation, paintSecondaryAction, staminaPresentation, paintStamina, createReloadAudioPresenter, createGunImpactReporter, createParryAudioReporter } from './voxel-fps-feedback.js';
 import { GameAudio } from './audio.js';
 import { gameKey, displayKey, getKeyboardLayout, mountKeyboardLayoutPicker, subscribeKeyboardLayout } from './keyboard-layout.js';
 import { ADS, HEAL, PLAYER_HEALTH, predictLocalMovement, findNearbyLoot as findNearbyBreachLoot } from './voxel-engine.js';
@@ -60,7 +60,7 @@ export function bootPractice() {
   const listeners = [], keys = new Set(), physicalKeys = new Map(), mouse = { fire: false, aim: false }, inputQueue = createPracticeInputQueue();
   const touch = { move: { x: 0, y: 0 }, look: { x: 0, y: 0 }, actions: new Set() }, pointers = new Map(), movement = new Map();
   const audio = new GameAudio(), picker = mountKeyboardLayoutPicker($('practice-keyboard'), { id: 'practice-keyboard-select' });
-  const meleeImpacts = createMeleeImpactReporter(audio), gunImpacts = createGunImpactReporter(audio);
+  const meleeImpacts = createMeleeImpactReporter(audio), gunImpacts = createGunImpactReporter(audio), parryAudio = createParryAudioReporter(audio);
   const reloadAudio = createReloadAudioPresenter(audio), staminaElements = { meter: $('practice-stamina-meter'), fill: $('practice-stamina-fill') };
   let staminaView = staminaPresentation(null, { active: false });
   function paintVitals(player, name = 'Your', active = true) { staminaView = staminaPresentation(player, { name, active }); paintStamina(staminaElements.meter, staminaElements.fill, staminaView); }
@@ -73,7 +73,7 @@ export function bootPractice() {
   const currentInput = () => composeInput(keys, touch, mouse, aim, active());
   const inventory = mountInventoryHotbar($('practice-inventory'), actions => {
     if (!active() || state?.phase !== 'fight') return;
-    for (const action of actions) inputQueue.press(action);
+    for (const action of actions) inputQueue.press(action, currentInput());
     canvas.focus({ preventScroll: true }); wake();
   });
   const mapMarkers = new Map(); let playerMarker, stormMarker;
@@ -89,8 +89,8 @@ export function bootPractice() {
   function hints() {
     const layout = getKeyboardLayout(); app.dataset.keyboardLayout = layout;
     setText('practice-move-keys', displayKey('WASD')); setText('practice-grenade-key', displayKey('Q')); setText('practice-guide-grenade', displayKey('Q'));
-    canvas.setAttribute('aria-label', `First-person ${royale ? 'Royale' : 'Breach'} practice. ${displayKey('WASD')} or arrows move, mouse looks, left click or B / J uses your selected item, right click aims, Space jumps, Control crouches, Shift sprints, C walks quietly, R reloads, 1 to 4 equip inventory slots, X drops your selected item, V switches blade, ${displayKey('Q')} throws a grenade, F heals, E picks up supplies, Escape pauses.`);
-    setText('practice-look-hint', fallback ? 'DRAG TO LOOK · ESC PAUSE' : `${displayKey('WASD')} MOVE · RMB AIM · ESC PAUSE`);
+    canvas.setAttribute('aria-label', `First-person ${royale ? 'Royale' : 'Breach'} practice. ${displayKey('WASD')} or arrows move, mouse looks, left click or B / J uses your selected item, right click aims guns, stabs with a knife or parries with other blades, Space jumps, Control crouches, Shift sprints, C walks quietly, R reloads, 1 to 4 equip inventory slots, X drops your selected item, V switches blade, ${displayKey('Q')} throws a grenade, F heals, E picks up supplies, Escape pauses.`);
+    setText('practice-look-hint', fallback ? 'DRAG TO LOOK · ESC PAUSE' : `${displayKey('WASD')} MOVE · RMB SECONDARY · ESC PAUSE`);
   }
   function stopFrame() { if (frameId !== null) cancelAnimationFrame(frameId); frameId = null; previousFrame = null; accumulator = 0; }
   function release() {
@@ -102,6 +102,7 @@ export function bootPractice() {
     pointers.clear();
     for (const pad of document.querySelectorAll('[data-practice-pad]')) pad.querySelector('i').style.transform = 'translate(0,0)';
     for (const button of document.querySelectorAll('[data-practice-action]')) button.setAttribute('aria-pressed', 'false');
+    paintSecondaryAction(document.querySelector('[data-practice-action="aim"]'), secondaryActionPresentation(null, { active: false }));
   }
   function unlock() { if (locked()) document.exitPointerLock?.(); }
   function requestCapture() {
@@ -110,7 +111,7 @@ export function bootPractice() {
   }
   function resetView() {
     release(); stopFrame(); previousPlayers = []; presentationPlayer = null; movement.clear(); eventCursor = 0; feedbackUntil = 0; hitFeedback.reset({ clearHistory: true }); damageFeedback = null;
-    lastCountdown = null; lastHudAt = -Infinity; lastPhase = ''; renderCount = physicsSamples = 0; lastFraction = 0; audio.resetEvents(); meleeImpacts.reset(); gunImpacts.reset(); reloadAudio.reset(); renderer?.resetEffects();
+    lastCountdown = null; lastHudAt = -Infinity; lastPhase = ''; renderCount = physicsSamples = 0; lastFraction = 0; audio.resetEvents(); meleeImpacts.reset(); gunImpacts.reset(); parryAudio.reset(); reloadAudio.reset(); renderer?.resetEffects();
     aim = cleanAim(state.players[0]?.yaw, state.players[0]?.pitch); lastDrawAt = performance.now();
   }
   function buildRadar() {
@@ -170,6 +171,7 @@ export function bootPractice() {
       if (audio.enabled && event.type === 'grenadeExplosion') { audio.noise(.4, { highpass: 40, lowpass: 1500, gain: .3 }); audio.tone(70, .3, { end: 25, gain: .2 }); }
     }
     gunImpacts.consume(freshEvents, 0, { context: `${state.mapId}:${state.practice.sessionId}` });
+    parryAudio.consume(freshEvents, 0, { context: `${state.mapId}:${state.practice.sessionId}`, active: active() && state.phase === 'fight' });
     hitFeedback.consume(freshEvents, state.players[0], state.players, { now, lifeKey: `${state.mapId}:${state.practice.sessionId}`, active: state.phase === 'fight' && !modalOpen });
   }
   function updateHud(now, force = false) {
@@ -181,6 +183,7 @@ export function bootPractice() {
     paintVitals(player, 'Your', activeSession && active());
     inventory.update(player, { visible: activeSession && player.alive, interactive: active() && phase === 'fight' });
     const swap = inventorySwapPresentation(player), swapButton = document.querySelector('[data-practice-action="swap"]'); if (swap && swapButton) { swapButton.textContent = swap.label; swapButton.setAttribute('aria-label', swap.ariaLabel); }
+    paintSecondaryAction(document.querySelector('[data-practice-action="aim"]'), secondaryActionPresentation(player, { active: active() && phase === 'fight', requireGun: royale }));
     setText('practice-map-label', state.mapName); setText('practice-mode-label', state.practice.config.mode === 'targets' ? 'MOVING TARGETS' : 'RETURN FIRE'); setText('practice-bots-left', stats.botsRemaining); setText('practice-hits', stats.hits); setText('practice-clock', clock(stats.seconds));
     setHidden($('practice-overlay'), phase === 'fight'); setHidden($('practice-setup-form'), phase !== 'ready'); setHidden($('practice-pause-card'), phase !== 'paused'); setHidden($('practice-result-card'), phase !== 'matchEnd'); setHidden($('practice-countdown'), phase !== 'countdown');
     setHidden($('practice-combat'), !activeSession); setHidden($('practice-radar'), !activeSession); setDisabled($('practice-pause'), !['fight', 'countdown', 'paused'].includes(phase));
@@ -189,6 +192,7 @@ export function bootPractice() {
     setText('practice-health', player.hp); setText('practice-health-max', `/ ${player.maxHp}`); setStyle($('practice-health-fill'), 'width', `${clamp(player.hp / player.maxHp, 0, 1) * 100}%`); setAttribute($('practice-health-rail'), 'aria-valuenow', String(player.hp)); setAttribute($('practice-health-rail'), 'aria-valuemax', String(player.maxHp)); setAttribute($('practice-health-rail'), 'data-low', String(player.hp <= 60));
     setText('practice-grenades', readout.grenades); setText('practice-potions', readout.potions); setText('practice-weapon-name', readout.label); setText('practice-ammo', readout.ammo); setText('practice-reserve', readout.sword || readout.healing || readout.utility ? '' : `/ ${readout.reserve}`); setText('practice-weapon-status', readout.status); setAttribute(document.querySelector('.practice-weapon'), 'data-sword', String(readout.sword || readout.healing || readout.utility));
     setHidden($('practice-action-track'), !readout.progress); if (readout.progress) setStyle($('practice-action-fill'), 'width', `${readout.progress.percent}%`);
+    setAttribute($('practice-action-track'), 'aria-label', readout.progress?.label || 'Weapon action'); setAttribute($('practice-action-track'), 'aria-valuenow', String(Math.round(readout.progress?.percent || 0))); setAttribute($('practice-action-track'), 'aria-valuetext', `${((readout.progress?.remaining || 0) / 120).toFixed(1)} seconds remaining`);
     const loot = (royale ? findNearbyLoot : findNearbyBreachLoot)(state, 0), lootView = inventoryLootPresentation(loot, player); setHidden($('practice-pickup'), !lootView || phase !== 'fight'); if (lootView) { setText('practice-pickup-name', lootView.name); setText('practice-pickup-detail', displayKey(lootView.detail)); }
     if (playerMarker) { setAttribute(playerMarker, 'cx', player.x); setAttribute(playerMarker, 'cy', player.z); }
     for (const [id, marker] of mapMarkers) { const peer = state.players[id]; setAttribute(marker, 'cx', peer.x); setAttribute(marker, 'cy', peer.z); setStyle(marker, 'display', peer.alive && state.practice.config.mode === 'targets' ? '' : 'none'); }
@@ -252,7 +256,7 @@ export function bootPractice() {
     const action = controlForKey(event);
     if (!action) return; event.preventDefault(); const physical = event.code || event.key; if (event.repeat && !physicalKeys.has(physical)) return;
     const wasHeld = currentInput()[action]; physicalKeys.set(physical, action); keys.add(action);
-    if (state.phase === 'fight' && !wasHeld) inputQueue.press(action); wake();
+    if (state.phase === 'fight' && !wasHeld) inputQueue.press(action, currentInput()); wake();
   }
   function keyboardUp(event) {
     const physical = event.code || event.key, action = physicalKeys.get(physical); physicalKeys.delete(physical);
@@ -266,7 +270,7 @@ export function bootPractice() {
   function mouseDown(event) {
     if (!active() || event.sourceCapabilities?.firesTouchEvents || touchMode && event.sourceCapabilities?.firesTouchEvents !== false || ![0, 2].includes(event.button)) return; touchMode = false; event.preventDefault(); canvas.focus({ preventScroll: true });
     const action = event.button === 0 ? 'fire' : 'aim', wasHeld = currentInput()[action]; mouse[action] = true;
-    if (state.phase === 'fight' && !wasHeld) inputQueue.press(action);
+    if (state.phase === 'fight' && !wasHeld) inputQueue.press(action, currentInput());
     if (!locked()) { fallback = true; hints(); requestCapture(); } wake();
   }
   function mouseUp(event) {
@@ -278,7 +282,7 @@ export function bootPractice() {
     const target = event.target.closest?.('[data-practice-action],[data-practice-pad]'); if (!target || !active()) return; event.preventDefault();
     const pad = target.dataset.practicePad, action = target.dataset.practiceAction, pointer = { target, pad, action, token: null };
     pointers.set(event.pointerId, pointer); try { target.setPointerCapture(event.pointerId); } catch {}
-    if (action) { const wasHeld = currentInput()[action]; touch.actions.add(action); if (state.phase === 'fight' && !wasHeld) pointer.token = inputQueue.press(action); target.setAttribute('aria-pressed', 'true'); } if (pad) touchMove(event); wake();
+    if (action) { const wasHeld = currentInput()[action]; touch.actions.add(action); if (state.phase === 'fight' && !wasHeld) pointer.token = inputQueue.press(action, currentInput()); target.setAttribute('aria-pressed', 'true'); } if (pad) touchMove(event); wake();
   }
   function touchMove(event) {
     const pointer = pointers.get(event.pointerId); if (!pointer?.pad || !active()) return; event.preventDefault();
@@ -322,7 +326,7 @@ export function bootPractice() {
   listen(window, 'blur', () => { if (active()) pause(); else release(); }); listen(document, 'visibilitychange', () => { if (document.hidden && active()) pause(); }); listen(window, 'pagehide', destroy);
   listen(canvas, 'voxel-renderer-error', event => { if (event.detail?.message) { graphicsError = event.detail.message; if (active()) pause(); setHidden($('practice-error'), false); setText('practice-error-text', graphicsError); } else { graphicsError = ''; setHidden($('practice-error'), true); updateHud(performance.now(), true); draw(performance.now()); } });
   const unsubscribe = subscribeKeyboardLayout(() => { release(); hints(); }); hints(); preview(); graphics();
-  const inspect = () => copy({ state: { ...state, map: undefined, fighters: undefined }, stats: getPracticeStats(state), input: currentInput(), queuedActions: inputQueue.inspect(), presentationPlayer, controls: { pointerLocked: locked(), fallback, modalOpen, paused: state.phase === 'paused', entered: activeSession, touch: touchMode }, renderCount, renderStats: renderer?.stats || null, audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), meleeImpactAudio: meleeImpacts.inspect(), reloadAudio: reloadAudio.inspect(), reloadSounds: audio.inspectReloads(), gunImpactAudio: gunImpacts.inspect(), stamina: staminaView, graphicsError, displayTiming: { physicsSamples, renderSamples: renderCount, lastFraction } });
+  const inspect = () => copy({ state: { ...state, map: undefined, fighters: undefined }, stats: getPracticeStats(state), input: currentInput(), queuedActions: inputQueue.inspect(), presentationPlayer, controls: { pointerLocked: locked(), fallback, modalOpen, paused: state.phase === 'paused', entered: activeSession, touch: touchMode }, renderCount, renderStats: renderer?.stats || null, audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), meleeImpactAudio: meleeImpacts.inspect(), reloadAudio: reloadAudio.inspect(), reloadSounds: audio.inspectReloads(), gunImpactAudio: gunImpacts.inspect(), parryAudio: parryAudio.inspect(), parrySounds: audio.inspectParries(), stamina: staminaView, graphicsError, displayTiming: { physicsSamples, renderSamples: renderCount, lastFraction } });
   const api = Object.freeze({ getState: inspect, getDisplayTiming: () => ({ physicsSamples, renderSamples: renderCount, lastFraction }) }); window.firesidePractice = api;
   return { destroy, inspect };
 }
