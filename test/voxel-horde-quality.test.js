@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import * as Horde from '../public/voxel-horde-engine.js';
-import { eyeHeight, playerHeight, emptyInput } from '../public/voxel-engine.js';
+import { eyeHeight, playerHeight, emptyInput, pickupCombatLoot } from '../public/voxel-engine.js';
 import { WEAPONS } from '../public/voxel-weapons.js';
 
 const openArena = Object.freeze({
@@ -129,6 +129,7 @@ test('real gun, sword and frag kills produce one kill credit and one bounded dro
       Horde.step(state, [{ swap: true }]); assert.equal(human.slot, 'sword');
       for (let hit = 0; hit < 2; hit++) { Horde.step(state, [{ fire: true, yaw: 0 }]); advance(state, 72); }
     } else {
+      const frag={id:++state.horde.lootId,kind:'grenade',amount:1,x:human.x,y:human.y,z:human.z};state.loot.push(frag);assert.equal(pickupCombatLoot(state,human,frag),true);
       // The normal shared throw lands at z=-1.589m in this empty, level arena.
       // Keep the emerging monster at that landing, then run the full fuse.
       pose(human, { x: 0, z: 12, yaw: 0 }); pose(monster, { x: 0, z: -1.5 });
@@ -142,7 +143,7 @@ test('real gun, sword and frag kills produce one kill credit and one bounded dro
     assert.equal(state.horde.totalKills, 1, attack); assert.equal(state.horde.waveKills, 1, attack);
     const kills = state.events.filter(event => event.type === 'kill' && event.targetId === monster.id);
     assert.equal(kills.length, 1, attack); assert.equal(kills[0].attack, attack, attack);
-    assert.equal(state.loot.length, 1, attack); assert.equal(state.loot[0].type, 'health', attack);
+    assert.equal(state.loot.length, 1, attack); assert.equal(state.loot[0].type, 'potion', attack);assert.equal(state.loot[0].amount,1);
     const before = JSON.stringify(state.loot);
     advance(state, 300, [{ fire: true }]);
     assert.equal(state.horde.totalKills, 1, attack); assert.equal(human.kills, 1, attack);
@@ -150,21 +151,21 @@ test('real gun, sword and frag kills produce one kill credit and one bounded dro
   }
 });
 
-test('dropped health cannot be collected through cover or repeatedly from a held pickup key', () => {
+test('dropped potions cannot be collected through cover or repeatedly from a held pickup key and never grant instant health', () => {
   const { state, human, monster } = combatFixture();
   monster.emergenceTicks = 10000;
   pose(human, { x: 0, z: 0 }); human.hp = 50;
-  const drop = { id: 1, type: 'health', kind: 'heal', x: 0, y: 0, z: -1, amount: 45, expiresTick: state.tick + 3000 };
+  const drop = { id: 1, type: 'potion', kind: 'heal', x: 0, y: 0, z: -1, amount: 1, expiresTick: state.tick + 3000 };
   state.loot = [drop];
   state.map = { ...openArena, colliders: [{ id: 'supply-wall', x: -20, y: 0, z: -.6, w: 40, h: 4, d: .12 }] };
   assert.equal(Horde.findNearbyLoot(state, 0), null);
   Horde.step(state, [{ interact: true }]); assert.equal(human.hp, 50); assert.equal(state.loot.length, 1);
   state.map = openArena; Horde.step(state);
   assert.equal(Horde.findNearbyLoot(state, 0), drop);
-  Horde.step(state, [{ interact: true }]); assert.equal(human.hp, 95); assert.equal(state.loot.length, 0);
-  state.loot.push({ ...drop, id: 2 });
-  advance(state, 100, [{ interact: true }]); assert.equal(human.hp, 95); assert.equal(state.loot.length, 1);
-  Horde.step(state); Horde.step(state, [{ interact: true }]); assert.equal(human.hp, 140); assert.equal(state.loot.length, 0);
+  Horde.step(state, [{ interact: true }]); assert.equal(human.hp, 50);assert.equal(human.potions,1); assert.equal(state.loot.length, 0);
+  state.loot.push({ ...drop, id: 2, amount:1 });
+  advance(state, 100, [{ interact: true }]); assert.equal(human.hp, 50);assert.equal(human.potions,1); assert.equal(state.loot.length, 1);
+  Horde.step(state); Horde.step(state, [{ interact: true }]); assert.equal(human.hp, 50);assert.equal(human.potions,2); assert.equal(state.loot.length, 0);
 });
 
 test('sparse co-op human slots stay indexed and a disconnected survivor cannot become a monster target or respawn', () => {

@@ -10,13 +10,17 @@ const arena = { bounds: { minX: -30, maxX: 30, minZ: -30, maxZ: 30 }, colliders:
 function fixture(weapon = 'carbine') {
   const player = createCombatPlayer(0, 1, weapon);
   const target = createCombatPlayer(1); target.x = 20; target.z = 20;
-  return { gameId: 'voxel-breach', practice: {}, phase: 'fight', tick: 0, players: [player, target], fighters: [player, target], map: arena, events: [], eventId: 0, loot: [], lootId: 0, grenades: [], grenadeId: 0, bolts: [], boltId: 0 };
+  const state={ gameId: 'voxel-breach', practice: {}, phase: 'fight', tick: 0, players: [player, target], fighters: [player, target], map: arena, events: [], eventId: 0, loot: [], lootId: 0, grenades: [], grenadeId: 0, bolts: [], boltId: 0 };
+  // Utility-specific fixtures collect their supplies; fresh players carry none.
+  for(const kind of ['heal','grenade']){const loot={id:++state.lootId,kind,amount:1,x:0,y:0,z:0};state.loot.push(loot);assert.equal(pickupCombatLoot(state,player,loot),true);}
+  return state;
 }
 function tick(state, input = {}) { state.tick++; combatStep(state, [{ ...emptyInput(state.players[0]), ...input }, emptyInput(state.players[1])], arena); }
 
-test('the default four-slot kit owns a knife first, chosen weapon second, one potion and one frag', () => {
+test('the default four-slot kit owns only a knife first and chosen weapon second with two free slots', () => {
   const player = createCombatPlayer(0, 1, 'revolver');
-  assert.deepEqual(player.inventory.map(item => [item.kind, item.weapon || item.amount]), [['melee', 'knife'], ['weapon', 'revolver'], ['heal', 1], ['grenade', 1]]);
+  assert.deepEqual(player.inventory.map(item => item?[item.kind, item.weapon || item.amount]:null), [['melee', 'knife'], ['weapon', 'revolver'], null, null]);
+  assert.equal(player.potions+player.grenades,0);
   assert.equal(player.inventoryIndex, 1); assert.equal(player.ammo, 6);
   initializeInventory(player, { knifeOnly: true });
   assert.deepEqual(player.inventory.map(item => item?.weapon || null), ['knife', null, null, null]);

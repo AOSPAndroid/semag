@@ -1,10 +1,10 @@
+import { staminaPresentation, paintStamina, createReloadAudioPresenter, createGunImpactReporter } from './voxel-fps-feedback.js';
 import { displayKey, gameKey, getKeyboardLayout, mountKeyboardLayoutPicker, subscribeKeyboardLayout } from './keyboard-layout.js';
 import { copyText, getName, hostInfo, roomUrl, saveName } from './hub/shared.js';
 import { GameAudio } from './audio.js';
 import { WEAPONS, WEAPON_IDS, weaponAimFovRatio, weaponSpread, weaponStats } from './voxel-weapons.js';
 import { PLAYER_HEALTH, HEAL } from './voxel-engine.js';
-import { meleeLabel, meleeProfile, MELEE_WEAPONS, MELEE_IDS } from './voxel-melee.js';
-import { meleeLoadoutNote } from './hub/horde-setup.js';
+import { meleeLabel, meleeProfile, MELEE_IDS } from './voxel-melee.js';
 import { incomingDamageFeedback, damageFeedbackPresentation, paintDamageFeedback } from './voxel-damage-feedback.js';
 import { createHitFeedback, paintHitFeedback } from './voxel-hit-feedback.js';
 import { combatPresentation, createCorrectionPresenter, createMovementPresenter, hudTransitionKey, interpolatedVoxelState, reconcileMovement, resolvePresentationContacts, withCombatPresentation } from './voxel-presentation.js';
@@ -15,7 +15,7 @@ import { inventoryControlForKey, inventoryItemReadout, inventoryLootPresentation
 import { mountVoxelLabelOverlay } from './voxel-label-overlay.js';
 
 export const LOOK_SENSITIVITY = 0.0025;
-export const FPS_BUTTONS = Object.freeze(['up', 'down', 'left', 'right', 'jump', 'crouch', 'walk', 'fire', 'reload', 'interact', 'aim', 'swap', 'grenade', 'heal', 'slot1', 'slot2', 'slot3', 'slot4', 'drop']);
+export const FPS_BUTTONS = Object.freeze(['up', 'down', 'left', 'right', 'jump', 'crouch', 'walk', 'sprint', 'fire', 'reload', 'interact', 'aim', 'swap', 'grenade', 'heal', 'slot1', 'slot2', 'slot3', 'slot4', 'drop']);
 const TAU = Math.PI * 2;
 const clone = value => value == null ? value : structuredClone(value);
 
@@ -31,7 +31,7 @@ export function neutralInput(yaw = 0, pitch = 0) {
 export function controlForKey(event, layout = getKeyboardLayout()) {
   if (event.defaultPrevented || event.isComposing || event.altKey || event.metaKey) return null;
   const key = gameKey(event, layout).toLowerCase();
-  const action = inventoryControlForKey(event) || ({ w: 'up', arrowup: 'up', s: 'down', arrowdown: 'down', a: 'left', arrowleft: 'left', d: 'right', arrowright: 'right', ' ': 'jump', control: 'crouch', shift: 'walk', r: 'reload', e: 'interact', v: 'swap', q: 'grenade', g: 'grenade', f: 'heal', h: 'heal' })[key] || null;
+  const action = inventoryControlForKey(event) || ({ w: 'up', arrowup: 'up', s: 'down', arrowdown: 'down', a: 'left', arrowleft: 'left', d: 'right', arrowright: 'right', ' ': 'jump', control: 'crouch', shift: 'sprint', c: 'walk', b: 'fire', j: 'fire', r: 'reload', e: 'interact', v: 'swap', q: 'grenade', g: 'grenade', f: 'heal', h: 'heal' })[key] || null;
   // Ctrl is the crouch control, so captured gameplay actions must work while it is held.
   return action;
 }
@@ -294,10 +294,7 @@ async function boot() {
     button.append(number, document.createTextNode(` ${weapon.label}`), detail); arenaButtons.append(button);
   }
   $('loadout-select').replaceChildren(loadoutOptions); $('arena-loadouts').replaceChildren(arenaButtons);
-  for (const name of ['melee-select', 'arena-melee-select']) {
-    const selector = $(name); selector.replaceChildren(...MELEE_IDS.map(id => { const option = document.createElement('option'); option.value = id; option.textContent = MELEE_WEAPONS[id].name; return option; })); selector.value = 'knife';
-  }
-  setText($('arena-melee-note'), meleeLoadoutNote('knife'));
+  setText($('arena-melee-note'), 'Slot 1: knife · Slot 2: chosen gun · Slots 3–4: empty. Scavenge blades, guns and supplies with E.');
   setText($('phase-shortcuts'), 'SETUP 1–9 · CLICK ANY WEAPON · IN PLAY: 1–4 EQUIP, X DROP');
   const roomId = new URLSearchParams(location.search).get('room')?.trim().toUpperCase() || '';
   const roomLabel = /^[A-Z0-9]{6}$/.test(roomId) ? roomId : 'NO ROOM';
@@ -333,7 +330,10 @@ async function boot() {
   let healthView = null; let healthGain = 0; let healthGainUntil = 0; let previewWeapon = null;
   let squadSignature = ''; let rosterSignature = ''; let idleDrawSignature = ''; let mapPlanId = ''; const mapMarkers = new Map();
   const audio = new GameAudio(); const eventSeen = new Set(); const eventOrder = []; const kills = [];
-  const meleeImpacts = createMeleeImpactReporter(audio);
+  const meleeImpacts = createMeleeImpactReporter(audio), gunImpacts = createGunImpactReporter(audio);
+  const reloadAudio = createReloadAudioPresenter(audio), staminaElements = { meter: $('stamina-meter'), fill: $('stamina-fill') };
+  let staminaView = staminaPresentation(null, { active: false });
+  function paintVitals(player, name = 'Your', active = true) { staminaView = staminaPresentation(player, { name, active }); paintStamina(staminaElements.meter, staminaElements.fill, staminaView); }
   const removers = [];
   function listen(target, name, handler, options) { target.addEventListener(name, handler, options); removers.push(() => target.removeEventListener(name, handler, options)); }
   function send(message) { if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message)); }
@@ -356,10 +356,10 @@ async function boot() {
   function utilityFeedback(action) {
     const local = ownPlayer(); if (state?.phase !== 'fight' || !local?.alive) return;
     if (action === 'heal' && !local.healTicks) {
-      if (!local.potions) toast('Your potion is spent. Supplies reset next round.');
+      if (!local.potions) toast('No potions. Press E near a drop to collect one, then F to drink it.');
       else if (local.hp >= local.maxHp) toast('Health is full. Save your potion.');
       else if (!local.grounded) toast('Land before drinking your potion.');
-    } else if (action === 'grenade' && !local.grenades) toast('Your frag is spent. Supplies reset next round.');
+    } else if (action === 'grenade' && !local.grenades) toast('No grenades. Scavenge a drop with E first.');
   }
   function sendInput(buttons = currentInput(), edge = true, now = performance.now(), cancelActions = false, cancelPress = null) {
     const nextSequence = sequence >= 999999000 ? 1 : sequence + 1;
@@ -388,10 +388,12 @@ async function boot() {
     else if (!shouldRun && inputHeartbeat) { clearInterval(inputHeartbeat); inputHeartbeat = null; }
   }
   function neutralize({ pause = false, unlock = false } = {}) {
+    reloadAudio.suspend(); paintVitals(null, 'Your', false);
     worldLabels.clear();
     hitFeedback.reset(); paintHitFeedback(hitElements, { visible: false });
     keys.clear(); pressedKeys.clear(); mouse.fire = mouse.aim = false; rightDrag = false;
     touch.actions.clear(); touch.move = { x: 0, y: 0 }; touch.look = { x: 0, y: 0 };
+    for (const button of document.querySelectorAll('[data-voxel-action="sprint"], [data-voxel-action="walk"], [data-voxel-action="crouch"]')) button.setAttribute('aria-pressed', 'false');
     for (const [pointerId, record] of actionPointers) try { record.element.releasePointerCapture(pointerId); } catch { /* A cancelled pointer is already released. */ }
     for (const [pointerId, record] of padPointers) try { record.element.releasePointerCapture(pointerId); } catch { /* A cancelled pointer is already released. */ }
     actionPointers.clear(); padPointers.clear();
@@ -506,11 +508,11 @@ async function boot() {
           const own = shooter === playerId;
           const gain = own ? 1 : .34;
           audio.gunshot(event.weapon, { gain });
-        } else if (event.type === 'damage' && !meleeImpact && (shooter === playerId || target === playerId)) {
+        } else if (event.type === 'damage' && !meleeImpact && perspective.incoming) {
           const soundKey = `${event.tick ?? state?.tick}:${perspective.incoming ? 'incoming' : 'outgoing'}`;
           if (impactSounds.has(soundKey)) continue;
           impactSounds.add(soundKey);
-          audio.tone(perspective.outgoing ? 920 : 130, 0.055, { end: perspective.outgoing ? 620 : 70, type: 'triangle', gain: 0.23 });
+          audio.tone(130, 0.055, { end: 70, type: 'triangle', gain: 0.23 });
         } else if (['plant', 'planted', 'defuse', 'defused', 'bombPlant', 'bombDefuse'].includes(event.type)) {
           audio.tone(640, 0.13, { gain: 0.18 }); audio.tone(880, 0.12, { gain: 0.12, delay: 0.13 });
         } else if (event.type === 'meleeStart') {
@@ -524,6 +526,7 @@ async function boot() {
         }
       } catch { /* Optional sound cannot interrupt gameplay. */ }
     }
+    gunImpacts.consume(freshEvents, playerId, { context: `${state?.mapId}:${state?.matchId}:${state?.round}`, viewedId: healthHUDPlayer(state, playerId, spectatorId)?.id });
     hitFeedback.consume(freshEvents, ownPlayer(), state.players, { now: performance.now(), lifeKey: `${state.mapId}:${state.round}:${ownPlayer()?.lifeId || 0}`, active: state.phase === 'fight' && !paused && !modalOpen && connected });
     const hits = confirmedHitGroups(freshEvents, playerId);
     if (hits.length) {
@@ -590,9 +593,7 @@ async function boot() {
     setDisabled($('player-name'), !inLobby || !connected);
     setDisabled($('loadout-select'), !connected || !['lobby', 'countdown', 'buy', 'roundEnd'].includes(phase));
     if (local?.weapon && document.activeElement !== $('loadout-select')) $('loadout-select').value = local.weapon;
-    const meleeId = local?.meleeLoadout || 'knife';
-    for (const id of ['melee-select', 'arena-melee-select']) { setDisabled($(id), !connected || !['lobby', 'countdown', 'buy', 'roundEnd'].includes(phase)); if (document.activeElement !== $(id)) $(id).value = meleeId; }
-    setText($('arena-melee-note'), meleeLoadoutNote($('arena-melee-select').value));
+    setText($('arena-melee-note'), 'Knife + chosen gun. No starting potions or grenades; E collects dropped equipment.');
     const me = roster.find(player => player?.id === playerId);
     setHidden($('ready-button'), phase === 'matchEnd'); setHidden($('rematch-button'), phase !== 'matchEnd');
     const mayCancelCountdown = phase === 'countdown' && state?.round === 1 && !(state?.scores?.[0] || state?.scores?.[1]) && !!me?.ready;
@@ -655,6 +656,7 @@ async function boot() {
     }
     const viewed = healthHUDPlayer(state, playerId, spectatorId);
     const spectating = viewed && viewed.id !== playerId;
+    paintVitals(viewed, spectating ? `${lookupName(viewed.id)}’s` : 'Your', connected && !paused && !modalOpen && ['countdown', 'buy', 'fight', 'roundEnd'].includes(phase));
     setHidden($('combat-hud'), inLobby || !viewed || (!viewed.alive && !spectating) || phase === 'matchEnd');
     healthView = healthPresentation(viewed, healthView, { now: performance.now(), round: state?.round });
     setText($('health'), healthView.hp); setText($('health-max'), `/ ${healthView.maxHp}`);
@@ -706,6 +708,7 @@ async function boot() {
       const action = button.dataset.voxelAction;
       if (action === 'swap') { const swap = inventorySwapPresentation(local); button.textContent = swap?.label || (readout.sword ? 'GUN' : 'SWORD'); button.setAttribute('aria-label', swap?.ariaLabel || (readout.sword ? 'Switch to primary gun' : 'Switch to sword')); button.setAttribute('aria-pressed', String(readout.sword)); }
       if (action === 'aim') button.setAttribute('aria-pressed', String(!!local?.aiming));
+      if (['sprint', 'walk', 'crouch'].includes(action)) button.setAttribute('aria-pressed', String(!!currentInput()[action]));
       if (action === 'grenade') { button.textContent = `FRAG ${readout.grenades}`; button.setAttribute('aria-label', `Throw fragmentation grenade: ${readout.grenades} remaining`); button.classList.toggle('unavailable', !readout.grenades); }
       if (action === 'heal') { button.textContent = readout.healing ? 'DRINKING' : `POTION ${readout.potions}`; button.setAttribute('aria-label', `Drink healing potion: ${readout.potions} remaining; restores up to ${engine?.HEAL?.amount || HEAL.amount} health after two seconds; interruption spends the potion`); button.classList.toggle('unavailable', (!readout.potions && !readout.healing) || local?.hp >= (local?.maxHp || PLAYER_HEALTH)); }
     }
@@ -781,7 +784,7 @@ async function boot() {
   }
 
   function draw(now = performance.now()) {
-    if (!renderer || !state || graphicsError || document.hidden) { worldLabels.clear(); return; }
+    if (!renderer?.available || !state || graphicsError || document.hidden) { worldLabels.clear(); reloadAudio.suspend(); paintVitals(null, 'Your', false); return; }
     const renderedState = interpolatedState(snapshots, timeline.time(now), playerId, { predictMovement: engine.predictLocalMovement, traceProjectile: engine.traceShot, combatTime: timeline.currentTime(now) }) || { ...state, players: state.players.map(player => ({ ...player })) };
     const local = ownPlayer();
     if (teamSwitchPending && local?.team === requestedTeam) { teamSwitchPending = false; requestedTeam = null; }
@@ -797,8 +800,10 @@ async function boot() {
     if (local?.alive) presentationPlayer = presentationPlayers.find(player => player.id === playerId) || presentationPlayer;
     const viewPlayer = local?.alive ? presentationPlayer : renderedState.players.find(player => player.id === spectatorId && player.team === local?.team && player.alive) || local;
     const viewAim = local?.alive ? aim : { yaw: viewPlayer?.yaw || 0, pitch: viewPlayer?.pitch || 0 };
-    renderer.render(renderedState, { playerId, localId: playerId, localPlayer: presentationPlayer, viewPlayer, cameraPlayer: viewPlayer, yaw: viewAim.yaw, pitch: viewAim.pitch + (viewPlayer?.recoil || 0), time: now, roster });
+    renderer.render(renderedState, { acceptedPlayers: state.players, playerId, localId: playerId, localPlayer: presentationPlayer, viewPlayer, cameraPlayer: viewPlayer, yaw: viewAim.yaw, pitch: viewAim.pitch + (viewPlayer?.recoil || 0), time: now, roster });
     worldLabels.paint(renderer.worldLabels, { active: labelsActive() });
+    paintVitals(viewPlayer, viewPlayer?.id !== playerId ? `${lookupName(viewPlayer?.id)}’s` : 'Your', labelsActive());
+    reloadAudio.observe(state.players.find(player => player.id === viewPlayer?.id), { tick: state.tick, context: `${state.mapId}:${state.matchId}:${state.round}`, active: connected && !paused && !modalOpen && state.phase === 'fight' });
     renderCount++;
     paintHitFeedback(hitElements, hitFeedback.present(local, { now, lifeKey: `${state.mapId}:${state.round}:${local?.lifeId || 0}`, active: state.phase === 'fight' && !paused && !modalOpen && connected, reducedMotion: hitMotion.matches }));
     paintDamageFeedback($('damage-cue'), damageFeedbackPresentation(damageFeedback, viewPlayer, { now, lifeKey: state.round, yaw: viewAim.yaw, active: state.phase === 'fight' }));
@@ -866,7 +871,7 @@ async function boot() {
     if (previousPhase !== state.phase && previousPhase !== null) neutralize();
     if (state.phase === 'lobby' && previousPhase !== 'lobby') {
       neutralize({ pause: true, unlock: true }); entered = false; fallback = false;
-      eventSeen.clear(); eventOrder.length = 0; kills.length = 0; healthView = null; healthGainUntil = 0; feedbackUntil = 0; hitFeedback.reset({ clearHistory: true }); damageFeedback = null; lastCountdown = null; audio.resetEvents(); meleeImpacts.reset();
+      eventSeen.clear(); eventOrder.length = 0; kills.length = 0; healthView = null; healthGainUntil = 0; feedbackUntil = 0; hitFeedback.reset({ clearHistory: true }); damageFeedback = null; lastCountdown = null; audio.resetEvents(); meleeImpacts.reset(); gunImpacts.reset(); reloadAudio.reset();
     }
     if (local && !local.alive && old?.players.find(player => player.id === playerId)?.alive !== false) neutralize({ pause: true, unlock: true });
     const ackValue = message.acks?.[playerId];
@@ -993,7 +998,7 @@ async function boot() {
     const layout = getKeyboardLayout();
     setText($('move-keys'), layout.toUpperCase());
     for (const label of document.querySelectorAll('[data-voxel-key]')) label.textContent = displayKey(label.dataset.voxelKey, layout);
-    canvas.setAttribute('aria-label', `3D tactical shooter. ${layout.toUpperCase()} or arrows to move, mouse to look, left click to use your selected item, right click to aim, 1 to 4 equip inventory slots, X drops the selected item, V switches blade and gun, ${displayKey('Q', layout)} grenade, F healing potion, R reload, E picks up loot or holds to plant or defuse, Space jumps, Control crouches, Shift walks. Choose any weapon in setup; number keys 1 to 9 select the first nine.`);
+    canvas.setAttribute('aria-label', `3D tactical shooter. ${layout.toUpperCase()} or arrows to move, mouse to look, left click to use your selected item, right click to aim, 1 to 4 equip inventory slots, X drops the selected item, V switches blade and gun, ${displayKey('Q', layout)} grenade, F healing potion, R reload, E picks up loot or holds to plant or defuse, Space jumps, Control crouches, Shift sprints, C walks quietly. Choose any weapon in setup; number keys 1 to 9 select the first nine.`);
   }
   function updateLayout() { neutralize({ pause: entered, unlock: true }); updateKeyLabels(); }
   const unsubscribeLayout = subscribeKeyboardLayout(updateLayout); updateKeyLabels();
@@ -1056,7 +1061,6 @@ async function boot() {
   listen($('overlay-ready'), 'click', () => (state?.phase === 'matchEnd' ? $('rematch-button') : $('ready-button')).click());
   listen($('player-name'), 'change', () => { playerName = saveName($('player-name').value); $('player-name').value = playerName; send({ type: 'join', name: playerName }); });
   listen($('loadout-select'), 'change', () => { previewWeapon = null; renderWeaponComparison($('loadout-select').value); neutralize(); send({ type: 'fps-loadout', weaponId: $('loadout-select').value }); });
-  for (const id of ['melee-select', 'arena-melee-select']) listen($(id), 'change', () => { const meleeId = $(id).value; neutralize(); send({ type: 'fps-loadout', meleeId }); });
   for (const button of document.querySelectorAll('[data-arena-loadout]')) {
     listen(button, 'click', () => { previewWeapon = null; renderWeaponComparison(button.dataset.arenaLoadout); selectArenaLoadout(button.dataset.arenaLoadout); });
     listen(button, 'mouseenter', () => { previewWeapon = button.dataset.arenaLoadout; renderWeaponComparison(previewWeapon); });
@@ -1147,7 +1151,7 @@ async function boot() {
     for (const remove of removers) remove(); pending = []; snapshots = []; kills.length = 0; eventSeen.clear();
   }
   listen(window, 'pagehide', destroy);
-  const inspect = () => clone({ state, players: roster, playerId, input: currentInput(), predictedPlayer, presentationPlayer, presentationPlayers, predictionRemainder: accumulator, predictionTick, actionQueue: actionInputs.inspect(), timeline: timeline.getState(), correction: correction.getState(), connected, controls: { pointerLocked: pointerLocked(), fallback, touch: touchMode, paused, entered, modalOpen }, queueLength: pending.length, renderCount, renderStats: renderer?.stats || null, worldLabels: worldLabels.inspect(), audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), meleeImpactAudio: meleeImpacts.inspect(), graphicsError, spectatorId });
+  const inspect = () => clone({ state, players: roster, playerId, input: currentInput(), predictedPlayer, presentationPlayer, presentationPlayers, predictionRemainder: accumulator, predictionTick, actionQueue: actionInputs.inspect(), timeline: timeline.getState(), correction: correction.getState(), connected, controls: { pointerLocked: pointerLocked(), fallback, touch: touchMode, paused, entered, modalOpen }, queueLength: pending.length, renderCount, renderStats: renderer?.stats || null, worldLabels: worldLabels.inspect(), audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), meleeImpactAudio: meleeImpacts.inspect(), reloadAudio: reloadAudio.inspect(), reloadSounds: audio.inspectReloads(), gunImpactAudio: gunImpacts.inspect(), stamina: staminaView, graphicsError, spectatorId });
   window.SemagVoxel = Object.freeze({ getState: inspect, inspect });
   updateUI();
   try {

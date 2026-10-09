@@ -6,12 +6,17 @@ import * as Royale from '../public/voxel-royale-engine.js';
 import { composeInput as breachInput } from '../public/voxel-client.js';
 import { composeInput as royaleInput } from '../public/voxel-royale-client.js';
 import { movementPresentation } from '../public/voxel-presentation.js';
+import { addInventoryStack, refreshInventory } from '../public/voxel-inventory.js';
 
 function fight(weapon = 'pistol') {
   const state = Voxel.createState();
   Voxel.selectLoadout(state, 0, weapon); Voxel.startMatch(state);
   while (state.phase !== 'fight') Voxel.step(state);
   return state;
+}
+function carrySupply(player, kind) {
+  assert.equal(addInventoryStack(player, kind, 1), 1);
+  refreshInventory(player);
 }
 function shortPress(queue, action, now = 100, aim = {}, viewTick) {
   queue.observe({ ...aim, [action]: true }, now, { viewTick });
@@ -67,7 +72,11 @@ test('short utility taps start actual reload, grenade, healing and jump commitme
   for (const action of ['reload', 'grenade', 'heal', 'jump']) {
     const state = fight(), queue = createFpsInputQueue(), player = state.players[0];
     if (action === 'reload') player.ammo--;
-    if (action === 'heal') Voxel.applyCombatDamage(state, [{ playerId: 1, targetId: 0, damage: 75, weapon: 'carbine', attack: 'gun' }]);
+    if (action === 'grenade') { assert.equal(player.grenades, 0); carrySupply(player, 'grenade'); assert.equal(player.grenades, 1); }
+    if (action === 'heal') {
+      assert.equal(player.potions, 0); carrySupply(player, 'heal'); assert.equal(player.potions, 1);
+      Voxel.applyCombatDamage(state, [{ playerId: 1, targetId: 0, damage: 75, weapon: 'carbine', attack: 'gun' }]);
+    }
     shortPress(queue, action); tick(state, queue);
     if (action === 'reload') assert.ok(player.reloadTicks > 0);
     if (action === 'grenade') { assert.equal(player.grenades, 0); assert.equal(state.grenades.length, 1); assert.ok(player.grenadeThrowTicks > 0); }
@@ -102,6 +111,7 @@ test('non-aim utility presses never redirect a held automatic shot or restore st
 
 test('a queued grenade uses its actual press direction while later movement remains current', () => {
   const state = fight(), queue = createFpsInputQueue();
+  carrySupply(state.players[0], 'grenade');
   shortPress(queue, 'grenade', 100, { yaw: Math.PI / 2, pitch: 0 }, 10);
   queue.observe({ left: true, yaw: -Math.PI / 2, pitch: .2 }, 102, { viewTick: 12 });
   const sampled = tick(state, queue, undefined, 103), grenade = state.grenades[0];
@@ -139,6 +149,7 @@ test('stale released presses expire at 120ms instead of emerging after a stalled
 
 test('cancel resets discard every pending commitment and prevent held actions reentering across a phase fence', () => {
   const state = fight(), queue = createFpsInputQueue();
+  carrySupply(state.players[0], 'grenade'); carrySupply(state.players[0], 'heal');
   for (const action of FPS_EDGE_ACTIONS) shortPress(queue, action);
   const held = Object.fromEntries(FPS_EDGE_ACTIONS.map(action => [action, true]));
   queue.reset({ held, neutral: true });
@@ -175,6 +186,7 @@ test('render previews and copied diagnostics cannot consume or mutate queued pre
 test('half-tick movement never invents a jump ahead of a queued fire or grenade commitment', () => {
   for (const action of ['fire', 'grenade']) {
     const state = fight(), queue = createFpsInputQueue(), player = state.players[0];
+    if (action === 'grenade') carrySupply(player, 'grenade');
     queue.observe({ [action]: true, up: true, yaw: -.4, pitch: -.2 }, 100);
     queue.observe({ jump: true, up: true, yaw: 1.1, pitch: .3 }, 101);
     const beforePlayer = structuredClone(player), beforeQueue = queue.inspect();

@@ -18,7 +18,7 @@ async function rejected(peer, message) {
   const response = await peer.waitFor(value => value.type === 'error', { after }); assert.ok(response.message);
 }
 
-test('Last Stand room creation validates the starting blade and carries it to every human slot and room metadata', async t => {
+test('Last Stand room creation validates legacy blade inputs and advertises a fixed knife starter for every human slot', async t => {
   const game = await host(t);
   for (const melee of ['__proto__', 'katana ', '', null, 1, {}, ['axe']]) {
     const response = await game.post({ gameId: 'voxel-horde', melee }); assert.equal(response.status, 400);
@@ -27,25 +27,28 @@ test('Last Stand room creation validates the starting blade and carries it to ev
   for (const melee of MELEE_IDS) {
     const response = await game.post({ gameId: 'voxel-horde', melee }); assert.equal(response.status, 201);
     const summary = (await response.json()).room, room = game.app.rooms.get(summary.id);
-    assert.equal(summary.melee, melee); assert.equal(room.state.horde.config.melee, melee);
-    assert.ok(room.state.players.every(player => player.inventory[0].weapon === melee));
-    const { welcome } = await game.connect(room); assert.equal(welcome.melee, melee);
+    assert.equal(summary.melee, 'knife'); assert.equal(room.state.horde.config.melee, 'knife');
+    assert.ok(room.state.players.every(player => player.inventory[0].weapon === 'knife'&&player.inventory[2]===null&&player.inventory[3]===null));
+    const { welcome } = await game.connect(room); assert.equal(welcome.melee, 'knife');
   }
   const response = await game.post({ gameId: 'voxel-horde' });
-  assert.equal((await response.json()).room.melee, 'katana');
+  assert.equal((await response.json()).room.melee, 'knife');
 });
 
 for (const gameId of ['voxel-breach', 'voxel-horde']) {
-  test(`${gameId} accepts independent blade choices and paired loadouts, without mutating on malformed requests`, async t => {
+  test(`${gameId} accepts gun choices and fixed-knife legacy requests, rejecting free blades atomically`, async t => {
     const game = await host(t), response = await game.post({ gameId }), summary = (await response.json()).room, room = game.app.rooms.get(summary.id);
     const one = await game.connect(room), two = await game.connect(room), other = JSON.stringify(room.state.players[two.welcome.playerId]);
     one.peer.send({ type: 'ready', ready: true }); await flushPeer(one.peer);
     assert.equal(room.players[one.welcome.playerId].ready, true);
-    one.peer.send({ type: 'fps-loadout', meleeId: 'axe' }); await flushPeer(one.peer);
-    assert.equal(room.state.players[one.welcome.playerId].inventory[0].weapon, 'axe'); assert.equal(room.players[one.welcome.playerId].ready, false);
-    one.peer.send({ type: 'fps-loadout', weaponId: 'dualsmg', meleeId: 'tonfas' }); await flushPeer(one.peer);
+    const initial=JSON.stringify(room.state.players),revision=room.state.eventId;
+    await rejected(one.peer,{type:'fps-loadout',meleeId:'axe'});assert.equal(JSON.stringify(room.state.players),initial);assert.equal(room.state.eventId,revision);assert.equal(room.players[one.welcome.playerId].ready,true);
+    for(const meleeId of MELEE_IDS.filter(id=>id!=='knife')){
+      await rejected(one.peer,{type:'fps-loadout',weaponId:'dualsmg',meleeId});assert.equal(JSON.stringify(room.state.players),initial,meleeId);assert.equal(room.state.eventId,revision,meleeId);
+    }
+    one.peer.send({ type: 'fps-loadout', weaponId: 'dualsmg', meleeId: 'knife' }); await flushPeer(one.peer);
     const player = room.state.players[one.welcome.playerId];
-    assert.equal(player.inventory[0].weapon, 'tonfas'); assert.equal(player.inventory[1].weapon, 'dualsmg');
+    assert.equal(player.inventory[0].weapon, 'knife'); assert.equal(player.inventory[1].weapon, 'dualsmg');assert.equal(room.players[one.welcome.playerId].ready,false);assert.equal(player.potions+player.grenades,0);
     assert.equal(JSON.stringify(room.state.players[two.welcome.playerId]), other, 'a loadout never changes another player');
     for (const message of [
       { type: 'fps-loadout' }, { type: 'fps-loadout', meleeId: '__proto__' },
@@ -58,7 +61,7 @@ for (const gameId of ['voxel-breach', 'voxel-horde']) {
       await rejected(one.peer, message); assert.equal(JSON.stringify(room.state.players), before); assert.equal(room.state.eventId, revision);
     }
     one.peer.send({ type: 'fps-loadout', weaponId: 'slugshotgun' }); await flushPeer(one.peer);
-    assert.equal(player.inventory[1].weapon, 'slugshotgun'); assert.equal(player.inventory[0].weapon, 'tonfas', 'legacy gun-only messages preserve the chosen blade');
+    assert.equal(player.inventory[1].weapon, 'slugshotgun'); assert.equal(player.inventory[0].weapon, 'knife', 'gun-only messages preserve the fixed starter');
     room.state.phase = 'fight'; const before = JSON.stringify(room.state.players);
     await rejected(one.peer, { type: 'fps-loadout', weaponId: 'carbine', meleeId: 'katana' });
     assert.equal(JSON.stringify(room.state.players), before, 'live combat rejects the entire replacement');

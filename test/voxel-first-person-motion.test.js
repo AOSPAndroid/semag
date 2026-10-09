@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createCombatPlayer } from '../public/voxel-engine.js';
 import { WEAPONS } from '../public/voxel-weapons.js';
-import { createFirstPersonMotionPresenter, createWeaponShotPresenter, weaponShotPose } from '../public/voxel-first-person-motion.js';
+import { createFirstPersonMotionPresenter, createWeaponShotPresenter, weaponShotPose, weaponCyclePose } from '../public/voxel-first-person-motion.js';
 import { VoxelRenderer } from '../public/voxel-renderer.js';
 
 const actor = patch => ({ ...createCombatPlayer(0), ...patch });
@@ -51,6 +51,23 @@ test('crouch reduces head motion and settled ADS preserves an exactly still aim 
   assert.ok(crouching.bobY >= -.0081 && Math.abs(crouching.roll) <= .00153);
   const partial = walk(createFirstPersonMotionPresenter(), 120, .8);
   close(partial.bobY, normal.bobY * .2); close(partial.roll, normal.roll * .2);
+});
+
+test('sprint gives the held weapon a clear low carry while eye motion and the central aim stay small', () => {
+  for (const hz of [60, 144, 240]) {
+    const present = createFirstPersonMotionPresenter(); present(actor({ sprinting: true }), 0, 'sprint');
+    let pose;
+    for (let frame = 1; frame <= hz; frame++) {
+      const player = actor({ sprinting: true, z: -7.7 * frame / hz, yaw: .1, pitch: -.2 }), before = structuredClone(player);
+      pose = present(player, frame * 1000 / hz, 'sprint');
+      assert.ok(pose.bobY >= -.018 && pose.bobY <= 0 && Math.abs(pose.roll) <= .0034);
+      assert.ok(Math.abs(pose.weaponX) <= .015 && Math.abs(pose.weaponY) <= .066 && pose.weaponZ <= .035);
+      assert.deepEqual(player, before, 'sprint carry cannot alter the real view angles or physical stance');
+    }
+    assert.ok(pose.sprint > .999 && pose.weaponPitch < -.17 && pose.weaponY < -.04);
+    for (let frame = 1; frame <= hz; frame++) pose = present(actor({ z: -7.7, sprinting: true, vz: -7.7 }), 1000 + frame * 1000 / hz, 'sprint');
+    assert.ok(pose.sprint < .00001 && Math.abs(pose.weaponPitch) < .00001, 'stale flags and velocity cannot keep a pinned body sprinting');
+  }
 });
 
 test('airborne footsteps fade and landing provides a bounded soft compression', () => {
@@ -129,6 +146,26 @@ test('one accepted shell creates one impulse despite repeated snapshots and late
   assert.equal(present.sample('carbine', 1040).kick, 0);
 });
 
+test('accepted-shot ages retain real per-hand slides and the delayed pump/bolt cycle without trigger guesses', () => {
+  const present = createWeaponShotPresenter();
+  assert.equal(present.age('shotgun', 1000), Infinity);
+  assert.equal(present.report({ id: 1, type: 'dryFire', weapon: 'shotgun' }, 1000), false);
+  assert.deepEqual(weaponCyclePose('shotgun', present.age('shotgun', 1200)), { pump: 0, bolt: 0 });
+  present.report({ id: 2, type: 'shot', weapon: 'shotgun', pellet: 0 }, 1000);
+  assert.equal(present.sample('shotgun', 1490).kick, 0, 'the recoil settles before the pump has returned');
+  assert.ok(weaponCyclePose('shotgun', present.age('shotgun', 1490)).pump > 0);
+  assert.equal(present.sample('shotgun', 1525).kick, 0); assert.equal(present.age('shotgun', 1525), Infinity);
+  present.report({ id: 3, type: 'shot', weapon: 'dualpistols', hand: 0, pellet: 0 }, 2000);
+  present.report({ id: 4, type: 'shot', weapon: 'dualpistols', hand: 1, pellet: 0 }, 2010);
+  assert.equal(present.age('dualpistols', 2020, 0), 20); assert.equal(present.age('dualpistols', 2020, 1), 10);
+  assert.ok(weaponCyclePose('dualpistols', present.age('dualpistols', 2020, 0)).bolt > .9);
+  assert.ok(weaponCyclePose('sniper', 265).bolt > .99 && weaponCyclePose('sniper', 0).bolt === 0);
+  for (const hz of [60, 144, 240]) {
+    for (let frame = 0; frame < hz / 2; frame++) weaponCyclePose('slugshotgun', frame * 1000 / hz);
+    assert.deepEqual(weaponCyclePose('slugshotgun', 245), { pump: 1, bolt: 0 });
+  }
+});
+
 test('long automatic reports remain bounded and invalid/profile prototype input stays finite', () => {
   const present = createWeaponShotPresenter();
   for (let id = 0; id < 500; id++) present.report({ id, type: 'shot', weapon: 'smg', pellet: 0 }, id);
@@ -139,7 +176,7 @@ test('long automatic reports remain bounded and invalid/profile prototype input 
   const stacked = createWeaponShotPresenter();
   for (let id = 0; id < 16; id++) stacked.report({ id, type: 'shot', weapon: 'smg', pellet: 0 }, 1000);
   const saturated = stacked.sample('smg', 1020);
-  assert.ok(saturated.kick <= 1.7 && saturated.z <= .044 * 1.7 && saturated.pitch <= .055 * 1.7);
+  assert.ok(saturated.kick <= 1.7 && saturated.z <= .050 * 1.7 && saturated.pitch <= .076 * 1.7);
   for (const weapon of ['constructor', 'toString', '__proto__', 'unknown', null]) {
     assert.equal(present.report({ id: 900, type: 'shot', weapon }, 1010), false);
     assert.ok(Object.values(weaponShotPose(weapon, 10)).every(Number.isFinite));

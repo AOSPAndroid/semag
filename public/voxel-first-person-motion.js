@@ -4,7 +4,7 @@ const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 const finite = (value, fallback = 0) => Number.isFinite(value) ? value : fallback;
 const approach = (current, target, elapsed, duration) => target + (current - target) * Math.exp(-elapsed / duration);
 const smooth = value => { const t = clamp(value, 0, 1); return t * t * (3 - 2 * t); };
-const neutral = () => ({ bobY: 0, roll: 0, weaponX: 0, weaponY: 0, phase: 0, stride: 0, speed: 0, land: 0, airborne: false });
+const neutral = () => ({ bobY: 0, roll: 0, weaponX: 0, weaponY: 0, phase: 0, stride: 0, speed: 0, land: 0, sprint: 0, weaponZ: 0, weaponPitch: 0, airborne: false });
 
 /** Cosmetic head motion follows travelled distance, including predicted sub-tick poses. */
 export function createFirstPersonMotionPresenter() {
@@ -28,8 +28,9 @@ export function createFirstPersonMotionPresenter() {
       pose = {
         bobY: -Math.min(.018, (1 - Math.cos(animation.phase * 2)) * .009 * weight + animation.land * .012 * steadiness) || 0,
         roll: Math.sin(animation.phase) * .0034 * weight,
-        weaponX: Math.sin(animation.phase) * .009 * animation.stride * ground,
-        weaponY: -(1 - Math.cos(animation.phase * 2)) * .004 * animation.stride * ground - animation.land * .009 || 0,
+        weaponX: Math.sin(animation.phase) * (.009 + animation.sprint * .006) * animation.stride * ground,
+        weaponY: -(1 - Math.cos(animation.phase * 2)) * (.004 + animation.sprint * .002) * animation.stride * ground - animation.land * .009 - animation.sprint * .045 || 0,
+        weaponZ: animation.sprint * .035, weaponPitch: -animation.sprint * .18, sprint: animation.sprint,
         phase: animation.phase, stride: animation.stride, speed: animation.speed, land: animation.land, airborne: animation.airborne,
       };
     }
@@ -43,22 +44,22 @@ export function createFirstPersonMotionPresenter() {
 // Presentation impulses only: these do not change the gun's authoritative recoil,
 // spread, cooldown, damage, shot direction or the player's mouse-look angles.
 const SHOT_PROFILES = Object.freeze({
-  carbine: { attack: 7, decay: 25, duration: 200, push: .075, pitch: .080, side: .004, yaw: .009, lift: .004 },
-  smg: { attack: 5, decay: 19, duration: 155, push: .044, pitch: .055, side: .003, yaw: .007, lift: .002 },
-  marksman: { attack: 8, decay: 34, duration: 275, push: .103, pitch: .105, side: .004, yaw: .010, lift: .005 },
-  pistol: { attack: 6, decay: 27, duration: 220, push: .070, pitch: .140, side: .005, yaw: .013, lift: .007 },
-  shotgun: { attack: 9, decay: 42, duration: 340, push: .133, pitch: .130, side: .007, yaw: .014, lift: .007 },
-  burst: { attack: 6, decay: 23, duration: 190, push: .061, pitch: .071, side: .004, yaw: .008, lift: .003 },
-  sniper: { attack: 9, decay: 48, duration: 385, push: .155, pitch: .155, side: .006, yaw: .012, lift: .006 },
-  lmg: { attack: 7, decay: 29, duration: 235, push: .086, pitch: .073, side: .006, yaw: .011, lift: .003 },
-  crossbow: { attack: 6, decay: 24, duration: 200, push: .036, pitch: .034, side: .002, yaw: .005, lift: .002 },
-  revolver: { attack: 7, decay: 34, duration: 280, push: .095, pitch: .150, side: .006, yaw: .017, lift: .009 },
-  pdw: { attack: 5, decay: 17, duration: 145, push: .038, pitch: .046, side: .0025, yaw: .006, lift: .002 },
-  autoshotgun: { attack: 8, decay: 36, duration: 295, push: .115, pitch: .116, side: .006, yaw: .012, lift: .006 },
-  battlerifle: { attack: 8, decay: 35, duration: 280, push: .108, pitch: .112, side: .005, yaw: .013, lift: .005 },
-  dualpistols: { attack: 6, decay: 24, duration: 205, push: .064, pitch: .128, side: .006, yaw: .018, lift: .008 },
-  dualsmg: { attack: 5, decay: 18, duration: 150, push: .041, pitch: .062, side: .004, yaw: .011, lift: .003 },
-  slugshotgun: { attack: 9, decay: 44, duration: 350, push: .145, pitch: .143, side: .006, yaw: .015, lift: .008 },
+  carbine: { attack: 7, decay: 25, duration: 200, push: .090, pitch: .105, side: .006, yaw: .014, lift: .006 },
+  smg: { attack: 5, decay: 19, duration: 155, push: .050, pitch: .076, side: .004, yaw: .011, lift: .003 },
+  marksman: { attack: 8, decay: 34, duration: 275, push: .116, pitch: .139, side: .005, yaw: .015, lift: .008 },
+  pistol: { attack: 6, decay: 27, duration: 220, push: .082, pitch: .205, side: .007, yaw: .021, lift: .012 },
+  shotgun: { attack: 9, decay: 42, duration: 340, push: .148, pitch: .172, side: .009, yaw: .020, lift: .011 },
+  burst: { attack: 6, decay: 23, duration: 190, push: .074, pitch: .095, side: .005, yaw: .013, lift: .005 },
+  sniper: { attack: 9, decay: 48, duration: 385, push: .158, pitch: .200, side: .008, yaw: .018, lift: .011 },
+  lmg: { attack: 7, decay: 29, duration: 235, push: .101, pitch: .105, side: .008, yaw: .017, lift: .006 },
+  crossbow: { attack: 6, decay: 24, duration: 200, push: .042, pitch: .046, side: .003, yaw: .007, lift: .003 },
+  revolver: { attack: 7, decay: 34, duration: 280, push: .112, pitch: .225, side: .008, yaw: .023, lift: .015 },
+  pdw: { attack: 5, decay: 17, duration: 145, push: .045, pitch: .065, side: .0035, yaw: .010, lift: .004 },
+  autoshotgun: { attack: 8, decay: 36, duration: 295, push: .129, pitch: .156, side: .008, yaw: .018, lift: .010 },
+  battlerifle: { attack: 8, decay: 35, duration: 280, push: .122, pitch: .156, side: .007, yaw: .019, lift: .009 },
+  dualpistols: { attack: 6, decay: 24, duration: 205, push: .075, pitch: .184, side: .008, yaw: .023, lift: .013 },
+  dualsmg: { attack: 5, decay: 18, duration: 150, push: .049, pitch: .084, side: .006, yaw: .017, lift: .005 },
+  slugshotgun: { attack: 9, decay: 44, duration: 350, push: .154, pitch: .188, side: .008, yaw: .022, lift: .013 },
 });
 
 /** A fast attack and analytic damped recovery are identical at every refresh rate. */
@@ -69,7 +70,18 @@ export function weaponShotPose(weapon, age, aim = 0, side = 1) {
   const maximum = (profile.decay / profile.attack) * Math.exp(-peakTime / profile.decay);
   const envelope = t >= 0 && t < profile.duration ? ((.42 + t / profile.attack) * Math.exp(-t / profile.decay) / maximum) * (1 - smooth((t - profile.duration * .65) / (profile.duration * .35))) : 0;
   const steady = 1 - clamp(finite(aim), 0, 1) * .72, sideways = Math.sign(finite(side, 1)) || 1;
-  return { kick: envelope, x: envelope * profile.side * sideways * steady, y: envelope * profile.lift * steady, z: envelope * profile.push * (1 - clamp(finite(aim), 0, 1) * .22), yaw: envelope * profile.yaw * sideways * steady, pitch: envelope * profile.pitch * steady };
+  // A small analytic return dip gives the weapon a spring-like settle without
+  // accumulating frame impulses or moving the camera's authoritative aim.
+  const settle = t >= 0 && t < profile.duration ? .065 * smooth((t - profile.decay * 2.2) / (profile.decay * 1.2)) * (1 - smooth((t - profile.decay * 3.4) / Math.max(1, profile.duration - profile.decay * 3.4))) : 0;
+  return { kick: envelope, x: envelope * profile.side * sideways * steady, y: (envelope * profile.lift - settle * .012) * steady, z: envelope * profile.push * (1 - clamp(finite(aim), 0, 1) * .22), yaw: (envelope - settle * .35) * profile.yaw * sideways * steady, pitch: (envelope - settle) * profile.pitch * steady };
+}
+
+/** Mechanical cycling is also sampled from accepted-shot age, never trigger input. */
+export function weaponCyclePose(weapon, age) {
+  const t = finite(age, Infinity);
+  const stroke = (start, pull, release) => t >= start && t < release ? smooth((t - start) / (pull - start)) * (1 - smooth((t - pull) / (release - pull))) : 0;
+  const pump = weapon === 'shotgun' || weapon === 'slugshotgun';
+  return { pump: pump ? stroke(90, 245, 525) : 0, bolt: weapon === 'sniper' ? stroke(105, 265, 480) : weapon === 'crossbow' || pump ? 0 : stroke(0, 19, 78) };
 }
 
 /** Bounded accepted-shot history. Pellet contacts never multiply a shell's impulse. */
@@ -93,7 +105,10 @@ export function createWeaponShotPresenter() {
     return true;
   };
   const sample = (weapon, time, aim = 0, hand = null) => {
-    for (let i = shots.length - 1; i >= 0; i--) if (time < shots[i].born || time - shots[i].born >= 400) shots.splice(i, 1);
+    for (let i = shots.length - 1; i >= 0; i--) {
+      const duration = Math.max(SHOT_PROFILES[shots[i].weapon].duration, shots[i].weapon === 'sniper' ? 480 : shots[i].weapon === 'shotgun' || shots[i].weapon === 'slugshotgun' ? 525 : 0);
+      if (time < shots[i].born || time - shots[i].born >= duration) shots.splice(i, 1);
+    }
     const pose = { kick: 0, x: 0, y: 0, z: 0, yaw: 0, pitch: 0 };
     for (const shot of shots) {
       if (shot.weapon !== weapon || hand !== null && shot.hand !== hand) continue;
@@ -108,5 +123,10 @@ export function createWeaponShotPresenter() {
     }
     return pose;
   };
-  return { report, sample, reset() { shots.length = 0; seen.clear(); order.length = 0; accepted = 0; }, getStats() { return { acceptedShots: accepted, activeShots: shots.length }; } };
+  const age = (weapon, time, hand = null) => {
+    if (!Number.isFinite(time)) return Infinity;
+    for (let i = shots.length - 1; i >= 0; i--) if (shots[i].weapon === weapon && (hand === null || shots[i].hand === hand) && shots[i].born <= time) return time - shots[i].born;
+    return Infinity;
+  };
+  return { report, sample, age, reset() { shots.length = 0; seen.clear(); order.length = 0; accepted = 0; }, getStats() { return { acceptedShots: accepted, activeShots: shots.length }; } };
 }

@@ -8,7 +8,7 @@ import { cleanAim, neutralInput, controlForKey, controlsAllowed, composeInput, c
 const arena = { id: 'test-island', bounds: { minX: -20, maxX: 20, minZ: -20, maxZ: 20 }, colliders: [{ id: 'cover', x: -3, y: 0, z: -3, w: 6, h: 3, d: 1 }] };
 const player = (id = 0, values = {}) => {
   const own = { ...createCombatPlayer(id), team: id };
-  initializeInventory(own, { weapon: values.weapon || 'carbine', knifeOnly: values.hasGun !== true });
+  initializeInventory(own, { weapon: values.weapon || 'carbine', knifeOnly: values.hasGun !== true, potions: values.potions ?? 0, grenades: values.grenades ?? 0 });
   return Object.assign(own, values);
 };
 const active = { connected: true, entered: true, paused: false, modalOpen: false, graphicsError: '', hidden: false, alive: true, phase: 'fight', pointerLocked: true, fallback: false, touchMode: false };
@@ -84,11 +84,11 @@ test('small-knife progress uses its quicker profile and remains in inventory aft
   let readout = combatReadout(own);
   assert.equal(readout.label, 'KNIFE'); assert.equal(readout.progress.total, 44); assert.equal(readout.progress.percent, 50); assert.equal(readout.progress.label, 'Knife attack and recovery');
   readout = combatReadout(player(0, { hasGun: true, weapon: 'smg', slot: 'primary', meleeTicks: 0 }));
-  assert.equal(readout.inventory, `KNIFE · ${WEAPONS.smg.label} · POTION · FRAG`);
+  assert.equal(readout.inventory, `KNIFE · ${WEAPONS.smg.label}`);
 });
 
 test('pickup readout explains gun exchanges, consumables and ammunition without inventing availability', () => {
-  const own = player(0, { hasGun: true, weapon: 'carbine' });
+  const own = player(0, { hasGun: true, weapon: 'carbine', potions: 1, grenades: 1 });
   const exchange = lootPresentation({ id: 'sniper-cache', kind: 'weapon', weapon: 'sniper', ammo: 2, reserve: 8 }, own);
   assert.equal(exchange.name, WEAPONS.sniper.name); assert.match(exchange.detail, /Replace Kestrel Carbine.*slot 2.*2 \/ 8/);
   assert.match(lootPresentation({ id: 1, kind: 'weapon', weapon: 'smg' }, player()).detail, /Pick up/);

@@ -52,7 +52,7 @@ export function refreshInventory(player) {
   player.inventoryPotions = player.potions; player.inventoryGrenades = player.grenades;
   return player;
 }
-export function initializeInventory(player, { weapon = player.weapon || 'carbine', knifeOnly = false, potions = 1, grenades = 1, melee = 'knife' } = {}) {
+export function initializeInventory(player, { weapon = player.weapon || 'carbine', knifeOnly = false, potions = 0, grenades = 0, melee = 'knife' } = {}) {
   melee = typeof melee === 'string' && Object.hasOwn(MELEE_WEAPONS, melee) ? melee : 'knife';
   player.inventory = [createInventoryMelee(melee), knifeOnly ? null : createInventoryGun(weapon), knifeOnly || !potions ? null : { kind: 'heal', amount: count(potions) }, knifeOnly || !grenades ? null : { kind: 'grenade', amount: count(grenades) }];
   player.inventoryIndex = knifeOnly ? 0 : 1; player.inventoryGunIndex = knifeOnly ? -1 : 1;
@@ -82,7 +82,7 @@ function adjustLegacyCount(player, kind, requested) {
 }
 export function ensureInventory(player) {
   if (!Array.isArray(player.inventory) || player.inventory.length !== INVENTORY_SIZE) {
-    initializeInventory(player, { knifeOnly: player.hasGun === false, potions: player.potions ?? 1, grenades: player.grenades ?? 1, melee: player.meleeWeapon || 'knife' });
+    initializeInventory(player, { knifeOnly: player.hasGun === false, potions: player.potions ?? 0, grenades: player.grenades ?? 0, melee: player.meleeWeapon || 'knife' });
     return player;
   }
   storeInventoryGun(player);

@@ -5,6 +5,7 @@ import { ADS, HEAL, createCombatPlayer, createState, combatStep, emptyInput, pic
 import { WEAPONS } from '../public/voxel-weapons.js';
 import { createExpansionMap } from '../public/voxel-expansion-maps.js';
 import { createInventoryGun, selectInventorySlot } from '../public/voxel-inventory.js';
+import { createWeaponShotPresenter } from '../public/voxel-first-person-motion.js';
 import { weaponMeshes, lootMeshes, createLootPresenter, operativeMeshes, mapMeshes, VoxelRenderer } from '../public/voxel-renderer.js';
 
 const newWeapons = ['revolver', 'pdw', 'autoshotgun', 'battlerifle'];
@@ -47,7 +48,11 @@ test('four new held gun silhouettes and their actual reload geometry are distinc
 
 test('flexible potion, grenade and empty slots show their own idle hands and suppress stale gun kick and ADS', () => {
   let samples = 0;
-  const sampler = { sample() { samples++; return { kick: 1, x: 1, y: 1, z: 1, yaw: 1, pitch: 1 }; } };
+  const sampler = createWeaponShotPresenter();
+  assert.equal(sampler.report({ id: 1, type: 'shot', playerId: 0, weapon: 'battlerifle', pellet: 0 }, 990), true);
+  assert.ok(sampler.sample('battlerifle', 1000).kick > .5, 'the actual accepted gun impulse is still live when switching to a supply');
+  const sample = sampler.sample;
+  sampler.sample = (...args) => { samples++; return sample(...args); };
   const signatures = new Set();
   for (const slot of ['potion', 'grenade', 'empty']) {
     const idle = view({ slot }), stale = view({ slot, aimTicks: ADS.ticks }, { presentShots: sampler, localShot: { born: 990, weapon: 'battlerifle' } });

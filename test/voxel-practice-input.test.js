@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createPracticeInputQueue } from '../public/voxel-practice-input.js';
 import { createPractice, startPractice, stepPractice, pausePractice, resumePractice } from '../public/voxel-practice-engine.js';
-import { applyCombatDamage, emptyInput, predictLocalMovement } from '../public/voxel-engine.js';
+import { applyCombatDamage, emptyInput, predictLocalMovement, pickupCombatLoot } from '../public/voxel-engine.js';
 import { WEAPONS } from '../public/voxel-weapons.js';
 import { movementPresentation } from '../public/voxel-presentation.js';
 import { composeInput } from '../public/voxel-client.js';
@@ -13,6 +13,7 @@ function fight(options = {}) {
   startPractice(state);
   while (state.phase === 'countdown') stepPractice(state);
   assert.equal(state.phase, 'fight');
+  for(const kind of ['heal','grenade']){const loot={id:++state.lootId,kind,amount:1,x:state.players[0].x,y:state.players[0].y,z:state.players[0].z};state.loot.push(loot);assert.equal(pickupCombatLoot(state,state.players[0],loot),true);}
   return state;
 }
 function shortPress(queue, action) { queue.press(action); queue.release(action); }

@@ -38,8 +38,8 @@ class Element extends EventTarget {
   setAttribute(key, value) { this.attributes[key] = value; }
 }
 function dialogFixture() {
-  const map = new Element('paris'), difficulty = new Element('nightmare'), melee = new Element('katana'), form = new Element();
-  form.elements = { namedItem: name => ({ mapId: map, difficulty, melee })[name] };
+  const map = new Element('paris'), difficulty = new Element('nightmare'), form = new Element();
+  form.elements = { namedItem: name => ({ mapId: map, difficulty })[name] };
   const selectors = Object.fromEntries(['[data-horde-map-note]', '[data-horde-map-preview]', '[data-horde-melee-note]', '[data-horde-setup-title]', '[data-horde-setup-note]', '[data-horde-submit]', '[data-cancel-horde]'].map(selector => [selector, new Element()]));
   const dialog = new Element(); dialog.open = false;
   dialog.querySelector = selector => selector === 'form' ? form : selectors[selector];
@@ -70,6 +70,6 @@ test('Solo and co-op dialogs require explicit submission and cancelling resolves
   map.value = 'depot'; map.dispatchEvent(new Event('change'));
   assert.match(selectors['[data-horde-map-preview]'].attributes['aria-label'], /Freight Depot/);
   form.dispatchEvent(new Event('submit', { cancelable: true }));
-  assert.deepEqual(await second, { capacity: 3, mapId: 'depot', difficulty: 'nightmare', melee: 'katana' });
+  assert.deepEqual(await second, { capacity: 3, mapId: 'depot', difficulty: 'nightmare', melee: 'knife' });
   dialog.dispatchEvent(new Event('cancel')); assert.equal(dialog.open, false);
 });

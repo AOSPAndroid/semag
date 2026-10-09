@@ -59,6 +59,21 @@ async function inputFrames(game, room, seat, buttons, ticks) {
   for (let tick = 0; tick < ticks; tick++) game.app.tick();
 }
 
+function assertStarterInventory(player, weapon = player.weapon) {
+  assert.deepEqual(player.inventory.map(item => item ? [item.kind, item.weapon] : null), [['melee', 'knife'], ['weapon', weapon], null, null]);
+  assert.equal(player.meleeLoadout, 'knife');
+  assert.equal(player.grenades, 0); assert.equal(player.potions, 0);
+}
+
+async function collectSupply(game, room, seat, kind) {
+  const player = room.state.players[seat.welcome.playerId], loot = Voxel.addInventoryLoot(room.state, player, { kind, amount: 1 });
+  assert.ok(room.state.loot.includes(loot));
+  await inputFrames(game, room, seat, { interact: true }, 1);
+  assert.equal(room.state.loot.some(item => item.id === loot.id), false, 'the socket pickup removes its actual physical supply');
+  assert.ok(room.state.events.some(event => event.type === 'lootPickup' && event.playerId === player.id && event.lootId === loot.id && event.kind === kind));
+  await inputFrames(game, room, seat, {}, 1);
+}
+
 async function walkRoute(game, room, seat, waypoints) {
   const id = seat.welcome.playerId;
   for (const [x, z, tolerance = .35] of waypoints) {
@@ -248,7 +263,7 @@ test('Voxel arsenal controls release on stale input without accepting inventory 
   for (const key of ['aim', 'swap', 'grenade', 'heal']) assert.equal(room.slots[0].buttons[key], false);
   assert.equal(room.slots[0].buttons.yaw, .6); assert.equal(room.slots[0].buttons.pitch, -.3);
   assert.equal(room.state.players[0].slot, 'primary');
-  assert.equal(room.state.players[0].grenades, 1); assert.equal(room.state.players[0].potions, 1);
+  assertStarterInventory(room.state.players[0]);
   const hp = room.state.players[0].hp;
   for (const buttons of [{ hp: 999 }, { potions: 99 }, { damage: 999 }, { slot: 'sword' }, { grenades: 99 }]) {
     const after = seat.peer.messages.length;
@@ -259,7 +274,7 @@ test('Voxel arsenal controls release on stale input without accepting inventory 
   }
 });
 
-test('Voxel new loadouts and finite utility actions are authoritative through real sockets', async t => {
+test('Voxel starter loadouts and finite weapon actions are authoritative through real sockets without granting utilities', async t => {
   const game = await host(t), room = await game.make(2, 'depot'), seats = await game.fill(room);
   for (const [id, weaponId] of ['pistol', 'shotgun', 'burst', 'carbine'].entries()) {
     const after = seats[id].peer.messages.length;
@@ -268,25 +283,61 @@ test('Voxel new loadouts and finite utility actions are authoritative through re
   }
   await readyEveryone(room, seats); advance(game.app, room, 'fight');
   const actor = room.state.players[0];
+  for (const player of room.state.players) assertStarterInventory(player);
   await inputFrames(game, room, seats[0], { aim: true }, Voxel.ADS.ticks);
   assert.equal(actor.aiming, true); assert.equal(actor.aimTicks, Voxel.ADS.ticks);
   await inputFrames(game, room, seats[0], { swap: true }, 40);
   assert.equal(actor.slot, 'sword'); assert.equal(actor.aiming, false);
-  assert.equal(actor.weapon, 'pistol', 'the primary loadout remains available when drawing the sword');
+  assert.equal(actor.meleeWeapon, 'knife');
+  assert.equal(actor.weapon, 'pistol', 'the primary loadout remains available when drawing the knife');
+  await inputFrames(game, room, seats[0], { fire: true }, 50);
+  assert.equal(actor.meleeIndex, 1); assert.equal(actor.meleeTicks, 0);
+  assert.equal(room.state.events.filter(event => event.type === 'meleeStart' && event.playerId === 0 && event.weapon === 'knife').length, 1, 'holding the knife trigger cannot invent another committed attack');
   await inputFrames(game, room, seats[0], {}, 1);
   await inputFrames(game, room, seats[0], { swap: true }, 1); assert.equal(actor.slot, 'primary');
+  const reserve = actor.reserve;
+  await inputFrames(game, room, seats[0], { fire: true, yaw: 1.5, pitch: 0 }, 30);
+  assert.equal(actor.shots, 1); assert.equal(actor.ammo, Voxel.WEAPONS.pistol.magazine - 1, 'a held pistol press spends exactly one real round');
+  await inputFrames(game, room, seats[0], {}, 1);
+  await inputFrames(game, room, seats[0], { reload: true }, 1);
+  assert.equal(actor.reloadTicks, Voxel.WEAPONS.pistol.reloadTicks);
+  await inputFrames(game, room, seats[0], { reload: true }, Voxel.WEAPONS.pistol.reloadTicks);
+  assert.equal(actor.reloadTicks, 0); assert.equal(actor.ammo, Voxel.WEAPONS.pistol.magazine); assert.equal(actor.reserve, reserve - 1);
+  assert.equal(room.state.events.filter(event => event.type === 'reload' && event.playerId === 0).length, 1);
+  assert.equal(room.state.events.filter(event => event.type === 'reloadComplete' && event.playerId === 0).length, 1);
+  await inputFrames(game, room, seats[0], { grenade: true }, 30);
+  assert.equal(actor.grenades, 0); assert.equal(room.state.grenades.length, 0);
+  await inputFrames(game, room, seats[0], { grenade: true }, 30);
+  assert.equal(room.state.grenades.length, 0, 'holding throw cannot invent an uncollected grenade');
+  await inputFrames(game, room, seats[0], { heal: true }, 10);
+  assert.equal(actor.potions, 0); assert.equal(actor.healTicks, 0); assert.equal(actor.hp, Voxel.PLAYER_HEALTH);
+  assert.equal(room.state.events.some(event => event.type === 'grenadeThrow' || event.type === 'healStart'), false, 'socket input cannot grant physical utility supplies');
+  await collectSupply(game, room, seats[0], 'heal'); assert.equal(actor.potions, 1);
+  await inputFrames(game, room, seats[0], { heal: true }, 10);
+  assert.equal(actor.potions, 1, 'full health does not waste a physically collected healing potion');
+  assert.equal(actor.healTicks, 0); assert.equal(actor.hp, Voxel.PLAYER_HEALTH);
+  await inputFrames(game, room, seats[0], {}, 1);
+  const injury = Voxel.WEAPONS.burst.damage * 3;
+  Voxel.applyCombatDamage(room.state, Array.from({ length: 3 }, () => ({ playerId: 2, targetId: 0, damage: Voxel.WEAPONS.burst.damage, weapon: 'burst', attack: 'gun' })));
+  assert.equal(actor.hp, Voxel.PLAYER_HEALTH - injury);
+  await inputFrames(game, room, seats[0], { heal: true }, 1);
+  assert.equal(actor.potions, 0); assert.equal(actor.healTicks, Voxel.HEAL.ticks); assert.equal(actor.healing, true);
+  await inputFrames(game, room, seats[0], { heal: true }, Voxel.HEAL.ticks);
+  assert.equal(actor.healTicks, 0); assert.equal(actor.healing, false); assert.equal(actor.hp, Voxel.PLAYER_HEALTH - injury + Voxel.HEAL.amount);
+  assert.equal(room.state.events.filter(event => event.type === 'healStart' && event.playerId === 0).length, 1);
+  const completedHeal = room.state.events.filter(event => event.type === 'healComplete' && event.playerId === 0);
+  assert.equal(completedHeal.length, 1); assert.equal(completedHeal[0].amount, Voxel.HEAL.amount);
+  await collectSupply(game, room, seats[0], 'grenade'); assert.equal(actor.grenades, 1);
   await inputFrames(game, room, seats[0], { grenade: true }, 30);
   assert.equal(actor.grenades, 0); assert.equal(room.state.grenades.length, 1);
   await inputFrames(game, room, seats[0], { grenade: true }, 30);
-  assert.equal(room.state.grenades.length, 1, 'a held throw cannot invent another grenade');
-  assert.equal(actor.potions, 1);
-  await inputFrames(game, room, seats[0], { heal: true }, 10);
-  assert.equal(actor.potions, 1, 'full health does not waste the healing potion');
+  assert.equal(room.state.grenades.length, 1, 'holding throw cannot spend the physical grenade twice');
+  assert.equal(room.state.events.filter(event => event.type === 'grenadeThrow' && event.playerId === 0).length, 1);
   room.state.phase = 'roundEnd'; room.state.phaseTicks = 1;
   game.app.tick();
   assert.equal(room.state.phase, 'countdown'); assert.equal(room.state.grenades.length, 0);
   for (const player of room.state.players) {
-    assert.equal(player.slot, 'primary'); assert.equal(player.grenades, 1); assert.equal(player.potions, 1);
+    assert.equal(player.slot, 'primary'); assertStarterInventory(player);
     assert.equal(player.healing, false); assert.equal(player.meleeTicks, 0);
   }
   assert.deepEqual(room.state.players.map(player => player.weapon), ['pistol', 'shotgun', 'burst', 'carbine']);
@@ -486,7 +537,7 @@ test('two WS swap taps before a tick retain a release tick while continuous look
 
 test('WS cancelActions discards pending commitments, validates before acknowledgment and blocks held reentry', async t => {
   const { game, room, seats } = await quickFight(t), peer = seats[0].peer, player = room.state.players[0];
-  peer.send({ type: 'input', seq: 0, buttons: { fire: true, jump: true, grenade: true, yaw: .2 } });
+  peer.send({ type: 'input', seq: 0, buttons: { fire: true, jump: true, swap: true, yaw: .2 } });
   await flushPeer(peer);
   for (const cancelActions of [1, 'true', null, {}]) {
     const after = peer.messages.length;
@@ -495,9 +546,9 @@ test('WS cancelActions discards pending commitments, validates before acknowledg
     assert.equal(room.slots[0].lastAccepted, 0); assert.equal(room.acks[0], -1);
     assert.equal(room.slots[0].actionInputs.inspect().pending.length, 3, 'invalid metadata cannot cancel already accepted controls');
   }
-  peer.send({ type: 'input', seq: 1, cancelActions: true, buttons: { fire: true, jump: true, yaw: .6 } }); await flushPeer(peer);
+  peer.send({ type: 'input', seq: 1, cancelActions: true, buttons: { fire: true, jump: true, swap: true, yaw: .6 } }); await flushPeer(peer);
   for (let index = 0; index < 4; index++) game.app.tick();
-  assert.equal(room.acks[0], 1); assert.equal(player.shots, 0); assert.equal(player.y, 0); assert.equal(player.grenades, 1); assert.equal(room.state.grenades.length, 0);
+  assert.equal(room.acks[0], 1); assert.equal(player.shots, 0); assert.equal(player.y, 0); assert.equal(player.slot, 'primary'); assertStarterInventory(player); assert.equal(room.state.grenades.length, 0);
   assert.equal(room.slots[0].buttons.yaw, .6); assert.equal(room.slots[0].actionInputs.inspect().pending.length, 0);
   peer.send({ type: 'input', seq: 2, buttons: {} }); peer.send({ type: 'input', seq: 3, buttons: { fire: true } }); peer.send({ type: 'input', seq: 4, buttons: {} });
   await flushPeer(peer); game.app.tick(); assert.equal(room.acks[0], 4); assert.equal(player.shots, 1);
@@ -511,16 +562,31 @@ test('WS cancellation is rejected for games that use ordered commands', async t 
   assert.equal(room.slots[0].lastAccepted, -1); assert.equal(room.slots[0].queue.length, 0);
 });
 
-for (const action of ['fire', 'jump', 'grenade']) {
+for (const action of ['fire', 'jump', 'swap', 'grenade']) {
   test(`WS cancellation removes an unconsumed ${action} touch commitment without a ghost action`, async t => {
     const { game, room, seats } = await quickFight(t), peer = seats[0].peer, player = room.state.players[0], ammo = player.ammo;
-    peer.send({ type: 'input', seq: 0, buttons: { [action]: true, yaw: .2 } });
-    peer.send({ type: 'input', seq: 1, buttons: { yaw: .6 }, cancelPress: { action, seq: 0 } });
+    assertStarterInventory(player);
+    if (action === 'grenade') { await collectSupply(game, room, seats[0], 'grenade'); assert.equal(player.grenades, 1); }
+    const sequence = (seats[0].sequence ?? -1) + 1, inventory = structuredClone(player.inventory), grenades = player.grenades;
+    peer.send({ type: 'input', seq: sequence, buttons: { [action]: true, yaw: .2 } });
+    peer.send({ type: 'input', seq: sequence + 1, buttons: { yaw: .6 }, cancelPress: { action, seq: sequence } });
     await flushPeer(peer);
     for (let index = 0; index < 4; index++) game.app.tick();
-    assert.equal(room.acks[0], 1); assert.equal(player.yaw, .6);
+    assert.equal(room.acks[0], sequence + 1); assert.equal(player.yaw, .6);
     assert.equal(player.shots, 0); assert.equal(player.ammo, ammo);
-    assert.equal(player.y, 0); assert.equal(player.grenades, 1); assert.equal(room.state.grenades.length, 0);
+    assert.equal(player.y, 0); assert.equal(player.slot, 'primary'); assert.equal(player.grenades, grenades); assert.deepEqual(player.inventory, inventory); assert.equal(room.state.grenades.length, 0);
+    peer.send({ type: 'input', seq: sequence + 2, buttons: { [action]: true } }); peer.send({ type: 'input', seq: sequence + 3, buttons: {} });
+    await flushPeer(peer); game.app.tick();
+    assert.equal(room.acks[0], sequence + 3);
+    if (action === 'fire') { assert.equal(player.shots, 1); assert.equal(player.ammo, ammo - 1); }
+    if (action === 'jump') { assert.ok(player.y > 0); assert.ok(player.vy > 0); }
+    if (action === 'swap') assert.equal(player.slot, 'sword');
+    if (action === 'grenade') {
+      assert.equal(player.grenades, 0); assert.equal(room.state.grenades.length, 1); assert.ok(player.grenadeThrowTicks > 0);
+      assert.equal(room.state.events.filter(event => event.type === 'grenadeThrow' && event.playerId === 0).length, 1);
+      for (let index = 0; index < 4; index++) game.app.tick();
+      assert.equal(room.state.grenades.length, 1, 'only the fresh uncancelled utility press reaches the actual grenade');
+    }
   });
 }
 
@@ -615,23 +681,23 @@ test('pre-bell held actions remain blocked while a genuinely fresh action after 
   const game = await host(t), room = await game.make(), seats = await game.fill(room), peer = seats[0].peer;
   peer.send({ type: 'fps-loadout', weaponId: 'pistol' }); await flushPeer(peer);
   await readyEveryone(room, seats); advance(game.app, room, 'buy');
-  peer.send({ type: 'input', seq: 0, buttons: { fire: true, jump: true, grenade: true, yaw: .2 } }); await flushPeer(peer);
+  peer.send({ type: 'input', seq: 0, buttons: { fire: true, jump: true, swap: true, yaw: .2 } }); await flushPeer(peer);
   advance(game.app, room, 'fight'); game.app.tick();
   const player = room.state.players[0];
-  assert.equal(player.shots, 0); assert.equal(player.y, 0); assert.equal(player.grenades, 1);
+  assert.equal(player.shots, 0); assert.equal(player.y, 0); assert.equal(player.slot, 'primary'); assertStarterInventory(player);
   peer.send({ type: 'input', seq: 1, buttons: {} }); peer.send({ type: 'input', seq: 2, buttons: { fire: true } }); peer.send({ type: 'input', seq: 3, buttons: {} });
   await flushPeer(peer); game.app.tick(); assert.equal(player.shots, 1); assert.equal(room.acks[0], 3);
 });
 
 test('disconnect clears every queued tap before an actual two-player ready restart', async t => {
   const { game, room, seats } = await quickFight(t), peer = seats[0].peer;
-  peer.send({ type: 'input', seq: 0, buttons: { fire: true, grenade: true, jump: true } }); peer.send({ type: 'input', seq: 1, buttons: {} });
+  peer.send({ type: 'input', seq: 0, buttons: { fire: true, swap: true, jump: true } }); peer.send({ type: 'input', seq: 1, buttons: {} });
   await flushPeer(peer); assert.equal(room.slots[0].actionInputs.inspect().pending.length, 3);
   const after = peer.messages.length; seats[1].peer.socket.close();
   await peer.untilState(message => message.state.phase === 'lobby' && message.players[1] === null, { after });
   assert.equal(room.slots[0].actionInputs.inspect().pending.length, 0); assert.equal(room.slots[0].queue.length, 0);
   seats[1] = await game.peer(room, 'Replacement'); await readyEveryone(room, seats); advance(game.app, room, 'fight'); game.app.tick();
-  assert.equal(room.state.players[0].shots, 0); assert.equal(room.state.players[0].grenades, 1); assert.equal(room.state.players[0].y, 0);
+  assert.equal(room.state.players[0].shots, 0); assertStarterInventory(room.state.players[0]); assert.equal(room.state.players[0].slot, 'primary'); assert.equal(room.state.players[0].y, 0);
 });
 
 for (const metadata of ['valid', 'stale', 'future']) {

@@ -19,8 +19,8 @@ test('four independent guns retain their own displayed ammunition and selected i
 
 test('normal starter and Royale knife-only inventories expose four flexible slots', () => {
   const own = createCombatPlayer(0), normal = inventorySlots(own);
-  assert.deepEqual(normal.map(slot => slot.kind), ['melee', 'weapon', 'heal', 'grenade']);
-  assert.equal(normal[0].label, 'KNIFE'); assert.equal(normal[1].selected, true); assert.equal(normal[2].detail, '×1 / 2');
+  assert.deepEqual(normal.map(slot => slot.kind), ['melee', 'weapon', 'empty', 'empty']);
+  assert.equal(normal[0].label, 'KNIFE'); assert.equal(normal[1].selected, true); assert.ok(normal.slice(2).every(slot => slot.detail === 'FREE SLOT' && !slot.droppable));
   initializeInventory(own, { knifeOnly: true });
   const royale = inventorySlots(own);
   assert.deepEqual(royale.map(slot => slot.kind), ['melee', 'empty', 'empty', 'empty']);
@@ -56,7 +56,7 @@ test('new inventory controls pass through compose and release with every other i
 });
 
 test('selected potions, grenades and empty hands never leak holstered gun ammo or sights', () => {
-  const own = createCombatPlayer(0); own.aimTicks = 18; own.ammo = 9; own.reserve = 70;
+  const own = createCombatPlayer(0); initializeInventory(own, { potions: 1, grenades: 1 }); own.aimTicks = 18; own.ammo = 9; own.reserve = 70;
   for (const [index, label, ammo] of [[2, 'HEALING POTION', '×1'], [3, 'FRAG GRENADE', '×1'], [0, 'EMPTY HANDS', '—']]) {
     if (!index) own.inventory[0] = null;
     own.inventoryIndex = index; refreshInventory(own);
@@ -70,6 +70,7 @@ test('selected potions, grenades and empty hands never leak holstered gun ammo o
 
 test('pickup hints explain free slots, full packs and deliberate gun replacement', () => {
   const own = createCombatPlayer(0), loot = { id: 'gun', kind: 'weapon', weapon: 'sniper', ammo: 2, reserve: 8 };
+  initializeInventory(own, { potions: 1, grenades: 1 });
   const before = JSON.stringify(own), replace = inventoryLootPresentation(loot, own);
   assert.equal(replace.name, WEAPONS.sniper.name); assert.match(replace.detail, /Replace .*Carbine.*slot 2.*2 \/ 8/);
   own.inventoryIndex = 0; refreshInventory(own);
@@ -88,10 +89,10 @@ test('full-inventory and drop feedback stays explicit and only reports real even
   assert.equal(inventoryEventFeedback({ type: 'shot' }), null);
 });
 
-test('instant monster healing supplies stay distinct from carried potion stacks', () => {
+test('monster healing drops are carried potions and never recover health on pickup', () => {
   const own = createCombatPlayer(0); own.hp = 175;
-  const before = JSON.stringify(own), supply = inventoryLootPresentation({ kind: 'heal', type: 'health', amount: 45 }, own);
-  assert.equal(supply.name, 'Healing supply'); assert.equal(supply.detail, 'E TO RECOVER UP TO 25 HP'); assert.equal(supply.kind, 'health');
+  const before = JSON.stringify(own), supply = inventoryLootPresentation({ kind: 'heal', type: 'potion', amount: 1 }, own);
+  assert.equal(supply.name, 'Healing potion'); assert.match(supply.detail, /Pick up.*STACK TO 2.*F TO HEAL/); assert.equal(supply.kind, 'heal');
   assert.match(inventoryLootPresentation({ kind: 'heal', amount: 1 }, own).detail, /STACK TO 2/);
   assert.equal(JSON.stringify(own), before);
 });

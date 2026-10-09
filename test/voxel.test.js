@@ -10,6 +10,13 @@ const shot = (state, id = 0, buttons = {}) => { const keys = neutral(state); key
 const fixtureMap = colliders => ({ bounds: { minX: -30, maxX: 30, minZ: -30, maxZ: 30 }, colliders });
 const fixturePlayer = () => game.cloneState(game.createState()).players[0];
 const close = (a, b, eps = 1e-6) => assert.ok(Math.abs(a - b) <= eps, `${a} != ${b}`);
+function collectUtility(state, player = state.players[0], kinds = ['heal', 'grenade']) {
+  for (const kind of kinds) {
+    const loot = game.addInventoryLoot(state, player, { kind, amount: 1 });
+    assert.ok(game.pickupCombatLoot(state, player, loot), `fixture collects its physical ${kind} supply`);
+  }
+  return player;
+}
 
 test('room modes create stable teams, unique spawns and bounded state', () => {
   for (const teamSize of [1, 2, 3]) for (const mapId of Object.keys(game.MAPS)) {
@@ -434,17 +441,17 @@ test('sword attacks trade in the same authoritative active tick and swap cannot 
   assert.equal(state.events.filter(e => e.type === 'meleeStart').length, 1); assert.ok(f.meleeCooldown > 0);
 });
 test('a potion costs one round charge, takes two seconds, heals sixty and slows movement', () => {
-  const state = lane(fighting()), f = state.players[0]; f.hp = 35;
+  const state = lane(fighting()), f = collectUtility(state, state.players[0], ['heal']); f.hp = 35;
   game.step(state, [input({ heal: true }, f), input({}, state.players[1])]); assert.equal(f.potions, 0); assert.equal(f.healTicks, game.HEAL.ticks); assert.equal(f.hp, 35); assert.equal(f.healing, true);
   advance(state, 100, [input({ right: true }, f), input({}, state.players[1])]); close(f.vx, game.WEAPONS.carbine.speed * game.HEAL.speedMultiplier);
   advance(state, game.HEAL.ticks - 101); assert.equal(f.hp, 35); advance(state, 1); assert.equal(f.hp, 95); assert.equal(f.healTicks, 0); assert.equal(f.healing, false);
   advance(state, 1); game.step(state, [input({ heal: true }, f), input({}, state.players[1])]); assert.equal(f.healTicks, 0);
-  const full = lane(fighting()); game.step(full, [input({ heal: true }, full.players[0]), input({}, full.players[1])]); assert.equal(full.players[0].potions, 1, 'full-health input does not waste a potion');
+  const full = lane(fighting()); collectUtility(full, full.players[0], ['heal']); game.step(full, [input({ heal: true }, full.players[0]), input({}, full.players[1])]); assert.equal(full.players[0].potions, 1, 'full-health input does not waste a potion');
 });
 test('potion healing is capped and fire, jump, swap, reload, interaction and grenade interrupt channels', () => {
-  const capped = lane(fighting()), f = capped.players[0]; f.hp = 185; game.step(capped, [input({ heal: true }, f), input({}, capped.players[1])]); advance(capped, game.HEAL.ticks); assert.equal(f.hp, 200);
+  const capped = lane(fighting()), f = collectUtility(capped, capped.players[0], ['heal']); f.hp = 185; game.step(capped, [input({ heal: true }, f), input({}, capped.players[1])]); advance(capped, game.HEAL.ticks); assert.equal(f.hp, 200);
   for (const action of ['fire', 'jump', 'swap', 'reload', 'interact', 'grenade']) {
-    const state = lane(fighting()), player = state.players[0]; player.hp = 60;
+    const state = lane(fighting()), player = collectUtility(state); player.hp = 60;
     game.step(state, [input({ heal: true }, player), input({}, state.players[1])]); advance(state, 10);
     game.step(state, [input({ [action]: true, yaw: Math.PI / 2 }, player), input({}, state.players[1])]);
     assert.equal(player.healTicks, 0, action); assert.equal(player.healing, false); assert.equal(player.hp, 60); assert.equal(player.potions, 0);
@@ -453,6 +460,7 @@ test('potion healing is capped and fire, jump, swap, reload, interaction and gre
 test('damage on the final potion tick cancels healing and lethal damage cannot revive its target', () => {
   for (const hp of [60, 20]) {
     const state = lane(fighting()), [f, attacker] = state.players; f.hp = hp; attacker.weapon = 'pistol'; attacker.ammo = 12;
+    collectUtility(state, f, ['heal']);
     game.step(state, [input({ heal: true }, f), input({}, attacker)]); advance(state, game.HEAL.ticks - 1); assert.equal(f.healTicks, 1);
     game.step(state, [input({}, f), input({ fire: true, pitch: Math.atan2(.85 - 1.62, 10) }, attacker)]);
     assert.equal(f.hp, Math.max(0, hp - 34)); assert.equal(f.healTicks, 0); assert.equal(f.healing, false); assert.equal(f.alive, hp > 34);
@@ -461,12 +469,13 @@ test('damage on the final potion tick cancels healing and lethal damage cannot r
 });
 test('setup-held utility and sword edges cannot trigger latent actions when combat unlocks', () => {
   const state = game.createState(); game.startMatch(state);
+  collectUtility(state);
   const held = [input({ swap: true, grenade: true, heal: true, fire: true }), input()]; advance(state, 1320, held); advance(state, 10, held);
   const f = state.players[0]; assert.equal(f.slot, 'primary'); assert.equal(f.grenades, 1); assert.equal(f.potions, 1); assert.equal(f.ammo, 24); assert.equal(state.grenades.length, 0);
   advance(state, 1); game.step(state, [input({ swap: true }, f), input({}, state.players[1])]); assert.equal(f.slot, 'sword');
 });
 test('quick grenade throws spend one charge, lock gun fire and honor the full 2.4 second fuse', () => {
-  const state = lane(fighting()), f = state.players[0];
+  const state = lane(fighting()), f = collectUtility(state, state.players[0], ['grenade']);
   game.step(state, [input({ grenade: true, fire: true, pitch: .3 }, f), input({}, state.players[1])]); const thrownAt = state.tick;
   assert.equal(f.grenades, 0); assert.equal(f.grenadeThrowTicks, 24); assert.equal(f.ammo, 24); assert.equal(state.grenades.length, 1); assert.equal(state.grenades[0].fuseTicks, 288);
   advance(state, 23, [input({ fire: true }, f), input({}, state.players[1])]); assert.equal(f.ammo, 24);
@@ -474,17 +483,17 @@ test('quick grenade throws spend one charge, lock gun fire and honor the full 2.
   assert.equal(state.events.findLast(e => e.type === 'grenadeExplosion').tick - thrownAt, 288);
   advance(state, 1); game.step(state, [input({ grenade: true }, f), input({}, state.players[1])]); assert.equal(state.grenades.length, 0);
 });
-test('round reset refills the full kit, clears actions and live grenades, and preserves gun choice and statistics', () => {
+test('round reset restores knife and gun without free supplies, clears actions and preserves gun choice and statistics', () => {
   const state = lane(fighting()), f = state.players[0]; Object.assign(f, { weapon: 'pistol', ammo: 1, potions: 0, grenades: 0, slot: 'sword', kills: 2, damageDealt: 140, aimTicks: 18, aiming: true, meleeTicks: 30, meleePhase: 'active' });
   state.grenades.push({ id: 999, playerId: 0, team: 0, x: 20, y: .12, z: 10, vx: 0, vy: 0, vz: 0, radius: .12, fuseTicks: 2, bornTick: state.tick - 1, bounces: 0 });
   state.roundTicks = 1; game.step(state, neutral(state)); assert.equal(state.phase, 'roundEnd'); assert.equal(state.grenades.length, 0); assert.equal(f.meleeTicks, 0); assert.equal(f.aimTicks, 0);
-  advance(state, 4 * game.TICK_RATE); const next = state.players[0]; assert.equal(next.slot, 'primary'); assert.equal(next.weapon, 'pistol'); assert.equal(next.ammo, 12); assert.equal(next.potions, 1); assert.equal(next.grenades, 1); assert.equal(next.kills, 2); assert.equal(next.damageDealt, 140);
+  advance(state, 4 * game.TICK_RATE); const next = state.players[0]; assert.equal(next.slot, 'primary'); assert.equal(next.weapon, 'pistol'); assert.equal(next.ammo, 12); assert.equal(next.potions, 0); assert.equal(next.grenades, 0); assert.equal(next.kills, 2); assert.equal(next.damageDealt, 140);
   assert.equal(next.hp, 200); assert.equal(next.maxHp, 200); assert.equal(next.meleeWeapon, 'knife');
   assert.equal(next.meleeTicks, 0); assert.equal(next.healTicks, 0); assert.equal(next.aimTicks, 0); assert.equal(state.grenades.length, 0);
 });
 
 test('grenade launch uses the current input aim and self damage never awards offensive statistics', () => {
-  const launch = lane(fighting()); game.step(launch, [input({ grenade: true, yaw: Math.PI / 2, pitch: .4 }, launch.players[0]), input({}, launch.players[1])]);
+  const launch = lane(fighting()); collectUtility(launch, launch.players[0], ['grenade']); game.step(launch, [input({ grenade: true, yaw: Math.PI / 2, pitch: .4 }, launch.players[0]), input({}, launch.players[1])]);
   assert.ok(launch.grenades[0].vx > 9); assert.ok(Math.abs(launch.grenades[0].vz) < 1e-6); assert.ok(launch.grenades[0].vy > 6);
   const self = lane(fighting()), f = self.players[0]; f.hp = 100;
   self.grenades.push({ id: 1, playerId: f.id, team: f.team, x: f.x, y: .12, z: f.z, vx: 0, vy: 0, vz: 0, radius: .12, fuseTicks: 1, bornTick: self.tick - 1, bounces: 0 });
@@ -504,6 +513,7 @@ test('utility attack events preserve kill credit and planted-round grenades rema
 test('bomb channels cannot overlap sword startup, grenade release or potion actions', () => {
   for (const action of ['sword', 'grenade', 'heal']) {
     const state = fighting(), f = state.players[0]; Object.assign(f, { x: -13, z: -12, hp: 60 });
+    if (action !== 'sword') collectUtility(state, f, [action]);
     if (action === 'sword') { f.slot = 'sword'; shot(state, 0, { yaw: Math.PI }); }
     else game.step(state, [input({ [action]: true }, f), input({}, state.players[1])]);
     game.step(state, [input({ interact: true }, f), input({}, state.players[1])]);
@@ -516,6 +526,7 @@ test('six shotgun volleys preserve every player fire event through a four-tick u
   for (const detonate of [false, true]) {
     const state = fighting({ teamSize: 3 });
     for (const f of state.players) Object.assign(f, { x: 18 + f.id % 3 * 2, y: 0, z: f.team ? -1 : 1, yaw: f.team ? Math.PI : 0, pitch: Math.atan2(.85 - 1.62, 2), weapon: 'shotgun', ammo: 6 });
+    for (const f of state.players) collectUtility(state, f);
     if (detonate) for (const f of state.players) state.grenades.push({ id: f.id + 1, playerId: f.id, team: f.team, x: f.x, y: .12, z: f.z, vx: 0, vy: 0, vz: 0, radius: .12, fuseTicks: 3, bornTick: state.tick - 1, bounces: 0 });
     const startId = state.eventId;
     game.step(state, state.players.map(f => input({ fire: true }, f)));

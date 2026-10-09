@@ -1,8 +1,8 @@
 import { MAPS } from '../voxel-maps.js';
-import { MELEE_WEAPONS, MELEE_IDS } from '../voxel-melee.js';
+import { MELEE_WEAPONS } from '../voxel-melee.js';
 
-export function validHordeSettings(mapId, difficulty, capacity = 3, melee = 'katana') {
-  return typeof mapId === 'string' && Object.hasOwn(MAPS, mapId) && ['veteran', 'nightmare'].includes(difficulty) && capacity === 3 && typeof melee === 'string' && Object.hasOwn(MELEE_WEAPONS, melee);
+export function validHordeSettings(mapId, difficulty, capacity = 3, melee = 'knife') {
+  return typeof mapId === 'string' && Object.hasOwn(MAPS, mapId) && ['veteran', 'nightmare'].includes(difficulty) && capacity === 3 && melee === 'knife';
 }
 
 /** Setup compares the real shared blade timings; Last Stand's wave bonus is separate. */
@@ -27,19 +27,13 @@ export function hordeOverview(arena) {
 export function chooseHordeSettings(dialog, { solo = false } = {}) {
   if (dialog.open) return Promise.resolve(null);
   const form = dialog.querySelector('form');
-  const map = form.elements.namedItem('mapId'), difficulty = form.elements.namedItem('difficulty'), melee = form.elements.namedItem('melee');
+  const map = form.elements.namedItem('mapId'), difficulty = form.elements.namedItem('difficulty');
   const note = dialog.querySelector('[data-horde-map-note]'), preview = dialog.querySelector('[data-horde-map-preview]');
   const selectedMap = map.value;
   map.replaceChildren(...Object.values(MAPS).map(arena => {
     const option = document.createElement('option'); option.value = arena.id; option.textContent = arena.name; return option;
   }));
   if (Object.hasOwn(MAPS, selectedMap)) map.value = selectedMap;
-  const selectedMelee = melee.value;
-  melee.replaceChildren(...MELEE_IDS.map(id => {
-    const option = document.createElement('option'); option.value = id; option.textContent = MELEE_WEAPONS[id].name; return option;
-  }));
-  melee.value = Object.hasOwn(MELEE_WEAPONS, selectedMelee) ? selectedMelee : 'katana';
-  const updateMelee = () => { dialog.querySelector('[data-horde-melee-note]').textContent = meleeLoadoutNote(melee.value); };
   dialog.querySelector('[data-horde-setup-title]').textContent = solo ? 'Plan your solo holdout.' : 'Set up your co-op holdout.';
   dialog.querySelector('[data-horde-setup-note]').textContent = solo
     ? 'Survive escalating waves alone. Choose your loadout and start when you are ready.'
@@ -51,12 +45,12 @@ export function chooseHordeSettings(dialog, { solo = false } = {}) {
     preview.innerHTML = arena ? hordeOverview(arena) : '';
     preview.setAttribute('aria-label', arena ? `${arena.name} holdout overview with cover and climb routes` : 'Holdout overview');
   };
-  updateMap(); updateMelee();
+  updateMap();
   return new Promise(resolve => {
     let finished = false;
     const finish = settings => {
       if (finished) return; finished = true;
-      form.removeEventListener('submit', submit); map.removeEventListener('change', updateMap); melee.removeEventListener('change', updateMelee);
+      form.removeEventListener('submit', submit); map.removeEventListener('change', updateMap);
       dialog.removeEventListener('close', cancel); dialog.removeEventListener('cancel', cancel);
       dialog.querySelector('[data-cancel-horde]').removeEventListener('click', cancel);
       dialog.close(); resolve(settings);
@@ -64,9 +58,9 @@ export function chooseHordeSettings(dialog, { solo = false } = {}) {
     const cancel = () => finish(null);
     const submit = event => {
       event.preventDefault();
-      if (validHordeSettings(map.value, difficulty.value, 3, melee.value)) finish({ capacity: 3, mapId: map.value, difficulty: difficulty.value, melee: melee.value });
+      if (validHordeSettings(map.value, difficulty.value, 3, 'knife')) finish({ capacity: 3, mapId: map.value, difficulty: difficulty.value, melee: 'knife' });
     };
-    form.addEventListener('submit', submit); map.addEventListener('change', updateMap); melee.addEventListener('change', updateMelee);
+    form.addEventListener('submit', submit); map.addEventListener('change', updateMap);
     dialog.addEventListener('close', cancel); dialog.addEventListener('cancel', cancel);
     dialog.querySelector('[data-cancel-horde]').addEventListener('click', cancel);
     dialog.showModal();

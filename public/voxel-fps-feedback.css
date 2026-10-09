@@ -1,0 +1,16 @@
+/* Split the existing health rail: health above, sprint stamina below. No HUD growth. */
+.fps-vitals-rails{height:8px;margin:4px 0;display:grid;grid-template-rows:minmax(0,1fr) 3px;gap:1px}
+.royale-app .fps-vitals-rails{margin:1px 0}
+.fps-vitals-rails>.health-meter,.fps-vitals-rails>.practice-health-track{height:100%!important;margin:0!important;border:0;min-height:0}
+.fps-stamina{position:relative;height:3px;overflow:hidden;background:#25393d;pointer-events:none}
+.fps-stamina>i,.health-readout .fps-stamina>i{display:block;height:100%;width:100%;background:#8abccf;transform-origin:left center;transition:none!important}
+.fps-stamina[data-state=sprinting]>i,.health-readout .fps-stamina[data-state=sprinting]>i{background:#c5e2ec}
+.fps-stamina[data-state=exhausted]>i,.health-readout .fps-stamina[data-state=exhausted]>i{background:#da9b73}
+.fps-stamina[hidden]{display:none!important}
+.fps-starter-kit>span{font:8px monospace;letter-spacing:.7px;color:inherit}
+.fps-starter-kit>p{font:10px/1.5 Arial,sans-serif;margin:7px 0;color:inherit}
+.practice-settings .fps-starter-kit{align-self:center;color:#c7d5b6}
+#horde-health-subject{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#horde-health,#horde-health-max{flex-shrink:0}
+@media(min-width:601px){.touch-actions,.practice-touch-actions{grid-template-columns:repeat(6,minmax(44px,1fr))}}
+@media(max-width:600px){.fps-vitals-rails{height:7px}.fps-starter-kit>p{font-size:9px}}

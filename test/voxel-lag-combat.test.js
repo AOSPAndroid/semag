@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { ADS, combatStep, createCombatPlayer, createState, emptyInput, KNIFE, MELEE, WEAPONS } from '../public/voxel-engine.js';
+import { ADS, addInventoryLoot, combatStep, createCombatPlayer, createState, emptyInput, KNIFE, MELEE, pickupCombatLoot, WEAPONS } from '../public/voxel-engine.js';
 import { weaponDamage } from '../public/voxel-weapons.js';
 import { enableLagCompensation, setShotViewTick } from '../public/voxel-lag-compensation.js';
 import { selectInventorySlot } from '../public/voxel-inventory.js';
@@ -47,6 +47,11 @@ for (const metadata of [false, true]) test(`real grenade, heal and moving-target
   const initial = combatState();
   initial.players[0].inventory[0].weapon = 'sword';
   initial.players[0].hp = 70;
+  for (const kind of ['grenade', 'heal']) {
+    const loot = addInventoryLoot(initial, initial.players[0], { kind, amount: 1 });
+    assert.ok(pickupCombatLoot(initial, initial.players[0], loot), `fixture collects its real ${kind} supply`);
+  }
+  assert.equal(initial.players[0].grenades, 1); assert.equal(initial.players[0].potions, 1);
   const states = pair(initial);
   for (let tick = 0; tick < 460; tick++) {
     if (tick === 280) for (const state of [states.browser, states.server]) {

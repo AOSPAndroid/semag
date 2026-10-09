@@ -34,6 +34,7 @@ function meleeFixture(weapon, distance = 1.5) {
 function hordeFixture(wave = 1, weapon = 'katana', monsterType = 'stalker', health = 10000) {
   const state = Horde.createState({ capacity: 1, seed: 321711, melee: weapon });
   Horde.startMatch(state); while (state.phase === 'countdown') Horde.step(state);
+  setInventoryMeleeLoadout(state.players[0],weapon);
   state.map = arena; state.horde.wave = wave; state.horde.pending = 1; state.horde.nextSpawnTick = 1e9;
   Object.assign(state.players[0], { x: 0, y: 0, z: 3, yaw: 0, pitch: 0 });
   state.spawnWarnings = [{ id: 1, x: 0, y: 0, z: -8, ticksLeft: 1, monsterType }];
@@ -159,14 +160,14 @@ test('tonfa hand order is stored on the physical melee item and continues after 
   assert.equal(pickupInventoryItem(recipient, lootFromInventoryItem(dropped)).ok, true); assert.equal(recipient.meleeIndex, 2);
 });
 
-test('all configured blades validate explicit enums and Horde restores each chosen starter without changing Royale knife starts', () => {
+test('all configured blades validate explicit enums while Horde and Royale keep knife-only starts', () => {
   for (const weapon of MELEE_IDS) {
-    const horde = Horde.createState({ melee: weapon }); assert.equal(horde.players[0].inventory[0].weapon, weapon);
-    Horde.startMatch(horde); assert.equal(horde.players[0].inventory[0].weapon, weapon);
+    const horde = Horde.createState({ melee: weapon }); assert.equal(horde.players[0].inventory[0].weapon, 'knife');
+    Horde.startMatch(horde); assert.equal(horde.players[0].inventory[0].weapon, 'knife');
     assert.equal(horde.players[0].hp, 200); assert.equal(horde.players[0].inventory.length, 4);
-    Horde.resetLobby(horde); assert.equal(horde.players[0].inventory[0].weapon, weapon);
+    Horde.resetLobby(horde); assert.equal(horde.players[0].inventory[0].weapon, 'knife');
   }
-  assert.equal(Horde.createState().players[0].inventory[0].weapon, 'katana');
+  assert.equal(Horde.createState().players[0].inventory[0].weapon, 'knife');
   for (const bad of ['__proto__', 'constructor', '', null, NaN, {}, ['katana'], new String('katana')]) {
     assert.equal(createInventoryMelee(bad), null); assert.throws(() => Horde.createState({ melee: bad }), RangeError);
     const horde = Horde.createState(), before = JSON.stringify(horde.players[0]);

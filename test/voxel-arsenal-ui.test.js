@@ -10,7 +10,7 @@ import { meleeLoadoutNote, validHordeSettings } from '../public/hub/horde-setup.
 
 test('every carried blade has its own catalog label, icon and truthful swap destination', () => {
   for (const id of MELEE_IDS) {
-    const player = createCombatPlayer(0); initializeInventory(player, { melee: id });
+    const player = createCombatPlayer(0); initializeInventory(player, { melee: id, potions: 1, grenades: 1 });
     const before = JSON.stringify(player), slot = inventorySlots(player)[0], blade = MELEE_WEAPONS[id];
     assert.equal(slot.name, blade.name); assert.equal(slot.label, blade.label); assert.equal(slot.icon, id);
     assert.equal(inventorySwapPresentation(player).label, blade.label);
@@ -45,7 +45,7 @@ test('close-combat comparisons use catalog damage, reach and all phases of a com
     assert.ok(note.includes(`${blade.damage} base damage`)); assert.ok(note.includes(`${blade.reach} m reach`));
     assert.ok(note.includes(`${Number((blade.startupTicks / 120).toFixed(2))} s wind-up`));
     assert.ok(note.includes(`${cycle} s full swing`)); assert.equal(note.includes('undefined'), false);
-    assert.equal(validHordeSettings('courtyard', 'veteran', 3, id), true);
+    assert.equal(validHordeSettings('courtyard', 'veteran', 3, id), id === 'knife', 'stronger blades are loot, never starter choices');
   }
   for (const invalid of ['__proto__', 'unknown', '', null, {}, 1]) {
     assert.equal(meleeLoadoutNote(invalid), ''); assert.equal(validHordeSettings('courtyard', 'veteran', 3, invalid), false);
@@ -53,13 +53,14 @@ test('close-combat comparisons use catalog damage, reach and all phases of a com
   }
 });
 
-test('Breach practice starts and restarts with the chosen physical blade and gun; bots keep their default gear', () => {
+test('Breach practice starts and restarts with a fixed knife and chosen gun; bots keep their default gear', () => {
   for (const melee of MELEE_IDS) {
     const state = createPractice({ game: 'voxel', mode: 'targets', bots: 1, weapon: 'dualpistols', melee, seed: 99 });
-    assert.equal(state.phase, 'ready'); assert.equal(state.practice.config.melee, melee);
+    assert.equal(state.phase, 'ready'); assert.equal(state.practice.config.melee, 'knife');
     for (let run = 0; run < 2; run++) {
       startPractice(state);
-      assert.equal(state.players[0].inventory[0].weapon, melee); assert.equal(state.players[0].inventory[1].weapon, 'dualpistols');
+      assert.equal(state.players[0].inventory[0].weapon, 'knife'); assert.equal(state.players[0].inventory[1].weapon, 'dualpistols');
+      assert.equal(state.players[0].potions+state.players[0].grenades,0);assert.deepEqual(state.players[0].inventory.slice(2),[null,null]);
       assert.equal(state.players[0].inventoryIndex, 1); assert.equal(state.players[1].inventory[0].weapon, 'knife');
       state.phase = 'matchEnd';
     }

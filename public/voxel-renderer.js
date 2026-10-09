@@ -3,8 +3,8 @@ import { WEAPONS, weaponAimFovRatio } from './voxel-weapons.js';
 import { grenadeCapacity } from './voxel-ordnance.js';
 import { MELEE_WEAPONS, meleeProfile, meleeWeaponId, meleeSlashOrigin, meleeSlashGeometry, meleeSlashPhase } from './voxel-melee.js';
 import { frameAlpha } from './display-timing.js';
-import { createPlayerAnimationPresenter, playerAnimationPose } from './voxel-player-animation.js';
-import { createFirstPersonMotionPresenter, createWeaponShotPresenter, weaponShotPose } from './voxel-first-person-motion.js';
+import { createPlayerAnimationPresenter, playerAnimationPose, weaponReloadPose, createWeaponReloadPresenter } from './voxel-player-animation.js';
+import { createFirstPersonMotionPresenter, createWeaponShotPresenter, weaponShotPose, weaponCyclePose } from './voxel-first-person-motion.js';
 import { MONSTER_BODIES, monsterBodyProfile } from './voxel-monster-bodies.js';
 import { EMPTY_WORLD_LABELS, presentWorldLabels } from './voxel-label-presentation.js';
 
@@ -59,6 +59,13 @@ const finite = (value, fallback = 0) => Number.isFinite(value) ? value : fallbac
 const smooth = value => { const t = clamp(value, 0, 1); return t * t * (3 - 2 * t); };
 const lerp = (a, b, amount) => a + (b - a) * amount;
 const gunHeld = player => !['sword', 'potion', 'grenade', 'empty'].includes(player?.slot) && !!WEAPONS[player?.weapon];
+
+/** Remaining accepted recovery uses the short interval inside a committed burst. */
+export function playerShotAge(player) {
+  if (!gunHeld(player) || !(player.shotIndex > 0) || !(player.shotCooldown > 0) || player.reloadTicks > 0 || player.alive === false) return Infinity;
+  const weapon = WEAPONS[player.weapon], duration = weapon.mode === 'burst' && player.burstRemaining > 0 ? weapon.burstInterval : weapon.cooldown;
+  return Math.max(0, (duration - player.shotCooldown) * 1000 / 120);
+}
 
 /** Free-for-all uniforms never imply the two tactical teams. */
 export function survivorColor(player) {
@@ -1903,10 +1910,10 @@ export function parisLandmarkMesh(bounds) {
 }
 
 const weaponLength = weapon => ({ pistol: .42, smg: .68, marksman: 1.04, shotgun: 1.02, burst: .87, sniper: 1.26, lmg: 1.08, crossbow: .83, revolver: .51, pdw: .80, autoshotgun: .93, battlerifle: 1.14, dualpistols: .46, dualsmg: .61, slugshotgun: 1.12 })[weapon] || .92;
-const reloadMagazineDrop = progress => progress > .04 && progress < .64 ? Math.sin((progress - .04) / .60 * Math.PI) * .25 : 0;
+const reloadMagazineDrop = (weapon, progress) => Math.max(...[0, 1].map(hand => weaponReloadPose(weapon, progress, { active: progress > 0, hand }).magazineDrop));
 const weaponCoverPadding = (weapon, scale = 1, reloadProgress = 0) => {
   const width = weapon === 'crossbow' ? .51 : weapon === 'lmg' ? .28 : weapon === 'sniper' ? .18 : weapon === 'revolver' ? .26 : weapon === 'autoshotgun' ? .18 : .11;
-  const height = (weapon === 'pistol' ? .22 : weapon === 'lmg' ? .30 : weapon === 'autoshotgun' ? .36 : .29) + (weapon === 'revolver' ? 0 : reloadMagazineDrop(reloadProgress));
+  const height = (weapon === 'pistol' ? .22 : weapon === 'lmg' ? .30 : weapon === 'autoshotgun' ? .36 : .29) + (weapon === 'revolver' ? 0 : reloadMagazineDrop(weapon, reloadProgress));
   return Math.max(width, height) * scale;
 };
 
@@ -1925,7 +1932,9 @@ function weaponParts(mesh, weapon, pose, options = {}) {
   const limit = options.limit ?? length + .20;
   const body = rgba(options.body || (smg ? '#4f747c' : sniper ? '#677961' : lmg ? '#76764d' : marksman ? '#526976' : shotgun ? '#7b5f43' : burst ? '#805b4f' : pistol ? '#607b91' : '#56685f')), trim = '#202d32', metal = '#b2bfb7';
   const stock = rgba(options.stock || (shotgun ? '#a37a4f' : sniper ? '#7e8c70' : '#8a927d'));
-  const reload = clamp(finite(options.reloadProgress), 0, 1), magazineDrop = reloadMagazineDrop(reload);
+  const reloadMotion = options.reloadMotion || weaponReloadPose(weapon, finite(options.reloadProgress), { active: options.reloadActive ?? finite(options.reloadProgress) > 0, hand: options.hand });
+  const reload = reloadMotion.active ? reloadMotion.progress : 0, magazineDrop = reloadMotion.magazineDrop;
+  const mechanicalBolt = Math.max(clamp(finite(options.bolt), 0, 1), reloadMotion.bolt), mechanicalPump = Math.max(clamp(finite(options.pump), 0, 1), reloadMotion.pump);
   const part = (x, y, z, w, h, d, color) => {
     // The weapon points down local -Z. Clamp each part at the first solid
     // cover contact so a barrel cannot reappear through a thin wall.
@@ -1933,6 +1942,7 @@ function weaponParts(mesh, weapon, pose, options = {}) {
     const clippedDepth = z + d - clippedZ;
     if (clippedDepth > 0) mesh.box(x, y, clippedZ, w, h, clippedDepth, color, pose);
   };
+  const magazine = (...args) => { if (reloadMotion.magazineVisible) part(...args); };
   const detail = (points, normal, color) => {
     if (points.every(point => point[2] < -limit)) return;
     const transform = point => {
@@ -1970,21 +1980,21 @@ function weaponParts(mesh, weapon, pose, options = {}) {
     part(.021, .137, rear + .036, .010, .010, .004, '#bdd4ae');
   };
   if (weapon === 'dualpistols' || weapon === 'dualsmg') {
-    const automatic = weapon === 'dualsmg', slide = clamp(finite(options.bolt), 0, 1) * .046;
+    const automatic = weapon === 'dualsmg', slide = mechanicalBolt * .046;
     const casing = automatic ? '#576d79' : '#b7c0b6', accent = automatic ? '#b49162' : '#907454';
     // Each hand has a complete compact firearm. Flush vent paint and a small
     // number of solid parts keep ten paired loadouts below the shared budget.
     part(-.047, -.026, automatic ? -.44 : -.39, .094, automatic ? .128 : .09, automatic ? .43 : .35, casing);
     part(-.047, automatic ? .102 : .064, (automatic ? -.435 : -.395) + slide, .094, .031, automatic ? .37 : .35, automatic ? '#7e969e' : '#d4d9cd');
     part(-.032, -.19, -.087, .064, .172, .089, '#324650');
-    part(-.034, -.190 - magazineDrop, -.085, .068, .043, .088, accent);
+    magazine(-.034, -.190 - magazineDrop, -.085, .068, .043, .088, accent);
     part(-.046, -.098, -.19, .013, .067, .102, trim);
     part(.033, -.098, -.19, .013, .067, .102, trim);
     part(-.046, -.108, -.19, .092, .015, .102, trim);
     part(-.028, .006, -length - .022, .056, .047, automatic ? .18 : .078, '#455963');
     if (automatic) {
-      part(-.032, -.253 - magazineDrop, -.285, .064, .230, .098, '#394f58');
-      part(-.033, -.253 - magazineDrop, -.286, .066, .026, .10, accent);
+      magazine(-.032, -.253 - magazineDrop, -.285, .064, .230, .098, '#394f58');
+      magazine(-.033, -.253 - magazineDrop, -.286, .066, .026, .10, accent);
       part(-.053, -.040, -.39, .106, .045, .066, '#384e57');
     }
     for (const xx of [-.0475, .0475]) {
@@ -2003,10 +2013,10 @@ function weaponParts(mesh, weapon, pose, options = {}) {
     part(-.029, .003, -length - .025, .058, .067, .74, '#aebbb5');
     part(-.025, -.061, -1.02, .050, .043, .62, '#4d6567');
     part(-.043, -.008, -length - .026, .086, .078, .06, '#344c51');
-    part(-.072, -.071, -.79 + finite(options.pump) * .16, .144, .094, .24, '#536d6e');
+    part(-.072, -.071, -.79 + mechanicalPump * .16, .144, .094, .24, '#536d6e');
     for (let rib = 0; rib < 4; rib++) {
-      side(-.073, -.052, -.76 + rib * .047 + finite(options.pump) * .16, .045, .013, '#afae91');
-      side(.073, -.052, -.76 + rib * .047 + finite(options.pump) * .16, .045, .013, '#afae91');
+      side(-.073, -.052, -.76 + rib * .047 + mechanicalPump * .16, .045, .013, '#afae91');
+      side(.073, -.052, -.76 + rib * .047 + mechanicalPump * .16, .045, .013, '#afae91');
     }
     part(-.035, -.175, -.025, .070, .134, .090, '#3c5155');
     part(-.064, .035, .015, .128, .041, .24, '#637b78');
@@ -2016,8 +2026,12 @@ function weaponParts(mesh, weapon, pose, options = {}) {
     part(.043, -.110, -.188, .015, .057, .116, trim);
     part(-.058, -.122, -.188, .116, .017, .116, trim);
     side(.061, .011, -.336, .058, .114, '#263d43');
-    part(.057, .028, -.255 + finite(options.bolt) * .076, .042, .025, .050, '#d2d0b6');
+    part(.057, .028, -.255 + mechanicalBolt * .076, .042, .025, .050, '#d2d0b6');
     for (let shell = 0; shell < 3; shell++) side(-.061, -.018, -.337 + shell * .065, .060, .032, '#c7a46a');
+    if (reloadMotion.shellVisible) {
+      part(-.085, -.20 + reloadMotion.shell * .07, -.25, .033, .073, .033, '#bb8258');
+      part(-.085, -.132 + reloadMotion.shell * .07, -.25, .033, .015, .033, '#d5bc7e');
+    }
     bore(.041, .050, -length - .027, .006);
     ironSights(-1.03, -.135);
     return length;
@@ -2025,7 +2039,7 @@ function weaponParts(mesh, weapon, pose, options = {}) {
   if (weapon === 'revolver') {
     // An exposed six chamber cylinder, brushed steel frame and walnut grip
     // give this hand cannon a silhouette distinct from the magazine pistol.
-    const open = reload > .07 && reload < .88 ? Math.sin((reload - .07) / .81 * Math.PI) : 0, cylinderX = -.145 * open;
+    const open = reloadMotion.cylinder, cylinderX = -.145 * open;
     part(-.042, -.041, -.30, .084, .138, .27, '#9ca9a9');
     part(-.028, -.006, -length - .025, .056, .068, .235, '#bbc6c2');
     part(-.035, .062, -.50, .070, .032, .20, '#718d96');
@@ -2074,12 +2088,12 @@ function weaponParts(mesh, weapon, pose, options = {}) {
       part(-.044, -.009, -length - .035, .088, .080, .30, '#284851');
       part(-.046, .070, -.625, .092, .016, .093, '#6697a0');
       for (let band = 0; band < 3; band++) part(-.047, -.012, -.75 + band * .083, .094, .083, .011, '#4d6e76');
-      part(-.034, -.242 - magazineDrop, -.075, .068, .212, .100, '#42616a');
-      part(-.035, -.240 - magazineDrop, -.076, .070, .038, .102, '#8cb3b4');
+      magazine(-.034, -.242 - magazineDrop, -.075, .068, .212, .100, '#42616a');
+      magazine(-.035, -.240 - magazineDrop, -.076, .070, .038, .102, '#8cb3b4');
       part(-.039, -.134, -.405, .078, .098, .084, '#436976');
       for (let rib = 0; rib < 3; rib++) side(-.040, -.113 + rib * .025, -.40, .008, .066, '#83abae');
       side(.070, -.013, -.23, .060, .105, '#183a43');
-      part(.066, .014, -.18 + finite(options.bolt) * .04, .035, .022, .038, '#abc1bf');
+      part(.066, .014, -.18 + mechanicalBolt * .04, .035, .022, .038, '#abc1bf');
       bore(.050, .045, -length - .036, .010);
     } else if (drum) {
       // The automatic shotgun uses a broad detachable drum rather than a
@@ -2087,14 +2101,16 @@ function weaponParts(mesh, weapon, pose, options = {}) {
       part(-.067, -.038, -.705, .134, .106, .32, '#796c56');
       part(-.030, -.011, -length - .034, .060, .063, .26, '#93a09d');
       part(-.047, -.019, -length - .035, .094, .079, .065, '#475654');
-      part(-.098, -.290 - magazineDrop, -.26 + magazineDrop * .11, .196, .219, .193, '#394f51');
-      part(-.126, -.250 - magazineDrop, -.243 + magazineDrop * .11, .252, .135, .159, '#4b6463');
-      side(-.127, -.232 - magazineDrop, -.231 + magazineDrop * .11, .096, .132, '#92a89a');
-      side(.127, -.232 - magazineDrop, -.231 + magazineDrop * .11, .096, .132, '#92a89a');
+      magazine(-.098, -.290 - magazineDrop, -.26 + magazineDrop * .11, .196, .219, .193, '#394f51');
+      magazine(-.126, -.250 - magazineDrop, -.243 + magazineDrop * .11, .252, .135, .159, '#4b6463');
+      if (reloadMotion.magazineVisible) {
+        side(-.127, -.232 - magazineDrop, -.231 + magazineDrop * .11, .096, .132, '#92a89a');
+        side(.127, -.232 - magazineDrop, -.231 + magazineDrop * .11, .096, .132, '#92a89a');
+      }
       part(-.037, -.132, -.55, .074, .105, .082, '#374c4e');
       for (let vent = 0; vent < 4; vent++) top(-.049, .070, -.65 + vent * .057, .098, .015, '#c1b29b');
       side(.070, -.013, -.33, .053, .135, '#273e42');
-      part(.065, .019, -.245 + finite(options.bolt) * .08, .041, .024, .061, metal);
+      part(.065, .019, -.245 + mechanicalBolt * .08, .041, .024, .061, metal);
       part(-.079, -.027, -.095, .018, .068, .085, '#bb996c');
       bore(.056, .050, -length - .036, .002);
     } else {
@@ -2103,15 +2119,15 @@ function weaponParts(mesh, weapon, pose, options = {}) {
       part(-.061, -.034, -.79, .122, .106, .39, '#526b83');
       part(-.027, -.011, -length - .034, .054, .060, .39, '#a8b9bb');
       part(-.045, -.018, -length - .035, .090, .076, .082, '#3c556a');
-      part(-.054, -.257 - magazineDrop, -.19 + magazineDrop * .13, .108, .227, .153, '#3f536b');
-      part(-.056, -.251 - magazineDrop, -.192 + magazineDrop * .13, .112, .037, .157, '#9baeb2');
+      magazine(-.054, -.257 - magazineDrop, -.19 + magazineDrop * .13, .108, .227, .153, '#3f536b');
+      magazine(-.056, -.251 - magazineDrop, -.192 + magazineDrop * .13, .112, .037, .157, '#9baeb2');
       for (let vent = 0; vent < 5; vent++) {
         side(-.062, -.005, -.755 + vent * .068, .036, .029, '#233c52');
         side(.062, -.005, -.755 + vent * .068, .036, .029, '#233c52');
       }
       top(-.052, .074, -.75, .104, .20, '#879eaa');
       side(.070, -.010, -.365, .049, .141, '#2b4155');
-      part(.068, .021, -.26 + finite(options.bolt) * .10, .047, .025, .056, metal);
+      part(.068, .021, -.26 + mechanicalBolt * .10, .047, .025, .056, metal);
       part(-.066, .043, .085, .132, .047, .109, '#8999a6');
       side(-.070, -.025, -.34, .033, .027, '#c7b991');
       bore(.052, .045, -length - .036, .004);
@@ -2120,8 +2136,8 @@ function weaponParts(mesh, weapon, pose, options = {}) {
     return length;
   }
   if (weapon === 'crossbow') {
-    const loaded = options.loaded !== false && reload === 0;
-    const draw = reload > 0 ? smooth(reload) : 1;
+    const loaded = options.loaded !== false && !reloadMotion.active || reloadMotion.loaded;
+    const draw = reloadMotion.active ? reloadMotion.draw : options.loaded !== false ? 1 : 0;
     const stringZ = lerp(-.61, -.19, draw);
     part(-.055, -.061, -.62, .11, .132, .68, '#676d52');
     part(-.065, -.012, -.65, .13, .080, .51, '#354844');
@@ -2162,8 +2178,8 @@ function weaponParts(mesh, weapon, pose, options = {}) {
     part(-.049, .080, -.36, .098, .033, .30, '#262f35');
     if (!shotgun && !lmg) {
       const magazineZ = burst ? -.11 : -.18;
-      part(-.045, -.25 - magazineDrop, magazineZ + magazineDrop * .16, .09, .20, .105, trim);
-      part(-.045, -.23 - magazineDrop, magazineZ - .002 + magazineDrop * .16, .09, .04, .109, burst ? '#bb8878' : '#738b80');
+      magazine(-.045, -.25 - magazineDrop, magazineZ + magazineDrop * .16, .09, .20, .105, trim);
+      magazine(-.045, -.23 - magazineDrop, magazineZ - .002 + magazineDrop * .16, .09, .04, .109, burst ? '#bb8878' : '#738b80');
     }
     part(-.06, -.067, -.06, .12, .125, .25, shotgun ? '#a37a4f' : sniper ? '#6b7b60' : '#47564f');
     part(-.066, -.083, .167, .132, .154, .045, trim);
@@ -2185,7 +2201,7 @@ function weaponParts(mesh, weapon, pose, options = {}) {
     // Handguard vent paint sits on its actual top. Four mostly enclosed
     // cubes would spend triangles on hidden faces in every remote rifle.
     for (let i = 0; i < 4; i++) top(-.055, .069, (smg ? -.555 : -.61) + i * .045, .11, .017, '#667f78');
-    const bolt = options.bolt || (reload > .72 && reload < .90 ? Math.sin((reload - .72) / .18 * Math.PI) : 0);
+    const bolt = mechanicalBolt;
     part(.061, .022, -.23 + bolt * .09, .046, .025, .06, metal);
     bore(.044, .042, -length - .036);
     if (smg) {
@@ -2211,7 +2227,7 @@ function weaponParts(mesh, weapon, pose, options = {}) {
     if (shotgun) {
       // A pump, tubular magazine and shell saddle make the close-range gun
       // readable without adding another material or rendering pass.
-      const pump = clamp(finite(options.pump), 0, 1) * .12;
+      const pump = mechanicalPump * .12;
       part(-.040, -.088, -.91, .08, .063, .43, '#303a3c');
       part(-.073, -.087, -.72 + pump, .146, .105, .26, '#996f48');
       for (let i = 0; i < 5; i++) part(-.075, -.084, -.69 + pump + i * .04, .15, .098, .012, '#523f32');
@@ -2220,8 +2236,8 @@ function weaponParts(mesh, weapon, pose, options = {}) {
         part(-.103, -.026, -.33 + i * .045, .030, .068, .032, '#a65c45');
         part(-.104, .033, -.33 + i * .045, .032, .014, .033, '#d1b36b');
       }
-      if (reload > .18 && reload < .85) {
-        const shell = Math.sin((reload - .18) / .67 * Math.PI);
+      if (reloadMotion.shellVisible) {
+        const shell = reloadMotion.shell;
         part(-.10 - shell * .025, -.11 - (1 - shell) * .06, -.25, .033, .075, .033, '#b36f47');
         part(-.10 - shell * .025, -.039 - (1 - shell) * .06, -.25, .033, .015, .033, '#d5b871');
       }
@@ -2231,9 +2247,9 @@ function weaponParts(mesh, weapon, pose, options = {}) {
     }
     if (lmg) {
       part(-.090, -.068, -.51, .18, .17, .37, '#536250');
-      part(-.100, -.030, -.34, .20, .18, .31, '#797d58');
-      part(-.075, -.27 - magazineDrop, -.27, .15, .23, .24, '#485340');
-      part(-.074, -.262 - magazineDrop, -.268, .148, .048, .236, '#9c9d70');
+      part(-.100, -.030 + reloadMotion.lid * .13, -.34 + reloadMotion.lid * .04, .20, .18, .31, '#797d58');
+      magazine(-.075, -.27 - magazineDrop, -.27, .15, .23, .24, '#485340');
+      magazine(-.074, -.262 - magazineDrop, -.268, .148, .048, .236, '#9c9d70');
       part(-.05, -.092, -.95, .10, .063, .41, '#435442');
       for (let i = 0; i < 6; i++) {
         part(-.155 - i * .022, .040 - i * .012, -.30, .027, .034, .043, '#b5a570');
@@ -2255,9 +2271,9 @@ function weaponParts(mesh, weapon, pose, options = {}) {
       part(-.075, .02, .10, .15, .135, .17, '#7e8b70');
       part(-.030, -.040, -1.01, .022, .11, .035, '#516055');
       part(.008, -.040, -1.01, .022, .11, .035, '#516055');
-      const recovery = clamp(finite(options.cycle), 0, 1), bolt = Math.sin(recovery * Math.PI) * .15;
+      const recovery = mechanicalBolt, bolt = recovery * .15;
       part(.065, .013, -.28 + bolt, .087, .023, .037, '#b7c6b6');
-      part(.13, -.025 + Math.sin(recovery * Math.PI) * .055, -.28 + bolt, .045, .07, .045, '#31483e');
+      part(.13, -.025 + recovery * .055, -.28 + bolt, .045, .07, .045, '#31483e');
       part(-.081, .079, .083, .162, .068, .105, '#879572');
       part(-.073, -.018, -.80, .146, .039, .26, '#4b6053');
       for (let i = 0; i < 3; i++) side(-.075, -.010, -.765 + i * .060, .025, .033, '#213a32');
@@ -2301,14 +2317,14 @@ function weaponParts(mesh, weapon, pose, options = {}) {
       for (let i = 0; i < 3; i++) side(-.077, -.005, -.642 + i * .064, .038, .032, '#263d38');
     }
   } else {
-    const slide = clamp(finite(options.bolt), 0, 1) * .053;
+    const slide = mechanicalBolt * .053;
     part(-.048, -.025, -.38, .096, .088, .34, body);
     part(-.046, .063, -.385 + slide, .092, .044, .345, metal);
     part(-.022, -.018, -.44, .044, .044, .065, trim);
-    part(-.040, -.19 - magazineDrop, -.11, .08, .18, .105, trim);
+    magazine(-.040, -.19 - magazineDrop, -.11, .08, .18, .105, trim);
     part(-.041, -.08, -.115, .008, .066, .086, '#a4b1ae');
     part(.033, -.08, -.115, .008, .066, .086, '#a4b1ae');
-    part(-.040, -.19 - magazineDrop, -.113, .08, .015, .109, '#8eb0bd');
+    magazine(-.040, -.19 - magazineDrop, -.113, .08, .015, .109, '#8eb0bd');
     for (let i = 0; i < 4; i++) part(.046, .066, -.17 + slide + i * .02, .006, .035, .008, '#596e79');
     part(-.052, -.023, -.15, .104, .030, .087, '#283d46');
     part(-.050, -.165, -.10, .011, .091, .074, '#3c5361');
@@ -2857,7 +2873,7 @@ export function createMonsterAnimationPresenter({ maxMonsters = 20 } = {}) {
 
 function creatureParts(mesh, player, type, art, pose, front, animation) {
   const box = (x, y, z, w, h, d, color) => mesh.box(x, y, z, w, h, d, color, pose);
-  const phase = finite(animation.phase), stride = clamp(finite(animation.stride), 0, 1);
+  const phase = finite(animation.phase), stride = clamp(finite(animation.stride), 0, 1), sprint = clamp(finite(animation.sprint), 0, 1);
   const windup = ['windup', 'lungeWindup'].includes(player.monsterState) ? smooth(1 - clamp(finite(player.attackTicks) / Math.max(1, finite(player.attackDuration, 1)), 0, 1)) : 0;
   const leap = player.monsterState === 'leap' && finite(player.lungeTicks) > 0;
   const roaring = player.monsterState === 'roar' && finite(player.roarTicks) > 0;
@@ -3047,14 +3063,14 @@ export function monsterMeshes(player, time = 0, animation = null) {
   const mesh = new Mesh(); monsterParts(mesh, player, finite(time), animation); return mesh.array;
 }
 
-function monsterMesh(mesh, player, map, time, animation = null) {
+function monsterMesh(mesh, player, map, time, animation = null, presentedReload = null) {
   const { armed, art, pose, yaw, pitch } = monsterParts(mesh, player, time, animation);
   if (!armed) return;
-  const offset = rotate([.12, 1.24, -.18], yaw), reloadProgress = player.reloadTicks > 0 ? clamp(1 - player.reloadTicks / (WEAPONS[player.weapon]?.reloadTicks || 252), 0, 1) : 0;
+  const offset = rotate([.12, 1.24, -.18], yaw), reloadProgress = presentedReload?.globalProgress ?? (player.reloadTicks > 0 ? clamp(1 - player.reloadTicks / (WEAPONS[player.weapon]?.reloadTicks || 252), 0, 1) : 0);
   const gunPose = { x: pose.x + offset[0], y: pose.y + offset[1], z: pose.z + offset[2], yaw, pitch, scale: .84 };
   const direction = [Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch)];
   const limit = Math.max(0, rayCoverDistance([gunPose.x, gunPose.y, gunPose.z], direction, map.colliders || [], weaponLength(player.weapon) * gunPose.scale + .12, weaponCoverPadding(player.weapon, gunPose.scale, reloadProgress)) - .025) / gunPose.scale;
-  weaponParts(mesh, player.weapon, gunPose, { limit, stock: art.armor, reloadProgress, aim: aimProgress(player), loaded: player.ammo > 0, cycle: 1 - finite(player.shotCooldown) / (WEAPONS[player.weapon]?.cooldown || 1) });
+  weaponParts(mesh, player.weapon, gunPose, { limit, stock: art.armor, reloadProgress, reloadMotion: presentedReload || undefined, aim: aimProgress(player), loaded: player.ammo > 0, cycle: 1 - finite(player.shotCooldown) / (WEAPONS[player.weapon]?.cooldown || 1) });
   mesh.box(-.07, -.14, -.10, .13, .14, .16, art.skin, gunPose);
 }
 
@@ -3144,13 +3160,14 @@ export function operativePose(player, animation = playerAnimationPose(player, 0)
   // Structural height follows the actual stance. Only joint flex settles after
   // standing up, so a transitioning body never acquires a stretched neck.
   const crouch = player.crouching ? 1 : 0, crouchBlend = player.crouching ? 1 : clamp(finite(animation.crouch), 0, 1), airborne = !!animation.airborne;
-  const phase = finite(animation.phase), stride = clamp(finite(animation.stride), 0, 1);
+  const phase = finite(animation.phase), stride = clamp(finite(animation.stride), 0, 1), sprint = clamp(finite(animation.sprint), 0, 1);
   const forward = clamp(finite(animation.forward, 1), -1, 1), strafe = clamp(finite(animation.strafe), -1, 1);
   const bob = clamp(finite(animation.bodyBob), -.028, 0), land = clamp(finite(animation.land), 0, 1);
   const hipY = lerp(.81, .53, crouch) + bob - land * .014, chestY = lerp(1.12, .68, crouch) + bob;
   const legs = [-1, 1].map((side, index) => {
-    const swing = Math.sin(phase + index * Math.PI), lift = airborne ? .055 + finite(animation.jump) * .050 : Math.max(0, swing) * stride * lerp(.105, .046, crouch);
-    const travel = swing * stride * lerp(.075, .040, crouch);
+    const swing = Math.sin(phase + index * Math.PI), raised = Math.max(0, Math.cos(phase + index * Math.PI));
+    const lift = airborne ? .055 + finite(animation.jump) * .050 : raised ** 1.4 * stride * lerp(.108 + sprint * .022, .046, crouch);
+    const travel = swing * stride * lerp(.080 + sprint * .020, .040, crouch);
     const foot = [side * .108 + strafe * travel * .55, .018 + lift, -.012 - forward * travel];
     const ankle = [foot[0], foot[1] + .112, foot[2] + .015];
     const hip = [side * .098, hipY, .024 + crouch * .036];
@@ -3160,19 +3177,24 @@ export function operativePose(player, animation = playerAnimationPose(player, 0)
       -.020 - crouchBlend * .090 - forward * travel * .28 - lift * .52];
     return { hip, knee, ankle, foot, lift };
   });
-  const aiming = aimProgress(player), reload = finite(player.reloadTicks) > 0 ? Math.sin(clamp(1 - player.reloadTicks / (WEAPONS[player.weapon]?.reloadTicks || 252), 0, 1) * Math.PI) : 0;
+  const aiming = aimProgress(player), reloadProgress = animation.reload?.globalProgress ?? clamp(1 - finite(player.reloadTicks) / (WEAPONS[player.weapon]?.reloadTicks || 252), 0, 1);
+  const reloading = gunHeld(player) && (animation.reload ? animation.reload.reloadActive : finite(player.reloadTicks) > 0), reloadPose = animation.reload || weaponReloadPose(player.weapon, reloadProgress, { active: reloading }), reload = reloadPose.weight;
   const healing = finite(player.healTicks) > 0, potion = healing || player.slot === 'potion', melee = player.slot === 'sword', dual = !potion && (melee ? !!meleeProfile(player).dualWield : gunHeld(player) && !!WEAPONS[player.weapon]?.dualWield), single = melee || potion || player.slot === 'grenade' || player.slot === 'empty', swing = meleeMotion(player);
   const throwLift = finite(player.grenadeThrowTicks) > 0 ? .085 : 0;
   const arms = [-1, 1].map((side, index) => {
-    const armSwing = Math.sin(phase + index * Math.PI + Math.PI) * stride * .027 * (1 - aiming * .75);
+    const armSwing = Math.sin(phase + index * Math.PI + Math.PI) * stride * (.034 + sprint * .013) * (1 - aiming * .75);
     const shoulder = [side * .211, lerp(1.295, .767, crouch) + bob, .012];
     const elbow = [side * .192, lerp(1.065, .638, crouch) + bob + aiming * .020, -.053 + armSwing];
     const hand = [side * (side < 0 ? .106 : .125), lerp(1.145, .735, crouch) + bob + aiming * .070 - (side < 0 ? reload * .110 : 0), -.185 + armSwing * .42];
-    if (!single && !dual && side < 0) { hand[0] = .074 - reload * .100; hand[1] += .015; hand[2] = -.215 + armSwing * .30; }
+    if (!single && !dual && side < 0) { hand[0] = .074 - reload * .080 + reloadPose.bolt * .045; hand[1] += .015 + reloadPose.seat * .010 + reloadPose.bolt * .040; hand[2] = -.215 + armSwing * .30 + reload * .042 + reloadPose.bolt * .025; }
     if (player.slot === 'empty') { hand[0] = side * .193; hand[1] -= .11; hand[2] = -.035 + armSwing; elbow[2] += .015; }
     if (potion && !healing && side < 0) { hand[0] = -.125; hand[2] = -.17; }
     if (healing && side < 0) { hand[0] = -.114; hand[1] = lerp(1.415, .792, crouch); hand[2] = -.105; elbow[1] += .035; }
-    if (dual) { hand[0] = side * .185; hand[1] -= reload * .085; hand[2] = -.22 + armSwing * .3; elbow[0] = side * .202; }
+    if (dual) {
+      const handReload = weaponReloadPose(player.weapon, reloadProgress, { active: reloading, hand: side > 0 ? 0 : 1 });
+      hand[0] = side * (melee ? .185 : .128); hand[1] -= handReload.weight * .085; hand[2] = (melee ? -.22 : -.140) + armSwing * .3 + handReload.weight * .035; elbow[0] = side * .202;
+    }
+    if (sprint > 0) { hand[1] -= sprint * .040; hand[2] += sprint * .018; elbow[2] += sprint * .016; }
     if (melee && (dual ? index === (player.meleeHand === 1 ? 0 : 1) : side > 0)) {
       if (swing.phase !== 'idle') {
         const grip = meleeWorldPose(player, swing);
@@ -3278,7 +3300,7 @@ export function operativeMeshes(player, time = 0, freeForAll = false, animation 
   const mesh = new Mesh(); operativeParts(mesh, player, finite(time), freeForAll, animation); return mesh.array;
 }
 
-function playerMesh(mesh, player, map, time, allied, freeForAll = false, animation = null) {
+function playerMesh(mesh, player, map, time, allied, freeForAll = false, animation = null, presentedReload = null) {
   const { crouch, yaw, pitch, pose, color, team, uniform, art, joints } = operativeParts(mesh, player, time, freeForAll, animation);
   const healing = finite(player.healTicks) > 0;
   const potion = healing || player.slot === 'potion', grenade = player.slot === 'grenade', empty = player.slot === 'empty';
@@ -3286,9 +3308,11 @@ function playerMesh(mesh, player, map, time, allied, freeForAll = false, animati
   const heldYaw = sword && player.meleeTicks > 0 ? finite(player.meleeYaw, yaw) : yaw;
   const heldPitch = sword && player.meleeTicks > 0 ? finite(player.meleePitch, pitch) : pitch;
   const handOffset = rotate([potion ? -.14 : sword ? .21 : .14, healing ? (crouch ? .87 : 1.42) : potion || grenade ? (crouch ? .71 : 1.14) : (crouch ? .82 : 1.24), healing ? -.34 : potion || grenade ? -.23 : sword ? -.24 - motion.extension : -.14], heldYaw);
-  const reloadProgress = player.reloadTicks > 0 ? clamp(1 - player.reloadTicks / (WEAPONS[player.weapon]?.reloadTicks || 252), 0, 1) : 0;
-  const reloadTilt = Math.sin(reloadProgress * Math.PI);
-  const gunPose = sword && !healing ? meleeWorldPose(player, motion) : { x: pose.x + handOffset[0], y: pose.y + handOffset[1] - reloadTilt * .12, z: pose.z + handOffset[2], yaw: heldYaw, pitch: heldPitch - reloadTilt * .24, scale: 1 };
+  const reloadProgress = presentedReload?.globalProgress ?? (player.reloadTicks > 0 ? clamp(1 - player.reloadTicks / (WEAPONS[player.weapon]?.reloadTicks || 252), 0, 1) : 0);
+  const reloadPose = presentedReload || weaponReloadPose(player.weapon, reloadProgress, { active: gunHeld(player) && finite(player.reloadTicks) > 0 });
+  const shotAge = playerShotAge(player);
+  const worldShot = weaponShotPose(player.weapon, shotAge, aimProgress(player)), worldCycle = weaponCyclePose(player.weapon, shotAge);
+  const gunPose = sword && !healing ? meleeWorldPose(player, motion) : { x: pose.x + handOffset[0], y: pose.y + handOffset[1] + reloadPose.weapon.y + (gunHeld(player) ? worldShot.y : 0) - finite(animation?.sprint) * .04, z: pose.z + handOffset[2], yaw: heldYaw + (gunHeld(player) ? worldShot.yaw : 0), pitch: heldPitch + reloadPose.weapon.pitch + (gunHeld(player) ? worldShot.pitch : 0) - finite(animation?.sprint) * .08, scale: 1 };
   const direction = [Math.sin(gunPose.yaw) * Math.cos(gunPose.pitch), Math.sin(gunPose.pitch), -Math.cos(gunPose.yaw) * Math.cos(gunPose.pitch)];
   const limit = sword ? meleeWorldCoverLimit(player, gunPose, map.colliders || []) : Math.max(0, rayCoverDistance([gunPose.x, gunPose.y, gunPose.z], direction, map.colliders || [], weaponLength(player.weapon) + .12, weaponCoverPadding(player.weapon, gunPose.scale, reloadProgress)) - .025) / gunPose.scale;
   if (potion) {
@@ -3315,17 +3339,18 @@ function playerMesh(mesh, player, map, time, allied, freeForAll = false, animati
     mesh.box(-.047, -.080, -.025, .094, .110, .160, art.skin, gunPose);
     mesh.box(-.060, -.075, .15, .12, .15, .27, uniform, gunPose);
   } else if (!empty && gunHeld(player) && WEAPONS[player.weapon]?.dualWield) {
-    const age = player.shotCooldown > 0 ? (WEAPONS[player.weapon].cooldown - player.shotCooldown) * 1000 / 120 : Infinity;
+    const age = playerShotAge(player);
     for (const hand of [0, 1]) {
       const arm = joints.arms[hand === 0 ? 1 : 0], offset = rotate(arm.hand, yaw);
       const kick = weaponShotPose(player.weapon, hand === player.lastShotHand ? age : Infinity, aimProgress(player), hand === 0 ? 1 : -1);
-      const handPose = { x: pose.x + offset[0], y: pose.y + offset[1] + .12 + kick.y, z: pose.z + offset[2], yaw: heldYaw + kick.yaw, pitch: heldPitch + kick.pitch - reloadTilt * .19, scale: 1 };
+      const pairedReload = weaponReloadPose(player.weapon, reloadProgress, { active: finite(player.reloadTicks) > 0, hand });
+      const handPose = { x: pose.x + offset[0], y: pose.y + offset[1] + .12 + kick.y, z: pose.z + offset[2], yaw: heldYaw + kick.yaw + pairedReload.weapon.yaw * (hand === 0 ? 1 : -1), pitch: heldPitch + kick.pitch + pairedReload.weapon.pitch, scale: 1 };
       const forward = rotate([0, 0, -1], handPose.yaw, handPose.pitch), limit = Math.max(0, rayCoverDistance([handPose.x, handPose.y, handPose.z], forward, map.colliders || [], weaponLength(player.weapon) + .12, weaponCoverPadding(player.weapon, 1, reloadProgress)) - .025);
-      weaponParts(mesh, player.weapon, handPose, { hand, limit, reloadProgress, bolt: kick.kick, aim: aimProgress(player) });
+      weaponParts(mesh, player.weapon, handPose, { hand, limit, reloadProgress, reloadMotion: pairedReload, bolt: weaponCyclePose(player.weapon, hand === player.lastShotHand ? age : Infinity).bolt, aim: aimProgress(player) });
       mesh.box(-.043, -.128, -.041, .086, .108, .10, art.skin, handPose);
     }
   } else if (!empty && gunHeld(player)) {
-    weaponParts(mesh, player.weapon, gunPose, { limit, stock: color, reloadProgress, aim: aimProgress(player), loaded: player.ammo > 0, spin: finite(player.spinTicks) / (WEAPONS[player.weapon]?.spinupTicks || 1), cycle: 1 - finite(player.shotCooldown) / (WEAPONS[player.weapon]?.cooldown || 1) });
+    weaponParts(mesh, player.weapon, gunPose, { limit, stock: color, reloadProgress, reloadMotion: reloadPose, bolt: worldCycle.bolt, pump: worldCycle.pump, aim: aimProgress(player), loaded: player.ammo > 0, spin: finite(player.spinTicks) / (WEAPONS[player.weapon]?.spinupTicks || 1), cycle: 1 - finite(player.shotCooldown) / (WEAPONS[player.weapon]?.cooldown || 1) });
     mesh.box(-.067, -.135, -.11, .104, .115, .140, art.skin, gunPose);
   }
   if (allied) {
@@ -3346,7 +3371,7 @@ export class VoxelRenderer {
     this.lastAim = null; this.swayX = 0; this.swayY = 0;
     this.frameMeshes = { world: new Mesh(), contact: new Mesh(), tracer: new Mesh(), weapon: new Mesh() };
     this.frameMeshes.tracer.ensure((MAX_MELEE_TRAIL_VERTICES + MAX_TRACERS * 6) * VERTEX_STRIDE);
-    this.presentLoot = createLootPresenter(); this.presentWarnings = createSpawnWarningPresenter(); this.presentEye = createEyeHeightPresenter(); this.presentHumans = createPlayerAnimationPresenter(); this.presentMonsters = createMonsterAnimationPresenter(); this.presentHead = createFirstPersonMotionPresenter(); this.presentShots = createWeaponShotPresenter(); this.firstPersonMotion = null; this.shotMotion = null; this.humanPoses = new Map(); this.resizeReads = 0;
+    this.presentLoot = createLootPresenter(); this.presentWarnings = createSpawnWarningPresenter(); this.presentEye = createEyeHeightPresenter(); this.presentHumans = createPlayerAnimationPresenter(); this.presentMonsters = createMonsterAnimationPresenter(); this.presentHead = createFirstPersonMotionPresenter(); this.presentShots = createWeaponShotPresenter(); this.presentReloads = createWeaponReloadPresenter({ maxPlayers: 32 }); this.cameraReload = null; this.firstPersonMotion = null; this.shotMotion = null; this.humanPoses = new Map(); this.resizeReads = 0;
     this._frameDrawCalls = 0; this._frameDynamicVertices = 0; this._mapVertices = 0; this._lootItems = 0; this._stormVertices = 0;
     this._worldLabels = EMPTY_WORLD_LABELS;
     this._onLost = event => {
@@ -3574,9 +3599,10 @@ export class VoxelRenderer {
       const fallback = playerAnimationPose(player, time / 1000);
       motion = { weaponX: Math.sin(fallback.phase) * .009 * fallback.stride, weaponY: -(1 - Math.cos(fallback.phase * 2)) * .004 * fallback.stride };
     }
+    this.reloadMotion = null;
     const aim = aimProgress(player);
-    const age = this.localShot?.weapon === player.weapon ? Math.max(0, time - this.localShot.born) : 10000;
-    const effects = shotEffect(player.weapon), firing = gunHeld(player) ? (this.presentShots ? this.presentShots.sample(player.weapon, time, aim) : weaponShotPose(player.weapon, age, aim)) : weaponShotPose(player.weapon, Infinity, 0), kick = firing.kick;
+    const age = this.presentShots ? this.presentShots.age(player.weapon, time) : this.localShot?.weapon === player.weapon ? Math.max(0, time - this.localShot.born) : Infinity;
+    const effects = shotEffect(player.weapon), firing = gunHeld(player) ? (this.presentShots ? this.presentShots.sample(player.weapon, time, aim) : weaponShotPose(player.weapon, age, aim)) : weaponShotPose(player.weapon, Infinity, 0);
     this.shotMotion = firing;
     if (this.lastAim && Number.isFinite(this.lastAim.time) && time > this.lastAim.time) {
       let yawDelta = yaw - this.lastAim.yaw;
@@ -3681,24 +3707,28 @@ export class VoxelRenderer {
       }
       return mesh.array;
     }
-    const reloadActive = finite(player.reloadTicks) > 0;
-    let reload = 0, reloadProgress = 0;
-    if (reloadActive) {
-      const ticks = finite(player.reloadTicks);
-      const duration = WEAPONS[player.weapon]?.reloadTicks || WEAPONS.carbine.reloadTicks;
-      reloadProgress = clamp(1 - ticks / duration, 0, 1);
-      reload = Math.sin(clamp(reloadProgress, .04, .96) * Math.PI);
-    }
+    const acceptedReloadTicks = this.cameraReload?.authoritativeTicks ?? finite(player.reloadTicks);
+    const reloadActive = acceptedReloadTicks > 0 && (this.cameraReload ? this.cameraReload.reloadActive : true);
+    const reloadProgress = reloadActive ? clamp(1 - acceptedReloadTicks / (WEAPONS[player.weapon]?.reloadTicks || WEAPONS.carbine.reloadTicks), 0, 1) : 0;
+    const reloadPose = this.cameraReload || weaponReloadPose(player.weapon, reloadProgress, { active: reloadActive });
+    const visualReloadProgress = reloadPose.globalProgress;
+    const reloadHands = WEAPONS[player.weapon]?.dualWield ? [reloadPose, weaponReloadPose(player.weapon, visualReloadProgress, { active: reloadActive, hand: 1 })] : [reloadPose];
+    this.reloadMotion = { weapon: player.weapon, active: reloadActive, progress: reloadProgress, visualProgress: visualReloadProgress, authoritativeTicks: acceptedReloadTicks, visualTicks: reloadPose.remainingTicks ?? acceptedReloadTicks, hands: reloadHands.map(hand => ({ hand: hand.hand, active: hand.active, stage: hand.stage, audioPhase: hand.audioPhase, magazineDrop: hand.magazineDrop, bolt: hand.bolt, pump: hand.pump, cylinder: hand.cylinder, lid: hand.lid, draw: hand.draw })) };
     const steady = 1 - aim * .92;
     const throwing = Math.sin(clamp(finite(player.grenadeThrowTicks) / 24, 0, 1) * Math.PI);
     if (WEAPONS[player.weapon]?.dualWield) {
       for (const hand of [0, 1]) {
         const side = hand === 0 ? 1 : -1;
         const handShot = this.presentShots ? this.presentShots.sample(player.weapon, time, aim, hand) : weaponShotPose(player.weapon, this.localShot?.hand === hand ? age : Infinity, aim, side);
-        const pose = { x: side * lerp(.275, .175, aim) + (this.swayX + motion.weaponX) * steady + handShot.x, y: lerp(-.29, -.212, aim) + (this.swayY + motion.weaponY) * steady + handShot.y - reload * .11 - throwing * .15, z: lerp(-.49, -.405, aim) + handShot.z + reload * .055, yaw: -side * lerp(.08, .055, aim) + this.swayX * 2 * steady + handShot.yaw + reload * side * .17, pitch: handShot.pitch - reload * .24 - throwing * .20, scale: .74 };
-        const handReload = reloadActive ? clamp(reloadProgress + (hand === 0 ? .05 : -.05), 0, 1) : 0;
-        const limit = coverLimit(pose, weaponLength(player.weapon) + .20, weaponCoverPadding(player.weapon, pose.scale, handReload));
-        const length = weaponParts(mesh, player.weapon, pose, { hand, limit, reloadProgress: handReload, bolt: handShot.kick * .75, aim });
+        const handReload = reloadHands[hand], reloadWeapon = handReload.weapon;
+        const pose = { x: side * lerp(.275, .175, aim) + (this.swayX + motion.weaponX) * steady + handShot.x + reloadWeapon.x * side,
+          y: lerp(-.29, -.212, aim) + (this.swayY + motion.weaponY) * steady + handShot.y + reloadWeapon.y - throwing * .15,
+          z: lerp(-.49, -.405, aim) + handShot.z + reloadWeapon.z + finite(motion.weaponZ) * steady,
+          yaw: -side * lerp(.08, .055, aim) + this.swayX * 2 * steady + handShot.yaw + reloadWeapon.yaw * side,
+          pitch: handShot.pitch + reloadWeapon.pitch + finite(motion.weaponPitch) * steady - throwing * .20, scale: .74 };
+        const limit = coverLimit(pose, weaponLength(player.weapon) + .20, weaponCoverPadding(player.weapon, pose.scale, visualReloadProgress));
+        const handAge = this.presentShots ? this.presentShots.age(player.weapon, time, hand) : this.localShot?.hand === hand ? age : Infinity;
+        const length = weaponParts(mesh, player.weapon, pose, { hand, limit, reloadProgress, reloadMotion: handReload, bolt: weaponCyclePose(player.weapon, handAge).bolt, aim });
         glove(pose, 0, -.122, -.010, hand === 0 ? 'gun' : 'support', limit);
         const flashDuration = finite(effects.muzzleTicks, 5) * 1000 / 120;
         if (this.localShot?.hand === hand && age < flashDuration && !reloadActive && !throwing && finite(effects.muzzleStrength, 1) > 0) {
@@ -3711,25 +3741,18 @@ export class VoxelRenderer {
       return mesh.array;
     }
     const pose = {
-      x: lerp(.29, 0, aim) + (this.swayX + motion.weaponX) * steady + firing.x,
-      y: lerp(-.29, -(WEAPONS[player.weapon]?.adsSightHeight || .152) * .74, aim) + (this.swayY + motion.weaponY) * steady + firing.y - reload * .105 - throwing * .15,
-      z: lerp(-.49, -.35, aim) + firing.z + reload * .065,
-      yaw: -.065 * (1 - aim) + this.swayX * 2 * steady + firing.yaw + reload * .22,
-      pitch: firing.pitch - reload * .23 - throwing * .20,
+      x: lerp(.29, 0, aim) + (this.swayX + motion.weaponX) * steady + firing.x + reloadPose.weapon.x,
+      y: lerp(-.29, -(WEAPONS[player.weapon]?.adsSightHeight || .152) * .74, aim) + (this.swayY + motion.weaponY) * steady + firing.y + reloadPose.weapon.y - throwing * .15,
+      z: lerp(-.49, -.35, aim) + firing.z + reloadPose.weapon.z + finite(motion.weaponZ) * steady,
+      yaw: -.065 * (1 - aim) + this.swayX * 2 * steady + firing.yaw + reloadPose.weapon.yaw,
+      pitch: firing.pitch + reloadPose.weapon.pitch + finite(motion.weaponPitch) * steady - throwing * .20,
       scale: .74,
     };
-    const pump = ['shotgun', 'slugshotgun'].includes(player.weapon) && age > 80 && age < 640 ? Math.sin((age - 80) / 560 * Math.PI) : 0;
-    const limit = coverLimit(pose, weaponLength(player.weapon) + .20, weaponCoverPadding(player.weapon, pose.scale, reloadProgress));
-    const length = weaponParts(mesh, player.weapon, pose, { stock: team, limit, reloadProgress, bolt: kick * .75, pump, aim, loaded: player.ammo > 0, spin: finite(player.spinTicks) / (WEAPONS[player.weapon]?.spinupTicks || 1), cycle: 1 - finite(player.shotCooldown) / (WEAPONS[player.weapon]?.cooldown || 1) });
-    const handShift = reload * .30, handDrop = reload * .17;
-    if (player.weapon === 'revolver') {
-      const cylinderOpen = reloadProgress > .07 && reloadProgress < .88 ? Math.sin((reloadProgress - .07) / .81 * Math.PI) : 0;
-      glove(pose, -.071 - cylinderOpen * .125, -.148 - reload * .060, -.060 - cylinderOpen * .12, 'support', limit);
-    } else if (player.weapon === 'pistol') {
-      glove(pose, -.071, -.148 - handDrop, -.060 + handShift, 'support', limit);
-    } else {
-      glove(pose, -.063, -.084 - handDrop, (player.weapon === 'pdw' ? -.40 : -.502) + handShift + pump * .12, 'support', limit);
-    }
+    const cyclePose = weaponCyclePose(player.weapon, age), pump = Math.max(cyclePose.pump, reloadPose.pump);
+    const limit = coverLimit(pose, weaponLength(player.weapon) + .20, weaponCoverPadding(player.weapon, pose.scale, visualReloadProgress));
+    const length = weaponParts(mesh, player.weapon, pose, { stock: team, limit, reloadProgress, reloadMotion: reloadPose, bolt: cyclePose.bolt, pump, aim, loaded: player.ammo > 0, spin: finite(player.spinTicks) / (WEAPONS[player.weapon]?.spinupTicks || 1), cycle: 1 - finite(player.shotCooldown) / (WEAPONS[player.weapon]?.cooldown || 1) });
+    const support = reloadPose.support;
+    glove(pose, support[0], support[1], support[2] + (reloadActive ? reloadPose.pump : cyclePose.pump) * .12, 'support', limit);
     glove(pose, .004, -.131, .002, 'gun', limit);
     if (throwing > 0) {
       const hand = { x: -.20, y: -.17 - (1 - throwing) * .22, z: -.39 - throwing * .18, yaw: .17, pitch: -.16, scale: .74 };
@@ -3786,6 +3809,18 @@ export class VoxelRenderer {
     const aim = aimProgress(cameraPlayer), zoom = weaponAimFovRatio(cameraPlayer.weapon, ADS);
     const headContext = `${state.gameId || 'voxel-breach'}:${map.id}:${state.matchId ?? ''}:${state.round ?? ''}`;
     const motion = this.presentHead(cameraPlayer, time, headContext, { aim, paused: state.phase === 'paused' || !!options.paused });
+    this.presentReloads.retain([...players.map(player => player.id), cameraPlayer.id]);
+    const acceptedPlayers = Array.isArray(options.acceptedPlayers) ? options.acceptedPlayers : players;
+    const acceptedById = new Map(acceptedPlayers.map(player => [player.id, player]));
+    const presentReload = player => {
+      const accepted = acceptedById.get(player.id);
+      const sameActor = accepted && ['id', 'alive', 'lifeId', 'deaths', 'weapon', 'slot', 'inventoryIndex'].every(field => accepted[field] === player[field]);
+      // Body/camera positions are already projected. Only the raw accepted
+      // timer enters this one bounded clock, so it cannot advance twice.
+      const source = sameActor ? accepted : { ...player, reloadTicks: 0 };
+      return this.presentReloads(source, time, headContext, { durationTicks: WEAPONS[source.weapon]?.reloadTicks, paused: state.phase === 'paused' || !!options.paused });
+    };
+    this.cameraReload = presentReload(cameraPlayer);
     const eye = this.presentEye(cameraPlayer, map, time);
     let bobY = motion.bobY;
     if (bobY < 0 && map.colliders?.length) {
@@ -3833,15 +3868,17 @@ export class VoxelRenderer {
     this.presentMonsters.retain(horde ? players.filter(player => Object.hasOwn(MONSTER_ART, player.monsterType) && player.alive).map(player => player.id) : []);
     for (const player of players) {
       if (!Number.isFinite(player.x) || !Number.isFinite(player.z)) continue;
-      const humanAnimation = !player.monsterType ? this.presentHumans(player, time, humanContext, { paused: state.phase === 'paused' || !!options.paused }) : null;
+      const reloadAnimation = player.id === cameraPlayer.id ? this.cameraReload : presentReload(player);
+      const gaitAnimation = !player.monsterType ? this.presentHumans(player, time, humanContext, { paused: state.phase === 'paused' || !!options.paused }) : null;
+      const humanAnimation = gaitAnimation ? { ...gaitAnimation, reload: reloadAnimation } : null;
       if (humanAnimation) this.humanPoses.set(player.id, { animation: humanAnimation, joints: operativePose(player, humanAnimation) });
       if (!player.alive) {
         if (horde && player.human && player.connected && player.participating && player.revivesThisWave < 1 && ['fight', 'paused'].includes(state.phase)) fallenSurvivorKit(dynamic, contacts, player, yaw);
         continue;
       }
       if (player.id === cameraPlayer.id) continue;
-      if (horde && player.monsterType) monsterMesh(dynamic, player, map, time, this.presentMonsters(player, time, humanContext, { paused: state.phase === 'paused' || !!options.paused }));
-      else playerMesh(dynamic, player, map, time, !freeForAll && player.team === local.team, freeForAll, humanAnimation);
+      if (horde && player.monsterType) monsterMesh(dynamic, player, map, time, this.presentMonsters(player, time, humanContext, { paused: state.phase === 'paused' || !!options.paused }), reloadAnimation);
+      else playerMesh(dynamic, player, map, time, !freeForAll && player.team === local.team, freeForAll, humanAnimation, reloadAnimation);
       const support = surfaceBelow(map.colliders, player.x, player.z, finite(player.y) + .045);
       const ground = support ? support.y + support.h : 0;
       const altitude = Math.max(0, finite(player.y) - ground), spread = .26 + Math.min(.22, altitude * .08), opacity = .15 / (1 + altitude);
@@ -3920,8 +3957,8 @@ export class VoxelRenderer {
   get worldLabels() { return this._worldLabels; }
   get stats() {
     const loot = this.presentLoot?.getStats(), warnings = this.presentWarnings?.getStats();
-    const humanAnimation = Object.freeze({ cachedPlayers: this.presentHumans?.size || 0, poses: Object.freeze([...this.humanPoses].map(([id, { animation, joints }]) => Object.freeze({ id, phase: animation.phase, stride: animation.stride, speed: animation.speed, forward: animation.forward, strafe: animation.strafe, crouch: animation.crouch, airborne: animation.airborne, jump: animation.jump, land: animation.land, bodyBob: animation.bodyBob, knees: Object.freeze(joints.legs.map(leg => Object.freeze([...leg.knee]))), feet: Object.freeze(joints.legs.map(leg => Object.freeze([...leg.foot]))) }))) });
-    const firstPerson = this.firstPersonMotion ? Object.freeze({ ...this.firstPersonMotion, eye: Object.freeze([...this.firstPersonMotion.eye]), shot: Object.freeze({ ...this.shotMotion }), ...this.presentShots.getStats() }) : null;
+    const humanAnimation = Object.freeze({ cachedPlayers: this.presentHumans?.size || 0, poses: Object.freeze([...this.humanPoses].map(([id, { animation, joints }]) => Object.freeze({ id, phase: animation.phase, stride: animation.stride, speed: animation.speed, sprint: animation.sprint, forward: animation.forward, strafe: animation.strafe, crouch: animation.crouch, airborne: animation.airborne, jump: animation.jump, land: animation.land, bodyBob: animation.bodyBob, knees: Object.freeze(joints.legs.map(leg => Object.freeze([...leg.knee]))), feet: Object.freeze(joints.legs.map(leg => Object.freeze([...leg.foot]))) }))) });
+    const firstPerson = this.firstPersonMotion ? Object.freeze({ ...this.firstPersonMotion, eye: Object.freeze([...this.firstPersonMotion.eye]), shot: Object.freeze({ ...this.shotMotion }), reload: this.reloadMotion ? Object.freeze({ ...this.reloadMotion, hands: Object.freeze(this.reloadMotion.hands.map(hand => Object.freeze({ ...hand }))) }) : null, ...this.presentShots.getStats() }) : null;
     return Object.freeze({ mapId: this.mapId, mapVertices: this._mapVertices, cachedMaps: this.mapCache.size, drawCalls: this._frameDrawCalls, dynamicVertices: this._frameDynamicVertices, lootItems: this._lootItems, stormVertices: this._stormVertices, spawnWarnings: this._spawnWarnings || 0, meleeTrailVertices: this._meleeTrailVertices || 0, meleeTrailActors: this._meleeTrailActors || 0, cachedSpawnWarnings: warnings?.cachedItems || 0, spawnWarningBuilds: warnings?.builds || 0, bloodParticles: this.particles.filter(particle => particle.material === 'blood').length, visibleBloodParticles: this._visibleBloodParticles || 0, cachedLootItems: loot?.cachedItems || 0, lootGeometryBuilds: loot?.builds || 0, geometryBufferBytes: Object.values(this.frameMeshes || {}).reduce((bytes, mesh) => bytes + mesh.storage.byteLength, 0) + (loot?.bufferBytes || 0) + (loot?.templateBytes || 0) + (warnings?.bufferBytes || 0) + (warnings?.templateBytes || 0), cameraEyeHeight: this.cameraEyeHeight, resizeReads: this.resizeReads, humanAnimation, firstPerson });
   }
   resetEffects() {
@@ -3929,7 +3966,7 @@ export class VoxelRenderer {
     this.eventIds.clear(); this.eventQueue.length = 0; this.particles.length = 0; this.tracers.length = 0;
     this._visibleBloodParticles = 0; this._meleeTrailVertices = 0; this._meleeTrailActors = 0;
     this.localShot = null; this.localReload = null; this.shotContext = null; this.lastAim = null; this.swayX = 0; this.swayY = 0;
-    this.presentLoot?.reset(); this.presentWarnings?.reset(); this.presentEye?.reset(); this.presentHumans?.reset(); this.presentMonsters?.reset(); this.presentHead?.reset(); this.presentShots?.reset(); this.firstPersonMotion = null; this.shotMotion = null; this.humanPoses?.clear(); this._spawnWarnings = 0;
+    this.presentLoot?.reset(); this.presentWarnings?.reset(); this.presentEye?.reset(); this.presentHumans?.reset(); this.presentMonsters?.reset(); this.presentHead?.reset(); this.presentShots?.reset(); this.presentReloads?.reset(); this.cameraReload = null; this.firstPersonMotion = null; this.shotMotion = null; this.reloadMotion = null; this.humanPoses?.clear(); this._spawnWarnings = 0;
   }
   destroy() {
     if (this.destroyed) return;

@@ -1,5 +1,5 @@
 /** Local drills use the shipped movement, weapons, damage and Royale rules at 120 Hz. */
-import { MAPS as BREACH_MAPS, createState as createBreachState, createCombatPlayer, combatStep, emptyInput, eyeHeight, playerHeight, aimDirection, traceShot, emitCombatEvent, TICK_RATE, WORLD, findNearbyLoot, pickupCombatLoot, advanceInventoryLoot } from './voxel-engine.js';
+import { MAPS as BREACH_MAPS, createState as createBreachState, createCombatPlayer, combatStep, emptyInput, eyeHeight, playerHeight, aimDirection, traceShot, emitCombatEvent, TICK_RATE, WORLD, findNearbyLoot, pickupCombatLoot, advanceInventoryLoot, resetSprint } from './voxel-engine.js';
 import * as Royale from './voxel-royale-engine.js';
 import { WEAPONS } from './voxel-weapons.js';
 import { MELEE_WEAPONS } from './voxel-melee.js';
@@ -38,7 +38,7 @@ function normalize(options = {}) {
   if (typeof melee !== 'string' || !Object.hasOwn(MELEE_WEAPONS, melee)) throw new RangeError('Unknown practice close-combat weapon.');
   if (!Object.hasOwn(PRACTICE_DIFFICULTIES, difficulty)) throw new RangeError('Unknown bot difficulty.');
   if (options.seed !== undefined && !Number.isInteger(options.seed)) throw new RangeError('Practice seed must be an integer.');
-  return { game, mapId, bots, mode, weapon, melee: game === 'voxel-royale' ? 'knife' : melee, difficulty, seed: options.seed === undefined ? (Date.now() ^ Math.floor(Math.random() * 0x100000000)) >>> 0 : options.seed >>> 0 };
+  return { game, mapId, bots, mode, weapon, melee: 'knife', difficulty, seed: options.seed === undefined ? (Date.now() ^ Math.floor(Math.random() * 0x100000000)) >>> 0 : options.seed >>> 0 };
 }
 function freeGround(arena, point, radius = WORLD.radius + .065) {
   if (!Number.isFinite(point.x) || !Number.isFinite(point.z)) return false;
@@ -169,7 +169,7 @@ export function startPractice(state) {
   sessionMaps.set(state, state.map); return state;
 }
 function neutralize(state) {
-  for (const player of state.players) { player.previousInput = emptyInput(player); player.triggerBlocked = true; }
+  for (const player of state.players) { player.previousInput = emptyInput(player); player.triggerBlocked = true;player.sprinting=false; }
 }
 export function pausePractice(state) {
   if (!state?.practice || !['countdown', 'fight'].includes(state.phase)) return state;
@@ -178,7 +178,7 @@ export function pausePractice(state) {
 export function resumePractice(state) {
   if (!state?.practice || state.phase !== 'paused') return state;
   state.phase = state.practice.pausedPhase || 'fight'; state.practice.pausedPhase = null;
-  state.practice.inputFence = ['fire', 'jump', 'swap', 'grenade', 'heal', 'interact', 'reload', 'slot1', 'slot2', 'slot3', 'slot4', 'drop'];
+  state.practice.inputFence = ['fire', 'jump', 'swap', 'grenade', 'heal', 'interact', 'reload', 'sprint', 'slot1', 'slot2', 'slot3', 'slot4', 'drop'];
   neutralize(state); return state;
 }
 function visibleEnemy(state, bot, enemy) {
@@ -313,7 +313,7 @@ function finishPractice(state, result, reason) {
     if (state.gameId === 'voxel-royale') state.winner = state.winnerId = state.roundWinner = null;
     emitCombatEvent(state, 'practiceEnd', { result, reason });
   }
-  for (const player of state.players) Object.assign(player, { vx: 0, vy: 0, vz: 0, knockbackX: 0, knockbackZ: 0, knockbackTicks: 0, knockbackReadyTicks: 0, meleeTicks: 0, meleePhase: 'idle', meleeHitIds: [], meleeHitLives: [], meleeStartTick: 0, aiming: false, aimTicks: 0 });
+  for (const player of state.players) {Object.assign(player, { vx: 0, vy: 0, vz: 0, knockbackX: 0, knockbackZ: 0, knockbackTicks: 0, knockbackReadyTicks: 0, meleeTicks: 0, meleePhase: 'idle', meleeHitIds: [], meleeHitLives: [], meleeStartTick: 0, aiming: false, aimTicks: 0 });resetSprint(player,{refill:player.alive});}
   neutralize(state); state.objective = result === 'won' ? 'Drill cleared. Review your accuracy or start another run.' : result === 'lost' ? 'Your run is over. Change the drill or try again.' : 'Time limit reached. Review your results or try again.';
 }
 export function stepPractice(state, localInput = {}) {

@@ -1,4 +1,4 @@
-import { createVoxelShotSamples, createVoxelMeleeSamples } from './voxel-shot-audio.js';
+import { createVoxelShotSamples, createVoxelMeleeSamples, createVoxelReloadSamples, createVoxelImpactSamples } from './voxel-shot-audio.js';
 
 const MAX_GUNSHOT_VOICES = 24;
 
@@ -43,11 +43,15 @@ export class GameAudio {
     this.gunshotBuffers = new Map();
     this.meleeBuffers = new Map();
     this.monsterBuffers = new Map();
+    this.reloadBuffers = new Map();
+    this.impactBuffers = new Map();
     this.gunshotVoices = new Set();
     this.gunshotVariation = 0;
     this.gunshotReports = 0;
     this.meleeReports = 0;
     this.monsterReports = 0;
+    this.reloadReports = 0;
+    this.impactReports = 0;
   }
 
   async setEnabled(enabled) {
@@ -63,6 +67,8 @@ export class GameAudio {
         this.gunshotBuffers.clear();
         this.meleeBuffers.clear();
         this.monsterBuffers.clear();
+        this.reloadBuffers.clear();
+        this.impactBuffers.clear();
         this.context = new AudioContext({ latencyHint: 'interactive' });
         const compressor = this.context.createDynamicsCompressor();
         compressor.threshold.value = -20;
@@ -97,18 +103,27 @@ export class GameAudio {
     return this.playVoxelReport(id, { gain, monster: true, playerId });
   }
 
-  playVoxelReport(weaponId, { gain = 1, melee = false, monster = false, playerId = null } = {}) {
+  reloadAction(weaponId, phase, { gain = .58 } = {}) {
+    return this.playVoxelReport(weaponId, { gain, reload: true, phase });
+  }
+
+  confirmedImpact(kind, { gain = .68 } = {}) {
+    return this.playVoxelReport(kind, { gain, impact: true });
+  }
+
+  playVoxelReport(weaponId, { gain = 1, melee = false, monster = false, reload = false, impact = false, phase = null, playerId = null } = {}) {
     if (!this.enabled || this.destroyed || this.context?.state !== 'running' || !Number.isFinite(gain) || gain <= 0) return false;
     let source, envelope, voice;
     try {
-      const buffers = monster ? this.monsterBuffers : melee ? this.meleeBuffers : this.gunshotBuffers;
-      let buffer = buffers.get(weaponId);
+      const buffers = reload ? this.reloadBuffers : impact ? this.impactBuffers : monster ? this.monsterBuffers : melee ? this.meleeBuffers : this.gunshotBuffers;
+      const bufferKey = reload ? `${weaponId}:${phase}` : weaponId;
+      let buffer = buffers.get(bufferKey);
       if (!buffer) {
-        const samples = monster ? createVoxelMonsterSamples(weaponId, this.context.sampleRate) : melee ? createVoxelMeleeSamples(weaponId, this.context.sampleRate) : createVoxelShotSamples(weaponId, this.context.sampleRate);
+        const samples = reload ? createVoxelReloadSamples(weaponId, phase, this.context.sampleRate) : impact ? createVoxelImpactSamples(weaponId, this.context.sampleRate) : monster ? createVoxelMonsterSamples(weaponId, this.context.sampleRate) : melee ? createVoxelMeleeSamples(weaponId, this.context.sampleRate) : createVoxelShotSamples(weaponId, this.context.sampleRate);
         if (!samples) return false;
         buffer = this.context.createBuffer(1, samples.length, this.context.sampleRate);
         buffer.getChannelData(0).set(samples);
-        buffers.set(weaponId, buffer);
+        buffers.set(bufferKey, buffer);
       }
       while (this.gunshotVoices.size >= MAX_GUNSHOT_VOICES) this.endGunshot(this.gunshotVoices.values().next().value, true);
       source = this.context.createBufferSource(); envelope = this.context.createGain();
@@ -117,13 +132,13 @@ export class GameAudio {
       source.playbackRate.value = [.994, 1.008, .985, 1.003, 1.014, .999][this.gunshotVariation++ % 6];
       envelope.gain.value = Math.min(1, gain);
       source.connect(envelope); envelope.connect(this.master);
-      voice = { source, envelope, ended: false, monsterKey: monster ? weaponId : null, monsterPlayerId: monster ? playerId : null };
+      voice = { source, envelope, ended: false, reload, monsterKey: monster ? weaponId : null, monsterPlayerId: monster ? playerId : null };
       this.gunshotVoices.add(voice);
       source.onended = () => this.endGunshot(voice);
       source.start(this.context.currentTime);
       // Buffer expiry ends the source naturally; this fence also bounds faulty contexts.
       source.stop(this.context.currentTime + buffer.duration / source.playbackRate.value + .02);
-      if (monster) this.monsterReports += 1; else if (melee) this.meleeReports += 1; else this.gunshotReports += 1;
+      if (reload) this.reloadReports += 1; else if (impact) this.impactReports += 1; else if (monster) this.monsterReports += 1; else if (melee) this.meleeReports += 1; else this.gunshotReports += 1;
       return true;
     } catch {
       if (voice) this.endGunshot(voice, true);
@@ -143,6 +158,13 @@ export class GameAudio {
   stopGunshots() {
     for (const voice of this.gunshotVoices) this.endGunshot(voice, true);
   }
+
+  stopReloads() {
+    for (const voice of this.gunshotVoices) if (voice.reload) this.endGunshot(voice, true);
+  }
+
+  inspectReloads() { return Object.freeze({ enabled: this.enabled, cachedBuffers: this.reloadBuffers.size, activeVoices: [...this.gunshotVoices].filter(voice => voice.reload).length, maxVoices: MAX_GUNSHOT_VOICES, played: this.reloadReports }); }
+  inspectImpacts() { return Object.freeze({ enabled: this.enabled, cachedBuffers: this.impactBuffers.size, maxVoices: MAX_GUNSHOT_VOICES, played: this.impactReports }); }
 
   stopMonsterTells(playerId, windupOnly = false) {
     if (!Number.isInteger(playerId)) return;
@@ -337,6 +359,8 @@ export class GameAudio {
     this.gunshotBuffers.clear();
     this.meleeBuffers.clear();
     this.monsterBuffers.clear();
+    this.reloadBuffers.clear();
+    this.impactBuffers.clear();
     try {
       if (this.context && this.context.state !== 'closed') this.context.close().catch(() => {});
     } catch { /* A detached or unsupported context may already be unavailable. */ }

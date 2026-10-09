@@ -152,16 +152,18 @@ test('physical paired gun and tonfa inventory preserve hand cadence and recovery
   assert.equal(shots(state).at(-1).hand, 1);
 });
 
-test('Breach close-combat selection validates enum and phase and preserves chosen blades across starts/rematches', () => {
+test('Breach close-combat selection validates enum and phase while starts and rematches restore the fixed knife', () => {
   const state = createState();
   assert.equal(selectMeleeLoadout(state, 0, '__proto__').ok, false); assert.equal(selectMeleeLoadout(state, 0, 'constructor').ok, false);
   for (const value of [['katana'], { toString: () => 'katana' }, new String('katana'), null]) assert.equal(selectMeleeLoadout(state, 0, value).ok, false);
   assert.equal(selectMeleeLoadout(state, .5, 'katana').ok, false);
-  assert.equal(selectMeleeLoadout(state, 0, 'katana').changed, true); assert.equal(selectMeleeLoadout(state, 0, 'katana').changed, false);
+  const before = JSON.stringify(state);
+  assert.equal(selectMeleeLoadout(state, 0, 'katana').ok, false); assert.equal(JSON.stringify(state), before);
+  assert.equal(selectMeleeLoadout(state, 0, 'knife').changed, false);
   selectLoadout(state, 0, 'dualpistols'); startMatch(state);
-  assert.equal(state.players[0].inventory[0].weapon, 'katana'); assert.equal(state.players[0].inventory[1].weapon, 'dualpistols');
+  assert.equal(state.players[0].inventory[0].weapon, 'knife'); assert.equal(state.players[0].inventory[1].weapon, 'dualpistols');
   state.phase = 'fight'; assert.equal(selectMeleeLoadout(state, 0, 'axe').ok, false);
-  resetLobby(state); assert.equal(state.players[0].meleeLoadout, 'katana'); assert.equal(state.players[0].inventory[0].weapon, 'katana');
+  resetLobby(state); assert.equal(state.players[0].meleeLoadout, 'knife'); assert.equal(state.players[0].inventory[0].weapon, 'knife');
 });
 
 test('Royale seeds every new blade while every participant still starts with only the small knife', () => {

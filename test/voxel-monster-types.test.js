@@ -74,7 +74,7 @@ test('hounds and other new creatures never generate guns or blades, while five-k
   }
   const state = fixture(); const { player } = spawn(state, 'hound'); state.horde.killsSinceHeal = 4;
   applyCombatDamage(state, [{ playerId: 0, targetId: player.id, damage: player.hp, attack: 'gun', weapon: 'pistol' }]); Horde.step(state);
-  assert.equal(state.loot.length, 1); assert.equal(state.loot[0].type, 'health'); assert.equal(state.loot[0].amount, 45);
+  assert.equal(state.loot.length, 1); assert.equal(state.loot[0].type, 'potion'); assert.equal(state.loot[0].amount, 1);
 });
 
 test('a leaper warns before a fixed-direction collision-aware lunge and can hit only once', () => {

@@ -3,7 +3,7 @@ import test from 'node:test';
 import * as Horde from '../public/voxel-horde-engine.js';
 import { applyCombatDamage, emptyInput, eyeHeight, playerHeight } from '../public/voxel-engine.js';
 import { MELEE_WEAPONS } from '../public/voxel-melee.js';
-import { createInventoryGun, createInventoryMelee, refreshInventory, selectInventorySlot } from '../public/voxel-inventory.js';
+import { createInventoryGun, createInventoryMelee, refreshInventory, selectInventorySlot, setInventoryMeleeLoadout } from '../public/voxel-inventory.js';
 
 const arena = Object.freeze({ id: 'horde-close-combat-arena', bounds: Object.freeze({ minX: -25, maxX: 25, minZ: -22, maxZ: 22 }), colliders: Object.freeze([]), spawns: Horde.MAPS.courtyard.spawns });
 function advance(state, ticks, inputs = []) { for (let tick = 0; tick < ticks; tick++) Horde.step(state, typeof inputs === 'function' ? inputs(state, tick) : inputs); }
@@ -12,6 +12,8 @@ function fixture({ melee = 'katana', wave = 1, monsterType = 'stalker', capacity
   const state = Horde.createState({ capacity, melee, seed }); Horde.startMatch(state, participants); advance(state, state.phaseTicks);
   state.map = arena; state.horde.wave = wave; state.horde.pending = 1; state.horde.nextSpawnTick = Number.MAX_SAFE_INTEGER;
   const human = pose(state.players[participants[0]], 0, 4);
+  // Combat fixtures supply the tested physical blade after the knife-only start.
+  setInventoryMeleeLoadout(human,melee);
   state.spawnWarnings = [{ id: 1, x: 0, y: 0, z: -8, ticksLeft: 1, monsterType }]; Horde.step(state);
   const monster = state.players.find(player => player.monster); assert.ok(monster, 'a real rift must create the enemy');
   monster.emergenceTicks = 0; pose(monster, 0, -1.3, Math.PI); pose(human, 0, 0);
@@ -26,20 +28,20 @@ function strike(state, human, ticks = null) {
 }
 function aimAt(player, target) { return { fire: true, aim: true, yaw: Math.atan2(target.x - player.x, -(target.z - player.z)), pitch: Math.atan2(target.y + playerHeight(target) * .55 - player.y - eyeHeight(player), Math.hypot(target.x - player.x, target.z - player.z)) - player.recoil }; }
 
-test('Last Stand validates the starting blade and preserves each survivor choice across start and lobby reset', () => {
-  assert.equal(Horde.createState().horde.config.melee, 'katana');
+test('Last Stand validates legacy blade inputs while every fresh run and lobby start with a knife', () => {
+  assert.equal(Horde.createState().horde.config.melee, 'knife');
   for (const melee of ['__proto__', null, 'carbine', '', 4, ['katana'], { toString: () => 'katana' }]) {
     assert.throws(() => Horde.createState({ melee }), RangeError); assert.equal(Horde.chooseMelee(Horde.createState(), 0, melee).ok, false);
   }
   for (const melee of Object.keys(MELEE_WEAPONS)) {
     const state = Horde.createState({ capacity: 3, melee });
-    assert.equal(state.players[0].inventory[0].weapon, melee); assert.equal(state.players[0].inventory[1].weapon, 'carbine');
-    assert.equal(Horde.chooseMelee(state, 2, 'axe').ok, true); assert.equal(Horde.chooseMelee(state, 2, 'axe').changed, false);
+    assert.equal(state.players[0].inventory[0].weapon, 'knife'); assert.equal(state.players[0].inventory[1].weapon, 'carbine');
+    assert.equal(Horde.chooseMelee(state, 2, 'axe').ok, false); assert.equal(Horde.chooseMelee(state, 2, 'knife').changed, false);
     assert.equal(Horde.chooseMelee(state, 3, 'axe').ok, false); assert.equal(Horde.chooseMelee(state, 0, '__proto__').ok, false);
     Horde.startMatch(state, [0, 2]); advance(state, state.phaseTicks);
-    assert.equal(state.players[0].inventory[0].weapon, melee); assert.equal(state.players[2].inventory[0].weapon, 'axe');
+    assert.equal(state.players[0].inventory[0].weapon, 'knife'); assert.equal(state.players[2].inventory[0].weapon, 'knife');
     assert.equal(Horde.chooseMelee(state, 2, 'tonfas').ok, false, 'a live wave cannot replace an inventory slot from setup');
-    Horde.resetLobby(state); assert.equal(state.players[0].inventory[0].weapon, melee); assert.equal(state.players[2].hordeMelee, 'axe');
+    Horde.resetLobby(state); assert.equal(state.players[0].inventory[0].weapon, 'knife'); assert.equal(state.players[2].hordeMelee, 'knife');
   }
 });
 
@@ -144,7 +146,7 @@ test('wave-clear melee supplies are optional and never overwrite four deliberate
   // remains a separate physical item and can be reclaimed later.
   const gunDrop = state.loot.find(drop => drop.kind === 'weapon'); assert.ok(gunDrop); pose(human, .7, 0); gunDrop.x = -.8;
   Horde.step(state); Horde.step(state, [{ interact: true }]); assert.equal(human.inventory[0].weapon, 'tonfas');
-  assert.ok(state.loot.some(drop => drop.id === gunDrop.id)); assert.equal(human.hordeMelee, 'katana');
+  assert.ok(state.loot.some(drop => drop.id === gunDrop.id)); assert.equal(human.hordeMelee, 'knife');
 });
 
 test('rare physical monster melee drops can be collected into a freed slot and never replace a guaranteed heal', () => {
@@ -159,7 +161,7 @@ test('rare physical monster melee drops can be collected into a freed slot and n
     assert.equal(state.horde.totalKills, 1);
   }
   const { state, human, monster } = fixture({ melee: 'axe', seed: 9216 }); state.horde.killsSinceHeal = 4;
-  strike(state, human); assert.equal(monster.alive, false); assert.equal(state.loot.length, 1); assert.equal(state.loot[0].type, 'health');
+  strike(state, human); assert.equal(monster.alive, false); assert.equal(state.loot.length, 1); assert.equal(state.loot[0].type, 'potion');assert.equal(state.loot[0].amount,1);
 });
 
 test('revives preserve the selected starting-blade identity and the actual carried flexible inventory', () => {
@@ -168,7 +170,7 @@ test('revives preserve the selected starting-blade identity and the actual carri
   fallen.inventory = [createInventoryGun('pistol'), createInventoryGun('carbine'), createInventoryMelee('tonfas'), { kind: 'heal', amount: 2 }]; fallen.inventoryIndex = 2; fallen.inventoryGunIndex = 1; refreshInventory(fallen);
   applyCombatDamage(state, [{ targetId: fallen.id, playerId: monster.id, damage: fallen.hp, attack: 'monster', weapon: 'stalker' }]);
   advance(state, Horde.HORDE_RULES.reviveTicks, [{ interact: true }]); const revived = state.players[2];
-  assert.ok(revived.alive); assert.equal(revived.hordeMelee, 'axe'); assert.equal(revived.inventory[0].kind, 'weapon');
+  assert.ok(revived.alive); assert.equal(revived.hordeMelee, 'knife'); assert.equal(revived.inventory[0].kind, 'weapon');
   assert.equal(revived.inventory[2].weapon, 'tonfas'); assert.equal(revived.inventory[3], null); assert.equal(revived.potions, 0); assert.equal(revived.inventoryIndex, 2);
   assert.equal(human.interactTicks, 0);
 });

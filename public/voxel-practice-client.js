@@ -1,3 +1,4 @@
+import { staminaPresentation, paintStamina, createReloadAudioPresenter, createGunImpactReporter } from './voxel-fps-feedback.js';
 import { GameAudio } from './audio.js';
 import { gameKey, displayKey, getKeyboardLayout, mountKeyboardLayoutPicker, subscribeKeyboardLayout } from './keyboard-layout.js';
 import { ADS, HEAL, PLAYER_HEALTH, predictLocalMovement, findNearbyLoot as findNearbyBreachLoot } from './voxel-engine.js';
@@ -10,8 +11,6 @@ import { createMovementPresenter, combatPresentation, withCombatPresentation, re
 import { cleanAim, composeInput, controlForKey, aimFraction, aimLookMultiplier, combatReadout, isFormTarget, hasGunshotReport, combatEventPerspective, createMeleeImpactReporter, LOOK_SENSITIVITY } from './voxel-client.js';
 import { incomingDamageFeedback, damageFeedbackPresentation } from './voxel-damage-feedback.js';
 import { createHitFeedback, paintHitFeedback } from './voxel-hit-feedback.js';
-import { MELEE_WEAPONS, MELEE_IDS } from './voxel-melee.js';
-import { meleeLoadoutNote } from './hub/horde-setup.js';
 import { setHidden, setAttribute, setStyle, setDisabled } from './hub/dom.js';
 import { createPractice, startPractice, stepPractice, pausePractice, resumePractice, getPracticeStats, TICK_RATE } from './voxel-practice-engine.js';
 import { tickFraction } from './display-timing.js';
@@ -61,7 +60,10 @@ export function bootPractice() {
   const listeners = [], keys = new Set(), physicalKeys = new Map(), mouse = { fire: false, aim: false }, inputQueue = createPracticeInputQueue();
   const touch = { move: { x: 0, y: 0 }, look: { x: 0, y: 0 }, actions: new Set() }, pointers = new Map(), movement = new Map();
   const audio = new GameAudio(), picker = mountKeyboardLayoutPicker($('practice-keyboard'), { id: 'practice-keyboard-select' });
-  const meleeImpacts = createMeleeImpactReporter(audio);
+  const meleeImpacts = createMeleeImpactReporter(audio), gunImpacts = createGunImpactReporter(audio);
+  const reloadAudio = createReloadAudioPresenter(audio), staminaElements = { meter: $('practice-stamina-meter'), fill: $('practice-stamina-fill') };
+  let staminaView = staminaPresentation(null, { active: false });
+  function paintVitals(player, name = 'Your', active = true) { staminaView = staminaPresentation(player, { name, active }); paintStamina(staminaElements.meter, staminaElements.fill, staminaView); }
   // Secondary touch hardware does not decide how a player uses the mouse.
   let touchMode = matchMedia('(pointer: coarse)').matches;
   const setText = (id, value) => { const element = $(id); if (element.textContent !== String(value)) element.textContent = String(value); };
@@ -83,17 +85,16 @@ export function bootPractice() {
   $('practice-map').value = Object.hasOwn(maps, params.get('map')) ? params.get('map') : royale ? 'forest' : 'courtyard';
   for (const id of WEAPON_IDS) { const option = document.createElement('option'); option.value = id; option.textContent = WEAPONS[id].name; $('practice-weapon').append(option); }
   $('practice-weapon').value = 'carbine';
-  for (const id of MELEE_IDS) { const option = document.createElement('option'); option.value = id; option.textContent = MELEE_WEAPONS[id].name; $('practice-melee').append(option); }
-  $('practice-melee').value = !royale && Object.hasOwn(MELEE_WEAPONS, params.get('melee')) ? params.get('melee') : 'knife';
-  function config() { return { game, mapId: $('practice-map').value, bots: Number($('practice-count').value), mode: $('practice-mode').value, difficulty: $('practice-difficulty').value, weapon: $('practice-weapon').value, melee: royale ? 'knife' : $('practice-melee').value }; }
+  function config() { return { game, mapId: $('practice-map').value, bots: Number($('practice-count').value), mode: $('practice-mode').value, difficulty: $('practice-difficulty').value, weapon: $('practice-weapon').value, melee: 'knife' }; }
   function hints() {
     const layout = getKeyboardLayout(); app.dataset.keyboardLayout = layout;
     setText('practice-move-keys', displayKey('WASD')); setText('practice-grenade-key', displayKey('Q')); setText('practice-guide-grenade', displayKey('Q'));
-    canvas.setAttribute('aria-label', `First-person ${royale ? 'Royale' : 'Breach'} practice. ${displayKey('WASD')} or arrows move, mouse looks, left click or C uses your selected item, right click aims, Space jumps, Control crouches, Shift walks, R reloads, 1 to 4 equip inventory slots, X drops your selected item, V switches blade, ${displayKey('Q')} throws a grenade, F heals, E picks up supplies, Escape pauses.`);
+    canvas.setAttribute('aria-label', `First-person ${royale ? 'Royale' : 'Breach'} practice. ${displayKey('WASD')} or arrows move, mouse looks, left click or B / J uses your selected item, right click aims, Space jumps, Control crouches, Shift sprints, C walks quietly, R reloads, 1 to 4 equip inventory slots, X drops your selected item, V switches blade, ${displayKey('Q')} throws a grenade, F heals, E picks up supplies, Escape pauses.`);
     setText('practice-look-hint', fallback ? 'DRAG TO LOOK · ESC PAUSE' : `${displayKey('WASD')} MOVE · RMB AIM · ESC PAUSE`);
   }
   function stopFrame() { if (frameId !== null) cancelAnimationFrame(frameId); frameId = null; previousFrame = null; accumulator = 0; }
   function release() {
+    reloadAudio.suspend(); paintVitals(null, 'Your', false);
     hitFeedback.reset(); paintHitFeedback(hitElements, { visible: false });
     inputQueue.reset();
     keys.clear(); physicalKeys.clear(); mouse.fire = mouse.aim = false; touch.move = { x: 0, y: 0 }; touch.look = { x: 0, y: 0 }; touch.actions.clear();
@@ -109,7 +110,7 @@ export function bootPractice() {
   }
   function resetView() {
     release(); stopFrame(); previousPlayers = []; presentationPlayer = null; movement.clear(); eventCursor = 0; feedbackUntil = 0; hitFeedback.reset({ clearHistory: true }); damageFeedback = null;
-    lastCountdown = null; lastHudAt = -Infinity; lastPhase = ''; renderCount = physicsSamples = 0; lastFraction = 0; audio.resetEvents(); meleeImpacts.reset(); renderer?.resetEffects();
+    lastCountdown = null; lastHudAt = -Infinity; lastPhase = ''; renderCount = physicsSamples = 0; lastFraction = 0; audio.resetEvents(); meleeImpacts.reset(); gunImpacts.reset(); reloadAudio.reset(); renderer?.resetEffects();
     aim = cleanAim(state.players[0]?.yaw, state.players[0]?.pitch); lastDrawAt = performance.now();
   }
   function buildRadar() {
@@ -124,7 +125,7 @@ export function bootPractice() {
   function preview() {
     activeSession = false; modalOpen = false; setHidden($('practice-guide'), true); unlock(); state = createPractice(config()); resetView(); buildRadar();
     setText('practice-weapon-note', royale ? 'Knife start · 200 health · weapons, ammo and healing are found in structures.' : WEAPONS[state.practice.config.weapon].description);
-    setText('practice-melee-note', meleeLoadoutNote($('practice-melee').value));
+    setText('practice-melee-note', royale ? 'Knife only. Collect every gun and supply with E.' : 'Knife + chosen gun. Slots 3–4 are empty; E collects blades, guns and supplies.');
     updateHud(performance.now(), true); draw(performance.now());
   }
   function start() {
@@ -157,7 +158,7 @@ export function bootPractice() {
       const meleeImpact = meleeImpacts.consume(event, 0, impactOptions);
       if (event.type === 'damage' && event.damage > 0) {
         const incoming = incomingDamageFeedback(event, state.players[0], state.players, { now, lifeKey: state.practice.sessionId, friendlyFire: royale }); if (incoming) damageFeedback = incoming;
-        if (audio.enabled && !meleeImpact && (perspective.outgoing || perspective.incoming)) audio.tone(perspective.outgoing ? 940 : 140, .055, { end: perspective.outgoing ? 690 : 70, gain: .18, type: 'triangle' });
+        if (audio.enabled && !meleeImpact && perspective.incoming) audio.tone(140, .055, { end: 70, gain: .18, type: 'triangle' });
       }
       if (['kill', 'elimination'].includes(event.type) && perspective.outgoing) feedback(event.headshot ? 'HEADSHOT · TARGET DOWN' : 'TARGET DOWN', now);
       if (event.type === 'lootPickup' && perspective.source === 0) feedback(event.kind === 'weapon' ? `PICKED UP ${WEAPONS[event.weapon]?.label || 'WEAPON'}` : `PICKED UP ${event.kind.toUpperCase()}`, now);
@@ -168,6 +169,7 @@ export function bootPractice() {
       if (audio.enabled && hasGunshotReport(event)) audio.gunshot(event.weapon, { gain: perspective.source === 0 ? 1 : .28 });
       if (audio.enabled && event.type === 'grenadeExplosion') { audio.noise(.4, { highpass: 40, lowpass: 1500, gain: .3 }); audio.tone(70, .3, { end: 25, gain: .2 }); }
     }
+    gunImpacts.consume(freshEvents, 0, { context: `${state.mapId}:${state.practice.sessionId}` });
     hitFeedback.consume(freshEvents, state.players[0], state.players, { now, lifeKey: `${state.mapId}:${state.practice.sessionId}`, active: state.phase === 'fight' && !modalOpen });
   }
   function updateHud(now, force = false) {
@@ -176,6 +178,7 @@ export function bootPractice() {
     if (!force && phase === lastPhase && signature === urgentHud && now - lastHudAt < 80) return;
     urgentHud = signature; const changed = phase !== lastPhase; lastPhase = phase; lastHudAt = now; setAttribute(app, 'data-phase', phase);
     const stats = getPracticeStats(state), player = state.players[0], readout = combatReadout(player, WEAPONS, { ADS, HEAL, PLAYER_HEALTH });
+    paintVitals(player, 'Your', activeSession && active());
     inventory.update(player, { visible: activeSession && player.alive, interactive: active() && phase === 'fight' });
     const swap = inventorySwapPresentation(player), swapButton = document.querySelector('[data-practice-action="swap"]'); if (swap && swapButton) { swapButton.textContent = swap.label; swapButton.setAttribute('aria-label', swap.ariaLabel); }
     setText('practice-map-label', state.mapName); setText('practice-mode-label', state.practice.config.mode === 'targets' ? 'MOVING TARGETS' : 'RETURN FIRE'); setText('practice-bots-left', stats.botsRemaining); setText('practice-hits', stats.hits); setText('practice-clock', clock(stats.seconds));
@@ -201,7 +204,7 @@ export function bootPractice() {
     }
   }
   function draw(now = performance.now()) {
-    if (destroyed || !renderer?.available) return; const live = active(); if (live) lastDrawAt = now;
+    if (destroyed || !renderer?.available) { reloadAudio.suspend(); paintVitals(null, 'Your', false); return; } const live = active(); if (live) lastDrawAt = now;
     const view = { ...state, players: state.players.map(player => {
       let pose = player;
       if (state.phase === 'fight' && player.alive) { if (!movement.has(player.id)) movement.set(player.id, createMovementPresenter()); pose = movement.get(player.id)(player, player.id === 0 ? inputQueue.preview(currentInput()) : player.previousInput, state.map, accumulator, predictLocalMovement, state.players); }
@@ -210,7 +213,9 @@ export function bootPractice() {
     // Fractional player endpoints share one collision-safe rendered world.
     // The camera follows that same body batch without changing real combat.
     view.players = resolvePresentationContacts(view.players, state.map);
-    view.fighters = view.players; presentationPlayer = view.players[0]; renderer.render(view, { playerId: 0, localId: 0, localPlayer: presentationPlayer, cameraPlayer: presentationPlayer, yaw: aim.yaw, pitch: aim.pitch + (presentationPlayer.recoil || 0), time: live ? now : lastDrawAt }); renderCount++; lastFraction = tickFraction(accumulator, STEP);
+    view.fighters = view.players; presentationPlayer = view.players[0]; renderer.render(view, { acceptedPlayers: state.players, playerId: 0, localId: 0, localPlayer: presentationPlayer, cameraPlayer: presentationPlayer, yaw: aim.yaw, pitch: aim.pitch + (presentationPlayer.recoil || 0), time: live ? now : lastDrawAt }); renderCount++; lastFraction = tickFraction(accumulator, STEP);
+    paintVitals(presentationPlayer, 'Your', activeSession && active());
+    reloadAudio.observe(state.players[0], { tick: state.tick, context: `${state.mapId}:${state.practice.sessionId}`, active: active() && state.phase === 'fight' });
     const scoped = state.phase === 'fight' && presentationPlayer.alive && !modalOpen && presentationPlayer.slot !== 'sword' && WEAPONS[presentationPlayer.weapon]?.scoped && aimFraction(presentationPlayer, ADS.ticks) >= 14 / 18;
     setHidden($('practice-scope'), !scoped); setHidden($('practice-crosshair'), state.phase !== 'fight' || modalOpen || scoped || presentationPlayer.healing);
     paintHitFeedback(hitElements, hitFeedback.present(state.players[0], { now, lifeKey: `${state.mapId}:${state.practice.sessionId}`, active: state.phase === 'fight' && !modalOpen, reducedMotion: hitMotion.matches })); setHidden($('practice-feedback'), now >= feedbackUntil || state.phase !== 'fight');
@@ -244,7 +249,7 @@ export function bootPractice() {
     }
     if (event.key === 'Escape' && ['fight', 'countdown', 'paused'].includes(state.phase)) { event.preventDefault(); if (!event.repeat && state.phase !== 'paused') pause(); return; }
     if (!active() || isFormTarget(event.target) || event.isComposing || event.altKey || event.metaKey) return;
-    const canonical = gameKey(event).toLowerCase(), action = ['c', 'j'].includes(canonical) ? 'fire' : controlForKey(event);
+    const action = controlForKey(event);
     if (!action) return; event.preventDefault(); const physical = event.code || event.key; if (event.repeat && !physicalKeys.has(physical)) return;
     const wasHeld = currentInput()[action]; physicalKeys.set(physical, action); keys.add(action);
     if (state.phase === 'fight' && !wasHeld) inputQueue.press(action); wake();
@@ -298,7 +303,7 @@ export function bootPractice() {
     if (destroyed) return; destroyed = true; stopFrame(); release(); unlock(); for (const remove of listeners) remove(); unsubscribe(); picker.destroy(); audio.destroy(); inventory.destroy(); renderer?.destroy(); movement.clear();
   }
   listen($('practice-setup-form'), 'submit', event => { event.preventDefault(); start(); });
-  for (const id of ['practice-map', 'practice-count', 'practice-mode', 'practice-difficulty', 'practice-weapon', 'practice-melee']) listen($(id), 'change', preview);
+  for (const id of ['practice-map', 'practice-count', 'practice-mode', 'practice-difficulty', 'practice-weapon']) listen($(id), 'change', preview);
   listen($('practice-pause'), 'click', () => state.phase === 'paused' ? resume() : pause()); listen($('practice-touch-pause'), 'click', pause);
   listen($('practice-resume'), 'click', resume); listen($('practice-restart'), 'click', start); listen($('practice-replay'), 'click', start);
   listen($('practice-change-setup'), 'click', setup); listen($('practice-result-setup'), 'click', setup);
@@ -317,7 +322,7 @@ export function bootPractice() {
   listen(window, 'blur', () => { if (active()) pause(); else release(); }); listen(document, 'visibilitychange', () => { if (document.hidden && active()) pause(); }); listen(window, 'pagehide', destroy);
   listen(canvas, 'voxel-renderer-error', event => { if (event.detail?.message) { graphicsError = event.detail.message; if (active()) pause(); setHidden($('practice-error'), false); setText('practice-error-text', graphicsError); } else { graphicsError = ''; setHidden($('practice-error'), true); updateHud(performance.now(), true); draw(performance.now()); } });
   const unsubscribe = subscribeKeyboardLayout(() => { release(); hints(); }); hints(); preview(); graphics();
-  const inspect = () => copy({ state: { ...state, map: undefined, fighters: undefined }, stats: getPracticeStats(state), input: currentInput(), queuedActions: inputQueue.inspect(), presentationPlayer, controls: { pointerLocked: locked(), fallback, modalOpen, paused: state.phase === 'paused', entered: activeSession, touch: touchMode }, renderCount, renderStats: renderer?.stats || null, audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), meleeImpactAudio: meleeImpacts.inspect(), graphicsError, displayTiming: { physicsSamples, renderSamples: renderCount, lastFraction } });
+  const inspect = () => copy({ state: { ...state, map: undefined, fighters: undefined }, stats: getPracticeStats(state), input: currentInput(), queuedActions: inputQueue.inspect(), presentationPlayer, controls: { pointerLocked: locked(), fallback, modalOpen, paused: state.phase === 'paused', entered: activeSession, touch: touchMode }, renderCount, renderStats: renderer?.stats || null, audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), meleeImpactAudio: meleeImpacts.inspect(), reloadAudio: reloadAudio.inspect(), reloadSounds: audio.inspectReloads(), gunImpactAudio: gunImpacts.inspect(), stamina: staminaView, graphicsError, displayTiming: { physicsSamples, renderSamples: renderCount, lastFraction } });
   const api = Object.freeze({ getState: inspect, getDisplayTiming: () => ({ physicsSamples, renderSamples: renderCount, lastFraction }) }); window.firesidePractice = api;
   return { destroy, inspect };
 }

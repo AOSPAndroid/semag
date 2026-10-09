@@ -52,6 +52,48 @@ export function createVoxelShotSamples(weaponId, sampleRate = 48000) {
   return samples;
 }
 
+const RELOAD_PHASES = Object.freeze({ remove: [ .095, 430, .28 ], insert: [ .13, 290, .42 ], seat: [ .075, 205, .36 ], bolt: [ .16, 650, .38 ], open: [ .10, 560, .26 ], close: [ .08, 380, .36 ], eject: [ .14, 780, .25 ], load: [ .12, 325, .29 ], pump: [ .18, 470, .36 ], draw: [ .20, 230, .22 ], place: [ .09, 510, .20 ], shell1: [ .08, 420, .27 ], shell2: [ .08, 420, .27 ], shell3: [ .08, 420, .27 ] });
+
+/** Dry magazine, cylinder, shell and string mechanisms: one short cached source. */
+export function createVoxelReloadSamples(weaponId, phase, sampleRate = 48000) {
+  const profile = typeof phase === 'string' && Object.hasOwn(RELOAD_PHASES, phase) ? RELOAD_PHASES[phase] : null;
+  if (!profile || typeof weaponId !== 'string' || !Object.hasOwn(VOXEL_SHOT_AUDIO, weaponId) || !Number.isFinite(sampleRate) || sampleRate < 8000 || sampleRate > 192000) return null;
+  const [duration, frequency, level] = profile, samples = new Float32Array(Math.ceil(sampleRate * duration));
+  const string = weaponId === 'crossbow', heavy = weaponId === 'lmg', pitch = frequency * (heavy ? .76 : string ? .66 : 1);
+  let seed = 173 + weaponId.length * 971 + phase.length * 43, low = 0;
+  const alpha = 1 - Math.exp(-2 * Math.PI * (string ? 1100 : 2600) / sampleRate);
+  for (let index = 1; index < samples.length - 1; index++) {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    const white = seed / 2147483648 - 1, time = index / sampleRate, progress = index / (samples.length - 1);
+    low += alpha * (white - low);
+    const click = Math.exp(-time / .016) + (phase === 'bolt' || phase === 'pump' ? .65 * Math.exp(-Math.max(0, time - .055) / .013) * (time >= .055 ? 1 : 0) : 0);
+    const rub = Math.sin(Math.PI * progress) ** 2 * .24;
+    const ring = Math.sin(time * Math.PI * 2 * pitch) * Math.exp(-time / (string ? .045 : .022));
+    const fade = Math.min(1, time / .002, (samples.length - index - 1) / (sampleRate * .006));
+    samples[index] = ((white - low) * click * .38 + low * rub + ring * .35) * level * fade;
+  }
+  return samples;
+}
+
+/** Accepted hits are short physical contacts; the headshot has a brighter dry tick. */
+export function createVoxelImpactSamples(kind, sampleRate = 48000) {
+  if (!['body', 'headshot'].includes(kind) || !Number.isFinite(sampleRate) || sampleRate < 8000 || sampleRate > 192000) return null;
+  const head = kind === 'headshot', samples = new Float32Array(Math.ceil(sampleRate * (head ? .11 : .095)));
+  let seed = head ? 8731 : 3127, low = 0;
+  const alpha = 1 - Math.exp(-2 * Math.PI * (head ? 1700 : 950) / sampleRate);
+  for (let index = 1; index < samples.length - 1; index++) {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    const white = seed / 2147483648 - 1, time = index / sampleRate;
+    low += alpha * (white - low);
+    const contact = (low * .65 + (white - low) * (head ? .20 : .08)) * Math.exp(-time / .018);
+    const body = Math.sin(time * Math.PI * 2 * (head ? 118 : 76)) * Math.exp(-time / .023) * .34;
+    const tick = head ? (Math.sin(time * Math.PI * 2 * 790) + .3 * Math.sin(time * Math.PI * 2 * 1370)) * Math.exp(-time / .009) * .12 : 0;
+    const fade = Math.min(1, time / .001, (samples.length - index - 1) / (sampleRate * .006));
+    samples[index] = (contact + body + tick) * .42 * fade;
+  }
+  return samples;
+}
+
 /** Quiet committed swings: the sweep peaks around the blade's active phase. */
 export const VOXEL_MELEE_AUDIO = Object.freeze(Object.fromEntries(Object.entries({
   knife: { duration: .22, peak: .102, width: .037, brightness: 3500, air: .27, body: .035, frequency: 230 },

@@ -101,7 +101,7 @@ test('tonfa hands alternate real short committed cuts; all five profiles honor t
 test('two visible world guns follow separate human hands and all new supplies fit the existing small prop cache', () => {
   for (const weapon of ['dualpistols', 'dualsmg']) for (const crouching of [false, true]) {
     const pose = operativePose(player({ weapon, crouching }));
-    assert.ok(pose.arms[0].hand[0] < -.17 && pose.arms[1].hand[0] > .17, 'left arm holds its own gun instead of crossing to support the right');
+    assert.ok(pose.arms[0].hand[0] < -.12 && pose.arms[1].hand[0] > .12, 'each arm retains a distinct grasp inside the actual body/contact envelope');
     for (const arm of pose.arms) assert.ok(arm.hand[1] < (crouching ? .83 : 1.48) && arm.hand[1] > (crouching ? .5 : 1));
   }
   for (const [kind, ids] of [['weapon', ['dualpistols', 'dualsmg', 'slugshotgun']], ['melee', ['katana', 'axe', 'tonfas']]]) for (const weapon of ids) {

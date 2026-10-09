@@ -147,7 +147,7 @@ test('revive progress reflects real uninterrupted channel ticks and clears immed
   assert.equal(hordeRevivePresentation(state.players[0], null, rules), null);
 });
 
-test('intermission uses real movement and health pickup while combat previews stay inert', () => {
+test('intermission permits a real carried-potion pickup while combat previews stay inert', () => {
   const state = active(), player = state.players[0];
   state.map = { ...Horde.MAPS.courtyard, id: 'client-intermission-fixture', colliders: [], bounds: { minX: -20, maxX: 20, minZ: -20, maxZ: 20 } };
   Object.assign(player, { x: 0, y: 0, z: 0, yaw: 0, hp: 100, vx: 0, vy: 0, vz: 0, grounded: true });
@@ -155,7 +155,7 @@ test('intermission uses real movement and health pickup while combat previews st
   assert.equal(state.phase, 'intermission');
   // Isolate this health-pickup fixture from the separate wave-clear blade cache.
   state.loot = [];
-  state.loot.push({ id: 55, type: 'health', kind: 'heal', amount: 30, x: .5, y: 0, z: 0, expiresTick: state.tick + 1000 });
+  state.loot.push({ id: 55, type: 'potion', kind: 'heal', amount: 1, x: .5, y: 0, z: 0, expiresTick: state.tick + 1000 });
   const inventory = { ammo: player.ammo, grenades: player.grenades, potions: player.potions, shots: player.shots };
   const raw = { up: true, aim: true, fire: true, grenade: true, heal: true, reload: true, swap: true, yaw: 0, pitch: .2 }, rawCopy = { ...raw };
   const preview = hordeInputForPhase(raw, state.phase);
@@ -166,7 +166,7 @@ test('intermission uses real movement and health pickup while combat previews st
   assert.ok(player.z < -.1); for (const axis of ['x', 'y', 'z']) assert.ok(Math.abs(player[axis] - predicted[axis]) < 1e-8, 'real regroup movement matches the reused prediction');
   assert.equal(Horde.findNearbyLoot(state, 0).id, 55);
   const hp = player.hp; Horde.step(state, [{ interact: true, yaw: 0, pitch: .2 }]);
-  assert.equal(player.hp, hp + 30); assert.equal(state.loot.some(loot => loot.id === 55), false);
-  assert.deepEqual({ ammo: player.ammo, grenades: player.grenades, potions: player.potions, shots: player.shots }, inventory);
+  assert.equal(player.hp, hp, 'collecting a potion does not drink it'); assert.equal(player.potions, inventory.potions + 1); assert.equal(state.loot.some(loot => loot.id === 55), false);
+  assert.deepEqual({ ammo: player.ammo, grenades: player.grenades, potions: player.potions, shots: player.shots }, { ...inventory, potions: inventory.potions + 1 });
   assert.equal(hordeInputForPhase(raw, 'fight'), raw, 'combat controls resume unchanged in the real fight');
 });

@@ -1,3 +1,4 @@
+import { staminaPresentation, paintStamina, createReloadAudioPresenter, createGunImpactReporter } from './voxel-fps-feedback.js';
 import { displayKey, gameKey, getKeyboardLayout, mountKeyboardLayoutPicker, subscribeKeyboardLayout } from './keyboard-layout.js';
 import { copyText, getName, hostInfo, roomUrl, saveName } from './hub/shared.js';
 import { GameAudio } from './audio.js';
@@ -15,7 +16,7 @@ import { setAttribute, setDisabled, setHidden, setStyle, setText, toggleClass } 
 import { inventoryControlForKey, inventoryItemReadout, inventoryLootPresentation, inventoryEventFeedback, inventorySlots, inventorySwapPresentation, mountInventoryHotbar } from './voxel-inventory-ui.js';
 
 export const LOOK_SENSITIVITY = .0025;
-export const INPUT_ACTIONS = Object.freeze(['up', 'down', 'left', 'right', 'jump', 'crouch', 'walk', 'fire', 'reload', 'interact', 'aim', 'swap', 'grenade', 'heal', 'slot1', 'slot2', 'slot3', 'slot4', 'drop']);
+export const INPUT_ACTIONS = Object.freeze(['up', 'down', 'left', 'right', 'jump', 'crouch', 'walk', 'sprint', 'fire', 'reload', 'interact', 'aim', 'swap', 'grenade', 'heal', 'slot1', 'slot2', 'slot3', 'slot4', 'drop']);
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const finite = (n, fallback = 0) => Number.isFinite(n) ? n : fallback;
 const clone = value => value == null ? value : structuredClone(value);
@@ -29,7 +30,7 @@ export function neutralInput(yaw = 0, pitch = 0) {
 }
 export function controlForKey(event, layout = getKeyboardLayout()) {
   if (event.defaultPrevented || event.isComposing || event.altKey || event.metaKey) return null;
-  return inventoryControlForKey(event) || ({ w: 'up', s: 'down', a: 'left', d: 'right', arrowup: 'up', arrowdown: 'down', arrowleft: 'left', arrowright: 'right', ' ': 'jump', control: 'crouch', shift: 'walk', r: 'reload', e: 'interact', v: 'swap', q: 'grenade', g: 'grenade', f: 'heal', h: 'heal' })[gameKey(event, layout).toLowerCase()] || null;
+  return inventoryControlForKey(event) || ({ w: 'up', s: 'down', a: 'left', d: 'right', arrowup: 'up', arrowdown: 'down', arrowleft: 'left', arrowright: 'right', ' ': 'jump', control: 'crouch', shift: 'sprint', c: 'walk', b: 'fire', j: 'fire', r: 'reload', e: 'interact', v: 'swap', q: 'grenade', g: 'grenade', f: 'heal', h: 'heal' })[gameKey(event, layout).toLowerCase()] || null;
 }
 export function isFormTarget(target) {
   return !!(target?.isContentEditable || target?.closest?.('input, select, textarea, button, a, [contenteditable]:not([contenteditable="false"]), [role="dialog"]'));
@@ -183,7 +184,10 @@ async function boot() {
   let paintedHUDKey = "";
   const hudKey = () => hudTransitionKey(state, roster, playerId);
   const eventSeen = new Set(), eventOrder = [], kills = [], audio = new GameAudio(), removers = [];
-  const meleeImpacts = createMeleeImpactReporter(audio);
+  const meleeImpacts = createMeleeImpactReporter(audio), gunImpacts = createGunImpactReporter(audio);
+  const reloadAudio = createReloadAudioPresenter(audio), staminaElements = { meter: $('stamina-meter'), fill: $('stamina-fill') };
+  let staminaView = staminaPresentation(null, { active: false });
+  function paintVitals(player, name = 'Your', active = true) { staminaView = staminaPresentation(player, { name, active }); paintStamina(staminaElements.meter, staminaElements.fill, staminaView); }
   function listen(target, name, callback, options) { target.addEventListener(name, callback, options); removers.push(() => target.removeEventListener(name, callback, options)); }
   function send(message) { if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message)); }
   function error(message = '') { setText($('error-banner'), message); setHidden($('error-banner'), !message); }
@@ -231,9 +235,11 @@ async function boot() {
     if (touchMode && controlsActive()) { const sensitivity = aimLookMultiplier(presentationPlayer || ownPlayer(), engine?.ADS); aim = cleanAim(aim.yaw + touch.look.x * dt * 2.4 * sensitivity, aim.pitch - touch.look.y * dt * 1.85 * sensitivity); }
   }
   function neutralize({ pause = false, unlock = false } = {}) {
+    reloadAudio.suspend(); paintVitals(null, 'Your', false);
     hitFeedback.reset(); paintHitFeedback(hitElements, { visible: false });
     keys.clear(); pressedKeys.clear(); mouse.fire = mouse.aim = false; rightDrag = false;
     touch.actions.clear(); touch.move = { x: 0, y: 0 }; touch.look = { x: 0, y: 0 };
+    for (const button of document.querySelectorAll('[data-royale-action="sprint"], [data-royale-action="walk"], [data-royale-action="crouch"]')) button.setAttribute('aria-pressed', 'false');
     for (const [id, record] of actionPointers) try { record.element.releasePointerCapture(id); } catch { /* Already cancelled. */ }
     for (const [id, record] of padPointers) try { record.element.releasePointerCapture(id); } catch { /* Already cancelled. */ }
     actionPointers.clear(); padPointers.clear(); document.querySelectorAll('.touch-pad.active, .touch-actions .pressed').forEach(element => element.classList.remove('active', 'pressed'));
@@ -295,6 +301,7 @@ async function boot() {
     setText($('start-note'), phase === 'lobby' ? count < 2 ? 'Invite at least one rival. The host chooses when to start.' : count >= room.capacity ? `${count} players are here. This room is full and the host can start.` : `${count} players are here. The host can start now or invite up to ${room.capacity - count} more.` : phase === 'matchEnd' ? isHost ? 'Return everyone to the lobby, invite more rivals and start a new battle.' : 'The host can open the lobby for another battle.' : 'The battle keeps running when controls are released.');
     const viewed = spectatorPlayer(state, playerId, spectatorId), spectating = !!viewed && viewed.id !== playerId;
     if (!local?.alive) spectatorId = viewed?.alive ? viewed.id : null;
+    paintVitals(viewed, spectating ? `${lookupName(viewed.id)}’s` : 'Your', connected && !paused && !modalOpen && ['countdown', 'fight'].includes(phase));
     const health = healthPresentation(viewed, healthView, { now: performance.now(), matchId: state?.matchId }); healthView = health;
     setHidden($('combat-hud'), !viewed?.alive || !['countdown', 'fight'].includes(phase));
     setText($('health'), Math.round(health.hp)); setText($('health-max'), `/ ${health.maxHp}`);
@@ -320,7 +327,7 @@ async function boot() {
     const living = aliveParticipants(state), placement = state?.placements?.find(item => item.playerId === playerId);
     setHidden($('spectator-hud'), !local || local.alive || phase !== 'fight'); setText($('placement-label'), placement ? `PLACED #${placement.place}` : 'ELIMINATED'); setText($('spectator-label'), spectating ? `SPECTATING ${lookupName(viewed.id).toUpperCase()}` : 'NO SURVIVORS'); setHidden($('next-spectator'), living.length < 2);
     setHidden($('pause-button'), paused || !entered || !local?.alive || !['countdown', 'fight'].includes(phase)); setHidden($('touch-controls'), !touchMode || !entered || paused || !local?.alive || !['countdown', 'fight'].includes(phase));
-    for (const button of document.querySelectorAll('[data-royale-action]')) { const action = button.dataset.royaleAction; if (action === 'swap') { const swap = inventorySwapPresentation(local); button.textContent = swap?.label || (readout.sword && local?.hasGun ? 'GUN' : 'KNIFE'); button.setAttribute('aria-label', swap?.ariaLabel || (readout.sword && local?.hasGun ? 'Switch to scavenged gun' : 'Switch to small knife')); button.setAttribute('aria-pressed', String(readout.sword)); } if (action === 'aim') button.setAttribute('aria-pressed', String(!!local?.aiming)); }
+    for (const button of document.querySelectorAll('[data-royale-action]')) { const action = button.dataset.royaleAction; if (action === 'swap') { const swap = inventorySwapPresentation(local); button.textContent = swap?.label || (readout.sword && local?.hasGun ? 'GUN' : 'KNIFE'); button.setAttribute('aria-label', swap?.ariaLabel || (readout.sword && local?.hasGun ? 'Switch to scavenged gun' : 'Switch to small knife')); button.setAttribute('aria-pressed', String(readout.sword)); } if (action === 'aim') button.setAttribute('aria-pressed', String(!!local?.aiming)); if (['sprint', 'walk', 'crouch'].includes(action)) button.setAttribute('aria-pressed', String(!!currentInput()[action])); }
     setText($('objective'), phase === 'lobby' ? room.capacity === 2 ? 'Invite your rival. The host starts with both players here.' : `The host can start with 2–${room.capacity} players.` : phase === 'countdown' ? 'Random spawns. Scavenge a gun when the battle begins.' : phase === 'fight' ? local?.alive ? 'Scavenge supplies. Stay inside the zone. Be the last alive.' : 'One life spent. Watch the remaining survivors.' : 'Battle complete. The host can return everyone to the lobby.');
     let overlay = false, title = '', kicker = '', subtitle = '', enter = false;
     if (graphicsError) { overlay = true; kicker = 'GRAPHICS UNAVAILABLE'; title = 'The island could not render.'; subtitle = graphicsError; }
@@ -349,17 +356,18 @@ async function boot() {
       if (!audio.enabled) continue;
       try {
         if (['shot', 'fire', 'boltLaunch'].includes(event.type) && (event.pellet == null || event.pellet === 0)) audio.gunshot(event.weapon, { gain: source === playerId ? 1 : .3 });
-        else if (event.type === 'damage' && !meleeImpact && (source === playerId || target === playerId)) { const key = `${event.tick}:${target === playerId ? 'in' : 'out'}`; if (impactSounds.has(key)) continue; impactSounds.add(key); audio.tone(target === playerId ? 130 : 920, .055, { end: target === playerId ? 70 : 620, type: 'triangle', gain: .22 }); }
+        else if (event.type === 'damage' && !meleeImpact && target === playerId) { const key = `${event.tick}:${target === playerId ? 'in' : 'out'}`; if (impactSounds.has(key)) continue; impactSounds.add(key); audio.tone(130, .055, { end: 70, type: 'triangle', gain: .22 }); }
         else if (event.type === 'meleeStart') audio.meleeSwing(event.weapon, { gain: source === playerId ? 1 : .3 });
         else if (event.type === 'explosion' || event.type === 'grenadeExplosion') { audio.noise(.45, { highpass: 30, lowpass: 1700, gain: .4 }); audio.tone(65, .42, { end: 28, gain: .22 }); }
         else if (event.type === 'healComplete' && source === playerId) audio.tone(660, .13, { end: 920, type: 'triangle', gain: .15 });
       } catch { /* Optional sound cannot interrupt the match. */ }
     }
+    gunImpacts.consume(fresh, playerId, { context: `${state.mapId}:${state.matchId}`, viewedId: spectatorPlayer(state, playerId, spectatorId)?.id });
     hitFeedback.consume(fresh, ownPlayer(), state.players, { now: performance.now(), lifeKey: `${state.mapId}:${state.matchId}:${ownPlayer()?.lifeId || 0}`, active: state.phase === 'fight' && !paused && !modalOpen && connected });
     const hits = confirmedHitGroups(fresh, playerId); if (hits.length) { const hit = hits.reduce((best, next) => next.damage > best.damage ? next : best); const killed = fresh.some(event => ['kill', 'elimination', 'death'].includes(event.type) && event.targetId === hit.targetId && (event.attackerId ?? event.shooterId ?? event.playerId) === playerId); feedbackUntil = performance.now() + (killed ? 1100 : 650); setText($('combat-feedback'), `${hit.label} · ${Math.round(hit.damage)} HP${killed ? ' · ELIMINATED' : ''}`); }
   }
   function draw(now = performance.now()) {
-    if (!renderer || !state || graphicsError || document.hidden) return;
+    if (!renderer?.available || !state || graphicsError || document.hidden) { reloadAudio.suspend(); paintVitals(null, 'Your', false); return; }
     const rendered = interpolatedState(snapshots, timeline.time(now), playerId, { predictMovement: engine.predictLocalMovement, traceProjectile: engine.traceShot, combatTime: timeline.currentTime(now) }) || { ...state, players: state.players.map(player => ({ ...player })) };
     const local = ownPlayer();
     presentationPlayer = predictedPlayer || local;
@@ -375,7 +383,9 @@ async function boot() {
     const viewed = spectatorPlayer(rendered, playerId, spectatorId);
     const camera = state.phase === 'lobby' ? { ...state.map.spawnPoints[0], alive: false, id: playerId, y: finite(state.map.spawnPoints[0]?.y) } : local?.alive ? presentationPlayer : viewed;
     const viewAim = local?.alive ? aim : cleanAim(camera?.yaw, camera?.pitch);
-    renderer.render(rendered, { playerId, localId: playerId, localPlayer: presentationPlayer, viewPlayer: camera, yaw: viewAim.yaw, pitch: viewAim.pitch + finite(camera?.recoil), time: now }); renderCount++;
+    renderer.render(rendered, { acceptedPlayers: state.players, playerId, localId: playerId, localPlayer: presentationPlayer, viewPlayer: camera, yaw: viewAim.yaw, pitch: viewAim.pitch + finite(camera?.recoil), time: now }); renderCount++;
+    paintVitals(camera, camera?.id !== playerId ? `${lookupName(camera?.id)}’s` : 'Your', connected && !paused && !modalOpen && ['countdown', 'fight'].includes(state.phase));
+    reloadAudio.observe(state.players.find(player => player.id === camera?.id), { tick: state.tick, context: `${state.mapId}:${state.matchId}:${state.round}`, active: connected && !paused && !modalOpen && state.phase === 'fight' });
     paintHitFeedback(hitElements, hitFeedback.present(local, { now, lifeKey: `${state.mapId}:${state.matchId}:${local?.lifeId || 0}`, active: state.phase === 'fight' && !paused && !modalOpen && connected, reducedMotion: hitMotion.matches })); paintDamageFeedback($('damage-cue'), damageFeedbackPresentation(damageFeedback, camera, { now, lifeKey: state.matchId, yaw: viewAim.yaw, active: state.phase === 'fight' })); setHidden($('combat-feedback'), now >= feedbackUntil);
     while (kills.length && now - kills[0].at > 6000) kills.shift(); const signature = kills.map(item => item.text).join('|');
     if ($('kill-feed').dataset.signature !== signature) { $('kill-feed').dataset.signature = signature; $('kill-feed').replaceChildren(...kills.map(kill => { const item = document.createElement('li'); item.textContent = kill.text; item.classList.toggle('own-kill', kill.own); return item; })); }
@@ -404,9 +414,9 @@ async function boot() {
     const reconciliationTime = performance.now();
     const beforePrediction = predictedPlayer;
     const beforePose = beforePrediction && old?.phase === 'fight' ? presentMovement(beforePrediction, actionInputs.preview(currentInput(), reconciliationTime), old.map, accumulator, engine.predictLocalMovement, old.players) : beforePrediction;
-    if (!old || predictedPlayer?.id !== playerId || fresh) { neutralize(); aim = cleanAim(local?.yaw, local?.pitch); pending = []; snapshots = []; spectatorId = null; accumulator = 0; renderer?.resetEffects(); healthView = null; damageFeedback = null; if (fresh) { eventSeen.clear(); eventOrder.length = 0; kills.length = 0; feedbackUntil = 0; hitFeedback.reset({ clearHistory: true }); damageFeedback = null; meleeImpacts.reset(); healthGainUntil = 0; lastCountdown = null; } sendInput(neutralInput(aim.yaw, aim.pitch), true); }
+    if (!old || predictedPlayer?.id !== playerId || fresh) { neutralize(); aim = cleanAim(local?.yaw, local?.pitch); pending = []; snapshots = []; spectatorId = null; accumulator = 0; renderer?.resetEffects(); healthView = null; damageFeedback = null; if (fresh) { eventSeen.clear(); eventOrder.length = 0; kills.length = 0; feedbackUntil = 0; hitFeedback.reset({ clearHistory: true }); damageFeedback = null; meleeImpacts.reset(); gunImpacts.reset(); reloadAudio.reset(); healthGainUntil = 0; lastCountdown = null; } sendInput(neutralInput(aim.yaw, aim.pitch), true); }
     if (previousPhase !== null && previousPhase !== state.phase) neutralize();
-    if (state.phase === 'lobby' && previousPhase !== 'lobby') { neutralize({ pause: true, unlock: true }); entered = false; fallback = false; healthView = null; damageFeedback = null; snapshots = []; pending = []; audio.resetEvents(); meleeImpacts.reset(); }
+    if (state.phase === 'lobby' && previousPhase !== 'lobby') { neutralize({ pause: true, unlock: true }); entered = false; fallback = false; healthView = null; damageFeedback = null; snapshots = []; pending = []; audio.resetEvents(); meleeImpacts.reset(); gunImpacts.reset(); reloadAudio.reset(); }
     if (local && !local.alive && old?.players?.find(player => player.id === playerId)?.alive !== false) neutralize({ pause: true, unlock: true });
     if (state.phase === 'matchEnd' && previousPhase !== 'matchEnd') neutralize({ pause: true, unlock: true });
     const ackValue = message.acks?.[playerId], ack = typeof ackValue === 'number' ? ackValue : ackValue?.seq ?? -1;
@@ -495,7 +505,7 @@ async function boot() {
     if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
   }
-  function updateKeyLabels() { setText($('move-keys'), getKeyboardLayout().toUpperCase()); for (const label of document.querySelectorAll('[data-royale-key]')) label.textContent = displayKey(label.dataset.royaleKey); canvas.setAttribute('aria-label', `3D battle royale. ${getKeyboardLayout().toUpperCase()} or arrows move; mouse looks; left click uses your selected item; right click aims; 1 to 4 equip inventory slots; X drops the selected item; E picks up loot; V swaps blade and gun; ${displayKey('Q')} throws grenade; F heals; R reloads; Space jumps; Control crouches; Shift walks; Escape releases controls.`); }
+  function updateKeyLabels() { setText($('move-keys'), getKeyboardLayout().toUpperCase()); for (const label of document.querySelectorAll('[data-royale-key]')) label.textContent = displayKey(label.dataset.royaleKey); canvas.setAttribute('aria-label', `3D battle royale. ${getKeyboardLayout().toUpperCase()} or arrows move; mouse looks; left click uses your selected item; right click aims; 1 to 4 equip inventory slots; X drops the selected item; E picks up loot; V swaps blade and gun; ${displayKey('Q')} throws grenade; F heals; R reloads; Space jumps; Control crouches; Shift sprints, C walks quietly; Escape releases controls.`); }
   const unsubscribeLayout = subscribeKeyboardLayout(() => { neutralize({ pause: entered, unlock: true }); updateKeyLabels(); }); updateKeyLabels();
   listen(window, 'keydown', event => { if (event.defaultPrevented || event.isComposing || event.altKey || event.metaKey) return; if (event.key === 'Escape') { if (modalOpen) { if (!$('guide-dialog').hidden) closeGuide(); else closeRoom(); } else if (entered) neutralize({ pause: true, unlock: true }); return; } if (event.key.toLowerCase() === 'p' && !isFormTarget(event.target) && entered) { event.preventDefault(); neutralize({ pause: true, unlock: true }); return; } if (!controlsActive() || isFormTarget(event.target)) return; const action = controlForKey(event); if (!action) return; event.preventDefault(); const id = event.code || event.key; if (pressedKeys.has(id) || event.repeat) return; pressedKeys.set(id, action); keys.add(action); utilityFeedback(action); sendInput(currentInput(), true); });
   listen(window, 'keyup', event => { const id = event.code || event.key, action = pressedKeys.get(id); pressedKeys.delete(id); if (action && ![...pressedKeys.values()].includes(action)) keys.delete(action); if (action) { sendInput(currentInput(), true); if (!isFormTarget(event.target)) event.preventDefault(); } });
@@ -567,7 +577,7 @@ async function boot() {
   const pingTimer = setInterval(() => { if (connected && !document.hidden) send({ type: 'ping', time: performance.now() }); }, 1500);
   function destroy() { if (destroyed) return; neutralize({ pause: true, unlock: true }); destroyed = true; clearTimeout(reconnectTimer); clearTimeout(toastTimer); clearInterval(pingTimer); clearInterval(heartbeat); heartbeat = null; if (frameId) cancelAnimationFrame(frameId); frameId = null; socket?.close(); renderer?.destroy(); audio.destroy(); inventory.destroy(); layoutPicker.destroy(); unsubscribeLayout(); for (const remove of removers) remove(); pending = []; snapshots = []; kills.length = 0; eventSeen.clear(); }
   listen(window, 'pagehide', destroy);
-  const inspect = () => { const { map, ...snapshot } = state || {}; return clone({ state: state ? snapshot : null, players: roster, playerId, hostId, input: currentInput(), predictedPlayer, presentationPlayer, presentationPlayers, predictionRemainder: accumulator, predictionTick, actionQueue: actionInputs.inspect(), timeline: timeline.getState(), correction: correction.getState(), connected, controls: { pointerLocked: pointerLocked(), fallback, touch: touchMode, paused, entered, modalOpen }, queueLength: pending.length, renderCount, renderStats: renderer?.stats || null, audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), meleeImpactAudio: meleeImpacts.inspect(), graphicsError, spectatorId }); };
+  const inspect = () => { const { map, ...snapshot } = state || {}; return clone({ state: state ? snapshot : null, players: roster, playerId, hostId, input: currentInput(), predictedPlayer, presentationPlayer, presentationPlayers, predictionRemainder: accumulator, predictionTick, actionQueue: actionInputs.inspect(), timeline: timeline.getState(), correction: correction.getState(), connected, controls: { pointerLocked: pointerLocked(), fallback, touch: touchMode, paused, entered, modalOpen }, queueLength: pending.length, renderCount, renderStats: renderer?.stats || null, audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), meleeImpactAudio: meleeImpacts.inspect(), reloadAudio: reloadAudio.inspect(), reloadSounds: audio.inspectReloads(), gunImpactAudio: gunImpacts.inspect(), stamina: staminaView, graphicsError, spectatorId }); };
   window.SemagRoyale = Object.freeze({ getState: inspect, inspect }); updateUI();
   try { const [rules, visual] = await Promise.all([import('./voxel-royale-engine.js'), import('./voxel-renderer.js')]); if (destroyed) return; engine = { ...rules, predictLocalMovement, sweepPresentationOffset, traceShot, ADS, HEAL, PLAYER_HEALTH }; renderer = new visual.VoxelRenderer(canvas); renderer.resize(); } catch (cause) { graphicsError = cause?.message || 'This game requires WebGL. Enable hardware acceleration and reload graphics.'; error(graphicsError); updateUI(); return; }
   connect();

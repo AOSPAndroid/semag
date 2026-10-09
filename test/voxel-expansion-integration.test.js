@@ -27,15 +27,23 @@ function fourGuns(player, ids = ['revolver', 'sniper', 'pdw', 'battlerifle']) {
   for (const weapon of ids) assert.equal(Inventory.pickupInventoryItem(player, { kind: 'weapon', weapon }).ok, true);
   return player;
 }
+function carriedUtilities(state, player) {
+  for (const kind of ['heal', 'grenade']) {
+    const loot = Combat.addInventoryLoot(state, player, { kind, amount: 1 });
+    assert.ok(loot);
+    assert.equal(Combat.pickupCombatLoot(state, player, loot), true);
+  }
+  assert.equal(player.potions, 1); assert.equal(player.grenades, 1);
+}
 
 test('FPS defaults have knife first, chosen gun second and four independent snapshot slots', () => {
   for (const weapon of ['revolver', 'pdw', 'autoshotgun', 'battlerifle']) {
     const state = lane(weapon), player = state.players[0];
-    assert.deepEqual(player.inventory.map(item => item.kind), ['melee', 'weapon', 'heal', 'grenade']);
+    assert.deepEqual(player.inventory.map(item => item?.kind || null), ['melee', 'weapon', null, null]);
     assert.equal(player.inventory[0].weapon, 'knife'); assert.equal(player.inventory[1].weapon, weapon);
-    assert.equal(player.inventory[2].amount, 1); assert.equal(player.inventory[3].amount, 1);
+    assert.equal(player.potions, 0); assert.equal(player.grenades, 0);
     const frozen = JSON.stringify(player.inventory), clone = Combat.cloneState(state);
-    clone.players[0].inventory[1].ammo = 0; clone.players[0].inventory[2].amount = 2;
+    clone.players[0].inventory[1].ammo = 0; clone.players[0].inventory[2] = { kind: 'heal', amount: 2 };
     assert.equal(JSON.stringify(player.inventory), frozen, 'a copied nested inventory changed authority');
     assert.equal(clone.fighters, clone.players);
     const presented = Combat.cloneState(player);
@@ -91,6 +99,7 @@ test('reload cancellation and an actual drop/pickup preserve spent ammo and the 
 
 test('stack limits apply per flexible slot and partial pickups leave the real remainder on the floor', () => {
   const state = lane('revolver'), player = state.players[0];
+  carriedUtilities(state, player);
   // All four slots are occupied. Only one potion can join the existing stack.
   const supply = { id: 1, kind: 'heal', amount: 4, x: player.x, y: player.y, z: player.z };
   state.loot = [supply];
@@ -133,6 +142,7 @@ test('four carried guns die into four drops once, with each gun actual ammunitio
 
 test('coalesced inventory selection and drop target the requested slot and fence an already-held trigger', () => {
   const state = lane('revolver'), player = state.players[0], queue = createFpsInputQueue();
+  carriedUtilities(state, player);
   const neutral = Combat.emptyInput(player);
   queue.observe({ ...neutral, fire: true }, 0); tick(state, queue.sample(undefined, 1).buttons);
   assert.equal(player.shots, 1);

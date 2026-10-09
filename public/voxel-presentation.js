@@ -1,14 +1,14 @@
 import { tickFraction } from './display-timing.js';
-import { ADS, separatePresentationBodies, sweepPresentationOffset } from './voxel-engine.js';
+import { ADS, INPUT_KEYS, copyMovementState, movementPredictionRevision, separatePresentationBodies, sweepPresentationOffset } from './voxel-engine.js';
 import { advanceBolts, MAX_BOLTS } from './voxel-projectiles.js';
 
 const STEP = 1 / 120;
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const finite = value => Number.isFinite(value) ? value : 0;
 const COMBAT_FIELDS = ['aimTicks', 'recoil', 'reloadTicks', 'healTicks', 'grenadeThrowTicks', 'meleeTicks', 'meleeCooldown', 'shotCooldown'];
-const INPUT_FIELDS = ['up', 'down', 'left', 'right', 'jump', 'crouch', 'walk', 'aim', 'yaw', 'pitch'];
-const MOVEMENT_FIELDS = ['x', 'y', 'z', 'vx', 'vy', 'vz', 'yaw', 'pitch', 'grounded', 'crouching', 'jumpBufferTicks', 'knockbackX', 'knockbackZ', 'knockbackTicks', 'knockbackReadyTicks', 'previousInput'];
-const CONTEXT_FIELDS = [...MOVEMENT_FIELDS, 'alive', 'radius', 'weapon', 'slot', 'reloadTicks', 'healTicks', 'grenadeThrowTicks', 'meleeWeapon'];
+const INPUT_FIELDS = [...INPUT_KEYS, 'yaw', 'pitch'];
+const MOVEMENT_FIELDS = ['x', 'y', 'z', 'vx', 'vy', 'vz', 'yaw', 'pitch', 'grounded', 'crouching', 'jumpBufferTicks', 'knockbackX', 'knockbackZ', 'knockbackTicks', 'knockbackReadyTicks', 'stamina', 'staminaRegenTicks', 'sprintExhausted', 'sprinting', 'previousInput'];
+const CONTEXT_FIELDS = [...MOVEMENT_FIELDS, 'alive', 'radius', 'weapon', 'slot', 'reloadTicks', 'healTicks', 'grenadeThrowTicks', 'meleeTicks', 'burstRemaining', 'pendingFireTicks', 'shotCooldown', 'triggerBlocked', 'ammo', 'reserve', 'lifeId', 'deaths', 'meleeStartTick', 'healStartTick', 'interaction', 'interactTicks', 'meleeWeapon', 'bot', 'monster'];
 const matches = (old, next, fields) => fields.every(field => old[field] === next[field]);
 
 /** Resolve the complete displayed body batch; independent previews share no future poses. */
@@ -26,7 +26,7 @@ export function reconcileMovement(player, history, ack, map, predictMovement, al
 }
 
 function interpolateMovement(player, next, fraction) {
-  const pose = { ...player };
+  const pose = copyMovementState(player);
   for (const field of ['x', 'y', 'z', 'vx', 'vy', 'vz']) {
     if (Number.isFinite(player[field]) && Number.isFinite(next[field])) pose[field] += (next[field] - player[field]) * fraction;
   }
@@ -40,10 +40,10 @@ export function createMovementPresenter() {
     if (!player?.alive || typeof predictMovement !== 'function') return player;
     const fraction = tickFraction(remainder, STEP);
     if (!fraction) return player;
-    if (!cache || cache.player !== player || cache.map !== map || cache.predict !== predictMovement || cache.peers !== peers || !matches(cache.source, player, CONTEXT_FIELDS) || !matches(cache.buttons, buttons, INPUT_FIELDS)) {
-      const next = { ...player };
+    if (!cache || cache.player !== player || cache.map !== map || cache.predict !== predictMovement || cache.peers !== peers || cache.actionRevision !== movementPredictionRevision(player) || !matches(cache.source, player, CONTEXT_FIELDS) || !matches(cache.buttons, buttons, INPUT_FIELDS)) {
+      const next = copyMovementState(player);
       predictMovement(next, buttons, map, 1, peers);
-      cache = { player, map, predict: predictMovement, peers, source: { ...player }, buttons: { ...buttons }, next };
+      cache = { player, map, predict: predictMovement, peers, source: { ...player }, buttons: { ...buttons }, next, actionRevision: movementPredictionRevision(player) };
     }
     return interpolateMovement(player, cache.next, fraction);
   };
@@ -54,7 +54,7 @@ export function movementPresentation(player, buttons, map, remainder, predictMov
   if (!player?.alive || typeof predictMovement !== 'function') return player;
   const fraction = tickFraction(remainder, STEP);
   if (!fraction) return player;
-  const next = { ...player };
+  const next = copyMovementState(player);
   predictMovement(next, buttons, map, 1, peers);
   return interpolateMovement(player, next, fraction);
 }
@@ -76,16 +76,17 @@ function receivedMovementPath(old, endpoint, from, to, map, predictMovement) {
       && ['x', 'z'].every(axis => Math.abs(old[`v${axis}`] - endpoint[`v${axis}`]) < 1e-8 && Math.abs(old[axis] + old[`v${axis}`] * duration - endpoint[axis]) < 1e-8)) return null;
   let cached = receivedPaths.get(old);
   if (cached?.endpoint === endpoint && cached.count === count && cached.map === map && cached.predict === predictMovement && cached.peers === from.state.players
+      && cached.sourceAction === movementPredictionRevision(old) && cached.targetAction === movementPredictionRevision(endpoint)
       && matches(cached.source, old, CONTEXT_FIELDS) && matches(cached.target, endpoint, CONTEXT_FIELDS) && matches(cached.buttons, old.previousInput, INPUT_FIELDS)) return cached.poses;
-  const poses = [{ ...old }];
+  const poses = [copyMovementState(old)];
   for (let tick = 0; tick < count; tick++) {
-    const next = { ...poses[tick] };
+    const next = copyMovementState(poses[tick]);
     predictMovement(next, old.previousInput, map, 1, from.state.players); poses.push(next);
   }
   const last = poses[count];
   const verified = ['x', 'y', 'z', 'vx', 'vy', 'vz'].every(axis => Number.isFinite(last[axis]) && Number.isFinite(endpoint[axis]) && Math.abs(last[axis] - endpoint[axis]) < 1e-6)
     && last.crouching === endpoint.crouching && last.grounded === endpoint.grounded;
-  cached = { endpoint, count, map, predict: predictMovement, peers: from.state.players, source: { ...old }, target: { ...endpoint }, buttons: { ...old.previousInput }, poses: verified ? poses : null };
+  cached = { endpoint, count, map, predict: predictMovement, peers: from.state.players, source: { ...old }, target: { ...endpoint }, sourceAction: movementPredictionRevision(old), targetAction: movementPredictionRevision(endpoint), buttons: { ...old.previousInput }, poses: verified ? poses : null };
   receivedPaths.set(old, cached); return cached.poses;
 }
 
@@ -94,23 +95,23 @@ export function projectedMovement(player, buttons, map, elapsedMs, predictMoveme
   const ticks = clamp(finite(elapsedMs), 0, 25) * 120 / 1000;
   const whole = Math.floor(ticks);
   let endpoints = remoteEndpoints.get(source);
-  if (!endpoints || endpoints.map !== map || endpoints.predict !== predictMovement || endpoints.peers !== peers || !matches(endpoints.source, source, CONTEXT_FIELDS) || !matches(endpoints.buttons, buttons, INPUT_FIELDS)) {
-    endpoints = { map, predict: predictMovement, peers, source: { ...source }, buttons: { ...buttons }, poses: new Map() };
+  if (!endpoints || endpoints.map !== map || endpoints.predict !== predictMovement || endpoints.peers !== peers || endpoints.actionRevision !== movementPredictionRevision(source) || !matches(endpoints.source, source, CONTEXT_FIELDS) || !matches(endpoints.buttons, buttons, INPUT_FIELDS)) {
+    endpoints = { map, predict: predictMovement, peers, source: { ...source }, actionRevision: movementPredictionRevision(source), buttons: { ...buttons }, poses: new Map() };
     remoteEndpoints.set(source, endpoints);
   }
   let endpoint = endpoints.poses.get(whole);
   if (!endpoint) {
-    const pose = { ...source };
+    const pose = copyMovementState(source);
     if (whole) predictMovement(pose, buttons, map, whole, peers);
     endpoint = { pose };
     endpoints.poses.set(whole, endpoint);
   }
-  const pose = { ...player };
+  const pose = copyMovementState(player);
   for (const field of MOVEMENT_FIELDS) if (field in endpoint.pose) pose[field] = endpoint.pose[field];
   const fraction = tickFraction((ticks - whole) * STEP, STEP);
   if (!fraction) return pose;
   if (!endpoint.next) {
-    endpoint.next = { ...endpoint.pose };
+    endpoint.next = copyMovementState(endpoint.pose);
     predictMovement(endpoint.next, buttons, map, 1, peers);
   }
   return interpolateMovement(pose, endpoint.next, fraction);

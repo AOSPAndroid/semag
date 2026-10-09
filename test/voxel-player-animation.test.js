@@ -49,6 +49,24 @@ test('walk, run and crouched motion use real speed and shorter crouched steps', 
   near(crouching.poses.at(-1).phase, Math.hypot(crouching.player.x, crouching.player.z) * Math.PI * 2 / 1.90 % (Math.PI * 2));
 });
 
+test('accepted sprint lengthens the articulated stride at every display cadence and pinned movement settles it', () => {
+  let reference;
+  for (const hz of [60, 120, 144, 240]) {
+    const result = simulate(hz, 2, { ...emptyInput(), up: true, sprint: true }), last = result.poses.at(-1);
+    assert.equal(result.player.sprinting, true);
+    assert.ok(last.sprint > .999 && last.speed > 7 && last.legs.some(leg => leg.lift > .02));
+    // The first sub-tick movement keeps the last accepted sprint flag until its
+    // first real tick; that <1 mm start contributes less than .002 rad.
+    near(last.phase, Math.hypot(result.player.x, result.player.z) * Math.PI * 2 / 2.85 % (Math.PI * 2), .002);
+    if (reference) { near(last.phase, reference.phase, .002); near(last.sprint, reference.sprint, .000001); }
+    else reference = last;
+  }
+  const wall = { ...openMap, colliders: [{ x: -3, y: 0, z: -1.5, w: 6, h: 4, d: .2 }] };
+  const result = simulate(240, 2, { ...emptyInput(), up: true, sprint: true }, wall);
+  assert.equal(result.player.sprinting, false);
+  assert.ok(result.poses.at(-1).sprint < .000001 && result.poses.at(-1).stride < .000001);
+});
+
 test('a genuine wall collision settles the legs and held input or stale velocity cannot make them march', () => {
   const wall = { ...openMap, colliders: [{ x: -3, y: 0, z: -1.5, w: 6, h: 4, d: .2 }] };
   const { poses, player, animation } = simulate(240, 2, { ...emptyInput(), up: true }, wall);

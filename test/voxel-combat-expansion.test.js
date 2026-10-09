@@ -21,6 +21,12 @@ function fighting(weapon = 'carbine', teamSize = 1, mapId = 'courtyard') {
   return state;
 }
 const shotEvents = (state, id = 0) => state.events.filter(event => event.type === 'shot' && event.playerId === id);
+function collectUtility(state, player, kind) {
+  const loot = game.addInventoryLoot(state, player, { kind, amount: 1 });
+  assert.ok(loot);
+  assert.equal(game.pickupCombatLoot(state, player, loot), true);
+  assert.equal(kind === 'heal' ? player.potions : player.grenades, 1);
+}
 
 test('sniper hip fire misses a distant body while a settled scope deals its honest 100 damage', () => {
   const outcomes = [];
@@ -114,6 +120,7 @@ test('LMG spends its first round after 24 held ticks and maintains a 12-tick cad
 test('LMG reload, grenade, potion, sword and interaction interrupt firing commitment', () => {
   for (const action of ['reload', 'grenade', 'heal', 'swap', 'interact']) {
     const state = fighting('lmg'), shooter = state.players[0], weapon = game.WEAPONS.lmg;
+    if (action === 'grenade' || action === 'heal') collectUtility(state, shooter, action === 'heal' ? 'heal' : 'grenade');
     advance(state, weapon.spinupTicks, { fire: true });
     advance(state, 1); advance(state, 12, { fire: true });
     assert.equal(shooter.spinTicks, 12); assert.equal(shooter.shots, 1);
@@ -172,7 +179,10 @@ test('all nine weapons replay identically with finite bounded six-player state o
     const state = game.createState({ teamSize: 3, mapId });
     for (const player of state.players) game.selectLoadout(state, player.id, weaponId);
     game.startMatch(state); advance(state, 11 * game.TICK_RATE);
-    for (const player of state.players) Object.assign(player, { x: 18 + player.id % 3 * 2, z: player.team ? -8 : 8, yaw: Math.PI / 2, pitch: 0, hp: 60 });
+    for (const player of state.players) {
+      Object.assign(player, { x: 18 + player.id % 3 * 2, z: player.team ? -8 : 8, yaw: Math.PI / 2, pitch: 0, hp: 60 });
+      collectUtility(state, player, 'heal'); collectUtility(state, player, 'grenade');
+    }
     const replay = game.cloneState(state);
     for (let tick = 0; tick < 720; tick++) {
       const keys = state.players.map(player => input(player, {

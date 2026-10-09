@@ -256,7 +256,22 @@ test('accepted recoil preserves one impulse per real shell, remains bounded unde
   for (let id = 100; id < 2100; id++) motion.report({ id, type: 'shot', playerId: 0, weapon: 'smg', pellet: 0 }, 1100 + id / 1000);
   assert.ok(motion.getStats().activeShots <= 16);
   const rapid = motion.sample('smg', 1110);
-  assert.ok(rapid.kick <= 1.7 && rapid.z < .08 && Math.abs(rapid.pitch) < .10);
+  assert.ok(Object.values(rapid).every(Number.isFinite));
+  // The stronger SMG profile pushes .050 m and pitches .076 rad per peak.
+  // Overlap retains the explicit 1.7 impulse cap rather than accumulating
+  // the thousands of accepted reports into camera-sized weapon displacement.
+  assert.ok(rapid.kick >= 0 && rapid.kick <= 1.7 + 1e-12);
+  assert.ok(rapid.z >= 0 && rapid.z <= .050 * 1.7 + 1e-12);
+  assert.ok(Math.abs(rapid.pitch) <= .076 * 1.7 + 1e-12);
+  const aimedRapid = motion.sample('smg', 1110, 1);
+  near(aimedRapid.z, rapid.z * .78, 1e-12);
+  near(aimedRapid.pitch, rapid.pitch * .28, 1e-12);
+  for (let repeat = 0; repeat < 10; repeat++) {
+    assert.deepEqual(motion.sample('smg', 1110, 1), aimedRapid, 'repeated ADS sampling never compounds damping');
+    assert.deepEqual(motion.sample('smg', 1110, 0), rapid, 'returning to hip aim restores the same accepted pose');
+  }
+  assert.deepEqual(motion.sample('smg', 1310), { kick: 0, x: 0, y: 0, z: 0, yaw: 0, pitch: 0 });
+  assert.equal(motion.getStats().activeShots, 0, 'a rapid volley releases its bounded history after actual recovery');
   for (const weapon of Object.keys(WEAPONS)) for (const aim of [0, 1]) {
     const first = createWeaponShotPresenter(); first.report({ id: 1, type: weapon === 'crossbow' ? 'boltLaunch' : 'shot', weapon, pellet: 0 }, 0);
     const expected = first.sample(weapon, 100, aim);
