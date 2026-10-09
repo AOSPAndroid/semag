@@ -4,7 +4,7 @@ import * as Horde from '../public/voxel-horde-engine.js';
 import { applyCombatDamage, emptyInput, predictLocalMovement } from '../public/voxel-engine.js';
 import { createFpsInputQueue, releaseFpsTouchAction } from '../public/voxel-input-queue.js';
 import { interpolatedVoxelState } from '../public/voxel-presentation.js';
-import { hordeLobbyPresentation, hordeSpectatorPlayer, hordeInterpolationSamples, hordeWavePresentation, hordeOverlayPresentation, hordeRevivePresentation, hordeInputForPhase } from '../public/voxel-horde-client.js';
+import { hordeLobbyPresentation, hordeSpectatorPlayer, hordeInterpolationSamples, hordeWavePresentation, hordeResultPresentation, hordeOverlayPresentation, hordeRevivePresentation, hordeInputForPhase } from '../public/voxel-horde-client.js';
 
 function active(participants = [0], options = {}) {
   const state = Horde.createState({ seed: 51931, ...options });
@@ -84,6 +84,90 @@ test('wave intro and threat count come from real simulation clocks, without adva
   assert.equal(state.tick, tick); assert.deepEqual(snapshot(state), before);
   for (let tick = 0; tick < 241 && state.phase === 'fight'; tick++) Horde.step(state);
   assert.equal(hordeWavePresentation(state).banner, null, 'short wave intro clears instead of covering the whole fight');
+});
+
+test('the terminal result shows each selected survivor’s accepted damage rather than overkill or squad totals', () => {
+  const state = active([0, 2]), monster = spawn(state), health = monster.hp;
+  assert.ok(health > 37);
+  applyCombatDamage(state, [
+    { playerId: 0, targetId: monster.id, targetLifeId: monster.lifeId, damage: 37, attack: 'gun', weapon: 'carbine' },
+    { playerId: 2, targetId: monster.id, targetLifeId: monster.lifeId, damage: 9999, attack: 'gun', weapon: 'carbine' },
+  ]);
+  Horde.step(state);
+  assert.equal(state.players[0].damageDealt, 37);
+  assert.equal(state.players[2].damageDealt, health - 37, 'overkill credits only the target’s remaining health');
+  assert.equal(state.horde.teamstats.damage, health);
+  assert.equal(state.horde.totalKills, 1);
+  const attacker = spawn(state);
+  applyCombatDamage(state, [0, 2].map(targetId => ({ playerId: attacker.id, targetId, damage: 9999, attack: 'monster', weapon: attacker.monsterType })));
+  Horde.step(state);
+  assert.equal(state.phase, 'matchEnd');
+  assert.equal(state.horde.result, 'lost');
+  assert.equal(hordeOverlayPresentation(state, { solo: false, connected: true, entered: true, paused: true, alive: false }), 'result', 'the result takes precedence over released or paused controls');
+  const before = snapshot(state), first = hordeResultPresentation(state, 0), second = hordeResultPresentation(state, 2);
+  assert.equal(first.damage, 37);
+  assert.equal(second.damage, health - 37);
+  assert.notEqual(first.damage, state.horde.teamstats.damage);
+  assert.notEqual(second.damage, state.horde.teamstats.damage);
+  assert.equal(second.kills, 1);
+  assert.equal(second.wave, state.horde.wave);
+  assert.equal(second.elapsed, state.horde.elapsedTicks / Horde.TICK_RATE);
+  const reordered = { ...state, players: [attacker, state.players[2], state.players[0], state.players[1]] };
+  assert.equal(hordeResultPresentation(reordered, 2).damage, second.damage, 'selection follows the player ID, not its array position');
+  assert.equal(hordeResultPresentation(state, attacker.id).damage, 0, 'a monster’s attacks are never presented as the survivor’s score');
+  assert.deepEqual(snapshot(state), before, 'reading terminal results leaves the complete run untouched');
+  for (let tick = 0; tick < 120; tick++) Horde.step(state);
+  assert.deepEqual(hordeResultPresentation(state, 2), second, 'the stopped simulation retains its final personal damage');
+});
+
+test('replay creates a fresh Last Stand with the chosen arena, threat and gun while clearing run results', () => {
+  const config = { capacity: 3, mapId: 'paris', difficulty: 'nightmare', seed: 51931 }, weapon = 'shotgun';
+  const previous = Horde.createState(config);
+  assert.equal(Horde.selectLoadout(previous, 0, weapon).ok, true);
+  Horde.startMatch(previous, [0]);
+  while (previous.phase === 'countdown') Horde.step(previous);
+  const target = spawn(previous), targetHp = target.hp;
+  applyCombatDamage(previous, [{ playerId: 0, targetId: target.id, targetLifeId: target.lifeId, damage: 9999, attack: 'gun', weapon }]);
+  Horde.step(previous);
+  const attacker = spawn(previous);
+  applyCombatDamage(previous, [{ playerId: attacker.id, targetId: 0, damage: 9999, attack: 'monster', weapon: attacker.monsterType }]);
+  Horde.step(previous);
+  assert.equal(previous.phase, 'matchEnd');
+  assert.equal(hordeResultPresentation(previous).damage, targetHp);
+  assert.equal(hordeResultPresentation(previous).kills, 1);
+  assert.ok(hordeResultPresentation(previous).elapsed > 0);
+  const ended = snapshot(previous);
+
+  // This is the real client replay sequence: fresh state, chosen gun, explicit start.
+  const replay = Horde.createState({ ...config, seed: config.seed + 1 });
+  assert.equal(Horde.selectLoadout(replay, 0, weapon).ok, true);
+  Horde.startMatch(replay, [0]);
+  assert.equal(replay.phase, 'countdown');
+  assert.equal(replay.phaseTicks, Horde.HORDE_RULES.countdownTicks);
+  assert.equal(replay.mapId, config.mapId);
+  assert.equal(replay.horde.config.difficulty, config.difficulty);
+  assert.equal(replay.capacity, config.capacity);
+  assert.equal(replay.players[0].weapon, weapon);
+  assert.equal(replay.players[0].hp, replay.players[0].maxHp);
+  assert.equal(replay.players[0].alive, true);
+  assert.equal(replay.players[0].damageDealt, 0);
+  assert.equal(replay.players[0].kills, 0);
+  assert.deepEqual(hordeResultPresentation(replay), { wave: 1, kills: 0, elapsed: 0, damage: 0 });
+  assert.deepEqual(snapshot(previous), ended, 'starting the next run cannot overwrite the previous terminal result');
+  while (replay.phase === 'countdown') Horde.step(replay);
+  assert.equal(replay.phase, 'fight');
+  assert.equal(replay.players[0].weapon, weapon);
+  assert.equal(hordeResultPresentation(replay).damage, 0);
+});
+
+test('result presentation safely handles an absent state or survivor without falling back to squad damage', () => {
+  const empty = { wave: 0, kills: 0, elapsed: 0, damage: 0 };
+  assert.deepEqual(hordeResultPresentation(), empty);
+  assert.deepEqual(hordeResultPresentation(null), empty);
+  const state = active(), before = snapshot(state), wave = hordeWavePresentation(state);
+  assert.deepEqual(hordeResultPresentation(state, 99), { wave: wave.wave, kills: wave.kills, elapsed: wave.elapsed, damage: 0 });
+  assert.equal(hordeResultPresentation({ ...state, players: undefined, horde: { ...state.horde, teamstats: { damage: 9000 } } }).damage, 0);
+  assert.deepEqual(snapshot(state), before);
 });
 
 test('a tap before the next horde physics sample fires once and preserves captured aim', () => {

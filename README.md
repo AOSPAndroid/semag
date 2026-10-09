@@ -1,6 +1,6 @@
-# Semag game hub
+# semaG game hub
 
-![Semag pixel-art logo](public/hub/logo.svg)
+![semaG pixel-art logo](public/hub/logo.svg)
 
 A self-hosted browser hub with **24 games**, including solo challenges, duels, a tactical team FPS, battle royale, and three-player co-op wave survival. Pick **Open game** to preview a solo game, then press **Start game** when ready, or create a room and share your PC address or room link with a colleague. Voxel Royale holds up to ten players; the host starts with any two or more connected players. Voxel Last Stand supports solo play or co-op with up to three players: everyone connected presses **Ready**, then the host explicitly starts. Voxel Breach has two, four or six seats and requires every seat to be ready; the remaining multiplayer rooms have two. The server can run several independent rooms at once. Every PvP game also has a **Vs bots** link for solo play, including Shinobi Showdown against one to four opponents.
 
@@ -12,7 +12,11 @@ Click an image to open it at full size.
 
 **Game hub**
 
-[![Semag game shelf with the available games and room controls](docs/screenshots/game-hub.jpg)](docs/screenshots/game-hub.jpg)
+[![semaG dark game library with the available games and room controls](docs/screenshots/game-hub-dark.png)](docs/screenshots/game-hub-dark.png)
+
+**Last Stand results**
+
+[![Last Stand death screen showing damage dealt, wave, hostiles defeated, survival time and Replay](docs/screenshots/voxel-last-stand-results.png)](docs/screenshots/voxel-last-stand-results.png)
 
 **Voxel Breach**
 
@@ -55,13 +59,13 @@ Click an image to open it at full size.
 | Oddstock Rumble | Bonus 1v1 platform brawler | Choose one of six comic fighters; use knockback, recovery, and stage control to take three stocks. |
 | Rift Survivor | Solo survival arena | Read enemy attack patterns, choose upgrades, and build synergistic relics and defeat four guardians across twenty waves. |
 
-The action games are original implementations. Checkers follows American checkers rules. All multiplayer card games use the same two-seat rooms, ready countdown, and rematch flow. The shelf filters show **All games**, **With a friend**, **Solo**, **Driving**, **Action**, **Roguelike**, **Ninja**, or **Voxel**. Search narrows the selected shelf by title, category, or description. Room joining and invitations sit above the game shelf.
+The action games are original implementations. Checkers follows American checkers rules. All multiplayer card games use the same two-seat rooms, ready countdown, and rematch flow. The shelf filters show **All games**, **With a friend**, **Solo**, **Driving**, **Action**, **Roguelike**, **Ninja**, or **Voxel**. Search narrows the selected shelf by title, category, or description. Room joining and invitations sit beside the game library on desktop and follow the games on smaller screens.
 
 The graphics use original local artwork: illustrated cards and enemy portraits,
 expressive character sprites, textured arena materials, crafted board pieces,
 and detailed driving scenery. Static art is cached, gameplay effects stay
 readable, and the shelf artwork matches the games. Assets ship with the host;
-playing does not require an image service. The hub uses its pixel SEMAG wordmark and S badge.
+playing does not require an image service. The hub uses its pixel semaG wordmark and S badge.
 
 Driving and action games use swept collision checks for moving bodies and projectiles. Cover stops shots at their first impact, vehicle depth shows occupied road space, and attack poses match active damage frames. Compact impact effects make solid contacts easier to read.
 
@@ -75,6 +79,10 @@ their completion records separate by difficulty.
 ## Starting a solo game
 
 Open a solo game from the shelf, review its controls, and press **Start game** when you are ready. The game and its timers wait on the ready screen. After starting, press **Escape** to pause or resume, or use Pause / Resume and New game for that session.
+
+The interface uses a modern dark theme with shared shadcn-style color roles, compact native controls and the pixelated **semaG** wordmark. Game canvases retain their own artwork and HUD signals.
+
+When a solo Last Stand ends, the death screen shows your total **Damage dealt**, wave reached, hostiles defeated and time survived. **Replay** starts the same map, difficulty and chosen loadout with full health and fresh run statistics; **Change setup** returns to the ready screen. Damage counts actual enemy health removed, including melee and grenade hits.
 
 Every PvP game has a **Vs bots** link beside **Create room**. The Solo shelf includes these practice modes as well as the solo games. Shinobi Showdown, Relic Duel, Vector Arena, Oddstock Rumble, Checkers, Crazy Eights, 21 Duel and Memory Match open with **Normal**, **Hard** or **Expert** opponents; **Hard** is selected initially. Review the setup and press **Start game**. Pause / Resume and Escape stop the solo simulation; opening **Room & controls** also pauses it. Play again resets the match, and the setup returns so you can change the challenge.
 

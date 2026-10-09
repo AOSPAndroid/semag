@@ -1,0 +1,59 @@
+/* semaG UI: shadcn semantic roles, adapted to the native self-hosted shell. */
+:root {
+  color-scheme: dark;
+  --background: #09090b;
+  --foreground: #fafafa;
+  --card: #111113;
+  --card-foreground: var(--foreground);
+  --popover: #18181b;
+  --popover-foreground: var(--foreground);
+  --primary: #fafafa;
+  --primary-foreground: #18181b;
+  --secondary: #222225;
+  --secondary-foreground: #e4e4e7;
+  --muted: #18181b;
+  --muted-foreground: #a1a1aa;
+  --accent: #f59e0b;
+  --accent-foreground: #18181b;
+  --destructive: #f87171;
+  --destructive-foreground: #fecaca;
+  --success: #86efac;
+  --border: #27272a;
+  --input: #3f3f46;
+  --ring: #d4d4d8;
+  --radius: .75rem;
+  --shadow-dialog: 0 24px 80px #0009;
+  --font: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  /* Compatibility with the existing canvas and room shells. */
+  --bg: var(--background);
+  --paper: var(--background);
+  --white: var(--card);
+  --surface: var(--card);
+  --ink: var(--foreground);
+  --text: var(--foreground);
+  --line: var(--border);
+  --forest: var(--foreground);
+  --text-secondary: var(--muted-foreground);
+  --text-label: var(--muted-foreground);
+}
+html { background: var(--background); scroll-padding-top: 24px; }
+body { background: var(--background); color: var(--foreground); font-family: var(--font); -webkit-font-smoothing: antialiased; }
+button, input, select, textarea { font-family: var(--font); }
+input, select, textarea { color-scheme: dark; accent-color: var(--accent); }
+input::placeholder, textarea::placeholder { color: var(--muted-foreground); opacity: 1; }
+select option, select optgroup { color: var(--foreground); background: var(--popover); }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible,
+textarea:focus-visible, summary:focus-visible, [tabindex]:focus-visible {
+  outline: 2px solid var(--ring); outline-offset: 3px;
+}
+button:disabled, input:disabled, select:disabled { cursor: not-allowed; }
+input[aria-invalid="true"], select[aria-invalid="true"], textarea[aria-invalid="true"] { border-color: var(--destructive); }
+::selection { background: var(--accent); color: var(--accent-foreground); }
+.pixel-logo, .practice-brand svg, .voxel-brand svg, .royale-brand svg { shape-rendering: crispEdges; }
+.keyboard-layout-picker { color: var(--muted-foreground); }
+.keyboard-layout-picker select { color: var(--foreground); background: var(--muted); border-color: var(--input); border-radius: calc(var(--radius) - 4px); font: 12px var(--font); min-height: 34px; }
+.keyboard-layout-picker label, .keyboard-layout-picker > span { color: var(--muted-foreground); }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto; }
+}

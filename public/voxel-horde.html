@@ -1,13 +1,14 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#111e19">
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#09090b">
   <title>Voxel Last Stand — Semag</title>
   <link rel="icon" href="/hub/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/keyboard-layout.css"><link rel="stylesheet" href="/voxel-horde.css">
   <link rel="stylesheet" href="/voxel-inventory-ui.css">
   <link rel="stylesheet" href="/voxel-hit-feedback.css">
   <link rel="stylesheet" href="/voxel-label-overlay.css">
   <link rel="stylesheet" href="/voxel-fps-feedback.css">
+  <link rel="stylesheet" href="/hub/modern-game.css">
 </head>
 <body>
   <main class="practice-app horde-app" id="horde-app" data-phase="lobby">
@@ -55,7 +56,7 @@
             <button class="practice-primary" id="horde-start" type="submit"><span id="horde-start-label">Start survival</span><span aria-hidden="true">→</span></button><small class="practice-start-note" id="horde-start-note">Solo · starts only when you choose · Esc pauses</small>
           </form>
           <div class="practice-card" id="horde-pause-card" hidden><span class="practice-eyebrow" id="horde-pause-tag">TAKE A BREATH</span><h2 id="horde-pause-title">Paused.</h2><p id="horde-pause-copy">The world and every enemy are frozen. Pick your next route.</p><button class="practice-primary" id="horde-resume" type="button"><span>Return to the fight</span><span aria-hidden="true">→</span></button><div class="practice-secondary-actions"><button id="horde-restart" type="button">New solo run</button><button id="horde-change-setup" type="button">Change setup</button></div></div>
-          <div class="practice-card" id="horde-result" hidden><span class="practice-eyebrow">THE HORDE HELD THE LINE</span><h2>Overrun.</h2><p id="horde-result-copy">Every wave asks more of your aim, positioning and timing.</p><dl class="practice-result-stats"><div><dt>WAVE REACHED</dt><dd id="horde-result-wave">1</dd></div><div><dt>SQUAD KILLS</dt><dd id="horde-result-kills">0</dd></div><div><dt>SURVIVED</dt><dd id="horde-result-time">0:00</dd></div></dl><button class="practice-primary" id="horde-replay" type="button"><span id="horde-replay-label">Make another stand</span><span aria-hidden="true">→</span></button><button class="practice-secondary" id="horde-result-setup" type="button">Change setup</button></div>
+          <div class="practice-card" id="horde-result" role="region" aria-labelledby="horde-result-title" hidden><span class="practice-eyebrow">THE HORDE HELD THE LINE</span><h2 id="horde-result-title">Overrun.</h2><p id="horde-result-copy">Every wave asks more of your aim, positioning and timing.</p><dl class="practice-result-stats horde-result-stats"><div><dt>DAMAGE DEALT</dt><dd id="horde-result-damage">0</dd></div><div><dt>WAVE REACHED</dt><dd id="horde-result-wave">1</dd></div><div><dt id="horde-result-kills-label">HOSTILES DEFEATED</dt><dd id="horde-result-kills">0</dd></div><div><dt>SURVIVED</dt><dd id="horde-result-time">0:00</dd></div></dl><button class="practice-primary" id="horde-replay" type="button"><span id="horde-replay-label">Replay</span><span aria-hidden="true">→</span></button><button class="practice-secondary" id="horde-result-setup" type="button">Change setup</button></div>
           <div class="practice-countdown" id="horde-countdown" hidden><span>YOUR STAND BEGINS</span><strong id="horde-countdown-value">3</strong><small>Watch the entry points. Protect your reloads.</small><button class="practice-primary" id="horde-enter" type="button" hidden><span>Enter the arena</span><span aria-hidden="true">→</span></button></div>
           <div class="practice-card" id="horde-connection-card" hidden><span class="practice-eyebrow">YOUR SQUAD</span><h2 id="horde-connection-title">Connecting…</h2><p id="horde-connection-copy">Finding your seat on the host.</p><a class="practice-primary" href="/"><span>Return to Semag</span><span aria-hidden="true">→</span></a></div>
         </div>

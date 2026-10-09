@@ -1,0 +1,420 @@
+@import './ui.css';
+
+/* Static game shells share the hub's semantic theme; engine artwork and
+   combat colors continue to belong to each game's renderer. */
+html body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font);
+  -webkit-font-smoothing: antialiased;
+}
+body :is(.topbar, .solo-topbar, .room-topbar, .voxel-topbar, .practice-topbar) {
+  border-color: var(--border);
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font);
+}
+body :is(.brand, .practice-brand, .solo-back, .back-link) { color: var(--foreground); }
+body :is(.room-heading, .arena-heading, .solo-heading, .practice-title) h1 {
+  color: var(--foreground);
+  font-family: var(--font);
+  font-weight: 600;
+  letter-spacing: -.04em;
+}
+body :is(.eyebrow, .practice-eyebrow, .solo-launch-kicker, .connection,
+  .practice-title > span, .practice-top-actions > span, .solo-heading > span,
+  .room-ready-note, .room-name-label, .lobby-actions label, .practice-settings > label,
+  .practice-field, .practice-setup-title, .layout-setting > span) {
+  color: var(--muted-foreground);
+  font-family: var(--font);
+  letter-spacing: .02em;
+}
+body :is(.tag, .edition, .room-code-button, .room-code, .solo-play-status) {
+  color: var(--muted-foreground);
+  background: var(--muted);
+  border-color: var(--border);
+  border-radius: calc(var(--radius) - .25rem);
+}
+body :is(.app, .room-app, .solo-app, .voxel-app, .royale-app, .practice-app)
+  :is(.game-shell, .practice-shell, .play-panel, .solo-play-panel) {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: none;
+}
+body :is(.hud, .game-hud, .match-hud, .match-strip, .practice-toolbar, .solo-hud) {
+  background: var(--card);
+  border-color: var(--border);
+  font-family: var(--font);
+}
+body :is(.player-heading > strong, .fighter-label > strong) { color: var(--foreground); }
+body :is(.player-detail > span, .center-hud > span, .round-hud > span,
+  .solo-score > span, .practice-toolbar > div:first-child > span) {
+  color: var(--muted-foreground);
+  font-family: var(--font);
+  letter-spacing: .02em;
+}
+body .room-app :is(.player-detail > span, .center-hud > span) { color: var(--muted-foreground); }
+body :is(.viewport, .game-viewport, .practice-viewport, .solo-game) { background: var(--background); }
+body :is(.objective-bar, .solo-objective, .practice-bottom, .room-footer, .practice-footer) {
+  border-color: var(--border);
+  background: var(--card);
+  color: var(--muted-foreground);
+  font-family: var(--font);
+  letter-spacing: 0;
+}
+body :is(.room-footer, .practice-footer) { background: transparent; }
+body :is(.objective-bar, .solo-objective, .practice-bottom) small { color: var(--muted-foreground); }
+
+/* Native buttons and inputs retain their existing event handlers and IDs. */
+body :is(.primary-button, .ready-button, .practice-primary, .solo-primary, .solo-launch-button) {
+  border: 1px solid var(--primary);
+  border-radius: calc(var(--radius) - .25rem);
+  background: var(--primary);
+  color: var(--primary-foreground);
+  box-shadow: none;
+  font-family: var(--font);
+  font-size: .8125rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-decoration: none;
+}
+body :is(.primary-button, .ready-button, .practice-primary, .solo-primary, .solo-launch-button):hover:not(:disabled) {
+  background: color-mix(in srgb, var(--primary) 90%, var(--background));
+  border-color: color-mix(in srgb, var(--primary) 90%, var(--background));
+}
+body :is(.secondary-button, .practice-secondary, .solo-secondary, .icon-button,
+  .practice-tools > button, .room-controls-button, .room-panel-button,
+  .room-panel-close, .practice-pause, .solo-toolbar-button, .solo-info-close,
+  .practice-guide-close, .practice-secondary-actions > button, .horde-invite > button,
+  .team-choices > button, .cards-action, .cards-text-button, .brawl-choice, .brawl-stage) {
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - .25rem);
+  background: var(--card);
+  color: var(--foreground);
+  box-shadow: none;
+  font-family: var(--font);
+  font-weight: 500;
+  letter-spacing: 0;
+}
+body :is(.secondary-button, .practice-secondary, .solo-secondary, .icon-button,
+  .practice-tools > button, .room-controls-button, .room-panel-button,
+  .room-panel-close, .practice-pause, .solo-toolbar-button, .solo-info-close,
+  .practice-guide-close, .practice-secondary-actions > button, .horde-invite > button,
+  .team-choices > button, .cards-action, .cards-text-button, .brawl-choice, .brawl-stage):hover:not(:disabled) {
+  background: var(--muted);
+  border-color: var(--muted-foreground);
+}
+body :is(.practice-secondary, .practice-primary, .practice-secondary-actions > button,
+  .practice-settings select, .practice-settings input, .horde-invite > button) {
+  min-height: 40px;
+}
+body :is(.is-ready, .practice-secondary[aria-pressed=true],
+  .practice-pause[aria-pressed=true], .team-choices > button[aria-pressed=true],
+  .brawl-choice[aria-pressed=true], .brawl-stage[aria-pressed=true]) {
+  color: var(--foreground);
+  background: var(--muted);
+  border-color: var(--foreground);
+}
+body :is(.room-panel-button > span, .you-label) {
+  background: var(--muted);
+  color: var(--muted-foreground);
+  border-color: var(--border);
+}
+body :is(.practice-settings, .lobby-actions, .name-field, .practice-field,
+  .training-panel, .room-panel, .room-controls, .solo-info-dialog) :is(input, select) {
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - .25rem);
+  background: var(--background);
+  color: var(--foreground);
+  padding: 8px 10px;
+  font-family: var(--font);
+  font-size: .8125rem;
+  line-height: 1.4;
+}
+body :is(input, textarea)::placeholder { color: var(--muted-foreground); }
+/* Legacy FPS sheets pin only this native control with important declarations. */
+body .keyboard-layout-select {
+  background: var(--background) !important;
+  color: var(--foreground) !important;
+  border-color: var(--border) !important;
+  border-radius: calc(var(--radius) - .25rem);
+  font-family: var(--font);
+}
+body :is(button, a, input, select, textarea, summary):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+body :is(.control-line, .solo-control-line, .key-row, .practice-guide, .guide-card) kbd {
+  border: 1px solid var(--border);
+  border-radius: .25rem;
+  background: var(--muted);
+  color: var(--foreground);
+  box-shadow: none;
+}
+
+/* Pause, setup and result cards use one restrained surface treatment. */
+body :is(.practice-overlay, .practice-guide, .guide-dialog) {
+  background: color-mix(in srgb, var(--background) 80%, transparent);
+  overscroll-behavior: contain;
+  scrollbar-color: var(--muted-foreground) var(--card);
+}
+body :is(.practice-overlay, .practice-guide) {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+body :is(.practice-card, .practice-guide-card, .overlay-card, .guide-card,
+  .room-panel-card, .wilds-overlay-card, .wilds-inventory-card,
+  .skyline-overlay-card, .shadow-overlay-card) {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--foreground);
+  box-shadow: 0 20px 60px rgb(0 0 0 / .32);
+  font-family: var(--font);
+  overflow-wrap: anywhere;
+  scrollbar-color: var(--muted-foreground) var(--card);
+}
+body .practice-card {
+  width: min(100%, 520px);
+  max-height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 24px;
+}
+body .practice-guide-card { max-height: 100%; overflow-y: auto; overscroll-behavior: contain; }
+body :is(.practice-card, .practice-guide-card, .overlay-card, .guide-card,
+  .room-panel-card, .wilds-overlay-card, .skyline-overlay-card, .shadow-overlay-card) :is(h2, h3) {
+  color: var(--foreground);
+  font-family: var(--font);
+  font-weight: 600;
+  letter-spacing: -.04em;
+  line-height: 1.2;
+}
+body .practice-card h2 { font-size: 1.75rem; margin: 10px 0; }
+body :is(.practice-card, .practice-guide-card, .overlay-card, .guide-card,
+  .room-panel-card, .wilds-overlay-card, .skyline-overlay-card, .shadow-overlay-card) p,
+body :is(.practice-start-note, .practice-weapon-note, .practice-guide-footnote,
+  .guide-intro, .guide-note, .lobby-note, .room-panel-note, .horde-ready-note) {
+  color: var(--muted-foreground);
+  font-family: var(--font);
+  line-height: 1.6;
+}
+body .practice-card > p { font-size: .8125rem; margin-bottom: 18px; }
+body .practice-card .practice-weapon-note { font-size: .75rem; }
+body :is(.practice-guide-grid, .guide-grid) b { color: var(--foreground); }
+body .practice-settings { gap: 14px; }
+body .practice-settings > label { font-size: .75rem; font-weight: 500; }
+body :is(.practice-settings select, .practice-settings input) { margin-top: 7px; }
+body .fps-starter-kit {
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - .25rem);
+  background: var(--background);
+  color: var(--muted-foreground);
+}
+body .fps-starter-kit > span { color: var(--muted-foreground); }
+body .fps-starter-kit p { color: var(--foreground); font-size: .75rem; }
+body .practice-card .practice-result-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  border-color: var(--border);
+  padding: 18px 0;
+  margin: 20px 0;
+}
+body .practice-card .horde-result-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+body .practice-card .practice-result-stats dt {
+  font: 500 .6875rem/1.4 var(--font);
+  color: var(--muted-foreground);
+  letter-spacing: .02em;
+}
+body .practice-card .practice-result-stats dd {
+  color: var(--foreground);
+  font: 600 1.75rem/1.2 var(--font);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.04em;
+  margin-top: 7px;
+}
+body .practice-card .horde-result-stats > div:first-child dd { color: var(--accent); }
+body :is(.horde-roster > li, .roster > li, .player-roster > li) {
+  border-color: var(--border);
+  border-radius: calc(var(--radius) - .25rem);
+  background: var(--background);
+  color: var(--foreground);
+}
+body :is(.horde-roster > li > span, .roster small, .player-roster small) { color: var(--muted-foreground); }
+body .horde-roster li[data-ready=true] > span { color: var(--foreground); }
+body .horde-roster li[data-empty=true] { color: var(--muted-foreground); }
+body .horde-invite code { color: var(--foreground); }
+body .horde-card #horde-ready[aria-pressed=true] {
+  background: var(--muted);
+  color: var(--foreground);
+  border-color: var(--foreground);
+}
+
+/* Native dialogs preserve the browser's top layer, focus and Escape behavior. */
+body :is(.room-panel, .room-controls, .solo-info-dialog) {
+  background: var(--card);
+  color: var(--foreground);
+  border-color: var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 24px 80px rgb(0 0 0 / .4);
+  scrollbar-color: var(--muted-foreground) var(--card);
+}
+body :is(.room-panel, .room-controls, .solo-info-dialog)::backdrop {
+  background: rgb(0 0 0 / .72);
+}
+body :is(.room-panel-heading, .drawer-heading, .solo-info-header) {
+  background: var(--card);
+  border-color: var(--border);
+}
+body :is(.room-panel, .room-controls, .solo-info-dialog) h2 {
+  color: var(--foreground);
+  font-family: var(--font);
+  font-weight: 600;
+}
+body :is(.party-panel, .controls-panel, .board-instructions, .card-instructions,
+  .brawl-move-card, .training-panel, .practice-setup, .solo-controls-panel,
+  .solo-rules-panel, .solo-extra-info, .cards-progress-panel) {
+  background: var(--card);
+  border-color: var(--border);
+  border-radius: calc(var(--radius) - .25rem);
+  box-shadow: none;
+  color: var(--foreground);
+}
+body :is(.room-panel, .room-controls) :is(.party-panel, .controls-panel,
+  .board-instructions, .card-instructions, .brawl-move-card, .training-panel,
+  .cards-progress-panel) {
+  background: var(--card);
+  color: var(--foreground);
+  border-color: var(--border);
+}
+body :is(.room-panel-note, .controls-session-note, .solo-info-description,
+  .party-player span, .party-ready-hint, .control-line > span:last-child,
+  .solo-control-line > span:last-child, .controls-panel p, .board-instructions p,
+  .board-instructions li, .card-instructions p, .card-instructions li,
+  .solo-rules-panel li, .solo-rules-panel small, .solo-record-note p,
+  .solo-controls-panel > p, .training-panel p, .combat-guide p,
+  .control-group > span) { color: var(--muted-foreground); }
+body :is(.room-invite code, .invite-panel code, .training-panel strong,
+  .controls-title strong, .combat-guide > div > span, .solo-rules-panel summary,
+  .party-player strong, .panel-title h2) { color: var(--foreground); }
+body :is(.invite-panel, .layout-setting, .name-field, .party-player) { border-color: var(--border); }
+body :is(.solo-info-note, .room-panel-button > span) {
+  border-color: var(--border);
+  background: var(--muted);
+  color: var(--muted-foreground);
+}
+body .brawl-mode.brawl-lobby-open .game-viewport,
+body .brawl-lobby { background: var(--card); }
+body :is(.brawl-lobby-heading p, .brawl-lobby-heading > span, .brawl-stage-heading > small,
+  .brawl-move-card > p, .brawl-moves small, .brawl-choice span, .brawl-stage small) {
+  color: var(--muted-foreground);
+}
+body :is(.cards-context, .cards-ledger-entry, .cards-suit-picker, .checkers-history,
+  .checkers-material, .checkers-toolbar, .checkers-notice) {
+  background: var(--card);
+  border-color: var(--border);
+  color: var(--foreground);
+  box-shadow: none;
+}
+body :is(.cards-decision-guide, .cards-public-trail > li, .cards-no-pairs,
+  .cards-match-score > span, .cards-ledger-entry > strong, .cards-ledger-entry > span,
+  .cards-collection-heading > strong, .cards-collection-heading > span,
+  .cards-status, .cards-hint) { color: var(--muted-foreground); }
+
+/* The launch artwork remains pixelated; only its menu chrome adopts the theme. */
+body #solo-app .solo-info-dialog {
+  background: var(--card);
+  color: var(--foreground);
+  border-color: var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 24px 80px rgb(0 0 0 / .4);
+}
+body #solo-app .solo-info-dialog::backdrop { background: rgb(0 0 0 / .72); }
+body #solo-app :is(.solo-info-description, .solo-info-note) { color: var(--muted-foreground); }
+body #solo-app .solo-info-note { background: var(--muted); border-color: var(--border); }
+body #solo-app .solo-info-close {
+  background: var(--card);
+  color: var(--foreground);
+  border-color: var(--border);
+  border-radius: calc(var(--radius) - .25rem);
+}
+body #solo-app :is(.solo-controls-panel, .solo-rules-panel, .solo-extra-info) {
+  background: var(--card);
+  border-color: var(--border);
+  color: var(--foreground);
+}
+body #solo-app .solo-launch-content { font-family: var(--font); }
+body #solo-app .solo-launch-content h2 { font-weight: 600; letter-spacing: -.04em; }
+body #solo-app .solo-launch-content p { color: var(--foreground); }
+body :is(.wilds-toolbar, .wilds-world-info, .wilds-status, .wilds-controls-hint) {
+  color: var(--muted-foreground);
+  font-family: var(--font);
+}
+body :is(.wilds-open-inventory, .wilds-close-inventory, .wilds-sound,
+  .wilds-overlay-actions > button) {
+  border-color: var(--border);
+  border-radius: calc(var(--radius) - .25rem);
+  background: var(--card);
+  color: var(--foreground);
+  font-family: var(--font);
+}
+body :is(.wilds-objective, .wilds-field-guide) {
+  background: var(--card);
+  border-color: var(--border);
+  color: var(--foreground);
+}
+body :is(.wilds-field-guide > summary, .wilds-field-guide > p,
+  .wilds-objective > b, .wilds-save-status) { color: var(--muted-foreground); }
+body :is(.paris-overlay, .highway-overlay, .rift-overlay, .ember-overlay,
+  .starfall-overlay, .ironwood-pause, .deckbound-pause) {
+  background: color-mix(in srgb, var(--card) 94%, transparent);
+  color: var(--foreground);
+  font-family: var(--font);
+  border-color: var(--border);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+body :is(.paris-overlay-title, .highway-overlay-title, .rift-overlay-title,
+  .ember-overlay > strong, .starfall-overlay > strong, .ironwood-pause h2,
+  .deckbound-pause > strong) {
+  color: var(--foreground);
+  font-family: var(--font);
+  font-weight: 600;
+  letter-spacing: -.04em;
+}
+body :is(.paris-overlay-detail, .highway-overlay-detail, .rift-overlay-detail,
+  .ember-overlay p, .starfall-overlay p, .ironwood-pause p,
+  .paris-overlay-eyebrow, .highway-overlay-eyebrow, .rift-overlay-eyebrow,
+  .shadow-overlay-tag, .skyline-overlay-tag, .wilds-overlay-tag,
+  .deckbound-pause > small) { color: var(--muted-foreground); font-family: var(--font); }
+
+@media (max-width: 600px) {
+  body .practice-card { padding: 20px; }
+  body .practice-card h2 { font-size: 1.5rem; }
+  body .practice-card > p { font-size: .75rem; }
+  body :is(.practice-primary, .practice-secondary, .practice-secondary-actions > button,
+    .practice-settings select, .practice-settings input, .horde-invite > button) { min-height: 44px; }
+  body .practice-card .practice-result-stats { gap: 16px 12px; }
+  body .practice-card .practice-result-stats dd { font-size: 1.5rem; }
+  body .practice-card .practice-result-stats dt { font-size: .625rem; }
+}
+@media (max-height: 560px) and (orientation: landscape) {
+  body :is(.practice-overlay, .practice-guide) { padding: 12px; align-items: start; }
+  body .practice-card {
+    width: min(100%, 570px);
+    max-height: min(100%, calc(100dvh - 116px));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 18px 22px;
+  }
+  body .practice-guide-card { max-height: calc(100dvh - 116px); overflow-y: auto; }
+  body :is(.practice-settings select, .practice-settings input, .practice-primary,
+    .practice-secondary, .practice-secondary-actions > button) { min-height: 38px; }
+  body .practice-card h2 { font-size: 1.375rem; margin: 6px 0 8px; }
+  body .practice-card > p { font-size: .75rem; margin-bottom: 12px; }
+  body .practice-card .practice-result-stats { padding: 14px 0; margin: 14px 0; gap: 12px; }
+  body .practice-card .practice-result-stats dd { font-size: 1.375rem; }
+}

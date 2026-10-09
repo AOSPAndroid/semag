@@ -1,0 +1,247 @@
+@import './ui.css';
+
+/* Native hub composition follows the shared semantic shadcn color roles. */
+.modern-hub { background: var(--background); color: var(--foreground); font-family: var(--font); -webkit-font-smoothing: antialiased; }
+.modern-hub .sidebar { position: relative; inset: auto; width: 100%; padding: 18px max(32px, calc((100vw - 1376px) / 2)); background: var(--background); color: var(--foreground); border-bottom: 1px solid var(--border); flex-direction: row; align-items: center; gap: 36px; }
+.modern-hub .hub-brand { flex-shrink: 0; gap: 7px; color: var(--foreground); }
+.modern-hub .hub-brand > .pixel-logo { width: 124px; height: 32px; color: var(--foreground); }
+.modern-hub .brand-sub { margin: 0; font: 600 9px var(--font); letter-spacing: 1.3px; color: var(--accent); }
+.modern-hub .sidebar nav { display: flex; flex-direction: row; align-items: center; gap: 8px; }
+.modern-hub .nav-link { min-height: 40px; padding: 10px 14px; gap: 9px; border: 1px solid transparent; border-radius: calc(var(--radius) - 4px); color: var(--muted-foreground); font-size: 13px; font-weight: 500; }
+.modern-hub .nav-link svg { width: 16px; height: 16px; stroke-width: 1.6; }
+.modern-hub .nav-link span { min-width: 23px; margin-left: 4px; padding: 2px 5px; border-radius: 4px; background: var(--background); color: var(--muted-foreground); font: 500 10px var(--font); text-align: center; }
+.modern-hub .nav-link.active, .modern-hub .nav-link:hover { background: var(--muted); border-color: var(--border); color: var(--foreground); }
+.modern-hub .nav-link.active svg { color: var(--accent); }
+.modern-hub .server-state { margin: 0 0 0 auto; gap: 10px; }
+.modern-hub .server-state > i { width: 6px; height: 6px; background: var(--muted-foreground); }
+.modern-hub .server-state > i.online { background: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 10%, transparent); }
+.modern-hub .server-state strong { color: var(--foreground); font-size: 12px; font-weight: 500; }
+.modern-hub .server-state span { margin-top: 5px; color: var(--muted-foreground); font: 10px var(--font); letter-spacing: .3px; }
+
+.modern-hub .hub-main { width: 100%; max-width: 1440px; margin: 0 auto; padding: 0 32px; }
+.modern-hub .hub-topbar { height: 68px; gap: 24px; border-color: var(--border); }
+.modern-hub .breadcrumb { margin-right: auto; color: var(--muted-foreground); font: 500 10px var(--font); letter-spacing: .7px; }
+.modern-hub .breadcrumb span { margin: 0 10px; color: var(--border); }
+.modern-hub .keyboard-layout-picker { flex-direction: row; align-items: center; gap: 10px; }
+.modern-hub .keyboard-layout-label { color: var(--muted-foreground); font: 500 11px var(--font); letter-spacing: 0; text-transform: none; }
+.modern-hub .keyboard-layout-select { min-height: 36px; max-width: 158px; background: var(--card); border-color: var(--border); border-radius: 6px; color: var(--foreground); font: 12px var(--font); }
+.modern-hub .hub-identity { gap: 10px; }
+.modern-hub .hub-identity > span { color: var(--muted-foreground); font: 500 10px var(--font); letter-spacing: .6px; }
+.modern-hub .hub-identity input { max-width: 130px; min-height: 36px; padding: 8px 10px; text-align: left; border: 1px solid var(--border); border-radius: 6px; background: var(--card); color: var(--foreground); font-size: 12px; }
+.modern-hub .hub-identity > i { width: 32px; height: 32px; border-color: var(--border); border-radius: 8px; background: var(--muted); color: var(--foreground); font-size: 12px; }
+.modern-hub .library-heading { padding: 34px 0 32px; align-items: flex-end; gap: 24px; scroll-margin-top: 24px; }
+.modern-hub .eyebrow { color: var(--muted-foreground); font: 600 10px var(--font); letter-spacing: 1.3px; }
+.modern-hub .library-heading h1 { margin: 9px 0 10px; color: var(--foreground); font-size: 40px; font-weight: 650; letter-spacing: -1.5px; line-height: 1.1; }
+.modern-hub .library-heading h1 > span { color: var(--accent); }
+.modern-hub .library-heading p { color: var(--muted-foreground); font-size: 14px; line-height: 1.6; }
+.modern-hub .library-count { display: flex; align-self: auto; margin: 0 0 4px; gap: 7px; padding: 8px 11px; border: 1px solid var(--border); border-radius: 6px; background: var(--card); color: var(--muted-foreground); font: 10px var(--font); letter-spacing: .5px; white-space: nowrap; }
+.modern-hub .library-count b { color: var(--foreground); font-weight: 600; }
+.modern-hub .library-count i { background: var(--accent); }
+
+.modern-hub .library-layout { display: grid; grid-template-columns: minmax(0, 1fr) 272px; align-items: start; gap: 0 24px; }
+.modern-hub .library-toolbar { grid-column: 1; grid-row: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin: 0 0 22px; }
+.modern-hub .shelf-filters { display: flex; flex-wrap: wrap; flex: 1 1 480px; gap: 6px; margin: 0; }
+.modern-hub .shelf-filters button { min-height: 36px; gap: 7px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--card); color: var(--muted-foreground); font-size: 12px; }
+.modern-hub .shelf-filters button span { color: var(--muted-foreground); font: 10px var(--font); }
+.modern-hub .shelf-filters button[aria-pressed=true] { background: var(--primary); border-color: var(--primary); color: var(--primary-foreground); }
+.modern-hub .shelf-filters button[aria-pressed=true] span { color: var(--primary-foreground); opacity: .7; }
+.modern-hub .shelf-filters button:hover { border-color: var(--muted-foreground); }
+.modern-hub .game-search { flex: 0 1 220px; height: 36px; gap: 9px; padding: 0 11px; border-color: var(--border); border-radius: 6px; background: var(--card); }
+.modern-hub .game-search svg { width: 15px; height: 15px; stroke: var(--muted-foreground); }
+.modern-hub .game-search input { min-width: 0; padding: 8px 0; background: transparent; color: var(--foreground); font: 12px var(--font); }
+.modern-hub .game-search input::placeholder { color: var(--muted-foreground); }
+.modern-hub .game-search:focus-within, .modern-hub .join-panel form:focus-within { outline: 2px solid var(--ring, var(--accent)); outline-offset: 2px; }
+.modern-hub .game-search input:focus-visible, .modern-hub .join-panel input:focus-visible { outline: none; }
+
+.modern-hub .game-grid { grid-column: 1; grid-row: 2; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: stretch; gap: 20px; }
+.modern-hub .game-card { display: flex; flex-direction: column; min-width: 0; border-color: var(--border); border-radius: var(--radius); background: var(--card); box-shadow: none; transition: border-color .18s, transform .18s; }
+.modern-hub .game-card:hover { transform: translateY(-2px); border-color: color-mix(in srgb, var(--foreground) 30%, var(--border)); box-shadow: none; }
+.modern-hub .game-art { flex-shrink: 0; height: auto; aspect-ratio: 15 / 8; background: var(--muted); border-bottom: 1px solid var(--border); }
+.modern-hub .game-art > canvas, .modern-hub .skill-cover { width: 100%; height: 100%; object-fit: cover; }
+.modern-hub .art-badge { top: 12px; left: 12px; max-width: calc(100% - 24px); padding: 5px 8px; border: 1px solid color-mix(in srgb, var(--foreground) 14%, transparent); border-radius: 5px; background: color-mix(in srgb, var(--background) 88%, transparent); color: var(--foreground); font: 500 8px var(--font); letter-spacing: .6px; line-height: 1.4; }
+.modern-hub .art-number { display: none; }
+.modern-hub .game-card-content { display: flex; flex-direction: column; flex: 1; gap: 12px; padding: 18px; }
+.modern-hub .game-card-header { flex: 1; }
+.modern-hub .game-category { align-items: flex-start; gap: 8px; color: var(--muted-foreground); font: 500 9px var(--font); letter-spacing: .4px; line-height: 1.5; }
+.modern-hub .game-category > span:first-child { min-width: 0; }
+.modern-hub .game-category > span:last-child { display: flex; font: 9px var(--font); }
+.modern-hub .game-category i { background: var(--muted-foreground); }
+.modern-hub .game-card h2 { margin: 10px 0 8px; color: var(--foreground); font-size: 21px; font-weight: 600; letter-spacing: -.6px; line-height: 1.25; }
+.modern-hub .game-card p { min-height: 40px; margin: 0; color: var(--muted-foreground); font-size: 12px; line-height: 1.65; }
+.modern-hub .game-card-bottom { display: flex; flex-direction: column; align-items: stretch; gap: 12px; }
+.modern-hub .game-chip { align-self: flex-start; max-width: 100%; padding: 4px 7px; border: 1px solid var(--border); border-radius: 4px; background: var(--muted); color: var(--muted-foreground); font: 500 8px var(--font); letter-spacing: .4px; white-space: normal; line-height: 1.4; }
+.modern-hub .game-card-bottom button { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 38px; padding: 9px 12px; gap: 9px; border: 1px solid var(--primary); border-radius: 6px; background: var(--primary); color: var(--primary-foreground); font-size: 12px; font-weight: 600; }
+.modern-hub .game-card-bottom button:hover { background: color-mix(in srgb, var(--primary) 90%, var(--background)); color: var(--primary-foreground); }
+.modern-hub .game-card-bottom button svg { width: 14px; height: 14px; flex-shrink: 0; stroke: currentColor; }
+.modern-hub .card-practice-link { display: flex; justify-content: space-between; align-items: center; min-height: 36px; margin: 0; padding: 8px 12px; border-color: var(--border); border-radius: 6px; background: transparent; color: var(--muted-foreground); font: 500 12px var(--font); }
+.modern-hub .card-practice-link:hover { background: var(--muted); color: var(--foreground); }
+.modern-hub .horde-card .game-card-bottom { gap: 12px; align-items: stretch; }
+.modern-hub .horde-card .game-chip { font-size: 8px; }
+.modern-hub .horde-card-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.modern-hub .game-card .horde-card-actions button { min-height: 38px; padding: 9px; font-size: 11px; border-radius: 6px; }
+.modern-hub .game-card .horde-card-actions button:first-child { border-color: var(--primary); background: var(--primary); color: var(--primary-foreground); }
+.modern-hub .game-card .horde-card-actions button:last-child { border-color: var(--border); background: transparent; color: var(--foreground); }
+.modern-hub .game-card .horde-card-actions button:last-child:hover { background: var(--muted); }
+.modern-hub .shelf-empty { grid-column: 1; grid-row: 3; margin: 0; padding: 44px 24px; border: 1px dashed var(--border); border-radius: var(--radius); color: var(--muted-foreground); }
+
+.modern-hub .rooms-column { grid-column: 2; grid-row: 1 / span 3; display: flex; flex-direction: column; min-width: 0; gap: 14px; margin: 0; scroll-margin-top: 24px; }
+.modern-hub .rooms-panel, .modern-hub .join-panel, .modern-hub .share-panel { min-height: 0; padding: 18px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); }
+.modern-hub .panel-heading { gap: 10px; }
+.modern-hub .panel-heading h2, .modern-hub .join-panel h2, .modern-hub .share-panel > strong { display: block; margin: 0; color: var(--foreground); font-size: 14px; font-weight: 600; letter-spacing: -.2px; }
+.modern-hub .live-label { padding: 4px 6px; border: 1px solid var(--border); border-radius: 4px; color: var(--muted-foreground); font: 9px var(--font); letter-spacing: .4px; }
+.modern-hub .live-label i, .modern-hub .room-legend i { background: var(--accent); }
+.modern-hub .rooms-list { max-height: 280px; overflow-y: auto; }
+.modern-hub .rooms-empty { display: flex; align-items: flex-start; text-align: left; padding: 22px 0; gap: 6px; }
+.modern-hub .rooms-empty > svg { display: none; }
+.modern-hub .rooms-empty strong { display: block; color: var(--foreground); font: 500 12px var(--font); }
+.modern-hub .rooms-empty p { margin: 0; color: var(--muted-foreground); font-size: 12px; line-height: 1.6; }
+.modern-hub .room-legend { display: flex; border-color: var(--border); padding: 12px 0 0; margin: 0; color: var(--muted-foreground); font: 10px var(--font); }
+.modern-hub .room-item { grid-template-columns: 28px minmax(0, 1fr) auto; gap: 8px; padding: 13px 0; border-color: var(--border); }
+.modern-hub .room-icon { width: 28px; height: 28px; border-color: var(--border); border-radius: 6px; background: var(--muted); color: var(--foreground); font-size: 14px; }
+.modern-hub .room-item strong { max-width: none; color: var(--foreground); font-size: 12px; }
+.modern-hub .room-item small { margin-top: 4px; color: var(--muted-foreground); font-size: 10px; line-height: 1.5; }
+.modern-hub .room-item button { min-height: 32px; padding: 6px 9px; border-color: var(--border); border-radius: 5px; background: var(--muted); color: var(--foreground); font-size: 11px; }
+.modern-hub .room-item button:hover { background: color-mix(in srgb, var(--muted) 80%, var(--foreground) 10%); }
+.modern-hub .room-item button:disabled { background: transparent; color: var(--muted-foreground); border-color: var(--border); }
+.modern-hub .join-panel p, .modern-hub .share-panel > p { display: block; margin: 8px 0 14px; color: var(--muted-foreground); font-size: 12px; line-height: 1.6; }
+.modern-hub .join-panel form { display: flex; margin: 0; border-color: var(--border); border-radius: 6px; background: var(--background); }
+.modern-hub .join-panel input { min-width: 0; min-height: 38px; padding: 10px; letter-spacing: .3px; background: transparent; color: var(--foreground); font: 12px var(--font); }
+.modern-hub .join-panel input::placeholder { color: var(--muted-foreground); letter-spacing: 0; }
+.modern-hub .join-panel form button { min-width: 38px; min-height: 38px; border-color: var(--border); background: var(--muted); color: var(--foreground); }
+.modern-hub .join-panel form button:hover { background: var(--primary); color: var(--primary-foreground); }
+.modern-hub .share-panel code { display: block; margin: 0 0 12px; padding: 9px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--background); color: var(--foreground); font: 11px/1.65 var(--mono); overflow-wrap: anywhere; }
+.modern-hub .share-panel button { display: flex; grid-column: auto; grid-row: auto; align-items: center; justify-content: space-between; width: 100%; min-height: 36px; padding: 8px 10px; gap: 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--muted); color: var(--foreground); font-size: 12px; }
+.modern-hub .share-panel button:hover { border-color: var(--muted-foreground); }
+.modern-hub .share-panel button svg { stroke: currentColor; }
+.modern-hub .share-panel small { display: block; margin-top: 12px; color: var(--muted-foreground); font-size: 10px; line-height: 1.6; }
+.modern-hub .hub-footer { margin-top: 36px; padding: 24px 0; border-color: var(--border); color: var(--muted-foreground); font: 10px var(--font); letter-spacing: .6px; }
+.modern-hub .hub-footer a { color: var(--foreground); font-size: 11px; }
+.modern-hub .hub-footer i { color: var(--accent); }
+.modern-hub .hub-error { background: var(--card); border-color: var(--destructive, var(--accent)); border-radius: 8px; color: var(--foreground); }
+.modern-hub .join-error { color: var(--destructive, var(--accent)); }
+.modern-hub .hub-toast { left: 50%; bottom: 24px; max-width: calc(100% - 32px); border-color: var(--border); border-radius: 8px; background: var(--card); color: var(--foreground); box-shadow: 0 12px 36px color-mix(in srgb, var(--background) 80%, transparent); }
+
+.modern-hub .voxel-setup { width: min(560px, calc(100% - 32px)); max-height: calc(100dvh - 32px); padding: 0; border-color: var(--border); border-radius: var(--radius); background: var(--card); color: var(--foreground); box-shadow: 0 24px 80px color-mix(in srgb, var(--background) 85%, transparent); }
+.modern-hub .voxel-setup::backdrop { background: color-mix(in srgb, var(--background) 82%, transparent); backdrop-filter: blur(8px); }
+.modern-hub .voxel-setup-art { height: 160px; border-color: var(--border); }
+.modern-hub .voxel-setup form { padding: 24px; }
+.modern-hub .setup-header { margin-bottom: 22px; }
+.modern-hub .voxel-setup h2 { margin: 8px 0 10px; color: var(--foreground); font-size: 25px; font-weight: 600; letter-spacing: -.7px; line-height: 1.2; }
+.modern-hub .voxel-setup p { color: var(--muted-foreground); font-size: 13px; line-height: 1.65; }
+.modern-hub .setup-header p { margin: 0; }
+.modern-hub .voxel-modes { gap: 10px; margin-bottom: 22px; }
+.modern-hub .voxel-modes legend, .modern-hub .voxel-map-label, .modern-hub .royale-setting-row label, .modern-hub .horde-settings label { color: var(--foreground); font: 500 12px var(--font); letter-spacing: 0; }
+.modern-hub .voxel-modes label > span { padding: 13px 8px; border-color: var(--border); border-radius: 7px; background: var(--background); }
+.modern-hub .voxel-modes strong { color: var(--foreground); font: 600 20px var(--font); }
+.modern-hub .voxel-modes small { color: var(--muted-foreground); font: 11px var(--font); }
+.modern-hub .voxel-modes input:checked + span { border-color: var(--foreground); box-shadow: inset 0 0 0 1px var(--foreground); background: var(--muted); }
+.modern-hub .voxel-modes input:focus-visible + span { outline: 2px solid var(--ring, var(--accent)); outline-offset: 3px; }
+.modern-hub .voxel-setup select { min-height: 40px; padding: 10px 12px; border-color: var(--border); border-radius: 6px; background: var(--background); color: var(--foreground); font: 13px var(--font); }
+.modern-hub .voxel-setup option { background: var(--card); color: var(--foreground); }
+.modern-hub .royale-setup .royale-setting-row, .modern-hub .horde-settings { grid-template-columns: minmax(0, 1fr) 160px; gap: 16px; margin: 0 0 18px; }
+.modern-hub .voxel-map-preview { padding: 14px; gap: 18px; border-color: var(--border); border-radius: 8px; background: var(--background); }
+.modern-hub .voxel-map-preview svg > rect:first-child { fill: var(--muted); }
+.modern-hub .voxel-map-preview span { color: var(--muted-foreground); font: 10px/1.9 var(--font); letter-spacing: 0; }
+.modern-hub .voxel-map-preview b, .modern-hub .royale-setup .voxel-map-preview b { color: var(--foreground); font-weight: 500; }
+.modern-hub .voxel-map-preview i { background: var(--muted-foreground); }
+.modern-hub .voxel-map-preview i + i { background: var(--accent); }
+.modern-hub .voxel-setup .voxel-map-note, .modern-hub .horde-setup #horde-melee-note { min-height: 0; margin: 10px 0 18px; color: var(--muted-foreground); font: 12px/1.65 var(--font); }
+.modern-hub .royale-setup .royale-start-note, .modern-hub .horde-setup .horde-run-note { margin: 0 0 20px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 7px; background: var(--muted); color: var(--muted-foreground); font-size: 12px; }
+.modern-hub .voxel-setup-actions { gap: 10px; padding-top: 20px; border-color: var(--border); }
+.modern-hub .voxel-setup-actions button { min-height: 40px; padding: 10px 16px; border-color: var(--border); border-radius: 6px; background: transparent; color: var(--foreground); font-size: 13px; font-weight: 500; }
+.modern-hub .voxel-setup-actions button[type=submit] { background: var(--primary); border-color: var(--primary); color: var(--primary-foreground); }
+.modern-hub .voxel-setup-actions button[type=submit]:hover { background: color-mix(in srgb, var(--primary) 90%, var(--background)); }
+.modern-hub .voxel-setup-actions button[type=button]:hover { background: var(--muted); }
+.modern-hub :is(button, a, input, select, summary):focus-visible { outline: 2px solid var(--ring, var(--accent)); outline-offset: 3px; }
+.modern-hub :is(button, input, select):disabled { opacity: .5; cursor: not-allowed; }
+.modern-hub [data-invalid] { color: var(--destructive, var(--accent)); }
+.modern-hub :is(input, select)[aria-invalid=true] { border-color: var(--destructive, var(--accent)); }
+.modern-hub [data-disabled], .modern-hub .setup-field:has(:disabled) { opacity: .6; }
+
+@media (max-width: 1199px) {
+  .modern-hub .library-layout { grid-template-columns: minmax(0, 1fr); }
+  .modern-hub .rooms-column { grid-column: 1; grid-row: 1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-bottom: 24px; }
+  .modern-hub .share-panel { display: block; }
+  .modern-hub .library-toolbar { grid-row: 2; }
+  .modern-hub .game-grid { grid-row: 3; }
+  .modern-hub .shelf-empty { grid-row: 4; }
+  .modern-hub .rooms-list { max-height: 132px; }
+  .modern-hub .share-panel > strong, .modern-hub .share-panel > p, .modern-hub .share-panel code, .modern-hub .share-panel small { grid-column: auto; }
+}
+@media (max-width: 900px) {
+  .modern-hub .sidebar { padding: 16px 24px; gap: 24px; }
+  .modern-hub .hub-main { padding: 0 24px; }
+  .modern-hub .server-state span { display: none; }
+  .modern-hub .hub-identity > span { display: none; }
+  .modern-hub .game-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .modern-hub .library-toolbar { gap: 12px; }
+  .modern-hub .game-search { flex-grow: 1; }
+}
+@media (max-width: 700px) {
+  .modern-hub .sidebar { display: grid; grid-template-columns: minmax(0, 1fr) auto; padding: 16px 20px 12px; gap: 14px; height: auto; }
+  .modern-hub .hub-brand { align-items: flex-start; }
+  .modern-hub .brand-sub { display: none; }
+  .modern-hub .sidebar nav { grid-column: 1 / -1; grid-row: 2; gap: 8px; }
+  .modern-hub .nav-link { flex: 1; min-height: 38px; justify-content: center; padding: 9px 12px; }
+  .modern-hub .nav-link span { margin-left: 0; }
+  .modern-hub .server-state { grid-column: 2; grid-row: 1; margin: 0; gap: 8px; }
+  .modern-hub .server-state strong { font-size: 11px; }
+  .modern-hub .hub-main { padding: 0 20px; }
+  .modern-hub .hub-topbar { min-height: 66px; height: auto; padding: 14px 0; gap: 12px; }
+  .modern-hub .keyboard-layout-picker { gap: 0; }
+  .modern-hub .keyboard-layout-label { display: none; }
+  .modern-hub .keyboard-layout-select { min-height: 38px; max-width: 155px; font-size: 12px; }
+  .modern-hub .hub-identity { gap: 8px; }
+  .modern-hub .hub-identity input { width: 112px; max-width: 112px; min-height: 38px; font-size: 12px; }
+  .modern-hub .library-heading { padding: 28px 0 26px; gap: 14px; }
+  .modern-hub .library-heading h1 { font-size: 34px; letter-spacing: -1.2px; }
+  .modern-hub .library-heading p { max-width: none; font-size: 13px; line-height: 1.7; }
+  .modern-hub .library-count { display: none; }
+  .modern-hub .library-toolbar { grid-row: 1; flex-direction: column; align-items: stretch; gap: 12px; }
+  .modern-hub .shelf-filters { flex: none; flex-wrap: nowrap; padding: 3px 0 5px; overflow-x: auto; scrollbar-width: thin; }
+  .modern-hub .shelf-filters button { flex-shrink: 0; min-height: 36px; padding: 8px 11px; font-size: 12px; }
+  .modern-hub .game-search { flex: none; width: 100%; height: 40px; }
+  .modern-hub .game-grid { grid-row: 2; }
+  .modern-hub .shelf-empty { grid-row: 3; }
+  .modern-hub .rooms-column { grid-row: 4; grid-template-columns: 1fr; gap: 14px; margin: 28px 0 0; }
+  .modern-hub .rooms-panel, .modern-hub .join-panel, .modern-hub .share-panel { padding: 18px; }
+  .modern-hub .rooms-empty { padding: 18px 0; }
+  .modern-hub .room-legend { display: flex; }
+  .modern-hub .join-panel p { display: block; }
+  .modern-hub .share-panel > strong, .modern-hub .share-panel small { display: block; }
+  .modern-hub .share-panel > p { display: block; }
+  .modern-hub .share-panel code { margin-bottom: 12px; font-size: 11px; }
+  .modern-hub .share-panel button { padding: 8px 10px; font-size: 12px; }
+  .modern-hub .hub-footer { gap: 18px; margin-top: 28px; padding: 22px 0; flex-wrap: wrap; font-size: 9px; }
+  .modern-hub .hub-footer > span:last-child { display: none; }
+}
+@media (max-width: 560px) {
+  .modern-hub .game-grid { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+  .modern-hub .game-card-content { padding: 20px; gap: 14px; }
+  .modern-hub .game-card h2 { font-size: 23px; }
+  .modern-hub .game-card p { min-height: 0; font-size: 13px; }
+  .modern-hub .game-card-bottom button, .modern-hub .card-practice-link { min-height: 42px; font-size: 13px; }
+  .modern-hub .game-category, .modern-hub .game-category > span:last-child { font-size: 10px; }
+  .modern-hub .game-chip, .modern-hub .horde-card .game-chip { font-size: 9px; }
+  .modern-hub .game-card .horde-card-actions button { min-height: 42px; padding: 10px 12px; font-size: 12px; }
+  .modern-hub .voxel-setup-art { height: 128px; }
+  .modern-hub .voxel-setup form { padding: 20px; }
+  .modern-hub .voxel-setup h2 { font-size: 23px; }
+  .modern-hub .royale-setup .royale-setting-row, .modern-hub .horde-settings { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .modern-hub .voxel-map-preview { padding: 12px; gap: 14px; }
+  .modern-hub .voxel-map-preview svg, .modern-hub .royale-setup .voxel-map-preview svg, .modern-hub .horde-setup .voxel-map-preview svg { width: 110px; height: 115px; }
+  .modern-hub .voxel-map-preview span { font-size: 10px; }
+  .modern-hub .voxel-setup-actions button { flex: 1; justify-content: center; }
+}
+@media (max-width: 359px) {
+  .modern-hub .hub-main { padding: 0 16px; }
+  .modern-hub .sidebar { padding: 14px 16px 10px; }
+  .modern-hub .keyboard-layout-select { max-width: 138px; }
+  .modern-hub .hub-identity input { width: 95px; }
+  .modern-hub .hub-identity > i { width: 28px; height: 28px; }
+  .modern-hub .voxel-map-preview { flex-direction: column; align-items: flex-start; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .modern-hub .game-card { transition: none; }
+  .modern-hub .game-card:hover { transform: none; }
+}

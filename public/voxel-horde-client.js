@@ -89,6 +89,14 @@ export function hordeWavePresentation(state, tickRate = 120) {
       state?.phase === 'fight' && finite(horde.waveTicks) < tickRate * 2 ? { tag: 'HOLD YOUR GROUND', title: `WAVE ${wave}`, detail: wave >= 4 ? 'Armed hostiles — use solid cover.' : 'Watch the entry points.' } : null };
 }
 
+/** Personal damage comes from accepted HP loss across the whole run. */
+export function hordeResultPresentation(state, playerId = 0, tickRate = 120) {
+  const wave = hordeWavePresentation(state, tickRate);
+  const player = state?.players?.find(player => player.id === playerId && !player.monster);
+  return { wave: wave.wave, kills: wave.kills, elapsed: wave.elapsed,
+    damage: Math.max(0, Math.round(finite(player?.damageDealt))) };
+}
+
 /** The fight-entry card remains reachable after the countdown has disappeared. */
 export function hordeOverlayPresentation(state, { solo = false, connected = true, entered = false, paused = false, alive = false } = {}) {
   if (!state || !solo && !connected) return 'connection';
@@ -324,8 +332,16 @@ export async function bootHorde() {
     const downCopy = player?.revivesThisWave >= 1 ? 'Your revive is spent for this wave. Clear it to return to the fight.' : 'Hold on — teammates can revive you. Clear the wave to return.';
     const spectatorHint = $('horde-spectator').querySelector('span'); if (spectatorHint.textContent !== downCopy) spectatorHint.textContent = downCopy;
     const spectating = !player?.alive && phase === 'fight'; hide('horde-spectator', !spectating || disconnected); const viewed = hordeSpectatorPlayer(state, playerId, spectatorId); text('horde-spectator-name', viewed?.alive ? `WATCHING ${nameFor(viewed.id).toUpperCase()}` : 'SQUAD DOWN');
-    if (phase === 'matchEnd') { text('horde-result-wave', wave.wave); text('horde-result-kills', wave.kills); text('horde-result-time', clock(wave.elapsed)); text('horde-result-copy', `Wave ${wave.wave} · ${wave.kills} hostiles defeated. Find better cover, protect your reloads, and make the next stand count.`); text('horde-replay-label', solo ? 'Make another stand' : playerId === hostId ? 'Open the next squad lobby' : 'Waiting for the host'); $('horde-replay').disabled = !solo && playerId !== hostId; hide('horde-result-setup', !solo); }
-    text('horde-objective', lobby ? solo ? 'Choose your arena and loadout. Start when you’re ready.' : 'Invite up to two friends. Everyone readies; the host starts.' : phase === 'paused' ? 'All movement and combat paused.' : phase === 'intermission' ? `Next wave in ${wave.seconds}s · recover, resupply, reposition.` : !player?.alive ? downCopy : 'Keep an escape route. E picks up drops · F drinks a potion · hold E near a fallen teammate.');
+    if (phase === 'matchEnd') {
+      const result = hordeResultPresentation(state, playerId, engine.TICK_RATE);
+      text('horde-result-damage', result.damage.toLocaleString()); text('horde-result-wave', result.wave);
+      text('horde-result-kills', result.kills); text('horde-result-time', clock(result.elapsed));
+      text('horde-result-kills-label', solo ? 'HOSTILES DEFEATED' : 'SQUAD KILLS');
+      text('horde-result-copy', 'Find better cover, protect your reloads, and make the next stand count.');
+      text('horde-replay-label', solo ? 'Replay' : playerId === hostId ? 'Open the next squad lobby' : 'Waiting for the host');
+      $('horde-replay').disabled = !solo && playerId !== hostId; hide('horde-result-setup', !solo);
+    }
+    text('horde-objective', lobby ? solo ? 'Choose your arena and loadout. Start when you’re ready.' : 'Invite up to two friends. Everyone readies; the host starts.' : phase === 'paused' ? 'All movement and combat paused.' : phase === 'matchEnd' ? solo ? 'Your stand is over. Replay the same challenge, or change your setup.' : 'Squad overrun. The host can open the next lobby.' : phase === 'intermission' ? `Next wave in ${wave.seconds}s · recover, resupply, reposition.` : !player?.alive ? downCopy : 'Keep an escape route. E picks up drops · F drinks a potion · hold E near a fallen teammate.');
     const banner = wave.banner || (phase === 'fight' && now < waveBannerUntil ? { tag: 'HOLD YOUR GROUND', title: `WAVE ${wave.wave}`, detail: wave.wave >= 4 ? 'Armed hostiles — use solid cover.' : 'Watch the entry points.' } : null);
     hide('horde-wave-banner', !banner || modalOpen || paused); if (banner) { text('horde-wave-tag', banner.tag); text('horde-wave-copy', banner.title); text('horde-wave-detail', banner.detail); }
     updateTeam();
@@ -371,7 +387,13 @@ export async function bootHorde() {
     }
     if (state.horde.wave !== lastWave) { lastWave = state.horde.wave; waveBannerUntil = now + 2200; }
     if (state.phase === 'countdown') { const value = Math.ceil(finite(state.phaseTicks) / engine.TICK_RATE); if (value !== lastCountdown) { lastCountdown = value; audio.countdown(value); } }
-    if (state.phase === 'matchEnd' && oldPhase !== 'matchEnd') { clearInputs(); entered = false; paused = false; unlock(); if (solo) stopFrame(); }
+    if (state.phase === 'matchEnd' && oldPhase !== 'matchEnd') {
+      clearInputs(); entered = false; paused = false; unlock();
+      // This is the last solo frame: a throttled refresh could otherwise leave
+      // the fight HUD visible forever after its animation loop stops.
+      updateHUD(true, now);
+      if (solo) { stopFrame(); $('horde-replay').focus({ preventScroll: true }); }
+    }
     if (localPlayer()?.alive === false && oldLife !== undefined) { if (entered) { clearInputs(); unlock(); entered = false; } }
     if (state.phase === 'lobby' && oldPhase !== 'lobby') { clearInputs(); unlock(); entered = paused = false; snapshots = []; timeline.reset(); }
     previousPhase = state.phase;
