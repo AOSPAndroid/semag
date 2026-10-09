@@ -2,6 +2,7 @@ import { mountKeyboardLayoutPicker } from '../keyboard-layout.js';
 import { GAMES, roomUrl, roomCapacity, soloUrl, getName, saveName, hostInfo, copyText } from './shared.js';
 import { chooseVoxelRoom } from './voxel-setup.js';
 import { chooseRoyaleRoom } from './royale-setup.js';
+import { chooseHordeSettings } from './horde-setup.js';
 import { setText, toggleClass } from './dom.js';
 const $ = (id) => document.getElementById(id);
 mountKeyboardLayoutPicker(document.querySelector('[data-keyboard-layout-picker]'));
@@ -15,12 +16,17 @@ function toast(message) { $('hub-toast').textContent = message; $('hub-toast').h
 function updateName() { name = saveName($('hub-name').value); $('hub-name').value = name; $('name-avatar').textContent = name[0].toUpperCase(); }
 $('hub-name').addEventListener('change', updateName);
 $('hub-name').addEventListener('keydown', (event) => { if (event.key === 'Enter') event.target.blur(); });
-document.querySelectorAll('[data-play-solo]').forEach(button => button.addEventListener('click', () => {
+document.querySelectorAll('[data-play-solo]').forEach(button => button.addEventListener('click', async () => {
   const gameId = button.dataset.playSolo;
-  if (GAMES[gameId]?.kind !== 'solo') return;
+  if (GAMES[gameId]?.kind !== 'solo' && !GAMES[gameId]?.supportsSolo) return;
+  if (gameId === 'voxel-horde') {
+    const settings = await chooseHordeSettings($('horde-setup'), { solo: true });
+    if (!settings) return;
+    updateName(); location.href = `${soloUrl(gameId)}&map=${encodeURIComponent(settings.mapId)}&difficulty=${encodeURIComponent(settings.difficulty)}`; return;
+  }
   updateName(); location.href = soloUrl(gameId);
 }));
-const matchesFilter = (game, filter) => filter === 'all' || (['ninja', 'voxel'].includes(filter) ? game?.theme === filter : filter === 'roguelike' ? game?.roguelike === true : ['driving', 'action'].includes(filter) ? game?.genre === filter : (game?.kind === 'solo') === (filter === 'solo'));
+const matchesFilter = (game, filter) => filter === 'all' || (['ninja', 'voxel'].includes(filter) ? game?.theme === filter : filter === 'roguelike' ? game?.roguelike === true : ['driving', 'action'].includes(filter) ? game?.genre === filter : filter === 'solo' ? game?.kind === 'solo' || game?.supportsSolo === true : game?.kind !== 'solo');
 let activeFilter = 'all';
 function filterShelf() {
   const query = $('game-search').value.trim().toLowerCase();
@@ -46,9 +52,10 @@ document.querySelectorAll('[data-filter]').forEach(button => {
 document.querySelectorAll('[data-create-game]').forEach(button => button.addEventListener('click', async () => {
   if (creating) return;
   const gameId = button.dataset.createGame;
-  const settings = gameId === 'voxel-breach' ? await chooseVoxelRoom($('voxel-setup')) : gameId === 'voxel-royale' ? await chooseRoyaleRoom($('royale-setup')) : {};
+  const settings = gameId === 'voxel-breach' ? await chooseVoxelRoom($('voxel-setup')) : gameId === 'voxel-royale' ? await chooseRoyaleRoom($('royale-setup')) : gameId === 'voxel-horde' ? await chooseHordeSettings($('horde-setup')) : {};
   if (!settings || creating) return;
   updateName(); creating = true; error('');
+  const buttonLabel = button.firstChild.textContent;
   document.querySelectorAll('[data-create-game]').forEach(b => { b.disabled = true; });
   button.firstChild.textContent = 'Opening… ';
   try {
@@ -56,7 +63,7 @@ document.querySelectorAll('[data-create-game]').forEach(button => button.addEven
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'The room could not be opened.');
     location.href = roomUrl(data.room);
-  } catch (e) { error(e.message || 'Could not reach your host.'); creating = false; button.firstChild.textContent = 'Create room '; document.querySelectorAll('[data-create-game]').forEach(b => { b.disabled = false; }); }
+  } catch (e) { error(e.message || 'Could not reach your host.'); creating = false; button.firstChild.textContent = buttonLabel; document.querySelectorAll('[data-create-game]').forEach(b => { b.disabled = false; }); }
 }));
 let roomSignature = null;
 function renderRooms() {
@@ -77,7 +84,7 @@ function renderRooms() {
     const title = document.createElement('strong'); title.textContent = room.players.find(p => p?.connected)?.name || room.name || game.title;
     const subtitle = document.createElement('small'); subtitle.textContent = `${game.title}${room.gameId === 'voxel-breach' ? ` · ${capacity / 2}v${capacity / 2}` : ''} · ${count}/${capacity} players`;
     description.append(title, subtitle);
-    const matchUnderway = room.gameId === 'voxel-royale' && room.phase !== 'lobby';
+    const matchUnderway = ['voxel-royale', 'voxel-horde'].includes(room.gameId) && room.phase !== 'lobby';
     const join = document.createElement('button'); join.textContent = matchUnderway ? 'In match' : count >= capacity ? 'Full' : 'Join'; join.disabled = matchUnderway || count >= capacity;
     join.addEventListener('click', () => { updateName(); location.href = roomUrl(room); });
     row.append(icon, description, join); list.append(row);
@@ -106,7 +113,7 @@ $('join-form').addEventListener('submit', async (event) => {
     await refreshRooms();
     const room = rooms.find(room => room.id === code);
     if (!room) throw new Error('Room not found. Check the code or ask your friend to create a new room.');
-    if (room.gameId === 'voxel-royale' && room.phase !== 'lobby') throw new Error('This battle is underway. Ask the host to open the next lobby after the match.');
+    if (['voxel-royale', 'voxel-horde'].includes(room.gameId) && room.phase !== 'lobby') throw new Error('This match is underway. Ask the host to open the next lobby after the match.');
     if (room.players.filter(p => p?.connected).length >= roomCapacity(room)) throw new Error('All seats are taken in that room.');
     location.href = roomUrl(room);
   } catch (e) { $('join-error').textContent = e.message; $('join-error').hidden = false; $('join-button').disabled = false; }

@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#111e19">
+  <title>Voxel Last Stand — Semag</title>
+  <link rel="icon" href="/hub/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/keyboard-layout.css"><link rel="stylesheet" href="/voxel-horde.css">
+</head>
+<body>
+  <main class="practice-app horde-app" id="horde-app" data-phase="lobby">
+    <header class="practice-topbar horde-topbar">
+      <a class="practice-brand" href="/" aria-label="Back to Semag"><span aria-hidden="true">←</span><svg viewBox="0 0 62 16" aria-hidden="true"><use href="/hub/logo.svg#brand" width="62" height="16"/></svg></a>
+      <div class="practice-title"><h1>Voxel Last Stand</h1><span id="horde-mode">WAVE SURVIVAL</span></div>
+      <div class="practice-top-actions"><span id="horde-connection">SOLO / CO-OP</span><div id="horde-keyboard"></div></div>
+    </header>
+    <div class="practice-error horde-error" id="horde-error" role="alert" hidden><span id="horde-error-text"></span><button id="horde-retry" type="button">Retry graphics</button></div>
+    <section class="practice-shell horde-shell" id="horde-shell" aria-label="Monster survival arena">
+      <div class="practice-toolbar">
+        <div><strong id="horde-map-label">Loading arena…</strong><span id="horde-status">HOLD YOUR GROUND</span></div>
+        <div class="practice-metrics horde-metrics"><span>WAVE <b id="horde-wave">—</b></span><span><b id="horde-threat">—</b> HOSTILES</span><span><b id="horde-clock">0:00</b></span></div>
+        <div class="practice-tools"><button id="horde-pause" type="button" aria-label="Pause game" disabled>Ⅱ</button><button id="horde-help" type="button" aria-label="Controls" aria-expanded="false">?</button><button id="horde-sound" type="button" aria-label="Enable sound" aria-pressed="false">♫</button><button id="horde-fullscreen" type="button" aria-label="Enter fullscreen" aria-pressed="false">⛶</button></div>
+      </div>
+      <div class="practice-viewport horde-viewport" id="horde-viewport">
+        <canvas id="horde-canvas" width="1200" height="680" tabindex="0" aria-label="First-person monster survival arena"></canvas>
+        <div class="practice-crosshair" id="horde-crosshair" aria-hidden="true" hidden><i></i><b></b><em></em><span></span></div>
+        <div class="practice-scope" id="horde-scope" aria-hidden="true" hidden><i></i><b></b><em></em><span></span><strong>+</strong></div>
+        <div class="practice-hit" id="horde-hit" aria-hidden="true" hidden>×</div>
+        <div class="practice-damage" id="horde-damage" aria-hidden="true" hidden><i></i></div>
+        <div class="horde-wave-banner" id="horde-wave-banner" role="status" hidden><span id="horde-wave-tag"></span><strong id="horde-wave-copy"></strong><small id="horde-wave-detail"></small></div>
+        <ul class="horde-team" id="horde-team" aria-label="Your squad" hidden></ul>
+        <div class="practice-feedback" id="horde-feedback" role="status" hidden></div>
+        <div class="practice-pickup" id="horde-pickup" hidden><kbd>E</kbd><span><b id="horde-pickup-name"></b><small id="horde-pickup-detail">Pick up supplies</small><span class="horde-revive-track" id="horde-revive-track" role="progressbar" aria-label="Revive progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" hidden><i id="horde-revive-fill"></i></span></span></div>
+        <div class="horde-spectator" id="horde-spectator" hidden><b id="horde-spectator-name">SQUAD VIEW</b><span>Hold on — teammates can revive you. You return between waves.</span><button id="horde-spectator-next" type="button">Next teammate ↻</button></div>
+        <div class="practice-combat horde-combat" id="horde-combat" hidden>
+          <div class="practice-health"><div><span>HEALTH</span><strong id="horde-health">200</strong><small id="horde-health-max">/ 200</small></div><div class="practice-health-track" role="progressbar" aria-label="Health" aria-valuemin="0" aria-valuemax="200" id="horde-health-rail"><i id="horde-health-fill"></i></div><small><kbd id="horde-grenade-key">Q</kbd> FRAG <b id="horde-grenades">1</b><kbd>F</kbd> HEAL <b id="horde-potions">1</b></small></div>
+          <div class="practice-weapon" id="horde-weapon-panel"><span id="horde-weapon-name">CARBINE</span><div><strong id="horde-ammo">24</strong><small id="horde-reserve">/ 72</small></div><p id="horde-weapon-status">RMB AIM · R RELOAD</p><div class="practice-action-track" id="horde-action-track" hidden><i id="horde-action-fill"></i></div></div>
+        </div>
+        <div class="practice-overlay" id="horde-overlay">
+          <form class="practice-card horde-card" id="horde-setup">
+            <span class="practice-eyebrow" id="horde-setup-tag">ONE SQUAD. NO END TO THE HORDE.</span><h2>Make your stand.</h2><p id="horde-setup-copy">Survive relentless waves. Fast hunters close the gap, brutes punish bad routes, and later waves bring guns. Fight for the supplies they leave behind.</p>
+            <div class="practice-settings">
+              <label id="horde-map-field">ARENA<select id="horde-map" aria-label="Survival map"></select></label>
+              <label id="horde-difficulty-field">THREAT<select id="horde-difficulty" aria-label="Difficulty"><option value="veteran">Veteran · relentless</option><option value="nightmare">Nightmare · unforgiving</option></select></label>
+              <label class="practice-loadout">YOUR LOADOUT<select id="horde-weapon" aria-label="Weapon loadout"></select></label>
+              <label class="practice-loadout" id="horde-name-field" hidden>YOUR NAME<input id="horde-name" maxlength="20" autocomplete="nickname" aria-label="Player name"></label>
+            </div>
+            <p class="practice-weapon-note" id="horde-weapon-note"></p>
+            <div id="horde-lobby" hidden><ul class="horde-roster" id="horde-roster" aria-label="Connected players"></ul><div class="horde-invite"><code id="horde-room-code"></code><button id="horde-copy-invite" type="button">Copy invite ↗</button></div><p class="horde-ready-note" id="horde-ready-note">Everyone connects and readies before the host starts.</p><button class="practice-secondary" id="horde-ready" type="button" aria-pressed="false">Ready up</button></div>
+            <button class="practice-primary" id="horde-start" type="submit"><span id="horde-start-label">Start survival</span><span aria-hidden="true">→</span></button><small class="practice-start-note" id="horde-start-note">Solo · starts only when you choose · Esc pauses</small>
+          </form>
+          <div class="practice-card" id="horde-pause-card" hidden><span class="practice-eyebrow" id="horde-pause-tag">TAKE A BREATH</span><h2 id="horde-pause-title">Paused.</h2><p id="horde-pause-copy">The world and every enemy are frozen. Pick your next route.</p><button class="practice-primary" id="horde-resume" type="button"><span>Return to the fight</span><span aria-hidden="true">→</span></button><div class="practice-secondary-actions"><button id="horde-restart" type="button">New solo run</button><button id="horde-change-setup" type="button">Change setup</button></div></div>
+          <div class="practice-card" id="horde-result" hidden><span class="practice-eyebrow">THE HORDE HELD THE LINE</span><h2>Overrun.</h2><p id="horde-result-copy">Every wave asks more of your aim, positioning and timing.</p><dl class="practice-result-stats"><div><dt>WAVE REACHED</dt><dd id="horde-result-wave">1</dd></div><div><dt>SQUAD KILLS</dt><dd id="horde-result-kills">0</dd></div><div><dt>SURVIVED</dt><dd id="horde-result-time">0:00</dd></div></dl><button class="practice-primary" id="horde-replay" type="button"><span id="horde-replay-label">Make another stand</span><span aria-hidden="true">→</span></button><button class="practice-secondary" id="horde-result-setup" type="button">Change setup</button></div>
+          <div class="practice-countdown" id="horde-countdown" hidden><span>YOUR STAND BEGINS</span><strong id="horde-countdown-value">3</strong><small>Watch the entry points. Protect your reloads.</small><button class="practice-primary" id="horde-enter" type="button" hidden><span>Enter the arena</span><span aria-hidden="true">→</span></button></div>
+          <div class="practice-card" id="horde-connection-card" hidden><span class="practice-eyebrow">YOUR SQUAD</span><h2 id="horde-connection-title">Connecting…</h2><p id="horde-connection-copy">Finding your seat on the host.</p><a class="practice-primary" href="/"><span>Return to Semag</span><span aria-hidden="true">→</span></a></div>
+        </div>
+          <div class="practice-guide" id="horde-guide" role="dialog" aria-modal="true" aria-labelledby="horde-guide-title" hidden><div class="practice-guide-card"><button class="practice-guide-close" id="horde-guide-close" type="button" aria-label="Close controls">×</button><span class="practice-eyebrow">POSITION. PRIORITIZE. SURVIVE.</span><h2 id="horde-guide-title">Keep an escape route.</h2><div class="practice-guide-grid"><p><b id="horde-guide-move">WASD</b> or arrows · move<br><b>Mouse</b> · look<br><b>LMB / C</b> · fire or strike<br><b>RMB</b> · aim down sights<br><b>Space</b> · jump onto cover</p><p><b>Ctrl</b> · crouch &nbsp; <b>Shift</b> · walk<br><b>R</b> · reload &nbsp; <b>V</b> · blade / gun<br><b id="horde-guide-grenade">Q</b> · grenade &nbsp; <b>F</b> · drink a potion<br><b>E</b> · pick up supplies / hold to revive<br><b>Esc</b> · pause / release controls</p></div><p class="practice-guide-footnote">Monsters announce their attacks. Hunters rush, brutes need space, and armed enemies punish open ground. Kills can drop health or ammunition: reach it and press E for immediate recovery. F drinks your carried potion; stay still in cover. Clear a wave to recover, resupply and bring fallen teammates back. In co-op, releasing your controls keeps the squad’s battle running.</p><button class="practice-primary" id="horde-guide-back" type="button"><span>Got it</span><span aria-hidden="true">→</span></button></div></div>
+      </div>
+      <div class="practice-touch" id="horde-touch" aria-label="Touch controls"><div class="practice-touch-pad" data-horde-pad="move" aria-label="Move"><i></i><b>MOVE</b></div><div class="practice-touch-actions"><button type="button" data-horde-action="fire" aria-pressed="false">FIRE</button><button type="button" data-horde-action="aim" aria-pressed="false">AIM</button><button type="button" data-horde-action="jump" aria-pressed="false">JUMP</button><button type="button" data-horde-action="reload" aria-pressed="false">RELOAD</button><button type="button" data-horde-action="crouch" aria-pressed="false">CROUCH</button><button type="button" data-horde-action="grenade" aria-pressed="false">FRAG</button><button type="button" data-horde-action="heal" aria-pressed="false">HEAL</button><button type="button" data-horde-action="interact" aria-pressed="false">PICK / REVIVE</button><button type="button" data-horde-action="swap" aria-pressed="false">BLADE</button><button type="button" id="horde-touch-pause">PAUSE</button></div><div class="practice-touch-pad" data-horde-pad="look" aria-label="Look"><i></i><b>LOOK</b></div></div>
+      <div class="practice-bottom horde-bottom"><span id="horde-objective">Choose your arena and loadout. Start when you’re ready.</span><small id="horde-look-hint">WASD MOVE · RMB AIM · ESC PAUSE</small></div>
+    </section>
+  </main>
+  <script type="module" src="/voxel-horde-client.js"></script>
+</body>
+</html>

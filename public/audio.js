@@ -139,6 +139,30 @@ export class GameAudio {
           case 'matchEnd':
             [330, 440, 660].forEach((note, index) => this.tone(note, 0.35, { delay: index * 0.1, gain: 0.2 }));
             break;
+          case 'hordeFight':
+            this.lastCountdown = null;
+            this.noise(0.18, { highpass: 55, lowpass: 750, gain: 0.22 });
+            this.tone(92, 0.38, { end: 48, type: 'triangle', gain: 0.3 });
+            this.tone(184, 0.13, { delay: 0.08, end: 120, gain: 0.12 });
+            break;
+          case 'hordeClear':
+            [294, 392, 588].forEach((note, index) => this.tone(note, 0.24, { delay: index * 0.1, type: 'triangle', gain: 0.18 }));
+            break;
+          case 'hordeRevive':
+            this.tone(392, 0.14, { end: 588, type: 'triangle', gain: 0.2 });
+            this.tone(784, 0.2, { delay: 0.12, gain: 0.12 });
+            break;
+          case 'hordeEnd':
+            this.tone(146, 0.4, { end: 73, type: 'triangle', gain: 0.24 });
+            this.tone(110, 0.48, { delay: 0.15, end: 55, type: 'triangle', gain: 0.16 });
+            break;
+          case 'monsterWindup':
+            this.noise(0.12, { highpass: 65, lowpass: 950, gain: 0.12 });
+            this.tone(event.monsterType === 'brute' ? 82 : 128, 0.16, { end: 48, type: 'sawtooth', gain: 0.06 });
+            break;
+          case 'monsterAim':
+            this.tone(540, 0.11, { end: 810, type: 'triangle', gain: 0.1 });
+            break;
         }
       } catch {
         // Sound support must never interrupt input or the simulation.

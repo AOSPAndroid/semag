@@ -1,9 +1,9 @@
 {
   "name": "fireside-game-hub",
-  "version": "3.23.0",
+  "version": "3.24.0",
   "private": true,
   "type": "module",
-  "description": "A self-hosted game hub with voxel survival, battle royale and tactical FPS, ninja games, roguelikes, driving, and classic games.",
+  "description": "A self-hosted game hub with co-op monster wave survival, voxel survival, battle royale, tactical FPS, ninja games, roguelikes, driving, and classics.",
   "scripts": {
     "start": "node server.js",
     "test": "node --test test/*.test.js"

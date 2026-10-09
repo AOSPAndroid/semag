@@ -129,10 +129,15 @@ test('quiet lobbies use 10 Hz snapshots; countdown and combat retain 60 Hz and i
   await first.untilState(packet => packet.state.phase === 'countdown', { after });
   room.state.phaseTicks = 1; game.app.tick();
   assert.equal(room.state.phase, 'fight');
+  const transitionTick = room.state.tick;
   after = first.messages.length;
   for (let i = 0; i < 120; i++) game.app.tick();
   await flushPeer(first);
-  assert.equal(first.messages.slice(after).filter(packet => packet.type === 'state').length, 60);
+  const combatPackets = first.messages.slice(after).filter(packet => packet.type === 'state');
+  assert.equal(combatPackets.length, 61, 'one immediate phase commit plus exactly 60 periodic snapshots');
+  assert.equal(combatPackets[0].state.phase, 'fight');
+  assert.equal(combatPackets[0].state.tick, transitionTick);
+  for (let index = 1; index < combatPackets.length; index++) assert.equal(combatPackets[index].state.tick, transitionTick + index * 2, 'steady combat remains 60 Hz');
 });
 
 test('host timer sleeps with no peers and wakes correctly after a complete disconnect', async t => {

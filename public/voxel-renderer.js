@@ -14,6 +14,7 @@ const TEAM_COLORS = ['#efad64', '#66d3c8'];
 const SURVIVOR_COLORS = ['#cfb785', '#94bca3', '#c69e8f', '#a9b6d5', '#b4a0c3', '#d2aa6e', '#8bb7b8', '#c5bd8b', '#9bac80', '#c897b1'];
 const ROYALE_THEMES = new Set(['forest', 'maze', 'desert']);
 const MAX_LOOT = 128;
+const MAX_SPAWN_WARNINGS = 4;
 const TAU = Math.PI * 2;
 const ATMOSPHERE = Object.freeze({
   courtyard: { sun: [-.52, .76, .39], direct: [.66, .51, .35], ambient: [.45, .52, .60], top: '#729aac', horizon: '#efd1ac', sunColor: '#ffe2a6' },
@@ -1923,6 +1924,172 @@ export function createLootPresenter() {
   return present;
 }
 
+const MONSTER_ART = Object.freeze({
+  stalker: { skin: '#718e79', shadow: '#374f49', armor: '#435b53', eye: '#ddf19b', width: .38, head: '#829d83' },
+  runner: { skin: '#9689aa', shadow: '#493c5e', armor: '#66597c', eye: '#c9b3ff', width: .32, head: '#524967' },
+  brute: { skin: '#837a6b', shadow: '#443e3c', armor: '#7c6350', eye: '#ffb077', width: .47, head: '#665244' },
+  gunner: { skin: '#839e97', shadow: '#324b4e', armor: '#476975', eye: '#a6f0df', width: .40, head: '#4e6970' },
+  sniper: { skin: '#8b92a3', shadow: '#303f57', armor: '#536582', eye: '#a5d5ff', width: .35, head: '#3e506d' },
+});
+
+function monsterParts(mesh, player, time) {
+  const type = MONSTER_ART[player.monsterType] ? player.monsterType : 'stalker', art = MONSTER_ART[type];
+  const yaw = finite(player.yaw), pose = { x: player.x, y: finite(player.y), z: player.z, yaw };
+  const windup = player.monsterState === 'windup' ? 1 - clamp(finite(player.attackTicks) / Math.max(1, finite(player.attackDuration, 1)), 0, 1) : 0;
+  const aiming = player.monsterState === 'aiming', armed = type === 'gunner' || type === 'sniper';
+  const speed = Math.hypot(finite(player.vx), finite(player.vz));
+  const stride = Math.sin(finite(time) * (type === 'runner' ? .018 : .011) + hash(player.id) % 30) * clamp(speed / 6, 0, 1) * .025;
+  const box = (x, y, z, w, h, d, color) => mesh.box(x, y, z, w, h, d, color, pose);
+  const front = (x, y, z, w, h, color) => {
+    const points = [[x, y, z], [x, y + h, z], [x + w, y + h, z], [x + w, y, z]].map(point => {
+      const p = rotate(point, yaw); return [p[0] + pose.x, p[1] + pose.y, p[2] + pose.z];
+    });
+    mesh.quad(...points, rotate([0, 0, -1], yaw), rgba(color));
+  };
+  // Every moving anatomical corner stays inside the shared .29 body and .22
+  // head shooting boxes at every yaw, including the claw windup. Bigger armor
+  // fills that envelope; it does not imply an unhittable oversized brute.
+  for (const [x, step] of [[-.22, stride], [.06, -stride]]) {
+    box(x, .018, -.13 + step, .16, .16, .26, art.shadow);
+    box(x + .018, .17, -.075 + step, .124, .64, .16, art.skin);
+    box(x + .008, .45, -.096 + step, .144, .16, .028, art.armor);
+    front(x + .027, .474, -.1245 + step, .106, .018, type === 'brute' ? '#c6a282' : '#a6b29b');
+    front(x + .036, .23, -.0754 + step, .024, .135, art.shadow);
+  }
+  box(-art.width / 2, .79, -.15, art.width, .59, .30, art.skin);
+  box(-.145, 1.375, -.10, .29, .105, .20, art.shadow);
+  if (type === 'brute') {
+    box(-.22, .86, -.15, .44, .43, .028, art.armor);
+    front(-.198, .91, -.1785, .396, .035, '#ba936b');
+    front(-.198, 1.07, -.1785, .396, .018, '#332f30');
+    front(-.026, .89, -.1788, .052, .36, '#bc885b');
+    for (const side of [-1, 1]) box(side < 0 ? -.24 : .16, 1.24, -.105, .08, .15, .21, '#9a7855');
+  } else if (armed) {
+    box(-.177, .89, -.152, .354, .36, .026, art.armor);
+    for (const x of [-.16, -.054, .052]) {
+      box(x, .93, -.177, .09, .16, .030, art.shadow);
+      front(x + .012, .956, -.2075, .066, .023, type === 'sniper' ? '#9ebad0' : '#afc9b6');
+    }
+    front(-.149, 1.176, -.1785, .298, .024, '#9da8a1');
+  } else {
+    // Flush rib paint and a narrow luminous sternum read as an original ghoul,
+    // rather than an ordinary operator with a green team tint.
+    for (let rib = 0; rib < 4; rib++) {
+      const width = art.width * .72 - rib * .026;
+      front(-width / 2, .89 + rib * .089, -.1505, width, .021, art.shadow);
+    }
+    front(-.027, .902, -.151, .054, .30, type === 'runner' ? '#a294c2' : '#bac899');
+    if (type === 'runner') {
+      box(-.155, 1.265, -.156, .31, .113, .029, art.armor);
+      front(-.138, 1.28, -.1855, .276, .018, '#a998c8');
+    }
+  }
+  for (const side of [-1, 1]) {
+    const x = side < 0 ? -.235 : .165;
+    const lift = armed ? .09 : windup * .20, forward = -.116 - windup * .030;
+    box(x, .83 + lift, forward, .070, .42, .15, art.skin);
+    box(x - (side < 0 ? 0 : .005), .805 + lift, forward - .021, .075, .15, .16, art.armor);
+    if (!armed) for (let claw = 0; claw < 2; claw++) box(x + .012 + claw * .027, .75 + lift, forward - .021, .013, .115, .025, '#d4d7b4');
+    front(x + .015, 1.15 + lift, forward - .0006, .04, .055, art.shadow);
+  }
+  const helmet = type === 'brute' || armed;
+  const headWidth = type === 'brute' ? .31 : type === 'runner' ? .265 : .29;
+  box(-headWidth / 2, 1.48, -.125, headWidth, .25, .25, art.head);
+  box(-headWidth / 2 + .014, 1.73, -.113, headWidth - .028, .07, .226, helmet ? art.armor : art.skin);
+  if (helmet) {
+    front(-headWidth / 2 + .018, 1.637, -.1257, headWidth - .036, .041, art.armor);
+    front(-.108, 1.51, -.126, .216, .077, art.shadow);
+    for (const x of [-.071, -.019, .033]) front(x, 1.528, -.1265, .032, .025, '#849187');
+  } else {
+    front(-.108, 1.512, -.126, .216, .079, art.shadow);
+    for (const x of [-.089, -.022, .045]) front(x, 1.525, -.1265, .044, .024, '#c7c4ad');
+    front(-.025, 1.664, -.126, .05, .066, art.shadow);
+  }
+  const danger = windup > .55 || aiming;
+  const eyes = danger ? '#ffe1a0' : art.eye;
+  for (const x of [-.111, .027]) {
+    front(x, 1.603, -.1263, .084, .033, '#202f33');
+    front(x + .009, 1.611, -.1268, .066, danger ? .025 : .012, eyes);
+  }
+  if (type === 'sniper') {
+    box(-.162, 1.68, -.137, .324, .059, .274, art.armor);
+    front(-.150, 1.696, -.1376, .30, .013, '#92aac7');
+  } else if (type === 'runner') {
+    front(-.129, 1.564, -.1265, .258, .021, '#b2a0c5');
+    front(-.013, 1.489, -.1267, .026, .063, '#9387a5');
+  }
+  return { type, armed, art, pose, yaw, pitch: clamp(finite(player.pitch) + finite(player.recoil), -1.45, 1.45) };
+}
+
+/** Inspectable anatomy excludes the gun, which uses the same real cover sweep as operators. */
+export function monsterMeshes(player, time = 0) {
+  const mesh = new Mesh(); monsterParts(mesh, player, finite(time)); return mesh.array;
+}
+
+function monsterMesh(mesh, player, map, time) {
+  const { armed, art, pose, yaw, pitch } = monsterParts(mesh, player, time);
+  if (!armed) return;
+  const offset = rotate([.12, 1.24, -.18], yaw), reloadProgress = player.reloadTicks > 0 ? clamp(1 - player.reloadTicks / (WEAPONS[player.weapon]?.reloadTicks || 252), 0, 1) : 0;
+  const gunPose = { x: pose.x + offset[0], y: pose.y + offset[1], z: pose.z + offset[2], yaw, pitch, scale: .84 };
+  const direction = [Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch)];
+  const limit = Math.max(0, rayCoverDistance([gunPose.x, gunPose.y, gunPose.z], direction, map.colliders || [], weaponLength(player.weapon) * gunPose.scale + .12, weaponCoverPadding(player.weapon, gunPose.scale, reloadProgress)) - .025) / gunPose.scale;
+  weaponParts(mesh, player.weapon, gunPose, { limit, stock: art.armor, reloadProgress, aim: aimProgress(player), loaded: player.ammo > 0, cycle: 1 - finite(player.shotCooldown) / (WEAPONS[player.weapon]?.cooldown || 1) });
+  mesh.box(-.07, -.14, -.10, .13, .14, .16, art.skin, gunPose);
+}
+
+function fallenSurvivorKit(mesh, contacts, player, cameraYaw) {
+  const pose = { x: player.x, y: finite(player.y), z: player.z, yaw: finite(player.yaw) }, mint = '#a3e6b7';
+  mesh.box(-.15, .023, -.20, .30, .12, .40, '#394b4c', pose);
+  mesh.box(-.125, .143, -.165, .25, .055, .33, '#8d8b6f', pose);
+  for (const x of [-.092, .065]) mesh.box(x, .035, -.206, .027, .138, .018, '#bcb294', pose);
+  mesh.box(-.11, .198, -.095, .22, .087, .19, '#566c61', pose);
+  mesh.box(-.08, .245, -.125, .16, .028, .034, '#bfc9a7', pose);
+  // A face-on cross is ordinary depth-tested world geometry, so a fallen
+  // teammate is easy to locate without a marker revealing them through walls.
+  const marker = { x: pose.x, y: pose.y, z: pose.z, yaw: finite(cameraYaw) };
+  mesh.box(-.039, .46, -.015, .078, .28, .03, mint, marker);
+  mesh.box(-.14, .561, -.015, .28, .078, .03, mint, marker);
+  contacts.floorRing(pose.x, pose.z, .23, .26, rgba(mint, .55), pose.y + .016, 12);
+}
+
+function validSpawnWarning(warning) {
+  return warning && [warning.x, warning.y, warning.z, warning.ticksLeft, warning.durationTicks].every(Number.isFinite) && warning.ticksLeft > 0 && warning.durationTicks > 0;
+}
+
+/** Four small rifts identify the actual pending spawn points before enemies arrive. */
+export function createSpawnWarningPresenter() {
+  const cache = new Map(), output = new Mesh(); let builds = 0;
+  const present = (warnings = [], time = 0) => {
+    output.reset(); const kept = new Set(); let count = 0;
+    for (const warning of warnings) {
+      if (count >= MAX_SPAWN_WARNINGS) break;
+      if (!validSpawnWarning(warning)) continue;
+      const key = warning.id ?? `slot-${count}`; let entry = cache.get(key);
+      if (!entry || ['x', 'y', 'z', 'monsterType'].some(field => entry.source[field] !== warning[field])) {
+        const base = new Mesh(), color = rgba(MONSTER_ART[warning.monsterType]?.eye || '#c9b3ff', .55);
+        base.floorRing(warning.x, warning.z, .34, .395, color, warning.y + .027, 12);
+        base.floorRing(warning.x, warning.z, .47, .492, shade(color, .85), warning.y + .025, 12);
+        for (const [dx, dz] of [[-.29, -.29], [.29, -.29], [-.29, .29], [.29, .29]]) {
+          for (let tier = 0; tier < 3; tier++) base.box(warning.x + dx - .017, warning.y + .07 + tier * .145, warning.z + dz - .017, .034, .077, .034, color);
+        }
+        entry = { source: { x: warning.x, y: warning.y, z: warning.z, monsterType: warning.monsterType }, base: base.array, animated: base.array.slice() };
+        cache.set(key, entry); builds++;
+      }
+      const progress = 1 - clamp(warning.ticksLeft / warning.durationTicks, 0, 1), glow = .58 + Math.sin(finite(time) * .008 + hash(key) % 13) * .16 + progress * .25;
+      for (let at = 0; at < entry.base.length; at += VERTEX_STRIDE) {
+        entry.animated[at + 1] = warning.y + .025 + (entry.base[at + 1] - warning.y - .025) * (.40 + progress * .60);
+        entry.animated[at + 9] = entry.base[at + 9] * glow;
+      }
+      output.append(entry.animated); kept.add(key); count++;
+    }
+    for (const key of cache.keys()) if (!kept.has(key)) cache.delete(key);
+    return { contacts: output.array, count };
+  };
+  present.reset = () => { cache.clear(); output.reset(); builds = 0; };
+  present.getStats = () => ({ cachedItems: cache.size, builds, bufferBytes: output.storage.byteLength, templateBytes: [...cache.values()].reduce((bytes, entry) => bytes + entry.base.byteLength + entry.animated.byteLength, 0) });
+  return present;
+}
+
 /** The circle is a ground projection; outside danger comes from surface haze. */
 export function stormMesh(storm) {
   const mesh = new Mesh();
@@ -2097,11 +2264,11 @@ export class VoxelRenderer {
     this.gl = canvas.getContext('webgl', { alpha: false, antialias: false, depth: true, powerPreference: 'high-performance', preserveDrawingBuffer: false }) || canvas.getContext('experimental-webgl');
     if (!this.gl) throw new Error('Voxel Breach needs WebGL. Enable hardware acceleration in your browser and reopen the game.');
     this.available = true; this.contextLost = false; this.error = null; this.destroyed = false;
-    this.mapCache = new Map(); this.mapId = null; this.effectMap = null; this.effectGameId = null; this.effectRound = null; this.effectPhase = null; this.eventIds = new Set(); this.eventQueue = [];
+    this.mapCache = new Map(); this.hordeMaps = new WeakMap(); this.mapId = null; this.effectMap = null; this.effectGameId = null; this.effectRound = null; this.effectPhase = null; this.eventIds = new Set(); this.eventQueue = [];
     this.particles = []; this.tracers = []; this.localShot = null; this.localReload = null;
     this.lastAim = null; this.swayX = 0; this.swayY = 0;
     this.frameMeshes = { world: new Mesh(), contact: new Mesh(), tracer: new Mesh(), weapon: new Mesh() };
-    this.presentLoot = createLootPresenter(); this.presentEye = createEyeHeightPresenter(); this.resizeReads = 0;
+    this.presentLoot = createLootPresenter(); this.presentWarnings = createSpawnWarningPresenter(); this.presentEye = createEyeHeightPresenter(); this.resizeReads = 0;
     this._frameDrawCalls = 0; this._frameDynamicVertices = 0; this._mapVertices = 0; this._lootItems = 0; this._stormVertices = 0;
     this._onLost = event => {
       event.preventDefault(); this.contextLost = true; this.available = false;
@@ -2208,7 +2375,7 @@ export class VoxelRenderer {
     return { buffer, count: array.length / VERTEX_STRIDE };
   }
   _events(state, time, localId) {
-    const combat = !state.phase || ['fight', 'roundEnd', 'matchEnd'].includes(state.phase);
+    const combat = !state.phase || ['fight', 'roundEnd', 'matchEnd'].includes(state.phase) || (state.gameId === 'voxel-horde' && state.phase === 'intermission');
     const map = typeof state.map === 'object' && state.map?.colliders ? state.map : MAPS[state.mapId];
     for (const event of state.events || []) {
       const key = event.id ?? `${event.tick}:${event.type}:${event.playerId}:${event.shotIndex ?? ''}`;
@@ -2259,7 +2426,7 @@ export class VoxelRenderer {
     this.particles = this.particles.filter(particle => time - particle.born < particle.life);
   }
   _bomb(mesh, state, players, time) {
-    if (state.gameId === 'voxel-royale') return;
+    if (state.gameId === 'voxel-royale' || state.gameId === 'voxel-horde') return;
     const bomb = state.bomb;
     if (!bomb) return;
     if (bomb.status === 'carried') {
@@ -2445,10 +2612,16 @@ export class VoxelRenderer {
   }
   render(state, options = {}) {
     if (this.destroyed || this.contextLost || !this.available || !state) return false;
-    const map = typeof state.map === 'object' && state.map?.colliders ? state.map : MAPS[state.mapId] || MAPS.courtyard;
+    let map = typeof state.map === 'object' && state.map?.colliders ? state.map : MAPS[state.mapId] || MAPS.courtyard;
     if (!map) return false;
     const players = state.players || state.fighters || [];
     const freeForAll = state.gameId === 'voxel-royale';
+    const horde = state.gameId === 'voxel-horde';
+    if (horde && map.sites?.length) {
+      let presentation = this.hordeMaps.get(map);
+      if (!presentation) { presentation = { ...map, sites: [] }; this.hordeMaps.set(map, presentation); }
+      map = presentation;
+    }
     const localId = options.localId ?? options.playerId;
     let cameraPlayer = options.viewPlayer ?? options.cameraPlayer ?? options.predictedPlayer ?? options.localPlayer ?? players.find(player => player.id === localId) ?? players.find(player => player.alive) ?? players[0];
     if (typeof cameraPlayer === 'string' || typeof cameraPlayer === 'number') cameraPlayer = players.find(player => player.id === cameraPlayer);
@@ -2498,8 +2671,14 @@ export class VoxelRenderer {
     this._draw(cached.shadows); gl.depthMask(true); gl.disable(gl.BLEND);
     const dynamic = this.frameMeshes.world.reset(), contacts = this.frameMeshes.contact.reset(), local = players.find(player => player.id === localId) || cameraPlayer;
     for (const player of players) {
-      if (!player.alive || player.id === cameraPlayer.id || !Number.isFinite(player.x) || !Number.isFinite(player.z)) continue;
-      playerMesh(dynamic, player, map, time, !freeForAll && player.team === local.team, freeForAll);
+      if (!Number.isFinite(player.x) || !Number.isFinite(player.z)) continue;
+      if (!player.alive) {
+        if (horde && player.human && player.connected && player.participating && player.revivesThisWave < 1 && ['fight', 'paused'].includes(state.phase)) fallenSurvivorKit(dynamic, contacts, player, yaw);
+        continue;
+      }
+      if (player.id === cameraPlayer.id) continue;
+      if (horde && player.monsterType) monsterMesh(dynamic, player, map, time);
+      else playerMesh(dynamic, player, map, time, !freeForAll && player.team === local.team, freeForAll);
       const support = surfaceBelow(map.colliders, player.x, player.z, finite(player.y) + .045);
       const ground = support ? support.y + support.h : 0;
       const altitude = Math.max(0, finite(player.y) - ground), spread = .26 + Math.min(.22, altitude * .08), opacity = .15 / (1 + altitude);
@@ -2510,11 +2689,17 @@ export class VoxelRenderer {
         contacts.floor(minX, minZ, maxX - minX, maxZ - minZ, [.035, .055, .08, opacity], ground + .012 + (2 - layer) * .0003);
       }
     }
-    this._lootItems = 0; this._stormVertices = 0;
-    if (freeForAll) {
-      const loot = this.presentLoot(state.loot || [], time), boundary = stormMesh(storm);
-      dynamic.append(loot.opaque); contacts.append(loot.contacts); contacts.append(boundary);
-      this._lootItems = loot.count; this._stormVertices = boundary.length / VERTEX_STRIDE;
+    this._lootItems = 0; this._stormVertices = 0; this._spawnWarnings = 0;
+    if (freeForAll || horde) {
+      const loot = this.presentLoot(state.loot || [], time);
+      dynamic.append(loot.opaque); contacts.append(loot.contacts);
+      this._lootItems = loot.count;
+      if (freeForAll) {
+        const boundary = stormMesh(storm); contacts.append(boundary); this._stormVertices = boundary.length / VERTEX_STRIDE;
+      } else {
+        const warnings = this.presentWarnings(state.spawnWarnings || [], time);
+        contacts.append(warnings.contacts); this._spawnWarnings = warnings.count;
+      }
     }
     this._bomb(dynamic, state, players.filter(player => player.id !== cameraPlayer.id), time);
     this._grenades(dynamic, contacts, state, map, time);
@@ -2564,14 +2749,14 @@ export class VoxelRenderer {
     return true;
   }
   get stats() {
-    const loot = this.presentLoot?.getStats();
-    return Object.freeze({ mapId: this.mapId, mapVertices: this._mapVertices, cachedMaps: this.mapCache.size, drawCalls: this._frameDrawCalls, dynamicVertices: this._frameDynamicVertices, lootItems: this._lootItems, stormVertices: this._stormVertices, bloodParticles: this.particles.filter(particle => particle.material === 'blood').length, visibleBloodParticles: this._visibleBloodParticles || 0, cachedLootItems: loot?.cachedItems || 0, lootGeometryBuilds: loot?.builds || 0, geometryBufferBytes: Object.values(this.frameMeshes || {}).reduce((bytes, mesh) => bytes + mesh.storage.byteLength, 0) + (loot?.bufferBytes || 0) + (loot?.templateBytes || 0), cameraEyeHeight: this.cameraEyeHeight, resizeReads: this.resizeReads });
+    const loot = this.presentLoot?.getStats(), warnings = this.presentWarnings?.getStats();
+    return Object.freeze({ mapId: this.mapId, mapVertices: this._mapVertices, cachedMaps: this.mapCache.size, drawCalls: this._frameDrawCalls, dynamicVertices: this._frameDynamicVertices, lootItems: this._lootItems, stormVertices: this._stormVertices, spawnWarnings: this._spawnWarnings || 0, cachedSpawnWarnings: warnings?.cachedItems || 0, spawnWarningBuilds: warnings?.builds || 0, bloodParticles: this.particles.filter(particle => particle.material === 'blood').length, visibleBloodParticles: this._visibleBloodParticles || 0, cachedLootItems: loot?.cachedItems || 0, lootGeometryBuilds: loot?.builds || 0, geometryBufferBytes: Object.values(this.frameMeshes || {}).reduce((bytes, mesh) => bytes + mesh.storage.byteLength, 0) + (loot?.bufferBytes || 0) + (loot?.templateBytes || 0) + (warnings?.bufferBytes || 0) + (warnings?.templateBytes || 0), cameraEyeHeight: this.cameraEyeHeight, resizeReads: this.resizeReads });
   }
   resetEffects() {
     this.eventIds.clear(); this.eventQueue.length = 0; this.particles.length = 0; this.tracers.length = 0;
     this._visibleBloodParticles = 0;
     this.localShot = null; this.localReload = null; this.lastAim = null; this.swayX = 0; this.swayY = 0;
-    this.presentLoot?.reset(); this.presentEye?.reset();
+    this.presentLoot?.reset(); this.presentWarnings?.reset(); this.presentEye?.reset(); this._spawnWarnings = 0;
   }
   destroy() {
     if (this.destroyed) return;

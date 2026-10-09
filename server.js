@@ -17,6 +17,7 @@ import * as Vector from './public/vector-engine.js';
 import * as Shinobi from './public/shinobi-engine.js';
 import * as Voxel from './public/voxel-engine.js';
 import * as Royale from './public/voxel-royale-engine.js';
+import * as Horde from './public/voxel-horde-engine.js';
 import { enableLagCompensation, isValidViewTick, setShotViewTick } from './public/voxel-lag-compensation.js';
 import * as Brawl from './public/brawl-engine.js';
 import { createFpsInputQueue, FPS_EDGE_ACTIONS } from './public/voxel-input-queue.js';
@@ -58,6 +59,12 @@ const GAMES = {
     numericControls: { yaw: { min: -Math.PI, max: Math.PI, default: 0 }, pitch: { min: -1.35, max: 1.35, default: 0 } },
     latestInput: true, snapshotInterval: 4, compensateHitscan: true,
     snapshotState: state => ({ ...state, map: undefined, fighters: undefined }),
+  },
+  'voxel-horde': {
+    title: 'Voxel Last Stand', engine: Horde, makeState: settings => Horde.createState(settings), inputKeys: Horde.INPUT_KEYS,
+    numericControls: { yaw: { min: -Math.PI, max: Math.PI, default: 0 }, pitch: { min: -1.35, max: 1.35, default: 0 } },
+    latestInput: true, snapshotInterval: 4, compensateHitscan: true,
+    snapshotState: state => ({ ...state, map: undefined, fighters: undefined, horde: { ...state.horde, brains: undefined } }),
   },
   'oddstock-rumble': { title: 'Oddstock Rumble', engine: Brawl, makeState: () => Brawl.createState(), inputKeys: Brawl.INPUT_KEYS, selectionComplete: Brawl.selectionComplete },
 };
@@ -218,17 +225,19 @@ export function createServer(options = {}) {
   function makeRoom(id, gameId, name, settings = {}) {
     const adapter = GAMES[gameId];
     const createdAt = Date.now();
-    const teamSize = gameId === 'voxel-breach' ? settings.teamSize : gameId === 'voxel-royale' ? undefined : 1;
-    const capacity = gameId === 'voxel-royale' ? settings.capacity : teamSize * 2;
-    const mapId = ['voxel-breach', 'voxel-royale'].includes(gameId) ? settings.mapId : undefined;
-    const maps = gameId === 'voxel-royale' ? Royale.MAPS : Voxel.MAPS;
-    const state = adapter.makeState({ teamSize, capacity, mapId });
+    const teamSize = gameId === 'voxel-breach' ? settings.teamSize : ['voxel-royale', 'voxel-horde'].includes(gameId) ? undefined : 1;
+    const capacity = gameId === 'voxel-horde' ? 3 : gameId === 'voxel-royale' ? settings.capacity : teamSize * 2;
+    const mapId = ['voxel-breach', 'voxel-royale', 'voxel-horde'].includes(gameId) ? settings.mapId : undefined;
+    const maps = gameId === 'voxel-horde' ? Horde.MAPS : gameId === 'voxel-royale' ? Royale.MAPS : Voxel.MAPS;
+    const difficulty = gameId === 'voxel-horde' ? settings.difficulty : undefined;
+    const state = adapter.makeState({ teamSize, capacity, mapId, difficulty });
+    if (gameId === 'voxel-horde') for (let id = 0; id < capacity; id++) Horde.setConnected(state, id, false);
     // Pose history belongs to authoritative rooms and never enters snapshots or practice.
     if (adapter.compensateHitscan) enableLagCompensation(state);
     return {
       id, gameId, name: cleanName(name || adapter.title, 48) || adapter.title,
-      capacity, teamSize, mapId, mapName: mapId === undefined ? undefined : maps[mapId].name,
-      ...(gameId === 'voxel-royale' ? { hostId: null } : {}),
+      capacity, teamSize, difficulty, mapId, mapName: mapId === undefined ? undefined : maps[mapId].name,
+      ...(['voxel-royale', 'voxel-horde'].includes(gameId) ? { hostId: null } : {}),
       adapter, createdAt, emptySince: createdAt, hadPlayers: false, sessionId: randomUUID(),
       state, players: Array(capacity).fill(null), slots: Array(capacity).fill(null), acks: Array(capacity).fill(-1),
       lastBroadcastTick: -12, lastBroadcastRevision: -1,
@@ -236,7 +245,8 @@ export function createServer(options = {}) {
   }
   const legacyRoom = makeRoom(null, 'afterimage', 'Afterimage Duel');
   const roomSettings = room => ({ capacity: room.capacity, teamSize: room.teamSize, mapId: room.mapId, mapName: room.mapName,
-    ...(room.gameId === 'voxel-royale' ? { hostId: room.hostId } : {}),
+    ...(['voxel-royale', 'voxel-horde'].includes(room.gameId) ? { hostId: room.hostId } : {}),
+    ...(room.gameId === 'voxel-horde' ? { difficulty: room.difficulty } : {}),
   });
   const summary = room => ({ id: room.id, gameId: room.gameId, name: room.name, ...roomSettings(room), players: room.players, phase: room.state.phase, createdAt: room.createdAt });
   function reapRooms(now = Date.now()) {
@@ -266,6 +276,15 @@ export function createServer(options = {}) {
       if (!Number.isInteger(capacity) || capacity < 2 || capacity > 10) throw Object.assign(new Error('Choose a player capacity from 2 to 10.'), { status: 400 });
       if (typeof mapId !== 'string' || !Object.hasOwn(Royale.MAPS, mapId)) throw Object.assign(new Error('Choose an available Voxel Royale map.'), { status: 400 });
       settings = { capacity, mapId };
+    } else if (gameId === 'voxel-horde') {
+      if (Object.keys(settings).some(key => !['capacity', 'mapId', 'difficulty'].includes(key))) throw Object.assign(new Error('Choose only a map and difficulty for this three-player co-op room.'), { status: 400 });
+      const capacity = Object.hasOwn(settings, 'capacity') ? settings.capacity : 3;
+      const mapId = Object.hasOwn(settings, 'mapId') ? settings.mapId : 'courtyard';
+      const difficulty = Object.hasOwn(settings, 'difficulty') ? settings.difficulty : 'veteran';
+      if (capacity !== 3) throw Object.assign(new Error('Voxel Last Stand supports up to three teammates.'), { status: 400 });
+      if (typeof mapId !== 'string' || !Object.hasOwn(Horde.MAPS, mapId)) throw Object.assign(new Error('Choose an available Voxel Last Stand map.'), { status: 400 });
+      if (typeof difficulty !== 'string' || !Object.hasOwn(Horde.HORDE_DIFFICULTIES, difficulty)) throw Object.assign(new Error('Choose Veteran or Nightmare difficulty.'), { status: 400 });
+      settings = { capacity, mapId, difficulty };
     } else if (Object.hasOwn(settings, 'teamSize') || Object.hasOwn(settings, 'mapId')) {
       throw Object.assign(new Error('Team and map settings are only available in Voxel Breach.'), { status: 400 });
     }
@@ -308,9 +327,13 @@ export function createServer(options = {}) {
         if (data.gameId === 'voxel-royale' && Object.keys(data).some(key => !['gameId', 'name', 'capacity', 'mapId'].includes(key))) {
           throw Object.assign(new Error('Choose only a room name, player capacity, and map.'), { status: 400 });
         }
+        if (data.gameId === 'voxel-horde' && Object.keys(data).some(key => !['gameId', 'name', 'capacity', 'mapId', 'difficulty'].includes(key))) {
+          throw Object.assign(new Error('Choose only a room name, map, and difficulty for Voxel Last Stand.'), { status: 400 });
+        }
         const settings = {};
         for (const key of ['teamSize', 'mapId']) if (Object.hasOwn(data, key)) settings[key] = data[key];
-        if (data.gameId === 'voxel-royale' && Object.hasOwn(data, 'capacity')) settings.capacity = data.capacity;
+        if (['voxel-royale', 'voxel-horde'].includes(data.gameId) && Object.hasOwn(data, 'capacity')) settings.capacity = data.capacity;
+        if (data.gameId === 'voxel-horde' && Object.hasOwn(data, 'difficulty')) settings.difficulty = data.difficulty;
         const room = createRoom(data.gameId, data.name, settings);
         json(res, 201, { room: summary(room) });
       } catch (error) { if (!res.writableEnded) json(res, error.status || 400, { error: error.message }); }
@@ -369,12 +392,12 @@ export function createServer(options = {}) {
   function returnToLobby(room) {
     room.adapter.engine.resetLobby(room.state); resetInputs(room);
     for (let id = 0; id < room.players.length; id++) {
-      if (room.gameId === 'voxel-royale' && !room.slots[id]) room.players[id] = null;
+      if (['voxel-royale', 'voxel-horde'].includes(room.gameId) && !room.slots[id]) room.players[id] = null;
       else if (room.players[id]) room.players[id].ready = false;
     }
   }
   function maybeStart(room) {
-    if (room.gameId === 'voxel-royale') return;
+    if (['voxel-royale', 'voxel-horde'].includes(room.gameId)) return;
     if (room.state.phase === 'lobby' && room.players.every(p => p?.connected && p.ready) && (!room.adapter.selectionComplete || room.adapter.selectionComplete(room.state))) {
       resetInputs(room); room.adapter.engine.startMatch(room.state);
     }
@@ -400,7 +423,7 @@ export function createServer(options = {}) {
           if (room.adapter.compensateHitscan) setShotViewTick(room.state, index, command.viewTick);
         } else if (now - slot.lastInputTime > 350) slot.buttons = freshInput(room, index, slot.buttons);
         if (room.adapter.latestInput) {
-          if (room.state.phase !== 'fight') { slot.actionInputs.reset({ held: slot.latestButtons }); slot.buttons = { ...slot.latestButtons }; }
+          if (room.state.phase !== 'fight' && !(room.gameId === 'voxel-horde' && room.state.phase === 'intermission')) { slot.actionInputs.reset({ held: slot.latestButtons }); slot.buttons = { ...slot.latestButtons }; }
           else {
             const sampled = slot.actionInputs.sample(slot.latestButtons, now);
             slot.buttons = sampled.buttons;
@@ -411,14 +434,17 @@ export function createServer(options = {}) {
       });
       const previousPhase = room.state.phase;
       room.adapter.engine.step(room.state, inputs);
-      if (room.adapter.latestInput && previousPhase !== room.state.phase) {
+      const phaseChanged = previousPhase !== room.state.phase;
+      if (room.adapter.latestInput && phaseChanged) {
         for (const slot of room.slots) slot?.actionInputs.reset({ held: slot.latestButtons });
       }
       if (previousPhase === 'countdown' && ['buy', 'fight', 'roundEnd', 'matchEnd'].includes(room.state.phase)) {
         for (const player of room.players) if (player) player.ready = false;
       }
-      // Card actions broadcast immediately; a 10 Hz heartbeat keeps idle tables alive.
-      if (room.adapter.viewForPlayer) {
+      // Phase commits must arrive even when a terminal engine stops its clock.
+      // Steady card/idle snapshots retain their existing 10 Hz heartbeat.
+      if (phaseChanged) broadcast(room);
+      else if (room.adapter.viewForPlayer) {
         if (room.state.revision !== room.lastBroadcastRevision || room.state.tick - room.lastBroadcastTick >= 12) broadcast(room);
       } else {
         const idle = room.state.phase === 'lobby' || room.state.phase === 'matchEnd' || !room.adapter.inputKeys.length && room.state.phase === 'fight';
@@ -474,8 +500,8 @@ export function createServer(options = {}) {
         ws.close(4404, 'Room not found'); return;
       }
     }
-    if (room.gameId === 'voxel-royale' && room.state.phase !== 'lobby') {
-      error(ws, 'This Voxel Royale match has already started. Join when the host opens the next lobby.');
+    if (['voxel-royale', 'voxel-horde'].includes(room.gameId) && room.state.phase !== 'lobby') {
+      error(ws, `This ${room.adapter.title} match has already started. Join when the host opens the next lobby.`);
       ws.close(4409, 'Match already started'); return;
     }
     let id = room.slots.findIndex(slot => slot === null);
@@ -492,7 +518,8 @@ export function createServer(options = {}) {
     startTicker();
     room.players[id] = { name: `Player ${id + 1}`, connected: true, ready: false };
     if (room.gameId === 'voxel-breach') room.players[id].team = id < room.teamSize ? 0 : 1;
-    if (room.gameId === 'voxel-royale' && room.hostId === null) room.hostId = id;
+    if (['voxel-royale', 'voxel-horde'].includes(room.gameId) && room.hostId === null) room.hostId = id;
+    if (room.gameId === 'voxel-horde') Horde.setConnected(room.state, id, true);
     room.acks[id] = -1; room.hadPlayers = true; room.emptySince = null;
     const welcome = () => send(ws, { type: 'welcome', playerId: id, roomId: room.id, gameId: room.gameId, ...roomSettings(room), sessionId: room.sessionId, tickRate: TICK_RATE });
     welcome();
@@ -513,18 +540,25 @@ export function createServer(options = {}) {
         room.players[id].name = cleanName(data.name, 24) || `Player ${id + 1}`;
         broadcast(room);
       } else if (data.type === 'start') {
-        if (room.gameId !== 'voxel-royale') { error(ws, 'This game starts when all players are ready.'); return; }
+        if (!['voxel-royale', 'voxel-horde'].includes(room.gameId)) { error(ws, 'This game starts when all players are ready.'); return; }
         if (Object.keys(data).some(key => key !== 'type')) { error(ws, 'Start accepts no player, map, or inventory overrides.'); return; }
-        if (id !== room.hostId) { error(ws, 'Only the room host can start Voxel Royale.'); return; }
+        if (id !== room.hostId) { error(ws, `Only the room host can start ${room.adapter.title}.`); return; }
         if (state.phase !== 'lobby') { error(ws, 'The host can start only from the lobby.'); return; }
         const participantIds = room.slots.flatMap((candidate, participantId) => candidate?.ws.readyState === WebSocket.OPEN ? [participantId] : []);
-        if (participantIds.length < 2) { error(ws, 'At least two connected players are needed to start Voxel Royale.'); return; }
-        Royale.startMatch(state, participantIds); resetInputs(room); broadcast(room);
+        if (room.gameId === 'voxel-royale' && participantIds.length < 2) { error(ws, 'At least two connected players are needed to start Voxel Royale.'); return; }
+        if (room.gameId === 'voxel-horde' && (!participantIds.length || participantIds.some(participantId => !room.players[participantId]?.ready))) { error(ws, 'Every connected teammate must be ready before the host starts Voxel Last Stand.'); return; }
+        room.adapter.engine.startMatch(state, participantIds); resetInputs(room); broadcast(room);
       } else if (data.type === 'ready') {
         if (typeof data.ready !== 'boolean') { error(ws, 'Ready must be true or false.'); return; }
         if (room.gameId === 'voxel-royale') {
           if (state.phase !== 'lobby') { error(ws, 'Readiness can change only in the Voxel Royale lobby.'); return; }
           room.players[id].ready = data.ready; broadcast(room); return;
+        }
+        if (room.gameId === 'voxel-horde') {
+          if (!['lobby', 'countdown'].includes(state.phase)) { error(ws, 'Readiness can change only in the Voxel Last Stand lobby or initial countdown.'); return; }
+          if (state.phase === 'countdown' && !data.ready) returnToLobby(room);
+          else room.players[id].ready = data.ready;
+          broadcast(room); return;
         }
         if (data.ready && room.adapter.selectionComplete && (!state.fighters[id].selected || !state.stageSelected)) {
           error(ws, 'Choose your comic and have player one confirm a stage before getting ready.'); return;
@@ -536,9 +570,9 @@ export function createServer(options = {}) {
         else room.players[id].ready = data.ready;
         maybeStart(room); broadcast(room);
       } else if (data.type === 'rematch') {
-        if (room.gameId === 'voxel-royale') {
+        if (['voxel-royale', 'voxel-horde'].includes(room.gameId)) {
           if (Object.keys(data).some(key => key !== 'type')) { error(ws, 'Rematch accepts no player, map, or inventory overrides.'); return; }
-          if (id !== room.hostId) { error(ws, 'Only the room host can open the next Voxel Royale lobby.'); return; }
+          if (id !== room.hostId) { error(ws, `Only the room host can open the next ${room.adapter.title} lobby.`); return; }
           if (state.phase !== 'matchEnd') { error(ws, 'Finish the current match before opening the next lobby.'); return; }
           returnToLobby(room); broadcast(room); return;
         }
@@ -583,11 +617,11 @@ export function createServer(options = {}) {
         welcome(); broadcast(room);
       } else if (data.type === 'fps-loadout') {
         if (room.gameId === 'voxel-royale') { error(ws, 'Pick up weapons in the arena; Voxel Royale has no loadout selection.'); return; }
-        if (room.gameId !== 'voxel-breach') { error(ws, 'Weapon selection is only available in Voxel Breach.'); return; }
+        if (!['voxel-breach', 'voxel-horde'].includes(room.gameId)) { error(ws, 'Weapon selection is only available in Voxel Breach and Voxel Last Stand.'); return; }
         if (Object.keys(data).some(key => !['type', 'weaponId'].includes(key)) || typeof data.weaponId !== 'string') {
           error(ws, 'Choose a valid weapon loadout.'); return;
         }
-        const result = Voxel.selectLoadout(state, id, data.weaponId);
+        const result = room.adapter.engine.selectLoadout(state, id, data.weaponId);
         if (!result.ok) { error(ws, result.error || 'That weapon loadout is not available.'); return; }
         if (result.changed && state.phase === 'lobby') room.players[id].ready = false;
         broadcast(room);
@@ -618,7 +652,7 @@ export function createServer(options = {}) {
         }
         if (!data.buttons || typeof data.buttons !== 'object' || Array.isArray(data.buttons) ||
             Object.keys(data.buttons).some(key => !validControl(room.adapter, key, data.buttons[key]))) {
-          error(ws, ['voxel-breach', 'voxel-royale'].includes(room.gameId) ? 'Use boolean controls, yaw between -π and π, and pitch between -1.35 and 1.35.' : room.adapter.numericControls ? 'Use boolean controls and finite aim components between -1 and 1.' : 'Input buttons must contain only valid boolean controls for this game.'); return;
+          error(ws, ['voxel-breach', 'voxel-royale', 'voxel-horde'].includes(room.gameId) ? 'Use boolean controls, yaw between -π and π, and pitch between -1.35 and 1.35.' : room.adapter.numericControls ? 'Use boolean controls and finite aim components between -1 and 1.' : 'Input buttons must contain only valid boolean controls for this game.'); return;
         }
         if (Object.hasOwn(data, 'cancelActions') && (typeof data.cancelActions !== 'boolean' || !room.adapter.latestInput)) { error(ws, 'Action cancellation must be a boolean FPS control.'); return; }
         if (Object.hasOwn(data, 'cancelPress') && (!room.adapter.latestInput || !data.cancelPress || typeof data.cancelPress !== 'object' || Array.isArray(data.cancelPress)
@@ -647,14 +681,20 @@ export function createServer(options = {}) {
     });
     ws.on('close', () => {
       if (room.slots[id] !== slot) return;
+      const activeHorde = room.gameId === 'voxel-horde' && room.state.phase !== 'lobby';
       const activeRoyale = room.gameId === 'voxel-royale' && ['countdown', 'fight', 'matchEnd'].includes(room.state.phase);
       room.slots[id] = null; room.acks[id] = -1;
-      if (activeRoyale) room.players[id] = { ...room.players[id], connected: false, ready: false };
+      if (activeRoyale || activeHorde) room.players[id] = { ...room.players[id], connected: false, ready: false };
       else room.players[id] = null;
       if (room.gameId === 'voxel-royale') {
         if (room.hostId === id) room.hostId = room.slots.findIndex(Boolean);
         if (room.hostId === -1) room.hostId = null;
         if (activeRoyale && room.state.participantIds.includes(id)) Royale.eliminateParticipant(room.state, id);
+      }
+      if (room.gameId === 'voxel-horde') {
+        Horde.setConnected(room.state, id, false);
+        if (room.hostId === id) room.hostId = room.slots.findIndex(Boolean);
+        if (room.hostId === -1) room.hostId = null;
       }
       if (!room.slots.some(Boolean)) {
         room.emptySince = Date.now(); occupiedRooms.delete(room);
@@ -662,7 +702,7 @@ export function createServer(options = {}) {
           clearInterval(ticker); clearInterval(heartbeat); ticker = heartbeat = null;
         }
       }
-      if (!activeRoyale || !room.slots.some(Boolean)) returnToLobby(room);
+      if (!(activeRoyale || activeHorde) || !room.slots.some(Boolean)) returnToLobby(room);
       if (room.gameId === 'oddstock-rumble') Brawl.clearSelection(room.state, id);
       broadcast(room);
     });
@@ -703,7 +743,7 @@ if (isMain) {
     for (const interfaces of Object.values(os.networkInterfaces())) for (const adapter of interfaces || []) {
       if (adapter.family === 'IPv4' && !adapter.internal) console.log(`Share LAN address: http://${adapter.address}:${port}`);
     }
-    console.log('Create a room and share the invite. Ready together, or host-start Voxel Royale. Ctrl+C stops the hub.\n');
+    console.log('Create a room and share the invite. Ready together, or host-start Voxel Royale / Last Stand. Ctrl+C stops the hub.\n');
   }).catch(error => { console.error(`Cannot start game hub: ${error.message}`); process.exitCode = 1; });
   let stopping = false;
   const stop = async () => { if (stopping) return; stopping = true; await game.close(); process.exitCode = 0; };

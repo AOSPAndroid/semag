@@ -1,4 +1,5 @@
 export const GAMES = {
+  'voxel-horde': { title: 'Voxel Last Stand', category: 'VOXEL / WAVE SURVIVAL FPS', kind: 'coop', supportsSolo: true, genre: 'action', theme: 'voxel', maxPlayers: 3, icon: '✹', description: 'Survive the swarm. Hunt for heals. Hold together against armed monsters.', color: '#967e69' },
   'voxel-wilds': { title: 'Voxel Wilds', category: 'VOXEL / BUILD & SURVIVE', kind: 'solo', genre: 'action', theme: 'voxel', icon: '▧', description: 'Mine the hillside. Build a shelter. Endure the night.', color: '#769274' },
   'voxel-breach': { title: 'Voxel Breach', category: 'VOXEL / TACTICAL 3D FPS', kind: 'team', genre: 'action', theme: 'voxel', maxPlayers: 6, icon: '⌗', description: 'Hold an angle. Breach a site. Win together.', color: '#628b88' },
   'voxel-royale': { title: 'Voxel Royale', category: 'VOXEL / BATTLE ROYALE', kind: 'battle-royale', genre: 'action', theme: 'voxel', maxPlayers: 10, icon: '◈', description: 'Find your kit. Escape the storm. Be the last alive.', color: '#75957b' },
@@ -28,14 +29,17 @@ export const GAMES = {
   'rift-survivor': { roguelike: true, title: 'Rift Survivor', category: 'SURVIVAL ARENA', kind: 'solo', genre: 'action', icon: '✧', description: 'The threat pace rises with time. Burst, dash, and survive.', color: '#7c7975' },
 };
 export function soloUrl(gameId) {
+  if (gameId === 'voxel-horde') return '/voxel-horde.html?solo=1';
   return `/solo.html?game=${encodeURIComponent(gameId)}`;
 }
 export function roomUrl(room) {
+  if (room.gameId === 'voxel-horde') return `/voxel-horde.html?room=${encodeURIComponent(room.id)}`;
   if (room.gameId === 'voxel-royale') return `/voxel-royale.html?room=${encodeURIComponent(room.id)}`;
   if (room.gameId === 'voxel-breach') return `/voxel.html?room=${encodeURIComponent(room.id)}`;
   return room.gameId === 'afterimage' ? `/afterimage.html?room=${encodeURIComponent(room.id)}` : `/play.html?room=${encodeURIComponent(room.id)}&game=${encodeURIComponent(room.gameId)}`;
 }
 export function roomCapacity(room) {
+  if (room.gameId === 'voxel-horde') return 3;
   if (room.gameId === 'voxel-royale') {
     if (Number.isInteger(room.capacity) && room.capacity >= 2 && room.capacity <= 10) return room.capacity;
     return room.players?.length >= 2 && room.players.length <= 10 ? room.players.length : 10;
