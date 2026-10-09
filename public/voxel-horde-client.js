@@ -1,3 +1,4 @@
+import { mountWeaponArmory } from './voxel-armory-ui.js';
 import { secondaryActionPresentation, paintSecondaryAction, staminaPresentation, paintStamina, createReloadAudioPresenter, createGunImpactReporter, createParryAudioReporter } from './voxel-fps-feedback.js';
 import { GameAudio } from './audio.js';
 import { displayKey, gameKey, getKeyboardLayout, mountKeyboardLayoutPicker, subscribeKeyboardLayout } from './keyboard-layout.js';
@@ -300,8 +301,9 @@ export async function bootHorde() {
     const phase = state.phase, player = localPlayer(), vitals = hordeSpectatorPlayer(state, playerId, spectatorId) || player, wave = hordeWavePresentation(state, engine.TICK_RATE), readout = vitals ? combatReadout(vitals, WEAPONS, { ADS, HEAL, PLAYER_HEALTH }) : null;
     for (const [id, value] of [['horde-weapon', player?.weapon]]) {
       $(id).disabled = !solo && (!connected || !['lobby', 'countdown', 'intermission', 'matchEnd'].includes(phase));
-      if (!solo && value && document.activeElement !== $(id)) $(id).value = value;
+      if (!solo && value && !weaponArmory.isOpen() && document.activeElement !== $(id)) $(id).value = value;
     }
+    weaponArmory.sync();
     weaponNote();
     paintVitals(vitals, vitals?.id !== playerId ? `${nameFor(vitals?.id)}’s` : 'Your', connected && !paused && !modalOpen && MOVEMENT_PHASES.includes(phase));
     inventory.update(vitals, { visible: !!vitals?.alive && !['lobby', 'matchEnd'].includes(phase), interactive: !!player?.alive && controlsActive() && MOVEMENT_PHASES.includes(phase) });
@@ -310,7 +312,7 @@ export async function bootHorde() {
     app.dataset.phase = phase; text('horde-map-label', state.mapName || state.map?.name || state.mapId); text('horde-wave', wave.wave || '—'); text('horde-threat', wave.threats); text('horde-clock', clock(wave.elapsed)); text('horde-status', phase === 'intermission' ? 'RESUPPLY & REPOSITION' : phase === 'fight' ? 'SURVIVE THE HORDE' : phase === 'paused' ? 'WORLD PAUSED' : phase === 'matchEnd' ? 'OVERRUN' : 'HOLD YOUR GROUND');
     text('horde-connection', solo ? 'SOLO' : connected ? `${roomId} · CO-OP` : 'DISCONNECTED');
     const disconnected = !solo && !connected, lobby = phase === 'lobby', card = hordeOverlayPresentation(state, { solo, connected, entered, paused, alive: player?.alive });
-    hide('horde-overlay', !card); hide('horde-setup', card !== 'setup'); hide('horde-pause-card', card !== 'pause'); hide('horde-result', card !== 'result'); hide('horde-countdown', card !== 'countdown'); hide('horde-connection-card', card !== 'connection');
+    hide('horde-overlay', !card); hide('horde-setup', card !== 'setup'); if (card !== 'setup') weaponArmory.close(); hide('horde-pause-card', card !== 'pause'); hide('horde-result', card !== 'result'); hide('horde-countdown', card !== 'countdown'); hide('horde-connection-card', card !== 'connection');
     if (disconnected) { text('horde-connection-title', permanentError ? 'Room unavailable.' : 'Connection lost.'); text('horde-connection-copy', permanentError ? 'This run has started or the room is unavailable. Return to Semag for the next squad.' : 'Your controls are released. Reconnecting to the host…'); }
     hide('horde-combat', !player || lobby || disconnected); hide('horde-enter', entered && !paused); $('horde-enter').disabled = !connected || !!graphicsError;
     text('horde-countdown-value', Math.ceil(Math.max(0, finite(state.phaseTicks ?? state.horde?.phaseTicks)) / engine.TICK_RATE));
@@ -462,6 +464,7 @@ export async function bootHorde() {
     listen(ws, 'error', () => {});
   }
   function keyboardDown(event) {
+    if (event.target?.closest?.('[data-voxel-armory]')) return;
     if (modalOpen) {
       if (event.key === 'Escape') { event.preventDefault(); hideHelp(); }
       else if (event.key === 'Tab') { const buttons = [...$('horde-guide').querySelectorAll('button:not(:disabled)')], index = buttons.indexOf(document.activeElement); if (event.shiftKey && index <= 0) { event.preventDefault(); buttons.at(-1)?.focus(); } else if (!event.shiftKey && index === buttons.length - 1) { event.preventDefault(); buttons[0]?.focus(); } }
@@ -508,16 +511,18 @@ export async function bootHorde() {
   }
   let rendererClass;
   function destroy() {
-    if (destroyed) return; clearInputs(); destroyed = true; stopFrame(); clearTimeout(reconnectTimer); clearInterval(heartbeat); unlock(); socket?.close(); for (const remove of listeners) remove(); unsubscribe(); picker.destroy(); audio.destroy(); inventory.destroy(); weaponWheel.destroy(); renderer?.destroy(); worldLabels.destroy(); movement.clear(); pending = []; snapshots = [];
+    if (destroyed) return; clearInputs(); destroyed = true; weaponArmory.destroy(); stopFrame(); clearTimeout(reconnectTimer); clearInterval(heartbeat); unlock(); socket?.close(); for (const remove of listeners) remove(); unsubscribe(); picker.destroy(); audio.destroy(); inventory.destroy(); weaponWheel.destroy(); renderer?.destroy(); worldLabels.destroy(); movement.clear(); pending = []; snapshots = [];
   }
   const unsubscribe = subscribeKeyboardLayout(() => { clearInputs(); hints(); });
   text('horde-mode', solo ? 'SOLO SURVIVAL' : '1–3 PLAYER CO-OP'); text('horde-room-code', roomId); $('horde-name').value = getName(); hide('horde-name-field', solo); hide('horde-lobby', solo); hide('horde-map-field', !solo); hide('horde-difficulty-field', !solo);
   text('horde-start-label', solo ? 'Start survival' : 'Start squad survival'); if (!solo) text('horde-setup-copy', 'One squad, up to three players. Everyone readies; the host starts. Clear waves to recover, share supplies, and bring fallen teammates back.');
   populateWeaponSelect($('horde-weapon')); $('horde-weapon').value = 'carbine';
+  const weaponArmory = mountWeaponArmory({ select: $('horde-weapon'), title: 'Choose your starting weapon', portalContainer: $('horde-shell') });
   const weaponDetails = document.createElement('details'); weaponDetails.className = 'arsenal-fold';
   const detailSummary = document.createElement('summary'); detailSummary.textContent = 'Weapon damage and handling';
   const detailCard = document.createElement('section'); detailCard.id = 'horde-weapon-details'; detailCard.setAttribute('aria-label', 'Selected weapon statistics');
   weaponDetails.append(detailSummary, detailCard); $('horde-weapon-note').after(weaponDetails);
+  weaponDetails.hidden = true; $('horde-weapon-note').hidden = true;
   function weaponNote() { text('horde-weapon-note', WEAPONS[$('horde-weapon').value]?.description || ''); renderWeaponDetails(detailCard, $('horde-weapon').value); }
   listen($('horde-setup'), 'submit', event => { event.preventDefault(); if (solo) startSolo(); else { if (!hordeLobbyPresentation(state, roster, playerId, hostId, connected).canStart) return; clearInputs(); entered = true; paused = false; canvas.focus({ preventScroll: true }); requestCapture(); send({ type: 'start' }); } });
   for (const id of ['horde-map', 'horde-difficulty']) listen($(id), 'change', preview);

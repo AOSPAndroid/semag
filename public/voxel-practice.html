@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="/voxel-fps-feedback.css">
   <link rel="stylesheet" href="/hub/modern-game.css">
   <link rel="stylesheet" href="/voxel-arsenal-ui.css">
+  <link rel="stylesheet" href="/voxel-armory-ui.css">
 </head>
 <body>
   <main class="practice-app" id="practice-app" data-phase="ready">
@@ -36,7 +37,7 @@
         <section class="dojo-tools" id="dojo-tools" aria-labelledby="dojo-tools-title" hidden>
           <div class="dojo-tools-heading"><div><span>FREE PRACTICE</span><h2 id="dojo-tools-title">Range tools</h2></div><button id="dojo-tools-close" type="button" aria-label="Return to the dojo">×</button></div>
           <p>Pick a weapon below, then walk to its rack and press E. Supplies restock. Magazines and reloads keep their real timing.</p>
-          <div class="dojo-tool-fields"><label>GUN RACK<select id="dojo-weapon" aria-label="Dojo gun rack weapon"></select></label><label>BLADE RACK<select id="dojo-blade" aria-label="Dojo blade rack weapon"></select></label></div>
+          <div class="dojo-tool-fields"><div class="armory-field"><span>GUN RACK</span><select id="dojo-weapon" aria-label="Dojo gun rack weapon"></select></div><div class="armory-field"><span>BLADE RACK</span><select id="dojo-blade" aria-label="Dojo blade rack weapon"></select></div></div>
           <button id="dojo-use-station" type="button" disabled>Approach an equipment station</button>
           <div class="dojo-tool-actions"><button id="dojo-motion" type="button" aria-pressed="false">Stationary targets</button><button id="dojo-reset" type="button">Reset targets</button><button id="dojo-wound" type="button" disabled>Healing test · −60 HP</button><button id="dojo-recover" type="button" disabled>Restore health</button></div>
           <small id="dojo-station-note">Recovery station: try a training wound, collect a potion at the supply bench, then press F to heal.</small>
@@ -57,8 +58,8 @@
               <label id="practice-mode-field">DRILL<select id="practice-mode" aria-label="Practice drill"><option value="targets">Moving targets</option><option value="combat">Bots shoot back</option><option value="blades">Blade training</option></select></label>
               <label id="practice-difficulty-field">BOT PACE<select id="practice-difficulty" aria-label="Bot difficulty"><option value="rookie">Rookie · deliberate</option><option value="regular" selected>Regular · reactive</option><option value="veteran">Veteran · demanding</option></select></label>
               <label id="dojo-motion-field" hidden>TARGET MOTION<select id="dojo-start-motion" aria-label="Dojo starting target motion"><option value="stationary">Stationary</option><option value="moving">Moving</option></select></label>
-              <label id="practice-loadout-field">YOUR GUN<select id="practice-weapon" aria-label="Practice weapon"></select></label>
-              <label id="practice-blade-field" hidden>TRAINING BLADE<select id="practice-blade" aria-label="Blade training weapon"></select></label>
+              <div id="practice-loadout-field" class="armory-field"><span>YOUR GUN</span><select id="practice-weapon" aria-label="Practice weapon"></select></div>
+              <div id="practice-blade-field" class="armory-field" hidden><span>TRAINING BLADE</span><select id="practice-blade" aria-label="Blade training weapon"></select></div>
               <div id="practice-melee-field" class="fps-starter-kit"><span>STARTING KIT</span><p>Knife + chosen gun<br>No starting supplies</p></div>
             </div>
             <p class="practice-weapon-note" id="practice-weapon-note"></p>

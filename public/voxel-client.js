@@ -353,14 +353,17 @@ export function reconcilePlayer(player, history, ack, mapId, predictMovement, al
 }
 
 async function boot() {
+  const { mountWeaponArmory } = await import('./voxel-armory-ui.js');
   const $ = id => document.getElementById(id);
   const canvas = $('arena');
   const worldLabels = mountVoxelLabelOverlay(canvas);
   populateWeaponSelect($('loadout-select'));
-  const arenaField = document.createElement('label'); arenaField.className = 'arsenal-selector';
+  const arenaField = document.createElement('div'); arenaField.className = 'arsenal-selector armory-field';
   const arenaCaption = document.createElement('span'); arenaCaption.textContent = 'PRIMARY GUN';
   const arenaSelect = document.createElement('select'); arenaSelect.id = 'arena-loadout-select'; arenaSelect.setAttribute('aria-label', 'Choose your setup weapon');
   populateWeaponSelect(arenaSelect); arenaField.append(arenaCaption, arenaSelect); $('arena-loadouts').replaceChildren(arenaField);
+  const loadoutArmory = mountWeaponArmory({ select: $('loadout-select'), title: 'Build your loadout', portalContainer: $('room-dialog') });
+  const arenaArmory = mountWeaponArmory({ select: arenaSelect, title: 'Choose your round weapon', portalContainer: $('game-shell') });
   const comparisonBands = document.createElement('section'); comparisonBands.id = 'comparison-bands'; comparisonBands.setAttribute('aria-label', 'Weapon damage at each range and handling'); $('weapon-comparison').append(comparisonBands);
   setText($('arena-melee-note'), 'Slot 1: knife · Slot 2: chosen gun · Slots 3–4: empty. Scavenge blades, guns and supplies with E.');
   setText($('phase-shortcuts'), 'CHOOSE A GUN DURING SETUP · IN PLAY: 1–4 EQUIP, WHEEL SWITCH, X DROP');
@@ -669,7 +672,8 @@ async function boot() {
     setText($('objective-mode'), `${teamSize}V${teamSize} / ${mapName || 'VOXEL BREACH'}`);
     setDisabled($('player-name'), !inLobby || !connected);
     setDisabled($('loadout-select'), !connected || !['lobby', 'countdown', 'buy', 'roundEnd'].includes(phase));
-    if (local?.weapon && document.activeElement !== $('loadout-select')) $('loadout-select').value = local.weapon;
+    if (local?.weapon && !loadoutArmory.isOpen() && document.activeElement !== $('loadout-select')) $('loadout-select').value = local.weapon;
+    loadoutArmory.sync();
     setText($('arena-melee-note'), 'Knife + chosen gun. No starting potions or grenades; E collects dropped equipment.');
     const me = roster.find(player => player?.id === playerId);
     setHidden($('ready-button'), phase === 'matchEnd'); setHidden($('rematch-button'), phase !== 'matchEnd');
@@ -843,7 +847,8 @@ async function boot() {
     setHidden($('arena-weapon-stats'), $('arena-loadouts').hidden);
     setHidden($('arena-melee-field'), $('arena-loadouts').hidden); setHidden($('arena-melee-note'), $('arena-loadouts').hidden);
     setDisabled(arenaSelect, !connected || !['countdown', 'buy'].includes(phase));
-    if (local?.weapon && document.activeElement !== arenaSelect) arenaSelect.value = local.weapon;
+    if (local?.weapon && !arenaArmory.isOpen() && document.activeElement !== arenaSelect) arenaSelect.value = local.weapon;
+    arenaArmory.sync(); if ($('arena-loadouts').hidden) arenaArmory.close();
     setHidden($('aim-note'), !enter); setText($('aim-note'), touchMode ? 'Touch: Move / Look pads. AIM becomes STAB with a knife or PARRY with another blade; tap a slot to equip.' : 'RMB: gun sights / knife stab / blade parry. If mouse capture is unavailable, hold RMB and drag to look.');
     const result = roundResult(state, local?.team);
     setHidden($('phase-announcement'), !connected || !!graphicsError || modalOpen || overlay || !['countdown', 'buy', 'roundEnd'].includes(phase));
@@ -925,7 +930,7 @@ async function boot() {
     const next = message.state;
     if (!next?.players) return;
     const old = state; state = next; capacity = message.capacity || next.capacity || capacity; teamSize = message.teamSize || next.teamSize || teamSize;
-    if (previousPhase === 'lobby' && state.phase === 'countdown' && !modalOpen && document.activeElement !== $('loadout-select')) {
+    if (previousPhase === 'lobby' && state.phase === 'countdown' && !modalOpen && !loadoutArmory.isOpen() && document.activeElement !== $('loadout-select')) {
       $('game-shell').scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
     }
     mapName = message.mapName || next.mapName || mapName;
@@ -1027,6 +1032,7 @@ async function boot() {
     else layoutPickerHome.insertBefore(layoutPickerHost, $('sound-button'));
   }
   function setDialog(kind) {
+    loadoutArmory.close(); arenaArmory.close();
     modalOpen = !!kind;
     if (modalOpen) worldLabels.clear();
     setHidden($('room-dialog'), kind !== 'room');
@@ -1063,6 +1069,7 @@ async function boot() {
     if (returnToRoom) $('room-guide-button').focus({ preventScroll: true }); else restoreDialogFocus();
   }
   function trapDialogTab(event) {
+    if (event.target?.closest?.('[data-voxel-armory]')) return;
     if (event.key !== 'Tab') return;
     const items = [...event.currentTarget.querySelectorAll('button:not(:disabled), input:not(:disabled), select:not(:disabled), a[href], [tabindex="0"]')].filter(element => element.getClientRects().length && !element.closest('[hidden]'));
     const first = items[0], last = items.at(-1); if (!first) return;
@@ -1078,6 +1085,7 @@ async function boot() {
   function updateLayout() { neutralize({ pause: entered, unlock: true }); updateKeyLabels(); }
   const unsubscribeLayout = subscribeKeyboardLayout(updateLayout); updateKeyLabels();
   listen(window, 'keydown', event => {
+    if (event.target?.closest?.('[data-voxel-armory]')) return;
     if (event.defaultPrevented || event.isComposing || event.altKey || event.metaKey) return;
     if (event.key === 'Escape') { if (modalOpen) { if (!$('guide-dialog').hidden) closeGuide(); else closeRoom(); } else if (entered && state?.phase !== 'lobby') neutralize({ pause: true, unlock: true }); return; }
     const loadout = entered && !modalOpen && !document.hidden ? loadoutForKey(event, state?.phase) : null;
@@ -1216,6 +1224,7 @@ async function boot() {
   const pingTimer = setInterval(() => { if (connected && !document.hidden) send({ type: 'ping', time: performance.now() }); }, 1500);
   function destroy() {
     if (destroyed) return; neutralize({ pause: true, unlock: true }); destroyed = true;
+    loadoutArmory.destroy(); arenaArmory.destroy();
     clearTimeout(reconnectTimer); clearTimeout(toastTimer); clearInterval(pingTimer);
     clearInterval(inputHeartbeat); inputHeartbeat = null;
     if (frameId) cancelAnimationFrame(frameId); frameId = null; socket?.close(); renderer?.destroy(); worldLabels.destroy(); audio.destroy(); inventory.destroy(); weaponWheel.destroy(); layoutPicker.destroy(); unsubscribeLayout();

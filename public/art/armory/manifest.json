@@ -1,0 +1,1535 @@
+{
+  "generator": "tools/generate-armory-art.py",
+  "source": [
+    "public/voxel-renderer.js",
+    "public/voxel-weapons.js",
+    "public/voxel-melee.js"
+  ],
+  "projection": "orthographic, shared 2.28-metre width; original mesh proportions and colors",
+  "transparent": true,
+  "resources": {
+    "activeContexts": 0,
+    "contextsCreated": 1,
+    "contextsReleased": 1,
+    "drawCalls": 44
+  },
+  "items": [
+    {
+      "id": "carbine",
+      "name": "Kestrel Carbine",
+      "kind": "gun",
+      "file": "carbine.webp",
+      "pixels": [
+        640,
+        360
+      ],
+      "alphaBounds": [
+        164,
+        105,
+        479,
+        249
+      ],
+      "bytes": 3274,
+      "vertices": 936,
+      "meshSha256": "123b52287a3e03fa5df85f930e87d2248ec1a4f720e56bdc06c6487ed1b6538f",
+      "bounds": {
+        "min": [
+          -0.07699999958276749,
+          -0.25,
+          -0.9559999704360962
+        ],
+        "max": [
+          0.10700000077486038,
+          0.15199999511241913,
+          0.21199999749660492
+        ]
+      },
+      "diagnostics": {
+        "activeContexts": 1,
+        "contextsCreated": 1,
+        "contextsReleased": 0,
+        "drawCalls": 4
+      }
+    },
+    {
+      "id": "smg",
+      "name": "Swift SMG",
+      "kind": "gun",
+      "file": "smg.webp",
+      "pixels": [
+        640,
+        360
+      ],
+      "alphaBounds": [
+        195,
+        110,
+        449,
+        245
+      ],
+      "bytes": 3406,
+      "vertices": 1080,
+      "meshSha256": "dfc6489847bca764adcf4c81769a1b395531286007bfa2a481cd2e0e0e8534d3",
+      "bounds": {
+        "min": [
+          -0.07999999821186066,
+          -0.25,
+          -0.7200000286102295
+        ],
+        "max": [
+          0.10700000077486038,
+          0.15199999511241913,
+          0.21199999749660492
+        ]
+      },
+      "diagnostics": {
+        "activeContexts": 1,
+        "contextsCreated": 1,
+        "contextsReleased": 0,
+        "drawCalls": 5
+      }
+    },
+    {
+      "id": "marksman",
+      "name": "Heron Marksman",
+      "kind": "gun",
+      "file": "marksman.webp",
+      "pixels": [
+        640,
+        360
+      ],
+      "alphaBounds": [
+        147,
+        114,
+        493,
+        267
+      ],
+      "bytes": 4566,
+      "vertices": 1398,
+      "meshSha256": "a72929308d1dc2bdfc7d4a7b7ea855778b4e6aaf9e4035b45760b69dfd61b682",
+      "bounds": {
+        "min": [
+          -0.07199999690055847,
+          -0.25,
+          -1.0759999752044678
+        ],
+        "max": [
+          0.10700000077486038,
+          0.26499998569488525,
+          0.21199999749660492
+        ]
+      },
+      "diagnostics": {
+        "activeContexts": 1,
+        "contextsCreated": 1,
+        "contextsReleased": 0,
+        "drawCalls": 6
+      }
+    },
+    {
+      "id": "pistol",
+      "name": "Finch Pistol",
+      "kind": "gun",
+      "file": "pistol.webp",
+      "pixels": [
+        640,
+        360
+      ],
+      "alphaBounds": [
+        261,
+        127,
+        381,
+        237
+      ],
+      "bytes": 1854,
+      "vertices": 750,
+      "meshSha256": "f86b8119b748b43e705e14b2f98d2a21a0b1dbd132c6b4339e6fb061c46a75c9",
+      "bounds": {
+        "min": [
+          -0.052000001072883606,
+          -0.1899999976158142,
+          -0.4410000145435333
+        ],
+        "max": [
+          0.052000001072883606,
+          0.15199999511241913,
+          -0.004000000189989805
+        ]
+      },
+      "diagnostics": {
+        "activeContexts": 1,
+        "contextsCreated": 1,
+        "contextsReleased": 0,
+        "drawCalls": 7
+      }
+    },
+    {
+      "id": "shotgun",
+      "name": "Warden Shotgun",
+      "kind": "gun",
+      "file": "shotgun.webp",
+      "pixels": [
+        640,
+        360
+      ],
+      "alphaBounds": [
+        150,
+        113,
+        491,
+        246
+      ],
+      "bytes": 5096,
+      "vertices": 894,
+      "meshSha256": "f92b80a68e99c38b83725304c6f488b82c8bfec0fc6233856258c24f477b1688",
+      "bounds": {
+        "min": [
+          -0.07400000095367432,
+          -0.17599999904632568,
+          -1.055999994277954
+        ],
+        "max": [
+          0.10100000351667404,
+          0.15199999511241913,
+          0.21199999749660492
+        ]
+      },
+      "diagnostics": {
+        "activeContexts": 1,
+        "contextsCreated": 1,
+        "contextsReleased": 0,
+        "drawCalls": 8
+      }
+    },
+    {
+      "id": "burst",
+      "name": "Osprey Burst Rifle",
+      "kind": "gun",
+      "file": "burst.webp",
+      "pixels": [
+        640,
+        360
+      ],
+      "alphaBounds": [
+        169,
+        106,
+        473,
+        251
+      ],
+      "bytes": 3778,
+      "vertices": 1152,
+      "meshSha256": "9ae07a49230abc12208cd2469dd874a5ed1bcf60ade27c6127ecaccdaeccc7f8",
+      "bounds": {
+        "min": [
+          -0.08100000023841858,
+          -0.25,
+          -0.906000018119812
+        ],
+        "max": [
+          0.10700000077486038,
+          0.15199999511241913,
+          0.22499999403953552
+        ]
+      },
+      "diagnostics": {
+        "activeContexts": 1,
+        "contextsCreated": 1,
+        "contextsReleased": 0,
+        "drawCalls": 9
+      }
+    },
+    {
+      "id": "sniper",
+      "name": "Rook Bolt Sniper",
+      "kind": "gun",
+      "file": "sniper.webp",
+      "pixels": [
+        640,
+        360
+      ],
+      "alphaBounds": [
+        105,
+        114,
+        529,
+        272
+      ],
+      "bytes": 6830,
+      "vertices": 1686,
+      "meshSha256": "7d48fea8184ef75dc309931a995e9365859f88ff651964c4601317c579a8fb84",
+      "bounds": {
+        "min": [
+          -0.08100000023841858,
+          -0.25,
+          -1.2999999523162842
+        ],
+        "max": [
+          0.17499999701976776,
+          0.26499998569488525,
+          0.27000001072883606
+        ]
+      },
+      "diagnostics": {
+        "activeContexts": 1,
+        "contextsCreated": 1,
+        "contextsReleased": 0,
+        "drawCalls": 10
+      }
+    },
+    {
+      "id": "lmg",
+      "name": "Bastion LMG",
+      "kind": "gun",
+      "file": "lmg.webp",
+      "pixels": [
+        640,
+        360
+      ],
+      "alphaBounds": [
+        153,
+        103,
+        509,
+        261
+      ],
+      "bytes": 5656,
+      "vertices": 1698,
+      "meshSha256": "df882fa6e0983689ce84b95b3c7154088ab12e492645d8fce3e6de0123c90594",
+      "bounds": {
+        "min": [
+          -0.26499998569488525,
+          -0.27000001072883606,
+          -1.1160000562667847
+        ],
+        "max": [
+          0.11999999731779099,
+          0.20000000298023224,
+          0.21199999749660492
+        ]
+      },
+      "diagnostics": {
+        "activeContexts": 1,
+        "contextsCreated": 1,
+        "contextsReleased": 0,
+        "drawCalls": 11
+      }
+    },
+    {
+      "id": "crossbow",
+      "name": "Peregrine Crossbow",
+      "kind": "gun",
+      "file": "crossbow.webp",
+      "pixels": [
+        640,
+        360
+      ],
+      "alphaBounds": [
+        152,
+        120,
+        464,
+        245
+      ],
+      "bytes": 5062,
+      "vertices": 738,
+      "meshSha256": "05a86cf44ec6972c0deab8a22378c025d3a7310ac1c6deaf937bfef6694db9fa",
+      "bounds": {
+        "min": [
+          -0.4970000088214874,
+          -0.20000000298023224,
+          -0.8399999737739563
+        ],
+        "max": [
+          0.4970000088214874,
+          0.15199999511241913,
+          0.20499999821186066
+        ]
+      },
+      "diagnostics": {
+        "activeContexts": 1,
+        "contextsCreated": 1,
+        "contextsReleased": 0,
+        "drawCalls": 12
+      }
+    },
+    {
+      "id": "revolver",
+      "name": "Shrike Revolver",
+      "kind": "gun",
+      "file": "revolver.webp",
+      "pixels": [
+        640,
+        360
+      ],
+      "alphaBounds": [
+        245,
+        124,
+        396,
+        240
+      ],
+      "bytes": 2478,
+      "vertices": 774,
+      "meshSha256": "5400f89a7ff4ce108b74dbdbea2aa9af98e8ff43b73af02e5ff0a050932d059b",
+      "bounds": {
+        "min": [
+          -0.08500000089406967,
+          -0.19099999964237213,
+          -0.5360000133514404
+        ],
+        "max": [
+          0.08500000089406967,
+          0.15199999511241913,
+          0.02500000037252903
+        ]
+      },
+      "diagnostics": {
+        "activeContexts": 1,
+        "contextsCreated": 1,
+        "contextsReleased": 0,
+        "drawCalls": 13
+      }
+    },
+    {
+      "id": "pdw",
+      "name": "Moth Suppressed PDW",
+      "kind": "gun",
+      "file": "pdw.webp",
+      "pixels": [
+        640,
+        360
+      ],
+      "alphaBounds": [
+        188,
+        118,
+        455,
+        251
+      ],
+      "bytes": 3172,
+      "vertices": 906,
+      "meshSha256": "d2375446abc1709e94b0b1d236f59a7d92dcf90b917279817798c00e6fae38c3",
+      "bounds": {
+        "min": [
+          -0.0689999982714653,
+          -0.24199999868869781,
+          -0.8360000252723694
+        ],
+        "max": [
+          0.10100000351667404,
+          0.15199999511241913,
+          0.14499999582767487
+        ]
+      },
+      "diagnostics": {
+        "activeContexts": 1,
+        "contextsCreated": 1,
+        "contextsReleased": 0,
+        "drawCalls": 14
+      }
+    },
+    {
+      "id": "autoshotgun",
+      "name": "Harrier Auto Shotgun",
+      "kind": "gun",
+      "file": "autoshotgun.webp",
+      "pixels": [
+        640,
+        360
+      ],
+      "alphaBounds": [
+        155,
+        97,
+        491,
+        255
+      ],
+      "bytes": 3980,
+      "vertices": 930,
+      "meshSha256": "4064a179aa7613892e8c4a9557b82b370bd27b6431f40dd8453baf529a50b1f0",
+      "bounds": {
+        "min": [
+          -0.12800000607967377,
+          -0.28999999165534973,
+          -0.9660000205039978
+        ],
+        "max": [
+          0.12800000607967377,
+          0.15199999511241913,
+          0.2840000092983246
+        ]
+      },
+      "diagnostics": {
+        "activeContexts": 1,
+        "contextsCreated": 1,
+        "contextsReleased": 0,
+        "drawCalls": 15
+      }
+    },
+    {
+      "id": "battlerifle",
+      "name": "Condor Battle Rifle",
+      "kind": "gun",
+      "file": "battlerifle.webp",
+      "pixels": [
+        640,
+        360
+      ],
+      "alphaBounds": [
+        129,
+        101,
+        512,
+        256
+      ],
+      "bytes": 3256,
+      "vertices": 852,
+      "meshSha256": "6d13ffaf76af1b657115820d31cd971958ae2d952aaae0f2e2da49b94c1e777d",
+      "bounds": {
+        "min": [
+          -0.07000000029802322,
+          -0.25699999928474426,
+          -1.1759999990463257
+        ],
+        "max": [
+          0.11500000208616257,
+          0.15199999511241913,
+          0.2549999952316284
+        ]
+      },
+      "diagnostics": {
+        "activeContexts": 1,
+        "contextsCreated": 1,
+        "contextsReleased": 0,
+        "drawCalls": 16
+      }
+    },
+    {
+      "id": "dualpistols",
+      "name": "Twin Finch Pistols",
+      "kind": "gun",
+      "file": "dualpistols.webp",
+      "pixels": [
+        640,
+        360
+      ],
+      "alphaBounds": [
+        238,
+        120,
+        403,
+        244
+      ],
+      "bytes": 2762,
+      "vertices": 1068,
+      "meshSha256": "4963069c0f77b9a4c694c8b3fea8802c6f6a036bbcb06974319a3df88b93e78a",
+      "bounds": {
+        "min": [
+          -0.19750000536441803,
+          -0.1899999976158142,
+          -0.4830000102519989
+        ],
+        "max": [
+          0.19750000536441803,
+          0.15199999511241913,
+          0.003000000026077032
+        ]
+      },
+      "diagnostics": {
+        "activeContexts": 1,
+        "contextsCreated": 1,
+        "contextsReleased": 0,
+        "drawCalls": 17
+      }
+    },
+    {
+      "id": "dualsmg",
+      "name": "Twin Swift SMGs",
+      "kind": "gun",
+      "file": "dualsmg.webp",
+      "pixels": [
+        640,
+        360
+      ],
+      "alphaBounds": [
+        220,
+        109,
+        424,
+        248
+      ],
+      "bytes": 3210,
+      "vertices": 1284,
+      "meshSha256": "b253691646363186a0847d142cc4e9270bb49f10c8ebfecb00a61dc9ad766fb4",
+      "bounds": {
+        "min": [
+          -0.2029999941587448,
+          -0.2529999911785126,
+          -0.6330000162124634
+        ],
+        "max": [
+          0.2029999941587448,
+          0.15199999511241913,
+          0.003000000026077032
+        ]
+      },
+      "diagnostics": {
+        "activeContexts": 1,
+        "contextsCreated": 1,
+        "contextsReleased": 0,
+        "drawCalls": 18
+      }
+    },
+    {
+      "id": "slugshotgun",
+      "name": "Goshawk Slug Shotgun",
+      "kind": "gun",
+      "file": "slugshotgun.webp",
+      "pixels": [
+        640,
+        360
+      ],
+      "alphaBounds": [
+        130,
+        110,
+        511,
+        246
+      ],
+      "bytes": 5016,
+      "vertices": 840,
+      "meshSha256": "67cda2f9dca1da8502a2b2119acfbd323a8b1d0cd3d278defe7fa9ae98ed7fa0",
+      "bounds": {
+        "min": [
+          -0.0729999989271164,
+          -0.17599999904632568,
+          -1.1469999551773071
+        ],
+        "max": [
+          0.0989999994635582,
+          0.15199999511241913,
+          0.2840000092983246
+        ]
+      },
+      "diagnostics": {
+        "activeContexts": 1,
+        "contextsCreated": 1,
+        "contextsReleased": 0,
+        "drawCalls": 19
+      }
+    },
+    {
+      "id": "classic",
+      "name": "Classic",
+      "kind": "gun",
+      "file": "classic.webp",
+      "pixels": [
+        640,
+        360
+      ],
+      "alphaBounds": [
+        262,
+        125,
+        380,
+        236
+      ],
+      "bytes": 1836,
+      "vertices": 540,
+      "meshSha256": "9de72553608e9789472fadfe8df53ad28dc73762e3cf2c24cb9880e63ec9db19",
+      "bounds": {
+        "min": [
+          -0.04800000041723251,
+          -0.19599999487400055,
+          -0.38100001215934753
+        ],
+        "max": [
+          0.04800000041723251,
+          0.15199999511241913,
+          0.05900000035762787
+        ]
+      },
+      "diagnostics": {
+        "activeContexts": 1,
+        "contextsCreated": 1,
+        "contextsReleased": 0,
+        "drawCalls": 20
+      }
+    },
+    {
+      "id": "shorty",
+      "name": "Shorty",
+      "kind": "gun",
+      "file": "shorty.webp",
+      "pixels": [
+        640,
+        360
+      ],
+      "alphaBounds": [
+        247,
+        125,
+        390,
+        237
+      ],
+      "bytes": 2508,
+      "vertices": 720,
+      "meshSha256": "e97b4bb88c1df97c182747b1ff545eba6f9da1d83b9ef3240e5dd3f988f420a8",
+      "bounds": {
+        "min": [
+          -0.05900000035762787,
+          -0.17900000512599945,
+          -0.460999995470047
+        ],
+        "max": [
+          0.05900000035762787,
+          0.15199999511241913,
+          0.061000000685453415
+        ]
+      },
+      "diagnostics": {
+        "activeContexts": 1,
+        "contextsCreated": 1,
+        "contextsReleased": 0,
+        "drawCalls": 21
+      }
+    },
+    {
+      "id": "frenzy",
+      "name": "Frenzy",
+      "kind": "gun",
+      "file": "frenzy.webp",
+      "pixels": [
+        640,
+        360
+      ],
+      "alphaBounds": [
+        255,
+        110,
+        388,
+        252
+      ],
+      "bytes": 2076,
+      "vertices": 612,
+      "meshSha256": "3365d33bd56ef484f0bab63f6bbaf85350fd7dcc3bd5e840c50e2b604099b353",
+      "bounds": {
+        "min": [
+          -0.0560000017285347,
+          -0.2930000126361847,
+          -0.4309999942779541
+        ],
+        "max": [
+          0.0560000017285347,
+          0.15199999511241913,
+          0.05900000035762787
+        ]
+      },
+      "diagnostics": {
+        "activeContexts": 1,
+        "contextsCreated": 1,
+        "contextsReleased": 0,
+        "drawCalls": 22
+      }
+    },
+    {
+      "id": "ghost",
+      "name": "Ghost",
+      "kind": "gun",
+      "file": "ghost.webp",
+      "pixels": [
+        640,
+        360
+      ],
+      "alphaBounds": [
+        217,
+        117,
+        423,
+        245
+      ],
+      "bytes": 2070,
+      "vertices": 600,
+      "meshSha256": "d6fa1db5b0ef7bf39fd1b35431314c26690e802ca440a2c8e84563ccfc4c1c50",
+      "bounds": {
+        "min": [
+          -0.04699999839067459,
+          -0.20600000023841858,
+          -0.7110000252723694
+        ],
+        "max": [
+          0.04699999839067459,
+          0.15199999511241913,
+          0.05900000035762787
+        ]
+      },
+      "diagnostics": {
+        "activeContexts": 1,
+        "contextsCreated": 1,
+        "contextsReleased": 0,
+        "drawCalls": 23
+      }
+    },
+    {
+      "id": "sheriff",
+      "name": "Sheriff",
+      "kind": "gun",
+      "file": "sheriff.webp",
+      "pixels": [
+        640,
+        360
+      ],
+      "alphaBounds": [
+        236,
+        123,
+        404,
+        239
+      ],
+      "bytes": 2372,
+      "vertices": 672,
+      "meshSha256": "d93118ba35c3cbfb52d44f09b7998bb0f8f01dd59337b6614d1d4632c6a7f571",
+      "bounds": {
+        "min": [
+          -0.08399999886751175,
+          -0.18299999833106995,
+          -0.5709999799728394
+        ],
+        "max": [
+          0.08399999886751175,
+          0.15199999511241913,
+          0.05900000035762787
+        ]
+      },
+      "diagnostics": {
+        "activeContexts": 1,
+        "contextsCreated": 1,
+        "contextsReleased": 0,
+        "drawCalls": 24
+      }
+    },
+    {
+      "id": "bandit",
+      "name": "Bandit",
+      "kind": "gun",
+      "file": "bandit.webp",
+      "pixels": [
+        640,
+        360
+      ],
+      "alphaBounds": [
+        246,
+        117,
+        395,
+        246
+      ],
+      "bytes": 2270,
+      "vertices": 636,
+      "meshSha256": "0ff35124051e739b0fb06aea650fa6cf6fb9c849ea700743fdefa081a07045fc",
+      "bounds": {
+        "min": [
+          -0.052000001072883606,
+          -0.23899999260902405,
+          -0.4909999966621399
+        ],
+        "max": [
+          0.052000001072883606,
+          0.15199999511241913,
+          0.05900000035762787
+        ]
+      },
+      "diagnostics": {
+        "activeContexts": 1,
+        "contextsCreated": 1,
+        "contextsReleased": 0,
+        "drawCalls": 25
+      }
+    },
+    {
+      "id": "stinger",
+      "name": "Stinger",
+      "kind": "gun",
+      "file": "stinger.webp",
+      "pixels": [
+        640,
+        360
+      ],
+      "alphaBounds": [
+        197,
+        103,
+        450,
+        245
+      ],
+      "bytes": 2716,
+      "vertices": 726,
+      "meshSha256": "f46f690ae4d5ab99f5a842ca31721b851180564ef82779843de2771c09addb3e",
+      "bounds": {
+        "min": [
+          -0.07800000160932541,
+          -0.2879999876022339,
+          -0.6610000133514404
+        ],
+        "max": [
+          0.07400000095367432,
+          0.15199999511241913,
+          0.2619999945163727
+        ]
+      },
+      "diagnostics": {
+        "activeContexts": 1,
+        "contextsCreated": 1,
+        "contextsReleased": 0,
+        "drawCalls": 26
+      }
+    },
+    {
+      "id": "spectre",
+      "name": "Spectre",
+      "kind": "gun",
+      "file": "spectre.webp",
+      "pixels": [
+        640,
+        360
+      ],
+      "alphaBounds": [
+        163,
+        100,
+        482,
+        249
+      ],
+      "bytes": 2934,
+      "vertices": 756,
+      "meshSha256": "692312ca0e74dd1f675b5a6a1b89f49ac9f7c949c22a998147b6275bf053bd6f",
+      "bounds": {
+        "min": [
+          -0.05999999865889549,
+          -0.2709999978542328,
+          -0.9110000133514404
+        ],
+        "max": [
+          0.05999999865889549,
+          0.15199999511241913,
+          0.27399998903274536
+        ]
+      },
+      "diagnostics": {
+        "activeContexts": 1,
+        "contextsCreated": 1,
+        "contextsReleased": 0,
+        "drawCalls": 27
+      }
+    },
+    {
+      "id": "bucky",
+      "name": "Bucky",
+      "kind": "gun",
+      "file": "bucky.webp",
+      "pixels": [
+        640,
+        360
+      ],
+      "alphaBounds": [
+        144,
+        111,
+        498,
+        243
+      ],
+      "bytes": 3618,
+      "vertices": 894,
+      "meshSha256": "7b02781f8f541f97a1ba5a3c0302d110975d3d93d72bb0d5a5e2a0cfd1e84625",
+      "bounds": {
+        "min": [
+          -0.07599999755620956,
+          -0.17599999904632568,
+          -1.0110000371932983
+        ],
+        "max": [
+          0.10000000149011612,
+          0.15199999511241913,
+          0.3140000104904175
+        ]
+      },
+      "diagnostics": {
+        "activeContexts": 1,
+        "contextsCreated": 1,
+        "contextsReleased": 0,
+        "drawCalls": 28
+      }
+    },
+    {
+      "id": "judge",
+      "name": "Judge",
+      "kind": "gun",
+      "file": "judge.webp",
+      "pixels": [
+        640,
+        360
+      ],
+      "alphaBounds": [
+        157,
+        95,
+        489,
+        256
+      ],
+      "bytes": 3698,
+      "vertices": 924,
+      "meshSha256": "9da97704fa3170c29e684b805e7ce4dc5a3ce1ac882c03dcbb89bb01fe060022",
+      "bounds": {
+        "min": [
+          -0.1340000033378601,
+          -0.2980000078678131,
+          -0.9309999942779541
+        ],
+        "max": [
+          0.1340000033378601,
+          0.15199999511241913,
+          0.30399999022483826
+        ]
+      },
+      "diagnostics": {
+        "activeContexts": 1,
+        "contextsCreated": 1,
+        "contextsReleased": 0,
+        "drawCalls": 29
+      }
+    },
+    {
+      "id": "bulldog",
+      "name": "Bulldog",
+      "kind": "gun",
+      "file": "bulldog.webp",
+      "pixels": [
+        640,
+        360
+      ],
+      "alphaBounds": [
+        177,
+        105,
+        471,
+        256
+      ],
+      "bytes": 2634,
+      "vertices": 696,
+      "meshSha256": "1fb786a130419c8a83c4ddfa6ffe860a3d1a3b2c684aa3b7daec3632219ad77c",
+      "bounds": {
+        "min": [
+          -0.07199999690055847,
+          -0.2460000067949295,
+          -0.8610000014305115
+        ],
+        "max": [
+          0.07199999690055847,
+          0.15199999511241913,
+          0.2290000021457672
+        ]
+      },
+      "diagnostics": {
+        "activeContexts": 1,
+        "contextsCreated": 1,
+        "contextsReleased": 0,
+        "drawCalls": 30
+      }
+    },
+    {
+      "id": "guardian",
+      "name": "Guardian",
+      "kind": "gun",
+      "file": "guardian.webp",
+      "pixels": [
+        640,
+        360
+      ],
+      "alphaBounds": [
+        123,
+        101,
+        519,
+        246
+      ],
+      "bytes": 3098,
+      "vertices": 768,
+      "meshSha256": "c8deca0139a0e365554e3997fab32423eadb78321cd1a965e6147df16fa8e998",
+      "bounds": {
+        "min": [
+          -0.06300000101327896,
+          -0.22200000286102295,
+          -1.180999994277954
+        ],
+        "max": [
+          0.10000000149011612,
+          0.15199999511241913,
+          0.3140000104904175
+        ]
+      },
+      "diagnostics": {
+        "activeContexts": 1,
+        "contextsCreated": 1,
+        "contextsReleased": 0,
+        "drawCalls": 31
+      }
+    },
+    {
+      "id": "phantom",
+      "name": "Phantom",
+      "kind": "gun",
+      "file": "phantom.webp",
+      "pixels": [
+        640,
+        360
+      ],
+      "alphaBounds": [
+        124,
+        96,
+        517,
+        252
+      ],
+      "bytes": 3102,
+      "vertices": 774,
+      "meshSha256": "340142533c0a994ed4f0c856eb5854d02910f1dfd1e26e1d643e9180af445185",
+      "bounds": {
+        "min": [
+          -0.06499999761581421,
+          -0.26499998569488525,
+          -1.1610000133514404
+        ],
+        "max": [
+          0.10100000351667404,
+          0.15199999511241913,
+          0.3140000104904175
+        ]
+      },
+      "diagnostics": {
+        "activeContexts": 1,
+        "contextsCreated": 1,
+        "contextsReleased": 0,
+        "drawCalls": 32
+      }
+    },
+    {
+      "id": "vandal",
+      "name": "Vandal",
+      "kind": "gun",
+      "file": "vandal.webp",
+      "pixels": [
+        640,
+        360
+      ],
+      "alphaBounds": [
+        133,
+        89,
+        515,
+        255
+      ],
+      "bytes": 3436,
+      "vertices": 804,
+      "meshSha256": "9779f3e85dc649640d3334aa727aa29066b7e13a4940798acc7ac957b069d9c2",
+      "bounds": {
+        "min": [
+          -0.06199999898672104,
+          -0.3190000057220459,
+          -1.1009999513626099
+        ],
+        "max": [
+          0.06199999898672104,
+          0.15199999511241913,
+          0.33399999141693115
+        ]
+      },
+      "diagnostics": {
+        "activeContexts": 1,
+        "contextsCreated": 1,
+        "contextsReleased": 0,
+        "drawCalls": 33
+      }
+    },
+    {
+      "id": "warden",
+      "name": "Warden",
+      "kind": "gun",
+      "file": "warden.webp",
+      "pixels": [
+        640,
+        360
+      ],
+      "alphaBounds": [
+        112,
+        106,
+        528,
+        270
+      ],
+      "bytes": 3814,
+      "vertices": 852,
+      "meshSha256": "66a22a72155d8be701e8b8ed06023201b34f8f17d16403a9908e14400be691c4",
+      "bounds": {
+        "min": [
+          -0.07199999690055847,
+          -0.28700000047683716,
+          -1.2109999656677246
+        ],
+        "max": [
+          0.11299999803304672,
+          0.26899999380111694,
+          0.34700000286102295
+        ]
+      },
+      "diagnostics": {
+        "activeContexts": 1,
+        "contextsCreated": 1,
+        "contextsReleased": 0,
+        "drawCalls": 34
+      }
+    },
+    {
+      "id": "marshal",
+      "name": "Marshal",
+      "kind": "gun",
+      "file": "marshal.webp",
+      "pixels": [
+        640,
+        360
+      ],
+      "alphaBounds": [
+        104,
+        120,
+        534,
+        268
+      ],
+      "bytes": 4722,
+      "vertices": 600,
+      "meshSha256": "9f8641c9044d9a8aec606e98d3b0675273ddde0f7eb62d46d0cc3401bcc085db",
+      "bounds": {
+        "min": [
+          -0.06800000369548798,
+          -0.1860000044107437,
+          -1.340999960899353
+        ],
+        "max": [
+          0.11900000274181366,
+          0.26899999380111694,
+          0.28999999165534973
+        ]
+      },
+      "diagnostics": {
+        "activeContexts": 1,
+        "contextsCreated": 1,
+        "contextsReleased": 0,
+        "drawCalls": 35
+      }
+    },
+    {
+      "id": "outlaw",
+      "name": "Outlaw",
+      "kind": "gun",
+      "file": "outlaw.webp",
+      "pixels": [
+        640,
+        360
+      ],
+      "alphaBounds": [
+        118,
+        118,
+        518,
+        263
+      ],
+      "bytes": 3660,
+      "vertices": 762,
+      "meshSha256": "eedcf2f54070ef4587f8ce3e23ef1f41267cde32dbeda2e4dffa986858865003",
+      "bounds": {
+        "min": [
+          -0.06800000369548798,
+          -0.17599999904632568,
+          -1.190999984741211
+        ],
+        "max": [
+          0.11299999803304672,
+          0.26899999380111694,
+          0.3140000104904175
+        ]
+      },
+      "diagnostics": {
+        "activeContexts": 1,
+        "contextsCreated": 1,
+        "contextsReleased": 0,
+        "drawCalls": 36
+      }
+    },
+    {
+      "id": "operator",
+      "name": "Operator",
+      "kind": "gun",
+      "file": "operator.webp",
+      "pixels": [
+        640,
+        360
+      ],
+      "alphaBounds": [
+        63,
+        109,
+        573,
+        275
+      ],
+      "bytes": 4326,
+      "vertices": 942,
+      "meshSha256": "7020cc3d5946f6fd40505f6c60af10edbff00837e9b1a66ca682235af9700f27",
+      "bounds": {
+        "min": [
+          -0.10000000149011612,
+          -0.25600001215934753,
+          -1.5809999704360962
+        ],
+        "max": [
+          0.17000000178813934,
+          0.27900001406669617,
+          0.34299999475479126
+        ]
+      },
+      "diagnostics": {
+        "activeContexts": 1,
+        "contextsCreated": 1,
+        "contextsReleased": 0,
+        "drawCalls": 37
+      }
+    },
+    {
+      "id": "ares",
+      "name": "Ares",
+      "kind": "gun",
+      "file": "ares.webp",
+      "pixels": [
+        640,
+        360
+      ],
+      "alphaBounds": [
+        133,
+        98,
+        514,
+        264
+      ],
+      "bytes": 3882,
+      "vertices": 876,
+      "meshSha256": "a4d8f61c81aaa8e27ef406b549a187b3c06bc9178b2c7973c920b3191f868086",
+      "bounds": {
+        "min": [
+          -0.09200000017881393,
+          -0.29499998688697815,
+          -1.1410000324249268
+        ],
+        "max": [
+          0.09200000017881393,
+          0.19599999487400055,
+          0.2939999997615814
+        ]
+      },
+      "diagnostics": {
+        "activeContexts": 1,
+        "contextsCreated": 1,
+        "contextsReleased": 0,
+        "drawCalls": 38
+      }
+    },
+    {
+      "id": "odin",
+      "name": "Odin",
+      "kind": "gun",
+      "file": "odin.webp",
+      "pixels": [
+        640,
+        360
+      ],
+      "alphaBounds": [
+        101,
+        84,
+        558,
+        274
+      ],
+      "bytes": 6102,
+      "vertices": 1020,
+      "meshSha256": "fa9b981dd80194d6c72f7474012e982f7a290a29414f9fff0de1269c7d4e1c8a",
+      "bounds": {
+        "min": [
+          -0.21799999475479126,
+          -0.3400000035762787,
+          -1.3910000324249268
+        ],
+        "max": [
+          0.10499999672174454,
+          0.19699999690055847,
+          0.33399999141693115
+        ]
+      },
+      "diagnostics": {
+        "activeContexts": 1,
+        "contextsCreated": 1,
+        "contextsReleased": 0,
+        "drawCalls": 39
+      }
+    },
+    {
+      "id": "knife",
+      "name": "Survivor Knife",
+      "kind": "melee",
+      "file": "melee_knife.webp",
+      "pixels": [
+        640,
+        360
+      ],
+      "alphaBounds": [
+        232,
+        158,
+        409,
+        210
+      ],
+      "bytes": 1948,
+      "vertices": 576,
+      "meshSha256": "9eacae2e959092c39d74ef71f532029892bcfcade376f6042085fca6e71cb803",
+      "bounds": {
+        "min": [
+          -0.07100000232458115,
+          -0.035999998450279236,
+          -0.4699999988079071
+        ],
+        "max": [
+          0.07100000232458115,
+          0.03799999877810478,
+          0.16500000655651093
+        ]
+      },
+      "diagnostics": {
+        "activeContexts": 1,
+        "contextsCreated": 1,
+        "contextsReleased": 0,
+        "drawCalls": 40
+      }
+    },
+    {
+      "id": "sword",
+      "name": "Breach Sword",
+      "kind": "melee",
+      "file": "melee_sword.webp",
+      "pixels": [
+        640,
+        360
+      ],
+      "alphaBounds": [
+        133,
+        140,
+        509,
+        250
+      ],
+      "bytes": 3116,
+      "vertices": 612,
+      "meshSha256": "279017fac5247686da2489aae18df1fdf2de0bfd636f3f2e9e7d0da7aeae82ec",
+      "bounds": {
+        "min": [
+          -0.18000000715255737,
+          -0.04699999839067459,
+          -1.1399999856948853
+        ],
+        "max": [
+          0.18000000715255737,
+          0.0560000017285347,
+          0.21400000154972076
+        ]
+      },
+      "diagnostics": {
+        "activeContexts": 1,
+        "contextsCreated": 1,
+        "contextsReleased": 0,
+        "drawCalls": 41
+      }
+    },
+    {
+      "id": "katana",
+      "name": "Raven Katana",
+      "kind": "melee",
+      "file": "melee_katana.webp",
+      "pixels": [
+        640,
+        360
+      ],
+      "alphaBounds": [
+        95,
+        122,
+        550,
+        237
+      ],
+      "bytes": 3208,
+      "vertices": 1044,
+      "meshSha256": "df3ca061cf344f50fc5ce1b3f4157d11c3071b1e2f27ed8de054f78fd099fe99",
+      "bounds": {
+        "min": [
+          -0.11599999666213989,
+          -0.050999999046325684,
+          -1.4049999713897705
+        ],
+        "max": [
+          0.11599999666213989,
+          0.050999999046325684,
+          0.2529999911785126
+        ]
+      },
+      "diagnostics": {
+        "activeContexts": 1,
+        "contextsCreated": 1,
+        "contextsReleased": 0,
+        "drawCalls": 42
+      }
+    },
+    {
+      "id": "axe",
+      "name": "Bulwark Axe",
+      "kind": "melee",
+      "file": "melee_axe.webp",
+      "pixels": [
+        640,
+        360
+      ],
+      "alphaBounds": [
+        132,
+        88,
+        496,
+        230
+      ],
+      "bytes": 3090,
+      "vertices": 540,
+      "meshSha256": "881a533c133ab4c33e40189d201b98096d9862e323ff40f15a14dcbe5cbcdc8f",
+      "bounds": {
+        "min": [
+          -0.3179999887943268,
+          -0.054999999701976776,
+          -0.9909999966621399
+        ],
+        "max": [
+          0.23999999463558197,
+          0.054999999701976776,
+          0.25200000405311584
+        ]
+      },
+      "diagnostics": {
+        "activeContexts": 1,
+        "contextsCreated": 1,
+        "contextsReleased": 0,
+        "drawCalls": 43
+      }
+    },
+    {
+      "id": "tonfas",
+      "name": "Twin Tonfas",
+      "kind": "melee",
+      "file": "melee_tonfas.webp",
+      "pixels": [
+        640,
+        360
+      ],
+      "alphaBounds": [
+        172,
+        86,
+        469,
+        260
+      ],
+      "bytes": 3458,
+      "vertices": 720,
+      "meshSha256": "f83637623ae211f300b5ca238822417f38b0bb03c754d75f7a779e813786018f",
+      "bounds": {
+        "min": [
+          -0.2070000022649765,
+          -0.16699999570846558,
+          -0.7360000014305115
+        ],
+        "max": [
+          0.2070000022649765,
+          0.10599999874830246,
+          0.25200000405311584
+        ]
+      },
+      "diagnostics": {
+        "activeContexts": 1,
+        "contextsCreated": 1,
+        "contextsReleased": 0,
+        "drawCalls": 44
+      }
+    }
+  ]
+}

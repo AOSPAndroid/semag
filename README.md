@@ -14,6 +14,10 @@ Click an image to open it at full size.
 
 [![semaG dark game library with the available games and room controls](docs/screenshots/game-hub-dark.png)](docs/screenshots/game-hub-dark.png)
 
+**Voxel armory**
+
+[![Visual voxel armory with weapon cards, categories, a rotatable 3D model and explicit Equip](docs/screenshots/voxel-armory.png)](docs/screenshots/voxel-armory.png)
+
 **Last Stand results**
 
 [![Last Stand death screen showing damage dealt, wave, hostiles defeated, survival time and Replay](docs/screenshots/voxel-last-stand-results.png)](docs/screenshots/voxel-last-stand-results.png)
@@ -81,7 +85,9 @@ their completion records separate by difficulty.
 
 Open a solo game from the shelf, review its controls, and press **Start game** when you are ready. The game and its timers wait on the ready screen. After starting, press **Escape** to pause or resume, or use Pause / Resume and New game for that session.
 
-The interface uses a modern dark theme with shared shadcn-style color roles, compact native controls and the pixelated **semaG** wordmark. Game canvases retain their own artwork and HUD signals.
+The interface uses a modern dark theme and the pixelated **semaG** wordmark. Voxel loadouts now open a visual shadcn armory: browse categories, search weapon cards, rotate the actual voxel models, inspect damage and handling, then explicitly Equip. Browsing never starts a game or changes your loadout until you confirm. The armory also covers training blades and both Dojo racks. Game canvases retain their own artwork and HUD signals.
+
+The isolated UI source and rebuild instructions are in [ui/armory](ui/armory/README.md). Hosting the game still needs only the normal root install; the compiled armory is included.
 
 When a solo Last Stand ends, the death screen shows your total **Damage dealt**, wave reached, hostiles defeated and time survived. **Replay** starts the same map, difficulty and chosen loadout with full health and fresh run statistics; **Change setup** returns to the ready screen. Damage counts actual enemy health removed, including melee and grenade hits.
 

@@ -39,3 +39,14 @@ body .arsenal-weapon-details .arsenal-handling{font:11px/1.65 var(--font,Arial,s
  .arsenal-metrics{gap:9px}.arsenal-metrics strong{font-size:10px}
  body .arena-weapon-stats{font-size:9px;line-height:1.55}
 }
+
+/* Visual armory fields remain semantic, outside native label wrappers. */
+.armory-field{display:flex;flex-direction:column;gap:8px;min-width:0;text-align:left}
+.armory-field>span{font:600 11px var(--font,Arial,sans-serif);color:var(--muted-foreground,#a1a1aa)}
+.practice-settings>.armory-field{grid-column:1/-1}
+.dojo-tool-fields>.armory-field{min-width:0}
+.practice-settings>.armory-field+.fps-starter-kit{grid-column:1/-1}
+@media(min-width:601px){
+ .practice-settings:has(#practice-blade-field:not([hidden]))>#practice-loadout-field,
+ .practice-settings:has(#practice-blade-field:not([hidden]))>#practice-blade-field{grid-column:auto}
+}

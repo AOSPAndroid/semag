@@ -1,0 +1,254 @@
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme) prefix(va);
+@import "tailwindcss/utilities.css" layer(utilities) prefix(va);
+@import "tw-animate-css";
+@source "./";
+@theme inline {
+  --font-sans: var(--font); --font-mono: var(--mono);
+  --color-background: var(--background); --color-foreground: var(--foreground);
+  --color-card: var(--card); --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover); --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary); --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary); --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted); --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent); --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive); --color-border: var(--border);
+  --color-input: var(--input); --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px); --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius); --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  :where(.voxel-armory-root, .voxel-armory-modal) button { background: transparent; border: 0; color: inherit; }
+}
+
+/* The island does not load Tailwind preflight. The host game's theme and
+   semantic roles are retained; the va: utility prefix cannot reset its UI. */
+:where(.voxel-armory-root, .voxel-armory-modal) {
+  font-family: var(--font);
+  color: var(--foreground);
+  font-size: 14px;
+  line-height: 1.45;
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+}
+:where(.voxel-armory-root, .voxel-armory-modal),
+:where(.voxel-armory-root, .voxel-armory-modal) * { box-sizing: border-box; }
+:where(.voxel-armory-root, .voxel-armory-modal) :is(button, input) { font: inherit; }
+:where(.voxel-armory-root, .voxel-armory-modal) button { cursor: pointer; }
+:where(.voxel-armory-root, .voxel-armory-modal) button:disabled { cursor: not-allowed; }
+:where(.voxel-armory-root, .voxel-armory-modal) :is(p, h1, h2, h3, dl, dt, dd) { margin: 0; }
+:where(.voxel-armory-root, .voxel-armory-modal) [hidden] { display: none !important; }
+:where(.voxel-armory-root, .voxel-armory-modal) :is(button, input, canvas, [role=radio]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.voxel-armory-root { width: 100%; min-width: 0; }
+.voxel-armory-root [data-slot=button], .voxel-armory-modal [data-slot=button] { min-height: 44px; }
+.voxel-armory-root [data-slot=button][data-armory-action=open] { min-height: 38px; }
+
+/* Compact loadout card: the actual chosen model is visible before opening. */
+.voxel-armory-root .armory-card[data-variant=loadout] {
+  display: grid;
+  grid-template-columns: minmax(88px, 30%) minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: 12px;
+  row-gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: none;
+  min-height: 110px;
+}
+.voxel-armory-root .armory-card[data-variant=loadout] [data-slot=card-header] { grid-column: 2; padding: 0; gap: 3px; }
+.voxel-armory-root .armory-card[data-variant=loadout] [data-slot=card-title] { font-size: 14px; font-weight: 600; line-height: 1.3; }
+.voxel-armory-root .armory-card[data-variant=loadout] [data-slot=card-description] { font-size: 11px; color: var(--muted-foreground); }
+.voxel-armory-root .armory-card[data-variant=loadout] [data-slot=card-content] { grid-column: 1; grid-row: 1 / 3; min-width: 0; padding: 0; align-self: stretch; }
+.voxel-armory-root .armory-card[data-variant=loadout] [data-slot=card-footer] { grid-column: 2; padding: 0; border: 0; background: transparent; gap: 8px; justify-content: space-between; flex-wrap: wrap; border-radius: 0; }
+.armory-loadout-art { display: flex; align-items: center; justify-content: center; height: 100%; min-height: 82px; border-radius: calc(var(--radius) - 4px); background: radial-gradient(ellipse at center, var(--secondary), var(--background)); }
+.armory-loadout-art .armory-weapon-image { height: 88px; }
+.armory-loadout-facts { font-size: 11px; color: var(--muted-foreground); line-height: 1.35; }
+.voxel-armory-root[data-disabled=true] .armory-card[data-variant=loadout] { opacity: .55; }
+.armory-weapon-image { display: block; width: 100%; height: 100%; object-fit: contain; user-select: none; }
+.armory-image-fallback { align-self: center; color: var(--muted-foreground); font: 11px var(--mono); text-align: center; }
+
+/* A wide dialog gives every weapon an image and a focused inspection space. */
+.voxel-armory-modal[data-variant=armory] {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  width: min(1280px, calc(100vw - 40px));
+  max-width: none;
+  height: min(840px, calc(100svh - 48px));
+  max-height: calc(100svh - 48px);
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) + 4px);
+  background: var(--background);
+  color: var(--foreground);
+  box-shadow: var(--shadow-dialog);
+  overflow: hidden;
+  isolation: isolate;
+}
+.voxel-armory-modal .armory-dialog-header { flex: none; padding: 24px 24px 18px; border-bottom: 1px solid var(--border); }
+.armory-dialog-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+.armory-heading-copy { display: flex; flex-direction: column; gap: 9px; min-width: 0; }
+.armory-eyebrow { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; font: 10px var(--mono); letter-spacing: .14em; color: var(--accent); }
+.armory-eyebrow > svg { width: 14px; height: 14px; flex: none; }
+.armory-eyebrow [data-slot=badge] { letter-spacing: 0; font-family: var(--font); }
+.voxel-armory-modal [data-slot=dialog-title] { font-size: clamp(20px, 2.3vw, 28px); font-weight: 650; line-height: 1.15; letter-spacing: -.035em; }
+.voxel-armory-modal [data-slot=dialog-description] { font-size: 13px; line-height: 1.5; }
+.voxel-armory-modal .armory-tabs { flex: 1; flex-direction: column; min-height: 0; min-width: 0; width: 100%; gap: 0; }
+.armory-browser-toolbar { display: flex; flex-direction: row; align-items: center; gap: 18px; padding: 16px 24px; border-bottom: 1px solid var(--border); background: var(--card); flex: none; }
+.armory-category-scroll { flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.voxel-armory-modal .armory-tabs-list { width: max-content; min-width: 100%; min-height: 44px; height: auto; justify-content: flex-start; gap: 5px; padding: 0; border-radius: 0; }
+.voxel-armory-modal .armory-tabs-list [data-slot=tabs-trigger] { flex: none; height: 44px; gap: 6px; padding: 0 12px; font-size: 12px; border-radius: calc(var(--radius) - 4px); border: 1px solid transparent; color: var(--muted-foreground); background: transparent; box-shadow: none; transition: background .12s, border-color .12s, color .12s; }
+.voxel-armory-modal .armory-tabs-list [data-slot=tabs-trigger]:hover { background: var(--muted); color: var(--foreground); }
+.voxel-armory-modal .armory-tabs-list [data-slot=tabs-trigger][data-active] { background: var(--muted); color: var(--foreground); border-color: var(--input); }
+.voxel-armory-modal .armory-tabs-list [data-slot=tabs-trigger][data-active]::after { opacity: 0; }
+.armory-category-count { font: 10px var(--mono); color: var(--muted-foreground); }
+.armory-search-group { width: 210px; max-width: 330px; gap: 0; flex: none; }
+.armory-search-box { position: relative; }
+.armory-search-box > svg { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; color: var(--muted-foreground); pointer-events: none; }
+.voxel-armory-modal .armory-search-box [data-slot=input] { height: 44px; padding-left: 39px; background: var(--background); font-size: 13px; }
+.armory-body { min-width: 0; width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) 338px; gap: 24px; flex: 1; min-height: 0; padding: 0 24px; }
+.armory-catalog { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.armory-results-line { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--muted-foreground); font-size: 11px; min-height: 44px; flex: none; }
+.armory-results-line > span:last-child { font: 10px var(--mono); }
+.voxel-armory-modal .armory-catalog-panel { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 4px 4px 20px; margin: 0 -4px; scrollbar-width: thin; scrollbar-color: var(--input) transparent; }
+.armory-weapon-fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
+.voxel-armory-modal .armory-weapon-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; align-items: stretch; }
+.armory-choice { min-width: 0; }
+.voxel-armory-modal .armory-choice-label { display: block; width: 100%; cursor: pointer; background: transparent; }
+.voxel-armory-modal .armory-card[data-variant=weapon] { gap: 0; padding: 0; height: 100%; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); box-shadow: none; transition: border-color .14s, background .14s, transform .14s; }
+.voxel-armory-modal .armory-card[data-variant=weapon] [data-slot=card-header] { padding: 12px 12px 0; gap: 4px; }
+.voxel-armory-modal .armory-card[data-variant=weapon] [data-slot=card-title] { font-size: 13px; line-height: 1.3; font-weight: 600; min-height: 34px; }
+.voxel-armory-modal .armory-card[data-variant=weapon] [data-slot=card-description] { color: var(--muted-foreground); font: 9px var(--mono); text-transform: uppercase; letter-spacing: .07em; }
+.voxel-armory-modal .armory-card[data-variant=weapon] [data-slot=card-content] { padding: 0 5px; }
+.voxel-armory-modal .armory-card[data-variant=weapon] [data-slot=card-footer] { min-height: 39px; padding: 8px 12px; border-top: 1px solid var(--border); background: transparent; justify-content: space-between; gap: 8px; color: var(--muted-foreground); font-size: 10px; }
+.voxel-armory-modal .armory-card[data-variant=weapon] [data-slot=badge] { font-size: 9px; }
+.armory-thumbnail-stage { height: 94px; display: flex; align-items: center; justify-content: center; background: radial-gradient(ellipse at center, var(--secondary), transparent 70%); }
+.voxel-armory-modal .armory-card[data-variant=weapon]:hover { border-color: var(--muted-foreground); background: color-mix(in srgb, var(--card) 85%, var(--secondary)); transform: translateY(-1px); }
+.voxel-armory-modal .armory-card[data-variant=weapon][data-selected=true] { border-color: var(--accent); background: color-mix(in srgb, var(--card) 94%, var(--accent)); outline: 1px solid var(--accent); }
+.voxel-armory-modal .armory-card[data-variant=weapon]:has(:focus-visible) { outline: 2px solid var(--accent); outline-offset: 3px; }
+.voxel-armory-modal .armory-card[data-variant=weapon] [data-slot=radio-group-item][data-checked] { background: var(--accent); border-color: var(--accent); color: var(--accent-foreground); }
+.voxel-armory-modal .armory-card[data-variant=weapon] [data-slot=radio-group-item][data-checked] [data-slot=radio-group-indicator] > span { background: var(--accent-foreground); }
+.armory-choice[data-disabled=true] { opacity: .4; }
+.armory-choice[data-disabled=true] .armory-choice-label { cursor: not-allowed; }
+.armory-choice[data-disabled=true] .armory-card[data-variant=weapon]:hover { transform: none; border-color: var(--border); }
+.armory-empty { min-height: 260px; }
+
+/* The inspection panel is always available while scrolling the collection. */
+.armory-detail { min-width: 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; padding: 20px 0; }
+.voxel-armory-modal .armory-card[data-variant=detail] { gap: 12px; padding: 0; border: 0; background: transparent; box-shadow: none; overflow: visible; }
+.voxel-armory-modal .armory-card[data-variant=detail] [data-slot=card-header] { padding: 0; gap: 8px; }
+.armory-detail-badges { display: flex; flex-wrap: wrap; gap: 6px; }
+.armory-detail-badges [data-slot=badge] { font-size: 10px; }
+.voxel-armory-modal .armory-card[data-variant=detail] [data-slot=card-title] { font-size: 23px; font-weight: 650; line-height: 1.15; letter-spacing: -.03em; }
+.voxel-armory-modal .armory-card[data-variant=detail] [data-slot=card-description] { font-size: 12px; line-height: 1.65; }
+.voxel-armory-modal .armory-card[data-variant=detail] [data-slot=card-content] { padding: 0; }
+.voxel-armory-modal .armory-card[data-variant=detail] [data-slot=card-footer] { padding: 12px 0 0; border-top: 1px solid var(--border); background: transparent; border-radius: 0; font-size: 10px; line-height: 1.6; color: var(--muted-foreground); }
+.armory-inspection { margin-bottom: 10px; }
+.armory-hero-stage { position: relative; display: flex; align-items: center; justify-content: center; height: 180px; border: 1px solid var(--border); border-radius: var(--radius); background: radial-gradient(ellipse at center, var(--secondary), var(--card) 75%); overflow: hidden; }
+.armory-hero-grid { position: absolute; inset: 0; background-image: linear-gradient(to right, var(--border) 1px, transparent 1px), linear-gradient(to bottom, var(--border) 1px, transparent 1px); background-size: 28px 28px; opacity: .4; mask-image: radial-gradient(ellipse at center, transparent 15%, var(--foreground) 95%); pointer-events: none; }
+.armory-hero-caption { position: absolute; top: 13px; left: 14px; font: 8px var(--mono); letter-spacing: .12em; color: var(--muted-foreground); pointer-events: none; }
+.armory-hero-stage canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; opacity: 0; }
+.armory-hero-stage[data-preview-ready=true] canvas { opacity: 1; }
+.armory-hero-stage canvas:active { cursor: grabbing; }
+.armory-hero-stage .armory-weapon-image-hero { position: relative; max-height: 100%; padding: 10px; }
+.voxel-armory-modal .armory-preview-badge { position: absolute; bottom: 12px; right: 12px; font: 9px var(--mono); background: var(--card); pointer-events: none; }
+.armory-inspection-tools { display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 42px; color: var(--muted-foreground); font-size: 9px; }
+.voxel-armory-modal .armory-inspection-tools [data-slot=button] { font-size: 11px; min-height: 44px; }
+.armory-mobile-details { display: flex; margin-top: 10px; }
+.armory-mobile-only, .armory-mobile-stats { display: none; }
+.armory-desktop-only { display: inline; }
+.armory-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.armory-stat { min-width: 0; padding: 12px; border: 1px solid var(--border); border-radius: calc(var(--radius) - 4px); background: var(--card); }
+.armory-stat dt { font-size: 10px; color: var(--muted-foreground); margin-bottom: 5px; }
+.armory-stat dd { font: 15px var(--mono); font-weight: 600; line-height: 1.4; color: var(--foreground); overflow-wrap: anywhere; }
+.armory-stat span { display: block; margin-top: 5px; font-size: 9px; color: var(--muted-foreground); line-height: 1.5; }
+.voxel-armory-modal .armory-dialog-footer { margin: 0; padding: 16px 24px; flex: none; border-top: 1px solid var(--border); background: var(--card); display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 16px; border-radius: 0; }
+.armory-equipped-note { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.armory-equipped-note span { font-size: 10px; color: var(--muted-foreground); }
+.armory-equipped-note strong { font-size: 12px; font-weight: 500; }
+.armory-footer-actions { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.armory-equip-button { min-width: 190px; }
+
+@media (min-width: 1150px) {
+  .armory-browser-toolbar { flex-direction: row; align-items: center; gap: 18px; }
+  .armory-category-scroll { flex: 1; }
+  .armory-search-group { width: 235px; flex: none; }
+}
+@media (max-width: 900px) {
+  .armory-body { grid-template-columns: minmax(0, 1fr) 300px; gap: 18px; padding: 0 18px; }
+  .armory-browser-toolbar { padding: 12px 18px; gap: 10px; }
+  .voxel-armory-modal .armory-dialog-header { padding: 18px; }
+  .voxel-armory-modal .armory-dialog-footer { padding: 14px 18px; }
+  .voxel-armory-modal .armory-weapon-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .armory-hero-stage { height: 180px; }
+}
+@media (max-width: 680px) {
+  .voxel-armory-modal[data-variant=armory] { width: calc(100vw - 16px); height: calc(100svh - 16px); max-height: calc(100svh - 16px); border-radius: var(--radius); }
+  .voxel-armory-modal .armory-dialog-header { padding: 16px; }
+  .armory-heading-copy { gap: 8px; }
+  .voxel-armory-modal [data-slot=dialog-title] { font-size: 22px; }
+  .voxel-armory-modal [data-slot=dialog-description] { font-size: 12px; }
+  .armory-eyebrow { font-size: 9px; gap: 8px; }
+  .armory-browser-toolbar { flex-direction: column; align-items: stretch; gap: 10px; padding: 10px 14px; }
+  .armory-search-group { width: 100%; max-width: none; }
+  .voxel-armory-modal .armory-tabs-list [data-slot=tabs-trigger] { padding: 0 10px; }
+  .armory-body { display: flex; flex-direction: column; gap: 0; padding: 0 14px; overflow: hidden; }
+  .armory-catalog { min-height: 120px; flex: 1; }
+  .voxel-armory-modal .armory-catalog-panel { overflow-y: auto; flex: 1; min-height: 0; padding-bottom: 18px; }
+  .armory-results-line { min-height: 40px; }
+  .armory-results-line > span:last-child { display: none; }
+  .voxel-armory-modal .armory-weapon-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .voxel-armory-modal .armory-card[data-variant=weapon] [data-slot=card-header] { padding: 10px 10px 0; }
+  .voxel-armory-modal .armory-card[data-variant=weapon] [data-slot=card-title] { font-size: 12px; min-height: 16px; }
+  .armory-thumbnail-stage { height: 60px; }
+  .voxel-armory-modal .armory-card[data-variant=weapon] [data-slot=card-footer] { padding: 8px 10px; }
+  .armory-detail { order: -1; flex: none; max-height: 66%; overflow-y: auto; min-height: 0; border-bottom: 1px solid var(--border); padding: 12px 0 8px; }
+  .voxel-armory-modal .armory-card[data-variant=detail] { gap: 8px; }
+  .voxel-armory-modal .armory-card[data-variant=detail] > [data-slot=card-header] { gap: 8px; }
+  .voxel-armory-modal .armory-card[data-variant=detail] > [data-slot=card-header] > [data-slot=card-description],
+  .voxel-armory-modal .armory-card[data-variant=detail] > [data-slot=card-footer],
+  .armory-desktop-stats { display: none; }
+  .voxel-armory-modal .armory-card[data-variant=detail] [data-slot=card-title] { font-size: 19px; }
+  .armory-detail-badges [data-slot=badge]:not(:first-child) { display: none; }
+  .armory-inspection { margin-bottom: 0; }
+  .armory-hero-stage { height: 150px; }
+  .armory-mobile-details { display: flex; margin-top: 0; }
+  .armory-mobile-only { display: inline; }
+  .armory-desktop-only { display: none; }
+  .armory-mobile-stats { display: block; }
+  .armory-mobile-details [data-slot=accordion-trigger] { min-height: 44px; align-items: center; }
+  .armory-mobile-details [data-slot=accordion-content] [data-slot=card-description] { margin-bottom: 12px; }
+  .armory-mobile-details .armory-stat { padding: 10px; }
+  .voxel-armory-modal .armory-dialog-footer { padding: 12px 14px; gap: 10px; }
+  .armory-equipped-note { display: none; }
+  .armory-footer-actions { width: 100%; }
+  .armory-footer-actions .armory-equip-button { flex: 1; min-width: 0; white-space: normal; text-align: center; padding: 8px 10px; line-height: 1.25; }
+  .armory-footer-actions [data-armory-action=cancel] { min-width: 70px; }
+}
+@media (max-height: 540px) and (min-width: 681px) {
+  .voxel-armory-modal[data-variant=armory] { height: calc(100svh - 16px); max-height: calc(100svh - 16px); }
+  .voxel-armory-modal .armory-dialog-header { padding: 12px 18px; }
+  .armory-eyebrow { display: none; }
+  .voxel-armory-modal [data-slot=dialog-description] { display: none; }
+  .voxel-armory-modal [data-slot=dialog-title] { font-size: 20px; }
+  .armory-browser-toolbar { flex-direction: row; padding: 8px 18px; }
+  .armory-category-scroll { flex: 1; }
+  .armory-search-group { width: 180px; flex: none; }
+  .voxel-armory-modal .armory-dialog-footer { padding: 8px 18px; }
+  .armory-detail { padding: 8px 0; }
+  .voxel-armory-modal .armory-card[data-variant=detail] { gap: 8px; }
+  .voxel-armory-modal .armory-card[data-variant=detail] > [data-slot=card-header] > [data-slot=card-description],
+  .armory-detail-badges { display: none; }
+  .voxel-armory-modal .armory-card[data-variant=detail] [data-slot=card-title] { font-size: 18px; }
+  .armory-hero-stage { height: 120px; }
+  .armory-hero-caption { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  :where(.voxel-armory-root, .voxel-armory-modal, .voxel-armory-overlay),
+  :where(.voxel-armory-root, .voxel-armory-modal, .voxel-armory-overlay) * { animation-duration: 0s !important; transition-duration: 0s !important; }
+}
