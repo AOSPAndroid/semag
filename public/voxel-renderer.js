@@ -4,6 +4,7 @@ import { grenadeCapacity } from './voxel-ordnance.js';
 import { meleeProfile, meleeWeaponId } from './voxel-melee.js';
 import { frameAlpha } from './display-timing.js';
 import { createPlayerAnimationPresenter, playerAnimationPose } from './voxel-player-animation.js';
+import { createFirstPersonMotionPresenter, createWeaponShotPresenter, weaponShotPose } from './voxel-first-person-motion.js';
 
 // All solid world surfaces come directly from the engine's minimum-corner
 // colliders. Decoration is either painted on those surfaces or outside bounds.
@@ -147,11 +148,12 @@ function bloodParticles(event, state, time, key) {
     return { origin, born: time, vx: velocity[0], vy: velocity[1] + .18 + (i % 3) * .07, vz: velocity[2], color: i % 3 === 0 ? '#922f37' : i % 3 === 1 ? '#c4484b' : '#ac353d', life: 235 + (i % 4) * 27, gravity: 4.8, cover: true, radius: .72, size: .016 + (i % 3) * .004, material: 'blood', shrink: true, targetId: event.targetId };
   });
 }
-function rotate(vector, yaw = 0, pitch = 0) {
+function rotate(vector, yaw = 0, pitch = 0, roll = 0) {
   const cp = Math.cos(pitch), sp = Math.sin(pitch), cy = Math.cos(yaw), sy = Math.sin(yaw);
-  const y = vector[1] * cp - vector[2] * sp;
-  const z = vector[1] * sp + vector[2] * cp;
-  return [vector[0] * cy - z * sy, y, vector[0] * sy + z * cy];
+  const cr = Math.cos(roll), sr = Math.sin(roll), x = vector[0] * cr - vector[1] * sr, vertical = vector[0] * sr + vector[1] * cr;
+  const y = vertical * cp - vector[2] * sp;
+  const z = vertical * sp + vector[2] * cp;
+  return [x * cy - z * sy, y, x * sy + z * cy];
 }
 function perspective(fov, aspect, near, far) {
   const f = 1 / Math.tan(fov / 2), out = new Float32Array(16);
@@ -159,9 +161,9 @@ function perspective(fov, aspect, near, far) {
   out[11] = -1; out[14] = 2 * far * near / (near - far);
   return out;
 }
-function viewMatrix(eye, yaw, pitch) {
+function viewMatrix(eye, yaw, pitch, roll = 0) {
   const sy = Math.sin(yaw), cy = Math.cos(yaw), sp = Math.sin(pitch), cp = Math.cos(pitch);
-  const right = [cy, 0, sy], up = [-sy * sp, cp, cy * sp], forward = [sy * cp, sp, -cy * cp];
+  const right = rotate([1, 0, 0], yaw, pitch, roll), up = rotate([0, 1, 0], yaw, pitch, roll), forward = [sy * cp, sp, -cy * cp];
   const dot = vector => vector[0] * eye[0] + vector[1] * eye[1] + vector[2] * eye[2];
   return new Float32Array([right[0], up[0], -forward[0], 0, right[1], up[1], -forward[1], 0, right[2], up[2], -forward[2], 0, -dot(right), -dot(up), dot(forward), 1]);
 }
@@ -2287,10 +2289,10 @@ export class VoxelRenderer {
     if (!this.gl) throw new Error('Voxel Breach needs WebGL. Enable hardware acceleration in your browser and reopen the game.');
     this.available = true; this.contextLost = false; this.error = null; this.destroyed = false;
     this.mapCache = new Map(); this.hordeMaps = new WeakMap(); this.mapId = null; this.effectMap = null; this.effectGameId = null; this.effectRound = null; this.effectPhase = null; this.eventIds = new Set(); this.eventQueue = [];
-    this.particles = []; this.tracers = []; this.localShot = null; this.localReload = null;
+    this.particles = []; this.tracers = []; this.localShot = null; this.localReload = null; this.shotContext = null;
     this.lastAim = null; this.swayX = 0; this.swayY = 0;
     this.frameMeshes = { world: new Mesh(), contact: new Mesh(), tracer: new Mesh(), weapon: new Mesh() };
-    this.presentLoot = createLootPresenter(); this.presentWarnings = createSpawnWarningPresenter(); this.presentEye = createEyeHeightPresenter(); this.presentHumans = createPlayerAnimationPresenter(); this.humanPoses = new Map(); this.resizeReads = 0;
+    this.presentLoot = createLootPresenter(); this.presentWarnings = createSpawnWarningPresenter(); this.presentEye = createEyeHeightPresenter(); this.presentHumans = createPlayerAnimationPresenter(); this.presentHead = createFirstPersonMotionPresenter(); this.presentShots = createWeaponShotPresenter(); this.firstPersonMotion = null; this.shotMotion = null; this.humanPoses = new Map(); this.resizeReads = 0;
     this._frameDrawCalls = 0; this._frameDynamicVertices = 0; this._mapVertices = 0; this._lootItems = 0; this._stormVertices = 0;
     this._onLost = event => {
       event.preventDefault(); this.contextLost = true; this.available = false;
@@ -2399,6 +2401,7 @@ export class VoxelRenderer {
   _events(state, time, localId) {
     const combat = !state.phase || ['fight', 'roundEnd', 'matchEnd'].includes(state.phase) || (state.gameId === 'voxel-horde' && state.phase === 'intermission');
     const map = typeof state.map === 'object' && state.map?.colliders ? state.map : MAPS[state.mapId];
+    const localAlive = state.players?.find(player => player.id === localId)?.alive !== false;
     for (const event of state.events || []) {
       const key = event.id ?? `${event.tick}:${event.type}:${event.playerId}:${event.shotIndex ?? ''}`;
       if (this.eventIds.has(key)) continue;
@@ -2414,12 +2417,18 @@ export class VoxelRenderer {
         const end = [event.hitX, event.hitY, event.hitZ].every(Number.isFinite) ? [event.hitX, event.hitY, event.hitZ] : origin.map((value, i) => value + direction[i] * 60);
         const effects = shotEffect(event.weapon);
         this.tracers.push({ origin, end, born: time, team: event.team, local: event.playerId === localId, width: effects.tracerWidth, color: effects.tracerColor, life: effects.tracerTicks * 1000 / 120, weapon: event.weapon });
-        if (event.playerId === localId && (!event.pellet || event.pelletCount === 1)) this.localShot = { born: time, weapon: event.weapon };
+        if (event.playerId === localId && localAlive && (!event.pellet || event.pelletCount === 1)) {
+          this.presentShots ||= createWeaponShotPresenter();
+          if (this.presentShots.report(event, time)) this.localShot = { born: time, weapon: event.weapon };
+        }
         if (event.hitKind && event.hitKind !== 'none') {
           this.particles.push(...impactParticles(event, end, direction, map, time, key));
         }
       } else if (event.type === 'boltLaunch') {
-        if (event.playerId === localId) this.localShot = { born: time, weapon: 'crossbow' };
+        if (event.playerId === localId && localAlive) {
+          this.presentShots ||= createWeaponShotPresenter();
+          if (this.presentShots.report(event, time)) this.localShot = { born: time, weapon: 'crossbow' };
+        }
       } else if (event.type === 'boltHit') {
         const origin = [finite(event.x), finite(event.y), finite(event.z)];
         this.particles.push(...impactParticles(event, origin, [-finite(event.nx), -finite(event.ny), -finite(event.nz)], map, time, key));
@@ -2501,13 +2510,17 @@ export class VoxelRenderer {
       mesh.box(-.006, -.042, .32, .012, .084, .09, feather, pose);
     }
   }
-  _viewModel(player, yaw, pitch, time, freeForAll = false, map = null, viewEye = null) {
+  _viewModel(player, yaw, pitch, time, freeForAll = false, map = null, viewEye = null, viewRoll = 0) {
     const mesh = this.frameMeshes?.weapon?.reset() || new Mesh(), team = freeForAll ? survivorColor(player) : TEAM_COLORS[player.team === 1 ? 1 : 0], art = humanAppearance(player, freeForAll);
-    const speed = Math.hypot(finite(player.vx), finite(player.vz));
-    const walking = clamp(speed / 5.5, 0, 1), step = time * .011;
+    let motion = this.firstPersonMotion;
+    if (!motion) {
+      const fallback = playerAnimationPose(player, time / 1000);
+      motion = { weaponX: Math.sin(fallback.phase) * .009 * fallback.stride, weaponY: -(1 - Math.cos(fallback.phase * 2)) * .004 * fallback.stride };
+    }
+    const aim = aimProgress(player);
     const age = this.localShot?.weapon === player.weapon ? Math.max(0, time - this.localShot.born) : 10000;
-    const effects = shotEffect(player.weapon), kickDuration = finite(effects.kickTicks, 28) * 1000 / 120;
-    const kick = age < kickDuration ? finite(effects.kickStrength, 1) * Math.exp(-age / Math.max(25, kickDuration * .28)) * (1 - age / kickDuration) : 0;
+    const effects = shotEffect(player.weapon), firing = this.presentShots ? this.presentShots.sample(player.weapon, time, aim) : weaponShotPose(player.weapon, age, aim), kick = firing.kick;
+    this.shotMotion = firing;
     if (this.lastAim && Number.isFinite(this.lastAim.time) && time > this.lastAim.time) {
       let yawDelta = yaw - this.lastAim.yaw;
       while (yawDelta > Math.PI) yawDelta -= TAU;
@@ -2524,9 +2537,9 @@ export class VoxelRenderer {
     this.lastAim = { yaw, pitch, time };
     const coverLimit = (pose, reach, padding) => {
       if (!map?.colliders?.length) return reach;
-      const offset = rotate([pose.x, pose.y, pose.z], yaw, pitch), eye = viewEye || [finite(player.x), finite(player.y) + (player.crouching ? WORLD.crouchEyeHeight : WORLD.eyeHeight), finite(player.z)];
+      const offset = rotate([pose.x, pose.y, pose.z], yaw, pitch, viewRoll), eye = viewEye || [finite(player.x), finite(player.y) + (player.crouching ? WORLD.crouchEyeHeight : WORLD.eyeHeight), finite(player.z)];
       const origin = eye.map((value, axis) => value + offset[axis]);
-      const direction = rotate(rotate([0, 0, -1], pose.yaw, pose.pitch), yaw, pitch);
+      const direction = rotate(rotate([0, 0, -1], pose.yaw, pose.pitch), yaw, pitch, viewRoll);
       let limit = Math.max(0, rayCoverDistance(origin, direction, map.colliders, reach * pose.scale, padding) - .025) / pose.scale;
       const anchorDistance = Math.hypot(...offset), anchorDirection = normalized(offset);
       const anchorCover = rayCoverDistance(eye, anchorDirection, map.colliders, anchorDistance, padding);
@@ -2580,7 +2593,7 @@ export class VoxelRenderer {
       while (committedYaw > Math.PI) committedYaw -= TAU;
       while (committedYaw < -Math.PI) committedYaw += TAU;
       const committedPitch = player.meleeTicks > 0 ? finite(player.meleePitch, pitch) - pitch : 0;
-      const pose = { x: (knife ? .22 : .27) + this.swayX * .5, y: (knife ? -.28 : -.32) - Math.abs(Math.cos(step)) * .007 * walking, z: -.42 - motion.extension * .12, yaw: motion.yaw + committedYaw, pitch: motion.pitch + committedPitch, scale: .90 };
+      const pose = { x: (knife ? .22 : .27) + this.swayX * .5, y: (knife ? -.28 : -.32) + finite(this.firstPersonMotion?.weaponY), z: -.42 - motion.extension * .12, yaw: motion.yaw + committedYaw, pitch: motion.pitch + committedPitch, scale: .90 };
       const limit = coverLimit(pose, meleeLength(player), (knife ? .08 : .18) * pose.scale);
       meleeParts(mesh, player, pose, { limit, active: motion.active });
       glove(pose, .003, -.057, knife ? .071 : .087, 'blade', limit);
@@ -2594,14 +2607,14 @@ export class VoxelRenderer {
       reloadProgress = clamp(1 - ticks / duration, 0, 1);
       reload = Math.sin(clamp(reloadProgress, .04, .96) * Math.PI);
     }
-    const aim = aimProgress(player), steady = 1 - aim * .92;
+    const steady = 1 - aim * .92;
     const throwing = Math.sin(clamp(finite(player.grenadeThrowTicks) / 24, 0, 1) * Math.PI);
     const pose = {
-      x: lerp(.29, 0, aim) + (this.swayX + Math.sin(step) * .008 * walking) * steady,
-      y: lerp(-.29, -(WEAPONS[player.weapon]?.adsSightHeight || .152) * .74, aim) + (this.swayY - Math.abs(Math.cos(step)) * .008 * walking) * steady - reload * .105 - throwing * .15,
-      z: lerp(-.49, -.35, aim) + kick * .052 + reload * .065,
-      yaw: -.065 * (1 - aim) + this.swayX * 2 * steady + reload * .22,
-      pitch: kick * .055 * (1 - aim * .70) - reload * .23 - throwing * .20,
+      x: lerp(.29, 0, aim) + (this.swayX + motion.weaponX) * steady + firing.x,
+      y: lerp(-.29, -(WEAPONS[player.weapon]?.adsSightHeight || .152) * .74, aim) + (this.swayY + motion.weaponY) * steady + firing.y - reload * .105 - throwing * .15,
+      z: lerp(-.49, -.35, aim) + firing.z + reload * .065,
+      yaw: -.065 * (1 - aim) + this.swayX * 2 * steady + firing.yaw + reload * .22,
+      pitch: firing.pitch - reload * .23 - throwing * .20,
       scale: .74,
     };
     const pump = player.weapon === 'shotgun' && age > 80 && age < 640 ? Math.sin((age - 80) / 560 * Math.PI) : 0;
@@ -2656,15 +2669,32 @@ export class VoxelRenderer {
     const setupTransition = state.phase !== this.effectPhase && ['lobby', 'countdown', 'buy'].includes(state.phase);
     if (map !== this.effectMap || state.gameId !== this.effectGameId || freshRound || setupTransition) this.resetEffects();
     this.mapId = map.id; this.effectMap = map; this.effectGameId = state.gameId; this.effectRound = state.round; this.effectPhase = state.phase;
+    const shotOwner = players.find(player => player.id === localId) || cameraPlayer;
+    const shotContext = { id: shotOwner.id, alive: shotOwner.alive, lifeId: shotOwner.lifeId, deaths: shotOwner.deaths, weapon: shotOwner.weapon, slot: shotOwner.slot };
+    if (this.shotContext && Object.keys(shotContext).some(key => this.shotContext[key] !== shotContext[key])) {
+      this.presentShots.reset(); this.localShot = null; this.localReload = null;
+    }
+    this.shotContext = shotContext;
     this._events(state, time, localId);
     const yaw = finite(options.aimYaw ?? options.yaw, finite(cameraPlayer.yaw));
     const pitch = clamp(finite(options.aimPitch ?? options.pitch, finite(cameraPlayer.pitch)), -1.48, 1.48);
-    const eye = this.presentEye(cameraPlayer, map, time); this.cameraEyeHeight = eye[1] - finite(cameraPlayer.y);
+    const aim = aimProgress(cameraPlayer), zoom = weaponAimFovRatio(cameraPlayer.weapon, ADS);
+    const headContext = `${state.gameId || 'voxel-breach'}:${map.id}:${state.matchId ?? ''}:${state.round ?? ''}`;
+    const motion = this.presentHead(cameraPlayer, time, headContext, { aim, paused: state.phase === 'paused' || !!options.paused });
+    const eye = this.presentEye(cameraPlayer, map, time);
+    let bobY = motion.bobY;
+    if (bobY < 0 && map.colliders?.length) {
+      const contact = rayCoverDistance(eye, [0, -1, 0], map.colliders, -bobY, .04);
+      if (contact < -bobY) bobY = -Math.max(0, contact - .005);
+    }
+    eye[1] += bobY;
+    this.firstPersonMotion = { ...motion, bobY, eye: [...eye], yaw, pitch };
+    this.shotMotion = this.presentShots.sample(cameraPlayer.weapon, time, aim);
+    this.cameraEyeHeight = eye[1] - finite(cameraPlayer.y);
     const gl = this.gl;
     this._frameDrawCalls = 0; this._frameDynamicVertices = 0;
-    const aim = aimProgress(cameraPlayer), zoom = weaponAimFovRatio(cameraPlayer.weapon, ADS);
     const fov = clamp(finite(options.fov, 70), 55, 95) * lerp(1, zoom, aim) * Math.PI / 180;
-    const projection = perspective(fov, this.aspect || 16 / 9, .025, 110), view = viewMatrix(eye, yaw, pitch);
+    const projection = perspective(fov, this.aspect || 16 / 9, .025, 110), view = viewMatrix(eye, yaw, pitch, motion.roll);
     const sky = rgba(map.skyColor || (map.id === 'canal' ? '#a3bdc2' : map.id === 'depot' ? '#8da6b0' : '#a8bcb9'));
     const atmosphere = ATMOSPHERE[map.theme || map.id] || ATMOSPHERE.courtyard;
     gl.clearColor(...sky); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -2676,7 +2706,7 @@ export class VoxelRenderer {
     gl.uniform3fv(this.skyUniforms.suncolor, rgba(atmosphere.sunColor).slice(0, 3));
     gl.uniform3fv(this.skyUniforms.sundirection, atmosphere.sun);
     const sy = Math.sin(yaw), cy = Math.cos(yaw), sp = Math.sin(pitch), cp = Math.cos(pitch), tangent = Math.tan(fov / 2);
-    gl.uniform3fv(this.skyUniforms.right, [cy, 0, sy]); gl.uniform3fv(this.skyUniforms.up, [-sy * sp, cp, cy * sp]); gl.uniform3fv(this.skyUniforms.forward, [sy * cp, sp, -cy * cp]);
+    gl.uniform3fv(this.skyUniforms.right, rotate([1, 0, 0], yaw, pitch, motion.roll)); gl.uniform3fv(this.skyUniforms.up, rotate([0, 1, 0], yaw, pitch, motion.roll)); gl.uniform3fv(this.skyUniforms.forward, [sy * cp, sp, -cy * cp]);
     gl.uniform2fv(this.skyUniforms.scale, [tangent * this.aspect, tangent]); gl.drawArrays(gl.TRIANGLES, 0, 3); this._frameDrawCalls++;
     gl.useProgram(this.program);
     gl.uniformMatrix4fv(this.uniforms.projection, false, projection); gl.uniformMatrix4fv(this.uniforms.view, false, view);
@@ -2771,20 +2801,21 @@ export class VoxelRenderer {
       // The hands use a stable soft key light so turning into map shade cannot
       // hide the weapon's sights or the magazine during a reload.
       gl.uniform3fv(this.uniforms.lightdirection, [-.30, .70, .62]); gl.uniform3fv(this.uniforms.sun, [.43, .43, .40]); gl.uniform3fv(this.uniforms.ambient, [.64, .68, .72]);
-      this._draw(this._dynamic(this._viewModel(cameraPlayer, yaw, pitch, time, freeForAll, map, eye), 'weapon'));
+      this._draw(this._dynamic(this._viewModel(cameraPlayer, yaw, pitch, time, freeForAll, map, eye, motion.roll), 'weapon'));
     }
     return true;
   }
   get stats() {
     const loot = this.presentLoot?.getStats(), warnings = this.presentWarnings?.getStats();
     const humanAnimation = Object.freeze({ cachedPlayers: this.presentHumans?.size || 0, poses: Object.freeze([...this.humanPoses].map(([id, { animation, joints }]) => Object.freeze({ id, phase: animation.phase, stride: animation.stride, speed: animation.speed, forward: animation.forward, strafe: animation.strafe, crouch: animation.crouch, airborne: animation.airborne, jump: animation.jump, land: animation.land, bodyBob: animation.bodyBob, knees: Object.freeze(joints.legs.map(leg => Object.freeze([...leg.knee]))), feet: Object.freeze(joints.legs.map(leg => Object.freeze([...leg.foot]))) }))) });
-    return Object.freeze({ mapId: this.mapId, mapVertices: this._mapVertices, cachedMaps: this.mapCache.size, drawCalls: this._frameDrawCalls, dynamicVertices: this._frameDynamicVertices, lootItems: this._lootItems, stormVertices: this._stormVertices, spawnWarnings: this._spawnWarnings || 0, cachedSpawnWarnings: warnings?.cachedItems || 0, spawnWarningBuilds: warnings?.builds || 0, bloodParticles: this.particles.filter(particle => particle.material === 'blood').length, visibleBloodParticles: this._visibleBloodParticles || 0, cachedLootItems: loot?.cachedItems || 0, lootGeometryBuilds: loot?.builds || 0, geometryBufferBytes: Object.values(this.frameMeshes || {}).reduce((bytes, mesh) => bytes + mesh.storage.byteLength, 0) + (loot?.bufferBytes || 0) + (loot?.templateBytes || 0) + (warnings?.bufferBytes || 0) + (warnings?.templateBytes || 0), cameraEyeHeight: this.cameraEyeHeight, resizeReads: this.resizeReads, humanAnimation });
+    const firstPerson = this.firstPersonMotion ? Object.freeze({ ...this.firstPersonMotion, eye: Object.freeze([...this.firstPersonMotion.eye]), shot: Object.freeze({ ...this.shotMotion }), ...this.presentShots.getStats() }) : null;
+    return Object.freeze({ mapId: this.mapId, mapVertices: this._mapVertices, cachedMaps: this.mapCache.size, drawCalls: this._frameDrawCalls, dynamicVertices: this._frameDynamicVertices, lootItems: this._lootItems, stormVertices: this._stormVertices, spawnWarnings: this._spawnWarnings || 0, cachedSpawnWarnings: warnings?.cachedItems || 0, spawnWarningBuilds: warnings?.builds || 0, bloodParticles: this.particles.filter(particle => particle.material === 'blood').length, visibleBloodParticles: this._visibleBloodParticles || 0, cachedLootItems: loot?.cachedItems || 0, lootGeometryBuilds: loot?.builds || 0, geometryBufferBytes: Object.values(this.frameMeshes || {}).reduce((bytes, mesh) => bytes + mesh.storage.byteLength, 0) + (loot?.bufferBytes || 0) + (loot?.templateBytes || 0) + (warnings?.bufferBytes || 0) + (warnings?.templateBytes || 0), cameraEyeHeight: this.cameraEyeHeight, resizeReads: this.resizeReads, humanAnimation, firstPerson });
   }
   resetEffects() {
     this.eventIds.clear(); this.eventQueue.length = 0; this.particles.length = 0; this.tracers.length = 0;
     this._visibleBloodParticles = 0;
-    this.localShot = null; this.localReload = null; this.lastAim = null; this.swayX = 0; this.swayY = 0;
-    this.presentLoot?.reset(); this.presentWarnings?.reset(); this.presentEye?.reset(); this.presentHumans?.reset(); this.humanPoses?.clear(); this._spawnWarnings = 0;
+    this.localShot = null; this.localReload = null; this.shotContext = null; this.lastAim = null; this.swayX = 0; this.swayY = 0;
+    this.presentLoot?.reset(); this.presentWarnings?.reset(); this.presentEye?.reset(); this.presentHumans?.reset(); this.presentHead?.reset(); this.presentShots?.reset(); this.firstPersonMotion = null; this.shotMotion = null; this.humanPoses?.clear(); this._spawnWarnings = 0;
   }
   destroy() {
     if (this.destroyed) return;

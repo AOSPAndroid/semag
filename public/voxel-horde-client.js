@@ -202,7 +202,7 @@ export async function bootHorde() {
       if (event.type === 'healCancel' && perspective.source === playerId) feedback('HEALING INTERRUPTED', now);
       if (event.type === 'hordeRevive') feedback(`${nameFor(event.targetId)} IS BACK IN THE FIGHT`, now);
       if (audio.enabled) try {
-        if (hasGunshotReport(event)) { const sound = WEAPONS[event.weapon]?.sound; if (sound) { const gain = perspective.source === playerId ? 1 : .22; audio.noise(sound.noiseDuration, { highpass: sound.highpass || 170, lowpass: sound.lowpass, gain: sound.noiseVolume * gain }); audio.tone(sound.frequency, sound.toneDuration, { end: sound.endFrequency || 48, type: sound.wave || 'triangle', gain: sound.toneVolume * gain }); } }
+        if (hasGunshotReport(event)) audio.gunshot(event.weapon, { gain: perspective.source === playerId ? 1 : .22 });
         else if (event.type === 'grenadeExplosion') { audio.noise(.4, { highpass: 40, lowpass: 1500, gain: .28 }); audio.tone(70, .3, { end: 25, gain: .18 }); }
         else if (event.type === 'damage' && (perspective.outgoing || perspective.incoming)) audio.tone(perspective.outgoing ? 940 : 140, .055, { end: perspective.outgoing ? 690 : 70, gain: .13, type: 'triangle' });
       } catch {}
@@ -440,7 +440,7 @@ export async function bootHorde() {
     if (solo) preview(); graphics(); if (!solo) { connect(); hostInfo().then(info => { invite = `${info.origin}/voxel-horde.html?room=${encodeURIComponent(roomId)}`; }).catch(() => {}); }
   } catch (cause) { graphicsError = cause?.message || 'The game could not load.'; error(`Voxel Last Stand could not load: ${graphicsError}`); }
   heartbeat = setInterval(() => { if (!solo && connected && !document.hidden && LIVE_PHASES.includes(state?.phase)) sendInput(); }, 50);
-  const inspect = () => copy({ state: state ? { ...state, map: undefined, fighters: undefined } : null, solo, playerId, hostId, aim, paused: paused || state?.phase === 'paused', connected, roomPlayers: roster, pendingInputs: pending, queuedActions: inputQueue.inspect(), presentationPlayer, presentationPlayers, controls: { pointerLocked: locked(), fallback, touch: touchMode, entered, modalOpen }, renderCount, renderStats: renderer?.stats || null, graphicsError, displayTiming: { physicsSamples, renderSamples: renderCount, lastFraction }, timeline: timeline.getState(), spectatorId });
+  const inspect = () => copy({ state: state ? { ...state, map: undefined, fighters: undefined } : null, solo, playerId, hostId, aim, paused: paused || state?.phase === 'paused', connected, roomPlayers: roster, pendingInputs: pending, queuedActions: inputQueue.inspect(), presentationPlayer, presentationPlayers, controls: { pointerLocked: locked(), fallback, touch: touchMode, entered, modalOpen }, renderCount, renderStats: renderer?.stats || null, audio: audio.inspectGunshots(), graphicsError, displayTiming: { physicsSamples, renderSamples: renderCount, lastFraction }, timeline: timeline.getState(), spectatorId });
   window.semagHorde = Object.freeze({ getState: inspect, getDebugState: inspect, getDisplayTiming: () => ({ physicsSamples, renderSamples: renderCount, lastFraction }) });
   return { destroy, inspect };
 }

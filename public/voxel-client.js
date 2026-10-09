@@ -437,12 +437,8 @@ async function boot() {
       try {
         if (hasGunshotReport(event)) {
           const own = shooter === playerId;
-          const profile = WEAPONS[event.weapon]?.sound;
           const gain = own ? 1 : .34;
-          if (profile) {
-            audio.noise(profile.noiseDuration, { highpass: profile.highpass || 170, lowpass: profile.lowpass, gain: profile.noiseVolume * gain });
-            audio.tone(profile.frequency, profile.toneDuration, { end: profile.endFrequency || 48, type: profile.wave || 'triangle', gain: profile.toneVolume * gain });
-          }
+          audio.gunshot(event.weapon, { gain });
         } else if (event.type === 'damage' && (shooter === playerId || target === playerId)) {
           const soundKey = `${event.tick ?? state?.tick}:${perspective.incoming ? 'incoming' : 'outgoing'}`;
           if (impactSounds.has(soundKey)) continue;
@@ -1073,7 +1069,7 @@ async function boot() {
     for (const remove of removers) remove(); pending = []; snapshots = []; kills.length = 0; eventSeen.clear();
   }
   listen(window, 'pagehide', destroy);
-  const inspect = () => clone({ state, players: roster, playerId, input: currentInput(), predictedPlayer, presentationPlayer, presentationPlayers, predictionRemainder: accumulator, predictionTick, actionQueue: actionInputs.inspect(), timeline: timeline.getState(), correction: correction.getState(), connected, controls: { pointerLocked: pointerLocked(), fallback, touch: touchMode, paused, entered, modalOpen }, queueLength: pending.length, renderCount, renderStats: renderer?.stats || null, graphicsError, spectatorId });
+  const inspect = () => clone({ state, players: roster, playerId, input: currentInput(), predictedPlayer, presentationPlayer, presentationPlayers, predictionRemainder: accumulator, predictionTick, actionQueue: actionInputs.inspect(), timeline: timeline.getState(), correction: correction.getState(), connected, controls: { pointerLocked: pointerLocked(), fallback, touch: touchMode, paused, entered, modalOpen }, queueLength: pending.length, renderCount, renderStats: renderer?.stats || null, audio: audio.inspectGunshots(), graphicsError, spectatorId });
   window.SemagVoxel = Object.freeze({ getState: inspect, inspect });
   updateUI();
   try {

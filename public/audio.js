@@ -1,3 +1,7 @@
+import { createVoxelShotSamples } from './voxel-shot-audio.js';
+
+const MAX_GUNSHOT_VOICES = 24;
+
 /** Procedural sound; AudioContext is only created by an explicit sound toggle. */
 export class GameAudio {
   constructor() {
@@ -9,17 +13,23 @@ export class GameAudio {
     this.lastCountdown = null;
     this.destroyed = false;
     this.toggleVersion = 0;
+    this.gunshotBuffers = new Map();
+    this.gunshotVoices = new Set();
+    this.gunshotVariation = 0;
+    this.gunshotReports = 0;
   }
 
   async setEnabled(enabled) {
     const version = ++this.toggleVersion;
     this.enabled = false;
+    this.stopGunshots();
     if (this.master && this.context?.state === 'running') this.master.gain.setTargetAtTime(0, this.context.currentTime, 0.015);
     if (!enabled || this.destroyed) return false;
     try {
       const AudioContext = globalThis.AudioContext || globalThis.webkitAudioContext;
       if (!AudioContext) return false;
       if (!this.context || this.context.state === 'closed') {
+        this.gunshotBuffers.clear();
         this.context = new AudioContext({ latencyHint: 'interactive' });
         const compressor = this.context.createDynamicsCompressor();
         compressor.threshold.value = -20;
@@ -38,6 +48,57 @@ export class GameAudio {
       this.enabled = false;
     }
     return this.enabled;
+  }
+
+  /** Exactly one cached source per shell; quiet remote reports use the same timbre. */
+  gunshot(weaponId, { gain = 1 } = {}) {
+    if (!this.enabled || this.destroyed || this.context?.state !== 'running' || !Number.isFinite(gain) || gain <= 0) return false;
+    let source, envelope, voice;
+    try {
+      let buffer = this.gunshotBuffers.get(weaponId);
+      if (!buffer) {
+        const samples = createVoxelShotSamples(weaponId, this.context.sampleRate);
+        if (!samples) return false;
+        buffer = this.context.createBuffer(1, samples.length, this.context.sampleRate);
+        buffer.getChannelData(0).set(samples);
+        this.gunshotBuffers.set(weaponId, buffer);
+      }
+      while (this.gunshotVoices.size >= MAX_GUNSHOT_VOICES) this.endGunshot(this.gunshotVoices.values().next().value, true);
+      source = this.context.createBufferSource(); envelope = this.context.createGain();
+      source.buffer = buffer;
+      // Small, repeatable pitch variation avoids identical machine-gun transients.
+      source.playbackRate.value = [.994, 1.008, .985, 1.003, 1.014, .999][this.gunshotVariation++ % 6];
+      envelope.gain.value = Math.min(1, gain);
+      source.connect(envelope); envelope.connect(this.master);
+      voice = { source, envelope, ended: false };
+      this.gunshotVoices.add(voice);
+      source.onended = () => this.endGunshot(voice);
+      source.start(this.context.currentTime);
+      // Buffer expiry ends the source naturally; this fence also bounds faulty contexts.
+      source.stop(this.context.currentTime + buffer.duration / source.playbackRate.value + .02);
+      this.gunshotReports += 1;
+      return true;
+    } catch {
+      if (voice) this.endGunshot(voice, true);
+      else { try { source?.disconnect(); envelope?.disconnect(); } catch {} }
+      return false;
+    }
+  }
+
+  endGunshot(voice, stop = false) {
+    if (!voice || voice.ended) return;
+    voice.ended = true; this.gunshotVoices.delete(voice);
+    voice.source.onended = null;
+    if (stop) try { voice.source.stop(); } catch {}
+    try { voice.source.disconnect(); voice.envelope.disconnect(); } catch {}
+  }
+
+  stopGunshots() {
+    for (const voice of this.gunshotVoices) this.endGunshot(voice, true);
+  }
+
+  inspectGunshots() {
+    return Object.freeze({ enabled: this.enabled, cachedBuffers: this.gunshotBuffers.size, activeVoices: this.gunshotVoices.size, maxVoices: MAX_GUNSHOT_VOICES, played: this.gunshotReports });
   }
 
   // Each voice ends and disconnects itself, keeping long sessions bounded.
@@ -171,6 +232,7 @@ export class GameAudio {
   }
 
   resetEvents() {
+    this.stopGunshots();
     this.seen.clear();
     this.seenOrder.length = 0;
     this.lastCountdown = null;
@@ -199,6 +261,7 @@ export class GameAudio {
     this.destroyed = true;
     this.toggleVersion += 1;
     this.resetEvents();
+    this.gunshotBuffers.clear();
     try {
       if (this.context && this.context.state !== 'closed') this.context.close().catch(() => {});
     } catch { /* A detached or unsupported context may already be unavailable. */ }
