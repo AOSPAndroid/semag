@@ -4,7 +4,10 @@ import { chooseVoxelRoom } from './voxel-setup.js';
 import { chooseRoyaleRoom } from './royale-setup.js';
 import { chooseHordeSettings } from './horde-setup.js';
 import { setText, toggleClass } from './dom.js';
+import { isBrowserHosted, pcHostUrl } from './hosting-mode.js';
+import { mountPcHostDialog } from './site-mode.js';
 const $ = (id) => document.getElementById(id);
+const browserHosted = isBrowserHosted(), openPcHost = mountPcHostDialog();
 mountKeyboardLayoutPicker(document.querySelector('[data-keyboard-layout-picker]'));
 $('nav-game-count').textContent = String(Object.keys(GAMES).length).padStart(2, '0');
 $('library-game-count').textContent = Object.keys(GAMES).length;
@@ -56,6 +59,7 @@ document.querySelectorAll('[data-filter]').forEach(button => {
   });
 });
 document.querySelectorAll('[data-create-game]').forEach(button => button.addEventListener('click', async () => {
+  if (browserHosted) { openPcHost(); return; }
   if (creating) return;
   const gameId = button.dataset.createGame;
   const settings = gameId === 'voxel-breach' ? await chooseVoxelRoom($('voxel-setup')) : gameId === 'voxel-royale' ? await chooseRoyaleRoom($('royale-setup')) : gameId === 'voxel-horde' ? await chooseHordeSettings($('horde-setup')) : {};
@@ -98,6 +102,7 @@ function renderRooms() {
 }
 let roomRequest = null;
 function refreshRooms() {
+  if (browserHosted) return Promise.resolve();
   if (roomRequest) return roomRequest;
   roomRequest = (async () => {
     try {
@@ -111,6 +116,11 @@ function refreshRooms() {
 }
 $('join-form').addEventListener('submit', async (event) => {
   event.preventDefault(); updateName(); $('join-error').hidden = true;
+  if (browserHosted) {
+    try { location.assign(pcHostUrl($('room-code').value)); }
+    catch (e) { $('join-error').textContent = e.message; $('join-error').hidden = false; }
+    return;
+  }
   let code = $('room-code').value.trim().toUpperCase();
   try { if (/^https?:\/\//i.test(code)) code = new URL($('room-code').value.trim()).searchParams.get('room')?.toUpperCase() || ''; } catch { code = ''; }
   if (!/^[A-Z0-9]{6}$/.test(code)) { $('join-error').textContent = 'Enter the six-character room code or an invite link.'; $('join-error').hidden = false; return; }
@@ -125,7 +135,31 @@ $('join-form').addEventListener('submit', async (event) => {
   } catch (e) { $('join-error').textContent = e.message; $('join-error').hidden = false; $('join-button').disabled = false; }
 });
 $('copy-hub').addEventListener('click', async () => { try { await copyText(origin); toast('Hub address copied. Bring a friend.'); } catch (e) { toast(e.message); } });
-hostInfo().then(info => { origin = info.origin; $('hub-address').textContent = origin; $('hub-download').hidden = !info.downloadAvailable; }).catch(() => { $('hub-address').textContent = origin; });
+if (browserHosted) {
+  $('host-status').textContent = 'Solo & bots ready';
+  $('host-dot').classList.add('online');
+  document.querySelector('.server-state span').textContent = 'BROWSER PLAY · PC MULTIPLAYER';
+  $('hub-address').textContent = origin;
+  $('hub-download').hidden = false;
+  document.querySelectorAll('[data-create-game]').forEach(button => { button.firstChild.textContent = 'Play with friends '; });
+  document.querySelector('.rooms-panel h2').textContent = 'Play with friends';
+  document.querySelector('.rooms-panel .live-label').textContent = 'PC HOST';
+  $('rooms-list').replaceChildren();
+  const hint = document.createElement('div'); hint.className = 'rooms-empty';
+  const title = document.createElement('strong'); title.textContent = 'Your PC. Your room.';
+  const note = document.createElement('p'); note.textContent = 'Download the PC host, start it, and share its hostname:port with your team.';
+  const action = document.createElement('button'); action.type = 'button'; action.textContent = 'Open PC host'; action.addEventListener('click', openPcHost);
+  hint.append(title, note, action); $('rooms-list').append(hint);
+  document.querySelector('.room-legend').textContent = 'Solo games, training and bots run here.';
+  document.querySelector('.join-panel h2').textContent = 'Open a PC host';
+  document.querySelector('.join-panel p').textContent = 'Enter a hostname:port or the full invitation link.';
+  $('room-code').placeholder = 'MY-PC:3000'; $('room-code').setAttribute('aria-label', 'PC host address or invite link'); $('join-button').setAttribute('aria-label', 'Open PC host');
+  document.querySelector('.share-panel strong').textContent = 'Share the library';
+  document.querySelector('.share-panel p').textContent = 'Open the same games, dojo and bot challenges.';
+  document.querySelector('.share-panel small').textContent = 'Multiplayer teammates connect to the same PC host over LAN or VPN.';
+} else {
+  hostInfo().then(info => { origin = info.origin; $('hub-address').textContent = origin; $('hub-download').hidden = !info.downloadAvailable; }).catch(() => { $('hub-address').textContent = origin; });
+}
 refreshRooms(); setInterval(() => { if (!document.hidden) refreshRooms(); }, 2000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshRooms(); });
 

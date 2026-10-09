@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as Horde from '../public/voxel-horde-engine.js';
-import { createCombatPlayer } from '../public/voxel-engine.js';
+import { createCombatPlayer, applyCombatDamage } from '../public/voxel-engine.js';
 import { presentWorldLabels, projectWorldLabel } from '../public/voxel-label-presentation.js';
 import { mountVoxelLabelOverlay } from '../public/voxel-label-overlay.js';
+import { monsterMeshes } from '../public/voxel-renderer.js';
 
 // Independent geometry and actual public-engine actors exercise player-visible
 // requirements, rather than reproducing the label helper's internal samples.
@@ -140,11 +141,45 @@ test('map changes immediately replace visibility rather than retaining the previ
   covered(f, []); assert.equal(monsters(f.labels()).length, 1);
 });
 
-test('all eight genuine monster types use current health and strict real actor lifetime identities', () => {
+test('all eleven genuine monster types use current health and strict real actor lifetime identities', () => {
+  assert.equal(Object.keys(Horde.MONSTER_TYPES).length, 11);
   for (const type of Object.keys(Horde.MONSTER_TYPES)) {
     const f = fixture(type), label = monsters(f.labels())[0]; assert.ok(label, type);
     assert.equal(label.hp, f.monster.hp); assert.equal(label.maxHp, f.monster.maxHp); assert.equal(label.id, f.monster.id); assert.equal(label.lifeId, f.monster.lifeId);
   }
+});
+
+for (const type of ['bomber', 'spitter', 'weaver']) test(`${type} health bars follow actual damage and death, reject spoofed actors and retain real flesh occlusion during their attack`, () => {
+  const f = fixture(type), before = monsters(f.labels())[0]; assert.ok(before);
+  const phases = { bomber: 'bomberFuse', spitter: 'spitting', weaver: 'weaving' };
+  Object.assign(f.monster, { monsterState: phases[type], attackDuration: Horde.MONSTER_TYPES[type].windup });
+  for (const fraction of [0, .5, 1]) for (const yaw of [0, Math.PI / 4, Math.PI / 2, Math.PI]) {
+    f.monster.attackTicks = f.monster.attackDuration * (1 - fraction); f.monster.yaw = yaw;
+    covered(f, []); assert.equal(monsters(f.labels()).length, 1, 'real charged anatomy retains a live visible health bar');
+    // From the actual camera the anchor ray crosses this low wall above 1.9m,
+    // while every authored head/body corner remains behind its 1.82m face.
+    covered(f, [wall({ z: -7.4, h: 1.82, d: .16 })]);
+    const visibleBody = monsterMeshes(f.monster, 1000, { phase: Math.PI / 2, stride: 1, speed: 5 }); assert.ok(visibleBody.length > 0);
+    for (let at = 0; at < visibleBody.length; at += 10) {
+      const crossing = -7.24 / visibleBody[at + 2], y = 1.62 + (visibleBody[at + 1] - 1.62) * crossing;
+      assert.ok(crossing > 0 && crossing < 1 && y >= 0 && y < 1.82 && Math.abs(visibleBody[at] * crossing) < 5, 'every actual authored flesh corner is behind the covering wall');
+    }
+    const anchor = projectWorldLabel({ x: f.monster.x, y: f.monster.y + 1.96, z: f.monster.z }, f.options.view, f.options.projection); assert.ok(anchor);
+    assert.ok(1.62 + (1.96 - 1.62) * 7.4 / 8 > 1.82, 'the floating anchor itself is uncovered');
+    assert.deepEqual(monsters(f.labels()), [], 'the bar cannot reveal fully covered real flesh through empty space');
+    covered(f, [wall({ z: -7.4, h: 1.68, d: .16 })]); assert.equal(monsters(f.labels()).length, 1, 'revealing the actual crown restores the bar');
+    covered(f, [wall({ z: -7.4, y: 1.85, h: .25, d: .16 })]); assert.deepEqual(monsters(f.labels()), [], 'an overhead solid hides the anchor even with uncovered flesh below');
+  }
+  covered(f, []);
+  applyCombatDamage(f.state, [{ playerId: 0, targetId: f.monster.id, targetLifeId: f.monster.lifeId, damage: 15, attack: 'gun', weapon: 'carbine' }]);
+  assert.equal(monsters(f.labels())[0].hp, before.hp - 15); assert.equal(monsters(f.labels())[0].maxHp, before.maxHp);
+  for (const patch of [{ monster: false }, { human: true }, { monsterType: 'sentinel' }, { monsterType: '__proto__' }]) {
+    const original = { ...f.monster }; Object.assign(f.monster, patch); assert.deepEqual(monsters(f.labels()), []); Object.assign(f.monster, original);
+  }
+  applyCombatDamage(f.state, [{ playerId: 0, targetId: f.monster.id, targetLifeId: f.monster.lifeId, damage: f.monster.hp, attack: 'gun', weapon: 'carbine' }]);
+  assert.equal(f.monster.alive, false); assert.deepEqual(monsters(f.labels()), []);
+  Object.assign(f.monster, { alive: true, hp: before.maxHp, maxHp: before.maxHp, lifeId: f.monster.lifeId + 1 });
+  const revived = monsters(f.labels())[0]; assert.ok(revived); assert.notEqual(revived.key, before.key); assert.equal(revived.lifeId, f.monster.lifeId);
 });
 
 test('large input rosters remain bounded and presentation never mutates shared simulation or roster data', () => {

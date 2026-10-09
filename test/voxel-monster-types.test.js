@@ -36,7 +36,7 @@ function roaring({ wall = false } = {}) {
 }
 
 test('new species have distinct finite roles while the five original combat profiles remain available', () => {
-  assert.equal(Object.keys(Horde.MONSTER_TYPES).length, 8);
+  assert.equal(Object.keys(Horde.MONSTER_TYPES).length, 11);
   const { hound, runner, leaper, screecher } = Horde.MONSTER_TYPES;
   assert.ok(hound.health < runner.health); assert.ok(hound.damage < runner.damage); assert.ok(hound.windup < runner.windup);
   assert.equal(hound.speed, 6.8); assert.equal(leaper.lungeTicks, 30); assert.equal(screecher.roarCooldown, 720);
@@ -66,7 +66,7 @@ test('hound movement is faster than runners and remains independent of the unuse
 });
 
 test('hounds and other new creatures never generate guns or blades, while five-kill health resupply remains guaranteed', () => {
-  for (const type of ['hound', 'leaper', 'screecher']) for (const seed of [1, 92, 9216, 12291]) {
+  for (const type of ['hound', 'leaper', 'screecher', 'bomber', 'spitter', 'weaver']) for (const seed of [1, 92, 9216, 12291]) {
     const state = fixture({ seed, wave: 5 }); const { player } = spawn(state, type);
     applyCombatDamage(state, [{ playerId: 0, targetId: player.id, damage: player.hp, attack: 'gun', weapon: 'pistol' }]); Horde.step(state);
     assert.ok(state.loot.every(drop => drop.kind !== 'weapon' && drop.kind !== 'melee'), `${type}:${seed}`);
@@ -167,7 +167,7 @@ test('an accepted blade can silence a roar during stagger immunity without reset
 });
 
 test('wave composition guarantees new species introductions without flooding the first wave or changing its population', () => {
-  for (const wave of [1, 2, 3, 5, 7]) {
+  for (const wave of [1, 2, 3, 4, 5, 7, 8]) {
     const state = fixture({ wave: wave - 1 }); state.horde.wave = wave - 1; state.phase = 'intermission'; state.phaseTicks = 1;
     Horde.step(state); const total = state.horde.pending; const types = [];
     for (let tick = 0; tick < 12000 && state.phase === 'fight'; tick++) {
@@ -177,6 +177,7 @@ test('wave composition guarantees new species introductions without flooding the
     assert.equal(state.phase, 'intermission'); assert.equal(types.length, total); assert.equal(total, 7 + wave * 3);
     assert.ok(types.includes('hound'), `wave ${wave}`); if (wave === 1) assert.ok(types.filter(type => type === 'hound').length <= 2);
     assert.equal(types.includes('leaper'), wave >= 3); assert.equal(types.includes('screecher'), wave >= 5); assert.equal(types.includes('sniper'), wave >= 7);
+    assert.equal(types.includes('bomber'), wave >= 3); assert.equal(types.includes('spitter'), wave >= 5); assert.equal(types.includes('weaver'), wave >= 8);
   }
 });
 

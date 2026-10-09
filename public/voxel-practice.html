@@ -14,7 +14,7 @@
   <main class="practice-app" id="practice-app" data-phase="ready">
     <header class="practice-topbar">
       <a class="practice-brand" href="/" aria-label="Back to the Semag game shelf"><span aria-hidden="true">←</span><svg viewBox="0 0 62 16" aria-hidden="true"><use href="/hub/logo.svg#brand" width="62" height="16"/></svg></a>
-      <div class="practice-title"><h1 id="practice-title">Voxel Breach</h1><span>SOLO PRACTICE</span></div>
+      <div class="practice-title"><h1 id="practice-title">Voxel Breach</h1><span id="practice-subtitle">SOLO PRACTICE</span></div>
       <div class="practice-top-actions"><a id="practice-online" href="/">Online lobby ↗</a><div id="practice-keyboard"></div></div>
     </header>
     <div class="practice-error" id="practice-error" role="alert" hidden><span id="practice-error-text"></span><button id="retry-graphics" type="button">Retry graphics</button></div>
@@ -22,7 +22,7 @@
       <div class="practice-toolbar">
         <div><strong id="practice-map-label">Loading arena…</strong><span id="practice-mode-label">MOVING TARGETS</span></div>
         <div class="practice-metrics"><span><b id="practice-bots-left">—</b> LEFT</span><span><b id="practice-hits">0</b> HITS</span><span><b id="practice-clock">0:00</b></span></div>
-        <div class="practice-tools"><button id="practice-pause" type="button" aria-label="Pause practice" disabled>Ⅱ</button><button id="practice-help" type="button" aria-label="Controls" aria-expanded="false">?</button><button id="practice-sound" type="button" aria-label="Enable sound" aria-pressed="false">♫</button><button id="practice-fullscreen" type="button" aria-label="Enter fullscreen" aria-pressed="false">⛶</button></div>
+        <div class="practice-tools"><button id="dojo-tools-toggle" type="button" aria-label="Open dojo range tools" aria-expanded="false" hidden>Tab</button><button id="practice-pause" type="button" aria-label="Pause practice" disabled>Ⅱ</button><button id="practice-help" type="button" aria-label="Controls" aria-expanded="false">?</button><button id="practice-sound" type="button" aria-label="Enable sound" aria-pressed="false">♫</button><button id="practice-fullscreen" type="button" aria-label="Enter fullscreen" aria-pressed="false">⛶</button></div>
       </div>
       <div class="practice-viewport" id="practice-viewport">
         <canvas id="practice-canvas" width="1200" height="680" tabindex="0" aria-label="First-person practice arena"></canvas>
@@ -32,6 +32,16 @@
         <div class="practice-damage" id="practice-damage" aria-hidden="true" hidden><i></i></div>
         <div class="practice-radar" id="practice-radar" hidden><span>N ↑</span><svg id="practice-map-plan" role="img" aria-label="Map and your position"></svg></div>
         <div class="practice-feedback" id="practice-feedback" role="status" hidden></div>
+        <div class="dojo-contact" id="dojo-contact" role="status" hidden><span id="dojo-contact-kind">RANGE READY</span><strong id="dojo-contact-damage">—</strong><small id="dojo-contact-distance">Real damage · measured contacts</small></div>
+        <section class="dojo-tools" id="dojo-tools" aria-labelledby="dojo-tools-title" hidden>
+          <div class="dojo-tools-heading"><div><span>FREE PRACTICE</span><h2 id="dojo-tools-title">Range tools</h2></div><button id="dojo-tools-close" type="button" aria-label="Return to the dojo">×</button></div>
+          <p>Pick a weapon below, then walk to its rack and press E. Supplies restock. Magazines and reloads keep their real timing.</p>
+          <div class="dojo-tool-fields"><label>GUN RACK<select id="dojo-weapon" aria-label="Dojo gun rack weapon"></select></label><label>BLADE RACK<select id="dojo-blade" aria-label="Dojo blade rack weapon"></select></label></div>
+          <button id="dojo-use-station" type="button" disabled>Approach an equipment station</button>
+          <div class="dojo-tool-actions"><button id="dojo-motion" type="button" aria-pressed="false">Stationary targets</button><button id="dojo-reset" type="button">Reset targets</button><button id="dojo-wound" type="button" disabled>Healing test · −60 HP</button><button id="dojo-recover" type="button" disabled>Restore health</button></div>
+          <small id="dojo-station-note">Recovery station: try a training wound, collect a potion at the supply bench, then press F to heal.</small>
+          <button id="dojo-return" class="practice-primary" type="button">Return to range →</button>
+        </section>
         <div class="practice-pickup" id="practice-pickup" hidden><kbd>E</kbd><span><b id="practice-pickup-name"></b><small id="practice-pickup-detail">Pick up supplies</small></span></div>
         <div class="practice-combat" id="practice-combat" hidden>
           <div class="practice-health"><div><span>HEALTH</span><strong id="practice-health">200</strong><small id="practice-health-max">/ 200</small></div><div class="fps-vitals-rails"><div class="practice-health-track" role="progressbar" aria-label="Health" aria-valuemin="0" aria-valuemax="200" id="practice-health-rail"><i id="practice-health-fill"></i></div><div id="practice-stamina-meter" class="fps-stamina" role="meter" aria-label="Your sprint stamina" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100" data-state="ready"><i id="practice-stamina-fill"></i></div></div><small><kbd id="practice-grenade-key">Q</kbd> FRAG <b id="practice-grenades">0</b><kbd>F</kbd> HEAL <b id="practice-potions">0</b></small></div>
@@ -44,16 +54,19 @@
             <div class="practice-settings">
               <label>MAP<select id="practice-map" aria-label="Practice map"></select></label>
               <label>TARGETS<select id="practice-count" aria-label="Number of bots"><option value="1">1 opponent</option><option value="2">2 opponents</option><option value="3" selected>3 opponents</option><option value="4">4 opponents</option><option value="5">5 opponents</option></select></label>
-              <label>DRILL<select id="practice-mode" aria-label="Practice drill"><option value="targets">Moving targets</option><option value="combat">Bots shoot back</option><option value="blades">Blade training</option></select></label>
-              <label>BOT PACE<select id="practice-difficulty" aria-label="Bot difficulty"><option value="rookie">Rookie · deliberate</option><option value="regular" selected>Regular · reactive</option><option value="veteran">Veteran · demanding</option></select></label>
+              <label id="practice-mode-field">DRILL<select id="practice-mode" aria-label="Practice drill"><option value="targets">Moving targets</option><option value="combat">Bots shoot back</option><option value="blades">Blade training</option></select></label>
+              <label id="practice-difficulty-field">BOT PACE<select id="practice-difficulty" aria-label="Bot difficulty"><option value="rookie">Rookie · deliberate</option><option value="regular" selected>Regular · reactive</option><option value="veteran">Veteran · demanding</option></select></label>
+              <label id="dojo-motion-field" hidden>TARGET MOTION<select id="dojo-start-motion" aria-label="Dojo starting target motion"><option value="stationary">Stationary</option><option value="moving">Moving</option></select></label>
               <label id="practice-loadout-field">YOUR GUN<select id="practice-weapon" aria-label="Practice weapon"></select></label>
               <label id="practice-blade-field" hidden>TRAINING BLADE<select id="practice-blade" aria-label="Blade training weapon"></select></label>
               <div id="practice-melee-field" class="fps-starter-kit"><span>STARTING KIT</span><p>Knife + chosen gun<br>No starting supplies</p></div>
             </div>
             <p class="practice-weapon-note" id="practice-weapon-note"></p>
             <p class="practice-weapon-note" id="practice-melee-note"></p>
-            <button id="practice-start" class="practice-primary" type="submit" disabled>Start practice <span aria-hidden="true">→</span></button>
-            <small class="practice-start-note">Solo · no second player needed · no ranked scores</small>
+            <div class="practice-setup-actions">
+              <button id="practice-start" class="practice-primary" type="submit" disabled>Start practice <span aria-hidden="true">→</span></button>
+              <small class="practice-start-note">Solo · no second player needed · no ranked scores</small>
+            </div>
           </form>
           <div class="practice-card practice-pause-card" id="practice-pause-card" hidden><span class="practice-eyebrow">TAKE A BREATH</span><h2>Practice paused.</h2><p>The bots, shots and clock are waiting. Your progress stays exactly where you left it.</p><button id="practice-resume" class="practice-primary" type="button">Resume practice →</button><div class="practice-secondary-actions"><button id="practice-restart" type="button">Restart drill</button><button id="practice-change-setup" type="button">Change setup</button></div></div>
           <div class="practice-card practice-result-card" id="practice-result-card" hidden><span class="practice-eyebrow" id="practice-result-tag">DRILL COMPLETE</span><h2 id="practice-result-title">Clean angles.</h2><p id="practice-result-copy"></p><dl class="practice-result-stats"><div><dt>ELIMINATIONS</dt><dd id="practice-result-kills">0</dd></div><div><dt id="practice-result-accuracy-label">ACCURACY</dt><dd id="practice-result-accuracy">0%</dd></div><div><dt>TIME</dt><dd id="practice-result-time">0:00</dd></div></dl><button id="practice-replay" class="practice-primary" type="button">Run it again →</button><button id="practice-result-setup" class="practice-secondary" type="button">Change setup</button></div>

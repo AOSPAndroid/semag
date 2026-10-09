@@ -203,6 +203,16 @@ body :is(.practice-start-note, .practice-weapon-note, .practice-guide-footnote,
 }
 body .practice-card > p { font-size: .8125rem; margin-bottom: 18px; }
 body .practice-card .practice-weapon-note { font-size: .75rem; }
+/* Keep the explicit launch action in view while longer setup fields scroll. */
+body .practice-card .practice-setup-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  background: var(--card);
+  margin-top: 14px;
+  padding-top: 14px;
+  box-shadow: 0 -14px 18px var(--card);
+}
 body :is(.practice-guide-grid, .guide-grid) b { color: var(--foreground); }
 body .practice-settings { gap: 14px; }
 body .practice-settings > label { font-size: .75rem; font-weight: 500; }

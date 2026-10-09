@@ -64,7 +64,7 @@ test('secondary knife geometry and its real grasp remain exact at committed upwa
     const geometry = meleeSlashGeometry(player, { from: phase.progress, to: phase.progress }), sample = geometry.samples[0];
     axis.forEach((value, i) => near(value, [sample.direction.x, sample.direction.y, sample.direction.z][i], 'locked precise axis'));
     const projected = points(meleeMeshes(player, pose)).map(point => point.reduce((sum, value, i) => sum + (value - [geometry.origin.x, geometry.origin.y, geometry.origin.z][i]) * axis[i], 0));
-    near(Math.max(...projected), 1.65, 'visible tip is the actual secondary capsule endpoint', .00002);
+    near(Math.max(...projected), 2.05, 'visible tip is the actual extended secondary capsule endpoint', .00002);
     const hand = world(operativePose(player).arms[1].hand, player.yaw);
     hand.forEach((value, i) => near(value, [pose.x - player.x, pose.y - player.y - .025, pose.z - player.z][i], 'hand remains physically attached'));
     assert.deepEqual(player, before);

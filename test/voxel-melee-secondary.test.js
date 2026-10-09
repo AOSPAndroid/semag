@@ -11,7 +11,7 @@ const wall = { id: 'shield', x: -2, y: 0, z: -.7, w: 4, h: 3, d: .08 };
 const near = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-8, `${actual} != ${expected}`);
 const movement = ['x', 'y', 'z', 'vx', 'vy', 'vz', 'grounded', 'stamina', 'staminaRegenTicks', 'sprintExhausted', 'sprinting'];
 function actor(id, fields = {}) { return { ...Combat.createCombatPlayer(id), hp: 500, maxHp: 500, lifeId: 1, ...fields }; }
-function fixture({ weapon = 'knife', gameId = 'voxel-breach', target = { z: -1.95 }, map = arena } = {}) {
+function fixture({ weapon = 'knife', gameId = 'voxel-breach', target = { z: -2.3 }, map = arena } = {}) {
   const player = actor(0, { team: 0, x: 0, y: 0, z: 0, human: true, connected: true, participating: true });
   setInventoryMeleeLoadout(player, weapon, { equip: true });
   const enemy = actor(1, { team: 1, x: 0, y: 0, z: -10, ...target });
@@ -36,12 +36,12 @@ function claw(state, source = 1, changes = {}) {
 
 test('secondary catalog is immutable and knife geometry uses exactly the heavy profile without changing quick attacks', () => {
   assert.ok(Object.isFrozen(KNIFE_SECONDARY) && Object.isFrozen(PARRY_PROFILES));
-  assert.deepEqual([KNIFE.startupTicks, KNIFE.activeTicks, KNIFE.recoveryTicks, KNIFE.damage, KNIFE.reach], [10, 8, 26, 28, 1.3]);
-  assert.deepEqual([KNIFE_SECONDARY.startupTicks, KNIFE_SECONDARY.activeTicks, KNIFE_SECONDARY.recoveryTicks, KNIFE_SECONDARY.damage, KNIFE_SECONDARY.reach, KNIFE_SECONDARY.slashRadius, KNIFE_SECONDARY.pushSpeed], [20, 6, 54, 60, 1.75, .10, 3.2]);
+  assert.deepEqual([KNIFE.startupTicks, KNIFE.activeTicks, KNIFE.recoveryTicks, KNIFE.damage, KNIFE.reach], [10, 8, 26, 28, 1.7]);
+  assert.deepEqual([KNIFE_SECONDARY.startupTicks, KNIFE_SECONDARY.activeTicks, KNIFE_SECONDARY.recoveryTicks, KNIFE_SECONDARY.damage, KNIFE_SECONDARY.reach, KNIFE_SECONDARY.slashRadius, KNIFE_SECONDARY.pushSpeed], [20, 6, 54, 60, 2.15, .10, 3.2]);
   const actor = { x: 2, y: 3, z: 4, meleeWeapon: 'knife', meleeAction: 'secondary', meleeYaw: .8, meleePitch: -.3 };
   assert.equal(meleeProfile(actor), KNIFE_SECONDARY); assert.equal(meleeProfile('knife'), KNIFE);
   const path = meleeSlashGeometry(actor); assert.equal(path.kind, 'stab'); assert.equal(path.radius, .10);
-  for (const sample of path.samples) near(Math.hypot(sample.outer.x - path.origin.x, sample.outer.y - path.origin.y, sample.outer.z - path.origin.z) + path.radius, 1.75);
+  for (const sample of path.samples) near(Math.hypot(sample.outer.x - path.origin.x, sample.outer.y - path.origin.y, sample.outer.z - path.origin.z) + path.radius, 2.15);
 });
 
 for (const gameId of ['voxel-breach', 'voxel-horde', 'voxel-royale', 'voxel-practice']) test(`${gameId}: held RMB commits one stronger knife stab and one accepted physical impact`, () => {
@@ -60,7 +60,7 @@ test('heavy knife has real windup, precise longer reach and committed yaw/pitch 
   step(state, { 0: { yaw: 1.5, pitch: .7 } }, 19); assert.equal(enemy.hp, 500); assert.equal(player.meleePhase, 'startup');
   step(state, { 0: { yaw: 1.5, pitch: .7 } }); assert.equal(enemy.hp, 440); assert.equal(player.meleeYaw, 0); assert.equal(player.meleePitch, 0);
   const quick = fixture(); step(quick.state, { 0: { fire: true } }); step(quick.state, {}, 18); assert.equal(quick.enemy.hp, 500, 'this same flesh is outside the quick knife reach');
-  const outside = fixture({ target: { z: -2.06 } }); step(outside.state, { 0: { aim: true } }); step(outside.state, {}, 26); assert.equal(outside.enemy.hp, 500);
+  const outside = fixture({ target: { z: -2.46 } }); step(outside.state, { 0: { aim: true } }); step(outside.state, {}, 26); assert.equal(outside.enemy.hp, 500);
   const side = fixture({ target: { x: .6, z: -1.3 } }); step(side.state, { 0: { aim: true } }); step(side.state, {}, 26); assert.equal(side.enemy.hp, 500, 'the heavy stab is not a damaging cone');
 });
 

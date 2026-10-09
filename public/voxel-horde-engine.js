@@ -4,6 +4,7 @@ import { navigationPoints, navigationPath, navigationCanOccupy, navigationVisibl
 import { INVENTORY_ACTIONS, createInventoryGun, createInventoryMelee, ensureInventory, refreshInventory, storeInventoryGun, inventoryCanTake, setInventoryLoadout, setInventoryMeleeLoadout } from './voxel-inventory.js';
 import { MELEE_WEAPONS, clearMeleeBuffer, resetMeleeDefense } from './voxel-melee.js';
 import { monsterBodyProfile, monsterAttackHeight } from './voxel-monster-bodies.js';
+import { MONSTER_SPECIAL_RULES, launchMonsterShard, markMonsterRune, cancelMonsterRunes, bomberDamage, advanceMonsterSpecials } from './voxel-monster-specials.js';
 import { resolveActiveFire, weaponFireIntervalTicks } from './voxel-fire-modes.js';
 
 export { emptyInput, INPUT_KEYS, TICK_RATE, MAPS, WEAPONS };
@@ -21,6 +22,9 @@ export const MONSTER_TYPES = Object.freeze({
   hound: Object.freeze({ label: 'Grave Hound', health: 45, damage: 12, reach: .95, windup: 24, recovery: 48, speed: 6.8, unarmed: true, walk: false }),
   leaper: Object.freeze({ label: 'Rift Leaper', health: 100, damage: 26, reach: 1.2, windup: 54, recovery: 78, speed: 5.5, lunge: true, lungeRange: 3.6, lungeTicks: 30, lungeSpeed: 9, unarmed: true, walk: false }),
   screecher: Object.freeze({ label: 'Ash Screecher', health: 105, damage: 16, reach: 1.3, windup: 42, recovery: 72, speed: 3.8, roar: true, roarWindup: 72, roarCooldown: 720, rallyRange: 8, rallyTicks: 180, unarmed: true, walk: false }),
+  bomber: Object.freeze({ label: 'Cinder Bomber', health: 105, special: 'bomber', windup: 90, recovery: 180, reach: 3.2, speed: 5.8, unarmed: true, walk: false }),
+  spitter: Object.freeze({ label: 'Shard Spitter', health: 125, special: 'spitter', windup: 78, reaction: 48, recovery: 180, reach: 22, speed: 3.6, unarmed: true, walk: false }),
+  weaver: Object.freeze({ label: 'Rift Weaver', health: 150, special: 'weaver', windup: 108, reaction: 60, recovery: 240, reach: 24, speed: 3.1, unarmed: true, walk: false }),
 });
 export const HORDE_RALLY_RULES = Object.freeze({ speedMultiplier: 1.18, maxTicks: 180 });
 const GUNNER_POOLS = Object.freeze([
@@ -88,7 +92,7 @@ function humanPlayer(state, id, old = null) {
 }
 export function createState(options = {}) {
   const config = normalizedOptions(options);
-  const state = { gameId: 'voxel-horde', capacity: config.capacity, teamSize: config.capacity, mapId: config.mapId, mapName: MAPS[config.mapId].name, tick: 0, matchId: 0, phase: 'lobby', phaseTicks: 0, round: 1, maxRounds: 0, roundTicks: 0, scores: [0, 0], winner: null, roundWinner: null, roundReason: null, players: [], fighters: [], bomb: null, grenades: [], grenadeId: 0, bolts: [], boltId: 0, events: [], eventId: 0, eventLimit: 256, loot: [], spawnWarnings: [], objective: 'Survive together. Ready up, then start the first wave.', horde: { config, seed: config.seed, randomState: config.seed || 0x9e3779b9, sessionId: 0, wave: 0, waveKills: 0, totalKills: 0, alive: 0, pending: 0, phaseTicks: 0, participantIds: [], elapsedTicks: 0, waveTicks: 0, wavesCleared: 0, revives: 0, result: null, brains: [], nextSpawnTick: 0, spawnId: 0, monsterLifeId: 0, lootId: 0, killsSinceHeal: 0, lastEventId: 0, pausedPhase: null, inputFences: Array.from({ length: config.capacity }, () => []), teamstats: { kills: 0, damage: 0, damageTaken: 0, revives: 0 } } };
+  const state = { gameId: 'voxel-horde', capacity: config.capacity, teamSize: config.capacity, mapId: config.mapId, mapName: MAPS[config.mapId].name, tick: 0, matchId: 0, phase: 'lobby', phaseTicks: 0, round: 1, maxRounds: 0, roundTicks: 0, scores: [0, 0], winner: null, roundWinner: null, roundReason: null, players: [], fighters: [], bomb: null, grenades: [], grenadeId: 0, bolts: [], boltId: 0, events: [], eventId: 0, eventLimit: 256, loot: [], spawnWarnings: [], objective: 'Survive together. Ready up, then start the first wave.', horde: { projectiles: [], hazards: [], specialId: 0, config, seed: config.seed, randomState: config.seed || 0x9e3779b9, sessionId: 0, wave: 0, waveKills: 0, totalKills: 0, alive: 0, pending: 0, phaseTicks: 0, participantIds: [], elapsedTicks: 0, waveTicks: 0, wavesCleared: 0, revives: 0, result: null, brains: [], nextSpawnTick: 0, spawnId: 0, monsterLifeId: 0, lootId: 0, killsSinceHeal: 0, lastEventId: 0, pausedPhase: null, inputFences: Array.from({ length: config.capacity }, () => []), teamstats: { kills: 0, damage: 0, damageTaken: 0, revives: 0 } } };
   state.players = Array.from({ length: config.capacity }, (_, id) => humanPlayer(state, id)); state.fighters = state.players;
   // Navigation is prepared before the live countdown, so the first monster does
   // not trigger construction during a combat frame.
@@ -144,6 +148,7 @@ function neutralize(state, { stop = true } = {}) {
 }
 function prepareWave(state) {
   const horde = state.horde, count = Math.max(1, horde.participantIds.length);
+  horde.projectiles = []; horde.hazards = [];
   horde.wave++; state.round = horde.wave; horde.waveKills = 0; horde.waveTicks = 0; horde.waveQueued = 0;
   horde.waveTypeCounts = {};
   horde.pending = 7 + horde.wave * 3 + (count - 1) * (4 + Math.floor(horde.wave * 1.5));
@@ -200,21 +205,22 @@ function monsterType(state) {
   const { wave, waveQueued = 0 } = state.horde;
   // Introduce each threat in a readable place within the wave. A seeded roll
   // fills the rest, so a new species cannot silently miss its debut for a run.
-  const introductions = wave >= 7 ? ['sniper', 'hound', 'leaper', 'screecher', 'gunner', 'brute']
-    : wave >= 5 ? ['gunner', 'hound', 'leaper', 'screecher', 'brute']
-      : wave >= 4 ? ['gunner', 'hound', 'leaper', 'brute']
-        : wave === 3 ? ['brute', 'hound', 'leaper']
+  const introductions = wave >= 8 ? ['weaver', 'sniper', 'hound', 'leaper', 'screecher', 'gunner', 'brute', 'bomber', 'spitter'] : wave >= 7 ? ['sniper', 'hound', 'leaper', 'screecher', 'gunner', 'brute', 'bomber', 'spitter']
+    : wave >= 5 ? ['gunner', 'hound', 'leaper', 'screecher', 'brute', 'bomber', 'spitter']
+      : wave >= 4 ? ['gunner', 'hound', 'leaper', 'brute', 'bomber']
+        : wave === 3 ? ['brute', 'hound', 'leaper', 'bomber']
           : wave === 2 ? ['runner', 'hound'] : ['stalker', 'hound'];
   if (waveQueued < introductions.length) return introductions[waveQueued];
   const weights = [['stalker', wave === 1 ? .82 : .18], ['hound', wave === 1 ? .18 : .17]];
   if (wave >= 2) weights.push(['runner', .25]);
-  if (wave >= 3) weights.push(['brute', .17], ['leaper', .12]);
+  if (wave >= 3) weights.push(['brute', .17], ['leaper', .12], ['bomber', .075]);
   if (wave >= 4) weights.push(['gunner', Math.min(.38, .15 + (wave - 4) * .035)]);
-  if (wave >= 5) weights.push(['screecher', .075]);
+  if (wave >= 5) weights.push(['screecher', .075], ['spitter', .09]);
   if (wave >= 7) weights.push(['sniper', .14]);
+  if (wave >= 8) weights.push(['weaver', .07]);
   const counts = state.horde.waveTypeCounts || {}, active = state.players.filter(player => player.monster && player.alive);
   const choices = weights.filter(([type]) => !(type === 'hound' && wave === 1 && (counts.hound || 0) >= 2)
-    && !(type === 'screecher' && active.filter(player => player.monsterType === type).length + state.spawnWarnings.filter(warning => warning.monsterType === type).length >= 2));
+    && !(['screecher', 'bomber', 'spitter', 'weaver'].includes(type) && active.filter(player => player.monsterType === type).length + state.spawnWarnings.filter(warning => warning.monsterType === type).length >= 2));
   let roll = random(state) * choices.reduce((sum, [, weight]) => sum + weight, 0);
   for (const [type, weight] of choices) { roll -= weight; if (roll < 0) return type; }
   return 'stalker';
@@ -235,7 +241,7 @@ function spawnPoint(state, type) {
   return choices[Math.floor(random(state) * choices.length)];
 }
 function newBrain(state, player) {
-  return { id: player.id, lifeId: player.lifeId, targetId: null, path: [], nextPlanTick: state.tick + player.id % 12, nextSightTick: 0, visible: false, firstSeenTick: -1, attackTargetId: null, attackYaw: 0, attackPitch: 0, attackTicks: 0, attackReady: false, recoverTicks: 0, staggerTicks: 0, staggerReadyTick: 0, gunTicks: 0, burstUntil: 0, burstStartShots: 0, burstShotLimit: 0, nextBurstTick: 0, lungeTicks: 0, lungeDamageReady: false, roarTicks: 0, nextRoarTick: state.tick + HORDE_RULES.emergenceTicks + 60, rallyUntilTick: 0, lastX: player.x, lastZ: player.z, lastMotionTick: state.tick, stuckTicks: 0, aimYaw: player.yaw, aimPitch: 0 };
+  return { id: player.id, lifeId: player.lifeId, targetId: null, path: [], nextPlanTick: state.tick + player.id % 12, nextSightTick: 0, visible: false, firstSeenTick: -1, attackTargetId: null, attackYaw: 0, attackPitch: 0, attackTicks: 0, attackReady: false, blastReady: false, recoverTicks: 0, staggerTicks: 0, staggerReadyTick: 0, gunTicks: 0, burstUntil: 0, burstStartShots: 0, burstShotLimit: 0, nextBurstTick: 0, lungeTicks: 0, lungeDamageReady: false, roarTicks: 0, nextRoarTick: state.tick + HORDE_RULES.emergenceTicks + 60, rallyUntilTick: 0, lastX: player.x, lastZ: player.z, lastMotionTick: state.tick, stuckTicks: 0, aimYaw: player.yaw, aimPitch: 0 };
 }
 function survivorMelee(state, attacker, target) {
   return humanSlot(state, attacker?.id) && attacker.human && attacker.connected && attacker.participating && target?.monster && target.team !== attacker.team;
@@ -267,6 +273,7 @@ function onMeleeHit(state, hit, attacker, target) {
   // This contact cancels a readable commitment, not an impact already resolved
   // this tick. A follow-up hit during immunity still deals damage but cannot
   // cancel another windup; coordinated blades cannot stun-lock a brute.
+  cancelMonsterRunes(state, target); brain.blastReady = false;
   brain.attackTicks = brain.gunTicks = brain.burstUntil = 0; brain.attackReady = false; brain.attackTargetId = null;
   brain.lungeTicks = 0; brain.lungeDamageReady = false; target.lungeTicks = 0;
   brain.recoverTicks = Math.max(brain.recoverTicks, 12); brain.nextBurstTick = Math.max(brain.nextBurstTick, state.tick + ticks + 12);
@@ -316,7 +323,7 @@ function spawnTick(state) {
   horde.pending--;
   horde.waveQueued++; horde.waveTypeCounts ||= {}; horde.waveTypeCounts[type] = (horde.waveTypeCounts[type] || 0) + 1;
   const warning = { id: ++horde.spawnId, ...point, monsterType: type, ticksLeft: HORDE_RULES.spawnWarningTicks, durationTicks: HORDE_RULES.spawnWarningTicks };
-  state.spawnWarnings.push(warning); emitCombatEvent(state, 'monsterRift', { ...warning });
+  state.spawnWarnings.push(warning); const { id: riftId, ...rift } = warning; emitCombatEvent(state, 'monsterRift', { ...rift, riftId });
 }
 function targetVisible(state, player, target) {
   if (!target?.alive) return false;
@@ -359,6 +366,30 @@ function lungeInput(state, player, brain, input, profile) {
   if (--brain.lungeTicks <= 0) brain.recoverTicks = profile.recovery;
   return input;
 }
+function specialMonsterInput(state, player, brain, input, profile, target, distance, desiredYaw) {
+  if (brain.attackTicks > 0) {
+    brain.attackTicks--; player.attackTicks = brain.attackTicks;
+    player.monsterState = profile.special === 'bomber' ? 'bomberFuse' : profile.special === 'spitter' ? 'spitting' : 'weaving';
+    if (!brain.attackTicks) {
+      brain.recoverTicks = profile.recovery;
+      if (profile.special === 'bomber') brain.blastReady = true;
+      else if (profile.special === 'spitter') launchMonsterShard(state, player, brain.attackYaw, brain.attackPitch);
+    }
+    return input;
+  }
+  if (!brain.recoverTicks && brain.visible && distance <= profile.reach && Math.abs(wrap(player.yaw - desiredYaw)) < .3 && (profile.special === 'bomber' || state.tick - brain.firstSeenTick >= profile.reaction)) {
+    if (profile.special === 'weaver' && !markMonsterRune(state, player, target, arenaFor(state))) return input;
+    brain.attackTicks = profile.windup; brain.attackTargetId = target.id; brain.attackTargetLifeId = target.lifeId;
+    brain.attackYaw = desiredYaw; brain.attackPitch = Math.atan2(target.y + playerHeight(target) * .5 - player.y - 1.1, distance);
+    player.attackTicks = player.attackDuration = profile.windup;
+    player.monsterState = profile.special === 'bomber' ? 'bomberFuse' : profile.special === 'spitter' ? 'spitting' : 'weaving';
+    if (profile.special !== 'weaver') emitCombatEvent(state, profile.special === 'bomber' ? 'monsterFuse' : 'monsterSpit', { playerId: player.id, sourceId: player.id, sourceLifeId: player.lifeId, stage: 'windup', ticks: profile.windup, radius: profile.special === 'bomber' ? MONSTER_SPECIAL_RULES.blastRadius : undefined, x: player.x, y: player.y, z: player.z });
+    return input;
+  }
+  if (profile.special !== 'bomber' && brain.visible && distance < 5) input.down = true;
+  else steer(player, brain, input);
+  return input;
+}
 function monsterInput(state, player, brain) {
   const input = emptyInput(player), profile = MONSTER_TYPES[player.monsterType];
   player.monsterRallyTicks = player.alive ? Math.max(0, Math.min(HORDE_RALLY_RULES.maxTicks, brain.rallyUntilTick - state.tick)) : 0;
@@ -399,6 +430,7 @@ function monsterInput(state, player, brain) {
     return input;
   }
   if (brain.recoverTicks > 0) { brain.recoverTicks--; player.monsterState = 'recover'; if (brain.recoverTicks > 18) return input; }
+  if (profile.special) return specialMonsterInput(state, player, brain, input, profile, target, distance, desiredYaw);
   if (profile.gun) {
     const weapon = WEAPONS[player.weapon];
     // Alternate-trigger sidearms use their left shot. ADS-burst rifles use hip
@@ -467,8 +499,9 @@ function monsterInput(state, player, brain) {
   steer(player, brain, input); return input;
 }
 function monsterDamage(state) {
-  const hits = [];
+  const hits = advanceMonsterSpecials(state, arenaFor(state), settingsFor(state).damage);
   for (const brain of state.horde.brains) {
+    if (brain?.blastReady) { brain.blastReady = false; const source = state.players[brain.id]; if (source?.alive && source.monsterType === 'bomber') hits.push(...bomberDamage(state, source, arenaFor(state), settingsFor(state).damage)); }
     if (!brain?.attackReady && !brain?.lungeDamageReady) continue;
     const lunge = brain.lungeDamageReady; brain.lungeDamageReady = false;
     brain.attackReady = false;
@@ -545,13 +578,17 @@ function humanInteractions(state, inputs, previous) {
   }
   state.fighters = state.players;
 }
+function emitLootEvent(state, type, loot, extra = {}) {
+  const { id: lootId, type: lootType, ...data } = loot;
+  emitCombatEvent(state, type, { ...data, ...extra, lootId, lootType });
+}
 function dropLoot(state, event) {
   const horde = state.horde; horde.killsSinceHeal++;
   const monster = state.players[event.targetId];
   if (MONSTER_TYPES[monster?.monsterType]?.gun && random(state) < .35) {
     ensureInventory(monster); const item = createInventoryGun(monster.weapon, monster);
     // Corpses drop their real magazine/reserve and cooldown, never a fresh duplicate loadout.
-    if (item) { item.reserve = Math.min(item.reserve, WEAPONS[item.weapon].reserve); item.reloadTicks = item.burstRemaining = item.spinTicks = 0; const weaponDrop = addInventoryLoot(state, monster, item); if (weaponDrop) emitCombatEvent(state, 'hordeDrop', { ...weaponDrop }); }
+    if (item) { item.reserve = Math.min(item.reserve, WEAPONS[item.weapon].reserve); item.reloadTicks = item.burstRemaining = item.spinTicks = 0; const weaponDrop = addInventoryLoot(state, monster, item); if (weaponDrop) emitLootEvent(state, 'hordeDrop', weaponDrop); }
   }
   const needsHeal = activeHumans(state).some(player => player.hp < 150), roll = random(state);
   let type = roll < (needsHeal ? .24 : .12) || horde.killsSinceHeal >= 5 ? 'potion' : roll < .72 ? 'ammo' : roll < .78 && !MONSTER_TYPES[monster?.monsterType]?.unarmed ? 'melee' : roll < .84 && MONSTER_TYPES[monster?.monsterType]?.gun ? 'grenade' : null;
@@ -559,17 +596,17 @@ function dropLoot(state, event) {
   if (type === 'melee') {
     const weapon = monster.monsterType === 'brute' ? 'axe' : monster.monsterType === 'runner' ? 'tonfas' : 'katana';
     const drop = addInventoryLoot(state, monster, createInventoryMelee(weapon));
-    if (drop) emitCombatEvent(state, 'hordeDrop', { ...drop });
+    if (drop) emitLootEvent(state, 'hordeDrop', drop);
     return;
   }
   if (type === 'potion' || type === 'grenade') {
     const drop=addInventoryLoot(state,monster,{kind:type==='potion'?'heal':'grenade',amount:1});
-    if(drop){drop.type=type;if(type==='potion')horde.killsSinceHeal=0;emitCombatEvent(state,'hordeDrop',{...drop});}
+    if(drop){drop.type=type;if(type==='potion')horde.killsSinceHeal=0;emitLootEvent(state, 'hordeDrop', drop);}
     return;
   }
   const drop = { id: ++horde.lootId, type, kind: 'ammo', x: event.x, y: event.y, z: event.z, amount: 1.5, spawnTick: state.tick, expiresTick: state.tick + HORDE_RULES.lootLifetimeTicks };
   if (state.loot.length >= HORDE_RULES.maxLoot) state.loot.splice(0, 1);
-  state.loot.push(drop); emitCombatEvent(state, 'hordeDrop', { ...drop });
+  state.loot.push(drop); emitLootEvent(state, 'hordeDrop', drop);
 }
 function recordCombat(state) {
   const horde = state.horde, fresh = state.events.filter(event => event.id > horde.lastEventId);
@@ -585,6 +622,7 @@ function recordCombat(state) {
   }
 }
 function beginIntermission(state) {
+  state.horde.projectiles = []; state.horde.hazards = [];
   const horde = state.horde; horde.wavesCleared++; state.phase = 'intermission'; state.phaseTicks = HORDE_RULES.intermissionTicks; horde.phaseTicks = state.phaseTicks;
   state.grenades = []; state.bolts = []; state.spawnWarnings = [];
   for (const id of horde.participantIds) {
@@ -603,13 +641,14 @@ function beginIntermission(state) {
   if (supplier) {
     const weapon = HORDE_MELEE_RULES.supplyWeapons[(horde.wave - 1) % HORDE_MELEE_RULES.supplyWeapons.length];
     const cache = addInventoryLoot(state, supplier, createInventoryMelee(weapon));
-    if (cache) { cache.source = 'wave-clear'; emitCombatEvent(state, 'hordeSupply', { ...cache, wave: horde.wave }); }
+    if (cache) { cache.source = 'wave-clear'; emitLootEvent(state, 'hordeSupply', cache, { wave: horde.wave }); }
   }
   state.fighters = state.players; state.objective = 'Wave cleared. Regroup, collect the close-combat supply and choose your next loadout.';
   for (const id of horde.participantIds) horde.inputFences[id] = ACTIONS.filter(key => state.players[id].previousInput[key]);
   neutralize(state, { stop: false }); emitCombatEvent(state, 'hordeClear', { wave: horde.wave, seconds: horde.waveTicks / TICK_RATE });
 }
 function finish(state) {
+  state.horde.projectiles = []; state.horde.hazards = [];
   state.phase = 'matchEnd'; state.phaseTicks = 0; state.horde.phaseTicks = 0; state.horde.result = 'lost'; state.winner = 1; state.roundWinner = 1; state.roundReason = 'The squad fell.';
   state.objective = 'The squad fell. Compare your waves survived, regroup and try another run.';
   for (const player of state.players) {player.knockbackX = player.knockbackZ = player.knockbackTicks = player.knockbackReadyTicks = 0;resetSprint(player,{refill:false});resetMeleeDefense(player, { blockAim: true });}

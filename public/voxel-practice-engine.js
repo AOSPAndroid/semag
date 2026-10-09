@@ -4,6 +4,8 @@ import * as Royale from './voxel-royale-engine.js';
 import { WEAPONS } from './voxel-weapons.js';
 import { MELEE_WEAPONS, resetMeleeDefense, clearMeleeBuffer } from './voxel-melee.js';
 import { setInventoryMeleeLoadout, selectInventorySlot } from './voxel-inventory.js';
+import { DOJO_MAP } from './voxel-dojo-map.js';
+import { initializeDojo, dojoTargetInput, processDojoActions, advanceDojo, findDojoStationLoot, DOJO_ACTIONS } from './voxel-dojo-engine.js';
 
 export { TICK_RATE, emptyInput };
 export const PRACTICE_DIFFICULTIES = Object.freeze({
@@ -27,18 +29,20 @@ function normalize(options = {}) {
   const alias = { voxel: 'voxel', breach: 'voxel', 'voxel-breach': 'voxel', royale: 'voxel-royale', 'voxel-royale': 'voxel-royale' };
   const requestedGame = options.game ?? 'voxel', game = Object.hasOwn(alias, requestedGame) ? alias[requestedGame] : null;
   if (!game) throw new RangeError('Choose Breach or Royale practice.');
-  const maps = game === 'voxel' ? BREACH_MAPS : Royale.MAPS;
-  const mapId = options.mapId ?? (game === 'voxel' ? 'courtyard' : 'forest');
-  const bots = options.bots ?? 3, mode = options.mode ?? 'combat', weapon = options.weapon ?? 'carbine', difficulty = options.difficulty ?? 'regular';
+  const mode = options.mode ?? 'combat';
+  const maps = game === 'voxel' ? mode === 'dojo' ? { dojo: DOJO_MAP } : BREACH_MAPS : Royale.MAPS;
+  const mapId = options.mapId ?? (mode === 'dojo' ? 'dojo' : game === 'voxel' ? 'courtyard' : 'forest');
+  const bots = options.bots ?? 3, weapon = options.weapon ?? 'carbine', difficulty = options.difficulty ?? 'regular';
   const melee = options.melee ?? 'knife';
   if (!Object.hasOwn(maps, mapId)) throw new RangeError('Unknown practice map.');
   if (!Number.isInteger(bots) || bots < 1 || bots > 5) throw new RangeError('Practice supports 1–5 bots.');
-  if (!['targets', 'combat', 'blades'].includes(mode) || (mode === 'blades' && game !== 'voxel')) throw new RangeError('Choose moving targets, combat bots, or Breach blade training.');
+  if (!['targets', 'combat', 'blades', 'dojo'].includes(mode) || (['blades', 'dojo'].includes(mode) && game !== 'voxel')) throw new RangeError('Choose moving targets, combat bots, Breach blade training, or the solo dojo.');
   if (!Object.hasOwn(WEAPONS, weapon)) throw new RangeError('Unknown practice weapon.');
   if (typeof melee !== 'string' || !Object.hasOwn(MELEE_WEAPONS, melee)) throw new RangeError('Unknown practice close-combat weapon.');
   if (!Object.hasOwn(PRACTICE_DIFFICULTIES, difficulty)) throw new RangeError('Unknown bot difficulty.');
   if (options.seed !== undefined && !Number.isInteger(options.seed)) throw new RangeError('Practice seed must be an integer.');
-  return { game, mapId, bots, mode, weapon, melee: mode === 'blades' ? melee : 'knife', difficulty, seed: options.seed === undefined ? (Date.now() ^ Math.floor(Math.random() * 0x100000000)) >>> 0 : options.seed >>> 0 };
+  if (mode === 'dojo' && options.targetMotion !== undefined && !['stationary', 'moving'].includes(options.targetMotion)) throw new RangeError('Choose stationary or moving dojo targets.');
+  return { game, mapId, bots, mode, weapon, melee: ['blades', 'dojo'].includes(mode) ? melee : 'knife', difficulty, ...(mode === 'dojo' ? { targetMotion: options.targetMotion || 'stationary' } : {}), seed: options.seed === undefined ? (Date.now() ^ Math.floor(Math.random() * 0x100000000)) >>> 0 : options.seed >>> 0 };
 }
 function freeGround(arena, point, radius = WORLD.radius + .065) {
   if (!Number.isFinite(point.x) || !Number.isFinite(point.z)) return false;
@@ -152,8 +156,8 @@ function spawnBreach(state, config) {
   state.players = state.fighters = players; state.capacity = players.length; state.bomb = null; state.maxRounds = 1;
 }
 export function createPractice(options = {}) {
-  const config = normalize(options), state = config.game === 'voxel' ? createBreachState({ mapId: config.mapId }) : Royale.createState({ mapId: config.mapId, capacity: config.bots + 1, seed: config.seed });
-  state.map = (config.game === 'voxel' ? BREACH_MAPS : Royale.MAPS)[config.mapId];
+  const config = normalize(options), state = config.game === 'voxel' ? createBreachState({ mapId: config.mode === 'dojo' ? 'courtyard' : config.mapId }) : Royale.createState({ mapId: config.mapId, capacity: config.bots + 1, seed: config.seed });
+  state.map = config.mode === 'dojo' ? DOJO_MAP : (config.game === 'voxel' ? BREACH_MAPS : Royale.MAPS)[config.mapId];
   // Build static navigation while the setup screen is visible, before live play.
   navigationFor(state.map);
   state.practice = { config, seed: config.seed, randomState: config.seed || 0x9e3779b9, sessionId: 0, elapsedTicks: 0, brains: [], stats: { hits: 0, damageTaken: 0, lastEventId: 0, lastShotHitTick: -1, ...(config.mode === 'blades' ? { bladeSwings: 0, bladeHitSwings: 0, lastHitSwing: null } : {}) }, result: null, pausedPhase: null, inputFence: [] };
@@ -162,6 +166,7 @@ export function createPractice(options = {}) {
     const spawn = state.map.spawnPoints[0];
     Object.assign(state.players[0], spawn, { alive: true, hp: state.players[0].maxHp });
   }
+  if (config.mode === 'dojo') initializeDojo(state, config);
   state.phase = 'ready'; state.phaseTicks = 0; state.objective = 'Choose your drill, then press Start practice.';
   return state;
 }
@@ -175,7 +180,7 @@ export function startPractice(state) {
   state.practice.brains = Array.from({ length: config.bots }, (_, index) => ({ id: index + 1, targetId: null, seenTick: -1, nextBurstTick: 0, burstUntil: 0, nextPlanTick: state.tick + state.phaseTicks + index * 6, nextSmoothTick: 0, nextAimTick: 0, aimYaw: 0, aimPitch: 0, path: [], goal: null, goalKind: 'patrol', lootId: null, lastX: state.players[index + 1].x, lastZ: state.players[index + 1].z, lastMotionTick: state.tick, escapeUntil: 0, blockedCount: 0, ...(config.mode === 'blades' ? { lastKnownTarget: null, orbitDirection: index % 2 ? -1 : 1 } : {}) }));
   for (const player of state.players) player.bot = player.id > 0 && player.id <= config.bots;
   if (config.mode === 'blades') for (const player of state.players) selectInventorySlot(player, 0);
-  state.objective = config.game === 'voxel-royale' ? 'One life, one small knife. Scavenge supplies and outlast the bots.' : config.mode === 'blades' ? 'Blade training: clear approaching targets with real cuts. Targets never attack.' : config.mode === 'targets' ? 'Clear the moving targets. Targets never shoot back.' : 'Clear the combat bots with the real weapons and movement rules.';
+  state.objective = config.mode === 'dojo' ? 'Explore the dojo. Targets reset; equipment stations restock. Tab opens range tools.' : config.game === 'voxel-royale' ? 'One life, one small knife. Scavenge supplies and outlast the bots.' : config.mode === 'blades' ? 'Blade training: clear approaching targets with real cuts. Targets never attack.' : config.mode === 'targets' ? 'Clear the moving targets. Targets never shoot back.' : 'Clear the combat bots with the real weapons and movement rules.';
   sessionMaps.set(state, state.map); return state;
 }
 function neutralize(state) {
@@ -188,7 +193,7 @@ export function pausePractice(state) {
 export function resumePractice(state) {
   if (!state?.practice || state.phase !== 'paused') return state;
   state.phase = state.practice.pausedPhase || 'fight'; state.practice.pausedPhase = null;
-  state.practice.inputFence = ['fire', 'aim', 'jump', 'swap', 'grenade', 'heal', 'interact', 'reload', 'sprint', 'slot1', 'slot2', 'slot3', 'slot4', 'drop'];
+  state.practice.inputFence = ['fire', 'aim', 'jump', 'swap', 'grenade', 'heal', 'interact', 'reload', 'sprint', 'slot1', 'slot2', 'slot3', 'slot4', 'drop', ...(state.dojo ? DOJO_ACTIONS : [])];
   neutralize(state); return state;
 }
 function visibleEnemy(state, bot, enemy) {
@@ -322,6 +327,7 @@ function bladeTargetInput(state, bot, brain, input) {
 function botInput(state, bot, brain) {
   const input = emptyInput(bot), practice = state.practice, settings = PRACTICE_DIFFICULTIES[practice.config.difficulty];
   if (!bot.alive) return input;
+  if (practice.config.mode === 'dojo') return dojoTargetInput(state, bot);
   if (practice.config.mode === 'blades') return bladeTargetInput(state, bot, brain, input);
   const enemies = state.players.filter(player => player.alive && player.id !== bot.id && player.team !== bot.team).sort((a, b) => Math.hypot(a.x - bot.x, a.z - bot.z) - Math.hypot(b.x - bot.x, b.z - bot.z));
   const visibleTarget = enemies.find(player => visibleEnemy(state, bot, player)), enemy = visibleTarget || enemies[0], visible = Boolean(visibleTarget);
@@ -411,14 +417,16 @@ export function stepPractice(state, localInput = {}) {
       return state;
     }
     const previous = state.players.map(player => ({ ...player.previousInput }));
+    if (state.dojo) processDojoActions(state, inputs[0], previous[0]);
     state.roundTicks = Math.max(0, state.roundTicks - 1); combatStep(state, inputs, state.map);
-    for (const player of state.players) if (player.alive && inputs[player.id].interact && !previous[player.id].interact && !inputs[player.id].fire && !player.healTicks && !player.reloadTicks && !player.meleeTicks && !player.grenadeThrowTicks) { const loot = findNearbyLoot(state, player.id, state.map); if (loot) pickupCombatLoot(state, player, loot, inputs[player.id]); }
+    for (const player of state.players) if (player.alive && inputs[player.id].interact && !previous[player.id].interact && !inputs[player.id].fire && !player.healTicks && !player.reloadTicks && !player.meleeTicks && !player.grenadeThrowTicks) { const loot = state.dojo && player.id === 0 ? findDojoStationLoot(state) || findNearbyLoot(state, player.id, state.map) : findNearbyLoot(state, player.id, state.map); if (loot) pickupCombatLoot(state, player, loot, inputs[player.id]); }
     advanceInventoryLoot(state, state.map);
   }
   if (state.phase === 'countdown') return state;
   // The countdown-to-fight transition has not simulated any active time yet.
   if (state.gameId === 'voxel-royale' && state.matchTicks === 0) return state;
   state.practice.elapsedTicks++; recordStats(state);
+  if (state.dojo) { advanceDojo(state); return state; }
   if (!state.players[0].alive) finishPractice(state, 'lost', 'playerEliminated');
   else if (state.phase === 'matchEnd' || !state.players.some(player => player.bot && player.alive)) finishPractice(state, 'won', 'targetsCleared');
   else if (state.gameId !== 'voxel-royale' && state.roundTicks === 0) finishPractice(state, 'timeout', 'timeLimit');

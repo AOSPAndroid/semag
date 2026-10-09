@@ -24,8 +24,8 @@ const shots = state => state.events.filter(event => event.type === 'shot');
 
 test('five immutable melee profiles preserve the starter knife and distinct blade tradeoffs', () => {
   assert.deepEqual(MELEE_IDS, ['knife', 'sword', 'katana', 'axe', 'tonfas']);
-  assert.deepEqual([KNIFE.startupTicks, KNIFE.activeTicks, KNIFE.recoveryTicks, KNIFE.damage, KNIFE.reach, KNIFE.arcRadians, KNIFE.speed], [10, 8, 26, 28, 1.3, .64, 6.1]);
-  assert.deepEqual([MELEE.startupTicks, MELEE.activeTicks, MELEE.recoveryTicks, MELEE.damage, MELEE.reach, MELEE.arcRadians, MELEE.speed], [12, 12, 30, 100, 2.4, .70, 5.85]);
+  assert.deepEqual([KNIFE.startupTicks, KNIFE.activeTicks, KNIFE.recoveryTicks, KNIFE.damage, KNIFE.reach, KNIFE.arcRadians, KNIFE.speed], [10, 8, 26, 28, 1.7, .64, 6.1]);
+  assert.deepEqual([MELEE.startupTicks, MELEE.activeTicks, MELEE.recoveryTicks, MELEE.damage, MELEE.reach, MELEE.arcRadians, MELEE.speed], [12, 12, 30, 100, 3.05, .70, 5.85]);
   for (const id of MELEE_IDS) { assert.ok(Object.isFrozen(MELEE_WEAPONS[id])); assert.equal(meleeProfile(id), MELEE_WEAPONS[id]); }
   const { katana, axe, tonfas } = MELEE_WEAPONS;
   assert.ok(katana.reach > MELEE.reach && katana.arcRadians < MELEE.arcRadians);

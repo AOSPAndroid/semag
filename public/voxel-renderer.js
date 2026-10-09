@@ -10,6 +10,9 @@ import { createFirstPersonMotionPresenter, createWeaponShotPresenter, weaponShot
 import { MONSTER_BODIES, monsterBodyProfile } from './voxel-monster-bodies.js';
 import { MONSTER_DEATH_RULES, monsterDeathPose, createMonsterDeathPresenter } from './voxel-monster-death.js';
 import { EMPTY_WORLD_LABELS, presentWorldLabels } from './voxel-label-presentation.js';
+import { createSlashImpactPresenter } from './voxel-slash-effects.js';
+import { MONSTER_VARIANT_ART, appendMonsterVariant } from './voxel-monster-variants.js';
+import { MONSTER_SPECIAL_RULES } from './voxel-monster-specials.js';
 
 // All solid world surfaces come directly from the engine's minimum-corner
 // colliders. Decoration is either painted on those surfaces or outside bounds.
@@ -19,7 +22,7 @@ const MAX_TRACERS = 14;
 const MAX_EVENT_IDS = 256;
 const MAX_MELEE_TRAILS = 10;
 const MAX_MELEE_TRAIL_SAMPLES = 49;
-const MELEE_TRAIL_FADE_TICKS = 6;
+const MELEE_TRAIL_FADE_TICKS = 10;
 const MAX_MELEE_TRAIL_VERTICES = MAX_MELEE_TRAILS * (MAX_MELEE_TRAIL_SAMPLES - 1) * 18;
 const TEAM_COLORS = ['#efad64', '#66d3c8'];
 const SURVIVOR_COLORS = ['#cfb785', '#94bca3', '#c69e8f', '#a9b6d5', '#b4a0c3', '#d2aa6e', '#8bb7b8', '#c5bd8b', '#9bac80', '#c897b1'];
@@ -43,6 +46,7 @@ const ATMOSPHERE = Object.freeze({
   market: { sun: [-.15, .98, .10], direct: [.25, .23, .19], ambient: [.66, .60, .51], top: '#14283d', horizon: '#405b64', sunColor: '#ffcd80' },
   lockdown: { sun: [.20, .96, -.18], direct: [.29, .26, .20], ambient: [.58, .61, .65], top: '#263a49', horizon: '#777164', sunColor: '#ffc876' },
   trading: { sun: [-.30, .91, .24], direct: [.51, .48, .43], ambient: [.66, .65, .63], top: '#aebbc4', horizon: '#e5e2d9', sunColor: '#fff5df' },
+  dojo: { sun: [-.37, .82, .43], direct: [.67, .57, .44], ambient: [.51, .57, .59], top: '#7ea4b0', horizon: '#ecdbc4', sunColor: '#ffebbc' },
 });
 const ART = Object.freeze({
   courtyard: { paving: '#d7c7aa', accent: '#cc9d76', skyline: '#748b90', cloud: '#f4dcc0', tile: 2.5 },
@@ -60,6 +64,7 @@ const ART = Object.freeze({
   market: { paving: '#566060', accent: '#e7b06a', skyline: '#354c60', cloud: '#718997', tile: 2.5 },
   lockdown: { paving: '#686765', accent: '#d2a063', skyline: '#485664', cloud: '#9ba4a9', tile: 3.2 },
   trading: { paving: '#858a89', accent: '#4787a0', skyline: '#738ca3', cloud: '#edf2f6', tile: 1.6 },
+  dojo: { paving: '#798777', accent: '#bfa67b', skyline: '#738f82', cloud: '#f0e4d2', tile: 2 },
 });
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const finite = (value, fallback = 0) => Number.isFinite(value) ? value : fallback;
@@ -480,13 +485,13 @@ function quadTouchesCover(points, colliders) {
   return colliders.some(box => hi[0] >= box.x && lo[0] <= box.x + box.w && hi[1] >= box.y && lo[1] <= box.y + box.h && hi[2] >= box.z && lo[2] <= box.z + box.d);
 }
 
-function meleeTrailParts(mesh, player, colliders, camera) {
+function meleeTrailParts(mesh, player, colliders, camera, { reducedMotion = false } = {}) {
   const path = meleeTrailPath(player, colliders);
   if (!path || !path.samples.length) return 0;
   const start = mesh.length;
-  const id = meleeWeaponId(player), warm = id === 'axe';
-  const core = warm ? [1, .92, .76, 1] : [.90, 1, .95, 1];
-  const ribbon = warm ? [.95, .67, .36, 1] : [.59, .86, .90, 1];
+  const id = meleeWeaponId(player), warm = id === 'axe' || id === 'katana';
+  const core = warm ? [1, .97, .85, 1] : [.94, 1, 1, 1];
+  const ribbon = id === 'tonfas' ? [.78, .66, 1, 1] : id === 'katana' ? [1, .84, .47, 1] : warm ? [1, .64, .32, 1] : [.46, .89, 1, 1];
   if (path.kind === 'stab') {
     const sample = path.samples.at(-1);
     if (sample.length > .21) {
@@ -502,22 +507,30 @@ function meleeTrailParts(mesh, player, colliders, camera) {
     if (quadTouchesCover(full, path.cover)) continue;
     const age = (a.progress + b.progress) / 2 - path.from;
     const span = Math.max(.001, path.to - path.from);
-    const fade = path.fade * (.14 + .86 * clamp(age / span, 0, 1) ** 1.6);
-    const edgeDepth = Math.min(path.radius * .5, a.length - .19, b.length - .19);
-    const innerA = a.outer.map((value, axis) => value - a.direction[axis] * edgeDepth);
-    const innerB = b.outer.map((value, axis) => value - b.direction[axis] * edgeDepth);
+    const taperA = clamp((a.progress - path.from) / span, 0, 1), taperB = clamp((b.progress - path.from) / span, 0, 1);
+    const head = clamp(age / span, 0, 1), fade = path.fade * (.06 + .94 * head ** 1.2);
+    const depthA = Math.min(path.radius * (.16 + taperA * .74), a.length - .19), depthB = Math.min(path.radius * (.16 + taperB * .74), b.length - .19);
+    const innerA = a.outer.map((value, axis) => value - a.direction[axis] * depthA);
+    const innerB = b.outer.map((value, axis) => value - b.direction[axis] * depthB);
     // A faint finite blade band, a narrow tip ribbon and a bright thin edge.
     // All three layers follow the actual sampled cut, never a projectile.
-    mesh.quad(...full, [0, 1, 0], [ribbon[0], ribbon[1], ribbon[2], .055 * fade]);
-    mesh.quad(innerA, a.outer, b.outer, innerB, [0, 1, 0], [ribbon[0], ribbon[1], ribbon[2], .27 * fade]);
-    mesh.line(a.outer, b.outer, .010, [core[0], core[1], core[2], .92 * fade], camera);
+    mesh.quad(...full, [0, 1, 0], [ribbon[0], ribbon[1], ribbon[2], (reducedMotion ? .028 : .070) * fade]);
+    mesh.quad(innerA, a.outer, b.outer, innerB, [0, 1, 0], [ribbon[0], ribbon[1], ribbon[2], (reducedMotion ? .22 : .52) * fade]);
+    // Every fourth short edge catches the light, rather than adding a new
+    // free-moving spark object or another draw pass for each swinging actor.
+    const glint = !reducedMotion && (index + finite(player.meleeIndex)) % 4 === 0;
+    const width = (reducedMotion ? .009 : .016 + head * .010 + (glint ? .009 : 0)) * path.fade;
+    const delta = b.outer.map((value, axis) => value - a.outer[axis]), middle = a.outer.map((value, axis) => (value + b.outer[axis]) / 2);
+    const toEye = camera.map((value, axis) => value - middle[axis]), side = normalized(cross(delta, toEye), [0, 0, 0]).map(value => value * width);
+    const edge = [a.outer.map((v, i) => v - side[i]), b.outer.map((v, i) => v - side[i]), b.outer.map((v, i) => v + side[i]), a.outer.map((v, i) => v + side[i])];
+    if (!quadTouchesCover(edge, path.cover)) mesh.quad(...edge, [0, 1, 0], [core[0], core[1], core[2], Math.min(1, (glint ? 1.15 : .98) * fade)]);
   }
   return (mesh.length - start) / VERTEX_STRIDE;
 }
 
 /** Inspect the same finite trail assembly without creating a WebGL context. */
-export function meleeTrailMeshes(player, colliders = [], camera = [0, 1.62, 0]) {
-  const mesh = new Mesh(); meleeTrailParts(mesh, player, colliders, camera); return mesh.array;
+export function meleeTrailMeshes(player, colliders = [], camera = [0, 1.62, 0], options = {}) {
+  const mesh = new Mesh(); meleeTrailParts(mesh, player, colliders, camera, options); return mesh.array;
 }
 
 /** Smooth stance height without delaying movement, aim or authoritative collision. */
@@ -570,6 +583,100 @@ export function surfaceBelow(colliders, x, z, height) {
     support = collider; top = candidate;
   }
   return support;
+}
+
+const SPECIAL_RING_SEGMENTS = 28;
+const SPECIAL_RING_POINTS = Object.freeze(Array.from({ length: SPECIAL_RING_SEGMENTS + 1 }, (_, index) => Object.freeze([Math.sin(index * TAU / SPECIAL_RING_SEGMENTS), Math.cos(index * TAU / SPECIAL_RING_SEGMENTS)])));
+const actorLife = actor => Number.isSafeInteger(actor?.lifeId) ? actor.lifeId : 0;
+function specialSource(state, attack, type) {
+  const source = state.players?.find(player => player.id === (attack.sourceId ?? attack.playerId));
+  return source?.monster === true && source.human !== true && source.monsterType === type && actorLife(source) === attack.sourceLifeId ? source : null;
+}
+function validSpecialTimer(attack, maximum) {
+  return [attack.x, attack.y, attack.z, attack.ticksLeft, attack.lifeTicks].every(Number.isFinite) && attack.ticksLeft > 0 && attack.ticksLeft <= attack.lifeTicks && attack.lifeTicks > 0 && attack.lifeTicks <= maximum;
+}
+function groundWarningRing(mesh, map, x, y, z, inner, outer, color) {
+  const colliders = map.colliders || [], points = [[0, y + .016, 0], [0, y + .016, 0], [0, y + .016, 0], [0, y + .016, 0]], normal = [0, 1, 0];
+  for (let index = 0; index < SPECIAL_RING_SEGMENTS; index++) {
+    const a = SPECIAL_RING_POINTS[index], b = SPECIAL_RING_POINTS[index + 1];
+    points[0][0] = x + a[0] * inner; points[0][2] = z + a[1] * inner;
+    points[1][0] = x + a[0] * outer; points[1][2] = z + a[1] * outer;
+    points[2][0] = x + b[0] * outer; points[2][2] = z + b[1] * outer;
+    points[3][0] = x + b[0] * inner; points[3][2] = z + b[1] * inner;
+    // A marker paints the accepted ground. Do not bridge a wall, float
+    // past a deck edge or imply a second attack downstairs.
+    if (points.some(point => {
+      const ground = surfaceBelow(colliders, point[0], point[2], y + .04);
+      return Math.abs((ground ? ground.y + ground.h : 0) - y) > .06 || map.bounds && (point[0] < map.bounds.minX || point[0] > map.bounds.maxX || point[2] < map.bounds.minZ || point[2] > map.bounds.maxZ);
+    }) || quadTouchesCover(points, colliders)) continue;
+    mesh.quad(...points, normal, color);
+  }
+}
+function specialWarning(mesh, map, attack, radius, color, reducedMotion) {
+  const progress = clamp(1 - attack.ticksLeft / attack.lifeTicks, 0, 1);
+  const alpha = reducedMotion ? .48 : .56 + progress * .26;
+  groundWarningRing(mesh, map, attack.x, attack.y, attack.z, radius - .09, radius, [...color, alpha]);
+  const countdown = radius * (.16 + progress * .76);
+  groundWarningRing(mesh, map, attack.x, attack.y, attack.z, Math.max(.03, countdown - .045), countdown, [...color, reducedMotion ? .28 : .34]);
+}
+function monsterSpecialParts(world, contacts, state, map, { reducedMotion = false } = {}) {
+  const startWorld = world.length, startContacts = contacts.length;
+  let shards = 0, runes = 0, fuses = 0;
+  if (state.gameId !== 'voxel-horde') return { shards, runes, fuses, vertices: 0 };
+  for (const projectile of (state.horde?.projectiles || []).slice(0, MONSTER_SPECIAL_RULES.maxProjectiles)) {
+    if (!specialSource(state, projectile, 'spitter') || !validSpecialTimer(projectile, MONSTER_SPECIAL_RULES.shardTicks) || ![projectile.dx, projectile.dy, projectile.dz].every(Number.isFinite)) continue;
+    const direction = normalized([projectile.dx, projectile.dy, projectile.dz], [0, 0, 0]);
+    if (Math.hypot(...direction) < .5) continue;
+    const pose = { x: projectile.x, y: projectile.y, z: projectile.z, yaw: Math.atan2(direction[0], -direction[2]), pitch: Math.asin(clamp(direction[1], -1, 1)) };
+    const back = direction.map(value => -value), origin = [projectile.x, projectile.y, projectile.z];
+    const length = Math.max(0, rayCoverDistance(origin, back, map.colliders || [], .23, .026) - .014);
+    if (length < .018) continue;
+    // Its simulated point is the tip, and both small solids sit behind it.
+    // There is no fake instantaneous beam or wall-clock extrapolation.
+    world.box(-.022, -.022, .003, .044, .044, Math.min(.09, length), '#9bfff0', pose);
+    if (length > .10) world.box(-.012, -.012, .09, .024, .024, length - .09, '#32b9b1', pose);
+    shards++;
+  }
+  for (const hazard of (state.horde?.hazards || []).slice(0, MONSTER_SPECIAL_RULES.maxHazards)) {
+    const source = specialSource(state, hazard, 'weaver'), target = state.players?.find(player => player.id === hazard.targetId);
+    if (!source?.alive || !target?.alive || target.human !== true || actorLife(target) !== hazard.targetLifeId || !validSpecialTimer(hazard, MONSTER_SPECIAL_RULES.runeTicks) || hazard.radius !== MONSTER_SPECIAL_RULES.runeRadius) continue;
+    specialWarning(contacts, map, hazard, MONSTER_SPECIAL_RULES.runeRadius, [.79, .58, 1], reducedMotion); runes++;
+  }
+  for (const source of state.players || []) {
+    if (fuses >= 4) break;
+    if (!source.alive || source.monster !== true || source.monsterType !== 'bomber' || source.monsterState !== 'bomberFuse' || ![source.x, source.y, source.z, source.attackTicks, source.attackDuration].every(Number.isFinite) || source.attackTicks <= 0 || source.attackDuration !== 90 || source.attackTicks > source.attackDuration) continue;
+    const support = surfaceBelow(map.colliders || [], source.x, source.z, source.y + .04), ground = support ? support.y + support.h : 0;
+    specialWarning(contacts, map, { x: source.x, y: ground, z: source.z, ticksLeft: source.attackTicks, lifeTicks: source.attackDuration }, MONSTER_SPECIAL_RULES.blastRadius, [1, .51, .24], reducedMotion); fuses++;
+  }
+  return { shards, runes, fuses, vertices: (world.length - startWorld + contacts.length - startContacts) / VERTEX_STRIDE };
+}
+
+/** The same bounded, depth-tested special geometry used by actual frames. */
+export function monsterSpecialMeshes(state, map, options = {}) {
+  const world = new Mesh(), contacts = new Mesh(), stats = monsterSpecialParts(world, contacts, state, map, options);
+  return { world: world.array, contacts: contacts.array, ...stats };
+}
+
+export function createMonsterSpecialImpactPresenter() {
+  const seen = new Map();
+  const present = (event, state, time, { reducedMotion = false } = {}) => {
+    const blast = event.type === 'monsterBlast', rune = event.type === 'monsterMark' && event.stage === 'release', shard = event.type === 'monsterShardImpact';
+    if ((!blast && !rune && !shard) || ![event.x, event.y, event.z, event.tick, time].every(Number.isFinite) || event.tick > state.tick + 1 || state.tick - event.tick > 18 || !specialSource(state, event, blast ? 'bomber' : rune ? 'weaver' : 'spitter')) return [];
+    const key = `${event.playerId}:${event.sourceLifeId}:${event.type}:${event.specialId ?? event.spawnTick ?? event.tick}:${event.x}:${event.y}:${event.z}`;
+    if (seen.has(key)) return [];
+    seen.set(key, true); while (seen.size > 128) seen.delete(seen.keys().next().value);
+    if (reducedMotion) return [];
+    const count = shard ? 4 : 12, origin = [event.x, event.y + (shard ? 0 : .04), event.z];
+    return Array.from({ length: count }, (_, index) => {
+      const angle = index * 2.39996, spread = shard ? .45 : 1 + index % 3 * .18;
+      return { origin, born: time, vx: Math.sin(angle) * spread, vy: shard ? .25 : .6 + index % 3 * .16, vz: Math.cos(angle) * spread,
+        color: shard ? '#8ce7d4' : rune ? index % 3 ? '#b497e0' : '#ead7ff' : index % 3 ? '#f2a156' : '#ffe6a1',
+        life: shard ? 150 : 220 + index * 8, gravity: 3, cover: true, radius: shard ? .22 : .8, size: shard ? .012 : .02, shrink: true, material: 'monster-special' };
+    });
+  };
+  present.reset = () => seen.clear();
+  present.getStats = () => ({ seenContacts: seen.size, capacity: 128 });
+  return present;
 }
 
 const GLYPHS = Object.freeze({
@@ -639,6 +746,39 @@ function paintRoyaleCollider(mesh, collider, theme) {
   if (h < .12) return;
   const leaves = /foliage|leaves|leaf|canopy/.test(`${material}:${id}`);
   const trunk = /bark|trunk/.test(`${material}:${id}`);
+  if (theme === 'dojo' && !leaves && !trunk) {
+    for (const face of ['north', 'south', 'west', 'east']) {
+      const width = face === 'north' || face === 'south' ? w : d;
+      const patch = (left, bottom, ww, hh, tint, offset = .004) => {
+        if (left >= .012 && bottom >= .012 && left + ww <= width - .012 && bottom + hh <= h - .012) wallPatch(mesh, collider, face, left, bottom, ww, hh, tint, offset);
+      };
+      if (material === 'shoji' && width > .5) {
+        // Cedar lattice is paint on the real opaque paper screen, preserving
+        // its exact cover silhouette and every open doorway in the hall.
+        for (let left = .08; left < width - .04; left += .52) patch(left, .04, .025, h - .08, '#785a40');
+        for (let bottom = .08; bottom < h - .04; bottom += .60) patch(.04, bottom, width - .08, .025, '#785a40');
+        patch(.025, .025, .045, h - .05, '#664c35', .006);
+        patch(width - .07, .025, .045, h - .05, '#664c35', .006);
+      } else if (material === 'dojo-cedar' || material === 'torii') {
+        const grain = material === 'torii' ? '#762f24' : '#65442f';
+        for (const fraction of [.22, .54, .79]) patch(width * fraction, .035, Math.min(.018, width * .04), h - .07, grain);
+        if (material === 'torii') patch(.025, .035, width - .05, Math.min(.21, h * .20), '#353e3a', .006);
+        else if (width > 1) for (let left = .26; left < width - .30; left += .74) patch(left, h * .46, Math.min(.31, width - left - .02), .009, '#be9566', .005);
+      } else if (material === 'dojo-plaster') {
+        patch(.035, .035, width - .07, Math.min(.22, h * .10), '#75583d');
+        patch(.035, h - .20, width - .07, .080, '#897257');
+        for (let left = 3.1; left < width - .05; left += 4.8) patch(left, .10, .020, h - .25, '#b3a38b');
+      } else if (material === 'dojo-roof') {
+        for (let left = .13; left < width - .05; left += .48) patch(left, .025, .028, h - .05, '#6f7972');
+        patch(.035, .025, width - .07, .018, '#242e2c');
+      } else if (material === 'lantern') {
+        patch(.04, .055, width - .08, h - .11, '#ecd3a1');
+        patch(width * .47, .055, Math.min(.025, width * .05), h - .11, '#725d44', .006);
+      }
+    }
+    if (material === 'dojo-cedar' && w > 1 && d > .5) for (let zz = .15; zz < d - .08; zz += .22) mesh.floor(x + .035, z + zz, w - .07, .012, '#6f4c31', y + h + .004);
+    return;
+  }
   for (const face of ['north', 'south', 'west', 'east']) {
     const width = face === 'north' || face === 'south' ? w : d;
     const patch = (left, bottom, ww, hh, tint, offset = .004) => {
@@ -651,8 +791,8 @@ function paintRoyaleCollider(mesh, collider, theme) {
       for (let i = 0; i < 4; i++) {
         const seed = hash(`${id}:${face}:${i}`), left = width * (.06 + i * .22);
         const bottom = h * (.12 + (seed % 4) * .15), ww = width * .18, hh = h * .18;
-        patch(left, bottom, ww, hh, i % 2 ? mix(color, rgba('#123d34'), .28) : mix(color, rgba('#a5b66f'), .30));
-        patch(left + ww * .20, bottom + hh, ww * .57, hh * .35, mix(color, rgba('#b9c984'), .23));
+        patch(left, bottom, ww, hh, i % 2 ? mix(color, rgba(theme === 'dojo' ? '#865368' : '#123d34'), .28) : mix(color, rgba(theme === 'dojo' ? '#ffe3db' : '#a5b66f'), .30));
+        patch(left + ww * .20, bottom + hh, ww * .57, hh * .35, mix(color, rgba(theme === 'dojo' ? '#ffe5dc' : '#b9c984'), .23));
       }
     } else if (trunk) {
       for (const fraction of [.16, .43, .76]) {
@@ -1214,7 +1354,7 @@ function paintCollider(mesh, collider, theme) {
   if (theme === 'market' || theme === 'lockdown') return paintCloseCombatCollider(mesh, collider, theme);
   if (theme === 'paris') return paintParisCollider(mesh, collider);
   if (['snow', 'sewers', 'trading'].includes(theme)) return paintExpansionCollider(mesh, collider, theme);
-  if (ROYALE_THEMES.has(theme)) return paintRoyaleCollider(mesh, collider, theme);
+  if (ROYALE_THEMES.has(theme) || theme === 'dojo') return paintRoyaleCollider(mesh, collider, theme);
   const { x, y, z, w, h, d } = collider;
   if (String(collider.id || '').startsWith('landmark-')) {
     // Semantic props have their own surface finishes below. Reusing building
@@ -1533,7 +1673,49 @@ function landmarkArt(mesh, map, theme) {
   }
 }
 
+function dojoMapPaint(mesh, map) {
+  for (const decoration of map.decorations || []) {
+    const { x, z, w, d, kind } = decoration, y = finite(decoration.y) + .008;
+    if (![x, z, w, d].every(Number.isFinite) || w <= 0 || d <= 0) continue;
+    mesh.floor(x, z, w, d, decoration.color || ART.dojo.accent, y);
+    if (kind === 'cedar-floor') for (let xx = .02; xx < w; xx += .42) mesh.floor(x + xx, z + .015, .013, d - .03, '#755a40', y + .001);
+    if (kind === 'dojo-tatami') {
+      for (let zz = .08; zz < d - .02; zz += .11) mesh.floor(x + .02, z + zz, w - .04, .012, '#999768', y + .001);
+      for (let xx = 0; xx < w; xx += 1.04) mesh.floor(x + xx, z, .040, d, '#545f45', y + .002);
+      for (let zz = 0; zz < d; zz += 1.75) mesh.floor(x, z + zz, w, .040, '#545f45', y + .002);
+    }
+    if (kind === 'stone-path') {
+      for (let zz = .04; zz < d - .01; zz += .92) mesh.floor(x + .02, z + zz, w - .04, .018, '#8e887a', y + .001);
+      for (let xx = .80; xx < w - .02; xx += .86) mesh.floor(x + xx, z + .02, .018, d - .04, '#938b7e', y + .001);
+    }
+    if (kind === 'gravel-garden') for (let zz = .17; zz < d - .10; zz += .52) mesh.floor(x + .07, z + zz, w - .14, .025, '#bfb7a4', y + .001);
+  }
+  for (const station of (map.stations || []).slice(0, 4)) {
+    const bench = map.colliders.find(collider => collider.id === station.colliderId);
+    if (!bench || typeof station.label !== 'string') continue;
+    const label = station.label.slice(0, 10), height = .135, units = [...label].reduce((sum, letter) => sum + (GLYPHS[letter]?.[0]?.length || 2) + 1, 0) - 1;
+    const left = (bench.w - units * height / 7) / 2;
+    wallPatch(mesh, bench, 'north', left - .045, .022, units * height / 7 + .09, .165, '#344a40', .008);
+    wallText(mesh, bench, 'north', label, left, .036, height, '#f2deb3', .011);
+  }
+  for (const lane of (map.rangeLanes || []).slice(0, 4)) {
+    const label = lane.id === 'blade-pad' ? 'BLADE' : `${Math.round(lane.distance)}M`, size = .42;
+    const origin = lane.origin;
+    if (!origin || ![origin.x, origin.z].every(Number.isFinite)) continue;
+    for (let index = 0; index < label.length; index++) floorLetter(mesh, label[index], origin.x + (index - (label.length - 1) / 2) * .39, origin.z + .58, size, '#eed5a5');
+  }
+  // Petals remain flat markings near physical cherry trees; none pretend to
+  // be cover or add a continuously moving particle emitter to the range.
+  for (const tree of map.colliders.filter(collider => /dojo-cherry.*trunk/.test(collider.id))) {
+    for (let index = 0; index < 14; index++) {
+      const seed = hash(`${tree.id}:${index}`), px = tree.x + tree.w / 2 + Math.sin(seed % 97) * 1.8, pz = tree.z + tree.d / 2 + Math.cos(seed % 83) * 1.8;
+      mesh.floor(px, pz, .075 + seed % 3 * .014, .045, index % 3 ? '#d69da8' : '#ebc0b8', .018);
+    }
+  }
+}
+
 function mapPaint(mesh, map, theme) {
+  if (theme === 'dojo') { dojoMapPaint(mesh, map); return; }
   const find = id => map.colliders.find(collider => collider.id === id);
   const siteColumn = id => {
     const side = id === 'A' ? 'west' : 'east';
@@ -1846,9 +2028,9 @@ export function mapMeshes(map) {
     for (let layer = 3; layer >= 0; layer--) {
       const soft = .035 + layer * .075;
       const corners = [[collider.x - soft, collider.z - soft], [collider.x + collider.w + soft, collider.z - soft], [collider.x + collider.w + soft, collider.z + collider.d + soft], [collider.x - soft, collider.z + collider.d + soft]];
-      shadows.floorPolygon([...corners, ...corners.map(point => [point[0] + dx, point[1] + dz])], [.075, .095, .13, .062], .005 + (3 - layer) * .0003);
+      shadows.floorPolygon([...corners, ...corners.map(point => [point[0] + dx, point[1] + dz])], [.075, .095, .13, .062], (theme === 'dojo' ? .020 : .005) + (3 - layer) * .0003);
     }
-    shadows.floor(collider.x - .08, collider.z - .08, collider.w + .16, collider.d + .16, [.055, .07, .08, .22], .007);
+    shadows.floor(collider.x - .08, collider.z - .08, collider.w + .16, collider.d + .16, [.055, .07, .08, .22], theme === 'dojo' ? .022 : .007);
   }
   mapPaint(opaque, map, theme);
   for (const site of map.sites || []) {
@@ -1871,6 +2053,10 @@ export function mapMeshes(map) {
       const z = axis === 'z' ? side : start + i;
       const w = axis === 'x' ? 4 : 4.1, d = axis === 'z' ? 4 : 4.1;
       const c = shade(skylineColor, .80 + (seed % 4) * .07);
+      if (theme === 'dojo') {
+        for (let tier = 0; tier < 3; tier++) opaque.box(x - .3 + tier * .5, -.10 + tier * 1.35, z - .3 + tier * .5, 6.1 - tier, 1.6, 6.1 - tier, shade(c, .90 + tier * .05));
+        continue;
+      }
       if (theme === 'forest' || theme === 'snow') {
         opaque.box(x + 1.65, -.05, z + 1.65, .70, h + 1, .70, '#5a6650');
         for (let tier = 0; tier < 4; tier++) {
@@ -2960,6 +3146,7 @@ const MONSTER_ART = Object.freeze({
   hound: { skin: '#796859', shadow: '#363331', armor: '#514d40', eye: '#f4a767', width: .38, head: '#938171' },
   leaper: { skin: '#a4ad8c', shadow: '#4b5445', armor: '#67735a', eye: '#e5e98b', width: .29, head: '#9da783' },
   screecher: { skin: '#917e8c', shadow: '#463d4b', armor: '#665668', eye: '#efa6c5', width: .40, head: '#786577' },
+  ...MONSTER_VARIANT_ART,
 });
 
 const CREATURE_TYPES = new Set(['hound', 'leaper', 'screecher']);
@@ -3121,6 +3308,7 @@ function monsterParts(mesh, player, time, animation = null) {
     });
     mesh.quad(...points, rotate([0, 0, -1], yaw), rgba(color));
   };
+  if (appendMonsterVariant(mesh, player, pose, { time, animation: animation || monsterAnimationPose(player, time) })) return { type, armed: false, art, pose, yaw, pitch: 0 };
   if (CREATURE_TYPES.has(type)) {
     creatureParts(mesh, player, type, art, pose, front, animation || monsterAnimationPose(player, time));
     return { type, armed: false, art, pose, yaw, pitch: 0 };
@@ -3665,6 +3853,9 @@ export class VoxelRenderer {
     this.available = true; this.contextLost = false; this.error = null; this.destroyed = false;
     this.mapCache = new Map(); this.hordeMaps = new WeakMap(); this.mapId = null; this.effectMap = null; this.effectGameId = null; this.effectRound = null; this.effectPhase = null; this.eventIds = new Set(); this.eventQueue = [];
     this.particles = []; this.tracers = []; this.localShot = null; this.localReload = null; this.shotContext = null;
+    this.reducedMotion = typeof globalThis.matchMedia === 'function' ? globalThis.matchMedia('(prefers-reduced-motion: reduce)') : null;
+    this.presentSlashImpacts = createSlashImpactPresenter();
+    this.presentMonsterSpecialImpacts = createMonsterSpecialImpactPresenter();
     this.lastAim = null; this.swayX = 0; this.swayY = 0;
     this.frameMeshes = { world: new Mesh(), contact: new Mesh(), tracer: new Mesh(), weapon: new Mesh() };
     this.frameMeshes.tracer.ensure((MAX_MELEE_TRAIL_VERTICES + MAX_TRACERS * 6) * VERTEX_STRIDE);
@@ -3778,7 +3969,7 @@ export class VoxelRenderer {
     this._frameDynamicVertices += array.length / VERTEX_STRIDE;
     return { buffer, count: array.length / VERTEX_STRIDE };
   }
-  _events(state, time, localId) {
+  _events(state, time, localId, { reducedMotion = false } = {}) {
     const combat = !state.phase || ['fight', 'roundEnd', 'matchEnd'].includes(state.phase) || (state.gameId === 'voxel-horde' && state.phase === 'intermission');
     const map = typeof state.map === 'object' && state.map?.colliders ? state.map : MAPS[state.mapId];
     const localAlive = state.players?.find(player => player.id === localId)?.alive !== false;
@@ -3822,13 +4013,19 @@ export class VoxelRenderer {
           const angle = i * 2.39996 + hash(key) % 7;
           this.particles.push({ origin, born: time, vx: Math.sin(angle) * .55, vy: .32 + i * .055, vz: Math.cos(angle) * .55, color: i % 2 ? '#e8be78' : '#d9eee5', life: 100 + i * 13, gravity: 3, cover: true, radius: .22, size: .012, material: 'parry', shrink: true });
         }
+      } else if (event.type === 'meleeHit') {
+        this.presentSlashImpacts ||= createSlashImpactPresenter();
+        this.particles.push(...this.presentSlashImpacts(event, state, time, { reducedMotion }));
+      } else if (['monsterBlast', 'monsterMark', 'monsterShardImpact'].includes(event.type)) {
+        this.presentMonsterSpecialImpacts ||= createMonsterSpecialImpactPresenter();
+        this.particles.push(...this.presentMonsterSpecialImpacts(event, state, time, { reducedMotion }));
       } else if (event.type === 'reload' && event.playerId === localId) this.localReload = { born: time, weapon: event.weapon };
-      else if (event.type === 'grenadeBounce' || event.type === 'meleeHit' || event.type === 'healComplete') {
+      else if (event.type === 'grenadeBounce' || event.type === 'healComplete') {
         const origin = [finite(event.x), finite(event.y, .2), finite(event.z)], heal = event.type === 'healComplete';
-        const count = heal ? 8 : event.type === 'meleeHit' ? 6 : 4;
+        const count = heal ? 8 : 4;
         for (let i = 0; i < count; i++) {
           const angle = i * 2.39996 + hash(key) % 7;
-          this.particles.push({ origin, born: time, vx: Math.sin(angle) * (heal ? .25 : .48) + finite(event.nx) * .45, vy: heal ? .35 + i * .04 : .25 + finite(event.ny) * .40, vz: Math.cos(angle) * (heal ? .25 : .48) + finite(event.nz) * .45, color: heal ? '#a9d6b9' : event.type === 'grenadeBounce' ? '#bfa47b' : '#e4c286', life: heal ? 360 + i * 15 : event.type === 'meleeHit' ? 140 + i * 11 : 180 + i * 12, gravity: heal ? 0 : 3, cover: true, size: event.type === 'meleeHit' ? .015 : undefined });
+          this.particles.push({ origin, born: time, vx: Math.sin(angle) * (heal ? .25 : .48) + finite(event.nx) * .45, vy: heal ? .35 + i * .04 : .25 + finite(event.ny) * .40, vz: Math.cos(angle) * (heal ? .25 : .48) + finite(event.nz) * .45, color: heal ? '#a9d6b9' : '#bfa47b', life: heal ? 360 + i * 15 : 180 + i * 12, gravity: heal ? 0 : 3, cover: true });
         }
       } else if (event.type === 'explosion' || event.type === 'grenadeExplosion') {
         const origin = [finite(event.x), finite(event.y, .25), finite(event.z)];
@@ -4112,7 +4309,8 @@ export class VoxelRenderer {
       this.presentShots.reset(); this.localShot = null; this.localReload = null;
     }
     this.shotContext = shotContext;
-    this._events(state, time, localId);
+    const reducedMotion = this.reducedMotion?.matches === true || options.reducedMotion === true || options.quality === 'reduced';
+    this._events(state, time, localId, { reducedMotion });
     const yaw = finite(options.aimYaw ?? options.yaw, finite(cameraPlayer.yaw));
     const pitch = clamp(finite(options.aimPitch ?? options.pitch, finite(cameraPlayer.pitch)), -1.48, 1.48);
     const aim = aimProgress(cameraPlayer), zoom = weaponAimFovRatio(cameraPlayer.weapon, ADS);
@@ -4214,6 +4412,8 @@ export class VoxelRenderer {
     this._bomb(dynamic, state, players.filter(player => player.id !== cameraPlayer.id), time);
     this._grenades(dynamic, contacts, state, map, time);
     this._bolts(dynamic, state);
+    this._monsterSpecials = monsterSpecialParts(dynamic, contacts, state, map, { reducedMotion });
+    this._reducedMotion = reducedMotion;
     this._visibleBloodParticles = 0;
     for (const particle of this.particles) {
       // A head contact sits directly against its victim's eye. Rendering the
@@ -4222,6 +4422,7 @@ export class VoxelRenderer {
       // watched player, rather than localId, so spectators keep the same view.
       if (particle.targetId != null && particle.targetId === cameraPlayer.id) continue;
       const { point, size, fade } = particlePosition(particle, time, map.colliders);
+      if (particle.material === 'monster-special' && Math.hypot(...point.map((value, axis) => value - eye[axis])) < .22) continue;
       dynamic.box(point[0] - size / 2, point[1] - size / 2, point[2] - size / 2, size, size, size, shade(rgba(particle.color), .7 + fade * .3));
       if (particle.material === 'blood') this._visibleBloodParticles++;
     }
@@ -4235,7 +4436,7 @@ export class VoxelRenderer {
     for (const player of players) {
       if (this._meleeTrailActors >= MAX_MELEE_TRAILS) break;
       const actor = player.id === cameraPlayer.id ? cameraPlayer : player;
-      const count = meleeTrailParts(traces, actor, map.colliders || [], eye);
+      const count = meleeTrailParts(traces, actor, map.colliders || [], eye, { reducedMotion });
       this._meleeTrailVertices += count; if (count) this._meleeTrailActors++;
     }
     if (this.tracers.length || traces.length) {
@@ -4273,11 +4474,13 @@ export class VoxelRenderer {
       corpses: Object.freeze((this.monsterDeaths || []).map(death => { const pose = monsterDeathPose(death, death.ageMs); return Object.freeze({ targetId: death.targetId, lifeId: death.lifeId, monsterType: death.monsterType, x: death.x, y: death.y, z: death.z, ageMs: death.ageMs, progress: pose.progress, collapse: pose.collapse, dissolve: pose.dissolve }); })) });
     const humanAnimation = Object.freeze({ cachedPlayers: this.presentHumans?.size || 0, poses: Object.freeze([...this.humanPoses].map(([id, { animation, joints }]) => Object.freeze({ id, phase: animation.phase, stride: animation.stride, speed: animation.speed, sprint: animation.sprint, forward: animation.forward, strafe: animation.strafe, crouch: animation.crouch, airborne: animation.airborne, jump: animation.jump, land: animation.land, bodyBob: animation.bodyBob, knees: Object.freeze(joints.legs.map(leg => Object.freeze([...leg.knee]))), feet: Object.freeze(joints.legs.map(leg => Object.freeze([...leg.foot]))) }))) });
     const firstPerson = this.firstPersonMotion ? Object.freeze({ ...this.firstPersonMotion, eye: Object.freeze([...this.firstPersonMotion.eye]), shot: Object.freeze({ ...this.shotMotion }), melee: this.meleePose ? Object.freeze({ ...this.meleePose }) : null, reload: this.reloadMotion ? Object.freeze({ ...this.reloadMotion, hands: Object.freeze(this.reloadMotion.hands.map(hand => Object.freeze({ ...hand }))) }) : null, ...this.presentShots.getStats() }) : null;
-    return Object.freeze({ mapId: this.mapId, mapVertices: this._mapVertices, cachedMaps: this.mapCache.size, drawCalls: this._frameDrawCalls, dynamicVertices: this._frameDynamicVertices, lootItems: this._lootItems, stormVertices: this._stormVertices, spawnWarnings: this._spawnWarnings || 0, meleeTrailVertices: this._meleeTrailVertices || 0, meleeTrailActors: this._meleeTrailActors || 0, cachedSpawnWarnings: warnings?.cachedItems || 0, spawnWarningBuilds: warnings?.builds || 0, bloodParticles: this.particles.filter(particle => particle.material === 'blood').length, visibleBloodParticles: this._visibleBloodParticles || 0, cachedLootItems: loot?.cachedItems || 0, lootGeometryBuilds: loot?.builds || 0, geometryBufferBytes: Object.values(this.frameMeshes || {}).reduce((bytes, mesh) => bytes + mesh.storage.byteLength, 0) + (loot?.bufferBytes || 0) + (loot?.templateBytes || 0) + (warnings?.bufferBytes || 0) + (warnings?.templateBytes || 0) + (deathGeometry?.bufferBytes || 0) + (deathGeometry?.templateBytes || 0), cameraEyeHeight: this.cameraEyeHeight, resizeReads: this.resizeReads, humanAnimation, firstPerson, monsterDeaths });
+    return Object.freeze({ mapId: this.mapId, mapVertices: this._mapVertices, cachedMaps: this.mapCache.size, drawCalls: this._frameDrawCalls, dynamicVertices: this._frameDynamicVertices, lootItems: this._lootItems, stormVertices: this._stormVertices, spawnWarnings: this._spawnWarnings || 0, meleeTrailVertices: this._meleeTrailVertices || 0, meleeTrailActors: this._meleeTrailActors || 0, slashImpacts: Object.freeze(this.presentSlashImpacts?.getStats() || {}), monsterSpecials: Object.freeze(this._monsterSpecials || { shards: 0, runes: 0, fuses: 0, vertices: 0 }), reducedMotion: this._reducedMotion === true, cachedSpawnWarnings: warnings?.cachedItems || 0, spawnWarningBuilds: warnings?.builds || 0, bloodParticles: this.particles.filter(particle => particle.material === 'blood').length, visibleBloodParticles: this._visibleBloodParticles || 0, cachedLootItems: loot?.cachedItems || 0, lootGeometryBuilds: loot?.builds || 0, geometryBufferBytes: Object.values(this.frameMeshes || {}).reduce((bytes, mesh) => bytes + mesh.storage.byteLength, 0) + (loot?.bufferBytes || 0) + (loot?.templateBytes || 0) + (warnings?.bufferBytes || 0) + (warnings?.templateBytes || 0) + (deathGeometry?.bufferBytes || 0) + (deathGeometry?.templateBytes || 0), cameraEyeHeight: this.cameraEyeHeight, resizeReads: this.resizeReads, humanAnimation, firstPerson, monsterDeaths });
   }
   resetEffects() {
     this._worldLabels = EMPTY_WORLD_LABELS;
     this.eventIds.clear(); this.eventQueue.length = 0; this.particles.length = 0; this.tracers.length = 0;
+    this.presentSlashImpacts?.reset();
+    this.presentMonsterSpecialImpacts?.reset(); this._monsterSpecials = null; this._reducedMotion = false;
     this._visibleBloodParticles = 0; this._meleeTrailVertices = 0; this._meleeTrailActors = 0;
     this.localShot = null; this.localReload = null; this.shotContext = null; this.lastAim = null; this.swayX = 0; this.swayY = 0;
     this.presentLoot?.reset(); this.presentWarnings?.reset(); this.presentEye?.reset(); this.presentHumans?.reset(); this.presentMonsters?.reset(); this.presentHead?.reset(); this.presentShots?.reset(); this.presentReloads?.reset(); this.cameraReload = null; this.firstPersonMotion = null; this.shotMotion = null; this.reloadMotion = null; this.meleePose = null; this.humanPoses?.clear(); this._spawnWarnings = 0;

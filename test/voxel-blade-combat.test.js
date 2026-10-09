@@ -36,7 +36,7 @@ for (const [weapon, cuts] of [['sword', 2], ['katana', 3], ['axe', 2], ['tonfas'
 });
 
 test('sword and katana reach enemies beyond the old short slash without contacting flesh outside their real lengths', () => {
-  for (const [weapon, reachable, outside] of [['sword', 2.55, 2.85], ['katana', 2.8, 3.1]]) {
+  for (const [weapon, reachable, outside] of [['sword', 3.2, 3.5], ['katana', 3.2, 3.7]]) {
     const close = fixture(weapon, [actor(1, { x: 0, z: -reachable })]); attack(close.state, weapon); assert.ok(close.targets[0].hp < 200, `${weapon}: legitimate longer cut`);
     const far = fixture(weapon, [actor(1, { x: 0, z: -outside })]); attack(far.state, weapon); assert.equal(far.targets[0].hp, 200, `${weapon}: range is physical`);
   }
@@ -174,7 +174,7 @@ test('a curved multi-monster sweep still respects cover, per-life dedupe and ver
 
 test('an approaching sideways player can be cut while one who leaves real reach during windup escapes', () => {
   const crossing = fixture('katana', [actor(1, { x: -.3, z: -1.6 })]); step(crossing.state, { 0: { fire: true }, 1: { right: true } }); step(crossing.state, { 1: { right: true } }, 18); assert.equal(crossing.targets[0].hp, 125);
-  const fleeing = fixture('sword', [actor(1, { x: 0, z: -2.6 })]); step(fleeing.state, { 0: { fire: true }, 1: { up: true } }); step(fleeing.state, { 1: { up: true } }, 24); assert.equal(fleeing.targets[0].hp, 200, 'no range extension or target snapping');
+  const fleeing = fixture('sword', [actor(1, { x: 0, z: -3.2 })]); step(fleeing.state, { 0: { fire: true }, 1: { up: true } }); step(fleeing.state, { 1: { up: true } }, 24); assert.equal(fleeing.targets[0].hp, 200, 'no range extension or target snapping');
 });
 
 test('waist-crossing blades contact actual close low hounds while knives still require downward aim', () => {
@@ -183,7 +183,7 @@ test('waist-crossing blades contact actual close low hounds while knives still r
     const hit = setup.state.events.find(event => event.type === 'damage'); assert.ok(hit && hit.hitY <= .8, `${weapon}:${yaw} must contact real dog flesh`);
   }
   const knife = fixture('knife', [actor(1, { x: 0, z: -1.1, radius: .5, monster: true, human: false, monsterType: 'hound' })], arena, 'voxel-horde'); attack(knife.state, 'knife'); assert.equal(knife.targets[0].hp, 200);
-  assert.deepEqual([KNIFE.damage, KNIFE.reach, KNIFE.startupTicks, KNIFE_SECONDARY.damage, KNIFE_SECONDARY.reach], [28, 1.3, 10, 60, 1.75]);
+  assert.deepEqual([KNIFE.damage, KNIFE.reach, KNIFE.startupTicks, KNIFE_SECONDARY.damage, KNIFE_SECONDARY.reach], [28, 1.7, 10, 60, 2.15]);
   for (const weapon of ['sword', 'katana', 'axe']) {
     const geometry = meleeSlashGeometry({ meleeWeapon: weapon, meleeYaw: 0, meleePitch: 0 });
     for (const sample of geometry.samples) assert.ok(Math.hypot(sample.outer.x - geometry.origin.x, sample.outer.y - geometry.origin.y, sample.outer.z - geometry.origin.z) + geometry.radius <= MELEE_WEAPONS[weapon].reach + 1e-8);

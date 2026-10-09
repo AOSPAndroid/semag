@@ -2,19 +2,19 @@
 import { monsterAttackOrigin } from './voxel-monster-bodies.js';
 // Each carried blade has a close-range role; Royale's free starter knife stays
 // short and quick. Distances are metres; durations are 120 Hz ticks.
-export const MELEE = Object.freeze({ id: 'sword', name: 'Breach Sword', label: 'SWORD', startupTicks: 12, activeTicks: 12, recoveryTicks: 30, damage: 100, reach: 2.4, arcRadians: .70, speed: 5.85, slashRadius: .24, slashTilt: -.16, slashDropRadians: .28, pushSpeed: 4.2, description: 'A wide, powerful two-hit slash. Guide the windup, then commit the cut and step through recovery.' });
-export const KNIFE = Object.freeze({ id: 'knife', name: 'Survivor Knife', label: 'KNIFE', startupTicks: 10, activeTicks: 8, recoveryTicks: 26, damage: 28, reach: 1.3, arcRadians: .64, speed: 6.1, slashRadius: .14, slashTilt: 0, pushSpeed: 2.2, description: 'A small, quick starter blade. Close the gap and commit each strike carefully.' });
+export const MELEE = Object.freeze({ id: 'sword', name: 'Breach Sword', label: 'SWORD', startupTicks: 12, activeTicks: 12, recoveryTicks: 30, damage: 100, reach: 3.05, arcRadians: .70, speed: 5.85, slashRadius: .24, slashTilt: -.16, slashDropRadians: .28, pushSpeed: 4.2, description: 'A wide, powerful two-hit slash. Guide the windup, then commit the cut and step through recovery.' });
+export const KNIFE = Object.freeze({ id: 'knife', name: 'Survivor Knife', label: 'KNIFE', startupTicks: 10, activeTicks: 8, recoveryTicks: 26, damage: 28, reach: 1.7, arcRadians: .64, speed: 6.1, slashRadius: .14, slashTilt: 0, pushSpeed: 2.2, description: 'A small, quick starter blade. Close the gap and commit each strike carefully.' });
 
 /** Every blade contacts once per committed swing; paired tonfas alternate hands. */
 export const MELEE_WEAPONS = Object.freeze({
   knife: KNIFE,
   sword: MELEE,
-  katana: Object.freeze({ id: 'katana', name: 'Raven Katana', label: 'KATANA', startupTicks: 8, activeTicks: 10, recoveryTicks: 24, damage: 75, reach: 2.75, arcRadians: .52, speed: 6, slashRadius: .22, slashTilt: -.12, slashDropRadians: .34, pushSpeed: 3, description: 'A fast long cut with modest pushback. Guide the short windup and chain three precise cuts at close range.' }),
-  axe: Object.freeze({ id: 'axe', name: 'Bulwark Axe', label: 'AXE', startupTicks: 22, activeTicks: 12, recoveryTicks: 50, damage: 140, reach: 2.3, arcRadians: .72, speed: 5.1, slashRadius: .26, slashTilt: -.72, slashDropRadians: .32, pushSpeed: 10, description: 'A heavy committed chop. High impact trades wind-up, recovery and movement speed.' }),
-  tonfas: Object.freeze({ id: 'tonfas', name: 'Twin Tonfas', label: 'DUAL TONFAS', startupTicks: 6, activeTicks: 7, recoveryTicks: 17, damage: 42, reach: 1.6, arcRadians: .58, speed: 6.15, dualWield: true, slashRadius: .20, slashTilt: -.20, pushSpeed: 2.6, description: 'Alternate quick close strikes with both hands. Five clean blows defeat a full-health rival; each press is one blow.' }),
+  katana: Object.freeze({ id: 'katana', name: 'Raven Katana', label: 'KATANA', startupTicks: 8, activeTicks: 10, recoveryTicks: 24, damage: 75, reach: 3.35, arcRadians: .52, speed: 6, slashRadius: .22, slashTilt: -.12, slashDropRadians: .34, pushSpeed: 3, description: 'A fast long cut with modest pushback. Guide the short windup and chain three precise cuts at close range.' }),
+  axe: Object.freeze({ id: 'axe', name: 'Bulwark Axe', label: 'AXE', startupTicks: 22, activeTicks: 12, recoveryTicks: 50, damage: 140, reach: 2.85, arcRadians: .72, speed: 5.1, slashRadius: .26, slashTilt: -.72, slashDropRadians: .32, pushSpeed: 10, description: 'A heavy committed chop. High impact trades wind-up, recovery and movement speed.' }),
+  tonfas: Object.freeze({ id: 'tonfas', name: 'Twin Tonfas', label: 'DUAL TONFAS', startupTicks: 6, activeTicks: 7, recoveryTicks: 17, damage: 42, reach: 2, arcRadians: .58, speed: 6.15, dualWield: true, slashRadius: .20, slashTilt: -.20, pushSpeed: 2.6, description: 'Alternate quick close strikes with both hands. Five clean blows defeat a full-health rival; each press is one blow.' }),
 });
-/** A precise RMB commitment; the quick knife profile remains unchanged. */
-export const KNIFE_SECONDARY = Object.freeze({ ...KNIFE, startupTicks: 20, activeTicks: 6, recoveryTicks: 54, damage: 60, reach: 1.75, slashRadius: .10, pushSpeed: 3.2 });
+/** A precise RMB commitment extends the starter knife without widening its band. */
+export const KNIFE_SECONDARY = Object.freeze({ ...KNIFE, startupTicks: 20, activeTicks: 6, recoveryTicks: 54, damage: 60, reach: 2.15, slashRadius: .10, pushSpeed: 3.2 });
 const guard = (startupTicks, activeTicks, recoveryTicks, cooldownTicks, staminaCost, halfAngle) => Object.freeze({ startupTicks, activeTicks, recoveryTicks, cooldownTicks, staminaCost, halfAngle });
 export const PARRY_PROFILES = Object.freeze({ sword: guard(4, 12, 24, 72, 12, .75), katana: guard(4, 12, 24, 72, 12, .75), axe: guard(7, 8, 38, 96, 16, .6), tonfas: guard(3, 14, 22, 66, 10, .8) });
 export const MELEE_IDS = Object.freeze(Object.keys(MELEE_WEAPONS));

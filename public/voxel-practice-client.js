@@ -16,6 +16,8 @@ import { setHidden, setAttribute, setStyle, setDisabled } from './hub/dom.js';
 import { createPractice, startPractice, stepPractice, pausePractice, resumePractice, getPracticeStats, TICK_RATE } from './voxel-practice-engine.js';
 import { tickFraction } from './display-timing.js';
 import { createPracticeInputQueue } from './voxel-practice-input.js';
+import { DOJO_MAP } from './voxel-dojo-map.js';
+import { DOJO_ACTIONS, findDojoStation, findDojoStationLoot } from './voxel-dojo-engine.js';
 import { inventoryLootPresentation, inventoryEventFeedback, inventorySwapPresentation, mountInventoryHotbar, mountWeaponWheel } from './voxel-inventory-ui.js';
 
 const STEP = 1 / TICK_RATE;
@@ -67,14 +69,14 @@ export function bootPractice() {
   const app = $('practice-app'), canvas = $('practice-canvas'), shell = $('practice-shell');
   if (!app || !canvas) return null;
   const params = new URLSearchParams(location.search), game = params.get('game') === 'voxel-royale' ? 'voxel-royale' : 'voxel';
-  const royale = game === 'voxel-royale', maps = royale ? ROYALE_MAPS : BREACH_MAPS;
+  const royale = game === 'voxel-royale', dojo = !royale && params.get('mode') === 'dojo', maps = dojo ? { dojo: DOJO_MAP } : royale ? ROYALE_MAPS : BREACH_MAPS;
   let renderer = null, graphicsError = '', destroyed = false, frameId = null, previousFrame = null, accumulator = 0;
   let state, aim = { yaw: 0, pitch: 0 }, previousPlayers = [], presentationPlayer = null, lastHudAt = -Infinity, lastPhase = '';
   const hitFeedback = createHitFeedback(), hitMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const hitElements = { crosshair: $('practice-crosshair'), scope: $('practice-scope'), marker: $('practice-hit') };
   let urgentHud = '', eventCursor = 0, feedbackUntil = 0, damageFeedback = null, lastDrawAt = 0, fallback = false, modalOpen = false;
-  let renderCount = 0, physicsSamples = 0, lastFraction = 0, activeSession = false, lastCountdown = null, returnFocus = null;
-  const listeners = [], keys = new Set(), physicalKeys = new Map(), mouse = { fire: false, aim: false }, inputQueue = createPracticeInputQueue();
+  let renderCount = 0, physicsSamples = 0, lastFraction = 0, activeSession = false, lastCountdown = null, returnFocus = null, dojoToolsOpen = false;
+  const listeners = [], keys = new Set(), physicalKeys = new Map(), mouse = { fire: false, aim: false }, inputQueue = createPracticeInputQueue({ extraActions: dojo ? DOJO_ACTIONS : [] });
   const touch = { move: { x: 0, y: 0 }, look: { x: 0, y: 0 }, actions: new Set() }, pointers = new Map(), movement = new Map();
   const audio = new GameAudio(), picker = mountKeyboardLayoutPicker($('practice-keyboard'), { id: 'practice-keyboard-select' });
   const meleeImpacts = createMeleeImpactReporter(audio), gunImpacts = createGunImpactReporter(audio), parryAudio = createParryAudioReporter(audio);
@@ -87,7 +89,7 @@ export function bootPractice() {
   const listen = (target, name, callback, options) => { target.addEventListener(name, callback, options); listeners.push(() => target.removeEventListener(name, callback, options)); };
   const locked = () => document.pointerLockElement === canvas;
   const active = () => !destroyed && !modalOpen && ['countdown', 'fight'].includes(state?.phase);
-  const currentInput = () => composeInput(keys, touch, mouse, aim, active());
+  const currentInput = () => ({ ...composeInput(keys, touch, mouse, aim, active()), ...(dojo ? { dojoWeapon: $('dojo-weapon').value, dojoBlade: $('dojo-blade').value, dojoTools: dojoToolsOpen } : {}) });
   const wheelInput = createPracticeWheelDispatch(inputQueue, currentInput, wake);
   const weaponWheel = mountWeaponWheel(canvas, {
     context: () => ({ player: state?.players?.[0], active: active() && state?.phase === 'fight' && !graphicsError && !!renderer?.available && !document.hidden, pointerLocked: locked(), fallback, crouchHeld: keys.has('crouch') }),
@@ -106,23 +108,33 @@ export function bootPractice() {
   if (royale) { setText('practice-setup-title', 'Find your next opening.'); setText('practice-setup-copy', 'Start with a knife. Scavenge the real maps while bots move, loot and fight for the last safe ground.'); setHidden($('practice-loadout-field'), true); setHidden($('practice-melee-field'), true); setHidden($('practice-melee-note'), true); }
   if (royale) $('practice-mode').querySelector('option[value="blades"]')?.remove();
   setHidden($('practice-blade-guide'), royale);
+  if (dojo) {
+    setText('practice-title', 'Voxel Dojo'); setText('practice-subtitle', 'WEAPONS LAB'); document.title = 'Voxel Dojo — Semag';
+    const option = document.createElement('option'); option.value = 'dojo'; option.textContent = 'Equipment sandbox'; $('practice-mode').append(option); $('practice-mode').value = 'dojo';
+    setHidden($('practice-mode-field'), true); setHidden($('practice-difficulty-field'), true); setHidden($('dojo-motion-field'), false);
+    $('practice-count').value = '5'; setText('practice-online', 'Back to hub ↗'); $('practice-online').href = '/';
+    setText('practice-start', 'Enter dojo →');
+  }
   try { const target = new URL(params.get('return') || '/', location.origin); if (target.origin === location.origin && /^\/(?:voxel(?:-royale)?(?:\/|\.html|$)|$)/.test(target.pathname)) $('practice-online').href = target.href; } catch {}
   for (const [id, map] of Object.entries(maps)) { const option = document.createElement('option'); option.value = id; option.textContent = map.name; $('practice-map').append(option); }
-  $('practice-map').value = Object.hasOwn(maps, params.get('map')) ? params.get('map') : royale ? 'forest' : 'courtyard';
+  $('practice-map').value = dojo ? 'dojo' : Object.hasOwn(maps, params.get('map')) ? params.get('map') : royale ? 'forest' : 'courtyard';
   populateWeaponSelect($('practice-weapon'));
   for (const [id, blade] of Object.entries(MELEE_WEAPONS)) { const option = document.createElement('option'); option.value = id; option.textContent = blade.name; $('practice-blade').append(option); }
-  $('practice-blade').value = 'sword';
+  $('practice-blade').value = dojo ? 'knife' : 'sword';
+  populateWeaponSelect($('dojo-weapon'));
+  for (const [id, blade] of Object.entries(MELEE_WEAPONS)) { const option = document.createElement('option'); option.value = id; option.textContent = blade.name; $('dojo-blade').append(option); }
+  $('dojo-weapon').value = 'carbine'; $('dojo-blade').value = 'knife';
   const weaponDetails = document.createElement('details'); weaponDetails.className = 'arsenal-fold'; weaponDetails.hidden = royale;
   const detailSummary = document.createElement('summary'); detailSummary.textContent = 'Weapon damage and handling';
   const detailCard = document.createElement('section'); detailCard.id = 'practice-weapon-details'; detailCard.setAttribute('aria-label', 'Selected weapon statistics');
   weaponDetails.append(detailSummary, detailCard); $('practice-weapon-note').after(weaponDetails);
   $('practice-weapon').value = 'carbine';
-  function config() { return { game, mapId: $('practice-map').value, bots: Number($('practice-count').value), mode: $('practice-mode').value, difficulty: $('practice-difficulty').value, weapon: $('practice-weapon').value, melee: !royale && $('practice-mode').value === 'blades' ? $('practice-blade').value : 'knife' }; }
+  function config() { return { game, mapId: $('practice-map').value, bots: Number($('practice-count').value), mode: $('practice-mode').value, difficulty: $('practice-difficulty').value, weapon: $('practice-weapon').value, melee: !royale && ['blades', 'dojo'].includes($('practice-mode').value) ? $('practice-blade').value : 'knife', ...(dojo ? { targetMotion: $('dojo-start-motion').value } : {}) }; }
   function hints() {
     const layout = getKeyboardLayout(); app.dataset.keyboardLayout = layout;
     setText('practice-move-keys', displayKey('WASD')); setText('practice-grenade-key', displayKey('Q')); setText('practice-guide-grenade', displayKey('Q'));
     canvas.setAttribute('aria-label', `First-person ${royale ? 'Royale' : 'Breach'} practice. ${displayKey('WASD')} or arrows move, mouse looks, left click or B / J uses your selected item, right click aims guns, stabs with a knife or parries with other blades, Space jumps, Control crouches, Shift sprints, C walks quietly, R reloads, 1 to 4 equip inventory slots, wheel up or down switches carried weapons, X drops your selected item, V switches blade, ${displayKey('Q')} throws a grenade, F heals, E picks up supplies, Escape pauses.`);
-    setText('practice-look-hint', fallback ? 'DRAG TO LOOK · ESC PAUSE' : `${displayKey('WASD')} MOVE · RMB SECONDARY · ESC PAUSE`);
+    setText('practice-look-hint', dojo ? `TAB RANGE TOOLS · ${displayKey('WASD')} MOVE · ESC PAUSE` : fallback ? 'DRAG TO LOOK · ESC PAUSE' : `${displayKey('WASD')} MOVE · RMB SECONDARY · ESC PAUSE`);
   }
   function stopFrame() { if (frameId !== null) cancelAnimationFrame(frameId); frameId = null; previousFrame = null; accumulator = 0; }
   function release() {
@@ -138,6 +150,14 @@ export function bootPractice() {
     paintSecondaryAction(document.querySelector('[data-practice-action="aim"]'), secondaryActionPresentation(null, { active: false }));
   }
   function unlock() { if (locked()) document.exitPointerLock?.(); }
+  function setDojoTools(open) {
+    if (!dojo || !activeSession || state.phase !== 'fight') return;
+    dojoToolsOpen = open; setHidden($('dojo-tools'), !open); setAttribute($('dojo-tools-toggle'), 'aria-expanded', String(open));
+    release();
+    if (open) { unlock(); $('dojo-weapon').focus({ preventScroll: true }); }
+    else { canvas.focus({ preventScroll: true }); inputQueue.reset({ neutral: true }); requestCapture(); }
+    updateHud(performance.now(), true); wake();
+  }
   function requestCapture() {
     if (touchMode || !canvas.requestPointerLock) { fallback = !touchMode; hints(); return; }
     try { const result = canvas.requestPointerLock(); result?.catch?.(() => { fallback = true; hints(); }); } catch { fallback = true; hints(); }
@@ -146,6 +166,8 @@ export function bootPractice() {
     release(); stopFrame(); previousPlayers = []; presentationPlayer = null; movement.clear(); eventCursor = 0; feedbackUntil = 0; hitFeedback.reset({ clearHistory: true }); damageFeedback = null;
     lastCountdown = null; lastHudAt = -Infinity; lastPhase = ''; renderCount = physicsSamples = 0; lastFraction = 0; audio.resetEvents(); meleeImpacts.reset(); gunImpacts.reset(); parryAudio.reset(); reloadAudio.reset(); renderer?.resetEffects();
     aim = cleanAim(state.players[0]?.yaw, state.players[0]?.pitch); lastDrawAt = performance.now();
+    dojoToolsOpen = false; setHidden($('dojo-tools'), true); setAttribute($('dojo-tools-toggle'), 'aria-expanded', 'false');
+    if (dojo) { $('dojo-weapon').value = state.practice.config.weapon; $('dojo-blade').value = state.practice.config.melee; }
   }
   function buildRadar() {
     const svg = $('practice-map-plan'), map = state.map, { minX, maxX, minZ, maxZ } = map.bounds;
@@ -159,14 +181,14 @@ export function bootPractice() {
   function preview() {
     activeSession = false; modalOpen = false; setHidden($('practice-guide'), true); unlock(); state = createPractice(config()); resetView(); buildRadar();
     const blades = state.practice.config.mode === 'blades';
-    setHidden($('practice-blade-field'), !blades); setHidden($('practice-melee-field'), royale || blades);
+    setHidden($('practice-blade-field'), !blades && !dojo); setHidden($('practice-melee-field'), royale || blades || dojo);
     if (!royale) {
-      setText('practice-setup-title', blades ? 'Make every cut count.' : 'Make every shot count.');
-      setText('practice-setup-copy', blades ? 'Train real cuts against approaching targets. They move and use solid cover, but never attack. Your chosen blade is equipped at Start.' : 'Practice movement and weapon handling against moving targets. Add return fire when you’re ready.');
+      setText('practice-setup-title', dojo ? 'Find your favourite weapon.' : blades ? 'Make every cut count.' : 'Make every shot count.');
+      setText('practice-setup-copy', dojo ? 'Explore a cedar dojo, try every gun and blade, and test grenades and healing. Targets reset after each kill. Enter when you’re ready.' : blades ? 'Train real cuts against approaching targets. They move and use solid cover, but never attack. Your chosen blade is equipped at Start.' : 'Practice movement and weapon handling against moving targets. Add return fire when you’re ready.');
     }
     setText('practice-weapon-note', royale ? 'Knife start · 200 health · weapons, ammo and healing are found in structures.' : WEAPONS[state.practice.config.weapon].description);
     if (!royale) renderWeaponDetails(detailCard, state.practice.config.weapon);
-    setText('practice-melee-note', royale ? 'Knife only. Collect every gun and supply with E.' : blades ? `Training kit: ${MELEE_WEAPONS[state.practice.config.melee].name} in slot 1, chosen gun in slot 2. No supplies. ${MELEE_WEAPONS[state.practice.config.melee].description}` : 'Knife + chosen gun. Slots 3–4 are empty; E collects blades, guns and supplies.');
+    setText('practice-melee-note', dojo ? 'Your chosen gun + blade. E uses equipment stations; supplies restock, reserve ammo is unlimited, magazines and reloads stay real. Tab opens range tools.' : royale ? 'Knife only. Collect every gun and supply with E.' : blades ? `Training kit: ${MELEE_WEAPONS[state.practice.config.melee].name} in slot 1, chosen gun in slot 2. No supplies. ${MELEE_WEAPONS[state.practice.config.melee].description}` : 'Knife + chosen gun. Slots 3–4 are empty; E collects blades, guns and supplies.');
     updateHud(performance.now(), true); draw(performance.now());
   }
   function start() {
@@ -174,7 +196,7 @@ export function bootPractice() {
     state = createPractice(config()); startPractice(state); activeSession = true; resetView(); buildRadar(); updateHud(performance.now(), true); canvas.focus({ preventScroll: true }); requestCapture(); wake();
   }
   function pause() {
-    if (!active()) return; pausePractice(state); release(); stopFrame(); unlock(); updateHud(performance.now(), true); draw(lastDrawAt); $('practice-resume').focus({ preventScroll: true });
+    if (!active()) return; dojoToolsOpen = false; setHidden($('dojo-tools'), true); pausePractice(state); release(); stopFrame(); unlock(); updateHud(performance.now(), true); draw(lastDrawAt); $('practice-resume').focus({ preventScroll: true });
   }
   function resume() {
     if (state?.phase !== 'paused' || modalOpen || !renderer?.available) return; release(); resumePractice(state); previousFrame = null; accumulator = 0; previousPlayers = []; movement.clear();
@@ -224,7 +246,16 @@ export function bootPractice() {
     inventory.update(player, { visible: activeSession && player.alive, interactive: active() && phase === 'fight' });
     const swap = inventorySwapPresentation(player), swapButton = document.querySelector('[data-practice-action="swap"]'); if (swap && swapButton) { swapButton.textContent = swap.label; swapButton.setAttribute('aria-label', swap.ariaLabel); }
     paintSecondaryAction(document.querySelector('[data-practice-action="aim"]'), secondaryActionPresentation(player, { active: active() && phase === 'fight', requireGun: royale }));
-    setText('practice-map-label', state.mapName); setText('practice-mode-label', blades ? 'BLADE TRAINING' : state.practice.config.mode === 'targets' ? 'MOVING TARGETS' : 'RETURN FIRE'); setText('practice-bots-left', stats.botsRemaining); setText('practice-hits', stats.hits); setText('practice-clock', clock(stats.seconds));
+    setText('practice-map-label', state.mapName); setText('practice-mode-label', dojo ? 'FREE PRACTICE' : blades ? 'BLADE TRAINING' : state.practice.config.mode === 'targets' ? 'MOVING TARGETS' : 'RETURN FIRE'); setText('practice-bots-left', stats.botsRemaining); setText('practice-hits', dojo ? state.dojo.headContacts + state.dojo.bodyContacts : stats.hits); setText('practice-clock', clock(stats.seconds));
+    setHidden($('dojo-tools-toggle'), !dojo || !activeSession); setDisabled($('dojo-tools-toggle'), phase !== 'fight'); setHidden($('dojo-contact'), !dojo || !activeSession);
+    if (dojo) {
+      const hit = state.dojo.lastHit, station = findDojoStation(state), recovery = findDojoStation(state, 'recovery');
+      setText('dojo-contact-kind', hit ? `${hit.kind.toUpperCase()} CONTACT` : 'RANGE READY'); setText('dojo-contact-damage', hit ? `${Math.round(hit.damage * 10) / 10} DMG` : '—'); setText('dojo-contact-distance', hit ? `${hit.distance.toFixed(1)} m · ${WEAPONS[hit.weapon]?.name || MELEE_WEAPONS[hit.weapon]?.name || hit.weapon}` : '10 / 20 / 30 m lanes · Tab tools');
+      setAttribute($('dojo-contact'), 'data-kind', hit?.kind || 'ready');
+      setAttribute($('dojo-motion'), 'aria-pressed', String(state.dojo.moving)); setText('dojo-motion', state.dojo.moving ? 'Moving targets' : 'Stationary targets');
+      setDisabled($('dojo-use-station'), !station || !player.alive); setText('dojo-use-station', station ? `${station.name} · use E` : 'Approach an equipment station');
+      setDisabled($('dojo-wound'), !recovery || !player.alive || player.hp <= 60); setDisabled($('dojo-recover'), !recovery || !player.alive);
+    }
     setHidden($('practice-overlay'), phase === 'fight'); setHidden($('practice-setup-form'), phase !== 'ready'); setHidden($('practice-pause-card'), phase !== 'paused'); setHidden($('practice-result-card'), phase !== 'matchEnd'); setHidden($('practice-countdown'), phase !== 'countdown');
     setHidden($('practice-combat'), !activeSession); setHidden($('practice-radar'), !activeSession); setDisabled($('practice-pause'), !['fight', 'countdown', 'paused'].includes(phase));
     setText('practice-pause', phase === 'paused' ? '▶' : 'Ⅱ'); setAttribute($('practice-pause'), 'aria-label', phase === 'paused' ? 'Resume practice' : 'Pause practice');
@@ -233,11 +264,12 @@ export function bootPractice() {
     setText('practice-grenades', readout.grenades); setText('practice-potions', readout.potions); setText('practice-weapon-name', readout.label); setText('practice-ammo', readout.ammo); setText('practice-reserve', readout.sword || readout.healing || readout.utility ? '' : `/ ${readout.reserve}`); setText('practice-weapon-status', readout.status); setAttribute(document.querySelector('.practice-weapon'), 'data-sword', String(readout.sword || readout.healing || readout.utility));
     setHidden($('practice-action-track'), !readout.progress); if (readout.progress) setStyle($('practice-action-fill'), 'width', `${readout.progress.percent}%`);
     setAttribute($('practice-action-track'), 'aria-label', readout.progress?.label || 'Weapon action'); setAttribute($('practice-action-track'), 'aria-valuenow', String(Math.round(readout.progress?.percent || 0))); setAttribute($('practice-action-track'), 'aria-valuetext', `${((readout.progress?.remaining || 0) / 120).toFixed(1)} seconds remaining`);
-    const loot = (royale ? findNearbyLoot : findNearbyBreachLoot)(state, 0), lootView = inventoryLootPresentation(loot, player); setHidden($('practice-pickup'), !lootView || phase !== 'fight'); if (lootView) { setText('practice-pickup-name', lootView.name); setText('practice-pickup-detail', displayKey(lootView.detail)); }
+    const loot = dojo ? findDojoStationLoot(state) || findNearbyBreachLoot(state, 0) : (royale ? findNearbyLoot : findNearbyBreachLoot)(state, 0), lootView = inventoryLootPresentation(loot, player), recoveryStation = dojo && findDojoStation(state, 'recovery'); setHidden($('practice-pickup'), !lootView && !recoveryStation || phase !== 'fight'); if (lootView) { setText('practice-pickup-name', lootView.name); setText('practice-pickup-detail', displayKey(lootView.detail)); } else if (recoveryStation) { setText('practice-pickup-name', 'Recovery station'); setText('practice-pickup-detail', 'Restore health · Tab for healing test'); }
     if (playerMarker) { setAttribute(playerMarker, 'cx', player.x); setAttribute(playerMarker, 'cy', player.z); }
-    for (const [id, marker] of mapMarkers) { const peer = state.players[id]; setAttribute(marker, 'cx', peer.x); setAttribute(marker, 'cy', peer.z); setStyle(marker, 'display', peer.alive && ['targets', 'blades'].includes(state.practice.config.mode) ? '' : 'none'); }
+    for (const [id, marker] of mapMarkers) { const peer = state.players[id]; setAttribute(marker, 'cx', peer.x); setAttribute(marker, 'cy', peer.z); setStyle(marker, 'display', peer.alive && ['targets', 'blades', 'dojo'].includes(state.practice.config.mode) ? '' : 'none'); }
     if (stormMarker && royale) { setAttribute(stormMarker, 'r', state.storm.radius); setStyle(stormMarker, 'display', state.storm.active ? '' : 'none'); }
     setText('practice-objective', phase === 'ready' ? 'Choose your arena. Start when you’re ready.' : phase === 'paused' ? 'All movement and combat paused.' : royale ? `${stats.botsRemaining + (player.alive ? 1 : 0)} survivors · ${state.storm.active ? state.storm.mode === 'shrinking' ? 'Storm closing — move to the ring.' : `Storm closes in ${Math.ceil(state.storm.ticksUntilShrink / TICK_RATE)}s.` : 'Start with a knife. Search for supplies.'}` : blades ? 'Blade training: LMB cuts. Release before the next strike; a late recovery tap queues one cut. RMB stabs or guards. Targets never attack.' : state.practice.config.mode === 'targets' ? 'Targets move and use solid cover. Track, counter-strafe and settle before firing.' : 'Bots react to sight and shoot in bursts. Use cover and choose your timing.');
+    if (dojo && phase === 'fight') setText('practice-objective', player.alive ? 'E equipment stations · R reload · F potion · Q frag · Tab range tools · targets reset after 2 seconds' : 'Training accident. Returning you to the entrance in two seconds.');
     if (phase === 'countdown') { const seconds = Math.ceil(state.phaseTicks / TICK_RATE); setText('practice-countdown-value', seconds); setText('practice-countdown-copy', royale ? 'Knife first. Find cover and supplies.' : blades ? 'Your blade is equipped. Step in and time each cut.' : 'Read the cover. Settle your aim.'); if (seconds !== lastCountdown) { lastCountdown = seconds; audio.countdown(seconds); } }
     if (phase === 'fight' && changed) audio.fight();
     if (phase === 'matchEnd') {
@@ -296,6 +328,7 @@ export function bootPractice() {
       if (event.key === 'Tab') { const buttons = [...$('practice-guide').querySelectorAll('button:not(:disabled),a[href],[tabindex="0"]')]; const index = buttons.indexOf(document.activeElement); if (event.shiftKey && index <= 0) { event.preventDefault(); buttons.at(-1)?.focus(); } else if (!event.shiftKey && index === buttons.length - 1) { event.preventDefault(); buttons[0]?.focus(); } }
       return;
     }
+    if (dojo && event.key === 'Tab' && active() && state.phase === 'fight' && (!dojoToolsOpen || event.target === canvas)) { event.preventDefault(); if (!event.repeat) setDojoTools(!dojoToolsOpen); return; }
     if (event.key === 'Escape' && ['fight', 'countdown', 'paused'].includes(state.phase)) { event.preventDefault(); if (!event.repeat && state.phase !== 'paused') pause(); return; }
     if (!active() || isFormTarget(event.target) || event.isComposing || event.altKey || event.metaKey) return;
     const action = controlForKey(event);
@@ -314,6 +347,7 @@ export function bootPractice() {
     const multiplier = aimLookMultiplier(presentationPlayer || state.players[0], ADS); aim = cleanAim(aim.yaw + (event.movementX || 0) * LOOK_SENSITIVITY * multiplier, aim.pitch - (event.movementY || 0) * LOOK_SENSITIVITY * multiplier); wake();
   }
   function mouseDown(event) {
+    if (dojo && dojoToolsOpen && active()) { event.preventDefault(); setDojoTools(false); return; }
     if (!active() || event.sourceCapabilities?.firesTouchEvents || touchMode && event.sourceCapabilities?.firesTouchEvents !== false || ![0, 2].includes(event.button)) return; touchMode = false; event.preventDefault(); canvas.focus({ preventScroll: true });
     const action = event.button === 0 ? 'fire' : 'aim', wasHeld = currentInput()[action]; mouse[action] = true;
     if (state.phase === 'fight' && !wasHeld) inputQueue.press(action, currentInput());
@@ -353,7 +387,10 @@ export function bootPractice() {
     if (destroyed) return; destroyed = true; stopFrame(); release(); unlock(); for (const remove of listeners) remove(); unsubscribe(); picker.destroy(); audio.destroy(); inventory.destroy(); weaponWheel.destroy(); renderer?.destroy(); movement.clear();
   }
   listen($('practice-setup-form'), 'submit', event => { event.preventDefault(); start(); });
-  for (const id of ['practice-map', 'practice-count', 'practice-mode', 'practice-difficulty', 'practice-weapon', 'practice-blade']) listen($(id), 'change', preview);
+  for (const id of ['practice-map', 'practice-count', 'practice-mode', 'practice-difficulty', 'practice-weapon', 'practice-blade', 'dojo-start-motion']) listen($(id), 'change', preview);
+  listen($('dojo-tools-toggle'), 'click', () => setDojoTools(!dojoToolsOpen)); listen($('dojo-tools-close'), 'click', () => setDojoTools(false)); listen($('dojo-return'), 'click', () => setDojoTools(false));
+  for (const id of ['dojo-weapon', 'dojo-blade']) listen($(id), 'change', () => { if (dojo && active()) { updateHud(performance.now(), true); wake(); } });
+  for (const [id, action] of [['dojo-motion', 'dojoMotion'], ['dojo-reset', 'dojoReset'], ['dojo-wound', 'dojoWound'], ['dojo-recover', 'dojoRecover'], ['dojo-use-station', 'interact']]) listen($(id), 'click', () => { if (dojo && active() && state.phase === 'fight') { inputQueue.press(action, currentInput()); inputQueue.release(action); wake(); } });
   listen($('practice-pause'), 'click', () => state.phase === 'paused' ? resume() : pause()); listen($('practice-touch-pause'), 'click', pause);
   listen($('practice-resume'), 'click', resume); listen($('practice-restart'), 'click', start); listen($('practice-replay'), 'click', start);
   listen($('practice-change-setup'), 'click', setup); listen($('practice-result-setup'), 'click', setup);
@@ -365,7 +402,7 @@ export function bootPractice() {
   // report its first press and final release. Touch keeps its pointer handlers.
   listen(window, 'keydown', keyboardDown); listen(window, 'keyup', keyboardUp); listen(window, 'mousemove', mouseMove); listen(canvas, 'mousedown', mouseDown); listen(window, 'mouseup', mouseUp);
   listen(canvas, 'contextmenu', event => event.preventDefault()); listen($('practice-touch'), 'pointerdown', touchDown); listen(window, 'pointermove', touchMove); listen(window, 'pointerup', touchEnd); listen(window, 'pointercancel', touchEnd); listen($('practice-touch'), 'lostpointercapture', touchEnd);
-  listen(document, 'pointerlockchange', () => { if (locked()) { fallback = false; hints(); } else if (active()) pause(); });
+  listen(document, 'pointerlockchange', () => { if (locked()) { fallback = false; hints(); } else if (active() && !dojoToolsOpen) pause(); });
   listen(document, 'pointerlockerror', () => { fallback = true; hints(); });
   listen(document, 'fullscreenchange', () => { const full = document.fullscreenElement === shell; setAttribute($('practice-fullscreen'), 'aria-pressed', String(full)); setAttribute($('practice-fullscreen'), 'aria-label', full ? 'Exit fullscreen' : 'Enter fullscreen'); renderer?.resize(); draw(performance.now()); });
   listen(window, 'resize', () => { renderer?.resize(); if (!active()) draw(performance.now()); });

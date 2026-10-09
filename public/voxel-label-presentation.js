@@ -1,7 +1,8 @@
 /** Screen annotations use the same camera and actors as the world draw. */
+import { monsterTypeId } from './voxel-monster-bodies.js';
+
 export const MAX_WORLD_LABELS = 23;
 export const EMPTY_WORLD_LABELS = Object.freeze([]);
-const MONSTERS = new Set(['stalker', 'runner', 'brute', 'gunner', 'sniper', 'hound', 'leaper', 'screecher']);
 const PHASES = new Set(['fight', 'paused', 'intermission', 'roundEnd', 'matchEnd', 'buy', 'countdown']);
 const finite = (value, fallback = 0) => Number.isFinite(value) ? value : fallback;
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
@@ -101,7 +102,7 @@ export function presentWorldLabels({ state, players = state?.players, roster = [
   const result = [], kept = new Set();
   for (const actor of players.slice(0, MAX_WORLD_LABELS)) {
     if (!actor || !Number.isSafeInteger(actor.id) || actor.id < 0 || actor.id >= MAX_WORLD_LABELS || kept.has(actor.id) || actor.id === cameraPlayer?.id || actor.alive !== true || ![actor.x, actor.y, actor.z].every(Number.isFinite)) continue;
-    const monster = horde && actor.monster === true && actor.human !== true && MONSTERS.has(actor.monsterType);
+    const monster = horde && monsterTypeId(actor) !== null;
     const teammate = actor.bot !== true && !actor.monster && !actor.monsterType && names.has(actor.id) && local && actor.team === local.team && actor.id !== localId && (!horde || actor.human === true && actor.connected === true && actor.participating === true);
     if (!monster && !teammate || monster && (finite(actor.emergenceTicks) > 0 || actor.monsterState === 'emerging' || !Number.isFinite(actor.hp) || actor.hp <= 0 || !Number.isFinite(actor.maxHp) || actor.maxHp <= 0)) continue;
     const geometry = anatomy(actor, monster, humanPoses?.get(actor.id)?.joints), position = projectWorldLabel(geometry.anchor, view, projection);

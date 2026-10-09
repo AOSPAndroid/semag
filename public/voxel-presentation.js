@@ -2,6 +2,7 @@ import { tickFraction } from './display-timing.js';
 import { ADS, INPUT_KEYS, copyMovementState, movementPredictionRevision, separatePresentationBodies, sweepPresentationOffset } from './voxel-engine.js';
 import { advanceBolts, MAX_BOLTS } from './voxel-projectiles.js';
 import { meleeProfile, meleeStartupAim } from './voxel-melee.js';
+import { MONSTER_SPECIAL_RULES } from './voxel-monster-specials.js';
 
 const STEP = 1 / 120;
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
@@ -129,6 +130,9 @@ export function interpolatedVoxelState(samples, targetTime, localId, { predictMo
   }
   const state = { ...newest.state, players: newest.state.players.map(player => ({ ...player })),
     bolts: (newest.state.bolts || []).slice(0, MAX_BOLTS).map(bolt => ({ ...bolt })) };
+  if (newest.state.horde) state.horde = { ...newest.state.horde,
+    projectiles: (newest.state.horde.projectiles || []).slice(0, MONSTER_SPECIAL_RULES.maxProjectiles).map(projectile => ({ ...projectile })),
+    hazards: (newest.state.horde.hazards || []).slice(0, MONSTER_SPECIAL_RULES.maxHazards).map(hazard => ({ ...hazard })) };
   state.fighters = state.players;
   const compatible = sample => ['phase', 'round', 'matchId', 'mapId'].every(field => sample.state[field] === newest.state[field]);
   if (!compatible(from) || !compatible(to)) return state;
@@ -175,6 +179,19 @@ export function interpolatedVoxelState(samples, targetTime, localId, { predictMo
     const endpoint = to.state.bolts?.find(matchesBolt), old = from.state.bolts?.find(matchesBolt);
     if (!endpoint || !old) continue;
     for (const axis of ['x', 'y', 'z', 'vx', 'vy', 'vz']) if (Number.isFinite(old[axis]) && Number.isFinite(endpoint[axis])) bolt[axis] = old[axis] + (endpoint[axis] - old[axis]) * ratio;
+  }
+  // Only positions follow the existing received bracket. Newest membership,
+  // lifetimes and stationary warnings stay immediate, with no shard prediction.
+  if (state.gameId === 'voxel-horde' && state.horde?.projectiles.length) {
+    const previous = (from.state.horde?.projectiles || []).slice(0, MONSTER_SPECIAL_RULES.maxProjectiles);
+    const next = (to.state.horde?.projectiles || []).slice(0, MONSTER_SPECIAL_RULES.maxProjectiles);
+    for (const projectile of state.horde.projectiles) {
+      const sameShard = other => other.id === projectile.id && other.sourceId === projectile.sourceId
+        && other.sourceLifeId === projectile.sourceLifeId && other.spawnTick === projectile.spawnTick;
+      const endpoint = next.find(sameShard), old = previous.find(sameShard);
+      if (!endpoint || !old) continue;
+      for (const axis of ['x', 'y', 'z']) if (Number.isFinite(old[axis]) && Number.isFinite(endpoint[axis])) projectile[axis] = old[axis] + (endpoint[axis] - old[axis]) * ratio;
+    }
   }
   if (projectedMs > 0 && state.phase === 'fight' && typeof predictMovement === 'function') {
     const peers = newest.state.players, map = newest.state.map || newest.state.mapId;

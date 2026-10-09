@@ -87,7 +87,9 @@ test('a finite trailing ribbon follows sampled damage slices, fades promptly, an
     const early = meleeTrailPath({ ...player, meleeTicks: profile.recoveryTicks - 1 });
     const late = meleeTrailPath({ ...player, meleeTicks: profile.recoveryTicks - 5 });
     assert.ok(early.fade > late.fade && late.fade > 0);
-    assert.equal(meleeTrailPath({ ...player, meleeTicks: profile.recoveryTicks - 6 }), null);
+    // The polished trail retains its finite tip for 10 physics ticks (83ms),
+    // then disappears instead of accumulating through the whole recovery.
+    assert.equal(meleeTrailPath({ ...player, meleeTicks: profile.recoveryTicks - 10 }), null);
     assert.equal(meleeTrailPath({ ...player, alive: false }), null);
     assert.equal(meleeTrailPath({ ...player, slot: 'primary' }), null);
     assert.equal(JSON.stringify(player), before);

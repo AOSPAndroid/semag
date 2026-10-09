@@ -1,5 +1,19 @@
 @import './ui.css';
 
+.pc-host-dialog { width: min(480px, calc(100vw - 32px)); padding: 28px; color: var(--foreground); background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 20px 70px #0009; }
+.pc-host-dialog::backdrop { background: #000b; backdrop-filter: blur(4px); }
+.pc-host-dialog form { display: grid; gap: 16px; }
+.pc-host-dialog h2 { margin: 0; font-size: 24px; letter-spacing: -.6px; }
+.pc-host-dialog p { margin: 0; color: var(--muted-foreground); font-size: 13px; line-height: 1.6; }
+.pc-host-dialog label { font-size: 13px; font-weight: 500; }
+.pc-host-dialog input { width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 7px; background: var(--background); color: var(--foreground); font: inherit; }
+.pc-host-dialog input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pc-host-dialog a { color: var(--accent); font-size: 13px; }
+.pc-host-dialog #pc-host-error { color: var(--destructive); }
+.pc-host-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px; }
+.pc-host-actions button, .rooms-empty > button { padding: 10px 16px; border: 1px solid var(--border); border-radius: 7px; background: var(--muted); color: var(--foreground); font: 500 13px var(--font); cursor: pointer; }
+.pc-host-actions button[type="submit"] { background: var(--primary); color: var(--primary-foreground); border-color: var(--primary); }
+
 /* Native hub composition follows the shared semantic shadcn color roles. */
 .modern-hub { background: var(--background); color: var(--foreground); font-family: var(--font); -webkit-font-smoothing: antialiased; }
 .modern-hub .sidebar { position: relative; inset: auto; width: 100%; padding: 18px max(32px, calc((100vw - 1376px) / 2)); background: var(--background); color: var(--foreground); border-bottom: 1px solid var(--border); flex-direction: row; align-items: center; gap: 36px; }

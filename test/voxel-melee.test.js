@@ -43,7 +43,7 @@ test('knife windup lasts ten ticks, contacts once, and cannot repeat from a held
 });
 
 test('the knife uses its actual short reach and solid cover blocks a reachable strike', () => {
-  for (const [distance, expected] of [[1.58, 172], [1.60, 200]]) {
+  for (const [distance, expected] of [[1.98, 172], [2.0, 200]]) {
     const state = encounter(distance); ticks(state, 1, { 0: { fire: true } }); ticks(state, 20);
     assert.equal(state.players[1].hp, expected, `${distance}: the actual flesh surface must fit inside the knife reach`);
   }

@@ -191,22 +191,29 @@ test('a naturally fighting mixed wave seven preserves every introduction across 
   state.horde.wave = 6;
   Horde.step(state);
   assert.equal(state.horde.wave, 7);
-  const rifts = [];
+  const rifts = [], deaths = [];
   for (let tick = 0; tick < 1500; tick++) {
     Horde.step(state);
-    // Rift warning IDs also occupy the event ID field. Tick-based collection
-    // observes genuine fresh events before the 256-entry history evicts them.
+    // Observe real events each tick before the bounded history evicts them.
+    // Rift entity IDs remain separate from the global combat-event cursor.
     for (const event of state.events) {
       if (event.type === 'monsterRift' && event.tick === state.tick) rifts.push(event.monsterType);
+      if (event.type === 'kill' && event.tick === state.tick) deaths.push(event);
     }
     assert.equal(state.phase, 'fight');
     assert.ok(human.hp > 0);
     assert.ok(state.players.filter(player => player.monster && player.alive && player.monsterType === 'screecher').length <= 2);
     assert.ok(state.events.length <= 256);
   }
-  assert.deepEqual(rifts.slice(0, 6), ['sniper', 'hound', 'leaper', 'screecher', 'gunner', 'brute']);
+  assert.deepEqual(rifts.slice(0, 8), ['sniper', 'hound', 'leaper', 'screecher', 'gunner', 'brute', 'bomber', 'spitter']);
   assert.ok(human.hp < human.maxHp, 'the observation must include actual monster combat');
-  assert.equal(state.horde.totalKills, 0);
+  assert.ok(deaths.length > 0, 'the live wave includes a genuine bomber detonation');
+  for (const death of deaths) {
+    assert.equal(death.monsterType, 'bomber'); assert.equal(death.attack, 'monster-special'); assert.equal(death.weapon, 'bomber');
+    assert.equal(death.playerId, death.targetId); assert.ok(death.targetLifeId > 0);
+  }
+  assert.equal(state.horde.totalKills, deaths.length);
+  assert.equal(human.kills, 0); assert.equal(human.shots, 0); assert.equal(human.damageDealt, 0);
 });
 
 function observeBursts(fixture, wanted = 3) {

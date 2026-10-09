@@ -46,7 +46,7 @@ function physical(map, player) {
 }
 
 test('new species preserve the original roster and hounds are smaller, faster and weaker than a stalker', () => {
-  assert.deepEqual(Object.keys(Horde.MONSTER_TYPES), ['stalker', 'runner', 'brute', 'gunner', 'sniper', 'hound', 'leaper', 'screecher']);
+  assert.deepEqual(Object.keys(Horde.MONSTER_TYPES), ['stalker', 'runner', 'brute', 'gunner', 'sniper', 'hound', 'leaper', 'screecher', 'bomber', 'spitter', 'weaver']);
   const { state, monster } = fixture('hound');
   assert.equal(monster.hp, 45); assert.equal(Combat.playerHeight(monster), .8); assert.equal(Combat.eyeHeight(monster), .66); assert.equal(monster.radius, .5);
   assert.ok(Horde.MONSTER_TYPES.hound.health < Horde.MONSTER_TYPES.stalker.health && Horde.MONSTER_TYPES.hound.damage < Horde.MONSTER_TYPES.stalker.damage);

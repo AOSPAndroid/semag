@@ -9,7 +9,7 @@ const houndBoxes = Object.freeze([
 export const MONSTER_BODIES = Object.freeze({
   hound: Object.freeze({ id: 'hound', height: .80, radius: .50, eyeHeight: .66, eyeForward: .32, attackHeight: .60, attackForward: .43, speed: 6.8, jumpSpeed: 6.4, crouch: false, boxes: houndBoxes }),
 });
-const movement = Object.freeze({ hound: 6.8, leaper: 5.5, screecher: 3.8 });
+const movement = Object.freeze({ hound: 6.8, leaper: 5.5, screecher: 3.8, bomber: 5.8, spitter: 3.6, weaver: 3.1 });
 const types = new Set(['stalker', 'runner', 'brute', 'gunner', 'sniper', ...Object.keys(movement)]);
 const trustedType = player => player?.monster === true && player.human !== true && typeof player.monsterType === 'string' && types.has(player.monsterType) ? player.monsterType : null;
 const timed = (value, maximum) => Number.isInteger(value) && value > 0 && value <= maximum;

@@ -1,12 +1,13 @@
 /** Native action edges wait for the next 120 Hz step; presentation stays read only. */
 export const PRACTICE_EDGE_ACTIONS = Object.freeze(['slot1', 'slot2', 'slot3', 'slot4', 'drop', 'fire', 'aim', 'jump', 'reload', 'interact', 'swap', 'grenade', 'heal']);
 
-export function createPracticeInputQueue() {
+export function createPracticeInputQueue({ extraActions = [] } = {}) {
+  const edgeActions = [...new Set([...PRACTICE_EDGE_ACTIONS, ...extraActions.filter(action => typeof action === 'string' && /^dojo[A-Z]\w*$/.test(action))])];
   const pending = new Map(), pendingTokens = new Map(), sampled = new Map(), blocked = new Set();
   let prime = false;
   const select = (input = {}) => {
     const output = { ...input };
-    for (const action of PRACTICE_EDGE_ACTIONS) {
+    for (const action of edgeActions) {
       if (prime || blocked.has(action) && input[action] === true) output[action] = false;
       else if ((pending.get(action) || 0) > 0) output[action] = sampled.get(action) !== true;
     }
@@ -18,7 +19,7 @@ export function createPracticeInputQueue() {
   return Object.freeze({
     press(action, input = {}) {
       const count = pending.get(action) || 0;
-      if (!PRACTICE_EDGE_ACTIONS.includes(action) || blocked.has(action) || count >= 8) return null;
+      if (!edgeActions.includes(action) || blocked.has(action) || count >= 8) return null;
       if (['slot1', 'slot2', 'slot3', 'slot4', 'drop', 'swap'].includes(action)) {
         pending.delete('aim'); pendingTokens.delete('aim');
         if (input.aim === true) blocked.add('aim');
@@ -39,14 +40,14 @@ export function createPracticeInputQueue() {
     release(action) { blocked.delete(action); },
     reset({ held = {}, neutral = false } = {}) {
       pending.clear(); pendingTokens.clear(); sampled.clear(); blocked.clear(); prime = neutral;
-      for (const action of PRACTICE_EDGE_ACTIONS) if (held[action] === true) blocked.add(action);
+      for (const action of edgeActions) if (held[action] === true) blocked.add(action);
     },
     // The displayed next step uses the exact pending press or release fence,
     // without consuming counts, changing sampled holds or clearing a reset gate.
     preview: select,
     sample(input = {}) {
       const output = select(input);
-      for (const action of PRACTICE_EDGE_ACTIONS) {
+      for (const action of edgeActions) {
         if (blocked.has(action) && input[action] !== true) blocked.delete(action);
         const count = pending.get(action) || 0;
         if (count > 0 && output[action] === true) {
@@ -59,6 +60,6 @@ export function createPracticeInputQueue() {
       prime = false;
       return output;
     },
-    inspect() { return Object.fromEntries(PRACTICE_EDGE_ACTIONS.map(action => [action, pending.get(action) || 0])); },
+    inspect() { return Object.fromEntries(edgeActions.map(action => [action, pending.get(action) || 0])); },
   });
 }
