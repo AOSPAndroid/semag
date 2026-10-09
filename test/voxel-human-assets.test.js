@@ -94,7 +94,7 @@ test('animated human anatomy stays inside the existing body, head and wall colli
 });
 
 // A committed blade can extend its cosmetic grasp beyond the standing body
-// cylinder. Only the articulated striking arm receives that exception; actual
+// cylinder. Only the articulated blade arms receive that exception; actual
 // head, torso, legs, ordinary gestures and their contact envelopes stay fixed.
 function distanceToSegment(point, a, b) {
   const delta = b.map((value, axis) => value - a[axis]), lengthSquared = delta.reduce((sum, value) => sum + value * value, 0);
@@ -119,7 +119,8 @@ test('ordinary gestures retain body contacts while committed blade arms follow t
     const idle = committed ? operativeMeshes({ ...player, meleeTicks: 0, meleePhase: 'idle' }, time * 1000, false, animation) : null;
     const joints = committed ? operativePose(player, animation) : null;
     const toWorld = point => [player.x + point[0] * Math.cos(yaw) - point[2] * Math.sin(yaw), player.y + point[1], player.z + point[0] * Math.sin(yaw) + point[2] * Math.cos(yaw)];
-    const grasp = joints ? Object.fromEntries(['shoulder', 'elbow', 'hand'].map(key => [key, toWorld(joints.arms[1][key])])) : null;
+    const twoHanded = committed && action.meleeWeapon !== 'knife';
+    const grasps = joints ? (twoHanded ? joints.arms : [joints.arms[1]]).map(arm => Object.fromEntries(['shoulder', 'elbow', 'hand'].map(key => [key, toWorld(arm[key])]))) : [];
     let movedArmVertices = 0;
     assert.ok(mesh.length / 10 <= 1200 && mesh.every(Number.isFinite));
     if (idle) assert.equal(mesh.length, idle.length, 'a cut does not add or remove physical body/head surfaces');
@@ -128,15 +129,15 @@ test('ordinary gestures retain body contacts while committed blade arms follow t
       const changed = idle && point.some((value, axis) => Math.abs(value - idle[at + axis]) > 1e-6);
       if (changed) {
         movedArmVertices++;
-        const nearest = Math.min(distanceToSegment(point, grasp.shoulder, grasp.elbow), distanceToSegment(point, grasp.elbow, grasp.hand));
-        assert.ok(nearest <= .071, 'only the narrow articulated striking arm can leave the idle body envelope');
+        const nearest = Math.min(...grasps.flatMap(grasp => [distanceToSegment(point, grasp.shoulder, grasp.elbow), distanceToSegment(point, grasp.elbow, grasp.hand)]));
+        assert.ok(nearest <= .071, 'only the narrow articulated blade arms can leave the idle body envelope');
         continue;
       }
       const y = point[1] - player.y, radius = y > height - .32 + 1e-6 ? .22 : .29;
       assert.ok(y >= -1e-6 && y <= height + 1e-6, 'head, torso, legs and ordinary gestures remain inside the real player height');
       assert.ok(Math.hypot(point[0] - player.x, point[2] - player.z) <= radius + 1e-6, `crouch ${crouching}, ${JSON.stringify(action)}: unchanged anatomy preserves the actual body/head contact regions`);
     }
-    if (committed) assert.ok(movedArmVertices > 0 && movedArmVertices <= 108, 'only one upper arm, forearm and grasp move; head, torso, legs and the off hand are unchanged');
+    if (committed) assert.ok(movedArmVertices > 0 && movedArmVertices <= (twoHanded ? 216 : 108), 'only the blade arm chains move; head, torso and legs are unchanged');
     assert.equal(JSON.stringify(player), source, 'cosmetic action poses leave actual timers, aim and collision unchanged');
   }
 });

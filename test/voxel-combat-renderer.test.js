@@ -153,7 +153,7 @@ test('short knives and long swords have distinct finite clipped first and third 
     for (const meleeTicks of [0, profile.startupTicks + profile.activeTicks + profile.recoveryTicks, profile.activeTicks + profile.recoveryTicks, profile.recoveryTicks]) {
       const model = VoxelRenderer.prototype._viewModel.call({ lastAim: null, swayX: 0, swayY: 0 }, { ...p, meleeTicks }, 0, 0, 1000);
       assert.ok(model.every(Number.isFinite));
-      assert.ok(model.length / 10 < 1000);
+      assert.ok(model.length / 10 < (meleeWeapon === 'knife' ? 1000 : 1800), 'two-handed sword grips fit the bounded first-person mesh');
     }
     const wall = { ...arena, colliders: [{ x: -2, y: 0, z: -.95, w: 4, h: 3, d: .2 }] };
     const clipped = VoxelRenderer.prototype._viewModel.call({ lastAim: null, swayX: 0, swayY: 0 }, p, 0, 0, 1000, false, wall);

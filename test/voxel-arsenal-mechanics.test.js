@@ -22,10 +22,10 @@ function ticks(state, count = 1, input = {}, options = {}) {
 }
 const shots = state => state.events.filter(event => event.type === 'shot');
 
-test('five immutable melee profiles preserve baseline knife and sword numbers and distinct new tradeoffs', () => {
+test('five immutable melee profiles preserve the starter knife and distinct blade tradeoffs', () => {
   assert.deepEqual(MELEE_IDS, ['knife', 'sword', 'katana', 'axe', 'tonfas']);
   assert.deepEqual([KNIFE.startupTicks, KNIFE.activeTicks, KNIFE.recoveryTicks, KNIFE.damage, KNIFE.reach, KNIFE.arcRadians, KNIFE.speed], [10, 8, 26, 28, 1.3, .64, 6.1]);
-  assert.deepEqual([MELEE.startupTicks, MELEE.activeTicks, MELEE.recoveryTicks, MELEE.damage, MELEE.reach, MELEE.arcRadians, MELEE.speed], [18, 12, 42, 55, 2.15, .64, 5.85]);
+  assert.deepEqual([MELEE.startupTicks, MELEE.activeTicks, MELEE.recoveryTicks, MELEE.damage, MELEE.reach, MELEE.arcRadians, MELEE.speed], [12, 12, 30, 100, 2.4, .70, 5.85]);
   for (const id of MELEE_IDS) { assert.ok(Object.isFrozen(MELEE_WEAPONS[id])); assert.equal(meleeProfile(id), MELEE_WEAPONS[id]); }
   const { katana, axe, tonfas } = MELEE_WEAPONS;
   assert.ok(katana.reach > MELEE.reach && katana.arcRadians < MELEE.arcRadians);
@@ -40,7 +40,9 @@ test('five immutable melee profiles preserve baseline knife and sword numbers an
 
 for (const blade of ['katana', 'axe', 'tonfas']) test(`${blade} uses real startup, once-per-swing contact, committed aim, reach and ally/cover blockers`, () => {
   const profile = MELEE_WEAPONS[blade];
-  const state = encounter({ blade, distance: profile.reach + .28, melee: true });
+  // Put the torso inside the finite descending path rather than relying on
+  // the edge contact of the old horizontal sweep beyond nominal reach.
+  const state = encounter({ blade, distance: profile.reach - .1, melee: true });
   ticks(state, 1, { 0: { fire: true } });
   ticks(state, profile.startupTicks - 1, { 0: { fire: true } });
   assert.equal(state.players[1].hp, 200, 'windup cannot apply early damage');
@@ -76,9 +78,9 @@ test('mode-specific melee hooks only scale and stagger accepted contacts while d
     assert.equal(current, state); assert.equal(attacker.id, 0); assert.equal(target.id, 1); assert.equal(profile.id, 'katana'); return 1.6;
   }, onMeleeHit: (current, hit, attacker, target, profile) => contacts.push([current === state, hit.damage, attacker.id, target.id, profile.id]) };
   ticks(state, 1, { 0: { fire: true } }, options); ticks(state, 30, {}, options);
-  assert.equal(state.players[1].hp, 123); assert.deepEqual(contacts, [[true, 77, 0, 1, 'katana']]);
+  assert.equal(state.players[1].hp, 80); assert.deepEqual(contacts, [[true, 120, 0, 1, 'katana']]);
   const normal = encounter({ blade: 'katana', distance: 1.8, melee: true }); ticks(normal, 1, { 0: { fire: true } }); ticks(normal, 30);
-  assert.equal(normal.players[1].hp, 152);
+  assert.equal(normal.players[1].hp, 125);
   const blocked = encounter({ blade: 'katana', distance: 1.8, melee: true });
   blocked.map = { ...arena, colliders: [{ id: 'hook-cover', x: -.5, y: 0, z: .8, w: 1, h: 2, d: .02 }] };
   let called = false; ticks(blocked, 1, { 0: { fire: true } }, { onMeleeHit: () => called = true }); ticks(blocked, 30, {}, { onMeleeHit: () => called = true });

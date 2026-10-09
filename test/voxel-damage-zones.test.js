@@ -127,7 +127,7 @@ test('crossbow leg damage is delayed, snapshotted by value, ally blocked and exa
   assert.equal(replay(), replay()); replay({ crouching: true }); replay({ ally: true });
 });
 
-test('a sword contacting an elevated leg keeps its fixed 55 damage and body feedback', () => {
+test('a sword contacting an elevated leg keeps its fixed 100 damage and body feedback', () => {
   const { state, shooter, target } = lane({ targetY: 1.6, distance: 1.4 });
   shooter.inventory[0].weapon = 'sword'; shooter.slot = 'sword'; shooter.meleeWeapon = 'sword'; shooter.pitch = .35;
   ticks(state, 1, { 0: { fire: true } }); ticks(state, 31);
@@ -135,8 +135,8 @@ test('a sword contacting an elevated leg keeps its fixed 55 damage and body feed
   assert.ok(contact, 'the deliberate upward sword swing must contact the falling opponent');
   const footY = damage.y - WORLD.eyeHeight;
   assert.ok(contact.y >= footY && contact.y < footY + .55, 'the physical contact is inside the elevated leg volume');
-  assert.equal(damage.damage, 55); assert.equal(damage.hitKind, 'body'); assert.equal(damage.attack, 'sword');
-  assert.equal(target.hp, 145); assert.equal(state.events.filter(event => event.type === 'damage').length, 1);
+  assert.equal(damage.damage, 100); assert.equal(damage.hitKind, 'body'); assert.equal(damage.attack, 'sword');
+  assert.equal(target.hp, 100); assert.equal(state.events.filter(event => event.type === 'damage').length, 1);
 });
 
 test('stats report exact zones, realistic burst cadence, pellet units, falloff and reload', () => {

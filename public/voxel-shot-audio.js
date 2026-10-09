@@ -152,3 +152,34 @@ export function createVoxelMeleeSamples(weaponId, sampleRate = 48000) {
   }
   return samples;
 }
+
+/** The contact is separate from the swing: a cut, a heavy chop, or a short blunt hit. */
+export const VOXEL_BLADE_IMPACT_AUDIO = Object.freeze(Object.fromEntries(Object.entries({
+  sword: { duration: .18, body: .42, frequency: 93, bodyDecay: .031, cut: .30, cutDecay: .027, brightness: 2100, edge: .080, edgeFrequency: 690, edgeDecay: .010 },
+  katana: { duration: .145, body: .30, frequency: 123, bodyDecay: .024, cut: .40, cutDecay: .022, brightness: 3350, edge: .10, edgeFrequency: 1120, edgeDecay: .008 },
+  axe: { duration: .23, body: .58, frequency: 61, bodyDecay: .046, cut: .32, cutDecay: .032, brightness: 1450, edge: .035, edgeFrequency: 410, edgeDecay: .008 },
+  tonfas: { duration: .12, body: .40, frequency: 157, bodyDecay: .022, cut: .23, cutDecay: .013, brightness: 1050, edge: .055, edgeFrequency: 480, edgeDecay: .006 },
+}).map(([id, profile]) => [id, Object.freeze(profile)])));
+
+/** Deterministic, bounded contact buffers; no oscillator beep or per-victim allocation. */
+export function createVoxelBladeImpactSamples(weaponId, sampleRate = 48000) {
+  const profile = typeof weaponId === 'string' && Object.hasOwn(VOXEL_BLADE_IMPACT_AUDIO, weaponId) ? VOXEL_BLADE_IMPACT_AUDIO[weaponId] : null;
+  if (!profile || !Number.isFinite(sampleRate) || sampleRate < 8000 || sampleRate > 192000) return null;
+  const length = Math.ceil(sampleRate * profile.duration), samples = new Float32Array(length);
+  let seed = 0x51f15e, low = 0, bass = 0, phase = 0;
+  for (let index = 0; index < weaponId.length; index++) seed = Math.imul(seed ^ weaponId.charCodeAt(index), 16777619);
+  const alpha = 1 - Math.exp(-2 * Math.PI * profile.brightness / sampleRate), bassAlpha = 1 - Math.exp(-2 * Math.PI * 170 / sampleRate);
+  for (let index = 1; index < length - 1; index++) {
+    seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5;
+    const white = (seed >>> 0) / 2147483648 - 1, time = index / sampleRate;
+    low += alpha * (white - low); bass += bassAlpha * (white - bass);
+    phase += Math.PI * 2 * profile.frequency * (1 + .75 * Math.exp(-time / .009)) / sampleRate;
+    const weight = (Math.sin(phase) * .78 + bass * 1.4) * profile.body * Math.exp(-time / profile.bodyDecay);
+    const cut = (low - bass + (white - low) * .16) * profile.cut * Math.exp(-time / profile.cutDecay);
+    const edge = Math.sin(time * Math.PI * 2 * profile.edgeFrequency) * profile.edge * Math.exp(-time / profile.edgeDecay);
+    const fade = Math.min(1, time / .0012, (length - index - 1) / (sampleRate * .008));
+    const value = (weight + cut + edge) * fade;
+    samples[index] = value / (1 + Math.abs(value));
+  }
+  return samples;
+}

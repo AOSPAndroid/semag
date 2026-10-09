@@ -180,7 +180,7 @@ export function createMeleeImpactReporter(audio) {
   let context, reports = 0;
   function reset() { context = undefined; swings.clear(); reports = 0; }
   return Object.freeze({
-    consume(event, localId, { lifeKey = 0, viewedId = localId, gain = .16 } = {}) {
+    consume(event, localId, { lifeKey = 0, viewedId = localId, gain = .16, active = true } = {}) {
       if (event?.type !== 'damage' || !(MELEE_IDS.includes(event.attack) || event.attack === 'melee' && MELEE_IDS.includes(event.weapon))) return false;
       const perspective = combatEventPerspective(event, localId);
       const watched = viewedId != null && viewedId !== localId && perspective.source === viewedId && perspective.target != null && perspective.target !== viewedId && perspective.target !== localId;
@@ -198,7 +198,11 @@ export function createMeleeImpactReporter(audio) {
       if (swings.has(key)) return true;
       swings.add(key); while (swings.size > limit) swings.delete(swings.values().next().value);
       // Consume while muted so enabling sound cannot replay a partial old swing.
-      if (audio?.enabled && Number.isFinite(gain) && gain > 0) try {
+      if (active && audio?.enabled && Number.isFinite(gain) && gain > 0) try {
+        if (weapon !== 'knife' && typeof audio.meleeImpact === 'function') {
+          if (audio.meleeImpact(weapon, { gain: Math.min(.72, gain * 3.5) }) === true) reports++;
+          return true;
+        }
         const heavy = weapon === 'axe';
         const frequency = ({ knife: 285, sword: 195, katana: 225, axe: 155, tonfas: 255 })[weapon] || 195;
         const volume = Math.min(.3, gain);

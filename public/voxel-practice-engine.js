@@ -2,8 +2,8 @@
 import { MAPS as BREACH_MAPS, createState as createBreachState, createCombatPlayer, combatStep, emptyInput, eyeHeight, playerHeight, aimDirection, traceShot, emitCombatEvent, TICK_RATE, WORLD, findNearbyLoot, pickupCombatLoot, advanceInventoryLoot, resetSprint } from './voxel-engine.js';
 import * as Royale from './voxel-royale-engine.js';
 import { WEAPONS } from './voxel-weapons.js';
-import { MELEE_WEAPONS, resetMeleeDefense } from './voxel-melee.js';
-import { setInventoryMeleeLoadout } from './voxel-inventory.js';
+import { MELEE_WEAPONS, resetMeleeDefense, clearMeleeBuffer } from './voxel-melee.js';
+import { setInventoryMeleeLoadout, selectInventorySlot } from './voxel-inventory.js';
 
 export { TICK_RATE, emptyInput };
 export const PRACTICE_DIFFICULTIES = Object.freeze({
@@ -33,12 +33,12 @@ function normalize(options = {}) {
   const melee = options.melee ?? 'knife';
   if (!Object.hasOwn(maps, mapId)) throw new RangeError('Unknown practice map.');
   if (!Number.isInteger(bots) || bots < 1 || bots > 5) throw new RangeError('Practice supports 1–5 bots.');
-  if (!['targets', 'combat'].includes(mode)) throw new RangeError('Choose moving targets or combat bots.');
+  if (!['targets', 'combat', 'blades'].includes(mode) || (mode === 'blades' && game !== 'voxel')) throw new RangeError('Choose moving targets, combat bots, or Breach blade training.');
   if (!Object.hasOwn(WEAPONS, weapon)) throw new RangeError('Unknown practice weapon.');
   if (typeof melee !== 'string' || !Object.hasOwn(MELEE_WEAPONS, melee)) throw new RangeError('Unknown practice close-combat weapon.');
   if (!Object.hasOwn(PRACTICE_DIFFICULTIES, difficulty)) throw new RangeError('Unknown bot difficulty.');
   if (options.seed !== undefined && !Number.isInteger(options.seed)) throw new RangeError('Practice seed must be an integer.');
-  return { game, mapId, bots, mode, weapon, melee: 'knife', difficulty, seed: options.seed === undefined ? (Date.now() ^ Math.floor(Math.random() * 0x100000000)) >>> 0 : options.seed >>> 0 };
+  return { game, mapId, bots, mode, weapon, melee: mode === 'blades' ? melee : 'knife', difficulty, seed: options.seed === undefined ? (Date.now() ^ Math.floor(Math.random() * 0x100000000)) >>> 0 : options.seed >>> 0 };
 }
 function freeGround(arena, point, radius = WORLD.radius + .065) {
   if (!Number.isFinite(point.x) || !Number.isFinite(point.z)) return false;
@@ -134,6 +134,15 @@ function spawnBreach(state, config) {
   Object.assign(players[0], localSpawn, { y: localSpawn.y || 0 });
   setInventoryMeleeLoadout(players[0], config.melee); players[0].meleeLoadout = config.melee;
   const candidates = [...arena.spawns[1], ...navigationFor(arena).nodes.slice().sort((a, b) => (a.x - arena.spawns[1][0].x) ** 2 + (a.z - arena.spawns[1][0].z) ** 2 - ((b.x - arena.spawns[1][0].x) ** 2 + (b.z - arena.spawns[1][0].z) ** 2))];
+  // A close-combat drill starts nearby on real, connected ground. These are
+  // setup spawns; every subsequent approach uses normal physical movement.
+  if (config.mode === 'blades') {
+    const nearby = navigationFor(arena).nodes.filter(point => {
+      const distance = Math.hypot(point.x - localSpawn.x, point.z - localSpawn.z);
+      return distance >= 6 && distance <= 12 && clearWalk(arena, localSpawn, point);
+    }).sort((a, b) => Math.hypot(a.x - localSpawn.x, a.z - localSpawn.z) - Math.hypot(b.x - localSpawn.x, b.z - localSpawn.z));
+    candidates.unshift(...nearby);
+  }
   for (let id = 1; id < players.length; id++) {
     const spawn = candidates.find(point => freeGround(arena, point, WORLD.radius) && players.slice(0, id).every(player => Math.hypot(player.x - point.x, player.z - point.z) > 1.1));
     if (!spawn) throw new RangeError('This map does not have enough safe bot spawns.');
@@ -147,7 +156,7 @@ export function createPractice(options = {}) {
   state.map = (config.game === 'voxel' ? BREACH_MAPS : Royale.MAPS)[config.mapId];
   // Build static navigation while the setup screen is visible, before live play.
   navigationFor(state.map);
-  state.practice = { config, seed: config.seed, randomState: config.seed || 0x9e3779b9, sessionId: 0, elapsedTicks: 0, brains: [], stats: { hits: 0, damageTaken: 0, lastEventId: 0, lastShotHitTick: -1 }, result: null, pausedPhase: null, inputFence: [] };
+  state.practice = { config, seed: config.seed, randomState: config.seed || 0x9e3779b9, sessionId: 0, elapsedTicks: 0, brains: [], stats: { hits: 0, damageTaken: 0, lastEventId: 0, lastShotHitTick: -1, ...(config.mode === 'blades' ? { bladeSwings: 0, bladeHitSwings: 0, lastHitSwing: null } : {}) }, result: null, pausedPhase: null, inputFence: [] };
   if (config.game === 'voxel') spawnBreach(state, config);
   else {
     const spawn = state.map.spawnPoints[0];
@@ -163,13 +172,14 @@ export function startPractice(state) {
   state.practice.randomState = (config.seed ^ Math.imul(sessionId + 1, 0x9e3779b9)) >>> 0 || 0x85ebca6b;
   if (config.game === 'voxel-royale') Royale.startMatch(state, Array.from({ length: config.bots + 1 }, (_, id) => id));
   else { state.phase = 'countdown'; state.phaseTicks = TICK_RATE; state.roundTicks = MAX_DRILL_TICKS; }
-  state.practice.brains = Array.from({ length: config.bots }, (_, index) => ({ id: index + 1, targetId: null, seenTick: -1, nextBurstTick: 0, burstUntil: 0, nextPlanTick: state.tick + state.phaseTicks + index * 6, nextSmoothTick: 0, nextAimTick: 0, aimYaw: 0, aimPitch: 0, path: [], goal: null, goalKind: 'patrol', lootId: null, lastX: state.players[index + 1].x, lastZ: state.players[index + 1].z, lastMotionTick: state.tick, escapeUntil: 0, blockedCount: 0 }));
+  state.practice.brains = Array.from({ length: config.bots }, (_, index) => ({ id: index + 1, targetId: null, seenTick: -1, nextBurstTick: 0, burstUntil: 0, nextPlanTick: state.tick + state.phaseTicks + index * 6, nextSmoothTick: 0, nextAimTick: 0, aimYaw: 0, aimPitch: 0, path: [], goal: null, goalKind: 'patrol', lootId: null, lastX: state.players[index + 1].x, lastZ: state.players[index + 1].z, lastMotionTick: state.tick, escapeUntil: 0, blockedCount: 0, ...(config.mode === 'blades' ? { lastKnownTarget: null, orbitDirection: index % 2 ? -1 : 1 } : {}) }));
   for (const player of state.players) player.bot = player.id > 0 && player.id <= config.bots;
-  state.objective = config.game === 'voxel-royale' ? 'One life, one small knife. Scavenge supplies and outlast the bots.' : config.mode === 'targets' ? 'Clear the moving targets. Targets never shoot back.' : 'Clear the combat bots with the real weapons and movement rules.';
+  if (config.mode === 'blades') for (const player of state.players) selectInventorySlot(player, 0);
+  state.objective = config.game === 'voxel-royale' ? 'One life, one small knife. Scavenge supplies and outlast the bots.' : config.mode === 'blades' ? 'Blade training: clear approaching targets with real cuts. Targets never attack.' : config.mode === 'targets' ? 'Clear the moving targets. Targets never shoot back.' : 'Clear the combat bots with the real weapons and movement rules.';
   sessionMaps.set(state, state.map); return state;
 }
 function neutralize(state) {
-  for (const player of state.players) { player.previousInput = emptyInput(player); player.triggerBlocked = true;player.sprinting=false; }
+  for (const player of state.players) { clearMeleeBuffer(player); player.previousInput = emptyInput(player); player.triggerBlocked = true;player.sprinting=false; }
 }
 export function pausePractice(state) {
   if (!state?.practice || !['countdown', 'fight'].includes(state.phase)) return state;
@@ -253,9 +263,66 @@ function steer(state, bot, brain, input) {
   input.up = forward > .32; input.down = forward < -.32; input.right = right > .32; input.left = right < -.32;
   input.walk = brain.goalKind === 'strafe' || state.practice.config.mode === 'targets';
 }
+function bladePatrolGoal(state, bot, brain) {
+  const nodes = navigationFor(state.map).nodes;
+  brain.path = [];
+  for (let attempt = 0; attempt < 24 && nodes.length; attempt++) {
+    const point = nodes[Math.floor(random(state.practice) * nodes.length)], distance = Math.hypot(point.x - bot.x, point.z - bot.z);
+    if (distance < 2 || distance > 14) continue;
+    const path = route(state.map, bot, point);
+    if (path.length) { brain.path = path; return { x: point.x, z: point.z }; }
+  }
+  return null;
+}
+function bladeTargetInput(state, bot, brain, input) {
+  const target = state.players[0], settings = PRACTICE_DIFFICULTIES[state.practice.config.difficulty];
+  const visible = visibleEnemy(state, bot, target);
+  if (visible) {
+    if (brain.seenTick < 0) brain.nextPlanTick = state.tick;
+    brain.targetId = target.id; brain.seenTick = state.tick;
+    brain.lastKnownTarget = { x: target.x, z: target.z };
+  } else brain.seenTick = -1;
+  if (state.tick - brain.lastMotionTick >= 90) {
+    if (brain.path.length && Math.hypot(bot.x - brain.lastX, bot.z - brain.lastZ) < .22) {
+      brain.blockedCount++; brain.orbitDirection *= -1; brain.nextPlanTick = 0;
+    }
+    brain.lastX = bot.x; brain.lastZ = bot.z; brain.lastMotionTick = state.tick;
+  }
+  if (state.tick >= brain.nextPlanTick) {
+    brain.nextPlanTick = state.tick + (visible ? 24 : 90); brain.nextSmoothTick = 0; brain.path = [];
+    if (visible) {
+      // Stop in the actual short knife's range, then make deliberate side steps.
+      // Other targets remain physical bodies and can block this route normally.
+      const angle = Math.atan2(bot.z - target.z, bot.x - target.x), distance = Math.hypot(bot.x - target.x, bot.z - target.z);
+      const orbitAngle = angle + (distance < 1.65 ? brain.orbitDirection * .7 : 0);
+      for (const offset of [0, brain.orbitDirection * .35, -brain.orbitDirection * .35]) {
+        const point = { x: target.x + Math.cos(orbitAngle + offset) * 1.1, z: target.z + Math.sin(orbitAngle + offset) * 1.1 };
+        if (!freeGround(state.map, point, WORLD.radius)) continue;
+        const path = route(state.map, bot, point);
+        if (path.length && Math.hypot(path.at(-1).x - point.x, path.at(-1).z - point.z) < .1) {
+          brain.goalKind = distance < 1.65 ? 'strafe' : 'approach'; brain.goal = point; brain.path = path; break;
+        }
+      }
+    } else if (brain.lastKnownTarget && Math.hypot(bot.x - brain.lastKnownTarget.x, bot.z - brain.lastKnownTarget.z) > .8) {
+      brain.goalKind = 'search'; brain.goal = { ...brain.lastKnownTarget }; brain.path = route(state.map, bot, brain.goal);
+    } else {
+      brain.lastKnownTarget = null; brain.targetId = null;
+      brain.goalKind = 'patrol'; brain.goal = bladePatrolGoal(state, bot, brain);
+    }
+  }
+  const look = visible ? target : brain.path[0] || brain.goal;
+  if (look) {
+    const desiredYaw = Math.atan2(look.x - bot.x, -(look.z - bot.z));
+    input.yaw = wrap(bot.yaw + clamp(wrap(desiredYaw - bot.yaw), -settings.turnSpeed / TICK_RATE, settings.turnSpeed / TICK_RATE));
+  }
+  steer(state, bot, brain, input);
+  input.walk = brain.goalKind === 'strafe' || (visible && state.practice.config.difficulty === 'rookie');
+  return input;
+}
 function botInput(state, bot, brain) {
   const input = emptyInput(bot), practice = state.practice, settings = PRACTICE_DIFFICULTIES[practice.config.difficulty];
   if (!bot.alive) return input;
+  if (practice.config.mode === 'blades') return bladeTargetInput(state, bot, brain, input);
   const enemies = state.players.filter(player => player.alive && player.id !== bot.id && player.team !== bot.team).sort((a, b) => Math.hypot(a.x - bot.x, a.z - bot.z) - Math.hypot(b.x - bot.x, b.z - bot.z));
   const visibleTarget = enemies.find(player => visibleEnemy(state, bot, player)), enemy = visibleTarget || enemies[0], visible = Boolean(visibleTarget);
   if (brain.targetId !== enemy?.id || !visible) { brain.targetId = enemy?.id ?? null; brain.seenTick = visible ? state.tick : -1; brain.burstUntil = 0; }
@@ -298,10 +365,16 @@ function recordStats(state) {
   const stats = state.practice.stats;
   for (const event of state.events) {
     if (event.id <= stats.lastEventId) continue;
+    if (state.practice.config.mode === 'blades' && event.type === 'meleeStart' && event.playerId === 0) stats.bladeSwings++;
     if (event.type === 'damage' && event.targetId === 0) stats.damageTaken += event.damage;
     if (event.playerId === 0 && event.damage > 0 && event.targetId !== null && state.players[event.targetId]?.team !== state.players[0].team) {
       if (event.type === 'shot' && event.tick !== stats.lastShotHitTick) { stats.hits++; stats.lastShotHitTick = event.tick; }
       else if (event.type === 'boltHit') stats.hits++;
+      else if (state.practice.config.mode === 'blades' && event.type === 'meleeHit') {
+        stats.hits++;
+        const swing = `${event.weapon}:${event.meleeStartTick}:${event.meleeIndex}`;
+        if (stats.lastHitSwing !== swing) { stats.bladeHitSwings++; stats.lastHitSwing = swing; }
+      }
     }
     stats.lastEventId = event.id;
   }
@@ -354,5 +427,6 @@ export function stepPractice(state, localInput = {}) {
 export function getPracticeStats(state) {
   if (!state?.practice) return null;
   const { practice } = state, player = state.players[0], botsRemaining = state.players.filter(peer => peer.bot && peer.alive).length;
-  return Object.freeze({ seconds: practice.elapsedTicks / TICK_RATE, elapsedTicks: practice.elapsedTicks, kills: player.kills, shots: player.shots, hits: practice.stats.hits, accuracy: player.shots ? Math.min(100, practice.stats.hits / player.shots * 100) : 0, damageDealt: player.damageDealt, damageTaken: practice.stats.damageTaken, botsRemaining, result: practice.result, sessionId: practice.sessionId });
+  const blades = practice.config.mode === 'blades', attempts = blades ? practice.stats.bladeSwings : player.shots, landed = blades ? practice.stats.bladeHitSwings : practice.stats.hits;
+  return Object.freeze({ seconds: practice.elapsedTicks / TICK_RATE, elapsedTicks: practice.elapsedTicks, kills: player.kills, shots: player.shots, hits: practice.stats.hits, accuracy: attempts ? Math.min(100, landed / attempts * 100) : 0, ...(blades ? { swings: attempts, landedSwings: landed } : {}), damageDealt: player.damageDealt, damageTaken: practice.stats.damageTaken, botsRemaining, result: practice.result, sessionId: practice.sessionId });
 }

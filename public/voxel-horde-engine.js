@@ -2,7 +2,7 @@
 import { createCombatPlayer, combatStep, emitCombatEvent, emptyInput, INPUT_KEYS, TICK_RATE, MAPS, WEAPONS, WORLD, PLAYER_HEALTH, eyeHeight, playerHeight, aimDirection, traceShot, pickupCombatLoot, addInventoryLoot, advanceInventoryLoot, resetSprint } from './voxel-engine.js';
 import { navigationPoints, navigationPath, navigationCanOccupy, navigationVisible } from './voxel-navigation.js';
 import { INVENTORY_ACTIONS, createInventoryGun, createInventoryMelee, ensureInventory, refreshInventory, storeInventoryGun, inventoryCanTake, setInventoryLoadout, setInventoryMeleeLoadout } from './voxel-inventory.js';
-import { MELEE_WEAPONS, resetMeleeDefense } from './voxel-melee.js';
+import { MELEE_WEAPONS, clearMeleeBuffer, resetMeleeDefense } from './voxel-melee.js';
 import { monsterBodyProfile, monsterAttackHeight } from './voxel-monster-bodies.js';
 import { resolveActiveFire, weaponFireIntervalTicks } from './voxel-fire-modes.js';
 
@@ -140,7 +140,7 @@ export function chooseMelee(state, id, melee) {
   return valid;
 }
 function neutralize(state, { stop = true } = {}) {
-  for (const player of state.players) { player.previousInput = emptyInput(player); player.triggerBlocked = true; player.sprinting = false; if (stop) player.vx = player.vy = player.vz = 0; player.aiming = false; player.aimTicks = 0; }
+  for (const player of state.players) { clearMeleeBuffer(player); player.previousInput = emptyInput(player); player.triggerBlocked = true; player.sprinting = false; if (stop) player.vx = player.vy = player.vz = 0; player.aiming = false; player.aimTicks = 0; }
 }
 function prepareWave(state) {
   const horde = state.horde, count = Math.max(1, horde.participantIds.length);

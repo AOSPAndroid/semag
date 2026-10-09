@@ -181,14 +181,14 @@ test('all configured blades validate explicit enums while Horde and Royale keep 
 test('Horde melee benefits decrease through waves 1–3 and disappear from later-wave and PvP damage', () => {
   for (const wave of [1, 2, 3, 4, 8]) {
     const { state, monster } = hordeFixture(wave);
-    hordeTicks(state, 1, { fire: true }); hordeTicks(state, MELEE_WEAPONS.katana.startupTicks);
+    hordeTicks(state, 1, { fire: true }); hordeTicks(state, MELEE_WEAPONS.katana.startupTicks + MELEE_WEAPONS.katana.activeTicks - 1);
     const event = state.events.findLast(event => event.type === 'damage' && event.playerId === 0 && event.targetId === monster.id);
     assert.ok(event, `wave ${wave}: physical melee did not contact`);
     assert.equal(event.damage, Math.round(MELEE_WEAPONS.katana.damage * ([1.6, 1.4, 1.2][wave - 1] || 1)));
     assert.equal(event.headshot, false); assert.equal(event.hitKind, 'body');
   }
-  const pvp = meleeFixture('katana'); tick(pvp, 1, { 0: { fire: true } }); tick(pvp, MELEE_WEAPONS.katana.startupTicks);
-  assert.equal(pvp.players[1].hp, 10000 - 48);
+  const pvp = meleeFixture('katana'); tick(pvp, 1, { 0: { fire: true } }); tick(pvp, MELEE_WEAPONS.katana.startupTicks + MELEE_WEAPONS.katana.activeTicks - 1);
+  assert.equal(pvp.players[1].hp, 10000 - MELEE_WEAPONS.katana.damage);
 });
 
 test('early-wave katana opens a real safe punish window while heavy brutes retain impact resistance', () => {
@@ -196,6 +196,8 @@ test('early-wave katana opens a real safe punish window while heavy brutes retai
   for (const fixture of [ordinary, brute]) {
     hordeTicks(fixture.state, 1); assert.ok(fixture.brain.attackTicks > 0, 'enemy begins a real close attack');
     hordeTicks(fixture.state, 1, { fire: true }); hordeTicks(fixture.state, MELEE_WEAPONS.katana.startupTicks);
+    // Observe the actual descending cut's contact, not an assumed first slice.
+    for (let active = 1; active < MELEE_WEAPONS.katana.activeTicks && !fixture.state.events.some(event => event.type === 'monsterStagger'); active++) hordeTicks(fixture.state, 1);
     assert.equal(fixture.brain.attackTicks, 0, 'accepted impact interrupts the current windup');
     assert.ok(fixture.brain.staggerTicks > 0);
     const hp = fixture.human.hp; hordeTicks(fixture.state, fixture.brain.staggerTicks - 1);

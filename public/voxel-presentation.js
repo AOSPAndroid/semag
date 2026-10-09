@@ -1,6 +1,7 @@
 import { tickFraction } from './display-timing.js';
 import { ADS, INPUT_KEYS, copyMovementState, movementPredictionRevision, separatePresentationBodies, sweepPresentationOffset } from './voxel-engine.js';
 import { advanceBolts, MAX_BOLTS } from './voxel-projectiles.js';
+import { meleeProfile, meleeStartupAim } from './voxel-melee.js';
 
 const STEP = 1 / 120;
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
@@ -8,7 +9,7 @@ const finite = value => Number.isFinite(value) ? value : 0;
 const COMBAT_FIELDS = ['aimTicks', 'recoil', 'reloadTicks', 'healTicks', 'grenadeThrowTicks', 'meleeTicks', 'meleeCooldown', 'shotCooldown', 'parryTicks', 'parryCooldown', 'meleeSecondaryCooldown'];
 const INPUT_FIELDS = [...INPUT_KEYS, 'yaw', 'pitch'];
 const MOVEMENT_FIELDS = ['x', 'y', 'z', 'vx', 'vy', 'vz', 'yaw', 'pitch', 'grounded', 'crouching', 'jumpBufferTicks', 'knockbackX', 'knockbackZ', 'knockbackTicks', 'knockbackReadyTicks', 'stamina', 'staminaRegenTicks', 'sprintExhausted', 'sprinting', 'previousInput'];
-const CONTEXT_FIELDS = [...MOVEMENT_FIELDS, 'alive', 'radius', 'weapon', 'slot', 'reloadTicks', 'healTicks', 'grenadeThrowTicks', 'meleeTicks', 'meleeCooldown', 'meleeAction', 'meleeSecondaryCooldown', 'meleeAimBlocked', 'parryTicks', 'parryCooldown', 'parryYaw', 'parryPitch', 'parryStartTick', 'parryIndex', 'parryConsumed', 'burstRemaining', 'pendingFireTicks', 'shotCooldown', 'triggerBlocked', 'ammo', 'reserve', 'lifeId', 'deaths', 'meleeStartTick', 'healStartTick', 'interaction', 'interactTicks', 'meleeWeapon', 'bot', 'monster'];
+const CONTEXT_FIELDS = [...MOVEMENT_FIELDS, 'alive', 'radius', 'weapon', 'slot', 'reloadTicks', 'healTicks', 'grenadeThrowTicks', 'meleeTicks', 'meleeCooldown', 'pendingMeleeTicks', 'inventoryIndex', 'meleeIndex', 'meleeInitialYaw', 'meleeInitialPitch', 'meleeYaw', 'meleePitch', 'meleeAction', 'meleeSecondaryCooldown', 'meleeAimBlocked', 'parryTicks', 'parryCooldown', 'parryYaw', 'parryPitch', 'parryStartTick', 'parryIndex', 'parryConsumed', 'burstRemaining', 'pendingFireTicks', 'shotCooldown', 'triggerBlocked', 'ammo', 'reserve', 'lifeId', 'deaths', 'meleeStartTick', 'healStartTick', 'interaction', 'interactTicks', 'meleeWeapon', 'bot', 'monster'];
 const matches = (old, next, fields) => fields.every(field => old[field] === next[field]);
 
 /** Resolve the complete displayed body batch; independent previews share no future poses. */
@@ -147,7 +148,8 @@ export function interpolatedVoxelState(samples, targetTime, localId, { predictMo
     // Action starts, cancellation and completion come from the newest state,
     // independently of the older bracket used to smooth an opponent's body.
     Object.assign(player, combatPresentation(player, previousCombat, 1, combatMs));
-    if (player.id === localId || !player.alive || old.alive !== player.alive || endpoint.alive !== player.alive || old.team !== player.team || endpoint.team !== player.team) continue;
+    if (player.id === localId || !player.alive || old.alive !== player.alive || endpoint.alive !== player.alive || old.team !== player.team || endpoint.team !== player.team
+        || (old.lifeId || 0) !== (player.lifeId || 0) || (endpoint.lifeId || 0) !== (player.lifeId || 0) || (old.deaths || 0) !== (player.deaths || 0) || (endpoint.deaths || 0) !== (player.deaths || 0)) continue;
     if (distance(endpoint, old) > 4 || distance(player, endpoint) > 4) continue;
     const map = newest.state.map || newest.state.mapId;
     const path = receivedMovementPath(old, endpoint, from, to, map, predictMovement);
@@ -192,7 +194,45 @@ export function interpolatedVoxelState(samples, targetTime, localId, { predictMo
   return state;
 }
 
-const sameEquipment = (player, old) => old && player.id === old.id && player.alive === old.alive && player.team === old.team && player.weapon === old.weapon && player.slot === old.slot && player.meleeWeapon === old.meleeWeapon;
+const sameEquipment = (player, old) => old && player.id === old.id && player.alive === old.alive && player.team === old.team && player.weapon === old.weapon && player.slot === old.slot && player.meleeWeapon === old.meleeWeapon
+  && (player.lifeId || 0) === (old.lifeId || 0) && (player.deaths || 0) === (old.deaths || 0) && player.inventoryIndex === old.inventoryIndex;
+const sameSwing = (player, old) => sameEquipment(player, old) && player.meleeStartTick === old.meleeStartTick && player.meleeIndex === old.meleeIndex && (player.meleeAction || 'primary') === (old.meleeAction || 'primary')
+  && player.meleeInitialYaw === old.meleeInitialYaw && player.meleeInitialPitch === old.meleeInitialPitch;
+const bladeDirection = (yaw, pitch) => [Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch)];
+function blendBladeAim(from, to, amount) {
+  const a = bladeDirection(finite(from.meleeYaw), finite(from.meleePitch)), b = bladeDirection(finite(to.meleeYaw), finite(to.meleePitch));
+  const angle = Math.acos(clamp(a.reduce((sum, value, index) => sum + value * b[index], 0), -1, 1));
+  if (angle < 1e-8 || angle > Math.PI - 1e-6) return { meleeYaw: finite(to.meleeYaw), meleePitch: finite(to.meleePitch) };
+  const denominator = Math.sin(angle), first = Math.sin((1 - amount) * angle) / denominator, second = Math.sin(amount * angle) / denominator;
+  const vector = a.map((value, index) => value * first + b[index] * second);
+  return { meleeYaw: Math.atan2(vector[0], -vector[2]), meleePitch: Math.asin(clamp(vector[1], -1, 1)) };
+}
+function bladePresentation(pose, player, old, amount, extra) {
+  if (!(player.meleeTicks > 0) || player.slot !== 'sword') return;
+  const profile = meleeProfile(player), startupBoundary = profile.activeTicks + profile.recoveryTicks;
+  const continuing = sameSwing(player, old);
+  if (!continuing) pose.meleeTicks = Math.max(.001, player.meleeTicks - extra);
+  if (player.meleeTicks <= startupBoundary) {
+    // Once authority commits a cut, neither an older windup nor delayed visual
+    // interpolation may rotate or rewind its physical contact slice.
+    pose.meleeYaw = player.meleeYaw; pose.meleePitch = player.meleePitch;
+    pose.meleeTicks = Math.max(.001, player.meleeTicks - extra);
+    return;
+  }
+  // A still-pending windup can be displayed smoothly, but cannot invent the
+  // first active contact before the authoritative phase arrives.
+  pose.meleeTicks = Math.max(startupBoundary + .001, pose.meleeTicks);
+  if (!['sword', 'katana'].includes(profile.id) || player.meleeAction === 'secondary') return;
+  if (continuing && old.meleeTicks > startupBoundary) Object.assign(pose, blendBladeAim(old, player, amount));
+  const preview = { ...player, meleeYaw: pose.meleeYaw, meleePitch: pose.meleePitch };
+  let remaining = extra;
+  while (remaining > 1e-8 && preview.meleeTicks > startupBoundary) {
+    const next = meleeStartupAim(preview, player), endpoint = { meleeYaw: next.yaw, meleePitch: next.pitch };
+    Object.assign(preview, blendBladeAim(preview, endpoint, Math.min(1, remaining)));
+    preview.meleeTicks--; remaining--;
+  }
+  pose.meleeYaw = preview.meleeYaw; pose.meleePitch = preview.meleePitch;
+}
 
 /** Smooth only visual combat values; health, inventory and action results stay newest. */
 export function combatPresentation(player, old, ratio, elapsedMs = 0) {
@@ -209,10 +249,12 @@ export function combatPresentation(player, old, ratio, elapsedMs = 0) {
     if (!(player[field] > 0)) continue;
     if (field === 'healTicks' && player.healStartTick !== old.healStartTick) continue;
     if (field === 'parryTicks' && player.parryStartTick !== old.parryStartTick) continue;
+    if ((field === 'meleeTicks' || field === 'meleeCooldown') && !sameSwing(player, old)) continue;
     const ongoing = old[field] >= player[field] && old[field] > 0;
     // Keep the current action visible until authority confirms its completion.
     pose[field] = Math.max(.001, (ongoing ? interpolate(field) : player[field]) - extra);
   }
+  bladePresentation(pose, player, old, amount, extra);
   return pose;
 }
 
@@ -220,7 +262,14 @@ export function combatPresentation(player, old, ratio, elapsedMs = 0) {
 export function withCombatPresentation(player, visual) {
   if (!player || !sameEquipment(player, visual)) return player;
   const pose = { ...player };
-  for (const field of COMBAT_FIELDS) if (Number.isFinite(visual[field])) pose[field] = visual[field];
+  const coherentSwing = sameSwing(player, visual);
+  for (const field of COMBAT_FIELDS) if (Number.isFinite(visual[field]) && (!['meleeTicks', 'meleeCooldown'].includes(field) || coherentSwing)) pose[field] = visual[field];
+  if (coherentSwing && player.meleeTicks > 0 && visual.meleeTicks > 0 && player.meleeTicks > meleeProfile(player).activeTicks + meleeProfile(player).recoveryTicks) {
+    if (Number.isFinite(visual.meleeYaw)) pose.meleeYaw = visual.meleeYaw;
+    if (Number.isFinite(visual.meleePitch)) pose.meleePitch = visual.meleePitch;
+  }
+  // Queued input is authority, not a tweened or predicted combat value.
+  pose.pendingMeleeTicks = player.pendingMeleeTicks;
   return pose;
 }
 
@@ -262,7 +311,7 @@ export function createCorrectionPresenter({ halfLifeMs = 40, maxOffset = .5, sna
 export function hudTransitionKey(state, roster, playerId, context = '') {
   const players = state?.players?.map(player => [player.id, player.team, player.alive, player.hp, player.maxHp,
     player.weapon, player.slot, player.hasGun, player.ammo, player.reserve, player.potions, player.grenades,
-    !!player.reloadTicks, !!player.healTicks, !!player.grenadeThrowTicks, player.meleePhase, player.meleeAction, !!player.parryTicks, !!player.parryCooldown, !!player.meleeSecondaryCooldown, player.parryConsumed, player.aiming, player.aimTicks >= 14, player.grounded]);
+    !!player.reloadTicks, !!player.healTicks, !!player.grenadeThrowTicks, player.meleePhase, player.meleeAction, !!player.pendingMeleeTicks, !!player.parryTicks, !!player.parryCooldown, !!player.meleeSecondaryCooldown, player.parryConsumed, player.aiming, player.aimTicks >= 14, player.grounded]);
   const bomb = state?.bomb;
   return JSON.stringify([context, playerId, state?.phase, state?.round, state?.matchId, state?.mapId,
     state?.scores, state?.attackTeam, state?.winner, state?.winnerId, state?.placements, state?.participantIds,

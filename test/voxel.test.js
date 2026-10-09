@@ -410,14 +410,14 @@ const equipSword = f => { f.meleeWeapon = 'sword'; f.inventory[0].weapon = 'swor
 const swordReady = state => { const f = equipSword(state.players[0]); game.step(state, [input({ swap: true }, f), ...neutral(state).slice(1)]); advance(state, 1); assert.equal(f.slot, 'sword'); return f; };
 test('sword windup, active contact and recovery apply one hit per swing without spending gun ammunition', () => {
   const state = lane(fighting(), { az: .7, bz: -.7 }), f = swordReady(state), ammo = f.ammo;
-  shot(state); assert.equal(f.meleePhase, 'startup'); assert.equal(f.meleeTicks, 72); assert.equal(state.players[1].hp, 200);
+  shot(state); assert.equal(f.meleePhase, 'startup'); assert.equal(f.meleeTicks, game.MELEE.startupTicks + game.MELEE.activeTicks + game.MELEE.recoveryTicks); assert.equal(state.players[1].hp, 200);
   advance(state, game.MELEE.startupTicks - 1); assert.equal(state.players[1].hp, 200);
   advance(state, 1); assert.equal(f.meleePhase, 'active'); assert.equal(f.meleeTicks, game.MELEE.activeTicks + game.MELEE.recoveryTicks);
   assert.equal(state.players[1].hp, 200, 'the central target is hit when the finite blade path reaches it');
-  advance(state, game.MELEE.activeTicks - 1); assert.equal(f.meleePhase, 'active'); assert.equal(state.players[1].hp, 145);
+  advance(state, game.MELEE.activeTicks - 1); assert.equal(f.meleePhase, 'active'); assert.equal(state.players[1].hp, 100);
   const contact = state.events.find(e => e.type === 'meleeHit'), commitment = state.events.find(e => e.type === 'meleeStart');
   assert.ok(contact.tick >= commitment.tick + game.MELEE.startupTicks && contact.tick < commitment.tick + game.MELEE.startupTicks + game.MELEE.activeTicks);
-  advance(state, 1); assert.equal(f.meleePhase, 'recovery'); assert.equal(f.meleeTicks, game.MELEE.recoveryTicks); assert.equal(state.players[1].hp, 145);
+  advance(state, 1); assert.equal(f.meleePhase, 'recovery'); assert.equal(f.meleeTicks, game.MELEE.recoveryTicks); assert.equal(state.players[1].hp, 100);
   advance(state, game.MELEE.recoveryTicks); assert.equal(f.meleePhase, 'idle'); assert.equal(f.meleeTicks, 0); assert.equal(f.ammo, ammo);
   assert.equal(state.events.filter(e => e.type === 'meleeHit').length, 1);
 });

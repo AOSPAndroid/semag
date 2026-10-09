@@ -6,6 +6,7 @@ import { MAPS as BREACH_MAPS } from './voxel-maps.js';
 import { MAPS as ROYALE_MAPS } from './voxel-royale-maps.js';
 import { findNearbyLoot } from './voxel-royale-engine.js';
 import { WEAPONS } from './voxel-weapons.js';
+import { MELEE_WEAPONS } from './voxel-melee.js';
 import { VoxelRenderer } from './voxel-renderer.js';
 import { createMovementPresenter, combatPresentation, withCombatPresentation, resolvePresentationContacts } from './voxel-presentation.js';
 import { cleanAim, composeInput, controlForKey, aimFraction, aimLookMultiplier, combatReadout, isFormTarget, hasGunshotReport, combatEventPerspective, createMeleeImpactReporter, LOOK_SENSITIVITY, populateWeaponSelect, renderWeaponDetails, weaponCrosshairSpread } from './voxel-client.js';
@@ -103,16 +104,20 @@ export function bootPractice() {
 
   setText('practice-title', royale ? 'Voxel Royale' : 'Voxel Breach'); document.title = `${royale ? 'Voxel Royale' : 'Voxel Breach'} Practice — Semag`;
   if (royale) { setText('practice-setup-title', 'Find your next opening.'); setText('practice-setup-copy', 'Start with a knife. Scavenge the real maps while bots move, loot and fight for the last safe ground.'); setHidden($('practice-loadout-field'), true); setHidden($('practice-melee-field'), true); setHidden($('practice-melee-note'), true); }
+  if (royale) $('practice-mode').querySelector('option[value="blades"]')?.remove();
+  setHidden($('practice-blade-guide'), royale);
   try { const target = new URL(params.get('return') || '/', location.origin); if (target.origin === location.origin && /^\/(?:voxel(?:-royale)?(?:\/|\.html|$)|$)/.test(target.pathname)) $('practice-online').href = target.href; } catch {}
   for (const [id, map] of Object.entries(maps)) { const option = document.createElement('option'); option.value = id; option.textContent = map.name; $('practice-map').append(option); }
   $('practice-map').value = Object.hasOwn(maps, params.get('map')) ? params.get('map') : royale ? 'forest' : 'courtyard';
   populateWeaponSelect($('practice-weapon'));
+  for (const [id, blade] of Object.entries(MELEE_WEAPONS)) { const option = document.createElement('option'); option.value = id; option.textContent = blade.name; $('practice-blade').append(option); }
+  $('practice-blade').value = 'sword';
   const weaponDetails = document.createElement('details'); weaponDetails.className = 'arsenal-fold'; weaponDetails.hidden = royale;
   const detailSummary = document.createElement('summary'); detailSummary.textContent = 'Weapon damage and handling';
   const detailCard = document.createElement('section'); detailCard.id = 'practice-weapon-details'; detailCard.setAttribute('aria-label', 'Selected weapon statistics');
   weaponDetails.append(detailSummary, detailCard); $('practice-weapon-note').after(weaponDetails);
   $('practice-weapon').value = 'carbine';
-  function config() { return { game, mapId: $('practice-map').value, bots: Number($('practice-count').value), mode: $('practice-mode').value, difficulty: $('practice-difficulty').value, weapon: $('practice-weapon').value, melee: 'knife' }; }
+  function config() { return { game, mapId: $('practice-map').value, bots: Number($('practice-count').value), mode: $('practice-mode').value, difficulty: $('practice-difficulty').value, weapon: $('practice-weapon').value, melee: !royale && $('practice-mode').value === 'blades' ? $('practice-blade').value : 'knife' }; }
   function hints() {
     const layout = getKeyboardLayout(); app.dataset.keyboardLayout = layout;
     setText('practice-move-keys', displayKey('WASD')); setText('practice-grenade-key', displayKey('Q')); setText('practice-guide-grenade', displayKey('Q'));
@@ -153,9 +158,15 @@ export function bootPractice() {
   }
   function preview() {
     activeSession = false; modalOpen = false; setHidden($('practice-guide'), true); unlock(); state = createPractice(config()); resetView(); buildRadar();
+    const blades = state.practice.config.mode === 'blades';
+    setHidden($('practice-blade-field'), !blades); setHidden($('practice-melee-field'), royale || blades);
+    if (!royale) {
+      setText('practice-setup-title', blades ? 'Make every cut count.' : 'Make every shot count.');
+      setText('practice-setup-copy', blades ? 'Train real cuts against approaching targets. They move and use solid cover, but never attack. Your chosen blade is equipped at Start.' : 'Practice movement and weapon handling against moving targets. Add return fire when you’re ready.');
+    }
     setText('practice-weapon-note', royale ? 'Knife start · 200 health · weapons, ammo and healing are found in structures.' : WEAPONS[state.practice.config.weapon].description);
     if (!royale) renderWeaponDetails(detailCard, state.practice.config.weapon);
-    setText('practice-melee-note', royale ? 'Knife only. Collect every gun and supply with E.' : 'Knife + chosen gun. Slots 3–4 are empty; E collects blades, guns and supplies.');
+    setText('practice-melee-note', royale ? 'Knife only. Collect every gun and supply with E.' : blades ? `Training kit: ${MELEE_WEAPONS[state.practice.config.melee].name} in slot 1, chosen gun in slot 2. No supplies. ${MELEE_WEAPONS[state.practice.config.melee].description}` : 'Knife + chosen gun. Slots 3–4 are empty; E collects blades, guns and supplies.');
     updateHud(performance.now(), true); draw(performance.now());
   }
   function start() {
@@ -205,15 +216,15 @@ export function bootPractice() {
   }
   function updateHud(now, force = false) {
     const phase = state.phase, local = state.players[0];
-    const signature = [phase, local.hp, local.alive, local.weapon, local.slot, local.hasGun, local.ammo, local.reserve, local.potions, local.grenades, local.aiming, local.healTicks > 0, local.reloadTicks > 0, local.grenadeThrowTicks > 0, local.shotCooldown > 0, local.burstRemaining > 0, local.meleePhase, local.kills, local.damageDealt].join(':');
+    const signature = [phase, local.hp, local.alive, local.weapon, local.slot, local.hasGun, local.ammo, local.reserve, local.potions, local.grenades, local.aiming, local.healTicks > 0, local.reloadTicks > 0, local.grenadeThrowTicks > 0, local.shotCooldown > 0, local.burstRemaining > 0, local.meleeWeapon, local.meleePhase, local.pendingMeleeTicks > 0, local.parryTicks > 0, local.parryConsumed, local.parryCooldown > 0, local.kills, local.damageDealt].join(':');
     if (!force && phase === lastPhase && signature === urgentHud && now - lastHudAt < 80) return;
     urgentHud = signature; const changed = phase !== lastPhase; lastPhase = phase; lastHudAt = now; setAttribute(app, 'data-phase', phase);
-    const stats = getPracticeStats(state), player = state.players[0], readout = combatReadout(player, WEAPONS, { ADS, HEAL, PLAYER_HEALTH });
+    const stats = getPracticeStats(state), player = state.players[0], blades = state.practice.config.mode === 'blades', readout = combatReadout(player, WEAPONS, { ADS, HEAL, PLAYER_HEALTH });
     paintVitals(player, 'Your', activeSession && active());
     inventory.update(player, { visible: activeSession && player.alive, interactive: active() && phase === 'fight' });
     const swap = inventorySwapPresentation(player), swapButton = document.querySelector('[data-practice-action="swap"]'); if (swap && swapButton) { swapButton.textContent = swap.label; swapButton.setAttribute('aria-label', swap.ariaLabel); }
     paintSecondaryAction(document.querySelector('[data-practice-action="aim"]'), secondaryActionPresentation(player, { active: active() && phase === 'fight', requireGun: royale }));
-    setText('practice-map-label', state.mapName); setText('practice-mode-label', state.practice.config.mode === 'targets' ? 'MOVING TARGETS' : 'RETURN FIRE'); setText('practice-bots-left', stats.botsRemaining); setText('practice-hits', stats.hits); setText('practice-clock', clock(stats.seconds));
+    setText('practice-map-label', state.mapName); setText('practice-mode-label', blades ? 'BLADE TRAINING' : state.practice.config.mode === 'targets' ? 'MOVING TARGETS' : 'RETURN FIRE'); setText('practice-bots-left', stats.botsRemaining); setText('practice-hits', stats.hits); setText('practice-clock', clock(stats.seconds));
     setHidden($('practice-overlay'), phase === 'fight'); setHidden($('practice-setup-form'), phase !== 'ready'); setHidden($('practice-pause-card'), phase !== 'paused'); setHidden($('practice-result-card'), phase !== 'matchEnd'); setHidden($('practice-countdown'), phase !== 'countdown');
     setHidden($('practice-combat'), !activeSession); setHidden($('practice-radar'), !activeSession); setDisabled($('practice-pause'), !['fight', 'countdown', 'paused'].includes(phase));
     setText('practice-pause', phase === 'paused' ? '▶' : 'Ⅱ'); setAttribute($('practice-pause'), 'aria-label', phase === 'paused' ? 'Resume practice' : 'Pause practice');
@@ -224,14 +235,15 @@ export function bootPractice() {
     setAttribute($('practice-action-track'), 'aria-label', readout.progress?.label || 'Weapon action'); setAttribute($('practice-action-track'), 'aria-valuenow', String(Math.round(readout.progress?.percent || 0))); setAttribute($('practice-action-track'), 'aria-valuetext', `${((readout.progress?.remaining || 0) / 120).toFixed(1)} seconds remaining`);
     const loot = (royale ? findNearbyLoot : findNearbyBreachLoot)(state, 0), lootView = inventoryLootPresentation(loot, player); setHidden($('practice-pickup'), !lootView || phase !== 'fight'); if (lootView) { setText('practice-pickup-name', lootView.name); setText('practice-pickup-detail', displayKey(lootView.detail)); }
     if (playerMarker) { setAttribute(playerMarker, 'cx', player.x); setAttribute(playerMarker, 'cy', player.z); }
-    for (const [id, marker] of mapMarkers) { const peer = state.players[id]; setAttribute(marker, 'cx', peer.x); setAttribute(marker, 'cy', peer.z); setStyle(marker, 'display', peer.alive && state.practice.config.mode === 'targets' ? '' : 'none'); }
+    for (const [id, marker] of mapMarkers) { const peer = state.players[id]; setAttribute(marker, 'cx', peer.x); setAttribute(marker, 'cy', peer.z); setStyle(marker, 'display', peer.alive && ['targets', 'blades'].includes(state.practice.config.mode) ? '' : 'none'); }
     if (stormMarker && royale) { setAttribute(stormMarker, 'r', state.storm.radius); setStyle(stormMarker, 'display', state.storm.active ? '' : 'none'); }
-    setText('practice-objective', phase === 'ready' ? 'Choose your arena. Start when you’re ready.' : phase === 'paused' ? 'All movement and combat paused.' : royale ? `${stats.botsRemaining + (player.alive ? 1 : 0)} survivors · ${state.storm.active ? state.storm.mode === 'shrinking' ? 'Storm closing — move to the ring.' : `Storm closes in ${Math.ceil(state.storm.ticksUntilShrink / TICK_RATE)}s.` : 'Start with a knife. Search for supplies.'}` : state.practice.config.mode === 'targets' ? 'Targets move and use solid cover. Track, counter-strafe and settle before firing.' : 'Bots react to sight and shoot in bursts. Use cover and choose your timing.');
-    if (phase === 'countdown') { const seconds = Math.ceil(state.phaseTicks / TICK_RATE); setText('practice-countdown-value', seconds); setText('practice-countdown-copy', royale ? 'Knife first. Find cover and supplies.' : 'Read the cover. Settle your aim.'); if (seconds !== lastCountdown) { lastCountdown = seconds; audio.countdown(seconds); } }
+    setText('practice-objective', phase === 'ready' ? 'Choose your arena. Start when you’re ready.' : phase === 'paused' ? 'All movement and combat paused.' : royale ? `${stats.botsRemaining + (player.alive ? 1 : 0)} survivors · ${state.storm.active ? state.storm.mode === 'shrinking' ? 'Storm closing — move to the ring.' : `Storm closes in ${Math.ceil(state.storm.ticksUntilShrink / TICK_RATE)}s.` : 'Start with a knife. Search for supplies.'}` : blades ? 'Blade training: LMB cuts. Release before the next strike; a late recovery tap queues one cut. RMB stabs or guards. Targets never attack.' : state.practice.config.mode === 'targets' ? 'Targets move and use solid cover. Track, counter-strafe and settle before firing.' : 'Bots react to sight and shoot in bursts. Use cover and choose your timing.');
+    if (phase === 'countdown') { const seconds = Math.ceil(state.phaseTicks / TICK_RATE); setText('practice-countdown-value', seconds); setText('practice-countdown-copy', royale ? 'Knife first. Find cover and supplies.' : blades ? 'Your blade is equipped. Step in and time each cut.' : 'Read the cover. Settle your aim.'); if (seconds !== lastCountdown) { lastCountdown = seconds; audio.countdown(seconds); } }
     if (phase === 'fight' && changed) audio.fight();
     if (phase === 'matchEnd') {
-      const won = stats.result === 'won'; setText('practice-result-tag', won ? royale ? 'LAST SURVIVOR' : 'DRILL CLEARED' : stats.result === 'timeout' ? 'TIME LIMIT' : 'RUN ENDED'); setText('practice-result-title', won ? 'Clean angles.' : 'Find the next opening.');
-      setText('practice-result-copy', `${stats.damageDealt} damage dealt · ${stats.damageTaken} damage taken. ${won ? 'Try a harder pace or a different weapon.' : 'Change your route, settle your aim and protect your reloads.'}`);
+      const won = stats.result === 'won'; setText('practice-result-tag', won ? royale ? 'LAST SURVIVOR' : 'DRILL CLEARED' : stats.result === 'timeout' ? 'TIME LIMIT' : 'RUN ENDED'); setText('practice-result-title', won ? blades ? 'Clean cuts.' : 'Clean angles.' : 'Find the next opening.');
+      setText('practice-result-copy', blades ? `${stats.damageDealt} damage dealt · ${stats.landedSwings} of ${stats.swings} cuts connected. Try another blade or more targets.` : `${stats.damageDealt} damage dealt · ${stats.damageTaken} damage taken. ${won ? 'Try a harder pace or a different weapon.' : 'Change your route, settle your aim and protect your reloads.'}`);
+      setText('practice-result-accuracy-label', blades ? 'CUT ACCURACY' : 'ACCURACY');
       setText('practice-result-kills', stats.kills); setText('practice-result-accuracy', `${Math.round(stats.accuracy)}%`); setText('practice-result-time', clock(stats.seconds));
       if (changed) { release(); unlock(); stopFrame(); $('practice-replay').focus({ preventScroll: true }); }
     }
@@ -341,7 +353,7 @@ export function bootPractice() {
     if (destroyed) return; destroyed = true; stopFrame(); release(); unlock(); for (const remove of listeners) remove(); unsubscribe(); picker.destroy(); audio.destroy(); inventory.destroy(); weaponWheel.destroy(); renderer?.destroy(); movement.clear();
   }
   listen($('practice-setup-form'), 'submit', event => { event.preventDefault(); start(); });
-  for (const id of ['practice-map', 'practice-count', 'practice-mode', 'practice-difficulty', 'practice-weapon']) listen($(id), 'change', preview);
+  for (const id of ['practice-map', 'practice-count', 'practice-mode', 'practice-difficulty', 'practice-weapon', 'practice-blade']) listen($(id), 'change', preview);
   listen($('practice-pause'), 'click', () => state.phase === 'paused' ? resume() : pause()); listen($('practice-touch-pause'), 'click', pause);
   listen($('practice-resume'), 'click', resume); listen($('practice-restart'), 'click', start); listen($('practice-replay'), 'click', start);
   listen($('practice-change-setup'), 'click', setup); listen($('practice-result-setup'), 'click', setup);

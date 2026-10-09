@@ -45,11 +45,12 @@ test('Last Stand validates legacy blade inputs while every fresh run and lobby s
   }
 });
 
-test('two real knife or katana strikes can dispatch an early stalker without spending ammunition or taking a free hit', () => {
-  for (const melee of ['knife', 'katana']) {
+test('an early stalker needs two starter-knife cuts or one collected-katana cut without ammunition or a free hit', () => {
+  for (const [melee, cuts] of [['knife', 2], ['katana', 1]]) {
     const { state, human, monster } = fixture({ melee }); const ammo = human.ammo;
-    strike(state, human); assert.equal(monster.alive, true, melee);
-    strike(state, human); assert.equal(monster.alive, false, melee);
+    for (let cut = 1; cut <= cuts; cut++) {
+      strike(state, human); assert.equal(monster.alive, cut < cuts, `${melee}: cut ${cut}`);
+    }
     assert.equal(human.hp, human.maxHp, `${melee}: an early duel should reward interrupting the readable windup`);
     assert.equal(human.ammo, ammo); assert.equal(human.shots, 0); assert.equal(human.kills, 1);
     assert.equal(state.horde.totalKills, 1); assert.equal(state.events.filter(event => event.type === 'kill').length, 1);
@@ -92,12 +93,12 @@ test('rapid paired tonfas cannot permanently stagger a late armored brute', () =
   assert.ok(brain.staggerReadyTick > staggers[0].tick, 'immunity must live on the shared simulation clock');
 });
 
-test('the committed axe rewards heavy close impact while brute armor resists a quicker katana stagger', () => {
+test('the slower axe deals a heavier opening than a quick katana while brute armor limits both staggers', () => {
   const axe = fixture({ melee: 'axe', wave: 3, monsterType: 'brute' }), katana = fixture({ melee: 'katana', wave: 3, monsterType: 'brute' });
   strike(axe.state, axe.human, MELEE_WEAPONS.axe.startupTicks); strike(katana.state, katana.human, MELEE_WEAPONS.katana.startupTicks);
   const heavyHit = axe.state.events.findLast(event => event.type === 'damage' && event.playerId === 0), quickHit = katana.state.events.findLast(event => event.type === 'damage' && event.playerId === 0);
   const heavyStagger = axe.state.events.findLast(event => event.type === 'monsterStagger'), quickStagger = katana.state.events.findLast(event => event.type === 'monsterStagger');
-  assert.equal(heavyHit.damage, 106); assert.equal(quickHit.damage, 58); assert.equal(heavyStagger.ticks, 25); assert.equal(quickStagger.ticks, 10);
+  assert.equal(heavyHit.damage, 168); assert.equal(quickHit.damage, 90); assert.equal(heavyStagger.ticks, 25); assert.equal(quickStagger.ticks, 10);
   assert.ok(MELEE_WEAPONS.axe.startupTicks > MELEE_WEAPONS.katana.startupTicks); assert.ok(MELEE_WEAPONS.axe.recoveryTicks > MELEE_WEAPONS.katana.recoveryTicks);
   assert.ok(axe.monster.alive && katana.monster.alive, 'an early armored brute must still survive either single blow');
 });

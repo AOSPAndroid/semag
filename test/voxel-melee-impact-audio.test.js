@@ -11,6 +11,9 @@ import { setInventoryMeleeLoadout, selectInventorySlot } from '../public/voxel-i
 const arena = { id: 'melee-impact-audio-arena', bounds: { minX: -30, maxX: 30, minZ: -30, maxZ: 30 }, colliders: [], sites: [] };
 function recorder(enabled = true) {
   const audio = new GameAudio(), voices = []; audio.enabled = enabled;
+  // Exercise compatibility with tone/noise-only audio; real cached blade
+  // contacts are verified with an AudioContext in voxel-blade-feedback.test.js.
+  audio.meleeImpact = undefined;
   audio.tone = (frequency, duration, options) => voices.push({ kind: 'tone', frequency, duration, ...options });
   audio.noise = (duration, options) => voices.push({ kind: 'noise', duration, ...options });
   return { audio, voices, reporter: createMeleeImpactReporter(audio) };

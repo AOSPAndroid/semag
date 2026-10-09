@@ -2,7 +2,8 @@ import { SPRINT } from './voxel-engine.js';
 import { WEAPONS, weaponAimFovRatio } from './voxel-weapons.js';
 import { weaponReloadDuration } from './voxel-fire-modes.js';
 import { weaponReloadPose } from './voxel-player-animation.js';
-import { KNIFE_SECONDARY, PARRY_PROFILES, meleeLabel, meleeProfile, parryProfile, parryPhase } from './voxel-melee.js';
+import { KNIFE_SECONDARY, PARRY_PROFILES, MELEE_PRESS_BUFFER_TICKS, meleeLabel, meleeProfile, meleeWeaponId, meleeSlashPhase, parryProfile, parryPhase } from './voxel-melee.js';
+import { selectedInventoryItem } from './voxel-inventory.js';
 
 /** Keep hip turn speed; ADS adds deliberate fine control to the weapon's zoom. */
 export const ADS_LOOK_CONTROL = Object.freeze({ precisionMultiplier: .55 });
@@ -38,8 +39,14 @@ export function meleeActionReadout(player, profile = meleeProfile(player)) {
   }
   if (attackTicks) {
     const phase = player.meleeTicks > 0 ? player.meleePhase : 'recovery';
+    const held = selectedInventoryItem(player);
+    const queued = Number.isSafeInteger(player.pendingMeleeTicks) && player.pendingMeleeTicks > 0 && player.pendingMeleeTicks <= MELEE_PRESS_BUFFER_TICKS
+      && player.meleeAction === 'primary' && phase === 'recovery' && meleeSlashPhase(player).phase === 'recovery'
+      && finiteTicks(player.meleeTicks) <= MELEE_PRESS_BUFFER_TICKS && finiteTicks(player.meleeCooldown) <= MELEE_PRESS_BUFFER_TICKS
+      && held?.kind === 'melee' && held.weapon === meleeWeaponId(player) && profile.id === held.weapon
+      && !player.reloadTicks && !player.grenadeThrowTicks && !player.parryTicks && !player.triggerBlocked;
     return { state: phase || 'recovery', ammo: ({ startup: 'WINDUP', active: secondary ? 'STAB' : 'STRIKE', recovery: 'RECOVER' })[phase] || 'RECOVER',
-      status: `${(attackTicks / 120).toFixed(1)}S · ${phase === 'startup' ? secondary ? 'COMMITTING STAB' : 'COMMITTING' : phase === 'active' ? secondary ? 'STAB ACTIVE' : 'BLADE ACTIVE' : 'RECOVERING'}`,
+      status: `${(attackTicks / 120).toFixed(1)}S · ${phase === 'startup' ? secondary ? 'COMMITTING STAB' : 'COMMITTING' : phase === 'active' ? secondary ? 'STAB ACTIVE' : 'BLADE ACTIVE' : 'RECOVERING'}${queued ? ' · NEXT STRIKE QUEUED' : ''}`,
       progress: actionProgress(`${bladeName} ${secondary ? 'stab' : 'attack'} and recovery`, attackTicks, profile.startupTicks + profile.activeTicks + profile.recoveryTicks) };
   }
   const cooldown = Math.max(finiteTicks(player.parryCooldown), finiteTicks(player.meleeSecondaryCooldown));

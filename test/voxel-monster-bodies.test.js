@@ -85,7 +85,7 @@ test('a human katana makes one real flesh contact across every canine facing', (
     setInventoryMeleeLoadout(snapshot.players[0], 'katana', { equip: true });
     snapshot.tick++; combatStep(snapshot, [{ ...emptyInput({ yaw: 0, pitch: -.28 }), fire: true }, emptyInput(dog)]);
     for (let tick = 0; tick < 55; tick++) { snapshot.tick++; combatStep(snapshot, [emptyInput({ yaw: 0, pitch: -.28 }), emptyInput(dog)]); }
-    assert.equal(dog.hp, 52, `katana once through facing ${dog.yaw}`);
+    assert.equal(dog.hp, 25, `one 75-damage katana cut through facing ${dog.yaw}`);
     assert.equal(snapshot.events.filter(event => event.type === 'damage').length, 1);
   }
 });

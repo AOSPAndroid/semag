@@ -342,13 +342,13 @@ test('combat readout distinguishes a committed sword strike, gun ammo and potion
   const player = { weapon: 'pistol', slot: 'primary', grounded: true, hp: 75, maxHp: 100, ammo: 6, reserve: 24, grenades: 1, potions: 1 };
   let readout = combatReadout(player, weapons);
   assert.equal(readout.label, 'PISTOL'); assert.equal(readout.ammo, 6); assert.equal(readout.status, 'CLICK EACH SHOT'); assert.equal(readout.progress, null);
-  Object.assign(player, { slot: 'sword', meleeTicks: 54, meleePhase: 'active' });
+  Object.assign(player, { slot: 'sword', meleeTicks: 40.5, meleePhase: 'active' });
   readout = combatReadout(player, weapons);
-  assert.equal(readout.label, 'SWORD'); assert.equal(readout.ammo, 'STRIKE'); assert.equal(readout.progress.percent, 25); assert.equal(readout.status, '0.5S · BLADE ACTIVE');
+  assert.equal(readout.label, 'SWORD'); assert.equal(readout.ammo, 'STRIKE'); assert.equal(readout.progress.percent, 25); assert.equal(readout.status, '0.3S · BLADE ACTIVE');
   player.meleeTicks = 0; player.meleePhase = 'idle';
   readout = combatReadout(player, weapons); assert.equal(readout.ammo, 'READY'); assert.equal(readout.progress, null);
-  player.meleeCooldown = 36;
-  readout = combatReadout(player, weapons); assert.equal(readout.ammo, 'RECOVER'); assert.equal(readout.status, '0.3S · RECOVERING'); assert.equal(readout.progress.percent, 50, 'swapping away from a swing cannot hide its recovery');
+  player.meleeCooldown = 27;
+  readout = combatReadout(player, weapons); assert.equal(readout.ammo, 'RECOVER'); assert.equal(readout.status, '0.2S · RECOVERING'); assert.equal(readout.progress.percent, 50, 'swapping away from a swing cannot hide its recovery');
   player.meleeCooldown = 0;
   Object.assign(player, { healing: true, healTicks: 120, potions: 0 });
   readout = combatReadout(player, weapons);

@@ -18,7 +18,7 @@ import * as Shinobi from './public/shinobi-engine.js';
 import * as Voxel from './public/voxel-engine.js';
 import * as Royale from './public/voxel-royale-engine.js';
 import * as Horde from './public/voxel-horde-engine.js';
-import { MELEE_WEAPONS } from './public/voxel-melee.js';
+import { MELEE_WEAPONS, clearMeleeBuffer } from './public/voxel-melee.js';
 import { enableLagCompensation, isValidViewTick, setShotViewTick } from './public/voxel-lag-compensation.js';
 import * as Brawl from './public/brawl-engine.js';
 import { createFpsInputQueue, FPS_EDGE_ACTIONS } from './public/voxel-input-queue.js';
@@ -387,6 +387,7 @@ export function createServer(options = {}) {
     }
   }
   function resetInputs(room) {
+    if (room.adapter.latestInput) for (const player of room.state.players) clearMeleeBuffer(player);
     if (room.adapter.compensateHitscan) for (const player of room.state.players) setShotViewTick(room.state, player.id, null);
     for (const slot of room.slots) {
       if (!slot) continue;
@@ -413,10 +414,12 @@ export function createServer(options = {}) {
     for (const room of occupiedRooms) {
       const inputs = room.slots.map((slot, index) => {
         if (!slot) {
+          if (room.adapter.latestInput && room.state.players[index]) clearMeleeBuffer(room.state.players[index]);
           if (room.adapter.compensateHitscan) setShotViewTick(room.state, index, null);
           return freshInput(room, index);
         }
         if (room.adapter.latestInput && now - slot.lastInputTime > 350) {
+          clearMeleeBuffer(room.state.players[index]);
           slot.buttons = freshInput(room, index, slot.queue.at(-1)?.buttons ?? slot.latestButtons);
           slot.latestButtons = slot.buttons; slot.actionInputs.reset({ neutral: true });
           slot.queue.length = 0;
@@ -429,7 +432,7 @@ export function createServer(options = {}) {
           if (room.adapter.compensateHitscan) setShotViewTick(room.state, index, command.viewTick);
         } else if (now - slot.lastInputTime > 350) slot.buttons = freshInput(room, index, slot.buttons);
         if (room.adapter.latestInput) {
-          if (room.state.phase !== 'fight' && !(room.gameId === 'voxel-horde' && room.state.phase === 'intermission')) { slot.actionInputs.reset({ held: slot.latestButtons }); slot.buttons = { ...slot.latestButtons }; }
+          if (room.state.phase !== 'fight' && !(room.gameId === 'voxel-horde' && room.state.phase === 'intermission')) { clearMeleeBuffer(room.state.players[index]); slot.actionInputs.reset({ held: slot.latestButtons }); slot.buttons = { ...slot.latestButtons }; }
           else {
             const sampled = slot.actionInputs.sample(slot.latestButtons, now);
             slot.buttons = sampled.buttons;
@@ -442,6 +445,7 @@ export function createServer(options = {}) {
       room.adapter.engine.step(room.state, inputs);
       const phaseChanged = previousPhase !== room.state.phase;
       if (room.adapter.latestInput && phaseChanged) {
+        for (const player of room.state.players) clearMeleeBuffer(player);
         for (const slot of room.slots) slot?.actionInputs.reset({ held: slot.latestButtons });
       }
       if (previousPhase === 'countdown' && ['buy', 'fight', 'roundEnd', 'matchEnd'].includes(room.state.phase)) {
@@ -689,7 +693,7 @@ export function createServer(options = {}) {
         }
         if (room.adapter.latestInput) {
           slot.queue.length = 0;
-          if (data.cancelActions) slot.actionInputs.reset({ held: buttons, neutral: true });
+          if (data.cancelActions) { clearMeleeBuffer(room.state.players[id]); slot.actionInputs.reset({ held: buttons, neutral: true }); }
           else {
             if (data.cancelPress) slot.actionInputs.cancel(data.cancelPress);
             slot.actionInputs.observe(buttons, now, { viewTick: data.viewTick, sequence: data.seq });
@@ -700,6 +704,7 @@ export function createServer(options = {}) {
     });
     ws.on('close', () => {
       if (room.slots[id] !== slot) return;
+      if (room.adapter.latestInput) clearMeleeBuffer(room.state.players[id]);
       const activeHorde = room.gameId === 'voxel-horde' && room.state.phase !== 'lobby';
       const activeRoyale = room.gameId === 'voxel-royale' && ['countdown', 'fight', 'matchEnd'].includes(room.state.phase);
       room.slots[id] = null; room.acks[id] = -1;

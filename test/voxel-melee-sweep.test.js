@@ -33,7 +33,7 @@ test('all blade bands are finite, preserve actual reach and use a bounded active
     }
     player.meleeTicks = profile.activeTicks + profile.recoveryTicks;
     const phase = meleeSlashPhase(player); assert.equal(phase.phase, 'active'); assert.equal(phase.from, 0); near(phase.to, 1 / profile.activeTicks);
-    assert.ok(meleeSlashGeometry(player, phase).samples.length <= 7, 'a physical tick samples a short finite interval');
+    assert.ok(meleeSlashGeometry(player, phase).samples.length <= 8, 'a physical tick samples a short finite interval including the descending curve');
     player.meleeTicks = profile.recoveryTicks; assert.equal(meleeSlashPhase(player).phase, 'recovery');
   }
 });
@@ -58,7 +58,7 @@ test('finite segment/box contacts are exact at a face, edge, corner and an inter
 test('one real katana sweep damages every monster across and behind the front of its blade exactly once', () => {
   const targets = [foe(3, -.72, -1.9), foe(4, 0, -1.1), foe(5, 0, -1.9), foe(6, .72, -1.9)];
   const { state, attacker } = fixture({ targets }); swing(state, 'katana');
-  for (const target of targets) assert.equal(target.hp, 452, `monster ${target.id} receives one cut`);
+  for (const target of targets) assert.equal(target.hp, 425, `monster ${target.id} receives one cut`);
   const hits = state.events.filter(event => event.type === 'damage'); assert.equal(hits.length, 4);
   assert.equal(new Set(hits.map(event => `${event.playerId}:${event.meleeStartTick}:${event.meleeIndex}:${event.attackerLifeId}`)).size, 1);
   assert.equal(attacker.meleeHitLives.length, 4); assert.equal(attacker.shots, 0);
@@ -67,8 +67,8 @@ test('one real katana sweep damages every monster across and behind the front of
 test('each active tick damages only the part of the blade path already swept, not an instant full cone', () => {
   const left = foe(3, -.85, -2), right = foe(4, .85, -2), { state } = fixture({ weapon: 'sword', targets: [left, right] });
   step(state, { fire: true }); step(state, {}, MELEE_WEAPONS.sword.startupTicks);
-  assert.equal(left.hp, 445); assert.equal(right.hp, 500, 'the far right side has not been cut yet');
-  step(state, {}, MELEE_WEAPONS.sword.activeTicks); assert.equal(right.hp, 445);
+  assert.equal(left.hp, 400); assert.equal(right.hp, 500, 'the far right side has not been cut yet');
+  step(state, {}, MELEE_WEAPONS.sword.activeTicks); assert.equal(right.hp, 400);
   assert.equal(state.events.filter(event => event.type === 'damage').length, 2);
 });
 
@@ -92,7 +92,7 @@ test('walls, elevated floors and allied bodies keep shielding the entire swarm',
 test('Breach and Royale human bodies preserve nearest-target blocking while monster-only cleave stays specific to Horde', () => {
   for (const gameId of ['voxel-breach', 'voxel-royale']) {
     const targets = [actor(1, { x: 0, z: -1.1, team: 1 }), actor(2, { x: 0, z: -1.9, team: 1 })], { state } = fixture({ gameId, targets });
-    swing(state, 'katana'); assert.equal(targets[0].hp, 452); assert.equal(targets[1].hp, 500, gameId);
+    swing(state, 'katana'); assert.equal(targets[0].hp, 425); assert.equal(targets[1].hp, 500, gameId);
   }
 });
 
@@ -126,7 +126,7 @@ function shove({ weapon = 'katana', type = 'stalker', monster = true, fields = {
 }
 
 test('accepted nonlethal hits give weapon-specific physical impulses after stagger hooks without teleporting', () => {
-  const expected = { knife: 2.2, sword: 7.2, katana: 6, axe: 10, tonfas: 3.3 };
+  const expected = { knife: 2.2, sword: 4.2, katana: 3, axe: 10, tonfas: 2.6 };
   for (const [weapon, speed] of Object.entries(expected)) {
     const { state, target } = shove({ weapon }); near(vectorLength(target), speed); assert.equal(target.z, -1.4); assert.equal(target.y, 0);
     const before = target.z; step(state); assert.ok(target.z < before - .015, `${weapon} visibly displaces through physical movement`);
@@ -134,7 +134,7 @@ test('accepted nonlethal hits give weapon-specific physical impulses after stagg
   }
   const { state, target } = fixture(); const victim = state.players[3];
   applyCombatDamage(state, [{ playerId: 0, targetId: 3, damage: 1, attack: 'katana', weapon: 'katana' }], { onMeleeHit() { victim.vx *= .2; victim.vz *= .2; } });
-  near(vectorLength(victim), 6);
+  near(vectorLength(victim), 3);
 });
 
 test('heavy brute resistance and modest PvP shoves preserve movement and combat control', () => {
@@ -149,7 +149,7 @@ test('heavy brute resistance and modest PvP shoves preserve movement and combat 
 test('simultaneous cooperative impacts retain all damage but cannot stack launch speeds or refresh the guard', () => {
   const { state, target } = shove({ weapon: 'katana' });
   applyCombatDamage(state, Array.from({ length: 3 }, () => ({ playerId: 0, targetId: 3, damage: 1, attack: 'axe', weapon: 'axe' })));
-  near(vectorLength(target), 6); assert.equal(target.hp, 496); assert.equal(target.knockbackReadyTicks, 12);
+  near(vectorLength(target), 3); assert.equal(target.hp, 496); assert.equal(target.knockbackReadyTicks, 12);
   assert.equal(state.events.filter(event => event.type === 'meleeKnockback').length, 1);
   step(state, {}, 12); applyCombatDamage(state, [{ playerId: 0, targetId: 3, damage: 1, attack: 'axe', weapon: 'axe' }]);
   near(vectorLength(target), 10); assert.equal(target.knockbackTicks, 36);
@@ -193,7 +193,7 @@ test('co-moving swarm shoves are independent of monster IDs and prediction vacat
     step(state, {}, 29); near(predicted.z, targets.find(target => target.id === predicted.id).z); near(predicted.knockbackZ, targets.find(target => target.id === predicted.id).knockbackZ);
     assert.equal(JSON.stringify(peers), before);
     step(state, {}, 6); const last = targets.slice().sort((a, b) => a.z - b.z).map(target => ({ z: target.z, knockbackZ: target.knockbackZ, ticks: target.knockbackTicks }));
-    assert.ok(-.8 - last[1].z > .65); near(last[1].z - last[0].z, .65);
+    assert.ok(-.8 - last[1].z > .35 && -.8 - last[1].z < .5, 'the revised sword keeps a visible shove inside follow-up range'); near(last[1].z - last[0].z, .65);
     runs.push({ first, last });
   }
   assert.deepEqual(runs[0], runs[1], 'the same two positions and impact fields produce identical physical results');
