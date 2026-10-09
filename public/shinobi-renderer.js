@@ -6,7 +6,13 @@ const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 const NINJAS = [
   { cloth: '#314451', shade: '#1b2b37', edge: '#6b8491', sash: '#ee9b67', pale: '#ffe6ab', ink: '#101c27' },
   { cloth: '#39434a', shade: '#20292f', edge: '#788784', sash: '#79d5c3', pale: '#dcfff0', ink: '#13212a' },
+  { cloth: '#453848', shade: '#2d2536', edge: '#96829e', sash: '#c9a1ed', pale: '#f5e5ff', ink: '#201829' },
+  { cloth: '#3b4658', shade: '#212e42', edge: '#8399b4', sash: '#83bdec', pale: '#e1f2ff', ink: '#142131' },
+  { cloth: '#504234', shade: '#342a23', edge: '#a18d70', sash: '#efcb73', pale: '#fff3c4', ink: '#261f19' },
 ];
+const POSES = new Set(['ready', 'windup', 'strike', 'recover', 'guard', 'throw', 'stun', 'feint']);
+const paletteIndex = id => Number.isInteger(id) && id >= 0 && id < NINJAS.length ? id : 0;
+const palette = id => NINJAS[paletteIndex(id)];
 const SCENES = {
   rooftop: { name: 'MOONLIT ROOFTOPS', seed: 1831, ink: '#111d2d', floor: '#293c4b', seam: '#21323f', tiles: ['#304654', '#334957', '#2e4250', '#344754'], edge: '#8aafbf', stone: '#65798a', light: '#bed6d8', wood: '#635864' },
   garden: { name: 'LANTERN GARDEN', seed: 5901, ink: '#152829', floor: '#3c514b', seam: '#334640', tiles: ['#485c51', '#4d6156', '#46594f', '#4b5e52'], edge: '#a1b295', stone: '#87978b', light: '#d7d8b3', wood: '#756354' },
@@ -82,8 +88,9 @@ export class ShinobiRenderer {
   resetEffects() {
     this.particles = []; this.bursts = []; this.ghosts = [];
     this.callouts = [];
-    this.seenEvents = new Set(); this.eventOrder = []; this.lastGhost = [-1, -1];
-    this.lastTick = -1; this.lastTime = null; this.hitFlash = [0, 0];
+    this.seenEvents = new Set(); this.eventOrder = []; this.lastGhost = Array(NINJAS.length).fill(-1);
+    this.lastTick = -1; this.lastTime = null; this.hitFlash = Array(NINJAS.length).fill(0);
+    this.fighterOrder = [];
     this.lastRound = null; this.lastStage = null; this.lastPhase = null;
   }
 
@@ -426,7 +433,10 @@ export class ShinobiRenderer {
   }
 
   sprite(id, stride = 0, pose = 'ready') {
-    const player = id === 1 ? 1 : 0, key = `${player}:${stride}:${pose}`;
+    const player = paletteIndex(id);
+    stride = Number.isFinite(stride) ? Math.sign(stride) : 0;
+    pose = POSES.has(pose) ? pose : 'ready';
+    const key = `${player}:${stride}:${pose}`;
     if (this.sprites.has(key)) return this.sprites.get(key);
     const canvas = canvasLayer(64, 64), ctx = canvas.getContext('2d'), p = NINJAS[player];
     ctx.translate(32, 32);
@@ -479,7 +489,7 @@ export class ShinobiRenderer {
     const occupied = new Set(this.callouts.filter(callout => callout.fighterId === fighterId).map(callout => callout.lane));
     let lane = 0; while (occupied.has(lane)) lane++;
     const scale = this.uiScale || 1;
-    const offset = scale > 1.5 && fighterId === 1 ? 67 : 39;
+    const offset = fighter?.team != null ? 47 + 12 * scale : scale > 1.5 && fighterId === 1 ? 67 : 39;
     const originY = fighter?.y ?? event.y, above = originY - offset - lane * 12 * scale;
     const halfWidth = text.length * 2.9 * scale;
     this.callouts.push({ fighterId, lane, x: clamp(fighter?.x ?? event.x, halfWidth + 8, WORLD.width - halfWidth - 8),
@@ -500,8 +510,8 @@ export class ShinobiRenderer {
       if (this.eventOrder.length > 256) this.seenEvents.delete(this.eventOrder.shift());
       if (Number.isFinite(event.tick) && state.tick - event.tick > 72) continue;
       if (!Number.isFinite(event.x) || !Number.isFinite(event.y)) continue;
-      const p = NINJAS[event.fighter ?? event.owner ?? 0] || NINJAS[0];
-      if (event.type === 'hit' && event.target != null) this.hitFlash[event.target] = .13;
+      const p = palette(event.fighter ?? event.owner ?? 0);
+      if (event.type === 'hit' && Number.isInteger(event.target) && event.target >= 0 && event.target < this.hitFlash.length) this.hitFlash[event.target] = .13;
       const impact = event.type !== 'parry' || event.target != null;
       if (impact && (event.type === 'hit' && Number.isFinite(event.damage) || event.type === 'parry' || event.type === 'deflect')) {
         const target = state.fighters?.find(fighter => fighter.id === (event.type === 'hit' ? event.target : event.fighter));
@@ -562,8 +572,8 @@ export class ShinobiRenderer {
     }
   }
 
-  paintFighter(ctx, fighter, tick, ghost = false, obstacles = []) {
-    const p = NINJAS[fighter.id] || NINJAS[0], action = fighter.action || 'idle', frame = fighter.actionFrame || 0;
+  paintFighter(ctx, fighter, tick, ghost = false, obstacles = [], practice = false) {
+    const p = palette(fighter.id), action = fighter.action || 'idle', frame = fighter.actionFrame || 0;
     const move = fighter.hp <= 0 ? null : getMove(fighter), windows = getCombatOptions(fighter);
     const committed = !!move || ['throw', 'parry', 'feint'].includes(action);
     const facing = committed ? fighter.actionFacing ?? fighter.facing : fighter.facing || 0;
@@ -680,9 +690,9 @@ export class ShinobiRenderer {
         : action === 'dash' ? fighter.invulnerable ? 'EVADE' : 'DASH' : null;
       if (label) {
         const scale = this.uiScale || 1;
-        let labelY = fighter.y + (scale > 1.5 && fighter.id === 1 ? -36 : 25 + 6 * scale);
+        let labelY = fighter.y + (!practice && scale > 1.5 && fighter.id === 1 ? -36 : 25 + 6 * scale);
         if (labelY < 32) labelY = fighter.y + 25 + 6 * scale;
-        if (labelY > WORLD.height - 40) labelY = fighter.y - 38 - 6 * scale;
+        if (labelY > WORLD.height - 40) labelY = fighter.y - (practice ? 58 + 12 * scale : 38 + 6 * scale);
         const halfWidth = label.length * 2.6 * scale;
         const labelX = clamp(fighter.x, halfWidth + 8, WORLD.width - halfWidth - 8);
         ctx.textAlign = 'center'; ctx.font = `bold ${8 * scale}px Consolas, monospace`;
@@ -694,7 +704,7 @@ export class ShinobiRenderer {
   }
 
   paintProjectile(ctx, projectile) {
-    const p = NINJAS[projectile.owner] || NINJAS[0], radius = projectile.radius ?? 3;
+    const p = palette(projectile.owner), radius = projectile.radius ?? 3;
     const speed = Math.hypot(projectile.vx, projectile.vy) || 1, dx = projectile.vx / speed, dy = projectile.vy / speed;
     line(ctx, [[projectile.x - dx * 13, projectile.y - dy * 13], [projectile.x - dx * 3, projectile.y - dy * 3]], p.sash + 'a0', 2);
     // The luminous point is the engine's exact circular 3 px contact shape.
@@ -759,7 +769,7 @@ export class ShinobiRenderer {
 
   paintLocalHUD(ctx, fighter, aimTarget, phase, id) {
     if (!fighter) return;
-    const p = NINJAS[fighter.id] || NINJAS[0];
+    const p = palette(fighter.id);
     ring(ctx, fighter.x, fighter.y, fighter.radius ?? 15, p.pale + '55');
     if (phase === 'fight' && fighter.hp > 0) {
       const x = aimTarget?.x ?? fighter.x + (fighter.aimX ?? Math.cos(fighter.facing || 0)) * 105;
@@ -791,7 +801,21 @@ export class ShinobiRenderer {
     ctx.fillStyle = fighter.stamina >= (PARRY.cost ?? 20) ? p.pale : '#758a89'; ctx.fillText('PARRY', 590, 627);
   }
 
-  render(state, { localId = null, time = performance.now(), aimTarget = null } = {}) {
+  paintPracticeIdentity(ctx, fighter, player) {
+    const scale = this.uiScale || 1, p = palette(fighter.id);
+    const name = String(player?.name || fighter.name || (fighter.bot ? 'Ninja' : 'You')).trim().replace(/\s+/g, ' ').toUpperCase();
+    const identified = fighter.bot && !name.endsWith(` ${fighter.id}`) ? `${fighter.id} ${name}` : name;
+    const label = identified.length > 12 ? `${identified.slice(0, 11)}…` : identified;
+    const halfWidth = label.length * 2.7 * scale;
+    const x = clamp(fighter.x, halfWidth + 8, WORLD.width - halfWidth - 8);
+    const above = fighter.y - 37 - 3 * scale;
+    const y = above < 12 + 8 * scale ? fighter.y + 42 + 12 * scale : above;
+    ctx.save(); ctx.textAlign = 'center'; ctx.font = `bold ${8 * scale}px Consolas, monospace`;
+    ctx.lineWidth = 3; ctx.strokeStyle = '#102431'; ctx.strokeText(label, x, y);
+    ctx.fillStyle = p.sash; ctx.fillText(label, x, y); ctx.restore();
+  }
+
+  render(state, { localId = null, time = performance.now(), aimTarget = null, players = null } = {}) {
     const active = state.phase === 'fight' && !state.paused;
     const animateEffects = !state.paused && (active || state.phase === 'roundEnd');
     const dt = animateEffects && this.lastTime != null ? Math.min(.05, Math.max(0, (time - this.lastTime) / 1000)) : 0;
@@ -799,16 +823,16 @@ export class ShinobiRenderer {
     const ctx = this.ctx, stageId = Object.hasOwn(SCENES, state.stageId) ? state.stageId : 'rooftop';
     ctx.setTransform(this.canvas.width / WORLD.width, 0, 0, this.canvas.height / WORLD.height, 0, 0);
     ctx.imageSmoothingEnabled = false; ctx.globalAlpha = 1;
-    const scene = this.scene(stageId, state.obstacles), fighters = state.fighters || [];
+    const scene = this.scene(stageId, state.obstacles), fighters = state.fighters || [], practice = !!state.practice;
     if (active && !this.reducedMotion) for (const fighter of fighters) {
-      if (fighter.action === 'dash' && fighter.invulnerable && state.tick - this.lastGhost[fighter.id] >= 3) {
+      if (fighter.hp > 0 && fighter.action === 'dash' && fighter.invulnerable && state.tick - this.lastGhost[fighter.id] >= 3) {
         this.ghosts.push({ id: fighter.id, x: fighter.x, y: fighter.y, facing: fighter.facing, age: 0 });
         this.lastGhost[fighter.id] = state.tick;
       }
     }
     if (this.ghosts.length > 12) this.ghosts.splice(0, this.ghosts.length - 12);
     let live = 0;
-    for (const ghost of this.ghosts) if ((ghost.age += dt) < .12) this.ghosts[live++] = ghost;
+    for (const ghost of this.ghosts) if ((ghost.age += dt) < .12 && (!practice || fighters.some(fighter => fighter.id === ghost.id && fighter.hp > 0))) this.ghosts[live++] = ghost;
     this.ghosts.length = live;
     if (live) {
       ctx.drawImage(this.background(stageId), 0, 0);
@@ -819,21 +843,31 @@ export class ShinobiRenderer {
       ctx.drawImage(scene.coverLayer, 0, 0);
     } else ctx.drawImage(scene.canvas, 0, 0);
     for (const projectile of state.projectiles || []) this.paintProjectile(ctx, projectile);
-    // Two actors require no general scene sort or per-frame asset allocations.
+    // The duel keeps its two-actor fast path. Practice reuses a tiny draw list
+    // so all living opponents sort correctly without allocating per frame.
     const obstacles = state.obstacles || STAGES[stageId].covers;
-    if (fighters.length === 2 && fighters[0].y > fighters[1].y) {
+    if (practice) {
+      const order = this.fighterOrder; order.length = 0;
+      for (const fighter of fighters) if (fighter.hp > 0) {
+        let at = order.length;
+        while (at > 0 && order[at - 1].y > fighter.y) { order[at] = order[at - 1]; at--; }
+        order[at] = fighter;
+      }
+      for (const fighter of order) this.paintFighter(ctx, fighter, state.tick, false, obstacles, true);
+      for (const fighter of order) this.paintPracticeIdentity(ctx, fighter, players?.[fighter.id]);
+    } else if (fighters.length === 2 && fighters[0].y > fighters[1].y) {
       this.paintFighter(ctx, fighters[1], state.tick, false, obstacles); this.paintFighter(ctx, fighters[0], state.tick, false, obstacles);
     } else for (const fighter of fighters) this.paintFighter(ctx, fighter, state.tick, false, obstacles);
     this.paintEffects(ctx, dt);
-    if (localId != null) this.paintLocalHUD(ctx, fighters.find(fighter => fighter.id === localId), aimTarget, state.phase, stageId);
+    if (localId != null) this.paintLocalHUD(ctx, fighters.find(fighter => fighter.id === localId && (!practice || fighter.hp > 0)), aimTarget, state.phase, stageId);
     else if ((this.uiScale || 1) <= RESOURCE_STRIP_MAX_SCALE) {
       ctx.fillStyle = SCENES[stageId].light; ctx.textAlign = 'center'; ctx.font = '9px Consolas, monospace';
       ctx.fillText('READ THE BLADE  /  PARRY THE STRIKE  /  OWN THE ANGLE', WORLD.width / 2, 627);
     }
     // Small round seals complement the large score above the arena.
-    for (const fighter of fighters) for (let win = 0; win < 2; win++) {
+    for (const fighter of fighters) if (!practice || fighter.id <= 1) for (let win = 0; win < 2; win++) {
       const x = fighter.id ? 616 + win * 13 : 344 - win * 13, y = 16;
-      polygon(ctx, [[x, y - 4], [x + 4, y], [x, y + 4], [x - 4, y]], win < fighter.wins ? NINJAS[fighter.id].sash : '#6a818144');
+      polygon(ctx, [[x, y - 4], [x + 4, y], [x, y + 4], [x - 4, y]], win < fighter.wins ? palette(fighter.id).sash : '#6a818144');
     }
   }
 }

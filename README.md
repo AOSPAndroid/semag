@@ -2,7 +2,7 @@
 
 ![Semag pixel-art logo](public/hub/logo.svg)
 
-A self-hosted browser hub with **24 games**, including solo challenges, duels, a tactical team FPS, battle royale, and three-player co-op wave survival. Pick **Open game** to preview a solo game, then press **Start game** when ready, or create a room and share your PC address or room link with a colleague. Voxel Royale holds up to ten players; the host starts with any two or more connected players. Voxel Last Stand supports solo play or co-op with up to three players: everyone connected presses **Ready**, then the host explicitly starts. Voxel Breach has two, four or six seats and requires every seat to be ready; the remaining multiplayer rooms have two. The server can run several independent rooms at once.
+A self-hosted browser hub with **24 games**, including solo challenges, duels, a tactical team FPS, battle royale, and three-player co-op wave survival. Pick **Open game** to preview a solo game, then press **Start game** when ready, or create a room and share your PC address or room link with a colleague. Voxel Royale holds up to ten players; the host starts with any two or more connected players. Voxel Last Stand supports solo play or co-op with up to three players: everyone connected presses **Ready**, then the host explicitly starts. Voxel Breach has two, four or six seats and requires every seat to be ready; the remaining multiplayer rooms have two. The server can run several independent rooms at once. Every PvP game also has a **Vs bots** link for solo play, including Shinobi Showdown against one to four opponents.
 
 [Run on your PC](#run-on-your-pc)
 
@@ -35,7 +35,7 @@ Click an image to open it at full size.
 | Voxel Breach | Tactical voxel 3D FPS: 1v1 / 2v2 / 3v3 | Hold angles, plant or defuse the bomb, and win four rounds on one of ten authored maps. |
 | Voxel Royale | First-person voxel battle royale: 2–10 players | Spawn randomly, scavenge weapons and supplies, escape the shrinking storm, and be the last survivor on one of seven authored maps. |
 | Shadow Lantern | Solo ninja stealth campaign | Collect guarded seals and extract across nine authored heists in three districts, using cover, sneaking, distractions and limited smoke. |
-| Shinobi Showdown | Real-time 1v1 ninja duel | Confirm katana chains, feint heavy strikes, land precise parries and manage stamina across three arenas. |
+| Shinobi Showdown | Real-time 1v1 duel / solo vs 1–4 bots | Confirm katana chains, feint heavy strikes, land precise parries and manage stamina across three arenas. Choose Normal, Hard or Expert opponents in solo play. |
 | Skyline Hook | Solo precision grappling platformer | Swing through twelve authored rooftops in three districts with campaign lives and a completed-run time record. |
 | Starfall Squadron | Solo bullet-hell shooter | Focus through six stages, defeat six guardians, graze shots and shape your ship with upgrades. |
 | Ironwood Tactics | Solo squad tactics roguelike | Read locked enemy intent, push and pull foes, and protect a beacon across nine missions and three biomes. |
@@ -75,6 +75,13 @@ their completion records separate by difficulty.
 ## Starting a solo game
 
 Open a solo game from the shelf, review its controls, and press **Start game** when you are ready. The game and its timers wait on the ready screen. After starting, press **Escape** to pause or resume, or use Pause / Resume and New game for that session.
+
+Every PvP game has a **Vs bots** link beside **Create room**. The Solo shelf includes these practice modes as well as the solo games. Shinobi Showdown, Relic Duel, Vector Arena, Oddstock Rumble, Checkers, Crazy Eights, 21 Duel and Memory Match open with **Normal**, **Hard** or **Expert** opponents; **Hard** is selected initially. Review the setup and press **Start game**. Pause / Resume and Escape stop the solo simulation; opening **Room & controls** also pauses it. Play again resets the match, and the setup returns so you can change the challenge.
+
+In Shinobi Showdown, choose **one to four bots** and **Moonlit Rooftops**, **Lantern Garden** or **Winter Shrine**. Bots form the opposing team and cannot hurt each other. Win a round by defeating the whole team; the first side to win two rounds wins the match. Each ninja has its own health and stamina bars, while the top HUD shows the remaining opponents and their combined health. The selected arena stays fixed for the solo match. Opponents use delayed observations, real stamina costs and the same cuts, kunai, feints and parries as a player.
+
+Checkers bots search legal moves, including mandatory captures and continuing jumps. Card opponents only receive their own player view: hidden hands, the deck and unrevealed Memory cards stay private. Memory bots learn from cards actually turned over during either player's turn. Afterimage retains its five training opponents and ladder; its **Vs bots** link opens the ready screen. Breach and Royale retain their existing bot-practice setup and maps.
+
 
 Play pages use compact headers and keep the game in the main space. **Controls & info** opens solo instructions and records; **Room & controls** opens multiplayer setup, invitations and rules. Opening solo instructions pauses the run; close them and press Resume when ready. Multiplayer matches continue while a panel is open. Fullscreen keeps an exit button available alongside the game.
 

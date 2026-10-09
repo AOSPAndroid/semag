@@ -35,6 +35,14 @@
 .room-heading .room-code-button > span { display: none; }
 .room-heading .room-code-button > strong { font-size: 12px; letter-spacing: 1px; }
 .room-heading .room-code-button > i { font-size: 15px; }
+.practice-setup { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; margin: 0 auto 10px; padding: 9px 12px; border: 1px solid #c4ccb8; border-radius: 5px; background: #fffdf8; }
+.practice-setup-title { font: 10px var(--mono); color: #456445; letter-spacing: .5px; }
+.practice-field { display: flex; align-items: center; gap: 8px; min-width: 0; color: #5b7357; font-size: 11px; }
+.practice-field select { min-width: 90px; min-height: 36px; padding: 6px 28px 6px 9px; border: 1px solid #bdcbb3; border-radius: 4px; background: #f5f7ee; color: #34583d; font: 12px var(--font); cursor: pointer; }
+.practice-field select:focus-visible { outline: 2px solid #aa7948; outline-offset: 3px; }
+.practice-pause { min-height: 38px; padding: 8px 12px; border: 1px solid #bdcbb3; border-radius: 5px; background: #fffdf8; color: #34583d; font-size: 12px; white-space: nowrap; }
+.practice-pause:hover { background: #eaf0e1; }
+.practice-pause[aria-pressed=true] { background: #e2ead6; border-color: #9fb58d; }
 .room-app .room-layout { display: block; }
 .room-app .play-panel { width: 100%; margin: 0 auto; border-color: #c4ccb8; box-shadow: 0 3px 12px #193b3207; }
 .room-app .game-hud { height: 62px; padding: 9px 16px; gap: 20px; }
@@ -136,6 +144,11 @@ body:has(.room-panel[open]) { overflow: hidden; }
   .room-app.board-mode .game-viewport { padding: 12px; }
 }
 @media (max-width: 570px) {
+  .practice-setup { gap: 8px 12px; padding: 8px 10px; }
+  .practice-setup-title { flex-basis: 100%; }
+  .practice-field { flex: 1 1 130px; justify-content: space-between; }
+  .practice-field select { min-height: 44px; min-width: 88px; }
+  .practice-pause { min-height: 40px; padding: 8px; font-size: 11px; }
   .room-app .room-topbar { height: 54px; gap: 6px; flex-wrap: nowrap; }
   .room-topbar .keyboard-layout-select { width: 108px; max-width: 108px; min-height: 40px; padding-left: 7px; font-size: 10px; }
   .room-topbar .icon-button { min-width: 44px; min-height: 44px; }

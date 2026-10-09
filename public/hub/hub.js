@@ -1,5 +1,5 @@
 import { mountKeyboardLayoutPicker } from '../keyboard-layout.js';
-import { GAMES, roomUrl, roomCapacity, soloUrl, getName, saveName, hostInfo, copyText } from './shared.js';
+import { GAMES, roomUrl, roomCapacity, soloUrl, practiceUrl, getName, saveName, hostInfo, copyText } from './shared.js';
 import { chooseVoxelRoom } from './voxel-setup.js';
 import { chooseRoyaleRoom } from './royale-setup.js';
 import { chooseHordeSettings } from './horde-setup.js';
@@ -26,7 +26,13 @@ document.querySelectorAll('[data-play-solo]').forEach(button => button.addEventL
   }
   updateName(); location.href = soloUrl(gameId);
 }));
-const matchesFilter = (game, filter) => filter === 'all' || (['ninja', 'voxel'].includes(filter) ? game?.theme === filter : filter === 'roguelike' ? game?.roguelike === true : ['driving', 'action'].includes(filter) ? game?.genre === filter : filter === 'solo' ? game?.kind === 'solo' || game?.supportsSolo === true : game?.kind !== 'solo');
+document.querySelectorAll('[data-play-practice]').forEach(link => {
+  const url = practiceUrl(link.dataset.playPractice);
+  if (!url) { link.hidden = true; return; }
+  link.href = url;
+  link.addEventListener('click', updateName);
+});
+const matchesFilter = (game, filter) => filter === 'all' || (['ninja', 'voxel'].includes(filter) ? game?.theme === filter : filter === 'roguelike' ? game?.roguelike === true : ['driving', 'action'].includes(filter) ? game?.genre === filter : filter === 'solo' ? game?.kind === 'solo' || game?.supportsSolo === true || game?.supportsPractice === true : game?.kind !== 'solo');
 let activeFilter = 'all';
 function filterShelf() {
   const query = $('game-search').value.trim().toLowerCase();

@@ -19,6 +19,7 @@ import { frameDecay, tickFraction } from '../display-timing.js';
 import { capturePlanarPose, presentPlanarFighter, presentNetworkPlanarFighter, retainAdjacentPlanarPose, rebasePlanarCorrection, presentPlanarEntities } from '../planar-presentation.js';
 import { createNetworkTimeline } from '../network-timeline.js';
 import { GAMES, roomUrl, getName, saveName, hostInfo, copyText } from './shared.js';
+import { createPvpPractice, PVP_PRACTICE_GAME_IDS } from './pvp-practice.js';
 
 const elements = new Map();
 const $ = id => { const node = elements.get(id) || document.getElementById(id); if (node) elements.set(id, node); return node; };
@@ -30,7 +31,10 @@ const vectorMode = gameId === 'vector-arena', shinobiMode = gameId === 'shinobi-
 const cardMode = ['crazy-eights', 'twenty-one', 'memory'].includes(gameId), realtimeMode = !boardMode && !cardMode;
 const engine = boardMode ? checkers : cardMode ? cards : vectorMode ? vector : shinobiMode ? shinobi : brawlMode ? brawl : topdown;
 const emptyInput = vectorMode ? vector.emptyInput : shinobiMode ? shinobi.emptyInput : brawlMode ? brawl.emptyInput : topdown.emptyInput, clone = state => JSON.parse(JSON.stringify(state));
-const initialState = () => boardMode ? checkers.createState() : cardMode ? cards.viewForPlayer(cards.createState(gameId), 0) : vectorMode ? vector.createState() : shinobiMode ? shinobi.createState() : brawlMode ? brawl.createState() : topdown.createState(coop ? 'coop' : 'duel');
+const practiceMode = params.get('practice') === '1' && PVP_PRACTICE_GAME_IDS.includes(gameId);
+const practiceSession = practiceMode ? createPvpPractice(gameId, { difficulty: ['normal', 'hard', 'expert'].includes(params.get('difficulty')) ? params.get('difficulty') : 'hard', bots: shinobiMode ? Math.max(1, Math.min(4, Math.floor(Number(params.get('bots')) || 1))) : 1, ...(shinobiMode ? { stageId: Object.hasOwn(shinobi.STAGES, params.get('stage')) ? params.get('stage') : 'rooftop' } : {}) }) : null;
+let practicePaused = false;
+const initialState = () => practiceMode ? practiceSession.getState() : boardMode ? checkers.createState() : cardMode ? cards.viewForPlayer(cards.createState(gameId), 0) : vectorMode ? vector.createState() : shinobiMode ? shinobi.createState() : brawlMode ? brawl.createState() : topdown.createState(coop ? 'coop' : 'duel');
 let authoritative = initialState();
 let predicted = clone(authoritative), players = [null, null], localId = null;
 let socket, connected = false, permanentlyClosed = false, intentionalClose = false, attempts = 0, reconnectTimer;
@@ -100,11 +104,63 @@ if (cardMode) {
 
 function error(message) { $('error-banner').textContent = message || ''; $('error-banner').hidden = !message; }
 function toast(message) { $('toast').textContent = message; $('toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { $('toast').hidden = true; }, 2700); }
-function send(message) { if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message)); }
+function send(message) {
+  if (practiceMode) {
+    if (message.type === 'join') { syncPractice(); return; }
+    if (practicePaused || $('room-panel').open || document.hidden) return;
+    if (['move', 'card-action', 'brawl-select'].includes(message.type)) {
+      const accepted = practiceSession.action(message);
+      if (!accepted.ok) { error(accepted.error); board?.resetSelection(); cardTable?.resetSelection(); }
+      else error('');
+      syncPractice(); scheduleFrame();
+    }
+    return;
+  }
+  if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
+}
+function practiceSettings() {
+  return { ...practiceSession.settings, difficulty: $('practice-difficulty').value,
+    ...(shinobiMode ? { bots: Number($('practice-bots').value), stageId: $('practice-stage').value } : {}),
+    seed: crypto.getRandomValues(new Uint32Array(1))[0] };
+}
+function playCombatAudio(state) {
+  audio.playEvents(shinobiMode ? (state.events || []).map(event => event.type === 'parry' && event.target == null ? { ...event, type: 'parryStart' } : event.type === 'attack' ? { ...event, type: 'swing', move: event.action } : event.type === 'throw' && event.release ? { ...event, type: 'swing', move: 'light' } : event.type === 'deflect' ? { ...event, type: 'parry' } : event.type === 'cover' ? { ...event, type: 'block' } : event.type === 'hit' ? { ...event, move: event.attack } : event) : state.events || []);
+}
+function syncPractice() {
+  authoritative = practiceSession.getState(); predicted = authoritative;
+  const count = shinobiMode ? authoritative.fighters.length : 2;
+  players = Array.from({ length: count }, (_, id) => ({ id, name: id === 0 ? playerName : shinobiMode ? `Shinobi ${id}` : 'Bot', connected: true, ready: id !== 0, bot: id !== 0 }));
+  if (realtimeMode) playCombatAudio(authoritative);
+  else if (boardMode && authoritative.lastMove && authoritative.lastMove.tick !== syncPractice.lastMoveTick) {
+    syncPractice.lastMoveTick = authoritative.lastMove.tick;
+    audio.playEvents([{ id: authoritative.moves * 1000 + authoritative.lastMove.tick, type: authoritative.lastMove.capture == null ? 'block' : 'hit', x: 0, y: 0 }]);
+  }
+  if (authoritative.phase !== previousPhase) {
+    previousPose = null;
+    if (shinobiInputs) { refreshKeys(); shinobiInputs.reset({ held: keys, neutral: authoritative.phase === 'fight' }); }
+    if (authoritative.phase === 'fight' && realtimeMode) { flashUntil = performance.now() + 550; audio.fight(); }
+    previousPhase = authoritative.phase;
+  }
+}
+function setPracticePaused(value) {
+  if (!practiceMode || !['countdown', 'fight', 'roundEnd'].includes(authoritative.phase)) return;
+  practicePaused = !!value; releaseKeys(); previousPose = null;
+  previousTime = performance.now(); accumulator = 0; focusLost = practicePaused;
+  if (!practicePaused && realtimeMode) canvas.focus({ preventScroll: true });
+  updateHUD(performance.now()); scheduleFrame();
+}
+function startPracticeGame() {
+  releaseKeys(); practicePaused = false; previousPose = null; lastDisplayTime = null;
+  audio.resetEvents(); renderer?.resetEffects(); board?.resetSelection(); cardTable?.resetSelection();
+  practiceSession.start(practiceSettings()); syncPractice.lastMoveTick = null; syncPractice();
+  previousTime = performance.now(); accumulator = 0; countdownLast = null; focusLost = false;
+  $('player-name').blur(); if (realtimeMode) canvas.focus({ preventScroll: true });
+  queuePlaySpaceResize(); updateHUD(performance.now()); scheduleFrame();
+}
 function updateConnection() {
   toggleClass($('connection-dot'), 'online', connected);
-  setText($('connection-status'), connected ? 'HOST CONNECTED' : permanentlyClosed ? 'ROOM UNAVAILABLE' : 'RECONNECTING');
-  setText($('ping'), ping == null ? '— ms' : `${ping} ms`);
+  setText($('connection-status'), practiceMode ? 'VS BOTS' : connected ? 'HOST CONNECTED' : permanentlyClosed ? 'ROOM UNAVAILABLE' : 'RECONNECTING');
+  setText($('ping'), practiceMode ? 'LOCAL' : ping == null ? '— ms' : `${ping} ms`);
   setHidden($('p1-you'), localId !== 0); setHidden($('p2-you'), localId !== 1);
   if (!realtimeMode) scheduleFrame();
 }
@@ -144,7 +200,7 @@ function receiveState(message) {
       else snapshots.push(next);
       if (snapshots.length > 12) snapshots.shift();
     }
-    audio.playEvents(shinobiMode ? (state.events || []).map(event => event.type === 'parry' && event.target == null ? { ...event, type: 'parryStart' } : event.type === 'attack' ? { ...event, type: 'swing', move: event.action } : event.type === 'throw' && event.release ? { ...event, type: 'swing', move: 'light' } : event.type === 'deflect' ? { ...event, type: 'parry' } : event.type === 'cover' ? { ...event, type: 'block' } : event.type === 'hit' ? { ...event, move: event.attack } : event) : state.events || []);
+    playCombatAudio(state);
   } else if (boardMode && state.lastMove && state.lastMove.tick !== receiveState.lastMoveTick) {
     receiveState.lastMoveTick = state.lastMove.tick;
     audio.playEvents([{ id: state.moves * 1000 + state.lastMove.tick, type: state.lastMove.capture == null ? 'block' : 'hit', x: 0, y: 0 }]);
@@ -232,7 +288,7 @@ function releaseKeys() {
     if (control.hasPointerCapture?.(id)) control.releasePointerCapture(id);
   }
   touchPointers.clear(); refreshKeys();
-  if (realtimeMode && connected && localId != null) {
+  if (!practiceMode && realtimeMode && connected && localId != null) {
     const frame = { type: 'input', seq: ++sequence, buttons: { ...keys } }; pending.push(frame); send(frame);
   }
 }
@@ -243,6 +299,8 @@ document.addEventListener('keydown', event => {
   if (event.defaultPrevented || typing(event.target) || event.isComposing || event.metaKey || event.ctrlKey || event.altKey) return;
   if ($('room-panel').open) return;
   const identity = keyboardIdentity(event), code = gameCode(event);
+  if (practiceMode && code === 'Escape' && !event.repeat) { event.preventDefault(); setPracticePaused(!practicePaused); return; }
+  if (practiceMode && practicePaused) return;
   const interactive = event.target instanceof Element ? event.target.closest('button, a, summary') : null;
   if (interactive && ['Space', 'Enter'].includes(code)) {
     const action = modernControls && (interactive.dataset.vectorAction || interactive.dataset.shinobiAction || interactive.dataset.brawlAction);
@@ -266,10 +324,10 @@ document.addEventListener('keyup', event => {
   held.delete(identity); refreshKeys();
   if (!typing(event.target)) event.preventDefault();
 });
-window.addEventListener('blur', () => { releaseKeys(); focusLost = true; });
-document.addEventListener('visibilitychange', () => { if (document.hidden) releaseKeys(); });
+window.addEventListener('blur', () => { releaseKeys(); focusLost = true; if (practiceMode) setPracticePaused(true); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) { releaseKeys(); if (practiceMode) setPracticePaused(true); } });
 canvas.addEventListener('pointerdown', event => {
-  if ($('room-panel').open) return;
+  if ($('room-panel').open || practiceMode && practicePaused) return;
   canvas.focus(); focusLost = false;
   if (!aimMode) return;
   if (!shinobiMode || event.pointerType !== 'mouse') event.preventDefault();
@@ -571,7 +629,15 @@ roomPanel.addEventListener('click', event => {
   const rect = roomPanel.getBoundingClientRect();
   if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) closeRoomPanel({ returnToGame: authoritative.phase === 'fight' });
 });
+for (const id of ['practice-difficulty', 'practice-bots', 'practice-stage']) $(id).addEventListener('change', () => {
+  if (!practiceMode || !['lobby', 'matchEnd'].includes(authoritative.phase)) return;
+  releaseKeys(); previousPose = null; practicePaused = false;
+  audio.resetEvents(); renderer?.resetEffects(); board?.resetSelection(); cardTable?.resetSelection();
+  practiceSession.reset(practiceSettings()); syncPractice(); updateHUD(performance.now()); scheduleFrame(); queuePlaySpaceResize();
+});
+$('practice-pause').addEventListener('click', () => setPracticePaused(!practicePaused));
 $('ready-button').addEventListener('click', () => {
+  if (practiceMode) { if (['lobby', 'matchEnd'].includes(authoritative.phase)) startPracticeGame(); return; }
   if (!connected || localId == null) return;
   if (authoritative.phase === 'fight' || authoritative.phase === 'roundEnd') return;
   send(authoritative.phase === 'matchEnd' ? { type: 'rematch' } : { type: 'ready', ready: !players[localId]?.ready });
@@ -579,7 +645,7 @@ $('ready-button').addEventListener('click', () => {
 });
 $('copy-code').addEventListener('click', async () => { try { await copyText(roomId); toast('Room code copied.'); } catch (e) { toast(e.message); } });
 $('copy-invite').addEventListener('click', async () => { try { await copyText(invite); toast('Invite copied. Your friend has a seat.'); } catch (e) { toast(e.message); } });
-hostInfo().then(info => { invite = info.origin + location.pathname + location.search; $('invite-address').textContent = invite; }).catch(() => { $('invite-address').textContent = invite; });
+if (!practiceMode) hostInfo().then(info => { invite = info.origin + location.pathname + location.search; $('invite-address').textContent = invite; }).catch(() => { $('invite-address').textContent = invite; });
 $('sound-button').addEventListener('click', async () => {
   await audio.setEnabled(!audio.enabled);
   $('sound-button').setAttribute('aria-pressed', String(audio.enabled));
@@ -589,6 +655,14 @@ $('sound-button').addEventListener('click', async () => {
 $('fullscreen-button').addEventListener('click', async () => { try { if (document.fullscreenElement) await document.exitFullscreen(); else await $('room-app').requestFullscreen(); } catch { toast('Fullscreen is unavailable in this browser.'); } });
 
 function inputTick() {
+  if (practiceMode) {
+    if (practicePaused || $('room-panel').open || document.hidden || ['lobby', 'matchEnd'].includes(authoritative.phase)) return;
+    if (realtimeMode) refreshKeys();
+    const buttons = authoritative.phase === 'fight' ? shinobiInputs ? shinobiInputs.sample(keys) : { ...keys } : emptyInput();
+    if (modernControls) { if (!shinobiInputs && authoritative.phase === 'fight') for (const action of pressIntents) buttons[action] = true; pressIntents.clear(); }
+    previousPose = realtimeMode ? capturePlanarPose(authoritative) : null;
+    practiceSession.step(buttons); syncPractice(); return;
+  }
   if (!realtimeMode || !connected || localId == null) return;
   if (authoritative.phase !== 'fight') { pressIntents.clear(); shinobiInputs?.reset({ held: keys }); return; }
   if (modernControls) refreshKeys();
@@ -604,6 +678,14 @@ function inputTick() {
   }
 }
 function displayState(now, fraction) {
+  if (practiceMode) {
+    if (practicePaused || $('room-panel').open || authoritative.phase !== 'fight') return authoritative;
+    const local = { ...authoritative, ...presentPlanarEntities(authoritative, previousPose, fraction), fighters: authoritative.fighters.map((_, id) => presentPlanarFighter(authoritative, previousPose, id, fraction)) };
+    if (shinobiMode) local.fighters = shinobi.sweepPresentationFighters(authoritative, local.fighters);
+    else if (vectorMode) local.fighters = vector.sweepPresentationFighters(authoritative, local.fighters);
+    else if (!brawlMode) return topdown.sweepPresentationScene(authoritative, local);
+    return local;
+  }
   const deltaMs = lastDisplayTime == null ? 1000 / 60 : now - lastDisplayTime;
   lastDisplayTime = now;
   if (authoritative.phase !== 'fight' || localId == null) return authoritative;
@@ -670,8 +752,16 @@ function shinobiDetail(fighter) {
 function updateHUD(now) {
   const state = authoritative, phase = state.phase;
   setAttribute($('room-app'), 'data-phase', phase);
-  setText($('room-seat-summary'), `${players.filter(player => player?.connected).length} / 2`);
+  setText($('room-seat-summary'), practiceMode ? 'SOLO' : `${players.filter(player => player?.connected).length} / 2`);
+  if (practiceMode) {
+    setHidden($('practice-setup'), !['lobby', 'matchEnd'].includes(phase));
+    setHidden($('practice-pause'), !['countdown', 'fight', 'roundEnd'].includes(phase));
+    setText($('practice-pause'), practicePaused ? 'Resume' : 'Pause');
+    setAttribute($('practice-pause'), 'aria-pressed', String(practicePaused));
+  }
   const names = players.map((p, i) => safeName(p?.name, `Player ${i + 1}`));
+  const botTeam = practiceMode && shinobiMode && state.fighters.length > 2 ? state.fighters.slice(1) : null;
+  if (botTeam) names[1] = `${botTeam.length} Shinobi`;
   const active = ['countdown', 'fight', 'roundEnd'].includes(phase);
   for (let i = 0; i < 2; i++) {
     const prefix = `p${i + 1}`, player = players[i];
@@ -695,13 +785,13 @@ function updateHUD(now) {
       if (!stocks) { stocks = document.createElement('span'); stocks.id = prefix + '-stocks'; setClass(stocks, 'brawl-stocks'); $(prefix + '-detail').parentElement.prepend(stocks); }
       setText(stocks, '●'.repeat(Math.max(0, fighter.stocks)) || 'OUT'); setAttribute(stocks, 'aria-label', `${fighter.stocks} stocks left`);
     } else {
-      const fighter = state.fighters[i];
+      const fighter = botTeam && i === 1 ? { ...state.fighters[1], hp: botTeam.reduce((sum, f) => sum + Math.max(0, f.hp), 0), maxHp: botTeam.reduce((sum, f) => sum + f.maxHp, 0), stamina: botTeam.reduce((sum, f) => sum + (f.hp > 0 ? f.stamina : 0), 0) / Math.max(1, botTeam.filter(f => f.hp > 0).length) } : state.fighters[i];
       setStyle($(prefix + '-health'), 'width', `${Math.min(100, Math.max(0, fighter.hp) / (fighter.maxHp || 100) * 100)}%`);
       setStyle($(prefix + '-stamina'), 'width', `${Math.max(0, fighter.stamina)}%`);
       setText($(prefix + '-score'), coop ? fighter.downed ? '↓' : `${Math.ceil(fighter.hp)}` : `${fighter.wins} / 2`);
-      setText($(prefix + '-detail'), shinobiMode ? shinobiDetail(fighter) : vectorMode ? fighter.reloadTicks > 0 ? `RELOAD ${(fighter.reloadTicks / 120).toFixed(1)}s` : `${fighter.ammo} / 6 SHOTS` : fighter.downed ? `REVIVE ${Math.round((fighter.reviveProgress || 0) / 180 * 100)}%` : fighter.guardBroken ? 'GUARD BROKEN' : fighter.action === 'block' ? 'GUARDING' : fighter.action === 'roll' ? 'EVADING' : 'STAMINA');
+      setText($(prefix + '-detail'), botTeam && i === 1 ? `${botTeam.filter(f => f.hp > 0).length} / ${botTeam.length} BOTS · ${practiceSession.settings.difficulty.toUpperCase()}` : shinobiMode ? shinobiDetail(fighter) : vectorMode ? fighter.reloadTicks > 0 ? `RELOAD ${(fighter.reloadTicks / 120).toFixed(1)}s` : `${fighter.ammo} / 6 SHOTS` : fighter.downed ? `REVIVE ${Math.round((fighter.reviveProgress || 0) / 180 * 100)}%` : fighter.guardBroken ? 'GUARD BROKEN' : fighter.action === 'block' ? 'GUARDING' : fighter.action === 'roll' ? 'EVADING' : 'STAMINA');
       if (aimMode) {
-        setAttribute($(prefix + '-health-track'), 'aria-label', `${names[i]} health: ${Math.ceil(fighter.hp)} of 100`);
+        setAttribute($(prefix + '-health-track'), 'aria-label', `${names[i]} health: ${Math.ceil(fighter.hp)} of ${fighter.maxHp || 100}`);
         setAttribute($(prefix + '-stamina-track'), 'aria-label', `${names[i]} ${shinobiMode ? 'combat' : 'dash'} stamina: ${Math.round(fighter.stamina)} of 100`);
       }
     }
@@ -746,13 +836,26 @@ function updateHUD(now) {
   setDisabled(button, needsBrawlChoice || !connected || localId == null || phase === 'fight' || phase === 'roundEnd' || !boardMode && phase === 'countdown' && state.round > 1);
   toggleClass(button, 'is-ready', !!mine?.ready);
   setText($('ready-note'), needsBrawlChoice ? 'Choose your fighter and let the host choose a stage, then ready up.' : phase === 'matchEnd' ? 'Both players must ready up for another game.' : phase === 'roundEnd' && cardMode ? 'The next hand starts shortly.' : phase === 'fight' ? 'Make it a good one.' : phase === 'countdown' ? 'Both players are ready. Starting shortly.' : mine?.ready ? 'Waiting for your friend to ready up.' : 'The game starts when both players are ready.');
-  setHidden($('focus-note'), !realtimeMode || !focusLost || phase !== 'fight');
+  if (practiceMode) {
+    setText(button.querySelector('span'), phase === 'matchEnd' ? 'Play again' : phase === 'lobby' ? 'Start game' : 'Game in progress');
+    setDisabled(button, needsBrawlChoice || !['lobby', 'matchEnd'].includes(phase));
+    toggleClass(button, 'is-ready', false);
+    setText($('ready-note'), needsBrawlChoice ? 'Choose your fighter and arena, then start.' : phase === 'lobby' ? 'Choose your challenge. Start when you are ready.' : phase === 'matchEnd' ? 'Try again or change the challenge.' : practicePaused ? 'Paused. Resume when you are ready.' : 'Solo play · the controls panel pauses the game.');
+    if (phase === 'lobby') setText($('objective'), 'Choose your challenge, then press Start game.');
+    setText($('slot1-status'), 'You'); setText($('slot2-status'), `${practiceSession.settings.difficulty.toUpperCase()} BOT${botTeam ? 'S' : ''}`);
+  }
+  setHidden($('focus-note'), !realtimeMode || !focusLost || phase !== 'fight' || practiceMode);
   updateOverlay(now, names);
 }
 function updateOverlay(now, names) {
   const state = authoritative, phase = state.phase, overlay = $('game-overlay');
   let overlayClass = 'room-overlay', overlayHidden = false;
   let kicker, title, subtitle;
+  if (practiceMode && practicePaused) {
+    setClass(overlay, overlayClass); setHidden(overlay, false);
+    setText($('overlay-kicker'), 'TAKE A BREATHER'); setText($('overlay-title'), 'Paused.');
+    setText($('overlay-subtitle'), 'Press Resume or Escape to continue.'); return;
+  }
   if (brawlMode && connected && phase === 'lobby') { setHidden(overlay, true); return; }
   if (!connected) {
     kicker = permanentlyClosed ? 'THIS SEAT IS UNAVAILABLE' : 'FINDING THE HOST';
@@ -762,6 +865,7 @@ function updateOverlay(now, names) {
     kicker = coop ? 'ADVENTURE IS BETTER TOGETHER' : 'A LITTLE FRIENDLY COMPETITION';
     title = players.every(p => p?.connected) ? 'Take your places.' : 'A friend is on the way.';
     subtitle = players.every(p => p?.connected) ? 'Both players ready up, then the game begins.' : 'Send the room code or invite link, then ready up.';
+    if (practiceMode) { kicker = 'SOLO CHALLENGE'; title = 'Read your opponent.'; subtitle = shinobiMode ? 'Choose one to four bots, then press Start game.' : 'Choose a difficulty, then press Start game.'; }
   } else if (phase === 'countdown') {
     const number = Math.max(1, Math.ceil(state.phaseTicks / 120));
     kicker = coop ? 'STAY TOGETHER' : 'MAKE YOUR NEXT MOVE COUNT'; title = number; subtitle = coop ? 'Keep an eye on your friend.' : 'Good luck. Have fun.'; overlayClass += ' countdown';
@@ -778,7 +882,7 @@ function updateOverlay(now, names) {
   } else {
     kicker = phase === 'roundEnd' ? `ROUND ${state.round} COMPLETE` : 'GOOD GAME. WELL PLAYED.';
     title = state.winner == null ? 'A well-earned draw.' : state.winner === localId ? 'You win.' : `${names[state.winner]} wins.`;
-    subtitle = phase === 'roundEnd' ? 'Next round starts shortly.' : 'Both players ready up to play again.';
+    subtitle = phase === 'roundEnd' ? 'Next round starts shortly.' : practiceMode ? 'Press Play again for another challenge.' : 'Both players ready up to play again.';
   }
   if (phase !== 'countdown') countdownLast = null;
   setClass(overlay, overlayClass); setHidden(overlay, overlayHidden);
@@ -796,11 +900,11 @@ function animate(now) {
   let ticks = 0; while (accumulator >= 1000 / 120 && ticks++ < 8) { inputTick(); accumulator -= 1000 / 120; }
   if (renderer) {
     const fraction = tickFraction(accumulator / 1000), state = displayState(now, fraction);
-    renderer.render(state, { localId, time: now, aimTarget: aimMode ? pointerTarget : null, players: coop ? players : undefined });
+    renderer.render(state, { localId, time: now, aimTarget: aimMode ? pointerTarget : null, players: coop || practiceMode ? players : undefined });
     presentation = { state, pose: previousPose, time: now, fraction, renderCount: ++renderCount };
   }
   if (!realtimeMode || now - lastHUD > 50) { updateHUD(now); lastHUD = now; }
-  if (realtimeMode) scheduleFrame();
+  if (realtimeMode || practiceMode && !['lobby', 'matchEnd'].includes(authoritative.phase)) scheduleFrame();
 }
 document.addEventListener('visibilitychange', () => {
   previousTime = performance.now(); accumulator = 0;
@@ -811,6 +915,7 @@ document.addEventListener('visibilitychange', () => {
 window.firesideRoom = {
   getState: () => clone(authoritative),
   getInputState: () => ({ buttons: { ...keys }, queued: shinobiInputs?.inspect() || null }),
+  getPracticeState: () => practiceMode ? clone({ settings: practiceSession.settings, paused: practicePaused || $('room-panel').open, players, state: authoritative }) : null,
   getPresentation: () => presentation && ({
     renderCount: presentation.renderCount, time: presentation.time, tick: presentation.state.tick, fraction: presentation.fraction,
     fighters: presentation.state.fighters.map(({ id, x, y }) => ({ id, x, y })),
@@ -872,6 +977,19 @@ if (typeof ResizeObserver === 'function') {
   for (const node of [document.querySelector('.room-heading'), document.querySelector('.game-hud'), document.querySelector('.objective-bar'), document.querySelector('.room-footer'), $('game-viewport')]) observer.observe(node);
 }
 queuePlaySpaceResize();
-setInterval(() => { if (connected) send({ type: 'ping', time: performance.now() }); }, 1000);
-setInterval(() => { if (connected && performance.now() - lastSnapshotAt > 3000) { error('The host stopped responding. Reconnecting…'); socket.close(); } }, 1500);
-connect(); updateConnection(); scheduleFrame();
+if (practiceMode) {
+  connected = true; localId = 0;
+  $('practice-difficulty').value = practiceSession.settings.difficulty;
+  $('practice-bots').value = String(practiceSession.settings.bots);
+  if (shinobiMode) $('practice-stage').value = practiceSession.settings.stageId;
+  setHidden($('practice-bots-field'), !shinobiMode); setHidden($('practice-stage-field'), !shinobiMode);
+  setHidden($('copy-code'), true); setHidden(document.querySelector('.room-invite'), true);
+  setText($('room-panel-note'), 'Check the controls here. Solo play pauses while this panel is open.');
+  setText($('party-title'), 'Your challenge'); setText($('footer-mode'), 'SOLO / VS BOTS');
+  setAttribute($('room-app'), 'data-practice', 'true'); syncPractice();
+} else {
+  setInterval(() => { if (connected) send({ type: 'ping', time: performance.now() }); }, 1000);
+  setInterval(() => { if (connected && performance.now() - lastSnapshotAt > 3000) { error('The host stopped responding. Reconnecting…'); socket.close(); } }, 1500);
+  connect();
+}
+updateConnection(); scheduleFrame();

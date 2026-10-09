@@ -25,32 +25,47 @@ const EPS = 1e-8;
 function fighter(id, wins = 0) {
   return { id, x: id ? 806 : 154, y: 320, vx: 0, vy: 0, radius: WORLD.fighterRadius, hp: 100, maxHp: 100, stamina: 100, wins, aimX: id ? -1 : 1, aimY: 0, facing: id ? Math.PI : 0, actionFacing: id ? Math.PI : 0, action: 'idle', actionFrame: 0, attackHits: [], comboStep: 0, hitConfirmed: false, hitTick: -1, inputBuffer: null, parrySuccess: false, dashFrame: 0, dashX: 1, dashY: 0, invulnerable: false, staminaDelay: 0, kunai: KUNAI.capacity, kunaiRecoveryTicks: 0, damageDealt: 0, parries: 0, perfectParries: 0, previousInput: { ...emptyInput(), aimX: id ? -1 : 1 } };
 }
-export function createState() {
-  return { gameId: 'shinobi-showdown', tick: 0, phase: 'lobby', phaseTicks: 0, round: 1, maxRounds: 5, roundTicks: WORLD.roundSeconds * TICK_RATE, winner: null, stageId: 'rooftop', stageName: STAGES.rooftop.name, fighters: [fighter(0), fighter(1)], obstacles: STAGES.rooftop.covers.map(rect => ({ ...rect })), projectiles: [], projectileId: 0, events: [], eventId: 0, objective: 'First to two rounds. Confirm your cuts, bait a parry, and punish the opening.' };
+export function createState(options = {}) {
+  const practice = options.mode === 'practice' ? {
+    bots: clamp(Number.isFinite(options.bots) ? Math.floor(options.bots) : 1, 1, 4),
+    difficulty: ['normal', 'hard', 'expert'].includes(options.difficulty) ? options.difficulty : 'hard',
+    stageId: Object.hasOwn(STAGES, options.stageId || '') ? options.stageId : 'rooftop',
+    seed: (Number.isFinite(options.seed) ? options.seed : 37193) >>> 0,
+  } : null;
+  const arena = STAGES[practice?.stageId || 'rooftop'];
+  const state = { gameId: 'shinobi-showdown', tick: 0, phase: 'lobby', phaseTicks: 0, round: 1, maxRounds: 5, roundTicks: WORLD.roundSeconds * TICK_RATE, winner: null, stageId: arena.id, stageName: arena.name, fighters: practice ? Array.from({ length: practice.bots + 1 }, (_, id) => ({ ...fighter(id), team: id ? 1 : 0, bot: id > 0, name: id ? ['Kage', 'Kumo', 'Hayate', 'Oboro'][id - 1] : 'You' })) : [fighter(0), fighter(1)], obstacles: arena.covers.map(rect => ({ ...rect })), projectiles: [], projectileId: 0, events: [], eventId: 0, objective: 'First to two rounds. Confirm your cuts, bait a parry, and punish the opening.' };
+  if (practice) { state.practice = practice; state.winnerTeam = null; positionFighters(state, arena); }
+  return state;
+}
+export const opposingFighters = (a, b) => !!a && !!b && a.id !== b.id && (a.team ?? a.id) !== (b.team ?? b.id);
+function positionFighters(state, arena) {
+  for (const f of state.fighters) {
+    const spawn = arena.spawns[f.id ? 1 : 0];
+    Object.assign(f, state.practice && state.practice.bots > 1 && f.id ? { x: spawn.x, y: 110 + (f.id - 1) * 420 / (state.practice.bots - 1) } : spawn);
+    const other = arena.spawns[f.id ? 0 : 1], angle = Math.atan2(other.y - f.y, other.x - f.x);
+    f.facing = f.actionFacing = angle; f.aimX = Math.cos(angle); f.aimY = Math.sin(angle);
+    f.previousInput.aimX = f.aimX; f.previousInput.aimY = f.aimY;
+  }
 }
 function emit(state, type, data = {}) {
   state.events.push({ id: ++state.eventId, tick: state.tick, type, ...data });
   if (state.events.length > 48) state.events.splice(0, state.events.length - 48);
 }
 function prepareRound(state, countdown = TICK_RATE * 2) {
-  const arena = STAGES[STAGE_ORDER[(state.round - 1) % STAGE_ORDER.length]];
+  const arena = STAGES[state.practice?.stageId || STAGE_ORDER[(state.round - 1) % STAGE_ORDER.length]];
   state.stageId = arena.id; state.stageName = arena.name; state.obstacles = arena.covers.map(rect => ({ ...rect }));
-  state.fighters = state.fighters.map(f => fighter(f.id, f.wins));
-  for (const f of state.fighters) {
-    Object.assign(f, arena.spawns[f.id]);
-    const other = arena.spawns[1 - f.id], angle = Math.atan2(other.y - f.y, other.x - f.x);
-    f.facing = f.actionFacing = angle; f.aimX = Math.cos(angle); f.aimY = Math.sin(angle);
-    f.previousInput.aimX = f.aimX; f.previousInput.aimY = f.aimY;
-  }
+  state.fighters = state.fighters.map(f => ({ ...fighter(f.id, f.wins), ...(state.practice ? { team: f.team, bot: f.bot, name: f.name } : {}) }));
+  positionFighters(state, arena);
   state.projectiles = []; state.phase = 'countdown'; state.phaseTicks = countdown; state.roundTicks = WORLD.roundSeconds * TICK_RATE; state.winner = null;
   state.objective = `${arena.name} · ${arena.description}`;
+  if (state.practice) state.winnerTeam = null;
   emit(state, 'round', { round: state.round, stageId: arena.id, stageName: arena.name, x: 480, y: 320 });
 }
 export function startMatch(state) {
-  const { tick, eventId } = state; Object.assign(state, createState(), { tick, eventId }); prepareRound(state, TICK_RATE * 3); return state;
+  const { tick, eventId } = state; Object.assign(state, createState(state.practice ? { mode: 'practice', ...state.practice } : {}), { tick, eventId }); prepareRound(state, TICK_RATE * 3); return state;
 }
 export function resetLobby(state) {
-  const { tick, eventId } = state; Object.assign(state, createState(), { tick, eventId }); return state;
+  const { tick, eventId } = state; Object.assign(state, createState(state.practice ? { mode: 'practice', ...state.practice } : {}), { tick, eventId }); return state;
 }
 /** First contact of a segment and circle; starting overlap is deliberate contact. */
 function circleContact(ax, ay, bx, by, radius) {
@@ -81,6 +96,11 @@ function rectContact(ax, ay, bx, by, rect, radius = 0) {
   for (const x of [rect.x, rect.x + rect.w]) for (const y of [rect.y, rect.y + rect.h]) accept(circleContact(ax - x, ay - y, bx - x, by - y, radius));
   return first;
 }
+/** Shared static-cover queries for practice decisions, using actual swept geometry. */
+export function clearPath(state, ax, ay, bx, by, radius = 0) {
+  return [ax, ay, bx, by, radius].every(Number.isFinite) && radius >= 0 && !state.obstacles.some(rect => rectContact(ax, ay, bx, by, rect, radius) !== null);
+}
+const stationaryPath = f => [{ ax: f.x, ay: f.y, bx: f.x, by: f.y, t0: 0, t1: 1 }];
 function pointAt(path, t) {
   const segment = path.find(p => t >= p.t0 - EPS && t <= p.t1 + EPS) || path.at(-1);
   const u = segment.t1 - segment.t0 > EPS ? clamp((t - segment.t0) / (segment.t1 - segment.t0), 0, 1) : 1;
@@ -164,17 +184,25 @@ function contactResponse(state, f, point, velocity, dx, dy) {
   return { x: dx, y: dy };
 }
 function collideFighters(state, paths) {
-  const [a, b] = state.fighters, radius = a.radius + b.radius;
+  const live = state.fighters.filter(f => f.hp > 0);
+  const nextContact = from => {
+    let first = null;
+    for (let i = 0; i < live.length; i++) for (let j = i + 1; j < live.length; j++) {
+      const a = live[i], b = live[j], time = pathContact(paths[a.id], paths[b.id], a.radius + b.radius, true, from);
+      if (time !== null && (!first || time < first.time - EPS)) first = { a, b, time };
+    }
+    return first;
+  };
   let from = 0;
-  for (let iteration = 0; iteration < 6; iteration++) {
-    const time = pathContact(paths[0], paths[1], radius, true, from);
-    if (time === null) return;
-    const pa = pointAt(paths[0], time), pb = pointAt(paths[1], time), length = Math.hypot(pb.x - pa.x, pb.y - pa.y);
+  for (let iteration = 0; iteration < 6 * Math.max(1, live.length * (live.length - 1) / 2); iteration++) {
+    const contact = nextContact(from); if (!contact) return;
+    const { a, b, time } = contact, pair = [a, b];
+    const pa = pointAt(paths[a.id], time), pb = pointAt(paths[b.id], time), length = Math.hypot(pb.x - pa.x, pb.y - pa.y);
     const nx = length > EPS ? (pb.x - pa.x) / length : 1, ny = length > EPS ? (pb.y - pa.y) / length : 0;
     // Resolve the motion that survived cover sweeps, never the blocked input
     // velocity. Only relative closing motion is constrained, so a fighter may
     // follow an escaping opponent without freezing either player's sidestep.
-    const velocities = paths.map(path => velocityAt(path, time)), [va, vb] = velocities;
+    const velocities = pair.map(f => velocityAt(paths[f.id], time)), [va, vb] = velocities;
     const na = va.x * nx + va.y * ny, nb = vb.x * nx + vb.y * ny, closing = Math.max(0, na - nb);
     const pushA = Math.max(0, na), pushB = Math.max(0, -nb);
     const speeds = velocities.map(v => Math.hypot(v.x, v.y));
@@ -192,8 +220,8 @@ function collideFighters(state, paths) {
       const speed = Math.hypot(velocity.x, velocity.y);
       if (speed > speeds[id] + EPS) { velocity.x *= speeds[id] / speed; velocity.y *= speeds[id] / speed; }
     }
-    for (const f of state.fighters) {
-      const result = stopAt(paths[f.id], time), velocity = velocities[f.id];
+    for (const [index, f] of pair.entries()) {
+      const result = stopAt(paths[f.id], time), velocity = velocities[index];
       // A stationary opponent receives no shove. Both moving fighters share
       // the constraint according to their own inward contribution.
       f.x = result.point.x; f.y = result.point.y;
@@ -203,29 +231,27 @@ function collideFighters(state, paths) {
     from = time;
   }
   // Crowding against multiple cover faces stays bounded and conservative.
-  const time = pathContact(paths[0], paths[1], radius, true, from);
-  if (time !== null) for (const f of state.fighters) {
-    const result = stopAt(paths[f.id], time); paths[f.id] = result.path; f.x = result.point.x; f.y = result.point.y;
+  const contact = nextContact(from);
+  if (contact) for (const f of live) {
+    const result = stopAt(paths[f.id], contact.time); paths[f.id] = result.path; f.x = result.point.x; f.y = result.point.y;
   }
 }
-/** Project a displayed pair through the same swept cover/body contacts as play.
- * The predicted pair supplies valid bases; presentation fields remain newest.
- */
+/** Project displayed fighters through the same swept cover/body contacts as play. */
 export function sweepPresentationFighters(state, desiredFighters) {
   if (!Array.isArray(desiredFighters)) return [];
   const copies = desiredFighters.map(f => ({ ...f }));
-  if (state?.fighters?.length !== 2 || copies.length !== 2 || !Array.isArray(state.obstacles)) return copies;
-  const bases = [0, 1].map(id => state.fighters.find(f => f.id === id));
-  const displayed = [0, 1].map(id => copies.find(f => f.id === id));
-  if (bases.some(f => !f || !Number.isFinite(f.x) || !Number.isFinite(f.y) || !Number.isFinite(f.radius) || f.radius <= 0) || displayed.some(f => !f)) return copies;
+  if (!Array.isArray(state?.fighters) || state.fighters.length !== copies.length || !Array.isArray(state.obstacles)) return copies;
+  const bases = state.fighters, displayed = new Map(copies.map(f => [f.id, f]));
+  if (bases.some(f => !displayed.has(f.id) || !Number.isFinite(f.x) || !Number.isFinite(f.y) || !Number.isFinite(f.radius) || f.radius <= 0)) return copies;
   const actors = bases.map(f => ({ ...f })), simulation = { ...state, fighters: actors };
-  const paths = actors.map(f => {
-    const target = displayed[f.id], dx = target.x - f.x, dy = target.y - f.y;
-    const valid = Number.isFinite(dx) && Number.isFinite(dy) && Math.hypot(dx, dy) <= 128;
-    return moveFighter(simulation, f, valid ? dx : 0, valid ? dy : 0);
-  });
+  const paths = [];
+  for (const f of actors) {
+    const target = displayed.get(f.id), dx = target.x - f.x, dy = target.y - f.y;
+    const valid = f.hp > 0 && Number.isFinite(dx) && Number.isFinite(dy) && Math.hypot(dx, dy) <= 128;
+    paths[f.id] = moveFighter(simulation, f, valid ? dx : 0, valid ? dy : 0);
+  }
   collideFighters(simulation, paths);
-  for (const f of actors) { displayed[f.id].x = f.x; displayed[f.id].y = f.y; }
+  for (const f of actors) { displayed.get(f.id).x = f.x; displayed.get(f.id).y = f.y; }
   return copies;
 }
 function readInput(f, raw) {
@@ -370,11 +396,13 @@ function bladeContact(state, source, target, move) {
 function melee(state) {
   const contacts = [];
   for (const source of state.fighters) {
-    const move = MOVES[source.action], target = state.fighters[1 - source.id];
-    if (!move || source.hp <= 0 || target.hp <= 0 || source.actionFrame < move.startup || source.actionFrame >= move.startup + move.active || source.attackHits.includes(target.id) || target.invulnerable) continue;
-    const contact = bladeContact(state, source, target, move);
-    if (!contact) continue;
-    contacts.push({ source, target, move, ...contact, parried: parryType(target, source.x, source.y), action: source.action });
+    const move = MOVES[source.action];
+    if (!move || source.hp <= 0 || source.actionFrame < move.startup || source.actionFrame >= move.startup + move.active) continue;
+    for (const target of state.fighters) {
+      if (!opposingFighters(source, target) || target.hp <= 0 || source.attackHits.includes(target.id) || target.invulnerable) continue;
+      const contact = bladeContact(state, source, target, move);
+      if (contact) contacts.push({ source, target, move, ...contact, parried: parryType(target, source.x, source.y), action: source.action });
+    }
   }
   // Evaluate both committed strikes before applying damage so equal-tick trades are symmetric.
   for (const hit of contacts) {
@@ -402,8 +430,9 @@ function projectiles(state, paths) {
     const ax = shot.x, ay = shot.y, bx = ax + shot.vx, by = ay + shot.vy;
     let first = null, target = null;
     for (const rect of state.obstacles) { const t = rectContact(ax, ay, bx, by, rect, shot.radius); if (t !== null && (first === null || t < first)) { first = t; target = null; } }
-    const opponent = state.fighters[1 - shot.owner];
-    if (!opponent.invulnerable) {
+    const source = state.fighters.find(f => f.id === shot.owner);
+    if (!source) continue;
+    for (const opponent of state.fighters) if (opposingFighters(source, opponent) && opponent.hp > 0 && !opponent.invulnerable) {
       const body = shot.bornTick === state.tick ? [{ ax: opponent.x, ay: opponent.y, bx: opponent.x, by: opponent.y, t0: 0, t1: 1 }] : paths[opponent.id];
       const t = pathContact([{ ax, ay, bx, by, t0: 0, t1: 1 }], body, opponent.radius + shot.radius);
       if (t !== null && (first === null || t < first - EPS)) { first = t; target = opponent; }
@@ -420,7 +449,7 @@ function projectiles(state, paths) {
         shot.owner = target.id; shot.vx *= -speed; shot.vy *= -speed; shot.x = x; shot.y = y; shot.bornTick = state.tick; shot.reflections++;
         rewardParry(target, perfect);
         emit(state, 'deflect', { fighter: target.id, perfect, x, y, facing: target.actionFacing }); kept.push(shot);
-      } else hurt(state, state.fighters[shot.owner], target, shot.damage, x, y, 'kunai');
+      } else hurt(state, source, target, shot.damage, x, y, 'kunai');
       continue;
     }
     shot.x = bx; shot.y = by;
@@ -430,7 +459,8 @@ function projectiles(state, paths) {
 }
 function finishRound(state, winner, reason) {
   state.phase = 'roundEnd'; state.phaseTicks = TICK_RATE * 2; state.winner = winner;
-  if (winner !== null) state.fighters[winner].wins++;
+  if (state.practice) state.winnerTeam = winner === null ? null : state.fighters[winner].team;
+  if (winner !== null) for (const f of state.fighters) if (state.practice ? f.team === state.winnerTeam : f.id === winner) f.wins++;
   state.projectiles = [];
   for (const f of state.fighters) { f.vx = f.vy = 0; f.invulnerable = false; f.action = f.hp <= 0 ? 'dead' : 'idle'; f.actionFrame = 0; f.inputBuffer = null; f.hitConfirmed = false; f.hitTick = -1; f.comboStep = 0; f.parrySuccess = false; }
   emit(state, 'roundEnd', { winner, reason, x: 480, y: 320 });
@@ -447,19 +477,33 @@ export function step(state, inputs = []) {
     if (--state.phaseTicks <= 0) {
       const winner = state.fighters.find(f => f.wins >= 2);
       if (winner || state.round >= state.maxRounds) {
-        state.phase = 'matchEnd'; const [a, b] = state.fighters; state.winner = winner?.id ?? (a.wins === b.wins ? null : a.wins > b.wins ? 0 : 1); emit(state, 'matchEnd', { winner: state.winner });
+        state.phase = 'matchEnd'; const [a, b] = state.fighters; state.winner = winner ? state.practice ? winner.team === 0 ? 0 : 1 : winner.id : a.wins === b.wins ? null : a.wins > b.wins ? 0 : 1;
+        if (state.practice) state.winnerTeam = state.winner === null ? null : state.fighters[state.winner].team;
+        emit(state, 'matchEnd', { winner: state.winner });
       } else { state.round++; prepareRound(state); }
     }
     return state;
   }
-  const paths = state.fighters.map(f => updateFighter(state, f, readInput(f, inputs[f.id])));
+  const paths = state.fighters.map(f => {
+    if (f.hp > 0) return updateFighter(state, f, readInput(f, inputs[f.id]));
+    f.action = 'dead'; f.vx = f.vy = 0; f.inputBuffer = null; f.invulnerable = false; return stationaryPath(f);
+  });
   collideFighters(state, paths);
   // Existing tools advance against the actual piecewise fighter path. New tools are born after movement.
   projectiles(state, paths); melee(state);
   for (const f of state.fighters) if (f.hp > 0 && f.action === 'throw' && f.actionFrame === KUNAI.startup) throwKunai(state, f);
   state.roundTicks--;
-  const [a, b] = state.fighters;
-  if (a.hp <= 0 || b.hp <= 0) finishRound(state, a.hp <= 0 && b.hp <= 0 ? null : a.hp > 0 ? 0 : 1, 'knockout');
-  else if (state.roundTicks <= 0) finishRound(state, a.hp === b.hp ? null : a.hp > b.hp ? 0 : 1, 'timeout');
+  if (state.practice) {
+    const human = state.fighters[0], bots = state.fighters.slice(1), liveBots = bots.some(f => f.hp > 0);
+    if (human.hp <= 0 || !liveBots) finishRound(state, human.hp <= 0 && !liveBots ? null : human.hp > 0 ? 0 : 1, 'knockout');
+    else if (state.roundTicks <= 0) {
+      const health = bots.reduce((sum, f) => sum + Math.max(0, f.hp) / f.maxHp, 0) / bots.length, humanHealth = human.hp / human.maxHp;
+      finishRound(state, Math.abs(humanHealth - health) < EPS ? null : humanHealth > health ? 0 : 1, 'timeout');
+    }
+  } else {
+    const [a, b] = state.fighters;
+    if (a.hp <= 0 || b.hp <= 0) finishRound(state, a.hp <= 0 && b.hp <= 0 ? null : a.hp > 0 ? 0 : 1, 'knockout');
+    else if (state.roundTicks <= 0) finishRound(state, a.hp === b.hp ? null : a.hp > b.hp ? 0 : 1, 'timeout');
+  }
   return state;
 }

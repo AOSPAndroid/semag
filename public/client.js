@@ -17,6 +17,7 @@ const renderer = new ArenaRenderer(canvas);
 const audio = new GameAudio();
 const STEP_MS = 1000 / TICK_RATE;
 const roomId = new URLSearchParams(location.search).get('room');
+const practiceRoute = new URLSearchParams(location.search).get('practice') === '1';
 const storage = {
   get(key, fallback) { try { return localStorage.getItem(key) ?? fallback; } catch { return fallback; } },
   set(key, value) { try { localStorage.setItem(key, value); } catch { /* Private browsing still works. */ } },
@@ -45,9 +46,9 @@ function trainingHUD(){
 function restartPractice(){
   releaseKeys();audio.resetEvents();renderer.resetEffects?.();practiceState=createState();startMatch(practiceState);
   previousPracticePose = null;
-  previousPhase=practiceState.phase;countdownLast=null;canvas.focus();trainingHUD();
+  previousPhase=practiceState.phase;countdownLast=null;focusLost=false;previousTime=performance.now();accumulator=0;canvas.focus();trainingHUD();
 }
-$('training-mode').addEventListener('change',()=>{trainingMode=$('training-mode').value;trainingStage=0;if(practice)restartPractice();});
+$('training-mode').addEventListener('change',()=>{trainingMode=$('training-mode').value;trainingStage=0;if(practice && practiceState.phase !== 'lobby')restartPractice();else trainingHUD();});
 $('training-mode').addEventListener('focus',releaseKeys);
 let fullRoom = false, intentionalClose = false, ping = null, lastSnapshotAt = 0;
 let inviteAddress = roomId ? location.href : location.origin + '/afterimage.html', focusLost = false, toastTimer;
@@ -194,10 +195,10 @@ $('room-controls-button').addEventListener('click', () => openRoomControls());
 $('training-button').addEventListener('click', () => openRoomControls($('training-mode')));
 $('room-controls-close').addEventListener('click', () => roomControls.close());
 roomControls.addEventListener('close', () => {
-  releaseKeys(); previousTime = performance.now(); accumulator = 0;
+  releaseKeys(); previousTime = performance.now(); accumulator = 0; if (practice) previousPracticePose = capturePlanarPose(practiceState);
   setAttribute($('room-controls-button'), 'aria-expanded', 'false');
   const phase = (practice ? practiceState : authoritative).phase;
-  if (['countdown', 'fight', 'roundEnd'].includes(phase)) canvas.focus({ preventScroll: true });
+  if (['countdown', 'fight', 'roundEnd'].includes(phase)) { focusLost = false; canvas.focus({ preventScroll: true }); }
   else $('room-controls-button').focus({ preventScroll: true });
 });
 roomControls.addEventListener('keydown', event => {
@@ -216,6 +217,7 @@ roomControls.addEventListener('click', event => {
 function isTyping(target) { return target instanceof HTMLElement && (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable); }
 const keyboardIdentity = event => event.code || (event.key?.length === 1 ? event.key.toLowerCase() : event.key);
 document.addEventListener('keydown', (event) => {
+  if (practice && event.key === 'Escape' && !event.repeat && !roomControls.open && !isTyping(event.target)) { event.preventDefault(); openRoomControls(); return; }
   if (roomControls.open || event.defaultPrevented || isTyping(event.target) || event.isComposing || event.target instanceof Element && event.target.closest('button,a,summary') || event.ctrlKey || event.metaKey || event.altKey) return;
   const identity = keyboardIdentity(event), code = gameCode(event);
   if (event.repeat && !heldCodes.has(identity)) return;
@@ -243,14 +245,14 @@ const keyboardPicker = document.querySelector('[data-keyboard-layout-picker]');
 if (keyboardPicker) mountKeyboardLayoutPicker(keyboardPicker);
 keyboardPicker?.addEventListener('focusin', releaseKeys);
 updateKeyboardHints();
-window.addEventListener('blur', () => { releaseKeys(); focusLost = true; });
+window.addEventListener('blur', () => { releaseKeys(); focusLost = true; if (practice) previousPracticePose = capturePlanarPose(practiceState); });
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) releaseKeys();
+  if (document.hidden) { releaseKeys(); if (practice) { focusLost = true; previousPracticePose = capturePlanarPose(practiceState); } }
   previousTime = performance.now(); accumulator = 0;
 });
 $('player-name').addEventListener('focus', releaseKeys);
 canvas.tabIndex = 0;
-canvas.addEventListener('pointerdown', () => { if (roomControls.open) return; canvas.focus({ preventScroll: true }); focusLost = false; $('focus-note').hidden = true; });
+canvas.addEventListener('pointerdown', () => { if (roomControls.open) return; canvas.focus({ preventScroll: true }); focusLost = false; previousTime = performance.now(); accumulator = 0; if (practice) previousPracticePose = capturePlanarPose(practiceState); $('focus-note').hidden = true; });
 
 function toggleReady() {
   if (practice) {
@@ -273,6 +275,7 @@ $('player-name').addEventListener('change', () => {
 $('player-name').addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.target.blur(); canvas.focus(); } });
 
 $('practice-button').addEventListener('click', () => {
+  if (practiceRoute) { location.href = '/'; return; }
   practice = !practice;
   audio.resetEvents(); renderer.resetEffects?.();
   releaseKeys(); correction = { x: 0, y: 0 }; countdownLast = null; fightFlashUntil = 0;
@@ -351,7 +354,7 @@ async function setInvite() {
 
 function inputTick() {
   if (practice) {
-    if (roomControls.open) return;
+    if (roomControls.open || document.hidden || focusLost || practiceState.phase === 'lobby') return;
     const phase = practiceState.phase;
     previousPracticePose = capturePlanarPose(practiceState);
     step(practiceState, [copyInput(), botInput(practiceState, 1, trainingProfile()?.id || 'open')]);
@@ -435,7 +438,7 @@ function updateHUD(now) {
   const mine = players[localId];
   const button = $('ready-button');
   toggleClass(button, 'is-ready', !practice && !!mine?.ready);
-  setText(button.querySelector('span'), practice ? state.phase === 'matchEnd' ? trainingMode==='ladder' && state.winner===0 ? trainingStage===4 ? 'Ladder complete · Play again' : 'Next training duel' : 'Retry duel' : 'Restart practice' : state.phase === 'matchEnd' ? mine?.ready ? 'Rematch ready' : 'Rematch' : state.phase === 'fight' || state.phase === 'roundEnd' ? 'Match in progress' : mine?.ready ? 'Cancel ready' : 'Ready up');
+  setText(button.querySelector('span'), practice ? state.phase === 'lobby' ? 'Start game' : state.phase === 'matchEnd' ? trainingMode==='ladder' && state.winner===0 ? trainingStage===4 ? 'Ladder complete · Play again' : 'Next training duel' : 'Retry duel' : 'Restart practice' : state.phase === 'matchEnd' ? mine?.ready ? 'Rematch ready' : 'Rematch' : state.phase === 'fight' || state.phase === 'roundEnd' ? 'Match in progress' : mine?.ready ? 'Cancel ready' : 'Ready up');
   setDisabled(button, !practice && (!connected || localId == null || state.phase === 'fight' || state.phase === 'roundEnd' || state.phase === 'countdown' && state.round > 1));
   setDisabled($('practice-button'), !practice && ['fight', 'roundEnd', 'countdown'].includes(authoritative.phase));
   setDisabled($('player-name'), inMatch);
@@ -453,6 +456,7 @@ function updateHUD(now) {
     subtitle = fullRoom ? 'Both player slots are in use. You can still train in practice.' : !connected ? 'Keep the host running. We’ll bring you back into the room.' : mine?.ready ? 'Waiting for your opponent to ready up.' : 'Ready up. Your opponent will meet you here.';
     setHTML($('arena-status'), '<i></i> WAITING FOR TWO FIGHTERS');
     setText($('round-message'), 'BOTH PLAYERS READY → FIGHT');
+    if (practice) { kicker = 'SOLO / VS BOT'; title = 'Find your opening.'; subtitle = 'Choose your training opponent, then press Start game.'; setText($('round-message'), 'START WHEN YOU ARE READY'); }
   } else if (state.phase === 'countdown') {
     const count = Math.max(1, Math.ceil(state.phaseTicks / TICK_RATE));
     kicker = `ROUND ${String(state.round).padStart(2, '0')} / GET READY`;
@@ -518,4 +522,11 @@ window.afterimage = {
   }),
   get playerId() { return localId; }, get connected() { return connected; }, get practice() { return practice; },
 };
-setInvite(); connect(); connectedUI(); requestAnimationFrame(animate);
+if (practiceRoute) {
+  practice = true; practiceState = createState(); previousPhase = 'lobby';
+  trainingMode = 'master'; $('training-mode').value = trainingMode;
+  $('app').classList.add('is-practice'); $('practice-button').querySelector('span').textContent = 'Back to shelf';
+  $('mode-tag').textContent = 'SPARRING SESSION'; $('copy-button').closest('.invite-panel').hidden = true;
+  trainingHUD();
+} else { setInvite(); connect(); }
+connectedUI(); requestAnimationFrame(animate);

@@ -1,32 +1,39 @@
 export const GAMES = {
   'voxel-horde': { title: 'Voxel Last Stand', category: 'VOXEL / WAVE SURVIVAL FPS', kind: 'coop', supportsSolo: true, genre: 'action', theme: 'voxel', maxPlayers: 3, icon: '✹', description: 'Survive the swarm. Hunt for heals. Hold together against armed monsters.', color: '#967e69' },
   'voxel-wilds': { title: 'Voxel Wilds', category: 'VOXEL / BUILD & SURVIVE', kind: 'solo', genre: 'action', theme: 'voxel', icon: '▧', description: 'Mine the hillside. Build a shelter. Endure the night.', color: '#769274' },
-  'voxel-breach': { title: 'Voxel Breach', category: 'VOXEL / TACTICAL 3D FPS', kind: 'team', genre: 'action', theme: 'voxel', maxPlayers: 6, icon: '⌗', description: 'Hold an angle. Breach a site. Win together.', color: '#628b88' },
-  'voxel-royale': { title: 'Voxel Royale', category: 'VOXEL / BATTLE ROYALE', kind: 'battle-royale', genre: 'action', theme: 'voxel', maxPlayers: 10, icon: '◈', description: 'Find your kit. Escape the storm. Be the last alive.', color: '#75957b' },
+  'voxel-breach': { supportsPractice: true, title: 'Voxel Breach', category: 'VOXEL / TACTICAL 3D FPS', kind: 'team', genre: 'action', theme: 'voxel', maxPlayers: 6, icon: '⌗', description: 'Hold an angle. Breach a site. Win together.', color: '#628b88' },
+  'voxel-royale': { supportsPractice: true, title: 'Voxel Royale', category: 'VOXEL / BATTLE ROYALE', kind: 'battle-royale', genre: 'action', theme: 'voxel', maxPlayers: 10, icon: '◈', description: 'Find your kit. Escape the storm. Be the last alive.', color: '#75957b' },
   'shadow-lantern': { title: 'Shadow Lantern', category: 'NINJA / STEALTH CAMPAIGN', kind: 'solo', genre: 'action', theme: 'ninja', icon: '☾', description: 'Watch the patrol. Take the seal. Leave no trail.', color: '#7b8198' },
-  'shinobi-showdown': { title: 'Shinobi Showdown', category: 'NINJA / REAL-TIME DUEL', kind: 'duel', genre: 'action', theme: 'ninja', icon: '✣', description: 'Confirm the cut. Feint the parry. Outplay your rival.', color: '#8e7b87' },
+  'shinobi-showdown': { supportsPractice: true, title: 'Shinobi Showdown', category: 'NINJA / REAL-TIME DUEL', kind: 'duel', genre: 'action', theme: 'ninja', icon: '✣', description: 'Confirm the cut. Feint the parry. Outplay your rival.', color: '#8e7b87' },
   'skyline-hook': { title: 'Skyline Hook', category: 'PRECISION GRAPPLING', kind: 'solo', genre: 'action', icon: '↗', description: 'Build momentum. Catch an anchor. Earn the next rooftop.', color: '#71958b' },
   'starfall-squadron': { title: 'Starfall Squadron', category: 'BULLET-HELL SHOOTER', kind: 'solo', genre: 'action', icon: '✺', description: 'Read the pattern. Find the gap. Bring your squadron home.', color: '#7e81a4' },
   'ironwood-tactics': { title: 'Ironwood Tactics', category: 'SQUAD TACTICS ROGUELIKE', kind: 'solo', genre: 'strategy', roguelike: true, icon: '♜', description: 'Read their intent. Push the line. Protect the beacon.', color: '#8c9b72' },
   'paris-pedal': { title: 'Paris Pedal', category: 'DRIVING / E-BIKE SURVIVAL', kind: 'solo', genre: 'driving', icon: '⌁', description: 'Paris gets faster the longer you survive. Last one more second.', color: '#488d87' },
   'ember-delve': { title: 'Ember Delve', category: 'ACTION ROGUELIKE', kind: 'solo', genre: 'action', roguelike: true, icon: '♨', description: 'Read the windup. Break the pursuit. Earn your descent.', color: '#a07151' },
   'deckbound': { title: 'Deckbound', category: 'DECKBUILDING ROGUELIKE', kind: 'solo', genre: 'cards', roguelike: true, icon: '♧', description: 'Read their intent. Commit to battles. Build for the bosses.', color: '#8e815b' },
-  'oddstock-rumble': { title: 'Oddstock Rumble', category: 'BONUS PLATFORM BRAWLER', kind: 'duel', genre: 'action', icon: '★', description: 'Six unlikely heroes. Three stages. One glorious send-off.', color: '#927aa1' },
-  'relic-duel': { title: 'Relic Duel', category: 'TOP-DOWN ARENA', kind: 'duel', genre: 'action', icon: '⚔', description: 'Sword, shield, and a little quick thinking.', color: '#779868' },
-  'checkers': { title: 'Checkers', category: 'THE CLASSIC', kind: 'board', icon: '◉', description: 'Every move is a conversation.', color: '#a88e62' },
+  'oddstock-rumble': { supportsPractice: true, title: 'Oddstock Rumble', category: 'BONUS PLATFORM BRAWLER', kind: 'duel', genre: 'action', icon: '★', description: 'Six unlikely heroes. Three stages. One glorious send-off.', color: '#927aa1' },
+  'relic-duel': { supportsPractice: true, title: 'Relic Duel', category: 'TOP-DOWN ARENA', kind: 'duel', genre: 'action', icon: '⚔', description: 'Sword, shield, and a little quick thinking.', color: '#779868' },
+  'checkers': { supportsPractice: true, title: 'Checkers', category: 'THE CLASSIC', kind: 'board', icon: '◉', description: 'Every move is a conversation.', color: '#a88e62' },
   'dungeon-run': { title: 'Dungeon Run', category: 'CO-OP ADVENTURE', kind: 'coop', genre: 'action', icon: '✦', description: 'Two adventurers. One way through.', color: '#748766' },
-  'afterimage': { title: 'Afterimage', category: 'SWORD FIGHTER', kind: 'duel', genre: 'action', icon: '〃', description: 'A duel above the city.', color: '#667d7a' },
-  'crazy-eights': { title: 'Crazy Eights', category: 'CARD CLASSIC', kind: 'cards', icon: '♠', description: 'Match the suit. Change the game.', color: '#577e68' },
-  'twenty-one': { title: '21 Duel', category: 'BLACKJACK-STYLE DUEL', kind: 'cards', icon: '♦', description: 'Push your luck. Know when to stand.', color: '#b17b57' },
-  'memory': { title: 'Memory Match', category: 'CARD MEMORY GAME', kind: 'cards', icon: '♣', description: 'Remember a face. Find its match.', color: '#79898d' },
+  'afterimage': { supportsPractice: true, title: 'Afterimage', category: 'SWORD FIGHTER', kind: 'duel', genre: 'action', icon: '〃', description: 'A duel above the city.', color: '#667d7a' },
+  'crazy-eights': { supportsPractice: true, title: 'Crazy Eights', category: 'CARD CLASSIC', kind: 'cards', icon: '♠', description: 'Match the suit. Change the game.', color: '#577e68' },
+  'twenty-one': { supportsPractice: true, title: '21 Duel', category: 'BLACKJACK-STYLE DUEL', kind: 'cards', icon: '♦', description: 'Push your luck. Know when to stand.', color: '#b17b57' },
+  'memory': { supportsPractice: true, title: 'Memory Match', category: 'CARD MEMORY GAME', kind: 'cards', icon: '♣', description: 'Remember a face. Find its match.', color: '#79898d' },
   'night-drive': { title: 'Night Drive', category: 'DRIVING / HIGHWAY', kind: 'solo', genre: 'driving', icon: '▰', description: 'Survive the traffic. The longer you last, the faster you drive.', color: '#637e81' },
-  'vector-arena': { title: 'Vector Arena', category: 'PRECISION SHOOTER', kind: 'duel', genre: 'action', icon: '⌖', description: 'Lead the shot. Control the angle. Win the duel.', color: '#5b827c' },
+  'vector-arena': { supportsPractice: true, title: 'Vector Arena', category: 'PRECISION SHOOTER', kind: 'duel', genre: 'action', icon: '⌖', description: 'Lead the shot. Control the angle. Win the duel.', color: '#5b827c' },
   'prism-shift': { title: 'Prism Shift', category: 'FALLING BLOCKS', kind: 'solo', genre: 'puzzle', icon: '▥', description: 'Faster drops. Tighter placements. Master three challenge tiers.', color: '#8c7e9c' },
   'rift-survivor': { roguelike: true, title: 'Rift Survivor', category: 'SURVIVAL ARENA', kind: 'solo', genre: 'action', icon: '✧', description: 'The threat pace rises with time. Burst, dash, and survive.', color: '#7c7975' },
 };
 export function soloUrl(gameId) {
   if (gameId === 'voxel-horde') return '/voxel-horde.html?solo=1';
   return `/solo.html?game=${encodeURIComponent(gameId)}`;
+}
+export function practiceUrl(gameId) {
+  if (!Object.hasOwn(GAMES, gameId) || GAMES[gameId].supportsPractice !== true) return null;
+  if (gameId === 'voxel-breach') return '/voxel-practice.html?game=voxel';
+  if (gameId === 'voxel-royale') return '/voxel-practice.html?game=voxel-royale';
+  if (gameId === 'afterimage') return '/afterimage.html?practice=1';
+  return `/play.html?game=${encodeURIComponent(gameId)}&practice=1`;
 }
 export function roomUrl(room) {
   if (room.gameId === 'voxel-horde') return `/voxel-horde.html?room=${encodeURIComponent(room.id)}`;
