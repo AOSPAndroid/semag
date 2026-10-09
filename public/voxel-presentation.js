@@ -7,10 +7,10 @@ import { MONSTER_SPECIAL_RULES } from './voxel-monster-specials.js';
 const STEP = 1 / 120;
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const finite = value => Number.isFinite(value) ? value : 0;
-const COMBAT_FIELDS = ['aimTicks', 'recoil', 'reloadTicks', 'healTicks', 'grenadeThrowTicks', 'meleeTicks', 'meleeCooldown', 'shotCooldown', 'parryTicks', 'parryCooldown', 'meleeSecondaryCooldown'];
+const COMBAT_FIELDS = ['aimTicks', 'recoil', 'reloadTicks', 'healTicks', 'grenadeThrowTicks', 'meleeTicks', 'meleeCooldown', 'shotCooldown', 'parryTicks', 'parryCooldown', 'meleeSecondaryCooldown', 'meleeComboWindowTicks', 'hitStunTicks', 'hitStunReadyTicks'];
 const INPUT_FIELDS = [...INPUT_KEYS, 'yaw', 'pitch'];
-const MOVEMENT_FIELDS = ['x', 'y', 'z', 'vx', 'vy', 'vz', 'yaw', 'pitch', 'grounded', 'crouching', 'jumpBufferTicks', 'knockbackX', 'knockbackZ', 'knockbackTicks', 'knockbackReadyTicks', 'stamina', 'staminaRegenTicks', 'sprintExhausted', 'sprinting', 'previousInput'];
-const CONTEXT_FIELDS = [...MOVEMENT_FIELDS, 'alive', 'radius', 'weapon', 'slot', 'reloadTicks', 'healTicks', 'grenadeThrowTicks', 'meleeTicks', 'meleeCooldown', 'pendingMeleeTicks', 'inventoryIndex', 'meleeIndex', 'meleeInitialYaw', 'meleeInitialPitch', 'meleeYaw', 'meleePitch', 'meleeAction', 'meleeSecondaryCooldown', 'meleeAimBlocked', 'parryTicks', 'parryCooldown', 'parryYaw', 'parryPitch', 'parryStartTick', 'parryIndex', 'parryConsumed', 'burstRemaining', 'pendingFireTicks', 'shotCooldown', 'triggerBlocked', 'ammo', 'reserve', 'lifeId', 'deaths', 'meleeStartTick', 'healStartTick', 'interaction', 'interactTicks', 'meleeWeapon', 'bot', 'monster'];
+const MOVEMENT_FIELDS = ['x', 'y', 'z', 'vx', 'vy', 'vz', 'yaw', 'pitch', 'grounded', 'crouching', 'jumpBufferTicks', 'knockbackX', 'knockbackZ', 'knockbackTicks', 'knockbackReadyTicks', 'hitStunTicks', 'hitStunReadyTicks', 'stamina', 'staminaRegenTicks', 'sprintExhausted', 'sprinting', 'previousInput'];
+const CONTEXT_FIELDS = [...MOVEMENT_FIELDS, 'alive', 'radius', 'weapon', 'slot', 'reloadTicks', 'healTicks', 'grenadeThrowTicks', 'meleeTicks', 'meleeCooldown', 'pendingMeleeTicks', 'meleeComboStep', 'meleeComboConfirmed', 'meleeComboWindowTicks', 'meleeComboWeapon', 'inventoryIndex', 'meleeIndex', 'meleeInitialYaw', 'meleeInitialPitch', 'meleeYaw', 'meleePitch', 'meleeAction', 'meleeSecondaryCooldown', 'meleeAimBlocked', 'parryTicks', 'parryCooldown', 'parryYaw', 'parryPitch', 'parryStartTick', 'parryIndex', 'parryConsumed', 'burstRemaining', 'pendingFireTicks', 'shotCooldown', 'triggerBlocked', 'ammo', 'reserve', 'lifeId', 'deaths', 'meleeStartTick', 'healStartTick', 'interaction', 'interactTicks', 'meleeWeapon', 'bot', 'monster'];
 const matches = (old, next, fields) => fields.every(field => old[field] === next[field]);
 
 /** Resolve the complete displayed body batch; independent previews share no future poses. */
@@ -214,7 +214,7 @@ export function interpolatedVoxelState(samples, targetTime, localId, { predictMo
 const sameEquipment = (player, old) => old && player.id === old.id && player.alive === old.alive && player.team === old.team && player.weapon === old.weapon && player.slot === old.slot && player.meleeWeapon === old.meleeWeapon
   && (player.lifeId || 0) === (old.lifeId || 0) && (player.deaths || 0) === (old.deaths || 0) && player.inventoryIndex === old.inventoryIndex;
 const sameSwing = (player, old) => sameEquipment(player, old) && player.meleeStartTick === old.meleeStartTick && player.meleeIndex === old.meleeIndex && (player.meleeAction || 'primary') === (old.meleeAction || 'primary')
-  && player.meleeInitialYaw === old.meleeInitialYaw && player.meleeInitialPitch === old.meleeInitialPitch;
+  && player.meleeComboStep === old.meleeComboStep && player.meleeComboWeapon === old.meleeComboWeapon && player.meleeInitialYaw === old.meleeInitialYaw && player.meleeInitialPitch === old.meleeInitialPitch;
 const bladeDirection = (yaw, pitch) => [Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch)];
 function blendBladeAim(from, to, amount) {
   const a = bladeDirection(finite(from.meleeYaw), finite(from.meleePitch)), b = bladeDirection(finite(to.meleeYaw), finite(to.meleePitch));
@@ -328,7 +328,7 @@ export function createCorrectionPresenter({ halfLifeMs = 40, maxOffset = .5, sna
 export function hudTransitionKey(state, roster, playerId, context = '') {
   const players = state?.players?.map(player => [player.id, player.team, player.alive, player.hp, player.maxHp,
     player.weapon, player.slot, player.hasGun, player.ammo, player.reserve, player.potions, player.grenades,
-    !!player.reloadTicks, !!player.healTicks, !!player.grenadeThrowTicks, player.meleePhase, player.meleeAction, !!player.pendingMeleeTicks, !!player.parryTicks, !!player.parryCooldown, !!player.meleeSecondaryCooldown, player.parryConsumed, player.aiming, player.aimTicks >= 14, player.grounded]);
+    !!player.reloadTicks, !!player.healTicks, !!player.grenadeThrowTicks, player.meleePhase, player.meleeAction, player.meleeComboStep, player.meleeComboConfirmed, player.meleeComboWeapon, player.meleeComboWindowTicks > 0, player.hitStunTicks > 0, !!player.pendingMeleeTicks, !!player.parryTicks, !!player.parryCooldown, !!player.meleeSecondaryCooldown, player.parryConsumed, player.aiming, player.aimTicks >= 14, player.grounded]);
   const bomb = state?.bomb;
   return JSON.stringify([context, playerId, state?.phase, state?.round, state?.matchId, state?.mapId,
     state?.scores, state?.attackTeam, state?.winner, state?.winnerId, state?.placements, state?.participantIds,

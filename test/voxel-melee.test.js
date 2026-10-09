@@ -62,12 +62,12 @@ test('a knife commits aim at startup and the closest physical body blocks a clea
   assert.equal(blocked.events.filter(event => event.type === 'damage').length, 1);
 });
 
-test('a full-health Royale survivor requires eight committed knife hits and damage is clamped honestly', () => {
+test('a full-health Royale survivor requires eight isolated knife hits outside the combo window and damage is clamped honestly', () => {
   const state = encounter(), [attacker, target] = state.players;
   const approach = () => ({ 0: { yaw: Math.atan2(target.x - attacker.x, -(target.z - attacker.z)), up: Math.hypot(target.x - attacker.x, target.z - attacker.z) > 1 } });
   for (let hit = 0; hit < 7; hit++) {
     ticks(state, 1, { 0: { fire: true, yaw: approach()[0].yaw } });
-    ticks(state, 44, approach);
+    ticks(state, 44 + 43, approach);
   }
   assert.equal(target.hp, 4); assert.equal(target.alive, true);
   ticks(state, 1, { 0: { fire: true, yaw: approach()[0].yaw } }); ticks(state, 10);

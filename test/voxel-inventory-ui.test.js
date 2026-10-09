@@ -111,12 +111,12 @@ test('gun hints and swap labels name the carried knife or sword and never invent
 
 test('knife secondary hints and carried-gun swap labels remain honest with a knife-only pack', () => {
   const own = createCombatPlayer(0); own.inventoryIndex = 0; refreshInventory(own);
-  assert.equal(inventorySwapPresentation(own).label, 'GUN'); assert.equal(combatReadout(own).status, 'LMB QUICK · RMB STAB');
+  assert.equal(inventorySwapPresentation(own).label, 'GUN'); assert.equal(combatReadout(own).status, 'LMB COMBO · RMB STAB');
   initializeInventory(own, { knifeOnly: true });
   assert.equal(inventorySwapPresentation(own).label, 'KNIFE'); assert.match(inventorySwapPresentation(own).ariaLabel, /no other carried item/);
-  assert.equal(combatReadout(own).status, 'LMB QUICK · RMB STAB');
+  assert.equal(combatReadout(own).status, 'LMB COMBO · RMB STAB');
   const legacy = { weapon: 'carbine', slot: 'primary', grounded: true, ammo: 10, reserve: 20 };
   assert.equal(inventorySwapPresentation(legacy), null); assert.equal(combatReadout(legacy).status, 'RMB AIM · V SWORD');
   assert.equal(inventorySwapPresentation({ ...legacy, slot: 'sword', meleeWeapon: 'knife' }), null);
-  assert.equal(combatReadout({ ...legacy, slot: 'sword', meleeWeapon: 'knife' }).status, 'LMB QUICK · RMB STAB');
+  assert.equal(combatReadout({ ...legacy, slot: 'sword', meleeWeapon: 'knife' }).status, 'LMB COMBO · RMB STAB');
 });

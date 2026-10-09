@@ -1,7 +1,7 @@
 /** Public weapons lab: real actors, inventory, contacts and equipment commitments. */
 import { createCombatPlayer, emptyInput, emitCombatEvent, eyeHeight, traceShot, applyCombatDamage, findNearbyLoot, TICK_RATE, WORLD } from './voxel-engine.js';
 import { WEAPONS } from './voxel-weapons.js';
-import { MELEE_WEAPONS, clearMeleeBuffer } from './voxel-melee.js';
+import { MELEE_WEAPONS, clearMeleeComboContinuation } from './voxel-melee.js';
 import { initializeInventory, storeInventoryGun, refreshInventory, inventoryCanTake } from './voxel-inventory.js';
 import { DOJO_MAP } from './voxel-dojo-map.js';
 
@@ -104,7 +104,7 @@ function replenishReserve(player) {
 export function processDojoActions(state, input, previous) {
   if (!state.dojo || state.phase !== 'fight') return;
   refreshDojoStations(state, input);
-  if (input.dojoTools === true) clearMeleeBuffer(state.players[0]);
+  if (input.dojoTools === true) clearMeleeComboContinuation(state.players[0]);
   const pressed = action => input[action] === true && (DOJO_ACTIONS.includes(action) ? state.dojo.previousActions[action] : previous[action]) !== true;
   if (pressed('dojoMotion')) { state.dojo.moving = !state.dojo.moving; emitCombatEvent(state, 'dojoMotion', { moving: state.dojo.moving }); }
   if (pressed('dojoReset') && !state.players[0].meleeTicks && !state.players[0].parryTicks && !state.players[0].grenadeThrowTicks && !input.fire) {

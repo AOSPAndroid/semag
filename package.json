@@ -1,6 +1,6 @@
 {
   "name": "fireside-game-hub",
-  "version": "3.43.0",
+  "version": "3.44.0",
   "private": true,
   "type": "module",
   "description": "A self-hosted game hub with co-op monster wave survival, voxel survival, battle royale, tactical FPS, ninja games, roguelikes, driving, and classics.",

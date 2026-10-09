@@ -1,4 +1,4 @@
-import { MELEE_WEAPONS } from './voxel-melee.js';
+import { MELEE_WEAPONS, meleeComboLength } from './voxel-melee.js';
 
 const finite = (value, fallback = 0) => Number.isFinite(value) ? value : fallback;
 const life = player => Number.isSafeInteger(player?.lifeId) ? player.lifeId : 0;
@@ -25,12 +25,14 @@ export function createSlashImpactPresenter({ capacity = 128 } = {}) {
     const dx = finite(target.x) - finite(attacker.x), dz = finite(target.z) - finite(attacker.z), distance = Math.hypot(dx, dz) || 1;
     const outward = [dx / distance, dz / distance], origin = [event.x, event.y, event.z];
     const seed = (event.meleeIndex * 17 + target.id * 7) % 11;
+    const finisher = !attacker.monster && !attacker.monsterType && event.comboFinisher === true
+      && event.comboStep === event.comboLength && event.comboLength === meleeComboLength(event.weapon);
     return Array.from({ length: 6 }, (_, index) => {
-      const angle = seed + index * 2.39996, spread = .36 + index * .036;
-      return { origin, born: time, vx: Math.sin(angle) * spread - outward[0] * .28, vy: .20 + index * .045,
-        vz: Math.cos(angle) * spread - outward[1] * .28, color: index < 2 ? '#fff8df' : color[event.weapon],
-        life: 125 + index * 13, gravity: 3, cover: true, radius: .34, size: index < 2 ? .014 : .010,
-        material: 'blade', shrink: true, targetId: target.id, contactKey: key };
+      const angle = seed + index * 2.39996, spread = (.36 + index * .036) * (finisher ? 1.12 : 1);
+      return { origin, born: time, vx: Math.sin(angle) * spread - outward[0] * .28, vy: .20 + index * .045 + (finisher ? .04 : 0),
+        vz: Math.cos(angle) * spread - outward[1] * .28, color: index < 2 ? '#fff8df' : finisher ? '#ffd872' : color[event.weapon],
+        life: 125 + index * 13, gravity: 3, cover: true, radius: .34, size: index < 2 ? .014 : finisher ? .012 : .010,
+        material: 'blade', shrink: true, targetId: target.id, contactKey: key, comboFinisher: finisher };
     });
   };
   present.reset = () => { seen.clear(); contacts = 0; };

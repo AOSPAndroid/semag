@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from '../server.js';
-import { MELEE_WEAPONS } from '../public/voxel-melee.js';
-import { applyCombatDamage, addInventoryLoot } from '../public/voxel-engine.js';
+import { MELEE_WEAPONS, meleeProfile } from '../public/voxel-melee.js';
+import { applyCombatDamage, addInventoryLoot, MAPS } from '../public/voxel-engine.js';
 import { Peer, flushPeer } from './ws-helper.js';
 
 async function host(t, gameId = 'voxel-breach') {
@@ -36,6 +36,87 @@ async function queueLate(game) {
   return { index: player.meleeIndex, ticks: player.meleeTicks, cooldown: player.meleeCooldown, start: player.meleeStartTick, yaw: player.meleeYaw, pitch: player.meleePitch, parryTicks: player.parryTicks, parryCooldown: player.parryCooldown };
 }
 function settle(game, ticks = 100) { for (let tick = 0; tick < ticks; tick++) game.app.tick(); }
+
+// A legal courtyard spawn lane isolates socket controls from navigation. Damage
+// and combo confirmation still require the real blade band and authoritative tick.
+function contactLane(game) {
+  const positions = [{ x: -3, z: 18, yaw: 0 }, { x: -3, z: 16.75, yaw: Math.PI }];
+  for (const player of game.room.state.players) {
+    Object.assign(player, positions[player.id], { y: 0, pitch: 0, vx: 0, vy: 0, vz: 0, grounded: true });
+    for (const box of MAPS[game.room.state.mapId].colliders) {
+      if (box.y >= 1.8 || box.y + box.h <= 0) continue;
+      const dx = player.x - Math.max(box.x, Math.min(box.x + box.w, player.x));
+      const dz = player.z - Math.max(box.z, Math.min(box.z + box.d, player.z));
+      assert.ok(dx * dx + dz * dz >= player.radius ** 2, 'the contact fixture must not place an actor inside cover');
+    }
+  }
+}
+function finishAcceptedCut(game) {
+  let guard = 0;
+  while ((game.player.meleeTicks || game.player.meleeCooldown) && guard++ < 150) game.app.tick();
+  assert.ok(guard < 150, 'the accepted commitment must finish on the server clock');
+}
+async function confirmSocketCut(game, expectedStep) {
+  const hp = game.room.state.players[1].hp;
+  await input(game, { fire: true, yaw: 0, pitch: 0 });
+  const index = game.player.meleeIndex;
+  await input(game, { fire: false });
+  let guard = 0;
+  while (!game.player.meleeComboConfirmed && guard++ < 60) game.app.tick();
+  assert.ok(game.player.meleeComboConfirmed, 'a real socket cut must contact enemy flesh before advancing a chain');
+  const hit = game.room.state.events.findLast(event => event.type === 'meleeHit' && event.playerId === 0 && event.meleeIndex === index);
+  assert.ok(hit); assert.equal(hit.targetId, 1); assert.equal(hit.comboStep, expectedStep);
+  assert.equal(game.player.meleeComboStep, expectedStep);
+  assert.equal(game.room.state.players[1].hp, hp - hit.damage);
+  return hit;
+}
+
+test('confirmed socket blade contacts retain their combo through ordinary fire release and advance on a fresh press', async t => {
+  const game = await host(t); contactLane(game);
+  await confirmSocketCut(game, 1);
+  await input(game, { fire: false });
+  assert.equal(game.player.meleeComboConfirmed, true); assert.ok(game.player.meleeComboWindowTicks > 0);
+  await input(game, { fire: false }, { cancelActions: false });
+  assert.equal(game.player.meleeComboConfirmed, true);
+  finishAcceptedCut(game);
+  await confirmSocketCut(game, 2);
+  assert.deepEqual(game.room.state.events.filter(event => event.type === 'meleeStart' && event.playerId === 0).map(event => event.comboStep), [1, 2]);
+});
+
+test('valid socket cancellation preserves an accepted return-cut profile but prevents its contact from rearming the combo', async t => {
+  const game = await host(t); contactLane(game);
+  await confirmSocketCut(game, 1); finishAcceptedCut(game);
+  await input(game, { fire: true, yaw: 0, pitch: 0 });
+  assert.equal(game.player.meleeComboStep, 2); assert.equal(game.player.meleePhase, 'startup');
+  const profile = meleeProfile(game.player), before = structuredClone(game.player);
+  await input(game, { fire: false }, { cancelActions: true }, 0);
+  assert.equal(game.player.meleeComboConfirmed, false); assert.equal(game.player.meleeComboWindowTicks, 0);
+  assert.equal(meleeProfile(game.player), profile); assert.equal(game.player.meleeComboStep, 2);
+  for (const field of ['meleeTicks', 'meleePhase', 'meleeIndex', 'meleeStartTick', 'meleeCooldown', 'meleeYaw', 'meleePitch']) assert.equal(game.player[field], before[field], field);
+  assert.deepEqual(game.player.inventory, before.inventory);
+  finishAcceptedCut(game);
+  const hit = game.room.state.events.findLast(event => event.type === 'meleeHit' && event.playerId === 0 && event.meleeIndex === before.meleeIndex);
+  assert.ok(hit, 'canceling future intent does not delete the already accepted physical cut'); assert.equal(hit.comboStep, 2);
+  assert.equal(game.player.meleeComboConfirmed, false); assert.equal(game.player.meleeComboWindowTicks, 0);
+  await input(game, { fire: false }); await input(game, { fire: true });
+  assert.equal(game.player.meleeComboStep, 1, 'the next deliberate attack starts a fresh chain');
+});
+
+test('the real stale-input fence removes confirmed socket combo continuation without rewriting its current return cut', async t => {
+  const game = await host(t); contactLane(game);
+  await confirmSocketCut(game, 1); finishAcceptedCut(game); await confirmSocketCut(game, 2);
+  const profile = meleeProfile(game.player), before = structuredClone(game.player);
+  assert.ok(before.meleeComboWindowTicks > 0 && before.meleeComboConfirmed);
+  game.room.slots[0].lastInputTime -= 351; game.app.tick();
+  assert.equal(game.player.meleeComboConfirmed, false); assert.equal(game.player.meleeComboWindowTicks, 0);
+  assert.equal(meleeProfile(game.player), profile); assert.equal(game.player.meleeComboStep, 2);
+  assert.equal(game.player.meleeTicks, before.meleeTicks - 1); assert.equal(game.player.meleeCooldown, before.meleeCooldown - 1);
+  assert.equal(game.player.meleeIndex, before.meleeIndex); assert.equal(game.player.meleeStartTick, before.meleeStartTick);
+  assert.equal(game.room.slots[0].actionInputs.inspect().pending.length, 0);
+  finishAcceptedCut(game);
+  await input(game, { fire: false }); await input(game, { fire: true });
+  assert.equal(game.player.meleeComboStep, 1); assert.equal(game.player.meleeIndex, before.meleeIndex + 1);
+});
 
 for (const gameId of ['voxel-breach', 'voxel-royale', 'voxel-horde']) test(`${gameId}: accepted late blade intent is canceled by valid WS controls release without erasing the current cut`, async t => {
   const game = await host(t, gameId), before = await queueLate(game), player = game.player;

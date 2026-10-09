@@ -4,7 +4,7 @@ import { MAPS } from './voxel-maps.js';
 import { WEAPONS, weaponDamage, weaponSpread, weaponHand } from './voxel-weapons.js';
 import { advanceWeaponFireClock } from './voxel-fire-modes.js';
 import { launchBolt, advanceBolts, MAX_BOLTS } from './voxel-projectiles.js';
-import { MELEE, KNIFE, KNIFE_SECONDARY, MELEE_WEAPONS, meleeProfile, meleeWeaponId, meleeHand, meleeSlashOrigin, meleeSlashPhase, meleeSlashGeometry, meleeSegmentBoxContact, advanceMeleePrimaryPress, meleeStartupAim, parryProfile, parryPhase, parryFacesOrigin, resetMeleeDefense } from './voxel-melee.js';
+import { MELEE, KNIFE, KNIFE_SECONDARY, MELEE_WEAPONS, meleeProfile, meleeWeaponId, meleeHand, meleeSlashOrigin, meleeSlashPhase, meleeSlashGeometry, meleeSegmentBoxContact, advanceMeleePrimaryPress, meleeStartupAim, parryProfile, parryPhase, parryFacesOrigin, resetMeleeDefense, resetMeleeCombo, clearMeleeComboContinuation, beginMeleeCombo } from './voxel-melee.js';
 import { recordLagCompensation, traceCompensatedShot } from './voxel-lag-compensation.js';
 import { monsterTypeId, monsterBodyProfile, monsterBodyBoxes, monsterMovementSpeed, monsterMovementMultiplier } from './voxel-monster-bodies.js';
 import { INVENTORY_ACTIONS, initializeInventory, ensureInventory, refreshInventory, selectedInventoryItem, selectInventorySlot, storeInventoryGun, tickHolsteredInventory, consumeInventoryStack, pickupInventoryItem, inventoryCanTake, dropInventoryItem, lootFromInventoryItem, setInventoryLoadout, setInventoryMeleeLoadout } from './voxel-inventory.js';
@@ -24,7 +24,7 @@ export const SPRINT = Object.freeze({ maxStamina: 100, speedMultiplier: 1.4, dra
 const EPS = 1e-8, DT = 1 / TICK_RATE;
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 const movementActionClock = Symbol('movement-only action clock');
-const ACTION_CLOCK_SOURCE = ['reloadTicks', 'healTicks', 'grenadeThrowTicks', 'meleeTicks', 'meleeCooldown', 'pendingMeleeTicks', 'meleeAction', 'meleeWeapon', 'parryTicks', 'parryCooldown', 'meleeSecondaryCooldown', 'meleeAimBlocked', 'parryStartTick', 'parryConsumed', 'burstRemaining', 'pendingFireTicks', 'shotCooldown', 'spinTicks', 'triggerBlocked', 'meleeStartTick', 'healStartTick', 'interaction', 'interactTicks', 'alive', 'lifeId', 'deaths', 'weapon', 'slot', 'inventoryIndex', 'ammo', 'reserve'];
+const ACTION_CLOCK_SOURCE = ['reloadTicks', 'healTicks', 'grenadeThrowTicks', 'meleeTicks', 'meleeCooldown', 'pendingMeleeTicks', 'meleeComboStep', 'meleeComboConfirmed', 'meleeComboWindowTicks', 'meleeComboWeapon', 'meleeAction', 'meleeWeapon', 'parryTicks', 'parryCooldown', 'meleeSecondaryCooldown', 'meleeAimBlocked', 'parryStartTick', 'parryConsumed', 'burstRemaining', 'pendingFireTicks', 'shotCooldown', 'spinTicks', 'triggerBlocked', 'meleeStartTick', 'healStartTick', 'interaction', 'interactTicks', 'alive', 'lifeId', 'deaths', 'weapon', 'slot', 'inventoryIndex', 'ammo', 'reserve'];
 const actionTicks = value => Number.isFinite(value) ? Math.max(0, value) : 0;
 /** An opaque cache key; movement-only clocks never enter JSON or gameplay fields. */
 export const movementPredictionRevision = player => player?.[movementActionClock]?.revision ?? null;
@@ -39,7 +39,7 @@ function movementActions(player, input) {
   const valid = old && ACTION_CLOCK_SOURCE.every(field => old.source[field] === player[field]);
   const base = valid ? old : {
     source: Object.freeze(Object.fromEntries(ACTION_CLOCK_SOURCE.map(field => [field, player[field]]))),
-    reloadTicks: actionTicks(player.reloadTicks), healTicks: actionTicks(player.healTicks), grenadeThrowTicks: actionTicks(player.grenadeThrowTicks), meleeTicks: actionTicks(player.meleeTicks), meleeCooldown: actionTicks(player.meleeCooldown), pendingMeleeTicks: actionTicks(player.pendingMeleeTicks), meleeAction: player.meleeAction || 'primary', parryTicks: actionTicks(player.parryTicks), parryCooldown: actionTicks(player.parryCooldown), meleeSecondaryCooldown: actionTicks(player.meleeSecondaryCooldown), meleeAimBlocked: player.meleeAimBlocked === true, interaction: player.interaction,
+    reloadTicks: actionTicks(player.reloadTicks), healTicks: actionTicks(player.healTicks), grenadeThrowTicks: actionTicks(player.grenadeThrowTicks), meleeTicks: actionTicks(player.meleeTicks), meleeCooldown: actionTicks(player.meleeCooldown), pendingMeleeTicks: actionTicks(player.pendingMeleeTicks), meleeComboStep: player.meleeComboStep || 0, meleeComboConfirmed: player.meleeComboConfirmed === true, meleeComboWindowTicks: actionTicks(player.meleeComboWindowTicks), meleeComboWeapon: player.meleeComboWeapon || null, meleeAction: player.meleeAction || 'primary', parryTicks: actionTicks(player.parryTicks), parryCooldown: actionTicks(player.parryCooldown), meleeSecondaryCooldown: actionTicks(player.meleeSecondaryCooldown), meleeAimBlocked: player.meleeAimBlocked === true, interaction: player.interaction,
     burstRemaining: actionTicks(player.burstRemaining), pendingFireTicks: actionTicks(player.pendingFireTicks), shotCooldown: actionTicks(player.shotCooldown), spinTicks: actionTicks(player.spinTicks), triggerBlocked: player.triggerBlocked === true, ammo: player.ammo, reserve: player.reserve
   };
   const grenadeThrowTicks = Math.max(0, base.grenadeThrowTicks - 1);
@@ -47,13 +47,16 @@ function movementActions(player, input) {
   const alternatePressed = player.slot === 'primary' && weapon.alternateFire && input.aim && !player.previousInput?.aim;
   const attackInterrupt = alternatePressed || input.fire && (!player.previousInput?.fire || player.slot === 'primary' || player.slot === 'sword');
   const cancelHealing = attackInterrupt || input.swap || input.grenade || input.jump || input.interact || input.reload || selecting;
-  return { ...base, grenadeThrowTicks, healTicks: cancelHealing ? 0 : base.healTicks, triggerBlocked: input.fire ? base.triggerBlocked : false, meleeCooldown: Math.max(0, base.meleeCooldown - 1), parryCooldown: Math.max(0, base.parryCooldown - 1), meleeSecondaryCooldown: Math.max(0, base.meleeSecondaryCooldown - 1), meleeAimBlocked: input.aim ? base.meleeAimBlocked : false };
+  return { ...base, hitStunTicks: player.hitStunTicks || 0, grenadeThrowTicks, healTicks: cancelHealing ? 0 : base.healTicks, triggerBlocked: input.fire ? base.triggerBlocked : false, meleeCooldown: Math.max(0, base.meleeCooldown - 1), parryCooldown: Math.max(0, base.parryCooldown - 1), meleeSecondaryCooldown: Math.max(0, base.meleeSecondaryCooldown - 1), meleeAimBlocked: input.aim ? base.meleeAimBlocked : false, meleeComboWindowTicks: Math.max(0, base.meleeComboWindowTicks - 1) };
 }
 function advanceMovementActions(player, input, context) {
+  // Physical movement consumes the same stun tick before either attack clock.
+  context = { ...context, hitStunTicks: player.hitStunTicks || 0 };
   const weapon = WEAPONS[player.weapon];
   let reloadTicks = Math.max(0, context.reloadTicks - 1), burstRemaining = context.burstRemaining, pendingFireTicks = Math.max(0, context.pendingFireTicks - 1), shotCooldown = Math.max(0, context.shotCooldown - 1), ammo = context.ammo, reserve = context.reserve;
   let spinTicks = context.spinTicks || 0;
-  if (weapon.valorant) {
+  if (context.hitStunTicks) { reloadTicks = context.reloadTicks; burstRemaining = pendingFireTicks = spinTicks = 0; }
+  else if (weapon.valorant) {
     const next = advanceWeaponFireClock(weapon, { ...player, ...context }, input, player.previousInput);
     ({ reloadTicks, burstRemaining, pendingFireTicks, shotCooldown, ammo, reserve, spinTicks } = next);
   } else {
@@ -65,7 +68,7 @@ function advanceMovementActions(player, input, context) {
       if (input.interact) burstRemaining = pendingFireTicks = 0;
       if (weapon.pressBufferTicks && input.fire && !player.previousInput?.fire && !context.triggerBlocked && !reloadTicks && !input.interact && ammo > 0) pendingFireTicks = weapon.pressBufferTicks;
       if (context.triggerBlocked || reloadTicks) pendingFireTicks = 0;
-      if (!context.triggerBlocked && !reloadTicks && !input.interact && !shotCooldown && ammo > 0) {
+      if (!context.hitStunTicks && !context.triggerBlocked && !reloadTicks && !input.interact && !shotCooldown && ammo > 0) {
         if (!burstRemaining && weapon.mode === 'burst' && input.fire && !player.previousInput?.fire) burstRemaining = Math.min(weapon.burstCount, ammo);
         if (burstRemaining && weapon.mode === 'burst') { burstRemaining--; ammo--; shotCooldown = burstRemaining ? weapon.burstInterval : weapon.cooldown; }
         else if (pendingFireTicks) { pendingFireTicks = 0; ammo--; shotCooldown = weapon.cooldown; }
@@ -73,17 +76,22 @@ function advanceMovementActions(player, input, context) {
     } else pendingFireTicks = 0;
   }
   if (input.interact) burstRemaining = pendingFireTicks = 0;
+  let meleeComboStep = context.meleeComboStep, meleeComboConfirmed = context.meleeComboConfirmed, meleeComboWindowTicks = context.meleeComboWindowTicks, meleeComboWeapon = context.meleeComboWeapon;
+  if (!meleeComboWindowTicks && !context.meleeTicks || player.slot !== 'sword' || input.swap || input.drop || INVENTORY_ACTIONS.some(key => input[key])) { meleeComboStep = 0; meleeComboConfirmed = false; meleeComboWindowTicks = 0; meleeComboWeapon = null; }
+  else if (input.interact || input.reload || input.heal || input.grenade) { meleeComboConfirmed = false; meleeComboWindowTicks = 0; }
   let meleeTicks = Math.max(0, context.meleeTicks - 1), parryTicks = Math.max(0, context.parryTicks - 1), meleeCooldown = context.meleeCooldown, parryCooldown = context.parryCooldown, meleeSecondaryCooldown = context.meleeSecondaryCooldown, meleeAction = context.meleeAction;
   const primary = advanceMeleePrimaryPress(player, input, context), pendingMeleeTicks = primary.pendingMeleeTicks;
   if (player.slot === 'sword' && !context.healTicks && !context.grenadeThrowTicks && !meleeTicks && !context.parryTicks) {
     if (primary.primaryPressed) {
-      const profile = MELEE_WEAPONS[meleeWeaponId(player)]; meleeAction = 'primary'; meleeTicks = meleeCooldown = profile.startupTicks + profile.activeTicks + profile.recoveryTicks;
+      const chain = { ...player, ...context, meleeAction: 'primary' }, profile = beginMeleeCombo(chain, { ...context, meleeComboStep, meleeComboConfirmed, meleeComboWindowTicks, meleeComboWeapon });
+      ({ meleeComboStep, meleeComboConfirmed, meleeComboWindowTicks, meleeComboWeapon } = chain); meleeAction = 'primary'; meleeTicks = meleeCooldown = profile.startupTicks + profile.activeTicks + profile.recoveryTicks;
     } else if (secondaryReady(player, input, context)) {
+      meleeComboStep = 0; meleeComboConfirmed = false; meleeComboWindowTicks = 0; meleeComboWeapon = null;
       if (meleeWeaponId(player) === 'knife') { meleeAction = 'secondary'; meleeTicks = meleeCooldown = meleeSecondaryCooldown = KNIFE_SECONDARY.startupTicks + KNIFE_SECONDARY.activeTicks + KNIFE_SECONDARY.recoveryTicks; }
       else { const profile = parryProfile(player); if (profile && player.stamina >= profile.staminaCost) { spendParryStamina(player, profile); parryTicks = meleeCooldown = profile.startupTicks + profile.activeTicks + profile.recoveryTicks; parryCooldown = meleeSecondaryCooldown = profile.cooldownTicks; } }
     }
   }
-  const clock = Object.freeze({ source: context.source, reloadTicks, healTicks: Math.max(0, context.healTicks - 1), grenadeThrowTicks: context.grenadeThrowTicks, meleeTicks, meleeCooldown, pendingMeleeTicks, meleeAction, parryTicks, parryCooldown, meleeSecondaryCooldown, meleeAimBlocked: context.meleeAimBlocked, interaction: input.interact ? context.interaction : null, burstRemaining, pendingFireTicks, shotCooldown, spinTicks, triggerBlocked: context.triggerBlocked, ammo, reserve, revision: Object.freeze({}) });
+  const clock = Object.freeze({ source: context.source, reloadTicks, healTicks: Math.max(0, context.healTicks - 1), grenadeThrowTicks: context.grenadeThrowTicks, meleeTicks, meleeCooldown, pendingMeleeTicks, meleeComboStep, meleeComboConfirmed, meleeComboWindowTicks, meleeComboWeapon, meleeAction, parryTicks, parryCooldown, meleeSecondaryCooldown, meleeAimBlocked: context.meleeAimBlocked, interaction: input.interact ? context.interaction : null, burstRemaining, pendingFireTicks, shotCooldown, spinTicks, triggerBlocked: context.triggerBlocked, ammo, reserve, revision: Object.freeze({}) });
   Object.defineProperty(player, movementActionClock, { value: clock, writable: true, configurable: true });
 }
 export const eyeHeight = player => monsterBodyProfile(player)?.eyeHeight ?? (player.crouching ? WORLD.crouchEyeHeight : WORLD.eyeHeight);
@@ -99,7 +107,7 @@ export function resetSprint(player, { refill = true } = {}) {
 export function createCombatPlayer(id, teamSize = 1, loadout = 'carbine') {
   const weapon = typeof loadout === 'string' && Object.hasOwn(WEAPONS, loadout) ? loadout : 'carbine', w = WEAPONS[weapon];
   const player = { id, team: Math.floor(id / teamSize), x: 0, y: 0, z: 0, yaw: 0, pitch: 0, vx: 0, vy: 0, vz: 0, knockbackX: 0, knockbackZ: 0, knockbackTicks: 0, knockbackReadyTicks: 0, radius: WORLD.radius, grounded: true, jumpBufferTicks: 0, stamina: SPRINT.maxStamina, staminaRegenTicks: 0, sprintExhausted: false, sprinting: false, crouching: false, alive: true, hp: PLAYER_HEALTH, maxHp: PLAYER_HEALTH, weapon, slot: 'primary', meleeWeapon: 'knife', meleeLoadout: 'knife', ammo: w.magazine, reserve: w.reserve, reloadTicks: 0, shotCooldown: 0, burstRemaining: 0, spinTicks: 0, recoil: 0, heat: 0, shotIndex: 0, lastShotHand: 0, pendingFireTicks: 0, shots: 0, kills: 0, deaths: 0, damageDealt: 0, lastHitTick: -1000, triggerBlocked: false, aiming: false, aimTicks: 0, meleeTicks: 0, meleeCooldown: 0, meleeIndex: 0, meleeHand: 0, meleeYaw: 0, meleePitch: 0, meleeStartTick: 0, meleePhase: 'idle', meleeHitIds: [], meleeHitLives: [], healing: false, healTicks: 0, healStartTick: -1, potions: 0, grenades: 0, grenadeThrowTicks: 0, interaction: null, interactTicks: 0, previousInput: emptyInput() };
-  Object.assign(player, { pendingMeleeTicks: 0, meleeInitialYaw: 0, meleeInitialPitch: 0, meleeAction: 'primary', meleeAimBlocked: false, meleeSecondaryCooldown: 0, parryTicks: 0, parryCooldown: 0, parryYaw: 0, parryPitch: 0, parryStartTick: 0, parryIndex: 0, parryConsumed: false });
+  Object.assign(player, { pendingMeleeTicks: 0, meleeComboStep: 0, meleeComboConfirmed: false, meleeComboWindowTicks: 0, meleeComboWeapon: null, hitStunTicks: 0, hitStunReadyTicks: 0, meleeInitialYaw: 0, meleeInitialPitch: 0, meleeAction: 'primary', meleeAimBlocked: false, meleeSecondaryCooldown: 0, parryTicks: 0, parryCooldown: 0, parryYaw: 0, parryPitch: 0, parryStartTick: 0, parryIndex: 0, parryConsumed: false });
   return initializeInventory(player, { weapon });
 }
 const newPlayer = createCombatPlayer;
@@ -273,7 +281,7 @@ function supportHeight(f, arena) {
   return height;
 }
 function refreshGrounded(f, arena) { f.grounded = f.alive && f.vy <= EPS && Math.abs(f.y - supportHeight(f, arena)) <= EPS; }
-function clearKnockback(player) { player.knockbackX = player.knockbackZ = player.knockbackTicks = player.knockbackReadyTicks = 0; }
+function clearKnockback(player) { player.hitStunTicks = player.hitStunReadyTicks = 0; player.knockbackX = player.knockbackZ = player.knockbackTicks = player.knockbackReadyTicks = 0; }
 function clipKnockback(player, nx, nz) {
   const x = Number.isFinite(player.knockbackX) ? player.knockbackX : 0, z = Number.isFinite(player.knockbackZ) ? player.knockbackZ : 0, inward = Math.min(0, x * nx + z * nz);
   player.knockbackX = x - inward * nx; player.knockbackZ = z - inward * nz;
@@ -297,7 +305,7 @@ function sprintAllowed(player, input, forward, actions = player) {
   if (player.sprintExhausted && !input.sprint && player.stamina >= SPRINT.restartStamina) player.sprintExhausted = false;
   return player.monster !== true && player.bot !== true && input.sprint && forward > 0 && player.grounded && !player.crouching && !player.sprintExhausted && player.stamina > EPS
     && !input.walk && !input.aim && !input.fire && !input.reload && !input.interact && !input.heal && !input.grenade && !input.swap && !input.drop
-    && !actions.reloadTicks && !actions.healTicks && !actions.grenadeThrowTicks && !actions.meleeTicks && !actions.parryTicks && !actions.burstRemaining && !actions.pendingFireTicks && !actions.interaction;
+    && !player.hitStunTicks && !actions.reloadTicks && !actions.healTicks && !actions.grenadeThrowTicks && !actions.meleeTicks && !actions.parryTicks && !actions.burstRemaining && !actions.pendingFireTicks && !actions.interaction;
 }
 function finishSprint(player, plan) {
   if (!player.alive) { resetSprint(player, { refill: false }); return; }
@@ -323,14 +331,17 @@ function finishSprint(player, plan) {
 function movementTick(f, input, arena, peers = [], headroomPeers = peers, actions = f) {
   f.yaw = input.yaw; f.pitch = input.pitch;
   if (!f.alive) { f.vx = f.vy = f.vz = 0; f.jumpBufferTicks = 0; clearKnockback(f); resetSprint(f, { refill: false }); return null; }
+  const hitStunned = f.monster !== true && f.hitStunTicks > 0;
+  f.hitStunTicks = Math.max(0, Math.min(16, Number.isFinite(f.hitStunTicks) ? f.hitStunTicks : 0) - 1);
+  f.hitStunReadyTicks = Math.max(0, Math.min(72, Number.isFinite(f.hitStunReadyTicks) ? f.hitStunReadyTicks : 0) - 1);
   const monsterBody = monsterBodyProfile(f);
   if (monsterBody) { f.radius = monsterBody.radius; f.crouching = false; }
   else if (input.crouch) f.crouching = true;
   else if (!arena.colliders.some(rect => bodyOverlapsBox(f, rect, WORLD.standHeight)) && !headroomPeers.some(peer => bodyOverlapsPlayer(f, peer, WORLD.standHeight))) f.crouching = false;
   // Queue only a fresh press. It may survive a short descent onto the next
   // platform, but holding jump never repeats and leaving a ledge grants no lift.
-  if (input.jump && !f.previousInput?.jump) f.jumpBufferTicks = WORLD.jumpBufferTicks;
-  if (f.grounded && f.jumpBufferTicks > 0 && !f.crouching) {
+  if (!hitStunned && input.jump && !f.previousInput?.jump) f.jumpBufferTicks = WORLD.jumpBufferTicks;
+  if (!hitStunned && f.grounded && f.jumpBufferTicks > 0 && !f.crouching) {
     f.vy = monsterBody?.jumpSpeed ?? WORLD.jumpSpeed; f.grounded = false; f.jumpBufferTicks = 0;
   } else f.jumpBufferTicks = Math.max(0, (f.jumpBufferTicks || 0) - 1);
   let strafe = Number(input.right) - Number(input.left), forward = Number(input.up) - Number(input.down); const length = Math.hypot(strafe, forward);
@@ -338,7 +349,7 @@ function movementTick(f, input, arena, peers = [], headroomPeers = peers, action
   const primarySpeed = monsterMovementSpeed(f) ?? (f.slot === 'sword' ? meleeProfile(f).speed : WEAPONS[f.weapon].speed);
   const heldWeapon = WEAPONS[f.weapon], ads = input.aim && heldWeapon.adsSupported !== false && f.slot === 'primary' && !actions.reloadTicks && !actions.healTicks && !actions.grenadeThrowTicks;
   const adsSpeed = heldWeapon.valorant && Number.isFinite(heldWeapon.adsSpeed) ? heldWeapon.adsSpeed / heldWeapon.speed : ADS.speedMultiplier;
-  const allowed = sprintAllowed(f, input, forward, actions), normalSpeed = (f.crouching ? 2.35 : input.walk ? 2.8 : primarySpeed) * (actions.healTicks ? HEAL.speedMultiplier : ads ? adsSpeed : 1) * monsterMovementMultiplier(f);
+  const allowed = sprintAllowed(f, input, forward, actions), normalSpeed = (f.crouching ? 2.35 : input.walk ? 2.8 : primarySpeed) * (actions.healTicks ? HEAL.speedMultiplier : ads ? adsSpeed : 1) * monsterMovementMultiplier(f) * (hitStunned ? .35 : 1);
   const speed = normalSpeed * (allowed ? SPRINT.speedMultiplier : 1);
   if (!f.grounded && !monsterBody) {
     const velocity = Math.hypot(f.vx, f.vz);
@@ -674,6 +685,9 @@ function tickActions(state, f, input, arena) {
   if (!f.alive) return;
   ensureInventory(f);
   f.yaw = input.yaw; f.pitch = input.pitch;
+  f.meleeComboWindowTicks = Math.max(0, (f.meleeComboWindowTicks || 0) - 1);
+  if (!f.meleeComboWindowTicks && !f.meleeTicks || f.slot !== 'sword') resetMeleeCombo(f);
+  else if (input.interact || input.reload || input.heal) clearMeleeComboContinuation(f);
   f.grenadeThrowTicks = Math.max(0, f.grenadeThrowTicks - 1);
   f.meleeSecondaryCooldown = Math.max(0, (f.meleeSecondaryCooldown || 0) - 1);
   if (!input.fire) f.triggerBlocked = false;
@@ -701,7 +715,7 @@ function tickActions(state, f, input, arena) {
     clearMelee(f); cancelHeal(state, f, 'drop'); f.triggerBlocked = input.fire || f.triggerBlocked; f.meleeAimBlocked = input.aim || f.meleeAimBlocked;
   }
   const held = selectedInventoryItem(f), useGrenade = input.grenade && !f.previousInput.grenade || held?.kind === 'grenade' && input.fire && !f.previousInput.fire && !f.triggerBlocked;
-  if (useGrenade && !input.interact && !f.grenadeThrowTicks && !f.parryTicks) {
+  if (useGrenade && !f.hitStunTicks && !input.interact && !f.grenadeThrowTicks && !f.parryTicks) {
     const grenade = throwGrenade(state, f, arena, (type, data) => emit(state, type, data));
     if (grenade) {
       // Ordnance validates the throw before the selected physical stack is spent.
@@ -750,7 +764,7 @@ function meleeBodyContacts(geometry, target) {
   return contacts.sort((a, b) => a.distance - b.distance);
 }
 function secondaryReady(f, input, actions = f) {
-  return f.monster !== true && f.bot !== true && !f.sprinting && input.aim && !f.previousInput?.aim && !actions.meleeAimBlocked && !actions.meleeCooldown && !actions.meleeSecondaryCooldown && !actions.parryCooldown
+  return f.monster !== true && f.bot !== true && !f.sprinting && input.aim && !f.previousInput?.aim && !f.hitStunTicks && !actions.meleeAimBlocked && !actions.meleeCooldown && !actions.meleeSecondaryCooldown && !actions.parryCooldown
     && !input.fire && !input.interact && !input.reload && !input.heal && !input.grenade && !input.swap && !INVENTORY_ACTIONS.some(key => input[key]) && !actions.reloadTicks;
 }
 function spendParryStamina(f, profile) {
@@ -759,14 +773,16 @@ function spendParryStamina(f, profile) {
 }
 function beginMelee(state, f, action = 'primary') {
   f.meleeAction = action;
-  const melee = meleeProfile(f), weapon = meleeWeaponId(f);
+  if (action !== 'primary') resetMeleeCombo(f);
+  const melee = action === 'primary' ? beginMeleeCombo(f) : meleeProfile(f), weapon = meleeWeaponId(f);
   f.meleeTicks = melee.startupTicks + melee.activeTicks + melee.recoveryTicks; f.meleePhase = 'startup'; f.meleeHitIds = []; f.meleeHitLives = [];
   f.meleeCooldown = f.meleeTicks; f.pendingMeleeTicks = 0; f.meleeYaw = f.meleeInitialYaw = f.yaw; f.meleePitch = f.meleeInitialPitch = f.pitch;
   if (action === 'secondary') f.meleeSecondaryCooldown = f.meleeTicks;
   f.meleeIndex = (f.meleeIndex || 0) + 1; f.meleeHand = meleeHand(f, f.meleeIndex);
   f.meleeStartTick = state.tick;
-  emit(state, 'meleeStart', { playerId: f.id, weapon, meleeAction: action, hand: f.meleeHand, meleeIndex: f.meleeIndex, meleeStartTick: f.meleeStartTick, attackerLifeId: f.lifeId || 0, attackerDeaths: f.deaths || 0, x: f.x, y: f.y + eyeHeight(f), z: f.z, yaw: f.meleeYaw, pitch: f.meleePitch });
+  emit(state, 'meleeStart', { ...comboMetadata(melee), playerId: f.id, weapon, meleeAction: action, hand: f.meleeHand, meleeIndex: f.meleeIndex, meleeStartTick: f.meleeStartTick, attackerLifeId: f.lifeId || 0, attackerDeaths: f.deaths || 0, x: f.x, y: f.y + eyeHeight(f), z: f.z, yaw: f.meleeYaw, pitch: f.meleePitch });
 }
+const comboMetadata = profile => ({ comboStep: profile.comboStep || 0, comboLength: profile.comboLength || 0, comboFinisher: profile.comboFinisher === true, slashDirection: profile.slashDirection || 1 });
 function tickMelee(state, f, input, pendingDamage, arena, { meleeDamageScale } = {}) {
   const primary = advanceMeleePrimaryPress(f, input);
   f.pendingMeleeTicks = primary.pendingMeleeTicks;
@@ -784,6 +800,7 @@ function tickMelee(state, f, input, pendingDamage, arena, { meleeDamageScale } =
     else {
       const profile = parryProfile(f);
       if (profile && f.stamina >= profile.staminaCost) {
+        resetMeleeCombo(f);
         spendParryStamina(f, profile); f.parryTicks = f.meleeCooldown = profile.startupTicks + profile.activeTicks + profile.recoveryTicks; f.parryCooldown = f.meleeSecondaryCooldown = profile.cooldownTicks;
         f.parryYaw = f.yaw; f.parryPitch = f.pitch; f.parryStartTick = state.tick; f.parryIndex = (f.parryIndex || 0) + 1; f.parryConsumed = false;
         emit(state, 'parryStart', { playerId: f.id, weapon: meleeWeapon, parryIndex: f.parryIndex, parryStartTick: f.parryStartTick, defenderLifeId: f.lifeId || 0, ticks: f.parryTicks, cooldownTicks: profile.cooldownTicks, staminaCost: profile.staminaCost, x: f.x, y: f.y + eyeHeight(f), z: f.z, yaw: f.parryYaw, pitch: f.parryPitch });
@@ -794,7 +811,7 @@ function tickMelee(state, f, input, pendingDamage, arena, { meleeDamageScale } =
   if (f.meleePhase !== 'active') return;
   const origin = meleeSlashOrigin(f), phase = meleeSlashPhase(f), geometry = meleeSlashGeometry(f, { from: phase.from, to: phase.to, origin });
   f.meleeHitLives ||= [];
-  const swing = { meleeIndex: f.meleeIndex, meleeStartTick: f.meleeStartTick, meleeAction: f.meleeAction || 'primary', attackerLifeId: f.lifeId || 0, attackerDeaths: f.deaths || 0 };
+  const swing = { ...comboMetadata(melee), meleeIndex: f.meleeIndex, meleeStartTick: f.meleeStartTick, meleeAction: f.meleeAction || 'primary', attackerLifeId: f.lifeId || 0, attackerDeaths: f.deaths || 0 };
   for (const target of state.players) {
     const life = `${target.id}:${target.lifeId || 0}`;
     if (!target.alive || target.id === f.id || target.team === f.team || f.meleeHitLives.includes(life)) continue;
@@ -887,6 +904,12 @@ function fireRound(state, f, weapon, pendingDamage, arena, fire = null) {
 }
 function tickWeapon(state, f, input, pendingDamage, arena, meleeOptions = {}) {
   if (!f.alive) { f.pendingMeleeTicks = 0; return; }
+  if (f.hitStunTicks > 0) {
+    f.pendingMeleeTicks = f.pendingFireTicks = f.burstRemaining = f.spinTicks = 0;
+    f.shotCooldown = Math.max(0, f.shotCooldown - 1);
+    if (f.meleeTicks > 0) { f.meleeTicks--; f.meleePhase = f.meleeTicks > 0 ? 'recovery' : 'idle'; }
+    return;
+  }
   if (f.slot !== 'sword' || f.healTicks || f.grenadeThrowTicks) f.pendingMeleeTicks = 0;
   const weapon = WEAPONS[f.weapon]; f.recoil = Math.max(0, f.recoil - .04 * DT); f.heat = Math.max(0, f.heat - 2.8 * DT);
   if (weapon.valorant) {
@@ -924,7 +947,7 @@ function tickWeapon(state, f, input, pendingDamage, arena, meleeOptions = {}) {
   // interrupted firing commitment requires a new full wind-up before spending ammo.
   if (!weapon.spinupTicks || !input.fire || f.triggerBlocked || f.reloadTicks || input.interact || f.ammo <= 0) f.spinTicks = 0;
   else f.spinTicks = Math.min(weapon.spinupTicks, f.spinTicks + 1);
-  if (f.triggerBlocked || f.shotCooldown || f.reloadTicks || input.interact) return;
+  if (f.hitStunTicks || f.triggerBlocked || f.shotCooldown || f.reloadTicks || input.interact) return;
   if (!f.burstRemaining) {
     const bufferedPress = weapon.pressBufferTicks && f.pendingFireTicks > 0;
     if (!bufferedPress && (!input.fire || ((weapon.mode === 'semi' || weapon.mode === 'burst' || weapon.mode === 'pump' || weapon.mode === 'bolt') && f.previousInput.fire))) return;
@@ -949,7 +972,17 @@ function applyMeleeKnockback(state, hit, attacker, target, profile) {
   target.knockbackX = nx * speed; target.knockbackZ = nz * speed;
   target.knockbackTicks = monster ? KNOCKBACK.monsterTicks : KNOCKBACK.playerTicks;
   target.knockbackReadyTicks = monster ? KNOCKBACK.monsterReadyTicks : KNOCKBACK.playerReadyTicks;
-  emit(state, 'meleeKnockback', { playerId: attacker.id, targetId: target.id, targetLifeId: target.lifeId || 0, weapon: profile.id, meleeIndex: hit.meleeIndex, meleeStartTick: hit.meleeStartTick, attackerLifeId: attacker.lifeId || 0, x: target.x, y: target.y, z: target.z, dx: nx, dz: nz, speed, ticks: target.knockbackTicks });
+  emit(state, 'meleeKnockback', { ...comboMetadata(profile), playerId: attacker.id, targetId: target.id, targetLifeId: target.lifeId || 0, weapon: profile.id, meleeIndex: hit.meleeIndex, meleeStartTick: hit.meleeStartTick, attackerLifeId: attacker.lifeId || 0, x: target.x, y: target.y, z: target.z, dx: nx, dz: nz, speed, ticks: target.knockbackTicks });
+}
+function applyMeleeHitStun(state, hit, attacker, target, profile) {
+  if (target.hp <= 0 || target.monster === true || target.hitStunReadyTicks > 0) return;
+  const ticks = profile.hitStunTicks || 10;
+  target.hitStunTicks = ticks; target.hitStunReadyTicks = 72; target.sprinting = false; target.jumpBufferTicks = 0;
+  target.triggerBlocked = target.meleeAimBlocked = true; target.parryTicks = 0; target.parryConsumed = true;
+  target.pendingMeleeTicks = target.pendingFireTicks = target.burstRemaining = 0;
+  if (target.meleeTicks > 0) { target.meleeTicks = Math.min(target.meleeTicks, meleeProfile(target).recoveryTicks); target.meleePhase = 'recovery'; }
+  resetMeleeCombo(target);
+  emit(state, 'meleeStun', { ...comboMetadata(profile), playerId: attacker.id, targetId: target.id, targetLifeId: target.lifeId || 0, weapon: profile.id, meleeIndex: hit.meleeIndex, meleeStartTick: hit.meleeStartTick, attackerLifeId: attacker.lifeId || 0, ticks, readyTicks: target.hitStunReadyTicks, x: target.x, y: target.y, z: target.z });
 }
 function parryContact(state, hit, arena) {
   const defender = state.players[hit.targetId], attacker = state.players[hit.playerId];
@@ -980,7 +1013,7 @@ export function applyCombatDamage(state, pending, { onMeleeHit, arena = state.ma
   for (const { defender, attacker, contact, hit } of defenses.values()) {
     parried.add(hit); defender.parryConsumed = true; defender.parryTicks = Math.min(defender.parryTicks, parryProfile(defender).recoveryTicks);
     if (Object.hasOwn(MELEE_WEAPONS, hit.attack) && Number.isInteger(hit.meleeIndex) && hit.meleeIndex === attacker.meleeIndex && hit.meleeStartTick === attacker.meleeStartTick) {
-      stoppedSwings.add(swingKey(hit)); attacker.meleeTicks = Math.min(attacker.meleeTicks, meleeProfile(attacker).recoveryTicks); attacker.meleePhase = 'recovery';
+      stoppedSwings.add(swingKey(hit)); attacker.meleeTicks = Math.min(attacker.meleeTicks, meleeProfile(attacker).recoveryTicks); attacker.meleePhase = 'recovery'; resetMeleeCombo(attacker);
     }
     emit(state, 'meleeParry', { playerId: defender.id, targetId: attacker.id, weapon: meleeWeaponId(defender), attackWeapon: hit.weapon || hit.attack, defenderLifeId: defender.lifeId || 0, attackerLifeId: attacker.lifeId || 0, parryIndex: defender.parryIndex, parryStartTick: defender.parryStartTick, meleeIndex: hit.meleeIndex, meleeStartTick: hit.meleeStartTick, x: contact.x, y: contact.y, z: contact.z });
   }
@@ -991,10 +1024,12 @@ export function applyCombatDamage(state, pending, { onMeleeHit, arena = state.ma
     cancelHeal(state, f, 'damage');
     if (attacker && attacker.id !== f.id && attacker.team !== f.team) attacker.damageDealt += damage;
     if (f.hp <= 0) lethalHits.set(f.id, hit);
-    if (typeof hit.attack === 'string' && Object.hasOwn(MELEE_WEAPONS, hit.attack) && Number.isInteger(hit.meleeIndex) && [hit.hitX, hit.hitY, hit.hitZ].every(Number.isFinite)) emit(state, 'meleeHit', { meleeIndex: hit.meleeIndex, meleeStartTick: hit.meleeStartTick, meleeAction: hit.meleeAction || 'primary', attackerLifeId: hit.attackerLifeId || 0, attackerDeaths: hit.attackerDeaths || 0, playerId: hit.playerId, targetId: hit.targetId, targetLifeId: hit.targetLifeId || 0, weapon: hit.attack, hand: hit.hand, damage, x: hit.hitX, y: hit.hitY, z: hit.hitZ });
+    if (typeof hit.attack === 'string' && Object.hasOwn(MELEE_WEAPONS, hit.attack) && Number.isInteger(hit.meleeIndex) && [hit.hitX, hit.hitY, hit.hitZ].every(Number.isFinite)) emit(state, 'meleeHit', { comboStep: hit.comboStep || 0, comboLength: hit.comboLength || 0, comboFinisher: hit.comboFinisher === true, slashDirection: hit.slashDirection || 1, meleeIndex: hit.meleeIndex, meleeStartTick: hit.meleeStartTick, meleeAction: hit.meleeAction || 'primary', attackerLifeId: hit.attackerLifeId || 0, attackerDeaths: hit.attackerDeaths || 0, playerId: hit.playerId, targetId: hit.targetId, targetLifeId: hit.targetLifeId || 0, weapon: hit.attack, hand: hit.hand, damage, x: hit.hitX, y: hit.hitY, z: hit.hitZ });
     emit(state, 'damage', { ...hit, damage, hp: f.hp, x: f.x, y: f.y + eyeHeight(f), z: f.z });
     if (typeof hit.attack === 'string' && Object.hasOwn(MELEE_WEAPONS, hit.attack) && attacker && attacker.id !== f.id && attacker.team !== f.team) {
-      const profile = hit.attack === 'knife' && hit.meleeAction === 'secondary' ? KNIFE_SECONDARY : MELEE_WEAPONS[hit.attack];
+      const profile = meleeProfile({ meleeWeapon: hit.attack, meleeAction: hit.meleeAction || 'primary', meleeComboWeapon: hit.attack, meleeComboStep: hit.comboStep });
+      if (hit.meleeAction !== 'secondary' && attacker.alive && attacker.meleeComboStep > 0 && attacker.meleeComboWindowTicks > 0 && hit.comboStep === attacker.meleeComboStep && hit.meleeIndex === attacker.meleeIndex && hit.meleeStartTick === attacker.meleeStartTick && (hit.attackerLifeId || 0) === (attacker.lifeId || 0) && (hit.attackerDeaths || 0) === (attacker.deaths || 0)) attacker.meleeComboConfirmed = true;
+      applyMeleeHitStun(state, hit, attacker, f, profile);
       if (typeof onMeleeHit === 'function') onMeleeHit(state, { ...hit, damage }, attacker, f, profile);
       // Monster stagger modifies ordinary gait, never the independent shove.
       applyMeleeKnockback(state, hit, attacker, f, profile);

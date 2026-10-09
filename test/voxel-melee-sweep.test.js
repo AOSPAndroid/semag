@@ -137,10 +137,10 @@ test('accepted nonlethal hits give weapon-specific physical impulses after stagg
   near(vectorLength(victim), 3);
 });
 
-test('heavy brute resistance and modest PvP shoves preserve movement and combat control', () => {
+test('heavy brute resistance and modest PvP shoves add only brief interruptible-control stagger', () => {
   const light = shove({ weapon: 'axe' }), heavy = shove({ weapon: 'axe', type: 'brute' }), player = shove({ weapon: 'axe', monster: false, fields: { meleeTicks: 30, meleePhase: 'active' } });
   near(vectorLength(light.target), 10); near(vectorLength(heavy.target), 3.5); near(vectorLength(player.target), 2.4);
-  assert.equal(player.target.meleeTicks, 30, 'a shove adds no player stun or canceled attack'); assert.equal(player.target.knockbackTicks, 24);
+  assert.equal(player.target.meleeTicks, 26, 'brief impact ends a vulnerable knife commitment into its original recovery'); assert.equal(player.target.hitStunTicks, 10); assert.equal(player.target.knockbackTicks, 24);
   const before = player.target.x;
   predictLocalMovement(player.target, { ...emptyInput(player.target), right: true }, arena, 12);
   assert.ok(player.target.x > before + .12, 'the victim can still steer throughout impact');

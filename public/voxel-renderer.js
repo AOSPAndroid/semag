@@ -92,6 +92,7 @@ function aimProgress(player) {
 
 export function meleeMotion(player) {
   const profile = meleeProfile(player), id = meleeWeaponId(player), knife = id === 'knife', hand = id === 'tonfas' && player.meleeHand === 1 ? -1 : 1;
+  const combo = { comboStep: finite(profile.comboStep), comboLength: finite(profile.comboLength), comboFinisher: profile.comboFinisher === true, slashDirection: profile.slashDirection === -1 ? -1 : 1 };
   const secondary = knife && player.meleeAction === 'secondary';
   const phase = meleeSlashPhase(player);
   const total = profile.startupTicks + profile.activeTicks + profile.recoveryTicks;
@@ -106,10 +107,10 @@ export function meleeMotion(player) {
     // a raised V; the visible hold ends with the real short defense timer.
     const guardYaw = (id === 'tonfas' ? -.70 : id === 'axe' ? -.80 : -.94) * hand;
     const guardPitch = id === 'tonfas' ? .82 : id === 'axe' ? .70 : .58;
-    return { yaw: lerp(idleYaw, guardYaw, weight), pitch: lerp(idlePitch, guardPitch, weight), roll: lerp(idleRoll, (id === 'tonfas' ? .35 : .52) * hand, weight), extension: .03 * weight, active: false, phase: `parry-${defense.phase}`, progress: defense.progress, grip: weight, guarding: true, guardActive: defense.phase === 'active', action: 'parry' };
+    return { ...combo, yaw: lerp(idleYaw, guardYaw, weight), pitch: lerp(idlePitch, guardPitch, weight), roll: lerp(idleRoll, (id === 'tonfas' ? .35 : .52) * hand, weight), extension: .03 * weight, active: false, phase: `parry-${defense.phase}`, progress: defense.progress, grip: weight, guarding: true, guardActive: defense.phase === 'active', action: 'parry' };
   }
   const action = secondary ? 'secondary' : 'primary';
-  if (phase.phase === 'idle') return { yaw: idleYaw, pitch: idlePitch, roll: idleRoll, extension: 0, active: false, phase: 'idle', progress: 0, grip: 0, action };
+  if (phase.phase === 'idle') return { ...combo, yaw: idleYaw, pitch: idlePitch, roll: idleRoll, extension: 0, active: false, phase: 'idle', progress: 0, grip: 0, action };
   const pathProgress = phase.phase === 'startup' ? 0 : phase.phase === 'active' ? phase.progress : 1;
   const sample = meleeSlashGeometry(player, { from: pathProgress, to: pathProgress }).samples[0];
   const yaw = Math.atan2(sample.direction.x, -sample.direction.z), pitch = Math.asin(clamp(sample.direction.y, -1, 1));
@@ -124,13 +125,13 @@ export function meleeMotion(player) {
     // A heavy blade loads slowly, with a distinct pull back before its cut.
     const progress = smooth(elapsed / profile.startupTicks), weight = id === 'axe' ? progress ** 1.3 : progress;
     const extension = secondary ? -.18 * progress + .88 * smooth((progress - .72) / .28) : knife ? -progress * .10 : -Math.sin(progress * Math.PI) * (id === 'axe' ? .16 : .10);
-    return { yaw: lerp(idleYaw, relativeYaw, weight), pitch: lerp(idlePitch, relativePitch, weight), roll: lerp(idleRoll, roll, weight), extension, active: false, phase: 'startup', progress, grip: weight, action };
+    return { ...combo, yaw: lerp(idleYaw, relativeYaw, weight), pitch: lerp(idlePitch, relativePitch, weight), roll: lerp(idleRoll, roll, weight), extension, active: false, phase: 'startup', progress, grip: weight, action };
   }
   if (phase.phase === 'active') {
-    return { yaw: relativeYaw, pitch: relativePitch, roll, extension: knife ? (secondary ? .70 : .48) - phase.progress * (secondary ? .10 : .12) : Math.sin(phase.progress * Math.PI) * (id === 'tonfas' ? .19 : .28), active: true, phase: 'active', progress: phase.progress, grip: 1, action };
+    return { ...combo, yaw: relativeYaw, pitch: relativePitch, roll, extension: knife ? (secondary ? .70 : .48) - phase.progress * (secondary ? .10 : .12) : Math.sin(phase.progress * Math.PI) * (id === 'tonfas' ? .19 : .28), active: true, phase: 'active', progress: phase.progress, grip: 1, action };
   }
   const progress = smooth((elapsed - profile.startupTicks - profile.activeTicks) / profile.recoveryTicks);
-  return { yaw: lerp(relativeYaw, idleYaw, progress), pitch: lerp(relativePitch, idlePitch, progress), roll: lerp(roll, idleRoll, progress), extension: knife ? (secondary ? .60 : .36) * (1 - progress) : 0, active: false, phase: 'recovery', progress, grip: 1 - progress, action };
+  return { ...combo, yaw: lerp(relativeYaw, idleYaw, progress), pitch: lerp(relativePitch, idlePitch, progress), roll: lerp(roll, idleRoll, progress), extension: knife ? (secondary ? .60 : .36) * (1 - progress) : 0, active: false, phase: 'recovery', progress, grip: 1 - progress, action };
 }
 
 function meleeCutRoll(player, sample, yaw, pitch) {
@@ -474,7 +475,8 @@ export function meleeTrailPath(player, colliders = []) {
     const length = Math.max(0, Math.min(rawLength, rayCoverDistance(origin, direction, cover, rawLength + .025, .012) - .025));
     return { progress: sample.progress, inner: [sample.inner.x, sample.inner.y, sample.inner.z], outer: origin.map((value, axis) => value + direction[axis] * length), direction, length, clipped: length < rawLength - .001 };
   });
-  return { kind: path.kind, origin, radius: path.radius, from: path.from, to: path.to, fade, samples, cover };
+  return { kind: path.kind, origin, radius: path.radius, from: path.from, to: path.to, fade, samples, cover,
+    comboStep: finite(profile.comboStep), comboLength: finite(profile.comboLength), comboFinisher: profile.comboFinisher === true, slashDirection: profile.slashDirection === -1 ? -1 : 1 };
 }
 
 function quadTouchesCover(points, colliders) {
@@ -490,13 +492,14 @@ function meleeTrailParts(mesh, player, colliders, camera, { reducedMotion = fals
   if (!path || !path.samples.length) return 0;
   const start = mesh.length;
   const id = meleeWeaponId(player), warm = id === 'axe' || id === 'katana';
-  const core = warm ? [1, .97, .85, 1] : [.94, 1, 1, 1];
-  const ribbon = id === 'tonfas' ? [.78, .66, 1, 1] : id === 'katana' ? [1, .84, .47, 1] : warm ? [1, .64, .32, 1] : [.46, .89, 1, 1];
+  const core = path.comboFinisher ? [1, 1, .93, 1] : warm ? [1, .97, .85, 1] : [.94, 1, 1, 1];
+  const ribbon = path.comboFinisher ? [1, .80, .36, 1] : id === 'tonfas' ? [.78, .66, 1, 1] : id === 'katana' ? [1, .84, .47, 1] : warm ? [1, .64, .32, 1] : [.46, .89, 1, 1];
   if (path.kind === 'stab') {
     const sample = path.samples.at(-1);
     if (sample.length > .21) {
-      mesh.line(sample.inner, sample.outer, .026, [ribbon[0], ribbon[1], ribbon[2], .15 * path.fade], camera);
-      mesh.line(sample.inner, sample.outer, .006, [core[0], core[1], core[2], .62 * path.fade], camera);
+      const accent = path.comboFinisher && !reducedMotion ? 1.2 : 1;
+      mesh.line(sample.inner, sample.outer, .026 * accent, [ribbon[0], ribbon[1], ribbon[2], .15 * accent * path.fade], camera);
+      mesh.line(sample.inner, sample.outer, .006 * accent, [core[0], core[1], core[2], .62 * accent * path.fade], camera);
     }
     return (mesh.length - start) / VERTEX_STRIDE;
   }
@@ -519,7 +522,7 @@ function meleeTrailParts(mesh, player, colliders, camera, { reducedMotion = fals
     // Every fourth short edge catches the light, rather than adding a new
     // free-moving spark object or another draw pass for each swinging actor.
     const glint = !reducedMotion && (index + finite(player.meleeIndex)) % 4 === 0;
-    const width = (reducedMotion ? .009 : .016 + head * .010 + (glint ? .009 : 0)) * path.fade;
+    const width = (reducedMotion ? .009 : (.016 + head * .010 + (glint ? .009 : 0)) * (path.comboFinisher ? 1.2 : 1)) * path.fade;
     const delta = b.outer.map((value, axis) => value - a.outer[axis]), middle = a.outer.map((value, axis) => (value + b.outer[axis]) / 2);
     const toEye = camera.map((value, axis) => value - middle[axis]), side = normalized(cross(delta, toEye), [0, 0, 0]).map(value => value * width);
     const edge = [a.outer.map((v, i) => v - side[i]), b.outer.map((v, i) => v - side[i]), b.outer.map((v, i) => v + side[i]), a.outer.map((v, i) => v + side[i])];

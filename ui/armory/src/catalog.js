@@ -1,5 +1,5 @@
 import { WEAPONS, weaponDamage, weaponStats } from '../../../public/voxel-weapons.js';
-import { MELEE_WEAPONS } from '../../../public/voxel-melee.js';
+import { MELEE_WEAPONS, MELEE_COMBO_WINDOW_TICKS, meleeComboLength, meleeProfile } from '../../../public/voxel-melee.js';
 
 const GUN_CATEGORIES = Object.freeze([
   { id: 'all', label: 'All weapons' },
@@ -77,11 +77,15 @@ function gunStats(weapon) {
 }
 
 function meleeStats(weapon) {
+  const comboLength = meleeComboLength(weapon.id);
+  const finisher = meleeProfile({ meleeWeapon: weapon.id, meleeAction: 'primary', meleeComboWeapon: weapon.id, meleeComboStep: comboLength });
   return [
-    stat('Damage', weapon.damage, 'Per primary strike'),
+    stat('Damage', weapon.damage, 'Opening strike'),
     stat('Reach', `${number(weapon.reach)} m`, 'Primary strike'),
     stat('Wind-up', seconds(weapon.startupTicks / 120), 'Before the strike becomes active'),
     stat('Swing', seconds((weapon.startupTicks + weapon.activeTicks + weapon.recoveryTicks) / 120), 'Full swing and recovery'),
+    stat('Combo', `${comboLength} hits`, `Confirm each hit · ${seconds(MELEE_COMBO_WINDOW_TICKS / 120)} after recovery to follow up`),
+    stat('Finisher', finisher.damage, 'Last confirmed cut · stronger push and brief stagger; enemies can resist'),
   ];
 }
 

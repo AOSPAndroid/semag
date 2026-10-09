@@ -3,7 +3,7 @@ import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 import { createPractice, startPractice, stepPractice, pausePractice, resumePractice, getPracticeStats, TICK_RATE, emptyInput } from '../public/voxel-practice-engine.js';
 import { MAPS, WORLD, PLAYER_HEALTH } from '../public/voxel-engine.js';
-import { MELEE_WEAPONS } from '../public/voxel-melee.js';
+import { MELEE_WEAPONS, meleeComboLength, meleeProfile } from '../public/voxel-melee.js';
 import { WEAPONS } from '../public/voxel-weapons.js';
 import { selectInventorySlot } from '../public/voxel-inventory.js';
 
@@ -78,7 +78,9 @@ for (const blade of Object.keys(MELEE_WEAPONS)) test(`${blade}: the authored dri
   const stats = getPracticeStats(state);
   assert.equal(state.phase, 'matchEnd'); assert.equal(stats.result, 'won'); assert.equal(stats.kills, 1);
   assert.equal(stats.damageDealt, 200); assert.equal(stats.damageTaken, 0); assert.equal(stats.shots, 0);
-  assert.equal(stats.hits, Math.ceil(PLAYER_HEALTH / MELEE_WEAPONS[blade].damage));
+  let expectedHits = 0, chainDamage = 0;
+  while (chainDamage < PLAYER_HEALTH) { expectedHits++; chainDamage += meleeProfile({ meleeWeapon: blade, meleeComboWeapon: blade, meleeComboStep: (expectedHits - 1) % meleeComboLength(blade) + 1 }).damage; }
+  assert.equal(stats.hits, expectedHits);
   assert.ok(stats.landedSwings > 0 && stats.landedSwings <= stats.swings); assert.equal(stats.accuracy, stats.landedSwings / stats.swings * 100);
   assert.ok(state.events.some(event => event.type === 'meleeHit' && event.weapon === blade && event.targetId === 1));
   const terminal = JSON.stringify(state); advance(state, 240, { fire: true }); assert.equal(JSON.stringify(state), terminal);

@@ -2,7 +2,7 @@
 import { createCombatPlayer, combatStep, emitCombatEvent, emptyInput, INPUT_KEYS, TICK_RATE, MAPS, WEAPONS, WORLD, PLAYER_HEALTH, eyeHeight, playerHeight, aimDirection, traceShot, pickupCombatLoot, addInventoryLoot, advanceInventoryLoot, resetSprint } from './voxel-engine.js';
 import { navigationPoints, navigationPath, navigationCanOccupy, navigationVisible } from './voxel-navigation.js';
 import { INVENTORY_ACTIONS, createInventoryGun, createInventoryMelee, ensureInventory, refreshInventory, storeInventoryGun, inventoryCanTake, setInventoryLoadout, setInventoryMeleeLoadout } from './voxel-inventory.js';
-import { MELEE_WEAPONS, clearMeleeBuffer, resetMeleeDefense } from './voxel-melee.js';
+import { MELEE_WEAPONS, clearMeleeComboContinuation, resetMeleeDefense } from './voxel-melee.js';
 import { monsterBodyProfile, monsterAttackHeight } from './voxel-monster-bodies.js';
 import { MONSTER_SPECIAL_RULES, launchMonsterShard, markMonsterRune, cancelMonsterRunes, bomberDamage, advanceMonsterSpecials } from './voxel-monster-specials.js';
 import { resolveActiveFire, weaponFireIntervalTicks } from './voxel-fire-modes.js';
@@ -12,7 +12,7 @@ export const HORDE_RULES = Object.freeze({ maxMonsters: 20, maxLoot: 20, maxWarn
 export const HORDE_DIFFICULTIES = Object.freeze({ veteran: Object.freeze({ health: 1, spawn: 1, gunRest: 1, damage: 1 }), nightmare: Object.freeze({ health: 1.28, spawn: .78, gunRest: .8, damage: 1.18 }) });
 // Only the first three waves grant a close-combat damage opening. Monsters keep
 // their full health, movement and attack damage; later armed waves stay demanding.
-export const HORDE_MELEE_RULES = Object.freeze({ damageScales: Object.freeze([1.6, 1.4, 1.2]), staggerRecoveryTicks: 84, staggerTicks: Object.freeze({ knife: 18, sword: 28, katana: 32, axe: 44, tonfas: 16 }), supplyWeapons: Object.freeze(['tonfas', 'axe', 'sword', 'katana']) });
+export const HORDE_MELEE_RULES = Object.freeze({ damageScales: Object.freeze([1.6, 1.4, 1.2]), staggerRecoveryTicks: 84, comboStaggerMultiplier: 1.25, staggerTicks: Object.freeze({ knife: 18, sword: 28, katana: 32, axe: 44, tonfas: 16 }), supplyWeapons: Object.freeze(['tonfas', 'axe', 'sword', 'katana']) });
 export const MONSTER_TYPES = Object.freeze({
   stalker: Object.freeze({ label: 'Ash Stalker', health: 90, damage: 28, reach: 1.5, windup: 48, recovery: 72, weapon: 'carbine', walk: true }),
   runner: Object.freeze({ label: 'Rift Runner', health: 65, damage: 18, reach: 1.15, windup: 30, recovery: 54, weapon: 'smg', walk: false }),
@@ -106,6 +106,7 @@ export function setConnected(state, id, connected) {
   if (state.phase === 'lobby') player.alive = player.connected;
   else if (!player.connected) {
     player.alive = false; player.participating = false; player.hp = 0; player.vx = player.vy = player.vz = 0;
+    player.hitStunTicks = player.hitStunReadyTicks = 0;
     resetSprint(player,{refill:false});
     resetMeleeDefense(player, { blockAim: true });
     state.horde.participantIds = state.horde.participantIds.filter(peer => peer !== id);
@@ -144,7 +145,7 @@ export function chooseMelee(state, id, melee) {
   return valid;
 }
 function neutralize(state, { stop = true } = {}) {
-  for (const player of state.players) { clearMeleeBuffer(player); player.previousInput = emptyInput(player); player.triggerBlocked = true; player.sprinting = false; if (stop) player.vx = player.vy = player.vz = 0; player.aiming = false; player.aimTicks = 0; }
+  for (const player of state.players) { clearMeleeComboContinuation(player); player.previousInput = emptyInput(player); player.triggerBlocked = true; player.sprinting = false; if (stop) player.vx = player.vy = player.vz = 0; player.aiming = false; player.aimTicks = 0; }
 }
 function prepareWave(state) {
   const horde = state.horde, count = Math.max(1, horde.participantIds.length);
@@ -249,7 +250,7 @@ function survivorMelee(state, attacker, target) {
 function meleeDamageScale(state, attacker, target) {
   return survivorMelee(state, attacker, target) ? HORDE_MELEE_RULES.damageScales[state.horde.wave - 1] || 1 : 1;
 }
-function onMeleeHit(state, hit, attacker, target) {
+function onMeleeHit(state, hit, attacker, target, profile) {
   if (!(hit.damage > 0) || !survivorMelee(state, attacker, target) || target.hp <= 0 || target.emergenceTicks > 0) return;
   const brain = state.horde.brains[target.id];
   if (!brain) return;
@@ -267,7 +268,11 @@ function onMeleeHit(state, hit, attacker, target) {
   if (!duration) return;
   const waveResistance = wave === 1 ? 1 : wave === 2 ? .9 : wave === 3 ? .7 : wave === 4 ? .45 : .35;
   const armorResistance = target.monsterType === 'brute' ? hit.weapon === 'axe' ? .8 : .45 : 1;
-  const ticks = Math.max(6, Math.round(duration * waveResistance * armorResistance));
+  // A completed chain earns a stronger brief flinch, but never bypasses an
+  // enemy's shared immunity. Other survivors cannot repeatedly reset its cast.
+  const finisher = profile?.comboFinisher === true;
+  const comboResistance = finisher ? HORDE_MELEE_RULES.comboStaggerMultiplier : 1;
+  const ticks = Math.max(6, Math.round(duration * comboResistance * waveResistance * armorResistance));
   const attackWindow = monster.gun ? monster.windup + Math.round(monster.rest * settingsFor(state).gunRest) + 24 : monster.windup + 24;
   brain.staggerTicks = ticks; brain.staggerReadyTick = state.tick + ticks + Math.max(HORDE_MELEE_RULES.staggerRecoveryTicks, attackWindow);
   // This contact cancels a readable commitment, not an impact already resolved
@@ -281,7 +286,7 @@ function onMeleeHit(state, hit, attacker, target) {
   // Slow the ordinary gait only. Shared combat applies its independent,
   // collision-swept blade impulse after this confirmed-contact hook.
   target.vx *= .2; target.vz *= .2;
-  emitCombatEvent(state, 'monsterStagger', { playerId: attacker.id, targetId: target.id, weapon: hit.weapon, ticks, x: target.x, y: target.y, z: target.z });
+  emitCombatEvent(state, 'monsterStagger', { playerId: attacker.id, attackerLifeId: attacker.lifeId || 0, targetId: target.id, targetLifeId: target.lifeId || 0, weapon: hit.weapon, comboStep: profile?.comboStep || 0, comboLength: profile?.comboLength || 0, comboFinisher: finisher, ticks, x: target.x, y: target.y, z: target.z });
 }
 function spawnMonster(state, warning) {
   const point = { x: warning.x, y: warning.y, z: warning.z }, map = arenaFor(state);
@@ -629,7 +634,7 @@ function beginIntermission(state) {
     const old = state.players[id];
     if (!old.alive) { const restored = humanPlayer(state, id, old), position = safeHumanPosition(state, restored); if (!position) continue; Object.assign(restored, position); restored.participating = true; restored.hp = 150; state.players[id] = restored; }
     else { old.hp = Math.min(old.maxHp, old.hp + 35); ensureInventory(old); old.reloadTicks = old.healTicks = old.meleeTicks = old.meleeCooldown = old.grenadeThrowTicks = old.burstRemaining = old.spinTicks = 0; old.healing = false; old.meleePhase = 'idle'; }
-    const player = state.players[id]; player.knockbackX = player.knockbackZ = player.knockbackTicks = player.knockbackReadyTicks = 0; player.meleeHitIds = []; player.meleeHitLives = []; player.meleeStartTick = 0; storeInventoryGun(player);
+    const player = state.players[id]; player.knockbackX = player.knockbackZ = player.knockbackTicks = player.knockbackReadyTicks = player.hitStunTicks = player.hitStunReadyTicks = 0; player.meleeHitIds = []; player.meleeHitLives = []; player.meleeStartTick = 0; storeInventoryGun(player);
     resetSprint(player);
     resetMeleeDefense(player, { blockAim: true });
     for (const item of player.inventory) if (item?.kind === 'weapon') { const weapon = WEAPONS[item.weapon]; item.ammo = weapon.magazine; item.reserve = Math.min(weapon.reserve * 2, item.reserve + weapon.magazine * 2); item.reloadTicks = item.burstRemaining = item.spinTicks = 0; }
@@ -651,7 +656,7 @@ function finish(state) {
   state.horde.projectiles = []; state.horde.hazards = [];
   state.phase = 'matchEnd'; state.phaseTicks = 0; state.horde.phaseTicks = 0; state.horde.result = 'lost'; state.winner = 1; state.roundWinner = 1; state.roundReason = 'The squad fell.';
   state.objective = 'The squad fell. Compare your waves survived, regroup and try another run.';
-  for (const player of state.players) {player.knockbackX = player.knockbackZ = player.knockbackTicks = player.knockbackReadyTicks = 0;resetSprint(player,{refill:false});resetMeleeDefense(player, { blockAim: true });}
+  for (const player of state.players) {player.knockbackX = player.knockbackZ = player.knockbackTicks = player.knockbackReadyTicks = player.hitStunTicks = player.hitStunReadyTicks = 0;resetSprint(player,{refill:false});resetMeleeDefense(player, { blockAim: true });}
   neutralize(state); emitCombatEvent(state, 'hordeEnd', { wave: state.horde.wave, wavesCleared: state.horde.wavesCleared, kills: state.horde.totalKills, elapsedTicks: state.horde.elapsedTicks });
 }
 export function step(state, rawInputs = []) {

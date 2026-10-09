@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { WEAPONS, LEGACY_WEAPON_IDS, weaponDamage, weaponStats } from '../../../public/voxel-weapons.js';
-import { MELEE_WEAPONS } from '../../../public/voxel-melee.js';
+import { MELEE_WEAPONS, MELEE_COMBO_WINDOW_TICKS, meleeComboLength, meleeProfile } from '../../../public/voxel-melee.js';
 import { createArmoryEntries, categoriesFor, filterArmoryEntries, weaponCategory } from './catalog.js';
 
 const selectFor = (ids, catalog = WEAPONS) => ({
@@ -81,6 +81,12 @@ test('melee metadata uses complete primary swing timing and authored reach', () 
     assert.equal(statFor(entry, 'Reach').value, `${weapon.reach} m`);
     assert.equal(statFor(entry, 'Wind-up').value, `${(weapon.startupTicks / 120).toFixed(2)} s`);
     assert.equal(statFor(entry, 'Swing').value, `${((weapon.startupTicks + weapon.activeTicks + weapon.recoveryTicks) / 120).toFixed(2)} s`);
+    assert.equal(statFor(entry, 'Damage').note, 'Opening strike');
+    const length = meleeComboLength(entry.id);
+    const finisher = meleeProfile({ meleeWeapon: entry.id, meleeAction: 'primary', meleeComboWeapon: entry.id, meleeComboStep: length });
+    assert.equal(statFor(entry, 'Combo').value, `${length} hits`);
+    assert.ok(statFor(entry, 'Combo').note.includes(`${(MELEE_COMBO_WINDOW_TICKS / 120).toFixed(2)} s`));
+    assert.equal(statFor(entry, 'Finisher').value, String(finisher.damage));
   }
 });
 

@@ -2,7 +2,7 @@ import { SPRINT } from './voxel-engine.js';
 import { WEAPONS, weaponAimFovRatio } from './voxel-weapons.js';
 import { weaponReloadDuration } from './voxel-fire-modes.js';
 import { weaponReloadPose } from './voxel-player-animation.js';
-import { KNIFE_SECONDARY, PARRY_PROFILES, MELEE_PRESS_BUFFER_TICKS, meleeLabel, meleeProfile, meleeWeaponId, meleeSlashPhase, parryProfile, parryPhase } from './voxel-melee.js';
+import { KNIFE_SECONDARY, PARRY_PROFILES, MELEE_PRESS_BUFFER_TICKS, MELEE_COMBO_WINDOW_TICKS, meleeComboLength, meleeLabel, meleeProfile, meleeWeaponId, meleeSlashPhase, parryProfile, parryPhase } from './voxel-melee.js';
 import { selectedInventoryItem } from './voxel-inventory.js';
 
 /** Keep hip turn speed; ADS adds deliberate fine control to the weapon's zoom. */
@@ -31,6 +31,13 @@ export function meleeActionReadout(player, profile = meleeProfile(player)) {
   const bladeName = meleeLabel(player).toLowerCase().replace(/\b\w/g, letter => letter.toUpperCase());
   const guard = parryProfile(player), guardTicks = finiteTicks(player.parryTicks), attackTicks = Math.max(finiteTicks(player.meleeTicks), finiteTicks(player.meleeCooldown));
   const secondary = profile.id === 'knife' && player.meleeAction === 'secondary';
+  const held = selectedInventoryItem(player);
+  const combo = !secondary && !player.monster && !player.monsterType && Number.isSafeInteger(profile.comboStep)
+    && profile.comboStep > 0 && profile.comboStep === player.meleeComboStep && Number.isSafeInteger(profile.comboLength) && profile.comboLength > 1 && profile.comboStep <= profile.comboLength;
+  const followup = combo && !profile.comboFinisher && player.meleeComboConfirmed === true && finiteTicks(player.meleeComboWindowTicks) > 0
+    && player.meleeComboWeapon === profile.id && held?.kind === 'melee' && held.weapon === profile.id
+    && !player.reloadTicks && !player.grenadeThrowTicks && !player.parryTicks && !player.triggerBlocked;
+  const comboLabel = combo ? `${profile.comboFinisher ? 'FINISHER' : profile.id === 'knife' ? 'STAB' : 'CUT'} ${profile.comboStep}/${profile.comboLength} · ` : '';
   if (guard && guardTicks) {
     const phase = parryPhase(player).phase;
     return { state: phase, ammo: player.parryConsumed ? 'PARRIED' : ({ startup: 'SET', active: 'PARRY', recovery: 'RECOVER' })[phase] || 'RECOVER',
@@ -39,22 +46,28 @@ export function meleeActionReadout(player, profile = meleeProfile(player)) {
   }
   if (attackTicks) {
     const phase = player.meleeTicks > 0 ? player.meleePhase : 'recovery';
-    const held = selectedInventoryItem(player);
     const queued = Number.isSafeInteger(player.pendingMeleeTicks) && player.pendingMeleeTicks > 0 && player.pendingMeleeTicks <= MELEE_PRESS_BUFFER_TICKS
       && player.meleeAction === 'primary' && phase === 'recovery' && meleeSlashPhase(player).phase === 'recovery'
       && finiteTicks(player.meleeTicks) <= MELEE_PRESS_BUFFER_TICKS && finiteTicks(player.meleeCooldown) <= MELEE_PRESS_BUFFER_TICKS
       && held?.kind === 'melee' && held.weapon === meleeWeaponId(player) && profile.id === held.weapon
       && !player.reloadTicks && !player.grenadeThrowTicks && !player.parryTicks && !player.triggerBlocked;
-    return { state: phase || 'recovery', ammo: ({ startup: 'WINDUP', active: secondary ? 'STAB' : 'STRIKE', recovery: 'RECOVER' })[phase] || 'RECOVER',
-      status: `${(attackTicks / 120).toFixed(1)}S · ${phase === 'startup' ? secondary ? 'COMMITTING STAB' : 'COMMITTING' : phase === 'active' ? secondary ? 'STAB ACTIVE' : 'BLADE ACTIVE' : 'RECOVERING'}${queued ? ' · NEXT STRIKE QUEUED' : ''}`,
-      progress: actionProgress(`${bladeName} ${secondary ? 'stab' : 'attack'} and recovery`, attackTicks, profile.startupTicks + profile.activeTicks + profile.recoveryTicks) };
+    const prompt = queued ? followup ? ' · COMBO QUEUED' : ' · NEXT STRIKE QUEUED' : followup && phase === 'recovery'
+      ? finiteTicks(player.meleeTicks) <= MELEE_PRESS_BUFFER_TICKS && finiteTicks(player.meleeCooldown) <= MELEE_PRESS_BUFFER_TICKS ? ' · CLICK TO CHAIN' : ' · CHAIN READY' : '';
+    return { state: phase || 'recovery', ammo: ({ startup: 'WINDUP', active: secondary ? 'STAB' : combo && profile.comboFinisher ? 'FINISHER' : 'STRIKE', recovery: 'RECOVER' })[phase] || 'RECOVER',
+      status: `${comboLabel}${(attackTicks / 120).toFixed(1)}S · ${phase === 'startup' ? secondary ? 'COMMITTING STAB' : 'COMMITTING' : phase === 'active' ? secondary ? 'STAB ACTIVE' : 'BLADE ACTIVE' : 'RECOVERING'}${prompt}`,
+      progress: actionProgress(`${bladeName} ${secondary ? 'stab' : combo && profile.comboFinisher ? 'finisher' : 'attack'} and recovery`, attackTicks, profile.startupTicks + profile.activeTicks + profile.recoveryTicks) };
+  }
+  if (followup && Number.isSafeInteger(player.meleeComboWindowTicks) && player.meleeComboWindowTicks <= MELEE_COMBO_WINDOW_TICKS) {
+    const next = profile.comboStep + 1, action = next === profile.comboLength ? 'FINISHER' : profile.id === 'knife' ? 'STAB' : 'CUT';
+    return { state: 'combo', ammo: 'READY', status: `${(player.meleeComboWindowTicks / 120).toFixed(2)}S · CLICK FOR ${action} ${next}/${profile.comboLength}`,
+      progress: actionProgress(`${bladeName} combo follow-up window`, player.meleeComboWindowTicks, MELEE_COMBO_WINDOW_TICKS) };
   }
   const cooldown = Math.max(finiteTicks(player.parryCooldown), finiteTicks(player.meleeSecondaryCooldown));
   const action = guard ? 'PARRY' : 'STAB';
   if (cooldown) return { state: 'cooldown', ammo: 'READY', status: `${action} ${(cooldown / 120).toFixed(1)}S · LMB STRIKE`, progress: actionProgress(`${bladeName} ${action.toLowerCase()} cooldown`, cooldown, Math.max(cooldown, guard?.cooldownTicks || KNIFE_SECONDARY.startupTicks + KNIFE_SECONDARY.activeTicks + KNIFE_SECONDARY.recoveryTicks)) };
   if (guard && Number.isFinite(player.stamina) && player.stamina < guard.staminaCost) return { state: 'stamina', ammo: 'READY', status: `PARRY NEEDS ${guard.staminaCost} STAMINA`, progress: null };
   if (player.meleeAimBlocked) return { state: 'release', ammo: 'READY', status: `RELEASE RMB · LMB STRIKE`, progress: null };
-  return { state: 'ready', ammo: 'READY', status: guard ? 'LMB STRIKE · RMB PARRY' : 'LMB QUICK · RMB STAB', progress: null };
+  return { state: 'ready', ammo: 'READY', status: !player.monster && !player.bot && meleeComboLength(player) > 1 ? guard ? 'LMB COMBO · RMB PARRY' : 'LMB COMBO · RMB STAB' : guard ? 'LMB STRIKE · RMB PARRY' : 'LMB QUICK · RMB STAB', progress: null };
 }
 
 /** RMB keeps one wire action; the selected physical item gives it its meaning. */
