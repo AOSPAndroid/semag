@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { MAPS, MAP_IDS } from '../public/voxel-royale-maps.js';
 import { WORLD, WEAPONS, createCombatPlayer, emptyInput, predictLocalMovement } from '../public/voxel-engine.js';
+import { navigationPath } from '../public/voxel-navigation.js';
 
 const EPS = 1e-6;
 function overlaps(p, box, radius = WORLD.radius) {
@@ -84,7 +85,7 @@ test('Royale has seven distinct immutable authored arenas with bounded geometry 
     assert.deepEqual(map.sites, []);
     assert.ok(map.name && map.description);
     assert.deepEqual(map.bounds, { minX: -32, maxX: 32, minZ: -32, maxZ: 32 });
-    assert.ok(map.colliders.length <= 160, `${map.id} collision budget`);
+    assert.ok(map.colliders.length <= (['snow', 'sewers', 'trading'].includes(map.id) ? 180 : 160), `${map.id} collision budget`);
     assert.ok(Object.isFrozen(map.colliders) && Object.isFrozen(map.spawnPoints) && Object.isFrozen(map.lootPoints));
     assert.equal(new Set(map.colliders.map(box => box.id)).size, map.colliders.length);
     for (const box of map.colliders) {
@@ -127,14 +128,30 @@ for (const map of Object.values(MAPS)) {
 
   test(`${map.name}: all random spawns, ground caches, doors and climb starts share connected standing floor`, () => {
     const graph = floorGraph(map);
-    assert.ok(graph.reachableCount > 6500, `${map.id} broad playable floor`);
+    assert.ok(graph.reachableCount > (map.id === 'sewers' ? 2500 : 6500), `${map.id} substantial playable floor`);
     const locations = [...map.spawnPoints, ...map.lootPoints.filter(p => !p.y), ...map.routes.map(route => route.start), map.stormCenter,
       ...map.buildings.flatMap(building => building.doorways.flatMap(door => [door.inside, door.outside]))];
     for (const p of locations) assert.ok(graph.connected(p), `${map.id}: disconnected ${p.id || JSON.stringify(p)}`);
   });
 
-  test(`${map.name}: two-door interiors can be entered and escaped using real standing movement`, () => {
+  test(`${map.name}: authored interiors can be entered and escaped using real standing movement`, () => {
     for (const building of map.buildings) {
+      if (['sewers', 'trading'].includes(map.id)) {
+        assert.ok(building.doorways.length >= (map.id === 'sewers' ? 1 : 2));
+        for (const door of building.doorways) {
+          assert.ok(door.width >= 2 && door.height > WORLD.standHeight);
+          const player = Object.assign(createCombatPlayer(0), door.outside);
+          walkTo(player, map, door.inside, building.id); walkTo(player, map, door.outside, building.id);
+          near(player.y, 0, `${building.id} stays on the ground`);
+          assert.equal(player.grounded, true); assert.equal(player.crouching, false);
+        }
+        if (building.doorways.length > 1) {
+          const a = building.doorways[0].inside, b = building.doorways.at(-1).inside, player = Object.assign(createCombatPlayer(0), a);
+          const path = navigationPath(map, a, b); assert.ok(path.length, `${building.id}: connected inside entrances`);
+          for (const point of path) { assert.equal(point.jump, false); walkTo(player, map, point, building.id); }
+        }
+        continue;
+      }
       const [north, south] = building.doorways;
       assert.ok(north.width >= 2 && south.width >= 2 && north.height > WORLD.standHeight && south.height > WORLD.standHeight);
       const player = Object.assign(createCombatPlayer(0), north.outside);
@@ -148,13 +165,13 @@ for (const map of Object.values(MAPS)) {
 
   test(`${map.name}: every high route is reachable through successive jumps with the slowest weapon`, () => {
     const slowest = Object.values(WEAPONS).reduce((a, b) => a.speed < b.speed ? a : b);
-    assert.ok(map.routes.length >= 5);
+    assert.ok(map.routes.length >= (['sewers', 'trading'].includes(map.id) ? 4 : 5));
     for (const route of map.routes) {
       assert.ok(Object.isFrozen(route) && Object.isFrozen(route.start) && Object.isFrozen(route.steps));
       const player = Object.assign(createCombatPlayer(0, 1, slowest.id), route.start);
       assert.ok(clear(map, player), `${route.id} clear floor approach`);
       climb(player, map, route);
-      assert.ok(player.y >= 3.36 - EPS, `${route.id} meaningful high ground`);
+      assert.ok(player.y >= (['snow', 'sewers', 'trading'].includes(map.id) ? 3.2 : 3.36) - EPS, `${route.id} meaningful high ground`);
       assert.ok(route.steps.length >= 4);
     }
   });

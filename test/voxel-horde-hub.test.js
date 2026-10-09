@@ -24,7 +24,11 @@ test('Holdout setup accepts only authored maps, challenging difficulty levels an
     const overview = hordeOverview(map);
     assert.match(overview, /<svg viewBox=/); assert.match(overview, /Cover breaks enemy sight lines/);
     assert.equal(overview.includes('<text'), false, 'bomb-site labels do not misrepresent wave objectives');
-    assert.ok(overview.includes(`<rect x="${map.colliders.find(box => !box.id.startsWith('wall-')).x - map.bounds.minX}"`), 'cover uses actual map geometry');
+    const drawnCover = [...overview.matchAll(/<rect x="([^"]+)" y="([^"]+)" width="([^"]+)" height="([^"]+)"/g)]
+      .map(match => match.slice(1).map(Number));
+    const floorCover = map.colliders.filter(box => !box.overhead && !box.id.startsWith('wall-'))
+      .map(box => [box.x - map.bounds.minX, box.z - map.bounds.minZ, box.w, box.d]);
+    assert.deepEqual(drawnCover, floorCover, 'the overview shows every actual floor obstacle, excluding overhead ceilings');
   }
 });
 

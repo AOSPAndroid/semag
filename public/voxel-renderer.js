@@ -30,8 +30,8 @@ const ATMOSPHERE = Object.freeze({
   desert: { sun: [-.34, .90, -.28], direct: [.68, .57, .39], ambient: [.52, .55, .60], top: '#6ca9ba', horizon: '#eed9b7', sunColor: '#fff1c6' },
   paris: { sun: [-.47, .76, .45], direct: [.64, .56, .43], ambient: [.47, .53, .61], top: '#789eaf', horizon: '#ecd6b5', sunColor: '#ffebbd' },
   snow: { sun: [-.41, .82, .39], direct: [.50, .58, .65], ambient: [.50, .60, .73], top: '#759bbf', horizon: '#e4edf2', sunColor: '#edf5ff' },
-  sewers: { sun: [.15, .98, .10], direct: [.24, .30, .23], ambient: [.57, .62, .59], top: '#253a40', horizon: '#67796c', sunColor: '#c6dec0' },
-  trading: { sun: [-.30, .91, .24], direct: [.48, .54, .60], ambient: [.57, .63, .70], top: '#89a9c3', horizon: '#dbe6ed', sunColor: '#f1f6ff' },
+  sewers: { sun: [.15, .98, .10], direct: [.28, .25, .18], ambient: [.56, .52, .46], top: '#242823', horizon: '#5a5b48', sunColor: '#ffe3aa' },
+  trading: { sun: [-.30, .91, .24], direct: [.51, .48, .43], ambient: [.66, .65, .63], top: '#aebbc4', horizon: '#e5e2d9', sunColor: '#fff5df' },
 });
 const ART = Object.freeze({
   courtyard: { paving: '#d7c7aa', accent: '#cc9d76', skyline: '#748b90', cloud: '#f4dcc0', tile: 2.5 },
@@ -45,8 +45,8 @@ const ART = Object.freeze({
   desert: { paving: '#d7ba83', accent: '#51aca5', skyline: '#bd9867', cloud: '#f6e9c8', tile: 4 },
   paris: { paving: '#b9b4a7', accent: '#68847d', skyline: '#b3a894', cloud: '#f0e3cd', tile: 3 },
   snow: { paving: '#dce7ec', accent: '#779eb6', skyline: '#688b91', cloud: '#f2f6f8', tile: 4 },
-  sewers: { paving: '#586660', accent: '#a7bb8b', skyline: '#3e514c', cloud: '#83958b', tile: 3 },
-  trading: { paving: '#929aa3', accent: '#299bce', skyline: '#738ca3', cloud: '#edf2f6', tile: 3 },
+  sewers: { paving: '#5e5a4d', accent: '#d5af61', skyline: '#464b3f', cloud: '#83958b', tile: 2.4 },
+  trading: { paving: '#858a89', accent: '#4787a0', skyline: '#738ca3', cloud: '#edf2f6', tile: 1.6 },
 });
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const finite = (value, fallback = 0) => Number.isFinite(value) ? value : fallback;
@@ -792,21 +792,45 @@ function paintExpansionCollider(mesh, collider, theme) {
     const pw = Math.min(ww, width - xx - .008), ph = Math.min(hh, h - yy - .008);
     if (pw > .006 && ph > .006) wallPatch(mesh, collider, face, xx, yy, pw, ph, tint, offset);
   };
-  if (/ceiling/.test(material)) {
+  if (/ceiling/.test(material) || theme === 'sewers' && collider.overhead && /roof/.test(material)) {
     const underside = (xx, zz, ww, dd, tint, offset = .004) => mesh.quad([xx, y - offset, zz], [xx + ww, y - offset, zz], [xx + ww, y - offset, zz + dd], [xx, y - offset, zz + dd], [0, -1, 0], rgba(tint));
-    for (let xx = .06; xx < w - .06; xx += 4) for (let zz = .06; zz < d - .06; zz += 4) {
-      const ww = Math.min(3.88, w - xx - .06), dd = Math.min(3.88, d - zz - .06);
-      if (Math.min(ww, dd) <= .03) continue;
-      underside(x + xx, z + zz, ww, dd, theme === 'trading' ? '#c4cdd2' : '#465d55');
-      if (ww > 2 && dd > 1) {
-        underside(x + xx + .58, z + zz + .72, Math.min(2.1, ww - .8), .30, theme === 'trading' ? '#475e70' : '#293e39', .006);
-        underside(x + xx + .64, z + zz + .76, Math.min(1.98, ww - .92), .22, theme === 'trading' ? '#f0f7fa' : '#c6ddae', .008);
+    if (theme === 'sewers') {
+      // Brick collectors have longitudinal vault joints and sparse amber work
+      // lights. No office tile grid appears in these low maintenance tunnels.
+      underside(x + .01, z + .01, w - .02, d - .02, '#554e40');
+      const alongZ = d > w, length = alongZ ? d : w;
+      for (let at = .55; at < length - .15; at += 1.8) {
+        if (alongZ) underside(x + .03, z + at, w - .06, .035, '#343b33', .005);
+        else underside(x + at, z + .03, .035, d - .06, '#343b33', .005);
+      }
+      const lamps = Math.max(1, Math.ceil(length / 8));
+      for (let i = 0; i < lamps; i++) {
+        const cx = alongZ ? x + w / 2 : x + length * (i + .5) / lamps;
+        const cz = alongZ ? z + length * (i + .5) / lamps : z + d / 2;
+        const lw = Math.min(.85, w - .1), ld = Math.min(.27, d - .1);
+        underside(cx - lw / 2, cz - ld / 2, lw, ld, '#313f37', .006);
+        underside(cx - lw / 2 + .045, cz - ld / 2 + .045, lw - .09, ld - .09, '#ffe0a0', .008);
+      }
+    } else {
+      for (let xx = .03; xx < w - .03; xx += 3.2) for (let zz = .03; zz < d - .03; zz += 3.2) {
+        const ww = Math.min(3.16, w - xx - .03), dd = Math.min(3.16, d - zz - .03);
+        if (Math.min(ww, dd) <= .03) continue;
+        underside(x + xx, z + zz, ww, dd, '#dbdbd2');
+        if (ww > 2 && dd > 1) {
+          underside(x + xx + .4, z + zz + .65, Math.min(2.2, ww - .7), .36, '#8a8c85', .006);
+          underside(x + xx + .44, z + zz + .69, Math.min(2.12, ww - .78), .28, '#fff7e8', .008);
+        }
       }
     }
     return;
   }
   if (material === 'water') {
-    for (let line = .20; line < d; line += .65) mesh.floor(x + .04, z + line, Math.max(.01, w - .08), .025, '#98b7a1', y + h + .003);
+    mesh.floor(x + .008, z + .008, w - .016, d - .016, '#3f5142', y + h + .012);
+    const alongZ = d > w, length = alongZ ? d : w;
+    for (let line = .30; line < length - .04; line += .80) {
+      if (alongZ) mesh.floor(x + .06, z + line, w - .12, .016, line % 2 < 1 ? '#78836b' : '#5f6e59', y + h + .014);
+      else mesh.floor(x + line, z + .06, .016, d - .12, line % 2 < 1 ? '#78836b' : '#5f6e59', y + h + .014);
+    }
     return;
   }
   if (theme === 'snow') {
@@ -814,6 +838,39 @@ function paintExpansionCollider(mesh, collider, theme) {
     if (!bark) {
       mesh.floor(x + .012, z + .012, Math.max(.01, w - .024), Math.max(.01, d - .024), foliage ? '#d4e3e4' : '#eef4f7', y + h + .005);
       if (w > .45 && d > .45) mesh.floor(x + w * .15, z + d * .17, w * .44, d * .17, '#d9e7ed', y + h + .006);
+    }
+    if (/radar/.test(material)) {
+      for (const face of faces) {
+        const width = face === 'north' || face === 'south' ? w : d;
+        patch(face, .02, .02, width - .04, h - .04, '#d9e5e7', .003);
+        for (let band = .22; band < h - .04; band += .42) {
+          patch(face, .03, band, width - .06, .015, '#93b1bd', .004);
+          for (let seam = .25 + (Math.floor(band / .42) % 2) * .3; seam < width - .05; seam += .6) patch(face, seam, band, .014, Math.min(.39, h - band - .025), '#adc1c8', .004);
+        }
+        patch(face, width * .18, h * .23, width * .12, h * .14, '#f1f6f6', .005);
+      }
+      return;
+    }
+    if (/antenna|weather-equipment|laboratory-desk/.test(material) || /generator/.test(id)) {
+      for (const face of faces) {
+        const width = face === 'north' || face === 'south' ? w : d;
+        patch(face, .025, .025, width - .05, h - .05, /antenna/.test(material) ? '#637b87' : '#b89158', .003);
+        if (width > .6 && h > .5) {
+          patch(face, width * .20, h * .24, width * .60, h * .48, '#3b5660', .005);
+          for (let row = 0; row < 4; row++) patch(face, width * .27, h * .29 + row * h * .09, width * .34, .025, '#7eadaf', .006);
+          patch(face, width * .68, h * .32, width * .05, h * .23, '#e5bc7a', .006);
+        } else patch(face, .035, h * .68, width - .07, .04, '#edf0df', .005);
+      }
+      return;
+    }
+    if (/snow-bank/.test(material)) {
+      for (const face of faces) {
+        const width = face === 'north' || face === 'south' ? w : d;
+        patch(face, .01, .015, width - .02, h * .36, '#9fbdcd', .003);
+        patch(face, .01, h * .34, width - .02, h * .31, '#c7dce4', .004);
+        patch(face, width * .16, h * .68, width * .43, h * .17, '#e5eff2', .004);
+      }
+      return;
     }
     for (const face of faces) {
       const width = face === 'north' || face === 'south' ? w : d;
@@ -838,7 +895,8 @@ function paintExpansionCollider(mesh, collider, theme) {
         for (let column = 1.2; column < width - .3; column += 1.8) patch(face, column, .19, .016, h - .34, dark);
         if (h > 2.5 && width > 2.3 && /wall/.test(material)) for (let left = .60; left < width - 1.1; left += 2.3) {
           patch(face, left, 1.30, .95, .91, '#435f70', .009);
-          patch(face, left + .045, 1.345, .86, .82, '#7fa5b7', .010);
+          patch(face, left + .045, 1.345, .86, .82, '#bdab80', .010);
+          patch(face, left + .075, 1.38, .79, .22, '#f0d7a0', .011);
           patch(face, left + .43, 1.345, .025, .82, '#dbe7ec', .012);
           patch(face, left + .045, 1.70, .86, .025, '#dbe7ec', .012);
         }
@@ -847,82 +905,147 @@ function paintExpansionCollider(mesh, collider, theme) {
     return;
   }
   if (theme === 'sewers') {
+    const brick = /brick|arch/.test(material + id), pipe = /pipe/.test(material + id);
     for (const face of faces) {
       const width = face === 'north' || face === 'south' ? w : d;
-      if (/brick/.test(material)) {
-        const rows = clamp(Math.ceil(h / .43), 1, 8), columns = clamp(Math.ceil(width / 1.2), 1, 12);
+      if (brick) {
+        // Large, staggered brick courses survive at FPS distance without
+        // thousands of tiny boxes. Mortar remains flush against real masonry.
+        const rows = clamp(Math.ceil(h / .43), 1, 10), columns = clamp(Math.ceil(width / 1.2), 1, 12);
         for (let row = 1; row < rows; row++) {
-          patch(face, .012, h * row / rows, width - .024, .020, '#454d45', .003);
-          for (let column = 0; column < columns; column++) patch(face, (column + .5 + row % 2 * .35) * width / columns, h * (row - 1) / rows + .023, .017, h / rows - .046, '#4d564c', .004);
+          patch(face, .012, h * row / rows, width - .024, .026, '#3c4036', .003);
+          for (let column = 0; column < columns; column++) patch(face, (column + .2 + row % 2 * .5) * width / columns, h * (row - 1) / rows + .025, .020, h / rows - .05, '#46483d', .004);
         }
-        patch(face, .03, .04, width - .06, Math.min(.16, h * .15), '#425b4f');
-        for (const fraction of [.14, .68]) patch(face, width * fraction, .20, Math.min(.27, width * .15), Math.min(.47, h * .23), '#627969', .004);
-        if (h > 2 && width > 2) {
-          patch(face, width * .44, h - .33, Math.min(.34, width * .18), .14, '#324b46', .009);
-          patch(face, width * .44 + .025, h - .31, Math.min(.29, width * .14), .09, '#c6d8ad', .010);
+        patch(face, .018, .025, width - .036, Math.min(.24, h * .18), '#3a4b39', .005);
+        for (const fraction of [.12, .61]) {
+          const streak = Math.min(.48, width * .17), bottom = Math.min(.4, h * .14);
+          patch(face, width * fraction, bottom, streak, Math.min(1.2, h * .62), '#59614a', .005);
+          patch(face, width * fraction + streak * .3, bottom, streak * .36, Math.min(.73, h * .42), '#637255', .006);
         }
-      } else if (/pipe/.test(material)) {
-        patch(face, .012, h * .18, width - .024, .036, '#405d60');
-        patch(face, .012, h * .75, width - .024, .036, '#b7a782');
+        if (h > 2 && width > 2.4 && !/arch/.test(id)) {
+          const left = width * .42, bottom = Math.min(h - .65, 2.35);
+          patch(face, left, bottom, .52, .25, '#303c32', .007);
+          patch(face, left + .045, bottom + .05, .43, .15, '#f4c476', .009);
+          for (let bar = .08; bar < .50; bar += .12) patch(face, left + bar, bottom + .01, .024, .23, '#5d6147', .010);
+        }
+      } else if (pipe) {
         const along = width > h;
-        for (let band = along ? .30 : .12; band < (along ? width : h) - .08; band += along ? 1.4 : .85) patch(face, along ? band : .012, along ? .018 : band, along ? .055 : width - .024, along ? h - .036 : .055, '#849691', .009);
+        patch(face, .015, h * .15, width - .03, Math.max(.015, h * .10), '#4a5a4c', .004);
+        patch(face, .015, h * .71, width - .03, Math.max(.015, h * .10), '#a5aa83', .004);
+        for (let band = along ? .30 : .12; band < (along ? width : h) - .08; band += along ? 2.2 : 1.1) patch(face, along ? band : .012, along ? .018 : band, along ? .065 : width - .024, along ? h - .036 : .065, '#676f58', .009);
+        if (Math.abs(width - h) < .3 && width > .4) {
+          // Faceted cap is closed metal, not a black painted passage.
+          patch(face, width * .20, h * .20, width * .60, h * .60, '#8d9575', .005);
+          patch(face, width * .28, h * .28, width * .44, h * .44, '#778064', .007);
+          for (const [u, v] of [[.22, .22], [.72, .22], [.22, .72], [.72, .72]]) patch(face, width * u, h * v, .035, .035, '#c4bea0', .008);
+        }
       } else {
-        patch(face, .02, .06, width - .04, .036, dark);
-        patch(face, .02, h - .10, width - .04, .028, pale);
-        if (material === 'metal' && width > .8 && h > .4) for (let left = .13; left < width - .11; left += .75) patch(face, left, .12, .024, h - .24, '#455957');
+        patch(face, .02, .04, width - .04, .038, '#354638', .004);
+        patch(face, .02, h - .08, width - .04, .032, '#b0aa86', .004);
+        if (/control|pump|valve/.test(id) && width > .9 && h > .7) {
+          patch(face, width * .18, h * .29, width * .64, h * .48, '#3f5047', .005);
+          for (let index = 0; index < 3; index++) {
+            patch(face, width * (.23 + index * .20), h * .58, Math.min(.07, width * .06), .05, index === 1 ? '#d3b557' : '#8cab73', .007);
+            patch(face, width * (.23 + index * .20), h * .36, Math.min(.12, width * .09), .09, '#79886b', .007);
+          }
+        }
       }
     }
-    if (/roof|grate/.test(material)) {
-      mesh.floor(x + .012, z + .012, Math.max(.01, w - .024), Math.max(.01, d - .024), /grate/.test(material) ? '#687c73' : '#596b64', y + h + .003);
-      for (let line = .13; line < Math.min(d, 4) - .06; line += .30) mesh.floor(x + .04, z + line, Math.max(.01, w - .08), .025, '#354c47', y + h + .005);
-      if (/roof/.test(material)) for (const xx of [x + .04, x + w - .06]) mesh.floor(xx, z + .04, .020, Math.max(.01, d - .08), '#c0ba82', y + h + .006);
+    if (/roof|grate|catwalk|bridge/.test(material + id)) {
+      const top = y + h;
+      mesh.floor(x + .012, z + .012, Math.max(.01, w - .024), Math.max(.01, d - .024), /grate|catwalk|bridge/.test(material + id) ? '#677366' : '#675e48', top + .003);
+      for (let line = .12; line < Math.min(d, 6) - .04; line += .35) mesh.floor(x + .04, z + line, Math.max(.01, w - .08), .025, '#354638', top + .005);
+      if (w > .3 && d > .3) for (const xx of [x + .04, x + w - .06]) mesh.floor(xx, z + .04, .020, Math.max(.01, d - .08), '#d0b469', top + .006);
+      if (/roof/.test(material) && h > .04) mesh.quad([x + .015, y - .004, z + .015], [x + w - .015, y - .004, z + .015], [x + w - .015, y - .004, z + d - .015], [x + .015, y - .004, z + d - .015], [0, -1, 0], rgba('#5b5243'));
     }
     return;
   }
-  if (material === 'screen') {
-    // The monitor's complete collision slab remains behind these two sided
-    // market displays. Chart bars are paint and never enlarge its silhouette.
-    for (const face of ['north', 'south']) {
-      patch(face, .055, .065, w - .11, h - .13, '#17333f', .005);
-      patch(face, .07, h - .15, w - .14, .026, '#5abbdf', .007);
-      for (let index = 0; index < 5; index++) {
-        const left = .09 + index * Math.max(.06, (w - .23) / 5), graph = .08 + hash(`${id}:${index}`) % 12 / 100;
-        patch(face, left, .105, Math.max(.017, (w - .30) / 9), Math.min(graph, h - .26), index % 2 ? '#64cfb3' : '#d8af86', .008);
-        if (h > .45) patch(face, left, h * .61, Math.max(.015, (w - .25) / 7), .017, '#86c3d6', .008);
+  if (/screen|monitor/.test(material)) {
+    // Each screen is a real collision slab. A restrained bezel surrounds
+    // authored chart panes and a ticker; a monitor bank is useful solid cover.
+    const displayFaces = w >= d ? ['north', 'south'] : ['west', 'east'];
+    for (const face of displayFaces) {
+      const width = face === 'north' || face === 'south' ? w : d;
+      if (width < .16 || h < .14) continue;
+      patch(face, .035, .035, width - .07, h - .07, '#151f24', .003);
+      patch(face, .07, .07, width - .14, h - .14, '#26373b', .005);
+      const panes = clamp(Math.round(width / 1.25), 1, 8), paneWidth = (width - .20) / panes;
+      for (let pane = 0; pane < panes; pane++) {
+        const left = .10 + pane * paneWidth, graphHeight = Math.max(.05, h - .30), graphBottom = .15;
+        patch(face, left, h - .12, paneWidth - .06, .025, '#70a1ac', .007);
+        for (let row = 1; row < 4; row++) patch(face, left, graphBottom + graphHeight * row / 4, paneWidth - .06, .010, '#3d5052', .006);
+        for (let candle = 0; candle < 5; candle++) {
+          const seed = hash(`${id}:${pane}:${candle}`), center = graphBottom + graphHeight * (.25 + seed % 50 / 100);
+          const graph = Math.min(graphHeight * .22, .16 + seed % 5 / 80), cx = left + .06 + candle * Math.max(.018, (paneWidth - .18) / 5);
+          const tint = seed % 3 ? '#70b69e' : '#d29a7f';
+          patch(face, cx + .018, center - graph * .7, .012, graph * 1.4, tint, .008);
+          patch(face, cx, center - graph * .35, Math.max(.016, (paneWidth - .20) / 11), graph * .7, tint, .009);
+        }
+        if (pane > 0) patch(face, left - .025, .12, .015, h - .24, '#0e171b', .008);
+      }
+      patch(face, .09, .085, width - .18, .026, '#87999b', .008);
+      patch(face, width - .08, .018, .02, .012, '#88c7a6', .009);
+    }
+  } else if (/desk|table/.test(material)) {
+    mesh.floor(x + .008, z + .008, Math.max(.01, w - .016), Math.max(.01, d - .016), '#b4a38b', y + h + .003);
+    for (let grain = .11; grain < d - .03; grain += .27) mesh.floor(x + .025, z + grain, w - .05, .012, '#a79780', y + h + .004);
+    if (/top|table|desk/.test(id) && h < .4) for (let station = .50; station < w - .35; station += 1.45) {
+      mesh.floor(x + station - .24, z + d * .23, .48, Math.min(.21, d * .20), '#29312e', y + h + .005);
+      for (let row = 0; row < 3; row++) mesh.floor(x + station - .21, z + d * .23 + .035 + row * .049, .42, .015, '#b0b3a6', y + h + .006);
+      mesh.floor(x + station + .35, z + d * .24, .10, .135, '#4b5048', y + h + .005);
+      mesh.floor(x + station - .38, z + d * .70, .28, .36, '#e9e4d4', y + h + .006);
+      mesh.floor(x + station - .34, z + d * .70 + .055, .20, .015, '#7d8b86', y + h + .007);
+    }
+    for (const face of faces) {
+      const width = face === 'north' || face === 'south' ? w : d;
+      patch(face, .02, h - Math.min(.045, h * .3), width - .04, Math.min(.03, h * .22), '#d6c7ac', .004);
+      if (h > .35) {
+        patch(face, .02, .045, width - .04, .045, '#5e6157', .004);
+        for (let row = .20; row < h - .07; row += .25) {
+          patch(face, .06, row, width - .12, .018, '#7d7667', .005);
+          patch(face, Math.max(.08, width / 2 - .07), row + .055, Math.min(.14, width - .16), .022, '#484f4a', .006);
+        }
       }
     }
-  } else if (material === 'desk') {
-    mesh.floor(x + .018, z + .018, Math.max(.01, w - .036), Math.max(.01, d - .036), '#c4c7c7', y + h + .003);
-    for (let station = .35; station < w - .34; station += 1.25) {
-      mesh.floor(x + station - .20, z + d * .37, .40, Math.min(.17, d * .16), '#364957', y + h + .005);
-      for (let row = 0; row < 3; row++) mesh.floor(x + station - .17, z + d * .37 + .026 + row * .039, .34, .012, '#8796a0', y + h + .006);
-      mesh.floor(x + station + .27, z + d * .37 + .023, .07, .095, '#4c5c66', y + h + .005);
+  } else if (/chair|fabric|lounge/.test(material + id)) {
+    mesh.floor(x + .015, z + .015, w - .03, d - .03, '#4f605e', y + h + .004);
+    for (const face of faces) {
+      const width = face === 'north' || face === 'south' ? w : d;
+      patch(face, .045, .045, width - .09, h - .09, '#56655f', .004);
+      patch(face, .06, h * .30, width - .12, .020, '#3c4944', .005);
+      patch(face, .06, h * .67, width - .12, .016, '#75847a', .005);
     }
-    for (const face of faces) { const width = face === 'north' || face === 'south' ? w : d; patch(face, .03, h - .12, width - .06, .065, '#e3e8e9'); patch(face, .03, .06, width - .06, .06, '#365064'); }
   } else if (/glass/.test(material)) {
     for (const face of faces) {
       const width = face === 'north' || face === 'south' ? w : d;
-      patch(face, .016, .06, width - .032, h - .12, '#6f8a9d', .003);
-      patch(face, .02, h * .55, width - .04, .04, '#b4cedd', .006);
-      for (let left = .90; left < width - .1; left += 1.5) patch(face, left, .035, .026, h - .07, '#344f66', .007);
-      patch(face, .04, .21, width - .08, .13, '#339ccc', .008);
-      patch(face, .05, h - .15, width - .10, .027, '#d7e5ec', .008);
+      patch(face, .016, .035, width - .032, h - .07, '#83989b', .003);
+      for (let left = .9; left < width - .1; left += 2.6) patch(face, left, .035, .028, h - .07, '#4d6265', .005);
+      patch(face, .035, Math.min(1.25, h * .46), width - .07, Math.min(.20, h * .17), '#c0cec7', .007);
+      patch(face, .035, Math.min(1.28, h * .47), width - .07, .034, '#4d8998', .008);
+      patch(face, .04, h - .12, width - .08, .023, '#d9e0d6', .006);
     }
   } else {
     for (const face of faces) {
       const width = face === 'north' || face === 'south' ? w : d;
-      patch(face, .02, .085, width - .04, .047, '#327c9e');
-      patch(face, .02, h - .115, width - .04, .040, pale);
-      if (/rack|server/.test(id) && h > 1) for (let row = .22; row < h - .20; row += .25) {
-        patch(face, .09, row, width - .18, .12, '#263c4d');
-        patch(face, .14, row + .035, .030, .030, '#73d6b5', .010);
+      patch(face, .02, .085, width - .04, .038, '#696e65', .004);
+      patch(face, .02, h - .10, width - .04, .035, '#d0d4c6', .004);
+      if (/rack|server/.test(id) && h > 1) {
+        for (let row = .22; row < h - .20; row += .30) {
+          patch(face, .08, row, width - .16, .17, '#273532', .006);
+          patch(face, .12, row + .04, .025, .025, '#8dcc9e', .008);
+          patch(face, .18, row + .04, .022, .025, '#d7b870', .008);
+          for (let vent = .28; vent < width - .09; vent += .09) patch(face, vent, row + .035, .025, .10, '#485a50', .007);
+        }
+      } else if (/panel|wall/.test(material) && h > 2) {
+        for (let left = 2; left < width - .08; left += 2) patch(face, left, .06, .015, h - .12, '#898f83', .004);
       }
     }
     if (/roof/.test(material)) {
-      mesh.floor(x + .016, z + .016, Math.max(.01, w - .032), Math.max(.01, d - .032), '#b5c0c8', y + h + .004);
-      for (let line = .8; line < d - .08; line += 1.6) mesh.floor(x + .03, z + line, Math.max(.01, w - .06), .016, '#899ba9', y + h + .005);
+      mesh.floor(x + .016, z + .016, Math.max(.01, w - .032), Math.max(.01, d - .032), '#b7b8ab', y + h + .004);
+      for (let line = .8; line < d - .08; line += 1.6) mesh.floor(x + .03, z + line, Math.max(.01, w - .06), .014, '#9ca499', y + h + .005);
     }
   }
+
 }
 
 function paintCollider(mesh, collider, theme) {
@@ -930,6 +1053,12 @@ function paintCollider(mesh, collider, theme) {
   if (['snow', 'sewers', 'trading'].includes(theme)) return paintExpansionCollider(mesh, collider, theme);
   if (ROYALE_THEMES.has(theme)) return paintRoyaleCollider(mesh, collider, theme);
   const { x, y, z, w, h, d } = collider;
+  if (String(collider.id || '').startsWith('landmark-')) {
+    // Semantic props have their own surface finishes below. Reusing building
+    // facade detail on tiny components would add invisible per-brick work.
+    mesh.box(x, y, z, w, h, d, collider.color || '#7d8d83');
+    return;
+  }
   const original = rgba(collider.color || (theme === 'canal' ? '#b6b0a2' : '#8d9b9b'));
   const material = String(collider.material || 'concrete').toLowerCase();
   const c = /wood|crate/.test(material) ? mix(original, rgba('#bd8042'), .28) : material === 'stone' && theme === 'courtyard' ? mix(original, rgba('#dfcbb1'), .24) : original;
@@ -1006,20 +1135,18 @@ function paintCollider(mesh, collider, theme) {
     const count = clamp(Math.round(h / .48), 1, 14);
     for (let i = 1; i < count; i++) {
       const yy = y + i * h / count;
-      detail(x - skin, yy, z - skin, w + skin * 2, .017, d + skin * 2, shade(c, .84));
+      for (const face of ['north', 'south', 'west', 'east']) wallPatch(mesh, collider, face, 0, yy - y, face === 'north' || face === 'south' ? w : d, .017, shade(c, .84), .004);
       const rowsX = Math.min(20, Math.floor(w / 1.1)), rowsZ = Math.min(20, Math.floor(d / 1.1));
       for (let j = 0; j < rowsX; j++) {
         const xx = x + .50 + j * w / Math.max(1, rowsX) + (i % 2) * .25;
         if (xx < x + w - .06) {
-          detail(xx, yy - h / count + .026, z - skin * .6, .013, h / count - .045, skin * .6, shade(c, .82));
-          detail(xx, yy - h / count + .026, z + d, .013, h / count - .045, skin * .6, shade(c, .82));
+          for (const face of ['north', 'south']) wallPatch(mesh, collider, face, xx - x, yy - y - h / count + .026, .013, h / count - .045, shade(c, .82), .004);
         }
       }
       for (let j = 0; j < rowsZ; j++) {
         const zz = z + .50 + j * d / Math.max(1, rowsZ) + (i % 2) * .25;
         if (zz < z + d - .06) {
-          detail(x - skin * .6, yy - h / count + .026, zz, skin * .6, h / count - .045, .013, shade(c, .82));
-          detail(x + w, yy - h / count + .026, zz, skin * .6, h / count - .045, .013, shade(c, .82));
+          for (const face of ['west', 'east']) wallPatch(mesh, collider, face, zz - z, yy - y - h / count + .026, .013, h / count - .045, shade(c, .82), .004);
         }
       }
     }
@@ -1131,6 +1258,103 @@ function routePaint(mesh, map) {
   }
 }
 
+function landmarkArt(mesh, map, theme) {
+  const byId = new Map((map.colliders || []).map(collider => [collider.id, collider]));
+  for (const landmark of map.landmarks || []) {
+    const kind = String(landmark.kind || ''), ids = landmark.colliderIds || landmark.collisionIds || [landmark.id];
+    const boxes = ids.map(id => byId.get(id)).filter(Boolean);
+    const labelBox = boxes.filter(box => box.h > .6).sort((a, b) => Math.max(b.w, b.d) - Math.max(a.w, a.d))[0];
+    for (const box of boxes) {
+      const { x, y, z, w, h, d } = box;
+      const patch = (face, left, bottom, ww, hh, tint, offset = .007) => {
+        const width = face === 'north' || face === 'south' ? w : d;
+        const xx = Math.max(.01, left), yy = Math.max(.01, bottom);
+        const pw = Math.min(ww, width - xx - .01), ph = Math.min(hh, h - yy - .01);
+        if (pw > .003 && ph > .003) wallPatch(mesh, box, face, xx, yy, pw, ph, tint, offset);
+      };
+      if (/forklift/.test(kind)) {
+        for (const face of ['north', 'south', 'west', 'east']) {
+          const width = face === 'north' || face === 'south' ? w : d;
+          patch(face, .025, .10, width - .05, Math.min(.15, h * .20), '#d2a04c');
+          if (/cab|roof/.test(box.id)) {
+            patch(face, .05, .20, width - .10, h - .27, '#344b52', .005);
+            patch(face, width * .17, .22, .035, h - .30, '#e6b85f', .008);
+            patch(face, width * .78, .22, .035, h - .30, '#e6b85f', .008);
+          } else if (width > .6 && h > .45) {
+            for (const u of [.14, .73]) {
+              patch(face, width * u, .09, width * .15, Math.min(.28, h * .50), '#303b38', .008);
+              patch(face, width * u + .035, .14, Math.max(.015, width * .15 - .07), Math.min(.16, h * .27), '#8c8f75', .009);
+            }
+          }
+        }
+      } else if (/market-stall|newspaper-stand/.test(kind)) {
+        if (/canopy|roof/.test(box.id)) {
+          for (let at = .06; at < w - .04; at += .38) mesh.floor(x + at, z + .025, Math.min(.19, w - at - .02), d - .05, '#e8d7aa', y + h + .004);
+        } else for (const face of ['north', 'south']) {
+          patch(face, .035, .035, w - .07, h * .55, '#795f45');
+          if (/newspaper/.test(kind)) for (let paper = .10; paper < w - .18; paper += .34) {
+            patch(face, paper, h * .36, .26, Math.min(.32, h * .45), '#e0d7be', .009);
+            patch(face, paper + .025, h * .44, .20, .025, '#657165', .010);
+          }
+        }
+      } else if (/hvac|generator|signal-array|water-tank/.test(kind)) {
+        for (const face of ['north', 'south', 'west', 'east']) {
+          const width = face === 'north' || face === 'south' ? w : d;
+          if (width < .35 || h < .25) continue;
+          patch(face, .025, .045, width - .05, h - .09, '#566d68', .005);
+          for (let row = .14; row < h - .09; row += .17) patch(face, .08, row, width - .16, .033, '#263f3d', .008);
+          patch(face, width * .65, Math.min(h - .12, .3), Math.min(.07, width * .10), .05, '#cfb975', .010);
+        }
+      } else if (/logging-pile/.test(kind)) {
+        for (const face of ['west', 'east']) {
+          const width = d;
+          patch(face, .015, .015, width - .03, h - .03, '#c0a374', .005);
+          for (let ring = 0; ring < 3; ring++) {
+            const inset = .055 + ring * .06;
+            patch(face, inset, inset, width - inset * 2, .018, '#8e704b', .008);
+            patch(face, inset, h - inset - .018, width - inset * 2, .018, '#8e704b', .008);
+            patch(face, inset, inset, .018, h - inset * 2, '#8e704b', .008);
+            patch(face, width - inset - .018, inset, .018, h - inset * 2, '#8e704b', .008);
+          }
+        }
+      } else if (/carved-marker|carved-obelisk|fountain-sculpture/.test(kind)) {
+        for (const face of ['north', 'south', 'west', 'east']) {
+          const width = face === 'north' || face === 'south' ? w : d;
+          patch(face, .035, h * .15, width - .07, .030, '#827d63', .007);
+          patch(face, .035, h * .78, width - .07, .035, '#d1be8b', .008);
+          if (width > .35 && h > .50) for (let mark = .12; mark < h - .13; mark += .36) {
+            patch(face, width * .38, mark, width * .22, .065, '#5c7167', .008);
+            patch(face, width * .48, mark + .065, .030, .12, '#5c7167', .008);
+          }
+        }
+      } else if (/slag-vat/.test(kind)) {
+        mesh.floor(x + .025, z + .025, w - .05, d - .05, '#c88b43', y + h + .004);
+        for (let line = .15; line < d - .06; line += .32) mesh.floor(x + .08, z + line, w - .16, .033, '#e6b863', y + h + .005);
+      } else if (/stone-planter/.test(kind)) {
+        mesh.floor(x + .03, z + .03, w - .06, d - .06, '#66815c', y + h + .004);
+        for (let flower = .12; flower < w - .08; flower += .24) mesh.floor(x + flower, z + d * .50, .048, .048, '#d6bb85', y + h + .005);
+      }
+      if (!landmark.label || box !== labelBox || h < .65 || !/trail-board|metro-kiosk|service-control|pump|forklift|market-stall|newspaper-stand|carved-marker/.test(kind)) continue;
+      const face = w >= d ? 'south' : 'east', width = w >= d ? w : d;
+      const label = String(landmark.label).toUpperCase();
+      const units = [...label].reduce((sum, letter) => sum + (GLYPHS[letter]?.[0]?.length || 2) + 1, 0) - 1;
+      const height = Math.min(.21, h * .18, (width - .14) * 7 / units);
+      if (height < .075) continue;
+      const left = (width - units * height / 7) / 2, bottom = Math.min(h - height - .05, h * .60);
+      patch(face, left - .035, bottom - .035, units * height / 7 + .07, height + .07, '#304c4a', .009);
+      wallText(mesh, box, face, label, left, bottom, height, '#e4d8b4', .012);
+    }
+  }
+  // Decorations outside expansion/Paris already have a matching world floor.
+  // Painting these flat region labels never introduces uncollidable cover.
+  if (!['snow', 'sewers', 'trading', 'paris'].includes(theme)) for (const decoration of map.decorations || []) {
+    const { x, z, w, d } = decoration;
+    if (![x, z, w, d].every(Number.isFinite) || Math.min(w, d) <= 0) continue;
+    mesh.floor(x, z, w, d, decoration.color || (ART[theme] || ART.courtyard).accent, finite(decoration.y, 0) + .008);
+    if (/trail|walk|lane/.test(decoration.kind || '')) for (let at = .24; at < d - .2; at += 1.1) mesh.floor(x + .06, z + at, .025, .55, '#bcb896', finite(decoration.y, 0) + .009);
+  }
+}
+
 function mapPaint(mesh, map, theme) {
   const find = id => map.colliders.find(collider => collider.id === id);
   const siteColumn = id => {
@@ -1146,7 +1370,18 @@ function mapPaint(mesh, map, theme) {
     for (const decoration of map.decorations || []) {
       const { x, z, w, d } = decoration;
       if (![x, z, w, d].every(Number.isFinite) || Math.min(w, d) <= 0) continue;
-      mesh.floor(x, z, w, d, decoration.color || ART[theme].paving, .003);
+      mesh.floor(x, z, w, d, decoration.color || ART[theme].paving, finite(decoration.y, 0) + .003);
+      if (theme === 'snow' && /path|yard|trail/.test(decoration.kind || '')) {
+        const alongZ = d > w, length = alongZ ? d : w;
+        for (let at = .4, index = 0; at < length - .3; at += .9, index++) {
+          const side = index % 2 ? .14 : -.14;
+          if (alongZ) mesh.floor(x + w / 2 + side, z + at, .11, .22, '#96b3c1', .006);
+          else mesh.floor(x + at, z + d / 2 + side, .22, .11, '#96b3c1', .006);
+        }
+      }
+      if (theme === 'sewers' && !/water/.test(decoration.kind || '')) {
+        for (let at = .5; at < d - .15; at += 1.4) mesh.floor(x + .13, z + at, Math.min(.44, w - .2), .065, '#4b5b43', .006);
+      }
       if (/aisle|path/.test(decoration.kind || '')) {
         const alongZ = d > w, length = alongZ ? d : w;
         for (let at = .3; at < length - .3; at += 2.8) {
@@ -1159,12 +1394,12 @@ function mapPaint(mesh, map, theme) {
       const room = building.interior;
       if (!room) continue;
       const x = room.minX + .016, z = room.minZ + .016, w = room.maxX - room.minX - .032, d = room.maxZ - room.minZ - .032;
-      const base = theme === 'trading' ? '#6d8497' : theme === 'sewers' ? '#819287' : '#b6c4ca';
+      const base = theme === 'trading' ? '#8e958b' : theme === 'sewers' ? '#797760' : '#b6c4ca';
       mesh.floor(x, z, w, d, base, .004);
       for (let line = .35; line < d - .04; line += theme === 'trading' ? 1.5 : 1.0) mesh.floor(x + .03, z + line, w - .06, .016, shade(rgba(base), .82), .005);
       const wall = find(`${building.id}-west`);
       if (wall && wall.d > 3 && wall.h > 2) {
-        const left = Math.max(.12, (wall.d - 2.2) / 2), color = theme === 'trading' ? '#255b79' : theme === 'sewers' ? '#4f6859' : '#557c8b';
+        const left = Math.max(.12, (wall.d - 2.2) / 2), color = theme === 'trading' ? '#4f6f72' : theme === 'sewers' ? '#595b40' : '#557c8b';
         wallPatch(mesh, wall, 'east', left, 1.12, 2.2, .72, color, .009);
         wallText(mesh, wall, 'east', '0' + ((map.buildings || []).indexOf(building) + 1), left + .82, 1.27, .32, '#dbe8df', .012);
         wallPatch(mesh, wall, 'east', left + .10, 1.20, .40, .035, ART[theme].accent, .013);
@@ -1396,6 +1631,7 @@ function mapPaint(mesh, map, theme) {
       }
     }
   }
+  landmarkArt(mesh, map, theme);
   routePaint(mesh, map);
 }
 

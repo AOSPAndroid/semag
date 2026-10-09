@@ -60,8 +60,12 @@ test('interior art, roof finishes and door signs preserve every real entrance in
   for (const map of [BREACH_MAPS.paris, ...Object.values(ROYALE_MAPS)]) {
     const mesh = mapMeshes(map), points = positions(mesh.opaque);
     for (const building of map.buildings) for (const door of building.doorways) {
-      const crossing = points.filter(([x, y, z]) => Math.abs(x - door.x) < door.width / 2 - .025 && Math.abs(z - door.z) < .24 && y > .04 && y < door.height - .025);
-      assert.equal(crossing.length, 0, `${map.theme}/${building.id}: clear ${door.z} doorway, with no paint bridging the opening`);
+      const planeX = door.axis === 'x' || Math.abs(door.outside.x - door.inside.x) > Math.abs(door.outside.z - door.inside.z);
+      const crossing = points.filter(([x, y, z]) => (planeX
+        ? Math.abs(z - door.z) < door.width / 2 - .025 && Math.abs(x - door.x) < .24
+        : Math.abs(x - door.x) < door.width / 2 - .025 && Math.abs(z - door.z) < .24)
+        && y > .04 && y < door.height - .025);
+      assert.equal(crossing.length, 0, `${map.theme}/${building.id}: clear ${planeX ? 'X' : 'Z'} doorway, with no paint bridging the opening`);
     }
   }
 });
