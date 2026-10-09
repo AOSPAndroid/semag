@@ -12,6 +12,7 @@ import { createNetworkTimeline } from './network-timeline.js';
 import { createFpsInputQueue, releaseFpsTouchAction } from './voxel-input-queue.js';
 import { setAttribute, setDisabled, setHidden, setStyle, setText, toggleClass } from './hub/dom.js';
 import { inventoryControlForKey, inventoryItemReadout, inventoryLootPresentation, inventoryEventFeedback, inventorySwapPresentation, mountInventoryHotbar } from './voxel-inventory-ui.js';
+import { mountVoxelLabelOverlay } from './voxel-label-overlay.js';
 
 export const LOOK_SENSITIVITY = 0.0025;
 export const FPS_BUTTONS = Object.freeze(['up', 'down', 'left', 'right', 'jump', 'crouch', 'walk', 'fire', 'reload', 'interact', 'aim', 'swap', 'grenade', 'heal', 'slot1', 'slot2', 'slot3', 'slot4', 'drop']);
@@ -241,6 +242,7 @@ export function reconcilePlayer(player, history, ack, mapId, predictMovement, al
 async function boot() {
   const $ = id => document.getElementById(id);
   const canvas = $('arena');
+  const worldLabels = mountVoxelLabelOverlay(canvas);
   // Both selectors are built once from the same catalog that validates the server loadout.
   const loadoutOptions = document.createDocumentFragment(), arenaButtons = document.createDocumentFragment();
   for (const [index, id] of WEAPON_IDS.entries()) {
@@ -299,6 +301,11 @@ async function boot() {
   function error(message = '') { setText($('error-banner'), message); setHidden($('error-banner'), !message); }
   function toast(message) { clearTimeout(toastTimer); setText($('toast'), message); setHidden($('toast'), false); toastTimer = setTimeout(() => { setHidden($('toast'), true); }, 2800); }
   function ownPlayer() { return state?.players?.find(player => player.id === playerId) || null; }
+  function labelsActive() {
+    const local = ownPlayer();
+    return !destroyed && connected && !graphicsError && !document.hidden && !modalOpen && !teamSwitchPending && ['countdown', 'buy', 'fight', 'roundEnd'].includes(state?.phase) &&
+      (local?.alive ? entered && !paused : !!state?.players?.some(player => player.team === local?.team && player.alive));
+  }
   function pointerLocked() { return document.pointerLockElement === canvas; }
   function controlsActive() { return connected && entered && !paused && !modalOpen && !graphicsError && !document.hidden && !!ownPlayer()?.alive && ['countdown', 'buy', 'fight'].includes(state?.phase) && (pointerLocked() || fallback || touchMode); }
   function currentInput() { return composeInput(keys, touch, mouse, aim, controlsActive()); }
@@ -342,6 +349,7 @@ async function boot() {
     else if (!shouldRun && inputHeartbeat) { clearInterval(inputHeartbeat); inputHeartbeat = null; }
   }
   function neutralize({ pause = false, unlock = false } = {}) {
+    worldLabels.clear();
     hitFeedback.reset(); paintHitFeedback(hitElements, { visible: false });
     keys.clear(); pressedKeys.clear(); mouse.fire = mouse.aim = false; rightDrag = false;
     touch.actions.clear(); touch.move = { x: 0, y: 0 }; touch.look = { x: 0, y: 0 };
@@ -528,6 +536,7 @@ async function boot() {
   }
 
   function updateUI() {
+    if (!labelsActive()) worldLabels.clear();
     lastHUDAt = performance.now(); paintedHUDKey = hudKey();
     refreshHeartbeat();
     connectionUI();
@@ -731,7 +740,7 @@ async function boot() {
   }
 
   function draw(now = performance.now()) {
-    if (!renderer || !state || graphicsError || document.hidden) return;
+    if (!renderer || !state || graphicsError || document.hidden) { worldLabels.clear(); return; }
     const renderedState = interpolatedState(snapshots, timeline.time(now), playerId, { predictMovement: engine.predictLocalMovement, traceProjectile: engine.traceShot, combatTime: timeline.currentTime(now) }) || { ...state, players: state.players.map(player => ({ ...player })) };
     const local = ownPlayer();
     if (teamSwitchPending && local?.team === requestedTeam) { teamSwitchPending = false; requestedTeam = null; }
@@ -747,7 +756,8 @@ async function boot() {
     if (local?.alive) presentationPlayer = presentationPlayers.find(player => player.id === playerId) || presentationPlayer;
     const viewPlayer = local?.alive ? presentationPlayer : renderedState.players.find(player => player.id === spectatorId && player.team === local?.team && player.alive) || local;
     const viewAim = local?.alive ? aim : { yaw: viewPlayer?.yaw || 0, pitch: viewPlayer?.pitch || 0 };
-    renderer.render(renderedState, { playerId, localId: playerId, localPlayer: presentationPlayer, viewPlayer, cameraPlayer: viewPlayer, yaw: viewAim.yaw, pitch: viewAim.pitch + (viewPlayer?.recoil || 0), time: now });
+    renderer.render(renderedState, { playerId, localId: playerId, localPlayer: presentationPlayer, viewPlayer, cameraPlayer: viewPlayer, yaw: viewAim.yaw, pitch: viewAim.pitch + (viewPlayer?.recoil || 0), time: now, roster });
+    worldLabels.paint(renderer.worldLabels, { active: labelsActive() });
     renderCount++;
     paintHitFeedback(hitElements, hitFeedback.present(local, { now, lifeKey: `${state.mapId}:${state.round}:${local?.lifeId || 0}`, active: state.phase === 'fight' && !paused && !modalOpen && connected, reducedMotion: hitMotion.matches }));
     paintDamageFeedback($('damage-cue'), damageFeedbackPresentation(damageFeedback, viewPlayer, { now, lifeKey: state.round, yaw: viewAim.yaw, active: state.phase === 'fight' }));
@@ -897,6 +907,7 @@ async function boot() {
   }
   function setDialog(kind) {
     modalOpen = !!kind;
+    if (modalOpen) worldLabels.clear();
     setHidden($('room-dialog'), kind !== 'room');
     setHidden($('guide-dialog'), kind !== 'guide');
     positionLayoutPicker();
@@ -1091,11 +1102,11 @@ async function boot() {
     if (destroyed) return; neutralize({ pause: true, unlock: true }); destroyed = true;
     clearTimeout(reconnectTimer); clearTimeout(toastTimer); clearInterval(pingTimer);
     clearInterval(inputHeartbeat); inputHeartbeat = null;
-    if (frameId) cancelAnimationFrame(frameId); frameId = null; socket?.close(); renderer?.destroy(); audio.destroy(); inventory.destroy(); layoutPicker.destroy(); unsubscribeLayout();
+    if (frameId) cancelAnimationFrame(frameId); frameId = null; socket?.close(); renderer?.destroy(); worldLabels.destroy(); audio.destroy(); inventory.destroy(); layoutPicker.destroy(); unsubscribeLayout();
     for (const remove of removers) remove(); pending = []; snapshots = []; kills.length = 0; eventSeen.clear();
   }
   listen(window, 'pagehide', destroy);
-  const inspect = () => clone({ state, players: roster, playerId, input: currentInput(), predictedPlayer, presentationPlayer, presentationPlayers, predictionRemainder: accumulator, predictionTick, actionQueue: actionInputs.inspect(), timeline: timeline.getState(), correction: correction.getState(), connected, controls: { pointerLocked: pointerLocked(), fallback, touch: touchMode, paused, entered, modalOpen }, queueLength: pending.length, renderCount, renderStats: renderer?.stats || null, audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), graphicsError, spectatorId });
+  const inspect = () => clone({ state, players: roster, playerId, input: currentInput(), predictedPlayer, presentationPlayer, presentationPlayers, predictionRemainder: accumulator, predictionTick, actionQueue: actionInputs.inspect(), timeline: timeline.getState(), correction: correction.getState(), connected, controls: { pointerLocked: pointerLocked(), fallback, touch: touchMode, paused, entered, modalOpen }, queueLength: pending.length, renderCount, renderStats: renderer?.stats || null, worldLabels: worldLabels.inspect(), audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), graphicsError, spectatorId });
   window.SemagVoxel = Object.freeze({ getState: inspect, inspect });
   updateUI();
   try {

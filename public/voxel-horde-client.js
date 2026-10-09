@@ -13,6 +13,7 @@ import { meleeLoadoutNote } from './hub/horde-setup.js';
 import { createFpsInputQueue, FPS_EDGE_ACTIONS, releaseFpsTouchAction } from './voxel-input-queue.js';
 import { createNetworkTimeline } from './network-timeline.js';
 import { tickFraction } from './display-timing.js';
+import { mountVoxelLabelOverlay } from './voxel-label-overlay.js';
 
 const clamp = (n, low, high) => Math.max(low, Math.min(high, n));
 const finite = n => Number.isFinite(n) ? n : 0;
@@ -112,6 +113,7 @@ export async function bootHorde() {
   const elements = new Map(), $ = id => { if (!elements.has(id)) elements.set(id, document.getElementById(id)); return elements.get(id); };
   const app = $('horde-app'), canvas = $('horde-canvas'), shell = $('horde-shell');
   if (!app || !canvas) return null;
+  const worldLabels = mountVoxelLabelOverlay(canvas);
   const params = new URLSearchParams(location.search), roomId = (params.get('room') || '').trim().toUpperCase(), solo = params.get('solo') === '1' || !roomId;
   let engine, renderer, state = null, socket = null, playerId = solo ? 0 : null, hostId = solo ? 0 : null, connected = solo, roster = [];
   let destroyed = false, graphicsError = '', permanentError = false, reconnectTimer = null, reconnectAttempts = 0, invite = location.href;
@@ -132,6 +134,7 @@ export async function bootHorde() {
   const locked = () => document.pointerLockElement === canvas;
   const localPlayer = () => state?.players?.find(player => player.id === playerId) || null;
   const running = () => !destroyed && connected && !!state && !graphicsError && !document.hidden && LIVE_PHASES.includes(state.phase);
+  const labelsActive = () => running() && !modalOpen && (localPlayer()?.alive ? entered && !paused : !!hordeSpectatorPlayer(state, playerId, spectatorId)?.alive);
   const controlsActive = () => running() && entered && !paused && !modalOpen && localPlayer()?.alive && (locked() || fallback || touchMode);
   const currentInput = () => composeInput(keys, touch, mouse, aim, controlsActive());
   const inventory = mountInventoryHotbar($('horde-inventory'), actions => {
@@ -160,6 +163,7 @@ export async function bootHorde() {
   }
   function stopFrame() { if (frameId !== null) cancelAnimationFrame(frameId); frameId = null; previousFrame = null; accumulator = 0; }
   function clearInputs({ fence = false } = {}) {
+    worldLabels.clear();
     hitFeedback.reset(); paintHitFeedback(hitElements, { visible: false });
     const held = currentInput(); keys.clear(); physicalKeys.clear(); mouse.fire = mouse.aim = false; touch.actions.clear(); touch.move = { x: 0, y: 0 }; touch.look = { x: 0, y: 0 };
     // Remove records before releasing capture: synchronous loss cannot replay a tap.
@@ -266,6 +270,7 @@ export async function bootHorde() {
     $('horde-team').replaceChildren(...humans.map(player => { const item = document.createElement('li'), status = document.createElement('span'); item.textContent = nameFor(player.id); item.dataset.dead = String(!player.alive); status.textContent = player.alive ? `${Math.round(player.hp)} HP` : player.revivesThisWave >= 1 ? 'DOWN · RETURNS NEXT WAVE' : 'DOWN · HOLD E TO REVIVE'; item.append(status); return item; }));
   }
   function updateHUD(force = false, now = performance.now()) {
+    if (!labelsActive()) worldLabels.clear();
     if (!state) { hide('horde-setup', true); hide('horde-pause-card', true); hide('horde-result', true); hide('horde-countdown', true); hide('horde-connection-card', false); hide('horde-overlay', false); text('horde-connection-title', permanentError ? 'Room unavailable.' : 'Connecting…'); text('horde-connection-copy', permanentError ? 'This room is full, closed or already fighting. Return to Semag to join the next run.' : 'Finding your squad on the host.'); return; }
     if (!force && now - lastHUDAt < 70) return; lastHUDAt = now;
     const phase = state.phase, player = localPlayer(), wave = hordeWavePresentation(state, engine.TICK_RATE), readout = player ? combatReadout(player, WEAPONS, { ADS, HEAL, PLAYER_HEALTH }) : null;
@@ -307,7 +312,7 @@ export async function bootHorde() {
     updateTeam();
   }
   function draw(now = performance.now()) {
-    if (!renderer?.available || !state || destroyed || graphicsError || document.hidden) return;
+    if (!renderer?.available || !state || destroyed || graphicsError || document.hidden) { worldLabels.clear(); return; }
     const live = running(); if (live) lastDrawAt = now;
     let view;
     if (solo) {
@@ -329,7 +334,8 @@ export async function bootHorde() {
     }
     presentationPlayers = view.players; view.fighters = view.players;
     const camera = hordeSpectatorPlayer(view, playerId, spectatorId) || presentationPlayer || state.players[0], viewAim = camera?.id === playerId && camera.alive ? aim : cleanAim(camera?.yaw, camera?.pitch);
-    renderer.render(view, { playerId, localId: playerId, localPlayer: presentationPlayer, viewPlayer: camera, cameraPlayer: camera, yaw: viewAim.yaw, pitch: viewAim.pitch + finite(camera?.recoil), time: live ? now : lastDrawAt || now }); renderCount++; lastFraction = tickFraction(accumulator, 1 / engine.TICK_RATE);
+    renderer.render(view, { playerId, localId: playerId, localPlayer: presentationPlayer, viewPlayer: camera, cameraPlayer: camera, yaw: viewAim.yaw, pitch: viewAim.pitch + finite(camera?.recoil), time: live ? now : lastDrawAt || now, roster });
+    worldLabels.paint(renderer.worldLabels, { active: labelsActive() }); renderCount++; lastFraction = tickFraction(accumulator, 1 / engine.TICK_RATE);
     const scoped = MOVEMENT_PHASES.includes(state.phase) && camera?.alive && !modalOpen && !paused && camera.slot !== 'sword' && WEAPONS[camera.weapon]?.scoped && aimFraction(camera, ADS.ticks) >= 14 / 18;
     hide('horde-scope', !scoped); hide('horde-crosshair', state.phase !== 'fight' || modalOpen || paused || !camera?.alive || scoped || camera.healing);
     paintHitFeedback(hitElements, hitFeedback.present(localPlayer(), { now, lifeKey: `${state.mapId}:${state.matchId}:${localPlayer()?.lifeId}`, active: state.phase === 'fight' && !paused && !modalOpen && connected, reducedMotion: hitMotion.matches })); hide('horde-feedback', now >= feedbackUntil || !LIVE_PHASES.includes(state.phase));
@@ -442,13 +448,13 @@ export async function bootHorde() {
     try { if (pointer.element.hasPointerCapture?.(event.pointerId)) pointer.element.releasePointerCapture(event.pointerId); } catch {}
   }
   function graphics() {
-    if (destroyed) return; renderer?.destroy(); renderer = null; graphicsError = '';
+    if (destroyed) return; worldLabels.clear(); renderer?.destroy(); renderer = null; graphicsError = '';
     try { renderer = new rendererClass(canvas); if (!renderer.available) throw new Error(renderer.error || 'WebGL is unavailable.'); error(''); updateHUD(true); draw(); }
     catch (cause) { graphicsError = cause?.message || 'Enable hardware acceleration to run Voxel Last Stand.'; error(graphicsError); updateHUD(true); }
   }
   let rendererClass;
   function destroy() {
-    if (destroyed) return; clearInputs(); destroyed = true; stopFrame(); clearTimeout(reconnectTimer); clearInterval(heartbeat); unlock(); socket?.close(); for (const remove of listeners) remove(); unsubscribe(); picker.destroy(); audio.destroy(); inventory.destroy(); renderer?.destroy(); movement.clear(); pending = []; snapshots = [];
+    if (destroyed) return; clearInputs(); destroyed = true; stopFrame(); clearTimeout(reconnectTimer); clearInterval(heartbeat); unlock(); socket?.close(); for (const remove of listeners) remove(); unsubscribe(); picker.destroy(); audio.destroy(); inventory.destroy(); renderer?.destroy(); worldLabels.destroy(); movement.clear(); pending = []; snapshots = [];
   }
   const unsubscribe = subscribeKeyboardLayout(() => { clearInputs(); hints(); });
   text('horde-mode', solo ? 'SOLO SURVIVAL' : '1–3 PLAYER CO-OP'); text('horde-room-code', roomId); $('horde-name').value = getName(); hide('horde-name-field', solo); hide('horde-lobby', solo); hide('horde-map-field', !solo); hide('horde-difficulty-field', !solo);
@@ -485,7 +491,7 @@ export async function bootHorde() {
     if (solo) preview(); graphics(); if (!solo) { connect(); hostInfo().then(info => { invite = `${info.origin}/voxel-horde.html?room=${encodeURIComponent(roomId)}`; }).catch(() => {}); }
   } catch (cause) { graphicsError = cause?.message || 'The game could not load.'; error(`Voxel Last Stand could not load: ${graphicsError}`); }
   heartbeat = setInterval(() => { if (!solo && connected && !document.hidden && LIVE_PHASES.includes(state?.phase)) sendInput(); }, 50);
-  const inspect = () => copy({ state: state ? { ...state, map: undefined, fighters: undefined } : null, solo, playerId, hostId, aim, paused: paused || state?.phase === 'paused', connected, roomPlayers: roster, pendingInputs: pending, queuedActions: inputQueue.inspect(), presentationPlayer, presentationPlayers, controls: { pointerLocked: locked(), fallback, touch: touchMode, entered, modalOpen }, renderCount, renderStats: renderer?.stats || null, audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), monsterAudio: audio.inspectMonsters(), graphicsError, displayTiming: { physicsSamples, renderSamples: renderCount, lastFraction }, timeline: timeline.getState(), spectatorId });
+  const inspect = () => copy({ state: state ? { ...state, map: undefined, fighters: undefined } : null, solo, playerId, hostId, aim, paused: paused || state?.phase === 'paused', connected, roomPlayers: roster, pendingInputs: pending, queuedActions: inputQueue.inspect(), presentationPlayer, presentationPlayers, controls: { pointerLocked: locked(), fallback, touch: touchMode, entered, modalOpen }, renderCount, renderStats: renderer?.stats || null, worldLabels: worldLabels.inspect(), audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), monsterAudio: audio.inspectMonsters(), graphicsError, displayTiming: { physicsSamples, renderSamples: renderCount, lastFraction }, timeline: timeline.getState(), spectatorId });
   window.semagHorde = Object.freeze({ getState: inspect, getDebugState: inspect, getDisplayTiming: () => ({ physicsSamples, renderSamples: renderCount, lastFraction }) });
   return { destroy, inspect };
 }

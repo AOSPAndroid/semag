@@ -1,0 +1,7 @@
+.voxel-world-labels{position:absolute;inset:0;overflow:hidden;pointer-events:none;user-select:none;contain:layout style paint}
+.voxel-world-label{position:absolute;transform:translate(-50%,-100%);display:block;pointer-events:none}
+.voxel-world-name{display:block;max-width:144px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#dbf3e8;font:600 11px/15px Arial,Helvetica,sans-serif;letter-spacing:.15px;text-shadow:-1px -1px 0 #081b15,1px -1px 0 #081b15,-1px 1px 0 #081b15,1px 1px 0 #081b15,0 2px 3px #030a07}
+.voxel-world-health{display:block;width:46px;height:5px;padding:1px;background:#1b1715d9;box-shadow:0 1px 2px #070a07bf}
+.voxel-world-health-fill{display:block;width:100%;height:100%;background:linear-gradient(90deg,#b94032,#f28b58);transform-origin:left center}
+.voxel-world-labels[hidden],.voxel-world-label[hidden],.voxel-world-name[hidden],.voxel-world-health[hidden]{display:none!important}
+@media(max-width:540px){.voxel-world-name{max-width:120px;font-size:10px;line-height:14px}}

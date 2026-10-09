@@ -796,7 +796,7 @@ function animate(now) {
   let ticks = 0; while (accumulator >= 1000 / 120 && ticks++ < 8) { inputTick(); accumulator -= 1000 / 120; }
   if (renderer) {
     const fraction = tickFraction(accumulator / 1000), state = displayState(now, fraction);
-    renderer.render(state, { localId, time: now, aimTarget: aimMode ? pointerTarget : null });
+    renderer.render(state, { localId, time: now, aimTarget: aimMode ? pointerTarget : null, players: coop ? players : undefined });
     presentation = { state, pose: previousPose, time: now, fraction, renderCount: ++renderCount };
   }
   if (!realtimeMode || now - lastHUD > 50) { updateHUD(now); lastHUD = now; }

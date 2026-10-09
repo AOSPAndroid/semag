@@ -83,6 +83,9 @@ export class TopdownRenderer {
     this.lastConsumedEventId=null;
     this.depthObjects=[];
     this.depthPool=[];
+    this.coopNames=new Map();
+    this.coopNameBiome=null;
+    this.coopNameWave=null;
     this.lastTick = -1;
     this.lastTime = 0;
     this.shake = 0;
@@ -385,6 +388,9 @@ export class TopdownRenderer {
     const dt = this.lastTime ? clamp((time - this.lastTime) / 1000, 0, 0.05) : 1 / 60;
     this.lastTime = time;
     if (state) this.consumeEvents(state);
+    if(this.coopNameBiome!==this.currentBiome || this.coopNameWave!==state?.wave){
+      this.coopNames.clear();this.coopNameBiome=this.currentBiome;this.coopNameWave=state?.wave;
+    }
     const ctx = this.ctx;
     const scale = Math.min(this.canvas.width / WIDTH, this.canvas.height / HEIGHT);
     const ox = (this.canvas.width - WIDTH * scale) / 2, oy = (this.canvas.height - HEIGHT * scale) / 2;
@@ -427,7 +433,11 @@ export class TopdownRenderer {
     objects.sort((a, b) => a.y - b.y);
     for(const object of objects){
       if(object.kind===0)this.pillar(ctx,object.entity);
-      else if(object.kind===1)this.hero(ctx,object.entity.id==null?{...object.entity,id:object.index}:object.entity,time);
+      else if(object.kind===1){
+        const fighter=object.entity.id==null?{...object.entity,id:object.index}:object.entity;
+        this.hero(ctx,fighter,time);
+        if(state?.mode==='coop')this.heroName(ctx,fighter,options.players?.[fighter.id]);
+      }
       else this.enemy(ctx,object.entity,time);
     }
     for (const projectile of state?.projectiles || []) this.projectile(ctx, projectile, time);
@@ -435,6 +445,28 @@ export class TopdownRenderer {
     if(!this.reducedMotion.matches)this.motes(ctx, time);
     ctx.restore();
     this.shake *= Math.exp(-dt * 24);
+  }
+
+  heroName(ctx, fighter, person) {
+    const id=fighter.id??0,font='bold 12px system-ui';
+    if(id!==0 && id!==1)return;
+    if(!person?.connected || typeof person.name!=='string'){this.coopNames.delete(id);return;}
+    if(!Number.isFinite(fighter.x) || !Number.isFinite(fighter.y))return;
+    ctx.save();ctx.font=font;ctx.textAlign='center';ctx.textBaseline='middle';
+    let label=this.coopNames.get(id);
+    if(!label || label.source!==person.name || label.font!==font){
+      const letters=Array.from(person.name.replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g,'').trim()).slice(0,24);
+      let name=letters.join(''),width=name?ctx.measureText(name).width:0;
+      while(width>120 && letters.length>1){letters.pop();name=letters.join('')+'…';width=ctx.measureText(name).width;}
+      label={source:person.name,font,name,width};this.coopNames.set(id,label);
+    }
+    const{name,width}=label;
+    if(!name){ctx.restore();return;}
+    const x=clamp(fighter.x,width/2+10,WIDTH-width/2-10),y=Math.max(18,fighter.y-43);
+    ctx.fillStyle='#132820df';ctx.fillRect(x-width/2-4,y-8,width+8,16);
+    ctx.strokeStyle='#071b18';ctx.lineWidth=3;ctx.lineJoin='round';ctx.strokeText(name,x,y);
+    ctx.fillStyle=PALETTES[id].light;ctx.fillText(name,x,y);
+    ctx.restore();
   }
 
   torch(ctx, x, y, time) {

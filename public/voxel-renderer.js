@@ -6,6 +6,7 @@ import { frameAlpha } from './display-timing.js';
 import { createPlayerAnimationPresenter, playerAnimationPose } from './voxel-player-animation.js';
 import { createFirstPersonMotionPresenter, createWeaponShotPresenter, weaponShotPose } from './voxel-first-person-motion.js';
 import { MONSTER_BODIES, monsterBodyProfile } from './voxel-monster-bodies.js';
+import { EMPTY_WORLD_LABELS, presentWorldLabels } from './voxel-label-presentation.js';
 
 // All solid world surfaces come directly from the engine's minimum-corner
 // colliders. Decoration is either painted on those surfaces or outside bounds.
@@ -3220,8 +3221,9 @@ export class VoxelRenderer {
     this.frameMeshes = { world: new Mesh(), contact: new Mesh(), tracer: new Mesh(), weapon: new Mesh() };
     this.presentLoot = createLootPresenter(); this.presentWarnings = createSpawnWarningPresenter(); this.presentEye = createEyeHeightPresenter(); this.presentHumans = createPlayerAnimationPresenter(); this.presentMonsters = createMonsterAnimationPresenter(); this.presentHead = createFirstPersonMotionPresenter(); this.presentShots = createWeaponShotPresenter(); this.firstPersonMotion = null; this.shotMotion = null; this.humanPoses = new Map(); this.resizeReads = 0;
     this._frameDrawCalls = 0; this._frameDynamicVertices = 0; this._mapVertices = 0; this._lootItems = 0; this._stormVertices = 0;
+    this._worldLabels = EMPTY_WORLD_LABELS;
     this._onLost = event => {
-      event.preventDefault(); this.contextLost = true; this.available = false;
+      event.preventDefault(); this.contextLost = true; this.available = false; this._worldLabels = EMPTY_WORLD_LABELS;
       this.error = 'The 3D graphics context was interrupted. Waiting for the browser to restore it.';
       this._notify(this.error, true);
     };
@@ -3621,6 +3623,7 @@ export class VoxelRenderer {
     return mesh.array;
   }
   render(state, options = {}) {
+    this._worldLabels = EMPTY_WORLD_LABELS;
     if (this.destroyed || this.contextLost || !this.available || !state) return false;
     let map = typeof state.map === 'object' && state.map?.colliders ? state.map : MAPS[state.mapId] || MAPS.courtyard;
     if (!map) return false;
@@ -3722,6 +3725,7 @@ export class VoxelRenderer {
         contacts.floor(minX, minZ, maxX - minX, maxZ - minZ, [.035, .055, .08, opacity], ground + .012 + (2 - layer) * .0003);
       }
     }
+    this._worldLabels = presentWorldLabels({ state: { ...state, map }, players, roster: options.roster, localId, cameraPlayer, eye, view, projection, humanPoses: this.humanPoses });
     this._lootItems = 0; this._stormVertices = 0; this._spawnWarnings = 0;
     const loot = this.presentLoot(state.loot || [], time);
     dynamic.append(loot.opaque); contacts.append(loot.contacts);
@@ -3779,6 +3783,7 @@ export class VoxelRenderer {
     }
     return true;
   }
+  get worldLabels() { return this._worldLabels; }
   get stats() {
     const loot = this.presentLoot?.getStats(), warnings = this.presentWarnings?.getStats();
     const humanAnimation = Object.freeze({ cachedPlayers: this.presentHumans?.size || 0, poses: Object.freeze([...this.humanPoses].map(([id, { animation, joints }]) => Object.freeze({ id, phase: animation.phase, stride: animation.stride, speed: animation.speed, forward: animation.forward, strafe: animation.strafe, crouch: animation.crouch, airborne: animation.airborne, jump: animation.jump, land: animation.land, bodyBob: animation.bodyBob, knees: Object.freeze(joints.legs.map(leg => Object.freeze([...leg.knee]))), feet: Object.freeze(joints.legs.map(leg => Object.freeze([...leg.foot]))) }))) });
@@ -3786,6 +3791,7 @@ export class VoxelRenderer {
     return Object.freeze({ mapId: this.mapId, mapVertices: this._mapVertices, cachedMaps: this.mapCache.size, drawCalls: this._frameDrawCalls, dynamicVertices: this._frameDynamicVertices, lootItems: this._lootItems, stormVertices: this._stormVertices, spawnWarnings: this._spawnWarnings || 0, cachedSpawnWarnings: warnings?.cachedItems || 0, spawnWarningBuilds: warnings?.builds || 0, bloodParticles: this.particles.filter(particle => particle.material === 'blood').length, visibleBloodParticles: this._visibleBloodParticles || 0, cachedLootItems: loot?.cachedItems || 0, lootGeometryBuilds: loot?.builds || 0, geometryBufferBytes: Object.values(this.frameMeshes || {}).reduce((bytes, mesh) => bytes + mesh.storage.byteLength, 0) + (loot?.bufferBytes || 0) + (loot?.templateBytes || 0) + (warnings?.bufferBytes || 0) + (warnings?.templateBytes || 0), cameraEyeHeight: this.cameraEyeHeight, resizeReads: this.resizeReads, humanAnimation, firstPerson });
   }
   resetEffects() {
+    this._worldLabels = EMPTY_WORLD_LABELS;
     this.eventIds.clear(); this.eventQueue.length = 0; this.particles.length = 0; this.tracers.length = 0;
     this._visibleBloodParticles = 0;
     this.localShot = null; this.localReload = null; this.shotContext = null; this.lastAim = null; this.swayX = 0; this.swayY = 0;
@@ -3793,7 +3799,7 @@ export class VoxelRenderer {
   }
   destroy() {
     if (this.destroyed) return;
-    this.destroyed = true; this.available = false;
+    this.destroyed = true; this.available = false; this._worldLabels = EMPTY_WORLD_LABELS;
     this.canvas.removeEventListener('webglcontextlost', this._onLost);
     this.canvas.removeEventListener('webglcontextrestored', this._onRestored);
     this.resizeObserver?.disconnect();
