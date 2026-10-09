@@ -22,6 +22,7 @@ import { MELEE_WEAPONS } from './public/voxel-melee.js';
 import { enableLagCompensation, isValidViewTick, setShotViewTick } from './public/voxel-lag-compensation.js';
 import * as Brawl from './public/brawl-engine.js';
 import { createFpsInputQueue, FPS_EDGE_ACTIONS } from './public/voxel-input-queue.js';
+import { startHostConsole } from './host-console.js';
 
 const TICK_RATE = 120;
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -753,17 +754,34 @@ export function createServer(options = {}) {
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isMain) {
   const game = createServer();
-  game.listen().then(address => {
-    const port = address.port;
-    console.log('\nSEMAG GAME HUB · your PC, your game night');
-    console.log(`Open the hub:      http://localhost:${port}`);
-    console.log(`Share hostname:    http://${os.hostname()}:${port}`);
-    for (const interfaces of Object.values(os.networkInterfaces())) for (const adapter of interfaces || []) {
-      if (adapter.family === 'IPv4' && !adapter.internal) console.log(`Share LAN address: http://${adapter.address}:${port}`);
-    }
-    console.log('Create a room and share the invite. Ready together, or host-start Voxel Royale / Last Stand. Ctrl+C stops the hub.\n');
-  }).catch(error => { console.error(`Cannot start game hub: ${error.message}`); process.exitCode = 1; });
   let stopping = false;
-  const stop = async () => { if (stopping) return; stopping = true; await game.close(); process.exitCode = 0; };
+  let hostConsole;
+  const startup = game.listen();
+  startup.then(address => {
+    if (stopping) return;
+    const addresses = [];
+    for (const interfaces of Object.values(os.networkInterfaces())) for (const adapter of interfaces || []) {
+      if (adapter.family === 'IPv4' && !adapter.internal) addresses.push(adapter.address);
+    }
+    hostConsole = startHostConsole({ port: address.port, hostname: os.hostname(), addresses });
+  }).catch(error => {
+    hostConsole?.stop();
+    console.error(`Cannot start game hub: ${error.message}`);
+    process.exitCode = 1;
+  });
+  const stop = async () => {
+    if (stopping) return;
+    stopping = true;
+    hostConsole?.stop('Stopping the hub...');
+    try {
+      await startup.catch(() => {});
+      await game.close();
+      process.exitCode = 0;
+    } catch (error) {
+      console.error(`Cannot stop game hub: ${error.message}`);
+      process.exitCode = 1;
+    }
+  };
   process.on('SIGINT', stop); process.on('SIGTERM', stop);
+  process.once('exit', () => hostConsole?.stop());
 }

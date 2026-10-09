@@ -1,6 +1,7 @@
 @echo off
 setlocal
 cd /d "%~dp0"
+title semaG - local game host
 
 where node >nul 2>nul
 if errorlevel 1 goto missingnode
@@ -10,12 +11,15 @@ node -e "if (Number(process.versions.node.split('.')[0]) < 20) process.exit(1)"
 if errorlevel 1 goto oldnode
 
 if not exist "node_modules\ws\package.json" (
-  call npm install
+  echo.
+  echo   semaG / GAMES, REVERSED
+  echo   Installing the host dependency for this PC...
+  echo.
+  call npm install --no-audit --no-fund
   if errorlevel 1 goto failed
 )
 
-echo Starting SEMAG on this PC...
-call npm start
+node server.js
 if errorlevel 1 goto failed
 exit /b 0
 
