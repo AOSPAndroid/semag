@@ -18,8 +18,10 @@ export function weaponReloadPose(weapon, progress, { active = true, hand = 0 } =
   const start = hand === 1 ? .50 : .02, end = hand === 1 ? .98 : .48;
   const p = paired ? clamp((globalProgress - start) / (end - start), 0, 1) : globalProgress;
   const running = active && globalProgress < 1 && (!paired || globalProgress > start && globalProgress < end);
-  const style = weapon === 'shotgun' || weapon === 'slugshotgun' ? 'shell' : weapon === 'revolver' ? 'cylinder' : weapon === 'crossbow' ? 'string' : weapon === 'lmg' ? 'belt' : 'magazine';
+  const sidearm = ['pistol', 'classic', 'frenzy', 'ghost', 'bandit', 'sheriff'].includes(weapon);
+  const style = ['shorty', 'outlaw'].includes(weapon) ? 'break' : ['shotgun', 'slugshotgun', 'bucky'].includes(weapon) ? 'shell' : ['revolver', 'sheriff'].includes(weapon) ? 'cylinder' : weapon === 'crossbow' ? 'string' : ['lmg', 'ares', 'odin'].includes(weapon) ? 'belt' : 'magazine';
   const stage = !running ? 'ready' : style === 'shell' ? p < .14 ? 'lower' : p < .76 ? 'load' : p < .90 ? 'pump' : 'return'
+    : style === 'break' ? p < .18 ? 'open' : p < .32 ? 'eject' : p < .72 ? 'load' : p < .90 ? 'close' : 'return'
     : style === 'cylinder' ? p < .20 ? 'open' : p < .38 ? 'eject' : p < .70 ? 'load' : p < .88 ? 'close' : 'return'
     : style === 'string' ? p < .14 ? 'lower' : p < .62 ? 'draw' : p < .88 ? 'place' : 'return'
     : style === 'belt' ? p < .17 ? 'open' : p < .34 ? 'remove' : p < .61 ? 'insert' : p < .75 ? 'seat' : p < .85 ? 'close' : p < .94 ? 'bolt' : 'return'
@@ -33,23 +35,25 @@ export function weaponReloadPose(weapon, progress, { active = true, hand = 0 } =
   const cylinder = running && style === 'cylinder' ? ramp(p, .04, .20) * (1 - ramp(p, .70, .88)) : 0;
   const lid = running && style === 'belt' ? ramp(p, .02, .17) * (1 - ramp(p, .75, .85)) : 0;
   const pump = running && style === 'shell' ? pulse(p, .76, .825, .90) : 0;
+  const breakOpen = running && style === 'break' ? ramp(p, .02, .18) * (1 - ramp(p, .72, .90)) : 0;
   const shellCycle = clamp((p - .14) / .62, 0, .999999) * 3;
-  const shell = running && style === 'shell' && p >= .14 && p < .76 ? pulse(shellCycle % 1, 0, .65, 1) : 0;
+  const shell = running && style === 'shell' && p >= .14 && p < .76 ? pulse(shellCycle % 1, 0, .65, 1) : running && style === 'break' ? pulse(p, .32, .58, .72) : 0;
   const draw = style === 'string' && running ? ramp(p, .14, .62) : 1;
-  const home = weapon === 'pistol' ? [-.071, -.148, -.060] : weapon === 'pdw' ? [-.063, -.084, -.40] : [-.063, -.084, -.502];
+  const home = sidearm ? [-.071, -.148, -.060] : weapon === 'shorty' ? [-.063, -.084, -.28] : ['pdw', 'stinger', 'spectre'].includes(weapon) ? [-.063, -.084, -.40] : [-.063, -.084, -.502];
   let support = home;
   if (running) {
     if (style === 'magazine' || style === 'belt') {
-      const grasp = style === 'belt' ? [-.10, -.25 - magazineDrop, -.25] : weapon === 'pistol' ? [-.04, -.185 - magazineDrop, -.06] : [-.03, -.245 - magazineDrop, weapon === 'pdw' ? -.075 : -.18];
+      const grasp = style === 'belt' ? [-.10, -.25 - magazineDrop, -.25] : sidearm ? [-.04, -.185 - magazineDrop, -.06] : [-.03, -.245 - magazineDrop, weapon === 'bulldog' ? .055 : weapon === 'pdw' ? -.075 : -.18];
       support = mix(home, grasp, ramp(p, .04, .16) * (1 - ramp(p, .72, .78)));
       support[1] += seat * .035;
       support = mix(support, [.085, .027, -.23 + bolt * .09], pulse(p, .73, .79, .94));
     } else if (style === 'shell') support = mix(home, [-.075, -.20 + shell * .065, -.25 + shell * .04], weight * (1 - ramp(p, .74, .80)));
+    else if (style === 'break') support = mix(home, [-.055, -.14 + shell * .06, weapon === 'shorty' ? -.24 : -.38], weight * (1 - ramp(p, .72, .90)));
     else if (style === 'cylinder') support = [-.071 - cylinder * .125, -.148 - weight * .06, -.06 - cylinder * .12];
     else if (style === 'string') support = mix(home, [0, -.032, -.61 + draw * .42], weight);
   }
   const audioPhase = stage === 'load' && style === 'shell' ? `shell${Math.floor(shellCycle) + 1}` : stage;
-  return { active: running, reloadActive: active && globalProgress < 1, progress: p, globalProgress, style, stage, audioPhase, hand: paired && hand === 1 ? 1 : 0, weight, magazineDrop, magazineVisible: !running || style !== 'magazine' || p < .32 || p >= .48, seat, bolt, cylinder, lid, pump, shell, shellVisible: running && style === 'shell' && p >= .14 && p < .76, draw, loaded: style === 'string' && running && p >= .80, support,
+  return { active: running, reloadActive: active && globalProgress < 1, progress: p, globalProgress, style, stage, audioPhase, hand: paired && hand === 1 ? 1 : 0, weight, magazineDrop, magazineVisible: !running || style !== 'magazine' || p < .32 || p >= .48, seat, bolt, cylinder, lid, pump, breakOpen, shell, shellVisible: running && (style === 'shell' && p >= .14 && p < .76 || style === 'break' && p >= .32 && p < .72), draw, loaded: style === 'string' && running && p >= .80, support,
     weapon: { x: -weight * .035, y: weight * .035 + seat * .014, z: -weight * .015, yaw: weight * (style === 'cylinder' ? .28 : .20), pitch: -weight * (style === 'shell' ? .12 : .075) + seat * .025 } };
 }
 

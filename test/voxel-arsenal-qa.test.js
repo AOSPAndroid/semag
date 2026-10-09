@@ -51,7 +51,7 @@ function hordeTicks(state, count, buttons = {}) { for (let index = 0; index < co
 
 test('arsenal additions preserve the complete original gun order and four physical inventory slots', () => {
   assert.deepEqual(WEAPON_IDS.slice(0, 13), ['carbine', 'smg', 'marksman', 'pistol', 'shotgun', 'burst', 'sniper', 'lmg', 'crossbow', 'revolver', 'pdw', 'autoshotgun', 'battlerifle']);
-  assert.deepEqual(WEAPON_IDS.slice(13), GUNS);
+  assert.deepEqual(WEAPON_IDS.slice(13, 16), GUNS);
   assert.deepEqual(MELEE_IDS, ['knife', 'sword', 'katana', 'axe', 'tonfas']);
   for (const weapon of GUNS) {
     const player = fixture(weapon).players[0];

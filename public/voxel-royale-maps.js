@@ -1,6 +1,7 @@
 import { createParisMap } from './voxel-paris.js';
 import { createExpansionMap } from './voxel-expansion-maps.js';
 import { enhanceMapIdentity } from './voxel-map-landmarks.js';
+import { createCloseCombatMap } from './voxel-close-combat-maps.js';
 
 /** Original, server-shared arenas for Voxel Royale. Every visible solid is a collider. */
 const box = (id, x, y, z, w, h, d, color, material = 'stone') => Object.freeze({ id, x, y, z, w, h, d, color, material });
@@ -193,5 +194,6 @@ const desert = arena('desert', 'Dunes of Anubis', 'Loot open caravan houses and 
 export const MAPS = Object.freeze({
   forest: enhanceMapIdentity(forest), maze: enhanceMapIdentity(maze), desert: enhanceMapIdentity(desert),
   paris: enhanceMapIdentity(createParisMap('royale')), snow: createExpansionMap('snow', 'royale'), sewers: createExpansionMap('sewers', 'royale'), trading: createExpansionMap('trading', 'royale'),
+  market: createCloseCombatMap('market', 'royale'), lockdown: createCloseCombatMap('lockdown', 'royale'),
 });
 export const MAP_IDS = Object.freeze(Object.keys(MAPS));

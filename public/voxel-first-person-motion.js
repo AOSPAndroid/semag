@@ -60,6 +60,26 @@ const SHOT_PROFILES = Object.freeze({
   dualpistols: { attack: 6, decay: 24, duration: 205, push: .075, pitch: .184, side: .008, yaw: .023, lift: .013 },
   dualsmg: { attack: 5, decay: 18, duration: 150, push: .049, pitch: .084, side: .006, yaw: .017, lift: .005 },
   slugshotgun: { attack: 9, decay: 44, duration: 350, push: .154, pitch: .188, side: .008, yaw: .022, lift: .013 },
+  classic: { attack: 6, decay: 25, duration: 205, push: .077, pitch: .183, side: .005, yaw: .018, lift: .010 },
+  shorty: { attack: 8, decay: 38, duration: 310, push: .136, pitch: .202, side: .008, yaw: .021, lift: .013 },
+  frenzy: { attack: 5, decay: 19, duration: 155, push: .047, pitch: .102, side: .004, yaw: .014, lift: .006 },
+  ghost: { attack: 6, decay: 26, duration: 215, push: .067, pitch: .157, side: .004, yaw: .014, lift: .009 },
+  sheriff: { attack: 8, decay: 37, duration: 300, push: .128, pitch: .249, side: .008, yaw: .025, lift: .017 },
+  bandit: { attack: 7, decay: 30, duration: 245, push: .092, pitch: .211, side: .006, yaw: .020, lift: .013 },
+  stinger: { attack: 4, decay: 18, duration: 130, push: .040, pitch: .075, side: .005, yaw: .014, lift: .004 },
+  spectre: { attack: 5, decay: 19, duration: 155, push: .045, pitch: .068, side: .003, yaw: .009, lift: .003 },
+  bucky: { attack: 9, decay: 44, duration: 350, push: .158, pitch: .188, side: .009, yaw: .022, lift: .014 },
+  judge: { attack: 8, decay: 34, duration: 280, push: .126, pitch: .155, side: .008, yaw: .019, lift: .010 },
+  bulldog: { attack: 6, decay: 24, duration: 195, push: .083, pitch: .110, side: .005, yaw: .014, lift: .006 },
+  guardian: { attack: 8, decay: 36, duration: 290, push: .127, pitch: .163, side: .005, yaw: .017, lift: .010 },
+  phantom: { attack: 6, decay: 22, duration: 180, push: .074, pitch: .086, side: .004, yaw: .010, lift: .005 },
+  vandal: { attack: 7, decay: 27, duration: 220, push: .097, pitch: .127, side: .006, yaw: .016, lift: .007 },
+  warden: { attack: 8, decay: 32, duration: 260, push: .113, pitch: .147, side: .006, yaw: .015, lift: .009 },
+  marshal: { attack: 8, decay: 39, duration: 320, push: .132, pitch: .170, side: .006, yaw: .016, lift: .010 },
+  outlaw: { attack: 9, decay: 43, duration: 350, push: .153, pitch: .190, side: .007, yaw: .018, lift: .013 },
+  operator: { attack: 9.5, decay: 48, duration: 385, push: .159, pitch: .214, side: .008, yaw: .020, lift: .014 },
+  ares: { attack: 7, decay: 27, duration: 220, push: .087, pitch: .112, side: .007, yaw: .018, lift: .006 },
+  odin: { attack: 7, decay: 30, duration: 245, push: .105, pitch: .121, side: .009, yaw: .020, lift: .007 },
 });
 
 /** A fast attack and analytic damped recovery are identical at every refresh rate. */
@@ -80,8 +100,9 @@ export function weaponShotPose(weapon, age, aim = 0, side = 1) {
 export function weaponCyclePose(weapon, age) {
   const t = finite(age, Infinity);
   const stroke = (start, pull, release) => t >= start && t < release ? smooth((t - start) / (pull - start)) * (1 - smooth((t - pull) / (release - pull))) : 0;
-  const pump = weapon === 'shotgun' || weapon === 'slugshotgun';
-  return { pump: pump ? stroke(90, 245, 525) : 0, bolt: weapon === 'sniper' ? stroke(105, 265, 480) : weapon === 'crossbow' || pump ? 0 : stroke(0, 19, 78) };
+  const pump = weapon === 'shotgun' || weapon === 'slugshotgun' || weapon === 'bucky';
+  const boltAction = weapon === 'sniper' || weapon === 'operator' || weapon === 'marshal';
+  return { pump: pump ? stroke(90, 245, 525) : 0, bolt: boltAction ? stroke(105, 265, 480) : weapon === 'crossbow' || pump || weapon === 'shorty' || weapon === 'outlaw' ? 0 : stroke(0, 19, 78) };
 }
 
 /** Bounded accepted-shot history. Pellet contacts never multiply a shell's impulse. */
@@ -106,7 +127,7 @@ export function createWeaponShotPresenter() {
   };
   const sample = (weapon, time, aim = 0, hand = null) => {
     for (let i = shots.length - 1; i >= 0; i--) {
-      const duration = Math.max(SHOT_PROFILES[shots[i].weapon].duration, shots[i].weapon === 'sniper' ? 480 : shots[i].weapon === 'shotgun' || shots[i].weapon === 'slugshotgun' ? 525 : 0);
+      const duration = Math.max(SHOT_PROFILES[shots[i].weapon].duration, ['sniper', 'operator', 'marshal'].includes(shots[i].weapon) ? 480 : ['shotgun', 'slugshotgun', 'bucky'].includes(shots[i].weapon) ? 525 : 0);
       if (time < shots[i].born || time - shots[i].born >= duration) shots.splice(i, 1);
     }
     const pose = { kick: 0, x: 0, y: 0, z: 0, yaw: 0, pitch: 0 };

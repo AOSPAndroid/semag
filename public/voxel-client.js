@@ -3,7 +3,8 @@ export { aimFraction, aimLookMultiplier } from './voxel-fps-feedback.js';
 import { displayKey, gameKey, getKeyboardLayout, mountKeyboardLayoutPicker, subscribeKeyboardLayout } from './keyboard-layout.js';
 import { copyText, getName, hostInfo, roomUrl, saveName } from './hub/shared.js';
 import { GameAudio } from './audio.js';
-import { WEAPONS, WEAPON_IDS, weaponSpread, weaponStats } from './voxel-weapons.js';
+import { WEAPONS, WEAPON_IDS, WEAPON_GROUPS, weaponDamage, weaponSpread, weaponStats } from './voxel-weapons.js';
+import { resolveActiveFire, weaponReloadDuration, weaponFireIntervalTicks } from './voxel-fire-modes.js';
 import { PLAYER_HEALTH, HEAL } from './voxel-engine.js';
 import { meleeLabel, meleeProfile, MELEE_IDS } from './voxel-melee.js';
 import { incomingDamageFeedback, damageFeedbackPresentation, paintDamageFeedback } from './voxel-damage-feedback.js';
@@ -107,7 +108,7 @@ export function loadoutForKey(event, phase) {
 
 /** Action progress always comes from the simulation; readiness never anticipates a hit. */
 export function combatReadout(player, weapons = WEAPONS, rules = {}) {
-  const weapon = weapons[player?.weapon]; const sword = player?.slot === 'sword';
+  const weapon = weapons[player?.weapon]; const fire = resolveActiveFire(weapon, player); const sword = player?.slot === 'sword';
   const swap = inventorySwapPresentation(player);
   const melee = (player?.meleeAction !== 'secondary' && (player?.meleeWeapon === 'knife' ? rules.KNIFE : !player?.meleeWeapon || player.meleeWeapon === 'sword' ? rules.MELEE : null)) || meleeProfile(player);
   const bladeAction = sword ? meleeActionReadout(player, melee) : null;
@@ -123,18 +124,21 @@ export function combatReadout(player, weapons = WEAPONS, rules = {}) {
     status = 'SPINNING UP · HOLD FIRE';
     progress = { label: 'LMG wind-up', remaining: weapon.spinupTicks - player.spinTicks, total: weapon.spinupTicks };
   }
-  else if (weapon?.mode === 'burst' && player?.burstRemaining > 0) status = 'BURST FIRING';
-  else if (weapon?.mode === 'burst' && player?.shotCooldown > 0) status = `BURST RECOVERY ${(player.shotCooldown / 120).toFixed(1)}S`;
+  else if (fire?.mode === 'burst' && player?.burstRemaining > 0) status = 'BURST FIRING';
+  else if (fire?.mode === 'burst' && player?.shotCooldown > 0) status = `BURST RECOVERY ${(player.shotCooldown / 120).toFixed(1)}S`;
   else if (weapon?.mode === 'pump' && player?.shotCooldown > 0) status = `PUMPING ${(player.shotCooldown / 120).toFixed(1)}S`;
   else if (weapon?.mode === 'bolt' && player?.shotCooldown > 0) {
     status = `CYCLING BOLT ${(player.shotCooldown / 120).toFixed(1)}S`;
     progress = { label: 'Bolt recovery', remaining: player.shotCooldown, total: weapon.cooldown };
   }
+  else if (fire?.alternate) status = fire.mode === 'airburst' ? `RMB AIRBURST · ${fire.popDistance}M POP` : `RMB BURST · ${Math.min(fire.ammoCost || fire.count, player.ammo)} ROUNDS`;
+  else if (weapon?.adsBurst && fire?.mode === 'burst') status = `ADS ${fire.count}-SHOT BURST · HOLD LMB`;
+  else if (weapon?.fireRamp && player?.spinTicks > 0 && player.spinTicks < weapon.fireRamp.rampTicks && !player?.aiming) status = 'FIRE RATE RAMPING · HOLD LMB';
   else if (!player?.grounded) status = 'AIRBORNE / UNSTEADY';
   else if (player?.aiming) status = Math.hypot(player.vx || 0, player.vz || 0) > .22 ? 'AIMING / MOVING' : 'AIMING / STEADY';
   else if (player?.crouching) status = Math.hypot(player.vx || 0, player.vz || 0) > .22 ? 'CROUCHED / MOVING' : 'CROUCHED / STEADY';
-  else status = weapon?.projectile ? 'LEAD TARGET · CLICK EACH BOLT' : weapon?.spinupTicks ? 'HOLD FIRE · WIND-UP' : ({ semi: 'CLICK EACH SHOT', burst: 'CLICK EACH BURST', pump: 'CLICK EACH SHELL', bolt: 'SETTLE INTO SCOPE' })[weapon?.mode] || `RMB AIM · ${swap?.shortcut || 'V SWORD'}`;
-  if (reloading) { status = `RELOADING ${(player.reloadTicks / 120).toFixed(1)}S`; progress = { label: 'Reload', remaining: player.reloadTicks, total: weapon?.reloadTicks || player.reloadTicks }; }
+  else status = weapon?.projectile ? 'LEAD TARGET · CLICK EACH BOLT' : weapon?.spinupTicks ? 'HOLD FIRE · WIND-UP' : ({ semi: 'CLICK EACH SHOT', burst: 'CLICK EACH BURST', pump: 'CLICK EACH SHELL', bolt: 'SETTLE INTO SCOPE' })[weapon?.mode] || (weapon?.adsSupported === false ? 'HOLD FIRE · HIP FIRE' : `RMB AIM · ${swap?.shortcut || 'V SWORD'}`);
+  if (reloading) { status = `RELOADING ${(player.reloadTicks / 120).toFixed(1)}S`; progress = { label: 'Reload', remaining: player.reloadTicks, total: weaponReloadDuration(weapon, player.ammo) || player.reloadTicks }; }
   if (player?.grenadeThrowTicks > 0) status = `THROWING ${(player.grenadeThrowTicks / 120).toFixed(1)}S`;
   if (healing) {
     label = 'HEALING POTION'; ammo = `+${Math.min(rules.HEAL?.amount || HEAL.amount, Math.max(0, (player.maxHp || PLAYER_HEALTH) - player.hp))}`;
@@ -144,6 +148,16 @@ export function combatReadout(player, weapons = WEAPONS, rules = {}) {
   if (progress) progress.percent = Math.max(0, Math.min(100, 100 - progress.remaining / progress.total * 100));
   return { label, ammo, reserve: player?.reserve ?? '—', sword, healing, reloading, status, progress,
     grenades: Math.max(0, player?.grenades ?? 0), potions: Math.max(0, player?.potions ?? 0), ...inventoryItemReadout(player) };
+}
+
+/** Crosshair spread follows the currently accepted trigger profile, including Classic RMB. */
+export function weaponCrosshairSpread(player, rules = {}) {
+  const weapon = WEAPONS[player?.weapon]; if (!weapon || player?.slot === 'sword') return 0;
+  const fire = resolveActiveFire(weapon, player);
+  const motion = Math.max(0, Math.min(1, (Math.hypot(player.vx || 0, player.vz || 0) - .22) / weapon.speed));
+  const ads = aimFraction(player, rules.ticks);
+  const activeWeapon = fire?.alternate ? { ...weapon, hipSpread: fire.spread, aimedSpread: 0 } : weapon;
+  return (fire?.pelletSpread || 0) + weaponSpread(activeWeapon, { motion, grounded: player.grounded, heat: player.heat, ads }, rules);
 }
 
 /** A shotgun shell reports once; every pellet still supplies its own contact feedback. */
@@ -244,14 +258,84 @@ export function confirmedHitGroups(events = [], localId) {
   return [...groups.values()].map(group => ({ ...group, label: group.headshot ? 'HEADSHOT' : group.legshot ? 'LEG HIT' : 'HIT' }));
 }
 
+/** Group the catalog without changing the legacy keyboard or four-slot order. */
+export function weaponLoadoutGroups(catalog = WEAPONS, groups = WEAPON_GROUPS) {
+  const seen = new Set();
+  const result = groups.map(group => ({ id: group.id, label: group.label, ids: group.ids.filter(id => Object.hasOwn(catalog, id) && !seen.has(id) && seen.add(id)) })).filter(group => group.ids.length);
+  const remaining = Object.keys(catalog).filter(id => !seen.has(id));
+  if (remaining.length) result.push({ id: 'other', label: 'Other weapons', ids: remaining });
+  return result;
+}
+
+export function weaponHandling(weapon) {
+  if (!weapon) return '';
+  if (weapon.alternateFire?.mode === 'volley') return `LMB single shot · RMB ${weapon.alternateFire.count}-round burst · spends up to ${weapon.alternateFire.count} rounds`;
+  if (weapon.alternateFire?.mode === 'airburst') return `LMB ${weapon.pellets} pellets · RMB opens at ${weapon.alternateFire.burstDistance} m into ${weapon.alternateFire.count} pellets · 1 shell`;
+  if (weapon.adsBurst) return `Hip fire automatic · ADS ${weapon.adsBurst.count}-shot bursts while holding LMB`;
+  if (weapon.fireRamp) return 'Hold LMB to ramp up fire · ADS begins at full rate';
+  if (weapon.dualWield) return `Alternating barrels · RMB steadies the pair · ${weapon.mode === 'semi' ? 'one shot per click' : 'control close-range spread'}`;
+  if (weapon.projectile) return `Bolts ${weapon.projectileSpeed} m/s · gravity ${weapon.projectileGravity} m/s²`;
+  if (weapon.spinupTicks) return `${(weapon.spinupTicks / 120).toFixed(2)} s wind-up · hold LMB to fire`;
+  if (weapon.mode === 'burst') return `${weapon.burstCount || 3}-shot volley · release between bursts`;
+  const fire = ['semi', 'pump', 'bolt'].includes(weapon.mode) ? 'One shot per click' : 'Hold LMB to fire';
+  if (weapon.adsSupported === false || weapon.adsEnabled === false) return `${fire} · hip fire only`;
+  return weapon.scoped ? `${fire} · RMB ${weapon.zoomMultiplier || 'precision'}${weapon.zoomMultiplier ? '× scope' : ' scope'}` : `${fire} · RMB ${weapon.zoomMultiplier ? `${weapon.zoomMultiplier}× ADS` : 'aim'}`;
+}
+
+/** Damage rows use exact authored band boundaries and the authoritative damage helper. */
+export function weaponDamageRows(id) {
+  const weapon = WEAPONS[id]; if (!weapon) return [];
+  if (weapon.damageBands?.length) return weapon.damageBands.map((band, index) => {
+    const near = index ? weapon.damageBands[index - 1].maxDistance : 0;
+    return { label: band.maxDistance == null ? `${near}+ m` : `${near}–${band.maxDistance} m`, distance: near,
+      head: weaponDamage(weapon, 'head', near), body: weaponDamage(weapon, 'body', near), leg: weaponDamage(weapon, 'leg', near) };
+  });
+  const near = { label: 'Near · 0 m', distance: 0, head: weaponDamage(weapon, 'head', 0), body: weaponDamage(weapon, 'body', 0), leg: weaponDamage(weapon, 'leg', 0) };
+  const far = { label: `Far · ${weapon.range} m`, distance: weapon.range, head: weaponDamage(weapon, 'head', weapon.range), body: weaponDamage(weapon, 'body', weapon.range), leg: weaponDamage(weapon, 'leg', weapon.range) };
+  return weapon.falloff ? [near, far] : [{ ...near, label: `0–${weapon.range} m` }];
+}
+
 export function weaponComparison(id) {
   const weapon = WEAPONS[id]; const stats = weaponStats(id);
   if (!weapon || !stats) return null;
+  const rows = weaponDamageRows(id); const last = rows.at(-1);
+  const rate = weapon.valorant ? weapon.fireRamp ? `${Number((120 / weapon.fireRamp.startCooldownTicks).toFixed(1))} → ${Number((120 / weapon.fireRamp.endCooldownTicks).toFixed(1))} shots/s` : `${Number((120 / weaponFireIntervalTicks(weapon)).toFixed(2))} ${weapon.pellets > 1 ? 'shells' : 'shots'}/s${['semi','pump','bolt'].includes(weapon.mode) ? ' · per press' : ''}` : stats.fireRateLabel;
   return { name: weapon.name, description: weapon.description, body: stats.body, head: stats.head, leg: stats.leg,
-    damageLabel: stats.pellets > 1 ? `DAMAGE / PELLET · ${stats.pellets} PELLETS PER SHELL` : 'DAMAGE / HIT · CLOSE RANGE',
-    rate: stats.fireRateLabel, reload: `${stats.reloadSeconds.toFixed(2)} s`,
-    range: stats.falloffStart != null ? `Falls after ${stats.falloffStart} m · minimum ${Math.round(stats.falloffMinimum * 100)}%` : `Full damage to ${stats.effectiveRange} m`,
-    handling: weapon.dualWield ? `Alternating barrels · RMB steadies the pair · ${weapon.mode === 'semi' ? 'one shot per click' : 'control close-range spread'}` : stats.projectileSpeed ? `Bolts ${stats.projectileSpeed} m/s · gravity ${stats.projectileGravity} m/s²` : stats.windupSeconds ? `${stats.windupSeconds.toFixed(2)} s wind-up before fire` : weapon.scoped ? 'Scoped precision · settle before firing' : weapon.mode === 'burst' ? 'Three-shot volley · release between bursts' : ['semi', 'pump', 'bolt'].includes(weapon.mode) ? 'One shot per click · release between shots' : 'Automatic fire · control recoil' };
+    damageLabel: stats.pellets > 1 ? `DAMAGE / PELLET · ${stats.pellets} PELLETS PER SHELL` : 'DAMAGE / HIT · HEAD / BODY / LEGS',
+    rate, reload: `${stats.reloadSeconds.toFixed(2)} s`, magazine: weapon.magazine,
+    reloadDetail: weapon.emptyReloadTicks ? `${stats.reloadSeconds.toFixed(2)} s partial · ${(weapon.emptyReloadTicks / 120).toFixed(2)} s empty` : `${stats.reloadSeconds.toFixed(2)} s`,
+    range: weapon.damageBands ? weapon.damageBands.some(band => band.maxDistance != null) ? `Damage changes at ${weapon.damageBands.filter(band => band.maxDistance != null).map(band => `${band.maxDistance} m`).join(' / ')}` : 'Full damage at every distance' : stats.falloffStart != null ? `Falls after ${stats.falloffStart} m · minimum ${Math.round(stats.falloffMinimum * 100)}%` : `Full damage to ${stats.effectiveRange} m`,
+    handling: weaponHandling(weapon), rows, far: { head: last.head, body: last.body, leg: last.leg, distance: last.distance } };
+}
+
+/** Native optgroups keep a large arsenal keyboard- and touch-accessible. */
+export function populateWeaponSelect(select) {
+  const document = select.ownerDocument, previous = select.value, fragment = document.createDocumentFragment();
+  for (const group of weaponLoadoutGroups()) {
+    const optgroup = document.createElement('optgroup'); optgroup.label = group.id === 'legacy' ? group.label : `Valorant / ${group.label}`;
+    for (const id of group.ids) { const option = document.createElement('option'); option.value = id; option.textContent = WEAPONS[id].name; optgroup.append(option); }
+    fragment.append(optgroup);
+  }
+  select.replaceChildren(fragment); select.classList.add('arsenal-select');
+  select.value = Object.hasOwn(WEAPONS, previous) ? previous : 'carbine';
+}
+
+/** Render only when the selected gun changes; no combat frame creates DOM nodes. */
+export function renderWeaponDetails(host, id) {
+  if (!host || host.dataset.weapon === id) return;
+  const data = weaponComparison(id); if (!data) return;
+  const document = host.ownerDocument;
+  const node = (tag, className, text) => { const element = document.createElement(tag); if (className) element.className = className; if (text != null) element.textContent = text; return element; };
+  const table = node('table', 'arsenal-damage-table');
+  const caption = node('caption', null, data.damageLabel); table.append(caption);
+  const head = node('thead'), header = node('tr'); for (const title of ['Range', 'Head', 'Body', 'Legs']) header.append(node('th', null, title)); head.append(header); table.append(head);
+  const body = node('tbody');
+  for (const row of data.rows) { const line = node('tr'); const range = node('th', null, row.label); range.scope = 'row'; line.append(range); for (const zone of ['head', 'body', 'leg']) line.append(node('td', null, row[zone])); body.append(line); }
+  table.append(body);
+  const metrics = node('div', 'arsenal-metrics');
+  for (const [label, value] of [['MAG', `${data.magazine} rounds`], ['RELOAD', data.reloadDetail], ['FIRE', data.rate]]) { const cell = node('div'); cell.append(node('span', null, label), node('strong', null, value)); metrics.append(cell); }
+  const handling = node('p', 'arsenal-handling', data.handling);
+  host.classList.add('arsenal-weapon-details'); host.replaceChildren(table, metrics, handling); host.dataset.weapon = id;
 }
 
 /** Smooth remote bodies and live bolts. Combat and camera aim remain authoritative. */
@@ -268,21 +352,14 @@ async function boot() {
   const $ = id => document.getElementById(id);
   const canvas = $('arena');
   const worldLabels = mountVoxelLabelOverlay(canvas);
-  // Both selectors are built once from the same catalog that validates the server loadout.
-  const loadoutOptions = document.createDocumentFragment(), arenaButtons = document.createDocumentFragment();
-  for (const [index, id] of WEAPON_IDS.entries()) {
-    const weapon = WEAPONS[id];
-    const caption = weapon.dualWield ? 'Alternating barrels' : weapon.projectile ? 'Lead + bolt drop' : weapon.spinupTicks ? 'Hold fire to wind up' : weapon.mode === 'bolt' ? 'Settle into scope' : weapon.mode === 'burst' ? 'Three-shot volleys' : weapon.mode === 'pump' ? 'Close-range spread' : weapon.mode === 'semi' ? 'Fast single shots' : weapon.scoped ? 'Precise headshots' : weapon.magazine >= 30 ? 'Close quarters' : 'Measured bursts';
-    const option = document.createElement('option'); option.value = id; option.textContent = `${weapon.label} · ${caption}`; loadoutOptions.append(option);
-    const button = document.createElement('button'); button.dataset.arenaLoadout = id; button.setAttribute('aria-pressed', 'false');
-    button.setAttribute('aria-label', `${index < 9 ? `${index + 1}: ` : ''}${weapon.name}. ${weapon.description}`); button.title = weapon.description;
-    const number = document.createElement('b'); number.textContent = index < 9 ? String(index + 1) : '↗';
-    const detail = document.createElement('small'); detail.textContent = caption;
-    button.append(number, document.createTextNode(` ${weapon.label}`), detail); arenaButtons.append(button);
-  }
-  $('loadout-select').replaceChildren(loadoutOptions); $('arena-loadouts').replaceChildren(arenaButtons);
+  populateWeaponSelect($('loadout-select'));
+  const arenaField = document.createElement('label'); arenaField.className = 'arsenal-selector';
+  const arenaCaption = document.createElement('span'); arenaCaption.textContent = 'PRIMARY GUN';
+  const arenaSelect = document.createElement('select'); arenaSelect.id = 'arena-loadout-select'; arenaSelect.setAttribute('aria-label', 'Choose your setup weapon');
+  populateWeaponSelect(arenaSelect); arenaField.append(arenaCaption, arenaSelect); $('arena-loadouts').replaceChildren(arenaField);
+  const comparisonBands = document.createElement('section'); comparisonBands.id = 'comparison-bands'; comparisonBands.setAttribute('aria-label', 'Weapon damage at each range and handling'); $('weapon-comparison').append(comparisonBands);
   setText($('arena-melee-note'), 'Slot 1: knife · Slot 2: chosen gun · Slots 3–4: empty. Scavenge blades, guns and supplies with E.');
-  setText($('phase-shortcuts'), 'SETUP 1–9 · CLICK ANY WEAPON · IN PLAY: 1–4 EQUIP, X DROP');
+  setText($('phase-shortcuts'), 'CHOOSE A GUN DURING SETUP · IN PLAY: 1–4 EQUIP, WHEEL SWITCH, X DROP');
   const roomId = new URLSearchParams(location.search).get('room')?.trim().toUpperCase() || '';
   const roomLabel = /^[A-Z0-9]{6}$/.test(roomId) ? roomId : 'NO ROOM';
   setText($('room-code'), roomLabel);
@@ -540,7 +617,8 @@ async function boot() {
     setText($('comparison-description'), data.description);
     for (const key of ['body', 'head', 'leg', 'rate', 'reload', 'range', 'handling']) $(`comparison-${key}`).textContent = data[key];
     setText($('comparison-damage-label'), data.damageLabel);
-    setText($('arena-weapon-stats'), `${data.head} HEAD / ${data.body} BODY / ${data.leg} LEGS${WEAPONS[id].pellets > 1 ? ' · PER PELLET' : ''} · ${data.rate}`);
+    renderWeaponDetails(comparisonBands, id);
+    setText($('arena-weapon-stats'), `${data.head}/${data.far.head} HEAD · ${data.body}/${data.far.body} BODY · ${data.leg}/${data.far.leg} LEGS · NEAR/FAR${WEAPONS[id].pellets > 1 ? ' · PER PELLET' : ''} · ${data.magazine} ROUNDS · RELOAD ${data.reloadDetail}. ${data.handling}`);
   }
 
   function renderRoster() {
@@ -693,9 +771,8 @@ async function boot() {
     setHidden($('crosshair'), !controlsActive() || phase !== 'fight' || scoped || readout.healing);
     $('crosshair').dataset.stance = readout.sword ? 'sword' : local?.aiming ? 'aim' : 'hip';
     if (local) {
-      const motion = weapon ? Math.max(0, Math.min(1, (Math.hypot(local.vx, local.vz) - .22) / weapon.speed)) : 0;
       const ads = aimFraction(local, engine?.ADS?.ticks);
-      const spread = weapon ? (weapon.pelletSpread || 0) + weaponSpread(weapon, { motion, grounded: local.grounded, heat: local.heat, ads }, engine?.ADS) : 0;
+      const spread = weaponCrosshairSpread(local, engine?.ADS);
       const size = readout.sword ? 27 : Math.round(22 - ads * 8 + Math.min(64, spread * canvas.clientHeight * 2));
       setStyle($('crosshair'), 'width', `${size}px`); setStyle($('crosshair'), 'height', `${size}px`);
     }
@@ -761,10 +838,8 @@ async function boot() {
     setHidden($('arena-loadouts'), !enter || !['countdown', 'buy'].includes(phase));
     setHidden($('arena-weapon-stats'), $('arena-loadouts').hidden);
     setHidden($('arena-melee-field'), $('arena-loadouts').hidden); setHidden($('arena-melee-note'), $('arena-loadouts').hidden);
-    for (const button of document.querySelectorAll('[data-arena-loadout]')) {
-      button.setAttribute('aria-pressed', String(button.dataset.arenaLoadout === local?.weapon));
-      button.disabled = !connected || !['countdown', 'buy'].includes(phase);
-    }
+    setDisabled(arenaSelect, !connected || !['countdown', 'buy'].includes(phase));
+    if (local?.weapon && document.activeElement !== arenaSelect) arenaSelect.value = local.weapon;
     setHidden($('aim-note'), !enter); setText($('aim-note'), touchMode ? 'Touch: Move / Look pads. AIM becomes STAB with a knife or PARRY with another blade; tap a slot to equip.' : 'RMB: gun sights / knife stab / blade parry. If mouse capture is unavailable, hold RMB and drag to look.');
     const result = roundResult(state, local?.team);
     setHidden($('phase-announcement'), !connected || !!graphicsError || modalOpen || overlay || !['countdown', 'buy', 'roundEnd'].includes(phase));
@@ -1058,13 +1133,7 @@ async function boot() {
   listen($('overlay-ready'), 'click', () => (state?.phase === 'matchEnd' ? $('rematch-button') : $('ready-button')).click());
   listen($('player-name'), 'change', () => { playerName = saveName($('player-name').value); $('player-name').value = playerName; send({ type: 'join', name: playerName }); });
   listen($('loadout-select'), 'change', () => { previewWeapon = null; renderWeaponComparison($('loadout-select').value); neutralize(); send({ type: 'fps-loadout', weaponId: $('loadout-select').value }); });
-  for (const button of document.querySelectorAll('[data-arena-loadout]')) {
-    listen(button, 'click', () => { previewWeapon = null; renderWeaponComparison(button.dataset.arenaLoadout); selectArenaLoadout(button.dataset.arenaLoadout); });
-    listen(button, 'mouseenter', () => { previewWeapon = button.dataset.arenaLoadout; renderWeaponComparison(previewWeapon); });
-    listen(button, 'focus', () => { previewWeapon = button.dataset.arenaLoadout; renderWeaponComparison(previewWeapon); });
-    listen(button, 'mouseleave', () => { previewWeapon = null; renderWeaponComparison(ownPlayer()?.weapon || 'carbine'); });
-    listen(button, 'blur', () => { previewWeapon = null; renderWeaponComparison(ownPlayer()?.weapon || 'carbine'); });
-  }
+  listen(arenaSelect, 'change', () => { previewWeapon = null; renderWeaponComparison(arenaSelect.value); selectArenaLoadout(arenaSelect.value); });
   for (const button of document.querySelectorAll('[data-choose-team]')) listen(button, 'click', () => { neutralize({ pause: true, unlock: true }); teamSwitchPending = true; requestedTeam = Number(button.dataset.chooseTeam); send({ type: 'fps-team', team: requestedTeam }); updateUI(); });
   listen($('next-spectator'), 'click', () => {
     const local = ownPlayer(); const allies = state?.players.filter(player => player.team === local?.team && player.alive && player.id !== playerId) || [];

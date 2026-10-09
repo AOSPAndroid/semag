@@ -1,4 +1,6 @@
 /** Shared Voxel Breach loadouts. Distances are metres; durations are 120 Hz ticks. */
+import { VALORANT_WEAPONS, VALORANT_WEAPON_IDS } from './voxel-valorant-weapons.js';
+export { VALORANT_WEAPONS, VALORANT_WEAPON_IDS } from './voxel-valorant-weapons.js';
 // Presentation follows the same immutable catalog as authoritative damage.
 // Durations are 120 Hz ticks, widths are world metres; audio durations are seconds.
 const PROFILES = Object.freeze({
@@ -41,10 +43,18 @@ export const WEAPONS = Object.freeze({
   dualpistols: freezeWeapon({ id: 'dualpistols', name: 'Twin Finch Pistols', label: 'DUAL PISTOLS', mode: 'semi', dualWield: true, pressBufferTicks: 16, magazine: 24, reserve: 72, damage: 26, headMultiplier: 2.4, cooldown: 16, reloadTicks: 240, speed: 5.8, range: 75, recoil: .009, movingSpread: .034, airborneSpread: .105, bloom: .0026, hipSpread: .005, aimedSpread: .002, adsFovRatio: 60 / 70, falloff: { start: 18, span: 65, minimum: .6 }, color: '#e8ca93', description: 'One alternating-hand shot per press. A shared 24-round pair rewards close-range rhythm and deliberate aim.' }),
   dualsmg: freezeWeapon({ id: 'dualsmg', name: 'Twin Swift SMGs', label: 'DUAL SMGS', mode: 'auto', dualWield: true, magazine: 48, reserve: 144, damage: 16, headMultiplier: 2.4, cooldown: 6, reloadTicks: 300, speed: 5.5, range: 60, recoil: .0055, movingSpread: .034, airborneSpread: .098, bloom: .0032, hipSpread: .016, aimedSpread: .006, adsFovRatio: 60 / 70, falloff: { start: 10, span: 36, minimum: .38 }, color: '#d5a5b5', description: 'Hold fire to alternate both guns. A combined 48-round magazine and wide close-range cone demand careful reload timing.' }),
   slugshotgun: freezeWeapon({ id: 'slugshotgun', name: 'Goshawk Slug Shotgun', label: 'SLUG SHOTGUN', mode: 'pump', magazine: 5, reserve: 20, damage: 82, headMultiplier: 1.6, cooldown: 102, reloadTicks: 312, speed: 5, range: 80, recoil: .029, movingSpread: .059, airborneSpread: .13, bloom: .0025, hipSpread: .004, aimedSpread: .001, adsFovRatio: 48 / 70, falloff: { start: 12, span: 54, minimum: .35 }, color: '#e1af83', description: 'One powerful slug per press. Reward precise aim; damage falls beyond 12 metres and a miss leaves a long pump recovery.' }),
+  ...VALORANT_WEAPONS,
 });
 
 /** Slot order is shared by keyboard shortcuts and both loadout selectors. */
 export const WEAPON_IDS = Object.freeze(Object.keys(WEAPONS));
+export const LEGACY_WEAPON_IDS = Object.freeze(WEAPON_IDS.filter(id => !WEAPONS[id].valorant));
+/** Present the researched collection by role without changing legacy shortcut order. */
+export const WEAPON_GROUPS = Object.freeze([
+  ...[['sidearm', 'Sidearms'], ['smg', 'SMGs'], ['shotgun', 'Shotguns'], ['rifle', 'Rifles'], ['sniper', 'Sniper rifles'], ['heavy', 'Machine guns']]
+    .map(([id, label]) => Object.freeze({ id, label, ids: Object.freeze(VALORANT_WEAPON_IDS.filter(weaponId => VALORANT_WEAPONS[weaponId].category === id)) })),
+  Object.freeze({ id: 'legacy', label: 'Semag originals', ids: LEGACY_WEAPON_IDS }),
+]);
 
 const clamp = (value, lo, hi) => Math.max(lo, Math.min(hi, value));
 const finite = (value, fallback = 0) => Number.isFinite(value) ? value : fallback;
@@ -60,6 +70,12 @@ export function weaponHand(weaponOrId, shotIndex = 1) {
 export function weaponDamage(weaponOrId, hitKind = 'body', distance = 0) {
   const weapon = resolveWeapon(weaponOrId);
   if (!weapon || !Number.isFinite(weapon.damage) || weapon.damage <= 0) return 0;
+  if (Array.isArray(weapon.damageBands) && weapon.damageBands.length) {
+    const contactDistance = Math.max(0, finite(distance));
+    const band = weapon.damageBands.find(band => band.maxDistance === null || contactDistance < band.maxDistance) || weapon.damageBands.at(-1);
+    const zone = hitKind === 'head' ? 'head' : hitKind === 'leg' ? 'leg' : 'body';
+    return Math.max(0, finite(band?.[zone]));
+  }
   const falloff = weapon.falloff;
   const multiplier = falloff ? clamp(1 - Math.max(0, finite(distance) - falloff.start) / falloff.span, falloff.minimum, 1) : 1;
   const zone = hitKind === 'head' ? finite(weapon.headMultiplier, 1) : hitKind === 'leg' ? finite(weapon.legMultiplier, .75) : 1;
@@ -93,7 +109,7 @@ export function weaponStats(weaponOrId) {
   const weapon = resolveWeapon(weaponOrId);
   if (!weapon || !Number.isFinite(weapon.cooldown) || weapon.cooldown <= 0) return null;
   const mode = weapon.mode || 'auto', pellets = weapon.pellets || 1;
-  const cycleTicks = mode === 'burst'
+  const cycleTicks = weapon.valorant && Number.isFinite(weapon.fireIntervalTicks) ? weapon.fireIntervalTicks : mode === 'burst'
     ? (weapon.burstCount - 1) * weapon.burstInterval + weapon.cooldown
     : weapon.projectile ? Math.max(weapon.cooldown, weapon.reloadTicks) : weapon.cooldown;
   const shotsPerSecond = 120 * (mode === 'burst' ? weapon.burstCount : 1) / cycleTicks;
@@ -104,10 +120,14 @@ export function weaponStats(weaponOrId) {
     pellets, damagePerPellet: pellets > 1, shotsPerSecond, fireRateLabel, mode,
     reloadSeconds: weapon.reloadTicks / 120, cycleSeconds: cycleTicks / 120,
     windupSeconds: (weapon.spinupTicks || 0) / 120,
-    effectiveRange: weapon.range, falloffStart: weapon.falloff?.start ?? null,
-    falloffEnd: weapon.falloff ? weapon.falloff.start + weapon.falloff.span * (1 - weapon.falloff.minimum) : null,
-    falloffMinimum: weapon.falloff?.minimum ?? 1,
+    effectiveRange: weapon.range, falloffStart: weapon.damageBands?.length > 1 ? weapon.damageBands[0].maxDistance : weapon.falloff?.start ?? null,
+    falloffEnd: weapon.damageBands?.length > 1 ? weapon.damageBands.at(-2).maxDistance : weapon.falloff ? weapon.falloff.start + weapon.falloff.span * (1 - weapon.falloff.minimum) : null,
+    falloffMinimum: weapon.damageBands?.length > 1 ? weapon.damageBands.at(-1).body / weapon.damageBands[0].body : weapon.falloff?.minimum ?? 1,
     projectileSpeed: weapon.projectile ? weapon.projectileSpeed : null,
     projectileGravity: weapon.projectile ? weapon.projectileGravity : null,
+    ...(weapon.valorant ? { damageBands: weapon.damageBands, nominalFireRate: weapon.fireRate,
+      emptyReloadSeconds: (weapon.emptyReloadTicks ?? weapon.reloadTicks) / 120,
+      alternateFire: weapon.alternateFire || null, adsBurst: weapon.adsBurst || null,
+      wallPenetration: weapon.wallPenetration, collection: weapon.collection } : {}),
   });
 }

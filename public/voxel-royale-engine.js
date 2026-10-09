@@ -78,12 +78,24 @@ function addLoot(state, details) {
   state.loot.push(loot); return loot;
 }
 function seedLoot(state) {
-  const points = shuffled(state, state.map.lootPoints), weapons = shuffled(state, WEAPON_IDS), blades = shuffled(state, MELEE_IDS.filter(id => id !== 'knife'));
-  const gunCount = Math.max(ROYALE.maxPlayers, WEAPON_IDS.length, Math.ceil(points.length * .44));
-  for (let index = 0; index < Math.min(points.length, ROYALE.maxLoot); index++) {
+  const points = shuffled(state, state.map.lootPoints).slice(0, ROYALE.maxLoot);
+  const blades = shuffled(state, MELEE_IDS.filter(id => id !== 'knife'));
+  let weapons = shuffled(state, WEAPON_IDS);
+  // Scavenge a varied subset each round. Expanding the catalogue must never
+  // consume the healing, ammunition, grenades or four non-knife blade caches.
+  const gunBudget = Math.max(0, points.length - blades.length - 8);
+  const gunCount = Math.min(gunBudget, Math.max(ROYALE.maxPlayers, Math.ceil(points.length * .44)));
+  if (state.map.combatStyle === 'close') {
+    const shotgunIds = WEAPON_IDS.filter(id => WEAPONS[id].category === 'shotgun'
+      || id === 'shotgun' || id === 'autoshotgun' || id === 'slugshotgun');
+    const closeGuns = shuffled(state, shotgunIds).slice(0, Math.min(2, gunCount));
+    weapons = [...closeGuns, ...weapons.filter(id => !closeGuns.includes(id))];
+  }
+  const ammoWeapons = weapons.slice(0, Math.min(gunCount, weapons.length));
+  for (let index = 0; index < points.length; index++) {
     const point = points[index], position = { x: point.x, y: point.y, z: point.z };
-    // A complete catalogue and at least one gun per possible participant are
-    // guaranteed, while shuffled positions make memorised spawn routes variable.
+    // At least one gun per possible participant is present on shipped maps;
+    // all catalogue entries remain reachable through the deterministic shuffle.
     if (index < gunCount) {
       const weapon = weapons[index % weapons.length], stats = WEAPONS[weapon];
       addLoot(state, { ...position, kind: 'weapon', weapon, ammo: stats.magazine, reserve: Math.min(stats.reserve, stats.magazine * 2) });
@@ -91,8 +103,8 @@ function seedLoot(state) {
       addLoot(state, { ...position, kind: 'melee', weapon: blades[index - gunCount] });
     } else {
       const tail = index - gunCount - blades.length, scheduled = ['heal', 'ammo', 'heal', 'grenade'][tail % 4];
-      const kind = tail >= 4 && (point.kind === 'heal' || point.kind === 'ammo' || point.kind === 'grenade') ? point.kind : scheduled;
-      if (kind === 'ammo') { const weapon = weapons[tail % weapons.length]; addLoot(state, { ...position, kind, weapon, amount: WEAPONS[weapon].magazine }); }
+      const kind = tail >= 8 && (point.kind === 'heal' || point.kind === 'ammo' || point.kind === 'grenade') ? point.kind : scheduled;
+      if (kind === 'ammo') { const weapon = ammoWeapons[tail % ammoWeapons.length]; addLoot(state, { ...position, kind, weapon, amount: WEAPONS[weapon].magazine }); }
       else addLoot(state, { ...position, kind, amount: 1 });
     }
   }

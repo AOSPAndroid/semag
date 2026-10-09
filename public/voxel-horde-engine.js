@@ -4,6 +4,7 @@ import { navigationPoints, navigationPath, navigationCanOccupy, navigationVisibl
 import { INVENTORY_ACTIONS, createInventoryGun, createInventoryMelee, ensureInventory, refreshInventory, storeInventoryGun, inventoryCanTake, setInventoryLoadout, setInventoryMeleeLoadout } from './voxel-inventory.js';
 import { MELEE_WEAPONS, resetMeleeDefense } from './voxel-melee.js';
 import { monsterBodyProfile, monsterAttackHeight } from './voxel-monster-bodies.js';
+import { resolveActiveFire, weaponFireIntervalTicks } from './voxel-fire-modes.js';
 
 export { emptyInput, INPUT_KEYS, TICK_RATE, MAPS, WEAPONS };
 export const HORDE_RULES = Object.freeze({ maxMonsters: 20, maxLoot: 20, maxWarnings: 4, spawnWarningTicks: 90, emergenceTicks: 54, countdownTicks: 360, intermissionTicks: 960, reviveTicks: 360, reviveHealth: 75, pickupRange: 1.65, lootLifetimeTicks: 5400 });
@@ -22,6 +23,31 @@ export const MONSTER_TYPES = Object.freeze({
   screecher: Object.freeze({ label: 'Ash Screecher', health: 105, damage: 16, reach: 1.3, windup: 42, recovery: 72, speed: 3.8, roar: true, roarWindup: 72, roarCooldown: 720, rallyRange: 8, rallyTicks: 180, unarmed: true, walk: false }),
 });
 export const HORDE_RALLY_RULES = Object.freeze({ speedMultiplier: 1.18, maxTicks: 180 });
+const GUNNER_POOLS = Object.freeze([
+  Object.freeze(['pistol', 'classic', 'ghost', 'frenzy', 'bandit']),
+  Object.freeze(['pistol', 'classic', 'ghost', 'frenzy', 'bandit', 'carbine', 'smg', 'sheriff', 'stinger', 'spectre', 'shorty', 'bucky']),
+  Object.freeze(['pistol', 'classic', 'ghost', 'frenzy', 'bandit', 'carbine', 'smg', 'sheriff', 'stinger', 'spectre', 'shorty', 'bucky', 'judge', 'bulldog', 'guardian', 'phantom', 'vandal', 'ares']),
+  Object.freeze(['pistol', 'classic', 'ghost', 'frenzy', 'bandit', 'carbine', 'smg', 'sheriff', 'stinger', 'spectre', 'shorty', 'bucky', 'judge', 'bulldog', 'guardian', 'phantom', 'vandal', 'ares', 'odin']),
+]);
+const SNIPER_POOLS = Object.freeze([
+  Object.freeze(['marksman', 'marshal']),
+  Object.freeze(['marksman', 'marshal', 'outlaw', 'warden']),
+  Object.freeze(['marksman', 'marshal', 'outlaw', 'warden', 'operator']),
+]);
+/** Armed creatures unlock larger pools; the first three waves retain claws and blades. */
+export function monsterWeaponPool(type, wave) {
+  if (type === 'gunner' && wave >= 4) return GUNNER_POOLS[wave >= 12 ? 3 : wave >= 9 ? 2 : wave >= 6 ? 1 : 0];
+  if (type === 'sniper' && wave >= 7) return SNIPER_POOLS[wave >= 12 ? 2 : wave >= 9 ? 1 : 0];
+  return Object.freeze([MONSTER_TYPES[type]?.weapon || 'carbine']);
+}
+/** Independent seed hashing leaves the wave, movement and corpse-supply RNG unchanged. */
+export function monsterWeaponFor(type, wave, seed) {
+  const pool = monsterWeaponPool(type, wave);
+  let value = (seed >>> 0) ^ Math.imul(wave | 0, 0x9e3779b9) ^ (type === 'sniper' ? 0x85ebca6b : 0xc2b2ae35);
+  value = Math.imul(value ^ value >>> 16, 0x21f0aaad);
+  value = Math.imul(value ^ value >>> 15, 0x735a2d97);
+  return pool[((value ^ value >>> 15) >>> 0) % pool.length];
+}
 const EPS = 1e-7, clamp = (n, low, high) => Math.max(low, Math.min(high, n));
 const ACTIONS = Object.freeze(['fire', 'aim', 'jump', 'reload', 'interact', 'swap', 'grenade', 'heal', 'sprint', ...INVENTORY_ACTIONS]);
 const groundSpawns = new WeakMap();
@@ -209,7 +235,7 @@ function spawnPoint(state, type) {
   return choices[Math.floor(random(state) * choices.length)];
 }
 function newBrain(state, player) {
-  return { id: player.id, lifeId: player.lifeId, targetId: null, path: [], nextPlanTick: state.tick + player.id % 12, nextSightTick: 0, visible: false, firstSeenTick: -1, attackTargetId: null, attackYaw: 0, attackPitch: 0, attackTicks: 0, attackReady: false, recoverTicks: 0, staggerTicks: 0, staggerReadyTick: 0, gunTicks: 0, burstUntil: 0, nextBurstTick: 0, lungeTicks: 0, lungeDamageReady: false, roarTicks: 0, nextRoarTick: state.tick + HORDE_RULES.emergenceTicks + 60, rallyUntilTick: 0, lastX: player.x, lastZ: player.z, lastMotionTick: state.tick, stuckTicks: 0, aimYaw: player.yaw, aimPitch: 0 };
+  return { id: player.id, lifeId: player.lifeId, targetId: null, path: [], nextPlanTick: state.tick + player.id % 12, nextSightTick: 0, visible: false, firstSeenTick: -1, attackTargetId: null, attackYaw: 0, attackPitch: 0, attackTicks: 0, attackReady: false, recoverTicks: 0, staggerTicks: 0, staggerReadyTick: 0, gunTicks: 0, burstUntil: 0, burstStartShots: 0, burstShotLimit: 0, nextBurstTick: 0, lungeTicks: 0, lungeDamageReady: false, roarTicks: 0, nextRoarTick: state.tick + HORDE_RULES.emergenceTicks + 60, rallyUntilTick: 0, lastX: player.x, lastZ: player.z, lastMotionTick: state.tick, stuckTicks: 0, aimYaw: player.yaw, aimPitch: 0 };
 }
 function survivorMelee(state, attacker, target) {
   return humanSlot(state, attacker?.id) && attacker.human && attacker.connected && attacker.participating && target?.monster && target.team !== attacker.team;
@@ -256,7 +282,14 @@ function spawnMonster(state, warning) {
   if (!profile || !navigationCanOccupy(map, point, body ? { radius: body.radius, height: body.height } : undefined) || state.players.some(player => player.alive && Math.abs(player.y - point.y) < 1.8 && Math.hypot(player.x - point.x, player.z - point.z) < Math.max(1.05, player.radius + (body?.radius || WORLD.radius) + .05))) return false;
   let id = state.players.findIndex((player, index) => index >= state.capacity && !player.alive);
   if (id < 0) { if (state.players.length >= state.capacity + HORDE_RULES.maxMonsters) return false; id = state.players.length; }
-  const weapon = type === 'gunner' && state.horde.wave >= 6 ? 'carbine' : profile.weapon || 'carbine';
+  const horde = state.horde;
+  if (horde.arsenalWave !== horde.wave) { horde.arsenalWave = horde.wave; horde.arsenalCounts = {}; }
+  const ordinal = (horde.arsenalCounts[type] || 0) + 1;
+  horde.arsenalCounts[type] = ordinal;
+  // Keep the original introductory shooter readable, then vary later rifts.
+  const introduction = ordinal === 1 && (type === 'gunner' && [4, 6].includes(horde.wave) || type === 'sniper' && horde.wave === 7);
+  const seed = horde.seed ^ Math.imul(warning.id, 0x85ebca6b) ^ Math.imul(horde.sessionId, 0xc2b2ae35);
+  const weapon = introduction ? type === 'gunner' && horde.wave >= 6 ? 'carbine' : profile.weapon : monsterWeaponFor(type, horde.wave, seed);
   const player = createCombatPlayer(id, 1, weapon), target = activeHumans(state)[0];
   const health = Math.round(profile.health * settingsFor(state).health * (1 + Math.min(2.8, (state.horde.wave - 1) * .12)));
   Object.assign(player, point, { yaw: target ? Math.atan2(target.x - point.x, -(target.z - point.z)) : 0, team: 1, monster: true, human: false, monsterType: type, lifeId: ++state.horde.monsterLifeId, hp: health, maxHp: health, potions: 0, grenades: 0, emergenceTicks: HORDE_RULES.emergenceTicks, monsterState: 'emerging', attackTicks: 0, attackDuration: profile.windup, aimWindupTicks: 0, reserve: WEAPONS[weapon].reserve * 8 });
@@ -265,7 +298,7 @@ function spawnMonster(state, warning) {
   player.inventory = [profile.unarmed ? null : createInventoryGun(weapon, player), null, null, null]; player.inventoryIndex = player.inventoryGunIndex = 0; refreshInventory(player);
   player.previousInput = emptyInput(player); state.players[id] = player; state.fighters = state.players;
   state.horde.brains[id] = newBrain(state, player);
-  emitCombatEvent(state, 'monsterSpawn', { playerId: id, lifeId: player.lifeId, monsterType: type, x: point.x, y: point.y, z: point.z });
+  emitCombatEvent(state, 'monsterSpawn', { playerId: id, lifeId: player.lifeId, monsterType: type, weapon: profile.unarmed ? null : weapon, x: point.x, y: point.y, z: point.z });
   return true;
 }
 function spawnTick(state) {
@@ -367,15 +400,31 @@ function monsterInput(state, player, brain) {
   }
   if (brain.recoverTicks > 0) { brain.recoverTicks--; player.monsterState = 'recover'; if (brain.recoverTicks > 18) return input; }
   if (profile.gun) {
+    const weapon = WEAPONS[player.weapon];
+    // Alternate-trigger sidearms use their left shot. ADS-burst rifles use hip
+    // automatic fire so monster bursts remain bounded without cancelling a
+    // player's committed three/four-round weapon mechanic.
+    const aimed = weapon.adsSupported !== false && weapon.adsEnabled !== false && !weapon.alternateFire && !weapon.adsBurst;
     if (!player.ammo && !player.reloadTicks && player.reserve > 0) input.reload = !player.previousInput.reload;
     if (brain.gunTicks > 0) {
-      brain.gunTicks--; player.monsterState = 'aiming'; player.aimWindupTicks = brain.gunTicks; input.aim = true;
-      if (brain.gunTicks === 0) { brain.burstUntil = state.tick + (player.weapon === 'carbine' ? 29 : 2); brain.nextBurstTick = brain.burstUntil + Math.round(profile.rest * settingsFor(state).gunRest); }
+      brain.gunTicks--; player.monsterState = 'aiming'; player.aimWindupTicks = brain.gunTicks; input.aim = aimed;
+      if (brain.gunTicks === 0) {
+        const fire = resolveActiveFire(weapon, player, { ...input, aim: aimed });
+        brain.burstStartShots = player.shots;
+        brain.burstShotLimit = profile === MONSTER_TYPES.sniper ? 1 : fire.automatic ? state.horde.wave >= 6 ? 3 : 2 : fire.mode === 'burst' ? Math.min(3, fire.count) : 1;
+        const interval = fire.mode === 'burst' ? fire.intervalTicks : weaponFireIntervalTicks(weapon, player, { ...input, aim: aimed });
+        brain.burstUntil = state.tick + 2 + (brain.burstShotLimit - 1) * Math.ceil(interval) + (weapon.spinupTicks || 0);
+        brain.nextBurstTick = brain.burstUntil + Math.round(profile.rest * settingsFor(state).gunRest);
+      }
       return input;
     }
+    if (brain.burstUntil && player.shots - brain.burstStartShots >= brain.burstShotLimit) {
+      brain.burstUntil = 0;
+      brain.nextBurstTick = Math.max(brain.nextBurstTick, state.tick + Math.round(profile.rest * settingsFor(state).gunRest));
+    }
     if (state.tick < brain.burstUntil) {
-      input.aim = true; player.monsterState = 'aiming';
-      const hit = traceShot(state, player.id, { x: player.x, y: player.y + eyeHeight(player), z: player.z }, aimDirection(input.yaw, input.pitch), WEAPONS[player.weapon].range, arenaFor(state));
+      input.aim = aimed; player.monsterState = 'aiming';
+      const hit = traceShot(state, player.id, { x: player.x, y: player.y + eyeHeight(player), z: player.z }, aimDirection(input.yaw, input.pitch), weapon.range, arenaFor(state));
       input.fire = hit.playerId === null || state.players[hit.playerId]?.team !== player.team;
       return input;
     }

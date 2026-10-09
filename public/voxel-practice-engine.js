@@ -284,9 +284,9 @@ function botInput(state, bot, brain) {
   const desiredYaw = Math.atan2(enemy.x - bot.x, -(enemy.z - bot.z)), distance = Math.hypot(enemy.x - bot.x, enemy.z - bot.z);
   if (Math.abs(wrap(input.yaw - desiredYaw)) > .16 || (bot.slot === 'sword' && distance > 1.6)) return input;
   if (state.tick >= brain.nextBurstTick && state.tick >= brain.burstUntil) { brain.burstUntil = state.tick + settings.burstTicks; brain.nextBurstTick = brain.burstUntil + settings.restTicks + Math.floor(random(practice) * 18); }
-  const mode = WEAPONS[bot.weapon].mode;
+  const weapon = WEAPONS[bot.weapon], mode = weapon.mode;
   input.fire = state.tick < brain.burstUntil && (bot.slot === 'primary' && (!mode || mode === 'auto') ? true : !bot.previousInput.fire);
-  input.aim = bot.slot === 'primary' && practice.config.difficulty !== 'rookie';
+  input.aim = bot.slot === 'primary' && weapon.adsSupported !== false && practice.config.difficulty !== 'rookie';
   // An ally may have stepped into the lane after the target was acquired.
   if (input.fire) {
     const origin = { x: bot.x, y: bot.y + eyeHeight(bot), z: bot.z }, hit = traceShot(state, bot.id, origin, aimDirection(input.yaw, input.pitch), Math.min(WEAPONS[bot.weapon].range, distance + 1), state.map);

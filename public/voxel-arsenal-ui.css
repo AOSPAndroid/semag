@@ -1,0 +1,41 @@
+/* Catalog controls use the same dark semantic surfaces as the Semag shell. */
+.arsenal-selector{display:flex;flex-direction:column;gap:8px;min-width:0;text-align:left}
+.arsenal-selector>span{font:10px var(--font,Arial,sans-serif);font-weight:600;letter-spacing:.08em;color:var(--muted-foreground,#a1a1aa)}
+body select.arsenal-select{display:block;width:100%;min-width:0;min-height:44px;padding:10px 36px 10px 12px;background:var(--popover,#18181b);color:var(--foreground,#fafafa);border:1px solid var(--input,#3f3f46);border-radius:7px;font:13px var(--font,Arial,sans-serif);line-height:1.4;color-scheme:dark;box-shadow:0 1px 2px #0003}
+body select.arsenal-select:focus-visible{outline:2px solid var(--ring,#d4d4d8);outline-offset:2px}
+body select.arsenal-select:disabled{opacity:.55}
+.arsenal-select optgroup{font-weight:600;background:var(--popover,#18181b);color:var(--muted-foreground,#a1a1aa)}
+.arsenal-select option{font-weight:400;background:var(--popover,#18181b);color:var(--foreground,#fafafa)}
+body #arena-loadouts{display:block;max-height:none;overflow:visible;margin:14px 0 12px;padding:0;border:0;background:transparent}
+body .arena-weapon-stats{max-width:none;font:10px/1.6 var(--font,Arial,sans-serif);color:var(--muted-foreground,#a1a1aa);margin:10px 0 12px;text-wrap:pretty}
+body .weapon-comparison{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;min-width:0;padding:18px;background:var(--card,#111113);border:1px solid var(--border,#27272a);border-radius:8px}
+body .weapon-comparison .comparison-title h3{font:600 20px var(--font,Arial,sans-serif);letter-spacing:-.02em;color:var(--foreground,#fafafa);margin:7px 0}
+body .weapon-comparison .comparison-title p{font:12px/1.65 var(--font,Arial,sans-serif);color:var(--muted-foreground,#a1a1aa);margin:0}
+body .weapon-comparison .comparison-damage,body .weapon-comparison .comparison-details{display:none}
+.arsenal-weapon-details{min-width:0;color:var(--foreground,#fafafa)}
+.arsenal-damage-table{width:100%;border-collapse:collapse;table-layout:fixed;font:12px var(--font,Arial,sans-serif);font-variant-numeric:tabular-nums}
+.arsenal-damage-table caption{text-align:left;font-size:9px;font-weight:600;letter-spacing:.06em;color:var(--muted-foreground,#a1a1aa);padding:0 0 10px}
+.arsenal-damage-table th,.arsenal-damage-table td{padding:10px 8px;border-bottom:1px solid var(--border,#27272a);text-align:right;overflow-wrap:anywhere}
+.arsenal-damage-table th:first-child{width:38%;text-align:left}
+.arsenal-damage-table thead th{font-size:10px;font-weight:500;color:var(--muted-foreground,#a1a1aa);background:var(--muted,#18181b)}
+.arsenal-damage-table tbody th{font-size:11px;font-weight:500;color:var(--muted-foreground,#a1a1aa)}
+.arsenal-damage-table tbody td{font-weight:600}
+.arsenal-damage-table tbody td:first-of-type{color:var(--accent,#f59e0b)}
+.arsenal-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;padding:13px 0 0}
+.arsenal-metrics>div{display:flex;flex-direction:column;gap:5px;min-width:0}
+.arsenal-metrics span{font:9px var(--font,Arial,sans-serif);font-weight:600;letter-spacing:.06em;color:var(--muted-foreground,#a1a1aa)}
+.arsenal-metrics strong{font:500 12px/1.5 var(--font,Arial,sans-serif);color:var(--foreground,#fafafa);overflow-wrap:anywhere}
+body .arsenal-weapon-details .arsenal-handling{font:11px/1.65 var(--font,Arial,sans-serif);color:var(--muted-foreground,#a1a1aa);padding-top:13px;margin:12px 0 0;border-top:1px solid var(--border,#27272a);min-height:0}
+.arsenal-fold{margin:8px 0 15px;text-align:left;border:1px solid var(--border,#27272a);border-radius:7px;background:var(--card,#111113);min-width:0}
+.arsenal-fold>summary{padding:11px 12px;font:12px var(--font,Arial,sans-serif);color:var(--foreground,#fafafa);cursor:pointer;min-height:44px;align-content:center}
+.arsenal-fold>summary:focus-visible{outline:2px solid var(--ring,#d4d4d8);outline-offset:2px;border-radius:6px}
+.arsenal-fold>.arsenal-weapon-details{padding:0 12px 12px}
+@media(max-width:600px){
+ body select.arsenal-select{font-size:12px;padding-left:10px}
+ body .weapon-comparison{padding:14px;gap:13px}
+ body .weapon-comparison .comparison-title h3{font-size:18px}
+ .arsenal-damage-table{font-size:11px}.arsenal-damage-table th,.arsenal-damage-table td{padding:8px 6px}
+ .arsenal-damage-table tbody th{font-size:10px}
+ .arsenal-metrics{gap:9px}.arsenal-metrics strong{font-size:10px}
+ body .arena-weapon-stats{font-size:9px;line-height:1.55}
+}

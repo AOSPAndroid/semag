@@ -75,8 +75,8 @@ function climb(player, map, route) {
   }
 }
 
-test('Royale has seven distinct immutable authored arenas with bounded geometry and spread spawn choices', () => {
-  assert.deepEqual(MAP_IDS, ['forest', 'maze', 'desert', 'paris', 'snow', 'sewers', 'trading']);
+test('Royale has nine distinct immutable authored arenas with bounded geometry and spread spawn choices', () => {
+  assert.deepEqual(MAP_IDS, ['forest', 'maze', 'desert', 'paris', 'snow', 'sewers', 'trading', 'market', 'lockdown']);
   assert.ok(Object.isFrozen(MAPS) && Object.isFrozen(MAP_IDS));
   const skies = new Set(), floors = new Set(), shapes = new Set();
   for (const map of Object.values(MAPS)) {
@@ -85,7 +85,7 @@ test('Royale has seven distinct immutable authored arenas with bounded geometry 
     assert.deepEqual(map.sites, []);
     assert.ok(map.name && map.description);
     assert.deepEqual(map.bounds, { minX: -32, maxX: 32, minZ: -32, maxZ: 32 });
-    assert.ok(map.colliders.length <= (['snow', 'sewers', 'trading'].includes(map.id) ? 180 : 160), `${map.id} collision budget`);
+    assert.ok(map.colliders.length <= (['snow', 'sewers', 'trading', 'market', 'lockdown'].includes(map.id) ? 180 : 160), `${map.id} collision budget`);
     assert.ok(Object.isFrozen(map.colliders) && Object.isFrozen(map.spawnPoints) && Object.isFrozen(map.lootPoints));
     assert.equal(new Set(map.colliders.map(box => box.id)).size, map.colliders.length);
     for (const box of map.colliders) {
@@ -171,7 +171,7 @@ for (const map of Object.values(MAPS)) {
       const player = Object.assign(createCombatPlayer(0, 1, slowest.id), route.start);
       assert.ok(clear(map, player), `${route.id} clear floor approach`);
       climb(player, map, route);
-      assert.ok(player.y >= (['snow', 'sewers', 'trading'].includes(map.id) ? 3.2 : 3.36) - EPS, `${route.id} meaningful high ground`);
+      assert.ok(player.y >= (['snow', 'sewers', 'trading', 'market', 'lockdown'].includes(map.id) ? 3.2 : 3.36) - EPS, `${route.id} meaningful high ground`);
       assert.ok(route.steps.length >= 4);
     }
   });

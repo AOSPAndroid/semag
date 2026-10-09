@@ -306,6 +306,11 @@ test('authored maps have two reachable sites and distinct geometry for every mod
       const route = arena.groundRoutes.find(route => route.siteId === site.id);
       assert.ok(route, `${mapId} authored ground flank to ${site.id}`);
       for (const point of route.waypoints) driveTo(point.x, point.z);
+    } else if (mapId === 'market' || mapId === 'lockdown') {
+      // Compact halls end at 18 m. Their outer delivery lanes bypass the
+      // shops/workshops, while the north cross-lane reaches both sites.
+      const deliveryFlank = (siteIndex ? 1 : -1) * (arena.bounds.maxX - .6);
+      driveTo(deliveryFlank, 15.5); driveTo(deliveryFlank, site.z); driveTo(site.x, site.z);
     } else {
       // Paris delivery stairs occupy the inner lane, so skirt them at the perimeter.
       if (paris) driveTo(f.x, 20.5);
@@ -330,9 +335,10 @@ test('invalid input cannot poison finite player state or invent keypresses', () 
   for (const f of state.players) for (const key of ['x', 'y', 'z', 'vx', 'vy', 'vz', 'yaw', 'pitch', 'hp', 'ammo']) assert.ok(Number.isFinite(f[key]));
 });
 
-test('all sixteen primary loadouts keep finite ammunition and refill only between rounds', () => {
+test('all primary loadouts preserve the original sixteen and keep finite ammunition between rounds', () => {
   const state = game.createState();
-  assert.deepEqual(Object.keys(game.WEAPONS), ['carbine', 'smg', 'marksman', 'pistol', 'shotgun', 'burst', 'sniper', 'lmg', 'crossbow', 'revolver', 'pdw', 'autoshotgun', 'battlerifle', 'dualpistols', 'dualsmg', 'slugshotgun']);
+  assert.deepEqual(Object.keys(game.WEAPONS).slice(0, 16), ['carbine', 'smg', 'marksman', 'pistol', 'shotgun', 'burst', 'sniper', 'lmg', 'crossbow', 'revolver', 'pdw', 'autoshotgun', 'battlerifle', 'dualpistols', 'dualsmg', 'slugshotgun']);
+  assert.equal(Object.keys(game.WEAPONS).length, 36);
   for (const weapon of Object.values(game.WEAPONS)) {
     assert.equal(game.selectLoadout(state, 0, weapon.id).ok, true);
     assert.equal(state.players[0].ammo, weapon.magazine); assert.equal(state.players[0].reserve, weapon.reserve);

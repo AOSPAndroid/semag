@@ -5,10 +5,10 @@ import { ADS, HEAL, PLAYER_HEALTH, predictLocalMovement, findNearbyLoot as findN
 import { MAPS as BREACH_MAPS } from './voxel-maps.js';
 import { MAPS as ROYALE_MAPS } from './voxel-royale-maps.js';
 import { findNearbyLoot } from './voxel-royale-engine.js';
-import { WEAPONS, WEAPON_IDS } from './voxel-weapons.js';
+import { WEAPONS } from './voxel-weapons.js';
 import { VoxelRenderer } from './voxel-renderer.js';
 import { createMovementPresenter, combatPresentation, withCombatPresentation, resolvePresentationContacts } from './voxel-presentation.js';
-import { cleanAim, composeInput, controlForKey, aimFraction, aimLookMultiplier, combatReadout, isFormTarget, hasGunshotReport, combatEventPerspective, createMeleeImpactReporter, LOOK_SENSITIVITY } from './voxel-client.js';
+import { cleanAim, composeInput, controlForKey, aimFraction, aimLookMultiplier, combatReadout, isFormTarget, hasGunshotReport, combatEventPerspective, createMeleeImpactReporter, LOOK_SENSITIVITY, populateWeaponSelect, renderWeaponDetails, weaponCrosshairSpread } from './voxel-client.js';
 import { incomingDamageFeedback, damageFeedbackPresentation } from './voxel-damage-feedback.js';
 import { createHitFeedback, paintHitFeedback } from './voxel-hit-feedback.js';
 import { setHidden, setAttribute, setStyle, setDisabled } from './hub/dom.js';
@@ -106,7 +106,11 @@ export function bootPractice() {
   try { const target = new URL(params.get('return') || '/', location.origin); if (target.origin === location.origin && /^\/(?:voxel(?:-royale)?(?:\/|\.html|$)|$)/.test(target.pathname)) $('practice-online').href = target.href; } catch {}
   for (const [id, map] of Object.entries(maps)) { const option = document.createElement('option'); option.value = id; option.textContent = map.name; $('practice-map').append(option); }
   $('practice-map').value = Object.hasOwn(maps, params.get('map')) ? params.get('map') : royale ? 'forest' : 'courtyard';
-  for (const id of WEAPON_IDS) { const option = document.createElement('option'); option.value = id; option.textContent = WEAPONS[id].name; $('practice-weapon').append(option); }
+  populateWeaponSelect($('practice-weapon'));
+  const weaponDetails = document.createElement('details'); weaponDetails.className = 'arsenal-fold'; weaponDetails.hidden = royale;
+  const detailSummary = document.createElement('summary'); detailSummary.textContent = 'Weapon damage and handling';
+  const detailCard = document.createElement('section'); detailCard.id = 'practice-weapon-details'; detailCard.setAttribute('aria-label', 'Selected weapon statistics');
+  weaponDetails.append(detailSummary, detailCard); $('practice-weapon-note').after(weaponDetails);
   $('practice-weapon').value = 'carbine';
   function config() { return { game, mapId: $('practice-map').value, bots: Number($('practice-count').value), mode: $('practice-mode').value, difficulty: $('practice-difficulty').value, weapon: $('practice-weapon').value, melee: 'knife' }; }
   function hints() {
@@ -150,6 +154,7 @@ export function bootPractice() {
   function preview() {
     activeSession = false; modalOpen = false; setHidden($('practice-guide'), true); unlock(); state = createPractice(config()); resetView(); buildRadar();
     setText('practice-weapon-note', royale ? 'Knife start · 200 health · weapons, ammo and healing are found in structures.' : WEAPONS[state.practice.config.weapon].description);
+    if (!royale) renderWeaponDetails(detailCard, state.practice.config.weapon);
     setText('practice-melee-note', royale ? 'Knife only. Collect every gun and supply with E.' : 'Knife + chosen gun. Slots 3–4 are empty; E collects blades, guns and supplies.');
     updateHud(performance.now(), true); draw(performance.now());
   }
@@ -245,6 +250,9 @@ export function bootPractice() {
     paintVitals(presentationPlayer, 'Your', activeSession && active());
     reloadAudio.observe(state.players[0], { tick: state.tick, context: `${state.mapId}:${state.practice.sessionId}`, active: active() && state.phase === 'fight' });
     const scoped = state.phase === 'fight' && presentationPlayer.alive && !modalOpen && presentationPlayer.slot !== 'sword' && WEAPONS[presentationPlayer.weapon]?.scoped && aimFraction(presentationPlayer, ADS.ticks) >= 14 / 18;
+    const spread = weaponCrosshairSpread(presentationPlayer, ADS); const ads = aimFraction(presentationPlayer, ADS.ticks);
+    const size = presentationPlayer.slot === 'sword' ? 18 : Math.round(20 - ads * 8 + Math.min(60, spread * canvas.clientHeight * 2));
+    setStyle($('practice-crosshair'), 'width', `${size}px`); setStyle($('practice-crosshair'), 'height', `${size}px`);
     setHidden($('practice-scope'), !scoped); setHidden($('practice-crosshair'), state.phase !== 'fight' || modalOpen || scoped || presentationPlayer.healing);
     paintHitFeedback(hitElements, hitFeedback.present(state.players[0], { now, lifeKey: `${state.mapId}:${state.practice.sessionId}`, active: state.phase === 'fight' && !modalOpen, reducedMotion: hitMotion.matches })); setHidden($('practice-feedback'), now >= feedbackUntil || state.phase !== 'fight');
     const cue = damageFeedbackPresentation(damageFeedback, state.players[0], { now, lifeKey: state.practice.sessionId, yaw: aim.yaw, active: state.phase === 'fight' }), element = $('practice-damage');

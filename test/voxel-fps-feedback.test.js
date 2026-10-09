@@ -57,7 +57,7 @@ test('small stamina meter paints truthful accessible values with no reads or rep
   assert.equal(meter.writes, writes); paintStamina(meter, fill, staminaPresentation(null)); assert.equal(meter.hidden, true);
 });
 
-test('shared ADS makes every gun deliberately slower while preserving hip speed, camera zoom and mode guards', () => {
+test('shared ADS slows supported sights while preserving alternate-fire hip speed, camera zoom and mode guards', () => {
   for (const weapon of Object.keys(WEAPONS)) {
     const player = { weapon, hasGun: true, alive: true, slot: 'primary', aimTicks: 0 }, zoom = weaponAimFovRatio(weapon);
     let previous = 1;
@@ -67,7 +67,8 @@ test('shared ADS makes every gun deliberately slower while preserving hip speed,
       assert.equal(breachLook(player), value); assert.equal(royaleLook(player), value); assert.deepEqual(player, before);
       assert.equal(weaponAimFovRatio(weapon), zoom, 'precision control does not change camera or scope magnification'); previous = value;
     }
-    assert.ok(Math.abs(previous - zoom * .55) < 1e-12); assert.ok(previous < .5, `${weapon} aimed turn speed is below half hip speed`);
+    if (WEAPONS[weapon].adsSupported === false || WEAPONS[weapon].adsEnabled === false) assert.equal(previous, 1, `${weapon} has no sights and keeps hip speed`);
+    else { assert.ok(Math.abs(previous - zoom * .55) < 1e-12); assert.ok(previous < .5, `${weapon} aimed turn speed is below half hip speed`); }
     for (const blocked of [{ slot: 'sword', parryTicks: 12 }, { slot: 'potion' }, { slot: 'grenade' }, { slot: 'empty' }, { hasGun: false }, { alive: false }, { healTicks: 1 }, { healing: true }, { reloadTicks: 1 }, { grenadeThrowTicks: 1 }]) assert.equal(aimLookMultiplier({ ...player, ...blocked }), 1);
     for (const aimTicks of [NaN, Infinity, -1, undefined]) assert.equal(aimLookMultiplier({ ...player, aimTicks }), 1);
   }

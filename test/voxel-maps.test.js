@@ -10,8 +10,8 @@ const overlaps = (point, box, y = 0) => {
     && y < box.y + box.h - EPS && y + BODY_HEIGHT > box.y + EPS;
 };
 
-test('ten authored maps expose immutable geometry with a bounded collision budget', () => {
-  assert.deepEqual(MAP_IDS, ['courtyard', 'depot', 'canal', 'rooftops', 'foundry', 'bastion', 'paris', 'snow', 'sewers', 'trading']);
+test('twelve authored maps expose immutable geometry with a bounded collision budget', () => {
+  assert.deepEqual(MAP_IDS, ['courtyard', 'depot', 'canal', 'rooftops', 'foundry', 'bastion', 'paris', 'snow', 'sewers', 'trading', 'market', 'lockdown']);
   assert.ok(Object.isFrozen(MAPS));
   assert.ok(Object.isFrozen(MAP_IDS));
   const geometries = new Set();
@@ -22,7 +22,7 @@ test('ten authored maps expose immutable geometry with a bounded collision budge
     assert.ok(Object.isFrozen(map));
     assert.ok(Object.isFrozen(map.bounds));
     assert.ok(Object.isFrozen(map.colliders));
-    assert.ok(map.colliders.length <= (['snow', 'sewers', 'trading'].includes(id) ? 180 : id === 'paris' ? 128 : 55), `${id} collision budget`);
+    assert.ok(map.colliders.length <= (['snow', 'sewers', 'trading', 'market', 'lockdown'].includes(id) ? 180 : id === 'paris' ? 128 : 55), `${id} collision budget`);
     assert.equal(new Set(map.colliders.map(box => box.id)).size, map.colliders.length, `${id} duplicate cover ID`);
     geometries.add(JSON.stringify(map.colliders));
     for (const box of map.colliders) {
@@ -93,7 +93,7 @@ test('climb routes mark clear starts and real, unobstructed landing surfaces', (
       assert.ok(previousHeight >= 3.2 - EPS, `${route.id} worthwhile high ground`);
     }
   }
-  assert.equal(routeCount, 50);
+  assert.equal(routeCount, 58);
 });
 
 test('new maps include distinct upper route shapes and genuine walk-under space', () => {

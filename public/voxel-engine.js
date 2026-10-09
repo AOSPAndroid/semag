@@ -2,6 +2,7 @@
 import { throwGrenade, advanceGrenades } from './voxel-ordnance.js';
 import { MAPS } from './voxel-maps.js';
 import { WEAPONS, weaponDamage, weaponSpread, weaponHand } from './voxel-weapons.js';
+import { advanceWeaponFireClock } from './voxel-fire-modes.js';
 import { launchBolt, advanceBolts, MAX_BOLTS } from './voxel-projectiles.js';
 import { MELEE, KNIFE, KNIFE_SECONDARY, MELEE_WEAPONS, meleeProfile, meleeWeaponId, meleeHand, meleeSlashOrigin, meleeSlashPhase, meleeSlashGeometry, meleeSegmentBoxContact, parryProfile, parryPhase, parryFacesOrigin, resetMeleeDefense } from './voxel-melee.js';
 import { recordLagCompensation, traceCompensatedShot } from './voxel-lag-compensation.js';
@@ -23,7 +24,7 @@ export const SPRINT = Object.freeze({ maxStamina: 100, speedMultiplier: 1.4, dra
 const EPS = 1e-8, DT = 1 / TICK_RATE;
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 const movementActionClock = Symbol('movement-only action clock');
-const ACTION_CLOCK_SOURCE = ['reloadTicks', 'healTicks', 'grenadeThrowTicks', 'meleeTicks', 'meleeCooldown', 'meleeAction', 'meleeWeapon', 'parryTicks', 'parryCooldown', 'meleeSecondaryCooldown', 'meleeAimBlocked', 'parryStartTick', 'parryConsumed', 'burstRemaining', 'pendingFireTicks', 'shotCooldown', 'triggerBlocked', 'meleeStartTick', 'healStartTick', 'interaction', 'interactTicks', 'alive', 'lifeId', 'deaths', 'weapon', 'slot', 'ammo', 'reserve'];
+const ACTION_CLOCK_SOURCE = ['reloadTicks', 'healTicks', 'grenadeThrowTicks', 'meleeTicks', 'meleeCooldown', 'meleeAction', 'meleeWeapon', 'parryTicks', 'parryCooldown', 'meleeSecondaryCooldown', 'meleeAimBlocked', 'parryStartTick', 'parryConsumed', 'burstRemaining', 'pendingFireTicks', 'shotCooldown', 'spinTicks', 'triggerBlocked', 'meleeStartTick', 'healStartTick', 'interaction', 'interactTicks', 'alive', 'lifeId', 'deaths', 'weapon', 'slot', 'ammo', 'reserve'];
 const actionTicks = value => Number.isFinite(value) ? Math.max(0, value) : 0;
 /** An opaque cache key; movement-only clocks never enter JSON or gameplay fields. */
 export const movementPredictionRevision = player => player?.[movementActionClock]?.revision ?? null;
@@ -39,31 +40,38 @@ function movementActions(player, input) {
   const base = valid ? old : {
     source: Object.freeze(Object.fromEntries(ACTION_CLOCK_SOURCE.map(field => [field, player[field]]))),
     reloadTicks: actionTicks(player.reloadTicks), healTicks: actionTicks(player.healTicks), grenadeThrowTicks: actionTicks(player.grenadeThrowTicks), meleeTicks: actionTicks(player.meleeTicks), meleeCooldown: actionTicks(player.meleeCooldown), meleeAction: player.meleeAction || 'primary', parryTicks: actionTicks(player.parryTicks), parryCooldown: actionTicks(player.parryCooldown), meleeSecondaryCooldown: actionTicks(player.meleeSecondaryCooldown), meleeAimBlocked: player.meleeAimBlocked === true, interaction: player.interaction,
-    burstRemaining: actionTicks(player.burstRemaining), pendingFireTicks: actionTicks(player.pendingFireTicks), shotCooldown: actionTicks(player.shotCooldown), triggerBlocked: player.triggerBlocked === true, ammo: player.ammo, reserve: player.reserve
+    burstRemaining: actionTicks(player.burstRemaining), pendingFireTicks: actionTicks(player.pendingFireTicks), shotCooldown: actionTicks(player.shotCooldown), spinTicks: actionTicks(player.spinTicks), triggerBlocked: player.triggerBlocked === true, ammo: player.ammo, reserve: player.reserve
   };
   const grenadeThrowTicks = Math.max(0, base.grenadeThrowTicks - 1);
   const selecting = INVENTORY_ACTIONS.some(key => input[key] && !player.previousInput?.[key]);
-  const attackInterrupt = input.fire && (!player.previousInput?.fire || player.slot === 'primary' || player.slot === 'sword');
+  const alternatePressed = player.slot === 'primary' && weapon.alternateFire && input.aim && !player.previousInput?.aim;
+  const attackInterrupt = alternatePressed || input.fire && (!player.previousInput?.fire || player.slot === 'primary' || player.slot === 'sword');
   const cancelHealing = attackInterrupt || input.swap || input.grenade || input.jump || input.interact || input.reload || selecting;
   return { ...base, grenadeThrowTicks, healTicks: cancelHealing ? 0 : base.healTicks, triggerBlocked: input.fire ? base.triggerBlocked : false, meleeCooldown: Math.max(0, base.meleeCooldown - 1), parryCooldown: Math.max(0, base.parryCooldown - 1), meleeSecondaryCooldown: Math.max(0, base.meleeSecondaryCooldown - 1), meleeAimBlocked: input.aim ? base.meleeAimBlocked : false };
 }
 function advanceMovementActions(player, input, context) {
   const weapon = WEAPONS[player.weapon];
   let reloadTicks = Math.max(0, context.reloadTicks - 1), burstRemaining = context.burstRemaining, pendingFireTicks = Math.max(0, context.pendingFireTicks - 1), shotCooldown = Math.max(0, context.shotCooldown - 1), ammo = context.ammo, reserve = context.reserve;
-  if (context.reloadTicks === 1) { const loaded = Math.min(weapon.magazine - ammo, reserve); ammo += loaded; reserve -= loaded; }
-  // Anticipate the movement lock of an eligible reload/burst without publishing
-  // ammunition, action completion, attack events or any inventory mutation.
-  if (player.slot === 'primary' && !context.healTicks && !context.grenadeThrowTicks) {
-    if (input.reload && !player.previousInput?.reload && !reloadTicks && ammo < weapon.magazine && reserve > 0) { reloadTicks = weapon.reloadTicks; burstRemaining = pendingFireTicks = 0; }
-    if (input.interact) burstRemaining = pendingFireTicks = 0;
-    if (weapon.pressBufferTicks && input.fire && !player.previousInput?.fire && !context.triggerBlocked && !reloadTicks && !input.interact && ammo > 0) pendingFireTicks = weapon.pressBufferTicks;
-    if (context.triggerBlocked || reloadTicks) pendingFireTicks = 0;
-    if (!context.triggerBlocked && !reloadTicks && !input.interact && !shotCooldown && ammo > 0) {
-      if (!burstRemaining && weapon.mode === 'burst' && input.fire && !player.previousInput?.fire) burstRemaining = Math.min(weapon.burstCount, ammo);
-      if (burstRemaining && weapon.mode === 'burst') { burstRemaining--; ammo--; shotCooldown = burstRemaining ? weapon.burstInterval : weapon.cooldown; }
-      else if (pendingFireTicks) { pendingFireTicks = 0; ammo--; shotCooldown = weapon.cooldown; }
-    }
-  } else pendingFireTicks = 0;
+  let spinTicks = context.spinTicks || 0;
+  if (weapon.valorant) {
+    const next = advanceWeaponFireClock(weapon, { ...player, ...context }, input, player.previousInput);
+    ({ reloadTicks, burstRemaining, pendingFireTicks, shotCooldown, ammo, reserve, spinTicks } = next);
+  } else {
+    if (context.reloadTicks === 1) { const loaded = Math.min(weapon.magazine - ammo, reserve); ammo += loaded; reserve -= loaded; }
+    // Anticipate the movement lock of an eligible reload/burst without publishing
+    // ammunition, action completion, attack events or any inventory mutation.
+    if (player.slot === 'primary' && !context.healTicks && !context.grenadeThrowTicks) {
+      if (input.reload && !player.previousInput?.reload && !reloadTicks && ammo < weapon.magazine && reserve > 0) { reloadTicks = weapon.reloadTicks; burstRemaining = pendingFireTicks = 0; }
+      if (input.interact) burstRemaining = pendingFireTicks = 0;
+      if (weapon.pressBufferTicks && input.fire && !player.previousInput?.fire && !context.triggerBlocked && !reloadTicks && !input.interact && ammo > 0) pendingFireTicks = weapon.pressBufferTicks;
+      if (context.triggerBlocked || reloadTicks) pendingFireTicks = 0;
+      if (!context.triggerBlocked && !reloadTicks && !input.interact && !shotCooldown && ammo > 0) {
+        if (!burstRemaining && weapon.mode === 'burst' && input.fire && !player.previousInput?.fire) burstRemaining = Math.min(weapon.burstCount, ammo);
+        if (burstRemaining && weapon.mode === 'burst') { burstRemaining--; ammo--; shotCooldown = burstRemaining ? weapon.burstInterval : weapon.cooldown; }
+        else if (pendingFireTicks) { pendingFireTicks = 0; ammo--; shotCooldown = weapon.cooldown; }
+      }
+    } else pendingFireTicks = 0;
+  }
   if (input.interact) burstRemaining = pendingFireTicks = 0;
   let meleeTicks = Math.max(0, context.meleeTicks - 1), parryTicks = Math.max(0, context.parryTicks - 1), meleeCooldown = context.meleeCooldown, parryCooldown = context.parryCooldown, meleeSecondaryCooldown = context.meleeSecondaryCooldown, meleeAction = context.meleeAction;
   if (player.slot === 'sword' && !context.healTicks && !context.grenadeThrowTicks && !context.meleeTicks && !context.parryTicks) {
@@ -74,7 +82,7 @@ function advanceMovementActions(player, input, context) {
       else { const profile = parryProfile(player); if (profile && player.stamina >= profile.staminaCost) { spendParryStamina(player, profile); parryTicks = meleeCooldown = profile.startupTicks + profile.activeTicks + profile.recoveryTicks; parryCooldown = meleeSecondaryCooldown = profile.cooldownTicks; } }
     }
   }
-  const clock = Object.freeze({ source: context.source, reloadTicks, healTicks: Math.max(0, context.healTicks - 1), grenadeThrowTicks: context.grenadeThrowTicks, meleeTicks, meleeCooldown, meleeAction, parryTicks, parryCooldown, meleeSecondaryCooldown, meleeAimBlocked: context.meleeAimBlocked, interaction: input.interact ? context.interaction : null, burstRemaining, pendingFireTicks, shotCooldown, triggerBlocked: context.triggerBlocked, ammo, reserve, revision: Object.freeze({}) });
+  const clock = Object.freeze({ source: context.source, reloadTicks, healTicks: Math.max(0, context.healTicks - 1), grenadeThrowTicks: context.grenadeThrowTicks, meleeTicks, meleeCooldown, meleeAction, parryTicks, parryCooldown, meleeSecondaryCooldown, meleeAimBlocked: context.meleeAimBlocked, interaction: input.interact ? context.interaction : null, burstRemaining, pendingFireTicks, shotCooldown, spinTicks, triggerBlocked: context.triggerBlocked, ammo, reserve, revision: Object.freeze({}) });
   Object.defineProperty(player, movementActionClock, { value: clock, writable: true, configurable: true });
 }
 export const eyeHeight = player => monsterBodyProfile(player)?.eyeHeight ?? (player.crouching ? WORLD.crouchEyeHeight : WORLD.eyeHeight);
@@ -327,8 +335,9 @@ function movementTick(f, input, arena, peers = [], headroomPeers = peers, action
   let strafe = Number(input.right) - Number(input.left), forward = Number(input.up) - Number(input.down); const length = Math.hypot(strafe, forward);
   if (length > 0) { strafe /= length; forward /= length; }
   const primarySpeed = monsterMovementSpeed(f) ?? (f.slot === 'sword' ? meleeProfile(f).speed : WEAPONS[f.weapon].speed);
-  const ads = input.aim && f.slot === 'primary' && !actions.reloadTicks && !actions.healTicks && !actions.grenadeThrowTicks;
-  const allowed = sprintAllowed(f, input, forward, actions), normalSpeed = (f.crouching ? 2.35 : input.walk ? 2.8 : primarySpeed) * (actions.healTicks ? HEAL.speedMultiplier : ads ? ADS.speedMultiplier : 1) * monsterMovementMultiplier(f);
+  const heldWeapon = WEAPONS[f.weapon], ads = input.aim && heldWeapon.adsSupported !== false && f.slot === 'primary' && !actions.reloadTicks && !actions.healTicks && !actions.grenadeThrowTicks;
+  const adsSpeed = heldWeapon.valorant && Number.isFinite(heldWeapon.adsSpeed) ? heldWeapon.adsSpeed / heldWeapon.speed : ADS.speedMultiplier;
+  const allowed = sprintAllowed(f, input, forward, actions), normalSpeed = (f.crouching ? 2.35 : input.walk ? 2.8 : primarySpeed) * (actions.healTicks ? HEAL.speedMultiplier : ads ? adsSpeed : 1) * monsterMovementMultiplier(f);
   const speed = normalSpeed * (allowed ? SPRINT.speedMultiplier : 1);
   if (!f.grounded && !monsterBody) {
     const velocity = Math.hypot(f.vx, f.vz);
@@ -539,6 +548,71 @@ export function traceShot(state, playerId, origin, direction, maxDistance = 120,
   }
   return { ...result, x: origin.x + direction.x * result.distance, y: origin.y + direction.y * result.distance, z: origin.z + direction.z * result.distance };
 }
+/** Deliberate Semag material calibration; researched weapon tiers select a bounded budget. */
+export const WEAPON_PENETRATION = Object.freeze({ maxLayers: 4, maxActors: 2, low: .3, medium: .7, high: 1.25, actorRetention: .65 });
+const penetrableMaterial = Object.freeze({ glass: .25, foliage: .15, 'market-awning': .15, wood: 1, bark: 1.1, 'stacked-logs': 1.1,
+  desk: 1, 'desk-cabinet': 1, 'laboratory-desk': 1, 'snow-crate': 1, 'market-counter': 1, 'newspaper-stand': 1, 'trail-board': 1,
+  screen: 1.5, metal: 3, 'office-chair': 2, 'office-panel': 2, vehicle: 3, 'vehicle-cab': 3, 'snow-bank': .7 });
+function rayInterval(origin, direction, rect, maxDistance) {
+  let near = -Infinity, far = Infinity;
+  for (const [axis, size] of [['x', 'w'], ['y', 'h'], ['z', 'd']]) {
+    if (Math.abs(direction[axis]) < EPS) { if (origin[axis] < rect[axis] - EPS || origin[axis] > rect[axis] + rect[size] + EPS) return null; }
+    else {
+      let a = (rect[axis] - origin[axis]) / direction[axis], b = (rect[axis] + rect[size] - origin[axis]) / direction[axis];
+      if (a > b) [a, b] = [b, a]; near = Math.max(near, a); far = Math.min(far, b); if (near > far + EPS) return null;
+    }
+  }
+  return far < -EPS || near > maxDistance + EPS ? null : { distance: Math.max(0, near), exitDistance: Math.max(0, far), inside: near < EPS };
+}
+/** New-gun physical contacts only; shared LOS/melee and all legacy guns keep traceShot. */
+export function traceWeaponShot(state, playerId, origin, direction, maxDistance = 120, arena = state.map || MAPS[state.mapId], weaponOrId = state.players[playerId]?.weapon) {
+  const weapon = typeof weaponOrId === 'string' ? WEAPONS[weaponOrId] : weaponOrId;
+  if (!weapon?.valorant) return traceShot(state, playerId, origin, direction, maxDistance, arena);
+  const candidates = [], contacts = [], impacts = [], shooter = state.players[playerId];
+  const position = distance => ({ x: origin.x + direction.x * distance, y: origin.y + direction.y * distance, z: origin.z + direction.z * distance });
+  for (const rect of arena.colliders) {
+    const interval = rayInterval(origin, direction, rect, maxDistance);
+    if (interval) candidates.push({ ...interval, kind: 'wall', playerId: null, colliderId: rect.id, material: rect.material });
+  }
+  if (direction.y < -EPS) {
+    const distance = -origin.y / direction.y;
+    if (distance >= 0 && distance <= maxDistance + EPS) candidates.push({ distance, exitDistance: distance, inside: true, kind: 'wall', playerId: null, colliderId: 'floor', material: 'floor' });
+  }
+  for (const target of state.players) {
+    if (!target.alive || target.id === playerId) continue;
+    const localBoxes = monsterBodyBoxes(target), yaw = Number.isFinite(target.yaw) ? target.yaw : 0, c = Math.cos(yaw), s = Math.sin(yaw);
+    const dx = origin.x - target.x, dz = origin.z - target.z;
+    const localOrigin = localBoxes ? { x: c * dx + s * dz, y: origin.y - target.y, z: -s * dx + c * dz } : origin;
+    const localDirection = localBoxes ? { x: c * direction.x + s * direction.z, y: direction.y, z: -s * direction.x + c * direction.z } : direction;
+    let nearest = null;
+    for (const box of localBoxes || playerBoxes(target)) {
+      const interval = rayInterval(localOrigin, localDirection, box, maxDistance);
+      if (interval && (!nearest || interval.distance < nearest.distance - EPS)) nearest = { ...interval, kind: box.kind, playerId: target.id, targetLifeId: target.lifeId || 0, colliderId: null };
+    }
+    if (nearest) candidates.push(nearest);
+  }
+  candidates.sort((a, b) => a.distance - b.distance || (a.kind === 'wall' ? -1 : b.kind === 'wall' ? 1 : a.playerId - b.playerId));
+  const budget = WEAPON_PENETRATION[weapon.wallPenetration] || 0;
+  let spent = 0, multiplier = 1, layers = 0, final = { distance: maxDistance, kind: 'none', playerId: null, colliderId: null };
+  for (const candidate of candidates) {
+    final = { ...candidate, ...position(candidate.distance), damageMultiplier: multiplier, penetrationCount: layers };
+    if (candidate.kind !== 'wall') {
+      if (state.players[candidate.playerId]?.team === shooter?.team) break;
+      contacts.push(final);
+      if (contacts.length >= WEAPON_PENETRATION.maxActors) break;
+      multiplier *= WEAPON_PENETRATION.actorRetention;
+      continue;
+    }
+    const density = penetrableMaterial[candidate.material], thickness = candidate.exitDistance - candidate.distance, cost = thickness * density;
+    const canPass = Number.isFinite(density) && !candidate.inside && thickness > EPS && candidate.exitDistance <= maxDistance + EPS
+      && layers < WEAPON_PENETRATION.maxLayers && spent + cost <= budget + EPS;
+    impacts.push({ colliderId: candidate.colliderId, material: candidate.material, distance: candidate.distance, exitDistance: candidate.exitDistance, ...position(candidate.distance), exitX: position(candidate.exitDistance).x, exitY: position(candidate.exitDistance).y, exitZ: position(candidate.exitDistance).z, penetrated: canPass });
+    if (!canPass) break;
+    spent += cost; layers++; multiplier *= Math.max(.18, 1 - cost / budget * .6) * .92;
+    final = { distance: maxDistance, kind: 'none', playerId: null, colliderId: null, ...position(maxDistance), damageMultiplier: multiplier, penetrationCount: layers };
+  }
+  return { ...final, ...position(final.distance), contacts, impacts, penetrationCount: layers };
+}
 function cancelHeal(state, f, reason) {
   if (!f.healTicks) return;
   f.healTicks = 0; f.healing = false;
@@ -604,7 +678,8 @@ function tickActions(state, f, input, arena) {
   if (!input.fire) f.triggerBlocked = false;
   if (!input.aim) f.meleeAimBlocked = false;
   const selecting = INVENTORY_ACTIONS.some(key => input[key] && !f.previousInput[key]);
-  const attackInterrupt = input.fire && (!f.previousInput.fire || f.slot === 'primary' || f.slot === 'sword');
+  const alternatePressed = f.slot === 'primary' && WEAPONS[f.weapon].alternateFire && input.aim && !f.previousInput.aim;
+  const attackInterrupt = alternatePressed || input.fire && (!f.previousInput.fire || f.slot === 'primary' || f.slot === 'sword');
   if (f.healTicks && (attackInterrupt || input.swap || input.grenade || input.jump || input.interact || input.reload || selecting)) cancelHeal(state, f, 'action');
   for (let index = 0; index < 4; index++) if (input[`slot${index + 1}`] && !f.previousInput[`slot${index + 1}`] && !input.interact) {
     const changed = selectInventorySlot(f, index);
@@ -642,7 +717,7 @@ function tickActions(state, f, input, arena) {
   }
   tickHolsteredInventory(f);
   const heldMelee = selectedInventoryItem(f); if (heldMelee?.kind === 'melee') f.meleeCooldown = heldMelee.meleeCooldown || 0;
-  f.aiming = input.aim && f.slot === 'primary' && !f.reloadTicks && !f.healTicks && !f.grenadeThrowTicks && !input.interact;
+  f.aiming = input.aim && WEAPONS[f.weapon].adsSupported !== false && f.slot === 'primary' && !f.reloadTicks && !f.healTicks && !f.grenadeThrowTicks && !input.interact;
   f.aimTicks = clamp(f.aimTicks + (f.aiming ? 1 : -2), 0, ADS.ticks);
 }
 function tickHealing(state, f) {
@@ -740,37 +815,80 @@ function tickMelee(state, f, input, pendingDamage, arena, { meleeDamageScale } =
     pendingDamage.push({ ...swing, playerId: f.id, targetId: target.id, targetLifeId: target.lifeId || 0, damage, hitKind: 'body', headshot: false, attack: meleeWeapon, weapon: meleeWeapon, hand: f.meleeHand, attackX: origin.x, attackY: origin.y, attackZ: origin.z, hitX: hit.x, hitY: hit.y, hitZ: hit.z, dx: direction.x, dy: direction.y, dz: direction.z });
   }
 }
-function fireRound(state, f, weapon, pendingDamage, arena) {
+function rayBoundsDistance(origin, direction, bounds, maximum) {
+  let distance = maximum;
+  for (const [axis, lo, hi] of [['x', 'minX', 'maxX'], ['z', 'minZ', 'maxZ']]) {
+    if (origin[axis] < bounds[lo] - EPS || origin[axis] > bounds[hi] + EPS) return 0;
+    if (direction[axis] > EPS) distance = Math.min(distance, (bounds[hi] - origin[axis]) / direction[axis]);
+    else if (direction[axis] < -EPS) distance = Math.min(distance, (bounds[lo] - origin[axis]) / direction[axis]);
+  }
+  return Math.max(0, distance);
+}
+function fireRound(state, f, weapon, pendingDamage, arena, fire = null) {
   if (weapon.projectile && state.bolts.length >= MAX_BOLTS) return false;
   const speed = Math.hypot(f.vx, f.vz), motion = clamp((speed - .22) / weapon.speed, 0, 1), ads = f.aimTicks / ADS.ticks;
-  const spread = weaponSpread(weapon, { motion, grounded: f.grounded, heat: f.heat, ads }, ADS);
+  const spread = weaponSpread(weapon, { motion, grounded: f.grounded, heat: fire?.heat ?? f.heat, ads }, ADS);
   // Fixed indexed spread and fixed pellet geometry replay independently of frames.
   const index = ++f.shotIndex, angle = index * 2.399963229728653, radius = spread * Math.sqrt(((index * 73) % 101 + 1) / 102);
-  const horizontalRecoil = f.heat > .25 ? Math.sin(index * 1.73) * Math.min(.009, f.recoil * .24) : 0;
-  const yaw = f.yaw + horizontalRecoil + Math.cos(angle) * radius, pitch = clamp(f.pitch + f.recoil + Math.sin(angle) * radius, -1.5, 1.5);
-  const origin = { x: f.x, y: f.y + eyeHeight(f), z: f.z }, pelletCount = weapon.pellets || 1;
+  const roundRecoil = fire?.recoil ?? f.recoil, horizontalRecoil = (fire?.heat ?? f.heat) > .25 ? Math.sin(index * 1.73) * Math.min(.009, roundRecoil * .24) : 0;
+  const yaw = f.yaw + horizontalRecoil + Math.cos(angle) * radius, pitch = clamp(f.pitch + roundRecoil + Math.sin(angle) * radius, -1.5, 1.5);
+  const eyeOrigin = { x: f.x, y: f.y + eyeHeight(f), z: f.z };
+  let origin = eyeOrigin, pelletCount = weapon.pellets || 1, pelletSpread = weapon.pelletSpread, distanceOffset = 0, range = weapon.range, fireMode = fire?.mode || weapon.mode || 'auto';
+  if (fire?.mode === 'airburst') {
+    const center = aimDirection(yaw, pitch), popDistance = fire.burstDistance;
+    const clearDistance = rayBoundsDistance(eyeOrigin, center, arena.bounds, Math.min(popDistance, weapon.range));
+    const early = traceCompensatedShot(state, f.id, eyeOrigin, center, clearDistance, arena, traceShot);
+    if (early.kind === 'none' && clearDistance >= popDistance - EPS) {
+      distanceOffset = popDistance; origin = { x: eyeOrigin.x + center.x * popDistance, y: eyeOrigin.y + center.y * popDistance, z: eyeOrigin.z + center.z * popDistance };
+      pelletCount = fire.count; pelletSpread = fire.pelletSpread; range = weapon.range - popDistance;
+    } else { pelletCount = 1; pelletSpread = 0; range = clearDistance; fireMode = 'airburstSlug'; }
+  }
   if (weapon.projectile && !launchBolt(state, f, weapon, origin, aimDirection(yaw, pitch), { emit: (type, data) => emit(state, type, data) })) { f.shotIndex--; return false; }
   f.ammo--; f.shots++; f.recoil = Math.min(.13, f.recoil + weapon.recoil * (1 - ads * (1 - ADS.recoilMultiplier))); f.heat = Math.min(12, f.heat + 1);
   f.lastShotHand = weaponHand(weapon, index);
   if (weapon.projectile) return true;
+  if (weapon.valorant) state.eventLimit = 256;
   for (let pellet = 0; pellet < pelletCount; pellet++) {
     // One centered pellet keeps close precise aim meaningful; the ring fixes the
     // shotgun's minimum cone, so ADS cannot turn it into an eight-hit sniper.
-    const pelletAngle = (pellet - 1) * Math.PI * 2 / Math.max(1, pelletCount - 1), pelletRadius = pellet ? weapon.pelletSpread : 0;
+    const pelletAngle = (pellet - 1) * Math.PI * 2 / Math.max(1, pelletCount - 1), pelletRadius = pellet ? pelletSpread : 0;
     const direction = aimDirection(yaw + Math.cos(pelletAngle) * pelletRadius, clamp(pitch + Math.sin(pelletAngle) * pelletRadius, -1.5, 1.5));
-    const hit = traceCompensatedShot(state, f.id, origin, direction, weapon.range, arena, traceShot);
+    const trace = weapon.valorant ? (snapshot, id, start, vector, distance, map) => traceWeaponShot(snapshot, id, start, vector, distance, map, weapon) : traceShot;
+    const hit = traceCompensatedShot(state, f.id, origin, direction, range, arena, trace);
     let damage = 0;
-    if (hit.playerId !== null && state.players[hit.playerId].team !== f.team) {
-      damage = weaponDamage(weapon, hit.kind, hit.distance);
-      pendingDamage.push({ playerId: f.id, targetId: hit.playerId, damage, hitKind: hit.kind, headshot: hit.kind === 'head', attack: 'gun', weapon: f.weapon, hitX: hit.x, hitY: hit.y, hitZ: hit.z, dx: direction.x, dy: direction.y, dz: direction.z });
+    const contacts = [];
+    for (const contact of hit.contacts || [hit]) if (contact.playerId !== null && state.players[contact.playerId]?.team !== f.team) {
+      const slugDamage = fireMode === 'airburstSlug' ? weapon.alternateFire?.preBurstDamage?.[contact.kind] : undefined;
+      const contactDamage = (Number.isFinite(slugDamage) ? slugDamage : weaponDamage(weapon, contact.kind, contact.distance + distanceOffset)) * (contact.damageMultiplier ?? 1);
+      damage += contactDamage;
+      pendingDamage.push({ playerId: f.id, targetId: contact.playerId, ...(weapon.valorant ? { attackerLifeId: f.lifeId || 0, targetLifeId: contact.targetLifeId || 0, penetrationCount: contact.penetrationCount || 0 } : {}), damage: contactDamage, hitKind: contact.kind, headshot: contact.kind === 'head', attack: 'gun', weapon: f.weapon, hitX: contact.x, hitY: contact.y, hitZ: contact.z, dx: direction.x, dy: direction.y, dz: direction.z });
+      if (weapon.valorant) contacts.push({ targetId: contact.playerId, targetLifeId: contact.targetLifeId || 0, kind: contact.kind, damage: contactDamage, distance: contact.distance + distanceOffset, x: contact.x, y: contact.y, z: contact.z, penetrationCount: contact.penetrationCount || 0 });
     }
-    emit(state, 'shot', { playerId: f.id, targetId: hit.playerId, weapon: f.weapon, hand: f.lastShotHand, pellet, pelletCount, x: origin.x, y: origin.y, z: origin.z, dx: direction.x, dy: direction.y, dz: direction.z, hitX: hit.x, hitY: hit.y, hitZ: hit.z, hitKind: hit.kind, colliderId: hit.colliderId, damage });
+    emit(state, 'shot', { playerId: f.id, targetId: hit.playerId, weapon: f.weapon, hand: f.lastShotHand, pellet, pelletCount, x: origin.x, y: origin.y, z: origin.z, dx: direction.x, dy: direction.y, dz: direction.z, hitX: hit.x, hitY: hit.y, hitZ: hit.z, hitKind: hit.kind, colliderId: hit.colliderId, damage,
+      ...(weapon.valorant ? { fireMode, alternate: fire?.alternate === true, ...(distanceOffset ? { burstOrigin: origin, attackX: eyeOrigin.x, attackY: eyeOrigin.y, attackZ: eyeOrigin.z } : {}), contacts, impacts: hit.impacts || [], penetrationCount: hit.penetrationCount || 0 } : {}) });
   }
   return true;
 }
 function tickWeapon(state, f, input, pendingDamage, arena, meleeOptions = {}) {
   if (!f.alive) return;
-  const weapon = WEAPONS[f.weapon]; f.shotCooldown = Math.max(0, f.shotCooldown - 1); f.recoil = Math.max(0, f.recoil - .04 * DT); f.heat = Math.max(0, f.heat - 2.8 * DT);
+  const weapon = WEAPONS[f.weapon]; f.recoil = Math.max(0, f.recoil - .04 * DT); f.heat = Math.max(0, f.heat - 2.8 * DT);
+  if (weapon.valorant) {
+    if (weapon.shotRecoveryTicks && f.shotCooldown > 0 && f.shotCooldown <= weapon.fireIntervalTicks - weapon.shotRecoveryTicks + EPS) f.recoil = f.heat = 0;
+    const clock = advanceWeaponFireClock(weapon, f, input, f.previousInput), fire = clock.fireProfile;
+    for (const field of ['reserve', 'reloadTicks', 'shotCooldown', 'burstRemaining', 'spinTicks', 'pendingFireTicks']) f[field] = clock[field];
+    f.ammo = clock.ammo + clock.rounds;
+    if (clock.reloadCompleted) emit(state, 'reloadComplete', { playerId: f.id, weapon: f.weapon });
+    if (clock.reloadStarted) { f.aiming = false; emit(state, 'reload', { playerId: f.id, weapon: f.weapon, durationTicks: clock.durationTicks }); }
+    if (clock.dryFire) emit(state, 'dryFire', { playerId: f.id, weapon: f.weapon });
+    if (f.slot === 'sword' && !f.healTicks && !f.grenadeThrowTicks) tickMelee(state, f, input, pendingDamage, arena, meleeOptions);
+    if (fire) {
+      const recoil = f.recoil, heat = f.heat;
+      const activeWeapon = fire.alternate ? { ...weapon, hipSpread: fire.spread, aimedSpread: 0 } : weapon;
+      for (let round = 0; round < clock.rounds; round++) fireRound(state, f, activeWeapon, pendingDamage, arena, { ...fire, recoil, heat });
+    }
+    return;
+  }
+  f.shotCooldown = Math.max(0, f.shotCooldown - 1);
   if (f.reloadTicks > 0) {
     f.reloadTicks--;
     if (f.reloadTicks === 0) { const loaded = Math.min(weapon.magazine - f.ammo, f.reserve); f.ammo += loaded; f.reserve -= loaded; emit(state, 'reloadComplete', { playerId: f.id, weapon: f.weapon }); }

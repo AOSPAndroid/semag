@@ -1,5 +1,6 @@
 import { SPRINT } from './voxel-engine.js';
 import { WEAPONS, weaponAimFovRatio } from './voxel-weapons.js';
+import { weaponReloadDuration } from './voxel-fire-modes.js';
 import { weaponReloadPose } from './voxel-player-animation.js';
 import { KNIFE_SECONDARY, PARRY_PROFILES, meleeLabel, meleeProfile, parryProfile, parryPhase } from './voxel-melee.js';
 
@@ -8,6 +9,7 @@ export const ADS_LOOK_CONTROL = Object.freeze({ precisionMultiplier: .55 });
 
 export function aimFraction(player, ticks = 18, { requireGun = false } = {}) {
   if (!player || player.alive === false || player.hasGun === false || requireGun && !player.hasGun || player.slot != null && player.slot !== 'primary' || player.healing || player.healTicks > 0 || player.reloadTicks > 0 || player.grenadeThrowTicks > 0) return 0;
+  if (WEAPONS[player.weapon]?.adsSupported === false || WEAPONS[player.weapon]?.adsEnabled === false) return 0;
   const duration = Number.isFinite(ticks) && ticks > 0 ? ticks : 18;
   return Math.max(0, Math.min(1, Number.isFinite(player.aimTicks) ? player.aimTicks / duration : 0));
 }
@@ -57,7 +59,19 @@ export function secondaryActionPresentation(player, { active = true, requireGun 
     const instruction = kind === 'stab' ? 'Press for a stronger knife stab; release before the next stab' : `Press to parry an incoming melee attack; face it and time the press; costs ${parryProfile(player).staminaCost} stamina; release before the next parry`;
     return Object.freeze({ kind, label: kind.toUpperCase(), pressed, state: readout.state, detail: readout.status, ariaLabel: `${instruction}. ${readout.status}` });
   }
-  if (valid && (!requireGun || player.hasGun) && player.hasGun !== false && (player.slot == null || player.slot === 'primary') && typeof player.weapon === 'string' && Object.hasOwn(WEAPONS, player.weapon)) return Object.freeze({ kind: 'aim', label: 'AIM', pressed: !!player.aiming, state: player.aiming ? 'aiming' : 'ready', detail: 'Hold for gun sights and slower, precise look control', ariaLabel: 'Hold to aim down sights; slower, precise look control' });
+  if (valid && (!requireGun || player.hasGun) && player.hasGun !== false && (player.slot == null || player.slot === 'primary') && typeof player.weapon === 'string' && Object.hasOwn(WEAPONS, player.weapon)) {
+    const weapon = WEAPONS[player.weapon], alternate = weapon.alternateFire;
+    if (alternate) {
+      const kind = alternate.mode === 'airburst' ? 'airburst' : 'burst';
+      const held = player.previousInput?.aim === true || player.meleeAimBlocked;
+      const state = held ? 'release' : finiteTicks(player.shotCooldown) ? 'recovery' : 'ready';
+      const instruction = kind === 'airburst' ? 'Press for a shell that opens into five pellets after 7.5 metres; release before firing again' : 'Press for up to three simultaneous rounds; release before firing again';
+      const detail = state === 'release' ? 'Release RMB before firing' : state === 'recovery' ? 'Recovering from the accepted shot' : instruction;
+      return Object.freeze({ kind, label: kind.toUpperCase(), pressed: held, state, detail, ariaLabel: `${instruction}. ${detail}` });
+    }
+    if (weapon.adsSupported === false || weapon.adsEnabled === false) return Object.freeze({ kind: 'none', label: 'HIP', pressed: false, state: 'inactive', detail: 'This weapon fires from the hip', ariaLabel: 'This weapon has no aiming sights; fire from the hip' });
+    return Object.freeze({ kind: 'aim', label: 'AIM', pressed: !!player.aiming, state: player.aiming ? 'aiming' : 'ready', detail: 'Hold for gun sights and slower, precise look control', ariaLabel: 'Hold to aim down sights; slower, precise look control' });
+  }
   return Object.freeze({ kind: 'none', label: 'AIM', pressed: false, state: 'inactive', detail: 'Equip a gun or blade in combat', ariaLabel: 'Aim, knife stab or blade parry; equip a gun or blade in combat' });
 }
 
@@ -115,11 +129,12 @@ export function createReloadAudioPresenter(audio) {
   return {
     observe(player, { tick = 0, context = '', active = true, gain = .58 } = {}) {
       const weapon = WEAPONS[player?.weapon], remaining = player?.reloadTicks;
+      const duration = weaponReloadDuration(weapon, player?.ammo);
       const subject = JSON.stringify([context, player?.id, player?.lifeId ?? 0, player?.deaths ?? 0, player?.weapon]);
-      const valid = !!weapon && player?.alive !== false && !['sword', 'potion', 'grenade', 'empty'].includes(player?.slot) && Number.isInteger(remaining) && remaining > 0 && remaining <= weapon.reloadTicks && Number.isSafeInteger(tick);
+      const valid = !!weapon && player?.alive !== false && !['sword', 'potion', 'grenade', 'empty'].includes(player?.slot) && Number.isInteger(remaining) && remaining > 0 && remaining <= duration && Number.isSafeInteger(tick);
       const continuous = previous?.subject === subject && previous.active && active && tick >= previous.tick;
       if (valid) {
-        const startTick = tick + remaining - weapon.reloadTicks, progress = 1 - remaining / weapon.reloadTicks;
+        const startTick = tick + remaining - duration, progress = 1 - remaining / duration;
         const hands = player.weapon === 'dualpistols' || player.weapon === 'dualsmg' ? [0, 1] : [0];
         for (const hand of hands) {
           const pose = weaponReloadPose(player.weapon, progress, { hand });

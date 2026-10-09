@@ -3,8 +3,8 @@ import { GameAudio } from './audio.js';
 import { displayKey, gameKey, getKeyboardLayout, mountKeyboardLayoutPicker, subscribeKeyboardLayout } from './keyboard-layout.js';
 import { copyText, getName, hostInfo, roomUrl, saveName } from './hub/shared.js';
 import { ADS, HEAL, PLAYER_HEALTH, predictLocalMovement, sweepPresentationOffset, traceShot } from './voxel-engine.js';
-import { WEAPONS, WEAPON_IDS } from './voxel-weapons.js';
-import { cleanAim, composeInput, controlForKey, aimFraction, aimLookMultiplier, combatReadout, isFormTarget, hasGunshotReport, combatEventPerspective, createMeleeImpactReporter, createContinuousInputPacer as createInputPacer, LOOK_SENSITIVITY } from './voxel-client.js';
+import { WEAPONS } from './voxel-weapons.js';
+import { cleanAim, composeInput, controlForKey, aimFraction, aimLookMultiplier, combatReadout, isFormTarget, hasGunshotReport, combatEventPerspective, createMeleeImpactReporter, createContinuousInputPacer as createInputPacer, LOOK_SENSITIVITY, populateWeaponSelect, renderWeaponDetails, weaponCrosshairSpread } from './voxel-client.js';
 import { inventoryLootPresentation, inventoryEventFeedback, inventorySwapPresentation, mountInventoryHotbar, mountWeaponWheel } from './voxel-inventory-ui.js';
 import { combatPresentation, createCorrectionPresenter, createMovementPresenter, interpolatedVoxelState, reconcileMovement, resolvePresentationContacts, withCombatPresentation } from './voxel-presentation.js';
 import { incomingDamageFeedback, damageFeedbackPresentation, paintDamageFeedback } from './voxel-damage-feedback.js';
@@ -374,6 +374,9 @@ export async function bootHorde() {
     paintVitals(camera, camera?.id !== playerId ? `${nameFor(camera?.id)}’s` : 'Your', labelsActive());
     reloadAudio.observe(state.players.find(player => player.id === camera?.id), { tick: state.tick, context: `${state.mapId}:${state.matchId}:${state.round}`, active: connected && !paused && !modalOpen && state.phase === 'fight' }); renderCount++; lastFraction = tickFraction(accumulator, 1 / engine.TICK_RATE);
     const scoped = MOVEMENT_PHASES.includes(state.phase) && camera?.alive && !modalOpen && !paused && camera.slot !== 'sword' && WEAPONS[camera.weapon]?.scoped && aimFraction(camera, ADS.ticks) >= 14 / 18;
+    const spread = weaponCrosshairSpread(camera, ADS); const ads = aimFraction(camera, ADS.ticks);
+    const size = camera?.slot === 'sword' ? 18 : Math.round(20 - ads * 8 + Math.min(60, spread * canvas.clientHeight * 2));
+    $('horde-crosshair').style.width = `${size}px`; $('horde-crosshair').style.height = `${size}px`;
     hide('horde-scope', !scoped); hide('horde-crosshair', state.phase !== 'fight' || modalOpen || paused || !camera?.alive || scoped || camera.healing);
     paintHitFeedback(hitElements, hitFeedback.present(localPlayer(), { now, lifeKey: `${state.mapId}:${state.matchId}:${localPlayer()?.lifeId}`, active: state.phase === 'fight' && !paused && !modalOpen && connected, reducedMotion: hitMotion.matches })); hide('horde-feedback', now >= feedbackUntil || !LIVE_PHASES.includes(state.phase));
     paintDamageFeedback($('horde-damage'), damageFeedbackPresentation(damageFeedback, localPlayer(), { now, lifeKey: `${state.matchId}:${localPlayer()?.lifeId}`, yaw: aim.yaw, active: state.phase === 'fight' && !paused }));
@@ -504,8 +507,12 @@ export async function bootHorde() {
   const unsubscribe = subscribeKeyboardLayout(() => { clearInputs(); hints(); });
   text('horde-mode', solo ? 'SOLO SURVIVAL' : '1–3 PLAYER CO-OP'); text('horde-room-code', roomId); $('horde-name').value = getName(); hide('horde-name-field', solo); hide('horde-lobby', solo); hide('horde-map-field', !solo); hide('horde-difficulty-field', !solo);
   text('horde-start-label', solo ? 'Start survival' : 'Start squad survival'); if (!solo) text('horde-setup-copy', 'One squad, up to three players. Everyone readies; the host starts. Clear waves to recover, share supplies, and bring fallen teammates back.');
-  for (const id of WEAPON_IDS) { const option = document.createElement('option'); option.value = id; option.textContent = WEAPONS[id].name; $('horde-weapon').append(option); } $('horde-weapon').value = 'carbine';
-  function weaponNote() { text('horde-weapon-note', WEAPONS[$('horde-weapon').value]?.description || ''); }
+  populateWeaponSelect($('horde-weapon')); $('horde-weapon').value = 'carbine';
+  const weaponDetails = document.createElement('details'); weaponDetails.className = 'arsenal-fold';
+  const detailSummary = document.createElement('summary'); detailSummary.textContent = 'Weapon damage and handling';
+  const detailCard = document.createElement('section'); detailCard.id = 'horde-weapon-details'; detailCard.setAttribute('aria-label', 'Selected weapon statistics');
+  weaponDetails.append(detailSummary, detailCard); $('horde-weapon-note').after(weaponDetails);
+  function weaponNote() { text('horde-weapon-note', WEAPONS[$('horde-weapon').value]?.description || ''); renderWeaponDetails(detailCard, $('horde-weapon').value); }
   listen($('horde-setup'), 'submit', event => { event.preventDefault(); if (solo) startSolo(); else { if (!hordeLobbyPresentation(state, roster, playerId, hostId, connected).canStart) return; clearInputs(); entered = true; paused = false; canvas.focus({ preventScroll: true }); requestCapture(); send({ type: 'start' }); } });
   for (const id of ['horde-map', 'horde-difficulty']) listen($(id), 'change', preview);
   for (const id of ['horde-weapon']) listen($(id), 'change', () => { weaponNote(); if (solo) preview(); else send({ type: 'fps-loadout', weaponId: $('horde-weapon').value, meleeId: 'knife' }); });

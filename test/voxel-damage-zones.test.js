@@ -69,14 +69,18 @@ test('every loadout applies reduced leg damage through real gun or ballistic con
     const { state, shooter, target } = lane({ weapon: id });
     const pitch = Math.atan2(.25 - WORLD.eyeHeight, 4);
     // The scoped sniper and the LMG retain their real settling/wind-up rules.
-    ticks(state, 18, { 0: { aim: true, pitch } });
-    ticks(state, WEAPONS[id].spinupTicks || 1, { 0: { aim: true, fire: true, pitch } });
+    const aim = WEAPONS[id].adsSupported !== false;
+    ticks(state, 18, { 0: { aim, pitch } });
+    ticks(state, WEAPONS[id].spinupTicks || 1, { 0: { aim, fire: true, pitch } });
     if (WEAPONS[id].projectile) {
       assert.equal(target.hp, 200, `${id} damage must wait for flight`);
       ticks(state, 14, { 0: { aim: true, pitch } });
     }
     const hit = state.events.findLast(event => event.type === (WEAPONS[id].projectile ? 'boltHit' : 'shot') && (event.pellet ?? 0) === 0);
-    assert.equal(hit.hitKind, 'leg', id); assert.equal(hit.damage, weaponDamage(id, 'leg', 4), id);
+    // Penetrating rounds report their terminal surface and separate actor contacts.
+    const actorContact = hit.contacts?.find(contact => contact.targetId === target.id);
+    assert.equal(actorContact?.kind ?? hit.hitKind, 'leg', id);
+    assert.equal(actorContact?.damage ?? hit.damage, weaponDamage(id, 'leg', 4), id);
     const damage = state.events.filter(event => event.type === 'damage' && event.targetId === target.id);
     assert.ok(damage.length > 0, id);
     for (const event of damage) {
@@ -87,7 +91,9 @@ test('every loadout applies reduced leg damage through real gun or ballistic con
     }
     // The shotgun's real cone may also catch the lower torso at the near face.
     assert.ok(damage.every(event => (event.hitKind === 'leg' || (WEAPONS[id].pellets && event.hitKind === 'body')) && !event.headshot), id);
-    assert.equal(target.hp, 200 - damage.reduce((sum, event) => sum + event.damage, 0), id);
+    const accepted = damage.reduce((sum, event) => sum + event.damage, 0);
+    if (WEAPONS[id].valorant) assert.ok(Math.abs(target.hp - (200 - accepted)) < 1e-9, `${id}: fractional penetration damage accounts for exact HP loss`);
+    else assert.equal(target.hp, 200 - accepted, id);
     assert.equal(shooter.shots, 1, `${id}: pellets or flight must not invent extra trigger reports`);
   }
 });
@@ -160,7 +166,7 @@ test('distinct frozen audiovisual profiles leave physical damage and projectile 
   for (const id of WEAPON_IDS) {
     const { effects, sound, legMultiplier } = WEAPONS[id];
     assert.ok(Object.isFrozen(effects) && Object.isFrozen(sound), id);
-    assert.ok(legMultiplier >= .7 && legMultiplier <= .85, id);
+    assert.ok(legMultiplier >= .7 && legMultiplier <= .85 + 1e-12, id);
     for (const field of ['tracerColor', 'muzzleColor', 'impactColor']) assert.match(effects[field], /^#[0-9a-f]{6}$/i);
     for (const field of ['tracerWidth', 'tracerTicks', 'muzzleTicks', 'muzzleSize', 'muzzleStrength', 'impactStrength', 'kickStrength', 'kickTicks']) assert.ok(Number.isFinite(effects[field]) && effects[field] >= 0, `${id}.${field}`);
     for (const field of ['noiseDuration', 'noiseVolume', 'frequency', 'toneDuration', 'toneVolume', 'lowpass']) assert.ok(Number.isFinite(sound[field]) && sound[field] > 0, `${id}.${field}`);

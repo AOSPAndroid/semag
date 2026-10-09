@@ -33,7 +33,7 @@ test('dual guns display one combined magazine each and use distinct paired silho
   player.inventoryIndex = 1; refreshInventory(player);
   const before = JSON.stringify(player), slots = inventorySlots(player);
   assert.deepEqual(slots.map(slot => slot.label), ['DUAL PISTOLS', 'DUAL SMGS', WEAPONS.slugshotgun.label, 'CARBINE']);
-  assert.deepEqual(slots.map(slot => slot.icon), ['dualpistols', 'dualsmg', 'weapon', 'weapon']);
+  assert.deepEqual(slots.map(slot => slot.icon), ['dualpistols', 'dualsmg', 'slugshotgun', 'carbine']);
   assert.deepEqual(slots.map(slot => slot.detail), ['1 / 9', '2 / 10', '3 / 11', '4 / 12']);
   assert.equal(slots[1].selected, true); assert.equal(JSON.stringify(player), before);
 });

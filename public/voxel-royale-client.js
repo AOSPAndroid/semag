@@ -2,8 +2,9 @@ import { aimFraction as gunAimFraction, aimLookMultiplier as gunAimLookMultiplie
 import { displayKey, gameKey, getKeyboardLayout, mountKeyboardLayoutPicker, subscribeKeyboardLayout } from './keyboard-layout.js';
 import { copyText, getName, hostInfo, roomUrl, saveName } from './hub/shared.js';
 import { GameAudio } from './audio.js';
-import { createMeleeImpactReporter } from './voxel-client.js';
-import { WEAPONS, weaponSpread } from './voxel-weapons.js';
+import { createMeleeImpactReporter, weaponCrosshairSpread } from './voxel-client.js';
+import { WEAPONS } from './voxel-weapons.js';
+import { resolveActiveFire, weaponReloadDuration } from './voxel-fire-modes.js';
 import { predictLocalMovement, sweepPresentationOffset, traceShot, ADS, HEAL, PLAYER_HEALTH } from './voxel-engine.js';
 
 import { meleeLabel, meleeProfile } from './voxel-melee.js';
@@ -118,20 +119,23 @@ export function aimLookMultiplier(player, ads = {}) {
 }
 export function combatReadout(player, rules = {}) {
   const weapon = player?.hasGun ? WEAPONS[player.weapon] : null;
+  const fire = resolveActiveFire(weapon, player);
   const sword = !weapon || player?.slot === 'sword';
   const blade = player?.meleeWeapon ? player : { ...player, meleeWeapon: 'knife' };
   const bladeLabel = meleeLabel(blade), profile = meleeProfile(blade);
   const healing = player?.healTicks > 0;
   const bladeAction = sword ? meleeActionReadout({ ...blade, slot: 'sword' }, profile) : null;
   let label = sword ? bladeLabel : weapon.label, ammo = sword ? bladeAction?.ammo || 'READY' : player.ammo;
-  let status = sword ? bladeAction?.status || 'LMB STRIKE · FIND A GUN' : 'RMB AIM · R RELOAD';
+  let status = sword ? bladeAction?.status || 'LMB STRIKE · FIND A GUN' : weapon.adsSupported === false ? fire.automatic ? 'HOLD FIRE · HIP FIRE' : 'CLICK EACH SHOT · R RELOAD' : 'RMB AIM · R RELOAD';
   let progress = bladeAction?.progress || null;
   if (!sword && !player.ammo) status = player.reserve ? 'R TO RELOAD' : 'NO AMMUNITION';
   if (!sword && weapon.spinupTicks && player.spinTicks > 0 && player.spinTicks < weapon.spinupTicks) {
     status = 'HOLD FIRE · WINDING UP'; progress = { remaining: weapon.spinupTicks - player.spinTicks, total: weapon.spinupTicks, label: 'Weapon wind-up' };
   }
-  if (!sword && player.reloadTicks > 0) { status = `RELOADING ${(player.reloadTicks / 120).toFixed(1)}S`; progress = { remaining: player.reloadTicks, total: weapon.reloadTicks, label: 'Reload' }; }
-  if (!sword && player.shotCooldown > 0 && ['bolt', 'pump', 'burst'].includes(weapon.mode) && !player.reloadTicks) status = ({ bolt: 'CYCLING BOLT', pump: 'PUMPING', burst: 'BURST RECOVERY' })[weapon.mode];
+  if (!sword && player.reloadTicks > 0) { status = `RELOADING ${(player.reloadTicks / 120).toFixed(1)}S`; progress = { remaining: player.reloadTicks, total: weaponReloadDuration(weapon, player.ammo), label: 'Reload' }; }
+  if (!sword && player.shotCooldown > 0 && ['bolt', 'pump', 'burst'].includes(fire.mode) && !player.reloadTicks) status = ({ bolt: 'CYCLING BOLT', pump: 'PUMPING', burst: 'BURST RECOVERY' })[fire.mode];
+  if (!sword && fire.alternate && !player.reloadTicks && !player.shotCooldown) status = fire.mode === 'airburst' ? `RMB AIRBURST · ${fire.popDistance}M POP` : `RMB BURST · ${Math.min(fire.ammoCost || fire.count, player.ammo)} ROUNDS`;
+  else if (!sword && weapon.adsBurst && fire.mode === 'burst' && !player.reloadTicks && (player.burstRemaining > 0 || !player.shotCooldown)) status = player.burstRemaining > 0 ? 'BURST FIRING' : `ADS ${fire.count}-SHOT BURST · HOLD LMB`;
   if (healing) { label = 'HEALING POTION'; ammo = `+${Math.min(rules.HEAL?.amount || HEAL.amount, Math.max(0, (player.maxHp || PLAYER_HEALTH) - player.hp))}`; status = 'DRINKING · STAY IN COVER'; progress = { remaining: player.healTicks, total: rules.HEAL?.ticks || 240, label: 'Drinking healing potion' }; }
   if (progress) progress.percent = clamp(100 - progress.remaining / progress.total * 100, 0, 100);
   return { label, ammo, reserve: Math.max(0, finite(player?.reserve)), sword, healing, status, progress, inventory: Array.isArray(player?.inventory) ? inventorySlots(player).filter(slot => slot.kind !== 'empty').map(slot => slot.label).join(' · ') : weapon ? `${weapon.label} + ${bladeLabel}` : `${bladeLabel} ONLY · SCAVENGE A GUN`, grenades: Math.max(0, finite(player?.grenades)), potions: Math.max(0, finite(player?.potions)), ...inventoryItemReadout(player) };
@@ -327,7 +331,7 @@ async function boot() {
     const scoped = !!local?.hasGun && !!WEAPONS[local.weapon]?.scoped && aimFraction(local, engine?.ADS?.ticks) >= 14 / 18;
     setHidden($('scope-reticle'), !controlsActive() || phase !== 'fight' || !scoped); setText($('scope-label'), `${WEAPONS[local?.weapon]?.label || 'PRECISION'} / PRECISION SIGHT`);
     setHidden($('crosshair'), !controlsActive() || phase !== 'fight' || scoped || readout.healing); $('crosshair').dataset.stance = readout.sword ? 'sword' : local?.aiming ? 'aim' : 'hip';
-    if (local) { const weapon = WEAPONS[local.weapon], ads = aimFraction(local, engine?.ADS?.ticks); const motion = weapon ? clamp((Math.hypot(finite(local.vx), finite(local.vz)) - .22) / weapon.speed, 0, 1) : 0; const spread = weapon ? (weapon.pelletSpread || 0) + weaponSpread(weapon, { motion, grounded: local.grounded, heat: local.heat, ads }, engine?.ADS) : 0; const size = readout.sword ? 18 : Math.round(20 - ads * 8 + Math.min(60, spread * canvas.clientHeight * 2)); setStyle($('crosshair'), 'width', `${size}px`); setStyle($('crosshair'), 'height', `${size}px`); }
+    if (local) { const weapon = WEAPONS[local.weapon], ads = aimFraction(local, engine?.ADS?.ticks); const spread = weaponCrosshairSpread(local, engine?.ADS); const size = readout.sword ? 18 : Math.round(20 - ads * 8 + Math.min(60, spread * canvas.clientHeight * 2)); setStyle($('crosshair'), 'width', `${size}px`); setStyle($('crosshair'), 'height', `${size}px`); }
     const living = aliveParticipants(state), placement = state?.placements?.find(item => item.playerId === playerId);
     setHidden($('spectator-hud'), !local || local.alive || phase !== 'fight'); setText($('placement-label'), placement ? `PLACED #${placement.place}` : 'ELIMINATED'); setText($('spectator-label'), spectating ? `SPECTATING ${lookupName(viewed.id).toUpperCase()}` : 'NO SURVIVORS'); setHidden($('next-spectator'), living.length < 2);
     setHidden($('pause-button'), paused || !entered || !local?.alive || !['countdown', 'fight'].includes(phase)); setHidden($('touch-controls'), !touchMode || !entered || paused || !local?.alive || !['countdown', 'fight'].includes(phase));

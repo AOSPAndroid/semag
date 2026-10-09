@@ -238,7 +238,13 @@ test('an accepted living blade contact interrupts a screecher roar instead of gr
 test('wave introductions retain stalker pressure, cap early hounds and unlock the two later abilities on schedule', () => {
   for (const wave of [1, 2, 3, 4, 5, 7]) {
     const state = active({ wave }); state.horde.pending = wave === 1 ? 10 : 14; state.horde.nextSpawnTick = state.tick; state.horde.waveQueued = 0; state.horde.waveTypeCounts = {};
-    advance(state, 1500); const introduced = state.events.filter(event => event.type === 'monsterRift').map(event => event.monsterType);
+    const introduced = [];
+    for (let tick = 0; tick < 1500; tick++) {
+      Horde.step(state);
+      // Observe each real rift when emitted: the bounded event ring can evict
+      // early introductions during a later wave's gun and pellet reports.
+      introduced.push(...state.events.filter(event => event.type === 'monsterRift' && event.tick === state.tick).map(event => event.monsterType));
+    }
     assert.ok(introduced.includes('hound'), `wave ${wave}: hounds are actually seeded in the wave`);
     assert.equal(introduced.includes('leaper'), wave >= 3); assert.equal(introduced.includes('screecher'), wave >= 5);
     assert.equal(introduced.includes('gunner'), wave >= 4); assert.equal(introduced.includes('sniper'), wave >= 7);

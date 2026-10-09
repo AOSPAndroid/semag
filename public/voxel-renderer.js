@@ -1,5 +1,7 @@
 import { MAPS, ADS, HEAL, WORLD } from './voxel-engine.js';
 import { WEAPONS, weaponAimFovRatio } from './voxel-weapons.js';
+import { valorantModel } from './voxel-valorant-models.js';
+import { weaponReloadDuration } from './voxel-fire-modes.js';
 import { grenadeCapacity } from './voxel-ordnance.js';
 import { MELEE_WEAPONS, meleeProfile, meleeWeaponId, meleeSlashOrigin, meleeSlashGeometry, meleeSlashPhase, parryPhase } from './voxel-melee.js';
 import { frameAlpha } from './display-timing.js';
@@ -37,6 +39,8 @@ const ATMOSPHERE = Object.freeze({
   paris: { sun: [-.47, .76, .45], direct: [.64, .56, .43], ambient: [.47, .53, .61], top: '#789eaf', horizon: '#ecd6b5', sunColor: '#ffebbd' },
   snow: { sun: [-.41, .82, .39], direct: [.50, .58, .65], ambient: [.50, .60, .73], top: '#759bbf', horizon: '#e4edf2', sunColor: '#edf5ff' },
   sewers: { sun: [.15, .98, .10], direct: [.28, .25, .18], ambient: [.56, .52, .46], top: '#242823', horizon: '#5a5b48', sunColor: '#ffe3aa' },
+  market: { sun: [-.15, .98, .10], direct: [.25, .23, .19], ambient: [.66, .60, .51], top: '#14283d', horizon: '#405b64', sunColor: '#ffcd80' },
+  lockdown: { sun: [.20, .96, -.18], direct: [.29, .26, .20], ambient: [.58, .61, .65], top: '#263a49', horizon: '#777164', sunColor: '#ffc876' },
   trading: { sun: [-.30, .91, .24], direct: [.51, .48, .43], ambient: [.66, .65, .63], top: '#aebbc4', horizon: '#e5e2d9', sunColor: '#fff5df' },
 });
 const ART = Object.freeze({
@@ -52,6 +56,8 @@ const ART = Object.freeze({
   paris: { paving: '#b9b4a7', accent: '#68847d', skyline: '#b3a894', cloud: '#f0e3cd', tile: 3 },
   snow: { paving: '#dce7ec', accent: '#779eb6', skyline: '#688b91', cloud: '#f2f6f8', tile: 4 },
   sewers: { paving: '#5e5a4d', accent: '#d5af61', skyline: '#464b3f', cloud: '#83958b', tile: 2.4 },
+  market: { paving: '#566060', accent: '#e7b06a', skyline: '#354c60', cloud: '#718997', tile: 2.5 },
+  lockdown: { paving: '#686765', accent: '#d2a063', skyline: '#485664', cloud: '#9ba4a9', tile: 3.2 },
   trading: { paving: '#858a89', accent: '#4787a0', skyline: '#738ca3', cloud: '#edf2f6', tile: 1.6 },
 });
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
@@ -75,7 +81,7 @@ export function survivorColor(player) {
 }
 
 function aimProgress(player) {
-  return ['sword', 'potion', 'grenade', 'empty'].includes(player.slot) || player.healing || finite(player.healTicks) > 0 || finite(player.reloadTicks) > 0 || finite(player.grenadeThrowTicks) > 0 || player.alive === false ? 0 : smooth(finite(player.aimTicks) / ADS.ticks);
+  return WEAPONS[player.weapon]?.adsSupported === false || WEAPONS[player.weapon]?.adsEnabled === false || ['sword', 'potion', 'grenade', 'empty'].includes(player.slot) || player.healing || finite(player.healTicks) > 0 || finite(player.reloadTicks) > 0 || finite(player.grenadeThrowTicks) > 0 || player.alive === false ? 0 : smooth(finite(player.aimTicks) / ADS.ticks);
 }
 
 export function meleeMotion(player) {
@@ -1151,7 +1157,42 @@ function paintExpansionCollider(mesh, collider, theme) {
 
 }
 
+/** Covered market and workshop surfaces stay on their actual solid faces. */
+function paintCloseCombatCollider(mesh, collider, theme) {
+  const { x, y, z, w, h, d } = collider, id = String(collider.id || ''), color = rgba(collider.color || ART[theme].paving);
+  mesh.box(x, y, z, w, h, d, color);
+  if (collider.overhead) {
+    // Down-facing work lamps are paint on the physical hall ceiling, with a
+    // bounded number of strips even in the larger battle-royale variant.
+    for (let xx = x + 4; xx < x + w - 2; xx += 10) for (let zz = z + 4; zz < z + d - 2; zz += 10) {
+      const strip = theme === 'market' ? '#efd19a' : '#dddcc5';
+      mesh.quad([xx, y - .003, zz], [xx + 2.2, y - .003, zz], [xx + 2.2, y - .003, zz + .34], [xx, y - .003, zz + .34], [0, -1, 0], rgba('#25383e'));
+      mesh.quad([xx + .08, y - .004, zz + .07], [xx + 2.12, y - .004, zz + .07], [xx + 2.12, y - .004, zz + .27], [xx + .08, y - .004, zz + .27], [0, -1, 0], rgba(strip));
+    }
+    return;
+  }
+  const wood = collider.material === 'wood', pale = mix(color, rgba(theme === 'market' ? '#e4bd86' : '#c1c5bd'), .22), dark = shade(color, .64);
+  for (const face of ['north', 'south', 'west', 'east']) {
+    const width = face === 'north' || face === 'south' ? w : d;
+    if (width < .22 || h < .2) continue;
+    const patch = (left, bottom, ww, hh, tint, offset = .003) => wallPatch(mesh, collider, face, left, bottom, ww, hh, tint, offset);
+    patch(.025, .035, width - .05, .030, dark);
+    patch(.025, h - .065, width - .05, .030, pale);
+    const rows = Math.min(wood ? 5 : 3, Math.floor(h / .4));
+    for (let row = 1; row <= rows; row++) patch(.035, h * row / (rows + 1), width - .07, wood ? .018 : .028, dark);
+    if (width > 2 && h > 1.2) for (let at = 1.1; at < width - .2; at += Math.max(1.8, width / 6)) patch(at, .07, .017, h - .14, dark);
+    if (theme === 'lockdown' && /boiler|machine|workshop|furnace|generator/.test(id) && width > .8 && h > .5) {
+      patch(.08, .16, width - .16, .12, '#b89658', .005);
+      for (let at = .14; at < width - .25; at += .45) patch(at, .16, .19, .12, '#343d3d', .006);
+    }
+    if (theme === 'market' && /screen|sign|lintel/.test(id) && width > .8) {
+      patch(.08, Math.max(.04, h - .16), width - .16, .055, /east|food-1|food-2/.test(id) ? '#96d2cf' : '#edc482', .005);
+    }
+  }
+}
+
 function paintCollider(mesh, collider, theme) {
+  if (theme === 'market' || theme === 'lockdown') return paintCloseCombatCollider(mesh, collider, theme);
   if (theme === 'paris') return paintParisCollider(mesh, collider);
   if (['snow', 'sewers', 'trading'].includes(theme)) return paintExpansionCollider(mesh, collider, theme);
   if (ROYALE_THEMES.has(theme)) return paintRoyaleCollider(mesh, collider, theme);
@@ -1390,6 +1431,19 @@ function landmarkArt(mesh, map, theme) {
             }
           }
         }
+      } else if (kind === 'market-shop') {
+        for (const face of ['north', 'south', 'west', 'east']) {
+          const width = face === 'north' || face === 'south' ? w : d;
+          if (width < .5) continue;
+          if (/lintel/.test(box.id)) {
+            patch(face, .04, .07, width - .08, h - .14, '#233e46');
+            patch(face, .06, .09, width - .12, .035, /east/.test(box.id) ? '#8ed5d0' : '#efc488', .008);
+          } else {
+            patch(face, .04, .06, width - .08, Math.min(2.20, h - .12), '#59696b', .005);
+            for (let row = .25; row < Math.min(2.3, h - .15); row += .23) patch(face, .07, row, width - .14, .026, '#354e56', .007);
+            patch(face, .04, h - .30, width - .08, .12, /east/.test(box.id) ? '#74c2c3' : '#ddac64', .008);
+          }
+        }
       } else if (/market-stall|newspaper-stand/.test(kind)) {
         if (/canopy|roof/.test(box.id)) {
           for (let at = .06; at < w - .04; at += .38) mesh.floor(x + at, z + .025, Math.min(.19, w - at - .02), d - .05, '#e8d7aa', y + h + .004);
@@ -1437,7 +1491,7 @@ function landmarkArt(mesh, map, theme) {
         mesh.floor(x + .03, z + .03, w - .06, d - .06, '#66815c', y + h + .004);
         for (let flower = .12; flower < w - .08; flower += .24) mesh.floor(x + flower, z + d * .50, .048, .048, '#d6bb85', y + h + .005);
       }
-      if (!landmark.label || box !== labelBox || h < .65 || !/trail-board|metro-kiosk|service-control|pump|forklift|market-stall|newspaper-stand|carved-marker/.test(kind)) continue;
+      if (!landmark.label || box !== labelBox || h < .65 || !/trail-board|metro-kiosk|service-control|pump|forklift|market-stall|market-shop|newspaper-stand|carved-marker/.test(kind)) continue;
       const face = w >= d ? 'south' : 'east', width = w >= d ? w : d;
       const label = String(landmark.label).toUpperCase();
       const units = [...label].reduce((sum, letter) => sum + (GLYPHS[letter]?.[0]?.length || 2) + 1, 0) - 1;
@@ -1455,6 +1509,8 @@ function landmarkArt(mesh, map, theme) {
     if (![x, z, w, d].every(Number.isFinite) || Math.min(w, d) <= 0) continue;
     mesh.floor(x, z, w, d, decoration.color || (ART[theme] || ART.courtyard).accent, finite(decoration.y, 0) + .008);
     if (/trail|walk|lane/.test(decoration.kind || '')) for (let at = .24; at < d - .2; at += 1.1) mesh.floor(x + .06, z + at, .025, .55, '#bcb896', finite(decoration.y, 0) + .009);
+    if ((theme === 'market' || theme === 'lockdown') && /tiles|floor/.test(decoration.kind || '')) for (let row = 1; row < d; row += 1.6) mesh.floor(x + .04, z + row, w - .08, .017, theme === 'market' ? '#878473' : '#464e4f', finite(decoration.y, 0) + .010);
+    if (theme === 'lockdown' && /hazard|furnace/.test(decoration.kind || '')) for (let at = .1; at < w - .3; at += .6) mesh.floor(x + at, z + .06, .25, Math.min(.23, d - .12), '#d4a460', finite(decoration.y, 0) + .010);
   }
 }
 
@@ -1869,7 +1925,7 @@ export function mapMeshes(map) {
       }
     }
   };
-  const indoor = theme === 'sewers' || theme === 'trading';
+  const indoor = ['sewers', 'trading', 'market', 'lockdown'].includes(theme);
   if (!indoor) {
     backdrop('z', minZ - 11, minX - 8, width + 16);
     backdrop('z', maxZ + 7, minX - 8, width + 16);
@@ -1921,9 +1977,37 @@ export function parisLandmarkMesh(bounds) {
   return mesh.array;
 }
 
-const weaponLength = weapon => ({ pistol: .42, smg: .68, marksman: 1.04, shotgun: 1.02, burst: .87, sniper: 1.26, lmg: 1.08, crossbow: .83, revolver: .51, pdw: .80, autoshotgun: .93, battlerifle: 1.14, dualpistols: .46, dualsmg: .61, slugshotgun: 1.12 })[weapon] || .92;
+/** Rotate an opened barrel around its breech, clipping each physical face in
+ * gun space before the regular held transform. A thin wall cannot recreate it. */
+function hingedWeaponPart(mesh, item, pose, limit, hinge, angle) {
+  const colors = boxColors(item.color);
+  const local = point => { const value = rotate([point[0], point[1], point[2] - hinge], 0, angle); value[2] += hinge; return value; };
+  const world = point => { const value = rotate(point.map(value => value * finite(pose.scale, 1)), pose.yaw, pose.pitch); return value.map((value, axis) => value + [pose.x, pose.y, pose.z][axis]); };
+  for (let face = 0; face < BOX_FACES.length; face++) {
+    const { corners, normal } = BOX_FACES[face];
+    const polygon = corners.map(corner => local([corner & 1 ? item.x + item.w : item.x, corner & 2 ? item.y + item.h : item.y, corner & 4 ? item.z + item.d : item.z]));
+    const clipped = [];
+    for (let at = 0; at < polygon.length; at++) {
+      const current = polygon[at], previous = polygon[(at + polygon.length - 1) % polygon.length], currentInside = current[2] >= -limit, previousInside = previous[2] >= -limit;
+      if (currentInside !== previousInside) {
+        const ratio = (-limit - previous[2]) / (current[2] - previous[2]);
+        clipped.push([lerp(previous[0], current[0], ratio), lerp(previous[1], current[1], ratio), -limit]);
+      }
+      if (currentInside) clipped.push(current);
+    }
+    const transformed = clipped.map(world), outward = rotate(rotate(normal, 0, angle), pose.yaw, pose.pitch);
+    for (let at = 1; at < transformed.length - 1; at++) for (const point of [transformed[0], transformed[at], transformed[at + 1]]) mesh.vertex(point, outward, colors[face]);
+  }
+}
+
+const weaponLength = weapon => valorantModel(weapon)?.length || ({ pistol: .42, smg: .68, marksman: 1.04, shotgun: 1.02, burst: .87, sniper: 1.26, lmg: 1.08, crossbow: .83, revolver: .51, pdw: .80, autoshotgun: .93, battlerifle: 1.14, dualpistols: .46, dualsmg: .61, slugshotgun: 1.12 })[weapon] || .92;
 const reloadMagazineDrop = (weapon, progress) => Math.max(...[0, 1].map(hand => weaponReloadPose(weapon, progress, { active: progress > 0, hand }).magazineDrop));
 const weaponCoverPadding = (weapon, scale = 1, reloadProgress = 0) => {
+  const authored = valorantModel(weapon);
+  if (authored) {
+    const open = weaponReloadPose(weapon, reloadProgress, { active: reloadProgress > 0 }).breakOpen || 0;
+    return (authored.coverPadding + reloadMagazineDrop(weapon, reloadProgress) + open * Math.sin(.42) * (authored.length + finite(authored.breakHingeZ))) * scale;
+  }
   const width = weapon === 'crossbow' ? .51 : weapon === 'lmg' ? .28 : weapon === 'sniper' ? .18 : weapon === 'revolver' ? .26 : weapon === 'autoshotgun' ? .18 : .11;
   const height = (weapon === 'pistol' ? .22 : weapon === 'lmg' ? .30 : weapon === 'autoshotgun' ? .36 : .29) + (weapon === 'revolver' ? 0 : reloadMagazineDrop(weapon, reloadProgress));
   return Math.max(width, height) * scale;
@@ -1983,14 +2067,63 @@ function weaponParts(mesh, weapon, pose, options = {}) {
     mesh.quad(...points, normal, tint);
     mesh.quad(...[...points].reverse(), normal.map(value => -value), tint);
   };
-  const ironSights = (front, rear = -.15) => {
+  const ironSights = (front, rear = -.15, hinge = null) => {
     part(-.036, .112, rear, .017, .040, .035, '#253237');
     part(.019, .112, rear, .017, .040, .035, '#253237');
-    part(-.008, .109, front, .016, .043, .025, '#c3d2bc');
-    part(-.004, .142, front - .002, .008, .010, .005, '#c8e6b4');
+    if (hinge) {
+      hingedWeaponPart(mesh, { x: -.008, y: .109, z: front, w: .016, h: .043, d: .025, color: '#c3d2bc' }, pose, limit, hinge.z, hinge.angle);
+      hingedWeaponPart(mesh, { x: -.004, y: .142, z: front - .002, w: .008, h: .010, d: .005, color: '#c8e6b4' }, pose, limit, hinge.z, hinge.angle);
+    } else {
+      part(-.008, .109, front, .016, .043, .025, '#c3d2bc');
+      part(-.004, .142, front - .002, .008, .010, .005, '#c8e6b4');
+    }
     part(-.031, .137, rear + .036, .010, .010, .004, '#bdd4ae');
     part(.021, .137, rear + .036, .010, .010, .004, '#bdd4ae');
   };
+  const authored = valorantModel(weapon);
+  if (authored) {
+    const breakAngle = -.42 * finite(reloadMotion.breakOpen);
+    // All new weapons share the proven cut plane and pooled batches, but their
+    // authored silhouettes, magazines, scopes and barrel ports are independent.
+    for (const item of authored.parts) {
+      if (item.motion === 'break' && breakAngle) { hingedWeaponPart(mesh, item, pose, limit, authored.breakHingeZ, breakAngle); continue; }
+      if (item.motion === 'magazine' && !reloadMotion.magazineVisible) continue;
+      const x = item.x - (item.motion === 'cylinder' ? reloadMotion.cylinder * .15 : 0);
+      const y = item.y - (item.motion === 'magazine' ? magazineDrop : 0) + (item.motion === 'lid' ? reloadMotion.lid * .13 : 0);
+      const z = item.z + (item.motion === 'bolt' ? mechanicalBolt * .09 : item.motion === 'pump' ? mechanicalPump * .16 : item.motion === 'magazine' ? magazineDrop * .12 : item.motion === 'lid' ? reloadMotion.lid * .04 : 0);
+      part(x, y, z, item.w, item.h, item.d, item.color);
+    }
+    for (const item of authored.details) {
+      const args = item.args, shiftX = item.motion === 'cylinder' ? -reloadMotion.cylinder * .15 : 0;
+      const shiftZ = item.motion === 'pump' ? mechanicalPump * .16 : 0;
+      if (item.kind === 'side') side(args[0] + shiftX, args[1], args[2] + shiftZ, args[3], args[4], args[5]);
+      else if (item.kind === 'top') top(args[0] + shiftX, args[1], args[2] + shiftZ, args[3], args[4], args[5]);
+      else if (item.kind === 'front') {
+        const [x, y, z, w, h, color] = args;
+        const points = [[x + shiftX, y, z], [x + shiftX, y + h, z], [x + w + shiftX, y + h, z], [x + w + shiftX, y, z]];
+        if (item.motion === 'break' && breakAngle) {
+          const transformed = points.map(point => { const p = rotate([point[0], point[1], point[2] - authored.breakHingeZ], 0, breakAngle); p[2] += authored.breakHingeZ; return p; });
+          detail(transformed, rotate([0, 0, -1], 0, breakAngle), color);
+        } else detail(points, [0, 0, -1], color);
+      }
+    }
+    if (!authored.scoped) ironSights(-authored.length + .042, -.073, breakAngle ? { z: authored.breakHingeZ, angle: breakAngle } : null);
+    if (authored.breakHingeZ !== null && reloadMotion.shellVisible) {
+      for (let shell = 0; shell < 2; shell++) {
+        const y = (shell === 0 ? .035 : -.034) - (1 - reloadMotion.shell) * .13;
+        const z = authored.breakHingeZ + .04 + (1 - reloadMotion.shell) * .10, depth = weapon === 'shorty' ? .056 : .087;
+        part(-.018, y - .017, z, .036, .034, depth, '#a88a5f');
+        part(-.019, y - .018, z + depth - .010, .038, .036, .012, '#d3ba7e');
+      }
+    }
+    if (weapon === 'sheriff') {
+      for (let chamber = 0; chamber < 6; chamber++) {
+        const angle = chamber * TAU / 6, x = Math.sin(angle) * .052 - reloadMotion.cylinder * .15, y = .03 + Math.cos(angle) * .043;
+        detail([[x - .011, y - .009, -.283], [x - .011, y + .009, -.283], [x + .011, y + .009, -.283], [x + .011, y - .009, -.283]], [0, 0, -1], reloadMotion.cylinder > .2 ? '#b8a06f' : '#213640');
+      }
+    }
+    return authored.length;
+  }
   if (weapon === 'dualpistols' || weapon === 'dualsmg') {
     const automatic = weapon === 'dualsmg', slide = mechanicalBolt * .046;
     const casing = automatic ? '#576d79' : '#b7c0b6', accent = automatic ? '#b49162' : '#907454';
@@ -2600,6 +2733,11 @@ function grenadeParts(mesh, pose, radius, fuseTicks, time, intact = false, limit
 }
 
 function lootGun(mesh, weapon, pose) {
+  const authored = valorantModel(weapon);
+  if (authored) {
+    for (const item of authored.lootParts) mesh.box(item.x, item.y, item.z, item.w, item.h, item.d, item.color, pose);
+    return;
+  }
   if (WEAPONS[weapon]?.dualWield) {
     const automatic = weapon === 'dualsmg';
     for (const side of [-1, 1]) {
@@ -3087,7 +3225,7 @@ export function monsterMeshes(player, time = 0, animation = null) {
 function monsterMesh(mesh, player, map, time, animation = null, presentedReload = null) {
   const { armed, art, pose, yaw, pitch } = monsterParts(mesh, player, time, animation);
   if (!armed) return;
-  const offset = rotate([.12, 1.24, -.18], yaw), reloadProgress = presentedReload?.globalProgress ?? (player.reloadTicks > 0 ? clamp(1 - player.reloadTicks / (WEAPONS[player.weapon]?.reloadTicks || 252), 0, 1) : 0);
+  const offset = rotate([.12, 1.24, -.18], yaw), reloadProgress = presentedReload?.globalProgress ?? (player.reloadTicks > 0 ? clamp(1 - player.reloadTicks / (weaponReloadDuration(player.weapon, player.ammo) || 252), 0, 1) : 0);
   const gunPose = { x: pose.x + offset[0], y: pose.y + offset[1], z: pose.z + offset[2], yaw, pitch, scale: .84 };
   const direction = [Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch)];
   const limit = Math.max(0, rayCoverDistance([gunPose.x, gunPose.y, gunPose.z], direction, map.colliders || [], weaponLength(player.weapon) * gunPose.scale + .12, weaponCoverPadding(player.weapon, gunPose.scale, reloadProgress)) - .025) / gunPose.scale;
@@ -3198,7 +3336,7 @@ export function operativePose(player, animation = playerAnimationPose(player, 0)
       -.020 - crouchBlend * .090 - forward * travel * .28 - lift * .52];
     return { hip, knee, ankle, foot, lift };
   });
-  const aiming = aimProgress(player), reloadProgress = animation.reload?.globalProgress ?? clamp(1 - finite(player.reloadTicks) / (WEAPONS[player.weapon]?.reloadTicks || 252), 0, 1);
+  const aiming = aimProgress(player), reloadProgress = animation.reload?.globalProgress ?? clamp(1 - finite(player.reloadTicks) / (weaponReloadDuration(player.weapon, player.ammo) || 252), 0, 1);
   const reloading = gunHeld(player) && (animation.reload ? animation.reload.reloadActive : finite(player.reloadTicks) > 0), reloadPose = animation.reload || weaponReloadPose(player.weapon, reloadProgress, { active: reloading }), reload = reloadPose.weight;
   const healing = finite(player.healTicks) > 0, potion = healing || player.slot === 'potion', melee = player.slot === 'sword', dual = !potion && (melee ? !!meleeProfile(player).dualWield : gunHeld(player) && !!WEAPONS[player.weapon]?.dualWield), single = melee || potion || player.slot === 'grenade' || player.slot === 'empty', swing = meleeMotion(player);
   const throwLift = finite(player.grenadeThrowTicks) > 0 ? .085 : 0;
@@ -3331,7 +3469,7 @@ function playerMesh(mesh, player, map, time, allied, freeForAll = false, animati
   const heldYaw = sword && player.meleeTicks > 0 ? finite(player.meleeYaw, yaw) : yaw;
   const heldPitch = sword && player.meleeTicks > 0 ? finite(player.meleePitch, pitch) : pitch;
   const handOffset = rotate([potion ? -.14 : sword ? .21 : .14, healing ? (crouch ? .87 : 1.42) : potion || grenade ? (crouch ? .71 : 1.14) : (crouch ? .82 : 1.24), healing ? -.34 : potion || grenade ? -.23 : sword ? -.24 - motion.extension : -.14], heldYaw);
-  const reloadProgress = presentedReload?.globalProgress ?? (player.reloadTicks > 0 ? clamp(1 - player.reloadTicks / (WEAPONS[player.weapon]?.reloadTicks || 252), 0, 1) : 0);
+  const reloadProgress = presentedReload?.globalProgress ?? (player.reloadTicks > 0 ? clamp(1 - player.reloadTicks / (weaponReloadDuration(player.weapon, player.ammo) || 252), 0, 1) : 0);
   const reloadPose = presentedReload || weaponReloadPose(player.weapon, reloadProgress, { active: gunHeld(player) && finite(player.reloadTicks) > 0 });
   const shotAge = playerShotAge(player);
   const worldShot = weaponShotPose(player.weapon, shotAge, aimProgress(player)), worldCycle = weaponCyclePose(player.weapon, shotAge);
@@ -3525,7 +3663,7 @@ export class VoxelRenderer {
         this.tracers.push({ origin, end, born: time, team: event.team, local: event.playerId === localId, width: effects.tracerWidth, color: effects.tracerColor, life: effects.tracerTicks * 1000 / 120, weapon: event.weapon });
         if (event.playerId === localId && localAlive && (!event.pellet || event.pelletCount === 1)) {
           this.presentShots ||= createWeaponShotPresenter();
-          if (this.presentShots.report(event, time)) this.localShot = { born: time, weapon: event.weapon, hand: event.hand === 1 ? 1 : 0 };
+          if (this.presentShots.report(event, time)) this.localShot = { born: time, weapon: event.weapon, hand: event.hand === 1 ? 1 : 0, ...(Number.isInteger(event.shotIndex) ? { shotIndex: event.shotIndex } : {}) };
         }
         if (event.hitKind && event.hitKind !== 'none') {
           this.particles.push(...impactParticles(event, end, direction, map, time, key));
@@ -3742,7 +3880,7 @@ export class VoxelRenderer {
     }
     const acceptedReloadTicks = this.cameraReload?.authoritativeTicks ?? finite(player.reloadTicks);
     const reloadActive = acceptedReloadTicks > 0 && (this.cameraReload ? this.cameraReload.reloadActive : true);
-    const reloadProgress = reloadActive ? clamp(1 - acceptedReloadTicks / (WEAPONS[player.weapon]?.reloadTicks || WEAPONS.carbine.reloadTicks), 0, 1) : 0;
+    const reloadProgress = reloadActive ? clamp(1 - acceptedReloadTicks / (weaponReloadDuration(player.weapon, player.ammo) || WEAPONS.carbine.reloadTicks), 0, 1) : 0;
     const reloadPose = this.cameraReload || weaponReloadPose(player.weapon, reloadProgress, { active: reloadActive });
     const visualReloadProgress = reloadPose.globalProgress;
     const reloadHands = WEAPONS[player.weapon]?.dualWield ? [reloadPose, weaponReloadPose(player.weapon, visualReloadProgress, { active: reloadActive, hand: 1 })] : [reloadPose];
@@ -3800,8 +3938,11 @@ export class VoxelRenderer {
         const clippedZ = Math.max(z, -limit), depth = z + d - clippedZ;
         if (depth > 0) mesh.box(x, y, clippedZ, w, h, depth, color, pose);
       };
-      flashPart(-flash / 2, -.015, -length - .070, flash, flash, .05 + flare * .04, glow);
-      flashPart(-flash * .95, -.013 + flash * .2, -length - .055, flash * 1.9, flash * .38, .028, core);
+      const ports = valorantModel(player.weapon)?.muzzlePorts;
+      const port = ports?.[Math.max(0, Math.floor(finite(this.localShot?.shotIndex, 1)) - 1) % ports.length];
+      const muzzleX = port?.x || 0, muzzleY = port ? port.y - .012 : 0;
+      flashPart(muzzleX - flash / 2, muzzleY - .015, -length - .070, flash, flash, .05 + flare * .04, glow);
+      flashPart(muzzleX - flash * .95, muzzleY - .013 + flash * .2, -length - .055, flash * 1.9, flash * .38, .028, core);
     }
     return mesh.array;
   }
@@ -3851,7 +3992,7 @@ export class VoxelRenderer {
       // Body/camera positions are already projected. Only the raw accepted
       // timer enters this one bounded clock, so it cannot advance twice.
       const source = sameActor ? accepted : { ...player, reloadTicks: 0 };
-      return this.presentReloads(source, time, headContext, { durationTicks: WEAPONS[source.weapon]?.reloadTicks, paused: state.phase === 'paused' || !!options.paused });
+      return this.presentReloads(source, time, headContext, { durationTicks: weaponReloadDuration(source.weapon, source.ammo) || undefined, paused: state.phase === 'paused' || !!options.paused });
     };
     this.cameraReload = presentReload(cameraPlayer);
     const eye = this.presentEye(cameraPlayer, map, time);

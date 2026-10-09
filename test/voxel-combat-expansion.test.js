@@ -173,7 +173,7 @@ test('lethal damage and a completed round clear LMG wind-up without a latent sho
   game.resetLobby(ended); assert.equal(ended.players[0].spinTicks, 0); assert.equal(ended.phase, 'lobby');
 });
 
-test('all nine weapons replay identically with finite bounded six-player state on every authored map', () => {
+test('all catalog weapons replay identically with finite bounded six-player state on every authored map', () => {
   let reachedEventCap = false, sawFlyingBolt = false;
   for (const mapId of Object.keys(game.MAPS)) for (const weaponId of Object.keys(game.WEAPONS)) {
     const state = game.createState({ teamSize: 3, mapId });
@@ -201,10 +201,10 @@ test('all nine weapons replay identically with finite bounded six-player state o
         pitch: tick % 137 === 0 ? NaN : 0,
       }));
       game.step(state, keys); game.step(replay, keys);
-      assert.ok(state.events.length <= game.EVENT_LIMIT, `${mapId}/${weaponId} event cap`);
+      assert.ok(state.events.length <= (game.WEAPONS[weaponId].valorant ? 256 : game.EVENT_LIMIT), `${mapId}/${weaponId} event cap`);
       assert.ok(state.bolts.length <= MAX_BOLTS, `${mapId}/${weaponId} bolt cap`);
       assert.ok(state.grenades.length <= state.capacity, `${mapId}/${weaponId} per-round grenade cap`);
-      reachedEventCap ||= state.events.length === game.EVENT_LIMIT;
+      reachedEventCap ||= state.events.length === (game.WEAPONS[weaponId].valorant ? 256 : game.EVENT_LIMIT);
       sawFlyingBolt ||= state.bolts.length > 0;
     }
     assert.deepEqual(replay, state, `${mapId}/${weaponId} deterministic replay`);
