@@ -2,7 +2,7 @@ import { aimFraction as gunAimFraction, aimLookMultiplier as gunAimLookMultiplie
 import { displayKey, gameKey, getKeyboardLayout, mountKeyboardLayoutPicker, subscribeKeyboardLayout } from './keyboard-layout.js';
 import { copyText, getName, hostInfo, roomUrl, saveName } from './hub/shared.js';
 import { GameAudio } from './audio.js';
-import { createMeleeImpactReporter, weaponCrosshairSpread } from './voxel-client.js';
+import { createMeleeImpactReporter } from './voxel-client.js';
 import { WEAPONS } from './voxel-weapons.js';
 import { resolveActiveFire, weaponReloadDuration } from './voxel-fire-modes.js';
 import { predictLocalMovement, sweepPresentationOffset, traceShot, ADS, HEAL, PLAYER_HEALTH } from './voxel-engine.js';
@@ -10,6 +10,7 @@ import { predictLocalMovement, sweepPresentationOffset, traceShot, ADS, HEAL, PL
 import { meleeLabel, meleeProfile } from './voxel-melee.js';
 import { incomingDamageFeedback, damageFeedbackPresentation, paintDamageFeedback } from './voxel-damage-feedback.js';
 import { createHitFeedback, paintHitFeedback } from './voxel-hit-feedback.js';
+import { createCrosshairPresenter, paintCrosshair } from './voxel-crosshair.js';
 import { combatPresentation, createCorrectionPresenter, createMovementPresenter, hudTransitionKey, interpolatedVoxelState, reconcileMovement, resolvePresentationContacts, withCombatPresentation } from './voxel-presentation.js';
 import { createNetworkTimeline } from './network-timeline.js';
 import { createFpsInputQueue, releaseFpsTouchAction } from './voxel-input-queue.js';
@@ -173,6 +174,9 @@ async function boot() {
   let heartbeat = null, lastTouchLookAt = performance.now(), lastHUDAt = 0, previousPhase = null, previousMatch = null;
   const hitFeedback = createHitFeedback(), hitMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const hitElements = { crosshair: $('crosshair'), scope: $('scope-reticle'), marker: $('hit-marker') };
+  const presentCrosshair = createCrosshairPresenter();
+  let reticleView = null;
+  function clearReticle() { presentCrosshair.reset(); reticleView = null; paintCrosshair(hitElements.crosshair, null); setHidden(hitElements.scope, true); }
   let toastTimer, damageFeedback = null, feedbackUntil = 0, healthView = null, healthGain = 0, healthGainUntil = 0, lastCountdown = null;
   let rosterSignature = '', mapPlanId = '', mapSelf = null, zoneCircle = null, nextCircle = null, idleSignature = '';
   const keys = new Set(), pressedKeys = new Map(), mouse = { fire: false, aim: false };
@@ -242,6 +246,7 @@ async function boot() {
   }
   function neutralize({ pause = false, unlock = false } = {}) {
     weaponWheel.reset();
+    clearReticle();
     reloadAudio.suspend(); paintVitals(null, 'Your', false);
     hitFeedback.reset(); paintHitFeedback(hitElements, { visible: false });
     keys.clear(); pressedKeys.clear(); mouse.fire = mouse.aim = false; rightDrag = false;
@@ -328,10 +333,7 @@ async function boot() {
     updateMap(viewed);
     const nearLoot = local?.alive && phase === 'fight' && engine?.findNearbyLoot ? lootPresentation(engine.findNearbyLoot(state, playerId), local) : null;
     setHidden($('loot-prompt'), !nearLoot || paused || !entered || modalOpen); setText($('loot-name'), nearLoot?.name || ''); setText($('loot-detail'), nearLoot?.detail ? displayKey(nearLoot.detail) : '');
-    const scoped = !!local?.hasGun && !!WEAPONS[local.weapon]?.scoped && aimFraction(local, engine?.ADS?.ticks) >= 14 / 18;
-    setHidden($('scope-reticle'), !controlsActive() || phase !== 'fight' || !scoped); setText($('scope-label'), `${WEAPONS[local?.weapon]?.label || 'PRECISION'} / PRECISION SIGHT`);
-    setHidden($('crosshair'), !controlsActive() || phase !== 'fight' || scoped || readout.healing); $('crosshair').dataset.stance = readout.sword ? 'sword' : local?.aiming ? 'aim' : 'hip';
-    if (local) { const weapon = WEAPONS[local.weapon], ads = aimFraction(local, engine?.ADS?.ticks); const spread = weaponCrosshairSpread(local, engine?.ADS); const size = readout.sword ? 18 : Math.round(20 - ads * 8 + Math.min(60, spread * canvas.clientHeight * 2)); setStyle($('crosshair'), 'width', `${size}px`); setStyle($('crosshair'), 'height', `${size}px`); }
+    if (!controlsActive() || phase !== 'fight') clearReticle();
     const living = aliveParticipants(state), placement = state?.placements?.find(item => item.playerId === playerId);
     setHidden($('spectator-hud'), !local || local.alive || phase !== 'fight'); setText($('placement-label'), placement ? `PLACED #${placement.place}` : 'ELIMINATED'); setText($('spectator-label'), spectating ? `SPECTATING ${lookupName(viewed.id).toUpperCase()}` : 'NO SURVIVORS'); setHidden($('next-spectator'), living.length < 2);
     setHidden($('pause-button'), paused || !entered || !local?.alive || !['countdown', 'fight'].includes(phase)); setHidden($('touch-controls'), !touchMode || !entered || paused || !local?.alive || !['countdown', 'fight'].includes(phase));
@@ -376,7 +378,7 @@ async function boot() {
     const hits = confirmedHitGroups(fresh, playerId); if (hits.length) { const hit = hits.reduce((best, next) => next.damage > best.damage ? next : best); const killed = fresh.some(event => ['kill', 'elimination', 'death'].includes(event.type) && event.targetId === hit.targetId && (event.attackerId ?? event.shooterId ?? event.playerId) === playerId); feedbackUntil = performance.now() + (killed ? 1100 : 650); setText($('combat-feedback'), `${hit.label} · ${Math.round(hit.damage)} HP${killed ? ' · ELIMINATED' : ''}`); }
   }
   function draw(now = performance.now()) {
-    if (!renderer?.available || !state || graphicsError || document.hidden) { reloadAudio.suspend(); paintVitals(null, 'Your', false); return; }
+    if (!renderer?.available || !state || graphicsError || document.hidden) { clearReticle(); reloadAudio.suspend(); paintVitals(null, 'Your', false); return; }
     const rendered = interpolatedState(snapshots, timeline.time(now), playerId, { predictMovement: engine.predictLocalMovement, traceProjectile: engine.traceShot, combatTime: timeline.currentTime(now) }) || { ...state, players: state.players.map(player => ({ ...player })) };
     const local = ownPlayer();
     presentationPlayer = predictedPlayer || local;
@@ -393,6 +395,9 @@ async function boot() {
     const camera = state.phase === 'lobby' ? { ...state.map.spawnPoints[0], alive: false, id: playerId, y: finite(state.map.spawnPoints[0]?.y) } : local?.alive ? presentationPlayer : viewed;
     const viewAim = local?.alive ? aim : cleanAim(camera?.yaw, camera?.pitch);
     renderer.render(rendered, { acceptedPlayers: state.players, playerId, localId: playerId, localPlayer: presentationPlayer, viewPlayer: camera, yaw: viewAim.yaw, pitch: viewAim.pitch + finite(camera?.recoil), time: now }); renderCount++;
+    reticleView = presentCrosshair(camera, now, `${state.mapId}:${state.matchId}:${state.round}:${state.phase}`, { width: canvas.clientWidth, height: canvas.clientHeight, rules: engine.ADS, active: controlsActive() && state.phase === 'fight', reducedMotion: hitMotion.matches });
+    paintCrosshair(hitElements.crosshair, reticleView); setHidden(hitElements.scope, !reticleView.visible || !reticleView.scoped);
+    setText($('scope-label'), `${WEAPONS[camera?.weapon]?.label || 'PRECISION'} / PRECISION SIGHT`);
     paintVitals(camera, camera?.id !== playerId ? `${lookupName(camera?.id)}’s` : 'Your', connected && !paused && !modalOpen && ['countdown', 'fight'].includes(state.phase));
     reloadAudio.observe(state.players.find(player => player.id === camera?.id), { tick: state.tick, context: `${state.mapId}:${state.matchId}:${state.round}`, active: connected && !paused && !modalOpen && state.phase === 'fight' });
     paintHitFeedback(hitElements, hitFeedback.present(local, { now, lifeKey: `${state.mapId}:${state.matchId}:${local?.lifeId || 0}`, active: state.phase === 'fight' && !paused && !modalOpen && connected, reducedMotion: hitMotion.matches })); paintDamageFeedback($('damage-cue'), damageFeedbackPresentation(damageFeedback, camera, { now, lifeKey: state.matchId, yaw: viewAim.yaw, active: state.phase === 'fight' })); setHidden($('combat-feedback'), now >= feedbackUntil);
@@ -588,7 +593,7 @@ async function boot() {
   const pingTimer = setInterval(() => { if (connected && !document.hidden) send({ type: 'ping', time: performance.now() }); }, 1500);
   function destroy() { if (destroyed) return; neutralize({ pause: true, unlock: true }); destroyed = true; clearTimeout(reconnectTimer); clearTimeout(toastTimer); clearInterval(pingTimer); clearInterval(heartbeat); heartbeat = null; if (frameId) cancelAnimationFrame(frameId); frameId = null; socket?.close(); renderer?.destroy(); audio.destroy(); inventory.destroy(); weaponWheel.destroy(); layoutPicker.destroy(); unsubscribeLayout(); for (const remove of removers) remove(); pending = []; snapshots = []; kills.length = 0; eventSeen.clear(); }
   listen(window, 'pagehide', destroy);
-  const inspect = () => { const { map, ...snapshot } = state || {}; return clone({ state: state ? snapshot : null, players: roster, playerId, hostId, input: currentInput(), predictedPlayer, presentationPlayer, presentationPlayers, predictionRemainder: accumulator, predictionTick, actionQueue: actionInputs.inspect(), timeline: timeline.getState(), correction: correction.getState(), connected, controls: { pointerLocked: pointerLocked(), fallback, touch: touchMode, paused, entered, modalOpen }, queueLength: pending.length, renderCount, renderStats: renderer?.stats || null, audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), meleeImpactAudio: meleeImpacts.inspect(), reloadAudio: reloadAudio.inspect(), reloadSounds: audio.inspectReloads(), gunImpactAudio: gunImpacts.inspect(), parryAudio: parryAudio.inspect(), parrySounds: audio.inspectParries(), stamina: staminaView, weaponWheel: weaponWheel.inspect(), graphicsError, spectatorId }); };
+  const inspect = () => { const { map, ...snapshot } = state || {}; return clone({ state: state ? snapshot : null, players: roster, playerId, hostId, input: currentInput(), predictedPlayer, presentationPlayer, presentationPlayers, predictionRemainder: accumulator, predictionTick, actionQueue: actionInputs.inspect(), timeline: timeline.getState(), correction: correction.getState(), connected, controls: { pointerLocked: pointerLocked(), fallback, touch: touchMode, paused, entered, modalOpen }, queueLength: pending.length, renderCount, crosshair: reticleView, renderStats: renderer?.stats || null, audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), meleeImpactAudio: meleeImpacts.inspect(), reloadAudio: reloadAudio.inspect(), reloadSounds: audio.inspectReloads(), gunImpactAudio: gunImpacts.inspect(), parryAudio: parryAudio.inspect(), parrySounds: audio.inspectParries(), stamina: staminaView, weaponWheel: weaponWheel.inspect(), graphicsError, spectatorId }); };
   window.SemagRoyale = Object.freeze({ getState: inspect, inspect }); updateUI();
   try { const [rules, visual] = await Promise.all([import('./voxel-royale-engine.js'), import('./voxel-renderer.js')]); if (destroyed) return; engine = { ...rules, predictLocalMovement, sweepPresentationOffset, traceShot, ADS, HEAL, PLAYER_HEALTH }; renderer = new visual.VoxelRenderer(canvas); renderer.resize(); } catch (cause) { graphicsError = cause?.message || 'This game requires WebGL. Enable hardware acceleration and reload graphics.'; error(graphicsError); updateUI(); return; }
   connect();

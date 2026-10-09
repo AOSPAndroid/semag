@@ -1,0 +1,152 @@
+/* The shell never changes size: spread moves symmetrically around the true aim point. */
+.fps-crosshair,
+.fps-crosshair[data-stance] {
+  --reticle-gap: 4px;
+  --reticle-arm: 5px;
+  --reticle-stroke: 1.5px;
+  --reticle-color: #dcfff6;
+  --reticle-ink: var(--reticle-color);
+  --reticle-outline: #06100fec;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 24px !important;
+  height: 24px !important;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  transform: translate(-50%, -50%);
+  rotate: none;
+  scale: none;
+  translate: none;
+  overflow: visible;
+  opacity: 1;
+  pointer-events: none;
+  filter: none;
+  color: var(--reticle-ink);
+  contain: layout style;
+}
+
+.fps-crosshair[data-reticle] > :is(i, b, em, span) {
+  position: absolute;
+  display: block;
+  inset: auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: .5px;
+  background: var(--reticle-ink);
+  box-shadow: 0 0 0 1px var(--reticle-outline);
+  transform: none;
+  transform-origin: center;
+}
+
+/* Anchor every edge to 50%, including fractional device/CSS pixel sizes. */
+.fps-crosshair[data-reticle] > :is(i, b) {
+  left: calc(50% - var(--reticle-stroke) / 2);
+  width: var(--reticle-stroke);
+  height: var(--reticle-arm);
+}
+.fps-crosshair[data-reticle] > i { top: calc(50% - var(--reticle-gap) - var(--reticle-arm)); }
+.fps-crosshair[data-reticle] > b { top: calc(50% + var(--reticle-gap)); }
+.fps-crosshair[data-reticle] > :is(em, span) {
+  top: calc(50% - var(--reticle-stroke) / 2);
+  width: var(--reticle-arm);
+  height: var(--reticle-stroke);
+}
+.fps-crosshair[data-reticle] > em { left: calc(50% - var(--reticle-gap) - var(--reticle-arm)); }
+.fps-crosshair[data-reticle] > span { left: calc(50% + var(--reticle-gap)); }
+
+/* The center remains readable against both bright snow and dark interiors. */
+.fps-crosshair::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 2px;
+  height: 2px;
+  margin: 0;
+  border: 0;
+  border-radius: .5px;
+  box-sizing: border-box;
+  background: var(--reticle-ink);
+  box-shadow: 0 0 0 1px var(--reticle-outline);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.fps-crosshair[data-reticle=precision]::before {
+  width: 1.5px;
+  height: 1.5px;
+  border-radius: 50%;
+}
+.fps-crosshair[data-reticle=sidearm]::before { border-radius: 50%; }
+.fps-crosshair[data-reticle=rifle]::before { display: none; }
+.fps-crosshair[data-reticle=smg]::before {
+  width: 3px;
+  height: 3px;
+}
+.fps-crosshair[data-reticle=lmg]::before {
+  width: 5px;
+  height: 5px;
+  border: 1px solid var(--reticle-ink);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: 0 0 0 1px var(--reticle-outline), inset 0 0 0 1px var(--reticle-outline);
+}
+
+/* A shell's cone is a ring; a single solid slug uses an open diamond. */
+.fps-crosshair[data-reticle=shotgun]::before,
+.fps-crosshair[data-reticle=slug]::before {
+  width: calc(var(--reticle-gap) * 2);
+  height: calc(var(--reticle-gap) * 2);
+  background: transparent;
+  border: var(--reticle-stroke) solid var(--reticle-ink);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--reticle-outline), inset 0 0 0 1px var(--reticle-outline);
+}
+.fps-crosshair[data-reticle=shotgun][data-ballistic=volley]::before { border-style: dashed; }
+.fps-crosshair[data-reticle=shotgun][data-ballistic=airburst]::before { border-style: dotted; }
+.fps-crosshair[data-reticle=slug]::before {
+  width: calc(var(--reticle-gap) * 1.41421356);
+  height: calc(var(--reticle-gap) * 1.41421356);
+  border-radius: 0;
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.fps-crosshair[data-reticle=bolt]::before {
+  width: 3px;
+  height: 3px;
+  border-radius: 0;
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+.fps-crosshair[data-reticle=blade] > :is(i, b, em, span) { opacity: 0; }
+.fps-crosshair[data-reticle=blade]::before {
+  width: 6px;
+  height: 6px;
+  border: 1.5px solid var(--reticle-ink);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: 0 0 0 1px var(--reticle-outline), inset 0 0 0 1px var(--reticle-outline);
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+/* Confirmed damage retains the existing short arm pulse and gold headshot sparkle. */
+.fps-crosshair[data-hit-kind]:not([data-hit-kind=""]) {
+  --reticle-ink: var(--hit-color, var(--reticle-color));
+}
+.fps-crosshair[data-hit-kind]:not([data-hit-kind=""])::before {
+  filter: drop-shadow(0 0 2px var(--hit-glow, var(--reticle-ink)));
+}
+.fps-crosshair[data-hit-motion=reduced] > *,
+.fps-crosshair[data-hit-motion=reduced]::before,
+.fps-crosshair[data-hit-motion=reduced]::after {
+  animation: none !important;
+  transition: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .fps-crosshair > *, .fps-crosshair::before, .fps-crosshair::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

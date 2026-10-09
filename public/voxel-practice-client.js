@@ -10,9 +10,10 @@ import { WEAPONS } from './voxel-weapons.js';
 import { MELEE_WEAPONS } from './voxel-melee.js';
 import { VoxelRenderer } from './voxel-renderer.js';
 import { createMovementPresenter, combatPresentation, withCombatPresentation, resolvePresentationContacts } from './voxel-presentation.js';
-import { cleanAim, composeInput, controlForKey, aimFraction, aimLookMultiplier, combatReadout, isFormTarget, hasGunshotReport, combatEventPerspective, createMeleeImpactReporter, LOOK_SENSITIVITY, populateWeaponSelect, renderWeaponDetails, weaponCrosshairSpread } from './voxel-client.js';
+import { cleanAim, composeInput, controlForKey, aimLookMultiplier, combatReadout, isFormTarget, hasGunshotReport, combatEventPerspective, createMeleeImpactReporter, LOOK_SENSITIVITY, populateWeaponSelect, renderWeaponDetails } from './voxel-client.js';
 import { incomingDamageFeedback, damageFeedbackPresentation } from './voxel-damage-feedback.js';
 import { createHitFeedback, paintHitFeedback } from './voxel-hit-feedback.js';
+import { createCrosshairPresenter, paintCrosshair } from './voxel-crosshair.js';
 import { setHidden, setAttribute, setStyle, setDisabled } from './hub/dom.js';
 import { createPractice, startPractice, stepPractice, pausePractice, resumePractice, getPracticeStats, TICK_RATE } from './voxel-practice-engine.js';
 import { tickFraction } from './display-timing.js';
@@ -75,6 +76,9 @@ export function bootPractice() {
   let state, aim = { yaw: 0, pitch: 0 }, previousPlayers = [], presentationPlayer = null, lastHudAt = -Infinity, lastPhase = '';
   const hitFeedback = createHitFeedback(), hitMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const hitElements = { crosshair: $('practice-crosshair'), scope: $('practice-scope'), marker: $('practice-hit') };
+  const presentCrosshair = createCrosshairPresenter();
+  let reticleView = null;
+  function clearReticle() { presentCrosshair.reset(); reticleView = null; paintCrosshair(hitElements.crosshair, null); setHidden(hitElements.scope, true); }
   let urgentHud = '', eventCursor = 0, feedbackUntil = 0, damageFeedback = null, lastDrawAt = 0, fallback = false, modalOpen = false;
   let renderCount = 0, physicsSamples = 0, lastFraction = 0, activeSession = false, lastCountdown = null, returnFocus = null, dojoToolsOpen = false;
   const listeners = [], keys = new Set(), physicalKeys = new Map(), mouse = { fire: false, aim: false }, inputQueue = createPracticeInputQueue({ extraActions: dojo ? DOJO_ACTIONS : [] });
@@ -145,6 +149,7 @@ export function bootPractice() {
   function stopFrame() { if (frameId !== null) cancelAnimationFrame(frameId); frameId = null; previousFrame = null; accumulator = 0; }
   function release() {
     weaponWheel.reset();
+    clearReticle();
     reloadAudio.suspend(); paintVitals(null, 'Your', false);
     hitFeedback.reset(); paintHitFeedback(hitElements, { visible: false });
     inputQueue.reset();
@@ -290,7 +295,7 @@ export function bootPractice() {
     }
   }
   function draw(now = performance.now()) {
-    if (destroyed || !renderer?.available) { reloadAudio.suspend(); paintVitals(null, 'Your', false); return; } const live = active(); if (live) lastDrawAt = now;
+    if (destroyed || !renderer?.available || graphicsError || document.hidden) { clearReticle(); reloadAudio.suspend(); paintVitals(null, 'Your', false); return; } const live = active(); if (live) lastDrawAt = now;
     const view = { ...state, players: state.players.map(player => {
       let pose = player;
       if (state.phase === 'fight' && player.alive) { if (!movement.has(player.id)) movement.set(player.id, createMovementPresenter()); pose = movement.get(player.id)(player, player.id === 0 ? inputQueue.preview(currentInput()) : player.previousInput, state.map, accumulator, predictLocalMovement, state.players); }
@@ -302,11 +307,8 @@ export function bootPractice() {
     view.fighters = view.players; presentationPlayer = view.players[0]; renderer.render(view, { acceptedPlayers: state.players, playerId: 0, localId: 0, localPlayer: presentationPlayer, cameraPlayer: presentationPlayer, yaw: aim.yaw, pitch: aim.pitch + (presentationPlayer.recoil || 0), time: live ? now : lastDrawAt }); renderCount++; lastFraction = tickFraction(accumulator, STEP);
     paintVitals(presentationPlayer, 'Your', activeSession && active());
     reloadAudio.observe(state.players[0], { tick: state.tick, context: `${state.mapId}:${state.practice.sessionId}`, active: active() && state.phase === 'fight' });
-    const scoped = state.phase === 'fight' && presentationPlayer.alive && !modalOpen && presentationPlayer.slot !== 'sword' && WEAPONS[presentationPlayer.weapon]?.scoped && aimFraction(presentationPlayer, ADS.ticks) >= 14 / 18;
-    const spread = weaponCrosshairSpread(presentationPlayer, ADS); const ads = aimFraction(presentationPlayer, ADS.ticks);
-    const size = presentationPlayer.slot === 'sword' ? 18 : Math.round(20 - ads * 8 + Math.min(60, spread * canvas.clientHeight * 2));
-    setStyle($('practice-crosshair'), 'width', `${size}px`); setStyle($('practice-crosshair'), 'height', `${size}px`);
-    setHidden($('practice-scope'), !scoped); setHidden($('practice-crosshair'), state.phase !== 'fight' || modalOpen || scoped || presentationPlayer.healing);
+    reticleView = presentCrosshair(presentationPlayer, now, `${state.mapId}:${state.practice.sessionId}:${state.phase}`, { width: canvas.clientWidth, height: canvas.clientHeight, rules: ADS, active: live && state.phase === 'fight' && !modalOpen && !dojoToolsOpen, reducedMotion: hitMotion.matches });
+    paintCrosshair(hitElements.crosshair, reticleView); setHidden(hitElements.scope, !reticleView.visible || !reticleView.scoped);
     paintHitFeedback(hitElements, hitFeedback.present(state.players[0], { now, lifeKey: `${state.mapId}:${state.practice.sessionId}`, active: state.phase === 'fight' && !modalOpen, reducedMotion: hitMotion.matches })); setHidden($('practice-feedback'), now >= feedbackUntil || state.phase !== 'fight');
     const cue = damageFeedbackPresentation(damageFeedback, state.players[0], { now, lifeKey: state.practice.sessionId, yaw: aim.yaw, active: state.phase === 'fight' }), element = $('practice-damage');
     setHidden(element, !cue.visible);
@@ -419,7 +421,7 @@ export function bootPractice() {
   listen(window, 'blur', () => { if (active()) pause(); else release(); }); listen(document, 'visibilitychange', () => { if (document.hidden && active()) pause(); }); listen(window, 'pagehide', destroy);
   listen(canvas, 'voxel-renderer-error', event => { if (event.detail?.message) { graphicsError = event.detail.message; if (active()) pause(); setHidden($('practice-error'), false); setText('practice-error-text', graphicsError); } else { graphicsError = ''; setHidden($('practice-error'), true); updateHud(performance.now(), true); draw(performance.now()); } });
   const unsubscribe = subscribeKeyboardLayout(() => { release(); hints(); }); hints(); preview(); graphics();
-  const inspect = () => copy({ state: { ...state, map: undefined, fighters: undefined }, stats: getPracticeStats(state), input: currentInput(), queuedActions: inputQueue.inspect(), presentationPlayer, controls: { pointerLocked: locked(), fallback, modalOpen, paused: state.phase === 'paused', entered: activeSession, touch: touchMode }, renderCount, renderStats: renderer?.stats || null, audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), meleeImpactAudio: meleeImpacts.inspect(), reloadAudio: reloadAudio.inspect(), reloadSounds: audio.inspectReloads(), gunImpactAudio: gunImpacts.inspect(), parryAudio: parryAudio.inspect(), parrySounds: audio.inspectParries(), stamina: staminaView, weaponWheel: weaponWheel.inspect(), graphicsError, displayTiming: { physicsSamples, renderSamples: renderCount, lastFraction } });
+  const inspect = () => copy({ state: { ...state, map: undefined, fighters: undefined }, stats: getPracticeStats(state), input: currentInput(), queuedActions: inputQueue.inspect(), presentationPlayer, controls: { pointerLocked: locked(), fallback, modalOpen, paused: state.phase === 'paused', entered: activeSession, touch: touchMode }, renderCount, crosshair: reticleView, renderStats: renderer?.stats || null, audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), meleeImpactAudio: meleeImpacts.inspect(), reloadAudio: reloadAudio.inspect(), reloadSounds: audio.inspectReloads(), gunImpactAudio: gunImpacts.inspect(), parryAudio: parryAudio.inspect(), parrySounds: audio.inspectParries(), stamina: staminaView, weaponWheel: weaponWheel.inspect(), graphicsError, displayTiming: { physicsSamples, renderSamples: renderCount, lastFraction } });
   const api = Object.freeze({ getState: inspect, getDisplayTiming: () => ({ physicsSamples, renderSamples: renderCount, lastFraction }) }); window.firesidePractice = api;
   return { destroy, inspect };
 }

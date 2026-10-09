@@ -18,6 +18,10 @@ Click an image to open it at full size.
 
 [![Visual voxel armory with weapon cards, categories, a rotatable 3D model and explicit Equip](docs/screenshots/voxel-armory.png)](docs/screenshots/voxel-armory.png)
 
+**Weapon reticles · Voxel Dojo**
+
+[![Live Voxel Dojo gameplay with the shotgun spread ring centered on a training target](docs/screenshots/voxel-weapon-reticles.png)](docs/screenshots/voxel-weapon-reticles.png)
+
 **Last Stand results**
 
 [![Last Stand death screen showing damage dealt, wave, hostiles defeated, survival time and Replay](docs/screenshots/voxel-last-stand-results.png)](docs/screenshots/voxel-last-stand-results.png)
@@ -233,6 +237,8 @@ Blades have distinct close-combat roles: the sword deals **100** base damage wit
 Blades now have confirmed-hit combos: **three strikes** for sword, katana and knife, **two** for axe, and **four** for twin tonfas. Release and click again near the end of recovery or within **0.35 seconds** after it ends. Actual damage confirms each link; a miss, parry, expired window, equipment swap or pause restarts the chain. The final strike deals extra damage, shows a brighter gold slash and adds a modest shove and brief hit stun. Enemy immunity prevents repeated stun locks; later monsters and brutes resist stagger. The existing weapon status shows your chain count and follow-up window. [Blade combo guide](docs/voxel-blade-combos.md).
 
 Right-click with a knife commits a stronger, narrower thrust: 60 base damage, 2.15 metres of reach and a longer recovery than the quick left-click stab. Right-click with a sword, katana, axe or dual tonfas raises a timed directional parry. Face an incoming melee attack and commit just before contact; a successful guard blocks one contact, with a visible clash and optional sound. Parries cost sprint stamina, have weapon-specific timing and cooldowns, and cannot block bullets, grenades or the storm. Knife thrusts and parries lock their direction when committed. Sword and katana cuts allow a small aim correction during windup, then lock their direction when the active cut starts. Holding right-click never repeats melee actions, and switching or dropping a weapon preserves its cooldown. These actions share the same rules across Breach, Last Stand, Royale and practice. Touch players see **STAB** or **PARRY** on the existing aim button.
+
+Weapon reticles now distinguish sidearms, SMGs, rifles, precision guns, machine guns, shotgun pellets, solid slugs, bolts and blades. Pellet shells show a ring, slugs an open diamond, and bolts a separate diamond aiming cue. Movement, airborne accuracy, firing bloom and ADS drive the gap using the same spread rules as real shots. The center stays fixed while the gap smoothly expands and settles at display refresh rate, including in online Breach and Royale. Gold headshot and orange body-hit feedback remain. [Reticle guide](docs/voxel-reticles.md).
 
 Gun aiming smoothly lowers mouse sensitivity as the sights settle. At full aim, a carbine turns at about 42% of hip-fire mouse speed; magnified marksman and sniper sights turn more slowly. The same scaling applies to captured mouse look, right-button dragging and touch look. Selecting a blade restores normal look speed.
 

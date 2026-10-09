@@ -5,11 +5,12 @@ import { displayKey, gameKey, getKeyboardLayout, mountKeyboardLayoutPicker, subs
 import { copyText, getName, hostInfo, roomUrl, saveName } from './hub/shared.js';
 import { ADS, HEAL, PLAYER_HEALTH, predictLocalMovement, sweepPresentationOffset, traceShot } from './voxel-engine.js';
 import { WEAPONS } from './voxel-weapons.js';
-import { cleanAim, composeInput, controlForKey, aimFraction, aimLookMultiplier, combatReadout, isFormTarget, hasGunshotReport, combatEventPerspective, createMeleeImpactReporter, createContinuousInputPacer as createInputPacer, LOOK_SENSITIVITY, populateWeaponSelect, renderWeaponDetails, weaponCrosshairSpread } from './voxel-client.js';
+import { cleanAim, composeInput, controlForKey, aimLookMultiplier, combatReadout, isFormTarget, hasGunshotReport, combatEventPerspective, createMeleeImpactReporter, createContinuousInputPacer as createInputPacer, LOOK_SENSITIVITY, populateWeaponSelect, renderWeaponDetails } from './voxel-client.js';
 import { inventoryLootPresentation, inventoryEventFeedback, inventorySwapPresentation, mountInventoryHotbar, mountWeaponWheel } from './voxel-inventory-ui.js';
 import { combatPresentation, createCorrectionPresenter, createMovementPresenter, interpolatedVoxelState, reconcileMovement, resolvePresentationContacts, withCombatPresentation } from './voxel-presentation.js';
 import { incomingDamageFeedback, damageFeedbackPresentation, paintDamageFeedback } from './voxel-damage-feedback.js';
 import { createHitFeedback, paintHitFeedback } from './voxel-hit-feedback.js';
+import { createCrosshairPresenter, paintCrosshair } from './voxel-crosshair.js';
 import { createFpsInputQueue, FPS_EDGE_ACTIONS, releaseFpsTouchAction } from './voxel-input-queue.js';
 import { createNetworkTimeline } from './network-timeline.js';
 import { tickFraction } from './display-timing.js';
@@ -130,6 +131,9 @@ export async function bootHorde() {
   let predictionTick = 0, sequence = 0, renderCount = 0, physicsSamples = 0, lastFraction = 0, lastHUDAt = -Infinity, lastDrawAt = 0, previousPhase = null;
   const hitFeedback = createHitFeedback(), hitMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const hitElements = { crosshair: $('horde-crosshair'), scope: $('horde-scope'), marker: $('horde-hit') };
+  const presentCrosshair = createCrosshairPresenter();
+  let reticleView = null;
+  function clearReticle() { presentCrosshair.reset(); reticleView = null; paintCrosshair(hitElements.crosshair, null); hide('horde-scope', true); }
   let feedbackUntil = 0, damageFeedback = null, lastCountdown = null, lastWave = 0, waveBannerUntil = 0, returnFocus = null, heartbeat = null;
   const keys = new Set(), physicalKeys = new Map(), mouse = { fire: false, aim: false }, touch = { move: { x: 0, y: 0 }, look: { x: 0, y: 0 }, actions: new Set() };
   const actionPointers = new Map(), padPointers = new Map(), inputQueue = createFpsInputQueue(), pacer = createInputPacer(60), movement = new Map();
@@ -182,6 +186,7 @@ export async function bootHorde() {
   function stopFrame() { if (frameId !== null) cancelAnimationFrame(frameId); frameId = null; previousFrame = null; accumulator = 0; }
   function clearInputs({ fence = false } = {}) {
     weaponWheel.reset();
+    clearReticle();
     reloadAudio.suspend(); paintVitals(null, 'Your', false);
     worldLabels.clear();
     hitFeedback.reset(); paintHitFeedback(hitElements, { visible: false });
@@ -350,7 +355,7 @@ export async function bootHorde() {
     updateTeam();
   }
   function draw(now = performance.now()) {
-    if (!renderer?.available || !state || destroyed || graphicsError || document.hidden) { worldLabels.clear(); reloadAudio.suspend(); paintVitals(null, 'Your', false); return; }
+    if (!renderer?.available || !state || destroyed || graphicsError || document.hidden) { clearReticle(); worldLabels.clear(); reloadAudio.suspend(); paintVitals(null, 'Your', false); return; }
     const live = running(); if (live) lastDrawAt = now;
     let view;
     if (solo) {
@@ -376,11 +381,8 @@ export async function bootHorde() {
     worldLabels.paint(renderer.worldLabels, { active: labelsActive() });
     paintVitals(camera, camera?.id !== playerId ? `${nameFor(camera?.id)}’s` : 'Your', labelsActive());
     reloadAudio.observe(state.players.find(player => player.id === camera?.id), { tick: state.tick, context: `${state.mapId}:${state.matchId}:${state.round}`, active: connected && !paused && !modalOpen && state.phase === 'fight' }); renderCount++; lastFraction = tickFraction(accumulator, 1 / engine.TICK_RATE);
-    const scoped = MOVEMENT_PHASES.includes(state.phase) && camera?.alive && !modalOpen && !paused && camera.slot !== 'sword' && WEAPONS[camera.weapon]?.scoped && aimFraction(camera, ADS.ticks) >= 14 / 18;
-    const spread = weaponCrosshairSpread(camera, ADS); const ads = aimFraction(camera, ADS.ticks);
-    const size = camera?.slot === 'sword' ? 18 : Math.round(20 - ads * 8 + Math.min(60, spread * canvas.clientHeight * 2));
-    $('horde-crosshair').style.width = `${size}px`; $('horde-crosshair').style.height = `${size}px`;
-    hide('horde-scope', !scoped); hide('horde-crosshair', state.phase !== 'fight' || modalOpen || paused || !camera?.alive || scoped || camera.healing);
+    reticleView = presentCrosshair(camera, now, `${state.mapId}:${state.matchId}:${state.round}:${state.phase}`, { width: canvas.clientWidth, height: canvas.clientHeight, rules: ADS, active: labelsActive() && !paused && state.phase === 'fight', reducedMotion: hitMotion.matches });
+    paintCrosshair(hitElements.crosshair, reticleView); hide('horde-scope', !reticleView.visible || !reticleView.scoped);
     paintHitFeedback(hitElements, hitFeedback.present(localPlayer(), { now, lifeKey: `${state.mapId}:${state.matchId}:${localPlayer()?.lifeId}`, active: state.phase === 'fight' && !paused && !modalOpen && connected, reducedMotion: hitMotion.matches })); hide('horde-feedback', now >= feedbackUntil || !LIVE_PHASES.includes(state.phase));
     paintDamageFeedback($('horde-damage'), damageFeedbackPresentation(damageFeedback, localPlayer(), { now, lifeKey: `${state.matchId}:${localPlayer()?.lifeId}`, yaw: aim.yaw, active: state.phase === 'fight' && !paused }));
   }
@@ -552,7 +554,7 @@ export async function bootHorde() {
     if (solo) preview(); graphics(); if (!solo) { connect(); hostInfo().then(info => { invite = `${info.origin}/voxel-horde.html?room=${encodeURIComponent(roomId)}`; }).catch(() => {}); }
   } catch (cause) { graphicsError = cause?.message || 'The game could not load.'; error(`Voxel Last Stand could not load: ${graphicsError}`); }
   heartbeat = setInterval(() => { if (!solo && connected && !document.hidden && LIVE_PHASES.includes(state?.phase)) sendInput(); }, 50);
-  const inspect = () => copy({ state: state ? { ...state, map: undefined, fighters: undefined } : null, solo, playerId, hostId, aim, paused: paused || state?.phase === 'paused', connected, roomPlayers: roster, pendingInputs: pending, queuedActions: inputQueue.inspect(), presentationPlayer, presentationPlayers, controls: { pointerLocked: locked(), fallback, touch: touchMode, entered, modalOpen }, renderCount, renderStats: renderer?.stats || null, worldLabels: worldLabels.inspect(), audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), meleeImpactAudio: meleeImpacts.inspect(), reloadAudio: reloadAudio.inspect(), reloadSounds: audio.inspectReloads(), gunImpactAudio: gunImpacts.inspect(), parryAudio: parryAudio.inspect(), parrySounds: audio.inspectParries(), stamina: staminaView, weaponWheel: weaponWheel.inspect(), monsterAudio: audio.inspectMonsters(), graphicsError, displayTiming: { physicsSamples, renderSamples: renderCount, lastFraction }, timeline: timeline.getState(), spectatorId });
+  const inspect = () => copy({ state: state ? { ...state, map: undefined, fighters: undefined } : null, solo, playerId, hostId, aim, paused: paused || state?.phase === 'paused', connected, roomPlayers: roster, pendingInputs: pending, queuedActions: inputQueue.inspect(), presentationPlayer, presentationPlayers, controls: { pointerLocked: locked(), fallback, touch: touchMode, entered, modalOpen }, renderCount, crosshair: reticleView, renderStats: renderer?.stats || null, worldLabels: worldLabels.inspect(), audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), meleeImpactAudio: meleeImpacts.inspect(), reloadAudio: reloadAudio.inspect(), reloadSounds: audio.inspectReloads(), gunImpactAudio: gunImpacts.inspect(), parryAudio: parryAudio.inspect(), parrySounds: audio.inspectParries(), stamina: staminaView, weaponWheel: weaponWheel.inspect(), monsterAudio: audio.inspectMonsters(), graphicsError, displayTiming: { physicsSamples, renderSamples: renderCount, lastFraction }, timeline: timeline.getState(), spectatorId });
   window.semagHorde = Object.freeze({ getState: inspect, getDebugState: inspect, getDisplayTiming: () => ({ physicsSamples, renderSamples: renderCount, lastFraction }) });
   return { destroy, inspect };
 }
