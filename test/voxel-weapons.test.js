@@ -36,7 +36,7 @@ test('original SMG and rebalanced shotgun retain exact falloff, rounding and hea
 
 test('new damage rewards head accuracy without turning the crossbow into a body-shot kill', () => {
   assert.equal(weaponDamage('sniper', 'body', 35), 100);
-  assert.equal(weaponDamage('sniper', 'head', 35), 150);
+  assert.equal(weaponDamage('sniper', 'head', 35), 200);
   assert.equal(weaponDamage('crossbow', 'body', 35), 75);
   assert.equal(weaponDamage('crossbow', 'head', 35), 150);
   assert.equal(weaponDamage('lmg', 'body', 10), 26);

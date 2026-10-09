@@ -98,8 +98,8 @@ test('every loadout applies reduced leg damage through real gun or ballistic con
   }
 });
 
-test('a scoped sniper preserves leg, torso and head damage against the larger starting health pool', () => {
-  for (const [relativeY, expectedHp, kind] of [[.25, 130, 'leg'], [.9, 100, 'body'], [1.62, 50, 'head']]) {
+test('a scoped sniper rewards a real headshot with a kill while body and leg contacts remain survivable', () => {
+  for (const [relativeY, expectedHp, kind] of [[.25, 130, 'leg'], [.9, 100, 'body'], [1.62, 0, 'head']]) {
     const { state, target } = lane({ weapon: 'sniper' });
     const pitch = Math.atan2(relativeY - WORLD.eyeHeight, 4);
     ticks(state, 18, { 0: { aim: true, pitch } }); ticks(state, 1, { 0: { aim: true, fire: true, pitch } });

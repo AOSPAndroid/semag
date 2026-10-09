@@ -866,9 +866,18 @@ function fireRound(state, f, weapon, pendingDamage, arena, fire = null) {
     const contacts = [];
     for (const contact of hit.contacts || [hit]) if (contact.playerId !== null && state.players[contact.playerId]?.team !== f.team) {
       const slugDamage = fireMode === 'airburstSlug' ? weapon.alternateFire?.preBurstDamage?.[contact.kind] : undefined;
-      const contactDamage = (Number.isFinite(slugDamage) ? slugDamage : weaponDamage(weapon, contact.kind, contact.distance + distanceOffset)) * (contact.damageMultiplier ?? 1);
+      let contactDamage = (Number.isFinite(slugDamage) ? slugDamage : weaponDamage(weapon, contact.kind, contact.distance + distanceOffset)) * (contact.damageMultiplier ?? 1);
+      const target = state.players[contact.playerId];
+      // A verified, unobstructed sniper head contact is a monster weak-point
+      // kill even when later waves increase HP. Attenuated wall/actor contacts
+      // retain ordinary damage; no client headshot flag can grant this bonus.
+      const lethalMonsterHeadshot = contact.kind === 'head' && (weapon.id === 'sniper' || weapon.family === 'sniper')
+        && (contact.damageMultiplier ?? 1) === 1 && (contact.penetrationCount ?? 0) === 0
+        && monsterTypeId(target) !== null && target.alive && Number.isFinite(target.hp) && target.hp > 0
+        && (contact.targetLifeId === undefined || contact.targetLifeId === (target.lifeId || 0));
+      if (lethalMonsterHeadshot) contactDamage = Math.max(contactDamage, target.hp);
       damage += contactDamage;
-      pendingDamage.push({ playerId: f.id, targetId: contact.playerId, ...(weapon.valorant ? { attackerLifeId: f.lifeId || 0, targetLifeId: contact.targetLifeId || 0, penetrationCount: contact.penetrationCount || 0 } : {}), damage: contactDamage, hitKind: contact.kind, headshot: contact.kind === 'head', attack: 'gun', weapon: f.weapon, hitX: contact.x, hitY: contact.y, hitZ: contact.z, dx: direction.x, dy: direction.y, dz: direction.z });
+      pendingDamage.push({ playerId: f.id, targetId: contact.playerId, ...(weapon.valorant || lethalMonsterHeadshot ? { attackerLifeId: f.lifeId || 0, targetLifeId: contact.targetLifeId ?? (target.lifeId || 0), penetrationCount: contact.penetrationCount || 0 } : {}), damage: contactDamage, hitKind: contact.kind, headshot: contact.kind === 'head', attack: 'gun', weapon: f.weapon, hitX: contact.x, hitY: contact.y, hitZ: contact.z, dx: direction.x, dy: direction.y, dz: direction.z });
       if (weapon.valorant) contacts.push({ targetId: contact.playerId, targetLifeId: contact.targetLifeId || 0, kind: contact.kind, damage: contactDamage, distance: contact.distance + distanceOffset, x: contact.x, y: contact.y, z: contact.z, penetrationCount: contact.penetrationCount || 0 });
     }
     emit(state, 'shot', { playerId: f.id, targetId: hit.playerId, weapon: f.weapon, hand: f.lastShotHand, pellet, pelletCount, x: origin.x, y: origin.y, z: origin.z, dx: direction.x, dy: direction.y, dz: direction.z, hitX: hit.x, hitY: hit.y, hitZ: hit.z, hitKind: hit.kind, colliderId: hit.colliderId, damage,

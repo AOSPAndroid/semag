@@ -51,8 +51,9 @@ ADS zoom multipliers are 1.15× for SMGs/machine guns, 1.25× for Bulldog/Phanto
 
 ## Deliberate Semag adaptations
 
-These factual profiles are applied to Semag's existing **200 HP** combat. There is no armor/economy conversion or global health rebalance. Body and head values are not scaled to force VALORANT's 150-health kill thresholds. Legacy gun balance is untouched.
+These factual profiles are applied to Semag's existing **200 HP** combat. There is no armor/economy conversion or global health rebalance. Body and head values are not scaled to force VALORANT's 150-health kill thresholds. The original Rook sniper now deals 200 head / 100 body / 70 leg damage.
 
+- **Sniper headshots:** Rook, Marshal, Outlaw and Operator kill full-health players with one clean headshot. A verified, unattenuated head contact also kills a recognized monster regardless of wave health. Body/leg damage, range, physical head hitboxes and cover remain unchanged. Penetrated cover or an earlier actor cancels the monster weak-point bonus; actual damage credit is capped to remaining HP. This weak-point rule is a Semag adaptation, separate from the reference damage table.
 - **Cadence:** one tick is 1/120 s. Integer `cooldown` remains available to old UI contracts. New `fireIntervalTicks` and `adsFireIntervalTicks` retain fractional researched rates; the simulation carries tick remainder rather than rounding every shot upward.
 - **Burst spacing:** the API gives effective ADS rates and burst counts, but not authoritative within-burst spacing. Semag uses 6 ticks between Stinger rounds and 12 between Bulldog rounds, then derives recovery so the launch-to-launch period reproduces the API's average rate exactly. These intra-burst timings are calibrated, not claimed as Riot measurements.
 - **Odin acceleration:** the initial/final/ADS fire rates come from source data. Its one-second acceleration ramp is a Semag tuning choice; the public data does not expose the authoritative ramp duration.
