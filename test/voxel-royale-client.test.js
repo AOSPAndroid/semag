@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createCombatPlayer, predictLocalMovement, emptyInput, PLAYER_HEALTH } from '../public/voxel-engine.js';
+import { createCombatPlayer, predictLocalMovement, emptyInput, PLAYER_HEALTH, HEAL } from '../public/voxel-engine.js';
 import { WEAPONS } from '../public/voxel-weapons.js';
 import { initializeInventory } from '../public/voxel-inventory.js';
 import { cleanAim, neutralInput, controlForKey, controlsAllowed, composeInput, createInputPacer, aliveParticipants, canHostStart, roomPresentation, spectatorPlayer, lootPresentation, stormPresentation, healthPresentation, combatReadout, aimFraction, confirmedHitGroups, reconcilePlayer, interpolatedState } from '../public/voxel-royale-client.js';
@@ -121,7 +121,7 @@ test('HP responds immediately, recent loss decays and spectator or rematch never
 test('reload and healing progress follow actual simulation ticks and reserves', () => {
   const own = player(0, { hasGun: true, weapon: 'crossbow', slot: 'primary', ammo: 0, reserve: 4, reloadTicks: WEAPONS.crossbow.reloadTicks / 2 });
   let readout = combatReadout(own); assert.equal(readout.progress.percent, 50); assert.match(readout.status, /RELOADING/);
-  own.hp = 80; own.healTicks = 120; own.potions = 0; readout = combatReadout(own); assert.equal(readout.ammo, '+60'); assert.equal(readout.progress.percent, 50); assert.equal(readout.healing, true);
+  own.hp = 80; own.healTicks = HEAL.ticks / 2; own.potions = 1; readout = combatReadout(own); assert.equal(readout.ammo, '+60'); assert.equal(readout.progress.percent, 50); assert.equal(readout.healing, true);
   own.hp = 185; assert.equal(combatReadout(own).ammo, '+15', 'healing stops at authoritative maximum health');
 });
 

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createCombatPlayer, combatStep, emptyInput, pickupCombatLoot } from '../public/voxel-engine.js';
+import { createCombatPlayer, combatStep, emptyInput, pickupCombatLoot, HEAL } from '../public/voxel-engine.js';
 import { WEAPONS } from '../public/voxel-weapons.js';
 import { createInventoryGun, initializeInventory, refreshInventory, inventoryTotal, inventoryPickupHint } from '../public/voxel-inventory.js';
 import { createFpsInputQueue } from '../public/voxel-input-queue.js';
@@ -65,9 +65,9 @@ test('the selected potion drinks without firing the mirrored gun and holding its
   const state = fixture(), player = state.players[0]; player.hp = 90;
   tick(state, { slot3: true, fire: true }); assert.equal(player.shots, 0); assert.equal(player.healTicks, 0);
   tick(state); tick(state, { fire: true });
-  assert.equal(player.healTicks, 240); assert.equal(player.potions, 0); assert.equal(player.slot, 'empty');
-  for (let index = 0; index < 240; index++) tick(state, { fire: true });
-  assert.equal(player.hp, 150); assert.equal(player.shots, 0); assert.equal(player.ammo, WEAPONS.carbine.magazine);
+  assert.equal(player.healTicks, HEAL.ticks); assert.equal(player.potions, 1); assert.equal(player.slot, 'potion');
+  for (let index = 0; index < HEAL.ticks; index++) tick(state, { fire: true });
+  assert.equal(player.hp, 150); assert.equal(player.potions, 0); assert.equal(player.slot, 'empty'); assert.equal(player.shots, 0); assert.equal(player.ammo, WEAPONS.carbine.magazine);
 });
 
 test('a selected frag throws exactly once and cannot fire the hidden gun from a held trigger', () => {

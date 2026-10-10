@@ -8,7 +8,8 @@ import { monsterBodyBoxes, monsterBodyProfile } from '../public/voxel-monster-bo
 import { monsterAnimationPose, createMonsterAnimationPresenter, monsterMeshes, createSpawnWarningPresenter, VoxelRenderer } from '../public/voxel-renderer.js';
 
 const TYPES = ['hound', 'leaper', 'screecher'];
-const ALL_TYPES = ['stalker', 'runner', 'brute', 'gunner', 'sniper', ...TYPES];
+const ORIGINAL_TYPES = ['stalker', 'runner', 'brute', 'gunner', 'sniper', ...TYPES];
+const ALL_TYPES = [...ORIGINAL_TYPES, 'bomber', 'spitter', 'weaver'];
 const digest = mesh => createHash('sha256').update(new Uint8Array(mesh.buffer, mesh.byteOffset, mesh.byteLength)).digest('hex');
 const actor = (monsterType, patch = {}) => ({ ...createCombatPlayer(7), monster: true, human: false, monsterType, team: 1, x: 2.25, y: 4, z: -3.5, attackDuration: monsterType === 'hound' ? 24 : 54, roarDuration: 72, lungeDuration: 30, ...patch });
 const inside = (point, box) => point[0] >= box.x - .000002 && point[0] <= box.x + box.w + .000002 && point[1] >= box.y - .000002 && point[1] <= box.y + box.h + .000002 && point[2] >= box.z - .000002 && point[2] <= box.z + box.d + .000002;
@@ -108,7 +109,7 @@ test('presented gait follows distance, rejects correction jitter, settles idle a
 });
 
 test('rally marks only actually buffed monsters and pending new species have distinct small depth-tested spawn colors', () => {
-  for (const type of ALL_TYPES) {
+  for (const type of ORIGINAL_TYPES) {
     const normal = monsterMeshes(actor(type), 1000), buffed = monsterMeshes(actor(type, { monsterRallyTicks: 180 }), 1000);
     assert.notEqual(digest(normal), digest(buffed), `${type}: actual rally state has a compact in-world cue`);
     assert.deepEqual(monsterMeshes(actor(type, { monsterRallyTicks: 0 }), 1000), normal, 'cue expires with authoritative effect');

@@ -18,7 +18,7 @@ export const WORLD = Object.freeze({ radius: .32, standHeight: 1.8, crouchHeight
 export const INPUT_KEYS = Object.freeze(['up', 'down', 'left', 'right', 'jump', 'crouch', 'walk', 'sprint', 'fire', 'reload', 'interact', 'aim', 'swap', 'grenade', 'heal', ...INVENTORY_ACTIONS]);
 export const ADS = Object.freeze({ ticks: 18, speedMultiplier: .65, spreadMultiplier: .4, recoilMultiplier: .62, fovRatio: 54 / 70, scopedFovRatio: 40 / 70 });
 export const PLAYER_HEALTH = 200;
-export const HEAL = Object.freeze({ ticks: 240, amount: 60, speedMultiplier: .3 });
+export const HEAL = Object.freeze({ ticks: 24, amount: 60, speedMultiplier: .3 });
 export const KNOCKBACK = Object.freeze({ decay: 10, maxMonsterSpeed: 10, maxPlayerSpeed: 2.4, monsterTicks: 36, playerTicks: 24, monsterReadyTicks: 12, playerReadyTicks: 24 });
 export const SPRINT = Object.freeze({ maxStamina: 100, speedMultiplier: 1.4, drainPerSecond: 24, regenPerSecond: 18, regenDelayTicks: 144, restartStamina: 25 });
 const EPS = 1e-8, DT = 1 / TICK_RATE;
@@ -108,6 +108,7 @@ export function createCombatPlayer(id, teamSize = 1, loadout = 'carbine') {
   const weapon = typeof loadout === 'string' && Object.hasOwn(WEAPONS, loadout) ? loadout : 'carbine', w = WEAPONS[weapon];
   const player = { id, team: Math.floor(id / teamSize), x: 0, y: 0, z: 0, yaw: 0, pitch: 0, vx: 0, vy: 0, vz: 0, knockbackX: 0, knockbackZ: 0, knockbackTicks: 0, knockbackReadyTicks: 0, radius: WORLD.radius, grounded: true, jumpBufferTicks: 0, stamina: SPRINT.maxStamina, staminaRegenTicks: 0, sprintExhausted: false, sprinting: false, crouching: false, alive: true, hp: PLAYER_HEALTH, maxHp: PLAYER_HEALTH, weapon, slot: 'primary', meleeWeapon: 'knife', meleeLoadout: 'knife', ammo: w.magazine, reserve: w.reserve, reloadTicks: 0, shotCooldown: 0, burstRemaining: 0, spinTicks: 0, recoil: 0, heat: 0, shotIndex: 0, lastShotHand: 0, pendingFireTicks: 0, shots: 0, kills: 0, deaths: 0, damageDealt: 0, lastHitTick: -1000, triggerBlocked: false, aiming: false, aimTicks: 0, meleeTicks: 0, meleeCooldown: 0, meleeIndex: 0, meleeHand: 0, meleeYaw: 0, meleePitch: 0, meleeStartTick: 0, meleePhase: 'idle', meleeHitIds: [], meleeHitLives: [], healing: false, healTicks: 0, healStartTick: -1, potions: 0, grenades: 0, grenadeThrowTicks: 0, interaction: null, interactTicks: 0, previousInput: emptyInput() };
   Object.assign(player, { pendingMeleeTicks: 0, meleeComboStep: 0, meleeComboConfirmed: false, meleeComboWindowTicks: 0, meleeComboWeapon: null, hitStunTicks: 0, hitStunReadyTicks: 0, meleeInitialYaw: 0, meleeInitialPitch: 0, meleeAction: 'primary', meleeAimBlocked: false, meleeSecondaryCooldown: 0, parryTicks: 0, parryCooldown: 0, parryYaw: 0, parryPitch: 0, parryStartTick: 0, parryIndex: 0, parryConsumed: false });
+  Object.assign(player, { healUseIndex: 0, healUseId: null, healInventoryIndex: -1, healSelectedIndex: -1 });
   return initializeInventory(player, { weapon });
 }
 const newPlayer = createCombatPlayer;
@@ -627,8 +628,32 @@ export function traceWeaponShot(state, playerId, origin, direction, maxDistance 
 }
 function cancelHeal(state, f, reason) {
   if (!f.healTicks) return;
-  f.healTicks = 0; f.healing = false;
+  resetHealing(f);
   emit(state, 'healCancel', { playerId: f.id, reason });
+}
+/** End or reset a drink without spending its reserved physical potion. */
+export function resetHealing(f) {
+  clearHealReservation(f);
+  f.healTicks = 0; f.healing = false; f.healStartTick = -1;
+  return f;
+}
+function clearHealReservation(f) {
+  const item = f.inventory?.[f.healInventoryIndex];
+  if (item && f.healUseId && item.healUseId === f.healUseId) delete item.healUseId;
+  f.healInventoryIndex = f.healSelectedIndex = -1; f.healUseId = null;
+}
+function reserveHeal(f) {
+  const held = selectedInventoryItem(f);
+  const index = held?.kind === 'heal' ? f.inventoryIndex : f.inventory.findIndex(item => item?.kind === 'heal' && item.amount > 0);
+  const item = f.inventory[index];
+  if (item?.kind !== 'heal' || !Number.isFinite(item.amount) || item.amount < 1) return false;
+  f.healUseIndex = (f.healUseIndex || 0) + 1;
+  // A serializable token survives deterministic state cloning, but cannot bind
+  // this drink to a replacement item, another life or a different held slot.
+  f.healUseId = `${f.id}:${f.lifeId || 0}:${f.deaths || 0}:${f.healUseIndex}`;
+  f.healInventoryIndex = index; f.healSelectedIndex = f.inventoryIndex;
+  item.healUseId = f.healUseId;
+  return true;
 }
 function clearMelee(f) { f.meleeTicks = 0; f.meleePhase = 'idle'; f.meleeHitIds = []; f.meleeHitLives = []; f.meleeStartTick = 0; resetMeleeDefense(f); }
 export function addInventoryLoot(state, player, item) {
@@ -643,6 +668,7 @@ export function addInventoryLoot(state, player, item) {
   return loot;
 }
 export function dropCombatInventory(state, player) {
+  cancelHeal(state, player, 'drop');
   ensureInventory(player);
   for (let index = 0; index < 4; index++) addInventoryLoot(state, player, dropInventoryItem(player, index));
 }
@@ -711,8 +737,9 @@ function tickActions(state, f, input, arena) {
     emit(state, 'swap', { playerId: f.id, slot: f.slot });
   }
   if (input.drop && !f.previousInput.drop && !input.interact) {
+    cancelHeal(state, f, 'drop');
     const item = dropInventoryItem(f); if (item) addInventoryLoot(state, f, item);
-    clearMelee(f); cancelHeal(state, f, 'drop'); f.triggerBlocked = input.fire || f.triggerBlocked; f.meleeAimBlocked = input.aim || f.meleeAimBlocked;
+    clearMelee(f); f.triggerBlocked = input.fire || f.triggerBlocked; f.meleeAimBlocked = input.aim || f.meleeAimBlocked;
   }
   const held = selectedInventoryItem(f), useGrenade = input.grenade && !f.previousInput.grenade || held?.kind === 'grenade' && input.fire && !f.previousInput.fire && !f.triggerBlocked;
   if (useGrenade && !f.hitStunTicks && !input.interact && !f.grenadeThrowTicks && !f.parryTicks) {
@@ -726,8 +753,8 @@ function tickActions(state, f, input, arena) {
     }
   }
   const potionFire = held?.kind === 'heal' && input.fire && !f.previousInput.fire && !f.triggerBlocked;
-  if ((input.heal && !f.previousInput.heal || potionFire) && f.potions > 0 && f.hp < f.maxHp && !f.healTicks && !f.meleeTicks && !f.parryTicks && !f.grenadeThrowTicks && (!input.fire || potionFire) && !input.jump && !input.swap && !input.grenade && !input.interact && !input.reload && !selecting && f.grounded) {
-    storeInventoryGun(f); consumeInventoryStack(f, 'heal'); f.healTicks = HEAL.ticks; f.healStartTick = state.tick; f.healing = true; f.reloadTicks = 0; f.burstRemaining = 0; f.spinTicks = 0;
+  if ((input.heal && !f.previousInput.heal || potionFire) && f.potions > 0 && f.hp < f.maxHp && !f.healTicks && !f.meleeTicks && !f.parryTicks && !f.grenadeThrowTicks && (!input.fire || potionFire) && !input.jump && !input.swap && !input.drop && !input.grenade && !input.interact && !input.reload && !selecting && f.grounded && reserveHeal(f)) {
+    storeInventoryGun(f); f.healTicks = HEAL.ticks; f.healStartTick = state.tick; f.healing = true; f.reloadTicks = 0; f.burstRemaining = 0; f.spinTicks = 0;
     emit(state, 'healStart', { playerId: f.id, x: f.x, y: f.y + eyeHeight(f), z: f.z });
   }
   tickHolsteredInventory(f);
@@ -737,10 +764,20 @@ function tickActions(state, f, input, arena) {
 }
 function tickHealing(state, f) {
   if (!f.alive || !f.healTicks || f.healStartTick === state.tick) return;
-  if (--f.healTicks === 0) {
-    const amount = Math.min(HEAL.amount, f.maxHp - f.hp); f.hp += amount; f.healing = false;
-    emit(state, 'healComplete', { playerId: f.id, amount, hp: f.hp, x: f.x, y: f.y + eyeHeight(f), z: f.z });
-  }
+  if (f.healTicks > 1) { f.healTicks--; return; }
+  const item = f.inventory?.[f.healInventoryIndex];
+  const expected = `${f.id}:${f.lifeId || 0}:${f.deaths || 0}:${f.healUseIndex}`;
+  if (!f.healUseId || f.healUseId !== expected || f.inventoryIndex !== f.healSelectedIndex || item?.kind !== 'heal' || item.healUseId !== f.healUseId || !Number.isFinite(item.amount) || item.amount < 1) { cancelHeal(state, f, 'inventory'); return; }
+  const amount = Math.min(HEAL.amount, Math.max(0, f.maxHp - f.hp));
+  if (!Number.isFinite(amount) || amount <= 0) { cancelHeal(state, f, 'full'); return; }
+  // Damage and death already resolved this tick. Commit health and the exact
+  // reserved physical stack together; cancelled drinks have spent nothing.
+  storeInventoryGun(f); const index = f.healInventoryIndex; item.amount--;
+  resetHealing(f);
+  if (!item.amount) f.inventory[index] = null;
+  f.hp += amount;
+  refreshInventory(f);
+  emit(state, 'healComplete', { playerId: f.id, amount, hp: f.hp, x: f.x, y: f.y + eyeHeight(f), z: f.z });
 }
 function meleeBodyContacts(geometry, target) {
   const localBoxes = monsterBodyBoxes(target), boxes = localBoxes || playerBoxes(target), contacts = [];
@@ -1036,6 +1073,7 @@ export function applyCombatDamage(state, pending, { onMeleeHit, arena = state.ma
     }
   }
   for (const f of state.players) if (f.alive && f.hp <= 0) {
+    resetHealing(f);
     f.alive = false; f.deaths++; f.vx = f.vy = f.vz = 0; clearKnockback(f); resetSprint(f, { refill: false }); f.jumpBufferTicks = 0; f.reloadTicks = 0; f.burstRemaining = 0; f.spinTicks = f.pendingFireTicks = 0; f.aiming = false; f.aimTicks = 0; f.healing = false; f.healTicks = 0; f.grenadeThrowTicks = 0; clearMelee(f); f.interaction = null; f.interactTicks = 0;
     const killer = lethalHits.get(f.id), attacker = killer && state.players[killer.playerId];
     if (attacker && attacker.id !== f.id && attacker.team !== f.team) attacker.kills++;

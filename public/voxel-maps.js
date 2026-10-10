@@ -2,6 +2,7 @@ import { createParisMap } from './voxel-paris.js';
 import { createExpansionMap } from './voxel-expansion-maps.js';
 import { enhanceMapIdentity } from './voxel-map-landmarks.js';
 import { createCloseCombatMap } from './voxel-close-combat-maps.js';
+import { addCombatLayers } from './voxel-map-layers.js';
 
 /** Authored, shared collision and rendering geometry for Voxel Breach. */
 const box = (id, x, y, z, w, h, d, color = '#647780', material = 'stone') => Object.freeze({ id, x, y, z, w, h, d, color, material });
@@ -182,10 +183,10 @@ const bastionClimbs = [
 const bastion = expanded(bastionBase, bastionClimbs);
 
 /** Single catalog consumed by server validation, prediction, setup and rendering. */
-export const MAPS = Object.freeze({
+export const MAPS = Object.freeze(Object.fromEntries(Object.entries({
   courtyard: enhanceMapIdentity(courtyard), depot: enhanceMapIdentity(depot), canal: enhanceMapIdentity(canal),
   rooftops: enhanceMapIdentity(rooftops), foundry: enhanceMapIdentity(foundry), bastion: enhanceMapIdentity(bastion),
   paris: enhanceMapIdentity(createParisMap('breach')), snow: createExpansionMap('snow'), sewers: createExpansionMap('sewers'), trading: createExpansionMap('trading'),
   market: createCloseCombatMap('market'), lockdown: createCloseCombatMap('lockdown'),
-});
+}).map(([id, arena]) => [id, addCombatLayers(arena)])));
 export const MAP_IDS = Object.freeze(Object.keys(MAPS));

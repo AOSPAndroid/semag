@@ -114,20 +114,44 @@ export function createSewerMap(mode = 'breach') {
   // approaches overlook the junction, rather than climbing generic house roofs.
   for (const [galleryIndex, x] of [-7.2, 7.2].entries()) {
     const galleryId = `sewers-gallery-${galleryIndex}`;
-    const deck = solid(galleryId, x - 1.1, 2.96, -1, 2.2, .24, 2, '#758079', 'metal'); mark('maintenance-catwalk', [deck], galleryIndex ? 'East inspection gallery' : 'West inspection gallery');
+    const deck = solid(galleryId, x - 1.1, 2.96, -1.2, 2.2, .24, 2.4, '#758079', 'metal'); mark('maintenance-catwalk', [deck], galleryIndex ? 'East inspection gallery' : 'West inspection gallery');
     for (const [side, sign] of [['north', -1], ['south', 1]]) {
       const steps = [];
       for (let i = 0; i < 3; i++) {
-        const z = sign * (6.5 - i * 2.2), id = `${galleryId}-${side}-step-${i + 1}`;
+        const z = sign * (6.2 - i * 2.2), id = `${galleryId}-${side}-step-${i + 1}`;
         solid(id, x - 1.1, 0, z - 1.1, 2.2, .8 * (i + 1), 2.2, '#69756b', 'metal');
         steps.push(freeze({ colliderId: id, x: x * sx, z: z * sz }));
       }
       steps.push(freeze({ colliderId: galleryId, x: x * sx, z: sign * .55 * sz }));
-      const start = P(x, sign * 8.05);
+      // Keep a half-metre hound clear of both the first riser and chamber rock.
+      const start = P(x, sign * 7.95);
       routes.push(freeze({ id: `${galleryId}-${side}`, name: `${galleryIndex ? 'East' : 'West'} inspection / ${side} stairs`, side, role: 'mid', start,
         steps: freeze(steps), approach: freeze([start]) }));
     }
   }
+
+  // Maintenance banks expand the two landings into a connected upper floor.
+  // The clear underside carries the existing ground rotations past the pump.
+  const maintenanceIds = ['sewers-maintenance-west', 'sewers-maintenance-east', 'sewers-maintenance-crossing'];
+  for (const [index, [x, z, w, d]] of [[-6.1, -4.5, 2.4, 9], [3.7, -4.5, 2.4, 9], [-3.7, -4.5, 7.4, 2.2]].entries()) {
+    const deck = solid(maintenanceIds[index], x, 2.96, z, w, .24, d, '#758079', 'sewer-roof', { overhead: true });
+    mark('maintenance-catwalk', [deck], index === 2 ? 'Pump maintenance crossing' : `${index ? 'East' : 'West'} maintenance bank`);
+  }
+  for (const [index, x] of [-6.1, 5.5].entries()) {
+    const pipe = solid(`sewers-gallery-pressure-pipe-${index}`, x, 3.2, 2.8, .6, 1.3, 1.2, '#968157', 'pipe');
+    const collar = solid(`sewers-gallery-pipe-collar-${index}`, x - .06, 3.48, 3.05, .72, .62, .7, '#738070', 'metal');
+    mark('pipe-alcove', [pipe, collar], index ? 'East pressure bypass' : 'West pressure bypass');
+  }
+  const manifold = solid('sewers-gallery-manifold', -.5, 3.2, -4.5, 1, 1.3, .8, '#405b53', 'metal');
+  mark('maintenance-manifold', [manifold], 'Upper pump manifold');
+  for (const [index, [x, z]] of [[-14.5, -10.8], [13.3, 10.1]].entries()) {
+    const cargo = solid(`sewers-service-cargo-${index}`, x, 0, z, 1.2, .8, 1.1, '#748070', 'metal');
+    mark('service-cargo', [cargo], 'Drain service tools');
+  }
+  const upperFloors = freeze([freeze({ id: 'sewers-maintenance-level', name: 'Pump maintenance walk',
+    colliderIds: freeze(['sewers-gallery-0', 'sewers-gallery-1', ...maintenanceIds]),
+    routeIds: freeze(routes.map(route => route.id)), underpasses: freeze([P(-4.8, 0), P(0, -3.1)]),
+    traverse: freeze([P(-4.8, 3.5, 3.2), P(-4.8, -3.1, 3.2), P(0, -3.1, 3.2), P(4.8, -3.1, 3.2), P(4.8, 3.5, 3.2)]) })]);
 
   const tunnelSpecs = [ ['north-feed', 0, -14.2, 0, -11.75, 0, -9.3, 6], ['south-feed', 0, 9.3, 0, 11.75, 0, 14.2, 6],
     ['west-drain', -19.5, -7.5, -19.5, 0, -19.5, 7.5, 5], ['east-drain', 19.5, -7.5, 19.5, 0, 19.5, 7.5, 5],
@@ -163,9 +187,10 @@ export function createSewerMap(mode = 'breach') {
         ...(east ? [freeze({ x: 18 * sx, z: -14.6 * sz, width: 3 * sz, height: 3.4, axis: 'x', outside: P(19, -14.6), inside: P(17, -14.6) })] : [])]) });
   });
   const common = { id: 'sewers', name: 'Undercity Sewers', theme: 'sewers', mode,
-    description: 'A brick drainage network with wet collectors, branching maintenance loops, treatment basins, solid pressure pipes and four upper inspection stairways overlooking a vaulted pump junction.',
+    description: 'A brick drainage network with wet collectors, branching maintenance loops, treatment basins and solid pressure pipes. Four inspection stairways reach a connected upper maintenance walk with pipe alcoves and a manifold overlooking the vaulted pump junction; both ground banks stay open underneath.',
     bounds, colliders: freeze(colliders), routes: freeze(routes), buildings: freeze(buildings), landmarks: freeze(landmarks), decorations: freeze(decorations), tunnels: freeze(tunnels),
     ceilings: freeze(ceilings), groundRegions: freeze(walkspaces.map(r => freeze({ x: r.x, z: r.z, w: r.w, d: r.d }))),
+    upperFloors,
     channelRoutes: freeze([freeze({ id: 'sewers-west-bank', points: freeze([P(-18.5, -8), P(-18.5, 0), P(-18.5, 8)]) }),
       freeze({ id: 'sewers-east-bank', points: freeze([P(18.5, -8), P(18.5, 0), P(18.5, 8)]) })]), floorColor: '#55574b', skyColor: '#253129' };
   if (!royale) return freeze({ ...common,

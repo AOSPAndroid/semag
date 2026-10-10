@@ -90,6 +90,22 @@ export function createSnowMap(mode = 'breach') {
   extras.push(...radar); landmarks.push(Object.freeze({ kind: 'radar-dish', ...radar[0], collisionIds: Object.freeze(radar.map(value => value.id)) }));
   const radio = definitions[1];
   add('weather-mast', box('snow-radio-weather-mast', radio.x + radio.w * .64, radio.roofY, radio.z + radio.d * .61, .65, 3.2, .65, '#637f8c', 'antenna'));
+  // A genuine research gallery links the two higher roofs. Its open underside
+  // keeps both yard rotations usable; four existing stairways contest the deck.
+  const survey = definitions[3], galleryX = lab.x + lab.w - .8, galleryZ = lab.z + lab.d - 1;
+  const galleryIds = ['snow-research-gallery', 'snow-research-gallery-return'];
+  add('research-gallery', box(galleryIds[0], galleryX, 3.68, galleryZ, survey.x + 3 - galleryX, .32, 3, '#668593', 'metal'));
+  add('research-gallery', box(galleryIds[1], survey.x, 3.68, galleryZ + 3, 3, .32, survey.z + .8 - galleryZ - 3, '#668593', 'metal'));
+  for (const [index, x] of [-4.5, 4.5].entries())
+    add('weather-equipment', box(`snow-gallery-instrument-${index}`, x, 4, galleryZ + .2, 1.2, 1.35, .7, index ? '#da985e' : '#669fa8', 'weather-equipment'));
+  for (const [index, [x, z]] of [[-8.3, -10.2], [5.8, 10.2]].entries())
+    add('rescue-cargo', box(`snow-rescue-cargo-${index}`, x, 0, z, 1.4, 1.3, 1.2, index ? '#da985e' : '#829ba9', 'snow-crate'));
+  const upperFloors = Object.freeze([Object.freeze({ id: 'snow-research-level', name: 'Research roof gallery',
+    colliderIds: Object.freeze([`${lab.id}-roof`, ...galleryIds, `${survey.id}-roof`]),
+    routeIds: Object.freeze([lab, survey].flatMap(value => [`${value.id}-outer`, `${value.id}-inner`])),
+    underpasses: Object.freeze([point(-8, galleryZ + 2), point(6, galleryZ + 2)]),
+    traverse: Object.freeze([point(galleryX - 1, galleryZ + .2, 4), point(galleryX + .8, galleryZ + 2, 4),
+      point(survey.x + 1.5, galleryZ + 2, 4), point(survey.x + 1.5, survey.z + 1.5, 4)]) })]);
   // Banked spawn approaches and irregular side banks create distinct snowy rotations.
   const bankDefinitions = royale ? [
     ['north', -5.5, -24, 11, 1.8, 1.3], ['south', -5, 23, 10, 1.8, 1.3],
@@ -111,11 +127,12 @@ export function createSnowMap(mode = 'breach') {
     box(`${prefix}-north`, -halfW, 0, -halfD - 1, halfW * 2, 5.8, 1, '#b9d0db', 'snow-wall'),
     box(`${prefix}-south`, -halfW, 0, halfD, halfW * 2, 5.8, 1, '#b9d0db', 'snow-wall')];
   const common = { id: 'snow', name: 'Frostline Research', theme: 'snow', mode,
-    description: 'An asymmetric alpine research station: a radar laboratory, radio lodge, survey office and supply shelter overlook a banked snow yard. Eight equipment climbs connect different roof heights; generators, rescue cargo and icy side routes give each approach its own cover.',
+    description: 'An asymmetric alpine research station: a radar laboratory, radio lodge, survey office and supply shelter overlook a banked snow yard. A suspended research gallery joins the higher roofs above two open yard crossings. Eight equipment climbs, instrument housings, rescue cargo and icy side routes provide contested approaches.',
     bounds: Object.freeze({ minX: -halfW, maxX: halfW, minZ: -halfD, maxZ: halfD }),
     colliders: Object.freeze([...perimeter, ...buildings.flatMap(value => value.colliders), ...extras]),
     routes: Object.freeze(buildings.flatMap(value => value.routes)), buildings: Object.freeze(buildings.map(value => value.metadata)),
     landmarks: Object.freeze(landmarks), tunnels: Object.freeze([]), ceilings: Object.freeze([]),
+    upperFloors,
     decorations: Object.freeze([paint('snow-yard', -8, -3.5, 16, 8.5, '#bdd0dc'),
       paint('snow-path', -2.3, -halfD, 4.6, halfD * 2, '#b2c9d8'),
       paint('snow-path-west', -halfW + 1, -halfD + 1, 2.5, halfD * 2 - 2, '#c6d7e0'),

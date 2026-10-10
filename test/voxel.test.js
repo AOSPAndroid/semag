@@ -446,11 +446,11 @@ test('sword attacks trade in the same authoritative active tick and swap cannot 
   advance(state, 1); game.step(state, [input({ swap: true }, f), input({}, state.players[1])]); advance(state, 1); game.step(state, [input({ swap: true }, f), input({}, state.players[1])]); advance(state, 1); shot(state, 0, { yaw: Math.PI / 2 });
   assert.equal(state.events.filter(e => e.type === 'meleeStart').length, 1); assert.ok(f.meleeCooldown > 0);
 });
-test('a potion costs one round charge, takes two seconds, heals sixty and slows movement', () => {
+test('a potion spends one physical charge after a 0.2-second drink, heals sixty and briefly slows movement', () => {
   const state = lane(fighting()), f = collectUtility(state, state.players[0], ['heal']); f.hp = 35;
-  game.step(state, [input({ heal: true }, f), input({}, state.players[1])]); assert.equal(f.potions, 0); assert.equal(f.healTicks, game.HEAL.ticks); assert.equal(f.hp, 35); assert.equal(f.healing, true);
-  advance(state, 100, [input({ right: true }, f), input({}, state.players[1])]); close(f.vx, game.WEAPONS.carbine.speed * game.HEAL.speedMultiplier);
-  advance(state, game.HEAL.ticks - 101); assert.equal(f.hp, 35); advance(state, 1); assert.equal(f.hp, 95); assert.equal(f.healTicks, 0); assert.equal(f.healing, false);
+  game.step(state, [input({ heal: true }, f), input({}, state.players[1])]); assert.equal(f.potions, 1); assert.equal(f.healTicks, game.HEAL.ticks); assert.equal(f.hp, 35); assert.equal(f.healing, true);
+  advance(state, 10, [input({ right: true }, f), input({}, state.players[1])]); close(f.vx, game.WEAPONS.carbine.speed * game.HEAL.speedMultiplier, .01);
+  advance(state, game.HEAL.ticks - 11); assert.equal(f.hp, 35); assert.equal(f.potions, 1); advance(state, 1); assert.equal(f.hp, 95); assert.equal(f.potions, 0); assert.equal(f.healTicks, 0); assert.equal(f.healing, false);
   advance(state, 1); game.step(state, [input({ heal: true }, f), input({}, state.players[1])]); assert.equal(f.healTicks, 0);
   const full = lane(fighting()); collectUtility(full, full.players[0], ['heal']); game.step(full, [input({ heal: true }, full.players[0]), input({}, full.players[1])]); assert.equal(full.players[0].potions, 1, 'full-health input does not waste a potion');
 });
@@ -460,7 +460,7 @@ test('potion healing is capped and fire, jump, swap, reload, interaction and gre
     const state = lane(fighting()), player = collectUtility(state); player.hp = 60;
     game.step(state, [input({ heal: true }, player), input({}, state.players[1])]); advance(state, 10);
     game.step(state, [input({ [action]: true, yaw: Math.PI / 2 }, player), input({}, state.players[1])]);
-    assert.equal(player.healTicks, 0, action); assert.equal(player.healing, false); assert.equal(player.hp, 60); assert.equal(player.potions, 0);
+    assert.equal(player.healTicks, 0, action); assert.equal(player.healing, false); assert.equal(player.hp, 60); assert.equal(player.potions, 1);
   }
 });
 test('damage on the final potion tick cancels healing and lethal damage cannot revive its target', () => {

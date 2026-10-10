@@ -7,7 +7,7 @@ import { DOJO_MAP } from '../public/voxel-dojo-map.js';
 import { DOJO_ACTIONS, DOJO_RESPAWN_TICKS, findDojoStationLoot, findDojoStation } from '../public/voxel-dojo-engine.js';
 import { WEAPONS } from '../public/voxel-weapons.js';
 import { MELEE_WEAPONS } from '../public/voxel-melee.js';
-import { WORLD, eyeHeight, emptyInput } from '../public/voxel-engine.js';
+import { WORLD, HEAL, eyeHeight, emptyInput } from '../public/voxel-engine.js';
 import { selectInventorySlot } from '../public/voxel-inventory.js';
 
 function begin(options = {}) {
@@ -119,8 +119,8 @@ test('recovery, deliberate training injury and actual collected potions heal onl
   pose(player, 9, 12); stepPractice(state); stepPractice(state, { dojoWound: true }); assert.equal(player.hp, 140);
   assert.equal(getPracticeStats(state).damageTaken, 60);
   pose(player, 3, 12); stepPractice(state, { interact: true }); assert.equal(player.potions, 2);
-  stepPractice(state); stepPractice(state, { heal: true }); assert.ok(player.healTicks > 0); assert.equal(player.hp, 140); assert.equal(player.potions, 1);
-  advance(state, 239); assert.equal(player.hp, 140); stepPractice(state); assert.equal(player.hp, 200);
+  stepPractice(state); stepPractice(state, { heal: true }); assert.ok(player.healTicks > 0); assert.equal(player.hp, 140); assert.equal(player.potions, 2);
+  advance(state, HEAL.ticks - 1); assert.equal(player.hp, 140); assert.equal(player.potions, 2); stepPractice(state); assert.equal(player.hp, 200); assert.equal(player.potions, 1);
   pose(player, 9, 12); stepPractice(state, { dojoWound: true }); assert.equal(player.hp, 140); stepPractice(state); stepPractice(state, { interact: true }); assert.equal(player.hp, 200);
   assert.ok(state.events.some(event => event.type === 'healComplete' && event.amount === 60));
 });

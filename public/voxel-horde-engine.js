@@ -1,5 +1,5 @@
 /** Voxel Last Stand: deterministic, shared 120 Hz solo / three-player wave survival. */
-import { createCombatPlayer, combatStep, emitCombatEvent, emptyInput, INPUT_KEYS, TICK_RATE, MAPS, WEAPONS, WORLD, PLAYER_HEALTH, eyeHeight, playerHeight, aimDirection, traceShot, pickupCombatLoot, addInventoryLoot, advanceInventoryLoot, resetSprint } from './voxel-engine.js';
+import { createCombatPlayer, combatStep, emitCombatEvent, emptyInput, INPUT_KEYS, TICK_RATE, MAPS, WEAPONS, WORLD, PLAYER_HEALTH, eyeHeight, playerHeight, aimDirection, traceShot, pickupCombatLoot, addInventoryLoot, advanceInventoryLoot, resetSprint, resetHealing } from './voxel-engine.js';
 import { navigationPoints, navigationPath, navigationCanOccupy, navigationVisible } from './voxel-navigation.js';
 import { INVENTORY_ACTIONS, createInventoryGun, createInventoryMelee, ensureInventory, refreshInventory, storeInventoryGun, inventoryCanTake, setInventoryLoadout, setInventoryMeleeLoadout } from './voxel-inventory.js';
 import { MELEE_WEAPONS, clearMeleeComboContinuation, resetMeleeDefense } from './voxel-melee.js';
@@ -340,6 +340,10 @@ function steer(player, brain, input) {
   while (brain.path.length && Math.hypot(brain.path[0].x - player.x, brain.path[0].z - player.z) < .38 && Math.abs((brain.path[0].y || 0) - player.y) < .24) brain.path.shift();
   const point = brain.path[0]; if (!point) return;
   const dx = point.x - player.x, dz = point.z - player.z, distance = Math.hypot(dx, dz); if (distance < EPS) return;
+  // Brake on the approach and centering tread before changing direction for a
+  // rise. A fast hound's lateral ground speed cannot be undone during a jump.
+  // Ordinary flat pursuit keeps the species' full chase speed.
+  if (point.jump || point.y > player.y + .3 || brain.path[1]?.jump) input.walk = true;
   const forward = (Math.sin(input.yaw) * dx - Math.cos(input.yaw) * dz) / distance, right = (Math.cos(input.yaw) * dx + Math.sin(input.yaw) * dz) / distance;
   input.up = forward > .25; input.down = forward < -.25; input.right = right > .25; input.left = right < -.25;
   // Jump is an edge in the shared engine. Holding it through landing would make
@@ -633,7 +637,7 @@ function beginIntermission(state) {
   for (const id of horde.participantIds) {
     const old = state.players[id];
     if (!old.alive) { const restored = humanPlayer(state, id, old), position = safeHumanPosition(state, restored); if (!position) continue; Object.assign(restored, position); restored.participating = true; restored.hp = 150; state.players[id] = restored; }
-    else { old.hp = Math.min(old.maxHp, old.hp + 35); ensureInventory(old); old.reloadTicks = old.healTicks = old.meleeTicks = old.meleeCooldown = old.grenadeThrowTicks = old.burstRemaining = old.spinTicks = 0; old.healing = false; old.meleePhase = 'idle'; }
+    else { old.hp = Math.min(old.maxHp, old.hp + 35); ensureInventory(old); resetHealing(old); old.reloadTicks = old.meleeTicks = old.meleeCooldown = old.grenadeThrowTicks = old.burstRemaining = old.spinTicks = 0; old.meleePhase = 'idle'; }
     const player = state.players[id]; player.knockbackX = player.knockbackZ = player.knockbackTicks = player.knockbackReadyTicks = player.hitStunTicks = player.hitStunReadyTicks = 0; player.meleeHitIds = []; player.meleeHitLives = []; player.meleeStartTick = 0; storeInventoryGun(player);
     resetSprint(player);
     resetMeleeDefense(player, { blockAim: true });

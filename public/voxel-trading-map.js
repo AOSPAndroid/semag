@@ -94,11 +94,25 @@ export function createTradingMap(mode = 'breach') {
   }
   solid('balcony-screen', box('trading-server-cover', 21.6, 3.2, 2.1, 1, 1.05, 3.6, '#1478a0', 'metal'));
 
+  // The research and operations decks meet across an actual suspended floor.
+  // Drawer cabinets, a tabletop and a monitor bank provide their shown cover,
+  // while the south side remains a clear route and the ground aisles pass below.
+  solid('office-mezzanine', box('trading-cross-floor-mezzanine', -15.4, 2.9, -.7, 30.8, .3, 2.2, '#6e8997', 'office-roof'));
+  solid('mezzanine-desk', box('trading-upper-desk', -1.2, 3.88, -.6, 2.4, .12, .8, '#a5a5a0', 'desk'));
+  for (const [index, x] of [-1.1, .7].entries())
+    solid('mezzanine-cabinet', box(`trading-upper-drawer-${index}`, x, 3.2, -.5, .4, .68, .56, '#a4a19a', 'desk-cabinet'));
+  solid('mezzanine-screen', box('trading-upper-monitor', -.95, 4, -.4, 1.9, 1.2, .3, '#16394b', 'screen'));
+  for (const [index, [x, z]] of [[-5.2, -5.6], [3.8, 5.4]].entries())
+    solid('archive-cabinet', box(`trading-archive-cabinet-${index}`, x, 0, z, 1.4, 1.35, 1.2, '#748b97', 'desk-cabinet'));
+
   function climb(id, name, x, edge, direction, deckId, landing, side, role) {
     const steps = [];
     for (let index = 0; index < 3; index++) {
       const z = edge - direction * (5.5 - index * 2.2), colliderId = `${id}-step-${index + 1}`;
-      solid('office-step', box(colliderId, x - 1.1, 0, z - 1.1, 2.2, .8 * (index + 1), 2.2, '#8c9da7', 'metal'));
+      // Only the entry tread has a wider landing apron. Lateral hound jumps
+      // clear the next riser's corner while the upper staircase stays narrow.
+      const width = index === 0 ? 3.4 : 2.2;
+      solid('office-step', box(colliderId, x - width / 2, 0, z - 1.1, width, .8 * (index + 1), 2.2, '#8c9da7', 'metal'));
       steps.push(Object.freeze({ colliderId, x, z }));
     }
     steps.push(Object.freeze({ colliderId: deckId, x: landing.x, z: landing.z }));
@@ -109,6 +123,10 @@ export function createTradingMap(mode = 'breach') {
   climb('trading-meeting-south-climb', 'Research / workstation risers', -19, 4.6, -1, 'trading-meeting-mezzanine', point(-19, 3.9), 'south', 'flank');
   climb('trading-server-north-climb', 'Operations / backup racks', 19, -2.4, 1, 'trading-server-gallery', point(19, -1.7), 'north', 'mid');
   climb('trading-server-south-climb', 'Operations / equipment risers', 19, 8.8, -1, 'trading-server-gallery', point(19, 8.1), 'south', 'mid');
+  const upperFloors = Object.freeze([Object.freeze({ id: 'trading-mezzanine-level', name: 'Research and operations mezzanine',
+    colliderIds: Object.freeze(['trading-meeting-mezzanine', 'trading-cross-floor-mezzanine', 'trading-server-gallery']),
+    routeIds: Object.freeze(routes.map(route => route.id)), underpasses: Object.freeze([point(0, .95), point(-12, .8)]),
+    traverse: Object.freeze([point(-19, -.3, 3.2), point(-13, .95, 3.2), point(0, .95, 3.2), point(13, .95, 3.2), point(19, .95, 3.2)]) })]);
 
   const decorations = [paint('office-aisle', -2.6, -halfD, 5.2, halfD * 2, '#969e92'),
     paint('office-cross-aisle', -15, -1.1, 12.4, 1.2, '#4897b3'),
@@ -133,9 +151,10 @@ export function createTradingMap(mode = 'breach') {
   }
 
   const common = { id: 'trading', name: 'Barclays Trading Floor',
-    description: 'A fictional corporate trading floor: staggered workstation islands and head-height monitor banks divide broad cross aisles. Oversized market screens provide solid cover; a glass research suite and open server gallery have separate, contested mezzanine climbs.',
+    description: 'A fictional corporate trading floor: staggered workstation islands, archive cabinets and head-height monitor banks divide broad cross aisles. A real suspended mezzanine connects the glass research suite and open server gallery, with desk and screen protection above open ground aisles. Four separate climbs keep both levels contested.',
     theme: 'trading', mode, bounds: Object.freeze({ minX: -halfW, maxX: halfW, minZ: -halfD, maxZ: halfD }),
     colliders: Object.freeze(colliders), routes: Object.freeze(routes), buildings: Object.freeze(buildings), landmarks: Object.freeze(landmarks),
+    upperFloors,
     decorations: Object.freeze(decorations), tunnels: Object.freeze([]), ceilings: Object.freeze([ceiling.id]), floorColor: '#777c77', skyColor: '#d4d4c4' };
   if (!royale) return Object.freeze({ ...common,
     sites: Object.freeze([Object.freeze({ id: 'A', x: -13, z: -15, radius: 2.2 }), Object.freeze({ id: 'B', x: 13, z: -15, radius: 2.2 })]),

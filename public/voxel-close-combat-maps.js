@@ -1,3 +1,5 @@
+import { addCombatLayers } from './voxel-map-layers.js';
+
 /** Two authored close-quarters arenas. Every visible solid also blocks bodies and shots. */
 const box = (id, x, y, z, w, h, d, color, material = 'metal') => Object.freeze({ id, x, y, z, w, h, d, color, material });
 const point = (x, z, y = 0) => Object.freeze({ x, y, z });
@@ -151,10 +153,10 @@ export function createCloseCombatMap(id, mode = 'breach') {
     colliders: Object.freeze(colliders), landmarks: Object.freeze(landmarks), decorations: Object.freeze(decorations),
     routes: Object.freeze(routes), buildings: Object.freeze(buildings), ceilings: Object.freeze([ceiling.id]), tunnels: Object.freeze([]),
     floorColor: settings.floor, skyColor: settings.sky };
-  if (!royale) return Object.freeze({ ...common,
+  if (!royale) return addCombatLayers(Object.freeze({ ...common,
     sites: Object.freeze([-1, 1].map(sign => Object.freeze({ id: sign < 0 ? 'A' : 'B', x: sign * 12, z: -15, radius: 2.2 }))),
     spawns: Object.freeze([Object.freeze([-3, 0, 3].map(x => Object.freeze({ x, z: 15.5, yaw: 0 }))),
-      Object.freeze([3, 0, -3].map(x => Object.freeze({ x, z: -15.5, yaw: Math.PI })))]) });
+      Object.freeze([3, 0, -3].map(x => Object.freeze({ x, z: -15.5, yaw: Math.PI })))]) }));
 
   const ring = [[-28, -28], [-12, -28], [0, -28], [12, -28], [28, -28], [28, -12], [28, 0], [28, 12],
     [28, 28], [12, 28], [0, 28], [-12, 28], [-28, 28], [-28, 12], [-28, 0], [-28, -12]];
@@ -169,7 +171,7 @@ export function createCloseCombatMap(id, mode = 'breach') {
   const lootPoints = caches.map(([x, z], index) => cache(`${id}-cache-${index}`, x, z, kinds[index % kinds.length]));
   for (const [index, [x, z]] of [[-12, -2.4], [-12, 2.4], [12, -2.4], [12, 2.4], [-13.5, -21], [13.5, 21]].entries())
     lootPoints.push(cache(`${id}-upper-cache-${index}`, x, z, index % 2 ? 'heal' : 'weapon', 3.2));
-  return Object.freeze({ ...common, sites: Object.freeze([]), lootPoints: Object.freeze(lootPoints),
+  return addCombatLayers(Object.freeze({ ...common, sites: Object.freeze([]), lootPoints: Object.freeze(lootPoints),
     spawnPoints: Object.freeze(ring.map(([x, z]) => Object.freeze({ x, y: 0, z, yaw: Math.atan2(-x, z) }))),
-    stormCenter: point(0, 6.5) });
+    stormCenter: point(0, 6.5) }));
 }

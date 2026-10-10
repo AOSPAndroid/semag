@@ -86,7 +86,9 @@ function climb(map, route) {
   assert.ok(jumps >= 4 && player.y >= 3.2 - EPS, `${route.id}: a meaningful multi-hop perch`);
   const eye = { x: player.x, y: player.y + eyeHeight(player), z: player.z };
   let exposedFloor = 0;
-  for (const dx of [-8, -5, 0, 5, 8]) for (const dz of [-8, -5, 0, 5, 8]) {
+  // Connected sewer galleries overlook the narrower bank corridors too. Keep
+  // the five-metre minimum and real clearance/visibility checks for each ray.
+  for (const dx of [-8, -5, -2, 0, 2, 5, 8]) for (const dz of [-8, -5, -2, 0, 2, 5, 8]) {
     const p = { x: player.x + dx, y: 0, z: player.z + dz };
     if (Math.hypot(dx, dz) >= 5 && navigationCanOccupy(map, p)
       && navigationVisible(map, eye, { ...p, y: 1.64 })) exposedFloor++;

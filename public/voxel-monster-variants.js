@@ -1,4 +1,5 @@
 /** Authored unarmed Horde anatomy. Living actors and cached corpses share these cuboids. */
+import { monsterLocomotionPose, appendMonsterLimb } from './voxel-monster-animation.js';
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 const finite = value => Number.isFinite(value) ? value : 0;
 const EMPTY_OPTIONS = Object.freeze({});
@@ -127,6 +128,7 @@ export function appendMonsterVariant(mesh, player, pose, options = EMPTY_OPTIONS
       || !Number.isFinite(pose?.yaw)) return false;
   const art = MONSTER_VARIANT_ART[type], entries = VARIANT_PARTS[type];
   const alive = player.alive !== false, animation = options.animation;
+  const motion = options.motion || monsterLocomotionPose(player, animation);
   const stride = alive ? clamp(finite(animation?.stride), 0, 1) : 0, phase = finite(animation?.phase);
   const charge = alive && player.monsterState === art.state && Number.isFinite(player.attackTicks) && Number.isFinite(player.attackDuration) && player.attackDuration > 0
     ? clamp(1 - player.attackTicks / player.attackDuration, 0, 1) : 0;
@@ -151,6 +153,45 @@ export function appendMonsterVariant(mesh, player, pose, options = EMPTY_OPTIONS
     else if (tag === 'leftHand' || tag === 'rightHand' || tag === 'leftRune' || tag === 'rightRune') { y += charge * .32; z -= charge * .06; }
     if (part[6] === 'eye') color = alive ? bright ? art.charge : art.eye : art.shadow;
     else if (tag === 'core' || tag === 'leftRune' || tag === 'rightRune') color = alive ? bright ? art.charge : art.seam : art.shadow;
+    if (motion.active) {
+      const left = typeof tag === 'string' && tag.startsWith('left'), joint = left ? 0 : 1;
+      if (tag === 'leftLeg' || tag === 'rightLeg') {
+        const leg = motion.legs[joint];
+        if (part[4] > .3) {
+          appendMonsterLimb(mesh, pose, leg.hip, leg.knee, part[3], Math.min(.130, part[5]), color);
+          appendMonsterLimb(mesh, pose, leg.knee, leg.ankle, part[3] * .88, Math.min(.112, part[5]), color);
+        } else mesh.box(leg.knee[0] - w / 2, leg.knee[1] - h / 2, leg.knee[2] - .076, w, h, d, color, pose);
+        continue;
+      }
+      if (tag === 'leftFoot' || tag === 'rightFoot') {
+        const foot = motion.legs[joint].foot, width = w - motion.stride * .025, depth = d - motion.stride * .105;
+        mesh.box(foot[0] - width / 2, foot[1], foot[2] - depth / 2, width, h, depth, color, pose);
+        continue;
+      }
+      if (tag === 'leftArm' || tag === 'rightArm') {
+        const arm = motion.arms[joint];
+        appendMonsterLimb(mesh, pose, part[4] > .15 ? arm.shoulder : arm.elbow, part[4] > .15 ? arm.elbow : arm.hand, w, .075, color);
+        continue;
+      }
+      if (tag === 'leftHand' || tag === 'rightHand') {
+        const arm = motion.arms[joint];
+        appendMonsterLimb(mesh, pose, arm.elbow, arm.hand, w, .068, color);
+        continue;
+      }
+      if (tag === 'leftRune' || tag === 'rightRune') {
+        const hand = motion.arms[joint].hand;
+        mesh.box(hand[0] - w / 2, hand[1] - .023, hand[2] - .045, w, h, d, color, pose);
+        continue;
+      }
+      if (y >= .57 && y + h < 1.38) y += motion.bodyBob;
+    }
+    if ((tag === 'leftLeg' || tag === 'rightLeg') && part[4] > .3) {
+      // Keep the same two cuboids while stopped and in cached corpses. Their
+      // union is the original shin; starting a run cannot pop in extra parts.
+      mesh.box(x, y + h / 2, z, w, h / 2, d, color, pose);
+      mesh.box(x, y, z, w, h / 2, d, color, pose);
+      continue;
+    }
     mesh.box(x, y, z, w, h, d, color, pose);
   }
   return true;

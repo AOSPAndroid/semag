@@ -144,7 +144,7 @@ export function combatReadout(player, weapons = WEAPONS, rules = {}) {
   if (healing) {
     label = 'HEALING POTION'; ammo = `+${Math.min(rules.HEAL?.amount || HEAL.amount, Math.max(0, (player.maxHp || PLAYER_HEALTH) - player.hp))}`;
     status = `${(player.healTicks / 120).toFixed(1)}S · STAY IN COVER`;
-    progress = { label: 'Drinking healing potion', remaining: player.healTicks, total: rules.HEAL?.ticks || 240 };
+    progress = { label: 'Drinking healing potion', remaining: player.healTicks, total: rules.HEAL?.ticks || HEAL.ticks };
   }
   if (progress) progress.percent = Math.max(0, Math.min(100, 100 - progress.remaining / progress.total * 100));
   return { label, ammo, reserve: player?.reserve ?? '—', sword, healing, reloading, status, progress,
@@ -780,7 +780,7 @@ async function boot() {
       if (action === 'aim') paintSecondaryAction(button, secondaryActionPresentation(local, { active: controlsActive() && phase === 'fight' }));
       if (['sprint', 'walk', 'crouch'].includes(action)) button.setAttribute('aria-pressed', String(!!currentInput()[action]));
       if (action === 'grenade') { button.textContent = `FRAG ${readout.grenades}`; button.setAttribute('aria-label', `Throw fragmentation grenade: ${readout.grenades} remaining`); button.classList.toggle('unavailable', !readout.grenades); }
-      if (action === 'heal') { button.textContent = readout.healing ? 'DRINKING' : `POTION ${readout.potions}`; button.setAttribute('aria-label', `Drink healing potion: ${readout.potions} remaining; restores up to ${engine?.HEAL?.amount || HEAL.amount} health after two seconds; interruption spends the potion`); button.classList.toggle('unavailable', (!readout.potions && !readout.healing) || local?.hp >= (local?.maxHp || PLAYER_HEALTH)); }
+      if (action === 'heal') { button.textContent = readout.healing ? 'DRINKING' : `POTION ${readout.potions}`; button.setAttribute('aria-label', `Drink healing potion: ${readout.potions} remaining; restores up to ${engine?.HEAL?.amount || HEAL.amount} health in 0.2 seconds; interruption keeps the potion`); button.classList.toggle('unavailable', (!readout.potions && !readout.healing) || local?.hp >= (local?.maxHp || PLAYER_HEALTH)); }
     }
     setHidden($('pause-button'), paused || inLobby || phase === 'matchEnd' || !entered);
     setHidden($('touch-controls'), !touchMode || !entered || !['countdown', 'buy', 'fight'].includes(phase) || !local?.alive);

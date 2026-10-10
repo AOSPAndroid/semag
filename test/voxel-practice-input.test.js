@@ -54,7 +54,7 @@ test('rapid utility taps trigger the actual reload, grenade and healing commitme
   const heal = fight(), healQueue = createPracticeInputQueue();
   applyCombatDamage(heal, [{ playerId: 1, targetId: 0, damage: 75, weapon: 'carbine', attack: 'gun' }]);
   shortPress(healQueue, 'heal'); tick(heal, healQueue);
-  assert.equal(heal.players[0].potions, 0); assert.ok(heal.players[0].healTicks > 0);
+  assert.equal(heal.players[0].potions, 1); assert.ok(heal.players[0].healTicks > 0);
 });
 
 test('a rapid jump reaches real movement once while ordinary movement remains held', () => {

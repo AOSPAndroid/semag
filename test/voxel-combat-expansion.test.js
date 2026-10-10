@@ -130,7 +130,7 @@ test('LMG reload, grenade, potion, sword and interaction interrupt firing commit
     assert.equal(shooter.shots, 1, action);
     if (action === 'reload') assert.equal(shooter.reloadTicks, weapon.reloadTicks);
     if (action === 'grenade') { assert.equal(shooter.grenadeThrowTicks, 24); assert.equal(shooter.grenades, 0); }
-    if (action === 'heal') { assert.equal(shooter.healTicks, game.HEAL.ticks); assert.equal(shooter.potions, 0); }
+    if (action === 'heal') { assert.equal(shooter.healTicks, game.HEAL.ticks); assert.equal(shooter.potions, 1); }
     if (action === 'swap') { assert.equal(shooter.slot, 'sword'); assert.equal(shooter.meleeTicks, 0); }
     if (action === 'interact') {
       advance(state, 40, { fire: true, interact: true });

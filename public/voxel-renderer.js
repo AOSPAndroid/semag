@@ -13,6 +13,7 @@ import { EMPTY_WORLD_LABELS, presentWorldLabels } from './voxel-label-presentati
 import { createSlashImpactPresenter } from './voxel-slash-effects.js';
 import { MONSTER_VARIANT_ART, appendMonsterVariant } from './voxel-monster-variants.js';
 import { MONSTER_SPECIAL_RULES } from './voxel-monster-specials.js';
+import { monsterLocomotionPose, appendMonsterLimb } from './voxel-monster-animation.js';
 
 // All solid world surfaces come directly from the engine's minimum-corner
 // colliders. Decoration is either painted on those surfaces or outside bounds.
@@ -2081,7 +2082,12 @@ export function mapMeshes(map) {
       if (theme === 'paris') {
         const building = { x, y: -.05, z, w, h, d };
         opaque.box(x, -.05, z, w, h, d, c);
-        for (const face of ['north', 'south', 'west', 'east']) {
+        // Skyline backs face away from every playable camera position. Keep
+        // their complete building silhouette, but spend window/cornice detail
+        // only on street faces visible from inside the collision perimeter.
+        const streetFaces = ['north', 'south', 'west', 'east'].filter(face => face === 'north' ? z > bounds.minZ
+          : face === 'south' ? z + d < bounds.maxZ : face === 'west' ? x > bounds.minX : x + w < bounds.maxX);
+        for (const face of streetFaces) {
           const faceWidth = face === 'north' || face === 'south' ? w : d;
           wallPatch(opaque, building, face, .04, h - .24, faceWidth - .08, .10, '#e0d3b8', .004);
           for (let level = 2.12; level < h - 1.12; level += 1.9) {
@@ -3153,13 +3159,19 @@ const MONSTER_ART = Object.freeze({
 });
 
 const CREATURE_TYPES = new Set(['hound', 'leaper', 'screecher']);
+const STILL_MONSTER_GAIT = Object.freeze({ phase: 0, stride: 0, speed: 0, airborne: false, land: 0 });
 const monsterCycleLength = type => type === 'hound' ? 1.28 : type === 'leaper' ? 2.05 : type === 'screecher' ? 1.85 : type === 'runner' ? 1.75 : 3;
 
 /** Pure anatomy inspection fallback; live gait integrates presented travel below. */
 export function monsterAnimationPose(player, time = 0) {
   const speed = player?.alive === false ? 0 : Math.min(14, Math.hypot(finite(player?.vx), finite(player?.vz)));
-  const phase = speed ? (finite(time) * .001 * speed * TAU / monsterCycleLength(player?.monsterType) + hash(player?.id) % 13) % TAU : 0;
-  return { phase, stride: clamp(speed / 5, 0, 1), speed };
+  const airborne = player?.alive !== false && player?.grounded === false;
+  const phase = speed && !airborne ? (finite(time) * .001 * speed * TAU / monsterCycleLength(player?.monsterType) + hash(player?.id) % 13) % TAU : 0;
+  const yaw = finite(player?.yaw), vx = finite(player?.vx), vz = finite(player?.vz);
+  return { phase, stride: airborne ? 0 : clamp(speed / 5, 0, 1), speed, airborne, land: 0,
+    jump: airborne ? clamp(finite(player?.vy) / 6.4, 0, 1) : 0, fall: airborne ? clamp(-finite(player?.vy) / 8, 0, 1) : 0,
+    forward: speed > .05 ? (Math.sin(yaw) * vx - Math.cos(yaw) * vz) / speed : 1,
+    strafe: speed > .05 ? (Math.cos(yaw) * vx + Math.sin(yaw) * vz) / speed : 0 };
 }
 
 /** Bounded, independent creature gaits observe the final rendered positions. */
@@ -3176,25 +3188,31 @@ export function createMonsterAnimationPresenter({ maxMonsters = 20 } = {}) {
     const reset = !history || history.context !== context || history.lifeId !== player.lifeId || history.type !== player.monsterType
       || elapsed < 0 || elapsed > 1000 && !paused && !history.paused || Math.hypot(dx, dz) > Math.max(.5, elapsed * .020);
     if (reset) {
-      history = { x: player.x, z: player.z, gaitX: player.x, gaitZ: player.z, time, context, lifeId: player.lifeId, type: player.monsterType, paused, pose: { phase: hash(id) % 13, stride: 0, speed: 0 } };
+      history = { x: player.x, y: player.y, z: player.z, gaitX: player.x, gaitZ: player.z, time, context, lifeId: player.lifeId, type: player.monsterType, paused,
+        pose: { ...monsterAnimationPose({ ...player, vx: 0, vz: 0 }, 0), phase: hash(id) % 13 } };
       histories.delete(id);
       while (histories.size >= capacity) histories.delete(histories.keys().next().value);
       histories.set(id, history);
     }
     if (paused || history.paused) {
       // A tab resuming from pause keeps its held pose and discards elapsed wall time.
-      history.x = history.gaitX = player.x; history.z = history.gaitZ = player.z; history.time = time; history.paused = paused;
+      history.x = history.gaitX = player.x; history.y = player.y; history.z = history.gaitZ = player.z; history.time = time; history.paused = paused;
       return history.pose;
     }
     if (!reset && elapsed > 0) {
       const travelled = Math.hypot(player.x - history.gaitX, player.z - history.gaitZ), distance = travelled > .001 ? travelled : 0;
       const speed = distance ? Math.min(14, Math.hypot(dx, dz) * 1000 / elapsed) : 0;
       const amount = 1 - Math.exp(-elapsed / (speed > .05 ? 45 : 70));
-      const stride = history.pose.stride + (clamp(speed / 5, 0, 1) - history.pose.stride) * amount;
-      history.pose = { phase: (history.pose.phase + distance * TAU / monsterCycleLength(player.monsterType)) % TAU, stride: stride < .00001 ? 0 : stride, speed };
+      const airborne = player.grounded === false, yaw = finite(player.yaw), length = Math.hypot(dx, dz);
+      const stride = history.pose.stride + ((airborne ? 0 : clamp(speed / 5, 0, 1)) - history.pose.stride) * amount;
+      const land = airborne ? 0 : history.pose.airborne ? clamp(Math.max(.25, -finite(player.vy) / 8, (history.y - player.y) * 1000 / elapsed / 8), 0, 1) : finite(history.pose.land) * Math.exp(-elapsed / 95);
+      history.pose = { phase: (history.pose.phase + (airborne ? 0 : distance) * TAU / monsterCycleLength(player.monsterType)) % TAU, stride: stride < .00001 ? 0 : stride, speed, airborne,
+        land: land < .00001 ? 0 : land, jump: airborne ? clamp(finite(player.vy) / 6.4, 0, 1) : 0, fall: airborne ? clamp(-finite(player.vy) / 8, 0, 1) : 0,
+        forward: length > .001 ? (Math.sin(yaw) * dx - Math.cos(yaw) * dz) / length : history.pose.forward,
+        strafe: length > .001 ? (Math.cos(yaw) * dx + Math.sin(yaw) * dz) / length : history.pose.strafe };
       if (distance) { history.gaitX = player.x; history.gaitZ = player.z; }
     }
-    history.x = player.x; history.z = player.z; history.time = time;
+    history.x = player.x; history.y = player.y; history.z = player.z; history.time = time;
     histories.delete(id); histories.set(id, history);
     return history.pose;
   };
@@ -3204,8 +3222,8 @@ export function createMonsterAnimationPresenter({ maxMonsters = 20 } = {}) {
   return present;
 }
 
-function creatureParts(mesh, player, type, art, pose, front, animation) {
-  const box = (x, y, z, w, h, d, color) => mesh.box(x, y, z, w, h, d, color, pose);
+function creatureParts(mesh, player, type, art, pose, front, animation, motion) {
+  const box = (x, y, z, w, h, d, color) => mesh.box(x, y + (motion.active && y >= .30 && y + h <= .64 && z >= -.20 && z + d <= .34 ? motion.bodyBob : 0), z, w, h, d, color, pose);
   const phase = finite(animation.phase), stride = clamp(finite(animation.stride), 0, 1), sprint = clamp(finite(animation.sprint), 0, 1);
   const windup = ['windup', 'lungeWindup'].includes(player.monsterState) ? smooth(1 - clamp(finite(player.attackTicks) / Math.max(1, finite(player.attackDuration, 1)), 0, 1)) : 0;
   const leap = player.monsterState === 'leap' && finite(player.lungeTicks) > 0;
@@ -3220,8 +3238,16 @@ function creatureParts(mesh, player, type, art, pose, front, animation) {
     box(-.13, .555, -.125, .26, .075, .36, art.shadow);
     box(-.18, .365, -.195, .36, .19, .07, art.head);
     box(-.15, .32, .235, .30, .16, .09, art.armor);
+    let pawIndex = 0;
     for (const side of [-1, 1]) for (const end of [-1, 1]) {
       const centerX = side * .13, centerZ = end < 0 ? -.19 : .21;
+      if (motion.active) {
+        const paw = motion.paws[pawIndex++];
+        appendMonsterLimb(mesh, pose, paw.hip, paw.knee, .074, .072, art.skin);
+        appendMonsterLimb(mesh, pose, paw.knee, paw.ankle, .066, .062, art.shadow);
+        mesh.box(paw.foot[0] - .050, paw.foot[1], paw.foot[2] - .052, .100, .050, .104, art.armor, pose);
+        continue;
+      }
       // Diagonal pairs trot together; each entire pose fits its own leg box.
       const swing = Math.sin(phase + (side === end ? 0 : Math.PI)), travel = swing * stride * .016;
       const lift = Math.max(0, Math.cos(phase + (side === end ? 0 : Math.PI))) * stride * .052;
@@ -3249,8 +3275,16 @@ function creatureParts(mesh, player, type, art, pose, front, animation) {
   }
   const crouch = type === 'leaper' ? windup * .055 + (leap ? .035 : 0) : .018 + roar * .025;
   const legStride = Math.sin(phase) * stride * .028;
-  for (const side of [-1, 1]) {
+  for (const [index, side] of [-1, 1].entries()) {
     const x = side < 0 ? -.184 : .084, travel = side * legStride;
+    if (motion.active) {
+      const leg = motion.legs[index];
+      appendMonsterLimb(mesh, pose, leg.hip, leg.knee, .090, .112, art.armor);
+      appendMonsterLimb(mesh, pose, leg.knee, leg.ankle, .078, .100, art.skin);
+      mesh.box(leg.foot[0] - .050, leg.foot[1], leg.foot[2] - .090, .100, .110, .180, art.shadow, pose);
+      front(leg.knee[0] - .014, leg.knee[1] - .08, leg.knee[2] - .060, .028, .140, type === 'leaper' ? '#d6d5b9' : '#b09cae');
+      continue;
+    }
     box(x, .018, -.13 + travel, .10, .11, .26, art.shadow);
     box(x + .011, .126, -.085 + travel, .078, .38, .15, art.skin);
     box(x - .004, .476, -.102 + travel, .108, .30 - crouch, .19, art.armor);
@@ -3264,9 +3298,16 @@ function creatureParts(mesh, player, type, art, pose, front, animation) {
     const ribWidth = width * .78 - rib * .020;
     front(-ribWidth / 2, .834 + rib * .075 - crouch, -.1285, ribWidth, .019, art.shadow);
   }
-  for (const side of [-1, 1]) {
+  for (const [index, side] of [-1, 1].entries()) {
     const x = side < 0 ? -.236 : .172;
     const lift = type === 'leaper' ? windup * .23 + (leap ? .18 : 0) : roar * .14;
+    if (motion.active) {
+      const arm = motion.arms[index];
+      appendMonsterLimb(mesh, pose, arm.shoulder, arm.elbow, .064, .078, art.skin);
+      appendMonsterLimb(mesh, pose, arm.elbow, arm.hand, .058, .072, art.shadow);
+      for (let claw = 0; claw < 2; claw++) mesh.box(arm.hand[0] - .024 + claw * .028, arm.hand[1] - .072, arm.hand[2] - .043, .013, .092, .027, '#dbd2b9', pose);
+      continue;
+    }
     // Longer bare forearms and small real claws stay within .29 body / .32
     // movement bounds; lunge travel belongs to the swept engine body itself.
     box(x, .803 + lift - crouch, -.115, .064, .395, .13, art.skin);
@@ -3300,26 +3341,35 @@ function creatureParts(mesh, player, type, art, pose, front, animation) {
 function monsterParts(mesh, player, time, animation = null) {
   const type = MONSTER_ART[player.monsterType] ? player.monsterType : 'stalker', art = MONSTER_ART[type];
   const yaw = finite(player.yaw), pose = { x: player.x, y: finite(player.y), z: player.z, yaw };
+  const gait = player.alive === false ? STILL_MONSTER_GAIT : animation || monsterAnimationPose(player, time), motion = monsterLocomotionPose(player, gait);
   const windup = player.monsterState === 'windup' ? 1 - clamp(finite(player.attackTicks) / Math.max(1, finite(player.attackDuration, 1)), 0, 1) : 0;
   const aiming = player.monsterState === 'aiming', armed = type === 'gunner' || type === 'sniper';
-  const speed = Math.hypot(finite(player.vx), finite(player.vz));
-  const stride = animation ? Math.sin(finite(animation.phase)) * clamp(finite(animation.stride), 0, 1) * .025 : Math.sin(finite(time) * (type === 'runner' ? .018 : .011) + hash(player.id) % 30) * clamp(speed / 6, 0, 1) * .025;
-  const box = (x, y, z, w, h, d, color) => mesh.box(x, y, z, w, h, d, color, pose);
+  const stride = Math.sin(finite(gait.phase)) * clamp(finite(gait.stride), 0, 1) * .025;
+  const box = (x, y, z, w, h, d, color) => mesh.box(x, y + (motion.active && y >= .79 && y + h <= 1.38 ? motion.bodyBob : 0), z, w, h, d, color, pose);
   const front = (x, y, z, w, h, color) => {
     const points = [[x, y, z], [x, y + h, z], [x + w, y + h, z], [x + w, y, z]].map(point => {
       const p = rotate(point, yaw); return [p[0] + pose.x, p[1] + pose.y, p[2] + pose.z];
     });
     mesh.quad(...points, rotate([0, 0, -1], yaw), rgba(color));
   };
-  if (appendMonsterVariant(mesh, player, pose, { time, animation: animation || monsterAnimationPose(player, time) })) return { type, armed: false, art, pose, yaw, pitch: 0 };
+  if (appendMonsterVariant(mesh, player, pose, { time, animation: gait, motion })) return { type, armed: false, art, pose, yaw, pitch: 0 };
   if (CREATURE_TYPES.has(type)) {
-    creatureParts(mesh, player, type, art, pose, front, animation || monsterAnimationPose(player, time));
+    creatureParts(mesh, player, type, art, pose, front, gait, motion);
     return { type, armed: false, art, pose, yaw, pitch: 0 };
   }
   // Every moving anatomical corner stays inside the shared .29 body and .22
   // head shooting boxes at every yaw, including the claw windup. Bigger armor
   // fills that envelope; it does not imply an unhittable oversized brute.
-  for (const [x, step] of [[-.22, stride], [.06, -stride]]) {
+  for (const [index, [x, step]] of [[-.22, stride], [.06, -stride]].entries()) {
+    if (motion.active) {
+      const leg = motion.legs[index], depth = .26 - motion.stride * .085, width = .16 - motion.stride * .025;
+      appendMonsterLimb(mesh, pose, leg.hip, leg.knee, .124, .142, art.skin);
+      appendMonsterLimb(mesh, pose, leg.knee, leg.ankle, .115, .125, art.skin);
+      mesh.box(leg.foot[0] - width / 2, leg.foot[1], leg.foot[2] - depth / 2, width, .145, depth, art.shadow, pose);
+      front(leg.knee[0] - .053, leg.knee[1] - .006, leg.knee[2] - .078, .106, .025, type === 'brute' ? '#c6a282' : '#a6b29b');
+      front(leg.ankle[0] - .012, leg.ankle[1] + .032, leg.ankle[2] - .064, .024, .100, art.shadow);
+      continue;
+    }
     box(x, .018, -.13 + step, .16, .16, .26, art.shadow);
     box(x + .018, .17, -.075 + step, .124, .64, .16, art.skin);
     box(x + .008, .45, -.096 + step, .144, .16, .028, art.armor);
@@ -3355,8 +3405,16 @@ function monsterParts(mesh, player, time, animation = null) {
     }
   }
   if (finite(player.monsterRallyTicks) > 0) front(-.027, 1.31, -.1508, .054, .036, '#aff0b4');
-  for (const side of [-1, 1]) {
+  for (const [index, side] of [-1, 1].entries()) {
     const x = side < 0 ? -.235 : .165;
+    if (motion.active) {
+      const arm = motion.arms[index];
+      appendMonsterLimb(mesh, pose, arm.shoulder, arm.elbow, .070, .085, art.skin);
+      appendMonsterLimb(mesh, pose, arm.elbow, arm.hand, .060, .072, art.armor);
+      if (!armed) for (let claw = 0; claw < 2; claw++) mesh.box(arm.hand[0] - .024 + claw * .027, arm.hand[1] - .080, arm.hand[2] - .040, .013, .100, .025, '#d4d7b4', pose);
+      front(arm.shoulder[0] - .020, arm.shoulder[1] - .065, arm.shoulder[2] - .052, .040, .055, art.shadow);
+      continue;
+    }
     const lift = armed ? .09 : windup * .20, forward = -.116 - windup * .030;
     box(x, .83 + lift, forward, .070, .42, .15, art.skin);
     box(x - (side < 0 ? 0 : .005), .805 + lift, forward - .021, .075, .15, .16, art.armor);

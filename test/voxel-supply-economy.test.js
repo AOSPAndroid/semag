@@ -37,11 +37,11 @@ test('a fifth genuine monster kill guarantees exactly one carryable potion and r
   assert.equal(state.loot.length,total);assert.equal(state.loot.filter(item=>item.id===id).length,1);assert.equal(state.horde.totalKills,kills);
 });
 
-test('actual E collects corpse medicine into a slot at full health and its later use runs the real two-second heal channel',()=>{
+test('actual E collects corpse medicine into a slot at full health and its later use spends it after a 0.2-second drink',()=>{
   const{state,monster,player}=spawned();state.horde.killsSinceHeal=4;kill(state,monster);Object.assign(player,{x:monster.x,z:monster.z});
   Horde.step(state,[{interact:true}]);assert.equal(player.hp,player.maxHp);assert.equal(player.potions,1);assert.ok(state.events.some(event=>event.type==='lootPickup'&&event.kind==='heal'));assert.ok(!state.loot.some(item=>item.kind==='heal'));
-  player.hp=50;Horde.step(state);Horde.step(state,[{heal:true}]);assert.equal(player.potions,0);assert.equal(player.healTicks,HEAL.ticks);assert.equal(player.hp,50);
-  advance(state,HEAL.ticks-1);assert.equal(player.hp,50);advance(state,1);assert.equal(player.hp,50+HEAL.amount);assert.equal(player.healTicks,0);
+  player.hp=50;Horde.step(state);Horde.step(state,[{heal:true}]);assert.equal(player.potions,1);assert.equal(player.healTicks,HEAL.ticks);assert.equal(player.hp,50);
+  advance(state,HEAL.ticks-1);assert.equal(player.hp,50);assert.equal(player.potions,1);advance(state,1);assert.equal(player.hp,50+HEAL.amount);assert.equal(player.potions,0);assert.equal(player.healTicks,0);
 });
 
 test('corpse potions obey real range, height and cover checks before any inventory mutation',()=>{
@@ -64,9 +64,26 @@ test('every potion stack stays capped at two and a full pack leaves all uncollec
   Horde.step(state);Horde.step(state,[{interact:true}]);assert.equal(loot.amount,2);assert.equal(player.potions,2);
 });
 
-test('wave clear never hands out consumables or refunds a potion already committed to an interrupted heal',()=>{
-  const{state,player,monster}=spawned({wave:2});player.hp=50;collect(state,player,'heal');Horde.step(state,[{heal:true}]);assert.equal(player.healTicks,HEAL.ticks);assert.equal(player.potions,0);
-  state.horde.pending=0;kill(state,monster);assert.equal(state.phase,'intermission');assert.equal(player.healTicks,0);assert.equal(player.potions,0);assert.equal(player.grenades,0);assert.equal(player.hp,85);assert.equal(player.sprinting,false);assert.equal(player.stamina,100);
+test('wave clear clears an interrupted drink and keeps its unspent potion without handing out additional consumables',()=>{
+  const{state,player,monster}=spawned({wave:2});player.hp=50;collect(state,player,'heal');Horde.step(state,[{heal:true}]);assert.equal(player.healTicks,HEAL.ticks);assert.equal(player.potions,1);
+  state.horde.pending=0;kill(state,monster);assert.equal(state.phase,'intermission');assert.equal(player.healTicks,0);assert.equal(player.healing,false);assert.equal(player.potions,1);assert.equal(player.inventory.find(item=>item?.kind==='heal').healUseId,undefined);assert.equal(player.healUseId,null);assert.equal(player.grenades,0);assert.equal(player.hp,85);assert.equal(player.sprinting,false);assert.equal(player.stamina,100);
+  advance(state,HEAL.ticks*2);assert.equal(player.potions,1);assert.equal(player.hp,85);assert.ok(!state.events.some(event=>event.type==='healComplete'));
+});
+
+test('winning Royale during a drink clears its reservation while retaining the unspent potion and original health',()=>{
+  const state=Royale.createState({capacity:2,seed:291});Royale.startMatch(state,[0,1]);
+  for(let i=0;i<Royale.ROYALE.countdownTicks;i++)Royale.step(state);
+  state.map=arena;state.loot=[];const[player,opponent]=state.players;
+  Object.assign(player,{x:0,y:0,z:0,hp:50,grounded:true});Object.assign(opponent,{x:20,y:0,z:20,grounded:true});
+  state.loot.push({id:++state.lootId,kind:'heal',amount:1,x:0,y:0,z:0});
+  Royale.step(state,[{interact:true}]);assert.equal(player.potions,1);
+  Royale.step(state);Royale.step(state,[{heal:true}]);assert.equal(player.healTicks,HEAL.ticks);assert.equal(player.potions,1);
+  applyCombatDamage(state,[{playerId:0,targetId:1,damage:opponent.hp,attack:'gun',weapon:'carbine'}]);Royale.step(state);
+  assert.equal(state.phase,'matchEnd');assert.equal(state.winnerId,0);assert.equal(player.hp,50);assert.equal(player.potions,1);
+  assert.equal(player.healTicks,0);assert.equal(player.healing,false);assert.equal(player.healUseId,null);assert.equal(player.healStartTick,-1);
+  assert.equal(player.inventory.find(item=>item?.kind==='heal').healUseId,undefined);
+  for(let i=0;i<HEAL.ticks*2;i++)Royale.step(state);
+  assert.equal(player.hp,50);assert.equal(player.potions,1);assert.ok(!state.events.some(event=>event.type==='healComplete'));
 });
 
 test('fresh Horde rematches discard found blades and supplies while retaining the selected gun',()=>{

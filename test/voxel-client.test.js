@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { aimFraction, aimLookMultiplier, confirmedHitGroups, healthHUDPlayer, healthPresentation, weaponComparison, combatEventPerspective, combatReadout, cleanAim, composeInput, controlForKey, createContinuousInputPacer, FPS_BUTTONS, hasGunshotReport, interpolatedState, isFormTarget, loadoutForKey, matchClock, neutralInput, reconcilePlayer, roundResult, tacticalSquadHealth, tacticalMapPlayers } from '../public/voxel-client.js';
-import { createState, emptyInput, MAPS, predictLocalMovement, traceShot, WEAPONS, PLAYER_HEALTH } from '../public/voxel-engine.js';
+import { createState, emptyInput, MAPS, predictLocalMovement, traceShot, WEAPONS, PLAYER_HEALTH, HEAL } from '../public/voxel-engine.js';
 import { advanceBolts, launchBolt } from '../public/voxel-projectiles.js';
 
 function boltSamples() {
@@ -350,9 +350,9 @@ test('combat readout distinguishes a committed sword strike, gun ammo and potion
   player.meleeCooldown = 27;
   readout = combatReadout(player, weapons); assert.equal(readout.ammo, 'RECOVER'); assert.equal(readout.status, '0.2S · RECOVERING'); assert.equal(readout.progress.percent, 50, 'swapping away from a swing cannot hide its recovery');
   player.meleeCooldown = 0;
-  Object.assign(player, { healing: true, healTicks: 120, potions: 0 });
+  Object.assign(player, { healing: true, healTicks: HEAL.ticks / 2, potions: 1 });
   readout = combatReadout(player, weapons);
-  assert.equal(readout.label, 'HEALING POTION'); assert.equal(readout.ammo, '+25'); assert.equal(readout.progress.percent, 50); assert.equal(readout.progress.label, 'Drinking healing potion'); assert.equal(readout.potions, 0);
+  assert.equal(readout.label, 'HEALING POTION'); assert.equal(readout.ammo, '+25'); assert.equal(readout.progress.percent, 50); assert.equal(readout.progress.label, 'Drinking healing potion'); assert.equal(readout.potions, 1);
   assert.equal(player.ammo, 6, 'readout cannot consume the primary gun magazine');
 });
 
