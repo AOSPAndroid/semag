@@ -17,6 +17,7 @@ import { createCrosshairPresenter, paintCrosshair } from './voxel-crosshair.js';
 import { setHidden, setAttribute, setStyle, setDisabled } from './hub/dom.js';
 import { createPractice, startPractice, stepPractice, pausePractice, resumePractice, getPracticeStats, TICK_RATE } from './voxel-practice-engine.js';
 import { tickFraction } from './display-timing.js';
+import { isPauseShortcut } from './pause-shortcut.js';
 import { createPracticeInputQueue } from './voxel-practice-input.js';
 import { DOJO_MAP } from './voxel-dojo-map.js';
 import { DOJO_ACTIONS, findDojoStation, findDojoStationLoot } from './voxel-dojo-engine.js';
@@ -80,7 +81,7 @@ export function bootPractice() {
   let reticleView = null;
   function clearReticle() { presentCrosshair.reset(); reticleView = null; paintCrosshair(hitElements.crosshair, null); setHidden(hitElements.scope, true); }
   let urgentHud = '', eventCursor = 0, feedbackUntil = 0, damageFeedback = null, lastDrawAt = 0, fallback = false, modalOpen = false;
-  let renderCount = 0, physicsSamples = 0, lastFraction = 0, activeSession = false, lastCountdown = null, returnFocus = null, dojoToolsOpen = false;
+  let renderCount = 0, physicsSamples = 0, lastFraction = 0, activeSession = false, lastCountdown = null, returnFocus = null, dojoToolsOpen = false, wasFullscreen = document.fullscreenElement === shell;
   const listeners = [], keys = new Set(), physicalKeys = new Map(), mouse = { fire: false, aim: false }, inputQueue = createPracticeInputQueue({ extraActions: dojo ? DOJO_ACTIONS : [] });
   const touch = { move: { x: 0, y: 0 }, look: { x: 0, y: 0 }, actions: new Set() }, pointers = new Map(), movement = new Map();
   const audio = new GameAudio(), picker = mountKeyboardLayoutPicker($('practice-keyboard'), { id: 'practice-keyboard-select' });
@@ -143,8 +144,8 @@ export function bootPractice() {
   function hints() {
     const layout = getKeyboardLayout(); app.dataset.keyboardLayout = layout;
     setText('practice-move-keys', displayKey('WASD')); setText('practice-grenade-key', displayKey('Q')); setText('practice-guide-grenade', displayKey('Q'));
-    canvas.setAttribute('aria-label', `First-person ${royale ? 'Royale' : 'Breach'} practice. ${displayKey('WASD')} or arrows move, mouse looks, left click or B / J uses your selected item, right click aims guns, stabs with a knife or parries with other blades, Space jumps, Control crouches, Shift sprints, C walks quietly, R reloads, 1 to 4 equip inventory slots, wheel up or down switches carried weapons, X drops your selected item, V switches blade, ${displayKey('Q')} throws a grenade, F heals, E picks up supplies, Escape pauses.`);
-    setText('practice-look-hint', dojo ? `TAB RANGE TOOLS · ${displayKey('WASD')} MOVE · ESC PAUSE` : fallback ? 'DRAG TO LOOK · ESC PAUSE' : `${displayKey('WASD')} MOVE · RMB SECONDARY · ESC PAUSE`);
+    canvas.setAttribute('aria-label', `First-person ${royale ? 'Royale' : 'Breach'} practice. ${displayKey('WASD')} or arrows move, mouse looks, left click or B / J uses your selected item, right click aims guns, stabs with a knife or parries with other blades, Space jumps, Control crouches, Shift sprints, C walks quietly, R reloads, 1 to 4 equip inventory slots, wheel up or down switches carried weapons, X drops your selected item, V switches blade, ${displayKey('Q')} throws a grenade, F heals, E picks up supplies, P pauses or resumes. Escape releases the cursor or exits fullscreen.`);
+    setText('practice-look-hint', dojo ? `TAB RANGE TOOLS · ${displayKey('WASD')} MOVE · P MENU` : fallback ? 'DRAG TO LOOK · P MENU' : `${displayKey('WASD')} MOVE · RMB SECONDARY · P MENU`);
   }
   function stopFrame() { if (frameId !== null) cancelAnimationFrame(frameId); frameId = null; previousFrame = null; accumulator = 0; }
   function release() {
@@ -171,8 +172,9 @@ export function bootPractice() {
   }
   function requestCapture() {
     if (touchMode || !canvas.requestPointerLock) { fallback = !touchMode; hints(); return; }
-    try { const result = canvas.requestPointerLock(); result?.catch?.(() => { fallback = true; hints(); }); } catch { fallback = true; hints(); }
+    try { const result = canvas.requestPointerLock(); result?.catch?.(captureFailed); } catch { captureFailed(); }
   }
+  function captureFailed() { if (!active() || dojoToolsOpen || locked()) return; fallback = true; hints(); }
   function resetView() {
     for (const armory of armories.values()) armory.close();
     release(); stopFrame(); previousPlayers = []; presentationPlayer = null; movement.clear(); eventCursor = 0; feedbackUntil = 0; hitFeedback.reset({ clearHistory: true }); damageFeedback = null;
@@ -209,7 +211,7 @@ export function bootPractice() {
     state = createPractice(config()); startPractice(state); activeSession = true; resetView(); buildRadar(); updateHud(performance.now(), true); canvas.focus({ preventScroll: true }); requestCapture(); wake();
   }
   function pause() {
-    if (!active()) return; for (const armory of armories.values()) armory.close(); dojoToolsOpen = false; setHidden($('dojo-tools'), true); pausePractice(state); release(); stopFrame(); unlock(); updateHud(performance.now(), true); draw(lastDrawAt); $('practice-resume').focus({ preventScroll: true });
+    if (!active()) return; for (const armory of armories.values()) armory.close(); dojoToolsOpen = false; setHidden($('dojo-tools'), true); setAttribute($('dojo-tools-toggle'), 'aria-expanded', 'false'); pausePractice(state); release(); stopFrame(); unlock(); updateHud(performance.now(), true); draw(lastDrawAt); $('practice-resume').focus({ preventScroll: true });
   }
   function resume() {
     if (state?.phase !== 'paused' || modalOpen || !renderer?.available) return; release(); resumePractice(state); previousFrame = null; accumulator = 0; previousPlayers = []; movement.clear();
@@ -272,7 +274,7 @@ export function bootPractice() {
     }
     setHidden($('practice-overlay'), phase === 'fight'); setHidden($('practice-setup-form'), phase !== 'ready'); setHidden($('practice-pause-card'), phase !== 'paused'); setHidden($('practice-result-card'), phase !== 'matchEnd'); setHidden($('practice-countdown'), phase !== 'countdown');
     setHidden($('practice-combat'), !activeSession); setHidden($('practice-radar'), !activeSession); setDisabled($('practice-pause'), !['fight', 'countdown', 'paused'].includes(phase));
-    setText('practice-pause', phase === 'paused' ? '▶' : 'Ⅱ'); setAttribute($('practice-pause'), 'aria-label', phase === 'paused' ? 'Resume practice' : 'Pause practice');
+    setText('practice-pause', phase === 'paused' ? '▶' : 'Ⅱ'); setAttribute($('practice-pause'), 'aria-label', phase === 'paused' ? 'Resume practice (P)' : 'Pause practice (P)');
     setDisabled($('practice-start'), !renderer?.available || !!graphicsError);
     setText('practice-health', player.hp); setText('practice-health-max', `/ ${player.maxHp}`); setStyle($('practice-health-fill'), 'width', `${clamp(player.hp / player.maxHp, 0, 1) * 100}%`); setAttribute($('practice-health-rail'), 'aria-valuenow', String(player.hp)); setAttribute($('practice-health-rail'), 'aria-valuemax', String(player.maxHp)); setAttribute($('practice-health-rail'), 'data-low', String(player.hp <= 60));
     setText('practice-grenades', readout.grenades); setText('practice-potions', readout.potions); setText('practice-weapon-name', readout.label); setText('practice-ammo', readout.ammo); setText('practice-reserve', readout.sword || readout.healing || readout.utility ? '' : `/ ${readout.reserve}`); setText('practice-weapon-status', readout.status); setAttribute(document.querySelector('.practice-weapon'), 'data-sword', String(readout.sword || readout.healing || readout.utility));
@@ -333,6 +335,11 @@ export function bootPractice() {
     consumeEvents(now); updateHud(now); draw(now); if (active()) wake();
   }
   function wake() { if (!destroyed && active() && frameId === null) frameId = requestAnimationFrame(frame); }
+  function keyboardPause(event) {
+    if (!isPauseShortcut(event)) return;
+    if (modalOpen) { event.preventDefault(); event.stopPropagation(); hideHelp(); if (state?.phase === 'paused') resume(); return; }
+    if (['fight', 'countdown', 'paused'].includes(state?.phase)) { event.preventDefault(); event.stopPropagation(); state.phase === 'paused' ? resume() : pause(); }
+  }
   function keyboardDown(event) {
     if (event.target?.closest?.('[data-voxel-armory]')) return;
     if (modalOpen) {
@@ -341,7 +348,7 @@ export function bootPractice() {
       return;
     }
     if (dojo && event.key === 'Tab' && active() && state.phase === 'fight' && (!dojoToolsOpen || event.target === canvas)) { event.preventDefault(); if (!event.repeat) setDojoTools(!dojoToolsOpen); return; }
-    if (event.key === 'Escape' && ['fight', 'countdown', 'paused'].includes(state.phase)) { event.preventDefault(); if (!event.repeat && state.phase !== 'paused') pause(); return; }
+    if (event.key === 'Escape' && ['fight', 'countdown', 'paused'].includes(state.phase)) { if (!event.repeat && state.phase !== 'paused') pause(); return; }
     if (!active() || isFormTarget(event.target) || event.isComposing || event.altKey || event.metaKey) return;
     const action = controlForKey(event);
     if (!action) return; event.preventDefault(); const physical = event.code || event.key; if (event.repeat && !physicalKeys.has(physical)) return;
@@ -412,11 +419,14 @@ export function bootPractice() {
   listen(document, 'pointerdown', event => { if (event.pointerType === 'touch') touchMode = true; else if (event.pointerType === 'mouse') touchMode = false; }, true);
   // MouseEvents report each button in an ADS/fire chord; PointerEvents only
   // report its first press and final release. Touch keeps its pointer handlers.
+  // Equipment trigger buttons stop bubbling keys; reserve P before those UI
+  // handlers while leaving editable fields and every other key with the UI.
+  listen(window, 'keydown', keyboardPause, true);
   listen(window, 'keydown', keyboardDown); listen(window, 'keyup', keyboardUp); listen(window, 'mousemove', mouseMove); listen(canvas, 'mousedown', mouseDown); listen(window, 'mouseup', mouseUp);
   listen(canvas, 'contextmenu', event => event.preventDefault()); listen($('practice-touch'), 'pointerdown', touchDown); listen(window, 'pointermove', touchMove); listen(window, 'pointerup', touchEnd); listen(window, 'pointercancel', touchEnd); listen($('practice-touch'), 'lostpointercapture', touchEnd);
-  listen(document, 'pointerlockchange', () => { if (locked()) { fallback = false; hints(); } else if (active() && !dojoToolsOpen) pause(); });
-  listen(document, 'pointerlockerror', () => { fallback = true; hints(); });
-  listen(document, 'fullscreenchange', () => { const full = document.fullscreenElement === shell; setAttribute($('practice-fullscreen'), 'aria-pressed', String(full)); setAttribute($('practice-fullscreen'), 'aria-label', full ? 'Exit fullscreen' : 'Enter fullscreen'); renderer?.resize(); draw(performance.now()); });
+  listen(document, 'pointerlockchange', () => { if (locked()) { if (!active() || dojoToolsOpen) { unlock(); return; } fallback = false; hints(); } else if (active() && !dojoToolsOpen) pause(); });
+  listen(document, 'pointerlockerror', captureFailed);
+  listen(document, 'fullscreenchange', () => { const full = document.fullscreenElement === shell, exited = wasFullscreen && !full; wasFullscreen = full; if (exited && active()) pause(); setAttribute($('practice-fullscreen'), 'aria-pressed', String(full)); setAttribute($('practice-fullscreen'), 'aria-label', full ? 'Exit fullscreen' : 'Enter fullscreen'); renderer?.resize(); draw(performance.now()); });
   listen(window, 'resize', () => { renderer?.resize(); if (!active()) draw(performance.now()); });
   listen(window, 'blur', () => { if (active()) pause(); else release(); }); listen(document, 'visibilitychange', () => { if (document.hidden && active()) pause(); }); listen(window, 'pagehide', destroy);
   listen(canvas, 'voxel-renderer-error', event => { if (event.detail?.message) { graphicsError = event.detail.message; if (active()) pause(); setHidden($('practice-error'), false); setText('practice-error-text', graphicsError); } else { graphicsError = ''; setHidden($('practice-error'), true); updateHud(performance.now(), true); draw(performance.now()); } });

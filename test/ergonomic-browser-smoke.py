@@ -290,13 +290,13 @@ def solo_pause_and_ui(browser, game):
         wait(page, 'window.firesideSolo.getState() !== null')
         phase = solo_state(page)['phase']
         solo_focus(page)
-        page.keyboard.press('Escape')
+        page.keyboard.press('p')
         wait(page, 'window.firesideSolo.getState().phase === "paused"')
         paused = solo_state(page)
-        cdp_key(page, 'Escape', 'Escape', repeat=True)
-        cdp_key(page, 'Escape', 'Escape', 'keyUp')
+        cdp_key(page, 'p', 'KeyP', repeat=True)
+        cdp_key(page, 'p', 'KeyP', 'keyUp')
         page.wait_for_timeout(110)
-        assert solo_state(page) == paused, (game, 'Repeat Escape or pause advanced state')
+        assert solo_state(page) == paused, (game, 'Repeat P or pause advanced state')
 
         # Existing forms plus inherited/empty contenteditable must accept native
         # editing without R restarting, P pausing, or a game action firing.
@@ -329,12 +329,12 @@ def solo_pause_and_ui(browser, game):
             assert not page.locator('#solo-how-to').evaluate('element => element.open')
             assert solo_state(page) == paused
         solo_focus(page)
-        page.keyboard.press('Escape')
+        page.keyboard.press('p')
         wait(page, 'phase => window.firesideSolo.getState().phase === phase', phase)
         page.keyboard.press('p')
         wait(page, 'window.firesideSolo.getState().phase === "paused"')
         solo_focus(page)
-        page.keyboard.press('Escape')
+        page.keyboard.press('p')
         wait(page, 'phase => window.firesideSolo.getState().phase === phase', phase)
         actions = solo_near_actions(page, game)
         if game == 'ember-delve':
@@ -343,14 +343,14 @@ def solo_pause_and_ui(browser, game):
             native_blur(page, lambda: wait(page, 'window.firesideSolo.getState().phase === "paused"'))
             page.keyboard.up('d')
             solo_focus(page)
-            page.keyboard.press('Escape')
+            page.keyboard.press('p')
             wait(page, 'window.firesideSolo.getState().phase === "playing"')
-        page.keyboard.press('Escape')
+        page.keyboard.press('p')
         wait(page, 'window.firesideSolo.getState().phase === "paused"')
         for width in (390, 320):
             page.set_viewport_size({'width': width, 'height': 900})
             no_overflow(page, game + '/' + str(width))
-        CHECKS.append({'game': game, 'escape_pause_resume': True, 'legacy_p': True,
+        CHECKS.append({'game': game, 'p_pause_resume': True, 'escape_reserved': True,
                        'repeat_ignored': True, 'ready_gate': True, 'forms_contenteditable': True,
                        'layout_preserves_pause': True, 'native_help': True, 'responsive_320_390': True,
                        'native_near_actions': actions})

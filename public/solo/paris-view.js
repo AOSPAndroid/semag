@@ -80,7 +80,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   const canvas = node('canvas', 'paris-canvas');
   canvas.width = W; canvas.height = H; canvas.tabIndex = 0; canvas.dataset.soloFocus = '';
   canvas.setAttribute('role', 'img');
-  canvas.setAttribute('aria-label', 'Forward-facing, 3D-style Paris street. Ride behind the e-bike courier. Arrow keys or W A S D to ride. Space for electric assist; E rings the bell. Escape pauses.');
+  canvas.setAttribute('aria-label', 'Forward-facing, 3D-style Paris street. Ride behind the e-bike courier. Arrow keys or W A S D to ride. Space for electric assist; E rings the bell. P pauses.');
   const overlay = node('div', 'paris-overlay'); overlay.hidden = true;
   const overlayEyebrow = node('span', 'paris-overlay-eyebrow');
   const overlayTitle = node('strong', 'paris-overlay-title');
@@ -144,7 +144,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     syncButtons();
   }
   function details() {
-    if (state.phase === 'paused') return 'Ride paused. Press Escape or Resume to continue.';
+    if (state.phase === 'paused') return 'Ride paused. Press P or Resume to continue.';
     if (state.mode === 'survival') {
       if (state.phase === 'lost') return `Survived ${formatAlive(Math.floor((state.finishTime ?? state.elapsed) * 1000))}. Three impacts ended your ${(state.distance / 1000).toFixed(2)} km ride.`;
       return 'Stay alive as Paris gets faster. Read the signals, use short brake bursts, and leave an escape gap.';
@@ -195,7 +195,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     if (!overlay.hidden) {
       setText(overlayEyebrow, state.phase === 'paused' ? 'UN PETIT MOMENT' : survival ? 'PARIS / SURVIVAL' : 'PARIS / FIN DE COURSE');
       setText(overlayTitle, state.phase === 'paused' ? 'Take a breather.' : survival ? `Survived ${formatAlive(Math.floor((state.finishTime ?? state.elapsed) * 1000))}.` : state.phase === 'won' ? 'Livraison réussie.' : 'End of the ride.');
-      setText(overlayDetail, state.phase === 'paused' ? 'Press Escape or Resume when you are ready.' : survival
+      setText(overlayDetail, state.phase === 'paused' ? 'Press P or Resume when you are ready.' : survival
         ? `THREE IMPACTS · ${(state.distance / 1000).toFixed(2)} KM · ${Math.round(state.speed * 3.6)} KM/H · ${getDifficulty(state).title.toUpperCase()}`
         : `${(state.distance / 1000).toFixed(2)} KM · ${Math.round(state.score)} POINTS · ${getDifficulty(state).title.toUpperCase()}`);
       replay.hidden = state.phase === 'paused';
@@ -383,7 +383,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   observer?.observe(canvas); observer?.observe(view);
   function updateKeyboardHints() {
     view.dataset.keyboardLayout = getKeyboardLayout();
-    canvas.setAttribute('aria-label', `Forward-facing, 3D-style Paris street. Ride behind the e-bike courier. Arrow keys or ${displayKey('W A S D')} to ride. Space for electric assist; E rings the bell. Escape pauses.`);
+    canvas.setAttribute('aria-label', `Forward-facing, 3D-style Paris street. Ride behind the e-bike courier. Arrow keys or ${displayKey('W A S D')} to ride. Space for electric assist; E rings the bell. P pauses.`);
   }
   const unsubscribeKeyboardLayout = subscribeKeyboardLayout(() => { releaseControls(); updateKeyboardHints(); publish(true); });
   updateKeyboardHints();

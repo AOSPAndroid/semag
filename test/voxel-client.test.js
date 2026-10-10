@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { aimFraction, aimLookMultiplier, confirmedHitGroups, healthHUDPlayer, healthPresentation, weaponComparison, combatEventPerspective, combatReadout, cleanAim, composeInput, controlForKey, createContinuousInputPacer, FPS_BUTTONS, hasGunshotReport, interpolatedState, isFormTarget, loadoutForKey, matchClock, neutralInput, reconcilePlayer, roundResult, tacticalSquadHealth, tacticalMapPlayers } from '../public/voxel-client.js';
+import { aimFraction, aimLookMultiplier, breachPauseAction, confirmedHitGroups, healthHUDPlayer, healthPresentation, weaponComparison, combatEventPerspective, combatReadout, cleanAim, composeInput, controlForKey, createContinuousInputPacer, FPS_BUTTONS, hasGunshotReport, interpolatedState, isFormTarget, loadoutForKey, matchClock, neutralInput, reconcilePlayer, roundResult, tacticalSquadHealth, tacticalMapPlayers } from '../public/voxel-client.js';
 import { createState, emptyInput, MAPS, predictLocalMovement, traceShot, WEAPONS, PLAYER_HEALTH, HEAL } from '../public/voxel-engine.js';
 import { advanceBolts, launchBolt } from '../public/voxel-projectiles.js';
 
@@ -191,6 +191,22 @@ test('arena loadout shortcuts respect setup phases, French digits, form focus an
   for (const phase of ['lobby', 'fight', 'matchEnd']) assert.equal(loadoutForKey({ key: '2', code: 'Digit2' }, phase), null);
   for (const blocked of [{ repeat: true }, { defaultPrevented: true }, { isComposing: true }, { ctrlKey: true }, { metaKey: true }, { altKey: true }, { target: { closest() { return {}; } } }]) assert.equal(loadoutForKey({ key: '1', ...blocked }, 'buy'), null);
   for (const key of ['0', 'è', '_', 'ç', 'F7']) assert.equal(loadoutForKey({ key }, 'buy'), null, 'symbols require their physical number-row identity');
+});
+
+test('Breach pause menu resumes only connected living players during playable round phases', () => {
+  const live = { connected: true, alive: true, entered: true, paused: false, phase: 'fight' };
+  assert.equal(breachPauseAction(live), 'open', 'P releases controls and opens the menu during play');
+  for (const phase of ['countdown', 'buy', 'fight']) {
+    assert.equal(breachPauseAction({ ...live, phase, paused: true, modalOpen: true }), 'resume', `${phase}: P or Resume returns to play from the menu`);
+    assert.equal(breachPauseAction({ ...live, phase, paused: true }), 'resume', `${phase}: P resumes the released-controls overlay`);
+  }
+  for (const change of [{ phase: 'lobby' }, { phase: 'roundEnd' }, { phase: 'matchEnd' }, { connected: false }, { alive: false }, { graphicsError: 'context lost' }]) {
+    assert.equal(breachPauseAction({ ...live, paused: true, modalOpen: true, ...change }), 'close', 'an unavailable match closes the menu without enabling gameplay');
+  }
+  assert.equal(breachPauseAction({ ...live, entered: false, paused: true }), 'open', 'first entry still uses the deliberate Enter arena button');
+  assert.equal(breachPauseAction({ ...live, hidden: true }), null);
+  assert.equal(breachPauseAction({ ...live, modalOpen: true, hidden: true }), null);
+  assert.deepEqual(live, { connected: true, alive: true, entered: true, paused: false, phase: 'fight' }, 'menu decisions never mutate the match');
 });
 
 test('form, buttons and dialog targets never supply game input', () => {

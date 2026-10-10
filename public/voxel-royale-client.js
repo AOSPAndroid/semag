@@ -16,6 +16,7 @@ import { createNetworkTimeline } from './network-timeline.js';
 import { createFpsInputQueue, releaseFpsTouchAction } from './voxel-input-queue.js';
 import { setAttribute, setDisabled, setHidden, setStyle, setText, toggleClass } from './hub/dom.js';
 import { inventoryControlForKey, inventoryItemReadout, inventoryLootPresentation, inventoryEventFeedback, inventorySlots, inventorySwapPresentation, mountInventoryHotbar, mountWeaponWheel } from './voxel-inventory-ui.js';
+import { isPauseShortcut } from './pause-shortcut.js';
 
 export const LOOK_SENSITIVITY = .0025;
 export const INPUT_ACTIONS = Object.freeze(['up', 'down', 'left', 'right', 'jump', 'crouch', 'walk', 'sprint', 'fire', 'reload', 'interact', 'aim', 'swap', 'grenade', 'heal', 'slot1', 'slot2', 'slot3', 'slot4', 'drop']);
@@ -170,6 +171,7 @@ async function boot() {
   let predictedPlayer = null, presentationPlayer = null, presentationPlayers = [], snapshots = [], pending = [], sequence = 0, predictionTick = 0, aim = cleanAim();
   let dialogReturnFocus = null, guideReturnToRoom = false;
   let paused = true, entered = false, fallback = false, touchMode = false, rightDrag = false, modalOpen = false, graphicsError = '', spectatorId = null;
+  let captureAttempt = 0;
   let destroyed = false, permanentError = false, reconnectTimer, reconnectAttempts = 0, frameId = null, lastFrameAt = 0, accumulator = 0, renderCount = 0;
   let heartbeat = null, lastTouchLookAt = performance.now(), lastHUDAt = 0, previousPhase = null, previousMatch = null;
   const hitFeedback = createHitFeedback(), hitMotion = matchMedia('(prefers-reduced-motion: reduce)');
@@ -245,6 +247,7 @@ async function boot() {
     if (touchMode && controlsActive()) { const sensitivity = aimLookMultiplier(presentationPlayer || ownPlayer(), engine?.ADS); aim = cleanAim(aim.yaw + touch.look.x * dt * 2.4 * sensitivity, aim.pitch - touch.look.y * dt * 1.85 * sensitivity); }
   }
   function neutralize({ pause = false, unlock = false } = {}) {
+    if (pause || unlock) captureAttempt++;
     weaponWheel.reset();
     clearReticle();
     reloadAudio.suspend(); paintVitals(null, 'Your', false);
@@ -308,8 +311,9 @@ async function boot() {
     setHidden($('overlay-start'), !isHost || phase !== 'lobby' || !!graphicsError); setDisabled($('overlay-start'), !startable);
     setHidden($('rematch-button'), !isHost || phase !== 'matchEnd'); setDisabled($('rematch-button'), !connected);
     setHidden($('overlay-rematch'), $('rematch-button').hidden); setDisabled($('overlay-rematch'), $('rematch-button').disabled);
-    setHidden($('overlay-room'), !connected || !['lobby', 'matchEnd'].includes(phase) || !!graphicsError);
-    $('overlay-room').firstChild.textContent = phase === 'matchEnd' ? 'Room & controls ' : 'Room setup ';
+    const releasedControls = local?.alive && (paused || !entered) && ['countdown', 'fight'].includes(phase);
+    setHidden($('overlay-room'), !connected || !['lobby', 'matchEnd'].includes(phase) && !releasedControls || !!graphicsError);
+    $('overlay-room').firstChild.textContent = phase === 'lobby' ? 'Room setup ' : 'Room & controls ';
     setText($('host-label'), isHost ? 'You host this room.' : hostId != null ? `${lookupName(hostId)} hosts this room.` : 'Waiting for the host');
     setText($('start-note'), phase === 'lobby' ? count < 2 ? 'Invite at least one rival. The host chooses when to start.' : count >= room.capacity ? `${count} players are here. This room is full and the host can start.` : `${count} players are here. The host can start now or invite up to ${room.capacity - count} more.` : phase === 'matchEnd' ? isHost ? 'Return everyone to the lobby, invite more rivals and start a new battle.' : 'The host can open the lobby for another battle.' : 'The battle keeps running when controls are released.');
     const viewed = spectatorPlayer(state, playerId, spectatorId), spectating = !!viewed && viewed.id !== playerId;
@@ -344,7 +348,7 @@ async function boot() {
     else if (!connected) { overlay = true; kicker = 'CONNECTING TO THE HOST'; title = permanentError ? 'This room is unavailable.' : 'Waiting for the host.'; subtitle = permanentError ? 'Return to the shelf to create a room or join the next battle.' : 'Your controls are released while the connection recovers.'; }
     else if (phase === 'lobby') { overlay = true; kicker = `${state?.mapName || 'PRIVATE ISLAND'} / ${count} PLAYERS`; title = isHost ? count >= 2 ? 'Your rivals are here.' : 'Gather your rivals.' : 'Waiting for the host.'; subtitle = isHost ? count >= 2 ? count >= room.capacity ? 'Everyone is here. Start when you are ready.' : `Start with the players here, or invite more. This room holds up to ${room.capacity} players.` : 'Share your invite with at least one other player. You choose when the battle begins.' : `${lookupName(hostId)} starts the battle when everyone is here. You do not need to ready up.`; }
     else if (phase === 'matchEnd') { overlay = true; const winner = state.winnerId ?? state.winner; kicker = 'BATTLE COMPLETE'; title = winner == null ? 'No one left standing.' : winner === playerId ? 'You outlasted everyone.' : `${lookupName(winner)} survives.`; subtitle = `${placement ? `You placed #${placement.place}. ` : ''}${local?.kills || 0} eliminations. ${isHost ? 'Return to the lobby to invite players and go again.' : 'The host can open the lobby for another battle.'}`; }
-    else if (local?.alive && (paused || !entered) && !modalOpen) { overlay = true; kicker = entered ? 'CONTROLS RELEASED' : 'YOUR ONE LIFE STARTS HERE'; title = entered ? 'Controls released.' : 'Enter the arena.'; subtitle = 'You start with a small knife and 200 health. Find a gun and supplies, then keep moving with the safe zone. The battle keeps running while controls are released.'; enter = true; }
+    else if (local?.alive && (paused || !entered) && !modalOpen) { overlay = true; kicker = entered ? 'CONTROLS RELEASED' : 'YOUR ONE LIFE STARTS HERE'; title = entered ? 'Controls released.' : 'Enter the arena.'; subtitle = 'You start with a small knife and 200 health. Find a gun and supplies, then keep moving with the safe zone. The battle keeps running while controls are released. Press P to return.'; enter = true; }
     setHidden($('game-overlay'), !overlay); setText($('overlay-kicker'), kicker); setText($('overlay-title'), title); setText($('overlay-subtitle'), subtitle); setHidden($('enter-arena'), !enter); setHidden($('retry-graphics'), !graphicsError); setHidden($('aim-note'), !enter); setText($('aim-note'), touchMode ? 'Move / Look pads. AIM becomes STAB with a knife or PARRY with another blade.' : 'RMB: gun sights / knife stab / blade parry. If capture is unavailable, hold RMB and drag to look.');
     setHidden($('phase-announcement'), phase !== 'countdown' || overlay || modalOpen || !connected); setText($('countdown-number'), Math.max(1, Math.ceil(finite(state?.phaseTicks) / 120))); renderRoster();
   }
@@ -468,11 +472,22 @@ async function boot() {
   }
   async function enterArena(event) {
     if (!connected || !ownPlayer()?.alive || graphicsError || !['countdown', 'fight'].includes(state?.phase)) return;
-    neutralize(); entered = true; paused = false; touchMode ||= event?.pointerType === 'touch' || matchMedia('(pointer: coarse)').matches; canvas.focus({ preventScroll: true });
+    neutralize(); const attempt = ++captureAttempt; entered = true; paused = false; touchMode ||= event?.pointerType === 'touch' || matchMedia('(pointer: coarse)').matches; canvas.focus({ preventScroll: true });
     if (touchMode) { fallback = false; updateUI(); wake(); return; } fallback = false;
     if (!canvas.requestPointerLock) { fallback = true; updateUI(); wake(); return; }
-    try { const request = canvas.requestPointerLock(); if (request?.then) await request; if (!pointerLocked()) { fallback = true; toast('Mouse capture unavailable. Hold right mouse and drag to look.'); } } catch { fallback = true; toast('Mouse capture unavailable. Hold right mouse and drag to look.'); }
+    try {
+      const request = canvas.requestPointerLock(); if (request?.then) await request;
+      if (destroyed || attempt !== captureAttempt || paused || modalOpen) return;
+      if (!pointerLocked()) { fallback = true; toast('Mouse capture unavailable. Hold right mouse and drag to look.'); }
+    } catch {
+      if (destroyed || attempt !== captureAttempt || paused || modalOpen) return;
+      fallback = true; toast('Mouse capture unavailable. Hold right mouse and drag to look.');
+    }
     updateUI(); wake();
+  }
+  function releaseControls() {
+    neutralize({ pause: true, unlock: true });
+    if (!$('enter-arena').hidden) $('enter-arena').focus({ preventScroll: true });
   }
   function positionLayoutPicker() {
     if (document.fullscreenElement || !$('room-dialog').hidden) $('room-keyboard-host').append(layoutPickerHost);
@@ -520,20 +535,38 @@ async function boot() {
     if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
   }
-  function updateKeyLabels() { setText($('move-keys'), getKeyboardLayout().toUpperCase()); for (const label of document.querySelectorAll('[data-royale-key]')) label.textContent = displayKey(label.dataset.royaleKey); canvas.setAttribute('aria-label', `3D battle royale. ${getKeyboardLayout().toUpperCase()} or arrows move; mouse looks; left click uses your selected item; right click aims guns, stabs with a knife or parries with other blades; 1 to 4 equip inventory slots; wheel up or down switches carried weapons; X drops the selected item; E picks up loot; V swaps blade and gun; ${displayKey('Q')} throws grenade; F heals; R reloads; Space jumps; Control crouches; Shift sprints, C walks quietly; Escape releases controls.`); }
+  function updateKeyLabels() { setText($('move-keys'), getKeyboardLayout().toUpperCase()); for (const label of document.querySelectorAll('[data-royale-key]')) label.textContent = displayKey(label.dataset.royaleKey); canvas.setAttribute('aria-label', `3D battle royale. ${getKeyboardLayout().toUpperCase()} or arrows move; mouse looks; left click uses your selected item; right click aims guns, stabs with a knife or parries with other blades; 1 to 4 equip inventory slots; wheel up or down switches carried weapons; X drops the selected item; E picks up loot; V swaps blade and gun; ${displayKey('Q')} throws grenade; F heals; R reloads; Space jumps; Control crouches; Shift sprints, C walks quietly; P opens the controls menu or resumes controls; Escape exits fullscreen and releases controls.`); }
   const unsubscribeLayout = subscribeKeyboardLayout(() => { neutralize({ pause: entered, unlock: true }); updateKeyLabels(); }); updateKeyLabels();
-  listen(window, 'keydown', event => { if (event.defaultPrevented || event.isComposing || event.altKey || event.metaKey) return; if (event.key === 'Escape') { if (modalOpen) { if (!$('guide-dialog').hidden) closeGuide(); else closeRoom(); } else if (entered) neutralize({ pause: true, unlock: true }); return; } if (event.key.toLowerCase() === 'p' && !isFormTarget(event.target) && entered) { event.preventDefault(); neutralize({ pause: true, unlock: true }); return; } if (!controlsActive() || isFormTarget(event.target)) return; const action = controlForKey(event); if (!action) return; event.preventDefault(); const id = event.code || event.key; if (pressedKeys.has(id) || event.repeat) return; if (/^slot[1-4]$/.test(action) || ['drop', 'swap'].includes(action)) weaponWheel.reset(); pressedKeys.set(id, action); keys.add(action); utilityFeedback(action); sendInput(currentInput(), true); });
+  listen(window, 'keydown', event => {
+    if (event.defaultPrevented || event.isComposing || event.altKey || event.metaKey) return;
+    if (event.key === 'Escape') {
+      if (event.repeat) return;
+      if (modalOpen) { if (!$('guide-dialog').hidden) closeGuide(); else closeRoom(); }
+      else if (entered) releaseControls();
+      return;
+    }
+    if (isPauseShortcut(event) && !modalOpen && connected && ownPlayer()?.alive && ['countdown', 'fight'].includes(state?.phase)) {
+      event.preventDefault();
+      if (paused || !entered) enterArena(event); else releaseControls();
+      return;
+    }
+    if (!controlsActive() || isFormTarget(event.target)) return;
+    const action = controlForKey(event); if (!action) return;
+    event.preventDefault(); const id = event.code || event.key; if (pressedKeys.has(id) || event.repeat) return;
+    if (/^slot[1-4]$/.test(action) || ['drop', 'swap'].includes(action)) weaponWheel.reset();
+    pressedKeys.set(id, action); keys.add(action); utilityFeedback(action); sendInput(currentInput(), true);
+  });
   listen(window, 'keyup', event => { const id = event.code || event.key, action = pressedKeys.get(id); pressedKeys.delete(id); if (action && ![...pressedKeys.values()].includes(action)) keys.delete(action); if (action) { sendInput(currentInput(), true); if (!isFormTarget(event.target)) event.preventDefault(); } });
   listen(document, 'focusin', event => { if (isFormTarget(event.target) && !actionPointers.size && !padPointers.size) neutralize(); });
   listen(window, 'blur', () => neutralize({ pause: entered, unlock: true }));
   listen(document, 'visibilitychange', () => { if (document.hidden) { neutralize({ pause: entered, unlock: true }); if (frameId) cancelAnimationFrame(frameId); frameId = null; lastFrameAt = 0; } else { renderer?.resize(); updateUI(); wake(); } });
-  listen(document, 'pointerlockchange', () => { if (pointerLocked()) { fallback = false; paused = false; entered = true; updateUI(); wake(); } else if (entered && !fallback && !touchMode && ownPlayer()?.alive) neutralize({ pause: true }); });
-  listen(document, 'pointerlockerror', () => { if (entered && !modalOpen) { fallback = true; paused = false; updateUI(); toast('Hold right mouse and drag to look. Left click fires.'); } });
+  listen(document, 'pointerlockchange', () => { if (pointerLocked()) { if (paused || modalOpen || !entered) { document.exitPointerLock?.(); return; } fallback = false; updateUI(); wake(); } else if (entered && !paused && !fallback && !touchMode && ownPlayer()?.alive) releaseControls(); });
+  listen(document, 'pointerlockerror', () => { if (entered && !paused && !modalOpen) { fallback = true; updateUI(); toast('Hold right mouse and drag to look. Left click fires.'); } });
   listen(canvas, 'mousedown', event => { if (!controlsActive()) return; event.preventDefault(); canvas.focus({ preventScroll: true }); if (event.button === 0) mouse.fire = true; if (event.button === 2) { mouse.aim = true; if (fallback) rightDrag = true; } if ([0, 2].includes(event.button)) sendInput(currentInput(), true); });
   listen(window, 'mouseup', event => { if (event.button === 0) mouse.fire = false; if (event.button === 2) { mouse.aim = false; rightDrag = false; } if (entered && [0, 2].includes(event.button)) sendInput(currentInput(), true); });
   listen(document, 'mousemove', event => { if (!controlsActive() || !(pointerLocked() || fallback && rightDrag)) return; const sensitivity = LOOK_SENSITIVITY * aimLookMultiplier(presentationPlayer || ownPlayer(), engine?.ADS); aim = cleanAim(aim.yaw + event.movementX * sensitivity, aim.pitch - event.movementY * sensitivity); sendInput(); });
   listen(canvas, 'contextmenu', event => event.preventDefault()); listen(canvas, 'click', event => { if (!entered || paused) enterArena(event); }); listen($('enter-arena'), 'click', enterArena);
-  listen($('pause-button'), 'click', () => neutralize({ pause: true, unlock: true }));
+  listen($('pause-button'), 'click', releaseControls);
   listen($('guide-button'), 'click', openGuide); listen($('close-guide'), 'click', closeGuide); listen($('close-guide-bottom'), 'click', closeGuide); listen($('guide-dialog'), 'click', event => { if (event.target === $('guide-dialog')) closeGuide(); });
   listen($('guide-dialog'), 'keydown', trapDialogTab);
   listen($('room-dialog'), 'keydown', trapDialogTab);
@@ -553,7 +586,14 @@ async function boot() {
     catch { toast('Fullscreen is unavailable in this browser.'); }
   }
   listen($('fullscreen-button'), 'click', toggleFullscreen); listen($('arena-fullscreen-button'), 'click', toggleFullscreen);
+  let wasFullscreen = document.fullscreenElement === $('game-shell');
   listen(document, 'fullscreenchange', () => {
+    const full = document.fullscreenElement === $('game-shell');
+    if (wasFullscreen && !full) {
+      neutralize({ pause: entered, unlock: true });
+      if (!modalOpen && !$('enter-arena').hidden) $('enter-arena').focus({ preventScroll: true });
+    }
+    wasFullscreen = full;
     positionLayoutPicker(); renderer?.resize(); draw();
     for (const id of ['fullscreen-button', 'arena-fullscreen-button']) {
       const label = document.fullscreenElement ? 'Exit fullscreen' : 'Enter fullscreen'; $(id).setAttribute('aria-label', label); $(id).title = label;

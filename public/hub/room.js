@@ -1,6 +1,7 @@
 import { setText, setAttribute, setHidden, setDisabled, setClass, toggleClass, setStyle, setHTML } from './dom.js';
 import { gameCode, displayKey, formatKeyboardText, subscribeKeyboardLayout, mountKeyboardLayoutPicker } from '../keyboard-layout.js';
 import { createCombatKeyMap, combatInputFromKeys } from '../combat-controls.js';
+import { isPauseShortcut } from '../pause-shortcut.js';
 import * as topdown from '../topdown-engine.js';
 import * as checkers from '../checkers-engine.js';
 import * as cards from '../cards-engine.js';
@@ -65,7 +66,7 @@ document.title = `${game.title} — Semag`;
 $('game-title').textContent = game.title;
 $('game-category').textContent = game.category;
 $('game-description').textContent = game.description;
-$('room-panel-note').textContent = `${game.description} Invite a friend or check the controls here. Live games continue while this panel is open.`;
+$('room-panel-note').textContent = `${game.description} Press P to open or close this panel. Online games keep running. Esc exits fullscreen.`;
 $('room-code-label').textContent = roomId || '—';
 $('player-name').value = playerName;
 $('room-app').classList.toggle('board-mode', boardMode);
@@ -296,10 +297,16 @@ function releaseKeys() {
 // cannot turn a held movement key into a different action.
 const keyboardIdentity = event => event.code || (event.key?.length === 1 ? event.key.toLowerCase() : event.key);
 document.addEventListener('keydown', event => {
+  if (isPauseShortcut(event)) {
+    event.preventDefault();
+    if ($('room-panel').open) closeRoomPanel({ returnToGame: true });
+    else openRoomPanel();
+    return;
+  }
   if (event.defaultPrevented || typing(event.target) || event.isComposing || event.metaKey || event.ctrlKey || event.altKey) return;
   if ($('room-panel').open) return;
   const identity = keyboardIdentity(event), code = gameCode(event);
-  if (practiceMode && code === 'Escape' && !event.repeat) { event.preventDefault(); setPracticePaused(!practicePaused); return; }
+  if (practiceMode && code === 'Escape' && !event.repeat) { setPracticePaused(true); return; }
   if (practiceMode && practicePaused) return;
   const interactive = event.target instanceof Element ? event.target.closest('button, a, summary') : null;
   if (interactive && ['Space', 'Enter'].includes(code)) {
@@ -325,6 +332,12 @@ document.addEventListener('keyup', event => {
   if (!typing(event.target)) event.preventDefault();
 });
 window.addEventListener('blur', () => { releaseKeys(); focusLost = true; if (practiceMode) setPracticePaused(true); });
+let wasFullscreen = Boolean(document.fullscreenElement);
+document.addEventListener('fullscreenchange', () => {
+  const fullscreen = Boolean(document.fullscreenElement);
+  if (wasFullscreen && !fullscreen) { releaseKeys(); if (practiceMode) setPracticePaused(true); }
+  wasFullscreen = fullscreen;
+});
 document.addEventListener('visibilitychange', () => { if (document.hidden) { releaseKeys(); if (practiceMode) setPracticePaused(true); } });
 canvas.addEventListener('pointerdown', event => {
   if ($('room-panel').open || practiceMode && practicePaused) return;
@@ -596,19 +609,24 @@ function closeRoomPanel({ returnToGame = false } = {}) {
   roomPanelReturnToGame = returnToGame;
   roomPanel.close();
 }
-$('room-panel-button').addEventListener('click', () => {
+function openRoomPanel() {
+  if (roomPanel.open) return;
   releaseKeys();
+  if (practiceMode) setPracticePaused(true);
   focusLost = realtimeMode && authoritative.phase === 'fight';
   roomPanel.showModal();
   roomPanelReturnToGame = false;
   $('room-panel-button').setAttribute('aria-expanded', 'true');
   $('room-panel-close').focus({ preventScroll: true });
-});
-$('room-panel-close').addEventListener('click', () => closeRoomPanel({ returnToGame: authoritative.phase === 'fight' }));
+}
+$('room-panel-button').addEventListener('click', openRoomPanel);
+$('room-panel-close').addEventListener('click', () => closeRoomPanel({ returnToGame: ['countdown', 'fight', 'roundEnd'].includes(authoritative.phase) }));
 roomPanel.addEventListener('close', () => {
   releaseKeys();
+  previousTime = performance.now(); accumulator = 0; previousPose = null;
   $('room-panel-button').setAttribute('aria-expanded', 'false');
-  const returnToGame = roomPanelReturnToGame && realtimeMode && authoritative.phase === 'fight';
+  if (roomPanelReturnToGame && practiceMode) setPracticePaused(false);
+  const returnToGame = roomPanelReturnToGame && realtimeMode && ['countdown', 'fight', 'roundEnd'].includes(authoritative.phase);
   if (returnToGame) focusLost = false;
   (returnToGame ? canvas : $('room-panel-button')).focus({ preventScroll: true });
   roomPanelReturnToGame = false;
@@ -627,7 +645,7 @@ roomPanel.addEventListener('keydown', event => {
 roomPanel.addEventListener('click', event => {
   if (event.target !== roomPanel) return;
   const rect = roomPanel.getBoundingClientRect();
-  if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) closeRoomPanel({ returnToGame: authoritative.phase === 'fight' });
+  if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) closeRoomPanel({ returnToGame: ['countdown', 'fight', 'roundEnd'].includes(authoritative.phase) });
 });
 for (const id of ['practice-difficulty', 'practice-bots', 'practice-stage']) $(id).addEventListener('change', () => {
   if (!practiceMode || !['lobby', 'matchEnd'].includes(authoritative.phase)) return;
@@ -840,7 +858,7 @@ function updateHUD(now) {
     setText(button.querySelector('span'), phase === 'matchEnd' ? 'Play again' : phase === 'lobby' ? 'Start game' : 'Game in progress');
     setDisabled(button, needsBrawlChoice || !['lobby', 'matchEnd'].includes(phase));
     toggleClass(button, 'is-ready', false);
-    setText($('ready-note'), needsBrawlChoice ? 'Choose your fighter and arena, then start.' : phase === 'lobby' ? 'Choose your challenge. Start when you are ready.' : phase === 'matchEnd' ? 'Try again or change the challenge.' : practicePaused ? 'Paused. Resume when you are ready.' : 'Solo play · the controls panel pauses the game.');
+    setText($('ready-note'), needsBrawlChoice ? 'Choose your fighter and arena, then start.' : phase === 'lobby' ? 'Choose your challenge. Start when you are ready.' : phase === 'matchEnd' ? 'Try again or change the challenge.' : practicePaused ? 'Paused. Resume or use the P menu.' : 'Solo play · P opens the pause menu.');
     if (phase === 'lobby') setText($('objective'), 'Choose your challenge, then press Start game.');
     setText($('slot1-status'), 'You'); setText($('slot2-status'), `${practiceSession.settings.difficulty.toUpperCase()} BOT${botTeam ? 'S' : ''}`);
   }
@@ -854,7 +872,7 @@ function updateOverlay(now, names) {
   if (practiceMode && practicePaused) {
     setClass(overlay, overlayClass); setHidden(overlay, false);
     setText($('overlay-kicker'), 'TAKE A BREATHER'); setText($('overlay-title'), 'Paused.');
-    setText($('overlay-subtitle'), 'Press Resume or Escape to continue.'); return;
+    setText($('overlay-subtitle'), 'Press Resume, or open the P menu and close it when ready.'); return;
   }
   if (brawlMode && connected && phase === 'lobby') { setHidden(overlay, true); return; }
   if (!connected) {
@@ -984,7 +1002,7 @@ if (practiceMode) {
   if (shinobiMode) $('practice-stage').value = practiceSession.settings.stageId;
   setHidden($('practice-bots-field'), !shinobiMode); setHidden($('practice-stage-field'), !shinobiMode);
   setHidden($('copy-code'), true); setHidden(document.querySelector('.room-invite'), true);
-  setText($('room-panel-note'), 'Check the controls here. Solo play pauses while this panel is open.');
+  setText($('room-panel-note'), 'Solo play is paused. Press P or close this panel to resume. Esc exits fullscreen and leaves the game paused.');
   setText($('party-title'), 'Your challenge'); setText($('footer-mode'), 'SOLO / VS BOTS');
   setAttribute($('room-app'), 'data-practice', 'true'); syncPractice();
 } else {

@@ -43,7 +43,7 @@
           <div class="solo-play-status"><span class="solo-status-dot" aria-hidden="true"></span><span id="solo-status-label" role="status" aria-live="polite">READY</span></div>
           <div class="solo-score solo-best"><span id="solo-record-label">BEST SCORE</span><strong id="solo-record">—</strong></div>
           <div class="solo-session-actions" aria-label="Game session controls" hidden>
-            <button class="solo-secondary" id="solo-pause" type="button" disabled aria-pressed="false" title="Pause or resume (Escape / P)"><span>Pause</span><b aria-hidden="true"><svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M3 2h3v12H3zm7 0h3v12h-3z"/></svg></b></button>
+            <button class="solo-secondary" id="solo-pause" type="button" disabled aria-pressed="false" title="Pause or resume (P)" aria-keyshortcuts="P"><span>Pause</span><b aria-hidden="true"><svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M3 2h3v12H3zm7 0h3v12h-3z"/></svg></b></button>
             <button class="solo-primary" id="solo-restart" type="button" disabled title="Start a new game (R)"><span>New game</span><b aria-hidden="true"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13 6a5 5 0 1 0 0 5M13 2v4H9"/></svg></b></button>
           </div>
         </div>
@@ -71,7 +71,7 @@
         <section class="solo-controls-panel">
           <h2>Quick controls</h2>
           <div id="solo-controls-list"></div>
-          <p class="solo-shortcuts"><kbd>Esc</kbd> Pause / resume <span>·</span> <kbd>R</kbd> New game</p>
+          <p class="solo-shortcuts"><kbd>P</kbd> Pause / resume <span>·</span> <kbd>Esc</kbd> Exit fullscreen <span>·</span> <kbd>R</kbd> New game</p>
           <p id="solo-touch-help"></p>
         </section>
 

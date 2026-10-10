@@ -1,3 +1,5 @@
+import { isPauseShortcut } from '../pause-shortcut.js';
+
 const SHORTCUT_UI = 'input,select,textarea,[contenteditable]:not([contenteditable="false"]),summary,#solo-how-to,.ironwood-help';
 
 /** Single-press actions must leave typing, help and browser shortcuts alone. */
@@ -9,7 +11,7 @@ export function blocksSoloShortcut(event, { allowRepeat = false } = {}) {
 export function soloSessionShortcut(event) {
   if (blocksSoloShortcut(event)) return null;
   const key = typeof event?.key === 'string' ? event.key.toLowerCase() : '';
-  if (key === 'escape' || key === 'p') return 'pause';
+  if (isPauseShortcut(event)) return 'pause';
   if (key === 'r') return 'restart';
   return null;
 }

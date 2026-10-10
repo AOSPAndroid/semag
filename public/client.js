@@ -1,6 +1,7 @@
 import { setText, setAttribute, setHidden, setDisabled, setClass, toggleClass, setStyle, setHTML } from './hub/dom.js';
 import { gameCode, displayKey, formatKeyboardText, subscribeKeyboardLayout, mountKeyboardLayoutPicker } from './keyboard-layout.js';
 import { createCombatKeyMap, combatInputFromKeys } from './combat-controls.js';
+import { isPauseShortcut } from './pause-shortcut.js';
 import { createState, step, startMatch, cloneState, emptyInput, TICK_RATE, sweepPresentationFighters } from './engine.js';
 import { ArenaRenderer } from './renderer.js';
 import { botInput, TRAINING_STAGES } from './practice.js';
@@ -13,6 +14,7 @@ const elements = new Map();
 const $ = id => { const node = elements.get(id) || document.getElementById(id); if (node) elements.set(id, node); return node; };
 const canvas = $('arena');
 const roomControls = $('room-controls');
+let roomControlsReturnToGame = true;
 const renderer = new ArenaRenderer(canvas);
 const audio = new GameAudio();
 const STEP_MS = 1000 / TICK_RATE;
@@ -37,7 +39,7 @@ const trainingProfile=()=>trainingMode==='ladder'?TRAINING_STAGES[trainingStage]
 function trainingHUD(){
   setHidden($('training-panel'), !practice);
   setHidden($('training-button'), !practice);
-  setText($('controls-session-note'), practice ? 'Practice pauses while this panel is open. Close it to return to the duel.' : 'Online matches keep running while this panel is open.');
+  setText($('controls-session-note'), practice ? 'Practice pauses here. Press P or close this panel to return to the duel. Esc exits fullscreen and leaves practice paused.' : 'Press P to open or close this panel. Online matches keep running. Esc exits fullscreen.');
   const profile=trainingProfile();
   setText($('training-title'), profile?.name || 'Open sparring');
   setText($('training-tip'), profile?.tip || 'Practice the whole move set against a balanced sparring partner.');
@@ -185,6 +187,7 @@ function releaseKeys() {
 }
 function openRoomControls(focusTarget = $('room-controls-close')) {
   releaseKeys();
+  roomControlsReturnToGame = true;
   if (practiceState) previousPracticePose = capturePlanarPose(practiceState);
   if (!roomControls.open) roomControls.showModal();
   setAttribute($('room-controls-button'), 'aria-expanded', 'true');
@@ -194,11 +197,15 @@ function openRoomControls(focusTarget = $('room-controls-close')) {
 $('room-controls-button').addEventListener('click', () => openRoomControls());
 $('training-button').addEventListener('click', () => openRoomControls($('training-mode')));
 $('room-controls-close').addEventListener('click', () => roomControls.close());
+roomControls.addEventListener('cancel', () => {
+  roomControlsReturnToGame = false;
+  if (practice) focusLost = true;
+});
 roomControls.addEventListener('close', () => {
   releaseKeys(); previousTime = performance.now(); accumulator = 0; if (practice) previousPracticePose = capturePlanarPose(practiceState);
   setAttribute($('room-controls-button'), 'aria-expanded', 'false');
   const phase = (practice ? practiceState : authoritative).phase;
-  if (['countdown', 'fight', 'roundEnd'].includes(phase)) { focusLost = false; canvas.focus({ preventScroll: true }); }
+  if (roomControlsReturnToGame && ['countdown', 'fight', 'roundEnd'].includes(phase)) { focusLost = false; canvas.focus({ preventScroll: true }); }
   else $('room-controls-button').focus({ preventScroll: true });
 });
 roomControls.addEventListener('keydown', event => {
@@ -217,8 +224,14 @@ roomControls.addEventListener('click', event => {
 function isTyping(target) { return target instanceof HTMLElement && (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable); }
 const keyboardIdentity = event => event.code || (event.key?.length === 1 ? event.key.toLowerCase() : event.key);
 document.addEventListener('keydown', (event) => {
-  if (practice && event.key === 'Escape' && !event.repeat && !roomControls.open && !isTyping(event.target)) { event.preventDefault(); openRoomControls(); return; }
+  if (isPauseShortcut(event)) {
+    event.preventDefault();
+    if (roomControls.open) roomControls.close();
+    else openRoomControls();
+    return;
+  }
   if (roomControls.open || event.defaultPrevented || isTyping(event.target) || event.isComposing || event.target instanceof Element && event.target.closest('button,a,summary') || event.ctrlKey || event.metaKey || event.altKey) return;
+  if (practice && event.key === 'Escape' && !event.repeat) { openRoomControls(); return; }
   const identity = keyboardIdentity(event), code = gameCode(event);
   if (event.repeat && !heldCodes.has(identity)) return;
   if (keyMapping.has(code)) {
@@ -234,7 +247,7 @@ document.addEventListener('keyup', (event) => {
 });
 const keyboardLabels = [...document.querySelectorAll('.controls-panel kbd')].map(node => ({ node, text: node.textContent }));
 const keyboardHints = [...document.querySelectorAll('.alternate-controls')].map(node => ({ node, text: node.textContent.replace('W to jump', '{W} to jump').replace('U to block', '{U} to block') }));
-const keyboardArenaLabel = 'Two sword fighters face each other on a nighttime rooftop. Use {A} and {D} to move, {W} or Space to jump, {C} for a quick strike, {G} for a heavy strike, Shift to dash, {F} to block or parry. Legacy {J}, {K}, {L}, {I} and {U} controls also work.';
+const keyboardArenaLabel = 'Two sword fighters face each other on a nighttime rooftop. Use {A} and {D} to move, {W} or Space to jump, {C} for a quick strike, {G} for a heavy strike, Shift to dash, {F} to block or parry. P opens room and controls and pauses practice. Esc exits fullscreen. Legacy {J}, {K}, {L}, {I} and {U} controls also work.';
 function updateKeyboardHints() {
   for (const { node, text } of keyboardLabels) setText(node, displayKey(text));
   for (const { node, text } of keyboardHints) setText(node, formatKeyboardText(text));
@@ -246,6 +259,15 @@ if (keyboardPicker) mountKeyboardLayoutPicker(keyboardPicker);
 keyboardPicker?.addEventListener('focusin', releaseKeys);
 updateKeyboardHints();
 window.addEventListener('blur', () => { releaseKeys(); focusLost = true; if (practice) previousPracticePose = capturePlanarPose(practiceState); });
+let wasFullscreen = Boolean(document.fullscreenElement);
+document.addEventListener('fullscreenchange', () => {
+  const fullscreen = Boolean(document.fullscreenElement);
+  if (wasFullscreen && !fullscreen) {
+    releaseKeys();
+    if (practice) { focusLost = true; previousPracticePose = capturePlanarPose(practiceState); }
+  }
+  wasFullscreen = fullscreen;
+});
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) { releaseKeys(); if (practice) { focusLost = true; previousPracticePose = capturePlanarPose(practiceState); } }
   previousTime = performance.now(); accumulator = 0;

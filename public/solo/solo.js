@@ -22,7 +22,7 @@ const GAME_INFO = {
     recordPolicy: { scopes: ['wilds-survival-v1'], onlyLost: true, unit: 's', digits: 0 },
     controls: [[['W', 'A', 'S', 'D', '↑', '←', '↓', '→'], 'Move'], [['Mouse'], 'Look / drag to look'], [['Click', 'C'], 'Hold to mine / attack'], [['Right click', 'E'], 'Place selected block'], [['Space'], 'Jump'], [['Shift'], 'Sprint'], [['F'], 'Eat / use selected item'], [['1–8', 'Wheel'], 'Choose inventory slot'], [['Tab'], 'Inventory & crafting']],
     touch: 'Designed for a keyboard and mouse. Click the world to capture the mouse, or drag to look if capture is unavailable.',
-    rules: ['Explore a seeded woodland with editable hills, trees, underground ore, and old stone ruins. Hold mine on a block until it breaks; changing targets resets progress.', 'Eight inventory slots hold your tools, gathered materials, food, and crafted supplies. Stack space matters: make room before gathering. Select a block and place it on a face within reach; blocks cannot overlap you.', 'Turn logs into planks, then craft a workbench, better picks, a sword, and survival supplies. Some recipes need a nearby workbench. Stronger tools unlock tougher ore and faster mining.', 'Gather food and build shelter before night. Hunger drains during active play, sprinting costs more, and long falls hurt. Every night brings stronger threats; watch for enemies that break through weak walls.', 'Tab opens crafting and freezes survival. Escape pauses, leaving the tab pauses, and resuming always requires your action.', 'Your world is saved in this browser when storage is available. Choose Continue after starting to return to it. New game replaces the expedition; your best survival record remains.'],
+    rules: ['Explore a seeded woodland with editable hills, trees, underground ore, and old stone ruins. Hold mine on a block until it breaks; changing targets resets progress.', 'Eight inventory slots hold your tools, gathered materials, food, and crafted supplies. Stack space matters: make room before gathering. Select a block and place it on a face within reach; blocks cannot overlap you.', 'Turn logs into planks, then craft a workbench, better picks, a sword, and survival supplies. Some recipes need a nearby workbench. Stronger tools unlock tougher ore and faster mining.', 'Gather food and build shelter before night. Hunger drains during active play, sprinting costs more, and long falls hurt. Every night brings stronger threats; watch for enemies that break through weak walls.', 'Tab opens crafting and freezes survival. P pauses, Escape releases the mouse, leaving the tab pauses, and resuming always requires your action.', 'Your world is saved in this browser when storage is available. Choose Continue after starting to return to it. New game replaces the expedition; your best survival record remains.'],
   },
   'shadow-lantern': {
     title: 'Shadow Lantern', category: 'NINJA / NINE STEALTH HEISTS', description: 'Watch the patrol. Take the seal. Leave no trail.',
@@ -228,6 +228,7 @@ async function startSolo() {
   let starting = false;
   let destroyed = false;
   let layoutFrame = null;
+  let fullscreenWasActive = false;
   let fitCanvas = null;
   let fitBoard = null;
 
@@ -350,6 +351,8 @@ async function startSolo() {
   }
   function fullscreenChanged() {
     const active = document.fullscreenElement === app;
+    if (fullscreenWasActive && !active) autoPause();
+    fullscreenWasActive = active;
     fullscreenButton.setAttribute('aria-pressed', String(active));
     fullscreenButton.setAttribute('aria-label', active ? 'Exit fullscreen' : 'Enter fullscreen');
     fullscreenButton.title = active ? 'Exit fullscreen' : 'Enter fullscreen';

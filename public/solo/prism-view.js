@@ -590,7 +590,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       ctx.font = `${Math.max(8, Math.round(width * 0.044))}px ui-monospace, monospace`;
       const line =
         state.phase === 'paused'
-          ? 'ESC / RESUME'
+          ? 'P / RESUME'
           : state.phase === 'stage-clear'
             ? `${getDigStage(state).title.toUpperCase()}`
             : state.phase === 'won'

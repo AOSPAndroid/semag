@@ -211,6 +211,23 @@ test('a co-op teammate who misses the countdown can enter from the fight resume 
   assert.equal(hordeOverlayPresentation(state, { ...controls, connected: false }), 'connection');
 });
 
+test('releasing controls during countdown exposes the resume menu while the shared clock continues', () => {
+  const state = Horde.createState(); Horde.setConnected(state, 1, true); Horde.startMatch(state, [0, 1]);
+  const controls = { solo: false, connected: true, entered: true, paused: true, alive: state.players[1].alive };
+  const tick = state.tick, countdown = state.phaseTicks, before = snapshot(state);
+  assert.equal(hordeOverlayPresentation(state, controls), 'pause', 'the countdown cannot hide the released-controls menu');
+  assert.deepEqual(snapshot(state), before, 'the menu never pauses or mutates the shared match');
+  Horde.step(state);
+  assert.equal(state.tick, tick + 1);
+  assert.equal(state.phaseTicks, countdown - 1);
+  assert.equal(hordeOverlayPresentation(state, { ...controls, paused: false }), 'countdown');
+  Horde.pauseMatch(state);
+  assert.equal(state.phase, 'countdown', 'a shared squad cannot be globally paused');
+  const soloState = Horde.createState(); Horde.startMatch(soloState, [0]); Horde.pauseMatch(soloState);
+  assert.equal(soloState.phase, 'paused');
+  assert.equal(hordeOverlayPresentation(soloState, { ...controls, solo: true }), 'pause');
+});
+
 test('revive progress reflects real uninterrupted channel ticks and clears immediately on release', () => {
   const state = active([0, 1]);
   state.map = { ...Horde.MAPS.courtyard, id: 'client-revive-fixture', colliders: [], bounds: { minX: -20, maxX: 20, minZ: -20, maxZ: 20 } };

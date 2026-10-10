@@ -7,8 +7,9 @@ import { createState as createParisState, step as stepParis, togglePause as paus
 
 const event = (key, overrides = {}) => ({ key, code: key === 'Escape' ? 'Escape' : `Key${key.toUpperCase()}`, ...overrides });
 
-test('solo session actions offer Escape without changing pause and restart aliases', () => {
-  for (const key of ['Escape', 'p', 'P']) assert.equal(soloSessionShortcut(event(key)), 'pause');
+test('solo session actions use P while leaving Escape to the browser', () => {
+  for (const key of ['p', 'P']) assert.equal(soloSessionShortcut(event(key)), 'pause');
+  assert.equal(soloSessionShortcut(event('Escape')), null);
   for (const key of ['r', 'R']) assert.equal(soloSessionShortcut(event(key)), 'restart');
   for (const key of ['w', 'z', 'q', 'a', 'c', 'e', ' ', 'Enter', 'Tab']) {
     assert.equal(soloSessionShortcut(event(key)), null, `Do not steal gameplay key ${key}`);
@@ -17,16 +18,16 @@ test('solo session actions offer Escape without changing pause and restart alias
   assert.equal(soloSessionShortcut(null), null);
 });
 
-test('held Escape pauses once and must be released before resuming', () => {
+test('held P pauses once and must be released before resuming', () => {
   let paused = false;
   const dispatch = input => {
     if (soloSessionShortcut(input) === 'pause') paused = !paused;
   };
-  dispatch(event('Escape'));
+  dispatch(event('p'));
   assert.equal(paused, true);
-  for (let index = 0; index < 20; index += 1) dispatch(event('Escape', { repeat: true }));
+  for (let index = 0; index < 20; index += 1) dispatch(event('p', { repeat: true }));
   assert.equal(paused, true);
-  dispatch(event('Escape'));
+  dispatch(event('p'));
   assert.equal(paused, false);
 });
 
@@ -53,7 +54,8 @@ test('focused typing and help cannot trigger session or hand actions', () => {
     assert.ok(selector.includes('summary'));
   }
   const playfield = { closest: () => null };
-  assert.equal(soloSessionShortcut(event('Escape', { target: playfield })), 'pause');
+  assert.equal(soloSessionShortcut(event('p', { target: playfield })), 'pause');
+  assert.equal(soloSessionShortcut(event('Escape', { target: playfield })), null);
 });
 
 test('unshifted AZERTY number-row shortcuts select the same cards and heroes', () => {

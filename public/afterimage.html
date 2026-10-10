@@ -17,7 +17,7 @@
       <a class="brand" href="/" aria-label="Back to Semag game hub"><svg viewBox="0 0 36 36" aria-hidden="true"><path d="M22 3 7 30h6L28 3zM29 12 17 33h6l12-21z" fill="currentColor"/></svg>AFTERIMAGE<span class="edition">← BACK TO SEMAG</span></a>
       <div class="top-actions">
         <span class="connection"><i id="connection-dot"></i><span id="connection-status">CONNECTING</span><span id="ping">— ms</span></span>
-        <button class="room-controls-button" id="room-controls-button" aria-haspopup="dialog" aria-expanded="false" aria-controls="room-controls"><span class="room-controls-long">Room &amp; controls</span><span class="room-controls-short">Controls</span></button>
+        <button class="room-controls-button" id="room-controls-button" aria-haspopup="dialog" aria-expanded="false" aria-controls="room-controls" aria-keyshortcuts="P" title="Room &amp; controls (P)"><span class="room-controls-long">Room &amp; controls</span><span class="room-controls-short">Controls</span></button>
         <button class="icon-button" id="sound-button" title="Enable game sound" aria-label="Enable game sound" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m11 5-5 4H3v6h3l5 4V5zm5 4 5 6m0-6-5 6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         <button class="icon-button" id="fullscreen-button" title="Fullscreen" aria-label="Enter fullscreen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
       </div>
@@ -53,7 +53,7 @@
     <dialog class="room-controls" id="room-controls" aria-labelledby="room-controls-title">
       <header class="drawer-heading"><div><span class="eyebrow">AFTERIMAGE / THE ROOFTOP</span><h2 id="room-controls-title">Room &amp; controls</h2></div><button class="icon-button" id="room-controls-close" aria-label="Close room and controls"><span aria-hidden="true">×</span></button></header>
       <div class="drawer-content">
-        <p class="controls-session-note" id="controls-session-note">Online matches keep running while this panel is open.</p>
+        <p class="controls-session-note" id="controls-session-note">Press P to open or close this panel. Online matches keep running. Esc exits fullscreen.</p>
         <div class="identity"><span class="eyebrow" id="corner-label">YOUR CORNER</span><label class="name-field"><span id="identity-number">01</span><input id="player-name" type="text" maxlength="20" value="Challenger" placeholder="Your fighter name" aria-label="Your fighter name" autocomplete="off" spellcheck="false"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m12 3 5 5M3 17l4-1L17 6a2 2 0 0 0-3-3L4 13l-1 4Z" fill="none" stroke="currentColor" stroke-width="1.3"/></svg></label></div>
         <div class="layout-setting"><span>Keyboard layout</span><div data-keyboard-layout-picker></div></div>
       <section class="training-panel" id="training-panel" hidden aria-label="Practice challenges">

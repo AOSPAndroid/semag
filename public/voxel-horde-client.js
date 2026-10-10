@@ -15,6 +15,7 @@ import { createFpsInputQueue, FPS_EDGE_ACTIONS, releaseFpsTouchAction } from './
 import { createNetworkTimeline } from './network-timeline.js';
 import { tickFraction } from './display-timing.js';
 import { mountVoxelLabelOverlay } from './voxel-label-overlay.js';
+import { isPauseShortcut } from './pause-shortcut.js';
 
 const clamp = (n, low, high) => Math.max(low, Math.min(high, n));
 const finite = n => Number.isFinite(n) ? n : 0;
@@ -104,8 +105,9 @@ export function hordeOverlayPresentation(state, { solo = false, connected = true
   if (!state || !solo && !connected) return 'connection';
   if (state.phase === 'lobby') return 'setup';
   if (state.phase === 'matchEnd') return 'result';
+  if (state.phase === 'paused' || LIVE_PHASES.includes(state.phase) && alive && paused) return 'pause';
   if (state.phase === 'countdown') return 'countdown';
-  if (state.phase === 'paused' || LIVE_PHASES.includes(state.phase) && alive && (paused || !entered)) return 'pause';
+  if (LIVE_PHASES.includes(state.phase) && alive && !entered) return 'pause';
   return null;
 }
 
@@ -170,8 +172,8 @@ export async function bootHorde() {
   function feedback(message, now = performance.now(), duration = 1400) { text('horde-feedback', message); feedbackUntil = now + duration; }
   function hints() {
     app.dataset.keyboardLayout = getKeyboardLayout(); text('horde-guide-move', displayKey('WASD')); text('horde-grenade-key', displayKey('Q')); text('horde-guide-grenade', displayKey('Q'));
-    text('horde-look-hint', fallback ? 'DRAG TO LOOK · ESC RELEASE' : `${displayKey('WASD')} MOVE · RMB SECONDARY · ESC ${solo ? 'PAUSE' : 'RELEASE'}`);
-    canvas.setAttribute('aria-label', `First-person monster survival. ${displayKey('WASD')} or arrows move, mouse looks, left click or B / J uses your selected item, right click aims guns, stabs with a knife or parries with other blades, Space jumps, Control crouches, Shift sprints, C walks quietly, R reloads, 1 to 4 equip inventory slots, wheel up or down switches carried weapons, X drops the selected item, V switches blade, ${displayKey('Q')} throws a grenade, F heals, E picks up supplies or holds to revive. Escape ${solo ? 'pauses' : 'releases your controls'}.`);
+    text('horde-look-hint', fallback ? 'DRAG TO LOOK · P MENU · ESC RELEASE' : `${displayKey('WASD')} MOVE · RMB SECONDARY · P ${solo ? 'PAUSE' : 'MENU'} · ESC RELEASE`);
+    canvas.setAttribute('aria-label', `First-person monster survival. ${displayKey('WASD')} or arrows move, mouse looks, left click or B / J uses your selected item, right click aims guns, stabs with a knife or parries with other blades, Space jumps, Control crouches, Shift sprints, C walks quietly, R reloads, 1 to 4 equip inventory slots, wheel up or down switches carried weapons, X drops the selected item, V switches blade, ${displayKey('Q')} throws a grenade, F heals, E picks up supplies or holds to revive. P ${solo ? 'toggles pause and opens the setup menu' : 'opens the controls menu or resumes controls'}. Escape exits fullscreen and releases your controls.`);
   }
   function sendInput(buttons = currentInput(), edge = false, now = performance.now(), cancelActions = false, cancelPress = null) {
     const nextSequence = sequence >= 999999000 ? 1 : sequence + 1;
@@ -322,7 +324,7 @@ export async function bootHorde() {
     hide('horde-combat', !player || lobby || disconnected); hide('horde-enter', entered && !paused); $('horde-enter').disabled = !connected || !!graphicsError;
     text('horde-countdown-value', Math.ceil(Math.max(0, finite(state.phaseTicks ?? state.horde?.phaseTicks)) / engine.TICK_RATE));
     text('horde-pause-tag', solo ? 'TAKE A BREATH' : 'YOUR CONTROLS ARE RELEASED'); text('horde-pause-title', solo ? 'Paused.' : entered ? 'Step back in.' : 'Your squad is fighting.');
-    text('horde-pause-copy', solo ? 'The world and every enemy are frozen. Pick your next route.' : 'The battle keeps running for your teammates. Return when you are ready.'); hide('horde-restart', !solo); hide('horde-change-setup', !solo);
+    text('horde-pause-copy', solo ? 'The world and every enemy are frozen. Press P to return, or change your loadout and setup for a new run.' : 'The battle keeps running for your teammates. Press P to return when you are ready.'); hide('horde-restart', !solo); hide('horde-change-setup', !solo);
     $('horde-pause').disabled = !LIVE_PHASES.includes(phase) && phase !== 'paused'; text('horde-pause', phase === 'paused' || paused ? '▶' : 'Ⅱ'); $('horde-pause').setAttribute('aria-label', phase === 'paused' || paused ? 'Resume controls' : solo ? 'Pause game' : 'Release controls');
     if (solo) { hide('horde-start', false); $('horde-start').disabled = !renderer?.available || !!graphicsError; }
     else updateRoster();
@@ -468,11 +470,16 @@ export async function bootHorde() {
   function keyboardDown(event) {
     if (event.target?.closest?.('[data-voxel-armory]')) return;
     if (modalOpen) {
-      if (event.key === 'Escape') { event.preventDefault(); hideHelp(); }
+      if (event.key === 'Escape' && !event.repeat) hideHelp();
       else if (event.key === 'Tab') { const buttons = [...$('horde-guide').querySelectorAll('button:not(:disabled)')], index = buttons.indexOf(document.activeElement); if (event.shiftKey && index <= 0) { event.preventDefault(); buttons.at(-1)?.focus(); } else if (!event.shiftKey && index === buttons.length - 1) { event.preventDefault(); buttons[0]?.focus(); } }
       return;
     }
-    if (event.key === 'Escape' && (LIVE_PHASES.includes(state?.phase) || state?.phase === 'paused')) { event.preventDefault(); if (!event.repeat && state.phase !== 'paused') pause(); return; }
+    if (isPauseShortcut(event) && (LIVE_PHASES.includes(state?.phase) || state?.phase === 'paused')) {
+      event.preventDefault();
+      if (paused || state.phase === 'paused' || !entered) resume(); else pause();
+      return;
+    }
+    if (event.key === 'Escape' && (LIVE_PHASES.includes(state?.phase) || state?.phase === 'paused')) { if (!event.repeat && !paused && state.phase !== 'paused') pause(); return; }
     if (!controlsActive() || isFormTarget(event.target) || event.isComposing || event.altKey || event.metaKey) return;
     const action = controlForKey(event); if (!action) return;
     event.preventDefault(); const physical = event.code || event.key; if (event.repeat || physicalKeys.has(physical)) return;
@@ -532,7 +539,8 @@ export async function bootHorde() {
   listen($('horde-name'), 'change', () => { $('horde-name').value = saveName($('horde-name').value); send({ type: 'join', name: $('horde-name').value }); });
   listen($('horde-ready'), 'click', () => { const lobby = hordeLobbyPresentation(state, roster, playerId, hostId, connected); send({ type: 'ready', ready: !lobby.ready }); });
   listen($('horde-pause'), 'click', () => paused || state?.phase === 'paused' ? resume() : pause()); listen($('horde-touch-pause'), 'click', pause); listen($('horde-resume'), 'click', resume); listen($('horde-enter'), 'click', enter);
-  listen($('horde-restart'), 'click', startSolo); listen($('horde-replay'), 'click', () => solo ? startSolo() : send({ type: 'rematch' })); listen($('horde-change-setup'), 'click', preview); listen($('horde-result-setup'), 'click', preview);
+  function changeSetup() { if (!solo) return; preview(); weaponArmory.focus(); }
+  listen($('horde-restart'), 'click', startSolo); listen($('horde-replay'), 'click', () => solo ? startSolo() : send({ type: 'rematch' })); listen($('horde-change-setup'), 'click', changeSetup); listen($('horde-result-setup'), 'click', changeSetup);
   listen($('horde-help'), 'click', showHelp); listen($('horde-guide-close'), 'click', hideHelp); listen($('horde-guide-back'), 'click', hideHelp); listen($('horde-retry'), 'click', graphics);
   listen($('horde-sound'), 'click', async () => { const enabled = await audio.setEnabled(!audio.enabled); $('horde-sound').setAttribute('aria-pressed', String(enabled)); $('horde-sound').setAttribute('aria-label', enabled ? 'Mute sound' : 'Enable sound'); });
   listen($('horde-fullscreen'), 'click', async () => { if (running()) pause(); try { if (document.fullscreenElement) await document.exitFullscreen(); else await shell.requestFullscreen(); } catch { feedback('Fullscreen is unavailable in this browser.'); } });
@@ -541,8 +549,9 @@ export async function bootHorde() {
   listen(window, 'keydown', keyboardDown); listen(window, 'keyup', keyboardUp); listen(window, 'mousemove', mouseMove); listen(canvas, 'mousedown', mouseDown); listen(window, 'mouseup', mouseUp); listen(canvas, 'contextmenu', event => event.preventDefault());
   listen(document, 'pointerdown', event => { if (event.pointerType === 'touch') touchMode = true; else if (event.pointerType === 'mouse') touchMode = false; }, true);
   listen($('horde-touch'), 'pointerdown', touchDown); listen(window, 'pointermove', touchMove); listen(window, 'pointerup', touchEnd); listen(window, 'pointercancel', touchEnd); listen($('horde-touch'), 'lostpointercapture', touchEnd);
-  listen(document, 'pointerlockchange', () => { if (locked()) { fallback = false; hints(); updateHUD(true); wake(); } else if (controlsActive() || entered && !paused && running()) pause(); }); listen(document, 'pointerlockerror', () => { fallback = true; hints(); updateHUD(true); });
-  listen(document, 'fullscreenchange', () => { const full = document.fullscreenElement === shell; $('horde-fullscreen').setAttribute('aria-pressed', String(full)); $('horde-fullscreen').setAttribute('aria-label', full ? 'Exit fullscreen' : 'Enter fullscreen'); renderer?.resize(); draw(); });
+  listen(document, 'pointerlockchange', () => { if (locked()) { if (paused || modalOpen || !entered) { unlock(); return; } fallback = false; hints(); updateHUD(true); wake(); } else if (controlsActive() || entered && !paused && running()) pause(); }); listen(document, 'pointerlockerror', () => { if (!paused && !modalOpen && entered) { fallback = true; hints(); updateHUD(true); } });
+  let wasFullscreen = document.fullscreenElement === shell;
+  listen(document, 'fullscreenchange', () => { const full = document.fullscreenElement === shell; if (wasFullscreen && !full && running() && !paused) pause(); wasFullscreen = full; $('horde-fullscreen').setAttribute('aria-pressed', String(full)); $('horde-fullscreen').setAttribute('aria-label', full ? 'Exit fullscreen' : 'Enter fullscreen'); renderer?.resize(); draw(); });
   listen(window, 'resize', () => { renderer?.resize(); if (!running()) draw(); }); listen(window, 'blur', () => { if (running()) pause(); else clearInputs(); }); listen(document, 'visibilitychange', () => { if (document.hidden && running()) pause(); }); listen(window, 'pagehide', destroy);
   listen(canvas, 'voxel-renderer-error', event => { graphicsError = event.detail?.message || ''; if (graphicsError) { if (LIVE_PHASES.includes(state?.phase)) pause(); error(graphicsError); } else { error(''); renderer?.resize(); updateHUD(true); draw(); } });
   listen(canvas, 'voxel-renderer-restored', () => { graphicsError = ''; error(''); renderer?.resize(); updateHUD(true); draw(); wake(); });

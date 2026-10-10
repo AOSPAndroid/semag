@@ -385,7 +385,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     if (!overlay.hidden) {
       textIfChanged(overlayEyebrow, { paused: 'HOLD YOUR POSITION', upgrade: 'A MOMENT BETWEEN WAVES', won: 'THE RIFT IS SEALED', lost: 'ONE MORE RUN' }[state.phase]);
       textIfChanged(overlayTitle, { paused: 'Take a breather.', upgrade: 'Wave cleared.', won: 'You held the line.', lost: 'The rift fought back.' }[state.phase]);
-      textIfChanged(overlayDetail, state.phase === 'paused' ? 'Press Escape or Resume to continue.' : state.phase === 'upgrade' ? 'Choose your next upgrade below.' : `${state.score} POINTS · ${state.kills} ENEMIES CLEARED`);
+      textIfChanged(overlayDetail, state.phase === 'paused' ? 'Press P or Resume to continue.' : state.phase === 'upgrade' ? 'Choose your next upgrade below.' : `${state.score} POINTS · ${state.kills} ENEMIES CLEARED`);
       propIfChanged(replay, 'hidden', state.phase === 'paused' || state.phase === 'upgrade');
     }
     updateUpgrades();
