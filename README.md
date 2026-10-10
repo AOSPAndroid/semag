@@ -22,6 +22,12 @@ Click an image to open it at full size.
 
 [![Searchable dark gun picker with small voxel weapon icons, grouped categories and ammunition hints](docs/screenshots/voxel-weapon-picker.png)](docs/screenshots/voxel-weapon-picker.png)
 
+**Roomier Dojo setup**
+
+[![Wide Dojo setup with aligned gun and blade cards and readable weapon names](docs/screenshots/voxel-dojo-setup.png)](docs/screenshots/voxel-dojo-setup.png)
+
+[View the compact window layout](docs/screenshots/voxel-dojo-setup-compact.png).
+
 **Weapon reticles · Voxel Dojo**
 
 [![Live Voxel Dojo gameplay with the shotgun spread ring centered on a training target](docs/screenshots/voxel-weapon-reticles.png)](docs/screenshots/voxel-weapon-reticles.png)
@@ -94,6 +100,8 @@ their completion records separate by difficulty.
 Open a solo game from the shelf, review its controls, and press **Start game** when you are ready. The game and its timers wait on the ready screen. After starting, press **Escape** to pause or resume, or use Pause / Resume and New game for that session.
 
 The interface uses a modern dark theme and the pixelated **semaG** wordmark. Voxel loadouts have a compact, searchable shadcn weapon picker with small voxel thumbnails, category headings and a selected marker. Click a weapon or press Enter to choose it; opening, searching and highlighting leave your current loadout in place. **Armory** opens the full weapon collection: browse cards, rotate the actual voxel models, inspect damage and handling, then explicitly Equip. Choosing equipment never starts the game. Both pickers also cover training blades and the Dojo racks. Game canvases retain their own artwork and HUD signals.
+
+Practice and Last Stand use wider setup panels with equipment in its own row. The Dojo keeps gun and blade cards aligned side by side on wider windows; narrow phones stack them. Chosen weapon names wrap in full, and taller screens show more weapons in the dropdown before scrolling.
 
 The isolated UI source and rebuild instructions are in [ui/armory](ui/armory/README.md). Hosting the game still needs only the normal root install; the compiled armory is included.
 

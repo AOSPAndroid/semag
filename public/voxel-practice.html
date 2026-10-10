@@ -11,6 +11,7 @@
   <link rel="stylesheet" href="/voxel-arsenal-ui.css">
   <link rel="stylesheet" href="/voxel-armory-ui.css">
   <link rel="stylesheet" href="/voxel-crosshair.css">
+  <link rel="stylesheet" href="/voxel-setup-ui.css">
 </head>
 <body>
   <main class="practice-app" id="practice-app" data-phase="ready">
@@ -59,6 +60,8 @@
               <label id="practice-mode-field">DRILL<select id="practice-mode" aria-label="Practice drill"><option value="targets">Moving targets</option><option value="combat">Bots shoot back</option><option value="blades">Blade training</option></select></label>
               <label id="practice-difficulty-field">BOT PACE<select id="practice-difficulty" aria-label="Bot difficulty"><option value="rookie">Rookie · deliberate</option><option value="regular" selected>Regular · reactive</option><option value="veteran">Veteran · demanding</option></select></label>
               <label id="dojo-motion-field" hidden>TARGET MOTION<select id="dojo-start-motion" aria-label="Dojo starting target motion"><option value="stationary">Stationary</option><option value="moving">Moving</option></select></label>
+            </div>
+            <div class="practice-equipment" aria-label="Starting equipment">
               <div id="practice-loadout-field" class="armory-field"><span>YOUR GUN</span><select id="practice-weapon" aria-label="Practice weapon"></select></div>
               <div id="practice-blade-field" class="armory-field" hidden><span>TRAINING BLADE</span><select id="practice-blade" aria-label="Blade training weapon"></select></div>
               <div id="practice-melee-field" class="fps-starter-kit"><span>STARTING KIT</span><p>Knife + chosen gun<br>No starting supplies</p></div>

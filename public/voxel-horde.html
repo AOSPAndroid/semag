@@ -12,6 +12,7 @@
   <link rel="stylesheet" href="/voxel-arsenal-ui.css">
   <link rel="stylesheet" href="/voxel-armory-ui.css">
   <link rel="stylesheet" href="/voxel-crosshair.css">
+  <link rel="stylesheet" href="/voxel-setup-ui.css">
 </head>
 <body>
   <main class="practice-app horde-app" id="horde-app" data-phase="lobby">
@@ -49,9 +50,11 @@
             <div class="practice-settings">
               <label id="horde-map-field">ARENA<select id="horde-map" aria-label="Survival map"></select></label>
               <label id="horde-difficulty-field">THREAT<select id="horde-difficulty" aria-label="Difficulty"><option value="veteran">Veteran · relentless</option><option value="nightmare">Nightmare · unforgiving</option></select></label>
+              <label class="practice-loadout" id="horde-name-field" hidden>YOUR NAME<input id="horde-name" maxlength="20" autocomplete="nickname" aria-label="Player name"></label>
+            </div>
+            <div class="practice-equipment" aria-label="Starting equipment">
               <div class="armory-field"><span>STARTING GUN</span><select id="horde-weapon" aria-label="Weapon loadout"></select></div>
               <div class="fps-starter-kit"><span>STARTING KIT</span><p>Knife + chosen gun<br>Slots 3–4 empty · no supplies</p></div>
-              <label class="practice-loadout" id="horde-name-field" hidden>YOUR NAME<input id="horde-name" maxlength="20" autocomplete="nickname" aria-label="Player name"></label>
             </div>
             <p class="practice-weapon-note" id="horde-weapon-note"></p>
             <p class="practice-weapon-note" id="horde-melee-note">Scavenge corpses with E for guns, stronger blades and healing potions. F drinks a collected potion.</p>

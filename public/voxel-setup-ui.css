@@ -1,0 +1,101 @@
+/* Setup gets its own roomy layout; play, pause and result cards keep theirs. */
+body :is(#practice-setup-form, #horde-setup) {
+  width: min(100%, 920px);
+  min-width: 0;
+  padding: clamp(18px, 3vw, 28px);
+}
+body :is(#practice-setup-form, #horde-setup) > h2 { margin: 8px 0 10px; }
+body :is(#practice-setup-form, #horde-setup) > p { margin-bottom: 14px; }
+body :is(#practice-setup-form, #horde-setup) .practice-settings { align-items: end; }
+body #practice-setup-form .practice-settings:has(#dojo-motion-field:not([hidden])) {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+body #horde-setup .practice-settings:has(#horde-name-field:not([hidden])) {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.practice-equipment {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 16px;
+  margin-top: 20px;
+}
+.practice-equipment:not(:has(> :not([hidden]))) { display: none; }
+.practice-equipment > .armory-field { min-width: 0; }
+.practice-equipment > .armory-field > .voxel-armory-root { flex: 1; display: flex; }
+.practice-equipment .armory-card[data-variant=loadout] { width: 100%; height: 100%; }
+.practice-equipment .armory-card[data-variant=loadout] [data-slot=card-content] { display: flex; flex: 1; }
+.practice-equipment .armory-quick-field,
+.practice-equipment .armory-quick-field > [data-slot=field],
+.practice-equipment .armory-quick-trigger { flex: 1; }
+/* The outside field label already identifies the gun or blade. */
+.practice-equipment .armory-card[data-variant=loadout] [data-slot=card-header] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.practice-equipment .armory-card[data-variant=loadout] [data-slot=card-footer] {
+  margin-top: auto;
+  flex-wrap: nowrap;
+}
+.practice-equipment .armory-loadout-facts { min-width: 0; }
+/* Keep the complete chosen name and handling hint, including narrow windows. */
+.voxel-armory-root .armory-quick-copy :is(strong, span),
+.voxel-armory-picker-popup .armory-quick-copy :is(strong, span) {
+  white-space: normal;
+  text-overflow: clip;
+  overflow: visible;
+  overflow-wrap: anywhere;
+}
+.practice-equipment .armory-quick-trigger { min-height: 76px; gap: 10px; }
+.practice-equipment .fps-starter-kit { align-self: stretch; }
+body :is(#practice-setup-form, #horde-setup) .practice-weapon-note {
+  min-height: 0;
+  margin: 12px 0 0;
+  line-height: 1.5;
+}
+body :is(#practice-setup-form, #horde-setup) .practice-setup-actions {
+  position: static;
+  margin-top: 16px;
+  padding-top: 0;
+  box-shadow: none;
+}
+/* A tall display can show more of the collection at once. */
+.voxel-armory-picker-popup { width: max(var(--anchor-width), 420px); max-height: min(650px, var(--available-height)); }
+.voxel-armory-picker-popup .armory-quick-list {
+  max-height: min(546px, max(0px, calc(var(--available-height) - 96px)));
+}
+/* In-range equipment uses the same paired layout when there is room. */
+.dojo-tools { width: min(680px, calc(100% - 24px)); }
+.dojo-tool-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; }
+.dojo-tool-fields .armory-card[data-variant=loadout] { height: 100%; }
+@media (min-width: 461px) and (max-width: 680px) {
+  body .practice-overlay:has(> :is(#practice-setup-form, #horde-setup):not([hidden])) { padding: 12px; }
+  body :is(#practice-setup-form, #horde-setup) { padding: 14px 16px; }
+  body :is(#practice-setup-form, #horde-setup) > h2 { margin: 6px 0 8px; }
+  body :is(#practice-setup-form, #horde-setup) > p { margin-bottom: 10px; }
+  .practice-equipment { margin-top: 12px; gap: 12px; }
+  .practice-equipment .armory-card[data-variant=loadout] { padding: 10px; }
+  .practice-equipment .armory-quick-trigger { min-height: 64px; }
+  body :is(#practice-setup-form, #horde-setup) .practice-weapon-note { margin-top: 6px; }
+  body :is(#practice-setup-form, #horde-setup) .practice-setup-actions { margin-top: 8px; }
+}
+@media (max-width: 460px) {
+  body #practice-setup-form .practice-settings:has(#dojo-motion-field:not([hidden])),
+  body #horde-setup .practice-settings:has(#horde-name-field:not([hidden])) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .practice-equipment { grid-template-columns: minmax(0, 1fr); gap: 12px; margin-top: 16px; }
+  .practice-equipment .armory-quick-trigger { min-height: 64px; }
+  .dojo-tools { width: calc(100% - 16px); }
+  .dojo-tool-fields { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-height: 560px) and (min-width: 461px) {
+  body :is(#practice-setup-form, #horde-setup) { padding: 16px 22px; }
+  body :is(#practice-setup-form, #horde-setup) > h2 { margin: 5px 0 7px; }
+  .practice-equipment { margin-top: 12px; gap: 12px; }
+  .practice-equipment .armory-quick-trigger { min-height: 64px; }
+}
