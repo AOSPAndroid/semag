@@ -15,6 +15,7 @@
 
 /* Keep the next drill away from the aiming lane and give the debrief room. */
 body .practice-card.practice-result-card {
+  animation: practice-results-reveal 180ms ease-out both;
   display: flex;
   flex-direction: column;
   width: min(100%, 680px);
@@ -23,6 +24,10 @@ body .practice-card.practice-result-card {
   padding: 30px;
   scrollbar-width: thin;
   scroll-padding-block: 24px;
+}
+@keyframes practice-results-reveal {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 body .practice-card.practice-result-card .practice-result-heading { flex-shrink: 0; }
 body .practice-card.practice-result-card .practice-result-heading h2 { margin: 10px 0 8px; }

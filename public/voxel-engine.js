@@ -1086,7 +1086,13 @@ export function applyCombatDamage(state, pending, { onMeleeHit, arena = state.ma
       dy: Number.isFinite(killer?.dy) ? killer.dy : 0,
       dz: Number.isFinite(killer?.dz) ? killer.dz : attacker ? f.z - attacker.z : 0,
     } : {};
-    emit(state, 'kill', { playerId: killer?.playerId ?? null, targetId: f.id, hitKind: killer?.hitKind ?? 'body', headshot: killer?.headshot || false, attack: killer?.attack || 'gun', weapon: killer?.weapon ?? (killer?.attack === 'grenade' ? 'grenade' : null), x: f.x, y: f.y, z: f.z, ...monsterDeath });
+    const humanDeath = !f.monsterType && f.monster !== true ? Object.freeze({
+      lifeId: f.lifeId || 0, deaths: f.deaths, team: f.team, crouching: !!f.crouching, yaw: f.yaw,
+      dx: Number.isFinite(killer?.dx) ? killer.dx : attacker ? f.x - attacker.x : 0,
+      dy: Number.isFinite(killer?.dy) ? killer.dy : 0,
+      dz: Number.isFinite(killer?.dz) ? killer.dz : attacker ? f.z - attacker.z : 0,
+    }) : null;
+    emit(state, 'kill', { playerId: killer?.playerId ?? null, targetId: f.id, hitKind: killer?.hitKind ?? 'body', headshot: killer?.headshot || false, attack: killer?.attack || 'gun', weapon: killer?.weapon ?? (killer?.attack === 'grenade' ? 'grenade' : null), x: f.x, y: f.y, z: f.z, ...monsterDeath, ...(humanDeath ? { humanDeath } : {}) });
     if (state.gameId === 'voxel-breach') {
       ensureInventory(f); const carriedHeal = f.inventory.some(item => item?.kind === 'heal' && item.amount > 0);
       dropCombatInventory(state, f);

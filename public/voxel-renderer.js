@@ -9,6 +9,7 @@ import { createPlayerAnimationPresenter, playerAnimationPose, weaponReloadPose, 
 import { createFirstPersonMotionPresenter, createWeaponShotPresenter, weaponShotPose, weaponCyclePose } from './voxel-first-person-motion.js';
 import { MONSTER_BODIES, monsterBodyProfile } from './voxel-monster-bodies.js';
 import { MONSTER_DEATH_RULES, monsterDeathPose, createMonsterDeathPresenter } from './voxel-monster-death.js';
+import { HUMAN_DEATH_RULES, humanDeathPose, humanDeathCameraPose, createHumanDeathPresenter } from './voxel-human-death.js';
 import { EMPTY_WORLD_LABELS, presentWorldLabels } from './voxel-label-presentation.js';
 import { createSlashImpactPresenter } from './voxel-slash-effects.js';
 import { MONSTER_VARIANT_ART, appendMonsterVariant } from './voxel-monster-variants.js';
@@ -3489,9 +3490,15 @@ function rotateAxis(point, axis, angle) {
     point[2] * c + (axis[0] * point[1] - axis[1] * point[0]) * s + axis[2] * dot * (1 - c)];
 }
 
-function deathJoint(part, type, bend) {
+function deathJoint(part, type, bend, crouching = false) {
   if (type === 'hound') return part.joint === 'paw' ? { pivot: [part.center[0], .30, part.center[2]], pitch: bend * .30, lower: 0 } : { pivot: [0, 0, 0], pitch: 0, lower: 0 };
   const side = part.center[0] < 0 ? -1 : 1;
+  if (crouching) {
+    if (part.joint === 'shin') return { pivot: [side * .11, .295, -.11], pitch: -.40 * bend, lower: -.05 * bend };
+    if (part.joint === 'thigh') return { pivot: [side * .10, .53, .06], pitch: .22 * bend, lower: -.15 * bend };
+    if (part.joint === 'arm') return { pivot: [side * .21, .767, 0], pitch: -.28 * bend, lower: -.15 * bend };
+    return { pivot: [0, 0, 0], pitch: 0, lower: -.15 * bend };
+  }
   if (part.joint === 'shin') return { pivot: [side * .14, .46, 0], pitch: -.58 * bend, lower: -.12 * bend };
   if (part.joint === 'thigh') return { pivot: [side * .14, .80, 0], pitch: .30 * bend, lower: -.31 * bend };
   if (part.joint === 'arm') return { pivot: [side * .21, 1.23, 0], pitch: -.28 * bend, lower: -.31 * bend };
@@ -3508,14 +3515,14 @@ function writeDeathPose(entry, pose, { boundsOnly = false } = {}) {
     globalColumns[0][1] * point[0] + globalColumns[1][1] * point[1] + globalColumns[2][1] * point[2],
     globalColumns[0][2] * point[0] + globalColumns[1][2] * point[1] + globalColumns[2][2] * point[2]];
   const boundParts = []; let length = 0, minY = Infinity;
-  const settle = Math.max(0, death.y - ground - 4.9 * (pose.ageMs / 1000) ** 2);
+  const settle = pose.reducedMotion ? Math.max(0, death.y - ground) : Math.max(0, death.y - ground - 4.9 * (pose.ageMs / 1000) ** 2);
   for (const part of template.parts) {
     const hidden = !boundsOnly && pose.dissolve > part.order;
-    const joint = deathJoint(part, death.monsterType, pose.bend), start = length;
+    const joint = deathJoint(part, death.monsterType, pose.bend, death.crouching), start = length;
     const columns = [[1, 0, 0], [0, 1, 0], [0, 0, 1]].map(point => transform(rotate(point, 0, joint.pitch)));
     const pivot = rotate(joint.pivot, 0, joint.pitch), offset = transform([joint.pivot[0] - pivot[0], joint.pivot[1] - pivot[1] + joint.lower, joint.pivot[2] - pivot[2]]);
     const bounds = boundsOnly ? [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity] : null;
-    const breakup = !boundsOnly ? smooth((pose.dissolve - part.order + .12) / .12) * .028 : 0;
+    const breakup = !boundsOnly && !pose.reducedMotion ? smooth((pose.dissolve - part.order + .12) / .12) * .028 : 0;
     const scatter = hash(`${death.key}:${part.start}`), scatterX = ((scatter & 15) / 15 - .5) * breakup, scatterZ = ((scatter >> 4 & 15) / 15 - .5) * breakup;
     const cx = columns[0], cy = columns[1], cz = columns[2], tint = 1 - pose.darken;
     for (let at = part.start; at < part.end; at += VERTEX_STRIDE) {
@@ -3845,6 +3852,59 @@ export function operativeMeshes(player, time = 0, freeForAll = false, animation 
   const mesh = new Mesh(); operativeParts(mesh, player, finite(time), freeForAll, animation); return mesh.array;
 }
 
+function humanDeathTemplate(death, freeForAll = false) {
+  const mesh = new Mesh(), parts = [], crouch = death.crouching === true;
+  for (const name of ['box', 'quad']) {
+    const original = mesh[name];
+    mesh[name] = function(...args) {
+      const start = this.length; original.apply(this, args);
+      if (this.length === start) return;
+      let x = 0, y = 0, z = 0, count = 0;
+      for (let at = start; at < this.length; at += VERTEX_STRIDE) { x += this.storage[at]; y += this.storage[at + 1]; z += this.storage[at + 2]; count++; }
+      const center = [x / count, y / count, z / count];
+      const joint = center[1] < (crouch ? .28 : .43) ? 'shin' : center[1] < (crouch ? .57 : .81) ? 'thigh'
+        : Math.abs(center[0]) > .18 && center[1] < (crouch ? .85 : 1.46) ? 'arm' : 'body';
+      parts.push({ start, end: this.length, center, joint, order: hash(`human:${death.targetId}:${start}`) / 4294967296 });
+    };
+  }
+  operativeParts(mesh, { id: death.targetId, team: death.team, alive: false, crouching: crouch, slot: 'empty', weapon: 'carbine', x: 0, y: 0, z: 0, yaw: 0 }, 0, freeForAll,
+    { phase: 0, stride: 0, speed: 0, crouch: crouch ? 1 : 0 });
+  return { base: mesh.array.slice(), parts };
+}
+
+/** Retain the operator's skin, clothes and stance, excluding dropped equipment. */
+export function humanDeathMeshes(death, ageMs = 0, map = MAPS.courtyard, options = {}) {
+  const pose = humanDeathPose(death, ageMs, options);
+  if (!pose.visible || !death || ![death.x, death.y, death.z, death.yaw].every(Number.isFinite)) return new Float32Array(0);
+  const normalized = { ...death, key: death.key || `${death.targetId}:${death.lifeId}:${death.deaths}`, dx: finite(death.dx), dz: finite(death.dz) };
+  return writeDeathPose(prepareDeathMesh(normalized, map, humanDeathTemplate(death, options.freeForAll)), pose).array;
+}
+
+/** Bodies stay in the existing depth-tested world batch, with bounded buffers. */
+export function createHumanDeathMeshPresenter() {
+  const templates = new Map(), entries = new Map(), mesh = new Mesh(); let builds = 0;
+  const present = (deaths = [], map = MAPS.courtyard, options = {}) => {
+    mesh.reset(); const keep = new Set(), keepTemplates = new Set();
+    for (const death of deaths.slice(0, HUMAN_DEATH_RULES.maxCorpses)) {
+      const pose = humanDeathPose(death, death.ageMs, options); if (!pose.visible) continue;
+      const key = death.key || `${death.targetId}:${death.lifeId}:${death.deaths}`, templateKey = `${death.targetId}:${death.team}:${death.crouching}:${!!options.freeForAll}`;
+      let entry = entries.get(key);
+      if (!entry) {
+        if (!templates.has(templateKey)) templates.set(templateKey, humanDeathTemplate(death, options.freeForAll));
+        entry = prepareDeathMesh(death, map, templates.get(templateKey)); entries.set(key, entry); builds++;
+      }
+      mesh.append(writeDeathPose(entry, pose).array); keep.add(key); keepTemplates.add(templateKey);
+    }
+    for (const key of entries.keys()) if (!keep.has(key)) entries.delete(key);
+    for (const key of templates.keys()) if (!keepTemplates.has(key)) templates.delete(key);
+    return mesh.array;
+  };
+  present.reset = () => { entries.clear(); templates.clear(); mesh.reset(); builds = 0; };
+  present.getStats = () => ({ geometryBuilds: builds, vertices: mesh.length / VERTEX_STRIDE,
+    templateBytes: [...templates.values()].reduce((sum, template) => sum + template.base.byteLength, 0) + [...entries.values()].reduce((sum, entry) => sum + entry.output.byteLength, 0), bufferBytes: mesh.storage.byteLength });
+  return present;
+}
+
 function playerMesh(mesh, player, map, time, allied, freeForAll = false, animation = null, presentedReload = null) {
   const { crouch, yaw, pitch, pose, color, team, uniform, art, joints } = operativeParts(mesh, player, time, freeForAll, animation);
   const healing = finite(player.healTicks) > 0;
@@ -3924,6 +3984,7 @@ export class VoxelRenderer {
     this._frameDrawCalls = 0; this._frameDynamicVertices = 0; this._mapVertices = 0; this._lootItems = 0; this._stormVertices = 0;
     this._worldLabels = EMPTY_WORLD_LABELS;
     this.presentMonsterDeaths = createMonsterDeathPresenter(); this.presentMonsterDeathMeshes = createMonsterDeathMeshPresenter(); this.monsterDeaths = [];
+    this.presentHumanDeaths = createHumanDeathPresenter(); this.presentHumanDeathMeshes = createHumanDeathMeshPresenter(); this.humanDeaths = []; this.deathCamera = null; this.deathCameraActor = null;
     this._onLost = event => {
       event.preventDefault(); this.contextLost = true; this.available = false; this._worldLabels = EMPTY_WORLD_LABELS;
       this.error = 'The 3D graphics context was interrupted. Waiting for the browser to restore it.';
@@ -4373,13 +4434,14 @@ export class VoxelRenderer {
     const reducedMotion = this.reducedMotion?.matches === true || options.reducedMotion === true || options.quality === 'reduced';
     this._events(state, time, localId, { reducedMotion });
     const yaw = finite(options.aimYaw ?? options.yaw, finite(cameraPlayer.yaw));
-    const pitch = clamp(finite(options.aimPitch ?? options.pitch, finite(cameraPlayer.pitch)), -1.48, 1.48);
+    let pitch = clamp(finite(options.aimPitch ?? options.pitch, finite(cameraPlayer.pitch)), -1.48, 1.48);
     const aim = aimProgress(cameraPlayer), zoom = weaponAimFovRatio(cameraPlayer.weapon, ADS);
     const headContext = `${state.gameId || 'voxel-breach'}:${map.id}:${state.matchId ?? ''}:${state.round ?? ''}`;
     const motion = this.presentHead(cameraPlayer, time, headContext, { aim, paused: state.phase === 'paused' || !!options.paused });
     this.presentReloads.retain([...players.map(player => player.id), cameraPlayer.id]);
     const acceptedPlayers = Array.isArray(options.acceptedPlayers) ? options.acceptedPlayers : players;
     this.monsterDeaths = this.presentMonsterDeaths({ ...state, players: acceptedPlayers }, time, { paused: state.phase === 'paused' || !!options.paused });
+    this.humanDeaths = this.presentHumanDeaths({ ...state, players: acceptedPlayers }, time, { paused: state.phase === 'paused' || !!options.paused });
     const acceptedById = new Map(acceptedPlayers.map(player => [player.id, player]));
     const presentReload = player => {
       const accepted = acceptedById.get(player.id);
@@ -4397,13 +4459,27 @@ export class VoxelRenderer {
       if (contact < -bobY) bobY = -Math.max(0, contact - .005);
     }
     eye[1] += bobY;
-    this.firstPersonMotion = { ...motion, bobY, eye: [...eye], yaw, pitch };
+    const sameCameraLife = death => cameraPlayer.alive === false && death?.targetId === cameraPlayer.id
+      && death.lifeId === (cameraPlayer.lifeId || 0) && death.deaths === cameraPlayer.deaths;
+    const localDeath = this.humanDeaths.find(sameCameraLife);
+    // The corpse has a short lifetime; hold the settled camera until a real
+    // respawn/view change so the end card never arrives after an upright snap.
+    this.deathCameraActor = localDeath || (sameCameraLife(this.deathCameraActor) ? this.deathCameraActor : null);
+    this.deathCamera = this.deathCameraActor ? humanDeathCameraPose({ ...this.deathCameraActor,
+      ageMs: Math.max(this.deathCameraActor.ageMs, this.presentHumanDeaths.getStats().clockMs - this.deathCameraActor.born) }, { reducedMotion }) : null;
+    let roll = motion.roll;
+    if (this.deathCamera) {
+      const lower = Math.min(this.deathCamera.lower, Math.max(0, rayCoverDistance(eye, [0, -1, 0], map.colliders || [], this.deathCamera.lower + .05, .04) - .05));
+      eye[1] -= lower; roll += this.deathCamera.roll; pitch = clamp(pitch + this.deathCamera.pitch, -1.48, 1.48);
+      this.deathCamera = { ...this.deathCamera, lower };
+    }
+    this.firstPersonMotion = { ...motion, roll, bobY, eye: [...eye], yaw, pitch };
     this.shotMotion = gunHeld(cameraPlayer) ? this.presentShots.sample(cameraPlayer.weapon, time, aim) : weaponShotPose(cameraPlayer.weapon, Infinity, 0);
     this.cameraEyeHeight = eye[1] - finite(cameraPlayer.y);
     const gl = this.gl;
     this._frameDrawCalls = 0; this._frameDynamicVertices = 0;
     const fov = clamp(finite(options.fov, 70), 55, 95) * lerp(1, zoom, aim) * Math.PI / 180;
-    const projection = perspective(fov, this.aspect || 16 / 9, .025, 110), view = viewMatrix(eye, yaw, pitch, motion.roll);
+    const projection = perspective(fov, this.aspect || 16 / 9, .025, 110), view = viewMatrix(eye, yaw, pitch, roll);
     const sky = rgba(map.skyColor || (map.id === 'canal' ? '#a3bdc2' : map.id === 'depot' ? '#8da6b0' : '#a8bcb9'));
     const atmosphere = ATMOSPHERE[map.theme || map.id] || ATMOSPHERE.courtyard;
     gl.clearColor(...sky); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -4415,7 +4491,7 @@ export class VoxelRenderer {
     gl.uniform3fv(this.skyUniforms.suncolor, rgba(atmosphere.sunColor).slice(0, 3));
     gl.uniform3fv(this.skyUniforms.sundirection, atmosphere.sun);
     const sy = Math.sin(yaw), cy = Math.cos(yaw), sp = Math.sin(pitch), cp = Math.cos(pitch), tangent = Math.tan(fov / 2);
-    gl.uniform3fv(this.skyUniforms.right, rotate([1, 0, 0], yaw, pitch, motion.roll)); gl.uniform3fv(this.skyUniforms.up, rotate([0, 1, 0], yaw, pitch, motion.roll)); gl.uniform3fv(this.skyUniforms.forward, [sy * cp, sp, -cy * cp]);
+    gl.uniform3fv(this.skyUniforms.right, rotate([1, 0, 0], yaw, pitch, roll)); gl.uniform3fv(this.skyUniforms.up, rotate([0, 1, 0], yaw, pitch, roll)); gl.uniform3fv(this.skyUniforms.forward, [sy * cp, sp, -cy * cp]);
     gl.uniform2fv(this.skyUniforms.scale, [tangent * this.aspect, tangent]); gl.drawArrays(gl.TRIANGLES, 0, 3); this._frameDrawCalls++;
     gl.useProgram(this.program);
     gl.uniformMatrix4fv(this.uniforms.projection, false, projection); gl.uniformMatrix4fv(this.uniforms.view, false, view);
@@ -4460,6 +4536,7 @@ export class VoxelRenderer {
     }
     this._worldLabels = presentWorldLabels({ state: { ...state, map }, players, roster: options.roster, localId, cameraPlayer, eye, view, projection, humanPoses: this.humanPoses });
     dynamic.append(this.presentMonsterDeathMeshes(this.monsterDeaths, map));
+    dynamic.append(this.presentHumanDeathMeshes(this.humanDeaths.filter(death => death.targetId !== cameraPlayer.id), map, { reducedMotion, freeForAll }));
     this._lootItems = 0; this._stormVertices = 0; this._spawnWarnings = 0;
     const loot = this.presentLoot(state.loot || [], time);
     dynamic.append(loot.opaque); contacts.append(loot.contacts);
@@ -4533,9 +4610,13 @@ export class VoxelRenderer {
     const deathGeometry = this.presentMonsterDeathMeshes?.getStats();
     const monsterDeaths = Object.freeze({ ...this.presentMonsterDeaths?.getStats(), geometryBuilds: deathGeometry?.geometryBuilds || 0, vertices: deathGeometry?.vertices || 0, templateBytes: deathGeometry?.templateBytes || 0,
       corpses: Object.freeze((this.monsterDeaths || []).map(death => { const pose = monsterDeathPose(death, death.ageMs); return Object.freeze({ targetId: death.targetId, lifeId: death.lifeId, monsterType: death.monsterType, x: death.x, y: death.y, z: death.z, ageMs: death.ageMs, progress: pose.progress, collapse: pose.collapse, dissolve: pose.dissolve }); })) });
+    const humanDeathGeometry = this.presentHumanDeathMeshes?.getStats();
+    const humanDeaths = Object.freeze({ ...this.presentHumanDeaths?.getStats(), geometryBuilds: humanDeathGeometry?.geometryBuilds || 0, vertices: humanDeathGeometry?.vertices || 0, templateBytes: humanDeathGeometry?.templateBytes || 0,
+      corpses: Object.freeze((this.humanDeaths || []).map(death => { const pose = humanDeathPose(death, death.ageMs, { reducedMotion: this._reducedMotion }); return Object.freeze({ targetId: death.targetId, lifeId: death.lifeId, deaths: death.deaths, x: death.x, y: death.y, z: death.z, ageMs: death.ageMs, progress: pose.progress, collapse: pose.collapse, dissolve: pose.dissolve }); })),
+      camera: this.deathCamera ? Object.freeze({ ...this.deathCamera }) : null });
     const humanAnimation = Object.freeze({ cachedPlayers: this.presentHumans?.size || 0, poses: Object.freeze([...this.humanPoses].map(([id, { animation, joints }]) => Object.freeze({ id, phase: animation.phase, stride: animation.stride, speed: animation.speed, sprint: animation.sprint, forward: animation.forward, strafe: animation.strafe, crouch: animation.crouch, airborne: animation.airborne, jump: animation.jump, land: animation.land, bodyBob: animation.bodyBob, knees: Object.freeze(joints.legs.map(leg => Object.freeze([...leg.knee]))), feet: Object.freeze(joints.legs.map(leg => Object.freeze([...leg.foot]))) }))) });
     const firstPerson = this.firstPersonMotion ? Object.freeze({ ...this.firstPersonMotion, eye: Object.freeze([...this.firstPersonMotion.eye]), shot: Object.freeze({ ...this.shotMotion }), melee: this.meleePose ? Object.freeze({ ...this.meleePose }) : null, reload: this.reloadMotion ? Object.freeze({ ...this.reloadMotion, hands: Object.freeze(this.reloadMotion.hands.map(hand => Object.freeze({ ...hand }))) }) : null, ...this.presentShots.getStats() }) : null;
-    return Object.freeze({ mapId: this.mapId, mapVertices: this._mapVertices, cachedMaps: this.mapCache.size, drawCalls: this._frameDrawCalls, dynamicVertices: this._frameDynamicVertices, lootItems: this._lootItems, stormVertices: this._stormVertices, spawnWarnings: this._spawnWarnings || 0, meleeTrailVertices: this._meleeTrailVertices || 0, meleeTrailActors: this._meleeTrailActors || 0, slashImpacts: Object.freeze(this.presentSlashImpacts?.getStats() || {}), monsterSpecials: Object.freeze(this._monsterSpecials || { shards: 0, runes: 0, fuses: 0, vertices: 0 }), reducedMotion: this._reducedMotion === true, cachedSpawnWarnings: warnings?.cachedItems || 0, spawnWarningBuilds: warnings?.builds || 0, bloodParticles: this.particles.filter(particle => particle.material === 'blood').length, visibleBloodParticles: this._visibleBloodParticles || 0, cachedLootItems: loot?.cachedItems || 0, lootGeometryBuilds: loot?.builds || 0, geometryBufferBytes: Object.values(this.frameMeshes || {}).reduce((bytes, mesh) => bytes + mesh.storage.byteLength, 0) + (loot?.bufferBytes || 0) + (loot?.templateBytes || 0) + (warnings?.bufferBytes || 0) + (warnings?.templateBytes || 0) + (deathGeometry?.bufferBytes || 0) + (deathGeometry?.templateBytes || 0), cameraEyeHeight: this.cameraEyeHeight, resizeReads: this.resizeReads, humanAnimation, firstPerson, monsterDeaths });
+    return Object.freeze({ mapId: this.mapId, mapVertices: this._mapVertices, cachedMaps: this.mapCache.size, drawCalls: this._frameDrawCalls, dynamicVertices: this._frameDynamicVertices, lootItems: this._lootItems, stormVertices: this._stormVertices, spawnWarnings: this._spawnWarnings || 0, meleeTrailVertices: this._meleeTrailVertices || 0, meleeTrailActors: this._meleeTrailActors || 0, slashImpacts: Object.freeze(this.presentSlashImpacts?.getStats() || {}), monsterSpecials: Object.freeze(this._monsterSpecials || { shards: 0, runes: 0, fuses: 0, vertices: 0 }), reducedMotion: this._reducedMotion === true, cachedSpawnWarnings: warnings?.cachedItems || 0, spawnWarningBuilds: warnings?.builds || 0, bloodParticles: this.particles.filter(particle => particle.material === 'blood').length, visibleBloodParticles: this._visibleBloodParticles || 0, cachedLootItems: loot?.cachedItems || 0, lootGeometryBuilds: loot?.builds || 0, geometryBufferBytes: Object.values(this.frameMeshes || {}).reduce((bytes, mesh) => bytes + mesh.storage.byteLength, 0) + (loot?.bufferBytes || 0) + (loot?.templateBytes || 0) + (warnings?.bufferBytes || 0) + (warnings?.templateBytes || 0) + (deathGeometry?.bufferBytes || 0) + (deathGeometry?.templateBytes || 0) + (humanDeathGeometry?.bufferBytes || 0) + (humanDeathGeometry?.templateBytes || 0), cameraEyeHeight: this.cameraEyeHeight, resizeReads: this.resizeReads, humanAnimation, firstPerson, monsterDeaths, humanDeaths });
   }
   resetEffects() {
     this._worldLabels = EMPTY_WORLD_LABELS;
@@ -4546,6 +4627,7 @@ export class VoxelRenderer {
     this.localShot = null; this.localReload = null; this.shotContext = null; this.lastAim = null; this.swayX = 0; this.swayY = 0;
     this.presentLoot?.reset(); this.presentWarnings?.reset(); this.presentEye?.reset(); this.presentHumans?.reset(); this.presentMonsters?.reset(); this.presentHead?.reset(); this.presentShots?.reset(); this.presentReloads?.reset(); this.cameraReload = null; this.firstPersonMotion = null; this.shotMotion = null; this.reloadMotion = null; this.meleePose = null; this.humanPoses?.clear(); this._spawnWarnings = 0;
     this.presentMonsterDeaths?.reset(); this.presentMonsterDeathMeshes?.reset(); this.monsterDeaths = [];
+    this.presentHumanDeaths?.reset(); this.presentHumanDeathMeshes?.reset(); this.humanDeaths = []; this.deathCamera = null; this.deathCameraActor = null;
   }
   destroy() {
     if (this.destroyed) return;
