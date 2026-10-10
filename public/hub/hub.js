@@ -147,16 +147,16 @@ if (browserHosted) {
   $('rooms-list').replaceChildren();
   const hint = document.createElement('div'); hint.className = 'rooms-empty';
   const title = document.createElement('strong'); title.textContent = 'Your PC. Your room.';
-  const note = document.createElement('p'); note.textContent = 'Download the PC host, start it, and share its hostname:port with your team.';
+  const note = document.createElement('p'); note.textContent = 'Download the PC host. Use the online launcher for a public HTTPS address, or share its hostname:port on your local network.';
   const action = document.createElement('button'); action.type = 'button'; action.textContent = 'Open PC host'; action.addEventListener('click', openPcHost);
   hint.append(title, note, action); $('rooms-list').append(hint);
   document.querySelector('.room-legend').textContent = 'Solo games, training and bots run here.';
   document.querySelector('.join-panel h2').textContent = 'Open a PC host';
-  document.querySelector('.join-panel p').textContent = 'Enter a hostname:port or the full invitation link.';
-  $('room-code').placeholder = 'MY-PC:3000'; $('room-code').setAttribute('aria-label', 'PC host address or invite link'); $('join-button').setAttribute('aria-label', 'Open PC host');
+  document.querySelector('.join-panel p').textContent = 'Enter the public HTTPS address, a local hostname:port, or the full invitation link.';
+  $('room-code').placeholder = 'https://your-host.trycloudflare.com'; $('room-code').setAttribute('aria-label', 'PC host address or invite link'); $('join-button').setAttribute('aria-label', 'Open PC host');
   document.querySelector('.share-panel strong').textContent = 'Share the library';
   document.querySelector('.share-panel p').textContent = 'Open the same games, dojo and bot challenges.';
-  document.querySelector('.share-panel small').textContent = 'Multiplayer teammates connect to the same PC host over LAN or VPN.';
+  document.querySelector('.share-panel small').textContent = 'Online multiplayer uses your PC’s public HTTPS address. Keep the host running.';
 } else {
   hostInfo().then(info => { origin = info.origin; $('hub-address').textContent = origin; $('hub-download').hidden = !info.downloadAvailable; }).catch(() => { $('hub-address').textContent = origin; });
 }

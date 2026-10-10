@@ -158,6 +158,8 @@ The colleague must be able to reach your PC. On the same LAN or a suitable VPN, 
 
 For players on separate networks, use a VPN that lets both computers reach each other, or configure your router to forward TCP port 3000 to your PC and share your actual public hostname/IP. Running the server does not automatically make your PC reachable over the internet. Stop it with **Ctrl+C** when finished.
 
+**Internet play from KOOBZ3:** the PC can host the match while Sites hosts the library. On Windows, install Cloudflare's `cloudflared` tunnel client, then run **start-online-windows.bat** from the game folder. It starts or reuses the local semaG host and displays a temporary public **HTTPS** address. Open the [semaG website](https://semag.daaalil.chatgpt.site/), choose **Play with friends**, and paste that address. The browser opens the PC's public hub; create a room there and share its invitation. Keep KOOBZ3 and the launcher running while playing. See [the online-host guide](docs/online-hosting.md) for installation, shutdown and troubleshooting.
+
 ## Controls and rules
 
 Voxel Dojo:
@@ -452,6 +454,6 @@ Share the same chosen port in the URL, and allow that port through your firewall
 
 ### Sites edition
 
-The Sites export runs the dojo, solo games, Last Stand solo and bot practice directly in the browser. Real-time rooms use the PC host: choose **Play with friends**, enter `Hostname:port` or a full invitation link, and continue on that host. The hosted edition includes the current PC-host ZIP. Sites publishes new sites privately by default. The PC hub keeps its room creation, joining and LAN/VPN behavior.
+The Sites export runs the dojo, solo games, Last Stand solo and bot practice directly in the browser. Real-time rooms use the PC host: choose **Play with friends**, enter a public HTTPS tunnel address, `Hostname:port`, or a full invitation link, and continue on that host. The hosted edition includes the current PC-host ZIP and its optional Windows online launcher. Sites publishes new sites privately by default. Internet guests can use the PC's public tunnel invitation directly; the PC hub also keeps its room creation, joining and LAN/VPN behavior.
 
 `node tools/build-sites.mjs /absolute/path/to/the/registered/sites/project` exports the current browser assets into the registered project's `dist` directory, preserves its `.openai/hosting.json` identity, and includes the verified PC download. Build the updated host ZIP before exporting.

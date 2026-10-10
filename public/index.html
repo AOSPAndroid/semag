@@ -112,10 +112,11 @@
   </dialog>
   <dialog id="pc-host-dialog" class="pc-host-dialog" aria-labelledby="pc-host-title">
     <form id="pc-host-form">
-      <span class="eyebrow">PLAY TOGETHER</span><h2 id="pc-host-title">Open your PC host.</h2>
-      <p>Start the host on your PC, then enter the address it displays. Teammates use that same address over LAN or VPN.</p>
-      <label for="pc-host-address">Hostname:port or invite link</label>
-      <input id="pc-host-address" placeholder="MY-PC:3000" autocomplete="url" spellcheck="false" required maxlength="2048">
+      <span class="eyebrow">PLAY TOGETHER</span><h2 id="pc-host-title">Connect to your game host.</h2>
+      <p>Your PC runs the match. Everyone connects to the same host address or room invite.</p>
+      <p>For internet play, run <strong>start-online-windows.bat</strong> on KOOBZ3 and paste the public HTTPS address it displays. On your local network, use <strong>KOOBZ3:3000</strong>.</p>
+      <label for="pc-host-address">Public HTTPS address, hostname:port or invite link</label>
+      <input id="pc-host-address" placeholder="https://your-host.trycloudflare.com" autocomplete="url" spellcheck="false" required maxlength="2048">
       <p id="pc-host-error" role="alert" hidden></p>
       <a href="/download/fireside-hub.zip" download>Download the PC host ↓</a>
       <div class="pc-host-actions"><button id="pc-host-cancel" type="button">Cancel</button><button type="submit">Open host ↗</button></div>
