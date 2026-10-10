@@ -103,6 +103,8 @@ The interface uses a modern dark theme and the pixelated **semaG** wordmark. Vox
 
 Practice and Last Stand use wider setup panels with equipment in its own row. The Dojo keeps gun and blade cards aligned side by side on wider windows; narrow phones stack them. Chosen weapon names wrap in full, and taller screens show more weapons in the dropdown before scrolling.
 
+Heavy rifles, machine guns, revolvers, shotguns and heavy snipers have stronger recoil and matching weapon kick. Vandal climbs more than Phantom; Odin kicks harder than Ares, and Stinger requires more control than Spectre. ADS reduces recoil, short bursts preserve control, and releasing fire lets the aim settle. This tuning applies to Dojo, practice and online voxel modes.
+
 The isolated UI source and rebuild instructions are in [ui/armory](ui/armory/README.md). Hosting the game still needs only the normal root install; the compiled armory is included.
 
 When a solo Last Stand ends, the death screen shows your total **Damage dealt**, wave reached, hostiles defeated and time survived. **Replay** starts the same map, difficulty and chosen loadout with full health and fresh run statistics; **Change setup** returns to the ready screen. Damage counts actual enemy health removed, including melee and grenade hits.
