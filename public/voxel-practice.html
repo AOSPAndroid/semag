@@ -74,7 +74,34 @@
             </div>
           </form>
           <div class="practice-card practice-pause-card" id="practice-pause-card" hidden><span class="practice-eyebrow">TAKE A BREATH</span><h2>Practice paused.</h2><p>The bots, shots and clock are waiting. Your progress stays exactly where you left it. Press P to resume. Changing setup or loadout starts a fresh drill.</p><button id="practice-resume" class="practice-primary" type="button">Resume practice →</button><div class="practice-secondary-actions"><button id="practice-restart" type="button">Restart drill</button><button id="practice-change-setup" type="button">Change setup / loadout</button></div></div>
-          <div class="practice-card practice-result-card" id="practice-result-card" hidden><span class="practice-eyebrow" id="practice-result-tag">DRILL COMPLETE</span><h2 id="practice-result-title">Clean angles.</h2><p id="practice-result-copy"></p><dl class="practice-result-stats"><div><dt>ELIMINATIONS</dt><dd id="practice-result-kills">0</dd></div><div><dt id="practice-result-accuracy-label">ACCURACY</dt><dd id="practice-result-accuracy">0%</dd></div><div><dt>TIME</dt><dd id="practice-result-time">0:00</dd></div></dl><button id="practice-replay" class="practice-primary" type="button">Run it again →</button><button id="practice-result-setup" class="practice-secondary" type="button">Change setup</button></div>
+          <section class="practice-card practice-result-card" id="practice-result-card" role="region" aria-labelledby="practice-result-title" aria-describedby="practice-result-context practice-result-copy" hidden>
+            <header class="practice-result-heading">
+              <span class="practice-eyebrow" id="practice-result-tag">DRILL COMPLETE</span>
+              <h2 id="practice-result-title" tabindex="-1">Clean angles.</h2>
+              <p id="practice-result-context" class="practice-result-context"></p>
+              <p id="practice-result-copy"></p>
+            </header>
+            <dl class="practice-result-stats">
+              <div><dt>ELIMINATIONS</dt><dd id="practice-result-kills">0</dd></div>
+              <div><dt id="practice-result-accuracy-label">ACCURACY</dt><dd id="practice-result-accuracy">0%</dd></div>
+              <div><dt>TIME</dt><dd id="practice-result-time">0:00</dd></div>
+            </dl>
+            <dl class="practice-result-details">
+              <div><dt>DAMAGE DEALT</dt><dd id="practice-result-damage-dealt">0</dd></div>
+              <div><dt>DAMAGE TAKEN</dt><dd id="practice-result-damage-taken">0</dd></div>
+              <div><dt>HEADSHOT ELIMINATIONS</dt><dd id="practice-result-headshots">0</dd></div>
+              <div><dt id="practice-result-shots-label">SHOTS FIRED</dt><dd id="practice-result-shots">0</dd></div>
+              <div><dt id="practice-result-hits-label">SHOTS LANDED</dt><dd id="practice-result-hits">0</dd></div>
+              <div><dt>HEALTH REMAINING</dt><dd id="practice-result-health">0 / 200</dd></div>
+            </dl>
+            <footer class="practice-result-footer">
+              <p id="practice-result-action-note" class="practice-result-action-note">Review your results. Start your next drill when you’re ready.</p>
+              <div class="practice-result-actions">
+                <button id="practice-result-setup" class="practice-secondary" type="button">Change setup</button>
+                <button id="practice-replay" class="practice-primary" type="button">Run it again <span aria-hidden="true">→</span></button>
+              </div>
+            </footer>
+          </section>
           <div class="practice-countdown" id="practice-countdown" hidden><span>GET READY</span><strong id="practice-countdown-value">3</strong><small id="practice-countdown-copy">Read the cover. Settle your aim.</small></div>
         </div>
         <section class="practice-guide" id="practice-guide" role="dialog" aria-modal="true" aria-labelledby="practice-guide-title" hidden>

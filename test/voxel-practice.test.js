@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createPractice, startPractice, stepPractice, pausePractice, resumePractice, getPracticeStats, PRACTICE_DIFFICULTIES, TICK_RATE, emptyInput } from '../public/voxel-practice-engine.js';
-import { MAPS as BREACH_MAPS, WORLD, PLAYER_HEALTH, eyeHeight } from '../public/voxel-engine.js';
+import { MAPS as BREACH_MAPS, WORLD, PLAYER_HEALTH, eyeHeight, applyCombatDamage } from '../public/voxel-engine.js';
 import * as Royale from '../public/voxel-royale-engine.js';
 import { WEAPONS, weaponDamage } from '../public/voxel-weapons.js';
 import { initializeInventory, selectInventorySlot } from '../public/voxel-inventory.js';
@@ -164,6 +164,67 @@ test('local practice shots use the shipped distinct weapon damages and real cont
   }
 });
 
+test('all Valorant guns count enemy contacts when their final trace ends at a wall', () => {
+  for (const weapon of Object.values(WEAPONS).filter(weapon => weapon.valorant)) {
+    const state = fight({ weapon: weapon.id }), target = state.players[1];
+    Object.assign(target, { x: 0, z: 4, hp: 5000, maxHp: 5000 });
+    state.map = { ...openArena, colliders: [{ id: 'backstop', x: -20, y: 0, z: -5, w: 40, h: 4, d: 1 }] };
+    stepPractice(state, { ...aimAt(state, target), aim: false });
+    const contacts = state.events.filter(event => event.type === 'shot' && event.playerId === 0 && event.damage > 0);
+    assert.ok(contacts.length > 0, `${weapon.id}: no genuine enemy contact`);
+    assert.ok(contacts.every(event => event.targetId === null && event.hitKind === 'wall'), `${weapon.id}: fixture did not reproduce terminal-wall traces`);
+    assert.ok(contacts.every(event => event.contacts.some(contact => contact.targetId === target.id && contact.damage > 0)));
+    const stats = getPracticeStats(state);
+    assert.equal(stats.shots, 1, weapon.id); assert.equal(stats.hits, 1, weapon.id); assert.equal(stats.accuracy, 100, weapon.id); assert.ok(stats.damageDealt > 0, weapon.id);
+    advance(state, 10); assert.equal(getPracticeStats(state).hits, 1, `${weapon.id}: retained events counted twice`);
+  }
+});
+
+test('shotgun accuracy counts one successful shell rather than every damaging pellet, and excludes misses', () => {
+  for (const weapon of Object.values(WEAPONS).filter(weapon => weapon.pellets > 1)) {
+    const state = fight({ weapon: weapon.id }), target = state.players[1];
+    Object.assign(target, { x: 0, z: 4, hp: 5000, maxHp: 5000 });
+    stepPractice(state, { ...aimAt(state, target), aim: false });
+    const damage = state.events.filter(event => event.type === 'damage' && event.playerId === 0 && event.targetId === target.id);
+    assert.ok(damage.length > 1, `${weapon.id}: fixture did not produce multiple real pellet contacts`);
+    assert.equal(getPracticeStats(state).shots, 1, weapon.id); assert.equal(getPracticeStats(state).hits, 1, weapon.id); assert.equal(getPracticeStats(state).accuracy, 100, weapon.id);
+    advance(state, Math.ceil(weapon.cooldown) + 2);
+    Object.assign(target, { x: 0, z: 4 });
+    stepPractice(state, { fire: true, yaw: Math.PI, pitch: 0 });
+    assert.equal(getPracticeStats(state).shots, 2, weapon.id); assert.equal(getPracticeStats(state).hits, 1, weapon.id); assert.equal(getPracticeStats(state).accuracy, 50, weapon.id);
+    advance(state, 10); assert.equal(getPracticeStats(state).hits, 1, weapon.id);
+  }
+});
+
+test('Bucky airburst contacts count once and Classic alternate rounds each retain their own accuracy', () => {
+  const bucky = fight({ weapon: 'bucky' }), buckyTarget = bucky.players[1];
+  Object.assign(buckyTarget, { hp: 5000, maxHp: 5000 });
+  stepPractice(bucky, { ...aimAt(bucky, buckyTarget, false), aim: true });
+  const burst = bucky.events.filter(event => event.type === 'shot');
+  assert.equal(burst.length, 5); assert.ok(burst.every(event => event.fireMode === 'airburst')); assert.ok(burst.some(event => event.damage > 0));
+  assert.equal(getPracticeStats(bucky).shots, 1); assert.equal(getPracticeStats(bucky).hits, 1); assert.equal(getPracticeStats(bucky).accuracy, 100);
+  const classic = fight({ weapon: 'classic' }), classicTarget = classic.players[1];
+  Object.assign(classicTarget, { x: 0, z: 4, hp: 5000, maxHp: 5000 });
+  stepPractice(classic, { ...aimAt(classic, classicTarget, false), aim: true });
+  const volley = classic.events.filter(event => event.type === 'shot');
+  assert.equal(volley.length, 3); assert.ok(volley.every(event => event.fireMode === 'volley' && event.pellet === 0 && event.damage > 0));
+  assert.equal(new Set(volley.map(event => event.tick)).size, 1);
+  assert.equal(getPracticeStats(classic).shots, 3); assert.equal(getPracticeStats(classic).hits, 3); assert.equal(getPracticeStats(classic).accuracy, 100);
+  advance(classic, 10); assert.equal(getPracticeStats(classic).hits, 3);
+});
+
+test('friendly blockers and sealed cover cannot contribute practice accuracy', () => {
+  for (const blockedBy of ['friendly', 'wall']) {
+    const state = fight({ weapon: 'judge' }), target = state.players[1];
+    Object.assign(target, { x: 0, z: 4 });
+    if (blockedBy === 'friendly') target.team = 0;
+    else state.map = { ...openArena, colliders: [{ id: 'sealed', material: 'concrete', x: -20, y: 0, z: 4.7, w: 40, h: 4, d: .7 }] };
+    stepPractice(state, { ...aimAt(state, target), aim: false });
+    assert.equal(getPracticeStats(state).shots, 1, blockedBy); assert.equal(getPracticeStats(state).hits, 0, blockedBy); assert.equal(getPracticeStats(state).accuracy, 0, blockedBy);
+    assert.equal(target.hp, PLAYER_HEALTH, blockedBy); assert.equal(getPracticeStats(state).damageDealt, 0, blockedBy);
+  }
+});
+
 test('friendly bodies stop bullets and receive no damage from another Breach bot', () => {
   const state = fight({ bots: 2, mode: 'combat', difficulty: 'veteran' });
   state.map = { ...openArena, bounds: { minX: -.5, maxX: .5, minZ: -10, maxZ: 10 } };
@@ -185,7 +246,57 @@ test('clearing all moving bots ends one real round and reports contact-derived s
   const stats = getPracticeStats(state); assert.equal(stats.result, 'won'); assert.equal(stats.kills, 2); assert.equal(stats.botsRemaining, 0); assert.equal(stats.damageDealt, PLAYER_HEALTH * 2);
   assert.ok(stats.hits <= stats.shots && stats.hits > 0); assert.equal(stats.accuracy, stats.hits / stats.shots * 100);
   assert.ok(Object.isFrozen(stats)); const terminal = JSON.stringify(state); advance(state, 240, { up: true, fire: true }); assert.equal(JSON.stringify(state), terminal);
-  startPractice(state); assert.equal(state.phase, 'countdown'); assert.equal(getPracticeStats(state).sessionId, 2); assert.equal(getPracticeStats(state).shots, 0); assert.equal(getPracticeStats(state).seconds, 0);
+  startPractice(state); assert.equal(state.phase, 'countdown'); assert.equal(getPracticeStats(state).sessionId, 2); assert.equal(getPracticeStats(state).shots, 0); assert.equal(getPracticeStats(state).hits, 0); assert.equal(getPracticeStats(state).accuracy, 0); assert.equal(getPracticeStats(state).seconds, 0);
+});
+
+test('practice counts lethal headshots once, excludes nonlethal head contacts and body eliminations, and resets the next drill', () => {
+  for (const game of ['voxel', 'voxel-royale']) {
+    const state = fight({ game, bots: 3 }), player = state.players[0], headTarget = state.players[1], bodyTarget = state.players[2];
+    if (game === 'voxel-royale') equip(player);
+    headTarget.hp = weaponDamage('carbine', 'head', 12) * 2;
+    const shootHead = () => {
+      const dx = headTarget.x - player.x, dz = headTarget.z - player.z;
+      stepPractice(state, { fire: true, aim: true, yaw: Math.atan2(dx, -dz), pitch: Math.atan2(headTarget.y + 1.64 - player.y - eyeHeight(player), Math.hypot(dx, dz)) - player.recoil });
+    };
+    shootHead();
+    assert.ok(state.events.some(event => event.type === 'damage' && event.targetId === headTarget.id && event.headshot === true));
+    assert.equal(getPracticeStats(state).headshotKills, 0); assert.equal(headTarget.alive, true);
+    advance(state, 30); shootHead();
+    const headKill = state.events.find(event => event.type === 'kill' && event.targetId === headTarget.id);
+    assert.ok(headKill, 'the real shots did not eliminate the head target'); assert.equal(headKill.headshot, true); assert.equal(headKill.playerId, 0);
+    assert.equal(getPracticeStats(state).headshotKills, 1); assert.equal(getPracticeStats(state).kills, 1);
+    advance(state, 30); // The retained kill event is visited on subsequent active ticks.
+    assert.equal(getPracticeStats(state).headshotKills, 1); assert.equal(getPracticeStats(state).headshotKills, 1);
+    bodyTarget.hp = weaponDamage('carbine', 'body', 12);
+    stepPractice(state, aimAt(state, bodyTarget));
+    const bodyKill = state.events.find(event => event.type === 'kill' && event.targetId === bodyTarget.id);
+    assert.ok(bodyKill); assert.equal(bodyKill.headshot, false);
+    assert.equal(getPracticeStats(state).kills, 2); assert.equal(getPracticeStats(state).headshotKills, 1);
+    for (let tick = 0; tick < 900 && state.phase === 'fight'; tick++) stepPractice(state, aimAt(state, state.players[3]));
+    assert.equal(state.phase, 'matchEnd'); assert.equal(getPracticeStats(state).headshotKills, 1);
+    startPractice(state); assert.equal(getPracticeStats(state).headshotKills, 0); assert.equal(getPracticeStats(state).kills, 0);
+    assert.equal(getPracticeStats(state).healthRemaining, PLAYER_HEALTH); assert.equal(getPracticeStats(state).healthMax, PLAYER_HEALTH);
+  }
+});
+
+test('an enemy lethal headshot cannot inflate the local headshot result', () => {
+  const state = fight({ bots: 2 }), player = state.players[0];
+  applyCombatDamage(state, [{ playerId: 1, targetId: 0, damage: player.hp, hitKind: 'head', headshot: true, attack: 'gun', weapon: 'carbine' }]);
+  assert.ok(state.events.some(event => event.type === 'kill' && event.playerId === 1 && event.headshot === true));
+  stepPractice(state);
+  const stats = getPracticeStats(state);
+  assert.equal(stats.result, 'lost'); assert.equal(stats.kills, 0); assert.equal(stats.headshotKills, 0);
+  assert.equal(stats.healthRemaining, 0); assert.equal(stats.healthMax, PLAYER_HEALTH);
+});
+
+test('practice results expose bounded finite health without mutating combat state', () => {
+  const state = createPractice({ seed: 33 }), player = state.players[0];
+  for (const [hp, maxHp, healthRemaining, healthMax] of [[73.5, 250, 73.5, 250], [-10, 200, 0, 200], [300, 200, 200, 200], [NaN, NaN, 0, PLAYER_HEALTH], [Infinity, Infinity, 0, PLAYER_HEALTH], [50, 0, 50, PLAYER_HEALTH]]) {
+    player.hp = hp; player.maxHp = maxHp;
+    const stats = getPracticeStats(state);
+    assert.equal(stats.healthRemaining, healthRemaining); assert.equal(stats.healthMax, healthMax);
+    assert.equal(player.hp, hp); assert.equal(player.maxHp, maxHp); assert.ok(Object.isFrozen(stats));
+  }
 });
 
 test('combat death ends the local drill, stops simulation and reports damage actually taken', () => {

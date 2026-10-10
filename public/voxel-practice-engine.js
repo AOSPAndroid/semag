@@ -1,5 +1,5 @@
 /** Local drills use the shipped movement, weapons, damage and Royale rules at 120 Hz. */
-import { MAPS as BREACH_MAPS, createState as createBreachState, createCombatPlayer, combatStep, emptyInput, eyeHeight, playerHeight, aimDirection, traceShot, emitCombatEvent, TICK_RATE, WORLD, findNearbyLoot, pickupCombatLoot, advanceInventoryLoot, resetSprint } from './voxel-engine.js';
+import { MAPS as BREACH_MAPS, createState as createBreachState, createCombatPlayer, combatStep, emptyInput, eyeHeight, playerHeight, aimDirection, traceShot, emitCombatEvent, TICK_RATE, WORLD, PLAYER_HEALTH, findNearbyLoot, pickupCombatLoot, advanceInventoryLoot, resetSprint } from './voxel-engine.js';
 import * as Royale from './voxel-royale-engine.js';
 import { WEAPONS } from './voxel-weapons.js';
 import { MELEE_WEAPONS, resetMeleeDefense, clearMeleeComboContinuation } from './voxel-melee.js';
@@ -160,7 +160,7 @@ export function createPractice(options = {}) {
   state.map = config.mode === 'dojo' ? DOJO_MAP : (config.game === 'voxel' ? BREACH_MAPS : Royale.MAPS)[config.mapId];
   // Build static navigation while the setup screen is visible, before live play.
   navigationFor(state.map);
-  state.practice = { config, seed: config.seed, randomState: config.seed || 0x9e3779b9, sessionId: 0, elapsedTicks: 0, brains: [], stats: { hits: 0, damageTaken: 0, lastEventId: 0, lastShotHitTick: -1, ...(config.mode === 'blades' ? { bladeSwings: 0, bladeHitSwings: 0, lastHitSwing: null } : {}) }, result: null, pausedPhase: null, inputFence: [] };
+  state.practice = { config, seed: config.seed, randomState: config.seed || 0x9e3779b9, sessionId: 0, elapsedTicks: 0, brains: [], stats: { hits: 0, headshotKills: 0, damageTaken: 0, lastEventId: 0, lastShotHitId: -1, ...(config.mode === 'blades' ? { bladeSwings: 0, bladeHitSwings: 0, lastHitSwing: null } : {}) }, result: null, pausedPhase: null, inputFence: [] };
   if (config.game === 'voxel') spawnBreach(state, config);
   else {
     const spawn = state.map.spawnPoints[0];
@@ -369,13 +369,23 @@ function botInput(state, bot, brain) {
 }
 function recordStats(state) {
   const stats = state.practice.stats;
+  const enemyContact = contact => contact.damage > 0 && state.players[contact.targetId] && state.players[contact.targetId].team !== state.players[0].team;
   for (const event of state.events) {
     if (event.id <= stats.lastEventId) continue;
+    if (event.type === 'kill' && event.playerId === 0 && event.headshot === true) {
+      const target = state.players[event.targetId];
+      if (target && target.team !== state.players[0].team) stats.headshotKills++;
+    }
     if (state.practice.config.mode === 'blades' && event.type === 'meleeStart' && event.playerId === 0) stats.bladeSwings++;
     if (event.type === 'damage' && event.targetId === 0) stats.damageTaken += event.damage;
-    if (event.playerId === 0 && event.damage > 0 && event.targetId !== null && state.players[event.targetId]?.team !== state.players[0].team) {
-      if (event.type === 'shot' && event.tick !== stats.lastShotHitTick) { stats.hits++; stats.lastShotHitTick = event.tick; }
-      else if (event.type === 'boltHit') stats.hits++;
+    if (event.playerId === 0 && event.damage > 0 && (enemyContact(event) || event.type === 'shot' && event.contacts?.some(enemyContact))) {
+      if (event.type === 'shot') {
+        // One round emits consecutive indexed pellet events. Terminal traces
+        // may end at a wall while their contacts still damage an enemy. Count
+        // a shell once, preserving separate rounds in Classic's same-tick volley.
+        const shotId = event.id - (Number.isInteger(event.pellet) ? event.pellet : 0);
+        if (shotId !== stats.lastShotHitId) { stats.hits++; stats.lastShotHitId = shotId; }
+      } else if (event.type === 'boltHit') stats.hits++;
       else if (state.practice.config.mode === 'blades' && event.type === 'meleeHit') {
         stats.hits++;
         const swing = `${event.weapon}:${event.meleeStartTick}:${event.meleeIndex}`;
@@ -436,5 +446,7 @@ export function getPracticeStats(state) {
   if (!state?.practice) return null;
   const { practice } = state, player = state.players[0], botsRemaining = state.players.filter(peer => peer.bot && peer.alive).length;
   const blades = practice.config.mode === 'blades', attempts = blades ? practice.stats.bladeSwings : player.shots, landed = blades ? practice.stats.bladeHitSwings : practice.stats.hits;
-  return Object.freeze({ seconds: practice.elapsedTicks / TICK_RATE, elapsedTicks: practice.elapsedTicks, kills: player.kills, shots: player.shots, hits: practice.stats.hits, accuracy: attempts ? Math.min(100, landed / attempts * 100) : 0, ...(blades ? { swings: attempts, landedSwings: landed } : {}), damageDealt: player.damageDealt, damageTaken: practice.stats.damageTaken, botsRemaining, result: practice.result, sessionId: practice.sessionId });
+  const healthMax = Number.isFinite(player.maxHp) && player.maxHp > 0 ? player.maxHp : PLAYER_HEALTH;
+  const healthRemaining = Number.isFinite(player.hp) ? clamp(player.hp, 0, healthMax) : 0;
+  return Object.freeze({ seconds: practice.elapsedTicks / TICK_RATE, elapsedTicks: practice.elapsedTicks, kills: player.kills, headshotKills: practice.stats.headshotKills, shots: player.shots, hits: practice.stats.hits, accuracy: attempts ? Math.min(100, landed / attempts * 100) : 0, ...(blades ? { swings: attempts, landedSwings: landed } : {}), damageDealt: player.damageDealt, damageTaken: practice.stats.damageTaken, healthRemaining, healthMax, botsRemaining, result: practice.result, sessionId: practice.sessionId });
 }

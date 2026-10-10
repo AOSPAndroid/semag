@@ -12,3 +12,104 @@
 .dojo-tools{position:absolute;z-index:8;right:12px;top:12px;width:min(320px,calc(100% - 24px));max-height:calc(100% - 120px);overflow:auto;padding:16px;border:1px solid #ffffff24;border-radius:12px;background:#101014f5;color:#fafafa;box-shadow:0 18px 70px #0008;font-family:Arial,sans-serif;backdrop-filter:blur(12px)}
 .dojo-tools-heading{display:flex;justify-content:space-between;align-items:center}.dojo-tools-heading span{font-size:9px;font-weight:600;letter-spacing:.12em;color:#a1a1aa}.dojo-tools h2{font-size:21px;font-weight:600;letter-spacing:-.04em;margin:4px 0}.dojo-tools p{font-size:11px;line-height:1.55;color:#a1a1aa;margin:12px 0}.dojo-tools button,.dojo-tools select{min-height:36px;border:1px solid #ffffff20;border-radius:7px;background:#18181b;color:#fafafa;padding:7px 9px;font:11px Arial,sans-serif}.dojo-tools button:hover{background:#27272a}.dojo-tools button:disabled{opacity:.4;cursor:default}.dojo-tools-heading button{font-size:20px;min-width:34px;line-height:1}.dojo-tool-fields{display:grid;gap:10px}.dojo-tool-fields label{font-size:9px;letter-spacing:.05em;color:#a1a1aa}.dojo-tool-fields select{display:block;width:100%;margin-top:5px}.dojo-tools>#dojo-use-station{width:100%;margin-top:12px}.dojo-tool-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0}.dojo-tools>small{display:block;font-size:10px;line-height:1.6;color:#a1a1aa;margin:10px 0 14px}.dojo-tools>#dojo-return{width:100%;background:#fafafa;color:#09090b;border-color:#fafafa;font-weight:600}.practice-tools>#dojo-tools-toggle{font:9px Arial,sans-serif;width:38px}
 @media(max-width:600px){.dojo-contact{right:8px;top:8px;max-width:180px;padding:7px 9px}.dojo-contact>strong{font-size:17px}.dojo-contact>small{font-size:8px}.dojo-tools{right:8px;top:8px;width:min(300px,calc(100% - 16px));max-height:calc(100% - 100px);padding:13px}.dojo-tools button,.dojo-tools select{min-height:40px}.dojo-tools h2{font-size:19px}}
+
+/* Keep the next drill away from the aiming lane and give the debrief room. */
+body .practice-card.practice-result-card {
+  display: flex;
+  flex-direction: column;
+  width: min(100%, 680px);
+  min-height: min(530px, 100%);
+  max-height: 100%;
+  padding: 30px;
+  scrollbar-width: thin;
+  scroll-padding-block: 24px;
+}
+body .practice-card.practice-result-card .practice-result-heading { flex-shrink: 0; }
+body .practice-card.practice-result-card .practice-result-heading h2 { margin: 10px 0 8px; }
+body .practice-card.practice-result-card .practice-result-heading p {
+  font-size: .8125rem;
+  margin: 0;
+}
+body .practice-card.practice-result-card .practice-result-heading .practice-result-context {
+  font-size: .6875rem;
+  line-height: 1.6;
+  margin-bottom: 10px;
+  color: var(--muted-foreground, #a1a1aa);
+}
+body .practice-card.practice-result-card .practice-result-stats {
+  flex-shrink: 0;
+  padding: 20px 0;
+  margin: 22px 0 0;
+  gap: 18px;
+}
+body .practice-card.practice-result-card .practice-result-stats dd { font-size: 2rem; }
+body .practice-card.practice-result-card .practice-result-details {
+  display: grid;
+  flex-shrink: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px 18px;
+  margin: 0;
+  padding: 22px 0 24px;
+}
+body .practice-card.practice-result-card .practice-result-details > div { min-width: 0; }
+body .practice-card.practice-result-card .practice-result-details dt {
+  color: var(--muted-foreground, #a1a1aa);
+  font: 500 .625rem/1.5 var(--font, Arial, sans-serif);
+  letter-spacing: .025em;
+}
+body .practice-card.practice-result-card .practice-result-details dd {
+  margin: 6px 0 0;
+  color: var(--foreground, #fafafa);
+  font: 600 1.125rem/1.3 var(--font, Arial, sans-serif);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.025em;
+}
+body .practice-card.practice-result-card .practice-result-footer {
+  flex-shrink: 0;
+  margin-top: auto;
+  padding-top: 20px;
+  border-top: 1px solid var(--border, #27272a);
+}
+body .practice-card.practice-result-card .practice-result-action-note {
+  font-size: .6875rem;
+  line-height: 1.5;
+  margin: 0 0 14px;
+  min-height: 1.5em;
+}
+body .practice-card.practice-result-card .practice-result-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: stretch;
+  gap: 12px;
+}
+body .practice-card.practice-result-card .practice-result-actions > button {
+  flex: 0 1 auto;
+  width: auto;
+  min-height: 46px;
+  margin: 0;
+  scroll-margin-block: 24px;
+}
+body .practice-card.practice-result-card .practice-result-actions > .practice-secondary {
+  min-width: 150px;
+}
+body .practice-card.practice-result-card .practice-result-actions > .practice-primary {
+  min-width: 210px;
+}
+@media (max-width: 600px) {
+  body .practice-card.practice-result-card { min-height: 0; padding: 22px; }
+  body .practice-card.practice-result-card .practice-result-stats { padding: 18px 0; margin: 18px 0 0; gap: 12px; }
+  body .practice-card.practice-result-card .practice-result-stats dd { font-size: 1.625rem; }
+  body .practice-card.practice-result-card .practice-result-details { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 20px 0; gap: 18px 16px; }
+  body .practice-card.practice-result-card .practice-result-details dd { font-size: 1.0625rem; }
+  body .practice-card.practice-result-card .practice-result-actions { flex-direction: column; gap: 10px; }
+  body .practice-card.practice-result-card .practice-result-actions > button { width: 100%; min-width: 0; min-height: 46px; }
+  body .practice-card.practice-result-card .practice-result-footer { padding-top: 16px; }
+}
+@media (max-height: 560px) and (orientation: landscape) {
+  body .practice-card.practice-result-card { min-height: 0; max-height: 100%; padding: 22px 26px; }
+  body .practice-card.practice-result-card .practice-result-stats { margin: 16px 0 0; padding: 16px 0; }
+  body .practice-card.practice-result-card .practice-result-details { padding: 18px 0; gap: 14px 18px; }
+}
+@media (max-width: 380px) {
+  body .practice-card.practice-result-card .practice-result-stats dt { font-size: .5625rem; }
+}
