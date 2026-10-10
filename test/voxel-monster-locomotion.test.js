@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createCombatPlayer, WORLD } from '../public/voxel-engine.js';
 import { monsterBodyBoxes, monsterBodyProfile } from '../public/voxel-monster-bodies.js';
-import { monsterLocomotionPose } from '../public/voxel-monster-animation.js';
-import { monsterMeshes, monsterAnimationPose, createMonsterAnimationPresenter } from '../public/voxel-renderer.js';
+import { monsterLocomotionPose, monsterStepArc, monsterGaitCycleMetres, MONSTER_GAIT_CONTACT_PHASE } from '../public/voxel-monster-animation.js';
+import { monsterMeshes, monsterAnimationPose, createMonsterAnimationPresenter, VoxelRenderer } from '../public/voxel-renderer.js';
 
 const TYPES = ['stalker', 'runner', 'brute', 'gunner', 'sniper', 'hound', 'leaper', 'screecher', 'bomber', 'spitter', 'weaver'];
 const actor = (type, patch = {}) => ({ ...createCombatPlayer(7), monster: true, human: false, monsterType: type, x: 2.25, y: 4, z: -3.5, lifeId: 1, monsterState: 'chase', ...patch });
@@ -98,4 +98,78 @@ test('armed hands remain attached to their gun while running; motion stops compl
     assert.equal(present({ ...player, z: player.z - .1 }, 20, 'match').stride > 0, true);
     assert.equal(present({ ...player, monsterType: type === 'hound' ? 'runner' : 'hound' }, 40, 'match').stride, 0, 'recycled type clears old joint motion');
   }
+});
+
+test('each stride has a flat grounded stance, a raised swing and only two touchdown rhythms including hound pairs', () => {
+  near(MONSTER_GAIT_CONTACT_PHASE, Math.PI / 2);
+  for (const type of TYPES) {
+    const player = actor(type), groundedFrames = type === 'hound' ? [0, 0, 0, 0] : [0, 0];
+    let contactCount = 0, previous;
+    for (let index = 0; index <= 64; index++) {
+      // Avoid evaluating the exact boundary with floating-point sin noise.
+      const phase = (index + .1) * Math.PI * 2 / 64;
+      const motion = monsterLocomotionPose(player, { phase, stride: 1, speed: 7, forward: 1 });
+      const limbs = type === 'hound' ? motion.paws : motion.legs;
+      const planted = limbs.filter(leg => leg.planted);
+      assert.equal(planted.length, limbs.length / 2, `${type}: opposing support stays grounded`);
+      for (const [joint, leg] of limbs.entries()) {
+        if (leg.planted) { near(leg.lift, 0); if (index < 64) groundedFrames[joint]++; }
+        else assert.ok(leg.lift > 0, `${type}: swing foot has clearance`);
+      }
+      if (previous && limbs.some((leg, joint) => leg.planted && !previous[joint].planted)) contactCount++;
+      previous = limbs;
+    }
+    assert.ok(groundedFrames.every(frames => frames === 32), `${type}: half of each stride is grounded`);
+    assert.equal(contactCount, 2, `${type}: diagonal paws do not double the step rhythm`);
+    const front = monsterLocomotionPose(player, { phase: Math.PI * .55, stride: 1, speed: 7, forward: 1 });
+    const rear = monsterLocomotionPose(player, { phase: Math.PI * 1.45, stride: 1, speed: 7, forward: 1 });
+    const frontFoot = type === 'hound' ? front.paws[0].foot : front.legs[0].foot;
+    const rearFoot = type === 'hound' ? rear.paws[0].foot : rear.legs[0].foot;
+    assert.ok(frontFoot[2] < rearFoot[2], `${type}: planted foot travels back beneath forward-moving body`);
+    const slow = monsterLocomotionPose(player, { phase: 0, stride: 1, speed: 2.5 });
+    const run = monsterLocomotionPose(player, { phase: 0, stride: 1, speed: 7 });
+    const slowLimbs = type === 'hound' ? slow.paws : slow.legs, runLimbs = type === 'hound' ? run.paws : run.legs;
+    assert.ok(runLimbs[0].lift > slowLimbs[0].lift, `${type}: running visibly raises swing clearance`);
+  }
+  assert.deepEqual(monsterStepArc(MONSTER_GAIT_CONTACT_PHASE), { swing: false, planted: true, progress: 0, travel: 1, lift: 0 });
+  near(monsterGaitCycleMetres('hound'), 1.28); near(monsterGaitCycleMetres('runner'), 1.75);
+});
+
+test('grounded rendered footsteps are read-only, current-frame poses and never expose the camera or dead actors', () => {
+  const gl = new Proxy({}, { get(_, key) {
+    if (key === 'getShaderParameter' || key === 'getProgramParameter') return () => true;
+    if (key === 'getAttribLocation') return () => 0;
+    if (key === 'getUniformLocation') return (_program, uniform) => uniform;
+    if (typeof key === 'string' && key.startsWith('create')) return () => ({});
+    return () => {};
+  } });
+  const renderer = new VoxelRenderer({ getContext: () => gl, getBoundingClientRect: () => ({ width: 960, height: 540 }), addEventListener() {}, removeEventListener() {} });
+  const camera = { ...createCombatPlayer(0), x: -5 }, mate = { ...createCombatPlayer(1), previousInput: { walk: true } };
+  const monster = actor('hound', { id: 2, x: 0, y: 0, z: -3, previousInput: { walk: true } });
+  const dead = actor('runner', { id: 3, alive: false });
+  const map = { id: 'walk-diagnostic-fixture', theme: 'custom', colliders: [], sites: [], bounds: { minX: -20, maxX: 20, minZ: -20, maxZ: 20 } };
+  const state = { gameId: 'voxel-horde', map, phase: 'fight', round: 1, players: [camera, mate, monster, dead], loot: [], events: [] };
+  const before = structuredClone(state);
+  renderer.render(state, { localId: 0, time: 0, hideWeapon: true });
+  assert.deepEqual(renderer.locomotionActors.map(item => item.id), [1, 2]);
+  assert.equal(renderer.locomotionActors[0].walking, true, 'quiet human walking comes from accepted input');
+  assert.equal(renderer.locomotionActors[1].walking, false, 'AI walk input does not silence monster footsteps');
+  assert.ok(Object.isFrozen(renderer.locomotionActors) && renderer.locomotionActors.every(Object.isFrozen));
+  assert.strictEqual(renderer.locomotionActors, renderer.locomotionActors, 'audio reads do not clone full stats');
+  const moving = { ...state, players: [camera, mate, { ...monster, z: -3.25 }, dead] };
+  renderer.render(moving, { localId: 0, time: 50, hideWeapon: true });
+  const sampled = renderer.locomotionActors.find(item => item.id === 2), pose = renderer.stats.monsterAnimation.poses[0];
+  near(pose.phase, sampled.phase); near(pose.speed, sampled.speed);
+  assert.ok(pose.stride > 0 && pose.feet.length === 4 && pose.knees.length === 4);
+  renderer.render(moving, { localId: 0, time: 50, hideWeapon: true });
+  near(renderer.locomotionActors.find(item => item.id === 2).phase, sampled.phase);
+  renderer.render(moving, { localId: 0, time: 500, hideWeapon: true, paused: true });
+  const paused = renderer.locomotionActors.find(item => item.id === 2);
+  near(paused.phase, sampled.phase); assert.equal(paused.paused, true);
+  assert.deepEqual(state, before, 'render and audio diagnostics never mutate authority');
+  renderer.resetEffects(); assert.equal(renderer.locomotionActors.length, 0); assert.equal(renderer.stats.monsterAnimation.poses.length, 0);
+  renderer.render(moving, { localId: 0, time: 550, hideWeapon: true });
+  renderer.available = false; assert.equal(renderer.render(moving, { localId: 0, time: 600 }), false);
+  assert.equal(renderer.locomotionActors.length, 0, 'a failed render cannot replay stale contacts');
+  renderer.destroy();
 });

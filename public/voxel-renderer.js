@@ -14,7 +14,7 @@ import { EMPTY_WORLD_LABELS, presentWorldLabels } from './voxel-label-presentati
 import { createSlashImpactPresenter } from './voxel-slash-effects.js';
 import { MONSTER_VARIANT_ART, appendMonsterVariant } from './voxel-monster-variants.js';
 import { MONSTER_SPECIAL_RULES } from './voxel-monster-specials.js';
-import { monsterLocomotionPose, appendMonsterLimb } from './voxel-monster-animation.js';
+import { monsterLocomotionPose, monsterGaitCycleMetres, appendMonsterLimb } from './voxel-monster-animation.js';
 
 // All solid world surfaces come directly from the engine's minimum-corner
 // colliders. Decoration is either painted on those surfaces or outside bounds.
@@ -3161,7 +3161,7 @@ const MONSTER_ART = Object.freeze({
 
 const CREATURE_TYPES = new Set(['hound', 'leaper', 'screecher']);
 const STILL_MONSTER_GAIT = Object.freeze({ phase: 0, stride: 0, speed: 0, airborne: false, land: 0 });
-const monsterCycleLength = type => type === 'hound' ? 1.28 : type === 'leaper' ? 2.05 : type === 'screecher' ? 1.85 : type === 'runner' ? 1.75 : 3;
+const monsterCycleLength = monsterGaitCycleMetres;
 
 /** Pure anatomy inspection fallback; live gait integrates presented travel below. */
 export function monsterAnimationPose(player, time = 0) {
@@ -3169,7 +3169,7 @@ export function monsterAnimationPose(player, time = 0) {
   const airborne = player?.alive !== false && player?.grounded === false;
   const phase = speed && !airborne ? (finite(time) * .001 * speed * TAU / monsterCycleLength(player?.monsterType) + hash(player?.id) % 13) % TAU : 0;
   const yaw = finite(player?.yaw), vx = finite(player?.vx), vz = finite(player?.vz);
-  return { phase, stride: airborne ? 0 : clamp(speed / 5, 0, 1), speed, airborne, land: 0,
+  return { phase, stride: airborne ? 0 : clamp(speed / 5, 0, 1), speed, run: clamp((speed - 2.5) / 3.5, 0, 1), airborne, land: 0,
     jump: airborne ? clamp(finite(player?.vy) / 6.4, 0, 1) : 0, fall: airborne ? clamp(-finite(player?.vy) / 8, 0, 1) : 0,
     forward: speed > .05 ? (Math.sin(yaw) * vx - Math.cos(yaw) * vz) / speed : 1,
     strafe: speed > .05 ? (Math.cos(yaw) * vx + Math.sin(yaw) * vz) / speed : 0 };
@@ -3189,7 +3189,7 @@ export function createMonsterAnimationPresenter({ maxMonsters = 20 } = {}) {
     const reset = !history || history.context !== context || history.lifeId !== player.lifeId || history.type !== player.monsterType
       || elapsed < 0 || elapsed > 1000 && !paused && !history.paused || Math.hypot(dx, dz) > Math.max(.5, elapsed * .020);
     if (reset) {
-      history = { x: player.x, y: player.y, z: player.z, gaitX: player.x, gaitZ: player.z, time, context, lifeId: player.lifeId, type: player.monsterType, paused,
+      history = { x: player.x, y: player.y, z: player.z, gaitX: player.x, gaitZ: player.z, gaitTime: time, time, context, lifeId: player.lifeId, type: player.monsterType, paused,
         pose: { ...monsterAnimationPose({ ...player, vx: 0, vz: 0 }, 0), phase: hash(id) % 13 } };
       histories.delete(id);
       while (histories.size >= capacity) histories.delete(histories.keys().next().value);
@@ -3197,21 +3197,23 @@ export function createMonsterAnimationPresenter({ maxMonsters = 20 } = {}) {
     }
     if (paused || history.paused) {
       // A tab resuming from pause keeps its held pose and discards elapsed wall time.
-      history.x = history.gaitX = player.x; history.y = player.y; history.z = history.gaitZ = player.z; history.time = time; history.paused = paused;
+      history.x = history.gaitX = player.x; history.y = player.y; history.z = history.gaitZ = player.z; history.gaitTime = history.time = time; history.paused = paused;
       return history.pose;
     }
     if (!reset && elapsed > 0) {
       const travelled = Math.hypot(player.x - history.gaitX, player.z - history.gaitZ), distance = travelled > .001 ? travelled : 0;
-      const speed = distance ? Math.min(14, Math.hypot(dx, dz) * 1000 / elapsed) : 0;
+      const speed = distance ? Math.min(14, distance * 1000 / Math.max(1, time - history.gaitTime)) : 0;
       const amount = 1 - Math.exp(-elapsed / (speed > .05 ? 45 : 70));
       const airborne = player.grounded === false, yaw = finite(player.yaw), length = Math.hypot(dx, dz);
       const stride = history.pose.stride + ((airborne ? 0 : clamp(speed / 5, 0, 1)) - history.pose.stride) * amount;
+      const run = finite(history.pose.run) + ((airborne ? 0 : clamp((speed - 2.5) / 3.5, 0, 1)) - finite(history.pose.run)) * amount;
       const land = airborne ? 0 : history.pose.airborne ? clamp(Math.max(.25, -finite(player.vy) / 8, (history.y - player.y) * 1000 / elapsed / 8), 0, 1) : finite(history.pose.land) * Math.exp(-elapsed / 95);
-      history.pose = { phase: (history.pose.phase + (airborne ? 0 : distance) * TAU / monsterCycleLength(player.monsterType)) % TAU, stride: stride < .00001 ? 0 : stride, speed, airborne,
+      history.pose = { phase: (history.pose.phase + (airborne ? 0 : distance) * TAU / monsterCycleLength(player.monsterType)) % TAU, stride: stride < .00001 ? 0 : stride, speed, run: run < .00001 ? 0 : run, airborne,
         land: land < .00001 ? 0 : land, jump: airborne ? clamp(finite(player.vy) / 6.4, 0, 1) : 0, fall: airborne ? clamp(-finite(player.vy) / 8, 0, 1) : 0,
         forward: length > .001 ? (Math.sin(yaw) * dx - Math.cos(yaw) * dz) / length : history.pose.forward,
         strafe: length > .001 ? (Math.cos(yaw) * dx + Math.sin(yaw) * dz) / length : history.pose.strafe };
-      if (distance) { history.gaitX = player.x; history.gaitZ = player.z; }
+      if (distance) { history.gaitX = player.x; history.gaitZ = player.z; history.gaitTime = time; }
+      else if (travelled < 1e-8) history.gaitTime = time;
     }
     history.x = player.x; history.y = player.y; history.z = player.z; history.time = time;
     histories.delete(id); histories.set(id, history);
@@ -3980,13 +3982,13 @@ export class VoxelRenderer {
     this.lastAim = null; this.swayX = 0; this.swayY = 0;
     this.frameMeshes = { world: new Mesh(), contact: new Mesh(), tracer: new Mesh(), weapon: new Mesh() };
     this.frameMeshes.tracer.ensure((MAX_MELEE_TRAIL_VERTICES + MAX_TRACERS * 6) * VERTEX_STRIDE);
-    this.presentLoot = createLootPresenter(); this.presentWarnings = createSpawnWarningPresenter(); this.presentEye = createEyeHeightPresenter(); this.presentHumans = createPlayerAnimationPresenter(); this.presentMonsters = createMonsterAnimationPresenter(); this.presentHead = createFirstPersonMotionPresenter(); this.presentShots = createWeaponShotPresenter(); this.presentReloads = createWeaponReloadPresenter({ maxPlayers: 32 }); this.cameraReload = null; this.firstPersonMotion = null; this.shotMotion = null; this.humanPoses = new Map(); this.resizeReads = 0;
+    this.presentLoot = createLootPresenter(); this.presentWarnings = createSpawnWarningPresenter(); this.presentEye = createEyeHeightPresenter(); this.presentHumans = createPlayerAnimationPresenter(); this.presentMonsters = createMonsterAnimationPresenter(); this.presentHead = createFirstPersonMotionPresenter(); this.presentShots = createWeaponShotPresenter(); this.presentReloads = createWeaponReloadPresenter({ maxPlayers: 32 }); this.cameraReload = null; this.firstPersonMotion = null; this.shotMotion = null; this.humanPoses = new Map(); this.monsterPoses = new Map(); this._locomotionActors = Object.freeze([]); this.resizeReads = 0;
     this._frameDrawCalls = 0; this._frameDynamicVertices = 0; this._mapVertices = 0; this._lootItems = 0; this._stormVertices = 0;
     this._worldLabels = EMPTY_WORLD_LABELS;
     this.presentMonsterDeaths = createMonsterDeathPresenter(); this.presentMonsterDeathMeshes = createMonsterDeathMeshPresenter(); this.monsterDeaths = [];
     this.presentHumanDeaths = createHumanDeathPresenter(); this.presentHumanDeathMeshes = createHumanDeathMeshPresenter(); this.humanDeaths = []; this.deathCamera = null; this.deathCameraActor = null;
     this._onLost = event => {
-      event.preventDefault(); this.contextLost = true; this.available = false; this._worldLabels = EMPTY_WORLD_LABELS;
+      event.preventDefault(); this.contextLost = true; this.available = false; this._worldLabels = EMPTY_WORLD_LABELS; this._locomotionActors = Object.freeze([]); this.monsterPoses.clear();
       this.error = 'The 3D graphics context was interrupted. Waiting for the browser to restore it.';
       this._notify(this.error, true);
     };
@@ -4402,6 +4404,8 @@ export class VoxelRenderer {
   }
   render(state, options = {}) {
     this._worldLabels = EMPTY_WORLD_LABELS;
+    this._locomotionActors = Object.freeze([]);
+    this.monsterPoses.clear();
     if (this.destroyed || this.contextLost || !this.available || !state) return false;
     let map = typeof state.map === 'object' && state.map?.colliders ? state.map : MAPS[state.mapId] || MAPS.courtyard;
     if (!map) return false;
@@ -4509,12 +4513,13 @@ export class VoxelRenderer {
     const dynamic = this.frameMeshes.world.reset(), contacts = this.frameMeshes.contact.reset(), local = players.find(player => player.id === localId) || cameraPlayer;
     const humanContext = `${state.gameId || 'voxel-breach'}:${map.id}:${state.matchId ?? ''}:${state.round ?? ''}`;
     this.humanPoses.clear();
+    const locomotionActors = [], animationPaused = state.phase === 'paused' || !!options.paused;
     this.presentHumans.retain(players.filter(player => !player.monsterType).map(player => player.id));
     this.presentMonsters.retain(horde ? players.filter(player => Object.hasOwn(MONSTER_ART, player.monsterType) && player.alive).map(player => player.id) : []);
     for (const player of players) {
       if (!Number.isFinite(player.x) || !Number.isFinite(player.z)) continue;
       const reloadAnimation = player.id === cameraPlayer.id ? this.cameraReload : presentReload(player);
-      const gaitAnimation = !player.monsterType ? this.presentHumans(player, time, humanContext, { paused: state.phase === 'paused' || !!options.paused }) : null;
+      const gaitAnimation = !player.monsterType ? this.presentHumans(player, time, humanContext, { paused: animationPaused }) : null;
       const humanAnimation = gaitAnimation ? { ...gaitAnimation, reload: reloadAnimation } : null;
       if (humanAnimation) this.humanPoses.set(player.id, { animation: humanAnimation, joints: operativePose(player, humanAnimation) });
       if (!player.alive) {
@@ -4522,8 +4527,17 @@ export class VoxelRenderer {
         continue;
       }
       if (player.id === cameraPlayer.id) continue;
-      if (horde && player.monsterType) monsterMesh(dynamic, player, map, time, this.presentMonsters(player, time, humanContext, { paused: state.phase === 'paused' || !!options.paused }), reloadAnimation);
-      else playerMesh(dynamic, player, map, time, !freeForAll && player.team === local.team, freeForAll, humanAnimation, reloadAnimation);
+      const monsterAnimation = horde && player.monsterType ? this.presentMonsters(player, time, humanContext, { paused: animationPaused }) : null;
+      if (monsterAnimation) {
+        if (this.monsterPoses.size < 32) this.monsterPoses.set(player.id, { player, monsterType: player.monsterType, animation: monsterAnimation });
+        monsterMesh(dynamic, player, map, time, monsterAnimation, reloadAnimation);
+      } else playerMesh(dynamic, player, map, time, !freeForAll && player.team === local.team, freeForAll, humanAnimation, reloadAnimation);
+      const locomotion = monsterAnimation || gaitAnimation;
+      if (locomotion && locomotionActors.length < 32) locomotionActors.push(Object.freeze({ id: player.id, x: player.x, y: finite(player.y), z: player.z,
+        alive: true, grounded: player.grounded !== false, lifeId: player.lifeId, deaths: player.deaths, monsterType: player.monsterType ?? null,
+        team: player.team, crouching: !!player.crouching, walking: !player.monsterType && !!player.previousInput?.walk, sprinting: !!player.sprinting,
+        phase: locomotion.phase, stride: locomotion.stride, speed: locomotion.speed, airborne: !!locomotion.airborne,
+        paused: animationPaused, contextKey: humanContext }));
       const support = surfaceBelow(map.colliders, player.x, player.z, finite(player.y) + .045);
       const ground = support ? support.y + support.h : 0;
       const altitude = Math.max(0, finite(player.y) - ground), spread = .26 + Math.min(.22, altitude * .08), opacity = .15 / (1 + altitude);
@@ -4534,6 +4548,7 @@ export class VoxelRenderer {
         contacts.floor(minX, minZ, maxX - minX, maxZ - minZ, [.035, .055, .08, opacity], ground + .012 + (2 - layer) * .0003);
       }
     }
+    this._locomotionActors = Object.freeze(locomotionActors);
     this._worldLabels = presentWorldLabels({ state: { ...state, map }, players, roster: options.roster, localId, cameraPlayer, eye, view, projection, humanPoses: this.humanPoses });
     dynamic.append(this.presentMonsterDeathMeshes(this.monsterDeaths, map));
     dynamic.append(this.presentHumanDeathMeshes(this.humanDeaths.filter(death => death.targetId !== cameraPlayer.id), map, { reducedMotion, freeForAll }));
@@ -4605,6 +4620,8 @@ export class VoxelRenderer {
     return true;
   }
   get worldLabels() { return this._worldLabels; }
+  /** Cheap immutable readout of the exact remote poses drawn in this frame. */
+  get locomotionActors() { return this._locomotionActors; }
   get stats() {
     const loot = this.presentLoot?.getStats(), warnings = this.presentWarnings?.getStats();
     const deathGeometry = this.presentMonsterDeathMeshes?.getStats();
@@ -4615,8 +4632,15 @@ export class VoxelRenderer {
       corpses: Object.freeze((this.humanDeaths || []).map(death => { const pose = humanDeathPose(death, death.ageMs, { reducedMotion: this._reducedMotion }); return Object.freeze({ targetId: death.targetId, lifeId: death.lifeId, deaths: death.deaths, x: death.x, y: death.y, z: death.z, ageMs: death.ageMs, progress: pose.progress, collapse: pose.collapse, dissolve: pose.dissolve }); })),
       camera: this.deathCamera ? Object.freeze({ ...this.deathCamera }) : null });
     const humanAnimation = Object.freeze({ cachedPlayers: this.presentHumans?.size || 0, poses: Object.freeze([...this.humanPoses].map(([id, { animation, joints }]) => Object.freeze({ id, phase: animation.phase, stride: animation.stride, speed: animation.speed, sprint: animation.sprint, forward: animation.forward, strafe: animation.strafe, crouch: animation.crouch, airborne: animation.airborne, jump: animation.jump, land: animation.land, bodyBob: animation.bodyBob, knees: Object.freeze(joints.legs.map(leg => Object.freeze([...leg.knee]))), feet: Object.freeze(joints.legs.map(leg => Object.freeze([...leg.foot]))) }))) });
+    const monsterAnimation = Object.freeze({ cachedMonsters: this.presentMonsters?.size || 0, poses: Object.freeze([...this.monsterPoses].map(([id, { player, monsterType, animation }]) => {
+      const motion = monsterLocomotionPose(player, animation), legs = monsterType === 'hound' ? motion.paws : motion.legs;
+      return Object.freeze({ id, monsterType, phase: animation.phase, stride: animation.stride, speed: animation.speed, run: animation.run,
+        forward: animation.forward, strafe: animation.strafe, airborne: animation.airborne, land: animation.land, bodyBob: motion.bodyBob,
+        feet: Object.freeze(legs.map(leg => Object.freeze([...leg.foot]))), knees: Object.freeze(legs.map(leg => Object.freeze([...leg.knee]))),
+        planted: Object.freeze(legs.map(leg => leg.planted)) });
+    })) });
     const firstPerson = this.firstPersonMotion ? Object.freeze({ ...this.firstPersonMotion, eye: Object.freeze([...this.firstPersonMotion.eye]), shot: Object.freeze({ ...this.shotMotion }), melee: this.meleePose ? Object.freeze({ ...this.meleePose }) : null, reload: this.reloadMotion ? Object.freeze({ ...this.reloadMotion, hands: Object.freeze(this.reloadMotion.hands.map(hand => Object.freeze({ ...hand }))) }) : null, ...this.presentShots.getStats() }) : null;
-    return Object.freeze({ mapId: this.mapId, mapVertices: this._mapVertices, cachedMaps: this.mapCache.size, drawCalls: this._frameDrawCalls, dynamicVertices: this._frameDynamicVertices, lootItems: this._lootItems, stormVertices: this._stormVertices, spawnWarnings: this._spawnWarnings || 0, meleeTrailVertices: this._meleeTrailVertices || 0, meleeTrailActors: this._meleeTrailActors || 0, slashImpacts: Object.freeze(this.presentSlashImpacts?.getStats() || {}), monsterSpecials: Object.freeze(this._monsterSpecials || { shards: 0, runes: 0, fuses: 0, vertices: 0 }), reducedMotion: this._reducedMotion === true, cachedSpawnWarnings: warnings?.cachedItems || 0, spawnWarningBuilds: warnings?.builds || 0, bloodParticles: this.particles.filter(particle => particle.material === 'blood').length, visibleBloodParticles: this._visibleBloodParticles || 0, cachedLootItems: loot?.cachedItems || 0, lootGeometryBuilds: loot?.builds || 0, geometryBufferBytes: Object.values(this.frameMeshes || {}).reduce((bytes, mesh) => bytes + mesh.storage.byteLength, 0) + (loot?.bufferBytes || 0) + (loot?.templateBytes || 0) + (warnings?.bufferBytes || 0) + (warnings?.templateBytes || 0) + (deathGeometry?.bufferBytes || 0) + (deathGeometry?.templateBytes || 0) + (humanDeathGeometry?.bufferBytes || 0) + (humanDeathGeometry?.templateBytes || 0), cameraEyeHeight: this.cameraEyeHeight, resizeReads: this.resizeReads, humanAnimation, firstPerson, monsterDeaths, humanDeaths });
+    return Object.freeze({ mapId: this.mapId, mapVertices: this._mapVertices, cachedMaps: this.mapCache.size, drawCalls: this._frameDrawCalls, dynamicVertices: this._frameDynamicVertices, lootItems: this._lootItems, stormVertices: this._stormVertices, spawnWarnings: this._spawnWarnings || 0, meleeTrailVertices: this._meleeTrailVertices || 0, meleeTrailActors: this._meleeTrailActors || 0, slashImpacts: Object.freeze(this.presentSlashImpacts?.getStats() || {}), monsterSpecials: Object.freeze(this._monsterSpecials || { shards: 0, runes: 0, fuses: 0, vertices: 0 }), reducedMotion: this._reducedMotion === true, cachedSpawnWarnings: warnings?.cachedItems || 0, spawnWarningBuilds: warnings?.builds || 0, bloodParticles: this.particles.filter(particle => particle.material === 'blood').length, visibleBloodParticles: this._visibleBloodParticles || 0, cachedLootItems: loot?.cachedItems || 0, lootGeometryBuilds: loot?.builds || 0, geometryBufferBytes: Object.values(this.frameMeshes || {}).reduce((bytes, mesh) => bytes + mesh.storage.byteLength, 0) + (loot?.bufferBytes || 0) + (loot?.templateBytes || 0) + (warnings?.bufferBytes || 0) + (warnings?.templateBytes || 0) + (deathGeometry?.bufferBytes || 0) + (deathGeometry?.templateBytes || 0) + (humanDeathGeometry?.bufferBytes || 0) + (humanDeathGeometry?.templateBytes || 0), cameraEyeHeight: this.cameraEyeHeight, resizeReads: this.resizeReads, humanAnimation, monsterAnimation, firstPerson, monsterDeaths, humanDeaths });
   }
   resetEffects() {
     this._worldLabels = EMPTY_WORLD_LABELS;
@@ -4625,7 +4649,7 @@ export class VoxelRenderer {
     this.presentMonsterSpecialImpacts?.reset(); this._monsterSpecials = null; this._reducedMotion = false;
     this._visibleBloodParticles = 0; this._meleeTrailVertices = 0; this._meleeTrailActors = 0;
     this.localShot = null; this.localReload = null; this.shotContext = null; this.lastAim = null; this.swayX = 0; this.swayY = 0;
-    this.presentLoot?.reset(); this.presentWarnings?.reset(); this.presentEye?.reset(); this.presentHumans?.reset(); this.presentMonsters?.reset(); this.presentHead?.reset(); this.presentShots?.reset(); this.presentReloads?.reset(); this.cameraReload = null; this.firstPersonMotion = null; this.shotMotion = null; this.reloadMotion = null; this.meleePose = null; this.humanPoses?.clear(); this._spawnWarnings = 0;
+    this.presentLoot?.reset(); this.presentWarnings?.reset(); this.presentEye?.reset(); this.presentHumans?.reset(); this.presentMonsters?.reset(); this.presentHead?.reset(); this.presentShots?.reset(); this.presentReloads?.reset(); this.cameraReload = null; this.firstPersonMotion = null; this.shotMotion = null; this.reloadMotion = null; this.meleePose = null; this.humanPoses?.clear(); this.monsterPoses?.clear(); this._locomotionActors = Object.freeze([]); this._spawnWarnings = 0;
     this.presentMonsterDeaths?.reset(); this.presentMonsterDeathMeshes?.reset(); this.monsterDeaths = [];
     this.presentHumanDeaths?.reset(); this.presentHumanDeathMeshes?.reset(); this.humanDeaths = []; this.deathCamera = null; this.deathCameraActor = null;
   }

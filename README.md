@@ -117,6 +117,8 @@ When a solo Last Stand ends, the death screen shows your total **Damage dealt**,
 
 Defeated monsters visibly collapse and fade out after a short death animation. Dogs roll onto their side; humanoid monsters fall onto the ground. Defeated enemies stop attacking immediately, and loot remains available during the animation in solo and co-op.
 
+Enemy movement has planted steps, bent knees, arm swing and weight shifts, with distinct gaits for hounds, runners and heavy monsters. With sound enabled, nearby enemies make footsteps synchronized to their actual movement. Steps become quieter with distance and come from the enemy's direction; idle, airborne and defeated enemies stay silent.
+
 Voxel players and practice bots also recoil, collapse and dissolve after a confirmed kill. The final elimination remains visible for about a second before results appear in Breach, Royale, Last Stand and FPS practice. Controls release immediately and the combat result stays final during that brief presentation. Reduced-motion settings use a shorter, quieter transition without a falling camera.
 
 Every PvP game has a **Vs bots** link beside **Create room**. The Solo shelf includes these practice modes as well as the solo games. Shinobi Showdown, Relic Duel, Vector Arena, Oddstock Rumble, Checkers, Crazy Eights, 21 Duel and Memory Match open with **Normal**, **Hard** or **Expert** opponents; **Hard** is selected initially. Review the setup and press **Start game**. Pause / Resume and **P** stop the solo simulation; **P** also opens Room & controls. Escape remains available for browser fullscreen and mouse release. Play again resets the match, and the setup returns so you can change the challenge.

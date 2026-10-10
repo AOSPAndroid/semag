@@ -2,6 +2,7 @@ import { aimFraction as gunAimFraction, aimLookMultiplier as gunAimLookMultiplie
 import { displayKey, gameKey, getKeyboardLayout, mountKeyboardLayoutPicker, subscribeKeyboardLayout } from './keyboard-layout.js';
 import { copyText, getName, hostInfo, roomUrl, saveName } from './hub/shared.js';
 import { GameAudio } from './audio.js';
+import { createEnemyFootstepPresenter } from './voxel-footsteps.js';
 import { createMeleeImpactReporter } from './voxel-client.js';
 import { WEAPONS } from './voxel-weapons.js';
 import { resolveActiveFire, weaponReloadDuration } from './voxel-fire-modes.js';
@@ -203,6 +204,7 @@ async function boot() {
   const hudKey = () => hudTransitionKey(state, roster, playerId);
   const eventSeen = new Set(), eventOrder = [], kills = [], audio = new GameAudio(), removers = [];
   const meleeImpacts = createMeleeImpactReporter(audio), gunImpacts = createGunImpactReporter(audio), parryAudio = createParryAudioReporter(audio);
+  const enemyFootsteps = createEnemyFootstepPresenter(audio);
   const reloadAudio = createReloadAudioPresenter(audio), staminaElements = { meter: $('stamina-meter'), fill: $('stamina-fill') };
   let staminaView = staminaPresentation(null, { active: false });
   function paintVitals(player, name = 'Your', active = true) { staminaView = staminaPresentation(player, { name, active }); paintStamina(staminaElements.meter, staminaElements.fill, staminaView); }
@@ -261,7 +263,7 @@ async function boot() {
     if (pause || unlock) captureAttempt++;
     weaponWheel.reset();
     clearReticle();
-    reloadAudio.suspend(); paintVitals(null, 'Your', false);
+    reloadAudio.suspend(); enemyFootsteps.suspend(); paintVitals(null, 'Your', false);
     hitFeedback.reset(); paintHitFeedback(hitElements, { visible: false });
     keys.clear(); pressedKeys.clear(); mouse.fire = mouse.aim = false; rightDrag = false;
     touch.actions.clear(); touch.move = { x: 0, y: 0 }; touch.look = { x: 0, y: 0 };
@@ -394,14 +396,14 @@ async function boot() {
     const hits = confirmedHitGroups(fresh, playerId); if (hits.length) { const hit = hits.reduce((best, next) => next.damage > best.damage ? next : best); const killed = fresh.some(event => ['kill', 'elimination', 'death'].includes(event.type) && event.targetId === hit.targetId && (event.attackerId ?? event.shooterId ?? event.playerId) === playerId); feedbackUntil = performance.now() + (killed ? 1100 : 650); setText($('combat-feedback'), `${hit.label} · ${Math.round(hit.damage)} HP${killed ? ' · ELIMINATED' : ''}`); }
   }
   function draw(now = performance.now()) {
-    if (!renderer?.available || !state || graphicsError || document.hidden) { clearReticle(); reloadAudio.suspend(); paintVitals(null, 'Your', false); return; }
+    if (!renderer?.available || !state || graphicsError || document.hidden) { clearReticle(); reloadAudio.suspend(); enemyFootsteps.suspend(); paintVitals(null, 'Your', false); return; }
     if (endView.holding) {
       const players = state.players.map(player => ({ ...player })), view = { ...state, players, fighters: players };
       const camera = players.find(player => player.id === playerId) || spectatorPlayer(view, playerId, spectatorId);
       const viewAim = camera?.id === playerId && camera.alive ? aim : cleanAim(camera?.yaw, camera?.pitch);
       presentationPlayer = players.find(player => player.id === playerId); presentationPlayers = players;
       renderer.render(view, { acceptedPlayers: state.players, playerId, localId: playerId, localPlayer: presentationPlayer, viewPlayer: camera, cameraPlayer: camera, yaw: viewAim.yaw, pitch: viewAim.pitch, time: now, roster });
-      clearReticle(); reloadAudio.suspend(); paintVitals(null, 'Your', false); renderCount++;
+      clearReticle(); reloadAudio.suspend(); enemyFootsteps.suspend(); paintVitals(null, 'Your', false); renderCount++;
       return;
     }
     const rendered = interpolatedState(snapshots, timeline.time(now), playerId, { predictMovement: engine.predictLocalMovement, traceProjectile: engine.traceShot, combatTime: timeline.currentTime(now) }) || { ...state, players: state.players.map(player => ({ ...player })) };
@@ -424,6 +426,7 @@ async function boot() {
     paintCrosshair(hitElements.crosshair, reticleView); setHidden(hitElements.scope, !reticleView.visible || !reticleView.scoped);
     setText($('scope-label'), `${WEAPONS[camera?.weapon]?.label || 'PRECISION'} / PRECISION SIGHT`);
     paintVitals(camera, camera?.id !== playerId ? `${lookupName(camera?.id)}’s` : 'Your', connected && !paused && !modalOpen && ['countdown', 'fight'].includes(state.phase));
+    enemyFootsteps.observe(renderer.locomotionActors, { now, context: `${state.mapId}:${state.matchId}:${state.round}`, listener: camera, yaw: viewAim.yaw, active: connected && entered && !!local?.alive && !paused && !modalOpen && state.phase === 'fight', freeForAll: true });
     reloadAudio.observe(state.players.find(player => player.id === camera?.id), { tick: state.tick, context: `${state.mapId}:${state.matchId}:${state.round}`, active: connected && !paused && !modalOpen && state.phase === 'fight' });
     paintHitFeedback(hitElements, hitFeedback.present(local, { now, lifeKey: `${state.mapId}:${state.matchId}:${local?.lifeId || 0}`, active: state.phase === 'fight' && !paused && !modalOpen && connected, reducedMotion: hitMotion.matches })); paintDamageFeedback($('damage-cue'), damageFeedbackPresentation(damageFeedback, camera, { now, lifeKey: state.matchId, yaw: viewAim.yaw, active: state.phase === 'fight' })); setHidden($('combat-feedback'), now >= feedbackUntil);
     while (kills.length && now - kills[0].at > 6000) kills.shift(); const signature = kills.map(item => item.text).join('|');
@@ -462,9 +465,9 @@ async function boot() {
     const reconciliationTime = performance.now();
     const beforePrediction = predictedPlayer;
     const beforePose = beforePrediction && old?.phase === 'fight' ? presentMovement(beforePrediction, actionInputs.preview(currentInput(), reconciliationTime), old.map, accumulator, engine.predictLocalMovement, old.players) : beforePrediction;
-    if (!old || predictedPlayer?.id !== playerId || fresh) { neutralize(); aim = cleanAim(local?.yaw, local?.pitch); pending = []; snapshots = []; spectatorId = null; accumulator = 0; renderer?.resetEffects(); healthView = null; damageFeedback = null; if (fresh) { eventSeen.clear(); eventOrder.length = 0; kills.length = 0; feedbackUntil = 0; hitFeedback.reset({ clearHistory: true }); damageFeedback = null; meleeImpacts.reset(); gunImpacts.reset(); parryAudio.reset(); reloadAudio.reset(); healthGainUntil = 0; lastCountdown = null; } sendInput(neutralInput(aim.yaw, aim.pitch), true); }
+    if (!old || predictedPlayer?.id !== playerId || fresh) { neutralize(); aim = cleanAim(local?.yaw, local?.pitch); pending = []; snapshots = []; spectatorId = null; accumulator = 0; renderer?.resetEffects(); healthView = null; damageFeedback = null; if (fresh) { eventSeen.clear(); eventOrder.length = 0; kills.length = 0; feedbackUntil = 0; hitFeedback.reset({ clearHistory: true }); damageFeedback = null; meleeImpacts.reset(); gunImpacts.reset(); parryAudio.reset(); reloadAudio.reset(); enemyFootsteps.reset(); healthGainUntil = 0; lastCountdown = null; } sendInput(neutralInput(aim.yaw, aim.pitch), true); }
     if (previousPhase !== null && previousPhase !== state.phase) neutralize();
-    if (state.phase === 'lobby' && previousPhase !== 'lobby') { neutralize({ pause: true, unlock: true }); entered = false; fallback = false; healthView = null; damageFeedback = null; snapshots = []; pending = []; audio.resetEvents(); meleeImpacts.reset(); gunImpacts.reset(); parryAudio.reset(); reloadAudio.reset(); }
+    if (state.phase === 'lobby' && previousPhase !== 'lobby') { neutralize({ pause: true, unlock: true }); entered = false; fallback = false; healthView = null; damageFeedback = null; snapshots = []; pending = []; audio.resetEvents(); meleeImpacts.reset(); gunImpacts.reset(); parryAudio.reset(); reloadAudio.reset(); enemyFootsteps.reset(); }
     if (local && !local.alive && old?.players?.find(player => player.id === playerId)?.alive !== false) neutralize({ pause: true, unlock: true });
     if (state.phase === 'matchEnd' && previousPhase !== 'matchEnd') neutralize({ pause: true, unlock: true });
     const ackValue = message.acks?.[playerId], ack = typeof ackValue === 'number' ? ackValue : ackValue?.seq ?? -1;
@@ -662,7 +665,7 @@ async function boot() {
   const pingTimer = setInterval(() => { if (connected && !document.hidden) send({ type: 'ping', time: performance.now() }); }, 1500);
   function destroy() { if (destroyed) return; neutralize({ pause: true, unlock: true }); destroyed = true; endPresentation.reset(); clearTimeout(reconnectTimer); clearTimeout(toastTimer); clearInterval(pingTimer); clearInterval(heartbeat); heartbeat = null; if (frameId) cancelAnimationFrame(frameId); frameId = null; socket?.close(); renderer?.destroy(); audio.destroy(); inventory.destroy(); weaponWheel.destroy(); layoutPicker.destroy(); unsubscribeLayout(); for (const remove of removers) remove(); pending = []; snapshots = []; kills.length = 0; eventSeen.clear(); }
   listen(window, 'pagehide', destroy);
-  const inspect = () => { const { map, ...snapshot } = state || {}; return clone({ state: state ? snapshot : null, players: roster, playerId, hostId, input: currentInput(), predictedPlayer, presentationPlayer, presentationPlayers, predictionRemainder: accumulator, predictionTick, actionQueue: actionInputs.inspect(), timeline: timeline.getState(), correction: correction.getState(), ending: { ...endView }, connected, controls: { pointerLocked: pointerLocked(), fallback, touch: touchMode, paused, entered, modalOpen }, queueLength: pending.length, renderCount, crosshair: reticleView, renderStats: renderer?.stats || null, audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), meleeImpactAudio: meleeImpacts.inspect(), reloadAudio: reloadAudio.inspect(), reloadSounds: audio.inspectReloads(), gunImpactAudio: gunImpacts.inspect(), parryAudio: parryAudio.inspect(), parrySounds: audio.inspectParries(), stamina: staminaView, weaponWheel: weaponWheel.inspect(), graphicsError, spectatorId }); };
+  const inspect = () => { const { map, ...snapshot } = state || {}; return clone({ state: state ? snapshot : null, players: roster, playerId, hostId, input: currentInput(), predictedPlayer, presentationPlayer, presentationPlayers, predictionRemainder: accumulator, predictionTick, actionQueue: actionInputs.inspect(), timeline: timeline.getState(), correction: correction.getState(), ending: { ...endView }, connected, controls: { pointerLocked: pointerLocked(), fallback, touch: touchMode, paused, entered, modalOpen }, queueLength: pending.length, renderCount, crosshair: reticleView, renderStats: renderer?.stats || null, audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), meleeImpactAudio: meleeImpacts.inspect(), reloadAudio: reloadAudio.inspect(), reloadSounds: audio.inspectReloads(), enemyFootsteps: enemyFootsteps.inspect(), footstepSounds: audio.inspectFootsteps(), gunImpactAudio: gunImpacts.inspect(), parryAudio: parryAudio.inspect(), parrySounds: audio.inspectParries(), stamina: staminaView, weaponWheel: weaponWheel.inspect(), graphicsError, spectatorId }); };
   window.SemagRoyale = Object.freeze({ getState: inspect, inspect }); updateUI();
   try { const [rules, visual] = await Promise.all([import('./voxel-royale-engine.js'), import('./voxel-renderer.js')]); if (destroyed) return; engine = { ...rules, predictLocalMovement, sweepPresentationOffset, traceShot, ADS, HEAL, PLAYER_HEALTH }; renderer = new visual.VoxelRenderer(canvas); renderer.resize(); } catch (cause) { graphicsError = cause?.message || 'This game requires WebGL. Enable hardware acceleration and reload graphics.'; error(graphicsError); updateUI(); return; }
   connect();

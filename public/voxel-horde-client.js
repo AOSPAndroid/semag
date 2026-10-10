@@ -1,6 +1,7 @@
 import { mountWeaponArmory } from './voxel-armory-ui.js';
 import { secondaryActionPresentation, paintSecondaryAction, staminaPresentation, paintStamina, createReloadAudioPresenter, createGunImpactReporter, createParryAudioReporter } from './voxel-fps-feedback.js';
 import { GameAudio } from './audio.js';
+import { createEnemyFootstepPresenter } from './voxel-footsteps.js';
 import { displayKey, gameKey, getKeyboardLayout, mountKeyboardLayoutPicker, subscribeKeyboardLayout } from './keyboard-layout.js';
 import { copyText, getName, hostInfo, roomUrl, saveName } from './hub/shared.js';
 import { ADS, HEAL, PLAYER_HEALTH, predictLocalMovement, sweepPresentationOffset, traceShot } from './voxel-engine.js';
@@ -152,6 +153,7 @@ export async function bootHorde() {
   const actionPointers = new Map(), padPointers = new Map(), inputQueue = createFpsInputQueue(), pacer = createInputPacer(60), movement = new Map();
   const correction = createCorrectionPresenter(), timeline = createNetworkTimeline({ snapshotTicks: 4 }), audio = new GameAudio(), listeners = [], eventSeen = new Set();
   const meleeImpacts = createMeleeImpactReporter(audio), gunImpacts = createGunImpactReporter(audio), parryAudio = createParryAudioReporter(audio);
+  const enemyFootsteps = createEnemyFootstepPresenter(audio);
   const reloadAudio = createReloadAudioPresenter(audio), staminaElements = { meter: $('horde-stamina-meter'), fill: $('horde-stamina-fill') };
   let staminaView = staminaPresentation(null, { active: false });
   function paintVitals(player, name = 'Your', active = true) { staminaView = staminaPresentation(player, { name, active }); paintStamina(staminaElements.meter, staminaElements.fill, staminaView); }
@@ -200,7 +202,7 @@ export async function bootHorde() {
   function clearInputs({ fence = false } = {}) {
     weaponWheel.reset();
     clearReticle();
-    reloadAudio.suspend(); paintVitals(null, 'Your', false);
+    reloadAudio.suspend(); enemyFootsteps.suspend(); paintVitals(null, 'Your', false);
     worldLabels.clear();
     hitFeedback.reset(); paintHitFeedback(hitElements, { visible: false });
     const held = currentInput(); keys.clear(); physicalKeys.clear(); mouse.fire = mouse.aim = false; touch.actions.clear(); touch.move = { x: 0, y: 0 }; touch.look = { x: 0, y: 0 };
@@ -238,7 +240,7 @@ export async function bootHorde() {
   function resetPresentation() {
     endPresentation.reset(); pendingResultFocus = false; observeEnd();
     clearInputs(); stopFrame(); previousPlayers = []; snapshots = []; movement.clear(); timeline.reset(); correction.reset(); damageFeedback = null;
-    feedbackUntil = waveBannerUntil = 0; hitFeedback.reset({ clearHistory: true }); eventSeen.clear(); renderer?.resetEffects(); audio.resetEvents(); meleeImpacts.reset(); gunImpacts.reset(); parryAudio.reset(); reloadAudio.reset(); lastCountdown = null; lastWave = 0; previousPhase = null;
+    feedbackUntil = waveBannerUntil = 0; hitFeedback.reset({ clearHistory: true }); eventSeen.clear(); renderer?.resetEffects(); audio.resetEvents(); meleeImpacts.reset(); gunImpacts.reset(); parryAudio.reset(); reloadAudio.reset(); enemyFootsteps.reset(); lastCountdown = null; lastWave = 0; previousPhase = null;
     renderCount = physicsSamples = 0; lastFraction = 0; lastHUDAt = -Infinity; aim = cleanAim(localPlayer()?.yaw, localPlayer()?.pitch); predictedPlayer = copy(localPlayer());
   }
   function config() { return { capacity: 3, mapId: $('horde-map').value, difficulty: $('horde-difficulty').value, melee: 'knife' }; }
@@ -375,14 +377,14 @@ export async function bootHorde() {
     updateTeam();
   }
   function draw(now = performance.now()) {
-    if (!renderer?.available || !state || destroyed || graphicsError || document.hidden) { clearReticle(); worldLabels.clear(); reloadAudio.suspend(); paintVitals(null, 'Your', false); return; }
+    if (!renderer?.available || !state || destroyed || graphicsError || document.hidden) { clearReticle(); worldLabels.clear(); reloadAudio.suspend(); enemyFootsteps.suspend(); paintVitals(null, 'Your', false); return; }
     if (endView.holding) {
       const players = state.players.map(player => ({ ...player })), view = { ...state, players, fighters: players };
       const camera = players.find(player => player.id === playerId) || hordeSpectatorPlayer(view, playerId, spectatorId) || players[0];
       const viewAim = camera?.id === playerId && camera.alive ? aim : cleanAim(camera?.yaw, camera?.pitch);
       presentationPlayer = players.find(player => player.id === playerId); presentationPlayers = players;
       renderer.render(view, { acceptedPlayers: state.players, playerId, localId: playerId, localPlayer: presentationPlayer, viewPlayer: camera, cameraPlayer: camera, yaw: viewAim.yaw, pitch: viewAim.pitch, time: now, roster });
-      clearReticle(); worldLabels.clear(); reloadAudio.suspend(); paintVitals(null, 'Your', false); renderCount++; lastDrawAt = now;
+      clearReticle(); worldLabels.clear(); reloadAudio.suspend(); enemyFootsteps.suspend(); paintVitals(null, 'Your', false); renderCount++; lastDrawAt = now;
       return;
     }
     const live = running(); if (live) lastDrawAt = now;
@@ -409,6 +411,7 @@ export async function bootHorde() {
     renderer.render(view, { acceptedPlayers: state.players, playerId, localId: playerId, localPlayer: presentationPlayer, viewPlayer: camera, cameraPlayer: camera, yaw: viewAim.yaw, pitch: viewAim.pitch + finite(camera?.recoil), time: live || state.phase === 'matchEnd' ? now : lastDrawAt || now, roster });
     worldLabels.paint(renderer.worldLabels, { active: labelsActive() });
     paintVitals(camera, camera?.id !== playerId ? `${nameFor(camera?.id)}’s` : 'Your', labelsActive());
+    enemyFootsteps.observe(renderer.locomotionActors, { now, context: `${state.mapId}:${state.matchId}:${state.round}:${state.horde?.sessionId ?? 0}`, listener: camera, yaw: viewAim.yaw, active: connected && entered && !!localPlayer()?.alive && !paused && !modalOpen && state.phase === 'fight' });
     reloadAudio.observe(state.players.find(player => player.id === camera?.id), { tick: state.tick, context: `${state.mapId}:${state.matchId}:${state.round}`, active: connected && !paused && !modalOpen && state.phase === 'fight' }); renderCount++; lastFraction = tickFraction(accumulator, 1 / engine.TICK_RATE);
     reticleView = presentCrosshair(camera, now, `${state.mapId}:${state.matchId}:${state.round}:${state.phase}`, { width: canvas.clientWidth, height: canvas.clientHeight, rules: ADS, active: labelsActive() && !paused && state.phase === 'fight', reducedMotion: hitMotion.matches });
     paintCrosshair(hitElements.crosshair, reticleView); hide('horde-scope', !reticleView.visible || !reticleView.scoped);
@@ -473,7 +476,7 @@ export async function bootHorde() {
     state = { ...next, map: engine.MAPS[next.mapId] }; state.fighters = state.players; hostId = message.hostId ?? state.hostId ?? hostId;
     roster = (Array.isArray(message.players) ? message.players : Object.values(message.players || {})).map((person, id) => person ? { ...person, id: person.id ?? id } : null);
     const local = localPlayer(), fresh = !old || old.matchId !== state.matchId || old.phase === 'lobby' && state.phase !== 'lobby';
-    if (fresh) { aim = cleanAim(local?.yaw, local?.pitch); pending = []; snapshots = []; timeline.reset(); correction.reset(); movement.clear(); eventSeen.clear(); hitFeedback.reset({ clearHistory: true }); damageFeedback = null; renderer?.resetEffects(); meleeImpacts.reset(); gunImpacts.reset(); parryAudio.reset(); reloadAudio.reset(); lastCountdown = null; }
+    if (fresh) { aim = cleanAim(local?.yaw, local?.pitch); pending = []; snapshots = []; timeline.reset(); correction.reset(); movement.clear(); eventSeen.clear(); hitFeedback.reset({ clearHistory: true }); damageFeedback = null; renderer?.resetEffects(); meleeImpacts.reset(); gunImpacts.reset(); parryAudio.reset(); reloadAudio.reset(); enemyFootsteps.reset(); lastCountdown = null; }
     phaseTransition(old?.phase, old?.players.find(player => player.id === playerId)?.lifeId, now);
     if (local) {
       const ack = typeof message.acks?.[playerId] === 'number' ? message.acks[playerId] : message.acks?.[playerId]?.seq ?? -1;
@@ -594,7 +597,7 @@ export async function bootHorde() {
     if (solo) preview(); graphics(); if (!solo) { connect(); hostInfo().then(info => { invite = `${info.origin}/voxel-horde.html?room=${encodeURIComponent(roomId)}`; }).catch(() => {}); }
   } catch (cause) { graphicsError = cause?.message || 'The game could not load.'; error(`Voxel Last Stand could not load: ${graphicsError}`); }
   heartbeat = setInterval(() => { if (!solo && connected && !document.hidden && LIVE_PHASES.includes(state?.phase)) sendInput(); }, 50);
-  const inspect = () => copy({ state: state ? { ...state, map: undefined, fighters: undefined } : null, solo, playerId, hostId, aim, input: currentInput(), paused: paused || state?.phase === 'paused', connected, roomPlayers: roster, pendingInputs: pending, queuedActions: inputQueue.inspect(), presentationPlayer, presentationPlayers, ending: { ...endView }, controls: { pointerLocked: locked(), fallback, touch: touchMode, entered, modalOpen }, renderCount, crosshair: reticleView, renderStats: renderer?.stats || null, worldLabels: worldLabels.inspect(), audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), meleeImpactAudio: meleeImpacts.inspect(), reloadAudio: reloadAudio.inspect(), reloadSounds: audio.inspectReloads(), gunImpactAudio: gunImpacts.inspect(), parryAudio: parryAudio.inspect(), parrySounds: audio.inspectParries(), stamina: staminaView, weaponWheel: weaponWheel.inspect(), monsterAudio: audio.inspectMonsters(), graphicsError, displayTiming: { physicsSamples, renderSamples: renderCount, lastFraction }, timeline: timeline.getState(), spectatorId });
+  const inspect = () => copy({ state: state ? { ...state, map: undefined, fighters: undefined } : null, solo, playerId, hostId, aim, input: currentInput(), paused: paused || state?.phase === 'paused', connected, roomPlayers: roster, pendingInputs: pending, queuedActions: inputQueue.inspect(), presentationPlayer, presentationPlayers, ending: { ...endView }, controls: { pointerLocked: locked(), fallback, touch: touchMode, entered, modalOpen }, renderCount, crosshair: reticleView, renderStats: renderer?.stats || null, worldLabels: worldLabels.inspect(), audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), meleeImpactAudio: meleeImpacts.inspect(), reloadAudio: reloadAudio.inspect(), reloadSounds: audio.inspectReloads(), enemyFootsteps: enemyFootsteps.inspect(), footstepSounds: audio.inspectFootsteps(), gunImpactAudio: gunImpacts.inspect(), parryAudio: parryAudio.inspect(), parrySounds: audio.inspectParries(), stamina: staminaView, weaponWheel: weaponWheel.inspect(), monsterAudio: audio.inspectMonsters(), graphicsError, displayTiming: { physicsSamples, renderSamples: renderCount, lastFraction }, timeline: timeline.getState(), spectatorId });
   window.semagHorde = Object.freeze({ getState: inspect, getDebugState: inspect, getDisplayTiming: () => ({ physicsSamples, renderSamples: renderCount, lastFraction }) });
   return { destroy, inspect };
 }
