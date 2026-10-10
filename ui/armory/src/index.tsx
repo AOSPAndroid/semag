@@ -7,13 +7,16 @@ import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card';
+import { Combobox, ComboboxTrigger, ComboboxContent, ComboboxInput, ComboboxEmpty, ComboboxList, ComboboxGroup, ComboboxLabel, ComboboxCollection, ComboboxItem } from '@/components/ui/combobox';
 import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyContent } from '@/components/ui/empty';
 import { Field, FieldGroup, FieldLabel, FieldSet, FieldLegend } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
+import { InputGroupAddon } from '@/components/ui/input-group';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { createArmoryEntries, categoriesFor, filterArmoryEntries } from './catalog.js';
+import { weaponIconStyle } from './weapon-icons.js';
 import './styles.css';
 
 type Kind = 'gun' | 'melee';
@@ -24,6 +27,13 @@ type Entry = {
   stats: { label: string; value: string; note: string }[];
 };
 const descriptionSummary = (description: string) => description.match(/^.*?[.!?](?:\s|$)/)?.[0].trim() || description;
+const ammunitionHint = (entry: Entry, kind: Kind) => {
+  if (kind === 'melee') return entry.stats[1] ? `${entry.stats[1].value} reach · ${entry.stats[0].value} damage` : entry.categoryLabel;
+  if (!entry.weapon) return entry.categoryLabel;
+  const rounds = entry.weapon.projectile ? 'bolts' : entry.weapon.pellets || entry.category === 'shotgun' ? 'shells' : 'rounds';
+  const mode = entry.weapon.projectile ? 'Projectile' : entry.weapon.mode === 'burst' ? 'Burst' : !entry.weapon.mode || entry.weapon.mode === 'auto' ? 'Automatic' : entry.weapon.mode === 'pump' ? 'Pump action' : entry.weapon.mode === 'bolt' ? 'Bolt action' : 'Single fire';
+  return `${entry.weapon.magazine} ${rounds} · ${mode}`;
+};
 
 type Snapshot = { value: string; disabled: boolean; entries: Entry[] };
 type PreviewController = { setWeapon(id: string, kind?: Kind): void; reset(): void; destroy(): void };
@@ -31,11 +41,12 @@ type ArmoryCommands = { close(): void; isOpen(): boolean; focus(): void };
 export type WeaponArmoryOptions = { select: HTMLSelectElement; title?: string; kind?: Kind; portalContainer?: HTMLElement };
 export type WeaponArmoryController = { sync(): void; close(): void; destroy(): void; isOpen(): boolean; focus(): void };
 
-function WeaponImage({ entry, hero = false, eager = false }: { entry: Entry; hero?: boolean; eager?: boolean }) {
+function WeaponImage({ entry, hero = false, eager = false, icon = false }: { entry: Entry; hero?: boolean; eager?: boolean; icon?: boolean }) {
   const [missing, setMissing] = useState(false);
+  const iconStyle = icon ? weaponIconStyle(entry.image) : undefined;
   useEffect(() => setMissing(false), [entry.image]);
   return missing ? <span className="armory-image-fallback">{entry.label}</span> :
-    <img src={entry.image} alt="" className={cn('armory-weapon-image', hero && 'armory-weapon-image-hero')} loading={hero || eager ? 'eager' : 'lazy'} draggable={false} onError={() => setMissing(true)} />;
+    <img src={entry.image} alt="" className={cn('armory-weapon-image', hero && 'armory-weapon-image-hero')} data-armory-cropped-icon={Boolean(iconStyle) || undefined} style={iconStyle} loading={hero || eager ? 'eager' : 'lazy'} draggable={false} onError={() => setMissing(true)} />;
 }
 
 function WeaponPreview({ entry, kind }: { entry: Entry; kind: Kind }) {
@@ -85,15 +96,70 @@ function StatList({ entry }: { entry: Entry }) {
   </div>)}</dl>;
 }
 
-function SelectionCard({ entry, kind, disabled, triggerRef }: { entry?: Entry; kind: Kind; disabled: boolean; triggerRef: React.RefObject<HTMLButtonElement | null> }) {
+function QuickWeaponPicker({ snapshot, kind, entry, disabled, open, onOpenChange, onCommit, triggerRef, portalContainer }: {
+  snapshot: Snapshot; kind: Kind; entry?: Entry; disabled: boolean; open: boolean;
+  onOpenChange(open: boolean): void; onCommit(id: string): boolean;
+  triggerRef: React.RefObject<HTMLButtonElement | null>; portalContainer?: HTMLElement;
+}) {
+  const uid = useId();
+  const groups = categoriesFor(snapshot.entries, kind).filter(category => category.id !== 'all').map(category => ({
+    value: category.id, label: category.label, items: snapshot.entries.filter(item => item.category === category.id),
+  }));
+  const fenceKeys = (event: React.KeyboardEvent) => event.stopPropagation();
+  return <FieldGroup className="armory-quick-field"><Field data-disabled={disabled || undefined}>
+    <FieldLabel htmlFor={`${uid}-trigger`} className="va:sr-only">Choose {kind === 'melee' ? 'melee weapon' : 'gun'}</FieldLabel>
+    <Combobox<Entry> items={groups} value={entry || null} open={open} disabled={disabled}
+      onOpenChange={onOpenChange} itemToStringLabel={item => item.name} itemToStringValue={item => item.id}
+      isItemEqualToValue={(item, value) => item.id === value.id}
+      filter={(item, query) => filterArmoryEntries([item], 'all', query).length > 0}
+      onValueChange={(item, details) => {
+        // Highlighting, searching and opening never equip a weapon.
+        if (details.reason !== 'item-press' || !item) { details.cancel(); return; }
+        if (onCommit(item.id)) onOpenChange(false); else details.cancel();
+      }}>
+      <ComboboxTrigger ref={triggerRef} id={`${uid}-trigger`} render={<Button variant="outline" />}
+        className="armory-quick-trigger" data-armory-action="quick-open"
+        aria-label={`Choose ${kind === 'melee' ? 'melee weapon' : 'gun'}${entry ? `, selected ${entry.name}` : ''}`}
+        onKeyDown={fenceKeys} onKeyUp={fenceKeys}>
+        <span className="armory-quick-thumbnail" aria-hidden="true">{entry && <WeaponImage entry={entry} eager icon />}</span>
+        <span className="armory-quick-copy"><strong className="va:truncate">{entry?.name || 'Choose your weapon'}</strong><span className="va:truncate">{entry ? ammunitionHint(entry, kind) : 'Explore your equipment'}</span></span>
+      </ComboboxTrigger>
+      <ComboboxContent portalContainer={portalContainer} className="voxel-armory-picker-popup" data-voxel-armory=""
+        data-armory-picker="" aria-label={kind === 'melee' ? 'Melee weapon picker' : 'Gun picker'}
+        onKeyDown={fenceKeys} onKeyUp={fenceKeys}>
+        <FieldGroup className="armory-quick-search-field"><Field><FieldLabel htmlFor={`${uid}-search`} className="va:sr-only">Search weapons</FieldLabel>
+          <ComboboxInput id={`${uid}-search`} showTrigger={false} placeholder="Search weapons…" autoComplete="off" data-armory-quick-search>
+            <InputGroupAddon><SearchIcon aria-hidden="true" /></InputGroupAddon>
+          </ComboboxInput>
+        </Field></FieldGroup>
+        <ComboboxEmpty className="armory-quick-empty">No weapons found. Try another name.</ComboboxEmpty>
+        <ComboboxList className="armory-quick-list">{(group: typeof groups[number]) => <ComboboxGroup key={group.value} items={group.items}>
+          <ComboboxLabel className="armory-quick-group-label">{group.label}</ComboboxLabel>
+          <ComboboxCollection>{(item: Entry) => <ComboboxItem key={item.id} value={item} disabled={item.disabled}
+            className="armory-quick-item" data-weapon-id={item.id}>
+            <span className="armory-quick-thumbnail" aria-hidden="true"><WeaponImage entry={item} eager icon /></span>
+            <span className="armory-quick-copy"><strong className="va:truncate">{item.name}</strong><span className="va:truncate">{ammunitionHint(item, kind)}</span></span>
+          </ComboboxItem>}</ComboboxCollection>
+        </ComboboxGroup>}</ComboboxList>
+        <div className="armory-quick-help"><span>↑ ↓ browse · Enter choose</span><span>Esc close</span></div>
+      </ComboboxContent>
+    </Combobox>
+  </Field></FieldGroup>;
+}
+
+function SelectionCard({ snapshot, entry, kind, disabled, triggerRef, quickTriggerRef, quickOpen, onQuickOpenChange, onCommit, portalContainer }: {
+  snapshot: Snapshot; entry?: Entry; kind: Kind; disabled: boolean;
+  triggerRef: React.RefObject<HTMLButtonElement | null>; quickTriggerRef: React.RefObject<HTMLButtonElement | null>;
+  quickOpen: boolean; onQuickOpenChange(open: boolean): void; onCommit(id: string): boolean; portalContainer?: HTMLElement;
+}) {
   return <Card variant="loadout" size="sm">
     <CardHeader>
-      <CardDescription>{entry?.categoryLabel || (kind === 'melee' ? 'Melee weapon' : 'Starting gun')}</CardDescription>
-      <CardTitle>{entry?.name || 'Choose your weapon'}</CardTitle>
+      <CardDescription>{kind === 'melee' ? 'Melee weapon' : 'Starting gun'}</CardDescription>
+      <CardTitle className="va:sr-only">{entry?.name || 'Choose your weapon'}</CardTitle>
     </CardHeader>
-    <CardContent><div className="armory-loadout-art">{entry && <WeaponImage entry={entry} />}</div></CardContent>
+    <CardContent><QuickWeaponPicker snapshot={snapshot} entry={entry} kind={kind} disabled={disabled} open={quickOpen} onOpenChange={onQuickOpenChange} onCommit={onCommit} triggerRef={quickTriggerRef} portalContainer={portalContainer} /></CardContent>
     <CardFooter>
-      <span className="armory-loadout-facts">{entry?.stats.length ? kind === 'melee' ? `${entry.stats[0].value} damage · ${entry.stats[1].value} reach` : `${entry.stats[1].value} ${entry.weapon?.projectile ? 'bolt' : entry.weapon?.pellets ? 'shells' : 'rounds'} · ${entry.stats[3].value} reload` : 'Explore the armory'}</span>
+      <span className="armory-loadout-facts">{entry?.categoryLabel || 'Explore the armory'} · inspect models & stats</span>
       <DialogTrigger ref={triggerRef} render={<Button variant="outline" size="sm" data-armory-action="open" disabled={disabled} />} aria-label={`Open ${kind === 'melee' ? 'melee ' : ''}armory${entry ? `, equipped ${entry.name}` : ''}`}>
         Armory<ChevronRightIcon data-icon="inline-end" />
       </DialogTrigger>
@@ -123,7 +189,9 @@ function WeaponTile({ entry, selected, equipped, choiceId }: { entry: Entry; sel
 function Armory({ snapshot, kind, title, portalContainer, onCommit, commandRef }: { snapshot: Snapshot; kind: Kind; title: string; portalContainer?: HTMLElement; onCommit(id: string): boolean; commandRef: React.Ref<ArmoryCommands> }) {
   const uid = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const quickTriggerRef = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
+  const [quickOpen, setQuickOpen] = useState(false);
   const [draft, setDraft] = useState(snapshot.value);
   const [category, setCategory] = useState('all');
   const [query, setQuery] = useState('');
@@ -131,22 +199,27 @@ function Armory({ snapshot, kind, title, portalContainer, onCommit, commandRef }
   const previewed = snapshot.entries.find(entry => entry.id === draft);
   const categories = categoriesFor(snapshot.entries, kind);
   const visible = filterArmoryEntries(snapshot.entries, category, query) as Entry[];
-  useImperativeHandle(commandRef, () => ({ close: () => setOpen(false), isOpen: () => open, focus: () => triggerRef.current?.focus() }), [open]);
+  useImperativeHandle(commandRef, () => ({ close: () => { setOpen(false); setQuickOpen(false); }, isOpen: () => open || quickOpen, focus: () => quickTriggerRef.current?.focus() }), [open, quickOpen]);
   useEffect(() => {
     if (!open) setDraft(snapshot.value);
-    if (snapshot.disabled) setOpen(false);
-  }, [snapshot.value, snapshot.disabled, open]);
+    if (snapshot.disabled || !snapshot.entries.some(entry => !entry.disabled)) { setOpen(false); setQuickOpen(false); }
+  }, [snapshot.value, snapshot.disabled, snapshot.entries, open]);
   useEffect(() => {
     if (!categories.some(item => item.id === category)) setCategory('all');
     if (draft && !snapshot.entries.some(entry => entry.id === draft)) setDraft(snapshot.value);
   }, [snapshot.entries, category, draft, snapshot.value]);
   const changeOpen = (next: boolean) => {
     if (next && snapshot.disabled) return;
-    if (next) { setDraft(snapshot.value); setCategory('all'); setQuery(''); }
+    if (next) { setQuickOpen(false); setDraft(snapshot.value); setCategory('all'); setQuery(''); }
     setOpen(next);
   };
+  const changeQuickOpen = (next: boolean) => {
+    if (next && (snapshot.disabled || !snapshot.entries.some(entry => !entry.disabled))) return;
+    if (next) setOpen(false);
+    setQuickOpen(next);
+  };
   return <Dialog open={open} onOpenChange={changeOpen}>
-    <SelectionCard triggerRef={triggerRef} entry={selected} kind={kind} disabled={snapshot.disabled || !snapshot.entries.some(entry => !entry.disabled)} />
+    <SelectionCard snapshot={snapshot} triggerRef={triggerRef} quickTriggerRef={quickTriggerRef} entry={selected} kind={kind} disabled={snapshot.disabled || !snapshot.entries.some(entry => !entry.disabled)} quickOpen={quickOpen} onQuickOpenChange={changeQuickOpen} onCommit={onCommit} portalContainer={portalContainer} />
     <DialogContent variant="armory" portalContainer={portalContainer} data-voxel-armory="" onKeyDown={event => { event.stopPropagation(); if (event.key === 'Escape') { event.preventDefault(); changeOpen(false); } }} onKeyUp={event => event.stopPropagation()} data-kind={kind} data-draft-weapon={draft} showCloseButton={false} initialFocus={() => document.getElementById(`${uid}-search`)}>
       <DialogHeader className="armory-dialog-header">
         <div className="armory-dialog-heading">
@@ -185,7 +258,8 @@ function Armory({ snapshot, kind, title, portalContainer, onCommit, commandRef }
 
 const mounted = new WeakMap<HTMLSelectElement, WeaponArmoryController>();
 
-/** The native selector remains authoritative. Browsing changes only modal draft. */
+/** The native selector remains authoritative. Quick choices commit explicitly;
+ *  the full inspection armory keeps a separate draft until Equip. */
 export function mountWeaponArmory({ select, title, kind = 'gun', portalContainer }: WeaponArmoryOptions): WeaponArmoryController {
   if (!select || select.tagName !== 'SELECT') throw new TypeError('mountWeaponArmory requires a native select');
   const existing = mounted.get(select);

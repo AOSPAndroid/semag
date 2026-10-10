@@ -18,6 +18,10 @@ Click an image to open it at full size.
 
 [![Visual voxel armory with weapon cards, categories, a rotatable 3D model and explicit Equip](docs/screenshots/voxel-armory.png)](docs/screenshots/voxel-armory.png)
 
+**Quick weapon picker**
+
+[![Searchable dark gun picker with small voxel weapon icons, grouped categories and ammunition hints](docs/screenshots/voxel-weapon-picker.png)](docs/screenshots/voxel-weapon-picker.png)
+
 **Weapon reticles · Voxel Dojo**
 
 [![Live Voxel Dojo gameplay with the shotgun spread ring centered on a training target](docs/screenshots/voxel-weapon-reticles.png)](docs/screenshots/voxel-weapon-reticles.png)
@@ -89,7 +93,7 @@ their completion records separate by difficulty.
 
 Open a solo game from the shelf, review its controls, and press **Start game** when you are ready. The game and its timers wait on the ready screen. After starting, press **Escape** to pause or resume, or use Pause / Resume and New game for that session.
 
-The interface uses a modern dark theme and the pixelated **semaG** wordmark. Voxel loadouts now open a visual shadcn armory: browse categories, search weapon cards, rotate the actual voxel models, inspect damage and handling, then explicitly Equip. Browsing never starts a game or changes your loadout until you confirm. The armory also covers training blades and both Dojo racks. Game canvases retain their own artwork and HUD signals.
+The interface uses a modern dark theme and the pixelated **semaG** wordmark. Voxel loadouts have a compact, searchable shadcn weapon picker with small voxel thumbnails, category headings and a selected marker. Click a weapon or press Enter to choose it; opening, searching and highlighting leave your current loadout in place. **Armory** opens the full weapon collection: browse cards, rotate the actual voxel models, inspect damage and handling, then explicitly Equip. Choosing equipment never starts the game. Both pickers also cover training blades and the Dojo racks. Game canvases retain their own artwork and HUD signals.
 
 The isolated UI source and rebuild instructions are in [ui/armory](ui/armory/README.md). Hosting the game still needs only the normal root install; the compiled armory is included.
 

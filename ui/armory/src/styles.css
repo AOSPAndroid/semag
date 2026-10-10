@@ -19,12 +19,12 @@
 }
 
 @layer base {
-  :where(.voxel-armory-root, .voxel-armory-modal) button { background: transparent; border: 0; color: inherit; }
+  :where(.voxel-armory-root, .voxel-armory-modal, .voxel-armory-picker-popup) button { background: transparent; border: 0; color: inherit; }
 }
 
 /* The island does not load Tailwind preflight. The host game's theme and
    semantic roles are retained; the va: utility prefix cannot reset its UI. */
-:where(.voxel-armory-root, .voxel-armory-modal) {
+:where(.voxel-armory-root, .voxel-armory-modal, .voxel-armory-picker-popup) {
   font-family: var(--font);
   color: var(--foreground);
   font-size: 14px;
@@ -32,45 +32,127 @@
   text-align: left;
   -webkit-tap-highlight-color: transparent;
 }
-:where(.voxel-armory-root, .voxel-armory-modal),
-:where(.voxel-armory-root, .voxel-armory-modal) * { box-sizing: border-box; }
-:where(.voxel-armory-root, .voxel-armory-modal) :is(button, input) { font: inherit; }
-:where(.voxel-armory-root, .voxel-armory-modal) button { cursor: pointer; }
-:where(.voxel-armory-root, .voxel-armory-modal) button:disabled { cursor: not-allowed; }
-:where(.voxel-armory-root, .voxel-armory-modal) :is(p, h1, h2, h3, dl, dt, dd) { margin: 0; }
-:where(.voxel-armory-root, .voxel-armory-modal) [hidden] { display: none !important; }
-:where(.voxel-armory-root, .voxel-armory-modal) :is(button, input, canvas, [role=radio]):focus-visible {
+:where(.voxel-armory-root, .voxel-armory-modal, .voxel-armory-picker-popup),
+:where(.voxel-armory-root, .voxel-armory-modal, .voxel-armory-picker-popup) * { box-sizing: border-box; }
+:where(.voxel-armory-root, .voxel-armory-modal, .voxel-armory-picker-popup) :is(button, input) { font: inherit; }
+:where(.voxel-armory-root, .voxel-armory-modal, .voxel-armory-picker-popup) button { cursor: pointer; }
+:where(.voxel-armory-root, .voxel-armory-modal, .voxel-armory-picker-popup) button:disabled { cursor: not-allowed; }
+:where(.voxel-armory-root, .voxel-armory-modal, .voxel-armory-picker-popup) :is(p, h1, h2, h3, dl, dt, dd) { margin: 0; }
+:where(.voxel-armory-root, .voxel-armory-modal, .voxel-armory-picker-popup) [hidden] { display: none !important; }
+:where(.voxel-armory-root, .voxel-armory-modal, .voxel-armory-picker-popup) :is(button, input, canvas, [role=radio]):focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
 }
 .voxel-armory-root { width: 100%; min-width: 0; }
 .voxel-armory-root [data-slot=button], .voxel-armory-modal [data-slot=button] { min-height: 44px; }
-.voxel-armory-root [data-slot=button][data-armory-action=open] { min-height: 38px; }
+.voxel-armory-root [data-slot=button][data-armory-action=open] { min-height: 44px; }
 
-/* Compact loadout card: the actual chosen model is visible before opening. */
+/* A lightweight quick pick sits beside the full model-inspection armory. */
 .voxel-armory-root .armory-card[data-variant=loadout] {
-  display: grid;
-  grid-template-columns: minmax(88px, 30%) minmax(0, 1fr);
-  grid-template-rows: auto auto;
-  column-gap: 12px;
-  row-gap: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   padding: 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: none;
-  min-height: 110px;
+  min-width: 0;
 }
-.voxel-armory-root .armory-card[data-variant=loadout] [data-slot=card-header] { grid-column: 2; padding: 0; gap: 3px; }
-.voxel-armory-root .armory-card[data-variant=loadout] [data-slot=card-title] { font-size: 14px; font-weight: 600; line-height: 1.3; }
+.voxel-armory-root .armory-card[data-variant=loadout] [data-slot=card-header] { padding: 0; gap: 0; }
 .voxel-armory-root .armory-card[data-variant=loadout] [data-slot=card-description] { font-size: 11px; color: var(--muted-foreground); }
-.voxel-armory-root .armory-card[data-variant=loadout] [data-slot=card-content] { grid-column: 1; grid-row: 1 / 3; min-width: 0; padding: 0; align-self: stretch; }
-.voxel-armory-root .armory-card[data-variant=loadout] [data-slot=card-footer] { grid-column: 2; padding: 0; border: 0; background: transparent; gap: 8px; justify-content: space-between; flex-wrap: wrap; border-radius: 0; }
-.armory-loadout-art { display: flex; align-items: center; justify-content: center; height: 100%; min-height: 82px; border-radius: calc(var(--radius) - 4px); background: radial-gradient(ellipse at center, var(--secondary), var(--background)); }
-.armory-loadout-art .armory-weapon-image { height: 88px; }
-.armory-loadout-facts { font-size: 11px; color: var(--muted-foreground); line-height: 1.35; }
+.voxel-armory-root .armory-card[data-variant=loadout] [data-slot=card-content] { min-width: 0; padding: 0; }
+.voxel-armory-root .armory-card[data-variant=loadout] [data-slot=card-footer] { padding: 0; border: 0; background: transparent; gap: 8px; justify-content: space-between; flex-wrap: wrap; border-radius: 0; }
+.armory-loadout-facts { flex: 1; min-width: 95px; font-size: 10px; color: var(--muted-foreground); line-height: 1.4; }
 .voxel-armory-root[data-disabled=true] .armory-card[data-variant=loadout] { opacity: .55; }
 .armory-weapon-image { display: block; width: 100%; height: 100%; object-fit: contain; user-select: none; }
 .armory-image-fallback { align-self: center; color: var(--muted-foreground); font: 11px var(--mono); text-align: center; }
+.armory-quick-field { gap: 0; min-width: 0; }
+.voxel-armory-root .armory-quick-trigger {
+  display: flex;
+  width: 100%;
+  height: auto;
+  min-height: 64px;
+  min-width: 0;
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 8px 12px 8px 8px;
+  border: 1px solid var(--input);
+  background: var(--background);
+  border-radius: calc(var(--radius) - 2px);
+  text-align: left;
+}
+.voxel-armory-root .armory-quick-trigger:hover,
+.voxel-armory-root .armory-quick-trigger[data-popup-open] { background: var(--muted); border-color: var(--muted-foreground); }
+.armory-quick-trigger > svg { margin-left: auto; flex: none; color: var(--muted-foreground); }
+.armory-quick-thumbnail {
+  position: relative;
+  display: flex;
+  flex: none;
+  width: 56px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 4px);
+  background: radial-gradient(ellipse at center, var(--secondary), var(--card));
+  overflow: hidden;
+}
+.armory-quick-thumbnail .armory-weapon-image { padding: 2px; }
+.armory-quick-thumbnail .armory-weapon-image[data-armory-cropped-icon] { position: absolute; object-fit: fill; padding: 0; max-width: none; max-height: none; }
+.armory-quick-thumbnail .armory-image-fallback { font-size: 8px; }
+.armory-quick-copy { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 4px; }
+.armory-quick-copy strong { font-size: 13px; font-weight: 600; line-height: 1.25; }
+.armory-quick-copy > span { font-size: 10px; line-height: 1.35; color: var(--muted-foreground); }
+.voxel-armory-picker-popup {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  width: max(var(--anchor-width), 340px);
+  min-width: 0;
+  max-width: min(var(--available-width), calc(100vw - 16px));
+  max-height: min(464px, var(--available-height));
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--popover);
+  color: var(--popover-foreground);
+  box-shadow: var(--shadow-dialog);
+  overflow: hidden;
+}
+.armory-quick-search-field { flex: none; gap: 0; padding: 9px; border-bottom: 1px solid var(--border); }
+.voxel-armory-picker-popup [data-slot=input-group] { width: 100%; min-height: 44px; height: 44px; background: var(--background); }
+.voxel-armory-picker-popup [data-slot=input-group-control] { min-width: 0; height: 42px; font-size: 13px; padding: 8px; }
+.voxel-armory-picker-popup [data-slot=input-group]:focus-within { border-color: var(--accent); outline: 2px solid var(--accent); outline-offset: 2px; box-shadow: none; }
+.voxel-armory-picker-popup [data-slot=input-group-control]:focus-visible { outline: none; box-shadow: none; }
+.voxel-armory-picker-popup .armory-quick-list {
+  flex: 1;
+  min-height: 0;
+  max-height: min(360px, max(0px, calc(var(--available-height) - 96px)));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 5px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--input) transparent;
+}
+.voxel-armory-picker-popup .armory-quick-group-label { padding: 9px 9px 6px; font: 10px var(--mono); letter-spacing: .055em; color: var(--muted-foreground); }
+.voxel-armory-picker-popup .armory-quick-item {
+  display: flex;
+  gap: 10px;
+  min-height: 56px;
+  padding: 7px 30px 7px 7px;
+  border-radius: calc(var(--radius) - 3px);
+  cursor: pointer;
+}
+.voxel-armory-picker-popup .armory-quick-item[data-selected] { background: var(--muted); }
+.voxel-armory-picker-popup .armory-quick-item[data-highlighted] { background: var(--accent); color: var(--accent-foreground); }
+.voxel-armory-picker-popup .armory-quick-item[data-highlighted] .armory-quick-copy > span { color: var(--accent-foreground); }
+.voxel-armory-picker-popup .armory-quick-item[data-disabled] { opacity: .4; cursor: not-allowed; }
+.voxel-armory-picker-popup .armory-quick-item .armory-quick-thumbnail { width: 52px; height: 36px; }
+.voxel-armory-picker-popup .armory-quick-empty { padding: 28px 16px; font-size: 12px; }
+.armory-quick-help { display: flex; flex: none; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 12px; border-top: 1px solid var(--border); font: 9px var(--mono); color: var(--muted-foreground); }
+@media (any-pointer: coarse) {
+  .voxel-armory-picker-popup [data-slot=input-group-control] { font-size: 16px; }
+  .armory-quick-help { display: none; }
+}
 
 /* A wide dialog gives every weapon an image and a focused inspection space. */
 .voxel-armory-modal[data-variant=armory] {
@@ -249,6 +331,6 @@
   .armory-hero-caption { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
-  :where(.voxel-armory-root, .voxel-armory-modal, .voxel-armory-overlay),
-  :where(.voxel-armory-root, .voxel-armory-modal, .voxel-armory-overlay) * { animation-duration: 0s !important; transition-duration: 0s !important; }
+  :where(.voxel-armory-root, .voxel-armory-modal, .voxel-armory-overlay, .voxel-armory-picker-popup),
+  :where(.voxel-armory-root, .voxel-armory-modal, .voxel-armory-overlay, .voxel-armory-picker-popup) * { animation-duration: 0s !important; transition-duration: 0s !important; }
 }
