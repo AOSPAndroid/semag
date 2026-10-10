@@ -192,9 +192,112 @@ const desert = arena('desert', 'Dunes of Anubis', 'Loot open caravan houses and 
   loot('desert-forecourt', 0, 9, 'heal'), loot('desert-pyramid-shadow', -8, -5, 'weapon'),
 ], { floorColor: '#d9bd86', skyColor: '#e9d4b5', wallColor: '#bfa076', material: 'sandstone', stormCenter: { x: 0, z: 9 }, routes: pyramidRoutes, spawnOverrides: { 2: Object.freeze({ x: -4, y: 0, z: -28, yaw: Math.atan2(4, -28) }) } });
 
+/** Large Royale regions are authored around the original close-fighting core.
+ * Doors, jump heights and weapon scale stay unchanged; only the surrounding
+ * reserve grows. The outer ring has supplies and cover rather than empty land.
+ */
+function expandRoyaleReserve(core) {
+  if (!['forest', 'maze', 'desert'].includes(core.id)) return core;
+  const largeBounds = Object.freeze({ minX: -48, maxX: 48, minZ: -48, maxZ: 48 });
+  const timber = core.id === 'forest', sand = core.id === 'desert';
+  const material = timber ? 'wood' : sand ? 'sandstone' : 'stone';
+  const wallColor = timber ? '#465d43' : sand ? '#bfa076' : '#748c76';
+  const added = [], caches = [], regions = [], landmarks = [], decorations = [];
+  const solid = value => { added.push(value); return value; };
+  const mark = (id, kind, name, label, pieces) => {
+    const x = Math.min(...pieces.map(p => p.x)), z = Math.min(...pieces.map(p => p.z));
+    const w = Math.max(...pieces.map(p => p.x + p.w)) - x, d = Math.max(...pieces.map(p => p.z + p.d)) - z;
+    landmarks.push(Object.freeze({ id, kind, name, label, x, y: 0, z, w, h: Math.max(...pieces.map(p => p.y + p.h)), d,
+      colliderIds: Object.freeze(pieces.map(p => p.id)) }));
+  };
+  const cover = (id, x, z, w, h, d, color = wallColor, solidMaterial = material) => solid(box(`${core.id}-outer-${id}`, x, 0, z, w, h, d, color, solidMaterial));
+  const paint = (kind, x, z, w, d, color) => decorations.push(Object.freeze({ kind, x, z, w, d, color }));
+  const cache = (id, x, z, kind = 'weapon') => caches.push(loot(`${core.id}-outer-${id}`, x, z, kind));
+  const outerNames = timber ? ['Lumber Camp', 'Birch Meadow', 'Stone Trail', 'Firewatch Camp']
+    : sand ? ['Caravan Outpost', 'Moon Gate', 'Buried Archive', 'Scribe Encampment']
+      : ['Western Library', 'Echo Court', 'Rooted Gallery', 'Eastern Library'];
+  const extensions = [
+    shelter(`${core.id}-outer-west-house`, -41, -40, timber ? '#85623f' : sand ? '#c29b65' : '#829989', material),
+    shelter(`${core.id}-outer-east-house`, 33, 27, timber ? '#a48256' : sand ? '#d1af7a' : '#9fa890', material),
+  ];
+  for (const [i, [x, z]] of [[-40, -39], [37, -35], [-38, 37], [36, 30]].entries())
+    regions.push(Object.freeze({ id: `${core.id}-outer-region-${i}`, name: outerNames[i], anchor: point(x, z),
+      bounds: Object.freeze({ minX: x - 5, maxX: x + 7, minZ: z - 6, maxZ: z + 9 }) }));
+  // Crossing tracks clearly connect the new districts to both core flanks.
+  const pathColor = timber ? '#8a865e' : sand ? '#c7a570' : '#839580';
+  for (const x of [-31, 29]) paint('reserve-track', x, -43, 2, 86, pathColor);
+  for (const z of [-31, 29]) paint('reserve-crossing', -43, z, 86, 2, pathColor);
+  if (timber) {
+    for (const [i, [x, z]] of [[-38, -15], [-38, 15], [38, -15], [38, 15], [-16, -38], [16, -38], [-16, 38], [16, 38]].entries()) {
+      const trunk = solid(box(`forest-outer-pine-${i}-trunk`, x - .36, 0, z - .36, .72, 4.3, .72, '#76543a', 'bark'));
+      solid(box(`forest-outer-pine-${i}-lower`, x - 2, 3.65, z - 2, 4, 1.65, 4, i % 2 ? '#426e48' : '#315d43', 'foliage'));
+      solid(box(`forest-outer-pine-${i}-crown`, x - 1.25, 5.3, z - 1.25, 2.5, 1.7, 2.5, '#648a58', 'foliage'));
+      mark(`forest-outer-grove-${i}`, 'pine-grove', 'Reserve pine grove', 'GROVE', [trunk]);
+    }
+    for (const [i, [x, z, w, d]] of [[-39, -7, 4, 1.2], [35, 6, 4, 1.2], [-7, -39, 1.2, 4], [6, 35, 1.2, 4]].entries()) {
+      const value = cover(`timber-${i}`, x, z, w, .78, d, '#94714a');
+      mark(`forest-outer-log-${i}`, 'logging-pile', 'Outer trail timber', 'TIMBER', [value]);
+    }
+    cover('meadow-rock', 33, -36, 3.4, .86, 2.4, '#879477', 'stone');
+    cover('stone-trail-rock', -39, 33, 3.4, .86, 2.4, '#879477', 'stone');
+    paint('meadow', 27, -42, 15, 14, '#788956');
+    paint('lumber-clearing', -43, -32.5, 13, 4.5, '#8f835d');
+  } else if (!sand) {
+    // Broken libraries open at both ends. Their alternating turns create
+    // several routes through the large ring without sealing a maze pocket.
+    for (const [i, [x, z]] of [[30, -40], [-41, 27], [-40, -12], [34, 10], [-12, -40], [9, 34]].entries()) {
+      const pieces = [cover(`gallery-${i}-screen`, x, z, 6, 2.52, .7, '#8d9b85'),
+        cover(`gallery-${i}-return`, x, z + .7, .7, 2.52, 4.2, '#78917e'),
+        cover(`gallery-${i}-broken-plinth`, x + 3.5, z + 3, 2, .84, 1.5, '#adb49a')];
+      mark(`maze-outer-gallery-${i}`, 'broken-archive', 'Outer archive gallery', 'ARCHIVE', pieces);
+    }
+    for (const [i, [x, z]] of [[-4, -38], [3, 36]].entries()) {
+      const marker = cover(`waystone-${i}`, x, z, 1.5, 2.1, 1.1, '#7f9e8d');
+      mark(`maze-outer-waystone-${i}`, 'carved-marker', i ? 'Southern root marker' : 'Northern echo marker', i ? 'ROOTS' : 'ECHO', [marker]);
+    }
+    paint('echo-inlay', 27, -42, 15, 13, '#7f9689');
+    paint('rooted-inlay', -43, 26, 13, 15, '#94a67f');
+  } else {
+    for (const [i, [x, z]] of [[-38, -12], [36, 11], [-12, -39], [10, 35]].entries()) {
+      const pieces = [cover(`ruin-${i}-column`, x, z, 1.2, 3.8, 1.2, '#b58e59'),
+        cover(`ruin-${i}-fallen-column`, x + 2, z + 2.2, 3.6, .84, 1.25, '#c7a572')];
+      mark(`desert-outer-ruins-${i}`, 'fallen-column', 'Outer buried ruins', 'RUINS', pieces);
+    }
+    const gate = [cover('moon-gate-west', 30, -39, 1.2, 4.2, 2, '#b48e59'),
+      cover('moon-gate-east', 38, -39, 1.2, 4.2, 2, '#b48e59'),
+      solid(box('desert-outer-moon-gate-cap', 30, 3.5, -39, 9.2, .7, 2, '#cfaa75', 'sandstone'))];
+    mark('desert-outer-moon-gate', 'ruined-gate', 'Moon Gate', 'MOON', gate);
+    for (const [i, [x, z]] of [[-39, 31], [-36, 36], [33, -31], [-4, 36]].entries())
+      cover(`caravan-crate-${i}`, x, z, 2.2, .84, 1.8, '#a88350', 'wood');
+    paint('moon-gate-causeway', 32, -43, 5, 16, '#c4a06b');
+    paint('archive-court', -43, 27, 14, 14, '#c8ae81');
+  }
+  for (const [i, [x, z]] of [[-39, -19], [-35, -4.5], [-38, 8], [-35, 23], [38, -23], [35, -9], [38, 8], [41, 20],
+    [-23, -38], [-9, -35], [9, -38], [23, -35], [-23, 38], [-9, 35], [13, 40], [23, 35]].entries())
+    cache(`cache-${i}`, x, z, ['weapon', 'heal', 'ammo', 'weapon', 'grenade'][i % 5]);
+  cache('echo-meadow-gun', 40, -35);
+  cache('stone-archive-gun', -38, 39);
+  const ring = [[-44, -44], [-20, -44], [0, -44], [20, -44], [44, -44], [44, -20], [44, 0], [44, 20],
+    [44, 44], [20, 44], [0, 44], [-20, 44], [-44, 44], [-44, 20], [-44, 0], [-44, -20]];
+  const boundaries = [box('boundary-west', -49, 0, -49, 1, 5.6, 98, wallColor, material),
+    box('boundary-east', 48, 0, -49, 1, 5.6, 98, wallColor, material),
+    box('boundary-north', -48, 0, -49, 96, 5.6, 1, wallColor, material),
+    box('boundary-south', -48, 0, 48, 96, 5.6, 1, wallColor, material)];
+  return Object.freeze({ ...core, bounds: largeBounds,
+    description: `A 96-metre reserve with ${outerNames.join(', ')} around the original arena. Scavenge six open buildings, cross covered outer tracks and contest connected roof routes.`,
+    colliders: Object.freeze([...boundaries, ...core.colliders.filter(value => !value.id.startsWith('boundary-')), ...added, ...extensions.flatMap(value => value.colliders)]),
+    spawnPoints: Object.freeze(ring.map(([x, z]) => Object.freeze({ x, y: 0, z, yaw: Math.atan2(-x, z) }))),
+    lootPoints: Object.freeze([...core.lootPoints, ...extensions.flatMap(value => value.lootPoints), ...caches]),
+    routes: Object.freeze([...core.routes, ...extensions.map(value => value.route)]),
+    buildings: Object.freeze([...core.buildings, ...extensions.map(value => value.buildings)]),
+    regions: Object.freeze(regions), landmarks: Object.freeze([...core.landmarks, ...landmarks]),
+    decorations: Object.freeze([...core.decorations, ...decorations]),
+  });
+}
+
 export const MAPS = Object.freeze(Object.fromEntries(Object.entries({
   forest: enhanceMapIdentity(forest), maze: enhanceMapIdentity(maze), desert: enhanceMapIdentity(desert),
   paris: enhanceMapIdentity(createParisMap('royale')), snow: createExpansionMap('snow', 'royale'), sewers: createExpansionMap('sewers', 'royale'), trading: createExpansionMap('trading', 'royale'),
   market: createCloseCombatMap('market', 'royale'), lockdown: createCloseCombatMap('lockdown', 'royale'),
-}).map(([id, arena]) => [id, addCombatLayers(arena)])));
+}).map(([id, arena]) => [id, expandRoyaleReserve(addCombatLayers(arena))])));
 export const MAP_IDS = Object.freeze(Object.keys(MAPS));

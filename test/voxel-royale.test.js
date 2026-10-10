@@ -260,6 +260,9 @@ test('the final zero-radius storm resolves all survivors in finite time, includi
 test('storm pulses use the final moved pose: entering the circle saves while exiting takes the actual boundary hit', () => {
   for (const entering of [true, false]) {
     const state = fight(), player = state.players[0], radius = state.storm.initialRadius * .46;
+    // The boundary fixture must contain the actual ring even as shipped maps grow.
+    const extent = state.storm.initialRadius + 2;
+    state.map = { ...openArena, bounds: { minX: state.storm.x - extent, maxX: state.storm.x + extent, minZ: state.storm.z - extent, maxZ: state.storm.z + extent } };
     Object.assign(player, { x: state.storm.x + radius + (entering ? .005 : -.005), z: state.storm.z, yaw: 0, hp: 6, vx: entering ? -5.85 : 5.85 });
     state.matchTicks = 105 * 120 - 1;
     tick(state, 1, { 0: entering ? { left: true } : { right: true } });

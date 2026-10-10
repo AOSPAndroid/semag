@@ -2,11 +2,14 @@
 import { MAPS, MAP_IDS } from './voxel-royale-maps.js';
 import { WEAPONS, WEAPON_IDS } from './voxel-weapons.js';
 import { MELEE_IDS, resetMeleeDefense } from './voxel-melee.js';
+import { MAX_GRENADES } from './voxel-ordnance.js';
 import { TICK_RATE, INPUT_KEYS, emptyInput, WORLD, eyeHeight, rayBox, createCombatPlayer, combatStep, applyCombatDamage, emitCombatEvent, pickupCombatLoot, dropCombatInventory, resetSprint, resetHealing } from './voxel-engine.js';
 import { initializeInventory, ensureInventory, inventoryCanTake } from './voxel-inventory.js';
 export { MAPS, MAP_IDS, WEAPONS, INPUT_KEYS, emptyInput, TICK_RATE };
 
 export const ROYALE = Object.freeze({ maxPlayers: 10, minPlayers: 2, countdownTicks: 3 * TICK_RATE, pickupRadius: 1.7, pickupHeight: 1.2, potionCapacity: 2, grenadeCapacity: 2, maxLoot: 128, eventLimit: 256 });
+/** Solo sessions have one human plus ten bots; online rooms keep their ten-seat limit. */
+export const SOLO_MAX_PLAYERS = 11;
 // Every contraction is announced before it moves. The last circle disappears
 // after four minutes, so even perfectly overlapping final survivors resolve.
 export const STORM_STAGES = Object.freeze([
@@ -45,11 +48,21 @@ function initialStorm(arena) {
   const radius = Math.max(...[arena.bounds.minX, arena.bounds.maxX].flatMap(x => [arena.bounds.minZ, arena.bounds.maxZ].map(z => Math.hypot(x - center.x, z - center.z)))) + WORLD.radius;
   return { x: center.x, z: center.z, radius, initialRadius: radius, stage: 0, mode: 'waiting', active: false, nextRadius: radius * STORM_STAGES[0].ratio, ticksUntilShrink: STORM_STAGES[0].wait * TICK_RATE, ticksUntilNext: (STORM_STAGES[0].wait + STORM_STAGES[0].shrink) * TICK_RATE, damagePerSecond: STORM_STAGES[0].damage };
 }
-export function createState({ mapId = 'forest', capacity = ROYALE.maxPlayers, seed } = {}) {
+function createArenaState({ mapId = 'forest', capacity = ROYALE.maxPlayers, seed } = {}, solo = false) {
   if (!Object.hasOwn(MAPS, mapId)) throw new RangeError('Unknown Voxel Royale map.');
-  if (!Number.isInteger(capacity) || capacity < ROYALE.minPlayers || capacity > ROYALE.maxPlayers) throw new RangeError('Voxel Royale capacity must be between 2 and 10.');
-  const players = Array.from({ length: ROYALE.maxPlayers }, (_, id) => inactivePlayer(id)), initialSeed = seedValue(seed);
-  return { gameId: 'voxel-royale', mapId, mapName: MAPS[mapId].name, map: MAPS[mapId], capacity, seed: initialSeed, randomState: initialSeed || 0x9e3779b9, matchId: 0, round: 0, tick: 0, matchTicks: 0, phase: 'lobby', phaseTicks: 0, roundTicks: 240 * TICK_RATE, participantIds: [], aliveCount: 0, winner: null, winnerId: null, roundWinner: null, roundReason: null, placements: [], players, fighters: players, loot: [], lootId: 0, grenades: [], grenadeId: 0, maxGrenades: ROYALE.maxPlayers * ROYALE.grenadeCapacity, bolts: [], boltId: 0, events: [], eventId: 0, eventLimit: ROYALE.eventLimit, storm: initialStorm(MAPS[mapId]), objective: 'The host can start with 2–10 players. Scavenge a weapon and be the last survivor.' };
+  const maxPlayers = solo ? SOLO_MAX_PLAYERS : ROYALE.maxPlayers;
+  if (!Number.isInteger(capacity) || capacity < ROYALE.minPlayers || capacity > maxPlayers) throw new RangeError(`Voxel Royale ${solo ? 'solo ' : ''}capacity must be between 2 and ${maxPlayers}.`);
+  const seats = solo ? capacity : ROYALE.maxPlayers;
+  const players = Array.from({ length: seats }, (_, id) => inactivePlayer(id)), initialSeed = seedValue(seed);
+  return { gameId: 'voxel-royale', ...(solo ? { solo: true } : {}), mapId, mapName: MAPS[mapId].name, map: MAPS[mapId], capacity, seed: initialSeed, randomState: initialSeed || 0x9e3779b9, matchId: 0, round: 0, tick: 0, matchTicks: 0, phase: 'lobby', phaseTicks: 0, roundTicks: 240 * TICK_RATE, participantIds: [], aliveCount: 0, winner: null, winnerId: null, roundWinner: null, roundReason: null, placements: [], players, fighters: players, loot: [], lootId: 0, grenades: [], grenadeId: 0, maxGrenades: Math.min(MAX_GRENADES, seats * ROYALE.grenadeCapacity), bolts: [], boltId: 0, events: [], eventId: 0, eventLimit: ROYALE.eventLimit, storm: initialStorm(MAPS[mapId]), objective: solo ? 'Start a solo battle against up to ten bots. Scavenge and survive.' : 'The host can start with 2–10 players. Scavenge a weapon and be the last survivor.' };
+}
+/** The server uses this factory; its protocol and capacity remain unchanged. */
+export function createState(options = {}) {
+  return createArenaState(options);
+}
+/** Explicit local-only factory, never used to construct an online room. */
+export function createSoloState(options = {}) {
+  return createArenaState(options, true);
 }
 /** Static geometry stays shared when copying gameplay state and never bloats a snapshot. */
 export function cloneState(state) {
@@ -59,7 +72,7 @@ export function cloneState(state) {
 }
 export function resetLobby(state) {
   const { tick, eventId, matchId, seed } = state;
-  Object.assign(state, createState({ mapId: state.mapId, capacity: state.capacity, seed }), { tick, eventId, matchId, round: matchId });
+  Object.assign(state, createArenaState({ mapId: state.mapId, capacity: state.capacity, seed }, state.solo === true), { tick, eventId, matchId, round: matchId });
   return state;
 }
 function safeSpawn(arena, point) {
@@ -84,7 +97,7 @@ function seedLoot(state) {
   // Scavenge a varied subset each round. Expanding the catalogue must never
   // consume the healing, ammunition, grenades or four non-knife blade caches.
   const gunBudget = Math.max(0, points.length - blades.length - 8);
-  const gunCount = Math.min(gunBudget, Math.max(ROYALE.maxPlayers, Math.ceil(points.length * .44)));
+  const gunCount = Math.min(gunBudget, Math.max(state.players.length, Math.ceil(points.length * .44)));
   if (state.map.combatStyle === 'close') {
     const shotgunIds = WEAPON_IDS.filter(id => WEAPONS[id].category === 'shotgun'
       || id === 'shotgun' || id === 'autoshotgun' || id === 'slugshotgun');
@@ -110,11 +123,11 @@ function seedLoot(state) {
   }
 }
 export function startMatch(state, participantIds) {
-  if (!Array.isArray(participantIds) || participantIds.length < ROYALE.minPlayers || participantIds.length > state.capacity || new Set(participantIds).size !== participantIds.length || participantIds.some(id => !Number.isInteger(id) || id < 0 || id >= ROYALE.maxPlayers)) throw new RangeError('A Royale match requires 2–10 unique connected player slots.');
+  if (!Array.isArray(participantIds) || participantIds.length < ROYALE.minPlayers || participantIds.length > state.capacity || new Set(participantIds).size !== participantIds.length || participantIds.some(id => !Number.isInteger(id) || id < 0 || id >= state.players.length)) throw new RangeError(`A Royale match requires 2–${state.capacity} unique ${state.solo ? 'local' : 'connected'} player slots.`);
   const spawnPoints = (state.map || MAPS[state.mapId]).spawnPoints.filter(point => safeSpawn(state.map || MAPS[state.mapId], point));
   if (spawnPoints.length < participantIds.length) throw new RangeError('This map does not have enough safe spawn points.');
   const { tick, eventId, seed } = state, matchId = state.matchId + 1;
-  Object.assign(state, createState({ mapId: state.mapId, capacity: state.capacity, seed }), { tick, eventId, matchId, round: matchId, randomState: ((seed ^ Math.imul(matchId, 0x9e3779b9)) >>> 0) || 0x85ebca6b });
+  Object.assign(state, createArenaState({ mapId: state.mapId, capacity: state.capacity, seed }, state.solo === true), { tick, eventId, matchId, round: matchId, randomState: ((seed ^ Math.imul(matchId, 0x9e3779b9)) >>> 0) || 0x85ebca6b });
   state.participantIds = participantIds.slice().sort((a, b) => a - b);
   const spawns = shuffled(state, spawnPoints);
   for (let index = 0; index < state.participantIds.length; index++) {

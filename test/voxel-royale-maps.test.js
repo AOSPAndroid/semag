@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { MAPS, MAP_IDS } from '../public/voxel-royale-maps.js';
 import { WORLD, WEAPONS, createCombatPlayer, emptyInput, predictLocalMovement } from '../public/voxel-engine.js';
-import { navigationPath } from '../public/voxel-navigation.js';
+import { navigationCanOccupy, navigationPath, navigationPoints } from '../public/voxel-navigation.js';
+import { createState as createRoyaleState } from '../public/voxel-royale-engine.js';
 
 const EPS = 1e-6;
 function overlaps(p, box, radius = WORLD.radius) {
@@ -17,14 +18,16 @@ const supported = (map, p) => !p.y || map.colliders.some(box => Math.abs(box.y +
 // A conservative half-metre floor graph proves a standing player can reach
 // every ground cache/door/climb from every random spawn without a jump or crouch.
 function floorGraph(map) {
-  const unit = .5, n = 129, allowed = new Uint8Array(n * n), parents = new Int32Array(n * n).fill(-2);
-  const point = index => ({ x: -32 + index % n * unit, y: 0, z: -32 + Math.floor(index / n) * unit });
+  const unit = .5, n = Math.round((map.bounds.maxX - map.bounds.minX) / unit) + 1;
+  const rows = Math.round((map.bounds.maxZ - map.bounds.minZ) / unit) + 1;
+  const allowed = new Uint8Array(n * rows), parents = new Int32Array(n * rows).fill(-2);
+  const point = index => ({ x: map.bounds.minX + index % n * unit, y: 0, z: map.bounds.minZ + Math.floor(index / n) * unit });
   for (let index = 0; index < allowed.length; index++) allowed[index] = Number(clear(map, point(index), WORLD.radius + .025));
   const nearest = p => {
-    const ix = Math.round((p.x + 32) / unit), iz = Math.round((p.z + 32) / unit);
+    const ix = Math.round((p.x - map.bounds.minX) / unit), iz = Math.round((p.z - map.bounds.minZ) / unit);
     let chosen = -1, distance = Infinity;
     for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) {
-      if (ix + dx < 0 || ix + dx >= n || iz + dz < 0 || iz + dz >= n) continue;
+      if (ix + dx < 0 || ix + dx >= n || iz + dz < 0 || iz + dz >= rows) continue;
       const index = ix + dx + (iz + dz) * n, next = point(index), gap = Math.hypot(next.x - p.x, next.z - p.z);
       if (allowed[index] && gap < distance && clear(map, { x: (next.x + p.x) / 2, z: (next.z + p.z) / 2, y: 0 }, WORLD.radius + .025)) { chosen = index; distance = gap; }
     }
@@ -35,7 +38,7 @@ function floorGraph(map) {
   for (let head = 0; head < queue.length; head++) {
     const current = queue[head], ix = current % n, iz = Math.floor(current / n);
     for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-      if (ix + dx < 0 || ix + dx >= n || iz + dz < 0 || iz + dz >= n) continue;
+      if (ix + dx < 0 || ix + dx >= n || iz + dz < 0 || iz + dz >= rows) continue;
       const next = current + dx + dz * n;
       if (!allowed[next] || parents[next] !== -2) continue;
       const a = point(current), b = point(next);
@@ -84,8 +87,9 @@ test('Royale has nine distinct immutable authored arenas with bounded geometry a
     assert.equal(map.theme, map.id);
     assert.deepEqual(map.sites, []);
     assert.ok(map.name && map.description);
-    assert.deepEqual(map.bounds, { minX: -32, maxX: 32, minZ: -32, maxZ: 32 });
-    assert.ok(map.colliders.length <= (['snow', 'sewers', 'trading', 'market', 'lockdown'].includes(map.id) ? 180 : 160), `${map.id} collision budget`);
+    const reserve = ['forest', 'maze', 'desert'].includes(map.id), edge = reserve ? 48 : 32;
+    assert.deepEqual(map.bounds, { minX: -edge, maxX: edge, minZ: -edge, maxZ: edge });
+    assert.ok(map.colliders.length <= (reserve ? 200 : ['snow', 'sewers', 'trading', 'market', 'lockdown'].includes(map.id) ? 180 : 160), `${map.id} collision budget`);
     assert.ok(Object.isFrozen(map.colliders) && Object.isFrozen(map.spawnPoints) && Object.isFrozen(map.lootPoints));
     assert.equal(new Set(map.colliders.map(box => box.id)).size, map.colliders.length);
     for (const box of map.colliders) {
@@ -93,7 +97,7 @@ test('Royale has nine distinct immutable authored arenas with bounded geometry a
       for (const field of ['x', 'y', 'z', 'w', 'h', 'd']) assert.ok(Number.isFinite(box[field]));
       for (const field of ['w', 'h', 'd']) assert.ok(box[field] > 0);
       assert.match(box.color, /^#[0-9a-f]{6}$/i);
-      if (!box.id.startsWith('boundary-')) assert.ok(box.x >= -32 && box.x + box.w <= 32 && box.z >= -32 && box.z + box.d <= 32, `${map.id}/${box.id} bounds`);
+      if (!box.id.startsWith('boundary-')) assert.ok(box.x >= map.bounds.minX && box.x + box.w <= map.bounds.maxX && box.z >= map.bounds.minZ && box.z + box.d <= map.bounds.maxZ, `${map.id}/${box.id} bounds`);
     }
     assert.ok(map.spawnPoints.length >= 16);
     for (const [index, p] of map.spawnPoints.entries()) {
@@ -189,4 +193,59 @@ test('the forest has safe overhead foliage and the Egyptian pyramid has genuine 
     near(pyramid[i].h - pyramid[i - 1].h, .84, 'pyramid terrace rise');
   }
   assert.equal(MAPS.desert.routes.filter(route => route.id.startsWith('pyramid-')).length, 2);
+});
+
+test('large reserves retain useful core landmarks and supply covered districts across the added floor', () => {
+  for (const id of ['forest', 'maze', 'desert']) {
+    const map = MAPS[id];
+    assert.equal((map.bounds.maxX - map.bounds.minX) * (map.bounds.maxZ - map.bounds.minZ) / (64 * 64), 2.25);
+    assert.equal(map.buildings.length, 6, `${id}: the wider arena adds genuine enterable shelter`);
+    assert.equal(map.regions.length, 4);
+    assert.ok(map.regions.every(region => Object.isFrozen(region) && region.name && Object.isFrozen(region.anchor)));
+    assert.ok(map.regions.every(region => navigationCanOccupy(map, region.anchor)), `${id}: named district anchors are playable ground`);
+    const outerLoot = map.lootPoints.filter(p => Math.abs(p.x) > 32 || Math.abs(p.z) > 32);
+    assert.ok(outerLoot.length >= 24, `${id}: new regions have supplies rather than an empty perimeter`);
+    assert.ok(map.colliders.filter(box => !box.id.startsWith('boundary-') && (Math.abs(box.x) > 32 || Math.abs(box.z) > 32) && box.y === 0 && box.h < 1).length >= 6,
+      `${id}: the outer reserve contains small jumpable cover`);
+    for (const spawn of map.spawnPoints) {
+      const nearest = map.lootPoints.filter(p => !p.y).reduce((a, b) => Math.hypot(a.x - spawn.x, a.z - spawn.z) < Math.hypot(b.x - spawn.x, b.z - spawn.z) ? a : b);
+      assert.ok(Math.hypot(nearest.x - spawn.x, nearest.z - spawn.z) < 21, `${id}: ${spawn.x},${spawn.z} has an early reachable ground cache`);
+    }
+    const storm = createRoyaleState({ mapId: id, seed: 100 }).storm;
+    assert.deepEqual({ x: storm.x, z: storm.z }, { x: map.stormCenter.x, z: map.stormCenter.z });
+    for (const x of [map.bounds.minX, map.bounds.maxX]) for (const z of [map.bounds.minZ, map.bounds.maxZ])
+      assert.ok(storm.initialRadius >= Math.hypot(x - storm.x, z - storm.z) + WORLD.radius - EPS, `${id}: initial storm contains the entire enlarged arena`);
+    assert.ok(navigationCanOccupy(map, map.stormCenter), `${id}: final storm centre is standable`);
+  }
+});
+
+test('bounded real navigation reaches the final circle and nearest supplies from every enlarged spawn', () => {
+  for (const id of ['forest', 'maze', 'desert']) {
+    const map = MAPS[id], nodes = navigationPoints(map);
+    assert.ok(nodes.length <= 6000 && nodes.length > 3000, `${id}: navigation stays within the shared cache budget`);
+    assert.strictEqual(navigationPoints(map), nodes, `${id}: immutable navigation is reused`);
+    for (const spawn of map.spawnPoints) {
+      const nearest = map.lootPoints.filter(p => !p.y).reduce((a, b) => Math.hypot(a.x - spawn.x, a.z - spawn.z) < Math.hypot(b.x - spawn.x, b.z - spawn.z) ? a : b);
+      for (const goal of [nearest, map.stormCenter]) {
+        const path = navigationPath(map, spawn, goal);
+        assert.ok(path.length, `${id}/${spawn.x},${spawn.z}: real navigation reaches ${goal.id || 'final circle'}`);
+        assert.ok(Math.hypot(path.at(-1).x - goal.x, path.at(-1).z - goal.z) < .1);
+        assert.ok(path.every(p => navigationCanOccupy(map, p)), `${id}: every route waypoint respects real collision`);
+      }
+    }
+  }
+});
+
+test('outer trail logs, broken archive plinths and caravan supplies work as real hop cover', () => {
+  for (const [id, colliderId] of [['forest', 'forest-outer-timber-0'], ['maze', 'maze-outer-gallery-0-broken-plinth'], ['desert', 'desert-outer-caravan-crate-0']]) {
+    const map = MAPS[id], support = map.colliders.find(box => box.id === colliderId);
+    const target = { x: support.x + support.w / 2, z: support.z + support.d / 2 };
+    const player = Object.assign(createCombatPlayer(0, 1, 'lmg'), { x: target.x, z: support.z + support.d + .45 });
+    assert.ok(clear(map, player), `${id}: real cover has a clear standing takeoff`);
+    move(player, map, { up: true, jump: true, yaw: 0 });
+    for (let tick = 0; tick < 140 && !player.grounded; tick++) move(player, map, { up: player.z > target.z + .04, yaw: 0 });
+    assert.equal(player.grounded, true);
+    near(player.y, support.y + support.h, `${id}: real jump lands on the low cover`);
+    assert.ok(supported(map, player) && clear(map, player));
+  }
 });

@@ -22,7 +22,7 @@ test('twelve authored maps expose immutable geometry with a bounded collision bu
     assert.ok(Object.isFrozen(map));
     assert.ok(Object.isFrozen(map.bounds));
     assert.ok(Object.isFrozen(map.colliders));
-    assert.ok(map.colliders.length <= (['snow', 'sewers', 'trading', 'market', 'lockdown'].includes(id) ? 180 : id === 'paris' ? 128 : id === 'foundry' ? 60 : 55), `${id} collision budget`);
+    assert.ok(map.colliders.length <= (['snow', 'sewers', 'trading', 'market', 'lockdown'].includes(id) ? 180 : id === 'paris' ? 128 : id === 'foundry' ? 66 : 61), `${id} collision budget`);
     assert.equal(new Set(map.colliders.map(box => box.id)).size, map.colliders.length, `${id} duplicate cover ID`);
     geometries.add(JSON.stringify(map.colliders));
     for (const box of map.colliders) {

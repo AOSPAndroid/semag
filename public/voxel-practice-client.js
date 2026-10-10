@@ -119,7 +119,23 @@ export function bootPractice() {
   const mapMarkers = new Map(); let playerMarker, stormMarker;
 
   setText('practice-title', royale ? 'Voxel Royale' : 'Voxel Breach'); document.title = `${royale ? 'Voxel Royale' : 'Voxel Breach'} Practice — Semag`;
-  if (royale) { setText('practice-setup-title', 'Find your next opening.'); setText('practice-setup-copy', 'Start with a knife. Scavenge the real maps while bots move, loot and fight for the last safe ground.'); setHidden($('practice-loadout-field'), true); setHidden($('practice-melee-field'), true); setHidden($('practice-melee-note'), true); }
+  if (royale) {
+    setText('practice-subtitle', 'SOLO BATTLE ROYALE'); document.title = 'Voxel Royale — Solo Battle | semaG';
+    setText('practice-setup-title', 'Be the last one standing.');
+    setText('practice-setup-copy', 'You against up to 10 bots. Start with a knife, find your weapons, and fight through the closing storm. Bots scavenge and battle each other too.');
+    setText('practice-count-label', 'BOT OPPONENTS');
+    $('practice-count').replaceChildren(...Array.from({ length: 10 }, (_, index) => {
+      const option = document.createElement('option'); option.value = String(index + 1); option.textContent = `${index + 1} ${index ? 'bots' : 'bot'} + you`; return option;
+    }));
+    $('practice-count').value = '10'; $('practice-mode').value = 'combat';
+    setHidden($('practice-mode-field'), true);
+    setText('practice-start', 'Start battle →');
+    setText('practice-resume', 'Resume battle →'); setText('practice-restart', 'Restart battle');
+    $('practice-setup-form').querySelector('.practice-eyebrow').textContent = 'SOLO / 1–10 BOT OPPONENTS';
+    $('practice-setup-form').querySelector('.practice-start-note').textContent = 'One life · no server needed · P pauses the battle';
+    $('practice-pause-card').querySelector('h2').textContent = 'Battle paused.';
+    setHidden($('practice-loadout-field'), true); setHidden($('practice-melee-field'), true); setHidden($('practice-melee-note'), true);
+  }
   if (royale) $('practice-mode').querySelector('option[value="blades"]')?.remove();
   setHidden($('practice-blade-guide'), royale);
   if (dojo) {
@@ -276,7 +292,7 @@ export function bootPractice() {
     inventory.update(player, { visible: activeSession && player.alive && phase !== 'matchEnd', interactive: active() && phase === 'fight' });
     const swap = inventorySwapPresentation(player), swapButton = document.querySelector('[data-practice-action="swap"]'); if (swap && swapButton) { swapButton.textContent = swap.label; swapButton.setAttribute('aria-label', swap.ariaLabel); }
     paintSecondaryAction(document.querySelector('[data-practice-action="aim"]'), secondaryActionPresentation(player, { active: active() && phase === 'fight', requireGun: royale }));
-    setText('practice-map-label', state.mapName); setText('practice-mode-label', dojo ? 'FREE PRACTICE' : blades ? 'BLADE TRAINING' : state.practice.config.mode === 'targets' ? 'MOVING TARGETS' : 'RETURN FIRE'); setText('practice-bots-left', stats.botsRemaining); setText('practice-hits', dojo ? state.dojo.headContacts + state.dojo.bodyContacts : stats.hits); setText('practice-clock', clock(stats.seconds));
+    setText('practice-map-label', state.mapName); setText('practice-mode-label', royale ? 'SOLO BATTLE ROYALE' : dojo ? 'FREE PRACTICE' : blades ? 'BLADE TRAINING' : state.practice.config.mode === 'targets' ? 'MOVING TARGETS' : 'RETURN FIRE'); setText('practice-bots-left', stats.botsRemaining); setText('practice-hits', dojo ? state.dojo.headContacts + state.dojo.bodyContacts : stats.hits); setText('practice-clock', clock(stats.seconds));
     setHidden($('dojo-tools-toggle'), !dojo || !activeSession); setDisabled($('dojo-tools-toggle'), phase !== 'fight'); setHidden($('dojo-contact'), !dojo || !activeSession);
     if (dojo) {
       const hit = state.dojo.lastHit, station = findDojoStation(state), recovery = findDojoStation(state, 'recovery');
@@ -305,9 +321,9 @@ export function bootPractice() {
     if (phase === 'fight' && changed) audio.fight();
     if (phase === 'matchEnd') {
       setText('practice-objective', endView.holding ? player.alive ? 'Target down. Reviewing your run…' : 'You’re down. Reviewing your run…' : 'Run complete. Review your stats or choose your next drill.');
-      const won = stats.result === 'won'; setText('practice-result-tag', won ? royale ? 'LAST SURVIVOR' : 'DRILL CLEARED' : stats.result === 'timeout' ? 'TIME LIMIT' : 'RUN ENDED'); setText('practice-result-title', won ? blades ? 'Clean cuts.' : 'Clean angles.' : 'Find the next opening.');
-      setText('practice-result-copy', won ? blades ? 'Chain your hits. Try another blade or add more targets.' : 'Try a harder pace or a different weapon. Make every shot count.' : 'Change your route, settle your aim and protect your reloads.');
-      const mode = royale ? 'Royale practice' : blades ? 'Blade training' : state.practice.config.mode === 'targets' ? 'Moving targets' : 'Bots shoot back';
+      const won = stats.result === 'won'; setText('practice-result-tag', won ? royale ? 'LAST SURVIVOR' : 'DRILL CLEARED' : stats.result === 'timeout' ? 'TIME LIMIT' : 'RUN ENDED'); setText('practice-result-title', won ? royale ? 'You outlasted them all.' : blades ? 'Clean cuts.' : 'Clean angles.' : 'Find the next opening.');
+      setText('practice-result-copy', won ? royale ? 'The storm has its champion. Take on a harder bot pace or explore another arena.' : blades ? 'Chain your hits. Try another blade or add more targets.' : 'Try a harder pace or a different weapon. Make every shot count.' : 'Change your route, settle your aim and protect your reloads.');
+      const mode = royale ? `Solo Royale · ${state.practice.config.bots} ${state.practice.config.bots === 1 ? 'bot' : 'bots'}` : blades ? 'Blade training' : state.practice.config.mode === 'targets' ? 'Moving targets' : 'Bots shoot back';
       const weapon = blades ? MELEE_WEAPONS[state.practice.config.melee] : WEAPONS[state.practice.config.weapon];
       setText('practice-result-context', `${state.mapName} · ${mode} · ${royale ? 'Knife start' : weapon?.name || weapon?.label || 'Chosen equipment'}`);
       setText('practice-result-accuracy-label', blades ? 'CUT ACCURACY' : 'ACCURACY');

@@ -35,7 +35,8 @@ function normalize(options = {}) {
   const bots = options.bots ?? 3, weapon = options.weapon ?? 'carbine', difficulty = options.difficulty ?? 'regular';
   const melee = options.melee ?? 'knife';
   if (!Object.hasOwn(maps, mapId)) throw new RangeError('Unknown practice map.');
-  if (!Number.isInteger(bots) || bots < 1 || bots > 5) throw new RangeError('Practice supports 1–5 bots.');
+  const maxBots = game === 'voxel-royale' ? Royale.SOLO_MAX_PLAYERS - 1 : 5;
+  if (!Number.isInteger(bots) || bots < 1 || bots > maxBots) throw new RangeError(`${game === 'voxel-royale' ? 'Royale solo' : 'Breach practice'} supports 1–${maxBots} bots.`);
   if (!['targets', 'combat', 'blades', 'dojo'].includes(mode) || (['blades', 'dojo'].includes(mode) && game !== 'voxel')) throw new RangeError('Choose moving targets, combat bots, Breach blade training, or the solo dojo.');
   if (!Object.hasOwn(WEAPONS, weapon)) throw new RangeError('Unknown practice weapon.');
   if (typeof melee !== 'string' || !Object.hasOwn(MELEE_WEAPONS, melee)) throw new RangeError('Unknown practice close-combat weapon.');
@@ -156,7 +157,7 @@ function spawnBreach(state, config) {
   state.players = state.fighters = players; state.capacity = players.length; state.bomb = null; state.maxRounds = 1;
 }
 export function createPractice(options = {}) {
-  const config = normalize(options), state = config.game === 'voxel' ? createBreachState({ mapId: config.mode === 'dojo' ? 'courtyard' : config.mapId }) : Royale.createState({ mapId: config.mapId, capacity: config.bots + 1, seed: config.seed });
+  const config = normalize(options), state = config.game === 'voxel' ? createBreachState({ mapId: config.mode === 'dojo' ? 'courtyard' : config.mapId }) : Royale.createSoloState({ mapId: config.mapId, capacity: config.bots + 1, seed: config.seed });
   state.map = config.mode === 'dojo' ? DOJO_MAP : (config.game === 'voxel' ? BREACH_MAPS : Royale.MAPS)[config.mapId];
   // Build static navigation while the setup screen is visible, before live play.
   navigationFor(state.map);
@@ -403,7 +404,7 @@ function finishPractice(state, result, reason) {
     emitCombatEvent(state, 'practiceEnd', { result, reason });
   }
   for (const player of state.players) {Object.assign(player, { vx: 0, vy: 0, vz: 0, knockbackX: 0, knockbackZ: 0, knockbackTicks: 0, knockbackReadyTicks: 0, hitStunTicks: 0, hitStunReadyTicks: 0, meleeTicks: 0, meleePhase: 'idle', meleeHitIds: [], meleeHitLives: [], meleeStartTick: 0, aiming: false, aimTicks: 0 });resetSprint(player,{refill:player.alive});resetMeleeDefense(player, { blockAim: true });}
-  neutralize(state); state.objective = result === 'won' ? 'Drill cleared. Review your accuracy or start another run.' : result === 'lost' ? 'Your run is over. Change the drill or try again.' : 'Time limit reached. Review your results or try again.';
+  neutralize(state); state.objective = state.gameId === 'voxel-royale' ? result === 'won' ? 'Last survivor. Review your battle or start a new expedition.' : 'Your battle is over. Change your route or try again.' : result === 'won' ? 'Drill cleared. Review your accuracy or start another run.' : result === 'lost' ? 'Your run is over. Change the drill or try again.' : 'Time limit reached. Review your results or try again.';
 }
 export function stepPractice(state, localInput = {}) {
   if (!state?.practice || !['countdown', 'fight'].includes(state.phase)) return state;
