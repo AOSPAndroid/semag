@@ -26,10 +26,17 @@ export const meleeWeaponId = playerOrId => {
 /** Confirmed primary chains reward timing without changing first-hit handling. */
 export const MELEE_COMBO_WINDOW_TICKS = 42;
 const COMBO_LENGTHS = Object.freeze({ knife: 3, sword: 3, katana: 3, axe: 2, tonfas: 4 });
+/** Long blades stagger and shove players on every confirmed cut; quick blades stay light. */
+export const BLADE_IMPACT = Object.freeze({
+  sword: Object.freeze({ stunTicks: 14, finisherStunTicks: 22, playerPush: .5 }),
+  katana: Object.freeze({ stunTicks: 14, finisherStunTicks: 22, playerPush: .5 }),
+  axe: Object.freeze({ stunTicks: 18, finisherStunTicks: 26, playerPush: .5 }),
+});
+const impactFor = id => BLADE_IMPACT[id] || { stunTicks: 10, finisherStunTicks: 16, playerPush: .28 };
 export const meleeComboLength = playerOrId => COMBO_LENGTHS[meleeWeaponId(playerOrId)];
 const COMBO_PROFILES = Object.freeze(Object.fromEntries(Object.entries(MELEE_WEAPONS).map(([id, profile]) => [id, Object.freeze(Array.from({ length: COMBO_LENGTHS[id] }, (_, index) => {
   const comboStep = index + 1, comboFinisher = comboStep === COMBO_LENGTHS[id];
-  return Object.freeze({ ...profile, comboStep, comboLength: COMBO_LENGTHS[id], comboFinisher, slashDirection: comboStep % 2 ? 1 : -1, damage: comboFinisher ? Math.round(profile.damage * (id === 'axe' ? 1.15 : 1.2)) : profile.damage, pushSpeed: profile.pushSpeed * (comboFinisher ? 1.25 : 1), hitStunTicks: comboFinisher ? 16 : 10 });
+  return Object.freeze({ ...profile, comboStep, comboLength: COMBO_LENGTHS[id], comboFinisher, slashDirection: comboStep % 2 ? 1 : -1, damage: comboFinisher ? Math.round(profile.damage * (id === 'axe' ? 1.15 : 1.2)) : profile.damage, pushSpeed: profile.pushSpeed * (comboFinisher ? 1.25 : 1), hitStunTicks: comboFinisher ? impactFor(id).finisherStunTicks : impactFor(id).stunTicks, playerPush: impactFor(id).playerPush });
 }))])));
 export const meleeProfile = playerOrId => {
   const id = meleeWeaponId(playerOrId);

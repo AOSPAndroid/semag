@@ -5,7 +5,7 @@ import { WEAPONS, weaponDamage, weaponSpread, weaponHand } from './voxel-weapons
 import { advanceWeaponFireClock, completeReload, weaponCanReload, weaponReloadDuration } from './voxel-fire-modes.js';
 import { applyRecoilKick, recoverRecoil } from './voxel-recoil.js';
 import { launchBolt, advanceBolts, MAX_BOLTS } from './voxel-projectiles.js';
-import { MELEE, KNIFE, KNIFE_SECONDARY, MELEE_WEAPONS, meleeProfile, meleeWeaponId, meleeHand, meleeSlashOrigin, meleeSlashPhase, meleeSlashGeometry, meleeSegmentBoxContact, advanceMeleePrimaryPress, meleeStartupAim, parryProfile, parryPhase, parryFacesOrigin, resetMeleeDefense, resetMeleeCombo, clearMeleeComboContinuation, beginMeleeCombo } from './voxel-melee.js';
+import { BLADE_IMPACT, MELEE, KNIFE, KNIFE_SECONDARY, MELEE_WEAPONS, meleeProfile, meleeWeaponId, meleeHand, meleeSlashOrigin, meleeSlashPhase, meleeSlashGeometry, meleeSegmentBoxContact, advanceMeleePrimaryPress, meleeStartupAim, parryProfile, parryPhase, parryFacesOrigin, resetMeleeDefense, resetMeleeCombo, clearMeleeComboContinuation, beginMeleeCombo } from './voxel-melee.js';
 import { recordLagCompensation, traceCompensatedShot } from './voxel-lag-compensation.js';
 import { monsterTypeId, monsterBodyProfile, monsterBodyBoxes, monsterMovementSpeed, monsterMovementMultiplier } from './voxel-monster-bodies.js';
 import { INVENTORY_ACTIONS, initializeInventory, ensureInventory, refreshInventory, selectedInventoryItem, selectInventorySlot, storeInventoryGun, tickHolsteredInventory, consumeInventoryStack, nextThrowableType, addInventoryStack, pickupInventoryItem, inventoryCanTake, dropInventoryItem, lootFromInventoryItem, setInventoryLoadout, setInventoryMeleeLoadout } from './voxel-inventory.js';
@@ -1222,7 +1222,8 @@ function applyMeleeKnockback(state, hit, attacker, target, profile) {
   if (target.hp <= 0 || target.knockbackReadyTicks > 0 || target.emergenceTicks > 0) return;
   const monster = target.monster === true && target.human !== true;
   const cap = monster ? KNOCKBACK.maxMonsterSpeed : KNOCKBACK.maxPlayerSpeed;
-  const resistance = monster ? target.monsterType === 'brute' ? .35 : target.monsterType === 'screecher' ? .8 : 1 : .28;
+  // Players resist most shoves; long blades still visibly push them back.
+  const resistance = monster ? target.monsterType === 'brute' ? .35 : target.monsterType === 'screecher' ? .8 : 1 : profile.playerPush ?? BLADE_IMPACT[profile.id]?.playerPush ?? .28;
   const speed = Math.min(cap, profile.pushSpeed * resistance), dx = target.x - attacker.x, dz = target.z - attacker.z, length = Math.hypot(dx, dz);
   const nx = length > EPS ? dx / length : Math.sin(attacker.meleeYaw || 0), nz = length > EPS ? dz / length : -Math.cos(attacker.meleeYaw || 0);
   // Replace a direction rather than add forces. Three simultaneous partners
@@ -1234,7 +1235,7 @@ function applyMeleeKnockback(state, hit, attacker, target, profile) {
 }
 function applyMeleeHitStun(state, hit, attacker, target, profile) {
   if (target.hp <= 0 || target.monster === true || target.hitStunReadyTicks > 0) return;
-  const ticks = profile.hitStunTicks || 10;
+  const ticks = profile.hitStunTicks || BLADE_IMPACT[profile.id]?.stunTicks || 10;
   target.hitStunTicks = ticks; target.hitStunReadyTicks = 72; target.sprinting = false; target.jumpBufferTicks = 0;
   target.triggerBlocked = target.meleeAimBlocked = true; target.parryTicks = 0; target.parryConsumed = true;
   target.pendingMeleeTicks = target.pendingFireTicks = target.burstRemaining = 0;
