@@ -5,7 +5,7 @@ import { copyText, getName, hostInfo, roomUrl, saveName } from './hub/shared.js'
 import { GameAudio } from './audio.js';
 import { createEnemyFootstepPresenter } from './voxel-footsteps.js';
 import { WEAPONS, WEAPON_IDS, WEAPON_GROUPS, weaponDamage, weaponStats } from './voxel-weapons.js';
-import { resolveActiveFire, weaponReloadDuration, weaponFireIntervalTicks } from './voxel-fire-modes.js';
+import { resolveActiveFire, weaponReloadDuration, weaponFireIntervalTicks, weaponChambers } from './voxel-fire-modes.js';
 import { crosshairAngularSpread, createCrosshairPresenter, paintCrosshair } from './voxel-crosshair.js';
 import { PLAYER_HEALTH, HEAL } from './voxel-engine.js';
 import { meleeLabel, meleeProfile, MELEE_IDS } from './voxel-melee.js';
@@ -333,7 +333,7 @@ export function weaponComparison(id) {
   return { name: weapon.name, description: weapon.description, body: stats.body, head: stats.head, leg: stats.leg,
     damageLabel: stats.pellets > 1 ? `DAMAGE / PELLET · ${stats.pellets} PELLETS PER SHELL` : 'DAMAGE / HIT · HEAD / BODY / LEGS',
     rate, reload: `${stats.reloadSeconds.toFixed(2)} s`, magazine: weapon.magazine,
-    reloadDetail: weapon.emptyReloadTicks ? `${stats.reloadSeconds.toFixed(2)} s partial · ${(weapon.emptyReloadTicks / 120).toFixed(2)} s empty` : `${stats.reloadSeconds.toFixed(2)} s`,
+    reloadDetail: weaponReloadDuration(weapon, 0) !== weapon.reloadTicks ? `${stats.reloadSeconds.toFixed(2)} s tactical${weaponChambers(weapon) ? ' (+1 chambered)' : ''} · ${(weaponReloadDuration(weapon, 0) / 120).toFixed(2)} s empty` : `${stats.reloadSeconds.toFixed(2)} s`,
     range: weapon.damageBands ? weapon.damageBands.some(band => band.maxDistance != null) ? `Damage changes at ${weapon.damageBands.filter(band => band.maxDistance != null).map(band => `${band.maxDistance} m`).join(' / ')}` : 'Full damage at every distance' : stats.falloffStart != null ? `Falls after ${stats.falloffStart} m · minimum ${Math.round(stats.falloffMinimum * 100)}%` : `Full damage to ${stats.effectiveRange} m`,
     handling: weaponHandling(weapon), rows, far: { head: last.head, body: last.body, leg: last.leg, distance: last.distance } };
 }

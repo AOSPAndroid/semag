@@ -4,6 +4,7 @@ import { combatStep, createCombatPlayer, createState, emptyInput, eyeHeight, ADS
 import { WEAPONS, WEAPON_IDS, weaponDamage, weaponSpread, weaponStats } from '../public/voxel-weapons.js';
 import { VOXEL_SHOT_AUDIO, createVoxelShotSamples } from '../public/voxel-shot-audio.js';
 import { createWeaponShotPresenter, weaponShotPose } from '../public/voxel-first-person-motion.js';
+import { weaponReloadDuration } from '../public/voxel-fire-modes.js';
 
 const NEW_GUNS = ['revolver', 'pdw', 'autoshotgun', 'battlerifle'];
 const floor = { id: 'floor', x: -100, y: -1, z: -100, w: 200, h: 1, d: 200 };
@@ -78,8 +79,9 @@ test('all new guns transfer finite reserve only on their full reload completion'
     const { state, shooter } = lane(id), weapon = WEAPONS[id];
     setGunField(shooter, 'ammo', 0); setGunField(shooter, 'reserve', 3);
     ticks(state, 1, { reload: true, fire: true, yaw: Math.PI / 2 });
-    assert.equal(shooter.reloadTicks, weapon.reloadTicks, id); assert.equal(shooter.shots, 0);
-    ticks(state, weapon.reloadTicks - 1, { fire: true, yaw: Math.PI / 2 });
+    // An empty gun must also be chambered, so it takes its empty reload time.
+    assert.equal(shooter.reloadTicks, weaponReloadDuration(weapon, 0), id); assert.equal(shooter.shots, 0);
+    ticks(state, weaponReloadDuration(weapon, 0) - 1, { fire: true, yaw: Math.PI / 2 });
     assert.equal(shooter.ammo, 0, id); assert.equal(shooter.reserve, 3, id);
     ticks(state, 1);
     assert.equal(shooter.ammo, 3, id); assert.equal(shooter.reserve, 0, id);

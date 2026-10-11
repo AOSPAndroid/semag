@@ -2,7 +2,7 @@
 import { throwGrenade, advanceGrenades } from './voxel-ordnance.js';
 import { MAPS } from './voxel-maps.js';
 import { WEAPONS, weaponDamage, weaponSpread, weaponHand } from './voxel-weapons.js';
-import { advanceWeaponFireClock } from './voxel-fire-modes.js';
+import { advanceWeaponFireClock, completeReload, weaponCanReload, weaponReloadDuration } from './voxel-fire-modes.js';
 import { applyRecoilKick, recoverRecoil } from './voxel-recoil.js';
 import { launchBolt, advanceBolts, MAX_BOLTS } from './voxel-projectiles.js';
 import { MELEE, KNIFE, KNIFE_SECONDARY, MELEE_WEAPONS, meleeProfile, meleeWeaponId, meleeHand, meleeSlashOrigin, meleeSlashPhase, meleeSlashGeometry, meleeSegmentBoxContact, advanceMeleePrimaryPress, meleeStartupAim, parryProfile, parryPhase, parryFacesOrigin, resetMeleeDefense, resetMeleeCombo, clearMeleeComboContinuation, beginMeleeCombo } from './voxel-melee.js';
@@ -62,11 +62,11 @@ function advanceMovementActions(player, input, context) {
     const next = advanceWeaponFireClock(weapon, { ...player, ...context }, input, player.previousInput);
     ({ reloadTicks, burstRemaining, pendingFireTicks, shotCooldown, ammo, reserve, spinTicks } = next);
   } else {
-    if (context.reloadTicks === 1) { const loaded = Math.min(weapon.magazine - ammo, reserve); ammo += loaded; reserve -= loaded; }
+    if (context.reloadTicks === 1) ({ ammo, reserve } = completeReload(weapon, ammo, reserve));
     // Anticipate the movement lock of an eligible reload/burst without publishing
     // ammunition, action completion, attack events or any inventory mutation.
     if (player.slot === 'primary' && !context.healTicks && !context.grenadeThrowTicks) {
-      if (input.reload && !player.previousInput?.reload && !reloadTicks && ammo < weapon.magazine && reserve > 0) { reloadTicks = weapon.reloadTicks; burstRemaining = pendingFireTicks = 0; }
+      if (input.reload && !player.previousInput?.reload && !reloadTicks && weaponCanReload(weapon, ammo, reserve)) { reloadTicks = weaponReloadDuration(weapon, ammo); burstRemaining = pendingFireTicks = 0; }
       if (input.interact) burstRemaining = pendingFireTicks = 0;
       if (weapon.pressBufferTicks && input.fire && !player.previousInput?.fire && !context.triggerBlocked && !reloadTicks && !input.interact && ammo > 0) pendingFireTicks = weapon.pressBufferTicks;
       if (context.triggerBlocked || reloadTicks) pendingFireTicks = 0;
@@ -967,7 +967,7 @@ function tickWeapon(state, f, input, pendingDamage, arena, meleeOptions = {}) {
     for (const field of ['reserve', 'reloadTicks', 'shotCooldown', 'burstRemaining', 'spinTicks', 'pendingFireTicks']) f[field] = clock[field];
     f.ammo = clock.ammo + clock.rounds;
     if (clock.reloadCompleted) emit(state, 'reloadComplete', { playerId: f.id, weapon: f.weapon });
-    if (clock.reloadStarted) { f.aiming = false; emit(state, 'reload', { playerId: f.id, weapon: f.weapon, durationTicks: clock.durationTicks }); }
+    if (clock.reloadStarted) { f.aiming = false; emit(state, 'reload', { playerId: f.id, weapon: f.weapon, durationTicks: clock.durationTicks, tactical: clock.ammo > 0 }); }
     if (clock.dryFire) emit(state, 'dryFire', { playerId: f.id, weapon: f.weapon });
     if (f.slot === 'sword' && !f.healTicks && !f.grenadeThrowTicks) tickMelee(state, f, input, pendingDamage, arena, meleeOptions);
     if (fire) {
@@ -980,12 +980,12 @@ function tickWeapon(state, f, input, pendingDamage, arena, meleeOptions = {}) {
   f.shotCooldown = Math.max(0, f.shotCooldown - 1);
   if (f.reloadTicks > 0) {
     f.reloadTicks--;
-    if (f.reloadTicks === 0) { const loaded = Math.min(weapon.magazine - f.ammo, f.reserve); f.ammo += loaded; f.reserve -= loaded; emit(state, 'reloadComplete', { playerId: f.id, weapon: f.weapon }); }
+    if (f.reloadTicks === 0) { ({ ammo: f.ammo, reserve: f.reserve } = completeReload(weapon, f.ammo, f.reserve)); emit(state, 'reloadComplete', { playerId: f.id, weapon: f.weapon }); }
   }
   if (f.healTicks || f.grenadeThrowTicks) { f.spinTicks = f.pendingFireTicks = f.pendingMeleeTicks = 0; return; }
   if (f.slot === 'sword') { f.spinTicks = f.pendingFireTicks = 0; tickMelee(state, f, input, pendingDamage, arena, meleeOptions); return; }
   if (f.slot !== 'primary') { f.spinTicks = f.pendingFireTicks = 0; return; }
-  if (input.reload && !f.previousInput.reload && !f.reloadTicks && f.ammo < weapon.magazine && f.reserve > 0) { f.reloadTicks = weapon.reloadTicks; f.burstRemaining = 0; f.spinTicks = f.pendingFireTicks = 0; f.aiming = false; emit(state, 'reload', { playerId: f.id, weapon: f.weapon }); }
+  if (input.reload && !f.previousInput.reload && !f.reloadTicks && weaponCanReload(weapon, f.ammo, f.reserve)) { f.reloadTicks = weaponReloadDuration(weapon, f.ammo); f.burstRemaining = 0; f.spinTicks = f.pendingFireTicks = 0; f.aiming = false; emit(state, 'reload', { playerId: f.id, weapon: f.weapon, durationTicks: f.reloadTicks, tactical: f.ammo > 0 }); }
   if (input.interact) { f.burstRemaining = 0; f.spinTicks = f.pendingFireTicks = 0; }
   // Paired pistols retain one recent fresh press across their short recovery.
   // Holding fire never queues another shot; reloads and hand changes discard it.

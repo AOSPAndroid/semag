@@ -17,7 +17,7 @@ export function createInventoryGun(weapon = 'carbine', source = {}) {
   if (typeof weapon !== 'string' || !Object.hasOwn(WEAPONS, weapon)) return null;
   const catalog = WEAPONS[weapon], item = { kind: 'weapon', weapon };
   for (const field of GUN_FIELDS) item[field] = gunField(field, source[field]);
-  item.ammo = count(source.ammo ?? catalog.magazine, catalog.magazine);
+  item.ammo = count(source.ammo ?? catalog.magazine, catalog.magazine + 1); // +1: a chambered round
   item.reserve = count(source.reserve ?? catalog.reserve, catalog.reserve * 8);
   return item;
 }

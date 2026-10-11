@@ -5,11 +5,41 @@ const finite = (value, fallback) => Number.isFinite(value) ? value : fallback;
 const resolveWeapon = value => typeof value === 'string' ? (Object.hasOwn(WEAPONS, value) ? WEAPONS[value] : null) : value;
 const readInput = (player, input) => input || player?.previousInput || player || {};
 
-/** The magazine remains unchanged while reloading, so snapshots retain its variant. */
+/** Box-fed guns keep a round in the chamber through a tactical reload. Revolvers,
+ * tube-fed pumps, bolt actions, crossbows and paired guns do not. */
+export const EMPTY_RELOAD_MULTIPLIER = 1.25;
+export function weaponChambers(weaponOrId) {
+  const weapon = resolveWeapon(weaponOrId);
+  if (!weapon) return false;
+  if (typeof weapon.chamber === 'boolean') return weapon.chamber;
+  const mode = weapon.mode || 'auto';
+  return ['auto', 'semi', 'burst'].includes(mode) && !weapon.dualWield && !weapon.projectile && weapon.family !== 'revolver' && weapon.id !== 'revolver'
+    && weapon.family !== 'shotgun' && !(weapon.pellets > 1) && weapon.magazine > 2;
+}
+/** Rounds a reload can hold: a tactical reload keeps the chambered round (+1). */
+export function weaponCapacity(weaponOrId, ammo = 0) {
+  const weapon = resolveWeapon(weaponOrId);
+  if (!weapon) return 0;
+  return weapon.magazine + (finite(ammo, 0) > 0 && weaponChambers(weapon) ? 1 : 0);
+}
+/** A fresh magazine is needed only once the current one is no longer full. */
+export function weaponCanReload(weaponOrId, ammo = 0, reserve = 0) {
+  const weapon = resolveWeapon(weaponOrId);
+  return !!weapon && finite(ammo, 0) < weapon.magazine && finite(reserve, 0) > 0;
+}
+/** The magazine remains unchanged while reloading, so snapshots retain its variant.
+ * An empty gun must also be chambered, so it takes longer than a tactical reload. */
 export function weaponReloadDuration(weaponOrId, ammo = 0) {
   const weapon = resolveWeapon(weaponOrId);
   if (!weapon) return 0;
-  return Math.max(0, finite(ammo, 0) <= 0 ? finite(weapon.emptyReloadTicks, weapon.reloadTicks) : weapon.reloadTicks);
+  if (finite(ammo, 0) > 0) return Math.max(0, weapon.reloadTicks);
+  if (Number.isFinite(weapon.emptyReloadTicks)) return Math.max(0, weapon.emptyReloadTicks);
+  return Math.max(0, weaponChambers(weapon) ? Math.round(weapon.reloadTicks * EMPTY_RELOAD_MULTIPLIER) : weapon.reloadTicks);
+}
+/** Ammunition after a completed reload. `ammo` is the count when it began. */
+export function completeReload(weaponOrId, ammo = 0, reserve = 0) {
+  const loaded = Math.max(0, Math.min(weaponCapacity(weaponOrId, ammo) - finite(ammo, 0), finite(reserve, 0)));
+  return { ammo: finite(ammo, 0) + loaded, reserve: finite(reserve, 0) - loaded, loaded };
 }
 export const weaponReloadTicks = weaponReloadDuration;
 
@@ -51,11 +81,10 @@ export function advanceWeaponFireClock(weaponOrId, player = {}, input = {}, prev
   const carry = oldCooldown > 0 ? Math.min(0, remaining) : 0;
   const result = { ammo: Math.max(0, finite(player.ammo, 0)), reserve: Math.max(0, finite(player.reserve, 0)), reloadTicks: Math.max(0, finite(player.reloadTicks, 0) - 1), shotCooldown: Math.max(0, remaining), burstRemaining: Math.max(0, finite(player.burstRemaining, 0)), spinTicks: Math.max(0, finite(player.spinTicks, 0)), pendingFireTicks: 0, rounds: 0, reloadStarted: false, reloadCompleted: false, dryFire: false, durationTicks: 0, fireProfile: null };
   if (player.reloadTicks > 0 && !result.reloadTicks) {
-    const loaded = Math.min(weapon.magazine - result.ammo, result.reserve);
-    result.ammo += loaded; result.reserve -= loaded; result.reloadCompleted = true;
+    ({ ammo: result.ammo, reserve: result.reserve } = completeReload(weapon, result.ammo, result.reserve)); result.reloadCompleted = true;
   }
   if (player.slot !== 'primary' || player.healTicks || player.grenadeThrowTicks) { result.spinTicks = result.burstRemaining = 0; return result; }
-  if (input.reload && !previousInput.reload && !result.reloadTicks && result.ammo < weapon.magazine && result.reserve > 0) {
+  if (input.reload && !previousInput.reload && !result.reloadTicks && weaponCanReload(weapon, result.ammo, result.reserve)) {
     result.durationTicks = weaponReloadDuration(weapon, result.ammo); result.reloadTicks = result.durationTicks;
     result.reloadStarted = true; result.burstRemaining = result.spinTicks = 0;
   }

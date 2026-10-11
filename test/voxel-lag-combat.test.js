@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { ADS, addInventoryLoot, combatStep, createCombatPlayer, createState, emptyInput, KNIFE, MELEE, pickupCombatLoot, WEAPONS } from '../public/voxel-engine.js';
 import { weaponDamage } from '../public/voxel-weapons.js';
+import { weaponChambers, weaponReloadDuration } from '../public/voxel-fire-modes.js';
 import { enableLagCompensation, setShotViewTick } from '../public/voxel-lag-compensation.js';
 import { selectInventorySlot } from '../public/voxel-inventory.js';
 
@@ -30,7 +31,7 @@ function runPair(states, buttons, metadata = false, compare = true, map = arena)
 for (const weapon of Object.values(WEAPONS)) test(`${weapon.id}: unenabled practice and enabled server without metadata execute identical real combat`, () => {
   const initial = combatState(weapon.id, { hp: 2000, maxHp: 2000 }), states = pair(initial);
   const perPress = ['semi', 'pump', 'bolt', 'burst'].includes(weapon.mode);
-  for (let tick = 0; tick < Math.max(weapon.reloadTicks, weapon.emptyReloadTicks || 0) + 125; tick++) {
+  for (let tick = 0; tick < weaponReloadDuration(weapon, 0) + 125; tick++) {
     const fire = tick >= 30 && tick < 120 && (!perPress || (tick - 30) % (weapon.cooldown + 3) === 0);
     runPair(states, [input({ aim: true, fire, reload: tick === 120 }), input()]);
   }
@@ -40,7 +41,9 @@ for (const weapon of Object.values(WEAPONS)) test(`${weapon.id}: unenabled pract
   if (weapon.projectile) assert.ok(events.some(event => event.type === 'boltHit'), 'crossbow used a swept flying projectile');
   assert.ok(events.some(event => event.type === 'reloadComplete'), 'fixture completed the real reload timer');
   assert.ok(states.browser.players[0].reserve < initial.players[0].reserve, 'reload spent authoritative reserve ammunition');
-  assert.equal(states.browser.players[0].ammo, weapon.magazine);
+  // A tactical reload of a box-fed gun keeps its chambered round.
+  const reload = events.find(event => event.type === 'reload');
+  assert.equal(states.browser.players[0].ammo, weapon.magazine + (reload.tactical && weaponChambers(weapon) ? 1 : 0));
 });
 
 for (const metadata of [false, true]) test(`real grenade, heal and moving-target sword combat retain full state/event parity ${metadata ? 'with valid rewind metadata' : 'without metadata'}`, () => {

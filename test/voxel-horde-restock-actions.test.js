@@ -3,6 +3,7 @@ import test from 'node:test';
 import * as Horde from '../public/voxel-horde-engine.js';
 import { HEAL, WEAPONS, addInventoryLoot, resetHealing } from '../public/voxel-engine.js';
 import { createInventoryGun, refreshInventory, storeInventoryGun } from '../public/voxel-inventory.js';
+import { weaponReloadDuration } from '../public/voxel-fire-modes.js';
 
 function advance(state, ticks, inputs = []) { for (let tick = 0; tick < ticks; tick++) Horde.step(state, inputs); return state; }
 function restock({ capacity = 1, ids = [0] } = {}) {
@@ -66,8 +67,8 @@ test('an empty corpse weapon collected in restock can reload using its real rese
   Horde.step(state, [{ interact: true }]);
   assert.equal(state.loot.some(item => item.id === drop.id), false); assert.equal(player.weapon, 'pistol'); assert.equal(player.ammo, 0); assert.equal(player.reserve, 8);
   Horde.step(state); Horde.step(state, [{ reload: true }]);
-  assert.equal(player.reloadTicks, WEAPONS.pistol.reloadTicks); assert.equal(events(state, 'reload').length, 1);
-  advance(state, WEAPONS.pistol.reloadTicks - 1);
+  assert.equal(player.reloadTicks, weaponReloadDuration('pistol', 0)); assert.equal(events(state, 'reload').length, 1);
+  advance(state, weaponReloadDuration('pistol', 0) - 1);
   assert.equal(player.reloadTicks, 1); assert.equal(player.ammo, 0); assert.equal(player.reserve, 8);
   Horde.step(state);
   assert.equal(player.reloadTicks, 0); assert.equal(player.ammo, 8); assert.equal(player.reserve, 0); assert.equal(events(state, 'reloadComplete').length, 1);
@@ -90,13 +91,13 @@ test('a last-tick restock drink crosses into the next wave without losing its to
 test('a late restock reload continues into combat and only spends reserve when it finishes', () => {
   const state = restock(), player = depletedGun(state.players[0]);
   advance(state, state.phaseTicks - 2); Horde.step(state, [{ reload: true }]);
-  assert.equal(state.phase, 'intermission'); assert.equal(player.reloadTicks, WEAPONS.carbine.reloadTicks);
-  Horde.step(state, [{ reload: true }]); assert.equal(state.phase, 'fight'); assert.equal(player.reloadTicks, WEAPONS.carbine.reloadTicks - 1);
+  assert.equal(state.phase, 'intermission'); assert.equal(player.reloadTicks, weaponReloadDuration('carbine', 0));
+  Horde.step(state, [{ reload: true }]); assert.equal(state.phase, 'fight'); assert.equal(player.reloadTicks, weaponReloadDuration('carbine', 0) - 1);
   assert.ok(state.horde.inputFences[0].includes('reload'));
   // Prevent fresh rifts from distracting this reload boundary fixture; this
   // does not alter the held item or the mode's next-wave clock.
   state.horde.nextSpawnTick = Number.MAX_SAFE_INTEGER;
-  advance(state, WEAPONS.carbine.reloadTicks - 2, [{ reload: true }]);
+  advance(state, weaponReloadDuration('carbine', 0) - 2, [{ reload: true }]);
   assert.equal(player.reloadTicks, 1); assert.equal(player.ammo, 0); assert.equal(player.reserve, 11);
   Horde.step(state, [{ reload: true }]);
   assert.equal(player.reloadTicks, 0); assert.equal(player.ammo, 11); assert.equal(player.reserve, 0);
@@ -141,8 +142,8 @@ test('interrupting a restock drink or reload by equipment change loses neither p
 test('two nonadjacent co-op seats recover independently and cannot spend an absent survivor inventory', () => {
   const state = restock({ capacity: 3, ids: [0, 2] }), first = potion(state, 0), second = depletedGun(state.players[2]);
   const absent = JSON.stringify(state.players[1].inventory), inputs = [{ heal: true }, { heal: true, reload: true }, { reload: true }];
-  Horde.step(state, inputs); assert.equal(first.healTicks, HEAL.ticks); assert.equal(second.reloadTicks, WEAPONS.carbine.reloadTicks);
-  advance(state, WEAPONS.carbine.reloadTicks, inputs);
+  Horde.step(state, inputs); assert.equal(first.healTicks, HEAL.ticks); assert.equal(second.reloadTicks, weaponReloadDuration('carbine', 0));
+  advance(state, weaponReloadDuration('carbine', 0), inputs);
   assert.equal(first.hp, 195); assert.equal(first.potions, 1); assert.equal(second.ammo, 11); assert.equal(second.reserve, 0);
   assert.equal(events(state, 'healComplete', 0).length, 1); assert.equal(events(state, 'reloadComplete', 2).length, 1);
   assert.equal(JSON.stringify(state.players[1].inventory), absent); assert.equal(state.phase, 'intermission');

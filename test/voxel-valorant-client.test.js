@@ -36,7 +36,7 @@ test('comparison explains alternate attacks, exact firing rates and the empty Ou
   assert.match(weaponComparison('bulldog').handling, /ADS 3-shot bursts/);
   assert.equal(weaponComparison('phantom').rate, '11 shots/s');
   assert.equal(weaponComparison('classic').rate, '6.75 shots/s · per press');
-  assert.equal(weaponComparison('outlaw').reloadDetail, '2.30 s partial · 3.80 s empty');
+  assert.equal(weaponComparison('outlaw').reloadDetail, '2.30 s tactical · 3.80 s empty');
   assert.match(weaponComparison('odin').rate, /12.*15.6/);
   assert.match(weaponComparison('crossbow').handling, /48 m\/s.*9 m\/s²/);
   assert.match(weaponComparison('dualsmg').handling, /Alternating barrels.*close-range spread/);

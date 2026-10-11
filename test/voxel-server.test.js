@@ -338,7 +338,7 @@ test('Voxel starter loadouts and finite weapon actions are authoritative through
   await inputFrames(game, room, seats[0], { reload: true }, 1);
   assert.equal(actor.reloadTicks, Voxel.WEAPONS.pistol.reloadTicks);
   await inputFrames(game, room, seats[0], { reload: true }, Voxel.WEAPONS.pistol.reloadTicks);
-  assert.equal(actor.reloadTicks, 0); assert.equal(actor.ammo, Voxel.WEAPONS.pistol.magazine); assert.equal(actor.reserve, reserve - 1);
+  assert.equal(actor.reloadTicks, 0); assert.equal(actor.ammo, Voxel.WEAPONS.pistol.magazine + 1, 'a tactical reload keeps the chambered round'); assert.equal(actor.reserve, reserve - 2);
   assert.equal(room.state.events.filter(event => event.type === 'reload' && event.playerId === 0).length, 1);
   assert.equal(room.state.events.filter(event => event.type === 'reloadComplete' && event.playerId === 0).length, 1);
   await inputFrames(game, room, seats[0], { grenade: true }, 30);

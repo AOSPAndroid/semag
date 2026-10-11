@@ -33,7 +33,7 @@ test('real accepted reload ticks drive removal, an empty receiver, insertion, se
   assert.ok(weaponReloadPose('carbine', .66).magazineDrop < .004);
   assert.ok(weaponReloadPose('carbine', .715).seat > .99);
   assert.ok(weaponReloadPose('carbine', .83).bolt > .99);
-  assert.equal(player.reloadTicks, 0); assert.equal(player.ammo, WEAPONS.carbine.magazine);
+  assert.equal(player.reloadTicks, 0); assert.equal(player.ammo, WEAPONS.carbine.magazine + 1, 'a tactical reload keeps the chambered round');
 });
 
 test('shell, cylinder, crossbow, belt and paired reloads move their actual distinct mechanical parts', () => {

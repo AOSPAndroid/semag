@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import * as game from '../public/voxel-engine.js';
 import { navigationCanOccupy, navigationPath } from '../public/voxel-navigation.js';
+import { weaponReloadDuration } from '../public/voxel-fire-modes.js';
 const input = (buttons = {}, player = null) => ({ ...game.emptyInput(player || {}), ...buttons });
 const neutral = state => state.players.map(f => input({}, f));
 function advance(state, ticks, inputs = null) { for (let i = 0; i < ticks; i++) game.step(state, inputs || neutral(state)); }
@@ -111,8 +112,8 @@ test('SMG damage falls at long range without inventing hits beyond weapon range'
 test('finite magazines and reload conserve the actual reserve, including partial refills', () => {
   const state = lane(fighting()), f = state.players[0]; f.ammo = 1; f.reserve = 5;
   shot(state, 0, { yaw: Math.PI / 2 }); advance(state, 200, [input({ fire: true, yaw: Math.PI / 2 }), input({}, state.players[1])]); assert.equal(f.ammo, 0); assert.equal(f.shots, 1); assert.equal(f.reserve, 5);
-  advance(state, 1); advance(state, 1, [input({ reload: true }, f), input({}, state.players[1])]); assert.equal(f.reloadTicks, game.WEAPONS.carbine.reloadTicks);
-  advance(state, game.WEAPONS.carbine.reloadTicks - 1); assert.equal(f.ammo, 0); advance(state, 1); assert.equal(f.ammo, 5); assert.equal(f.reserve, 0);
+  advance(state, 1); advance(state, 1, [input({ reload: true }, f), input({}, state.players[1])]); assert.equal(f.reloadTicks, weaponReloadDuration('carbine', 0), 'an empty gun takes its longer empty reload');
+  advance(state, weaponReloadDuration('carbine', 0) - 1); assert.equal(f.ammo, 0); advance(state, 1); assert.equal(f.ammo, 5); assert.equal(f.reserve, 0);
   advance(state, 1, [input({ reload: true }, f), input({}, state.players[1])]); assert.equal(f.reloadTicks, 0);
 });
 test('movement is normalised, yaw relative and precision walking is slower', () => {

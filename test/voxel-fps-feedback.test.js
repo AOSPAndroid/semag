@@ -119,7 +119,7 @@ test('real accepted magazine reload produces each shared mechanical phase once a
       while (nextFrame >= 1) { nextFrame--; const before = structuredClone(player); feedback.observe(player, { tick: state.tick }); assert.deepEqual(player, before); }
     }
     assert.deepEqual(sound.calls.map(call => call.phase), ['remove', 'insert', 'seat', 'bolt']);
-    assert.equal(feedback.inspect().reports, 4); assert.equal(player.ammo, WEAPONS.carbine.magazine);
+    assert.equal(feedback.inspect().reports, 4); assert.equal(player.ammo, WEAPONS.carbine.magazine + 1, 'a tactical reload keeps the chambered round');
   }
 });
 

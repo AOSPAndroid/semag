@@ -218,7 +218,7 @@ test('all catalog weapons replay identically with finite bounded six-player stat
       assert.ok(player.x >= bounds.minX + player.radius - 1e-6 && player.x <= bounds.maxX - player.radius + 1e-6);
       assert.ok(player.z >= bounds.minZ + player.radius - 1e-6 && player.z <= bounds.maxZ - player.radius + 1e-6);
       assert.ok(player.y >= 0 && player.hp >= 0 && player.hp <= player.maxHp);
-      assert.ok(Number.isInteger(player.ammo) && player.ammo >= 0 && player.ammo <= weapon.magazine);
+      assert.ok(Number.isInteger(player.ammo) && player.ammo >= 0 && player.ammo <= weapon.magazine + 1, 'at most one chambered round beyond the magazine');
       assert.ok(Number.isInteger(player.reserve) && player.reserve >= 0 && player.reserve <= weapon.reserve);
       assert.ok(player.spinTicks >= 0 && player.spinTicks <= (weapon.spinupTicks || 0));
     }
