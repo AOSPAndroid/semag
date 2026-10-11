@@ -78,8 +78,8 @@ function climb(player, map, route) {
   }
 }
 
-test('Royale has nine distinct immutable authored arenas with bounded geometry and spread spawn choices', () => {
-  assert.deepEqual(MAP_IDS, ['forest', 'maze', 'desert', 'paris', 'snow', 'sewers', 'trading', 'market', 'lockdown']);
+test('Royale has ten distinct immutable authored arenas with bounded geometry and spread spawn choices', () => {
+  assert.deepEqual(MAP_IDS, ['forest', 'maze', 'desert', 'paris', 'snow', 'sewers', 'trading', 'market', 'lockdown', 'medieval']);
   assert.ok(Object.isFrozen(MAPS) && Object.isFrozen(MAP_IDS));
   const skies = new Set(), floors = new Set(), shapes = new Set();
   for (const map of Object.values(MAPS)) {
@@ -87,9 +87,9 @@ test('Royale has nine distinct immutable authored arenas with bounded geometry a
     assert.equal(map.theme, map.id);
     assert.deepEqual(map.sites, []);
     assert.ok(map.name && map.description);
-    const reserve = ['forest', 'maze', 'desert'].includes(map.id), edge = reserve ? 48 : 32;
+    const reserve = ['forest', 'maze', 'desert', 'medieval'].includes(map.id), edge = reserve ? 48 : 32;
     assert.deepEqual(map.bounds, { minX: -edge, maxX: edge, minZ: -edge, maxZ: edge });
-    assert.ok(map.colliders.length <= (reserve ? 200 : ['snow', 'sewers', 'trading', 'market', 'lockdown'].includes(map.id) ? 180 : 160), `${map.id} collision budget`);
+    assert.ok(map.colliders.length <= (map.id === 'medieval' ? 160 : reserve ? 200 : ['snow', 'sewers', 'trading', 'market', 'lockdown'].includes(map.id) ? 180 : 160), `${map.id} collision budget`);
     assert.ok(Object.isFrozen(map.colliders) && Object.isFrozen(map.spawnPoints) && Object.isFrozen(map.lootPoints));
     assert.equal(new Set(map.colliders.map(box => box.id)).size, map.colliders.length);
     for (const box of map.colliders) {

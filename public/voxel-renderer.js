@@ -15,6 +15,7 @@ import { createSlashImpactPresenter } from './voxel-slash-effects.js';
 import { MONSTER_VARIANT_ART, appendMonsterVariant } from './voxel-monster-variants.js';
 import { MONSTER_SPECIAL_RULES } from './voxel-monster-specials.js';
 import { monsterLocomotionPose, monsterGaitCycleMetres, appendMonsterLimb } from './voxel-monster-animation.js';
+import { MAP_EXPANSION_ART, MAP_EXPANSION_ATMOSPHERE, appendVoxelMapExpansionCollider, appendVoxelMapExpansionFloor, appendVoxelMapExpansionDecoration, appendVoxelMapExpansionFloors } from './voxel-map-expansion-art.js';
 
 // All solid world surfaces come directly from the engine's minimum-corner
 // colliders. Decoration is either painted on those surfaces or outside bounds.
@@ -49,6 +50,7 @@ const ATMOSPHERE = Object.freeze({
   lockdown: { sun: [.20, .96, -.18], direct: [.29, .26, .20], ambient: [.58, .61, .65], top: '#263a49', horizon: '#777164', sunColor: '#ffc876' },
   trading: { sun: [-.30, .91, .24], direct: [.51, .48, .43], ambient: [.66, .65, .63], top: '#aebbc4', horizon: '#e5e2d9', sunColor: '#fff5df' },
   dojo: { sun: [-.37, .82, .43], direct: [.67, .57, .44], ambient: [.51, .57, .59], top: '#7ea4b0', horizon: '#ecdbc4', sunColor: '#ffebbc' },
+  ...MAP_EXPANSION_ATMOSPHERE,
 });
 const ART = Object.freeze({
   courtyard: { paving: '#d7c7aa', accent: '#cc9d76', skyline: '#748b90', cloud: '#f4dcc0', tile: 2.5 },
@@ -67,6 +69,7 @@ const ART = Object.freeze({
   lockdown: { paving: '#686765', accent: '#d2a063', skyline: '#485664', cloud: '#9ba4a9', tile: 3.2 },
   trading: { paving: '#858a89', accent: '#4787a0', skyline: '#738ca3', cloud: '#edf2f6', tile: 1.6 },
   dojo: { paving: '#798777', accent: '#bfa67b', skyline: '#738f82', cloud: '#f0e4d2', tile: 2 },
+  ...MAP_EXPANSION_ART,
 });
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const finite = (value, fallback = 0) => Number.isFinite(value) ? value : fallback;
@@ -1356,6 +1359,7 @@ function paintCloseCombatCollider(mesh, collider, theme) {
 }
 
 function paintCollider(mesh, collider, theme) {
+  if (appendVoxelMapExpansionCollider(mesh, collider, theme)) return;
   if (theme === 'market' || theme === 'lockdown') return paintCloseCombatCollider(mesh, collider, theme);
   if (theme === 'paris') return paintParisCollider(mesh, collider);
   if (['snow', 'sewers', 'trading'].includes(theme)) return paintExpansionCollider(mesh, collider, theme);
@@ -1511,12 +1515,12 @@ function paintCollider(mesh, collider, theme) {
   }
 }
 
-function floorLetter(mesh, letter, x, z, size, color) {
+function floorLetter(mesh, letter, x, z, size, color, y = .014) {
   const rows = GLYPHS[letter] || GLYPHS.A;
   const pixel = size / 7;
   for (let row = 0; row < rows.length; row++) {
     for (let column = 0; column < rows[row].length; column++) {
-      if (rows[row][column] === '1') mesh.floor(x + (column - 2.5) * pixel, z + (row - 3.5) * pixel, pixel * .87, pixel * .87, color, .014);
+      if (rows[row][column] === '1') mesh.floor(x + (column - 2.5) * pixel, z + (row - 3.5) * pixel, pixel * .87, pixel * .87, color, y);
     }
   }
 }
@@ -1535,6 +1539,7 @@ function routePaint(mesh, map) {
   const byId = new Map((map.colliders || []).map(collider => [collider.id, collider]));
   const trimmed = new Set();
   const color = mix(rgba('#e1c88e'), rgba((ART[map.theme || map.id] || ART.courtyard).accent), .23);
+  const routeOffset = Object.hasOwn(MAP_EXPANSION_ART, map.theme) ? .020 : .004;
   for (const route of map.routes || []) {
     const steps = route.steps || [], start = route.start, first = steps[0];
     if (start && first && [start.x, start.z, first.x, first.z].every(Number.isFinite)) {
@@ -1550,17 +1555,17 @@ function routePaint(mesh, map) {
         // or a lip that would alter the jump or its collision silhouette.
         const inset = .065, edge = .027;
         if (collider.w > .20 && collider.d > .20) {
-          mesh.floor(collider.x + inset, collider.z + inset, collider.w - inset * 2, edge, color, top + .004);
-          mesh.floor(collider.x + inset, collider.z + collider.d - inset - edge, collider.w - inset * 2, edge, color, top + .004);
-          mesh.floor(collider.x + inset, collider.z + inset, edge, collider.d - inset * 2, color, top + .004);
-          mesh.floor(collider.x + collider.w - inset - edge, collider.z + inset, edge, collider.d - inset * 2, color, top + .004);
+          mesh.floor(collider.x + inset, collider.z + inset, collider.w - inset * 2, edge, color, top + routeOffset);
+          mesh.floor(collider.x + inset, collider.z + collider.d - inset - edge, collider.w - inset * 2, edge, color, top + routeOffset);
+          mesh.floor(collider.x + inset, collider.z + inset, edge, collider.d - inset * 2, color, top + routeOffset);
+          mesh.floor(collider.x + collider.w - inset - edge, collider.z + inset, edge, collider.d - inset * 2, color, top + routeOffset);
         }
       }
       const next = steps[i + 1];
       if (collider.w >= .75 && collider.d >= .75) {
         const x = clamp(step.x, collider.x + .36, collider.x + collider.w - .36);
         const z = clamp(step.z, collider.z + .36, collider.z + collider.d - .36);
-        floorChevron(mesh, x, z, next ? Math.atan2(next.x - x, z - next.z) : route.side === 'north' ? Math.PI : 0, color, top + .016);
+        floorChevron(mesh, x, z, next ? Math.atan2(next.x - x, z - next.z) : route.side === 'north' ? Math.PI : 0, color, top + Math.max(.016, routeOffset));
       }
     }
   }
@@ -1668,7 +1673,10 @@ function landmarkArt(mesh, map, theme) {
   }
   // Decorations outside expansion/Paris already have a matching world floor.
   // Painting these flat region labels never introduces uncollidable cover.
+  if (theme === 'medieval') appendVoxelMapExpansionFloors(mesh, map);
   if (!['snow', 'sewers', 'trading', 'paris'].includes(theme)) for (const decoration of map.decorations || []) {
+    if (theme === 'medieval' && decoration.kind !== 'castle-banner') continue;
+    if (appendVoxelMapExpansionDecoration(mesh, map, decoration)) continue;
     const { x, z, w, d } = decoration;
     if (![x, z, w, d].every(Number.isFinite) || Math.min(w, d) <= 0) continue;
     mesh.floor(x, z, w, d, decoration.color || (ART[theme] || ART.courtyard).accent, finite(decoration.y, 0) + .008);
@@ -1679,10 +1687,12 @@ function landmarkArt(mesh, map, theme) {
 }
 
 function dojoMapPaint(mesh, map) {
-  for (const decoration of map.decorations || []) {
+  const art = ART[map.theme] || ART.dojo;
+  if (!appendVoxelMapExpansionFloors(mesh, map)) for (const decoration of map.decorations || []) {
     const { x, z, w, d, kind } = decoration, y = finite(decoration.y) + .008;
     if (![x, z, w, d].every(Number.isFinite) || w <= 0 || d <= 0) continue;
-    mesh.floor(x, z, w, d, decoration.color || ART.dojo.accent, y);
+    mesh.floor(x, z, w, d, decoration.color || art.accent, y);
+    if (appendVoxelMapExpansionFloor(mesh, decoration, map.theme, y)) continue;
     if (kind === 'cedar-floor') for (let xx = .02; xx < w; xx += .42) mesh.floor(x + xx, z + .015, .013, d - .03, '#755a40', y + .001);
     if (kind === 'dojo-tatami') {
       for (let zz = .08; zz < d - .02; zz += .11) mesh.floor(x + .02, z + zz, w - .04, .012, '#999768', y + .001);
@@ -1698,20 +1708,30 @@ function dojoMapPaint(mesh, map) {
   for (const station of (map.stations || []).slice(0, 4)) {
     const bench = map.colliders.find(collider => collider.id === station.colliderId);
     if (!bench || typeof station.label !== 'string') continue;
-    const label = station.label.slice(0, 10), height = .135, units = [...label].reduce((sum, letter) => sum + (GLYPHS[letter]?.[0]?.length || 2) + 1, 0) - 1;
-    const left = (bench.w - units * height / 7) / 2;
-    wallPatch(mesh, bench, 'north', left - .045, .022, units * height / 7 + .09, .165, '#344a40', .008);
-    wallText(mesh, bench, 'north', label, left, .036, height, '#f2deb3', .011);
+    const label = station.label.slice(0, 10), units = [...label].reduce((sum, letter) => sum + (GLYPHS[letter]?.[0]?.length || 2) + 1, 0) - 1;
+    const candidates = [
+      { face: 'north', gap: Math.hypot(station.z - bench.z, station.x - clamp(station.x, bench.x, bench.x + bench.w)), width: bench.w },
+      { face: 'south', gap: Math.hypot(station.z - bench.z - bench.d, station.x - clamp(station.x, bench.x, bench.x + bench.w)), width: bench.w },
+      { face: 'west', gap: Math.hypot(station.x - bench.x, station.z - clamp(station.z, bench.z, bench.z + bench.d)), width: bench.d },
+      { face: 'east', gap: Math.hypot(station.x - bench.x - bench.w, station.z - clamp(station.z, bench.z, bench.z + bench.d)), width: bench.d },
+    ];
+    const { face, width } = candidates.sort((a, b) => a.gap - b.gap)[0];
+    const height = Math.min(.135, bench.h - .04, (width - .12) * 7 / Math.max(1, units));
+    if (height < .035) continue;
+    const textWidth = units * height / 7, left = (width - textWidth) / 2, bottom = (bench.h - height) / 2;
+    wallPatch(mesh, bench, face, left - .025, bottom - .014, textWidth + .05, height + .028, '#344a40', .008);
+    wallText(mesh, bench, face, label, left, bottom, height, '#f2deb3', Object.hasOwn(MAP_EXPANSION_ART, map.theme) ? .016 : .011);
   }
-  for (const lane of (map.rangeLanes || []).slice(0, 4)) {
-    const label = lane.id === 'blade-pad' ? 'BLADE' : `${Math.round(lane.distance)}M`, size = .42;
+  for (const lane of (map.rangeLanes || []).slice(0, 8)) {
+    const label = /blade|melee/.test(lane.id || '') ? 'BLADE' : `${Math.round(lane.distance)}M`, size = .42;
     const origin = lane.origin;
     if (!origin || ![origin.x, origin.z].every(Number.isFinite)) continue;
-    for (let index = 0; index < label.length; index++) floorLetter(mesh, label[index], origin.x + (index - (label.length - 1) / 2) * .39, origin.z + .58, size, '#eed5a5');
+    for (let index = 0; index < label.length; index++) floorLetter(mesh, label[index], origin.x + (index - (label.length - 1) / 2) * .39, origin.z + .58, size, '#eed5a5', finite(origin.y) + (Object.hasOwn(MAP_EXPANSION_ART, map.theme) ? .016 : .014));
   }
   // Petals remain flat markings near physical cherry trees; none pretend to
   // be cover or add a continuously moving particle emitter to the range.
-  for (const tree of map.colliders.filter(collider => /dojo-cherry.*trunk/.test(collider.id))) {
+  const canopies = map.colliders.filter(collider => collider.material === 'cherry-foliage');
+  for (const tree of map.colliders.filter(collider => collider.material === 'bark' && canopies.some(canopy => collider.x >= canopy.x && collider.x + collider.w <= canopy.x + canopy.w && collider.z >= canopy.z && collider.z + collider.d <= canopy.z + canopy.d))) {
     for (let index = 0; index < 14; index++) {
       const seed = hash(`${tree.id}:${index}`), px = tree.x + tree.w / 2 + Math.sin(seed % 97) * 1.8, pz = tree.z + tree.d / 2 + Math.cos(seed % 83) * 1.8;
       mesh.floor(px, pz, .075 + seed % 3 * .014, .045, index % 3 ? '#d69da8' : '#ebc0b8', .018);
@@ -1720,7 +1740,7 @@ function dojoMapPaint(mesh, map) {
 }
 
 function mapPaint(mesh, map, theme) {
-  if (theme === 'dojo') { dojoMapPaint(mesh, map); return; }
+  if (map.mode === 'dojo') { dojoMapPaint(mesh, map); routePaint(mesh, map); return; }
   const find = id => map.colliders.find(collider => collider.id === id);
   const siteColumn = id => {
     const side = id === 'A' ? 'west' : 'east';
@@ -2008,15 +2028,17 @@ export function mapMeshes(map) {
   const floorColor = mix(rgba(map.floorColor || '#929b8b'), rgba(art.paving), .36);
   const { minX, maxX, minZ, maxZ } = bounds;
   const width = maxX - minX, depth = maxZ - minZ;
+  const expansion = Object.hasOwn(MAP_EXPANSION_ART, theme);
   opaque.floor(minX - 35, minZ - 35, width + 70, depth + 70, shade(floorColor, .72), -.025);
-  opaque.floor(minX, minZ, width, depth, floorColor, 0);
+  if (!expansion) opaque.floor(minX, minZ, width, depth, floorColor, 0);
   // Repeating paving seams are flat markings, so visible traversable ground is
   // identical to collision ground. A single GPU mesh serves the entire map.
   const tile = art.tile;
   for (let x = minX; x < maxX; x += tile) for (let z = minZ; z < maxZ; z += tile) {
     const seed = hash(`${map.id}:${x}:${z}`), lane = theme === 'courtyard' && Math.abs(Math.abs(x + tile / 2) - 11) < 2;
     const tint = shade(floorColor, .94 + seed % 5 * .022);
-    opaque.floor(x + .025, z + .025, Math.min(tile - .05, maxX - x - .025), Math.min(tile - .05, maxZ - z - .025), lane ? mix(tint, rgba('#94a09a'), .25) : tint, .001);
+    if (expansion) opaque.floor(x, z, Math.min(tile, maxX - x), Math.min(tile, maxZ - z), tint, 0);
+    else opaque.floor(x + .025, z + .025, Math.min(tile - .05, maxX - x - .025), Math.min(tile - .05, maxZ - z - .025), lane ? mix(tint, rgba('#94a09a'), .25) : tint, .001);
     if (theme === 'depot' && seed % 4 === 0) opaque.floor(x + .27, z + .57, tile * .49, tile * .44, shade(floorColor, .89), .002);
     if (theme === 'forest') {
       opaque.floor(x + .36 + seed % 13 / 10, z + .28 + seed % 17 / 10, .42, .14, shade(floorColor, .78), .002);
@@ -2026,6 +2048,7 @@ export function mapMeshes(map) {
     if (theme === 'maze' && seed % 3 === 0) opaque.floor(x + .35, z + .42, .81, .31, '#728b71', .002);
   }
   const atmosphere = ATMOSPHERE[theme] || ATMOSPHERE.courtyard;
+  const shadowFloor = map.mode === 'dojo' ? .020 : theme === 'medieval' ? .024 : .005;
   for (const collider of map.colliders || []) {
     paintCollider(opaque, collider, theme);
     if (collider.h < .15 || collider.overhead) continue;
@@ -2033,9 +2056,9 @@ export function mapMeshes(map) {
     for (let layer = 3; layer >= 0; layer--) {
       const soft = .035 + layer * .075;
       const corners = [[collider.x - soft, collider.z - soft], [collider.x + collider.w + soft, collider.z - soft], [collider.x + collider.w + soft, collider.z + collider.d + soft], [collider.x - soft, collider.z + collider.d + soft]];
-      shadows.floorPolygon([...corners, ...corners.map(point => [point[0] + dx, point[1] + dz])], [.075, .095, .13, .062], (theme === 'dojo' ? .020 : .005) + (3 - layer) * .0003);
+      shadows.floorPolygon([...corners, ...corners.map(point => [point[0] + dx, point[1] + dz])], [.075, .095, .13, .062], shadowFloor + (3 - layer) * .0003);
     }
-    shadows.floor(collider.x - .08, collider.z - .08, collider.w + .16, collider.d + .16, [.055, .07, .08, .22], theme === 'dojo' ? .022 : .007);
+    shadows.floor(collider.x - .08, collider.z - .08, collider.w + .16, collider.d + .16, [.055, .07, .08, .22], shadowFloor + .002);
   }
   mapPaint(opaque, map, theme);
   for (const site of map.sites || []) {
@@ -2060,6 +2083,19 @@ export function mapMeshes(map) {
       const c = shade(skylineColor, .80 + (seed % 4) * .07);
       if (theme === 'dojo') {
         for (let tier = 0; tier < 3; tier++) opaque.box(x - .3 + tier * .5, -.10 + tier * 1.35, z - .3 + tier * .5, 6.1 - tier, 1.6, 6.1 - tier, shade(c, .90 + tier * .05));
+        continue;
+      }
+      if (theme === 'dojo-iron') {
+        opaque.box(x, -.1, z, w, h * .66, d, c);
+        opaque.box(x + .12, h * .66, z + .12, w - .24, .25, d - .24, '#83959c');
+        if (seed % 3 === 0) opaque.box(x + w * .36, h * .66, z + d * .42, .62, h * .48, .62, '#566c79');
+        continue;
+      }
+      if (theme === 'medieval') {
+        // Distant crenellated silhouettes stay outside the playable perimeter.
+        opaque.box(x, -.1, z, w, h * .67, d, c);
+        opaque.box(x - .13, h * .67 - .15, z - .13, w + .26, .23, d + .26, shade(c, 1.07));
+        for (const xx of [.04, w - .75]) for (const zz of [.04, d - .75]) opaque.box(x + xx, h * .67 + .08, z + zz, .71, .60, .71, shade(c, 1.04));
         continue;
       }
       if (theme === 'forest' || theme === 'snow') {
@@ -2140,7 +2176,7 @@ export function mapMeshes(map) {
       }
     }
   };
-  const indoor = ['sewers', 'trading', 'market', 'lockdown'].includes(theme);
+  const indoor = ['sewers', 'trading', 'market', 'lockdown', 'dojo-lantern'].includes(theme);
   if (!indoor) {
     backdrop('z', minZ - 11, minX - 8, width + 16);
     backdrop('z', maxZ + 7, minX - 8, width + 16);

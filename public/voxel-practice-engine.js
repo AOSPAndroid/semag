@@ -4,7 +4,7 @@ import * as Royale from './voxel-royale-engine.js';
 import { WEAPONS } from './voxel-weapons.js';
 import { MELEE_WEAPONS, resetMeleeDefense, clearMeleeComboContinuation } from './voxel-melee.js';
 import { setInventoryMeleeLoadout, selectInventorySlot, inventoryCanTake } from './voxel-inventory.js';
-import { DOJO_MAP } from './voxel-dojo-map.js';
+import { DOJO_MAPS } from './voxel-dojo-maps.js';
 import { initializeDojo, dojoTargetInput, processDojoActions, advanceDojo, findDojoStationLoot, DOJO_ACTIONS } from './voxel-dojo-engine.js';
 
 export { TICK_RATE, emptyInput };
@@ -30,7 +30,7 @@ function normalize(options = {}) {
   const requestedGame = options.game ?? 'voxel', game = Object.hasOwn(alias, requestedGame) ? alias[requestedGame] : null;
   if (!game) throw new RangeError('Choose Breach or Royale practice.');
   const mode = options.mode ?? 'combat';
-  const maps = game === 'voxel' ? mode === 'dojo' ? { dojo: DOJO_MAP } : BREACH_MAPS : Royale.MAPS;
+  const maps = game === 'voxel' ? mode === 'dojo' ? DOJO_MAPS : BREACH_MAPS : Royale.MAPS;
   const mapId = options.mapId ?? (mode === 'dojo' ? 'dojo' : game === 'voxel' ? 'courtyard' : 'forest');
   const bots = options.bots ?? 3, weapon = options.weapon ?? 'carbine', difficulty = options.difficulty ?? 'regular';
   const melee = options.melee ?? 'knife';
@@ -138,6 +138,13 @@ function spawnBreach(state, config) {
   const players = Array.from({ length: config.bots + 1 }, (_, id) => ({ ...createCombatPlayer(id, 1, id ? 'carbine' : config.weapon), team: id ? 1 : 0, bot: id > 0 }));
   Object.assign(players[0], localSpawn, { y: localSpawn.y || 0 });
   setInventoryMeleeLoadout(players[0], config.melee); players[0].meleeLoadout = config.melee;
+  if (config.mode === 'dojo') {
+    // Training actors use authored, supported poses, including upper floors.
+    for (let id = 1; id < players.length; id++) Object.assign(players[id], arena.targetSpawns[id - 1]);
+    for (const player of players) player.previousInput = emptyInput(player);
+    state.players = state.fighters = players; state.capacity = players.length; state.bomb = null; state.maxRounds = 1;
+    return;
+  }
   const candidates = [...arena.spawns[1], ...navigationFor(arena).nodes.slice().sort((a, b) => (a.x - arena.spawns[1][0].x) ** 2 + (a.z - arena.spawns[1][0].z) ** 2 - ((b.x - arena.spawns[1][0].x) ** 2 + (b.z - arena.spawns[1][0].z) ** 2))];
   // A close-combat drill starts nearby on real, connected ground. These are
   // setup spawns; every subsequent approach uses normal physical movement.
@@ -158,7 +165,7 @@ function spawnBreach(state, config) {
 }
 export function createPractice(options = {}) {
   const config = normalize(options), state = config.game === 'voxel' ? createBreachState({ mapId: config.mode === 'dojo' ? 'courtyard' : config.mapId }) : Royale.createSoloState({ mapId: config.mapId, capacity: config.bots + 1, seed: config.seed });
-  state.map = config.mode === 'dojo' ? DOJO_MAP : (config.game === 'voxel' ? BREACH_MAPS : Royale.MAPS)[config.mapId];
+  state.map = (config.mode === 'dojo' ? DOJO_MAPS : config.game === 'voxel' ? BREACH_MAPS : Royale.MAPS)[config.mapId];
   // Build static navigation while the setup screen is visible, before live play.
   navigationFor(state.map);
   state.practice = { config, seed: config.seed, randomState: config.seed || 0x9e3779b9, sessionId: 0, elapsedTicks: 0, brains: [], stats: { hits: 0, headshotKills: 0, damageTaken: 0, lastEventId: 0, lastShotHitId: -1, ...(config.mode === 'blades' ? { bladeSwings: 0, bladeHitSwings: 0, lastHitSwing: null } : {}) }, result: null, pausedPhase: null, inputFence: [] };

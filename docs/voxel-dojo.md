@@ -1,8 +1,14 @@
 # Voxel Dojo
 
-Open Voxel Dojo in the library, then press **Enter dojo**. The session waits at setup until you start. WASD, ZQSD and arrow movement all work with the usual FPS controls.
+Open Voxel Dojo in the library, choose an arena, then press **Enter dojo**. The session waits at setup until you start. WASD, ZQSD and arrow movement all work with the usual FPS controls. Press **P** to pause, restart the selected arena or return to setup and choose another one.
 
 Cedar Dojo has a sheltered equipment hall, a tatami melee pad, measured shooting lanes, a cover wall, cherry trees, stone lanterns and a torii backstop. The physical scenery blocks movement and shots where it should.
+
+**Lantern Hall** is an enclosed Japanese cedar hall with shoji screens, hanging lanterns, close-combat tatami, solid corner-peek cover and 10–20 metre lanes. Four 0.6 metre jumps lead to a 2.4 metre gallery. Its fifth target stands on the gallery, so you can compare level and downward shots without a floating target.
+
+**Iron Range** is an open industrial course with 20, 40 and 50 metre shooting lanes, steel baffles, low vaulting crates and an elevated 25 metre lane. Climb its four-step gantry to practice shooting from above. Its long lanes make recoil, scoped accuracy and range falloff easier to compare.
+
+Every arena has four ground-level stations, five supported target pads and a real route to its elevated lane. Moving targets stay in their own lateral lanes, including upstairs. Resetting targets and recovering from a training accident use the selected arena’s poses; restarting keeps your chosen map, weapon and blade.
 
 - **Gun rack:** choose any of the 36 guns in the range panel, then use the nearby rack with E. Test the actual firing mode, sights, magazine and reload.
 - **Blade rack:** try knife, sword, katana, axe or paired tonfas. Test confirmed-hit combo chains, left-click cuts, right-click knife thrusts or parries, and hits across small gaps.

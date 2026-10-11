@@ -1,5 +1,5 @@
 export const GAMES = {
-  'voxel-dojo': { title: 'Voxel Dojo', category: 'VOXEL / WEAPON SANDBOX', kind: 'solo', genre: 'action', theme: 'voxel', icon: '⌖', description: 'Explore the equipment. Test every weapon. Train at your own pace.', color: '#a88968' },
+  'voxel-dojo': { title: 'Voxel Dojo', category: 'VOXEL / WEAPON SANDBOX', kind: 'solo', genre: 'action', theme: 'voxel', icon: '⌖', description: 'Three training grounds. Test every weapon. Train at your own pace.', color: '#a88968' },
   'voxel-horde': { title: 'Voxel Last Stand', category: 'VOXEL / WAVE SURVIVAL FPS', kind: 'coop', supportsSolo: true, genre: 'action', theme: 'voxel', maxPlayers: 3, icon: '✹', description: 'Survive the swarm. Hunt for heals. Hold together against armed monsters.', color: '#967e69' },
   'voxel-wilds': { title: 'Voxel Wilds', category: 'VOXEL / BUILD & SURVIVE', kind: 'solo', genre: 'action', theme: 'voxel', icon: '▧', description: 'Mine the hillside. Build a shelter. Endure the night.', color: '#769274' },
   'voxel-breach': { supportsPractice: true, title: 'Voxel Breach', category: 'VOXEL / TACTICAL 3D FPS', kind: 'team', genre: 'action', theme: 'voxel', maxPlayers: 6, icon: '⌗', description: 'Hold an angle. Breach a site. Win together.', color: '#628b88' },

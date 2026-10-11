@@ -3,7 +3,8 @@ import { createCombatPlayer, emptyInput, emitCombatEvent, eyeHeight, traceShot, 
 import { WEAPONS } from './voxel-weapons.js';
 import { MELEE_WEAPONS, clearMeleeComboContinuation } from './voxel-melee.js';
 import { initializeInventory, storeInventoryGun, refreshInventory, inventoryCanTake } from './voxel-inventory.js';
-import { DOJO_MAP } from './voxel-dojo-map.js';
+import { getDojoMap } from './voxel-dojo-maps.js';
+import { navigationCanOccupy } from './voxel-navigation.js';
 
 export const DOJO_ACTIONS = Object.freeze(['dojoReset', 'dojoMotion', 'dojoWound', 'dojoRecover']);
 export const DOJO_RESPAWN_TICKS = TICK_RATE * 2;
@@ -11,10 +12,11 @@ const valid = (catalog, value) => typeof value === 'string' && Object.hasOwn(cat
 const distance = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 
 export function initializeDojo(state, config) {
-  state.gameId = 'voxel-dojo'; state.map = DOJO_MAP; state.mapId = DOJO_MAP.id; state.mapName = DOJO_MAP.name;
+  const map = getDojoMap(config.mapId);
+  state.gameId = 'voxel-dojo'; state.map = map; state.mapId = map.id; state.mapName = map.name;
   state.dojo = { moving: config.targetMotion === 'moving', selection: { weapon: config.weapon, melee: config.melee }, respawnAt: {}, lastEventId: 0, lastHit: null, headContacts: 0, bodyContacts: 0, resetCount: 0, recoveringAt: 0, previousActions: {} };
   for (let id = 1; id < state.players.length; id++) {
-    const player = state.players[id], spawn = DOJO_MAP.targetSpawns[id - 1];
+    const player = state.players[id], spawn = map.targetSpawns[id - 1];
     Object.assign(player, spawn, { y: spawn.y || 0, team: 1, trainingTarget: true, lifeId: 1 });
     initializeInventory(player, { knifeOnly: true }); player.previousInput = emptyInput(player);
   }
@@ -34,7 +36,7 @@ export function refreshDojoStations(state, input = {}) {
   if (valid(WEAPONS, input.dojoWeapon)) selection.weapon = input.dojoWeapon;
   if (valid(MELEE_WEAPONS, input.dojoBlade)) selection.melee = input.dojoBlade;
   state.loot = (state.loot || []).filter(item => !item.dojoStation || item.dojoStation !== 'gun' && item.dojoStation !== 'blade' || item.weapon === (item.dojoStation === 'gun' ? selection.weapon : selection.melee));
-  for (const station of DOJO_MAP.stations) {
+  for (const station of state.map.stations) {
     const items = state.loot.filter(item => item.dojoStation === station.id);
     if (station.id === 'gun' && !items.length) stationLoot(state, station, 'weapon', selection.weapon);
     if (station.id === 'blade' && !items.length) stationLoot(state, station, 'melee', selection.melee);
@@ -50,7 +52,7 @@ export function refreshDojoStations(state, input = {}) {
 export function findDojoStation(state, id = null) {
   const player = state.players[0];
   if (!state.dojo || !player.alive || state.phase !== 'fight') return null;
-  return DOJO_MAP.stations.find(station => {
+  return state.map.stations.find(station => {
     if (id && station.id !== id || distance(player, station) > station.radius || Math.abs(player.y - station.y) > .4) return false;
     const origin = { x: player.x, y: player.y + eyeHeight(player), z: player.z }, target = { x: station.x, y: station.y + 1.05, z: station.z };
     const dx = target.x - origin.x, dy = target.y - origin.y, dz = target.z - origin.z, length = Math.hypot(dx, dy, dz);
@@ -67,11 +69,17 @@ export function findDojoStationLoot(state) {
   return findNearbyLoot({ ...state, loot: items }, 0, state.map);
 }
 function freeTargetPose(state, id) {
-  const spawn = DOJO_MAP.targetSpawns[id - 1], radius = WORLD.radius;
+  const map = state.map, spawn = map.targetSpawns[id - 1], radius = WORLD.radius;
+  const bounds = map.targetMotionBounds?.[id - 1];
   for (const offset of [0, 1, -1, 2, -2]) {
     const point = { ...spawn, x: spawn.x + offset, y: spawn.y || 0 };
+    if (bounds && (point.x < bounds.minX || point.x > bounds.maxX || point.z < bounds.minZ || point.z > bounds.maxZ)) continue;
     if (state.players.some(peer => peer.alive && peer.id !== id && Math.abs(peer.y - point.y) < WORLD.standHeight && distance(peer, point) < radius + peer.radius + .1)) continue;
-    if (state.map.colliders.some(box => box.y < WORLD.standHeight && box.y + box.h > 0 && (point.x - Math.max(box.x, Math.min(box.x + box.w, point.x))) ** 2 + (point.z - Math.max(box.z, Math.min(box.z + box.d, point.z))) ** 2 < radius ** 2)) continue;
+    if (!navigationCanOccupy(map, point)) continue;
+    // Raised targets must land on a complete physical pad, with full headroom.
+    if (point.y > 0 && !map.colliders.some(box => Math.abs(box.y + box.h - point.y) < 1e-7
+      && point.x >= box.x + radius && point.x <= box.x + box.w - radius
+      && point.z >= box.z + radius && point.z <= box.z + box.d - radius)) continue;
     return point;
   }
   return null;
@@ -87,8 +95,10 @@ function respawnTarget(state, id) {
 export function dojoTargetInput(state, target) {
   const input = emptyInput(target);
   if (!state.dojo?.moving || !target.alive) return input;
-  const spawn = DOJO_MAP.targetSpawns[target.id - 1], phase = (state.tick + target.id * 96) % 480;
-  const goal = spawn.x + (phase < 240 ? 1.4 : -1.4), dx = goal - target.x, dz = spawn.z - target.z;
+  const spawn = state.map.targetSpawns[target.id - 1], phase = (state.tick + target.id * 96) % 480;
+  const bounds = state.map.targetMotionBounds?.[target.id - 1];
+  const goal = phase < 240 ? bounds?.maxX ?? spawn.x + 1.4 : bounds?.minX ?? spawn.x - 1.4;
+  const dx = goal - target.x, dz = spawn.z - target.z;
   const yaw = target.yaw, length = Math.hypot(dx, dz);
   if (length > .12) {
     const forward = (Math.sin(yaw) * dx - Math.cos(yaw) * dz) / length, right = (Math.cos(yaw) * dx + Math.sin(yaw) * dz) / length;
@@ -144,10 +154,11 @@ export function advanceDojo(state) {
   }
   if (!player.alive) {
     if (!dojo.recoveringAt) dojo.recoveringAt = state.tick + DOJO_RESPAWN_TICKS;
-    if (state.tick >= dojo.recoveringAt && !state.players.some(peer => peer.id > 0 && peer.alive && distance(peer, DOJO_MAP.playerSpawn) < .9)) {
+    const spawn = state.map.playerSpawn;
+    if (state.tick >= dojo.recoveringAt && !state.players.some(peer => peer.id > 0 && peer.alive && Math.abs(peer.y - spawn.y) < WORLD.standHeight && distance(peer, spawn) < .9)) {
       const fresh = createCombatPlayer(0, 1, dojo.selection.weapon);
       initializeInventory(fresh, { weapon: dojo.selection.weapon, melee: dojo.selection.melee });
-      Object.assign(fresh, DOJO_MAP.playerSpawn, { lifeId: (player.lifeId || 0) + 1, kills: player.kills, shots: player.shots, damageDealt: player.damageDealt, deaths: player.deaths, triggerBlocked: true });
+      Object.assign(fresh, spawn, { lifeId: (player.lifeId || 0) + 1, kills: player.kills, shots: player.shots, damageDealt: player.damageDealt, deaths: player.deaths, triggerBlocked: true });
       state.players[0] = fresh; state.fighters = state.players; dojo.recoveringAt = 0;
       state.practice.inputFence = ['fire', 'aim', 'jump', 'interact', 'grenade', 'heal', 'swap', 'reload'];
       emitCombatEvent(state, 'dojoPlayerReset', { playerId: 0, hp: fresh.hp });

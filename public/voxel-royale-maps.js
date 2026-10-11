@@ -3,6 +3,7 @@ import { createExpansionMap } from './voxel-expansion-maps.js';
 import { enhanceMapIdentity } from './voxel-map-landmarks.js';
 import { createCloseCombatMap } from './voxel-close-combat-maps.js';
 import { addCombatLayers } from './voxel-map-layers.js';
+import { createMedievalMap } from './voxel-medieval-map.js';
 
 /** Original, server-shared arenas for Voxel Royale. Every visible solid is a collider. */
 const box = (id, x, y, z, w, h, d, color, material = 'stone') => Object.freeze({ id, x, y, z, w, h, d, color, material });
@@ -299,5 +300,6 @@ export const MAPS = Object.freeze(Object.fromEntries(Object.entries({
   forest: enhanceMapIdentity(forest), maze: enhanceMapIdentity(maze), desert: enhanceMapIdentity(desert),
   paris: enhanceMapIdentity(createParisMap('royale')), snow: createExpansionMap('snow', 'royale'), sewers: createExpansionMap('sewers', 'royale'), trading: createExpansionMap('trading', 'royale'),
   market: createCloseCombatMap('market', 'royale'), lockdown: createCloseCombatMap('lockdown', 'royale'),
+  medieval: createMedievalMap('royale'),
 }).map(([id, arena]) => [id, expandRoyaleReserve(addCombatLayers(arena))])));
 export const MAP_IDS = Object.freeze(Object.keys(MAPS));

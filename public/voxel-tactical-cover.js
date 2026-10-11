@@ -7,6 +7,11 @@ const cluster = (id, name, x, z, color, material, kind, approachSide = 0) => fre
 // Each group is just 3.3 m wide; the outer/ground rotations stay open. The two
 // .48/.84 m tops offer a short hop sequence rather than another tall barricade.
 const LAYOUTS = freeze({
+  medieval: freeze([
+    cluster('supplies', 'Castle supply chests', -9, 14, '#97754d', 'castle-timber', 'castle-supplies'),
+    cluster('masonry', 'Broken castle masonry', 9, -14, '#aaa58f', 'castle-stone', 'castle-masonry'),
+    cluster('stables', 'Stable deliveries', -23, 13, '#8e714b', 'castle-timber', 'castle-supplies'),
+  ]),
   courtyard: freeze([
     cluster('garden', 'Garden masonry', -18, 7, '#a99c81', 'stone', 'garden-step'),
     cluster('arcade', 'Arcade deliveries', 6, -9, '#a98251', 'wood', 'supply-crate'),

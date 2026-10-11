@@ -23,7 +23,7 @@ import { createResultActionGate } from './practice-result-actions.js';
 import { createEndPresentation } from './voxel-end-presentation.js';
 import { createRoyaleRewardPresenter, createRoyaleRewardAudio, royaleBattleResult } from './voxel-royale-reward.js';
 import { createPracticeInputQueue } from './voxel-practice-input.js';
-import { DOJO_MAP } from './voxel-dojo-map.js';
+import { DOJO_MAPS } from './voxel-dojo-maps.js';
 import { DOJO_ACTIONS, findDojoStation, findDojoStationLoot } from './voxel-dojo-engine.js';
 import { inventoryLootPresentation, inventoryEventFeedback, inventorySwapPresentation, mountInventoryHotbar, mountWeaponWheel } from './voxel-inventory-ui.js';
 
@@ -76,7 +76,7 @@ export function bootPractice() {
   const app = $('practice-app'), canvas = $('practice-canvas'), shell = $('practice-shell');
   if (!app || !canvas) return null;
   const params = new URLSearchParams(location.search), game = params.get('game') === 'voxel-royale' ? 'voxel-royale' : 'voxel';
-  const royale = game === 'voxel-royale', dojo = !royale && params.get('mode') === 'dojo', maps = dojo ? { dojo: DOJO_MAP } : royale ? ROYALE_MAPS : BREACH_MAPS;
+  const royale = game === 'voxel-royale', dojo = !royale && params.get('mode') === 'dojo', maps = dojo ? DOJO_MAPS : royale ? ROYALE_MAPS : BREACH_MAPS;
   let renderer = null, graphicsError = '', destroyed = false, frameId = null, previousFrame = null, accumulator = 0;
   let state, aim = { yaw: 0, pitch: 0 }, previousPlayers = [], presentationPlayer = null, lastHudAt = -Infinity, lastPhase = '';
   const hitFeedback = createHitFeedback(), hitMotion = matchMedia('(prefers-reduced-motion: reduce)');
@@ -154,7 +154,7 @@ export function bootPractice() {
   }
   try { const target = new URL(params.get('return') || '/', location.origin); if (target.origin === location.origin && /^\/(?:voxel(?:-royale)?(?:\/|\.html|$)|$)/.test(target.pathname)) $('practice-online').href = target.href; } catch {}
   for (const [id, map] of Object.entries(maps)) { const option = document.createElement('option'); option.value = id; option.textContent = map.name; $('practice-map').append(option); }
-  $('practice-map').value = dojo ? 'dojo' : Object.hasOwn(maps, params.get('map')) ? params.get('map') : royale ? 'forest' : 'courtyard';
+  $('practice-map').value = Object.hasOwn(maps, params.get('map')) ? params.get('map') : dojo ? 'dojo' : royale ? 'forest' : 'courtyard';
   populateWeaponSelect($('practice-weapon'));
   for (const [id, blade] of Object.entries(MELEE_WEAPONS)) { const option = document.createElement('option'); option.value = id; option.textContent = blade.name; $('practice-blade').append(option); }
   $('practice-blade').value = dojo ? 'knife' : 'sword';
@@ -236,7 +236,7 @@ export function bootPractice() {
     setHidden($('practice-blade-field'), !blades && !dojo); setHidden($('practice-melee-field'), royale || blades || dojo);
     if (!royale) {
       setText('practice-setup-title', dojo ? 'Find your favourite weapon.' : blades ? 'Make every cut count.' : 'Make every shot count.');
-      setText('practice-setup-copy', dojo ? 'Explore a cedar dojo, try every gun and blade, and test grenades and healing. Targets reset after each kill. Enter when you’re ready.' : blades ? 'Train real cuts against approaching targets. They move and use solid cover, but never attack. Your chosen blade is equipped at Start.' : 'Practice movement and weapon handling against moving targets. Add return fire when you’re ready.');
+      setText('practice-setup-copy', dojo ? `${state.map.description} Try every gun and blade; targets reset after each kill. Enter when you’re ready.` : blades ? 'Train real cuts against approaching targets. They move and use solid cover, but never attack. Your chosen blade is equipped at Start.' : 'Practice movement and weapon handling against moving targets. Add return fire when you’re ready.');
     }
     setText('practice-weapon-note', royale ? 'Knife start · 200 health · weapons, ammo and healing are found in structures.' : WEAPONS[state.practice.config.weapon].description);
     if (!royale) renderWeaponDetails(detailCard, state.practice.config.weapon);
@@ -314,7 +314,8 @@ export function bootPractice() {
     setHidden($('dojo-tools-toggle'), !dojo || !activeSession); setDisabled($('dojo-tools-toggle'), phase !== 'fight'); setHidden($('dojo-contact'), !dojo || !activeSession);
     if (dojo) {
       const hit = state.dojo.lastHit, station = findDojoStation(state), recovery = findDojoStation(state, 'recovery');
-      setText('dojo-contact-kind', hit ? `${hit.kind.toUpperCase()} CONTACT` : 'RANGE READY'); setText('dojo-contact-damage', hit ? `${Math.round(hit.damage * 10) / 10} DMG` : '—'); setText('dojo-contact-distance', hit ? `${hit.distance.toFixed(1)} m · ${WEAPONS[hit.weapon]?.name || MELEE_WEAPONS[hit.weapon]?.name || hit.weapon}` : '10 / 20 / 30 m lanes · Tab tools');
+      const distances = [...new Set(state.map.rangeLanes.filter(lane => lane.distance >= 5).map(lane => Math.round(lane.distance)))].sort((a, b) => a - b);
+      setText('dojo-contact-kind', hit ? `${hit.kind.toUpperCase()} CONTACT` : 'RANGE READY'); setText('dojo-contact-damage', hit ? `${Math.round(hit.damage * 10) / 10} DMG` : '—'); setText('dojo-contact-distance', hit ? `${hit.distance.toFixed(1)} m · ${WEAPONS[hit.weapon]?.name || MELEE_WEAPONS[hit.weapon]?.name || hit.weapon}` : `${distances.join(' / ')} m lanes · Tab tools`);
       setAttribute($('dojo-contact'), 'data-kind', hit?.kind || 'ready');
       setAttribute($('dojo-motion'), 'aria-pressed', String(state.dojo.moving)); setText('dojo-motion', state.dojo.moving ? 'Moving targets' : 'Stationary targets');
       setDisabled($('dojo-use-station'), !station || !player.alive); setText('dojo-use-station', station ? `${station.name} · use E` : 'Approach an equipment station');
