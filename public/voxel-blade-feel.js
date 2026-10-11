@@ -10,7 +10,8 @@ const finite = (value, fallback = 0) => Number.isFinite(value) ? value : fallbac
 export const BLADE_WEIGHT = Object.freeze({
   knife: { stopMs: 34, kick: .010 }, tonfas: { stopMs: 42, kick: .013 },
   sword: { stopMs: 58, kick: .018 }, katana: { stopMs: 54, kick: .017 },
-  axe: { stopMs: 86, kick: .028 },
+  axe: { stopMs: 86, kick: .028 }, spear: { stopMs: 52, kick: .016 },
+  hatchet: { stopMs: 50, kick: .016 }, whip: { stopMs: 30, kick: .009 },
 });
 export const BLADE_FEEL = Object.freeze({
   finisherMultiplier: 1.5, flinchKick: .022, clashStopMs: 70, clashKick: .024, blockKick: .012,

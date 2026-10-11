@@ -24,7 +24,7 @@ test('every committed melee weapon has a distinct bounded quiet sweep with a sil
     signatures.add(`${samples.length}:${energy(samples, 48000, profile.peak, profile.peak + .02)}`);
     assert.deepEqual(createVoxelMeleeSamples(id), samples, 'cached reports can be rebuilt deterministically');
   }
-  assert.equal(signatures.size, 5);
+  assert.equal(signatures.size, Object.keys(MELEE_WEAPONS).length);
 });
 
 test('melee samples accept normal device rates and reject malformed or unbounded synthesis requests', () => {

@@ -237,7 +237,7 @@ export function createMeleeImpactReporter(audio) {
           return true;
         }
         const heavy = weapon === 'axe';
-        const frequency = ({ knife: 285, sword: 195, katana: 225, axe: 155, tonfas: 255 })[weapon] || 195;
+        const frequency = ({ knife: 285, sword: 195, katana: 225, axe: 155, tonfas: 255, spear: 210, hatchet: 175, whip: 300 })[weapon] || 195;
         const volume = Math.min(.3, gain);
         audio.tone(frequency, heavy ? .085 : .065, { end: heavy ? 55 : 75, type: 'triangle', gain: volume }); reports++;
         audio.noise(heavy ? .04 : .028, { highpass: 100, lowpass: 1500, gain: volume * .38 });

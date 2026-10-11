@@ -12,7 +12,7 @@ export const HORDE_RULES = Object.freeze({ maxMonsters: 20, maxLoot: 20, maxWarn
 export const HORDE_DIFFICULTIES = Object.freeze({ veteran: Object.freeze({ health: 1, spawn: 1, gunRest: 1, damage: 1 }), nightmare: Object.freeze({ health: 1.28, spawn: .78, gunRest: .8, damage: 1.18 }) });
 // Only the first three waves grant a close-combat damage opening. Monsters keep
 // their full health, movement and attack damage; later armed waves stay demanding.
-export const HORDE_MELEE_RULES = Object.freeze({ damageScales: Object.freeze([1.6, 1.4, 1.2]), staggerRecoveryTicks: 84, comboStaggerMultiplier: 1.25, staggerTicks: Object.freeze({ knife: 18, sword: 28, katana: 32, axe: 44, tonfas: 16 }), supplyWeapons: Object.freeze(['tonfas', 'axe', 'sword', 'katana']) });
+export const HORDE_MELEE_RULES = Object.freeze({ damageScales: Object.freeze([1.6, 1.4, 1.2]), staggerRecoveryTicks: 84, comboStaggerMultiplier: 1.25, staggerTicks: Object.freeze({ knife: 18, sword: 28, katana: 32, axe: 44, tonfas: 16, spear: 30, hatchet: 24, whip: 20 }), supplyWeapons: Object.freeze(['tonfas', 'axe', 'sword', 'katana']) });
 export const MONSTER_TYPES = Object.freeze({
   stalker: Object.freeze({ label: 'Ash Stalker', health: 90, damage: 28, reach: 1.5, windup: 48, recovery: 72, weapon: 'carbine', walk: true }),
   runner: Object.freeze({ label: 'Rift Runner', health: 65, damage: 18, reach: 1.15, windup: 30, recovery: 54, weapon: 'smg', walk: false }),

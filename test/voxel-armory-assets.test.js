@@ -11,9 +11,9 @@ const art = new URL('../public/art/armory/', import.meta.url);
 const entries = [...Object.keys(WEAPONS).map(id => ({ id, kind: 'gun', file: `${id}.webp` })),
   ...Object.keys(MELEE_WEAPONS).map(id => ({ id, kind: 'melee', file: `melee_${id}.webp` }))];
 
-test('all 40 guns (including the grapple gadget) and five melee weapons have distinct transparent lossless cards from the actual meshes', async () => {
+test('all 40 guns (including the grapple gadget) and eight melee weapons have distinct transparent lossless cards from the actual meshes', async () => {
   const files = (await readdir(art)).filter(file => file.endsWith('.webp')).sort();
-  assert.equal(entries.length, 45);
+  assert.equal(entries.length, 48);
   assert.deepEqual(files, entries.map(entry => entry.file).sort());
   const manifest = JSON.parse(await readFile(new URL('manifest.json', art), 'utf8'));
   assert.equal(manifest.transparent, true);
@@ -38,7 +38,7 @@ test('all 40 guns (including the grapple gadget) and five melee weapons have dis
     const [left, top, right, bottom] = record.alphaBounds;
     assert.ok(left > 1 && top > 1 && right < 639 && bottom < 359, `${item.id}: mesh is fully inside the image`);
   }
-  assert.equal(signatures.size, 45, 'every card has its own rendered silhouette');
+  assert.equal(signatures.size, 48, 'every card has its own rendered silhouette');
   const width = id => { const item = manifest.items.find(item => item.id === id && item.kind === 'gun'); return item.alphaBounds[2] - item.alphaBounds[0]; };
   assert.ok(width('classic') < width('operator') * .4, 'pistols preserve their short real geometry on the shared camera scale');
 });

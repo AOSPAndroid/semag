@@ -118,11 +118,11 @@ test('invalid damage cannot create an impact or consume a legitimate future mele
   assert.equal(reporter.consume(event, 0), true); assert.equal(voices.length, 2);
 });
 
-test('all five physical blades use brief bounded impact cues that differ from the old high-pitched hit beep', () => {
-  const state = fixture(5), { voices, reporter } = recorder();
+test('every physical blade uses brief bounded impact cues that differ from the old high-pitched hit beep', () => {
+  const state = fixture(MELEE_IDS.length), { voices, reporter } = recorder();
   for (const [index, weapon] of MELEE_IDS.entries()) reporter.consume(accepted(state, index + 1, { attack: weapon, weapon, meleeIndex: index + 1 }), 0, { gain: .13 });
   const tones = voices.filter(voice => voice.kind === 'tone'), noises = voices.filter(voice => voice.kind === 'noise');
-  assert.equal(tones.length, 5); assert.equal(noises.length, 5); assert.equal(new Set(tones.map(voice => voice.frequency)).size, 5);
+  assert.equal(tones.length, MELEE_IDS.length); assert.equal(noises.length, MELEE_IDS.length); assert.equal(new Set(tones.map(voice => voice.frequency)).size, MELEE_IDS.length);
   assert.ok(tones.every(voice => voice.frequency >= 150 && voice.frequency <= 300 && voice.duration <= .085 && voice.gain === .13 && voice.end <= 75));
   assert.ok(noises.every(voice => voice.duration <= .04 && voice.gain <= .05 && voice.highpass === 100 && voice.lowpass === 1500));
 });

@@ -5,7 +5,7 @@ import { WEAPONS, weaponDamage, weaponSpread, weaponHand } from './voxel-weapons
 import { advanceWeaponFireClock, completeReload, weaponCanReload, weaponReloadDuration } from './voxel-fire-modes.js';
 import { applyRecoilKick, recoverRecoil } from './voxel-recoil.js';
 import { launchBolt, advanceBolts, MAX_BOLTS } from './voxel-projectiles.js';
-import { BLADE_IMPACT, DUEL_WEAPONS, RIPOSTE, heavyChargeTicks, MELEE, KNIFE, KNIFE_SECONDARY, MELEE_WEAPONS, meleeProfile, meleeWeaponId, meleeHand, meleeSlashOrigin, meleeSlashPhase, meleeSlashGeometry, meleeSegmentBoxContact, advanceMeleePrimaryPress, meleeStartupAim, parryProfile, parryPhase, parryFacesOrigin, resetMeleeDefense, resetMeleeCombo, clearMeleeComboContinuation, beginMeleeCombo } from './voxel-melee.js';
+import { BLADE_IMPACT, DUEL_WEAPONS, HATCHET_THROW, RIPOSTE, heavyChargeTicks, MELEE, KNIFE, KNIFE_SECONDARY, MELEE_WEAPONS, meleeProfile, meleeWeaponId, meleeHand, meleeSlashOrigin, meleeSlashPhase, meleeSlashGeometry, meleeSegmentBoxContact, advanceMeleePrimaryPress, meleeStartupAim, parryProfile, parryPhase, parryFacesOrigin, resetMeleeDefense, resetMeleeCombo, clearMeleeComboContinuation, beginMeleeCombo } from './voxel-melee.js';
 import { recordLagCompensation, traceCompensatedShot } from './voxel-lag-compensation.js';
 import { monsterTypeId, monsterBodyProfile, monsterBodyBoxes, monsterMovementSpeed, monsterMovementMultiplier } from './voxel-monster-bodies.js';
 import { INVENTORY_ACTIONS, initializeInventory, ensureInventory, refreshInventory, selectedInventoryItem, selectInventorySlot, storeInventoryGun, tickHolsteredInventory, consumeInventoryStack, nextThrowableType, addInventoryStack, pickupInventoryItem, inventoryCanTake, dropInventoryItem, lootFromInventoryItem, setInventoryLoadout, setInventoryMeleeLoadout } from './voxel-inventory.js';
@@ -113,6 +113,7 @@ function advanceMovementActions(player, input, context) {
     } else if (secondaryReady(player, input, context)) {
       meleeComboStep = 0; meleeComboConfirmed = false; meleeComboWindowTicks = 0; meleeComboWeapon = null;
       if (meleeWeaponId(player) === 'knife') { meleeAction = 'secondary'; meleeTicks = meleeCooldown = meleeSecondaryCooldown = KNIFE_SECONDARY.startupTicks + KNIFE_SECONDARY.activeTicks + KNIFE_SECONDARY.recoveryTicks; }
+      else if (meleeWeaponId(player) === 'hatchet') meleeSecondaryCooldown = HATCHET_THROW.cooldownTicks;
       else { const profile = parryProfile(player); if (profile && player.stamina >= profile.staminaCost) { spendParryStamina(player, profile); parryTicks = meleeCooldown = profile.startupTicks + profile.activeTicks + profile.recoveryTicks; parryCooldown = meleeSecondaryCooldown = profile.cooldownTicks; } }
     }
   }
@@ -1050,7 +1051,12 @@ function tickMelee(state, f, input, pendingDamage, arena, { meleeDamageScale } =
     if (lungeSlash) emit(state, 'meleeLunge', { playerId: f.id, weapon: meleeWeapon, meleeIndex: f.meleeIndex, x: f.x, y: f.y, z: f.z, dx: f.bladeLungeX, dz: f.bladeLungeZ });
   } else if (!f.meleeTicks && secondaryReady(f, input)) {
     if (meleeWeapon === 'knife') { beginMelee(state, f, 'secondary'); melee = meleeProfile(f); }
-    else {
+    else if (meleeWeapon === 'hatchet') {
+      // The hatchet leaves the hand in an arc and flies back once the cooldown ends.
+      const origin = eyePosition(f), bolt = state.bolts && state.bolts.length < MAX_BOLTS && launchBolt(state, f, HATCHET_THROW, origin, aimDirection(f.yaw, f.pitch), { emit: (type, data) => emit(state, type, data) });
+      if (bolt) { resetMeleeCombo(f); f.meleeSecondaryCooldown = HATCHET_THROW.cooldownTicks; emit(state, 'hatchetThrow', { playerId: f.id, boltId: bolt.id, x: origin.x, y: origin.y, z: origin.z, returnTicks: HATCHET_THROW.cooldownTicks }); }
+      return;
+    } else {
       const profile = parryProfile(f);
       if (profile && f.stamina >= profile.staminaCost) {
         resetMeleeCombo(f);
@@ -1284,7 +1290,9 @@ function applyMeleeKnockback(state, hit, attacker, target, profile) {
   const nx = length > EPS ? dx / length : Math.sin(attacker.meleeYaw || 0), nz = length > EPS ? dz / length : -Math.cos(attacker.meleeYaw || 0);
   // Replace a direction rather than add forces. Three simultaneous partners
   // cannot multiply launch speed or refresh this short impact guard.
-  target.knockbackX = nx * speed; target.knockbackZ = nz * speed;
+  // A whip drags its catch toward the wielder instead of shoving it away.
+  const pull = profile.pull === true ? -1 : 1;
+  target.knockbackX = nx * speed * pull; target.knockbackZ = nz * speed * pull;
   target.knockbackTicks = monster ? KNOCKBACK.monsterTicks : KNOCKBACK.playerTicks;
   target.knockbackReadyTicks = monster ? KNOCKBACK.monsterReadyTicks : KNOCKBACK.playerReadyTicks;
   emit(state, 'meleeKnockback', { ...comboMetadata(profile), playerId: attacker.id, targetId: target.id, targetLifeId: target.lifeId || 0, weapon: profile.id, meleeIndex: hit.meleeIndex, meleeStartTick: hit.meleeStartTick, attackerLifeId: attacker.lifeId || 0, x: target.x, y: target.y, z: target.z, dx: nx, dz: nz, speed, ticks: target.knockbackTicks });

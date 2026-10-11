@@ -70,7 +70,9 @@ for (const weapon of Object.keys(MELEE_WEAPONS)) {
     assert.equal(stagger.ticks, Math.max(6, Math.round(Horde.HORDE_MELEE_RULES.staggerTicks[weapon] * Horde.HORDE_MELEE_RULES.comboStaggerMultiplier * .35)));
     assert.equal(brain.staggerTicks, stagger.ticks); assert.equal(brain.attackTicks, 0); assert.equal(monster.monsterState, 'stagger');
     assert.equal(push.speed, Math.min(KNOCKBACK.maxMonsterSpeed, cut.profile.pushSpeed)); assert.equal(push.comboFinisher, true);
-    const impactZ = monster.z; advance(state, 8); assert.ok(monster.z < impactZ - .025, 'the authoritative impulse visibly displaces the enemy');
+    const impactZ = monster.z; advance(state, 8);
+    // The chain whip drags its catch in; every other blade shoves it away.
+    assert.ok(cut.profile.pull ? monster.z > impactZ + .025 : monster.z < impactZ - .025, 'the authoritative impulse visibly displaces the enemy');
     advance(state, 180); assert.equal(monster.knockbackTicks, 0); assert.equal(brain.staggerTicks, 0);
     assert.ok(state.events.some(event => event.type === 'monsterAttack' && event.playerId === monster.id), 'the survivor resumes its authored attack after the short opening');
   });

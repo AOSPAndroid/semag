@@ -124,7 +124,7 @@ test('alternating cuts and finishers keep first-person, world blade and ribbon o
       assert.equal(receiver.meleePose.comboStep, player.meleeComboStep); assert.equal(receiver.meleePose.slashDirection, profile.slashDirection);
       assert.deepEqual(player, before, 'presentation never advances or steers the accepted attack');
     }
-    if (weapon !== 'knife') {
+    if (weapon !== 'knife' && !meleeProfile(weapon).stab) {
       const first = meleeMotion(activeSample(trial.poses[0], .2)), second = meleeMotion(activeSample(trial.poses[1], .2));
       assert.ok(first.yaw * second.yaw < 0, `${weapon} reverses its second cut`);
     }

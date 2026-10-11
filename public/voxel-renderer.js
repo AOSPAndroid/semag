@@ -111,7 +111,7 @@ function aimProgress(player) {
 }
 
 export function meleeMotion(player) {
-  const profile = meleeProfile(player), id = meleeWeaponId(player), knife = id === 'knife', hand = id === 'tonfas' && player.meleeHand === 1 ? -1 : 1;
+  const profile = meleeProfile(player), id = meleeWeaponId(player), knife = id === 'knife', thrust = knife || profile.stab === true, hand = id === 'tonfas' && player.meleeHand === 1 ? -1 : 1;
   const combo = { comboStep: finite(profile.comboStep), comboLength: finite(profile.comboLength), comboFinisher: profile.comboFinisher === true, slashDirection: profile.slashDirection === -1 ? -1 : 1 };
   const secondary = knife && player.meleeAction === 'secondary';
   const phase = meleeSlashPhase(player);
@@ -142,18 +142,18 @@ export function meleeMotion(player) {
   const relativePitch = pitch - finite(player.meleePitch, finite(player.pitch));
   // The broad blade edge lies in the accepted cut plane. Axial wrist roll
   // makes the metal read as a slicing edge without rotating its damage ray.
-  const roll = knife ? 0 : meleeCutRoll(player, sample, yaw, pitch);
+  const roll = thrust ? 0 : meleeCutRoll(player, sample, yaw, pitch);
   if (phase.phase === 'startup') {
     // A heavy blade loads slowly, with a distinct pull back before its cut.
     const progress = smooth(elapsed / profile.startupTicks), weight = id === 'axe' ? progress ** 1.3 : progress;
-    const extension = secondary ? -.18 * progress + .88 * smooth((progress - .72) / .28) : knife ? -progress * .10 : -Math.sin(progress * Math.PI) * (id === 'axe' ? .16 : .10);
+    const extension = secondary ? -.18 * progress + .88 * smooth((progress - .72) / .28) : thrust ? -progress * (knife ? .10 : .24) : -Math.sin(progress * Math.PI) * (id === 'axe' ? .16 : .10);
     return { ...combo, yaw: lerp(idleYaw, relativeYaw, weight), pitch: lerp(idlePitch, relativePitch, weight), roll: lerp(idleRoll, roll, weight), extension, active: false, phase: 'startup', progress, grip: weight, action };
   }
   if (phase.phase === 'active') {
-    return { ...combo, yaw: relativeYaw, pitch: relativePitch, roll, extension: knife ? (secondary ? .70 : .48) - phase.progress * (secondary ? .10 : .12) : Math.sin(phase.progress * Math.PI) * (id === 'tonfas' ? .19 : .28), active: true, phase: 'active', progress: phase.progress, grip: 1, action };
+    return { ...combo, yaw: relativeYaw, pitch: relativePitch, roll, extension: thrust ? (secondary ? .70 : knife ? .48 : .66) - phase.progress * (secondary ? .10 : .12) : Math.sin(phase.progress * Math.PI) * (id === 'tonfas' ? .19 : .28), active: true, phase: 'active', progress: phase.progress, grip: 1, action };
   }
   const progress = smooth((elapsed - profile.startupTicks - profile.activeTicks) / profile.recoveryTicks);
-  return { ...combo, yaw: lerp(relativeYaw, idleYaw, progress), pitch: lerp(relativePitch, idlePitch, progress), roll: lerp(roll, idleRoll, progress), extension: knife ? (secondary ? .60 : .36) * (1 - progress) : 0, active: false, phase: 'recovery', progress, grip: 1 - progress, action };
+  return { ...combo, yaw: lerp(relativeYaw, idleYaw, progress), pitch: lerp(relativePitch, idlePitch, progress), roll: lerp(roll, idleRoll, progress), extension: thrust ? (secondary ? .60 : knife ? .36 : .52) * (1 - progress) : 0, active: false, phase: 'recovery', progress, grip: 1 - progress, action };
 }
 
 function meleeCutRoll(player, sample, yaw, pitch) {
@@ -2852,9 +2852,9 @@ function swordParts(mesh, pose, options = {}) {
   part(-.018, .048, .176, .036, .008, .024, '#516b72');
 }
 
-const meleeLength = player => ({ knife: .48, sword: 1.24, katana: 1.42, axe: 1.03, tonfas: .76 })[meleeWeaponId(player)] || 1.24;
-const meleePadding = player => ({ knife: .08, sword: .18, katana: .16, axe: .32, tonfas: .13 })[meleeWeaponId(player)] || .18;
-const meleeTipLength = player => ({ knife: .47, sword: 1.14, katana: 1.405, axe: .991, tonfas: .736 })[meleeWeaponId(player)] || 1.14;
+const meleeLength = player => ({ knife: .48, sword: 1.24, katana: 1.42, axe: 1.03, tonfas: .76, spear: 1.72, hatchet: .64, whip: 1.30 })[meleeWeaponId(player)] || 1.24;
+const meleePadding = player => ({ knife: .08, sword: .18, katana: .16, axe: .32, tonfas: .13, spear: .10, hatchet: .22, whip: .10 })[meleeWeaponId(player)] || .18;
+const meleeTipLength = player => ({ knife: .47, sword: 1.14, katana: 1.405, axe: .991, tonfas: .736, spear: 1.72, hatchet: .63, whip: 1.30 })[meleeWeaponId(player)] || 1.14;
 
 function meleeCommittedAim(player, motion, yaw = finite(player.yaw), pitch = finite(player.pitch)) {
   if (motion.guarding) return { yaw: finite(player.parryYaw, yaw), pitch: clamp(finite(player.parryPitch, pitch), -1.35, 1.35) };
@@ -2979,6 +2979,40 @@ function meleeParts(mesh, player, pose, options = {}) {
     part(.069, -.042, -.905, .129, .084, .112, '#95a9a9');
     part(.166, -.029, -.891, .074, .058, .085, '#cad2c7');
     part(-.034, -.055, -.951, .068, .110, .024, '#b29b69');
+    return;
+  }
+  if (id === 'spear') {
+    // A long ash shaft with a leaf-shaped steel head and a brass collar.
+    part(-.022, -.022, -1.32, .044, .044, 1.52, '#7a5b3e');
+    for (let wrap = 0; wrap < 3; wrap++) part(-.025, -.025, -.02 + wrap * .05, .05, .05, .016, '#b39a6a');
+    part(-.03, -.03, -1.38, .06, .06, .07, '#c9a65a');
+    part(-.045, -.012, -1.56, .09, .024, .19, '#c8d4d2');
+    part(-.03, -.011, -1.66, .06, .022, .11, '#e4ece6');
+    part(-.012, -.010, -1.72, .024, .020, .07, '#f2f2e6');
+    part(-.006, -.014, -1.62, .012, .028, .24, '#7d9095');
+    return;
+  }
+  if (id === 'hatchet') {
+    // A short hickory haft with a bearded throwing head.
+    if (player.meleeSecondaryCooldown > 0 && options.preview !== true) return;
+    part(-.024, -.026, -.50, .048, .052, .68, '#8a6a48');
+    for (let wrap = 0; wrap < 3; wrap++) part(-.027, -.029, .02 + wrap * .045, .054, .058, .014, '#3f4a44');
+    part(-.034, -.040, -.56, .068, .080, .09, '#4c5a5a');
+    part(-.20, -.036, -.60, .17, .072, .12, '#b8c4c0');
+    part(-.235, -.034, -.63, .05, .068, .18, '#e8ecdf');
+    part(.034, -.03, -.585, .07, .06, .05, '#8d9c9a');
+    return;
+  }
+  if (id === 'whip') {
+    // A wrapped grip feeding a run of steel links that ends in a weighted barb.
+    part(-.026, -.026, -.12, .052, .052, .30, '#3a3230');
+    for (let wrap = 0; wrap < 4; wrap++) part(-.029, -.029, -.10 + wrap * .06, .058, .058, .014, '#a8463a');
+    part(-.034, -.034, -.16, .068, .068, .04, '#9aa6a0');
+    for (let link = 0; link < 9; link++) {
+      const sway = Math.sin(link * .9) * .02 * (options.active ? 2 : 1);
+      part(-.018 + sway, (link % 2 ? -.008 : -.016), -.30 - link * .11, link % 2 ? .036 : .02, link % 2 ? .016 : .032, .09, link % 2 ? '#c1c9c4' : '#8f9a97');
+    }
+    part(-.03, -.03, -1.30, .06, .06, .09, '#d7dccf');
     return;
   }
   if (id === 'tonfas') {
@@ -4568,6 +4602,14 @@ export class VoxelRenderer {
       if (![bolt.x, bolt.y, bolt.z, bolt.vx, bolt.vy, bolt.vz].every(Number.isFinite)) continue;
       const horizontal = Math.hypot(bolt.vx, bolt.vz);
       const pose = { x: bolt.x, y: bolt.y, z: bolt.z, yaw: Math.atan2(bolt.vx, -bolt.vz), pitch: Math.atan2(bolt.vy, horizontal) };
+      if (bolt.weapon === 'hatchet') {
+        // A thrown hatchet tumbles end over end along its real arc.
+        const spin = { ...pose, pitch: pose.pitch - finite(bolt.ageTicks) * .32 };
+        mesh.box(-.022, -.024, -.05, .044, .048, .50, '#8a6a48', spin);
+        mesh.box(-.18, -.034, -.06, .16, .068, .11, '#b8c4c0', spin);
+        mesh.box(-.21, -.032, -.09, .045, .064, .17, '#e8ecdf', spin);
+        continue;
+      }
       const feather = state.gameId === 'voxel-royale' ? survivorColor({ id: bolt.playerId }) : bolt.team === 1 ? '#7baaa1' : '#b7a177';
       // The live projectile is depth-tested in the operative batch. It never
       // draws an instantaneous beam or a trail through solid cover.
