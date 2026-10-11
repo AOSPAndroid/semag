@@ -5,7 +5,7 @@ import { WEAPONS, weaponDamage, weaponSpread, weaponHand } from './voxel-weapons
 import { advanceWeaponFireClock, completeReload, weaponCanReload, weaponReloadDuration } from './voxel-fire-modes.js';
 import { applyRecoilKick, recoverRecoil } from './voxel-recoil.js';
 import { launchBolt, advanceBolts, MAX_BOLTS } from './voxel-projectiles.js';
-import { BLADE_IMPACT, MELEE, KNIFE, KNIFE_SECONDARY, MELEE_WEAPONS, meleeProfile, meleeWeaponId, meleeHand, meleeSlashOrigin, meleeSlashPhase, meleeSlashGeometry, meleeSegmentBoxContact, advanceMeleePrimaryPress, meleeStartupAim, parryProfile, parryPhase, parryFacesOrigin, resetMeleeDefense, resetMeleeCombo, clearMeleeComboContinuation, beginMeleeCombo } from './voxel-melee.js';
+import { BLADE_IMPACT, DUEL_WEAPONS, RIPOSTE, heavyChargeTicks, MELEE, KNIFE, KNIFE_SECONDARY, MELEE_WEAPONS, meleeProfile, meleeWeaponId, meleeHand, meleeSlashOrigin, meleeSlashPhase, meleeSlashGeometry, meleeSegmentBoxContact, advanceMeleePrimaryPress, meleeStartupAim, parryProfile, parryPhase, parryFacesOrigin, resetMeleeDefense, resetMeleeCombo, clearMeleeComboContinuation, beginMeleeCombo } from './voxel-melee.js';
 import { recordLagCompensation, traceCompensatedShot } from './voxel-lag-compensation.js';
 import { monsterTypeId, monsterBodyProfile, monsterBodyBoxes, monsterMovementSpeed, monsterMovementMultiplier } from './voxel-monster-bodies.js';
 import { INVENTORY_ACTIONS, initializeInventory, ensureInventory, refreshInventory, selectedInventoryItem, selectInventorySlot, storeInventoryGun, tickHolsteredInventory, consumeInventoryStack, nextThrowableType, addInventoryStack, pickupInventoryItem, inventoryCanTake, dropInventoryItem, lootFromInventoryItem, setInventoryLoadout, setInventoryMeleeLoadout } from './voxel-inventory.js';
@@ -135,7 +135,7 @@ export function resetSprint(player, { refill = true } = {}) {
 }
 export function createCombatPlayer(id, teamSize = 1, loadout = 'carbine') {
   const weapon = typeof loadout === 'string' && Object.hasOwn(WEAPONS, loadout) ? loadout : 'carbine', w = WEAPONS[weapon];
-  const player = { id, team: Math.floor(id / teamSize), x: 0, y: 0, z: 0, yaw: 0, pitch: 0, vx: 0, vy: 0, vz: 0, knockbackX: 0, knockbackZ: 0, knockbackTicks: 0, knockbackReadyTicks: 0, radius: WORLD.radius, grounded: true, jumpBufferTicks: 0, stamina: SPRINT.maxStamina, staminaRegenTicks: 0, sprintExhausted: false, sprinting: false, crouching: false, lean: 0, leanOffset: 0, leanX: 0, leanZ: 0, guarding: false, guardBroken: false, bladeLungeTicks: 0, bladeLungeCooldown: 0, bladeLungeX: 0, bladeLungeZ: 0, bladeLungeSlashPending: false, meleeSlide: false, chargeTicks: 0, leverStacks: 0, leverReadyTicks: 0, leverQueued: false, grappleTicks: 0, grappleX: 0, grappleY: 0, grappleZ: 0, grappleStuckTicks: 0, slideTicks: 0, slideCooldown: 0, slideX: 0, slideZ: 0, slideSpeed: 0, mantleTicks: 0, mantleFrom: null, mantleTo: null, alive: true, hp: PLAYER_HEALTH, maxHp: PLAYER_HEALTH, weapon, slot: 'primary', meleeWeapon: 'knife', meleeLoadout: 'knife', ammo: w.magazine, reserve: w.reserve, reloadTicks: 0, shotCooldown: 0, burstRemaining: 0, spinTicks: 0, recoil: 0, recoilYaw: 0, sprayShots: 0, sprayIdleTicks: 0, heat: 0, shotIndex: 0, lastShotHand: 0, pendingFireTicks: 0, shots: 0, kills: 0, deaths: 0, damageDealt: 0, lastHitTick: -1000, triggerBlocked: false, aiming: false, aimTicks: 0, meleeTicks: 0, meleeCooldown: 0, meleeIndex: 0, meleeHand: 0, meleeYaw: 0, meleePitch: 0, meleeStartTick: 0, meleePhase: 'idle', meleeHitIds: [], meleeHitLives: [], healing: false, healTicks: 0, healStartTick: -1, potions: 0, grenades: 0, flashTicks: 0, flashTotal: 0, grenadeThrowTicks: 0, interaction: null, interactTicks: 0, previousInput: emptyInput() };
+  const player = { id, team: Math.floor(id / teamSize), x: 0, y: 0, z: 0, yaw: 0, pitch: 0, vx: 0, vy: 0, vz: 0, knockbackX: 0, knockbackZ: 0, knockbackTicks: 0, knockbackReadyTicks: 0, radius: WORLD.radius, grounded: true, jumpBufferTicks: 0, stamina: SPRINT.maxStamina, staminaRegenTicks: 0, sprintExhausted: false, sprinting: false, crouching: false, lean: 0, leanOffset: 0, leanX: 0, leanZ: 0, guarding: false, guardBroken: false, meleeStyle: null, meleeSide: 0, heavyChargeTicks: 0, riposteTicks: 0, bladeLungeTicks: 0, bladeLungeCooldown: 0, bladeLungeX: 0, bladeLungeZ: 0, bladeLungeSlashPending: false, meleeSlide: false, chargeTicks: 0, leverStacks: 0, leverReadyTicks: 0, leverQueued: false, grappleTicks: 0, grappleX: 0, grappleY: 0, grappleZ: 0, grappleStuckTicks: 0, slideTicks: 0, slideCooldown: 0, slideX: 0, slideZ: 0, slideSpeed: 0, mantleTicks: 0, mantleFrom: null, mantleTo: null, alive: true, hp: PLAYER_HEALTH, maxHp: PLAYER_HEALTH, weapon, slot: 'primary', meleeWeapon: 'knife', meleeLoadout: 'knife', ammo: w.magazine, reserve: w.reserve, reloadTicks: 0, shotCooldown: 0, burstRemaining: 0, spinTicks: 0, recoil: 0, recoilYaw: 0, sprayShots: 0, sprayIdleTicks: 0, heat: 0, shotIndex: 0, lastShotHand: 0, pendingFireTicks: 0, shots: 0, kills: 0, deaths: 0, damageDealt: 0, lastHitTick: -1000, triggerBlocked: false, aiming: false, aimTicks: 0, meleeTicks: 0, meleeCooldown: 0, meleeIndex: 0, meleeHand: 0, meleeYaw: 0, meleePitch: 0, meleeStartTick: 0, meleePhase: 'idle', meleeHitIds: [], meleeHitLives: [], healing: false, healTicks: 0, healStartTick: -1, potions: 0, grenades: 0, flashTicks: 0, flashTotal: 0, grenadeThrowTicks: 0, interaction: null, interactTicks: 0, previousInput: emptyInput() };
   Object.assign(player, { pendingMeleeTicks: 0, meleeComboStep: 0, meleeComboConfirmed: false, meleeComboWindowTicks: 0, meleeComboWeapon: null, hitStunTicks: 0, hitStunReadyTicks: 0, meleeInitialYaw: 0, meleeInitialPitch: 0, meleeAction: 'primary', meleeAimBlocked: false, meleeSecondaryCooldown: 0, parryTicks: 0, parryCooldown: 0, parryYaw: 0, parryPitch: 0, parryStartTick: 0, parryIndex: 0, parryConsumed: false });
   Object.assign(player, { healUseIndex: 0, healUseId: null, healInventoryIndex: -1, healSelectedIndex: -1 });
   return initializeInventory(player, { weapon });
@@ -1003,10 +1003,12 @@ function spendParryStamina(f, profile) {
   f.stamina = Math.max(0, f.stamina - profile.staminaCost); f.staminaRegenTicks = SPRINT.regenDelayTicks;
   if (f.stamina <= EPS) f.sprintExhausted = true;
 }
-function beginMelee(state, f, action = 'primary') {
-  f.meleeAction = action;
-  if (action !== 'primary') resetMeleeCombo(f);
-  const melee = action === 'primary' ? beginMeleeCombo(f) : meleeProfile(f), weapon = meleeWeaponId(f);
+function beginMelee(state, f, action = 'primary', { style = null, side = 0 } = {}) {
+  f.meleeAction = action; f.meleeStyle = action === 'primary' ? style : null; f.meleeSide = action === 'primary' ? side : 0;
+  // Heavy cuts and ripostes stand alone: they neither continue nor start a combo.
+  const standalone = style === 'heavy' || style === 'riposte';
+  if (action !== 'primary' || standalone) resetMeleeCombo(f);
+  const melee = action === 'primary' && !standalone ? beginMeleeCombo(f) : meleeProfile(f), weapon = meleeWeaponId(f);
   f.meleeTicks = melee.startupTicks + melee.activeTicks + melee.recoveryTicks; f.meleePhase = 'startup'; f.meleeHitIds = []; f.meleeHitLives = [];
   f.meleeCooldown = f.meleeTicks; f.pendingMeleeTicks = 0; f.meleeYaw = f.meleeInitialYaw = f.yaw; f.meleePitch = f.meleeInitialPitch = f.pitch;
   if (action === 'secondary') f.meleeSecondaryCooldown = f.meleeTicks;
@@ -1016,25 +1018,35 @@ function beginMelee(state, f, action = 'primary') {
   f.meleeSlide = action === 'primary' && f.slideTicks > 0;
   emit(state, 'meleeStart', { ...(f.meleeSlide ? { slideSlash: true } : {}), ...comboMetadata(melee), playerId: f.id, weapon, meleeAction: action, hand: f.meleeHand, meleeIndex: f.meleeIndex, meleeStartTick: f.meleeStartTick, attackerLifeId: f.lifeId || 0, attackerDeaths: f.deaths || 0, x: f.x, y: f.y + eyeHeight(f), z: f.z, yaw: f.meleeYaw, pitch: f.meleePitch });
 }
-const comboMetadata = profile => ({ comboStep: profile.comboStep || 0, comboLength: profile.comboLength || 0, comboFinisher: profile.comboFinisher === true, slashDirection: profile.slashDirection || 1 });
+const comboMetadata = profile => ({ comboStep: profile.comboStep || 0, comboLength: profile.comboLength || 0, comboFinisher: profile.comboFinisher === true, slashDirection: profile.slashDirection || 1, ...(profile.heavy ? { heavy: true } : {}), ...(profile.riposte ? { riposte: true } : {}), ...(profile.overhead ? { overhead: true } : {}) });
 function tickMelee(state, f, input, pendingDamage, arena, { meleeDamageScale } = {}) {
   const primary = advanceMeleePrimaryPress(f, input);
   f.pendingMeleeTicks = primary.pendingMeleeTicks;
   // Holding right-click after the parry window keeps the guard up until released or broken.
   if (!input.aim) f.guardBroken = false;
   f.guarding = guardsBullets(f) && input.aim && !f.guardBroken && !f.meleeTicks && !['startup', 'active'].includes(parryPhase(f).phase) && !(f.bladeLungeTicks > 0) && f.stamina > 0;
-  if (f.parryTicks > 0) { f.parryTicks--; return; }
+  if (f.riposteTicks > 0) f.riposteTicks--;
+  if (f.parryTicks > 0) { f.parryTicks--; f.heavyChargeTicks = 0; return; }
   let melee = meleeProfile(f); const meleeWeapon = meleeWeaponId(f);
   if (f.meleeTicks > 0) {
     const guided = meleeStartupAim(f, input); f.meleeYaw = guided.yaw; f.meleePitch = guided.pitch;
     f.meleeTicks--;
     f.meleePhase = f.meleeTicks > melee.activeTicks + melee.recoveryTicks ? 'startup' : f.meleeTicks > melee.recoveryTicks ? 'active' : f.meleeTicks > 0 ? 'recovery' : 'idle';
   }
+  if (!f.meleeTicks) { f.meleeStyle = null; f.meleeSide = 0; }
+  // Long blades: holding the primary past a whole light cut charges a heavy, released on let-go.
+  const duel = f.slot === 'sword' && DUEL_WEAPONS.includes(meleeWeapon) && f.monster !== true && f.bot !== true && selectedInventoryItem(f)?.kind === 'melee';
+  const heavyRelease = duel && !input.fire && f.previousInput?.fire === true && f.heavyChargeTicks >= heavyChargeTicks(f) && !f.meleeTicks && !f.meleeCooldown && !(f.hitStunTicks > 0) && !input.aim;
+  f.heavyChargeTicks = duel && input.fire && !input.aim && !(f.hitStunTicks > 0) ? Math.min(100000, finite(f.heavyChargeTicks) + 1) : 0;
   // The lunge cut is timed so its blade arrives as the lunge lands (or as soon as a body stops it).
   const lungeSlash = f.bladeLungeSlashPending === true && !f.meleeTicks && !(f.bladeLungeTicks > Math.max(0, meleeProfile({ ...f, meleeAction: 'primary' }).startupTicks - 4));
   if (lungeSlash) f.bladeLungeSlashPending = false;
-  if (primary.primaryPressed || lungeSlash) {
-    beginMelee(state, f); melee = meleeProfile(f);
+  if (heavyRelease || primary.primaryPressed || lungeSlash) {
+    // A strafe picks the sweep's side; a jump turns the cut into an overhead chop.
+    const style = heavyRelease ? 'heavy' : lungeSlash || !duel ? null : f.riposteTicks > 0 ? 'riposte' : !f.grounded ? 'overhead' : null;
+    const side = duel && !heavyRelease && !lungeSlash ? input.left && !input.right ? -1 : input.right && !input.left ? 1 : 0 : 0;
+    if (style === 'riposte') f.riposteTicks = 0;
+    beginMelee(state, f, 'primary', { style, side }); melee = meleeProfile(f);
     if (lungeSlash) emit(state, 'meleeLunge', { playerId: f.id, weapon: meleeWeapon, meleeIndex: f.meleeIndex, x: f.x, y: f.y, z: f.z, dx: f.bladeLungeX, dz: f.bladeLungeZ });
   } else if (!f.meleeTicks && secondaryReady(f, input)) {
     if (meleeWeapon === 'knife') { beginMelee(state, f, 'secondary'); melee = meleeProfile(f); }
@@ -1329,6 +1341,8 @@ function bladeGuardContact(state, hit, pending, arena) {
   const parrying = bullet && parryPhase(defender).phase === 'active';
   // A staggered defender has no guard; the flag can be stale while stunned.
   if (!(parrying || defender.guarding && !(defender.hitStunTicks > 0)) || !facesFront(defender, source, BLADE_GUARD.halfAngle)) return;
+  // An overhead chop comes over the guard.
+  if (blade && hit.overhead === true && !parrying) return;
   const point = [hit.hitX, hit.hitY, hit.hitZ].every(Number.isFinite) ? { x: hit.hitX, y: hit.hitY, z: hit.hitZ } : eyePosition(defender);
   if (parrying) {
     const returned = Math.round(hit.damage * BLADE_GUARD.deflectShare);
@@ -1342,8 +1356,8 @@ function bladeGuardContact(state, hit, pending, arena) {
     return;
   }
   const share = blade ? BLADE_GUARD.meleeShare : 0, cost = BLADE_GUARD.staminaBase + hit.damage * BLADE_GUARD.staminaPerDamage;
-  if (defender.stamina < cost) {
-    // An exhausted guard breaks: the round lands and the defender staggers.
+  if (defender.stamina < cost || blade && hit.heavy === true) {
+    // An exhausted guard, or one met by a heavy cut, breaks: the hit lands and the defender staggers.
     defender.stamina = 0; defender.sprintExhausted = true; defender.guarding = false; defender.guardBroken = true;
     defender.hitStunTicks = Math.max(defender.hitStunTicks || 0, BLADE_GUARD.breakStunTicks); defender.triggerBlocked = defender.meleeAimBlocked = true;
     emit(state, 'guardBreak', { playerId: defender.id, targetId: attacker.id, x: point.x, y: point.y, z: point.z });
@@ -1366,6 +1380,8 @@ export function applyCombatDamage(state, pending, { onMeleeHit, arena = state.ma
   }
   for (const { defender, attacker, contact, hit } of defenses.values()) {
     parried.add(hit); defender.parryConsumed = true; defender.parryTicks = Math.min(defender.parryTicks, parryProfile(defender).recoveryTicks);
+    // A clean parry opens a riposte: the next cut lands harder and staggers longer.
+    if (DUEL_WEAPONS.includes(meleeWeaponId(defender))) defender.riposteTicks = RIPOSTE.windowTicks;
     if (Object.hasOwn(MELEE_WEAPONS, hit.attack) && Number.isInteger(hit.meleeIndex) && hit.meleeIndex === attacker.meleeIndex && hit.meleeStartTick === attacker.meleeStartTick) {
       stoppedSwings.add(swingKey(hit)); attacker.meleeTicks = Math.min(attacker.meleeTicks, meleeProfile(attacker).recoveryTicks); attacker.meleePhase = 'recovery'; resetMeleeCombo(attacker);
     }
@@ -1394,7 +1410,7 @@ export function applyCombatDamage(state, pending, { onMeleeHit, arena = state.ma
     cancelHeal(state, f, 'damage');
     if (attacker && attacker.id !== f.id && attacker.team !== f.team) attacker.damageDealt += damage;
     if (f.hp <= 0) lethalHits.set(f.id, hit);
-    if (typeof hit.attack === 'string' && Object.hasOwn(MELEE_WEAPONS, hit.attack) && Number.isInteger(hit.meleeIndex) && [hit.hitX, hit.hitY, hit.hitZ].every(Number.isFinite)) emit(state, 'meleeHit', { comboStep: hit.comboStep || 0, comboLength: hit.comboLength || 0, comboFinisher: hit.comboFinisher === true, slashDirection: hit.slashDirection || 1, meleeIndex: hit.meleeIndex, meleeStartTick: hit.meleeStartTick, meleeAction: hit.meleeAction || 'primary', attackerLifeId: hit.attackerLifeId || 0, attackerDeaths: hit.attackerDeaths || 0, playerId: hit.playerId, targetId: hit.targetId, targetLifeId: hit.targetLifeId || 0, weapon: hit.attack, hand: hit.hand, damage, x: hit.hitX, y: hit.hitY, z: hit.hitZ });
+    if (typeof hit.attack === 'string' && Object.hasOwn(MELEE_WEAPONS, hit.attack) && Number.isInteger(hit.meleeIndex) && [hit.hitX, hit.hitY, hit.hitZ].every(Number.isFinite)) emit(state, 'meleeHit', { ...(hit.heavy ? { heavy: true } : {}), ...(hit.riposte ? { riposte: true } : {}), ...(hit.overhead ? { overhead: true } : {}), comboStep: hit.comboStep || 0, comboLength: hit.comboLength || 0, comboFinisher: hit.comboFinisher === true, slashDirection: hit.slashDirection || 1, meleeIndex: hit.meleeIndex, meleeStartTick: hit.meleeStartTick, meleeAction: hit.meleeAction || 'primary', attackerLifeId: hit.attackerLifeId || 0, attackerDeaths: hit.attackerDeaths || 0, playerId: hit.playerId, targetId: hit.targetId, targetLifeId: hit.targetLifeId || 0, weapon: hit.attack, hand: hit.hand, damage, x: hit.hitX, y: hit.hitY, z: hit.hitZ });
     emit(state, 'damage', { ...hit, damage, hp: f.hp, x: f.x, y: f.y + eyeHeight(f), z: f.z });
     if (typeof hit.attack === 'string' && Object.hasOwn(MELEE_WEAPONS, hit.attack) && attacker && attacker.id !== f.id && attacker.team !== f.team) {
       const profile = meleeProfile({ meleeWeapon: hit.attack, meleeAction: hit.meleeAction || 'primary', meleeComboWeapon: hit.attack, meleeComboStep: hit.comboStep });

@@ -38,11 +38,37 @@ const COMBO_PROFILES = Object.freeze(Object.fromEntries(Object.entries(MELEE_WEA
   const comboStep = index + 1, comboFinisher = comboStep === COMBO_LENGTHS[id];
   return Object.freeze({ ...profile, comboStep, comboLength: COMBO_LENGTHS[id], comboFinisher, slashDirection: comboStep % 2 ? 1 : -1, damage: comboFinisher ? Math.round(profile.damage * (id === 'axe' ? 1.15 : 1.2)) : profile.damage, pushSpeed: profile.pushSpeed * (comboFinisher ? 1.25 : 1), hitStunTicks: comboFinisher ? impactFor(id).finisherStunTicks : impactFor(id).stunTicks, playerPush: impactFor(id).playerPush });
 }))])));
+/** Duel styles for long blades. A held-then-released primary is a heavy cut that
+ * breaks guards; a cut inside the window after a clean parry is a riposte; a cut
+ * thrown in the air is an overhead chop that comes over a held guard; a strafe
+ * picks which side the sweep comes from. */
+export const DUEL_WEAPONS = Object.freeze(['sword', 'katana', 'axe']);
+export const HEAVY = Object.freeze({ chargeExtraTicks: 18, damage: 1.6, push: 1.5, startupExtraTicks: 6, stunExtraTicks: 8 });
+export const RIPOSTE = Object.freeze({ windowTicks: 72, damage: 1.5 });
+export const OVERHEAD = Object.freeze({ tilt: -1.3, damage: 1.15 });
+/** Ticks the primary must be held before release turns into a heavy cut. */
+export const heavyChargeTicks = playerOrId => {
+  const base = MELEE_WEAPONS[meleeWeaponId(playerOrId)];
+  return base.startupTicks + base.activeTicks + base.recoveryTicks + HEAVY.chargeExtraTicks;
+};
+const STYLE_PROFILES = new Map();
+const styled = (profile, style, side) => {
+  const key = `${profile.id}:${profile.comboStep || 0}:${style || ''}:${side || 0}`;
+  let cached = STYLE_PROFILES.get(key); if (cached) return cached;
+  const impact = impactFor(profile.id), changes = {};
+  if (style === 'heavy') Object.assign(changes, { comboStep: 0, comboLength: 0, comboFinisher: false, heavy: true, startupTicks: profile.startupTicks + HEAVY.startupExtraTicks, damage: Math.round(profile.damage * HEAVY.damage), pushSpeed: profile.pushSpeed * HEAVY.push, hitStunTicks: impact.finisherStunTicks + HEAVY.stunExtraTicks });
+  else if (style === 'riposte') Object.assign(changes, { comboStep: 0, comboLength: 0, comboFinisher: false, riposte: true, damage: Math.round(profile.damage * RIPOSTE.damage), hitStunTicks: impact.finisherStunTicks });
+  else if (style === 'overhead') Object.assign(changes, { overhead: true, slashTilt: OVERHEAD.tilt, damage: Math.round(profile.damage * OVERHEAD.damage) });
+  if (side === 1 || side === -1) changes.slashDirection = side;
+  cached = Object.freeze({ ...profile, ...changes }); STYLE_PROFILES.set(key, cached); return cached;
+};
 export const meleeProfile = playerOrId => {
   const id = meleeWeaponId(playerOrId);
   if (id === 'knife' && playerOrId?.meleeAction === 'secondary') return KNIFE_SECONDARY;
   const step = playerOrId?.meleeComboStep;
-  return playerOrId?.monster !== true && playerOrId?.bot !== true && playerOrId?.meleeAction !== 'secondary' && playerOrId?.meleeComboWeapon === id && Number.isInteger(step) && step > 0 ? COMBO_PROFILES[id][Math.min(step, COMBO_LENGTHS[id]) - 1] : MELEE_WEAPONS[id];
+  const profile = playerOrId?.monster !== true && playerOrId?.bot !== true && playerOrId?.meleeAction !== 'secondary' && playerOrId?.meleeComboWeapon === id && Number.isInteger(step) && step > 0 ? COMBO_PROFILES[id][Math.min(step, COMBO_LENGTHS[id]) - 1] : MELEE_WEAPONS[id];
+  const style = playerOrId?.meleeStyle, side = playerOrId?.meleeSide;
+  return DUEL_WEAPONS.includes(id) && playerOrId?.meleeAction !== 'secondary' && (style || side) ? styled(profile, style, side) : profile;
 };
 export function resetMeleeCombo(player) { player.meleeComboStep = 0; player.meleeComboConfirmed = false; player.meleeComboWindowTicks = 0; player.meleeComboWeapon = null; return player; }
 /** Neutralization drops the next click without rewriting an accepted cut. */

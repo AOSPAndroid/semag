@@ -29,7 +29,7 @@ export function createBladeFeel() {
       if (!event || localId == null) return false;
       const mine = event.playerId === localId, hitMe = event.targetId === localId;
       if (event.type === 'meleeHit' && finite(event.damage) > 0) {
-        const weight = weightFor(event.weapon), heavy = event.comboFinisher === true || event.slideSlash === true ? BLADE_FEEL.finisherMultiplier : 1;
+        const weight = weightFor(event.weapon), heavy = event.heavy === true ? BLADE_FEEL.finisherMultiplier * 1.3 : event.comboFinisher === true || event.slideSlash === true || event.riposte === true ? BLADE_FEEL.finisherMultiplier : 1;
         if (mine) { stopUntil = Math.max(stopUntil, time + weight.stopMs * heavy); kick(weight.kick * heavy, weight.kick * .45 * heavy, weight.kick * .6); return true; }
         if (hitMe) { kick(-BLADE_FEEL.flinchKick * heavy, BLADE_FEEL.flinchKick * .7, BLADE_FEEL.flinchKick); return true; }
       } else if (event.type === 'meleeClash' && (mine || hitMe)) {

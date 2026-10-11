@@ -41,7 +41,11 @@ for (const weapon of Object.keys(MELEE_WEAPONS)) test(`${weapon}: confirmed fres
 test('held attack never advances a chain; whiffs, expired timing and physical weapon changes restart it', () => {
   const state = fixture('sword'), player = state.players[0];
   step(state, { fire: true }, 150); assert.equal(state.events.filter(event => event.type === 'meleeStart').length, 1);
-  step(state); assert.equal(strike(state).comboStep, 1);
+  // Letting go after a full charge throws one standalone heavy cut, never a chain step.
+  step(state); const heavy = state.events.findLast(event => event.type === 'meleeStart');
+  assert.equal(heavy.heavy, true); assert.equal(heavy.comboStep, 0); assert.equal(player.meleeComboStep, 0);
+  while (player.meleeTicks > 0 || player.meleeCooldown > 0) step(state);
+  assert.equal(strike(state).comboStep, 1);
   assert.equal(strike(state, { hit: false }).comboStep, 2); assert.equal(player.meleeComboConfirmed, false);
   assert.equal(strike(state).comboStep, 1);
   step(state, {}, MELEE_COMBO_WINDOW_TICKS + 1); assert.equal(strike(state).comboStep, 1);

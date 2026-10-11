@@ -2,7 +2,7 @@ import { SPRINT } from './voxel-engine.js';
 import { WEAPONS, weaponAimFovRatio } from './voxel-weapons.js';
 import { weaponReloadDuration } from './voxel-fire-modes.js';
 import { weaponReloadPose } from './voxel-player-animation.js';
-import { KNIFE_SECONDARY, PARRY_PROFILES, MELEE_PRESS_BUFFER_TICKS, MELEE_COMBO_WINDOW_TICKS, meleeComboLength, meleeLabel, meleeProfile, meleeWeaponId, meleeSlashPhase, parryProfile, parryPhase } from './voxel-melee.js';
+import { KNIFE_SECONDARY, PARRY_PROFILES, MELEE_PRESS_BUFFER_TICKS, MELEE_COMBO_WINDOW_TICKS, meleeComboLength, heavyChargeTicks, meleeLabel, meleeProfile, meleeWeaponId, meleeSlashPhase, parryProfile, parryPhase } from './voxel-melee.js';
 import { selectedInventoryItem } from './voxel-inventory.js';
 
 /** Keep hip turn speed; ADS adds deliberate fine control to the weapon's zoom. */
@@ -38,6 +38,11 @@ export function meleeActionReadout(player, profile = meleeProfile(player)) {
     && player.meleeComboWeapon === profile.id && held?.kind === 'melee' && held.weapon === profile.id
     && !player.reloadTicks && !player.grenadeThrowTicks && !player.parryTicks && !player.triggerBlocked;
   const comboLabel = combo ? `${profile.comboFinisher ? 'FINISHER' : profile.id === 'knife' ? 'STAB' : 'CUT'} ${profile.comboStep}/${profile.comboLength} · ` : '';
+  const charge = finiteTicks(player.heavyChargeTicks), chargeNeed = heavyChargeTicks(player);
+  if (charge > 0 && !attackTicks && !guardTicks) return charge >= chargeNeed
+    ? { state: 'heavy', ammo: 'HEAVY', status: `${bladeName} · HEAVY READY · RELEASE TO CUT · BREAKS GUARDS`, progress: null }
+    : { state: 'charge', ammo: 'CHARGE', status: `${bladeName} · CHARGING HEAVY`, progress: actionProgress('heavy', chargeNeed - charge, chargeNeed) };
+  if (finiteTicks(player.riposteTicks) > 0 && !attackTicks) return { state: 'riposte', ammo: 'RIPOSTE', status: `${bladeName} · RIPOSTE · CUT NOW FOR A HARDER HIT`, progress: null };
   if (player.guarding === true) return { state: 'guard', ammo: 'GUARD', status: `GUARD UP · ${Math.round(player.stamina || 0)} STAMINA · BULLETS BLOCKED`, progress: null };
   if (guard && guardTicks) {
     const phase = parryPhase(player).phase;
