@@ -6,7 +6,8 @@ import vm from 'node:vm';
 const source = await readFile(new URL('../public/service-worker.js', import.meta.url), 'utf8');
 const ORIGIN = 'https://semag.lol';
 const OFFLINE_URL = `${ORIGIN}/offline.html`;
-const CURRENT_CACHE = 'semag-pwa-3.68.0';
+const { version } = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
+const CURRENT_CACHE = `semag-pwa-${version}`;
 
 function workerPlatform({ network = async () => new Response('live'), existingCaches = {} } = {}) {
   const listeners = new Map();
@@ -133,7 +134,7 @@ test('server error responses remain visible rather than being replaced by an off
 test('activation removes only older semaG PWA caches and then claims pages', async () => {
   const worker = workerPlatform({ existingCaches: {
     'semag-pwa-3.67.0': [],
-    'semag-pwa-3.68.0': [[OFFLINE_URL, new Response('current connection page')]],
+    [CURRENT_CACHE]: [[OFFLINE_URL, new Response('current connection page')]],
     'semag-pwa-3.66.0': [],
     'another-app': [],
     'semag-game-art': [],

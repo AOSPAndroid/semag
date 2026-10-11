@@ -17,6 +17,9 @@ const ICONS = Object.freeze({
   empty: 'M8 11h12 M14 5v12',
 });
 const catalogItem = (catalog, id) => typeof id === 'string' && Object.hasOwn(catalog, id) ? catalog[id] : null;
+const wheelSelectableItem = item => item?.kind === 'weapon' ? !!catalogItem(WEAPONS, item.weapon)
+  : item?.kind === 'melee' ? !!catalogItem(MELEE_WEAPONS, item.weapon)
+  : (item?.kind === 'heal' || item?.kind === 'grenade') && Number.isFinite(item.amount) && item.amount >= 1;
 
 // Original side silhouettes share the hotbar's 28 × 24 viewBox. Barrel, stock,
 // magazine and optic shapes identify a carried gun even before its label fits.
@@ -110,7 +113,7 @@ export function createWeaponWheelController({ onReset = () => {} } = {}) {
   }
   function sync(player, now) {
     const next = JSON.stringify([player?.id, player?.lifeId, player?.deaths,
-      Array.from({ length: 4 }, (_, index) => { const item = player?.inventory?.[index]; return item ? [item.kind, item.weapon || null] : null; })]);
+      Array.from({ length: 4 }, (_, index) => { const item = player?.inventory?.[index]; return item ? [item.kind, item.weapon || null, wheelSelectableItem(item)] : null; })]);
     if (signature !== next || pendingIndex !== null && now - lastIntentAt > 750 && queuedIndex === null) { reset(); signature = next; }
   }
   function flush(player, now) {
@@ -130,7 +133,7 @@ export function createWeaponWheelController({ onReset = () => {} } = {}) {
       accumulatedDelta = Math.max(-threshold, Math.min(threshold, accumulatedDelta + delta));
       if (Math.abs(accumulatedDelta) < threshold) return { handled: true, action: null };
       const direction = Math.sign(accumulatedDelta); accumulatedDelta = 0;
-      const slots = player.inventory.slice(0, 4).flatMap((item, index) => item?.kind === 'weapon' && catalogItem(WEAPONS, item.weapon) || item?.kind === 'melee' && catalogItem(MELEE_WEAPONS, item.weapon) ? [index] : []);
+      const slots = player.inventory.slice(0, 4).flatMap((item, index) => wheelSelectableItem(item) ? [index] : []);
       const start = pendingIndex ?? (Number.isInteger(player.inventoryIndex) ? player.inventoryIndex : 0);
       let target = null;
       for (let offset = 1; offset <= 4; offset++) { const index = (start + direction * offset + 8) % 4; if (slots.includes(index)) { target = index; break; } }

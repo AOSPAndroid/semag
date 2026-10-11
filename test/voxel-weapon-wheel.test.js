@@ -6,18 +6,23 @@ import { createPracticeWheelDispatch } from '../public/voxel-practice-client.js'
 import { createPracticeInputQueue } from '../public/voxel-practice-input.js';
 import { createFpsInputQueue } from '../public/voxel-input-queue.js';
 import { createPractice, startPractice, stepPractice } from '../public/voxel-practice-engine.js';
-import { pickupCombatLoot } from '../public/voxel-engine.js';
+import { pickupCombatLoot, HEAL } from '../public/voxel-engine.js';
 
 const player = (inventory = [createInventoryMelee('knife'), createInventoryGun('carbine'), null, null], inventoryIndex = 1) => ({ id: 0, lifeId: 1, deaths: 0, alive: true, inventory, inventoryIndex });
 const event = (deltaY, extras = {}) => ({ deltaY, deltaX: 0, deltaMode: 0, ...extras });
 const consume = (wheel, actor, delta, now, extras) => wheel.consume(event(delta, extras), actor, { now });
 
-test('both directions wrap occupied guns and blades and skip utility and empty slots without mutation', () => {
+test('both directions wrap all carried items, including potions and grenades, without mutation', () => {
   const actor = player([createInventoryMelee('katana'), { kind: 'heal', amount: 2 }, createInventoryGun('pistol'), { kind: 'grenade', amount: 1 }], 0);
   const before = structuredClone(actor), wheel = createWeaponWheelController();
-  assert.equal(consume(wheel, actor, 120, 0).action, 'slot3');
-  assert.equal(consume(wheel, actor, 120, 30).action, 'slot1');
-  assert.equal(consume(wheel, actor, -120, 60).action, 'slot3');
+  assert.equal(consume(wheel, actor, 120, 0).action, 'slot2');
+  assert.equal(consume(wheel, actor, 120, 30).action, 'slot3');
+  assert.equal(consume(wheel, actor, 120, 60).action, 'slot4');
+  assert.equal(consume(wheel, actor, 120, 90).action, 'slot1');
+  assert.equal(consume(wheel, actor, -120, 120).action, 'slot4');
+  assert.equal(consume(wheel, actor, -120, 150).action, 'slot3');
+  assert.equal(consume(wheel, actor, -120, 180).action, 'slot2');
+  assert.equal(consume(wheel, actor, -120, 210).action, 'slot1');
   assert.deepEqual(actor, before);
   const empty = player([null, null, null, null]);
   assert.equal(consume(createWeaponWheelController(), empty, 120, 0).action, null);
@@ -32,6 +37,39 @@ test('physical slot order determines the next weapon even while a potion is sele
   const actor = player([createInventoryMelee('knife'), { kind: 'heal', amount: 1 }, null, createInventoryGun('pistol')], 1);
   assert.equal(consume(createWeaponWheelController(), actor, 80, 0).action, 'slot4');
   assert.equal(consume(createWeaponWheelController(), actor, -80, 0).action, 'slot1');
+});
+
+test('empty slots and depleted, malformed or unknown items are skipped', () => {
+  for (const item of [null, { kind: 'heal', amount: 0 }, { kind: 'heal', amount: .5 }, { kind: 'heal', amount: NaN }, { kind: 'heal', amount: '2' }, { kind: 'grenade', amount: Infinity }, { kind: 'ammo', amount: 2 }, { kind: 'melee', weapon: '__proto__' }]) {
+    const actor = player([createInventoryMelee('knife'), item, { kind: 'heal', amount: 1 }, null], 0);
+    assert.equal(consume(createWeaponWheelController(), actor, 120, 0).action, 'slot3');
+    assert.equal(consume(createWeaponWheelController(), actor, -120, 0).action, 'slot3');
+  }
+});
+
+test('rapid forward and reverse wraps include supplies while authority is still stale', () => {
+  for (const direction of [-1, 1]) for (const count of [2, 3, 4, 6]) {
+    const actor = player([createInventoryMelee('knife'), createInventoryGun('carbine'), { kind: 'heal', amount: 2 }, { kind: 'grenade', amount: 1 }]);
+    const before = structuredClone(actor), wheel = createWeaponWheelController(), sent = [];
+    for (let index = 0; index < count; index++) { const action = consume(wheel, actor, 120 * direction, index).action; if (action) sent.push(action); }
+    const final = wheel.flush(actor, 24); if (final) sent.push(final);
+    assert.equal(sent.at(-1), `slot${(1 + direction * count + 8) % 4 + 1}`);
+    assert.ok(sent.length <= 2); assert.deepEqual(actor, before);
+  }
+});
+
+test('stack depletion cancels a queued selection, while a still-occupied stack keeps it', () => {
+  const actor = player([createInventoryMelee('knife'), createInventoryGun('carbine'), { kind: 'heal', amount: 2 }, null], 0);
+  const wheel = createWeaponWheelController();
+  assert.equal(consume(wheel, actor, 120, 0).action, 'slot2');
+  assert.equal(consume(wheel, actor, 120, 1).action, null);
+  actor.inventory[2].amount = 1;
+  assert.equal(wheel.flush(actor, 24), 'slot3');
+  wheel.reset();
+  consume(wheel, actor, 120, 30); consume(wheel, actor, 120, 31);
+  actor.inventory[2].amount = 0;
+  assert.equal(wheel.flush(actor, 60), null);
+  assert.equal(consume(wheel, actor, 120, 90).action, 'slot2');
 });
 
 test('tiny trackpad motion accumulates, direction reversal resets it, and line/page detents stay bounded', () => {
@@ -90,10 +128,10 @@ test('life and inventory changes discard stale wheel targets while ammunition ch
   actor.lifeId++;
   assert.equal(consume(wheel, actor, 120, 60).action, 'slot3');
   actor.inventory[2] = { kind: 'heal', amount: 1 };
-  assert.equal(consume(wheel, actor, 120, 90).action, 'slot4');
+  assert.equal(consume(wheel, actor, 120, 90).action, 'slot3');
   assert.equal(resets, 3);
   const snapshot = wheel.inspect(); assert.ok(Object.isFrozen(snapshot));
-  wheel.reset(); assert.equal(snapshot.pendingIndex, 3); assert.equal(wheel.inspect().pendingIndex, null);
+  wheel.reset(); assert.equal(snapshot.pendingIndex, 2); assert.equal(wheel.inspect().pendingIndex, null);
 });
 
 class Canvas extends EventTarget {
@@ -204,4 +242,44 @@ test('network wheel slot pulses preserve physical fire/aim and serialize a stale
   assert.equal(actor.inventoryIndex, 1); assert.equal(actor.shots, before); assert.equal(actor.meleeTicks, 0); assert.equal(actor.parryTicks, 0);
   assert.equal(held.fire, true); assert.equal(held.aim, true);
   assert.equal(queue.inspect().pending.length, 0);
+});
+
+for (const path of ['practice', 'network']) test(`${path} wheel equips potions safely, drinks on a fresh click and skips the depleted stack`, () => {
+  const state = createPractice({ bots: 1, mode: 'targets', seed: 65219 }); startPractice(state);
+  while (state.phase === 'countdown') stepPractice(state);
+  const actor = state.players[0]; actor.hp = 60;
+  for (const kind of ['heal', 'grenade']) {
+    const loot = { id: ++state.lootId, kind, amount: kind === 'heal' ? 2 : 1, x: actor.x, y: actor.y, z: actor.z };
+    state.loot.push(loot); assert.equal(pickupCombatLoot(state, actor, loot), true);
+  }
+  const queue = path === 'practice' ? createPracticeInputQueue() : createFpsInputQueue();
+  let held = {}, now = 0;
+  const dispatch = path === 'practice' ? createPracticeWheelDispatch(queue, () => held) : null;
+  const wheel = createWeaponWheelController();
+  function advance(input = held) {
+    held = input;
+    if (path === 'network') queue.observe(held, now);
+    stepPractice(state, path === 'network' ? queue.sample(held, now++).buttons : queue.sample(held));
+  }
+  function scroll(delta, at) {
+    const action = consume(wheel, actor, delta, at).action;
+    assert.ok(action);
+    if (dispatch) assert.equal(dispatch.dispatch(action), true);
+    else { queue.observe({ ...held, [action]: true }, now); queue.observe(held, now); }
+    advance();
+  }
+  advance({ fire: true, aim: true }); const shots = actor.shots;
+  scroll(120, 0);
+  assert.equal(actor.inventoryIndex, 2); assert.equal(actor.slot, 'potion');
+  for (let index = 0; index < HEAL.ticks + 2; index++) advance();
+  assert.equal(actor.potions, 2); assert.equal(actor.hp, 60); assert.equal(actor.healTicks, 0); assert.equal(actor.shots, shots);
+  for (const expectedHp of [120, 180]) {
+    advance({}); advance({ fire: true });
+    assert.equal(actor.healTicks, HEAL.ticks);
+    for (let index = 0; index < HEAL.ticks; index++) advance();
+    assert.equal(actor.hp, expectedHp); assert.equal(actor.shots, shots);
+  }
+  assert.equal(actor.potions, 0); assert.equal(actor.inventory[2], null); assert.equal(actor.slot, 'empty');
+  advance({}); scroll(120, 30); assert.equal(actor.inventoryIndex, 3); assert.equal(actor.slot, 'grenade');
+  scroll(-120, 60); assert.equal(actor.inventoryIndex, 1); assert.equal(actor.slot, 'primary');
 });
