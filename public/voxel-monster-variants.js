@@ -4,6 +4,93 @@ const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 const finite = value => Number.isFinite(value) ? value : 0;
 const EMPTY_OPTIONS = Object.freeze({});
 
+/** The ordinary shambler wears a torn work shirt, not an operator's uniform. */
+export const MONSTER_SHAMBLER_ART = Object.freeze({
+  skin: '#82917b', shadow: '#293936', armor: '#554b3e', head: '#a2aa8b', eye: '#e9bd72', width: .344,
+  shirt: '#645d46', seam: '#373b32', clothLight: '#908466', trousers: '#3b4944', boot: '#29312f',
+  bone: '#d8cbb0', wound: '#754646', hair: '#424a3b', charge: '#ffe1a0',
+});
+
+/**
+ * Every garment and digit follows the accepted articulated rig, including idle
+ * and cached death templates. Flush six-vertex panels carry fine seams, teeth
+ * and scars; the silhouette uses 28 cuboids instead of a heavy microvoxel mesh.
+ * The front callback is the renderer's existing transformed, shaded quad path.
+ */
+export function appendMonsterShambler(mesh, player, pose, options = EMPTY_OPTIONS) {
+  if (player?.monster !== true || player.human === true || player.monsterType !== 'stalker'
+      || typeof mesh?.box !== 'function' || typeof options.front !== 'function'
+      || ![pose?.x, pose?.y, pose?.z, pose?.yaw].every(Number.isFinite)) return false;
+  const art = MONSTER_SHAMBLER_ART, motion = options.motion || monsterLocomotionPose(player, options.animation);
+  const alive = player.alive !== false, attack = motion.attack, bob = motion.bodyBob, front = options.front;
+  const jawLoad = alive ? attack.extension * .009 : 0;
+  const eye = alive ? attack.windup > .55 ? art.charge : art.eye : art.shadow;
+  // Real hip/knee/ankle anchors keep torn trouser fabric attached while running.
+  for (let side = 0; side < 2; side++) {
+    const leg = motion.legs[side], foot = leg.foot;
+    appendMonsterLimb(mesh, pose, leg.hip, leg.knee, .120, .136, art.trousers);
+    appendMonsterLimb(mesh, pose, leg.knee, leg.ankle, .108, .110, side === 0 ? art.skin : art.trousers);
+    const width = .154 - motion.stride * .025, depth = .252 - motion.stride * .090;
+    mesh.box(foot[0] - width / 2, foot[1], foot[2] - depth / 2, width, .135, depth, art.boot, pose);
+    front(foot[0] - .040, foot[1] + .070, foot[2] - depth / 2 - .0005, .080, .018, art.clothLight);
+    if (side === 0) {
+      front(leg.ankle[0] - .014, leg.ankle[1] + .020, leg.ankle[2] - .061, .028, .115, art.bone);
+      front(leg.knee[0] - .045, leg.knee[1] - .030, leg.knee[2] - .072, .058, .051, art.wound);
+    } else front(leg.knee[0] - .044, leg.knee[1] - .040, leg.knee[2] - .072, .088, .055, art.clothLight);
+  }
+  mesh.box(-.172, .790 + bob, -.121, .344, .580, .242, art.shirt, pose);
+  // Stepped, uneven hems and raised split lapels give the shirt actual depth.
+  mesh.box(-.164, .736 + bob, -.119, .082, .091, .237, art.shirt, pose);
+  mesh.box(-.038, .763 + bob, -.120, .059, .060, .236, art.seam, pose);
+  mesh.box(.081, .718 + bob, -.117, .078, .105, .231, art.shirt, pose);
+  mesh.box(-.137, 1.169 + bob, -.145, .103, .173, .026, art.clothLight, pose);
+  mesh.box(.026, 1.115 + bob, -.144, .111, .227, .025, art.shirt, pose);
+  front(-.039, 1.194 + bob, -.1218, .065, .150, art.skin);
+  front(-.118, .912 + bob, -.1218, .063, .171, art.wound);
+  front(-.009, .823 + bob, -.1221, .018, .299, art.seam);
+  front(.023, .819 + bob, -.1221, .012, .243, art.clothLight);
+  for (let button = 0; button < 3; button++) front(.030, .863 + bob + button * .097, -.1225, .013, .015, art.bone);
+  front(.060, 1.007 + bob, -.1225, .079, .088, art.seam);
+  front(.060, 1.082 + bob, -.1230, .079, .014, art.clothLight);
+  front(-.159, .816 + bob, -.1225, .062, .042, art.clothLight);
+  front(-.143, .768 + bob, -.1198, .021, .044, art.seam);
+  front(.095, .743 + bob, -.1178, .026, .054, art.seam);
+  if (finite(player.monsterRallyTicks) > 0) front(-.025, 1.294 + bob, -.146, .050, .034, '#aff0b4');
+
+  mesh.box(-.095, 1.370 + bob, -.088, .190, .132, .176, art.skin, pose);
+  mesh.box(-.145, 1.533, -.117, .290, .237, .234, art.head, pose);
+  mesh.box(-.137, 1.755, -.110, .274, .045, .220, art.hair, pose);
+  mesh.box(-.110, 1.488 - jawLoad, -.147, .213, .083, .183, art.skin, pose);
+  mesh.box(.074, 1.574, -.138, .041, .047, .025, art.bone, pose);
+  mesh.box(-.022, 1.623, -.141, .037, .059, .025, art.skin, pose);
+  front(-.100, 1.538 - jawLoad, -.1478, .187, .047 + jawLoad, art.shadow);
+  for (const [x, y, width] of [[-.092, 1.558, .028], [-.031, 1.548, .030], [.042, 1.558, .024]]) {
+    front(x, y - jawLoad, -.1483, width, .018, art.bone);
+  }
+  front(-.142, 1.588, -.1178, .038, .091, art.wound);
+  front(-.130, 1.611, -.1183, .027, .048, art.shadow);
+  front(.087, 1.522, -.1480, .017, .046, art.wound);
+  front(-.041, 1.735, -.1178, .035, .025, art.hair);
+  for (let side = 0; side < 2; side++) {
+    const x = side === 0 ? -.112 : .039, y = side === 0 ? 1.650 : 1.641;
+    front(x, y, -.1186, .072, .038, art.shadow);
+    front(x + .017, y + .008, -.1191, .026, .015, eye);
+    front(x - .003, y + .034, -.1196, .077, .014, art.hair);
+  }
+  // Unequal sleeve lengths, actual palms and paired bony fingers read in side
+  // views, while remaining inside the same .29m body shooting envelope.
+  for (let side = 0; side < 2; side++) {
+    const arm = motion.arms[side], hand = arm.hand;
+    appendMonsterLimb(mesh, pose, arm.shoulder, arm.elbow, .069, .077, art.shirt);
+    appendMonsterLimb(mesh, pose, arm.elbow, hand, .058, .064, side === 0 ? art.skin : art.clothLight);
+    mesh.box(hand[0] - .031, hand[1] - .033, hand[2] - .033, .062, .068, .066, art.skin, pose);
+    for (let finger = 0; finger < 2; finger++) mesh.box(hand[0] - .024 + finger * .028, hand[1] - .089 - finger * .009,
+      hand[2] - .030, .016, .060, .027, art.bone, pose);
+    front(hand[0] - .022, hand[1] - .004, hand[2] - .0338, .044, .021, art.bone);
+  }
+  return true;
+}
+
 export const MONSTER_VARIANT_ART = Object.freeze({
   bomber: Object.freeze({ skin: '#8e4936', shadow: '#382c29', armor: '#593527', head: '#a56348', eye: '#f5ad64', width: .52,
     seam: '#f18142', charge: '#ffd68a', bone: '#c9ad87', state: 'bomberFuse' }),

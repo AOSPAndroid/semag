@@ -44,9 +44,11 @@ test('walking feet, opening jaws, swelling bellies and casting hands remain insi
   }
 });
 
-test('the actual renderer preserves the released 3.61 idle, articulated attack-tell and corpse anatomy byte for byte', () => {
+test('the seven unchanged original species preserve released idle, attack-tell and corpse anatomy byte for byte', () => {
   const signature = createHash('sha256');
-  for (const type of ['stalker', 'runner', 'brute', 'gunner', 'sniper', 'hound', 'leaper', 'screecher']) {
+  // The base shambler is intentionally redrawn and has landmark, collision,
+  // animation, death and whole-wave budget checks in voxel-shambler-art.test.js.
+  for (const type of ['runner', 'brute', 'gunner', 'sniper', 'hound', 'leaper', 'screecher']) {
     for (const state of ['pursuit', 'windup', 'lungeWindup', 'leap', 'roar', 'aiming', 'dead']) for (const frame of [0, 1, 2]) {
       const player = { id: 8, lifeId: 3, monster: true, human: false, monsterType: type, alive: state !== 'dead', x: 2.4, y: .7, z: -3.1, yaw: frame * .73, pitch: .16, monsterState: state, attackTicks: 18, attackDuration: 72, lungeTicks: 12, roarTicks: 22, roarDuration: 72, monsterRallyTicks: frame ? 60 : 0, vx: frame * 1.4, vz: -frame * .8 };
       // Running limbs deliberately change. Freeze travel here so the same
@@ -55,7 +57,7 @@ test('the actual renderer preserves the released 3.61 idle, articulated attack-t
       signature.update(`${type}:${state}:${frame}:`); signature.update(new Uint8Array(mesh.buffer, mesh.byteOffset, mesh.byteLength));
     }
   }
-  assert.equal(signature.digest('hex'), '69f0b41959fde83a606cb0fc59c8e7a6ca120a63d700be4b1f8d12ae84aca198');
+  assert.equal(signature.digest('hex'), 'ad369788a9a3846dc5221397739ee46c84d7943ee33dc9d1c8b07c2cb2083a3b');
 });
 
 test('actual live meshes keep every charged and walking corner inside world-aligned hit boxes at continuous yaw', () => {

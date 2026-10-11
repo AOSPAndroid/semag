@@ -12,7 +12,7 @@ import { MONSTER_DEATH_RULES, MONSTER_DEATH_STYLES, monsterDeathPose, createMons
 import { HUMAN_DEATH_RULES, humanDeathPose, humanDeathCameraPose, createHumanDeathPresenter } from './voxel-human-death.js';
 import { EMPTY_WORLD_LABELS, presentWorldLabels } from './voxel-label-presentation.js';
 import { createSlashImpactPresenter } from './voxel-slash-effects.js';
-import { MONSTER_VARIANT_ART, MONSTER_BESTIARY_ART, appendMonsterVariant, appendMonsterBestiary } from './voxel-monster-variants.js';
+import { MONSTER_VARIANT_ART, MONSTER_BESTIARY_ART, MONSTER_SHAMBLER_ART, appendMonsterVariant, appendMonsterBestiary, appendMonsterShambler } from './voxel-monster-variants.js';
 import { MONSTER_SPECIAL_RULES, MONSTER_HEX_RULES } from './voxel-monster-specials.js';
 import { monsterLocomotionPose, monsterGaitCycleMetres, appendMonsterLimb, createMonsterAttackPresenter, MONSTER_QUADRUPED_GAITS } from './voxel-monster-animation.js';
 import { MAP_EXPANSION_ART, MAP_EXPANSION_ATMOSPHERE, appendVoxelMapExpansionCollider, appendVoxelMapExpansionFloor, appendVoxelMapExpansionDecoration, appendVoxelMapExpansionFloors, appendVoxelIdentityFloors, resolveVoxelWallSign } from './voxel-map-expansion-art.js';
@@ -3190,7 +3190,7 @@ export function createLootPresenter() {
 }
 
 const MONSTER_ART = Object.freeze({
-  stalker: { skin: '#718e79', shadow: '#374f49', armor: '#435b53', eye: '#ddf19b', width: .38, head: '#829d83' },
+  stalker: MONSTER_SHAMBLER_ART,
   runner: { skin: '#9689aa', shadow: '#493c5e', armor: '#66597c', eye: '#c9b3ff', width: .32, head: '#524967' },
   brute: { skin: '#837a6b', shadow: '#443e3c', armor: '#7c6350', eye: '#ffb077', width: .47, head: '#665244' },
   gunner: { skin: '#839e97', shadow: '#324b4e', armor: '#476975', eye: '#a6f0df', width: .40, head: '#4e6970' },
@@ -3401,7 +3401,7 @@ function monsterParts(mesh, player, time, animation = null) {
     });
     mesh.quad(...points, rotate([0, 0, -1], yaw), rgba(color));
   };
-  if (appendMonsterBestiary(mesh, player, pose, { time, animation: gait, motion }) || appendMonsterVariant(mesh, player, pose, { time, animation: gait, motion })) return { type, armed: false, art, pose, yaw, pitch: 0 };
+  if (appendMonsterShambler(mesh, player, pose, { animation: gait, motion, front }) || appendMonsterBestiary(mesh, player, pose, { time, animation: gait, motion }) || appendMonsterVariant(mesh, player, pose, { time, animation: gait, motion })) return { type, armed: false, art, pose, yaw, pitch: 0 };
   if (CREATURE_TYPES.has(type)) {
     creatureParts(mesh, player, type, art, pose, front, gait, motion);
     return { type, armed: false, art, pose, yaw, pitch: 0 };

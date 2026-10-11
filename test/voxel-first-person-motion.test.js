@@ -53,14 +53,14 @@ test('crouch reduces head motion and settled ADS preserves an exactly still aim 
   close(partial.bobY, normal.bobY * .2); close(partial.roll, normal.roll * .2);
 });
 
-test('sprint gives the held weapon a clear low carry while eye motion and the central aim stay small', () => {
+test('sprint gives the held weapon a clear low carry while eye motion stays bounded and the central aim remains unchanged', () => {
   for (const hz of [60, 144, 240]) {
     const present = createFirstPersonMotionPresenter(); present(actor({ sprinting: true }), 0, 'sprint');
     let pose;
     for (let frame = 1; frame <= hz; frame++) {
       const player = actor({ sprinting: true, z: -7.7 * frame / hz, yaw: .1, pitch: -.2 }), before = structuredClone(player);
       pose = present(player, frame * 1000 / hz, 'sprint');
-      assert.ok(pose.bobY >= -.018 && pose.bobY <= 0 && Math.abs(pose.roll) <= .0034);
+      assert.ok(pose.bobY >= -.018 && pose.bobY <= 0 && Math.abs(pose.roll) <= .007);
       assert.ok(Math.abs(pose.weaponX) <= .015 && Math.abs(pose.weaponY) <= .066 && pose.weaponZ <= .035);
       assert.deepEqual(player, before, 'sprint carry cannot alter the real view angles or physical stance');
     }

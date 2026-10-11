@@ -32,11 +32,17 @@ export function createFirstPersonMotionPresenter() {
       const fall = reducedMotion || reset ? 0 : animation.fall;
       const landing = reducedMotion || reset ? 0 : animation.land;
       const carry = animation.sprint;
+      // Sprint shares the distance-driven footfall clock, with a more readable
+      // shoulder-to-shoulder weight transfer. The accepted sprint blend eases
+      // its roll rather than switching the camera on a key press. Keep the
+      // released vertical envelope: a larger dip would add near-cover parallax
+      // between the fixed reticle and the authoritative gun origin.
+      const headRoll = .0034 + carry * .0036;
       // Downward-only eye travel cannot reveal anything above the real head.
       // Roll leaves the central forward ray and mouse angles exactly unchanged.
       pose = {
         bobY: -Math.min(.018, (1 - Math.cos(animation.phase * 2)) * .009 * weight + animation.land * .012 * steadiness) || 0,
-        roll: Math.sin(animation.phase) * .0034 * weight || 0,
+        roll: Math.sin(animation.phase) * headRoll * weight || 0,
         weaponX: Math.sin(animation.phase) * (.009 + carry * .006) * handStride || 0,
         weaponY: -(1 - Math.cos(animation.phase * 2)) * (.004 + carry * .002) * handStride - landing * .009 - carry * .045 + (-landing * .013 - crouchCarry * .014 + jump * .016 - fall * .012) * modelSteadiness || 0,
         weaponZ: carry * .035 + (landing * .026 + fall * .012) * modelSteadiness,

@@ -14,6 +14,10 @@ Click an image to open it at full size.
 
 Six additions bring the horde to seventeen creature types. Rats scurry low, boars commit to a rushing charge, wolves approach your flanks, vampires heal from landed bites, witches cast dodgeable hexes and antlered stags shove with a melee hit. Each has distinct voxel anatomy, movement, attack warnings and collapse animation. Open **Meet the horde** before starting for first appearances and counters.
 
+The ordinary **Ash Stalker** has a detailed damaged face, separate eyes and teeth, a torn layered work shirt, uneven bony fingers and an exposed shin. Its clothing and limbs follow the accepted walking and attack joints, and the same model collapses on death. The extra detail stays inside its existing shooting and movement body.
+
+[![A redesigned Ash Stalker approaching during an actual Last Stand wave, showing its damaged face, torn work shirt and bony hands](docs/screenshots/voxel-ash-stalker.png)](docs/screenshots/voxel-ash-stalker.png)
+
 [![Actual Last Stand field guide showing six pixel silhouettes, first-wave badges and practical counters](docs/screenshots/voxel-horde-field-guide.png)](docs/screenshots/voxel-horde-field-guide.png)
 
 [![A naturally introduced Plague Rat with its low body and visible health bar during real wave-two Last Stand play](docs/screenshots/voxel-plague-rat.png)](docs/screenshots/voxel-plague-rat.png)
@@ -35,6 +39,8 @@ Use WASD or ZQSD to move, Shift to sprint, Ctrl to crouch, C to walk and Space t
 **Walking, combat and reload motion**
 
 Shared voxel operators and Shinobi have smoother supporting steps, directional torso motion and connected weapon grips. Cuts and parries move the shoulders and elbows; reloads follow ammunition, magazine and charging-handle stages. These images come from actual keyboard/mouse gameplay.
+
+First-person sprinting has a more noticeable shoulder roll than walking, alongside the gentle distance-driven head dip and low weapon carry. The motion eases in and out, settles against walls and pauses, and stays still while fully scoped or using reduced motion. It follows the shared voxel FPS renderer in Breach, Royale, Last Stand and the Dojo.
 
 | Moving ninja | Carbine reload |
 | --- | --- |
@@ -516,7 +522,9 @@ Run `python test/voxel-arsenal-browser-smoke.py http://127.0.0.1:3000` for nativ
 
 Run `python test/voxel-monsters-browser-smoke.py http://127.0.0.1:3000` for native zombie-hound movement, low-body hits, bite contacts and unarmed artwork. Shared monster tests additionally check committed leaper attacks, interruptible rallies, solid cover, body-aware navigation, deterministic co-op and bounded wave rendering.
 
-The six-species bestiary checks cover guaranteed wave debuts, actual charges, bites, parries, siphon healing, flanking, antler gaps, knockback, cover-tested witch projectiles, loot, animation and rendering budgets. Native checks for this update cover the desktop/mobile field guide, a naturally visible rat and two-player co-op. The five later creatures and their special attacks were verified in simulation and rendering tests; they were not reached in the native survival runs.
+The six-species bestiary checks cover guaranteed wave debuts, actual charges, bites, parries, siphon healing, flanking, antler gaps, knockback, cover-tested witch projectiles, loot, animation and rendering budgets. Native bestiary checks cover the desktop/mobile field guide, a naturally visible rat and two-player co-op. The five later creatures and their special attacks were verified in simulation and rendering tests; they were not reached in the native survival runs.
+
+The sprint-roll and base-zombie polish passed 138 unique targeted checks, including twelve accepted first shots after a sprint, exact scoped steadiness, animated anatomy and full-wave rendering limits. Native Dojo checks confirm walking, stronger running roll, moving sights and held-forward collision settling; native Last Stand checks show the detailed Ash Stalker approaching, a real headshot kill, progressing corpse collapse and enemy footstep reports with sound enabled. These are browser checks, not a hardware FPS benchmark.
 
 Run `python test/voxel-labels-browser-smoke.py http://127.0.0.1:3000` for native co-op teammate names, monster health bars, damage updates and solid-cover visibility. Label tests additionally check the actual camera projection, short hound silhouettes, spectators, safe player names and bounded overlay nodes.
 

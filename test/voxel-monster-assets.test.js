@@ -89,10 +89,12 @@ test('presented gait follows distance, rejects correction jitter, settles idle a
     const cycle = type === 'hound' ? 1.28 : type === 'leaper' ? 2.05 : type === 'screecher' ? 1.85 : type === 'runner' ? 1.75 : 3;
     const phase = (initial.phase + 5 * Math.PI * 2 / cycle) % (Math.PI * 2);
     assert.ok(Math.abs(current.phase - phase) < .000001, 'phase uses travelled metres, independent of refresh rate');
-    assert.strictEqual(present({ ...player, x: 5 }, 1000, 'match1'), current, 'second pass at the same timestamp keeps one pose');
-    assert.strictEqual(present({ ...player, x: 5 }, 1050, 'match1', { paused: true }), current);
-    assert.strictEqual(present({ ...player, x: 5 }, 1500, 'match1', { paused: true }), current);
-    assert.strictEqual(present({ ...player, x: 5 }, 1600, 'match1'), current, 'resume discards wall time without a phase jump');
+    // Accepted attack presentation may wrap the gait in a fresh object. The
+    // displayed pose, not that wrapper's identity, must stay exactly frozen.
+    assert.deepEqual(present({ ...player, x: 5 }, 1000, 'match1'), current, 'second pass at the same timestamp keeps the exact pose');
+    assert.deepEqual(present({ ...player, x: 5 }, 1050, 'match1', { paused: true }), current);
+    assert.deepEqual(present({ ...player, x: 5 }, 1500, 'match1', { paused: true }), current);
+    assert.deepEqual(present({ ...player, x: 5 }, 1600, 'match1'), current, 'resume discards wall time without a phase jump');
     const parkedPhase = current.phase;
     for (let frame = 1; frame <= 120; frame++) current = present({ ...player, x: 5 + (frame % 2 ? .0001 : 0) }, 1600 + frame * 1000 / 120, 'match1');
     assert.equal(current.phase, parkedPhase, 'sub-millimetre corrections do not flap paws');
