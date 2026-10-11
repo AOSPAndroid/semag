@@ -20,6 +20,7 @@ import { isPauseShortcut } from './pause-shortcut.js';
 import { createEndPresentation } from './voxel-end-presentation.js';
 import { createResultActionGate } from './practice-result-actions.js';
 import { mountVoxelVictory } from './voxel-victory.js';
+import { hordeBestiaryMarkup } from './hub/horde-setup.js';
 
 const clamp = (n, low, high) => Math.max(low, Math.min(high, n));
 const finite = n => Number.isFinite(n) ? n : 0;
@@ -28,6 +29,15 @@ const clock = seconds => `${Math.floor(seconds / 60)}:${String(Math.floor(second
 const LIVE_PHASES = Object.freeze(['countdown', 'fight', 'intermission']);
 const MOVEMENT_PHASES = Object.freeze(['fight', 'intermission']);
 const INTERMISSION_COMBAT_ACTIONS = Object.freeze(['fire', 'aim', 'grenade', 'heal', 'swap', 'reload']);
+
+/** Keep controls and the two collapsible guide sections in the modal tab loop. */
+export function hordeGuideTabTarget(controls, active, backwards = false) {
+  const index = controls.indexOf(active);
+  if (!controls.length) return null;
+  if (index < 0 || backwards && index === 0) return backwards ? controls.at(-1) : controls[0];
+  if (!backwards && index === controls.length - 1) return controls[0];
+  return null;
+}
 
 /** Repositioning previews cannot invent an attack while the squad is resupplying. */
 export function hordeInputForPhase(input, phase) {
@@ -293,6 +303,11 @@ export async function bootHorde() {
   }
   function showHelp() {
     if (modalOpen) return; returnFocus = document.activeElement; if (running()) pause(); modalOpen = true; clearInputs(); unlock(); hide('horde-guide', false); $('horde-help').setAttribute('aria-expanded', 'true'); $('horde-guide-close').focus({ preventScroll: true }); updateHUD(true);
+  }
+  function showFieldGuide() {
+    showHelp(); $('horde-bestiary').open = true;
+    $('horde-bestiary-summary').focus({ preventScroll: true });
+    $('horde-bestiary-summary').scrollIntoView({ block: 'start', behavior: 'instant' });
   }
   function hideHelp() { modalOpen = false; hide('horde-guide', true); $('horde-help').setAttribute('aria-expanded', 'false'); (paused ? $('horde-resume') : returnFocus)?.focus?.({ preventScroll: true }); updateHUD(true); }
   function consumeEvents(now) {
@@ -574,7 +589,11 @@ export async function bootHorde() {
     if (event.target?.closest?.('[data-voxel-armory]')) return;
     if (modalOpen) {
       if (event.key === 'Escape' && !event.repeat) hideHelp();
-      else if (event.key === 'Tab') { const buttons = [...$('horde-guide').querySelectorAll('button:not(:disabled)')], index = buttons.indexOf(document.activeElement); if (event.shiftKey && index <= 0) { event.preventDefault(); buttons.at(-1)?.focus(); } else if (!event.shiftKey && index === buttons.length - 1) { event.preventDefault(); buttons[0]?.focus(); } }
+      else if (event.key === 'Tab') {
+        const controls = [...$('horde-guide').querySelectorAll('button:not(:disabled), summary')].filter(element => element.getClientRects().length);
+        const target = hordeGuideTabTarget(controls, document.activeElement, event.shiftKey);
+        if (target) { event.preventDefault(); target.focus(); }
+      }
       return;
     }
     if (isPauseShortcut(event) && (LIVE_PHASES.includes(state?.phase) || state?.phase === 'paused')) {
@@ -627,7 +646,7 @@ export async function bootHorde() {
   }
   const unsubscribe = subscribeKeyboardLayout(() => { clearInputs(); hints(); });
   text('horde-mode', solo ? 'SOLO SURVIVAL' : '1–3 PLAYER CO-OP'); text('horde-room-code', roomId); $('horde-name').value = getName(); hide('horde-name-field', solo); hide('horde-lobby', solo); hide('horde-map-field', !solo); hide('horde-difficulty-field', !solo);
-  text('horde-start-label', solo ? 'Start survival' : 'Start squad survival'); if (!solo) text('horde-setup-copy', 'One squad, up to three players. Everyone readies; the host starts. Clear waves to recover, share supplies, and bring fallen teammates back.');
+  text('horde-start-label', solo ? 'Start survival' : 'Start squad survival'); if (!solo) text('horde-setup-copy', 'One squad, up to three players. Everyone readies; the host starts. Read the new threats in the field guide, share supplies, and bring fallen teammates back between waves.');
   populateWeaponSelect($('horde-weapon')); $('horde-weapon').value = 'carbine';
   const weaponArmory = mountWeaponArmory({ select: $('horde-weapon'), title: 'Choose your starting weapon', portalContainer: $('horde-shell') });
   const weaponDetails = document.createElement('details'); weaponDetails.className = 'arsenal-fold';
@@ -645,6 +664,7 @@ export async function bootHorde() {
   function changeSetup() { if (!solo || observeEnd().holding) return; preview(); weaponArmory.focus(); }
   listen($('horde-restart'), 'click', startSolo); listen($('horde-replay'), 'click', () => resultAction(() => { if (solo) startSolo(); else if (playerId === hostId) send({ type: 'rematch' }); })); listen($('horde-change-setup'), 'click', changeSetup); listen($('horde-result-setup'), 'click', () => resultAction(changeSetup));
   listen($('horde-help'), 'click', showHelp); listen($('horde-guide-close'), 'click', hideHelp); listen($('horde-guide-back'), 'click', hideHelp); listen($('horde-retry'), 'click', graphics);
+  listen($('horde-field-guide'), 'click', showFieldGuide);
   listen($('horde-sound'), 'click', async () => { const enabled = await audio.setEnabled(!audio.enabled); $('horde-sound').setAttribute('aria-pressed', String(enabled)); $('horde-sound').setAttribute('aria-label', enabled ? 'Mute sound' : 'Enable sound'); });
   listen($('horde-fullscreen'), 'click', async () => { if (running()) pause(); try { if (document.fullscreenElement) await document.exitFullscreen(); else await shell.requestFullscreen(); } catch { feedback('Fullscreen is unavailable in this browser.'); } });
   listen($('horde-copy-invite'), 'click', async () => { try { await copyText(invite); text('horde-copy-invite', 'Copied ✓'); setTimeout(() => { if (!destroyed) text('horde-copy-invite', 'Copy invite ↗'); }, 1800); } catch (cause) { error(cause.message); } });
@@ -672,6 +692,8 @@ export async function bootHorde() {
   hints(); weaponNote(); updateHUD(true);
   try {
     const [rules, visual] = await Promise.all([import('./voxel-horde-engine.js'), import('./voxel-renderer.js')]); if (destroyed) return null; engine = rules; rendererClass = visual.VoxelRenderer;
+    $('horde-bestiary-grid').innerHTML = hordeBestiaryMarkup(engine.MONSTER_TYPES);
+    $('horde-field-guide').disabled = false;
     for (const [id, map] of Object.entries(engine.MAPS)) { const option = document.createElement('option'); option.value = id; option.textContent = map.name; $('horde-map').append(option); }
     $('horde-map').value = Object.hasOwn(engine.MAPS, params.get('map')) ? params.get('map') : 'courtyard'; $('horde-difficulty').value = params.get('difficulty') === 'nightmare' ? 'nightmare' : 'veteran';
     if (solo) preview(); graphics(); if (!solo) { connect(); hostInfo().then(info => { invite = `${info.origin}/voxel-horde.html?room=${encodeURIComponent(roomId)}`; }).catch(() => {}); }

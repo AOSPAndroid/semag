@@ -141,8 +141,8 @@ test('map changes immediately replace visibility rather than retaining the previ
   covered(f, []); assert.equal(monsters(f.labels()).length, 1);
 });
 
-test('all eleven genuine monster types use current health and strict real actor lifetime identities', () => {
-  assert.equal(Object.keys(Horde.MONSTER_TYPES).length, 11);
+test('all seventeen genuine monster types use current health and strict real actor lifetime identities', () => {
+  assert.equal(Object.keys(Horde.MONSTER_TYPES).length, 17);
   for (const type of Object.keys(Horde.MONSTER_TYPES)) {
     const f = fixture(type), label = monsters(f.labels())[0]; assert.ok(label, type);
     assert.equal(label.hp, f.monster.hp); assert.equal(label.maxHp, f.monster.maxHp); assert.equal(label.id, f.monster.id); assert.equal(label.lifeId, f.monster.lifeId);

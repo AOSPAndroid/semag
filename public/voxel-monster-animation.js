@@ -1,13 +1,14 @@
 /** Cosmetic joints in local metres. Heads and authoritative bodies never move. */
+import { monsterTypeId } from './voxel-monster-bodies.js';
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 const finite = (value, fallback = 0) => Number.isFinite(value) ? value : fallback;
 const TAU = Math.PI * 2;
 const smooth = value => { const t = clamp(value, 0, 1); return t * t * (3 - 2 * t); };
 /** Both feet (or diagonal hound pairs) meet the floor at these half-cycle crossings. */
 export const MONSTER_GAIT_CONTACT_PHASE = Math.PI / 2;
-const cycleMetres = Object.freeze({ hound: 1.28, leaper: 2.05, screecher: 1.85, runner: 1.75 });
+const cycleMetres = Object.freeze({ hound: 1.28, leaper: 2.05, screecher: 1.85, runner: 1.75, vampire: 1.72, witch: 2.75, wolf: 1.48, pig: 1.80, rat: .64, stag: 2.15 });
 /** One shared distance rhythm for visible joints and positional footstep audio. */
-export const monsterGaitCycleMetres = type => cycleMetres[type] || 3;
+export const monsterGaitCycleMetres = type => typeof type === 'string' && Object.hasOwn(cycleMetres, type) ? cycleMetres[type] : 3;
 const styles = Object.freeze({
   // Reach, swing clearance and bare-arm swing. Bulky brutes stamp; runners
   // pick their knees up, while ranged monsters retain their weapon grip.
@@ -15,12 +16,24 @@ const styles = Object.freeze({
   gunner: [.090, .140, .034], sniper: [.078, .120, .027], leaper: [.099, .157, .159],
   screecher: [.082, .122, .103], bomber: [.096, .149, .126],
   spitter: [.084, .127, .098], weaver: [.078, .115, .087],
+  vampire: [.102, .155, .154], witch: [.072, .112, .087],
 });
-const STARTUP_STATES = new Set(['windup', 'lungeWindup', 'bomberFuse', 'spitting', 'weaving', 'roar']);
+/** The same grounded chains drive live anatomy and species-sized corpse folds. */
+export const MONSTER_QUADRUPED_GAITS = Object.freeze({
+  hound: Object.freeze({ x: .13, frontZ: -.19, rearZ: .21, hipY: .300, kneeY: .175, ankleY: .063, footY: .006, travel: .035, clearance: .094, weight: .004, maxBob: .010, pairing: 'diagonal' }),
+  wolf: Object.freeze({ x: .16, frontZ: -.19, rearZ: .21, hipY: .320, kneeY: .190, ankleY: .065, footY: .008, travel: .040, clearance: .095, weight: .004, maxBob: .010, pairing: 'diagonal' }),
+  pig: Object.freeze({ x: .18, frontZ: -.16, rearZ: .27, hipY: .260, kneeY: .160, ankleY: .058, footY: .009, travel: .033, clearance: .064, weight: .003, maxBob: .008, pairing: 'diagonal' }),
+  rat: Object.freeze({ x: .065, frontZ: -.07, rearZ: .105, hipY: .105, kneeY: .068, ankleY: .031, footY: .004, travel: .014, clearance: .034, weight: .001, maxBob: .004, pairing: 'diagonal' }),
+  stag: Object.freeze({ x: .17, frontZ: -.20, rearZ: .24, hipY: .675, kneeY: .405, ankleY: .120, footY: .018, travel: .035, clearance: .108, weight: .005, maxBob: .012, pairing: 'forehind' }),
+});
+const STARTUP_STATES = new Set(['windup', 'lungeWindup', 'bomberFuse', 'spitting', 'weaving', 'hexing', 'roar']);
 const ATTACK_PHASES = new Set(['idle', 'startup', 'contact', 'recovery']);
 const IDLE_ATTACK = Object.freeze({ active: false, phase: 'idle', progress: 0, kind: null, weight: 0, windup: 0, extension: 0, brace: 0 });
-const unarmedMonster = player => player?.alive !== false && player?.monster === true && player?.human !== true
-  && (player.monsterType === 'hound' || Object.hasOwn(styles, player.monsterType)) && !['gunner', 'sniper'].includes(player.monsterType);
+const unarmedMonster = player => {
+  const type = monsterTypeId(player);
+  return player?.alive !== false && type !== null
+    && (Object.hasOwn(MONSTER_QUADRUPED_GAITS, type) || Object.hasOwn(styles, type)) && !['gunner', 'sniper'].includes(type);
+};
 function acceptedAttack(player) {
   if (!unarmedMonster(player) || !STARTUP_STATES.has(player.monsterState)) return null;
   const roar = player.monsterState === 'roar', duration = roar ? player.roarDuration : player.attackDuration, ticks = roar ? player.roarTicks : player.attackTicks;
@@ -131,7 +144,7 @@ export function monsterStepArc(phase = 0) {
 
 /** A clear alternating step, bent knee and weighted torso replace sliding poles. */
 export function monsterLocomotionPose(player, animation = {}) {
-  const alive = player?.alive !== false, type = player?.monsterType;
+  const alive = player?.alive !== false, type = monsterTypeId(player);
   const attack = monsterAttackPose(player, animation);
   const stride = alive ? clamp(finite(animation.stride), 0, 1) : 0;
   const airborne = alive && (animation.airborne === true || player?.grounded === false);
@@ -141,25 +154,28 @@ export function monsterLocomotionPose(player, animation = {}) {
   const forward = clamp(finite(animation.forward, 1), -1, 1), strafe = clamp(finite(animation.strafe), -1, 1);
   const run = alive ? clamp(finite(animation.run, (finite(animation.speed) - 2.5) / 3.5), 0, 1) : 0;
   const active = stride > .00001 || airborne || land > .00001 || attack.active;
-  const weight = type === 'hound' ? .004 : type === 'brute' ? .019 : .016;
-  const bob = airborne ? 0 : -(1 - Math.cos(phase * 2)) * stride * weight * (1 + run * .18) - land * (type === 'hound' ? .003 : .015) - attack.brace * (type === 'hound' ? 0 : .010);
-  const bodyBob = type === 'hound' ? Math.max(-.010, bob) : bob;
-  if (type === 'hound') {
-    // Diagonal paws trot together. Their compact swing remains inside the four
-    // real paw boxes; motion never adds an unhittable tail or floating muzzle.
+  const quadruped = Object.hasOwn(MONSTER_QUADRUPED_GAITS, type) ? MONSTER_QUADRUPED_GAITS[type] : null;
+  const weight = quadruped?.weight ?? (type === 'brute' ? .019 : .016);
+  const bob = airborne ? 0 : -(1 - Math.cos(phase * 2)) * stride * weight * (1 + run * .18) - land * (quadruped ? Math.min(.003, weight) : .015) - attack.brace * (quadruped ? 0 : .010);
+  const bodyBob = quadruped ? Math.max(-quadruped.maxBob, bob) : bob;
+  if (quadruped) {
+    // Paws remain left-front/rear then right-front/rear. Wolves and rats trot;
+    // stags bound on front/rear pairs and pigs brace before a committed rush.
     const paws = [];
     for (const side of [-1, 1]) for (const end of [-1, 1]) {
-      const offset = side === end ? 0 : Math.PI, step = monsterStepArc(phase + offset);
-      const lift = airborne ? .038 + jump * .030 : step.lift * stride * (.094 + run * .012);
-      const travel = airborne ? -.014 * jump : step.travel * stride * .035;
-      const x = side * .13, z = end < 0 ? -.19 : .21, sideTravel = strafe * travel * .15, forwardTravel = -forward * travel;
-      paws.push({ hip: [x, .300 + bodyBob, z], knee: [x + sideTravel * .35, .175 + lift * .48, z + forwardTravel * .35],
-        ankle: [x + sideTravel, .063 + lift, z + forwardTravel], foot: [x + sideTravel, .006 + lift, z + forwardTravel], planted: !airborne && (step.planted || stride === 0), lift });
+      const paired = quadruped.pairing === 'forehind';
+      const offset = paired ? end < 0 ? 0 : Math.PI : side === end ? 0 : Math.PI, step = monsterStepArc(phase + offset);
+      const jumpScale = type === 'rat' ? .30 : type === 'pig' ? .65 : type === 'stag' ? 1.4 : 1;
+      const lift = airborne ? (.038 + jump * .030) * jumpScale : step.lift * stride * (quadruped.clearance + run * (type === 'rat' ? .004 : .012));
+      const travel = airborne ? -.014 * jump * jumpScale : step.travel * stride * quadruped.travel;
+      const x = side * quadruped.x, z = end < 0 ? quadruped.frontZ : quadruped.rearZ, sideTravel = strafe * travel * .15, forwardTravel = -forward * travel;
+      paws.push({ hip: [x, quadruped.hipY + bodyBob, z], knee: [x + sideTravel * .35, quadruped.kneeY + lift * .48, z + forwardTravel * .35],
+        ankle: [x + sideTravel, quadruped.ankleY + lift, z + forwardTravel], foot: [x + sideTravel, quadruped.footY + lift, z + forwardTravel], planted: !airborne && (step.planted || stride === 0), lift });
     }
     return { active, phase, stride, run, airborne, land, bodyBob, attack, paws, legs: [], arms: [] };
   }
   const style = styles[type] || styles.stalker, armed = type === 'gunner' || type === 'sniper';
-  const charging = ['windup', 'lungeWindup', 'bomberFuse', 'spitting', 'weaving'].includes(player?.monsterState);
+  const charging = ['windup', 'lungeWindup', 'bomberFuse', 'spitting', 'weaving', 'hexing'].includes(player?.monsterState);
   const charge = attack.kind === 'roar' ? 0 : attack.windup;
   const roar = attack.kind === 'roar' ? attack.windup : 0;
   const crouch = type === 'leaper' ? (charging ? charge * .055 : 0) + (player?.monsterState === 'leap' ? .035 : 0) : 0;

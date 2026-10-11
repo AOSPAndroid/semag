@@ -196,3 +196,153 @@ export function appendMonsterVariant(mesh, player, pose, options = EMPTY_OPTIONS
   }
   return true;
 }
+
+/** Original fantasy/animal anatomy. Old special-ghoul exports keep their contract. */
+export const MONSTER_BESTIARY_ART = Object.freeze({
+  vampire: Object.freeze({ skin: '#eee0d0', shadow: '#24202e', armor: '#3d2735', head: '#eee0d0', eye: '#f1839d', width: .34, cloth: '#171b27', lining: '#9e344e', bone: '#fff4dc', charge: '#ffd0df' }),
+  witch: Object.freeze({ skin: '#a7c397', shadow: '#292337', armor: '#4d355c', head: '#a7c397', eye: '#c4f4a4', width: .32, cloth: '#35243f', lining: '#8c62a2', bone: '#ad976c', charge: '#dbffd0' }),
+  wolf: Object.freeze({ skin: '#7b8994', shadow: '#293540', armor: '#566472', head: '#95a4ae', eye: '#f2c278', width: .44, lining: '#827b82', fur: '#c0c8c9', bone: '#e5d7bf', charge: '#ffe6a8', quadruped: true }),
+  pig: Object.freeze({ skin: '#b88081', shadow: '#513c43', armor: '#805958', head: '#d69c93', eye: '#f0c790', width: .51, lining: '#ba7379', fur: '#ca9c91', bone: '#e9dac5', charge: '#ffe4bb', quadruped: true }),
+  rat: Object.freeze({ skin: '#786f67', shadow: '#342f31', armor: '#51494a', head: '#92867b', eye: '#efac7e', width: .18, fur: '#b5a694', bone: '#dacdbd', tail: '#c28a87', charge: '#ffd2a5', quadruped: true }),
+  stag: Object.freeze({ skin: '#926443', shadow: '#382f29', armor: '#5d4534', head: '#a97851', eye: '#dac78d', width: .46, fur: '#d8c7a0', bone: '#c4ac7f', charge: '#f4dfaa', quadruped: true }),
+});
+export const MONSTER_BESTIARY_IDS = Object.freeze(Object.keys(MONSTER_BESTIARY_ART));
+
+// Landmarks are genuinely different cuboids, not colour swaps. Animal flesh
+// stays in the corresponding trusted body boxes, including real rat tail and
+// stag antler anatomy. Gait limbs attach below in one existing world batch.
+const BESTIARY_PARTS = Object.freeze({
+  vampire: parts([
+    [-.17,.78,-.13,.34,.59,.26,'cloth','torso'],[-.135,1.36,-.09,.27,.12,.18,'lining','torso'],
+    [-.166,.40,.14,.332,.92,.043,'cloth','cape'],[-.143,.42,.179,.286,.87,.013,'lining','cape'],
+    [-.164,.39,.156,.044,.29,.048,'cloth','cape'],[.12,.39,.156,.044,.29,.048,'cloth','cape'],
+    [-.174,1.37,-.025,.082,.23,.093,'lining'],[.092,1.37,-.025,.082,.23,.093,'lining'],
+    [-.133,1.48,-.115,.266,.258,.23,'head'],[-.138,1.725,-.12,.276,.075,.235,'shadow'],
+    [-.138,1.636,-.119,.038,.11,.235,'shadow'],[.100,1.636,-.119,.038,.11,.235,'shadow'],
+    [-.110,1.654,-.126,.067,.028,.014,'shadow'],[.043,1.654,-.126,.067,.028,.014,'shadow'],
+    [-.096,1.642,-.135,.040,.019,.011,'eye'],[.056,1.642,-.135,.040,.019,.011,'eye'],
+    [-.019,1.576,-.136,.038,.042,.025,'skin'],[-.065,1.548,-.132,.13,.014,.013,'lining'],
+    [-.050,1.531,-.137,.020,.037,.018,'bone'],[.030,1.531,-.137,.020,.037,.018,'bone'],
+    [-.037,1.287,-.145,.074,.055,.022,'lining','torso'],[-.014,1.159,-.144,.028,.025,.018,'bone','torso'],
+    [-.014,1.073,-.144,.028,.025,.018,'bone','torso'],[-.105,.84,-.144,.21,.02,.018,'lining','torso'],
+  ]),
+  witch: parts([
+    [-.165,.58,-.135,.33,.78,.27,'cloth','torso'],[-.197,.31,-.143,.394,.29,.286,'cloth','robe'],
+    [-.17,.325,-.151,.34,.06,.016,'lining','robe'],[-.174,.535,-.146,.348,.023,.018,'lining','robe'],
+    [-.055,.61,-.153,.11,.66,.022,'armor','torso'],[-.109,1.268,-.138,.218,.053,.021,'lining','torso'],
+    [-.121,1.47,-.108,.242,.196,.216,'head'],[-.138,1.474,.079,.276,.19,.026,'shadow'],
+    [-.108,1.591,-.117,.070,.026,.014,'shadow'],[.038,1.591,-.117,.070,.026,.014,'shadow'],
+    [-.093,1.582,-.128,.043,.018,.014,'eye'],[.050,1.582,-.128,.043,.018,.014,'eye'],
+    [-.024,1.513,-.145,.048,.061,.047,'head'],[-.073,1.492,-.126,.146,.014,.019,'shadow'],
+    [-.158,1.646,-.129,.316,.034,.258,'cloth'],[-.122,1.68,-.096,.244,.045,.192,'lining'],
+    [-.085,1.721,-.074,.170,.038,.148,'cloth'],[-.050,1.759,-.052,.10,.027,.104,'cloth'],
+    [-.023,1.786,-.032,.046,.014,.064,'cloth'],[-.019,1.685,-.105,.038,.034,.016,'bone'],
+    [-.034,.728,-.158,.068,.031,.02,'bone','torso'],
+  ]),
+  wolf: parts([
+    [-.207,.335,-.177,.414,.326,.512,'skin','torso'],[-.189,.50,-.185,.378,.174,.26,'armor','torso'],
+    [-.211,.46,-.184,.422,.11,.067,'fur','torso'],[-.192,.573,-.185,.384,.11,.075,'fur','torso'],
+    [-.150,.584,-.361,.30,.205,.184,'head'],[-.116,.565,-.454,.232,.126,.156,'head'],
+    [-.110,.60,-.47,.220,.071,.037,'shadow'],[-.104,.575,-.435,.208,.019,.048,'bone'],
+    [-.146,.785,-.307,.106,.184,.107,'armor'],[.040,.785,-.307,.106,.184,.107,'armor'],
+    [-.120,.816,-.309,.055,.111,.012,'lining'],[.066,.816,-.309,.055,.111,.012,'lining'],
+    [-.163,.733,-.37,.063,.043,.016,'shadow'],[.100,.733,-.37,.063,.043,.016,'shadow'],
+    [-.152,.744,-.381,.041,.021,.014,'eye'],[.111,.744,-.381,.041,.021,.014,'eye'],
+    [-.040,.643,-.470,.080,.031,.014,'shadow'],[-.148,.350,.222,.093,.107,.092,'armor','torso'],
+    [.055,.350,.222,.093,.107,.092,'armor','torso'],[-.058,.431,.283,.116,.178,.060,'armor','tail'],
+    [-.046,.563,.244,.092,.115,.083,'fur','tail'],
+  ]),
+  pig: parts([
+    [-.243,.260,-.199,.486,.426,.576,'skin','torso'],[-.231,.488,-.181,.462,.211,.497,'armor','torso'],
+    [-.208,.292,.16,.416,.152,.21,'skin','torso'],[-.184,.355,-.418,.368,.283,.228,'head'],
+    [-.178,.39,-.477,.356,.137,.103,'head'],[-.154,.406,-.495,.114,.083,.020,'head'],
+    [.040,.406,-.495,.114,.083,.020,'head'],[-.117,.431,-.499,.038,.028,.008,'shadow'],
+    [.079,.431,-.499,.038,.028,.008,'shadow'],[-.188,.643,-.38,.110,.18,.109,'head'],
+    [.078,.643,-.38,.110,.18,.109,'head'],[-.168,.687,-.389,.065,.102,.018,'lining'],
+    [.103,.687,-.389,.065,.102,.018,'lining'],[-.178,.572,-.429,.058,.035,.018,'shadow'],
+    [.12,.572,-.429,.058,.035,.018,'shadow'],[-.166,.584,-.438,.033,.018,.012,'eye'],
+    [.133,.584,-.438,.033,.018,.012,'eye'],[-.157,.377,-.443,.030,.072,.032,'bone'],
+    [.127,.377,-.443,.030,.072,.032,'bone'],[-.022,.477,.351,.044,.068,.035,'head','tail'],
+    [.010,.53,.349,.040,.040,.038,'head','tail'],[-.027,.553,.348,.052,.033,.037,'head','tail'],
+  ]),
+  rat: parts([
+    [-.082,.114,-.074,.164,.112,.220,'skin','torso'],[-.072,.185,-.061,.144,.040,.172,'armor','torso'],
+    [-.066,.18,-.176,.132,.083,.124,'head'],[-.051,.171,-.217,.102,.054,.081,'head'],
+    [-.026,.183,-.220,.052,.025,.011,'tail'],[-.070,.265,-.117,.062,.069,.057,'head'],
+    [.008,.265,-.117,.062,.069,.057,'head'],[-.058,.278,-.12,.035,.041,.012,'tail'],
+    [.020,.278,-.12,.035,.041,.012,'tail'],[-.058,.319,-.111,.04,.036,.045,'head'],
+    [.018,.319,-.111,.04,.036,.045,'head'],[-.061,.239,-.184,.031,.016,.014,'shadow'],
+    [.03,.239,-.184,.031,.016,.014,'shadow'],[-.054,.242,-.190,.018,.012,.008,'eye'],
+    [.036,.242,-.190,.018,.012,.008,'eye'],[-.070,.192,-.214,.050,.004,.009,'bone'],
+    [.020,.192,-.214,.05,.004,.009,'bone'],[-.068,.210,-.198,.045,.004,.01,'bone'],
+    [.023,.210,-.198,.045,.004,.01,'bone'],[-.014,.1,.146,.028,.026,.042,'tail','tail'],
+    [-.007,.096,.18,.025,.024,.034,'tail','tail'],[.002,.105,.208,.016,.018,.024,'tail','tail'],
+  ]),
+  stag: parts([
+    [-.213,.669,-.199,.426,.342,.560,'skin','torso'],[-.205,.939,-.167,.41,.11,.365,'armor','torso'],
+    [-.133,.821,-.19,.266,.419,.170,'skin','neck'],[-.099,.85,-.212,.198,.293,.023,'fur','neck'],
+    [-.155,.918,-.367,.310,.224,.205,'head'],[-.107,.856,-.442,.214,.125,.174,'head'],
+    [-.086,.861,-.45,.172,.069,.056,'shadow'],
+    [-.157,1.143,-.286,.113,.102,.078,'head'],[.044,1.143,-.286,.113,.102,.078,'head'],
+    [-.156,1.046,-.376,.068,.036,.016,'shadow'],[.088,1.046,-.376,.068,.036,.016,'shadow'],
+    [-.144,1.053,-.385,.043,.021,.013,'eye'],[.100,1.053,-.385,.043,.021,.013,'eye'],
+    [-.11,1.236,-.273,.052,.217,.06,'bone','antler'],[.058,1.236,-.273,.052,.217,.06,'bone','antler'],
+    [-.19,1.412,-.263,.112,.043,.057,'bone','antler'],[.078,1.412,-.263,.112,.043,.057,'bone','antler'],
+    [-.202,1.448,-.259,.05,.171,.052,'bone','antler'],[.152,1.448,-.259,.05,.171,.052,'bone','antler'],
+    [-.278,1.537,-.25,.117,.039,.046,'bone','antler'],[.161,1.537,-.25,.117,.039,.046,'bone','antler'],
+    [-.278,1.576,-.249,.043,.072,.044,'bone','antler'],[.235,1.576,-.249,.043,.072,.044,'bone','antler'],
+    [-.174,1.482,-.315,.043,.073,.094,'bone','antler'],[.131,1.482,-.315,.043,.073,.094,'bone','antler'],
+    [-.052,.893,.327,.104,.107,.05,'fur','tail'],
+  ]),
+});
+
+/** Append true species art with distance-driven joints; no extra draw/material path. */
+export function appendMonsterBestiary(mesh, player, pose, options = EMPTY_OPTIONS) {
+  const type = player?.monsterType;
+  if (player?.monster !== true || player.human === true || typeof type !== 'string' || !Object.hasOwn(BESTIARY_PARTS, type) || typeof mesh?.box !== 'function'
+      || ![pose?.x,pose?.y,pose?.z,pose?.yaw].every(Number.isFinite)) return false;
+  const art = MONSTER_BESTIARY_ART[type], motion = options.motion || monsterLocomotionPose(player, options.animation), alive = player.alive !== false;
+  const stride = alive ? clamp(finite(options.animation?.stride),0,1) : 0, phase = finite(options.animation?.phase), attack = motion.attack;
+  for (const item of BESTIARY_PARTS[type]) {
+    const tag = item[7]; let x=item[0], y=item[1], z=item[2], color=art[item[6]] || art.lining || art.skin;
+    if (tag === 'torso' && motion.active) y += motion.bodyBob;
+    // Load the real snout/head inside its existing shooting box, then release
+    // through the accepted attack recovery. Stationary animals do not idle-bob.
+    if (art.quadruped && (!tag || tag === 'antler')) y -= attack.windup * (type === 'pig' ? .018 : type === 'rat' ? .004 : type === 'wolf' ? .003 : .010);
+    if (tag === 'cape') { z += Math.sin(phase + item[0] * 4) * stride * .008; y += motion.bodyBob * .6; }
+    if (tag === 'tail') { x += Math.sin(phase) * stride * (type === 'rat' ? .001 : .008); }
+    if (item[6] === 'eye') color = alive ? attack.windup > .55 || attack.extension > .4 ? art.charge : art.eye : art.shadow;
+    mesh.box(x,y,z,item[3],item[4],item[5],color,pose);
+  }
+  if (art.quadruped) {
+    const small = type === 'rat', hoof = type === 'pig' || type === 'stag';
+    const upper = small ? .021 : type === 'stag' ? .072 : .076, lower = small ? .018 : type === 'stag' ? .058 : .066;
+    const footW = small ? .036 : type === 'stag' ? .076 : .094, footD = small ? .042 : type === 'stag' ? .108 : type === 'wolf' ? .120 : .121, footH = small ? .026 : type === 'stag' ? .078 : .061;
+    for (const paw of motion.paws) {
+      appendMonsterLimb(mesh,pose,paw.hip,paw.knee,upper,upper,type === 'wolf' ? art.fur : art.skin);
+      appendMonsterLimb(mesh,pose,paw.knee,paw.ankle,lower,lower,art.skin);
+      mesh.box(paw.foot[0]-footW/2,paw.foot[1],paw.foot[2]-footD/2,footW,footH,footD,hoof ? art.shadow : art.armor,pose);
+      if (hoof) mesh.box(paw.foot[0]-.008,paw.foot[1]+.002,paw.foot[2]-footD/2-.001,.016,footH-.004,.008,art.skin,pose);
+    }
+  } else {
+    for (const leg of motion.legs) {
+      appendMonsterLimb(mesh,pose,leg.hip,leg.knee,.109,.119,art.cloth);
+      appendMonsterLimb(mesh,pose,leg.knee,leg.ankle,.098,.108,art.cloth);
+      mesh.box(leg.foot[0]-.058,leg.foot[1],leg.foot[2]-.087,.116,.110,.174,art.shadow,pose);
+    }
+    for (const [index,arm] of motion.arms.entries()) {
+      appendMonsterLimb(mesh,pose,arm.shoulder,arm.elbow,.073,.083,art.cloth);
+      appendMonsterLimb(mesh,pose,arm.elbow,arm.hand,.062,.069,art.skin);
+      mesh.box(arm.hand[0]-.032,arm.hand[1]-.035,arm.hand[2]-.032,.064,.07,.064,art.skin,pose);
+      if (type === 'vampire') for(const claw of [-.021,.014]) mesh.box(arm.hand[0]+claw,arm.hand[1]-.08,arm.hand[2]-.042,.011,.075,.014,art.bone,pose);
+      else if (index === 1) {
+        // The staff follows its actual grasp through the accepted hex tell.
+        const hand = arm.hand, staffPose = { ...pose, x:pose.x+Math.cos(pose.yaw)*hand[0]-Math.sin(pose.yaw)*hand[2], y:pose.y+hand[1], z:pose.z+Math.sin(pose.yaw)*hand[0]+Math.cos(pose.yaw)*hand[2] };
+        mesh.box(-.018,-.27,-.028,.036,.60,.04,art.bone,staffPose);
+        mesh.box(-.038,.297,-.043,.076,.068,.069,art.armor,staffPose);
+        mesh.box(-.022,.351,-.025,.044,.076,.039,alive && attack.weight > .12 ? art.charge : art.eye,staffPose);
+      }
+    }
+  }
+  return true;
+}

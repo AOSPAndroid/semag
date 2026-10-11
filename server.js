@@ -20,6 +20,7 @@ import { createShinobiVoxelInputQueue, SHINOBI_VOXEL_EDGE_ACTIONS } from './publ
 import * as Voxel from './public/voxel-engine.js';
 import * as Royale from './public/voxel-royale-engine.js';
 import * as Horde from './public/voxel-horde-engine.js';
+import { snapshotHordeState } from './public/voxel-horde-snapshot.js';
 import { MELEE_WEAPONS, clearMeleeComboContinuation } from './public/voxel-melee.js';
 import { enableLagCompensation, isValidViewTick, setShotViewTick } from './public/voxel-lag-compensation.js';
 import * as Brawl from './public/brawl-engine.js';
@@ -74,7 +75,7 @@ const GAMES = {
     title: 'Voxel Last Stand', engine: Horde, makeState: settings => Horde.createState(settings), inputKeys: Horde.INPUT_KEYS,
     numericControls: { yaw: { min: -Math.PI, max: Math.PI, default: 0 }, pitch: { min: -1.35, max: 1.35, default: 0 } },
     latestInput: true, snapshotInterval: 4, compensateHitscan: true,
-    snapshotState: state => ({ ...state, map: undefined, fighters: undefined, horde: { ...state.horde, brains: undefined } }),
+    snapshotState: snapshotHordeState,
   },
   'oddstock-rumble': { title: 'Oddstock Rumble', engine: Brawl, makeState: () => Brawl.createState(), inputKeys: Brawl.INPUT_KEYS, selectionComplete: Brawl.selectionComplete },
 };

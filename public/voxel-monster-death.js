@@ -1,4 +1,5 @@
 import { monsterTypeId } from './voxel-monster-bodies.js';
+import { MONSTER_QUADRUPED_GAITS } from './voxel-monster-animation.js';
 
 /** Presentation only: the dead actor and its loot remain owned by combat. */
 // A confirmed kill can reach its first paint after a slow frame or a delayed
@@ -9,16 +10,28 @@ const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const smooth = value => { const t = clamp(value, 0, 1); return t * t * (3 - 2 * t); };
 const livePhases = new Set(['fight', 'paused', 'intermission', 'matchEnd']);
 const validId = value => Number.isSafeInteger(value) && value >= 0;
+/** Distinct weight and cadence share the same bounded corpse lifetime. */
+export const MONSTER_DEATH_STYLES = Object.freeze({
+  vampire: Object.freeze({ collapseMs: 310, holdMs: 180, darken: .22 }),
+  witch: Object.freeze({ collapseMs: 390, holdMs: 160, darken: .24 }),
+  wolf: Object.freeze({ collapseMs: 285, holdMs: 180, darken: .17 }),
+  pig: Object.freeze({ collapseMs: 425, holdMs: 170, darken: .16 }),
+  rat: Object.freeze({ collapseMs: 210, holdMs: 130, darken: .19 }),
+  stag: Object.freeze({ collapseMs: 455, holdMs: 170, darken: .18 }),
+});
 
 /** A quick recoil, joint collapse, quiet hold, then a gradual voxel dissolve. */
 export function monsterDeathPose(death, ageMs = 0) {
   const age = Number.isFinite(ageMs) ? Math.max(0, ageMs) : MONSTER_DEATH_RULES.durationMs;
-  const collapse = smooth((age - 30) / (MONSTER_DEATH_RULES.collapseMs - 30));
+  const type = typeof death?.monsterType === 'string' ? death.monsterType : null;
+  const style = Object.hasOwn(MONSTER_DEATH_STYLES, type) ? MONSTER_DEATH_STYLES[type] : null;
+  const collapseMs = style?.collapseMs ?? MONSTER_DEATH_RULES.collapseMs, holdMs = style?.holdMs ?? MONSTER_DEATH_RULES.holdMs;
+  const collapse = smooth((age - 30) / (collapseMs - 30));
   return { visible: age < MONSTER_DEATH_RULES.durationMs, ageMs: age,
     progress: clamp(age / MONSTER_DEATH_RULES.durationMs, 0, 1), collapse,
-    bend: Math.sin(collapse * Math.PI / 2), angle: collapse * (death?.monsterType === 'hound' ? 1.49 : 1.47),
-    dissolve: smooth((age - MONSTER_DEATH_RULES.collapseMs - MONSTER_DEATH_RULES.holdMs) / MONSTER_DEATH_RULES.dissolveMs),
-    darken: .15 * smooth(age / 110) };
+    bend: Math.sin(collapse * Math.PI / 2), angle: collapse * (Object.hasOwn(MONSTER_QUADRUPED_GAITS, type) ? 1.49 : 1.47),
+    dissolve: smooth((age - collapseMs - holdMs) / (MONSTER_DEATH_RULES.durationMs - collapseMs - holdMs)),
+    darken: (style?.darken ?? .15) * smooth(age / 110) };
 }
 
 /** Only immutable, authoritative lethal events create corpses; despawns never do. */

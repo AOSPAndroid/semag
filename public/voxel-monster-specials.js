@@ -1,6 +1,7 @@
 /** Bounded, deterministic Horde attacks. Every damaging contact uses real cover. */
 import { aimDirection, eyeHeight, playerHeight, traceShot, emitCombatEvent, TICK_RATE } from './voxel-engine.js';
 export const MONSTER_SPECIAL_RULES = Object.freeze({ maxProjectiles: 16, maxHazards: 4, shardSpeed: 7.5, shardTicks: 600, shardDamage: 30, blastRadius: 4, blastDamage: 84, runeRadius: 2.1, runeDamage: 44, runeTicks: 108, runeHeight: .85 });
+export const MONSTER_HEX_RULES = Object.freeze({ speed: 6.3, ticks: 540, damage: 24 });
 const human = player => player?.human === true && player.monster !== true && player.connected && player.participating && player.alive;
 const sourceFor = (state, attack, type) => { const source = state.players[attack.sourceId]; return source?.monster === true && source.human !== true && source.monsterType === type && source.lifeId === attack.sourceLifeId ? source : null; };
 const emit = (state, type, attack, stage) => {
@@ -20,6 +21,13 @@ export function launchMonsterShard(state, source, yaw, pitch) {
   if (pool.length >= MONSTER_SPECIAL_RULES.maxProjectiles) return false;
   const direction = aimDirection(yaw, pitch), projectile = { id: ++state.horde.specialId, sourceId: source.id, sourceLifeId: source.lifeId, x: source.x, y: source.y + 1.1, z: source.z, dx: direction.x, dy: direction.y, dz: direction.z, ticksLeft: MONSTER_SPECIAL_RULES.shardTicks, lifeTicks: MONSTER_SPECIAL_RULES.shardTicks, spawnTick: state.tick };
   pool.push(projectile); emit(state, 'monsterSpit', projectile, 'release'); return true;
+}
+/** A witch commits a slow physical hex; no input can supply its damage or life. */
+export function launchMonsterHex(state, source, yaw, pitch) {
+  const pool = state.horde.projectiles;
+  if (pool.length >= MONSTER_SPECIAL_RULES.maxProjectiles || source?.monster !== true || source.human === true || source.monsterType !== 'witch' || !source.alive || state.players[source.id] !== source || !Number.isInteger(source.lifeId) || source.lifeId < 1 || ![source.x, source.y, source.z, yaw, pitch].every(Number.isFinite)) return false;
+  const direction = aimDirection(yaw, pitch), projectile = { id: ++state.horde.specialId, kind: 'hex', sourceType: 'witch', sourceId: source.id, sourceLifeId: source.lifeId, x: source.x, y: source.y + 1.1, z: source.z, dx: direction.x, dy: direction.y, dz: direction.z, ticksLeft: MONSTER_HEX_RULES.ticks, lifeTicks: MONSTER_HEX_RULES.ticks, spawnTick: state.tick };
+  pool.push(projectile); emit(state, 'monsterHex', projectile, 'release'); return true;
 }
 export function markMonsterRune(state, source, target, arena) {
   const pool = state.horde.hazards; if (pool.length >= MONSTER_SPECIAL_RULES.maxHazards) return false;
@@ -45,15 +53,16 @@ export function bomberDamage(state, source, arena, damageScale = 1) {
 export function advanceMonsterSpecials(state, arena, damageScale = 1) {
   const horde = state.horde, hits = [], pool = horde.projectiles;
   for (let index = pool.length - 1; index >= 0; index--) {
-    const projectile = pool[index], source = sourceFor(state, projectile, 'spitter');
+    const projectile = pool[index], hex = projectile.kind === 'hex';
+    const source = hex ? projectile.sourceType === 'witch' ? sourceFor(state, projectile, 'witch') : null : sourceFor(state, projectile, 'spitter');
     if (!source || --projectile.ticksLeft <= 0) { pool.splice(index, 1); continue; }
     if (projectile.spawnTick === state.tick) continue;
-    const origin = { x: projectile.x, y: projectile.y, z: projectile.z }, length = MONSTER_SPECIAL_RULES.shardSpeed / TICK_RATE;
+    const origin = { x: projectile.x, y: projectile.y, z: projectile.z }, length = (hex ? MONSTER_HEX_RULES.speed : MONSTER_SPECIAL_RULES.shardSpeed) / TICK_RATE;
     const contact = traceShot(state, source.id, origin, { x: projectile.dx, y: projectile.dy, z: projectile.dz }, length, arena);
     if (contact.playerId !== null || contact.kind === 'wall') {
       const target = contact.playerId === null ? null : state.players[contact.playerId];
-      if (human(target)) hits.push(hit(source, target, Math.round(MONSTER_SPECIAL_RULES.shardDamage * damageScale), 'spitter', origin));
-      emit(state, 'monsterShardImpact', { ...projectile, x: contact.x, y: contact.y, z: contact.z }, 'impact'); pool.splice(index, 1); continue;
+      if (human(target)) hits.push(hit(source, target, Math.round((hex ? MONSTER_HEX_RULES.damage : MONSTER_SPECIAL_RULES.shardDamage) * damageScale), hex ? 'witch' : 'spitter', origin));
+      emit(state, hex ? 'monsterHex' : 'monsterShardImpact', { ...projectile, x: contact.x, y: contact.y, z: contact.z }, 'impact'); pool.splice(index, 1); continue;
     }
     projectile.x += projectile.dx * length; projectile.y += projectile.dy * length; projectile.z += projectile.dz * length;
     if (projectile.x < arena.bounds.minX || projectile.x > arena.bounds.maxX || projectile.z < arena.bounds.minZ || projectile.z > arena.bounds.maxZ || projectile.y < 0 || projectile.y > 30) pool.splice(index, 1);

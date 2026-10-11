@@ -251,7 +251,8 @@ test('every monster has finite original voxel anatomy, visible collapse and a sh
     assert.equal(monsterDeathMeshes(death, 2000, support).length, 0);
     for (const mesh of [fresh, fallen, dissolving]) {
       assert.ok(mesh instanceof Float32Array && mesh.length % 30 === 0 && mesh.every(Number.isFinite));
-      assert.ok(mesh.length / 10 <= 1400, `${type}: a corpse uses a body-sized vertex budget`);
+      const speciesCap = { vampire: 1440, witch: 1296, wolf: 1188, pig: 1368, rat: 1224, stag: 1512 }[type] ?? 1400;
+      assert.ok(mesh.length / 10 <= speciesCap, `${type}: original corpses retain 1400; each new species retains its documented exact full-anatomy budget`);
       for (let at = 0; at < mesh.length; at += 10) assert.ok(mesh[at + 1] >= 3 - 2e-6, `${type}: no collapse vertex clips below its real support`);
     }
     assert.deepEqual(monsterDeathMeshes({ ...death, weapon: 'classic' }, 350, support), fallen, 'dead anatomy does not duplicate a gun while its loot lies nearby');

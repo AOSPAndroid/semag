@@ -11,11 +11,17 @@ export const VOXEL_FOOTSTEP_AUDIO = Object.freeze({
   hound: Object.freeze({ duration: .072, tone: 174, grain: .38, seed: 619, range: 18, gain: .35, intervalMs: 100 }),
   brute: Object.freeze({ duration: .155, tone: 67, grain: .12, seed: 853, range: 26, gain: .56, intervalMs: 210 }),
   shamble: Object.freeze({ duration: .122, tone: 96, grain: .34, seed: 947, range: 21, gain: .39, intervalMs: 160 }),
+  vampire: Object.freeze({ duration: .082, tone: 126, grain: .18, seed: 2027, range: 20, gain: .33, intervalMs: 115 }),
+  witch: Object.freeze({ duration: .126, tone: 87, grain: .50, seed: 1117, range: 18, gain: .31, intervalMs: 170 }),
+  wolf: Object.freeze({ duration: .084, tone: 155, grain: .40, seed: 617, range: 19, gain: .37, intervalMs: 100 }),
+  pig: Object.freeze({ duration: .130, tone: 84, grain: .18, seed: 733, range: 25, gain: .50, intervalMs: 150 }),
+  rat: Object.freeze({ duration: .044, tone: 235, grain: .58, seed: 197, range: 12, gain: .19, intervalMs: 85 }),
+  stag: Object.freeze({ duration: .100, tone: 192, grain: .11, seed: 1511, range: 25, gain: .43, intervalMs: 125 }),
 });
 
 /** One compact, deterministic contact buffer per body type; no per-frame synthesis. */
 export function createVoxelFootstepSamples(type, sampleRate = 48000) {
-  if (!Object.hasOwn(VOXEL_FOOTSTEP_AUDIO, type) || !Number.isFinite(sampleRate) || sampleRate < 8000 || sampleRate > 192000) return null;
+  if (typeof type !== 'string' || !Object.hasOwn(VOXEL_FOOTSTEP_AUDIO, type) || !Number.isFinite(sampleRate) || sampleRate < 8000 || sampleRate > 192000) return null;
   const profile = VOXEL_FOOTSTEP_AUDIO[type], samples = new Float32Array(Math.ceil(sampleRate * profile.duration));
   let seed = profile.seed, filtered = 0;
   for (let index = 1; index < samples.length - 1; index++) {
@@ -24,14 +30,14 @@ export function createVoxelFootstepSamples(type, sampleRate = 48000) {
     const noise = seed / 2147483648 - 1;
     filtered += (noise - filtered) * .13;
     const contact = Math.sin(time * TAU * profile.tone * (1 - progress * .30)) * Math.exp(-time * 42);
-    const grit = (filtered * .65 + noise * .35) * Math.exp(-time * (type === 'hound' ? 72 : 40));
+    const grit = (filtered * .65 + noise * .35) * Math.exp(-time * (type === 'hound' ? 72 : type === 'rat' ? 95 : type === 'wolf' ? 65 : 40));
     const envelope = Math.min(1, time / .002) * (1 - progress) ** 2;
     samples[index] = (contact * (1 - profile.grain) + grit * profile.grain) * envelope * .47;
   }
   return samples;
 }
 
-const soundType = actor => actor.monsterType === 'hound' ? 'hound' : actor.monsterType === 'brute' ? 'brute' : actor.monsterType ? 'shamble' : 'boot';
+const soundType = actor => typeof actor.monsterType === 'string' && Object.hasOwn(VOXEL_FOOTSTEP_AUDIO, actor.monsterType) ? actor.monsterType : actor.monsterType ? 'shamble' : 'boot';
 const validActor = actor => Number.isSafeInteger(actor?.id) && actor.id >= 0 && actor.alive === true && actor.paused !== true
   && [actor.x, actor.y, actor.z, actor.phase].every(Number.isFinite);
 

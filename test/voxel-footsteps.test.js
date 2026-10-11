@@ -29,16 +29,16 @@ function fakeContext() {
 }
 function enabledAudio() { const audio = new GameAudio(), context = fakeContext(); audio.enabled = true; audio.context = context; audio.master = {}; return { audio, context }; }
 
-test('four contacts are deterministic, finite, brief and distinct at supported sample rates', () => {
+test('every authored contact is deterministic, finite, brief and distinct at supported sample rates', () => {
   const signatures = new Set();
   for (const type of Object.keys(VOXEL_FOOTSTEP_AUDIO)) {
     const a = createVoxelFootstepSamples(type), b = createVoxelFootstepSamples(type);
     assert.deepEqual(a, b); assert.equal(a[0], 0); assert.equal(a.at(-1), 0);
-    assert.ok(a.length > 2500 && a.length < 8000); assert.ok(a.every(value => Number.isFinite(value) && Math.abs(value) < .5));
+    assert.ok(a.length > 1500 && a.length < 8000); assert.ok(a.every(value => Number.isFinite(value) && Math.abs(value) < .5));
     assert.ok(a.reduce((sum, value) => sum + value * value, 0) > .01); signatures.add(`${a.length}:${a[50]}:${a[300]}`);
     for (const rate of [8000, 44100, 96000, 192000]) assert.ok(createVoxelFootstepSamples(type, rate).length > 0);
   }
-  assert.equal(signatures.size, 4);
+  assert.equal(signatures.size, Object.keys(VOXEL_FOOTSTEP_AUDIO).length);
   for (const type of ['__proto__', 'constructor', '', null]) assert.equal(createVoxelFootstepSamples(type), null);
   for (const rate of [NaN, Infinity, 0, 7999, 192001]) assert.equal(createVoxelFootstepSamples('boot', rate), null);
 });

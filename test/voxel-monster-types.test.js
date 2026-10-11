@@ -36,7 +36,7 @@ function roaring({ wall = false } = {}) {
 }
 
 test('new species have distinct finite roles while the five original combat profiles remain available', () => {
-  assert.equal(Object.keys(Horde.MONSTER_TYPES).length, 11);
+  assert.equal(Object.keys(Horde.MONSTER_TYPES).length, 17);
   const { hound, runner, leaper, screecher } = Horde.MONSTER_TYPES;
   assert.ok(hound.health < runner.health); assert.ok(hound.damage < runner.damage); assert.ok(hound.windup < runner.windup);
   assert.equal(hound.speed, 6.8); assert.equal(leaper.lungeTicks, 30); assert.equal(screecher.roarCooldown, 720);

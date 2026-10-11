@@ -1,10 +1,10 @@
 /** Voxel Last Stand: deterministic, shared 120 Hz solo / three-player wave survival. */
-import { createCombatPlayer, combatStep, emitCombatEvent, emptyInput, INPUT_KEYS, TICK_RATE, MAPS, WEAPONS, WORLD, PLAYER_HEALTH, eyeHeight, playerHeight, aimDirection, traceShot, pickupCombatLoot, addInventoryLoot, advanceInventoryLoot, resetSprint, resetHealing } from './voxel-engine.js';
+import { createCombatPlayer, combatStep, emitCombatEvent, emptyInput, INPUT_KEYS, TICK_RATE, MAPS, WEAPONS, WORLD, KNOCKBACK, PLAYER_HEALTH, eyeHeight, playerHeight, aimDirection, traceShot, pickupCombatLoot, addInventoryLoot, advanceInventoryLoot, resetSprint, resetHealing } from './voxel-engine.js';
 import { navigationPoints, navigationPath, navigationCanOccupy, navigationVisible } from './voxel-navigation.js';
 import { INVENTORY_ACTIONS, createInventoryGun, createInventoryMelee, ensureInventory, refreshInventory, storeInventoryGun, inventoryCanTake, setInventoryLoadout, setInventoryMeleeLoadout } from './voxel-inventory.js';
 import { MELEE_WEAPONS, clearMeleeComboContinuation, resetMeleeDefense } from './voxel-melee.js';
-import { monsterBodyProfile, monsterAttackHeight } from './voxel-monster-bodies.js';
-import { MONSTER_SPECIAL_RULES, launchMonsterShard, markMonsterRune, cancelMonsterRunes, bomberDamage, advanceMonsterSpecials } from './voxel-monster-specials.js';
+import { monsterBodyProfile, monsterEyeOrigin, monsterAttackOrigin, monsterAttackHeight } from './voxel-monster-bodies.js';
+import { MONSTER_SPECIAL_RULES, launchMonsterShard, launchMonsterHex, markMonsterRune, cancelMonsterRunes, bomberDamage, advanceMonsterSpecials } from './voxel-monster-specials.js';
 import { resolveActiveFire, weaponFireIntervalTicks } from './voxel-fire-modes.js';
 
 export { emptyInput, INPUT_KEYS, TICK_RATE, MAPS, WEAPONS };
@@ -25,6 +25,12 @@ export const MONSTER_TYPES = Object.freeze({
   bomber: Object.freeze({ label: 'Cinder Bomber', health: 105, special: 'bomber', windup: 90, recovery: 180, reach: 3.2, speed: 5.8, unarmed: true, walk: false }),
   spitter: Object.freeze({ label: 'Shard Spitter', health: 125, special: 'spitter', windup: 78, reaction: 48, recovery: 180, reach: 22, speed: 3.6, unarmed: true, walk: false }),
   weaver: Object.freeze({ label: 'Rift Weaver', health: 150, special: 'weaver', windup: 108, reaction: 60, recovery: 240, reach: 24, speed: 3.1, unarmed: true, walk: false }),
+  vampire: Object.freeze({ label: 'Dusk Vampire', debutWave: 6, health: 135, damage: 22, reach: 1.25, windup: 42, recovery: 96, speed: 5.2, lunge: true, lungeRange: 3.6, lungeTicks: 24, lungeSpeed: 10.5, biteHeal: 8, unarmed: true, walk: false }),
+  witch: Object.freeze({ label: 'Hex Witch', debutWave: 8, health: 125, special: 'witch', windup: 96, reaction: 66, recovery: 264, reach: 21, speed: 3, unarmed: true, walk: false }),
+  wolf: Object.freeze({ label: 'Moon Wolf', debutWave: 4, health: 70, damage: 16, reach: 1.1, windup: 30, recovery: 54, speed: 7, flankRange: 1.65, unarmed: true, walk: false }),
+  pig: Object.freeze({ label: 'Carrion Boar', debutWave: 3, health: 150, damage: 30, reach: 1.15, windup: 78, recovery: 132, speed: 4, lunge: true, lungeRange: 4.2, lungeTicks: 42, lungeSpeed: 9.2, unarmed: true, walk: false }),
+  rat: Object.freeze({ label: 'Plague Rat', debutWave: 2, health: 25, damage: 6, reach: .62, windup: 24, recovery: 54, speed: 7.2, unarmed: true, walk: false }),
+  stag: Object.freeze({ label: 'Hollow Stag', debutWave: 9, health: 180, damage: 32, reach: 1.6, windup: 66, recovery: 108, speed: 4.4, knockbackSpeed: 1.9, knockbackTicks: 18, unarmed: true, walk: false }),
 });
 export const HORDE_RALLY_RULES = Object.freeze({ speedMultiplier: 1.18, maxTicks: 180 });
 const GUNNER_POOLS = Object.freeze([
@@ -63,8 +69,9 @@ const humanSlot = (state, id) => Number.isInteger(id) && id >= 0 && id < state.c
 function spawnPointsFor(map, type = null) {
   let bodies = groundSpawns.get(map);
   if (!bodies) { bodies = new Map(); groundSpawns.set(map, bodies); }
-  const key = type === 'hound' ? 'hound' : 'human'; let points = bodies.get(key);
-  if (!points) { points = navigationPoints(map, key === 'hound' ? { monster: true, human: false, monsterType: 'hound' } : undefined).filter(point => point.y < .1); bodies.set(key, points); }
+  const actor = { monster: true, human: false, monsterType: type }, body = monsterBodyProfile(actor);
+  const key = body?.id || 'human'; let points = bodies.get(key);
+  if (!points) { points = navigationPoints(map, body ? actor : undefined).filter(point => point.y < .1); bodies.set(key, points); }
   return points;
 }
 
@@ -97,7 +104,7 @@ export function createState(options = {}) {
   // Navigation is prepared before the live countdown, so the first monster does
   // not trigger construction during a combat frame.
   spawnPointsFor(arenaFor(state));
-  spawnPointsFor(arenaFor(state), 'hound');
+  for (const type of Object.keys(MONSTER_TYPES)) spawnPointsFor(arenaFor(state), type);
   return state;
 }
 export function setConnected(state, id, connected) {
@@ -211,6 +218,9 @@ function monsterType(state) {
       : wave >= 4 ? ['gunner', 'hound', 'leaper', 'brute', 'bomber']
         : wave === 3 ? ['brute', 'hound', 'leaper', 'bomber']
           : wave === 2 ? ['runner', 'hound'] : ['stalker', 'hound'];
+  // Keep every established opening in its original order. A new threat has a
+  // guaranteed readable debut; later waves can repeat it through seeded rolls.
+  introductions.push(...Object.entries(MONSTER_TYPES).filter(([, profile]) => profile.debutWave === wave).map(([type]) => type));
   if (waveQueued < introductions.length) return introductions[waveQueued];
   const weights = [['stalker', wave === 1 ? .82 : .18], ['hound', wave === 1 ? .18 : .17]];
   if (wave >= 2) weights.push(['runner', .25]);
@@ -219,9 +229,13 @@ function monsterType(state) {
   if (wave >= 5) weights.push(['screecher', .075], ['spitter', .09]);
   if (wave >= 7) weights.push(['sniper', .14]);
   if (wave >= 8) weights.push(['weaver', .07]);
+  for (const [type, weight] of [['rat', .08], ['pig', .065], ['wolf', .085], ['vampire', .06], ['witch', .05], ['stag', .05]]) {
+    if (wave >= MONSTER_TYPES[type].debutWave) weights.push([type, weight]);
+  }
   const counts = state.horde.waveTypeCounts || {}, active = state.players.filter(player => player.monster && player.alive);
+  const pressureCaps = { screecher: 2, bomber: 2, spitter: 2, weaver: 2, vampire: 2, witch: 2, pig: 3, wolf: 3, rat: 4, stag: 2 };
   const choices = weights.filter(([type]) => !(type === 'hound' && wave === 1 && (counts.hound || 0) >= 2)
-    && !(['screecher', 'bomber', 'spitter', 'weaver'].includes(type) && active.filter(player => player.monsterType === type).length + state.spawnWarnings.filter(warning => warning.monsterType === type).length >= 2));
+    && !(pressureCaps[type] && active.filter(player => player.monsterType === type).length + state.spawnWarnings.filter(warning => warning.monsterType === type).length >= pressureCaps[type]));
   let roll = random(state) * choices.reduce((sum, [, weight]) => sum + weight, 0);
   for (const [type, weight] of choices) { roll -= weight; if (roll < 0) return type; }
   return 'stalker';
@@ -242,7 +256,7 @@ function spawnPoint(state, type) {
   return choices[Math.floor(random(state) * choices.length)];
 }
 function newBrain(state, player) {
-  return { id: player.id, lifeId: player.lifeId, targetId: null, path: [], nextPlanTick: state.tick + player.id % 12, nextSightTick: 0, visible: false, firstSeenTick: -1, attackTargetId: null, attackYaw: 0, attackPitch: 0, attackTicks: 0, attackReady: false, blastReady: false, recoverTicks: 0, staggerTicks: 0, staggerReadyTick: 0, gunTicks: 0, burstUntil: 0, burstStartShots: 0, burstShotLimit: 0, nextBurstTick: 0, lungeTicks: 0, lungeDamageReady: false, roarTicks: 0, nextRoarTick: state.tick + HORDE_RULES.emergenceTicks + 60, rallyUntilTick: 0, lastX: player.x, lastZ: player.z, lastMotionTick: state.tick, stuckTicks: 0, aimYaw: player.yaw, aimPitch: 0 };
+  return { id: player.id, lifeId: player.lifeId, targetId: null, path: [], nextPlanTick: state.tick + player.id % 12, nextSightTick: 0, visible: false, firstSeenTick: -1, attackTargetId: null, attackTargetLifeId: null, attackYaw: 0, attackPitch: 0, attackTicks: 0, attackReady: false, blastReady: false, recoverTicks: 0, staggerTicks: 0, staggerReadyTick: 0, gunTicks: 0, burstUntil: 0, burstStartShots: 0, burstShotLimit: 0, nextBurstTick: 0, lungeTicks: 0, lungeDamageReady: false, roarTicks: 0, nextRoarTick: state.tick + HORDE_RULES.emergenceTicks + 60, rallyUntilTick: 0, lastX: player.x, lastZ: player.z, lastMotionTick: state.tick, stuckTicks: 0, aimYaw: player.yaw, aimPitch: 0 };
 }
 function survivorMelee(state, attacker, target) {
   return humanSlot(state, attacker?.id) && attacker.human && attacker.connected && attacker.participating && target?.monster && target.team !== attacker.team;
@@ -332,7 +346,7 @@ function spawnTick(state) {
 }
 function targetVisible(state, player, target) {
   if (!target?.alive) return false;
-  const origin = { x: player.x, y: player.y + eyeHeight(player), z: player.z }, dx = target.x - origin.x, dy = target.y + playerHeight(target) * .57 - origin.y, dz = target.z - origin.z, distance = Math.hypot(dx, dy, dz);
+  const origin = monsterEyeOrigin(player) || { x: player.x, y: player.y + eyeHeight(player), z: player.z }, dx = target.x - origin.x, dy = target.y + playerHeight(target) * .57 - origin.y, dz = target.z - origin.z, distance = Math.hypot(dx, dy, dz);
   if (distance < EPS) return true;
   return traceShot(state, player.id, origin, { x: dx / distance, y: dy / distance, z: dz / distance }, distance + .4, arenaFor(state)).playerId === target.id;
 }
@@ -351,10 +365,21 @@ function steer(player, brain, input) {
   input.jump = (point.jump || point.y > player.y + .3) && player.grounded && !player.previousInput.jump;
 }
 function rallyRecipients(state, player, profile) {
-  const origin = { x: player.x, y: player.y + eyeHeight(player), z: player.z };
+  const origin = monsterEyeOrigin(player) || { x: player.x, y: player.y + eyeHeight(player), z: player.z };
   return state.players.filter(peer => peer.id !== player.id && peer.monster && peer.alive && peer.emergenceTicks <= 0
     && Math.hypot(peer.x - player.x, peer.y - player.y, peer.z - player.z) <= profile.rallyRange
-    && navigationVisible(arenaFor(state), origin, { x: peer.x, y: peer.y + eyeHeight(peer), z: peer.z }));
+    && navigationVisible(arenaFor(state), origin, monsterEyeOrigin(peer) || { x: peer.x, y: peer.y + eyeHeight(peer), z: peer.z }));
+}
+function pursuitPoint(state, player, target, profile) {
+  if (!profile.flankRange || Math.abs(target.y - player.y) > .3) return target;
+  const dx = target.x - player.x, dz = target.z - player.z, distance = Math.hypot(dx, dz);
+  if (distance <= 3.2) return target;
+  // Adjacent wolves approach opposite shoulders. Invalid or occluded offset
+  // goals fall back to the real navigation route, never through cover or air.
+  const side = player.id % 2 ? 1 : -1, body = monsterBodyProfile(player);
+  const flank = { x: target.x - dz / distance * profile.flankRange * side, y: target.y, z: target.z + dx / distance * profile.flankRange * side };
+  return navigationCanOccupy(arenaFor(state), flank, body || undefined)
+    && navigationVisible(arenaFor(state), monsterEyeOrigin(player) || { x: player.x, y: player.y + eyeHeight(player), z: player.z }, { x: flank.x, y: flank.y + eyeHeight(player), z: flank.z }) ? flank : target;
 }
 function releaseRoar(state, player, brain, profile) {
   brain.nextRoarTick = state.tick + profile.roarCooldown; brain.recoverTicks = Math.max(brain.recoverTicks, 36);
@@ -378,11 +403,12 @@ function lungeInput(state, player, brain, input, profile) {
 function specialMonsterInput(state, player, brain, input, profile, target, distance, desiredYaw) {
   if (brain.attackTicks > 0) {
     brain.attackTicks--; player.attackTicks = brain.attackTicks;
-    player.monsterState = profile.special === 'bomber' ? 'bomberFuse' : profile.special === 'spitter' ? 'spitting' : 'weaving';
+    player.monsterState = profile.special === 'bomber' ? 'bomberFuse' : profile.special === 'spitter' ? 'spitting' : profile.special === 'witch' ? 'hexing' : 'weaving';
     if (!brain.attackTicks) {
       brain.recoverTicks = profile.recovery;
       if (profile.special === 'bomber') brain.blastReady = true;
       else if (profile.special === 'spitter') launchMonsterShard(state, player, brain.attackYaw, brain.attackPitch);
+      else if (profile.special === 'witch') launchMonsterHex(state, player, brain.attackYaw, brain.attackPitch);
     }
     return input;
   }
@@ -391,8 +417,8 @@ function specialMonsterInput(state, player, brain, input, profile, target, dista
     brain.attackTicks = profile.windup; brain.attackTargetId = target.id; brain.attackTargetLifeId = target.lifeId;
     brain.attackYaw = desiredYaw; brain.attackPitch = Math.atan2(target.y + playerHeight(target) * .5 - player.y - 1.1, distance);
     player.attackTicks = player.attackDuration = profile.windup;
-    player.monsterState = profile.special === 'bomber' ? 'bomberFuse' : profile.special === 'spitter' ? 'spitting' : 'weaving';
-    if (profile.special !== 'weaver') emitCombatEvent(state, profile.special === 'bomber' ? 'monsterFuse' : 'monsterSpit', { playerId: player.id, sourceId: player.id, sourceLifeId: player.lifeId, stage: 'windup', ticks: profile.windup, radius: profile.special === 'bomber' ? MONSTER_SPECIAL_RULES.blastRadius : undefined, x: player.x, y: player.y, z: player.z });
+    player.monsterState = profile.special === 'bomber' ? 'bomberFuse' : profile.special === 'spitter' ? 'spitting' : profile.special === 'witch' ? 'hexing' : 'weaving';
+    if (profile.special !== 'weaver') emitCombatEvent(state, profile.special === 'bomber' ? 'monsterFuse' : profile.special === 'witch' ? 'monsterHex' : 'monsterSpit', { playerId: player.id, sourceId: player.id, sourceLifeId: player.lifeId, stage: 'windup', ticks: profile.windup, radius: profile.special === 'bomber' ? MONSTER_SPECIAL_RULES.blastRadius : undefined, x: player.x, y: player.y, z: player.z });
     return input;
   }
   if (profile.special !== 'bomber' && brain.visible && distance < 5) input.down = true;
@@ -416,7 +442,7 @@ function monsterInput(state, player, brain) {
   }
   if (state.tick >= brain.nextPlanTick) {
     brain.nextPlanTick = state.tick + 90 + player.id % 12;
-    brain.path = navigationPath(arenaFor(state), player, target);
+    brain.path = navigationPath(arenaFor(state), player, pursuitPoint(state, player, target, profile));
   }
   if (state.tick - brain.lastMotionTick >= 120) {
     const moved = Math.hypot(player.x - brain.lastX, player.z - brain.lastZ);
@@ -500,11 +526,12 @@ function monsterInput(state, player, brain) {
   }
   if (!brain.recoverTicks && brain.visible && distance <= (profile.lunge ? profile.lungeRange : profile.reach + target.radius) && Math.abs(target.y - player.y) < 1.25 && Math.abs(wrap(player.yaw - desiredYaw)) < .3) {
     const attackY = player.y + (monsterAttackHeight(player) ?? eyeHeight(player) * .76);
-    brain.attackTicks = profile.windup; brain.attackTargetId = target.id; brain.attackYaw = desiredYaw; brain.attackPitch = Math.atan2(clamp(attackY, target.y + .18, target.y + playerHeight(target) - .16) - attackY, distance); player.attackTicks = profile.windup; player.monsterState = 'windup';
+    brain.attackTicks = profile.windup; brain.attackTargetId = target.id; brain.attackTargetLifeId = target.lifeId; brain.attackYaw = desiredYaw; brain.attackPitch = Math.atan2(clamp(attackY, target.y + .18, target.y + playerHeight(target) - .16) - attackY, distance); player.attackTicks = profile.windup; player.monsterState = 'windup';
     if (profile.lunge) player.monsterState = 'lungeWindup';
     emitCombatEvent(state, profile.lunge ? 'monsterLungeWindup' : 'monsterWindup', { playerId: player.id, targetId: target.id, monsterType: player.monsterType, ticks: profile.windup, yaw: desiredYaw, x: player.x, y: player.y, z: player.z });
     return input;
   }
+  if (profile.flankRange && brain.visible && distance <= 3.2 && Math.abs(target.y - player.y) < .3) brain.path = [{ x: target.x, y: target.y, z: target.z }];
   steer(player, brain, input); return input;
 }
 function monsterDamage(state) {
@@ -515,15 +542,15 @@ function monsterDamage(state) {
     const lunge = brain.lungeDamageReady; brain.lungeDamageReady = false;
     brain.attackReady = false;
     const player = state.players[brain.id], target = state.players[brain.attackTargetId], profile = MONSTER_TYPES[player?.monsterType];
-    if (!player?.alive || !target?.alive || target.team === player.team || !target.connected || !target.participating || !profile || profile.gun) continue;
-    const origin = { x: player.x, y: player.y + (monsterAttackHeight(player) ?? eyeHeight(player) * .76), z: player.z }, dx = target.x - origin.x, dz = target.z - origin.z, targetY = clamp(origin.y, target.y + .18, target.y + playerHeight(target) - .16), dy = targetY - origin.y, distance = Math.hypot(dx, dy, dz);
+    if (!player?.alive || !target?.alive || target.team === player.team || !target.connected || !target.participating || Number.isInteger(brain.attackTargetLifeId) && brain.attackTargetLifeId !== target.lifeId || !profile || profile.gun) continue;
+    const origin = monsterAttackOrigin(player) || { x: player.x, y: player.y + (monsterAttackHeight(player) ?? eyeHeight(player) * .76), z: player.z }, dx = target.x - origin.x, dz = target.z - origin.z, targetY = clamp(origin.y, target.y + .18, target.y + playerHeight(target) - .16), dy = targetY - origin.y, distance = Math.hypot(dx, dy, dz);
     const direction = aimDirection(brain.attackYaw, brain.attackPitch);
     let hit = false;
     if (distance > EPS && Math.hypot(Math.max(0, Math.hypot(dx, dz) - target.radius), dy) <= profile.reach && (dx * direction.x + dy * direction.y + dz * direction.z) / distance >= Math.cos(.65)) {
       const contact = traceShot(state, player.id, origin, { x: dx / distance, y: dy / distance, z: dz / distance }, distance + .01, arenaFor(state));
       hit = contact.playerId === target.id;
       if (hit) {
-        hits.push({ playerId: player.id, targetId: target.id, damage: Math.round(profile.damage * settingsFor(state).damage), hitKind: 'body', headshot: false, attack: 'monster', weapon: player.monsterType, attackX: origin.x, attackY: origin.y, attackZ: origin.z, hitX: contact.x, hitY: contact.y, hitZ: contact.z });
+        hits.push({ playerId: player.id, attackerLifeId: player.lifeId, targetId: target.id, targetLifeId: target.lifeId, damage: Math.round(profile.damage * settingsFor(state).damage), hitKind: 'body', headshot: false, attack: 'monster', weapon: player.monsterType, attackX: origin.x, attackY: origin.y, attackZ: origin.z, hitX: contact.x, hitY: contact.y, hitZ: contact.z });
         if (lunge) { brain.lungeTicks = 0; player.lungeTicks = 0; brain.recoverTicks = profile.recovery; player.monsterState = 'recover'; player.vx *= .15; player.vz *= .15; }
       }
     }
@@ -617,6 +644,26 @@ function dropLoot(state, event) {
   if (state.loot.length >= HORDE_RULES.maxLoot) state.loot.splice(0, 1);
   state.loot.push(drop); emitLootEvent(state, 'hordeDrop', drop);
 }
+function confirmedMonsterEffect(state, event) {
+  if (event.tick !== state.tick || event.attack !== 'monster' || event.damage <= 0) return;
+  const source = state.players[event.playerId], target = state.players[event.targetId], profile = MONSTER_TYPES[source?.monsterType];
+  if (!source?.alive || !source.monster || source.human || event.attackerLifeId !== source.lifeId || event.weapon !== source.monsterType || !humanSlot(state, target?.id) || !target.human || !target.connected || !target.participating || event.targetLifeId !== target.lifeId) return;
+  if (profile?.biteHeal) {
+    const amount = Math.max(0, Math.min(profile.biteHeal, event.damage, source.maxHp - source.hp));
+    if (amount > 0) {
+      source.hp += amount;
+      emitCombatEvent(state, 'monsterSiphon', { playerId: source.id, lifeId: source.lifeId, amount, hp: source.hp, maxHp: source.maxHp, x: source.x, y: source.y, z: source.z });
+    }
+  }
+  if (profile?.knockbackSpeed && target.alive && target.knockbackReadyTicks <= 0) {
+    const dx = event.hitX - event.attackX, dz = event.hitZ - event.attackZ, length = Math.hypot(dx, dz);
+    if (length <= EPS || !Number.isFinite(length)) return;
+    const speed = Math.min(KNOCKBACK.maxPlayerSpeed, profile.knockbackSpeed);
+    target.knockbackX = dx / length * speed; target.knockbackZ = dz / length * speed;
+    target.knockbackTicks = Math.min(KNOCKBACK.playerTicks, profile.knockbackTicks); target.knockbackReadyTicks = KNOCKBACK.playerReadyTicks;
+    emitCombatEvent(state, 'monsterKnockback', { playerId: source.id, attackerLifeId: source.lifeId, targetId: target.id, targetLifeId: target.lifeId, monsterType: source.monsterType, speed, ticks: target.knockbackTicks, dx: dx / length, dz: dz / length, x: target.x, y: target.y, z: target.z });
+  }
+}
 function recordCombat(state) {
   const horde = state.horde, fresh = state.events.filter(event => event.id > horde.lastEventId);
   // Capture the cursor before appending drops, so each existing combat kill is
@@ -627,6 +674,7 @@ function recordCombat(state) {
     if (event.type === 'damage') {
       if (humanSlot(state, event.targetId)) horde.teamstats.damageTaken += event.damage;
       else if (humanSlot(state, event.playerId)) horde.teamstats.damage += event.damage;
+      confirmedMonsterEffect(state, event);
     }
   }
 }

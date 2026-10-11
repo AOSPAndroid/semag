@@ -3,6 +3,7 @@ import test from 'node:test';
 import * as Horde from '../public/voxel-horde-engine.js';
 import { eyeHeight, playerHeight, emptyInput, pickupCombatLoot } from '../public/voxel-engine.js';
 import { WEAPONS } from '../public/voxel-weapons.js';
+import { snapshotHordeState } from '../public/voxel-horde-snapshot.js';
 
 const openArena = Object.freeze({
   id: 'horde-quality-arena',
@@ -324,7 +325,7 @@ test('eight naturally completed waves grow tougher while entities, drops, events
   // still requires the normal magazine, spin-up, recoil, aim and reload rules.
   human.hp = human.maxHp = 1e6;
   const generations = new Set(), lifeIds = new Set(), previousLifeBySlot = new Map(), types = new Set(), waves = [], stalkerHealth = [];
-  let peakSnapshotBytes = 0;
+  let peakSnapshotBytes = 0, selfDetonations = 0, eventCursor = state.eventId;
   for (let tick = 0; tick < 40000 && state.horde.wavesCleared < 8; tick++) {
     const targets = monsters(state).sort((a, b) => Math.hypot(a.x - human.x, a.z - human.z) - Math.hypot(b.x - human.x, b.z - human.z));
     for (const monster of targets) {
@@ -338,6 +339,8 @@ test('eight naturally completed waves grow tougher while entities, drops, events
       if (monster.monsterType === 'stalker' && stalkerHealth.length < state.horde.wave) stalkerHealth[state.horde.wave - 1] = monster.maxHp;
     }
     Horde.step(state, targets.length ? [aimAt(human, targets[0])] : []);
+    selfDetonations += state.events.filter(event => event.id > eventCursor && event.type === 'kill' && event.monsterType === 'bomber' && event.playerId === event.targetId).length;
+    eventCursor = state.eventId;
     assert.equal(state.players, state.fighters);
     assert.ok(state.players.length <= state.capacity + Horde.HORDE_RULES.maxMonsters);
     assert.ok(state.players.every((player, index) => player.id === index));
@@ -345,18 +348,18 @@ test('eight naturally completed waves grow tougher while entities, drops, events
     assert.ok(state.spawnWarnings.length <= Horde.HORDE_RULES.maxWarnings);
     assert.ok(state.events.length <= 256);
     if (tick % 120 === 0) {
-      const snapshot = { ...state, map: undefined, fighters: undefined, horde: { ...state.horde, brains: undefined } };
+      const snapshot = snapshotHordeState(state);
       peakSnapshotBytes = Math.max(peakSnapshotBytes, Buffer.byteLength(JSON.stringify(snapshot)));
     }
     if (state.phase === 'intermission' && !waves.some(wave => wave.number === state.horde.wave)) waves.push({ number: state.horde.wave, kills: state.horde.waveKills });
   }
   assert.equal(state.horde.wavesCleared, 8);
   assert.equal(waves.length, 8); assert.ok(waves.slice(1).every((wave, index) => wave.kills > waves[index].kills));
-  assert.deepEqual([...types].sort(), Object.keys(Horde.MONSTER_TYPES).sort());
+  assert.deepEqual([...types].sort(), Object.entries(Horde.MONSTER_TYPES).filter(([, profile]) => (profile.debutWave || 1) <= state.horde.wavesCleared).map(([type]) => type).sort());
   const healthSamples = stalkerHealth.filter(Number.isFinite);
   assert.ok(healthSamples.length >= 4); assert.ok(healthSamples.slice(1).every((health, index) => health > healthSamples[index]));
   assert.equal(state.horde.totalKills, waves.reduce((sum, wave) => sum + wave.kills, 0));
-  assert.equal(human.kills, state.horde.totalKills);
+  assert.equal(human.kills + selfDetonations, state.horde.totalKills);
   assert.ok(generations.size > state.players.length, 'monster slots never exercised reuse');
   assert.ok(peakSnapshotBytes < 128 * 1024, `oversized snapshot: ${peakSnapshotBytes} bytes`);
 });

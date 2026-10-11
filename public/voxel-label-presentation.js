@@ -1,5 +1,5 @@
 /** Screen annotations use the same camera and actors as the world draw. */
-import { monsterTypeId } from './voxel-monster-bodies.js';
+import { monsterBodyProfile, monsterTypeId } from './voxel-monster-bodies.js';
 
 export const MAX_WORLD_LABELS = 23;
 export const EMPTY_WORLD_LABELS = Object.freeze([]);
@@ -37,6 +37,21 @@ function anatomy(actor, monster, joints) {
       worldPoint(actor, -.07, .75, -.29), worldPoint(actor, .07, .75, -.29),
       worldPoint(actor, 0, .46, .05), worldPoint(actor, -.15, .46, .05), worldPoint(actor, .15, .46, .05),
     ] };
+  }
+  const body = monster && monsterBodyProfile(actor);
+  if (body) {
+    // Sample the substantial head and torso, not tails, antler tips or the
+    // empty space above a small animal. A floating bar alone reveals nothing.
+    const samples = [];
+    for (const kind of ['head', 'body']) {
+      const box = body.boxes.find(part => part.kind === kind);
+      if (!box) continue;
+      const x = box.x + box.w / 2, y = box.y + box.h / 2, z = box.z + box.d / 2;
+      samples.push(worldPoint(actor, x, y, z),
+        worldPoint(actor, x - box.w / 4, y, z), worldPoint(actor, x + box.w / 4, y, z),
+        worldPoint(actor, x, y + box.h / 4, z));
+    }
+    return { anchor: worldPoint(actor, 0, body.height + .16, -body.eyeForward), samples };
   }
   let crown = actor.crouching && !monster ? 1.15 : 1.8;
   let headBase = crown - .32, headFront = -.1, chest = actor.crouching && !monster ? .70 : 1.1;

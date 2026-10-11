@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { appendMonsterVariant, MONSTER_VARIANT_ART, MONSTER_VARIANT_IDS } from '../public/voxel-monster-variants.js';
 import { monsterMeshes, monsterDeathMeshes, createMonsterDeathMeshPresenter } from '../public/voxel-renderer.js';
 import { createMonsterDeathPresenter, MONSTER_DEATH_RULES } from '../public/voxel-monster-death.js';
+import { monsterAttackPose } from '../public/voxel-monster-animation.js';
 
 const position = Object.freeze({ x: 3, y: .7, z: -4, yaw: .9 });
 function actor(type, extra = {}) {
@@ -43,7 +44,7 @@ test('walking feet, opening jaws, swelling bellies and casting hands remain insi
   }
 });
 
-test('the actual renderer preserves the released idle, attack-tell and corpse anatomy byte for byte', () => {
+test('the actual renderer preserves the released 3.61 idle, articulated attack-tell and corpse anatomy byte for byte', () => {
   const signature = createHash('sha256');
   for (const type of ['stalker', 'runner', 'brute', 'gunner', 'sniper', 'hound', 'leaper', 'screecher']) {
     for (const state of ['pursuit', 'windup', 'lungeWindup', 'leap', 'roar', 'aiming', 'dead']) for (const frame of [0, 1, 2]) {
@@ -54,7 +55,7 @@ test('the actual renderer preserves the released idle, attack-tell and corpse an
       signature.update(`${type}:${state}:${frame}:`); signature.update(new Uint8Array(mesh.buffer, mesh.byteOffset, mesh.byteLength));
     }
   }
-  assert.equal(signature.digest('hex'), '506464e80632b6489e6bcad5ee9359628d56317f4f3c4f6b190f58f0b1b0eafa');
+  assert.equal(signature.digest('hex'), '69f0b41959fde83a606cb0fc59c8e7a6ca120a63d700be4b1f8d12ae84aca198');
 });
 
 test('actual live meshes keep every charged and walking corner inside world-aligned hit boxes at continuous yaw', () => {
@@ -99,10 +100,22 @@ test('new species use their original anatomy for authoritative cached death coll
 
 test('accepted special attack timers change readable anatomy and glow without time-driven animation while stopped', () => {
   for (const id of MONSTER_VARIANT_IDS) {
-    const art = MONSTER_VARIANT_ART[id], idle = body(actor(id)), start = body(actor(id, { monsterState: art.state, attackTicks: 90, attackDuration: 90 }));
+    const art = MONSTER_VARIANT_ART[id], idle = body(actor(id)), startPlayer = actor(id, { monsterState: art.state, attackTicks: 90, attackDuration: 90 }), start = body(startPlayer);
+    const next = body({ ...startPlayer, attackTicks: 89.99991 });
     const halfPlayer = actor(id, { monsterState: art.state, attackTicks: 45, attackDuration: 90 }), half = body(halfPlayer, { time: 1000 });
     const full = body(actor(id, { monsterState: art.state, attackTicks: 0, attackDuration: 90 }));
-    assert.deepEqual(start, idle); assert.notEqual(fingerprint(half), fingerprint(idle)); assert.notEqual(fingerprint(full), fingerprint(half));
+    const intent = monsterAttackPose(startPlayer);
+    assert.equal(intent.phase, 'startup'); assert.equal(intent.progress, 0); assert.equal(intent.windup, 0); assert.equal(intent.extension, 0);
+    assert.deepEqual(body(startPlayer, { time: 80000 }), start, 'the accepted zero-progress articulated stance stays planted while stopped');
+    assert.equal(next.length, start.length);
+    for (let index = 0; index < start.length; index++) for (const key of ['x','y','z','w','h','d']) assert.ok(Math.abs(next[index][key] - start[index][key]) <= 1e-6, `${id}: beginning the accepted tell has continuous real joints`);
+    for (const boxes of [start,next,half,full]) for (const box of boxes) {
+      assert.ok([box.x,box.y,box.z,box.w,box.h,box.d].every(Number.isFinite));
+      assert.ok(box.y >= 0 && box.y + box.h <= 1.8 + 1e-8);
+      const extent = box.y + box.h > 1.48 + 1e-8 ? .22 : .29;
+      for (const x of [box.x,box.x+box.w]) for (const z of [box.z,box.z+box.d]) assert.ok(Math.hypot(x,z) <= extent + 1e-8, `${id}: accepted tell preserves actual anatomy at continuous yaw`);
+    }
+    assert.notEqual(fingerprint(half), fingerprint(idle)); assert.notEqual(fingerprint(full), fingerprint(half));
     assert.ok(full.some(box => box.color === art.charge), `${id}: the completed tell is bright and readable`);
     assert.deepEqual(body(halfPlayer, { time: 80000 }), half, 'wall-clock changes cannot continue a paused attack tell');
     assert.equal(full.length, idle.length, 'charging adds no geometry, particle batches or transient meshes');

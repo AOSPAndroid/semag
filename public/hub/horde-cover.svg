@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 320" role="img" aria-labelledby="title desc">
   <title id="title">Voxel Last Stand</title>
-  <desc id="desc">A first-person holdout at dusk. A carbine covers advancing block-built monsters between courtyard masonry and supply crates. Teal teammates defend cover while a dropped health pack glows nearby.</desc>
+  <desc id="desc">A first-person holdout at dusk. A crimson-caped vampire, a violet witch, an antlered stag, a silver wolf, a pink boar and a small rat advance between courtyard masonry and supply crates. A teal teammate defends cover while a dropped health pack glows nearby.</desc>
   <defs>
     <linearGradient id="sky" x2="0" y2="1"><stop stop-color="#4e667c"/><stop offset=".76" stop-color="#9b8c94"/><stop offset="1" stop-color="#c19883"/></linearGradient>
     <linearGradient id="ground" x2="0" y2="1"><stop stop-color="#bba88c"/><stop offset="1" stop-color="#ddc9a7"/></linearGradient>
@@ -38,6 +38,12 @@
       <path fill="#b8aa8b" d="M0-4h5v7H0zm19 0h5v7h-5zM-5 12h8v6h-8zm25 0h8v6h-8z"/>
       <path fill="#786956" d="M0-4h2v7H0zm20 0h2v7h-2z"/>
     </g>
+    <g id="rat" shape-rendering="crispEdges"><path fill="#302b2c" d="M12 48h37v5H12z"/><path fill="#796c61" d="M16 35h27v15H16zM12 40h8v8h-8zM39 33h12v15H39z"/><path fill="#a29383" d="M17 31h9v10h-9zM36 29h10v11H36z"/><path fill="#c69b98" d="M19 33h5v5h-5zM38 31h6v6h-6zM49 41h7v5h-7zM7 45h9v4H7zM5 39h4v8H5zM1 35h6v5H1z"/><path fill="#ead6bb" d="M46 39h3v3h-3zM52 39h8v2h-8zM53 47h8v2h-8z"/><path fill="#1d1e21" d="M42 38h3v3h-3zM20 48h6v5h-6zM36 48h6v5h-6z"/></g>
+    <g id="pig" shape-rendering="crispEdges"><path fill="#32282d" d="M8 53h46v4H8z"/><path fill="#b57482" d="M12 30h33v20H12zM39 27h15v21H39zM10 34H5v10h9z"/><path fill="#e7a7ad" d="M16 30h24v9H16zM40 26h5v-8h8v13h-5zM44 35h14v10H44zM6 30h5v6H6z"/><path fill="#8f515f" d="M47 38h3v4h-3zM53 38h3v4h-3z"/><path fill="#1f2025" d="M43 31h3v3h-3zM14 48h9v7h-9zM34 48h9v7h-9z"/><path fill="#cb929c" d="M18 48h1v7h-1zM38 48h1v7h-1z"/></g>
+    <g id="wolf" shape-rendering="crispEdges"><path fill="#222b35" d="M8 53h47v4H8z"/><path fill="#68798b" d="M13 33h31v15H13zM34 28h13v18H34zM42 27h13v13H42z"/><path fill="#a6b5c4" d="M37 18h5v15h-5zM48 17h6v14h-6zM39 32h13v8H39zM50 34h10v7H50zM18 33h17v5H18zM9 26h8v12H9zM4 21h7v10H4z"/><path fill="#d7dfe4" d="M32 40h12v6H32zM51 35h7v3h-7z"/><path fill="#344657" d="M14 45h6v10h-6zM33 45h6v10h-6zM6 23h3v5H6z"/><path fill="#d8b565" d="M47 31h3v2h-3z"/><path fill="#141d26" d="M58 34h4v4h-4zM13 52h8v3h-8zM32 52h8v3h-8z"/></g>
+    <g id="vampire" shape-rendering="crispEdges"><path fill="#24232d" d="M12 29h40v26H12zM18 22h28v32H18z"/><path fill="#8d304d" d="M20 28h24v24H20zM14 23h7v11h-7zM43 23h7v11h-7z"/><path fill="#353345" d="M24 29h16v22H24zM23 50h7v9h-7zM34 50h7v9h-7z"/><path fill="#e3d9c9" d="M23 10h18v18H23zM16 36h5v9h-5zM43 36h5v9h-5z"/><path fill="#1b1c29" d="M23 9h18v5H23zM23 14h3v3h-3zM38 14h3v3h-3z"/><path fill="#d25260" d="M26 19h4v2h-4zM34 19h4v2h-4z"/><path fill="#fcf6e7" d="M28 24h3v5h-3zM34 24h3v5h-3z"/><path fill="#c6a970" d="M29 35h6v3h-6z"/></g>
+    <g id="witch" shape-rendering="crispEdges"><path fill="#3b2b54" d="M18 29h24v12H18zM14 39h32v17H14z"/><path fill="#705090" d="M12 19h37v5H12zM18 13h24v8H18zM25 7h12v8H25zM29 2h7v8h-7zM16 41h8v13h-8zM8 31h12v6H8z"/><path fill="#adb5a4" d="M23 24h14v10H23zM7 32h6v6H7zM42 34h6v6h-6z"/><path fill="#232c2d" d="M25 27h3v2h-3zM32 27h3v2h-3zM20 54h8v5h-8zM34 54h8v5h-8z"/><path fill="#917051" d="M49 22h3v36h-3z"/><path fill="#69cf9c" d="M45 14h11v11H45zM48 11h5v17h-5z"/><path fill="#c9f3c5" d="M48 15h5v4h-5z"/></g>
+    <g id="stag" shape-rendering="crispEdges"><path fill="#392c28" d="M6 54h51v4H6z"/><path fill="#895f46" d="M12 34h28v15H12zM34 24h13v23H34zM40 21h12v13H40z"/><path fill="#b1825d" d="M16 34h21v6H16zM43 26h12v7H43zM13 45h5v10h-5zM33 45h5v10h-5z"/><path fill="#e0d1af" d="M35 33h7v11h-7zM41 9h3v14h-3zM51 7h3v15h-3zM35 13h8v3h-8zM34 7h3v9h-3zM28 8h8v3h-8zM28 3h3v8h-3zM51 11h9v3h-9zM58 3h3v11h-3zM51 2h3v6h-3z"/><path fill="#242329" d="M47 24h3v3h-3zM53 28h4v4h-4zM12 52h7v4h-7zM32 52h7v4h-7z"/></g>
   </defs>
   <path fill="url(#sky)" d="M0 0h600v320H0z"/>
   <path fill="#f4c28e" fill-opacity=".13" d="M437 17h45v45h-45z"/>
@@ -80,10 +86,12 @@
     <path fill="#ab7b49" d="M271 182l20 3v26l-20-3z"/>
     <path stroke="#594d38" fill="none" d="m273 189 16 2m-16 5 16 2m-16 5 16 2m-10-20v22m13-19 18-4m-18 12 18-4m-18 12 18-4m-11-20v24"/>
     <path fill="#ceac72" d="m273 194 16 2v3l-16-2z"/>
-    <use href="#monster" transform="translate(272 163) scale(.77)"/>
-    <use href="#monster" transform="translate(319 154) scale(.66)"/>
-    <use href="#brute" transform="translate(212 182) scale(1.1)"/>
-    <use href="#monster" transform="translate(352 189) scale(1.03)"/>
+    <use href="#witch" transform="translate(242 137) scale(.77)"/>
+    <use href="#stag" transform="translate(291 142) scale(.72)"/>
+    <use href="#vampire" transform="translate(320 165) scale(1.08)"/>
+    <use href="#pig" transform="translate(165 218) scale(.95)"/>
+    <use href="#wolf" transform="translate(233 208) scale(1.03)"/>
+    <use href="#rat" transform="translate(93 231) scale(.72)"/>
     <use href="#operative" x="73" y="159" style="--cloth:#63cfc1"/>
     <path fill="#d2af76" d="m255 221 20-3 17 3-19 4z"/>
     <path fill="#e3c592" d="m260 221 9-1 3 2-3 1-1-1-4 1-1 2-3-1z"/>

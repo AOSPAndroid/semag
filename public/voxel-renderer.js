@@ -8,13 +8,13 @@ import { frameAlpha } from './display-timing.js';
 import { createPlayerAnimationPresenter, playerAnimationPose, weaponReloadPose, createWeaponReloadPresenter } from './voxel-player-animation.js';
 import { createFirstPersonMotionPresenter, createWeaponShotPresenter, weaponShotPose, weaponCyclePose } from './voxel-first-person-motion.js';
 import { MONSTER_BODIES, monsterBodyProfile } from './voxel-monster-bodies.js';
-import { MONSTER_DEATH_RULES, monsterDeathPose, createMonsterDeathPresenter } from './voxel-monster-death.js';
+import { MONSTER_DEATH_RULES, MONSTER_DEATH_STYLES, monsterDeathPose, createMonsterDeathPresenter } from './voxel-monster-death.js';
 import { HUMAN_DEATH_RULES, humanDeathPose, humanDeathCameraPose, createHumanDeathPresenter } from './voxel-human-death.js';
 import { EMPTY_WORLD_LABELS, presentWorldLabels } from './voxel-label-presentation.js';
 import { createSlashImpactPresenter } from './voxel-slash-effects.js';
-import { MONSTER_VARIANT_ART, appendMonsterVariant } from './voxel-monster-variants.js';
-import { MONSTER_SPECIAL_RULES } from './voxel-monster-specials.js';
-import { monsterLocomotionPose, monsterGaitCycleMetres, appendMonsterLimb, createMonsterAttackPresenter } from './voxel-monster-animation.js';
+import { MONSTER_VARIANT_ART, MONSTER_BESTIARY_ART, appendMonsterVariant, appendMonsterBestiary } from './voxel-monster-variants.js';
+import { MONSTER_SPECIAL_RULES, MONSTER_HEX_RULES } from './voxel-monster-specials.js';
+import { monsterLocomotionPose, monsterGaitCycleMetres, appendMonsterLimb, createMonsterAttackPresenter, MONSTER_QUADRUPED_GAITS } from './voxel-monster-animation.js';
 import { MAP_EXPANSION_ART, MAP_EXPANSION_ATMOSPHERE, appendVoxelMapExpansionCollider, appendVoxelMapExpansionFloor, appendVoxelMapExpansionDecoration, appendVoxelMapExpansionFloors, appendVoxelIdentityFloors, resolveVoxelWallSign } from './voxel-map-expansion-art.js';
 
 // All solid world surfaces come directly from the engine's minimum-corner
@@ -640,10 +640,11 @@ function specialWarning(mesh, map, attack, radius, color, reducedMotion) {
 }
 function monsterSpecialParts(world, contacts, state, map, { reducedMotion = false } = {}) {
   const startWorld = world.length, startContacts = contacts.length;
-  let shards = 0, runes = 0, fuses = 0;
-  if (state.gameId !== 'voxel-horde') return { shards, runes, fuses, vertices: 0 };
+  let shards = 0, hexes = 0, runes = 0, fuses = 0;
+  if (state.gameId !== 'voxel-horde') return { shards, hexes, runes, fuses, vertices: 0 };
   for (const projectile of (state.horde?.projectiles || []).slice(0, MONSTER_SPECIAL_RULES.maxProjectiles)) {
-    if (!specialSource(state, projectile, 'spitter') || !validSpecialTimer(projectile, MONSTER_SPECIAL_RULES.shardTicks) || ![projectile.dx, projectile.dy, projectile.dz].every(Number.isFinite)) continue;
+    const hex = projectile.kind === 'hex';
+    if (hex && projectile.sourceType !== 'witch' || !specialSource(state, projectile, hex ? 'witch' : 'spitter') || !validSpecialTimer(projectile, hex ? MONSTER_HEX_RULES.ticks : MONSTER_SPECIAL_RULES.shardTicks) || ![projectile.dx, projectile.dy, projectile.dz].every(Number.isFinite)) continue;
     const direction = normalized([projectile.dx, projectile.dy, projectile.dz], [0, 0, 0]);
     if (Math.hypot(...direction) < .5) continue;
     const pose = { x: projectile.x, y: projectile.y, z: projectile.z, yaw: Math.atan2(direction[0], -direction[2]), pitch: Math.asin(clamp(direction[1], -1, 1)) };
@@ -652,9 +653,9 @@ function monsterSpecialParts(world, contacts, state, map, { reducedMotion = fals
     if (length < .018) continue;
     // Its simulated point is the tip, and both small solids sit behind it.
     // There is no fake instantaneous beam or wall-clock extrapolation.
-    world.box(-.022, -.022, .003, .044, .044, Math.min(.09, length), '#9bfff0', pose);
-    if (length > .10) world.box(-.012, -.012, .09, .024, .024, length - .09, '#32b9b1', pose);
-    shards++;
+    world.box(-.022, -.022, .003, .044, .044, Math.min(.09, length), hex ? '#d9ffc5' : '#9bfff0', pose);
+    if (length > .10) world.box(-.012, -.012, .09, .024, .024, length - .09, hex ? '#9a74c4' : '#32b9b1', pose);
+    if (hex) hexes++; else shards++;
   }
   for (const hazard of (state.horde?.hazards || []).slice(0, MONSTER_SPECIAL_RULES.maxHazards)) {
     const source = specialSource(state, hazard, 'weaver'), target = state.players?.find(player => player.id === hazard.targetId);
@@ -667,7 +668,7 @@ function monsterSpecialParts(world, contacts, state, map, { reducedMotion = fals
     const support = surfaceBelow(map.colliders || [], source.x, source.z, source.y + .04), ground = support ? support.y + support.h : 0;
     specialWarning(contacts, map, { x: source.x, y: ground, z: source.z, ticksLeft: source.attackTicks, lifeTicks: source.attackDuration }, MONSTER_SPECIAL_RULES.blastRadius, [1, .51, .24], reducedMotion); fuses++;
   }
-  return { shards, runes, fuses, vertices: (world.length - startWorld + contacts.length - startContacts) / VERTEX_STRIDE };
+  return { shards, hexes, runes, fuses, vertices: (world.length - startWorld + contacts.length - startContacts) / VERTEX_STRIDE };
 }
 
 /** The same bounded, depth-tested special geometry used by actual frames. */
@@ -679,8 +680,8 @@ export function monsterSpecialMeshes(state, map, options = {}) {
 export function createMonsterSpecialImpactPresenter() {
   const seen = new Map();
   const present = (event, state, time, { reducedMotion = false } = {}) => {
-    const blast = event.type === 'monsterBlast', rune = event.type === 'monsterMark' && event.stage === 'release', shard = event.type === 'monsterShardImpact';
-    if ((!blast && !rune && !shard) || ![event.x, event.y, event.z, event.tick, time].every(Number.isFinite) || event.tick > state.tick + 1 || state.tick - event.tick > 18 || !specialSource(state, event, blast ? 'bomber' : rune ? 'weaver' : 'spitter')) return [];
+    const blast = event.type === 'monsterBlast', rune = event.type === 'monsterMark' && event.stage === 'release', hex = event.type === 'monsterHex' && event.stage === 'impact', shard = event.type === 'monsterShardImpact' || hex;
+    if ((!blast && !rune && !shard) || ![event.x, event.y, event.z, event.tick, time].every(Number.isFinite) || event.tick > state.tick + 1 || state.tick - event.tick > 18 || !specialSource(state, event, blast ? 'bomber' : rune ? 'weaver' : hex ? 'witch' : 'spitter')) return [];
     const key = `${event.playerId}:${event.sourceLifeId}:${event.type}:${event.specialId ?? event.spawnTick ?? event.tick}:${event.x}:${event.y}:${event.z}`;
     if (seen.has(key)) return [];
     seen.set(key, true); while (seen.size > 128) seen.delete(seen.keys().next().value);
@@ -689,7 +690,7 @@ export function createMonsterSpecialImpactPresenter() {
     return Array.from({ length: count }, (_, index) => {
       const angle = index * 2.39996, spread = shard ? .45 : 1 + index % 3 * .18;
       return { origin, born: time, vx: Math.sin(angle) * spread, vy: shard ? .25 : .6 + index % 3 * .16, vz: Math.cos(angle) * spread,
-        color: shard ? '#8ce7d4' : rune ? index % 3 ? '#b497e0' : '#ead7ff' : index % 3 ? '#f2a156' : '#ffe6a1',
+        color: hex ? index % 2 ? '#b293d9' : '#d0f3ae' : shard ? '#8ce7d4' : rune ? index % 3 ? '#b497e0' : '#ead7ff' : index % 3 ? '#f2a156' : '#ffe6a1',
         life: shard ? 150 : 220 + index * 8, gravity: 3, cover: true, radius: shard ? .22 : .8, size: shard ? .012 : .02, shrink: true, material: 'monster-special' };
     });
   };
@@ -3198,6 +3199,7 @@ const MONSTER_ART = Object.freeze({
   leaper: { skin: '#a4ad8c', shadow: '#4b5445', armor: '#67735a', eye: '#e5e98b', width: .29, head: '#9da783' },
   screecher: { skin: '#917e8c', shadow: '#463d4b', armor: '#665668', eye: '#efa6c5', width: .40, head: '#786577' },
   ...MONSTER_VARIANT_ART,
+  ...MONSTER_BESTIARY_ART,
 });
 
 const CREATURE_TYPES = new Set(['hound', 'leaper', 'screecher']);
@@ -3386,7 +3388,7 @@ function creatureParts(mesh, player, type, art, pose, front, animation, motion) 
 }
 
 function monsterParts(mesh, player, time, animation = null) {
-  const type = MONSTER_ART[player.monsterType] ? player.monsterType : 'stalker', art = MONSTER_ART[type];
+  const type = typeof player.monsterType === 'string' && Object.hasOwn(MONSTER_ART, player.monsterType) ? player.monsterType : 'stalker', art = MONSTER_ART[type];
   const yaw = finite(player.yaw), pose = { x: player.x, y: finite(player.y), z: player.z, yaw };
   const gait = player.alive === false ? STILL_MONSTER_GAIT : animation || monsterAnimationPose(player, time), motion = monsterLocomotionPose(player, gait);
   const aiming = player.monsterState === 'aiming', armed = type === 'gunner' || type === 'sniper';
@@ -3399,7 +3401,7 @@ function monsterParts(mesh, player, time, animation = null) {
     });
     mesh.quad(...points, rotate([0, 0, -1], yaw), rgba(color));
   };
-  if (appendMonsterVariant(mesh, player, pose, { time, animation: gait, motion })) return { type, armed: false, art, pose, yaw, pitch: 0 };
+  if (appendMonsterBestiary(mesh, player, pose, { time, animation: gait, motion }) || appendMonsterVariant(mesh, player, pose, { time, animation: gait, motion })) return { type, armed: false, art, pose, yaw, pitch: 0 };
   if (CREATURE_TYPES.has(type)) {
     creatureParts(mesh, player, type, art, pose, front, gait, motion);
     return { type, armed: false, art, pose, yaw, pitch: 0 };
@@ -3514,7 +3516,8 @@ function deathTemplate(type) {
       let x = 0, y = 0, z = 0, count = 0;
       for (let at = start; at < this.length; at += VERTEX_STRIDE) { x += this.storage[at]; y += this.storage[at + 1]; z += this.storage[at + 2]; count++; }
       const center = [x / count, y / count, z / count];
-      const joint = type === 'hound' ? center[1] < .30 ? 'paw' : 'body'
+      const quadruped = MONSTER_QUADRUPED_GAITS[type];
+      const joint = quadruped ? center[1] < quadruped.hipY ? 'paw' : 'body'
         : center[1] < .43 ? 'shin' : center[1] < .81 ? 'thigh' : Math.abs(center[0]) > .20 && center[1] < 1.46 ? 'arm' : 'body';
       parts.push({ start, end: this.length, center, joint, order: hash(`${type}:${start}`) / 4294967296 });
     };
@@ -3537,7 +3540,8 @@ function rotateAxis(point, axis, angle) {
 }
 
 function deathJoint(part, type, bend, crouching = false) {
-  if (type === 'hound') return part.joint === 'paw' ? { pivot: [part.center[0], .30, part.center[2]], pitch: bend * .30, lower: 0 } : { pivot: [0, 0, 0], pitch: 0, lower: 0 };
+  const quadruped = MONSTER_QUADRUPED_GAITS[type];
+  if (quadruped) return part.joint === 'paw' ? { pivot: [part.center[0], quadruped.hipY, part.center[2]], pitch: bend * .30, lower: 0 } : { pivot: [0, 0, 0], pitch: 0, lower: 0 };
   const side = part.center[0] < 0 ? -1 : 1;
   if (crouching) {
     if (part.joint === 'shin') return { pivot: [side * .11, .295, -.11], pitch: -.40 * bend, lower: -.05 * bend };
@@ -3553,7 +3557,7 @@ function deathJoint(part, type, bend, crouching = false) {
 
 function writeDeathPose(entry, pose, { boundsOnly = false } = {}) {
   const { death, template, output, axis, maxAngle, ground } = entry;
-  const angle = pose.angle * maxAngle / (death.monsterType === 'hound' ? 1.49 : 1.47);
+  const angle = pose.angle * maxAngle / (Object.hasOwn(MONSTER_QUADRUPED_GAITS, death.monsterType) ? 1.49 : 1.47);
   // Compose three rigid rotations once per cuboid, not once per vertex. This
   // keeps a twenty-monster cleave from creating thousands of frame objects.
   const globalColumns = [[1, 0, 0], [0, 1, 0], [0, 0, 1]].map(point => rotateAxis(rotate(point, death.yaw), axis, angle));
@@ -3599,21 +3603,27 @@ function writeDeathPose(entry, pose, { boundsOnly = false } = {}) {
 
 function deathTouchesCover(entry, map, angle = entry.maxAngle) {
   const old = entry.maxAngle; entry.maxAngle = angle;
-  const result = writeDeathPose(entry, monsterDeathPose(entry.death, MONSTER_DEATH_RULES.collapseMs), { boundsOnly: true }); entry.maxAngle = old;
-  return result.bounds.some(bound => (map.colliders || []).some(box => bound[3] > box.x + .001 && bound[0] < box.x + box.w - .001
-    && bound[4] > box.y + .001 && bound[1] < box.y + box.h - .001 && bound[5] > box.z + .001 && bound[2] < box.z + box.d - .001));
+  const collapsedAt = MONSTER_DEATH_STYLES[entry.death.monsterType]?.collapseMs ?? MONSTER_DEATH_RULES.collapseMs;
+  const result = writeDeathPose(entry, monsterDeathPose(entry.death, collapsedAt), { boundsOnly: true }); entry.maxAngle = old;
+  // New species keep room for the exact +/-14 mm horizontal dissolve drift.
+  // Without it a safely folded wolf can scatter its last fur cube into a wall.
+  // The released original silhouettes retain their existing clearance policy.
+  const breakupClearance = Object.hasOwn(MONSTER_BESTIARY_ART, entry.death.monsterType) ? .016 : 0;
+  return result.bounds.some(bound => (map.colliders || []).some(box => bound[3] + breakupClearance > box.x + .001 && bound[0] - breakupClearance < box.x + box.w - .001
+    && bound[4] > box.y + .001 && bound[1] < box.y + box.h - .001 && bound[5] + breakupClearance > box.z + .001 && bound[2] - breakupClearance < box.z + box.d - .001));
 }
 
 function prepareDeathMesh(death, map, template) {
   const support = surfaceBelow(map.colliders || [], death.x, death.z, death.y + .06);
   const ground = support ? support.y + support.h : 0;
-  const entry = { death, template, output: new Float32Array(template.base.length), axis: [1, 0, 0], maxAngle: death.monsterType === 'hound' ? 1.49 : 1.47, ground };
+  const quadruped = Object.hasOwn(MONSTER_QUADRUPED_GAITS, death.monsterType);
+  const entry = { death, template, output: new Float32Array(template.base.length), axis: [1, 0, 0], maxAngle: quadruped ? 1.49 : 1.47, ground };
   const directionLength = Math.hypot(death.dx, death.dz), facing = death.yaw;
   const direction = directionLength > .001 ? Math.atan2(death.dx, death.dz) : facing;
-  const hound = death.monsterType === 'hound', sign = death.dx * Math.cos(facing) + death.dz * Math.sin(facing) < 0 ? -1 : 1;
-  const turns = hound ? [sign, -sign] : [0, 1, -1, 2, -2, 3, -3, 4];
+  const sign = death.dx * Math.cos(facing) + death.dz * Math.sin(facing) < 0 ? -1 : 1;
+  const turns = quadruped ? [sign, -sign] : [0, 1, -1, 2, -2, 3, -3, 4];
   for (const turn of turns) {
-    entry.axis = hound ? [Math.sin(facing) * turn, 0, -Math.cos(facing) * turn]
+    entry.axis = quadruped ? [Math.sin(facing) * turn, 0, -Math.cos(facing) * turn]
       : [Math.cos(direction + turn * Math.PI / 4), 0, -Math.sin(direction + turn * Math.PI / 4)];
     // The middle of a fall must also clear a desk or crate, not just its end.
     if (!deathTouchesCover(entry, map) && !deathTouchesCover(entry, map, entry.maxAngle * .55)) return entry;
@@ -4315,7 +4325,7 @@ export class VoxelRenderer {
       } else if (event.type === 'meleeHit') {
         this.presentSlashImpacts ||= createSlashImpactPresenter();
         this.particles.push(...this.presentSlashImpacts(event, state, time, { reducedMotion }));
-      } else if (['monsterBlast', 'monsterMark', 'monsterShardImpact'].includes(event.type)) {
+      } else if (['monsterBlast', 'monsterMark', 'monsterShardImpact', 'monsterHex'].includes(event.type)) {
         this.presentMonsterSpecialImpacts ||= createMonsterSpecialImpactPresenter();
         this.particles.push(...this.presentMonsterSpecialImpacts(event, state, time, { reducedMotion }));
       } else if (event.type === 'reload' && event.playerId === localId) this.localReload = { born: time, weapon: event.weapon };
@@ -4828,7 +4838,7 @@ export class VoxelRenderer {
         reload: Object.freeze({ stage: held.reload.stage, style: held.reload.style, supportGrip: held.reload.supportGrip, progress: held.reload.globalProgress, weight: held.reload.weight, magazineDrop: held.reload.magazineDrop, bolt: held.reload.bolt, pump: held.reload.pump, cylinder: held.reload.cylinder, lid: held.reload.lid, shell: held.reload.shell }) }))),
       knees: Object.freeze(joints.legs.map(leg => frozenPoint(leg.knee))), feet: Object.freeze(joints.legs.map(leg => frozenPoint(leg.foot))) }))) });
     const monsterAnimation = Object.freeze({ cachedMonsters: this.presentMonsters?.size || 0, cachedAttacks: this.presentMonsters?.attackSize || 0, poses: Object.freeze([...this.monsterPoses].map(([id, { player, monsterType, animation }]) => {
-      const motion = monsterLocomotionPose(player, animation), legs = monsterType === 'hound' ? motion.paws : motion.legs;
+      const motion = monsterLocomotionPose(player, animation), legs = Object.hasOwn(MONSTER_QUADRUPED_GAITS, monsterType) ? motion.paws : motion.legs;
       return Object.freeze({ id, monsterType, phase: animation.phase, stride: animation.stride, speed: animation.speed, run: animation.run,
         forward: animation.forward, strafe: animation.strafe, airborne: animation.airborne, land: animation.land, bodyBob: motion.bodyBob,
         active: motion.active, attack: Object.freeze({ ...motion.attack }), charge: motion.attack.windup, extension: motion.attack.extension, combatBlend: motion.attack.weight, recovery: motion.attack.phase === 'recovery', arms: Object.freeze(motion.arms.map(frozenArm)),
