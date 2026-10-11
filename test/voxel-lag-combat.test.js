@@ -28,11 +28,13 @@ function runPair(states, buttons, metadata = false, compare = true, map = arena)
   if (compare) assert.deepEqual(states.server, states.browser, `actual combat differs at tick ${states.server.tick}`);
 }
 
-for (const weapon of Object.values(WEAPONS)) test(`${weapon.id}: unenabled practice and enabled server without metadata execute identical real combat`, () => {
+// The grapple gadget deals no damage; its pull is covered by the mechanic weapon tests.
+for (const weapon of Object.values(WEAPONS).filter(weapon => !weapon.gadget)) test(`${weapon.id}: unenabled practice and enabled server without metadata execute identical real combat`, () => {
   const initial = combatState(weapon.id, { hp: 2000, maxHp: 2000 }), states = pair(initial);
-  const perPress = ['semi', 'pump', 'bolt', 'burst'].includes(weapon.mode);
+  const perPress = ['semi', 'pump', 'bolt', 'burst', 'lever'].includes(weapon.mode);
   for (let tick = 0; tick < weaponReloadDuration(weapon, 0) + 125; tick++) {
-    const fire = tick >= 30 && tick < 120 && (!perPress || (tick - 30) % (weapon.cooldown + 3) === 0);
+    // A charge gun holds to full charge, then releases before the reload press.
+    const fire = weapon.mode === 'charge' ? tick >= 30 && tick < 30 + weapon.chargeTicks : tick >= 30 && tick < 120 && (!perPress || (tick - 30) % (weapon.cooldown + 3) === 0);
     runPair(states, [input({ aim: true, fire, reload: tick === 120 }), input()]);
   }
   const events = states.browser.events;

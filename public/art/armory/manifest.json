@@ -11,7 +11,7 @@
     "activeContexts": 0,
     "contextsCreated": 1,
     "contextsReleased": 1,
-    "drawCalls": 44
+    "drawCalls": 48
   },
   "items": [
     {
@@ -607,6 +607,154 @@
       }
     },
     {
+      "id": "railgun",
+      "name": "Kite Rail Lance",
+      "kind": "gun",
+      "file": "railgun.webp",
+      "pixels": [
+        640,
+        360
+      ],
+      "alphaBounds": [
+        104,
+        114,
+        538,
+        261
+      ],
+      "bytes": 4746,
+      "vertices": 870,
+      "meshSha256": "5b299a7b6bb9e0ecd06d15e3788cc7b2d61434875820580f3e0b0a1af8c576c9",
+      "bounds": {
+        "min": [
+          -0.08399999886751175,
+          -0.20499999821186066,
+          -1.3009999990463257
+        ],
+        "max": [
+          0.08399999886751175,
+          0.27900001406669617,
+          0.33399999141693115
+        ]
+      },
+      "diagnostics": {
+        "activeContexts": 1,
+        "contextsCreated": 1,
+        "contextsReleased": 0,
+        "drawCalls": 20
+      }
+    },
+    {
+      "id": "leveraction",
+      "name": "Marten Lever Rifle",
+      "kind": "gun",
+      "file": "leveraction.webp",
+      "pixels": [
+        640,
+        360
+      ],
+      "alphaBounds": [
+        138,
+        99,
+        509,
+        250
+      ],
+      "bytes": 3052,
+      "vertices": 714,
+      "meshSha256": "21ae086c971a801fbbc6135e16a5285da8a52f286ed8d2e3353acf30fc8fca31",
+      "bounds": {
+        "min": [
+          -0.054999999701976776,
+          -0.25,
+          -1.0809999704360962
+        ],
+        "max": [
+          0.054999999701976776,
+          0.15199999511241913,
+          0.3199999928474426
+        ]
+      },
+      "diagnostics": {
+        "activeContexts": 1,
+        "contextsCreated": 1,
+        "contextsReleased": 0,
+        "drawCalls": 21
+      }
+    },
+    {
+      "id": "throwingknife",
+      "name": "Wren Throwing Knives",
+      "kind": "gun",
+      "file": "throwingknife.webp",
+      "pixels": [
+        640,
+        360
+      ],
+      "alphaBounds": [
+        269,
+        146,
+        376,
+        214
+      ],
+      "bytes": 914,
+      "vertices": 234,
+      "meshSha256": "a1a6fef3dc90d22e7df68d61801058127c1003652d67ae5841a92e52398e3efb",
+      "bounds": {
+        "min": [
+          -0.029999999329447746,
+          -0.14000000059604645,
+          -0.36000001430511475
+        ],
+        "max": [
+          0.029999999329447746,
+          0.05000000074505806,
+          0.03799999877810478
+        ]
+      },
+      "diagnostics": {
+        "activeContexts": 1,
+        "contextsCreated": 1,
+        "contextsReleased": 0,
+        "drawCalls": 22
+      }
+    },
+    {
+      "id": "grapple",
+      "name": "Swallow Grapple Hook",
+      "kind": "gun",
+      "file": "grapple.webp",
+      "pixels": [
+        640,
+        360
+      ],
+      "alphaBounds": [
+        226,
+        134,
+        411,
+        238
+      ],
+      "bytes": 2036,
+      "vertices": 384,
+      "meshSha256": "def5e88c1528d1d6f29d4aa5e6ea89987cb38b2b657583604d4958b1e280149c",
+      "bounds": {
+        "min": [
+          -0.06199999898672104,
+          -0.17599999904632568,
+          -0.6209999918937683
+        ],
+        "max": [
+          0.05999999865889549,
+          0.14100000262260437,
+          0.05900000035762787
+        ]
+      },
+      "diagnostics": {
+        "activeContexts": 1,
+        "contextsCreated": 1,
+        "contextsReleased": 0,
+        "drawCalls": 23
+      }
+    },
+    {
       "id": "classic",
       "name": "Classic",
       "kind": "gun",
@@ -640,7 +788,7 @@
         "activeContexts": 1,
         "contextsCreated": 1,
         "contextsReleased": 0,
-        "drawCalls": 20
+        "drawCalls": 24
       }
     },
     {
@@ -677,7 +825,7 @@
         "activeContexts": 1,
         "contextsCreated": 1,
         "contextsReleased": 0,
-        "drawCalls": 21
+        "drawCalls": 25
       }
     },
     {
@@ -714,7 +862,7 @@
         "activeContexts": 1,
         "contextsCreated": 1,
         "contextsReleased": 0,
-        "drawCalls": 22
+        "drawCalls": 26
       }
     },
     {
@@ -751,7 +899,7 @@
         "activeContexts": 1,
         "contextsCreated": 1,
         "contextsReleased": 0,
-        "drawCalls": 23
+        "drawCalls": 27
       }
     },
     {
@@ -788,7 +936,7 @@
         "activeContexts": 1,
         "contextsCreated": 1,
         "contextsReleased": 0,
-        "drawCalls": 24
+        "drawCalls": 28
       }
     },
     {
@@ -825,7 +973,7 @@
         "activeContexts": 1,
         "contextsCreated": 1,
         "contextsReleased": 0,
-        "drawCalls": 25
+        "drawCalls": 29
       }
     },
     {
@@ -862,7 +1010,7 @@
         "activeContexts": 1,
         "contextsCreated": 1,
         "contextsReleased": 0,
-        "drawCalls": 26
+        "drawCalls": 30
       }
     },
     {
@@ -899,7 +1047,7 @@
         "activeContexts": 1,
         "contextsCreated": 1,
         "contextsReleased": 0,
-        "drawCalls": 27
+        "drawCalls": 31
       }
     },
     {
@@ -936,7 +1084,7 @@
         "activeContexts": 1,
         "contextsCreated": 1,
         "contextsReleased": 0,
-        "drawCalls": 28
+        "drawCalls": 32
       }
     },
     {
@@ -973,7 +1121,7 @@
         "activeContexts": 1,
         "contextsCreated": 1,
         "contextsReleased": 0,
-        "drawCalls": 29
+        "drawCalls": 33
       }
     },
     {
@@ -1010,7 +1158,7 @@
         "activeContexts": 1,
         "contextsCreated": 1,
         "contextsReleased": 0,
-        "drawCalls": 30
+        "drawCalls": 34
       }
     },
     {
@@ -1047,7 +1195,7 @@
         "activeContexts": 1,
         "contextsCreated": 1,
         "contextsReleased": 0,
-        "drawCalls": 31
+        "drawCalls": 35
       }
     },
     {
@@ -1084,7 +1232,7 @@
         "activeContexts": 1,
         "contextsCreated": 1,
         "contextsReleased": 0,
-        "drawCalls": 32
+        "drawCalls": 36
       }
     },
     {
@@ -1121,7 +1269,7 @@
         "activeContexts": 1,
         "contextsCreated": 1,
         "contextsReleased": 0,
-        "drawCalls": 33
+        "drawCalls": 37
       }
     },
     {
@@ -1158,7 +1306,7 @@
         "activeContexts": 1,
         "contextsCreated": 1,
         "contextsReleased": 0,
-        "drawCalls": 34
+        "drawCalls": 38
       }
     },
     {
@@ -1195,7 +1343,7 @@
         "activeContexts": 1,
         "contextsCreated": 1,
         "contextsReleased": 0,
-        "drawCalls": 35
+        "drawCalls": 39
       }
     },
     {
@@ -1232,7 +1380,7 @@
         "activeContexts": 1,
         "contextsCreated": 1,
         "contextsReleased": 0,
-        "drawCalls": 36
+        "drawCalls": 40
       }
     },
     {
@@ -1269,7 +1417,7 @@
         "activeContexts": 1,
         "contextsCreated": 1,
         "contextsReleased": 0,
-        "drawCalls": 37
+        "drawCalls": 41
       }
     },
     {
@@ -1306,7 +1454,7 @@
         "activeContexts": 1,
         "contextsCreated": 1,
         "contextsReleased": 0,
-        "drawCalls": 38
+        "drawCalls": 42
       }
     },
     {
@@ -1343,7 +1491,7 @@
         "activeContexts": 1,
         "contextsCreated": 1,
         "contextsReleased": 0,
-        "drawCalls": 39
+        "drawCalls": 43
       }
     },
     {
@@ -1380,7 +1528,7 @@
         "activeContexts": 1,
         "contextsCreated": 1,
         "contextsReleased": 0,
-        "drawCalls": 40
+        "drawCalls": 44
       }
     },
     {
@@ -1417,7 +1565,7 @@
         "activeContexts": 1,
         "contextsCreated": 1,
         "contextsReleased": 0,
-        "drawCalls": 41
+        "drawCalls": 45
       }
     },
     {
@@ -1454,7 +1602,7 @@
         "activeContexts": 1,
         "contextsCreated": 1,
         "contextsReleased": 0,
-        "drawCalls": 42
+        "drawCalls": 46
       }
     },
     {
@@ -1491,7 +1639,7 @@
         "activeContexts": 1,
         "contextsCreated": 1,
         "contextsReleased": 0,
-        "drawCalls": 43
+        "drawCalls": 47
       }
     },
     {
@@ -1528,7 +1676,7 @@
         "activeContexts": 1,
         "contextsCreated": 1,
         "contextsReleased": 0,
-        "drawCalls": 44
+        "drawCalls": 48
       }
     }
   ]

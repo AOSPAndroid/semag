@@ -40,16 +40,19 @@ test('the isolated dojo waits for Enter and preserves all ordinary practice and 
   assert.equal(createPractice({ mode: 'targets' }).gameId, 'voxel-breach'); assert.equal(createPractice({ mode: 'combat' }).mapId, 'courtyard');
 });
 
-test('all 36 guns are genuinely selectable from the visible rack and produce actual authoritative body contacts', () => {
-  assert.equal(Object.keys(WEAPONS).length, 36);
-  for (const weapon of Object.keys(WEAPONS)) {
+// Charge guns are held to full charge and released; per-press guns fire on the first tick.
+const trigger = (weapon, tick) => WEAPONS[weapon].mode === 'charge' ? tick % (WEAPONS[weapon].chargeTicks + 2) < WEAPONS[weapon].chargeTicks : tick === 0 || WEAPONS[weapon].mode === 'auto';
+test('all 39 guns are genuinely selectable from the visible rack and produce actual authoritative body contacts', () => {
+  const guns = Object.keys(WEAPONS).filter(id => !WEAPONS[id].gadget);
+  assert.equal(guns.length, 39);
+  for (const weapon of guns) {
     const state = begin(), player = state.players[0]; pose(player, -9, 12);
     stepPractice(state, { dojoWeapon: weapon, interact: true }); assert.equal(player.weapon, weapon, weapon);
     assert.ok(state.events.some(event => event.type === 'lootPickup' && event.weapon === weapon && event.playerId === 0), `${weapon}: no real pickup`);
     assert.ok(state.loot.some(item => item.dojoStation === 'gun' && item.weapon === weapon), `${weapon}: rack did not restock`);
     pose(player, -7, 8);
     const target = state.players[1], before = target.hp;
-    for (let tick = 0; tick < 160 && target.hp === before; tick++) stepPractice(state, aim(player, target, tick === 0 || WEAPONS[weapon].mode === 'auto'));
+    for (let tick = 0; tick < 200 && target.hp === before; tick++) stepPractice(state, aim(player, target, trigger(weapon, tick)));
     assert.ok(target.hp < before, `${weapon}: fired without actual body contact`);
     assert.ok(state.dojo.lastHit?.damage > 0, `${weapon}: missing measured damage`);
     const contacts = state.events.filter(event => event.type === 'damage' && event.playerId === 0 && event.targetId > 0), last = contacts.at(-1);

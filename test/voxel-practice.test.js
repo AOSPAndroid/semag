@@ -309,7 +309,7 @@ test('combat death ends the local drill, stops simulation and reports damage act
 test('Royale practice preserves one-life knife starts, seeded native loot and actual E pickups', () => {
   const state = createPractice({ game: 'voxel-royale', mapId: 'forest', bots: 3, seed: 17 }); startPractice(state);
   assert.equal(state.phaseTicks, Royale.ROYALE.countdownTicks); assert.deepEqual(state.participantIds, [0, 1, 2, 3]);
-  assert.equal(state.loot.length, Royale.MAPS.forest.lootPoints.length);
+  assert.equal(state.loot.filter(loot => loot.weapon !== 'grapple').length, Royale.MAPS.forest.lootPoints.length);
   for (const player of state.players.filter(player => player.alive)) {
     assert.equal(player.slot, 'sword'); assert.equal(player.meleeWeapon, 'knife'); assert.equal(player.hasGun, false); assert.equal(player.potions, 0); assert.equal(player.ammo, 0);
   }

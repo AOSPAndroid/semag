@@ -8,6 +8,8 @@ import { WEAPONS } from '../public/voxel-weapons.js';
 import { MELEE_WEAPONS } from '../public/voxel-melee.js';
 import { applyCombatDamage, eyeHeight, emptyInput, HEAL } from '../public/voxel-engine.js';
 import { navigationCanOccupy } from '../public/voxel-navigation.js';
+// Charge guns are held to full charge and released; per-press guns fire on the first tick.
+const trigger = (weapon, tick) => WEAPONS[weapon].mode === 'charge' ? tick % (WEAPONS[weapon].chargeTicks + 2) < WEAPONS[weapon].chargeTicks : tick === 0 || WEAPONS[weapon].mode === 'auto';
 
 const newMaps = DOJO_MAP_IDS.filter(id => id !== 'dojo');
 function advance(state, count, input = {}) { for (let tick = 0; tick < count; tick++) stepPractice(state, typeof input === 'function' ? input(state, tick) : input); }
@@ -45,7 +47,7 @@ for (const mapId of newMaps) {
   });
 
   test(`${mapId}: all guns must be picked up at the selected rack and cause real body contacts`, () => {
-    for (const weapon of Object.keys(WEAPONS)) {
+    for (const weapon of Object.keys(WEAPONS).filter(id => !WEAPONS[id].gadget)) {
       const state = begin(mapId), player = state.players[0], gunRack = state.map.stations.find(station => station.id === 'gun');
       stepPractice(state, { dojoWeapon: weapon, interact: true }); assert.equal(player.weapon, 'carbine', 'remote selection granted a gun');
       pose(player, gunRack); stepPractice(state); stepPractice(state, { dojoWeapon: weapon, interact: true });
@@ -53,7 +55,7 @@ for (const mapId of newMaps) {
       assert.ok(state.loot.some(item => item.dojoStation === 'gun' && item.weapon === weapon));
       const target = state.players[1]; pose(player, { x: target.x, y: target.y, z: target.z + 3 });
       const hp = target.hp;
-      for (let tick = 0; tick < 180 && target.hp === hp; tick++) stepPractice(state, aim(player, target, tick === 0 || WEAPONS[weapon].mode === 'auto'));
+      for (let tick = 0; tick < 200 && target.hp === hp; tick++) stepPractice(state, aim(player, target, trigger(weapon, tick)));
       assert.ok(target.hp < hp, `${weapon}: no real body contact`); assert.ok(state.dojo.lastHit?.damage > 0);
       assert.ok(player.inventory.length <= 4); assert.equal(state.phase, 'fight');
     }

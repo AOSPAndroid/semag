@@ -86,16 +86,18 @@ function firedState(weapon, patch = {}) {
   const state = createState();
   Object.assign(state, { map: openMap, mapId: openMap.id, phase: 'fight', tick: 0, events: [] });
   state.players = [{ ...createCombatPlayer(0, 1, weapon), z: 3, ...patch }, { ...createCombatPlayer(1), z: -3 }];
-  for (let tick = 0; tick < 40; tick++) {
+  // A charge gun is held to full charge, then released to fire.
+  const hold = WEAPONS[weapon].mode === 'charge' ? WEAPONS[weapon].chargeTicks : Infinity;
+  for (let tick = 0; tick < 40 + (Number.isFinite(hold) ? hold : 0); tick++) {
     state.tick++;
-    combatStep(state, state.players.map(player => ({ ...emptyInput({ yaw: 0, pitch: -.075 }), fire: player.id === 0 })), openMap);
+    combatStep(state, state.players.map(player => ({ ...emptyInput({ yaw: 0, pitch: -.075 }), fire: player.id === 0 && tick < hold })), openMap);
     if (state.events.some(event => event.type === 'shot' || event.type === 'boltLaunch')) break;
   }
   return state;
 }
 
 test('accepted shots across all weapons produce one shell kick and replayed snapshots cannot restart it', () => {
-  for (const weapon of Object.keys(WEAPONS)) {
+  for (const weapon of Object.keys(WEAPONS).filter(id => !WEAPONS[id].gadget)) {
     const state = firedState(weapon), events = state.events.filter(event => ['shot', 'boltLaunch'].includes(event.type));
     assert.equal(events.length, WEAPONS[weapon].pellets || 1, `${weapon}: genuine authoritative report count`);
     assert.equal(state.players[0].ammo, WEAPONS[weapon].magazine - 1, 'one accepted shell spends one ammo');

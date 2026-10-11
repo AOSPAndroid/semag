@@ -28,8 +28,9 @@ const finish = (id, data) => {
     parts: Object.freeze(data.parts.map(part => Object.freeze(hinge !== null && part.z <= (id === 'shorty' ? -.30 : -.75) ? { ...part, motion: 'break' } : part))), details: Object.freeze(details.map(detail => Object.freeze({ ...detail, args: Object.freeze(detail.args) }))),
     muzzlePorts: Object.freeze(ports.map(port => Object.freeze(port))), lootParts: Object.freeze(data.lootParts.map(part => Object.freeze(part))) });
 };
-const models = {};
-const add = (id, data) => { models[id] = finish(id, data); };
+const models = {}, mechanicModels = {};
+let registry = models;
+const add = (id, data) => { registry[id] = finish(id, data); };
 
 add('classic', { family: 'pistol', length: .38, parts: [
   box(-.047, -.035, -.34, .094, .095, .32, '#687f8b'), box(-.043, .060, -.363, .086, .050, .34, LIGHT, 'bolt'), box(-.027, -.196, -.084, .054, .173, .090, RUBBER, 'magazine'), box(-.048, -.029, -.175, .096, .022, .060, DARK), ...grip(),
@@ -119,9 +120,32 @@ add('warden', { family: 'rifle', length: 1.21, scoped: true, parts: [
   box(-.071, -.046, -.51, .142, .154, .54, '#69717b'), box(-.058, -.011, -.92, .116, .114, .46, '#89999e'), box(-.027, .009, -1.21, .054, .063, .35, STEEL), box(-.047, -.002, -1.21, .094, .087, .11, LIGHT), ...grip(), box(-.043, -.204, -.231, .086, .157, .119, '#526373', 'magazine'), box(-.040, -.287, -.274, .08, .114, .123, '#748697', 'magazine'), box(-.057, .035, .014, .114, .061, .32, '#73818e'), box(-.044, -.07, .16, .088, .042, .177, '#73818e'), box(-.067, -.079, .304, .134, .175, .043, DARK), box(.067, .018, -.28, .046, .029, .058, STEEL, 'bolt'), ...scope(-.47, -.17),
 ], details: [...vents(.100, .104, -.86, 6, .067), side(-.072, .005, -.40, .067, .20, '#b5c2c2'), side(.072, .005, -.40, .067, .20), top(-.034, .086, -1.20, .068, .074, DARK)], lootParts: [box(-.07, -.041, -.88, .14, .149, 1.21, STEEL), box(-.027, .009, -1.21, .054, .063, .36, LIGHT), box(-.056, .112, -.47, .112, .125, .30, DARK), box(-.04, -.28, -.25, .08, .238, .13, '#607687')] });
 
+// Mechanic weapons: original silhouettes that read at a glance.
+registry = mechanicModels;
+add('railgun', { family: 'sniper', length: 1.30, scoped: true, coverPadding: .36, parts: [
+  box(-.058, -.050, -.62, .116, .132, .66, '#3f5a66'), box(-.050, .028, -1.30, .030, .040, .70, '#9fe9ff'), box(.020, .028, -1.30, .030, .040, .70, '#9fe9ff'), box(-.044, -.030, -1.24, .088, .040, .62, DARK),
+  box(-.066, -.058, -.86, .132, .140, .050, '#6fd8f2'), box(-.066, -.058, -1.02, .132, .140, .050, '#6fd8f2'), box(-.066, -.058, -1.18, .132, .140, .050, '#6fd8f2'),
+  ...grip(), ...stock(.30, '#33474f'), box(-.040, -.205, -.26, .080, .155, .110, '#2b3d45', 'magazine'), ...scope(-.55, -.14, true),
+], details: [side(-.059, -.012, -.52, .060, .30, '#88d9ee'), side(.059, -.012, -.52, .060, .30, '#88d9ee'), ...vents(.10, .084, -.60, 4, .07)], lootParts: [box(-.058, -.05, -1.24, .116, .132, 1.26, '#4a6a78'), box(-.05, .11, -.55, .10, .12, .42, DARK), box(-.04, -.2, -.26, .08, .15, .11, DARK)] });
+add('leveraction', { family: 'rifle', length: 1.08, frontSightBase: .066, parts: [
+  box(-.040, -.030, -.44, .080, .110, .32, '#7d8c90'), box(-.022, .020, -1.08, .044, .046, .66, STEEL), box(-.020, -.032, -1.00, .040, .040, .58, '#5d6b70', 'magazine'),
+  box(-.046, -.050, -.86, .092, .076, .40, '#8a5a36'), box(-.034, -.176, -.060, .068, .14, .090, '#8a5a36'), box(-.050, -.012, .02, .100, .110, .30, '#8a5a36'), box(-.055, -.090, .22, .110, .170, .10, '#74492b'),
+  box(-.012, -.150, -.20, .024, .020, .17, DARK, 'bolt'), box(-.012, -.240, -.20, .024, .090, .020, DARK, 'bolt'), box(-.012, -.240, -.05, .024, .090, .020, DARK, 'bolt'), box(-.012, -.250, -.20, .024, .020, .17, DARK, 'bolt'),
+  box(-.010, .066, -1.04, .020, .028, .030, LIGHT), box(-.018, .090, -.30, .036, .030, .050, LIGHT),
+], details: [side(-.047, -.040, -.80, .050, .30, '#a87048'), side(.047, -.040, -.80, .050, .30, '#a87048'), side(-.041, -.010, -.40, .060, .20, '#b8c4c6'), side(.041, -.010, -.40, .060, .20)], lootParts: [box(-.04, -.03, -1.08, .08, .11, 1.0, '#8a5a36'), box(-.05, -.09, .02, .10, .17, .30, '#74492b'), box(-.012, -.25, -.20, .024, .11, .17, DARK)] });
+add('throwingknife', { family: 'pistol', length: .34, noIronSights: true, coverPadding: .22, parts: [
+  box(-.018, -.120, -.010, .036, .120, .040, '#30393f'), box(-.026, -.008, -.022, .052, .018, .060, '#9aa6ad'), box(-.010, .010, -.34, .020, .040, .32, '#d9e1e5'), box(-.006, .020, -.36, .012, .022, .030, '#eef3f5'),
+  box(-.030, -.140, -.020, .020, .110, .030, '#30393f'), box(.010, -.140, -.020, .020, .110, .030, '#30393f'),
+], details: [side(-.011, .015, -.30, .030, .26, '#b7c2c8'), side(.011, .015, -.30, .030, .26, '#b7c2c8')], lootParts: [box(-.010, 0, -.34, .020, .04, .34, '#d9e1e5'), box(-.018, -.11, -.01, .036, .11, .04, '#30393f')] });
+add('grapple', { family: 'pistol', length: .62, noIronSights: true, coverPadding: .30, parts: [
+  box(-.052, -.040, -.40, .104, .120, .40, '#5c6e4f'), box(-.036, -.020, -.56, .072, .080, .16, STEEL), box(-.060, .000, -.62, .120, .020, .060, '#c9d6b6'), box(-.010, -.050, -.62, .020, .110, .060, '#c9d6b6'),
+  box(-.044, .080, -.30, .088, .060, .22, '#3e4d36'), ...grip('#2f3a29'), box(-.062, -.020, -.20, .020, .060, .12, '#a7c48a', 'magazine'),
+], details: [side(-.053, -.010, -.36, .060, .26, '#8fa577'), side(.053, -.010, -.36, .060, .26, '#8fa577'), top(-.030, .141, -.28, .060, .18, '#a7c48a')], lootParts: [box(-.052, -.04, -.62, .104, .12, .62, '#5c6e4f'), box(-.06, 0, -.62, .12, .02, .06, '#c9d6b6')] });
 export const VALORANT_MODELS = Object.freeze(models);
+/** Original Semag mechanic weapons share the blueprint format, outside the researched set. */
+export const MECHANIC_MODELS = Object.freeze(mechanicModels);
 export const VALORANT_MODEL_IDS = Object.freeze(Object.keys(models));
-export const valorantModel = id => typeof id === 'string' && Object.hasOwn(VALORANT_MODELS, id) ? VALORANT_MODELS[id] : null;
+export const valorantModel = id => typeof id !== 'string' ? null : Object.hasOwn(VALORANT_MODELS, id) ? VALORANT_MODELS[id] : Object.hasOwn(MECHANIC_MODELS, id) ? MECHANIC_MODELS[id] : null;
 
 /** Original Semag shotguns retain their accepted metre scale and sight anchors. */
 export const LEGACY_SHOTGUN_MODELS = Object.freeze({

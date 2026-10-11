@@ -40,6 +40,7 @@ const PATTERNS = Object.freeze({
   marksman: ['single', -1], pistol: ['single', 1], shotgun: ['single', -1], sniper: ['single', 1], crossbow: ['single', 0], revolver: ['single', 1],
   autoshotgun: ['single', -1], dualpistols: ['single', 0], slugshotgun: ['single', 1],
   classic: ['single', 1], shorty: ['single', -1], ghost: ['single', -1], sheriff: ['single', 1], bandit: ['single', -1],
+  railgun: ['single', 1], leveraction: ['single', -1], throwingknife: ['single', 0], grapple: ['single', 0],
   bucky: ['single', 1], judge: ['single', -1], guardian: ['single', 1], marshal: ['single', -1], outlaw: ['single', 1], operator: ['single', -1],
 });
 

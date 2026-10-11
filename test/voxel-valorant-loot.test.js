@@ -32,8 +32,9 @@ function poseAt(state, item) {
 test('every map keeps all four blade types and eight or more useful supplies alongside distinct seeded guns', () => {
   const blades = new Set(MELEE_IDS.filter(id => id !== 'knife'));
   for (const mapId of Royale.MAP_IDS) for (const seed of [0, 761, 8124, 0xffffffff]) {
-    const state = match(mapId, seed), guns = state.loot.filter(p => p.kind === 'weapon'), supplies = state.loot.filter(p => ['heal', 'ammo', 'grenade'].includes(p.kind));
-    assert.equal(state.loot.length, state.map.lootPoints.length); assert.ok(state.loot.length <= Royale.ROYALE.maxLoot);
+    // Grapple hooks are extra traversal loot beside the guns, not catalogue guns.
+    const state = match(mapId, seed), guns = state.loot.filter(p => p.kind === 'weapon' && !WEAPONS[p.weapon].gadget), supplies = state.loot.filter(p => ['heal', 'ammo', 'grenade'].includes(p.kind));
+    assert.equal(state.loot.filter(p => !WEAPONS[p.weapon]?.gadget).length, state.map.lootPoints.length); assert.ok(state.loot.length <= Royale.ROYALE.maxLoot);
     assert.ok(guns.length >= Royale.ROYALE.maxPlayers); assert.equal(new Set(guns.map(p => p.weapon)).size, guns.length);
     assert.deepEqual(new Set(state.loot.filter(p => p.kind === 'melee').map(p => p.weapon)), blades);
     assert.ok(supplies.length >= 8, `${mapId}/${seed}: the larger gun catalogue cannot crowd out supplies`);
@@ -56,7 +57,7 @@ test('every gun is reachable on every map across deterministic real seeded start
   for (const mapId of Royale.MAP_IDS) {
     const available = new Set(), signatures = new Set();
     for (let seed = 1; seed <= 64; seed++) {
-      const state = match(mapId, seed), guns = state.loot.filter(p => p.kind === 'weapon');
+      const state = match(mapId, seed), guns = state.loot.filter(p => p.kind === 'weapon' && !WEAPONS[p.weapon].gadget);
       guns.forEach(p => available.add(p.weapon)); signatures.add(guns.map(p => p.weapon).join(','));
       if (state.map.combatStyle === 'close') assert.ok(guns.filter(p => shotgunFamily(p.weapon)).length >= 2, `${mapId}: close-quarter scavenging includes two distinct shotgun-family choices`);
       else ordinaryShotgunCounts.add(guns.filter(p => shotgunFamily(p.weapon)).length);
@@ -74,7 +75,7 @@ test('every gun is reachable on every map across deterministic real seeded start
 test('every catalogue weapon can be genuinely looted with its own magazine and reserve from seeded caches', () => {
   const seeds = new Map();
   for (let seed = 1; seed <= 64 && seeds.size < WEAPON_IDS.length; seed++) {
-    for (const gun of match('forest', seed, 2).loot.filter(p => p.kind === 'weapon')) if (!seeds.has(gun.weapon)) seeds.set(gun.weapon, seed);
+    for (const gun of match('forest', seed, 2).loot.filter(p => p.kind === 'weapon' && !WEAPONS[p.weapon].gadget)) if (!seeds.has(gun.weapon)) seeds.set(gun.weapon, seed);
   }
   assert.equal(seeds.size, WEAPON_IDS.length);
   for (const [weapon, seed] of seeds) {

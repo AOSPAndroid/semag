@@ -2503,7 +2503,7 @@ function weaponParts(mesh, weapon, pose, options = {}) {
       }
       detail(points, normal, color);
     }
-    if (!authored.scoped) ironSights(-authored.length + .042, -.073, breakAngle ? { z: authored.breakHingeZ, angle: breakAngle } : null, finite(authored.frontSightBase, .109));
+    if (!authored.scoped && !authored.noIronSights) ironSights(-authored.length + .042, -.073, breakAngle ? { z: authored.breakHingeZ, angle: breakAngle } : null, finite(authored.frontSightBase, .109));
     if (authored.breakHingeZ !== null && reloadMotion.shellVisible) {
       for (let shell = 0; shell < 2; shell++) {
         const y = (shell === 0 ? .035 : -.034) - (1 - reloadMotion.shell) * .13;
@@ -4457,7 +4457,7 @@ export class VoxelRenderer {
       } else if (event.type === 'boltLaunch') {
         if (event.playerId === localId && localAlive) {
           this.presentShots ||= createWeaponShotPresenter();
-          if (this.presentShots.report(event, time)) this.localShot = { born: time, weapon: 'crossbow' };
+          if (this.presentShots.report(event, time)) this.localShot = { born: time, weapon: event.weapon || 'crossbow' };
         }
       } else if (event.type === 'boltHit') {
         const origin = [finite(event.x), finite(event.y), finite(event.z)];
@@ -4981,6 +4981,12 @@ export class VoxelRenderer {
       const actor = player.id === cameraPlayer.id ? cameraPlayer : player;
       const count = meleeTrailParts(traces, actor, map.colliders || [], eye, { reducedMotion });
       this._meleeTrailVertices += count; if (count) this._meleeTrailActors++;
+    }
+    // A taut grapple line runs from the shooter's hand to its anchor.
+    for (const player of players) {
+      if (!(player.grappleTicks > 0) || ![player.grappleX, player.grappleY, player.grappleZ].every(Number.isFinite)) continue;
+      const actor = player.id === cameraPlayer.id ? cameraPlayer : player, hand = actor.id === cameraPlayer.id ? [eye[0], eye[1] - .28, eye[2]] : [finite(actor.x), finite(actor.y) + 1.25, finite(actor.z)];
+      traces.line(hand, [player.grappleX, player.grappleY, player.grappleZ], .018, rgba('#d6e3c2', .85), eye);
     }
     if (typeof options.appendEffectGeometry === 'function') options.appendEffectGeometry(traces, { state, players, map, eye, time, reducedMotion });
     if (this.tracers.length || traces.length) {

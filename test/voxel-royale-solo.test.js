@@ -89,7 +89,7 @@ test('all Royale gun caches require travel from every knife-only start, includin
     const spawns = state.players.map(({ x, z }) => ({ x, z }));
     const guns = state.loot.filter(loot => loot.kind === 'weapon');
     assert.ok(guns.length >= 11, `${mapId}/${seed}: not enough actual gun caches`);
-    assert.equal(state.loot.length, state.map.lootPoints.length);
+    assert.equal(state.loot.filter(loot => loot.weapon !== 'grapple').length, state.map.lootPoints.length, 'authored caches, plus two grapple hooks beside guns');
     const authored = new Set(state.map.lootPoints.map(point => `${point.x}/${point.y}/${point.z}`));
     for (const loot of state.loot) assert.ok(authored.has(`${loot.x}/${loot.y}/${loot.z}`), 'loot was teleported to an unauthored point');
     for (const gun of guns) for (const spawn of spawns) assert.ok(Math.hypot(gun.x - spawn.x, gun.z - spawn.z) >= Royale.ROYALE.gunSpawnClearance, `${mapId}/${seed}: gun at a start`);

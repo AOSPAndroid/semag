@@ -514,7 +514,7 @@ test('shotgun feedback groups confirmed HP loss per target and excludes speculat
 });
 
 test('all nine loadout comparison cards state damage, firing rhythm and real falloff', () => {
-  for (const id of Object.keys(WEAPONS)) {
+  for (const id of Object.keys(WEAPONS).filter(id => !WEAPONS[id].gadget)) {
     const card = weaponComparison(id); assert.ok(card);
     assert.ok(Number.isFinite(card.body) && card.body > 0); assert.ok(card.head >= card.body); assert.ok(card.leg < card.body);
     assert.match(card.reload, / s$/); assert.ok(card.rate.length); assert.ok(card.handling.length);

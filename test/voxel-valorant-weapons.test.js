@@ -12,7 +12,8 @@ const ids = ['classic', 'shorty', 'frenzy', 'ghost', 'sheriff', 'bandit', 'sting
 // headshot changes and the four non-shotgun recoil changes in 3.48.0, so the
 // original golden still checks every other field without refreshing its hash.
 test('original non-shotgun profiles retain their baseline except documented headshot and recoil tuning', () => {
-  const preserved = LEGACY_WEAPON_IDS.filter(id => !['shotgun', 'autoshotgun', 'slugshotgun'].includes(id));
+  // The three mechanic guns joined after this baseline was captured.
+  const preserved = LEGACY_WEAPON_IDS.filter(id => !['shotgun', 'autoshotgun', 'slugshotgun', 'railgun', 'leveraction', 'throwingknife'].includes(id));
   const baselineRecoil = { sniper: .035, lmg: .0115, battlerifle: .018, revolver: .026 };
   assert.equal(preserved.length, 13);
   assert.equal(hash(Object.fromEntries(preserved.map(id => [id, {
@@ -23,13 +24,13 @@ test('original non-shotgun profiles retain their baseline except documented head
     } : {}),
   }]))), 'd3133b95d3c5e0df3a5549a616a84d7db1ae04b2a5696d094e99f6dee7f018b3');
   assert.equal(hash(preserved.map(id => id === 'sniper' ? { ...weaponStats(id), head: 150 } : weaponStats(id))), '4b67dd4e4a3f6eba96968d3a111c1020d9724f84072da473234f180897d13c56');
-  assert.deepEqual(WEAPON_IDS.slice(0, 16), LEGACY_WEAPON_IDS);
+  assert.deepEqual(WEAPON_IDS.slice(0, 16), LEGACY_WEAPON_IDS.slice(0, 16));
 });
 
 test('the current official roster includes Bandit and Warden and each gun appears in one honest role', () => {
   assert.deepEqual(VALORANT_WEAPON_IDS, ids);
-  assert.equal(WEAPON_IDS.length, 36);
-  assert.equal(new Set(WEAPON_IDS).size, 36);
+  assert.equal(WEAPON_IDS.length, 39);
+  assert.equal(new Set(WEAPON_IDS).size, 39);
   assert.deepEqual(WEAPON_GROUPS.flatMap(group => group.ids), [...ids, ...LEGACY_WEAPON_IDS]);
   for (const id of ids) {
     const gun = WEAPONS[id];

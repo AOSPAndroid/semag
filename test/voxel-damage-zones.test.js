@@ -71,10 +71,13 @@ test('every loadout applies reduced leg damage through real gun or ballistic con
     // The scoped sniper and the LMG retain their real settling/wind-up rules.
     const aim = WEAPONS[id].adsSupported !== false;
     ticks(state, 18, { 0: { aim, pitch } });
-    ticks(state, WEAPONS[id].spinupTicks || 1, { 0: { aim, fire: true, pitch } });
+    ticks(state, WEAPONS[id].spinupTicks || WEAPONS[id].chargeTicks || 1, { 0: { aim, fire: true, pitch } });
+    // A charge gun fires when the trigger is released at full charge.
+    if (WEAPONS[id].mode === 'charge') ticks(state, 1, { 0: { aim, pitch } });
     if (WEAPONS[id].projectile) {
       assert.equal(target.hp, 200, `${id} damage must wait for flight`);
-      ticks(state, 14, { 0: { aim: true, pitch } });
+      // Slower thrown projectiles need longer to arrive than the crossbow's 14 ticks.
+      for (let wait = 0; wait < 90 && !state.events.some(event => event.type === 'boltHit'); wait++) ticks(state, 1, { 0: { aim: true, pitch } });
     }
     const hit = state.events.findLast(event => event.type === (WEAPONS[id].projectile ? 'boltHit' : 'shot') && (event.pellet ?? 0) === 0);
     // Penetrating rounds report their terminal surface and separate actor contacts.

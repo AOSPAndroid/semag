@@ -120,7 +120,7 @@ test('Crownfall Royale gives eleven knife-only starts, finite rich loot and real
   assert.ok(map.lootPoints.filter(p => p.kind === 'weapon').length >= 11);
   for (const seed of [1, 7, 151, 7143]) {
     const state = createPractice({ game: 'voxel-royale', mapId: 'medieval', bots: 10, seed }); startPractice(state);
-    assert.equal(state.players.length, 11); assert.equal(state.aliveCount, 11); assert.equal(state.loot.length, map.lootPoints.length);
+    assert.equal(state.players.length, 11); assert.equal(state.aliveCount, 11); assert.equal(state.loot.filter(loot => loot.weapon !== 'grapple').length, map.lootPoints.length);
     for (const player of state.players) {
       assert.ok(navigationCanOccupy(map, player)); assert.equal(player.hasGun, false);
       assert.equal(selectedInventoryItem(player).weapon, 'knife'); assert.equal(player.inventory.filter(Boolean).length, 1);

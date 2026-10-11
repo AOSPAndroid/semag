@@ -110,7 +110,7 @@ function seedLoot(state) {
     const closeGuns = shuffled(state, shotgunIds).slice(0, Math.min(2, gunCount));
     weapons = [...closeGuns, ...weapons.filter(id => !closeGuns.includes(id))];
   }
-  const ammoWeapons = weapons.slice(0, Math.min(gunCount, weapons.length));
+  const ammoWeapons = weapons.slice(0, Math.min(gunCount, weapons.length)).filter(id => !WEAPONS[id].recoverable);
   for (let index = 0; index < points.length; index++) {
     const point = points[index], position = { x: point.x, y: point.y, z: point.z };
     // At least one gun per possible participant is present on shipped maps;
@@ -128,6 +128,9 @@ function seedLoot(state) {
       else addLoot(state, { ...position, kind, amount: 1, ...(kind === 'grenade' && Math.floor(tail / 4) % 2 ? { type: Math.floor(tail / 8) % 2 ? 'flash' : 'smoke' } : {}) });
     }
   }
+  // Grapple hooks ride along with the first two gun caches: traversal is found, never issued.
+  const guns = state.loot.filter(item => item.kind === 'weapon').slice(0, 2);
+  for (const gun of guns) addLoot(state, { x: gun.x, y: gun.y, z: gun.z, kind: 'weapon', weapon: 'grapple', ammo: WEAPONS.grapple.magazine, reserve: WEAPONS.grapple.reserve });
 }
 export function startMatch(state, participantIds) {
   if (!Array.isArray(participantIds) || participantIds.length < ROYALE.minPlayers || participantIds.length > state.capacity || new Set(participantIds).size !== participantIds.length || participantIds.some(id => !Number.isInteger(id) || id < 0 || id >= state.players.length)) throw new RangeError(`A Royale match requires 2–${state.capacity} unique ${state.solo ? 'local' : 'connected'} player slots.`);
@@ -151,13 +154,13 @@ function canTakeLoot(player, loot) {
   return loot.kind === 'ammo' ? inventoryCanTake(player, loot) : ['weapon', 'melee', 'heal', 'grenade'].includes(loot.kind);
 }
 /** Pure prompt/pickup predicate: no through-wall or vertically remote supplies. */
-export function findNearbyLoot(state, playerId, { kind = null, takeableOnly = false } = {}) {
+export function findNearbyLoot(state, playerId, { kind = null, takeableOnly = false, gadgets = true } = {}) {
   const player = state.players[playerId], arena = state.map || MAPS[state.mapId];
   if (!player?.alive || state.phase !== 'fight' || !arena) return null;
   const origin = { x: player.x, y: player.y + eyeHeight(player), z: player.z };
   let nearest = null, nearestDistance = ROYALE.pickupRadius + EPS;
   for (const loot of state.loot || []) {
-    if (kind && loot.kind !== kind || takeableOnly && !inventoryCanTake(player, loot)) continue;
+    if (kind && loot.kind !== kind || takeableOnly && !inventoryCanTake(player, loot) || !gadgets && WEAPONS[loot.weapon]?.gadget) continue;
     if (![loot.x, loot.y, loot.z].every(Number.isFinite) || !canTakeLoot(player, loot) || Math.abs(player.y - loot.y) > ROYALE.pickupHeight) continue;
     const horizontal = Math.hypot(player.x - loot.x, player.z - loot.z);
     if (horizontal > nearestDistance) continue;

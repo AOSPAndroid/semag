@@ -64,14 +64,16 @@ test('invalid contact IDs, starter knife and unbounded sample rates cannot alloc
   for (const rate of [0, -1, NaN, Infinity, 7999, 192001]) assert.equal(createVoxelBladeImpactSamples('sword', rate), null);
 });
 
+// The four mechanic weapons postdate this capture; the original 36 bytes stay pinned.
+const MECHANIC_WEAPONS = ['railgun', 'leveraction', 'throwingknife', 'grapple'];
 test('all 36 firearm reports, all five miss whooshes and parry samples retain the released bytes', () => {
   // Independently captured from released 19a148b, over four normal device rates.
   const golden = [
-    [Object.keys(VOXEL_SHOT_AUDIO), createVoxelShotSamples, 'cd7e8b55036478485dee0560e9de59f8779f644a6f9618cf72420ddadc22cb2f'],
+    [Object.keys(VOXEL_SHOT_AUDIO).filter(id => !MECHANIC_WEAPONS.includes(id)), createVoxelShotSamples, 'cd7e8b55036478485dee0560e9de59f8779f644a6f9618cf72420ddadc22cb2f'],
     [Object.keys(VOXEL_MELEE_AUDIO), createVoxelMeleeSamples, 'aab20bc5bc39ed346423f3d5bd8c2feb63e81de4bdb9742b1621d7c13448a0f3'],
     [['parry'], (_, rate) => createVoxelParrySamples(rate), '55798782c08bbfa667d528d95d30d4ccd9e2aa6507eef1d9976eca4969d94385'],
   ];
-  assert.equal(Object.keys(VOXEL_SHOT_AUDIO).length, 36);
+  assert.equal(Object.keys(VOXEL_SHOT_AUDIO).length, 36 + MECHANIC_WEAPONS.length);
   for (const [ids, factory, expected] of golden) {
     const hash = createHash('sha256');
     for (const rate of [8000, 44100, 48000, 96000]) for (const id of ids) {

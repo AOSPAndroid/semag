@@ -39,7 +39,7 @@ function normalize(options = {}) {
   const maxBots = game === 'voxel-royale' ? Royale.SOLO_MAX_PLAYERS - 1 : 5;
   if (!Number.isInteger(bots) || bots < 1 || bots > maxBots) throw new RangeError(`${game === 'voxel-royale' ? 'Royale solo' : 'Breach practice'} supports 1–${maxBots} bots.`);
   if (!['targets', 'combat', 'blades', 'dojo'].includes(mode) || (['blades', 'dojo'].includes(mode) && game !== 'voxel')) throw new RangeError('Choose moving targets, combat bots, Breach blade training, or the solo dojo.');
-  if (!Object.hasOwn(WEAPONS, weapon)) throw new RangeError('Unknown practice weapon.');
+  if (!Object.hasOwn(WEAPONS, weapon) || WEAPONS[weapon].gadget) throw new RangeError('Unknown practice weapon.');
   if (typeof melee !== 'string' || !Object.hasOwn(MELEE_WEAPONS, melee)) throw new RangeError('Unknown practice close-combat weapon.');
   if (!Object.hasOwn(PRACTICE_DIFFICULTIES, difficulty)) throw new RangeError('Unknown bot difficulty.');
   if (options.seed !== undefined && !Number.isInteger(options.seed)) throw new RangeError('Practice seed must be an integer.');
@@ -242,7 +242,7 @@ function supplyGoal(state, bot, brain) {
   // Exhausted guns are not magically refilled. If matching ammo has run out,
   // the bot must collect another actual gun with a loaded magazine instead.
   if (kind === 'ammo' && !available.some(item => item.kind === 'ammo' && (!item.weapon || item.weapon === bot.weapon))) kind = 'weapon';
-  const candidates = available.filter(item => item.kind === kind && (kind !== 'ammo' || !item.weapon || item.weapon === bot.weapon) && (kind !== 'weapon' || item.ammo > 0 || item.reserve > 0)).sort((a, b) => Math.hypot(a.x - bot.x, a.z - bot.z) - Math.hypot(b.x - bot.x, b.z - bot.z));
+  const candidates = available.filter(item => item.kind === kind && (kind !== 'ammo' || !item.weapon || item.weapon === bot.weapon) && (kind !== 'weapon' || (item.ammo > 0 || item.reserve > 0) && !WEAPONS[item.weapon]?.gadget)).sort((a, b) => Math.hypot(a.x - bot.x, a.z - bot.z) - Math.hypot(b.x - bot.x, b.z - bot.z));
   for (const item of candidates.slice(0, 8)) {
     const path = route(state.map, bot, item), end = path.at(-1);
     if (!end || Math.hypot(end.x - item.x, end.z - item.z) > Royale.ROYALE.pickupRadius - .1) continue;
@@ -372,7 +372,7 @@ function botInput(state, bot, brain) {
   }
   if (bot.healTicks) return input;
   if (practice.config.mode === 'combat' && bot.hp < 105 && bot.potions && !visible && bot.grounded && !bot.reloadTicks && !bot.meleeTicks) { input.heal = !bot.previousInput.heal; return input; }
-  if (state.gameId === 'voxel-royale' && brain.goalKind === 'loot' && Royale.findNearbyLoot(state, bot.id, { takeableOnly: true, kind: bot.hasGun ? null : 'weapon' })) { input.interact = !bot.previousInput.interact; return input; }
+  if (state.gameId === 'voxel-royale' && brain.goalKind === 'loot' && Royale.findNearbyLoot(state, bot.id, { takeableOnly: true, kind: bot.hasGun ? null : 'weapon', gadgets: false })) { input.interact = !bot.previousInput.interact; return input; }
   steer(state, bot, brain, input);
   if (bot.slot === 'primary' && bot.ammo === 0 && bot.reserve > 0 && !bot.reloadTicks) { input.reload = !bot.previousInput.reload; return input; }
   if (practice.config.mode !== 'combat' || !enemy || !visible || brain.seenTick < 0 || state.tick - brain.seenTick < settings.reactionTicks || bot.reloadTicks) return input;

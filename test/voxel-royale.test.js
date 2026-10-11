@@ -43,10 +43,11 @@ test('every arena starts 2 or 10 genuine participants at distinct safe random sp
       assert.equal(player.hasGun, false); assert.equal(player.slot, 'sword'); assert.equal(player.ammo + player.reserve + player.potions + player.grenades, 0);
       assert.equal(player.meleeWeapon, 'knife'); assert.equal(meleeProfile(player), KNIFE);
     }
-    assert.equal(state.loot.length, Royale.MAPS[mapId].lootPoints.length);
+    assert.equal(state.loot.filter(loot => loot.weapon !== 'grapple').length, Royale.MAPS[mapId].lootPoints.length);
+    assert.equal(state.loot.filter(loot => loot.weapon === 'grapple').length, 2, 'two grapple hooks are always findable');
     assert.ok(state.loot.filter(loot => loot.kind === 'weapon').length >= 10);
     for (const kind of ['heal', 'ammo', 'grenade']) assert.ok(state.loot.some(loot => loot.kind === kind), `${mapId}/${kind}`);
-    const guns = state.loot.filter(loot => loot.kind === 'weapon').map(loot => loot.weapon);
+    const guns = state.loot.filter(loot => loot.kind === 'weapon' && loot.weapon !== 'grapple').map(loot => loot.weapon);
     assert.equal(new Set(guns).size, guns.length, 'fresh caches contain distinct guns');
     assert.ok(guns.every(id => WEAPON_IDS.includes(id)), 'all cache guns belong to the researched catalogue');
     assert.equal(state.loot.filter(loot => loot.kind === 'melee').length, 4);
@@ -157,8 +158,10 @@ test('every gun damage profile and delayed bolt reuses Breach contacts in free-f
     const state = fight(), shooter = state.players[0], target = state.players[1]; equip(shooter, weapon);
     Object.assign(shooter, { x: 0, z: 4, yaw: 0, pitch: Math.atan2(.9 - WORLD.eyeHeight, 4) }); Object.assign(target, { x: 0, z: 0 });
     const aim = !WEAPONS[weapon].alternateFire;
-    tick(state, 18, { 0: { aim, pitch: shooter.pitch } }); tick(state, WEAPONS[weapon].spinupTicks || 1, { 0: { aim, fire: true, pitch: shooter.pitch } });
-    if (WEAPONS[weapon].projectile) { assert.equal(target.hp, 200); tick(state, 15, { 0: { aim: true, pitch: shooter.pitch } }); }
+    tick(state, 18, { 0: { aim, pitch: shooter.pitch } }); tick(state, WEAPONS[weapon].spinupTicks || WEAPONS[weapon].chargeTicks || 1, { 0: { aim, fire: true, pitch: shooter.pitch } });
+    // A charge gun fires as the trigger is released at full charge.
+    if (WEAPONS[weapon].mode === 'charge') tick(state, 1, { 0: { aim, pitch: shooter.pitch } });
+    if (WEAPONS[weapon].projectile) { assert.equal(target.hp, 200); for (let wait = 0; wait < 60 && target.hp === 200; wait++) tick(state, 1, { 0: { aim: true, pitch: shooter.pitch } }); }
     assert.ok(target.hp < 200, weapon); assert.ok(state.events.some(event => event.type === 'damage' && event.targetId === 1 && event.playerId === 0), weapon);
     assert.equal(shooter.shots, 1, weapon); assert.equal(shooter.ammo, WEAPONS[weapon].magazine - 1, weapon); finiteState(state);
   }

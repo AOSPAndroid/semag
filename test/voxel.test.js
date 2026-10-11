@@ -348,8 +348,10 @@ test('invalid input cannot poison finite player state or invent keypresses', () 
 test('all primary loadouts preserve the original sixteen and keep finite ammunition between rounds', () => {
   const state = game.createState();
   assert.deepEqual(Object.keys(game.WEAPONS).slice(0, 16), ['carbine', 'smg', 'marksman', 'pistol', 'shotgun', 'burst', 'sniper', 'lmg', 'crossbow', 'revolver', 'pdw', 'autoshotgun', 'battlerifle', 'dualpistols', 'dualsmg', 'slugshotgun']);
-  assert.equal(Object.keys(game.WEAPONS).length, 36);
+  assert.equal(Object.keys(game.WEAPONS).length, 40, '36 guns, three mechanic guns and the grapple gadget');
   for (const weapon of Object.values(game.WEAPONS)) {
+    // The grapple is loot-only traversal, never a starting loadout.
+    if (weapon.gadget) { assert.equal(game.selectLoadout(state, 0, weapon.id).ok, false); continue; }
     assert.equal(game.selectLoadout(state, 0, weapon.id).ok, true);
     assert.equal(state.players[0].ammo, weapon.magazine); assert.equal(state.players[0].reserve, weapon.reserve);
   }

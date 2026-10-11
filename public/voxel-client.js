@@ -172,6 +172,10 @@ export function combatReadout(player, weapons = WEAPONS, rules = {}) {
   else if (player?.aiming) status = Math.hypot(player.vx || 0, player.vz || 0) > .22 ? 'AIMING / MOVING' : 'AIMING / STEADY';
   else if (player?.crouching) status = Math.hypot(player.vx || 0, player.vz || 0) > .22 ? 'CROUCHED / MOVING' : 'CROUCHED / STEADY';
   else status = weapon?.projectile ? 'LEAD TARGET · CLICK EACH BOLT' : weapon?.spinupTicks ? 'HOLD FIRE · WIND-UP' : ({ semi: 'CLICK EACH SHOT', burst: 'CLICK EACH BURST', pump: 'CLICK EACH SHELL', bolt: 'SETTLE INTO SCOPE' })[weapon?.mode] || (weapon?.adsSupported === false ? 'HOLD FIRE · HIP FIRE' : `RMB AIM · ${swap?.shortcut || 'V SWORD'}`);
+  // Mechanic weapons explain their own timing.
+  if (weapon?.mode === 'charge' && player?.chargeTicks > 0) { const percent = Math.round(player.chargeTicks / weapon.chargeTicks * 100); status = percent >= 100 ? 'FULL CHARGE · RELEASE TO FIRE' : percent < weapon.minCharge * 100 ? `CHARGING ${percent}% · TOO WEAK` : `CHARGING ${percent}% · RELEASE TO FIRE`; progress = { label: 'Charge', remaining: weapon.chargeTicks - player.chargeTicks, total: weapon.chargeTicks }; }
+  else if (weapon?.mode === 'lever' && player?.leverStacks > 0) status = `RHYTHM ${player.leverStacks}/${weapon.rhythmMaxStacks} · CLICK AS THE LEVER CLOSES`;
+  if (player?.grappleTicks > 0) status = 'GRAPPLING · SPACE TO LET GO';
   if (reloading) { status = `RELOADING ${(player.reloadTicks / 120).toFixed(1)}S`; progress = { label: 'Reload', remaining: player.reloadTicks, total: weaponReloadDuration(weapon, player.ammo) || player.reloadTicks }; }
   if (player?.grenadeThrowTicks > 0) status = `THROWING ${(player.grenadeThrowTicks / 120).toFixed(1)}S`;
   if (healing) {
@@ -295,7 +299,8 @@ export function confirmedHitGroups(events = [], localId) {
 export function weaponLoadoutGroups(catalog = WEAPONS, groups = WEAPON_GROUPS) {
   const seen = new Set();
   const result = groups.map(group => ({ id: group.id, label: group.label, ids: group.ids.filter(id => Object.hasOwn(catalog, id) && !seen.has(id) && seen.add(id)) })).filter(group => group.ids.length);
-  const remaining = Object.keys(catalog).filter(id => !seen.has(id));
+  // Gadgets are loot-only and never offered as a loadout.
+  const remaining = Object.keys(catalog).filter(id => !seen.has(id) && !catalog[id].gadget);
   if (remaining.length) result.push({ id: 'other', label: 'Other weapons', ids: remaining });
   return result;
 }

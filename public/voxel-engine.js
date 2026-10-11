@@ -118,7 +118,7 @@ export function resetSprint(player, { refill = true } = {}) {
 }
 export function createCombatPlayer(id, teamSize = 1, loadout = 'carbine') {
   const weapon = typeof loadout === 'string' && Object.hasOwn(WEAPONS, loadout) ? loadout : 'carbine', w = WEAPONS[weapon];
-  const player = { id, team: Math.floor(id / teamSize), x: 0, y: 0, z: 0, yaw: 0, pitch: 0, vx: 0, vy: 0, vz: 0, knockbackX: 0, knockbackZ: 0, knockbackTicks: 0, knockbackReadyTicks: 0, radius: WORLD.radius, grounded: true, jumpBufferTicks: 0, stamina: SPRINT.maxStamina, staminaRegenTicks: 0, sprintExhausted: false, sprinting: false, crouching: false, lean: 0, leanOffset: 0, leanX: 0, leanZ: 0, slideTicks: 0, slideCooldown: 0, slideX: 0, slideZ: 0, slideSpeed: 0, mantleTicks: 0, mantleFrom: null, mantleTo: null, alive: true, hp: PLAYER_HEALTH, maxHp: PLAYER_HEALTH, weapon, slot: 'primary', meleeWeapon: 'knife', meleeLoadout: 'knife', ammo: w.magazine, reserve: w.reserve, reloadTicks: 0, shotCooldown: 0, burstRemaining: 0, spinTicks: 0, recoil: 0, recoilYaw: 0, sprayShots: 0, sprayIdleTicks: 0, heat: 0, shotIndex: 0, lastShotHand: 0, pendingFireTicks: 0, shots: 0, kills: 0, deaths: 0, damageDealt: 0, lastHitTick: -1000, triggerBlocked: false, aiming: false, aimTicks: 0, meleeTicks: 0, meleeCooldown: 0, meleeIndex: 0, meleeHand: 0, meleeYaw: 0, meleePitch: 0, meleeStartTick: 0, meleePhase: 'idle', meleeHitIds: [], meleeHitLives: [], healing: false, healTicks: 0, healStartTick: -1, potions: 0, grenades: 0, flashTicks: 0, flashTotal: 0, grenadeThrowTicks: 0, interaction: null, interactTicks: 0, previousInput: emptyInput() };
+  const player = { id, team: Math.floor(id / teamSize), x: 0, y: 0, z: 0, yaw: 0, pitch: 0, vx: 0, vy: 0, vz: 0, knockbackX: 0, knockbackZ: 0, knockbackTicks: 0, knockbackReadyTicks: 0, radius: WORLD.radius, grounded: true, jumpBufferTicks: 0, stamina: SPRINT.maxStamina, staminaRegenTicks: 0, sprintExhausted: false, sprinting: false, crouching: false, lean: 0, leanOffset: 0, leanX: 0, leanZ: 0, chargeTicks: 0, leverStacks: 0, leverReadyTicks: 0, leverQueued: false, grappleTicks: 0, grappleX: 0, grappleY: 0, grappleZ: 0, grappleStuckTicks: 0, slideTicks: 0, slideCooldown: 0, slideX: 0, slideZ: 0, slideSpeed: 0, mantleTicks: 0, mantleFrom: null, mantleTo: null, alive: true, hp: PLAYER_HEALTH, maxHp: PLAYER_HEALTH, weapon, slot: 'primary', meleeWeapon: 'knife', meleeLoadout: 'knife', ammo: w.magazine, reserve: w.reserve, reloadTicks: 0, shotCooldown: 0, burstRemaining: 0, spinTicks: 0, recoil: 0, recoilYaw: 0, sprayShots: 0, sprayIdleTicks: 0, heat: 0, shotIndex: 0, lastShotHand: 0, pendingFireTicks: 0, shots: 0, kills: 0, deaths: 0, damageDealt: 0, lastHitTick: -1000, triggerBlocked: false, aiming: false, aimTicks: 0, meleeTicks: 0, meleeCooldown: 0, meleeIndex: 0, meleeHand: 0, meleeYaw: 0, meleePitch: 0, meleeStartTick: 0, meleePhase: 'idle', meleeHitIds: [], meleeHitLives: [], healing: false, healTicks: 0, healStartTick: -1, potions: 0, grenades: 0, flashTicks: 0, flashTotal: 0, grenadeThrowTicks: 0, interaction: null, interactTicks: 0, previousInput: emptyInput() };
   Object.assign(player, { pendingMeleeTicks: 0, meleeComboStep: 0, meleeComboConfirmed: false, meleeComboWindowTicks: 0, meleeComboWeapon: null, hitStunTicks: 0, hitStunReadyTicks: 0, meleeInitialYaw: 0, meleeInitialPitch: 0, meleeAction: 'primary', meleeAimBlocked: false, meleeSecondaryCooldown: 0, parryTicks: 0, parryCooldown: 0, parryYaw: 0, parryPitch: 0, parryStartTick: 0, parryIndex: 0, parryConsumed: false });
   Object.assign(player, { healUseIndex: 0, healUseId: null, healInventoryIndex: -1, healSelectedIndex: -1 });
   return initializeInventory(player, { weapon });
@@ -174,7 +174,7 @@ export function resetLobby(state) {
 export function selectLoadout(state, playerId, weaponId) {
   const f = state.players[playerId];
   if (!f || !Number.isInteger(playerId)) return { ok: false, changed: false, error: 'Unknown player.' };
-  if (typeof weaponId !== 'string' || !Object.hasOwn(WEAPONS, weaponId)) return { ok: false, changed: false, error: 'Choose a weapon from the loadout list.' };
+  if (typeof weaponId !== 'string' || !Object.hasOwn(WEAPONS, weaponId) || WEAPONS[weaponId].gadget) return { ok: false, changed: false, error: 'Choose a weapon from the loadout list.' };
   if (!['lobby', 'countdown', 'buy', 'roundEnd'].includes(state.phase)) return { ok: false, changed: false, error: 'Weapons can be changed between rounds.' };
   if (f.hasGun && f.weapon === weaponId) return { ok: true, changed: false };
   setInventoryLoadout(f, weaponId);
@@ -380,6 +380,24 @@ function advanceMantle(f) {
   f.mantleTicks--;
   if (!f.mantleTicks) { f.x = to.x; f.y = to.y; f.z = to.z; f.mantleFrom = f.mantleTo = null; }
 }
+/** A taut line drags the body straight to its anchor. Jump lets go, keeping the swing's momentum. */
+function advanceGrapple(f, input, arena, peers, hitStunned) {
+  const release = (keep = 1) => { f.grappleTicks = 0; f.grappleStuckTicks = 0; f.vx *= keep; f.vy *= keep; f.vz *= keep; return null; };
+  if (hitStunned || input.jump && !f.previousInput?.jump) return release(1);
+  const weapon = WEAPONS.grapple, center = { x: f.x, y: f.y + 1, z: f.z };
+  const dx = f.grappleX - center.x, dy = f.grappleY - center.y, dz = f.grappleZ - center.z, distance = Math.hypot(dx, dy, dz);
+  if (!(distance > 1)) return release(.45);
+  const speed = Math.min(weapon.pullSpeed, distance / DT);
+  f.vx = dx / distance * speed; f.vy = dy / distance * speed; f.vz = dz / distance * speed;
+  const before = distance;
+  bodyMove(f, f.vx * DT, f.vy * DT, f.vz * DT, arena, peers);
+  refreshGrounded(f, arena); f.grounded = false; f.crouching = false; f.slideTicks = 0; f.lean = f.leanOffset = f.leanX = f.leanZ = 0;
+  const after = Math.hypot(f.grappleX - f.x, f.grappleY - f.y - 1, f.grappleZ - f.z);
+  f.grappleStuckTicks = before - after < speed * DT * .25 ? (f.grappleStuckTicks || 0) + 1 : 0;
+  f.grappleTicks--;
+  if (!f.grappleTicks || f.grappleStuckTicks > 8) { release(.45); refreshGrounded(f, arena); }
+  return stillPlan(f);
+}
 const stillPlan = f => ({ allowed: false, x: f.x, z: f.z, unitX: 0, unitZ: 0, speed: 0, normalSpeed: 0, pushAlong: 0 });
 /** Head travel stops short of solid cover so a lean can never see or shoot through it. */
 function updateLeanReach(f, arena) {
@@ -415,6 +433,10 @@ function movementTick(f, input, arena, peers = [], headroomPeers = peers, action
     return stillPlan(f);
   }
   f.mantleTicks = 0;
+  if (f.grappleTicks > 0 && !monsterBody) {
+    const pulled = advanceGrapple(f, input, arena, peers, hitStunned);
+    if (pulled) return pulled;
+  }
   const primarySpeed = monsterMovementSpeed(f) ?? (f.slot === 'sword' ? meleeProfile(f).speed : WEAPONS[f.weapon].speed);
   // A fresh crouch at full sprint starts a slide; the body stays low throughout.
   f.slideCooldown = Math.max(0, (Number.isFinite(f.slideCooldown) ? f.slideCooldown : 0) - 1);
@@ -710,7 +732,7 @@ function rayInterval(origin, direction, rect, maxDistance) {
 /** New-gun physical contacts only; shared LOS/melee and all legacy guns keep traceShot. */
 export function traceWeaponShot(state, playerId, origin, direction, maxDistance = 120, arena = state.map || MAPS[state.mapId], weaponOrId = state.players[playerId]?.weapon) {
   const weapon = typeof weaponOrId === 'string' ? WEAPONS[weaponOrId] : weaponOrId;
-  if (!weapon?.valorant) return traceShot(state, playerId, origin, direction, maxDistance, arena);
+  if (!weapon?.valorant && !weapon?.wallPenetration) return traceShot(state, playerId, origin, direction, maxDistance, arena);
   const candidates = [], contacts = [], impacts = [], shooter = state.players[playerId];
   const position = distance => ({ x: origin.x + direction.x * distance, y: origin.y + direction.y * distance, z: origin.z + direction.z * distance });
   for (const rect of arena.colliders) {
@@ -796,6 +818,15 @@ export function addInventoryLoot(state, player, item) {
   state.loot.push(loot);
   emit(state, 'inventoryDrop', { playerId: player.id, lootId: id, kind: loot.kind, weapon: loot.weapon || null, amount: loot.amount || 1, x: loot.x, y: loot.y, z: loot.z });
   return loot;
+}
+/** A thrown knife lands as a pickup where it stopped; collecting it returns it to the reserve. */
+function recoverProjectile(state, hit) {
+  if (!WEAPONS[hit.weapon]?.recoverable || ![hit.x, hit.y, hit.z].every(Number.isFinite)) return;
+  state.loot ||= [];
+  const limit = state.horde ? 20 : 128;
+  if (state.loot.length >= limit) state.loot.splice(0, 1);
+  const id = state.horde ? ++state.horde.lootId : (state.lootId = (state.lootId || 0) + 1);
+  state.loot.push({ id, kind: 'ammo', weapon: hit.weapon, amount: 1, x: hit.x, y: Math.max(0, hit.y), z: hit.z, droppedBy: hit.playerId, falling: true, vy: 0, spawnTick: state.tick, expiresTick: state.tick + 5400, recovered: true });
 }
 export function dropCombatInventory(state, player) {
   cancelHeal(state, player, 'drop');
@@ -1019,7 +1050,9 @@ function fireRound(state, f, weapon, pendingDamage, arena, fire = null) {
   const speed = Math.hypot(f.vx, f.vz), motion = clamp((speed - .22) / weapon.speed, 0, 1), ads = f.aimTicks / ADS.ticks;
   const spread = weaponSpread(weapon, { motion, grounded: f.grounded, heat: fire?.heat ?? f.heat, ads }, ADS);
   // Fixed indexed spread and fixed pellet geometry replay independently of frames.
-  const index = ++f.shotIndex, angle = index * 2.399963229728653, radius = spread * Math.sqrt(((index * 73) % 101 + 1) / 102);
+  // A charged shot tightens toward a perfect line and hits harder as it fills.
+  const charge = Number.isFinite(fire?.charge) ? clamp(fire.charge, 0, 1) : null, chargeScale = charge === null ? 1 : weapon.chargeFloor + (1 - weapon.chargeFloor) * charge;
+  const index = ++f.shotIndex, angle = index * 2.399963229728653, radius = spread * Math.sqrt(((index * 73) % 101 + 1) / 102) * (charge === null ? 1 : 1.6 - .6 * charge);
   // The accumulated spray offset is the gun's learnable pattern position.
   const roundRecoil = fire?.recoil ?? f.recoil, horizontalRecoil = fire?.recoilYaw ?? (f.recoilYaw || 0);
   const yaw = f.yaw + horizontalRecoil + Math.cos(angle) * radius, pitch = clamp(f.pitch + roundRecoil + Math.sin(angle) * radius, -1.5, 1.5);
@@ -1046,13 +1079,14 @@ function fireRound(state, f, weapon, pendingDamage, arena, fire = null) {
     const pelletAngle = angle + (pellet - 1) * 2.399963229728653;
     const pelletRadius = pellet ? pelletSpread * Math.sqrt(pellet / Math.max(1, pelletCount - 1)) : 0;
     const direction = aimDirection(yaw + Math.cos(pelletAngle) * pelletRadius, clamp(pitch + Math.sin(pelletAngle) * pelletRadius, -1.5, 1.5));
-    const trace = weapon.valorant ? (snapshot, id, start, vector, distance, map) => traceWeaponShot(snapshot, id, start, vector, distance, map, weapon) : traceShot;
+    const penetrating = weapon.valorant || !!weapon.wallPenetration;
+    const trace = penetrating ? (snapshot, id, start, vector, distance, map) => traceWeaponShot(snapshot, id, start, vector, distance, map, weapon) : traceShot;
     const hit = traceCompensatedShot(state, f.id, origin, direction, range, arena, trace);
     let damage = 0;
     const contacts = [];
     for (const contact of hit.contacts || [hit]) if (contact.playerId !== null && state.players[contact.playerId]?.team !== f.team) {
       const slugDamage = fireMode === 'airburstSlug' ? weapon.alternateFire?.preBurstDamage?.[contact.kind] : undefined;
-      let contactDamage = (Number.isFinite(slugDamage) ? slugDamage : weaponDamage(weapon, contact.kind, contact.distance + distanceOffset)) * (contact.damageMultiplier ?? 1);
+      let contactDamage = (Number.isFinite(slugDamage) ? slugDamage : weaponDamage(weapon, contact.kind, contact.distance + distanceOffset)) * (contact.damageMultiplier ?? 1) * chargeScale;
       const target = state.players[contact.playerId];
       // A verified, unobstructed sniper head contact is a monster weak-point
       // kill even when later waves increase HP. Attenuated wall/actor contacts
@@ -1063,15 +1097,67 @@ function fireRound(state, f, weapon, pendingDamage, arena, fire = null) {
         && (contact.targetLifeId === undefined || contact.targetLifeId === (target.lifeId || 0));
       if (lethalMonsterHeadshot) contactDamage = Math.max(contactDamage, target.hp);
       damage += contactDamage;
-      pendingDamage.push({ playerId: f.id, targetId: contact.playerId, ...(weapon.valorant || lethalMonsterHeadshot ? { attackerLifeId: f.lifeId || 0, targetLifeId: contact.targetLifeId ?? (target.lifeId || 0), penetrationCount: contact.penetrationCount || 0 } : {}), damage: contactDamage, hitKind: contact.kind, headshot: contact.kind === 'head', attack: 'gun', weapon: f.weapon, hitX: contact.x, hitY: contact.y, hitZ: contact.z, dx: direction.x, dy: direction.y, dz: direction.z });
-      if (weapon.valorant) contacts.push({ targetId: contact.playerId, targetLifeId: contact.targetLifeId || 0, kind: contact.kind, damage: contactDamage, distance: contact.distance + distanceOffset, x: contact.x, y: contact.y, z: contact.z, penetrationCount: contact.penetrationCount || 0 });
+      pendingDamage.push({ playerId: f.id, targetId: contact.playerId, ...(penetrating || lethalMonsterHeadshot ? { attackerLifeId: f.lifeId || 0, targetLifeId: contact.targetLifeId ?? (target.lifeId || 0), penetrationCount: contact.penetrationCount || 0 } : {}), damage: contactDamage, hitKind: contact.kind, headshot: contact.kind === 'head', attack: 'gun', weapon: f.weapon, hitX: contact.x, hitY: contact.y, hitZ: contact.z, dx: direction.x, dy: direction.y, dz: direction.z });
+      if (penetrating) contacts.push({ targetId: contact.playerId, targetLifeId: contact.targetLifeId || 0, kind: contact.kind, damage: contactDamage, distance: contact.distance + distanceOffset, x: contact.x, y: contact.y, z: contact.z, penetrationCount: contact.penetrationCount || 0 });
     }
     emit(state, 'shot', { playerId: f.id, targetId: hit.playerId, weapon: f.weapon, hand: f.lastShotHand, pellet, pelletCount, x: origin.x, y: origin.y, z: origin.z, dx: direction.x, dy: direction.y, dz: direction.z, hitX: hit.x, hitY: hit.y, hitZ: hit.z, hitKind: hit.kind, colliderId: hit.colliderId, damage,
-      ...(weapon.valorant ? { fireMode, alternate: fire?.alternate === true, ...(distanceOffset ? { burstOrigin: origin, attackX: eyeOrigin.x, attackY: eyeOrigin.y, attackZ: eyeOrigin.z } : {}), contacts, impacts: hit.impacts || [], penetrationCount: hit.penetrationCount || 0 } : {}) });
+      ...(charge !== null ? { charge } : {}),
+      ...(penetrating ? { fireMode, alternate: fire?.alternate === true, ...(distanceOffset ? { burstOrigin: origin, attackX: eyeOrigin.x, attackY: eyeOrigin.y, attackZ: eyeOrigin.z } : {}), contacts, impacts: hit.impacts || [], penetrationCount: hit.penetrationCount || 0 } : {}) });
   }
   return true;
 }
+/** Hold to charge, release to fire. Reloading, a blocked trigger or an empty gun drops the charge. */
+function tickCharge(state, f, weapon, input, pendingDamage, arena) {
+  const holding = input.fire && !f.triggerBlocked && !f.reloadTicks && !input.interact && f.ammo > 0;
+  if (holding) { if (!f.shotCooldown) f.chargeTicks = Math.min(weapon.chargeTicks, (f.chargeTicks || 0) + 1); return; }
+  const charge = (f.chargeTicks || 0) / weapon.chargeTicks; f.chargeTicks = 0;
+  if (!(charge > 0) || input.fire || f.reloadTicks || f.shotCooldown) { if (input.fire && f.ammo <= 0 && !f.previousInput.fire) emit(state, 'dryFire', { playerId: f.id }); return; }
+  if (charge < weapon.minCharge) { emit(state, 'chargeFizzle', { playerId: f.id, weapon: f.weapon, charge }); return; }
+  if (fireRound(state, f, weapon, pendingDamage, arena, { charge })) f.shotCooldown = weapon.cooldown;
+}
+/** A lever action rewards rhythm: press as the lever closes to chain faster, steadier shots. */
+function tickLever(state, f, weapon, input, pendingDamage, arena) {
+  const fresh = input.fire && !f.previousInput.fire && !f.triggerBlocked;
+  if (f.reloadTicks || input.interact) { f.leverQueued = false; f.leverReadyTicks = 0; return; }
+  if (f.shotCooldown > 0) {
+    f.leverReadyTicks = 0;
+    if (!fresh) return;
+    if (f.shotCooldown <= weapon.rhythmWindowTicks) f.leverQueued = true;
+    else {
+      // Working the lever early short-strokes it: the cycle restarts longer and the rhythm is lost.
+      f.shotCooldown += weapon.shortStrokeTicks; f.leverStacks = 0; f.leverQueued = false;
+      emit(state, 'leverFumble', { playerId: f.id, weapon: f.weapon });
+    }
+    return;
+  }
+  f.leverReadyTicks = Math.min(10000, (f.leverReadyTicks || 0) + 1);
+  if (!f.leverQueued && !fresh) { if (f.leverReadyTicks > weapon.rhythmGraceTicks) f.leverStacks = 0; return; }
+  if (f.ammo <= 0) { if (fresh) emit(state, 'dryFire', { playerId: f.id }); f.leverQueued = false; return; }
+  const onBeat = f.leverQueued || f.shots > 0 && f.leverReadyTicks <= weapon.rhythmGraceTicks;
+  f.leverStacks = onBeat ? Math.min(weapon.rhythmMaxStacks, (f.leverStacks || 0) + 1) : 0;
+  if (f.leverStacks) f.heat = 0;
+  f.leverQueued = false; f.leverReadyTicks = 0;
+  if (fireRound(state, f, weapon, pendingDamage, arena)) f.shotCooldown = weapon.cooldown - f.leverStacks * weapon.rhythmStepTicks;
+}
+/** The first solid surface along the aim, for a grapple anchor. Players and the floor never hold it. */
+function grappleAnchor(origin, direction, range, arena) {
+  let best = null;
+  for (const rect of arena.colliders) { const distance = rayBox(origin, direction, rect, range); if (distance !== null && distance > .4 && (best === null || distance < best)) best = distance; }
+  return best === null ? null : { x: origin.x + direction.x * (best - .3), y: origin.y + direction.y * (best - .3), z: origin.z + direction.z * (best - .3), distance: best };
+}
+function tickGrappleGun(state, f, weapon, input, arena) {
+  const fresh = input.fire && !f.previousInput.fire && !f.triggerBlocked;
+  if (!fresh || f.shotCooldown || f.reloadTicks || input.interact) return;
+  if (f.ammo <= 0) { emit(state, 'dryFire', { playerId: f.id }); return; }
+  const origin = eyePosition(f), direction = aimDirection(f.yaw, f.pitch), anchor = grappleAnchor(origin, direction, weapon.range, arena);
+  f.shotCooldown = weapon.cooldown;
+  emit(state, 'grappleFire', { playerId: f.id, weapon: f.weapon, x: origin.x, y: origin.y, z: origin.z, hit: !!anchor, ...(anchor ? { hitX: anchor.x, hitY: anchor.y, hitZ: anchor.z } : {}) });
+  if (!anchor) return;
+  f.ammo--; f.shots++;
+  Object.assign(f, { grappleTicks: weapon.maxPullTicks, grappleX: anchor.x, grappleY: anchor.y, grappleZ: anchor.z, grappleStuckTicks: 0 });
+}
 function tickWeapon(state, f, input, pendingDamage, arena, meleeOptions = {}) {
+  if (WEAPONS[f.weapon]?.mode !== 'charge' || f.slot !== 'primary' || f.healTicks || f.grenadeThrowTicks || f.hitStunTicks > 0) f.chargeTicks = 0;
   if (!f.alive) { f.pendingMeleeTicks = 0; return; }
   if (f.hitStunTicks > 0) {
     f.pendingMeleeTicks = f.pendingFireTicks = f.burstRemaining = f.spinTicks = 0;
@@ -1105,8 +1191,11 @@ function tickWeapon(state, f, input, pendingDamage, arena, meleeOptions = {}) {
   if (f.healTicks || f.grenadeThrowTicks) { f.spinTicks = f.pendingFireTicks = f.pendingMeleeTicks = 0; return; }
   if (f.slot === 'sword') { f.spinTicks = f.pendingFireTicks = 0; tickMelee(state, f, input, pendingDamage, arena, meleeOptions); return; }
   if (f.slot !== 'primary') { f.spinTicks = f.pendingFireTicks = 0; return; }
-  if (input.reload && !f.previousInput.reload && !f.reloadTicks && weaponCanReload(weapon, f.ammo, f.reserve)) { f.reloadTicks = weaponReloadDuration(weapon, f.ammo); f.burstRemaining = 0; f.spinTicks = f.pendingFireTicks = 0; f.aiming = false; emit(state, 'reload', { playerId: f.id, weapon: f.weapon, durationTicks: f.reloadTicks, tactical: f.ammo > 0 }); }
+  if (input.reload && !f.previousInput.reload && !f.reloadTicks && weaponCanReload(weapon, f.ammo, f.reserve)) { f.chargeTicks = 0; f.leverQueued = false; f.reloadTicks = weaponReloadDuration(weapon, f.ammo); f.burstRemaining = 0; f.spinTicks = f.pendingFireTicks = 0; f.aiming = false; emit(state, 'reload', { playerId: f.id, weapon: f.weapon, durationTicks: f.reloadTicks, tactical: f.ammo > 0 }); }
   if (input.interact) { f.burstRemaining = 0; f.spinTicks = f.pendingFireTicks = 0; }
+  if (weapon.mode === 'charge') { tickCharge(state, f, weapon, input, pendingDamage, arena); return; }
+  if (weapon.mode === 'lever') { tickLever(state, f, weapon, input, pendingDamage, arena); return; }
+  if (weapon.mode === 'grapple') { tickGrappleGun(state, f, weapon, input, arena); return; }
   // Paired pistols retain one recent fresh press across their short recovery.
   // Holding fire never queues another shot; reloads and hand changes discard it.
   f.pendingFireTicks = Math.max(0, (f.pendingFireTicks || 0) - 1);
@@ -1249,7 +1338,7 @@ export function combatStep(state, rawInputs = [], arena = state.map || MAPS[stat
   advanceSmokes(state);
   advanceGrenades(state, arena, { emit: (type, data) => emit(state, type, data), queueDamage: hit => pending.push(hit) });
   // Traces use the same explicit arena as movement, including custom mode maps.
-  advanceBolts(state, { trace: (snapshot, id, origin, direction, distance) => traceShot(snapshot, id, origin, direction, distance, arena), arena, emit: (type, data) => emit(state, type, data), queueDamage: hit => pending.push(hit) });
+  advanceBolts(state, { trace: (snapshot, id, origin, direction, distance) => traceShot(snapshot, id, origin, direction, distance, arena), arena, emit: (type, data) => { emit(state, type, data); if (type === 'boltHit') recoverProjectile(state, data); }, queueDamage: hit => pending.push(hit) });
   // Lazy environmental contacts use the final physical pose for this tick,
   // while participating in the same death/heal ordering as weapon contacts.
   pending.push(...(typeof additionalDamage === 'function' ? additionalDamage(state) : additionalDamage));

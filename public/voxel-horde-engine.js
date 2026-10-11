@@ -129,7 +129,7 @@ export function resetLobby(state) {
 }
 export function selectLoadout(state, id, weapon) {
   if (!humanSlot(state, id)) return { ok: false, changed: false, error: 'Unknown survivor.' };
-  if (!Object.hasOwn(WEAPONS, weapon)) return { ok: false, changed: false, error: 'Choose a weapon from the loadout list.' };
+  if (!Object.hasOwn(WEAPONS, weapon) || WEAPONS[weapon].gadget) return { ok: false, changed: false, error: 'Choose a weapon from the loadout list.' };
   if (!['lobby', 'countdown', 'intermission', 'matchEnd'].includes(state.phase)) return { ok: false, changed: false, error: 'Change weapons between waves.' };
   const player = state.players[id];
   if (player.hasGun && player.weapon === weapon) return { ok: true, changed: false };

@@ -158,6 +158,9 @@ export function combatReadout(player, rules = {}) {
   if (!sword && weapon.spinupTicks && player.spinTicks > 0 && player.spinTicks < weapon.spinupTicks) {
     status = 'HOLD FIRE · WINDING UP'; progress = { remaining: weapon.spinupTicks - player.spinTicks, total: weapon.spinupTicks, label: 'Weapon wind-up' };
   }
+  if (!sword && weapon.mode === 'charge' && player.chargeTicks > 0) { const percent = Math.round(player.chargeTicks / weapon.chargeTicks * 100); status = percent >= 100 ? 'FULL CHARGE · RELEASE TO FIRE' : `CHARGING ${percent}% · RELEASE TO FIRE`; progress = { remaining: weapon.chargeTicks - player.chargeTicks, total: weapon.chargeTicks, label: 'Charge' }; }
+  if (!sword && weapon.mode === 'lever' && player.leverStacks > 0) status = `RHYTHM ${player.leverStacks}/${weapon.rhythmMaxStacks} · CLICK AS THE LEVER CLOSES`;
+  if (player.grappleTicks > 0) status = 'GRAPPLING · SPACE TO LET GO';
   if (!sword && player.reloadTicks > 0) { status = `RELOADING ${(player.reloadTicks / 120).toFixed(1)}S`; progress = { remaining: player.reloadTicks, total: weaponReloadDuration(weapon, player.ammo), label: 'Reload' }; }
   if (!sword && player.shotCooldown > 0 && ['bolt', 'pump', 'burst'].includes(fire.mode) && !player.reloadTicks) status = ({ bolt: 'CYCLING BOLT', pump: 'PUMPING', burst: 'BURST RECOVERY' })[fire.mode];
   if (!sword && fire.alternate && !player.reloadTicks && !player.shotCooldown) status = fire.mode === 'airburst' ? `RMB AIRBURST · ${fire.popDistance}M POP` : `RMB BURST · ${Math.min(fire.ammoCost || fire.count, player.ammo)} ROUNDS`;
