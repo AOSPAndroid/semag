@@ -1,4 +1,5 @@
 import { aimLookMultiplier, meleeActionReadout, secondaryActionPresentation, paintSecondaryAction, staminaPresentation, paintStamina, createReloadAudioPresenter, createGunImpactReporter, createParryAudioReporter } from './voxel-fps-feedback.js';
+import { createUtilityOverlay, utilityEventAudio, utilityView } from './voxel-utility-overlay.js';
 export { aimFraction, aimLookMultiplier } from './voxel-fps-feedback.js';
 import { displayKey, gameKey, getKeyboardLayout, mountKeyboardLayoutPicker, subscribeKeyboardLayout } from './keyboard-layout.js';
 import { copyText, getName, hostInfo, roomUrl, saveName } from './hub/shared.js';
@@ -384,6 +385,7 @@ async function boot() {
   const { mountWeaponArmory } = await import('./voxel-armory-ui.js');
   const $ = id => document.getElementById(id);
   const canvas = $('arena');
+  const utilityOverlay = createUtilityOverlay(canvas?.parentElement);
   const worldLabels = mountVoxelLabelOverlay(canvas);
   populateWeaponSelect($('loadout-select'));
   const arenaField = document.createElement('div'); arenaField.className = 'arsenal-selector armory-field';
@@ -393,7 +395,7 @@ async function boot() {
   const loadoutArmory = mountWeaponArmory({ select: $('loadout-select'), title: 'Build your loadout', portalContainer: $('room-dialog') });
   const arenaArmory = mountWeaponArmory({ select: arenaSelect, title: 'Choose your round weapon', portalContainer: $('game-shell') });
   const comparisonBands = document.createElement('section'); comparisonBands.id = 'comparison-bands'; comparisonBands.setAttribute('aria-label', 'Weapon damage at each range and handling'); $('weapon-comparison').append(comparisonBands);
-  setText($('arena-melee-note'), 'Slot 1: knife · Slot 2: chosen gun · Slots 3–4: empty. Scavenge blades, guns and supplies with F.');
+  setText($('arena-melee-note'), 'Slot 1: knife · Slot 2: chosen gun · Slots 3–4: empty, or smoke and flash with round utility. Scavenge blades, guns and supplies with F.');
   setText($('phase-shortcuts'), 'CHOOSE A GUN DURING SETUP · IN PLAY: 1–4 EQUIP, WHEEL SWITCH, X DROP');
   const roomId = new URLSearchParams(location.search).get('room')?.trim().toUpperCase() || '';
   const roomLabel = /^[A-Z0-9]{6}$/.test(roomId) ? roomId : 'NO ROOM';
@@ -661,7 +663,7 @@ async function boot() {
           audio.tone(660, .13, { end: 920, type: 'triangle', gain: .15 });
         } else if (event.type === 'explosion' || event.type === 'detonate' || event.type === 'grenadeExplosion') {
           audio.noise(0.45, { highpass: 30, lowpass: 1700, gain: 0.45 }); audio.tone(65, 0.42, { end: 28, gain: 0.25 });
-        }
+        } else utilityEventAudio(audio, event, playerId);
       } catch { /* Optional sound cannot interrupt gameplay. */ }
     }
     gunImpacts.consume(freshEvents, playerId, { context: `${state?.mapId}:${state?.matchId}:${state?.round}`, viewedId: healthHUDPlayer(state, playerId, spectatorId)?.id });
@@ -877,7 +879,7 @@ async function boot() {
       if (action === 'swap') { const swap = inventorySwapPresentation(local); button.textContent = swap?.label || (readout.sword ? 'GUN' : 'SWORD'); button.setAttribute('aria-label', swap?.ariaLabel || (readout.sword ? 'Switch to primary gun' : 'Switch to sword')); button.setAttribute('aria-pressed', String(readout.sword)); }
       if (action === 'aim') paintSecondaryAction(button, secondaryActionPresentation(local, { active: controlsActive() && phase === 'fight' }));
       if (['sprint', 'walk', 'crouch'].includes(action)) button.setAttribute('aria-pressed', String(!!currentInput()[action]));
-      if (action === 'grenade') { button.textContent = `FRAG ${readout.grenades}`; button.setAttribute('aria-label', `Throw fragmentation grenade: ${readout.grenades} remaining`); button.classList.toggle('unavailable', !readout.grenades); }
+      if (action === 'grenade') { button.textContent = `THROW ${readout.grenades}`; button.setAttribute('aria-label', `Throw the next grenade, smoke or flash: ${readout.grenades} remaining`); button.classList.toggle('unavailable', !readout.grenades); }
       if (action === 'heal') { button.textContent = readout.healing ? 'DRINKING' : `POTION ${readout.potions}`; button.setAttribute('aria-label', `Drink healing potion: ${readout.potions} remaining; restores up to ${engine?.HEAL?.amount || HEAL.amount} health in 0.2 seconds; interruption keeps the potion`); button.classList.toggle('unavailable', (!readout.potions && !readout.healing) || local?.hp >= (local?.maxHp || PLAYER_HEALTH)); }
     }
     setHidden($('pause-button'), paused || inLobby || phase === 'matchEnd' || !entered);
@@ -982,6 +984,7 @@ async function boot() {
     renderer.render(renderedState, { acceptedPlayers: state.players, playerId, localId: playerId, localPlayer: presentationPlayer, viewPlayer, cameraPlayer: viewPlayer, yaw: viewAim.yaw + (viewPlayer?.recoilYaw || 0), pitch: viewAim.pitch + (viewPlayer?.recoil || 0), time: now, roster, cameraMotion: cameraMotion.get() });
     reticleView = presentCrosshair(viewPlayer, now, `${state.mapId}:${state.matchId}:${state.round}:${state.phase}`, { width: canvas.clientWidth, height: canvas.clientHeight, rules: engine.ADS, active: controlsActive() && !teamSwitchPending && state.phase === 'fight', reducedMotion: hitMotion.matches });
     paintCrosshair(hitElements.crosshair, reticleView);
+    utilityOverlay.update(utilityView(renderedState, viewPlayer));
     setHidden(hitElements.scope, !reticleView.visible || !reticleView.scoped);
     setText($('scope-label'), `${WEAPONS[viewPlayer?.weapon]?.label || 'PRECISION'} / PRECISION SIGHT`);
     worldLabels.paint(renderer.worldLabels, { active: labelsActive() });

@@ -1,4 +1,5 @@
 import { aimFraction as gunAimFraction, aimLookMultiplier as gunAimLookMultiplier, meleeActionReadout, secondaryActionPresentation, paintSecondaryAction, staminaPresentation, paintStamina, createReloadAudioPresenter, createGunImpactReporter, createParryAudioReporter } from './voxel-fps-feedback.js';
+import { createUtilityOverlay, utilityEventAudio, utilityView } from './voxel-utility-overlay.js';
 import { displayKey, gameKey, getKeyboardLayout, mountKeyboardLayoutPicker, subscribeKeyboardLayout } from './keyboard-layout.js';
 import { copyText, getName, hostInfo, roomUrl, saveName } from './hub/shared.js';
 import { GameAudio } from './audio.js';
@@ -108,7 +109,7 @@ export function lootPresentation(loot, player) {
     return { id: loot.id, name: weapon.name, detail: exchange ? `EXCHANGE ${WEAPONS[player.weapon]?.label || 'GUN'} · ${loot.ammo ?? weapon.magazine} / ${loot.reserve ?? weapon.reserve}` : `PICK UP · ${loot.ammo ?? weapon.magazine} / ${loot.reserve ?? weapon.reserve}`, kind: 'weapon' };
   }
   if (loot.kind === 'heal') return { id: loot.id, name: 'Healing potion', detail: `PICK UP · H TO HEAL UP TO ${HEAL.amount} HP`, kind: 'heal' };
-  if (loot.kind === 'grenade') return { id: loot.id, name: 'Fragmentation grenade', detail: 'PICK UP · THROW WITH G', kind: 'grenade' };
+  if (loot.kind === 'grenade') return { id: loot.id, name: ({ smoke: 'Smoke grenade', flash: 'Flashbang' })[loot.type] || 'Fragmentation grenade', detail: 'PICK UP · THROW WITH G', kind: 'grenade' };
   if (loot.kind === 'ammo') return { id: loot.id, name: 'Ammunition', detail: `PICK UP · +${Math.max(0, loot.amount || 0)} RESERVE`, kind: 'ammo' };
   return null;
 }
@@ -185,6 +186,7 @@ export function interpolatedState(samples, targetTime, localId, options = {}) {
 
 async function boot() {
   const $ = id => document.getElementById(id), canvas = $('arena');
+  const utilityOverlay = createUtilityOverlay(canvas?.parentElement);
   const roomId = new URLSearchParams(location.search).get('room')?.trim().toUpperCase() || '';
   setText($('room-code'), /^[A-Z0-9]{6}$/.test(roomId) ? roomId : 'NO ROOM');
   const layoutPickerHost = document.querySelector('[data-keyboard-layout-picker]'), layoutPickerHome = layoutPickerHost.parentElement;
@@ -454,6 +456,7 @@ async function boot() {
         else if (event.type === 'meleeStart') audio.meleeSwing(event.weapon, { gain: source === playerId ? 1 : .3 });
         else if (event.type === 'explosion' || event.type === 'grenadeExplosion') { audio.noise(.45, { highpass: 30, lowpass: 1700, gain: .4 }); audio.tone(65, .42, { end: 28, gain: .22 }); }
         else if (event.type === 'healComplete' && source === playerId) audio.tone(660, .13, { end: 920, type: 'triangle', gain: .15 });
+        else utilityEventAudio(audio, event, playerId);
       } catch { /* Optional sound cannot interrupt the match. */ }
     }
     gunImpacts.consume(fresh, playerId, { context: `${state.mapId}:${state.matchId}`, viewedId: spectatorPlayer(state, playerId, spectatorId)?.id });
@@ -490,6 +493,7 @@ async function boot() {
     renderer.render(rendered, { acceptedPlayers: state.players, playerId, localId: playerId, localPlayer: presentationPlayer, viewPlayer: camera, yaw: viewAim.yaw + finite(camera?.recoilYaw), pitch: viewAim.pitch + finite(camera?.recoil), time: now, cameraMotion: cameraMotion.get() }); renderCount++;
     reticleView = presentCrosshair(camera, now, `${state.mapId}:${state.matchId}:${state.round}:${state.phase}`, { width: canvas.clientWidth, height: canvas.clientHeight, rules: engine.ADS, active: controlsActive() && state.phase === 'fight', reducedMotion: hitMotion.matches });
     paintCrosshair(hitElements.crosshair, reticleView); setHidden(hitElements.scope, !reticleView.visible || !reticleView.scoped);
+    utilityOverlay.update(utilityView(rendered, camera));
     setText($('scope-label'), `${WEAPONS[camera?.weapon]?.label || 'PRECISION'} / PRECISION SIGHT`);
     paintVitals(camera, camera?.id !== playerId ? `${lookupName(camera?.id)}’s` : 'Your', connected && !paused && !modalOpen && ['countdown', 'fight'].includes(state.phase));
     enemyFootsteps.observe(renderer.locomotionActors, { now, context: `${state.mapId}:${state.matchId}:${state.round}`, listener: camera, yaw: viewAim.yaw, active: connected && entered && !!local?.alive && !paused && !modalOpen && state.phase === 'fight', freeForAll: true });

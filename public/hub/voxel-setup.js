@@ -48,7 +48,8 @@ export function chooseVoxelRoom(dialog) {
       event.preventDefault();
       const teamSize = Number(form.elements.namedItem('teamSize').value);
       if (![1, 2, 3].includes(teamSize) || !Object.hasOwn(MAPS, map.value)) return;
-      finish({ teamSize, mapId: map.value });
+      const roundUtility = form.elements.namedItem('roundUtility')?.checked === true;
+      finish({ teamSize, mapId: map.value, ...(roundUtility ? { roundUtility } : {}) });
     };
     form.addEventListener('submit', submit);
     dialog.addEventListener('close', cancel);

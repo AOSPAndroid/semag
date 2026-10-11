@@ -778,3 +778,19 @@ for (const metadata of ['valid', 'stale', 'future']) {
     assert.equal(getLagCompensationDiagnostics(room.state).viewCount, 0); assert.equal(room.slots[0].actionInputs.inspect().pending.length, 0);
   });
 }
+
+test('Breach rooms opt into round utility explicitly and reject anything but a boolean', async t => {
+  const game = await host(t);
+  for (const [roundUtility, status] of [['yes', 400], [1, 400], [null, 400]]) assert.equal((await game.post({ gameId: 'voxel-breach', teamSize: 1, mapId: 'courtyard', roundUtility })).status, status);
+  const plain = await game.make();
+  assert.equal(plain.state.roundUtility, undefined);
+  const response = await game.post({ gameId: 'voxel-breach', teamSize: 1, mapId: 'courtyard', roundUtility: true });
+  assert.equal(response.status, 201);
+  const { room: summary } = await response.json();
+  assert.equal(summary.roundUtility, true);
+  const room = game.app.rooms.get(summary.id), seats = await game.fill(room);
+  await readyEveryone(room, seats);
+  for (const player of room.state.players) {
+    assert.equal(player.inventory[2]?.type, 'smoke'); assert.equal(player.inventory[3]?.type, 'flash');
+  }
+});

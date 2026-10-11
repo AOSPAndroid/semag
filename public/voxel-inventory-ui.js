@@ -1,6 +1,7 @@
 import { WEAPONS } from './voxel-weapons.js';
 import { MELEE_WEAPONS } from './voxel-melee.js';
-import { inventoryPickupHint } from './voxel-inventory.js';
+import { inventoryPickupHint, throwableType } from './voxel-inventory.js';
+export const THROWABLE_LABELS = Object.freeze({ frag: { short: 'FRAG', name: 'Frag grenade' }, smoke: { short: 'SMOKE', name: 'Smoke grenade' }, flash: { short: 'FLASH', name: 'Flashbang' } });
 
 const ICONS = Object.freeze({
   weapon: 'M2 5h22v4H12v3H8V9H2z M15 9v4h4V9 M21 3v2',
@@ -91,7 +92,7 @@ export function inventorySlots(player, weapons = WEAPONS) {
     }
     const amount = Math.max(0, Math.min(2, Math.floor(Number.isFinite(item.amount) ? item.amount : 0)));
     const blade = catalogItem(MELEE_WEAPONS, item.weapon);
-    return { index, key: index + 1, kind: item.kind, icon: item.kind === 'melee' ? item.weapon : item.kind, label: item.kind === 'heal' ? 'POTION' : item.kind === 'grenade' ? 'FRAG' : blade?.label || 'BLADE', name: item.kind === 'heal' ? 'Healing potion' : item.kind === 'grenade' ? 'Frag grenade' : blade?.name || 'Close-combat weapon', detail: ['heal', 'grenade'].includes(item.kind) ? `×${amount} / 2` : 'MELEE', selected, droppable: true };
+    return { index, key: index + 1, kind: item.kind, icon: item.kind === 'melee' ? item.weapon : item.kind, label: item.kind === 'heal' ? 'POTION' : item.kind === 'grenade' ? THROWABLE_LABELS[throwableType(item.type)].short : blade?.label || 'BLADE', name: item.kind === 'heal' ? 'Healing potion' : item.kind === 'grenade' ? THROWABLE_LABELS[throwableType(item.type)].name : blade?.name || 'Close-combat weapon', detail: ['heal', 'grenade'].includes(item.kind) ? `×${amount} / 2` : 'MELEE', selected, droppable: true };
   });
 }
 
@@ -180,7 +181,7 @@ export function inventoryItemReadout(player) {
   const item = player.inventory[player.inventoryIndex];
   if (item?.kind === 'weapon' || item?.kind === 'melee') return null;
   const kind = item?.kind;
-  return { label: kind === 'heal' ? 'HEALING POTION' : kind === 'grenade' ? 'FRAG GRENADE' : 'EMPTY HANDS',
+  return { label: kind === 'heal' ? 'HEALING POTION' : kind === 'grenade' ? THROWABLE_LABELS[throwableType(item.type)].name.toUpperCase() : 'EMPTY HANDS',
     ammo: item ? `×${item.amount}` : '—', reserve: '—', sword: false, healing: false, reloading: false, utility: true,
     status: kind === 'heal' ? player.hp >= player.maxHp ? 'FULL HEALTH · SAVE POTION' : 'LMB DRINK · H QUICK HEAL' : kind === 'grenade' ? 'LMB THROW · G QUICK THROW' : '1–4 EQUIP · F PICK UP', progress: null };
 }
@@ -209,7 +210,7 @@ export function inventoryLootPresentation(loot, player) {
   const weapon = loot.kind === 'weapon' ? catalogItem(WEAPONS, loot.weapon) : null;
   const blade = loot.kind === 'melee' ? catalogItem(MELEE_WEAPONS, loot.weapon) : null;
   if (loot.kind === 'weapon' && !weapon || loot.kind === 'melee' && !blade || !['weapon', 'melee', 'heal', 'grenade', 'ammo'].includes(loot.kind)) return null;
-  const name = weapon?.name || blade?.name || (loot.kind === 'heal' ? 'Healing potion' : loot.kind === 'grenade' ? 'Frag grenade' : 'Ammunition');
+  const name = weapon?.name || blade?.name || (loot.kind === 'heal' ? 'Healing potion' : loot.kind === 'grenade' ? THROWABLE_LABELS[throwableType(loot.type ?? loot.item?.type)].name : 'Ammunition');
   const hint = inventoryPickupHint(player, loot);
   const detail = weapon ? ` · ${loot.ammo ?? loot.item?.ammo ?? weapon.magazine} / ${loot.reserve ?? loot.item?.reserve ?? weapon.reserve}` : loot.kind === 'ammo' ? ` · +${Math.max(0, loot.amount || 0)} RESERVE` : loot.kind === 'heal' ? ' · STACK TO 2 · H TO HEAL' : loot.kind === 'grenade' ? ' · STACK TO 2 · G TO THROW' : '';
   return { id: loot.id, name, kind: loot.kind, detail: `${hint}${detail}` };

@@ -1,4 +1,5 @@
 import { mountWeaponArmory } from './voxel-armory-ui.js';
+import { createUtilityOverlay, utilityEventAudio, utilityView } from './voxel-utility-overlay.js';
 import { secondaryActionPresentation, paintSecondaryAction, staminaPresentation, paintStamina, createReloadAudioPresenter, createGunImpactReporter, createParryAudioReporter } from './voxel-fps-feedback.js';
 import { GameAudio } from './audio.js';
 import { createEnemyFootstepPresenter } from './voxel-footsteps.js';
@@ -104,6 +105,7 @@ export function bootPractice() {
   const elements = new Map();
   const $ = id => { if (!elements.has(id)) elements.set(id, document.getElementById(id)); return elements.get(id); };
   const app = $('practice-app'), canvas = $('practice-canvas'), shell = $('practice-shell');
+  const utilityOverlay = createUtilityOverlay(canvas?.parentElement);
   if (!app || !canvas) return null;
   const params = new URLSearchParams(location.search), game = params.get('game') === 'voxel-royale' ? 'voxel-royale' : 'voxel';
   const royale = game === 'voxel-royale', dojo = !royale && params.get('mode') === 'dojo', maps = dojo ? DOJO_MAPS : royale ? ROYALE_MAPS : BREACH_MAPS;
@@ -331,6 +333,7 @@ export function bootPractice() {
       if (event.type === 'healCancel' && perspective.source === 0) feedback('HEALING INTERRUPTED', now);
       if (audio.enabled && event.type === 'meleeStart') audio.meleeSwing(event.weapon, { gain: perspective.source === 0 ? 1 : .28 });
       if (audio.enabled && hasGunshotReport(event)) audio.gunshot(event.weapon, { gain: perspective.source === 0 ? 1 : .28 });
+      utilityEventAudio(audio, event, 0);
       if (audio.enabled && event.type === 'grenadeExplosion') { audio.noise(.4, { highpass: 40, lowpass: 1500, gain: .3 }); audio.tone(70, .3, { end: 25, gain: .2 }); }
     }
     gunImpacts.consume(freshEvents, 0, { context: `${state.mapId}:${state.practice.sessionId}` });
@@ -459,6 +462,7 @@ export function bootPractice() {
     view.players = resolvePresentationContacts(view.players, state.map);
     view.fighters = view.players; presentationPlayer = view.players[0]; renderer.render(view, { acceptedPlayers: state.players, playerId: 0, localId: 0, localPlayer: presentationPlayer, cameraPlayer: presentationPlayer, yaw: aim.yaw + (presentationPlayer.recoilYaw || 0), pitch: aim.pitch + (presentationPlayer.recoil || 0), time: sceneLive ? now : lastDrawAt, cameraMotion: cameraMotion.get() }); renderCount++; lastFraction = tickFraction(accumulator, STEP);
     paintVitals(presentationPlayer, 'Your', activeSession && active());
+    utilityOverlay.update(utilityView(view, presentationPlayer));
     enemyFootsteps.observe(renderer.locomotionActors, { now, context: `${state.mapId}:${state.practice.sessionId}`, listener: presentationPlayer, yaw: aim.yaw, active: activeSession && active() && !dojoToolsOpen && state.phase === 'fight', freeForAll: royale });
     reloadAudio.observe(state.players[0], { tick: state.tick, context: `${state.mapId}:${state.practice.sessionId}`, active: active() && state.phase === 'fight' });
     reticleView = presentCrosshair(presentationPlayer, now, `${state.mapId}:${state.practice.sessionId}:${state.phase}`, { width: canvas.clientWidth, height: canvas.clientHeight, rules: ADS, active: live && state.phase === 'fight' && !modalOpen && !dojoToolsOpen, reducedMotion: hitMotion.matches });

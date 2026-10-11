@@ -111,7 +111,7 @@ for (const mapId of newMaps) {
     const supply = state.map.stations.find(station => station.id === 'supplies'); pose(player, supply); stepPractice(state, { interact: true });
     assert.equal(player.potions, 2); stepPractice(state); stepPractice(state, { heal: true }); assert.equal(player.potions, 2);
     advance(state, HEAL.ticks); assert.equal(player.potions, 1); assert.equal(player.hp, 200);
-    assert.ok(player.inventory.length <= 4); assert.equal(state.loot.filter(item => item.dojoStation === 'supplies').length, 2);
+    assert.ok(player.inventory.length <= 4); assert.equal(state.loot.filter(item => item.dojoStation === 'supplies').length, 4, 'potion, frag, smoke and flash restock');
     pose(player, recovery); stepPractice(state, { dojoWound: true }); stepPractice(state); stepPractice(state, { interact: true }); assert.equal(player.hp, 200);
     pose(player, { ...recovery, y: 2.4 }); assert.equal(findDojoStation(state, 'recovery'), null, 'wrong-floor station interaction was accepted');
   });

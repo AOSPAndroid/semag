@@ -30,8 +30,8 @@ export function itemFromLoot(loot) {
   if (loot.kind === 'weapon') return createInventoryGun(loot.weapon, loot.item || loot);
   if (loot.kind === 'melee') return createInventoryMelee(loot.weapon, loot.item || loot);
   if (loot.kind === 'heal' || loot.kind === 'grenade') {
-    const amount = count(loot.amount ?? loot.item?.amount ?? 1);
-    return amount ? { kind: loot.kind, amount } : null;
+    const amount = count(loot.amount ?? loot.item?.amount ?? 1), type = throwableType(loot.type ?? loot.item?.type);
+    return amount ? { kind: loot.kind, amount, ...(loot.kind === 'grenade' && type !== 'frag' ? { type } : {}) } : null;
   }
   return null;
 }
@@ -120,20 +120,31 @@ export function tickHolsteredInventory(player) {
   player.meleeCooldown = blade?.meleeCooldown || 0;
   player.parryCooldown = blade?.parryCooldown || 0;
 }
-export function addInventoryStack(player, kind, amount = 1) {
+/** Grenade stacks carry a throwable type; untyped stacks are frags. */
+export const throwableType = value => value === 'smoke' || value === 'flash' ? value : 'frag';
+const sameStack = (item, kind, type) => item?.kind === kind && (kind !== 'grenade' || type == null || throwableType(item.type) === throwableType(type));
+export function addInventoryStack(player, kind, amount = 1, type = null) {
   let remaining = Math.max(0, Math.floor(finite(amount))), added = 0;
+  const typed = kind === 'grenade' && throwableType(type) !== 'frag' ? { type: throwableType(type) } : {};
   for (let index = 0; index < INVENTORY_SIZE && remaining; index++) {
-    const item = player.inventory[index]; if (item?.kind !== kind || item.amount >= ITEM_STACK_LIMIT) continue;
+    const item = player.inventory[index]; if (!sameStack(item, kind, kind === 'grenade' ? throwableType(type) : null) || item.amount >= ITEM_STACK_LIMIT) continue;
     const add = Math.min(remaining, ITEM_STACK_LIMIT - item.amount); item.amount += add; remaining -= add; added += add;
   }
-  for (let index = 0; index < INVENTORY_SIZE && remaining; index++) if (!player.inventory[index]) { const add = Math.min(remaining, ITEM_STACK_LIMIT); player.inventory[index] = { kind, amount: add }; remaining -= add; added += add; }
+  for (let index = 0; index < INVENTORY_SIZE && remaining; index++) if (!player.inventory[index]) { const add = Math.min(remaining, ITEM_STACK_LIMIT); player.inventory[index] = { kind, amount: add, ...typed }; remaining -= add; added += add; }
   return added;
 }
-export function consumeInventoryStack(player, kind, amount = 1) {
+/** The throwable a quick-throw uses: the held stack, else the first carried one. */
+export function nextThrowableType(player) {
+  const held = selectedInventoryItem(player);
+  if (held?.kind === 'grenade') return throwableType(held.type);
+  const first = (player?.inventory || []).find(item => item?.kind === 'grenade' && item.amount > 0);
+  return first ? throwableType(first.type) : 'frag';
+}
+export function consumeInventoryStack(player, kind, amount = 1, type = null) {
   let remaining = amount;
   const order = [player.inventoryIndex, ...Array.from({ length: INVENTORY_SIZE }, (_, index) => index).filter(index => index !== player.inventoryIndex)];
   for (const index of order) {
-    const item = player.inventory[index]; if (item?.kind !== kind || !remaining) continue;
+    const item = player.inventory[index]; if (!sameStack(item, kind, type) || !remaining) continue;
     const used = Math.min(remaining, item.amount); item.amount -= used; remaining -= used;
     if (!item.amount) player.inventory[index] = null;
   }
@@ -143,7 +154,7 @@ export function inventoryCanTake(player, loot, { replace = true } = {}) {
   if (loot?.kind === 'ammo') return (player.inventory || []).some(item => item?.kind === 'weapon' && (!loot.weapon || item.weapon === loot.weapon) && item.reserve < WEAPONS[item.weapon].reserve * 2 && finite(loot.amount) > 0);
   const item = itemFromLoot(loot); if (!item) return false;
   if (player.inventory.some(slot => !slot)) return true;
-  if (item.kind === 'heal' || item.kind === 'grenade') return player.inventory.some(slot => slot?.kind === item.kind && slot.amount < ITEM_STACK_LIMIT);
+  if (item.kind === 'heal' || item.kind === 'grenade') return player.inventory.some(slot => sameStack(slot, item.kind, item.kind === 'grenade' ? throwableType(item.type) : null) && slot.amount < ITEM_STACK_LIMIT);
   return replace && (item.kind === 'weapon' || item.kind === 'melee') && selectedInventoryItem(player)?.kind === item.kind;
 }
 export function inventoryPickupHint(player, loot) {
@@ -162,7 +173,7 @@ export function pickupInventoryItem(player, loot, { replace = true, equip = true
     refreshInventory(player); return { ok: added > 0, amount: added, dropped: null };
   }
   const item = itemFromLoot(loot);
-  if (item.kind === 'heal' || item.kind === 'grenade') { const added = addInventoryStack(player, item.kind, Math.max(0, Math.floor(finite(loot.amount, item.amount)))); refreshInventory(player); return { ok: added > 0, amount: added, dropped: null }; }
+  if (item.kind === 'heal' || item.kind === 'grenade') { const added = addInventoryStack(player, item.kind, Math.max(0, Math.floor(finite(loot.amount, item.amount))), item.type); refreshInventory(player); return { ok: added > 0, amount: added, dropped: null }; }
   let index = player.inventory.findIndex(slot => !slot), dropped = null;
   if (index < 0) { index = player.inventoryIndex; dropped = copy(player.inventory[index]); if (dropped?.kind === 'weapon') dropped.pendingFireTicks = 0; }
   if (item.kind === 'weapon') item.pendingFireTicks = 0;
@@ -180,7 +191,7 @@ export function dropInventoryItem(player, index = player.inventoryIndex) {
   refreshInventory(player); player.aiming = false; player.aimTicks = 0;
   return item;
 }
-export function lootFromInventoryItem(item) { return item ? { kind: item.kind, weapon: item.weapon, ...(item.kind === 'weapon' ? { ammo: item.ammo, reserve: item.reserve } : {}), ...(item.amount ? { amount: item.amount } : {}), item: copy(item) } : null; }
+export function lootFromInventoryItem(item) { return item ? { kind: item.kind, weapon: item.weapon, ...(item.kind === 'weapon' ? { ammo: item.ammo, reserve: item.reserve } : {}), ...(item.amount ? { amount: item.amount } : {}), ...(item.type ? { type: item.type } : {}), item: copy(item) } : null; }
 export function setInventoryLoadout(player, weapon) {
   const item = createInventoryGun(weapon); if (!item) return false;
   ensureInventory(player); storeInventoryGun(player);

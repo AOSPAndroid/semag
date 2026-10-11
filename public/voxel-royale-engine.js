@@ -124,7 +124,8 @@ function seedLoot(state) {
       const tail = index - gunCount - blades.length, scheduled = ['heal', 'ammo', 'heal', 'grenade'][tail % 4];
       const kind = tail >= 8 && (point.kind === 'heal' || point.kind === 'ammo' || point.kind === 'grenade') ? point.kind : scheduled;
       if (kind === 'ammo') { const weapon = ammoWeapons[tail % ammoWeapons.length]; addLoot(state, { ...position, kind, weapon, amount: WEAPONS[weapon].magazine }); }
-      else addLoot(state, { ...position, kind, amount: 1 });
+      // Grenade drops rotate frag, smoke, frag, flash so utility is findable but frags stay common.
+      else addLoot(state, { ...position, kind, amount: 1, ...(kind === 'grenade' && Math.floor(tail / 4) % 2 ? { type: Math.floor(tail / 8) % 2 ? 'flash' : 'smoke' } : {}) });
     }
   }
 }
@@ -203,7 +204,7 @@ function recordEliminations(state, previouslyAlive, reason) {
 function finishMatch(state, winnerId, reason) {
   if (state.phase === 'matchEnd' || state.phase === 'lobby') return;
   state.phase = 'matchEnd'; state.phaseTicks = 0; state.winner = state.winnerId = state.roundWinner = winnerId; state.roundReason = reason;
-  state.grenades = []; state.bolts = [];
+  state.grenades = []; state.smokes = []; state.bolts = [];
   for (const player of state.players) {Object.assign(player, { vx: 0, vy: 0, vz: 0, knockbackX: 0, knockbackZ: 0, knockbackTicks: 0, knockbackReadyTicks: 0, hitStunTicks: 0, hitStunReadyTicks: 0, jumpBufferTicks: 0, reloadTicks: 0, burstRemaining: 0, spinTicks: 0, aiming: false, aimTicks: 0, healing: false, healTicks: 0, grenadeThrowTicks: 0, meleeTicks: 0, meleePhase: 'idle', meleeHitIds: [], meleeHitLives: [], meleeStartTick: 0, interaction: null, interactTicks: 0 });resetHealing(player);resetSprint(player,{refill:player.alive});resetMeleeDefense(player, { blockAim: true });}
   if (winnerId !== null) state.placements.push({ playerId: winnerId, place: 1, reason: 'survivor' });
   state.objective = winnerId === null ? 'No survivors. The host can start a new expedition.' : 'Last survivor standing. The host can start a new expedition.';

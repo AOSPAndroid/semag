@@ -2,7 +2,7 @@ import { MAPS, ADS, HEAL, WORLD, LEAN } from './voxel-engine.js';
 import { WEAPONS, weaponAimFovRatio } from './voxel-weapons.js';
 import { valorantModel, legacyShotgunModel } from './voxel-valorant-models.js';
 import { weaponReloadDuration } from './voxel-fire-modes.js';
-import { grenadeCapacity } from './voxel-ordnance.js';
+import { grenadeCapacity, smokeRadius } from './voxel-ordnance.js';
 import { MELEE_WEAPONS, meleeProfile, meleeWeaponId, meleeSlashOrigin, meleeSlashGeometry, meleeSlashPhase, parryPhase } from './voxel-melee.js';
 import { frameAlpha } from './display-timing.js';
 import { createPlayerAnimationPresenter, playerAnimationPose, weaponReloadPose, createWeaponReloadPresenter } from './voxel-player-animation.js';
@@ -3039,11 +3039,13 @@ function potionParts(mesh, pose, progress = 0, limit = Infinity) {
   face(-.031, .140, .0314, .062, .027, '#617f6b', true);
 }
 
-function grenadeParts(mesh, pose, radius, fuseTicks, time, intact = false, limit = Infinity) {
+// Utility casings read apart at a glance: olive frag, grey smoke, pale flash.
+const THROWABLE_SHELLS = Object.freeze({ frag: '#4a6655', smoke: '#8a9096', flash: '#cfc7a3' });
+function grenadeParts(mesh, pose, radius, fuseTicks, time, intact = false, limit = Infinity, type = 'frag') {
   const r = clamp(finite(radius, .12), .04, .25), scale = r / .12;
   const blinkPeriod = lerp(70, 320, clamp(finite(fuseTicks) / 288, 0, 1));
   const lit = Math.floor(time / blinkPeriod) % 2 === 0;
-  const shell = lit && fuseTicks < 120 ? '#977457' : '#4a6655';
+  const shell = lit && fuseTicks < 120 ? '#977457' : THROWABLE_SHELLS[type] || THROWABLE_SHELLS.frag;
   const part = (x, y, z, w, h, d, color) => {
     const zz = Math.max(z * scale, -limit), dd = (z + d) * scale - zz;
     if (dd > 0) mesh.box(x * scale, y * scale, zz, w * scale, h * scale, dd, color, pose);
@@ -3271,7 +3273,7 @@ function buildLootMeshes(items = [], time = 0, movingRanges = null) {
       front(.110, .039, .011, .147, '#8fa393');
     } else {
       // The intact brass pin distinguishes a safe pickup from a live frag.
-      grenadeParts(opaque, { x, y: y + .15 + bob, z, yaw: .30, pitch: 0, scale: 1 }, .12, 288, time, true);
+      grenadeParts(opaque, { x, y: y + .15 + bob, z, yaw: .30, pitch: 0, scale: 1 }, .12, 288, time, true, Infinity, item.type ?? item.item?.type);
       movingEnd = opaque.length;
     }
     if (movingRanges && movingEnd > movingStart) movingRanges.push({ start: movingStart, end: movingEnd, bob, seed });
@@ -4266,7 +4268,7 @@ function playerMeshParts(mesh, player, map, time, allied, freeForAll = false, an
     mesh.box(-.055, -.095, -.030, .110, .085, .130, art.skin, bottlePose);
   } else if (grenade) {
     const limit = Math.max(0, rayCoverDistance([gunPose.x, gunPose.y, gunPose.z], direction, map.colliders || [], .24, .14) - .015);
-    grenadeParts(mesh, gunPose, .12, 288, time, true, limit);
+    grenadeParts(mesh, gunPose, .12, 288, time, true, limit, player.inventory?.[player.inventoryIndex]?.type);
     mesh.box(-.050, -.10, -.024, .10, .095, .12, art.skin, gunPose);
   } else if (sword && meleeProfile(player).dualWield) {
     for (const hand of [0, 1]) {
@@ -4525,7 +4527,7 @@ export class VoxelRenderer {
       const r = clamp(finite(grenade.radius, .12), .04, .25);
       const speed = Math.hypot(finite(grenade.vx), finite(grenade.vy), finite(grenade.vz));
       const spin = speed > .12 ? time * .005 + finite(grenade.bounces) * .8 : finite(grenade.bounces) * .8;
-      grenadeParts(mesh, { x: grenade.x, y: grenade.y, z: grenade.z, yaw: spin, pitch: spin * .7 }, r, grenade.fuseTicks, time);
+      grenadeParts(mesh, { x: grenade.x, y: grenade.y, z: grenade.z, yaw: spin, pitch: spin * .7 }, r, grenade.fuseTicks, time, false, Infinity, grenade.type);
       const support = surfaceBelow(map.colliders, grenade.x, grenade.z, grenade.y - r);
       const ground = support ? support.y + support.h : 0, altitude = Math.max(0, grenade.y - r - ground);
       for (let layer = 1; layer >= 0; layer--) {
@@ -4535,6 +4537,27 @@ export class VoxelRenderer {
         contacts.floor(minX, minZ, maxX - minX, maxZ - minZ, [.035, .055, .08, .17 / (1 + altitude * 1.5)], ground + .014 + layer * .0004);
       }
     }
+  }
+  /** Opaque voxel clouds: they hide what is behind them exactly as authority does. */
+  _smokes(mesh, state, time) {
+    let cubes = 0;
+    for (const smoke of (state.smokes || []).slice(-8)) {
+      if (![smoke.x, smoke.y, smoke.z].every(Number.isFinite)) continue;
+      const radius = smokeRadius(smoke); if (radius < .25) continue;
+      const cell = .8, reach = Math.ceil(radius / cell), seed = finite(smoke.id) * 7.13;
+      for (let ix = -reach; ix <= reach; ix++) for (let iy = -reach; iy <= reach; iy++) for (let iz = -reach; iz <= reach; iz++) {
+        const jitter = Math.sin(seed + ix * 12.9 + iy * 78.2 + iz * 37.7) * .5 + .5;
+        const x = ix * cell, y = iy * cell * .8, z = iz * cell, distance = Math.hypot(x, y, z);
+        // Only the outer shell is drawn; the core is never visible from outside.
+        if (distance > radius - jitter * .35 || distance < radius - 1.4) continue;
+        if (smoke.y + y < -.2) continue;
+        const drift = Math.sin(time * .0006 + jitter * 6.28) * .08, size = cell * (.95 + jitter * .35);
+        const tone = 150 + Math.round(jitter * 38) - Math.round(Math.max(0, -y) * 6);
+        mesh.box(smoke.x + x - size / 2 + drift, Math.max(0, smoke.y + y - size / 2), smoke.z + z - size / 2 - drift, size, size, size, [tone / 255, (tone + 3) / 255, (tone + 7) / 255, 1]);
+        cubes++;
+      }
+    }
+    this._smokeCubes = cubes;
   }
   _bolts(mesh, state) {
     for (const bolt of (state.bolts || []).slice(0, 24)) {
@@ -4666,7 +4689,7 @@ export class VoxelRenderer {
       const throwing = Math.sin(clamp(finite(player.grenadeThrowTicks) / 24, 0, 1) * Math.PI);
       const pose = equipPose({ x: .21 + finite(motion.weaponX), y: -.24 - throwing * .12 + finite(motion.weaponY), z: -.44 - throwing * .13, yaw: -.12, pitch: throwing * -.22, scale: .94 });
       const limit = coverLimit(pose, .34, .20 * pose.scale);
-      grenadeParts(mesh, pose, .12, 288, time, true, limit);
+      grenadeParts(mesh, pose, .12, 288, time, true, limit, player.inventory?.[player.inventoryIndex]?.type);
       glove(pose, 0, -.078, .029, 'blade', limit);
       return mesh.array;
     }
@@ -4929,6 +4952,7 @@ export class VoxelRenderer {
     }
     this._bomb(dynamic, state, players.filter(player => player.id !== cameraPlayer.id), time);
     this._grenades(dynamic, contacts, state, map, time);
+    this._smokes(dynamic, state, time);
     this._bolts(dynamic, state);
     this._monsterSpecials = monsterSpecialParts(dynamic, contacts, state, map, { reducedMotion });
     this._reducedMotion = reducedMotion;

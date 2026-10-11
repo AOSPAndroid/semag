@@ -128,7 +128,7 @@ test('recovery, deliberate training injury and actual collected potions heal onl
 test('supplies restock usable frag stacks and the real grenade damages a target', () => {
   const state = begin(), player = state.players[0]; pose(player, 3, 12);
   stepPractice(state, { interact: true }); assert.equal(player.potions, 2); stepPractice(state); stepPractice(state, { interact: true }); assert.equal(player.grenades, 2);
-  assert.equal(state.loot.filter(item => item.dojoStation === 'supplies').length, 2);
+  assert.equal(state.loot.filter(item => item.dojoStation === 'supplies').length, 4, 'potion, frag, smoke and flash restock');
   pose(player, -7, 7.4); stepPractice(state, { grenade: true, yaw: 0, pitch: -.5 }); assert.equal(player.grenades, 1); assert.equal(state.grenades.length, 1);
   advance(state, 300); assert.ok(state.events.some(event => event.type === 'grenadeExplosion'));
   assert.ok(state.events.some(event => event.type === 'damage' && event.attack === 'grenade' && event.targetId > 0)); assert.equal(state.phase, 'fight');

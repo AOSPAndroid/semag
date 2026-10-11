@@ -22,12 +22,13 @@ export function initializeDojo(state, config) {
   }
   refreshDojoStations(state);
 }
-function stationLoot(state, station, kind, weapon, offset = 0) {
+function stationLoot(state, station, kind, weapon, offset = 0, type = null) {
   const pose = station.display || { x: station.x, y: .9, z: station.z + 1.3 };
   const item = { id: ++state.lootId, kind, dojoStation: station.id, x: pose.x + offset, y: pose.y, z: pose.z };
   if (weapon) item.weapon = weapon;
   if (kind === 'weapon') { item.ammo = WEAPONS[weapon].magazine; item.reserve = WEAPONS[weapon].reserve; }
   if (kind === 'heal' || kind === 'grenade') item.amount = 2;
+  if (type) item.type = type;
   state.loot.push(item);
 }
 export function refreshDojoStations(state, input = {}) {
@@ -42,7 +43,10 @@ export function refreshDojoStations(state, input = {}) {
     if (station.id === 'blade' && !items.length) stationLoot(state, station, 'melee', selection.melee);
     if (station.id === 'supplies') {
       if (!items.some(item => item.kind === 'heal')) stationLoot(state, station, 'heal', null, -.35);
-      if (!items.some(item => item.kind === 'grenade')) stationLoot(state, station, 'grenade', null, .35);
+      // The bench restocks frags, smokes and flashes so every throw can be practised.
+      for (const [type, offset] of [['frag', .35], ['smoke', .7], ['flash', 1.05]]) {
+        if (!items.some(item => item.kind === 'grenade' && (item.type || 'frag') === type)) stationLoot(state, station, 'grenade', null, offset, type === 'frag' ? null : type);
+      }
     }
   }
   // Dropped experimental gear is temporary. Station sources remain bounded.
@@ -123,7 +127,7 @@ export function processDojoActions(state, input, previous) {
       // inside the player; blocked pads wait until there is legal room.
       const pose = freeTargetPose(state, id); if (pose) respawnTarget(state, id);
     } }
-    state.dojo.resetCount++; state.grenades = []; state.bolts = [];
+    state.dojo.resetCount++; state.grenades = []; state.smokes = []; state.bolts = [];
   }
   const player = state.players[0], recovering = findDojoStation(state, 'recovery');
   const idle = player.alive && player.grounded && !player.meleeTicks && !player.parryTicks && !player.healTicks && !player.reloadTicks && !player.grenadeThrowTicks && !input.fire && !input.aim;

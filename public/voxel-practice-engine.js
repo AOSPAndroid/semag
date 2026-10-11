@@ -1,4 +1,5 @@
 /** Local drills use the shipped movement, weapons, damage and Royale rules at 120 Hz. */
+import { smokeBlocksSight } from './voxel-ordnance.js';
 import { MAPS as BREACH_MAPS, createState as createBreachState, createCombatPlayer, combatStep, emptyInput, eyeHeight, eyePosition, playerHeight, aimDirection, traceShot, emitCombatEvent, TICK_RATE, WORLD, PLAYER_HEALTH, findNearbyLoot, pickupCombatLoot, advanceInventoryLoot, resetSprint } from './voxel-engine.js';
 import * as Royale from './voxel-royale-engine.js';
 import { WEAPONS } from './voxel-weapons.js';
@@ -207,10 +208,12 @@ export function resumePractice(state) {
 /** The first point of an enemy a bot can actually see: torso, then a peeking head. */
 function visiblePoint(state, bot, enemy) {
   if (!enemy.alive || enemy.team === bot.team || enemy.id === bot.id) return null;
+  // A blinded bot sees nothing until the worst of the flash has passed.
+  if (bot.flashTicks > Math.max(30, (bot.flashTotal || 0) * .35)) return null;
   const origin = eyePosition(bot), head = eyePosition(enemy);
   for (const target of [{ x: enemy.x, y: enemy.y + playerHeight(enemy) * .58, z: enemy.z }, { ...head, y: head.y - .05 }]) {
     const dx = target.x - origin.x, dy = target.y - origin.y, dz = target.z - origin.z, distance = Math.hypot(dx, dy, dz);
-    if (distance > 46 || distance < EPS) continue;
+    if (distance > 46 || distance < EPS || smokeBlocksSight(state, origin, target)) continue;
     const hit = traceShot(state, bot.id, origin, { x: dx / distance, y: dy / distance, z: dz / distance }, distance + .3, state.map);
     if (hit.playerId === enemy.id) return target;
   }

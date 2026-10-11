@@ -2,6 +2,14 @@
 import { monsterBodySamplePoints, monsterClosestPoint } from './voxel-monster-bodies.js';
 export const GRENADE = Object.freeze({ radius: .12, fuseTicks: 288, blastRadius: 5.5, damage: 120, speed: 11.5, loft: 3.1, gravity: 18.4, restitution: .48, capacity: 6 });
 export const MAX_GRENADES = 20;
+/** Utility grenades share the frag's throw and bounce physics. A smoke pops into
+ * an opaque cloud that blocks sight but not bullets; a flash blinds anyone with a
+ * clear line to it, most of all those looking at it. */
+export const GRENADE_TYPES = Object.freeze(['frag', 'smoke', 'flash']);
+export const SMOKE = Object.freeze({ fuseTicks: 150, radius: 4.2, ticks: 18 * 120, growTicks: 90, fadeTicks: 180, max: 8 });
+export const FLASH = Object.freeze({ fuseTicks: 168, range: 20, maxTicks: 300, minTicks: 24 });
+export const grenadeType = value => value === 'smoke' || value === 'flash' ? value : 'frag';
+const fuseFor = type => type === 'smoke' ? SMOKE.fuseTicks : type === 'flash' ? FLASH.fuseTicks : GRENADE.fuseTicks;
 const DT = 1 / 120, EPS = 1e-9, SKIN = 1e-7;
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 const finite = (n, fallback = 0) => Number.isFinite(n) ? n : fallback;
@@ -86,11 +94,12 @@ function boundedPosition(grenade, arena) {
 }
 
 function eventData(grenade) {
-  return { grenadeId: grenade.id, playerId: grenade.playerId, team: grenade.team, x: grenade.x, y: grenade.y, z: grenade.z, attack: 'grenade' };
+  return { grenadeId: grenade.id, playerId: grenade.playerId, team: grenade.team, x: grenade.x, y: grenade.y, z: grenade.z, attack: 'grenade', ...(grenade.type ? { grenadeType: grenade.type } : {}) };
 }
 
 /** Caller owns the input edge and live-round gate. Inventory changes only on a successful throw. */
-export function throwGrenade(state, player, arena, emit = noop) {
+export function throwGrenade(state, player, arena, emit = noop, type = 'frag') {
+  const kind = grenadeType(type);
   const active = Array.isArray(state.grenades) ? state.grenades : [], capacity = grenadeCapacity(state);
   if (!player?.alive || !Number.isInteger(player.grenades) || player.grenades <= 0 || active.length >= capacity) return null;
   const yaw = finite(player.yaw), pitch = clamp(finite(player.pitch), -1.35, 1.35), cosine = Math.cos(pitch);
@@ -104,7 +113,8 @@ export function throwGrenade(state, player, arena, emit = noop) {
     vx: direction.x * GRENADE.speed + clamp(finite(player.vx), -8, 8) * .3,
     vy: direction.y * GRENADE.speed + GRENADE.loft + clamp(finite(player.vy), -8, 8) * .2,
     vz: direction.z * GRENADE.speed + clamp(finite(player.vz), -8, 8) * .3,
-    radius: GRENADE.radius, fuseTicks: GRENADE.fuseTicks, bornTick: Math.max(0, Math.floor(finite(state.tick))), bounces: 0,
+    radius: GRENADE.radius, fuseTicks: fuseFor(kind), bornTick: Math.max(0, Math.floor(finite(state.tick))), bounces: 0,
+    ...(kind === 'frag' ? {} : { type: kind }),
   };
   boundedPosition(grenade, arena); state.grenades = active; state.grenadeId = grenade.id; active.push(grenade); player.grenades--;
   emit('grenadeThrow', { ...eventData(grenade), vx: grenade.vx, vy: grenade.vy, vz: grenade.vz, radius: grenade.radius, fuseTicks: grenade.fuseTicks });
@@ -206,12 +216,71 @@ export function advanceGrenades(state, arena, { emit = noop, queueDamage = noop 
     // A corrupt snapshot must not poison the authoritative simulation.
     if (![grenade.x, grenade.y, grenade.z, grenade.vx, grenade.vy, grenade.vz, grenade.fuseTicks].every(Number.isFinite) || grenade.fuseTicks <= 0) continue;
     if (grenade.bornTick === state.tick) { remaining.push(grenade); continue; }
-    grenade.radius = GRENADE.radius; grenade.fuseTicks = Math.min(GRENADE.fuseTicks, Math.floor(grenade.fuseTicks)) - 1;
+    grenade.radius = GRENADE.radius; grenade.fuseTicks = Math.min(fuseFor(grenadeType(grenade.type)), Math.floor(grenade.fuseTicks)) - 1;
     moveGrenade(grenade, arena, emit);
     if (grenade.fuseTicks <= 0) {
-      const damage = grenadeBlastHits(state, grenade, arena); for (const hit of damage) { hits.push(hit); queueDamage(hit); }
-      emit('grenadeExplosion', { ...eventData(grenade), radius: GRENADE.blastRadius, fuseTicks: 0 });
+      const type = grenadeType(grenade.type);
+      if (type === 'smoke') popSmoke(state, grenade, emit);
+      else if (type === 'flash') detonateFlash(state, grenade, arena, emit);
+      else {
+        const damage = grenadeBlastHits(state, grenade, arena); for (const hit of damage) { hits.push(hit); queueDamage(hit); }
+        emit('grenadeExplosion', { ...eventData(grenade), radius: GRENADE.blastRadius, fuseTicks: 0 });
+      }
     } else remaining.push(grenade);
   }
   state.grenades = remaining; return hits;
+}
+
+/** The live cloud radius: it billows out, holds, then thins away. */
+export function smokeRadius(smoke) {
+  const age = Math.max(0, finite(smoke?.ageTicks)), grow = clamp(age / SMOKE.growTicks, 0, 1), fade = clamp((SMOKE.ticks - age) / SMOKE.fadeTicks, 0, 1);
+  const ease = t => t * t * (3 - 2 * t);
+  return SMOKE.radius * ease(grow) * (.35 + .65 * ease(fade)) * (age < SMOKE.ticks ? 1 : 0);
+}
+function popSmoke(state, grenade, emit) {
+  const clouds = Array.isArray(state.smokes) ? state.smokes : [];
+  const smoke = { id: grenade.id, playerId: grenade.playerId, team: grenade.team, x: grenade.x, y: Math.max(.6, grenade.y), z: grenade.z, ageTicks: 0 };
+  clouds.push(smoke); state.smokes = clouds.slice(-SMOKE.max);
+  emit('smokePop', { ...eventData(grenade), radius: SMOKE.radius, durationTicks: SMOKE.ticks });
+}
+/** Clouds age on the authoritative clock and vanish when spent. */
+export function advanceSmokes(state) {
+  if (!Array.isArray(state.smokes) || !state.smokes.length) return;
+  state.smokes = state.smokes.filter(smoke => [smoke.x, smoke.y, smoke.z].every(Number.isFinite) && (smoke.ageTicks = Math.max(0, Math.floor(finite(smoke.ageTicks))) + 1) < SMOKE.ticks);
+}
+/** True when a straight sight line passes through a cloud's dense core. */
+export function smokeBlocksSight(state, from, to) {
+  const clouds = state?.smokes; if (!Array.isArray(clouds) || !clouds.length) return false;
+  const dx = to.x - from.x, dy = to.y - from.y, dz = to.z - from.z, lengthSq = dx * dx + dy * dy + dz * dz;
+  for (const smoke of clouds) {
+    const radius = smokeRadius(smoke) * .9; if (radius <= .2) continue;
+    const t = lengthSq > EPS ? clamp(((smoke.x - from.x) * dx + (smoke.y - from.y) * dy + (smoke.z - from.z) * dz) / lengthSq, 0, 1) : 0;
+    if (Math.hypot(from.x + dx * t - smoke.x, from.y + dy * t - smoke.y, from.z + dz * t - smoke.z) < radius) return true;
+  }
+  return false;
+}
+const playerEye = player => {
+  const height = player.crouching ? .98 : 1.62, drop = Math.abs(finite(player.leanOffset)) * .12;
+  return { x: finite(player.x) + finite(player.leanX), y: Math.max(0, finite(player.y)) + height - drop, z: finite(player.z) + finite(player.leanZ) };
+};
+/** Blind time for one player: a clear line is required; facing it and closeness strengthen it. */
+export function flashExposure(state, grenade, player, arena) {
+  if (!player?.alive || player.monster === true) return 0;
+  const eye = playerEye(player), x = grenade.x - eye.x, y = grenade.y - eye.y, z = grenade.z - eye.z, distance = Math.hypot(x, y, z);
+  if (distance >= FLASH.range || !visible(grenade, eye, arena) || smokeBlocksSight(state, grenade, eye)) return 0;
+  const yaw = finite(player.yaw), pitch = finite(player.pitch), view = { x: Math.sin(yaw) * Math.cos(pitch), y: Math.sin(pitch), z: -Math.cos(yaw) * Math.cos(pitch) };
+  const facing = distance > EPS ? (view.x * x + view.y * y + view.z * z) / distance : 1;
+  // Looking straight at it: full strength. Side-on: about a third. Turned away: a brief flicker.
+  const attention = clamp((facing + .35) / 1.35, .1, 1), falloff = Math.pow(1 - distance / FLASH.range, .6);
+  const ticks = Math.round(FLASH.maxTicks * attention * falloff);
+  return ticks >= FLASH.minTicks ? ticks : 0;
+}
+function detonateFlash(state, grenade, arena, emit) {
+  const blinded = [];
+  for (const player of state.players ?? []) {
+    const ticks = flashExposure(state, grenade, player, arena); if (!ticks) continue;
+    if (ticks > finite(player.flashTicks)) { player.flashTicks = ticks; player.flashTotal = ticks; }
+    blinded.push({ playerId: player.id, ticks });
+  }
+  emit('flashbang', { ...eventData(grenade), range: FLASH.range, blinded });
 }
