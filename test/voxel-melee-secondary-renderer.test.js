@@ -88,7 +88,9 @@ test('guard hands stay attached to world grips and all unchanged head, torso and
   for (const weapon of Object.keys(PARRY_PROFILES)) for (const crouching of [false, true]) for (const parryPitch of [-1.35, 0, 1.35]) {
     const player = guarding(weapon, 'active', .5, { yaw: -.8, pitch: .5, parryYaw: 1.7, parryPitch, crouching });
     const before = structuredClone(player), joints = operativePose(player), idle = operativePose({ ...player, parryTicks: 0 });
-    assert.deepEqual(joints.head, idle.head); assert.deepEqual(joints.torso, idle.torso); assert.deepEqual(joints.legs, idle.legs);
+    assert.deepEqual(joints.head, idle.head); assert.deepEqual(joints.legs, idle.legs);
+    for (const field of ['hipY', 'chestY', 'bob', 'hipsYaw']) assert.equal(joints.torso[field], idle.torso[field], `guard preserves real core ${field}`);
+    assert.ok(Math.abs(joints.torso.shoulderYaw - idle.torso.shoulderYaw) <= .035, 'bounded shoulder load belongs to the raised guard');
     for (const hand of weapon === 'tonfas' ? [0, 1] : [0]) {
       const held = { ...player, meleeHand: hand }, grip = meleeWorldPose(held), contact = world(joints.arms[hand ? 0 : 1].hand, player.yaw);
       contact.forEach((value, i) => near(value, [grip.x - player.x, grip.y - player.y - .025, grip.z - player.z][i], `${weapon} guard hand${hand}`));

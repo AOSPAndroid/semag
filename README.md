@@ -24,6 +24,16 @@ Use WASD or ZQSD to move, Shift to sprint, Ctrl to crouch, C to walk and Space t
 
 [![Completed two-player Shinobi duel with a 2–0 score, 440 damage, two eliminations and guarded rematch controls](docs/screenshots/shinobi-3d-victory.png)](docs/screenshots/shinobi-3d-victory.png)
 
+**Walking, combat and reload motion**
+
+Shared voxel operators and Shinobi have smoother supporting steps, directional torso motion and connected weapon grips. Cuts and parries move the shoulders and elbows; reloads follow ammunition, magazine and charging-handle stages. These images come from actual keyboard/mouse gameplay.
+
+| Moving ninja | Carbine reload |
+| --- | --- |
+| [![Actual native Shinobi movement with an articulated walking stride in Lantern Dojo](docs/screenshots/shinobi-3d-walking.png)](docs/screenshots/shinobi-3d-walking.png) | [![Actual native voxel carbine reload with the support hand following ammunition and weapon grips](docs/screenshots/voxel-articulated-reload.png)](docs/screenshots/voxel-articulated-reload.png) |
+
+[View the articulated katana cut](docs/screenshots/shinobi-3d-articulated-cut.png).
+
 **Distinct arenas · connected upper floors**
 
 The combat maps now use different floor plans and height routes. Barclays has a full office mezzanine, glass research rooms, clustered trading desks, market screens and voxel Barclays wall signs. Paris connects mansard roofs above real apartment courtyards; Frostline links laboratories through an enclosed skybridge; the Sewers combine branching tunnels with a raised pump-and-service circuit.
@@ -177,6 +187,8 @@ When a solo Last Stand ends, the death screen shows your total **Damage dealt**,
 Defeated monsters visibly collapse and fade out after a short death animation. Dogs roll onto their side; humanoid monsters fall onto the ground. Defeated enemies stop attacking immediately, and loot remains available during the animation in solo and co-op.
 
 Enemy movement has planted steps, bent knees, arm swing and weight shifts, with distinct gaits for hounds, runners and heavy monsters. With sound enabled, nearby enemies make footsteps synchronized to their actual movement. Steps become quieter with distance and come from the enemy's direction; idle, airborne and defeated enemies stay silent.
+
+Operators and Shinobi now keep their feet down during the supporting part of each step, then ease the moving foot back into place. Shoulders and hips counterbalance, stance changes settle smoothly, and bent elbows keep hands attached to the weapon during cuts, parries and reloads. Reloads include reaching for fresh ammunition, inserting it, seating it and working the charging handle. First-person weapons have controlled sprint carry and landing response; added sway settles away when aiming, and reduced motion calms head bob. Stationary monster windups stay visible and ease through release and recovery. Footstep sounds follow the rendered touchdown. Some foot sliding remains at high speed; the visible supporting stance is improved without changing the collision body.
 
 Voxel players and practice bots also recoil, collapse and dissolve after a confirmed kill. The final elimination remains visible for about a second before results appear in Breach, Royale, Last Stand and FPS practice. Controls release immediately and the combat result stays final during that brief presentation. Reduced-motion settings use a shorter, quieter transition without a falling camera.
 

@@ -1,5 +1,7 @@
 /** Cosmetic human motion. Rendered positions are observed; combat state is never changed. */
 const TAU = Math.PI * 2;
+// Each human foot begins its grounded supporting stance here, half a cycle apart.
+export const HUMAN_FOOT_CONTACT_PHASE = 0;
 const STANDING_CYCLE_METRES = 2.45, CROUCHED_CYCLE_METRES = 1.90, SPRINT_CYCLE_METRES = 2.85;
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 const finite = (value, fallback = 0) => Number.isFinite(value) ? value : fallback;
@@ -18,7 +20,7 @@ export function weaponReloadPose(weapon, progress, { active = true, hand = 0 } =
   const start = hand === 1 ? .50 : .02, end = hand === 1 ? .98 : .48;
   const p = paired ? clamp((globalProgress - start) / (end - start), 0, 1) : globalProgress;
   const running = active && globalProgress < 1 && (!paired || globalProgress > start && globalProgress < end);
-  const sidearm = ['pistol', 'classic', 'frenzy', 'ghost', 'bandit', 'sheriff'].includes(weapon);
+  const sidearm = ['pistol', 'classic', 'frenzy', 'ghost', 'bandit', 'sheriff', 'revolver', 'dualpistols'].includes(weapon);
   const style = ['shorty', 'outlaw'].includes(weapon) ? 'break' : ['shotgun', 'slugshotgun', 'bucky'].includes(weapon) ? 'shell' : ['revolver', 'sheriff'].includes(weapon) ? 'cylinder' : weapon === 'crossbow' ? 'string' : ['lmg', 'ares', 'odin'].includes(weapon) ? 'belt' : 'magazine';
   const stage = !running ? 'ready' : style === 'shell' ? p < .14 ? 'lower' : p < .76 ? 'load' : p < .90 ? 'pump' : 'return'
     : style === 'break' ? p < .18 ? 'open' : p < .32 ? 'eject' : p < .72 ? 'load' : p < .90 ? 'close' : 'return'
@@ -45,16 +47,30 @@ export function weaponReloadPose(weapon, progress, { active = true, hand = 0 } =
     if (style === 'magazine' || style === 'belt') {
       const grasp = style === 'belt' ? [-.10, -.25 - magazineDrop, -.25] : sidearm ? [-.04, -.185 - magazineDrop, -.06] : [-.03, -.245 - magazineDrop, weapon === 'bulldog' ? .055 : weapon === 'pdw' ? -.075 : -.18];
       support = mix(home, grasp, ramp(p, .04, .16) * (1 - ramp(p, .72, .78)));
+      // Fetch is a free-hand excursion to the equipment pouch, followed by the
+      // inserted magazine's rising contact point. It never changes ammo.
+      const fetch = style === 'magazine' ? pulse(p, .32, .40, .48) : pulse(p, .34, .40, .46);
+      support = mix(support, sidearm ? [-.15, -.35, .015] : [-.16, -.40, .055], fetch);
       support[1] += seat * .035;
-      support = mix(support, [.085, .027, -.23 + bolt * .09], pulse(p, .73, .79, .94));
-    } else if (style === 'shell') support = mix(home, [-.075, -.20 + shell * .065, -.25 + shell * .04], weight * (1 - ramp(p, .74, .80)));
+      if (style === 'belt') {
+        const lidContact = ramp(p, .02, .11) * (1 - ramp(p, .16, .24));
+        support = mix(support, [-.06, .11 + lid * .05, -.27], lidContact);
+      }
+      // Hold the charging handle through its complete stroke, then return to
+      // the foregrip rather than retracting before the mechanical bolt does.
+      const boltGrip = ramp(p, style === 'belt' ? .79 : .715, style === 'belt' ? .855 : .795) * (1 - ramp(p, style === 'belt' ? .94 : .91, .995));
+      support = mix(support, [.085, .027, -.23 + bolt * .09], boltGrip);
+    } else if (style === 'shell') support = mix(home, [-.075 - (1 - shell) * .065, -.20 + shell * .065, -.25 + shell * .04], weight * (1 - ramp(p, .74, .80)));
     else if (style === 'break') support = mix(home, [-.055, -.14 + shell * .06, weapon === 'shorty' ? -.24 : -.38], weight * (1 - ramp(p, .72, .90)));
     else if (style === 'cylinder') support = [-.071 - cylinder * .125, -.148 - weight * .06, -.06 - cylinder * .12];
     else if (style === 'string') support = mix(home, [0, -.032, -.61 + draw * .42], weight);
   }
   const audioPhase = stage === 'load' && style === 'shell' ? `shell${Math.floor(shellCycle) + 1}` : stage;
-  return { active: running, reloadActive: active && globalProgress < 1, progress: p, globalProgress, style, stage, audioPhase, hand: paired && hand === 1 ? 1 : 0, weight, magazineDrop, magazineVisible: !running || style !== 'magazine' || p < .32 || p >= .48, seat, bolt, cylinder, lid, pump, breakOpen, shell, shellVisible: running && (style === 'shell' && p >= .14 && p < .76 || style === 'break' && p >= .32 && p < .72), draw, loaded: style === 'string' && running && p >= .80, support,
-    weapon: { x: -weight * .035, y: weight * .035 + seat * .014, z: -weight * .015, yaw: weight * (style === 'cylinder' ? .28 : .20), pitch: -weight * (style === 'shell' ? .12 : .075) + seat * .025 } };
+  const supportGrip = !running || stage === 'lower' || stage === 'return' ? 'foregrip'
+    : stage === 'bolt' ? 'bolt' : stage === 'fetch' ? 'pouch' : style === 'belt' ? stage === 'open' || stage === 'close' ? 'lid' : 'belt'
+    : style === 'shell' || style === 'break' ? 'shell' : style === 'cylinder' ? 'cylinder' : style === 'string' ? stage === 'draw' ? 'string' : 'bolt' : 'magazine';
+  return { active: running, reloadActive: active && globalProgress < 1, progress: p, globalProgress, style, stage, audioPhase, hand: paired && hand === 1 ? 1 : 0, weight, magazineDrop, magazineVisible: !running || style !== 'magazine' || p < .32 || p >= .48, seat, bolt, cylinder, lid, pump, breakOpen, shell, shellVisible: running && (style === 'shell' && p >= .14 && p < .76 || style === 'break' && p >= .32 && p < .72), draw, loaded: style === 'string' && running && p >= .80, support, supportGrip, supportStage: stage,
+    weapon: { x: -weight * .045, y: weight * .045 + seat * .014, z: -weight * .020, yaw: weight * (style === 'cylinder' ? .30 : .26), pitch: -weight * (style === 'shell' ? .12 : .095) + seat * .025 } };
 }
 
 /** Cosmetic interpolation between 30 Hz snapshots; completion remains authoritative. */
@@ -104,20 +120,38 @@ function direction(dx, dz, yaw) {
   return { forward: (Math.sin(yaw) * x - Math.cos(yaw) * z) / length, strafe: (Math.cos(yaw) * x + Math.sin(yaw) * z) / length };
 }
 
+/** A stance foot stays down while the other follows one eased recovery arc. */
+function gaitLeg(phase, crouch, sprint) {
+  const cycle = ((phase / TAU) % 1 + 1) % 1;
+  const stanceLength = .58 + crouch * .06 - sprint * .06 * (1 - crouch);
+  const stance = cycle < stanceLength, swing = stance ? 0 : (cycle - stanceLength) / (1 - stanceLength);
+  // The stance travels back under the body; recovery returns forward with soft
+  // lift and touchdown. A > half-cycle stance creates honest double support.
+  const travel = stance ? 1 - 2 * cycle / stanceLength : -1 + 2 * smooth(swing);
+  const clearance = stance ? 0 : Math.sin(Math.PI * swing) ** 1.35;
+  const contact = stance ? 1 : 1 - ramp(swing, 0, .10) * (1 - ramp(swing, .90, 1));
+  return { cycle, stance, swing, travel, clearance, contact };
+}
 function poseOf(motion) {
   const { phase, speed, stride, forward, strafe, crouch, airborne, jump, fall, land, sprint } = motion;
   // Bob goes down into the real body silhouette, never above the head hitbox.
   const bodyBob = airborne ? 0 : -Math.min(.028, (1 - Math.cos(phase * 2)) * .009 * stride * (1 - crouch * .35) + land * .022);
   const lean = airborne ? 0 : Math.min(1, speed / 5.5) * stride;
   const legs = [0, Math.PI].map(offset => {
-    const swing = Math.sin(phase + offset), raised = Math.max(0, Math.cos(phase + offset));
-    const travel = airborne ? 0 : swing * stride * .18;
-    const lift = airborne ? jump * .07 + fall * .018 : raised ** 1.4 * stride * (.075 + sprint * .024);
-    const hip = airborne ? jump * .12 : swing * stride * forward * .38;
-    const knee = .10 + crouch * .9 + (airborne ? jump * .48 + fall * .18 : raised * stride * .58) + land * .12;
-    return { hip, knee, ankle: -hip - knee * .25, lift, forward: travel * forward, side: travel * strafe * .55 };
+    const gait = gaitLeg(phase + offset, crouch, sprint);
+    const travel = airborne ? 0 : gait.travel * stride * .18;
+    const clearance = airborne ? 0 : gait.clearance;
+    const lift = airborne ? jump * .07 + fall * .018 : clearance * stride * (.075 + sprint * .024) * (1 - crouch * .45);
+    const hip = airborne ? jump * .12 : gait.travel * stride * forward * .38;
+    const knee = .10 + crouch * .9 + (airborne ? jump * .48 + fall * .18 : clearance * stride * .58) + land * .12;
+    return { hip, knee, ankle: -hip - knee * .25, lift, forward: travel * forward, side: travel * strafe * .55,
+      cycle: gait.cycle, stance: !airborne && gait.stance ? 1 : 0, swing: airborne ? 0 : gait.swing, travel: airborne ? 0 : gait.travel,
+      clearance, contact: airborne ? 0 : 1 - (1 - gait.contact) * stride };
   });
-  return { phase, speed, stride, forward, strafe, crouch, airborne, jump, fall, land, sprint, bodyBob, torsoBob: bodyBob, leanForward: forward * lean * (.065 + sprint * .01), leanSide: strafe * lean * .045, armSwing: Math.sin(phase) * stride * (.027 + sprint * .014), legs };
+  const twist = airborne ? 0 : Math.sin(phase) * stride * forward * .045 * (1 - crouch * .65);
+  return { phase, speed, stride, forward, strafe, crouch, airborne, jump, fall, land, sprint, bodyBob, torsoBob: bodyBob,
+    leanForward: forward * lean * (.065 + sprint * .01), leanSide: strafe * lean * .045,
+    armSwing: -legs[0].travel * stride * (.027 + sprint * .014), shoulderYaw: -twist, hipsYaw: twist * .55, legs };
 }
 
 function initialMotion(player) {

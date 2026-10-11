@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createPlayerAnimationPresenter, playerAnimationPose } from '../public/voxel-player-animation.js';
+import { createPlayerAnimationPresenter, playerAnimationPose, HUMAN_FOOT_CONTACT_PHASE } from '../public/voxel-player-animation.js';
 import { createCombatPlayer, emptyInput, predictLocalMovement } from '../public/voxel-engine.js';
 import { createMovementPresenter } from '../public/voxel-presentation.js';
 
@@ -217,4 +217,68 @@ test('ordinary 350–500 ms render hitches preserve actual distance gait; long s
   for (let tick = 0; tick < 132; tick++) predictLocalMovement(player, buttons, openMap);
   const suspended = present(structuredClone(player), time + 1100, 'hitch');
   near(suspended.phase, 0); near(suspended.stride, 0); near(suspended.speed, 0);
+});
+
+test('walk, sprint and crouch have alternating grounded stances and a continuous recovery arc', () => {
+  for (const [crouching, sprinting, speed, cycle] of [[false, false, 5, 2.45], [false, true, 7.7, 2.85], [true, false, 2.35, 1.90]]) {
+    const player = { ...createCombatPlayer(0), crouching, sprinting, vx: 0, vz: -speed };
+    let doubleSupport = 0, swingingLeft = 0, swingingRight = 0, previous;
+    for (let sample = 0; sample <= 480; sample++) {
+      const pose = playerAnimationPose(player, sample / 480 * cycle / speed), before = structuredClone(player);
+      assert.ok(pose.legs.some(leg => leg.contact > .999 && leg.clearance === 0), 'a ground stance never depicts both feet floating');
+      if (pose.legs.every(leg => leg.contact > .999)) doubleSupport++;
+      swingingLeft += pose.legs[0].clearance > .5 ? 1 : 0; swingingRight += pose.legs[1].clearance > .5 ? 1 : 0;
+      for (const leg of pose.legs) {
+        assert.ok(leg.contact >= 0 && leg.contact <= 1); assert.ok(leg.clearance >= 0 && leg.clearance <= 1);
+        assert.ok(leg.travel >= -1 && leg.travel <= 1); if (leg.stance) assert.equal(leg.lift, 0);
+      }
+      if (previous) for (let side = 0; side < 2; side++) {
+        assert.ok(Math.abs(pose.legs[side].travel - previous.legs[side].travel) < .035, 'heel recovery never snaps at a cycle boundary');
+        assert.ok(Math.abs(pose.legs[side].clearance - previous.legs[side].clearance) < .025, 'recovery lifts and returns smoothly');
+      }
+      assert.deepEqual(player, before); previous = pose;
+    }
+    assert.ok(doubleSupport > (crouching ? 100 : sprinting ? 10 : 60), 'contact timing includes a real double-support interval');
+    assert.ok(swingingLeft > 30 && swingingRight > 30, 'both legs alternate through visible recovery');
+    for (let side = 0; side < 2; side++) {
+      const contactTime = (HUMAN_FOOT_CONTACT_PHASE + side * Math.PI) / (Math.PI * 2) * cycle / speed;
+      const touchdown = playerAnimationPose(player, contactTime).legs[side];
+      const preceding = playerAnimationPose(player, contactTime - .00001).legs[side];
+      assert.equal(touchdown.stance, 1); assert.equal(touchdown.lift, 0); assert.equal(touchdown.contact, 1);
+      assert.equal(preceding.stance, 0); assert.ok(preceding.clearance > 0, 'the exported audio contact follows the actual recovery arc');
+    }
+  }
+});
+
+test('displacement-based stopping settles feet and opposing torso twist without advancing a phantom step', () => {
+  const player = createCombatPlayer(1), present = createPlayerAnimationPresenter(); present(player, 0, 'settle');
+  let pose, lastMovingPhase;
+  for (let tick = 1; tick <= 100; tick++) {
+    predictLocalMovement(player, { ...emptyInput(), up: true }, openMap);
+    pose = present(player, tick * 1000 / 120, 'settle');
+    assert.ok(pose.shoulderYaw * pose.hipsYaw <= 1e-12); assert.ok(Math.abs(pose.shoulderYaw) <= .045);
+  }
+  const movingLift = Math.max(...pose.legs.map(leg => leg.lift)); assert.ok(movingLift > .01);
+  for (let tick = 101; tick <= 220; tick++) {
+    predictLocalMovement(player, emptyInput(), openMap); pose = present(player, tick * 1000 / 120, 'settle');
+    if (tick === 120) lastMovingPhase = pose.phase;
+  }
+  near(pose.phase, lastMovingPhase); assert.ok(pose.legs.every(leg => leg.lift < .000001 && leg.contact > .99999));
+  assert.ok(Math.abs(pose.shoulderYaw) < .000001 && Math.abs(pose.hipsYaw) < .000001);
+});
+
+test('camera-relative sideways travel produces directional feet while actual jumps clear both contacts', () => {
+  const player = createCombatPlayer(0), present = createPlayerAnimationPresenter(); present(player, 0, 'heading');
+  let pose;
+  for (let tick = 1; tick <= 48; tick++) {
+    const before = structuredClone(player);
+    predictLocalMovement(player, { ...emptyInput(), up: true, yaw: Math.PI / 2, moveYaw: 0 }, openMap);
+    const accepted = structuredClone(player); pose = present(player, tick * 1000 / 120, 'heading'); assert.deepEqual(player, accepted);
+    assert.ok(player.z <= before.z);
+  }
+  assert.ok(pose.strafe < -.98 && Math.abs(pose.forward) < .02); assert.ok(pose.legs.some(leg => Math.abs(leg.side) > .01));
+  const phase = pose.phase;
+  predictLocalMovement(player, { ...emptyInput(), jump: true, yaw: Math.PI / 2, moveYaw: 0 }, openMap);
+  const airborne = present(player, 49 * 1000 / 120, 'heading');
+  assert.equal(airborne.airborne, true); assert.ok(airborne.legs.every(leg => leg.contact === 0 && leg.stance === 0)); near(airborne.phase, phase);
 });

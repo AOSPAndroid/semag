@@ -1,19 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { GameAudio } from '../public/audio.js';
-import { createPlayerAnimationPresenter } from '../public/voxel-player-animation.js';
+import { createPlayerAnimationPresenter, HUMAN_FOOT_CONTACT_PHASE } from '../public/voxel-player-animation.js';
 import { createEnemyFootstepPresenter, createVoxelFootstepSamples, VOXEL_FOOTSTEP_AUDIO } from '../public/voxel-footsteps.js';
 
 const listener = { id: 0, lifeId: 1, deaths: 0, x: 0, y: 0, z: 0, yaw: 0, team: 0, alive: true };
-const actor = (patch = {}) => ({ id: 1, lifeId: 2, deaths: 0, alive: true, grounded: true, airborne: false, phase: 1.4, stride: 1, speed: 4,
+const actor = (patch = {}) => ({ id: 1, lifeId: 2, deaths: 0, alive: true, grounded: true, airborne: false, phase: 3.0, stride: 1, speed: 4,
   x: 3, y: 0, z: -3, yaw: 0, team: 1, ...patch });
 function recorder() {
   const calls = [], audio = { enabled: true, stops: 0, footstep(type, options) { calls.push({ type, ...options }); return true; }, stopFootsteps() { this.stops++; } };
   return { audio, calls, presenter: createEnemyFootstepPresenter(audio) };
 }
 function cross(presenter, patch = {}, options = {}) {
-  presenter.observe([actor(patch)], { now: 0, listener, context: 'a', ...options });
-  presenter.observe([actor({ ...patch, phase: 1.7, x: 3.2 + (patch.x === undefined ? 0 : patch.x - 3) })], { now: 60, listener, context: 'a', ...options });
+  const before = patch.monsterType ? 1.4 : 3.0, after = patch.monsterType ? 1.7 : 3.3;
+  presenter.observe([actor({ ...patch, phase: before })], { now: 0, listener, context: 'a', ...options });
+  presenter.observe([actor({ ...patch, phase: after, x: 3.2 + (patch.x === undefined ? 0 : patch.x - 3) })], { now: 60, listener, context: 'a', ...options });
 }
 function fakeContext() {
   const sources = [], gains = [], panners = [], buffers = [];
@@ -50,10 +51,25 @@ test('real presented human gait creates one contact per planted foot, including 
   }
   assert.equal(calls.length, 2, '2.5m travel crosses the first two actual foot contacts');
   assert.ok(calls.every(call => call.type === 'boot' && call.gain > 0));
+  assert.equal(HUMAN_FOOT_CONTACT_PHASE, 0);
+  const contacts = [];
+  const exact = recorder(), exactGait = createPlayerAnimationPresenter();
+  for (let frame = 0; frame <= 300; frame++) {
+    const human = actor({ x: 3 + frame * .02 }), motion = exactGait(human, frame * 16, 'exact');
+    const before = exact.calls.length;
+    exact.presenter.observe([{ ...human, ...motion }], { now: frame * 16, listener, context: 'exact' });
+    if (exact.calls.length > before) contacts.push(motion);
+  }
+  assert.ok(contacts.length >= 4);
+  for (const pose of contacts) {
+    const landed = pose.legs.find(leg => leg.cycle < .02);
+    assert.ok(landed, 'sound follows the actual swing-to-stance boundary, not the old quarter-cycle offset');
+    assert.equal(landed.stance, 1); assert.equal(landed.clearance, 0); assert.equal(landed.contact, 1);
+  }
 });
 
 test('contact presentation cannot change any player position, HP or input', () => {
-  const { presenter } = recorder(), a = actor(), b = actor({ phase: 1.7, x: 3.2 }), before = structuredClone([a, b, listener]);
+  const { presenter } = recorder(), a = actor(), b = actor({ phase: 3.3, x: 3.2 }), before = structuredClone([a, b, listener]);
   presenter.observe([a], { now: 0, listener }); presenter.observe([b], { now: 60, listener });
   assert.deepEqual([a, b, listener], before);
 });
@@ -83,27 +99,27 @@ test('idle, airborne, dead, stationary and friendly actors stay silent', () => {
     const { presenter, calls } = recorder(); cross(presenter, patch); assert.equal(calls.length, 0, JSON.stringify(patch));
   }
   const stationary = recorder(); stationary.presenter.observe([actor()], { now: 0, listener });
-  stationary.presenter.observe([actor({ phase: 1.7 })], { now: 60, listener }); assert.equal(stationary.calls.length, 0);
+  stationary.presenter.observe([actor({ phase: 3.3 })], { now: 60, listener }); assert.equal(stationary.calls.length, 0);
   const ffa = recorder(); cross(ffa.presenter, { team: 0 }, { freeForAll: true }); assert.equal(ffa.calls.length, 1);
 });
 
 test('landing primes silently and the next grounded foot contact remains audible', () => {
   const { presenter, calls } = recorder();
   presenter.observe([actor({ airborne: true, grounded: false })], { now: 0, listener });
-  presenter.observe([actor({ phase: 1.7, x: 3.2 })], { now: 60, listener }); assert.equal(calls.length, 0);
-  presenter.observe([actor({ phase: 4.8, x: 3.9 })], { now: 260, listener }); assert.equal(calls.length, 1);
+  presenter.observe([actor({ phase: 3.3, x: 3.2 })], { now: 60, listener }); assert.equal(calls.length, 0);
+  presenter.observe([actor({ phase: 6.4, x: 3.9 })], { now: 260, listener }); assert.equal(calls.length, 1);
 });
 
 test('mute consumes contacts so unmuting does not replay an old planted foot', () => {
   const { presenter, calls, audio } = recorder(); audio.enabled = false; cross(presenter); audio.enabled = true;
-  presenter.observe([actor({ phase: 1.7, x: 3.2 })], { now: 80, listener, context: 'a' }); assert.equal(calls.length, 0);
-  presenter.observe([actor({ phase: 4.8, x: 3.9 })], { now: 270, listener, context: 'a' }); assert.equal(calls.length, 1);
+  presenter.observe([actor({ phase: 3.3, x: 3.2 })], { now: 80, listener, context: 'a' }); assert.equal(calls.length, 0);
+  presenter.observe([actor({ phase: 6.4, x: 3.9 })], { now: 270, listener, context: 'a' }); assert.equal(calls.length, 1);
 });
 
 test('pause, menus, hidden frames and a dead listener clear histories and stop contact voices', () => {
   const { presenter, calls, audio } = recorder(); cross(presenter); const count = calls.length;
   presenter.observe([actor()], { now: 70, listener, active: false }); assert.equal(presenter.inspect().trackedActors, 0); assert.equal(presenter.inspect().active, false); assert.ok(audio.stops > 0);
-  presenter.observe([actor({ phase: 4.8, x: 3.9 })], { now: 80, listener, context: 'a' }); assert.equal(calls.length, count, 'resume primes without an old contact');
+  presenter.observe([actor({ phase: 6.4, x: 3.9 })], { now: 80, listener, context: 'a' }); assert.equal(calls.length, count, 'resume primes without an old contact');
   presenter.observe([actor()], { now: 100, listener: { ...listener, alive: false } }); assert.equal(presenter.inspect().trackedActors, 0);
 });
 
@@ -111,24 +127,24 @@ test('respawn, map/session change, teleports and long or reversed clocks prime s
   const changes = [{ lifeId: 3 }, { deaths: 1 }, { monsterType: 'hound' }, { contextKey: 'new-actor-round' }, { x: 30 }];
   for (const patch of changes) {
     const { presenter, calls } = recorder(); presenter.observe([actor()], { now: 0, listener, context: 'a' });
-    presenter.observe([actor({ phase: 1.7, x: 3.2, ...patch })], { now: 60, listener, context: 'a' }); assert.equal(calls.length, 0);
+    presenter.observe([actor({ phase: 3.3, x: 3.2, ...patch })], { now: 60, listener, context: 'a' }); assert.equal(calls.length, 0);
   }
   for (const options of [{ now: 400 }, { now: -1 }, { now: 60, context: 'b' }, { now: 60, listener: { ...listener, lifeId: 2 } }]) {
     const { presenter, calls } = recorder(); presenter.observe([actor()], { now: 0, listener, context: 'a' });
-    presenter.observe([actor({ phase: 1.7, x: 3.2 })], { now: 60, listener, context: 'a', ...options }); assert.equal(calls.length, 0);
+    presenter.observe([actor({ phase: 3.3, x: 3.2 })], { now: 60, listener, context: 'a', ...options }); assert.equal(calls.length, 0);
   }
 });
 
 test('same-time duplicate renders do not erase the contact cooldown', () => {
   const { presenter, calls } = recorder(); cross(presenter);
-  const duplicate = actor({ phase: 1.7, x: 3.2 }); presenter.observe([duplicate], { now: 60, listener, context: 'a' });
-  presenter.observe([actor({ phase: 4.8, x: 3.4 })], { now: 100, listener, context: 'a' }); assert.equal(calls.length, 1);
+  const duplicate = actor({ phase: 3.3, x: 3.2 }); presenter.observe([duplicate], { now: 60, listener, context: 'a' });
+  presenter.observe([actor({ phase: 6.4, x: 3.4 })], { now: 100, listener, context: 'a' }); assert.equal(calls.length, 1);
 });
 
 test('changing hordes retain at most64 actors and report no more18 contacts per second', () => {
   const { presenter, calls } = recorder();
   for (let frame = 0; frame < 12; frame++) {
-    const actors = Array.from({ length: 200 }, (_, i) => actor({ id: i + 1, x: 3 + frame * .2, phase: (frame % 2 ? 1.7 : 4.8) }));
+    const actors = Array.from({ length: 200 }, (_, i) => actor({ id: i + 1, x: 3 + frame * .2, phase: (frame % 2 ? 3.3 : 6.4) }));
     presenter.observe(actors, { now: frame * 80, listener, context: 'a' }); assert.ok(presenter.inspect().trackedActors <= 64);
   }
   assert.ok(calls.length > 0 && calls.length <= 18); assert.ok(presenter.inspect().lastContacts.length <= 3);
@@ -139,8 +155,8 @@ test('changing hordes retain at most64 actors and report no more18 contacts per 
 test('a failing optional device does not retry a consumed contact or interrupt movement', () => {
   const { presenter, calls, audio } = recorder(); audio.footstep = () => { throw Error('device failed'); };
   assert.doesNotThrow(() => cross(presenter)); audio.footstep = (type, options) => { calls.push({ type, ...options }); return true; };
-  presenter.observe([actor({ phase: 1.7, x: 3.2 })], { now: 90, listener, context: 'a' }); assert.equal(calls.length, 0);
-  presenter.observe([actor({ phase: 4.8, x: 3.9 })], { now: 270, listener, context: 'a' }); assert.equal(calls.length, 1);
+  presenter.observe([actor({ phase: 3.3, x: 3.2 })], { now: 90, listener, context: 'a' }); assert.equal(calls.length, 0);
+  presenter.observe([actor({ phase: 6.4, x: 3.9 })], { now: 270, listener, context: 'a' }); assert.equal(calls.length, 1);
 });
 
 test('cached contact audio respects mute/unlock, stereo pan and six-voice cap', () => {

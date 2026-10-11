@@ -4,37 +4,50 @@ const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 const finite = (value, fallback = 0) => Number.isFinite(value) ? value : fallback;
 const approach = (current, target, elapsed, duration) => target + (current - target) * Math.exp(-elapsed / duration);
 const smooth = value => { const t = clamp(value, 0, 1); return t * t * (3 - 2 * t); };
-const neutral = () => ({ bobY: 0, roll: 0, weaponX: 0, weaponY: 0, phase: 0, stride: 0, speed: 0, land: 0, sprint: 0, weaponZ: 0, weaponPitch: 0, airborne: false });
+const neutral = () => ({ bobY: 0, roll: 0, weaponX: 0, weaponY: 0, phase: 0, stride: 0, speed: 0, land: 0, sprint: 0, weaponZ: 0, weaponPitch: 0, weaponYaw: 0, weaponRoll: 0, crouchCarry: 0, airborne: false });
 
 /** Cosmetic head motion follows travelled distance, including predicted sub-tick poses. */
 export function createFirstPersonMotionPresenter() {
   const gait = createPlayerAnimationPresenter({ maxPlayers: 1 });
   let previous = null, pose = neutral();
-  const present = (player, time, contextKey = null, { aim = 0, paused = false } = {}) => {
+  const present = (player, time, contextKey = null, { aim = 0, paused = false, reducedMotion = false } = {}) => {
     const valid = player?.alive !== false && [player?.x, player?.y, player?.z, time].every(Number.isFinite);
     if (!valid) { present.reset(); return pose; }
     const elapsed = previous ? time - previous.time : 0;
     const reset = !previous || previous.id !== player.id || previous.contextKey !== contextKey || previous.lifeId !== player.lifeId || previous.deaths !== player.deaths
-      || elapsed < 0 || elapsed > 1000 || previous.paused && !paused
+      || elapsed < 0 || elapsed > 1000 || previous.paused && !paused || previous.reducedMotion !== reducedMotion
       || Math.hypot(player.x - previous.x, player.y - previous.y, player.z - previous.z) > Math.max(.5, elapsed * .016);
     if (reset) gait.reset();
     const animation = gait(player, time, contextKey, { paused });
     const ground = reset ? (animation.airborne ? 0 : 1) : approach(previous.ground, animation.airborne ? 0 : 1, elapsed, 55);
+    const crouchCarry = reset ? Number(!!player.crouching) : approach(previous.crouchCarry, Number(!!player.crouching), elapsed, 75);
     if (!paused || reset) {
-      const steadiness = 1 - clamp(finite(aim), 0, 1);
+      const modelSteadiness = 1 - clamp(finite(aim), 0, 1);
+      const steadiness = reducedMotion ? 0 : modelSteadiness;
       const weight = animation.stride * ground * steadiness * (1 - animation.crouch * .55);
+      const handStride = reducedMotion ? 0 : animation.stride * ground;
+      // The hands follow the real gait and flight posture, rather than adding a
+      // second walking clock. Only the held model takes these larger motions.
+      const jump = reducedMotion || reset ? 0 : animation.jump;
+      const fall = reducedMotion || reset ? 0 : animation.fall;
+      const landing = reducedMotion || reset ? 0 : animation.land;
+      const carry = animation.sprint;
       // Downward-only eye travel cannot reveal anything above the real head.
       // Roll leaves the central forward ray and mouse angles exactly unchanged.
       pose = {
         bobY: -Math.min(.018, (1 - Math.cos(animation.phase * 2)) * .009 * weight + animation.land * .012 * steadiness) || 0,
-        roll: Math.sin(animation.phase) * .0034 * weight,
-        weaponX: Math.sin(animation.phase) * (.009 + animation.sprint * .006) * animation.stride * ground,
-        weaponY: -(1 - Math.cos(animation.phase * 2)) * (.004 + animation.sprint * .002) * animation.stride * ground - animation.land * .009 - animation.sprint * .045 || 0,
-        weaponZ: animation.sprint * .035, weaponPitch: -animation.sprint * .18, sprint: animation.sprint,
+        roll: Math.sin(animation.phase) * .0034 * weight || 0,
+        weaponX: Math.sin(animation.phase) * (.009 + carry * .006) * handStride || 0,
+        weaponY: -(1 - Math.cos(animation.phase * 2)) * (.004 + carry * .002) * handStride - landing * .009 - carry * .045 + (-landing * .013 - crouchCarry * .014 + jump * .016 - fall * .012) * modelSteadiness || 0,
+        weaponZ: carry * .035 + (landing * .026 + fall * .012) * modelSteadiness,
+        weaponPitch: -carry * .18 + (crouchCarry * .025 + jump * .045 - fall * .035 - landing * .085) * modelSteadiness,
+        weaponYaw: (carry * .045 - animation.strafe * handStride * .025) * modelSteadiness || 0,
+        weaponRoll: (-carry * .14 + Math.sin(animation.phase) * handStride * .018 + animation.strafe * handStride * .025) * modelSteadiness || 0,
+        sprint: carry, crouchCarry,
         phase: animation.phase, stride: animation.stride, speed: animation.speed, land: animation.land, airborne: animation.airborne,
       };
     }
-    previous = { x: player.x, y: player.y, z: player.z, time, id: player.id, lifeId: player.lifeId, deaths: player.deaths, contextKey, ground, paused };
+    previous = { x: player.x, y: player.y, z: player.z, time, id: player.id, lifeId: player.lifeId, deaths: player.deaths, contextKey, ground, crouchCarry, paused, reducedMotion };
     return pose;
   };
   present.reset = () => { gait.reset(); previous = null; pose = neutral(); };

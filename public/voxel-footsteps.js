@@ -1,3 +1,4 @@
+import { HUMAN_FOOT_CONTACT_PHASE } from './voxel-player-animation.js';
 import { MONSTER_GAIT_CONTACT_PHASE } from './voxel-monster-animation.js';
 
 const TAU = Math.PI * 2;
@@ -36,7 +37,8 @@ const validActor = actor => Number.isSafeInteger(actor?.id) && actor.id >= 0 && 
 
 /**
  * Observe the renderer's exact gait, not raw network velocity or a second walking clock.
- * A contact is a rendered swing foot reaching the ground at PI/2 or 3PI/2.
+ * Contacts follow each body's rendered touchdown phase: humans at 0/PI,
+ * monsters at PI/2 or 3PI/2.
  * Muted contacts remain consumed. Discontinuities and menus prime silently.
  */
 export function createEnemyFootstepPresenter(audio, { maxActors = MAX_ACTORS } = {}) {
@@ -73,7 +75,7 @@ export function createEnemyFootstepPresenter(audio, { maxActors = MAX_ACTORS } =
         continue;
       }
       const advance = (phase - history.phase + TAU) % TAU;
-      const offset = actor.monsterType ? MONSTER_GAIT_CONTACT_PHASE : Math.PI / 2;
+      const offset = actor.monsterType ? MONSTER_GAIT_CONTACT_PHASE : HUMAN_FOOT_CONTACT_PHASE;
       const fromContact = phaseOf(history.phase - offset) % Math.PI;
       const crossed = advance > 1e-8 && advance <= Math.PI && fromContact + advance >= Math.PI - 1e-8;
       const type = soundType(actor), profile = VOXEL_FOOTSTEP_AUDIO[type];

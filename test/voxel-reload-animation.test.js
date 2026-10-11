@@ -79,22 +79,37 @@ test('reloads are frozen with their accepted timer, cancel immediately, and clip
   }
 });
 
-test('every staged reload and sprint gait preserves actual head, torso, foot and wall contact envelopes', () => {
-  for (const weapon of Object.keys(WEAPONS)) for (const crouching of [false, true]) for (const progress of [.2, .4, .56, .715, .83]) {
-    const player = actor(weapon, { crouching, yaw: .731, vx: 2, vz: -4, reloadTicks: WEAPONS[weapon].reloadTicks * (1 - progress) });
+test('every staged reload and sprint gait preserves actual core envelopes and connected equipment contacts', async () => {
+  const { operativePose, operativeFirearmPose } = await import('../public/voxel-renderer.js');
+  const toWorld = (point, yaw) => [point[0] * Math.cos(yaw) - point[2] * Math.sin(yaw), point[1], point[0] * Math.sin(yaw) + point[2] * Math.cos(yaw)];
+  const distance = (a, b) => Math.hypot(...a.map((value, axis) => value - b[axis]));
+  for (const weapon of Object.keys(WEAPONS)) for (const crouching of [false, true]) for (const pitch of [-1.4, 0, 1.4]) for (const progress of [.2, .4, .56, .715, .83]) {
+    const player = actor(weapon, { crouching, pitch, yaw: .731, vx: 2, vz: -4, reloadTicks: WEAPONS[weapon].reloadTicks * (1 - progress) });
     const source = structuredClone(player), animation = playerAnimationPose(player, .19);
-    for (const point of points(operativeMeshes(player, 190, false, animation))) {
-      const [x, y, z] = point, height = playerHeight(player), radius = y > height - .32 + 1e-6 ? .22 : .29;
-      assert.ok(y >= -1e-6 && y <= height + 1e-6, `${weapon}: genuine body height`);
-      assert.ok(Math.hypot(x, z) <= radius + 1e-6 && Math.hypot(x, z) <= WORLD.radius + 1e-6, `${weapon}: genuine body/head and cover bounds`);
+    // Inspect the actual rendered core separately: a hand reaching a magazine
+    // is equipment articulation, never a larger head/torso/foot hitbox.
+    for (const [x, y, z] of points(operativeMeshes(player, 190, false, animation, { includeArms: false }))) {
+      const height = playerHeight(player), radius = y > height - .32 + 1e-6 ? .22 : .29;
+      assert.ok(y >= -1e-6 && y <= height + 1e-6, `${weapon}: genuine core height`);
+      assert.ok(Math.hypot(x, z) <= radius + 1e-6 && Math.hypot(x, z) <= WORLD.radius + 1e-6, `${weapon}: genuine core/head and cover bounds`);
+    }
+    const joints = operativePose(player, animation);
+    for (const [index, arm] of joints.arms.entries()) {
+      assert.ok([...arm.shoulder, ...arm.elbow, ...arm.hand].every(Number.isFinite), `${weapon}: finite connected joints`);
+      assert.ok(distance(arm.shoulder, arm.hand) <= .92, `${weapon}: bounded shoulder-to-palm reach`);
+      assert.ok(distance(arm.shoulder, arm.elbow) <= .50 && distance(arm.elbow, arm.hand) <= .50, `${weapon}: bounded upper and lower sleeves`);
+      assert.ok(arm.hand[1] >= .04 && arm.hand[1] + .04 <= playerHeight(player) + 1e-6, `${weapon}: grasp stays below actual head crown`);
+      const held = operativeFirearmPose(player, animation, animation.reload, WEAPONS[weapon].dualWield && index === 0 ? 1 : 0);
+      const target = index === 1 || WEAPONS[weapon].dualWield ? held.right : held.support;
+      assert.ok(distance(toWorld(arm.hand, player.yaw), target) < 1e-9, `${weapon}: palm contacts the exact gun/mechanism transform`);
     }
     assert.deepEqual(player, source);
   }
   for (const yaw of [0, .731, 1.73]) for (let frame = 0; frame < 120; frame++) {
-    const player = actor('carbine', { sprinting: true, yaw, vx: 0, vz: -7.7 });
-    const mesh = operativeMeshes(player, frame * 1000 / 120, false, playerAnimationPose(player, frame / 120));
+    const player = actor('carbine', { sprinting: true, yaw, vx: 0, vz: -7.7 }), animation = playerAnimationPose(player, frame / 120);
+    const mesh = operativeMeshes(player, frame * 1000 / 120, false, animation, { includeArms: false });
     assert.ok(points(mesh).every(([x, y, z]) => y >= 0 && y <= WORLD.standHeight && Math.hypot(x, z) <= (y > WORLD.standHeight - .32 + 1e-6 ? .22 : .29) + 1e-6));
-    assert.ok(mesh.length / 10 <= 1200, 'expressive gait adds no anatomy or vertex budget');
+    assert.ok(operativeMeshes(player, 0, false, animation).length / 10 <= 1200, 'expressive gait adds no anatomy or vertex budget');
   }
 });
 
@@ -225,4 +240,37 @@ test('renderer anchors once to raw accepted timers while retaining projected bod
     assert.equal(reload.hands[1].active, true); assert.equal(reload.hands[1].stage, 'insert');
   }
   renderer.destroy();
+});
+
+test('reload support hands fetch away from the receiver, seat the magazine and hold its charging handle through the stroke', () => {
+  for (const weapon of ['carbine', 'vandal', 'phantom', 'pistol', 'ghost']) {
+    const removal = weaponReloadPose(weapon, .30), fetch = weaponReloadPose(weapon, .40), insertion = weaponReloadPose(weapon, .66);
+    assert.equal(fetch.stage, 'fetch'); assert.equal(fetch.supportGrip, 'pouch'); assert.equal(fetch.magazineVisible, false);
+    assert.ok(fetch.support[0] < removal.support[0] - .07, 'the free hand visibly reaches the equipment side');
+    assert.ok(insertion.support[1] > removal.support[1] + .17, 'the inserted magazine carries the hand upward into the receiver');
+    for (const progress of [.80, .83, .89]) {
+      const pose = weaponReloadPose(weapon, progress);
+      assert.equal(pose.supportGrip, 'bolt'); assert.ok(pose.support[0] > .08, 'the hand remains on the charging side until the bolt finishes');
+    }
+    const ready = weaponReloadPose(weapon, 1), returned = weaponReloadPose(weapon, .995);
+    assert.equal(ready.stage, 'ready'); assert.equal(ready.supportGrip, 'foregrip');
+    assert.ok(Math.hypot(...returned.support.map((value, axis) => value - ready.support[axis])) < .002);
+  }
+  assert.equal(weaponReloadPose('odin', .10).supportGrip, 'lid');
+  assert.ok(weaponReloadPose('odin', .11).support[1] > 0, 'belt reload opens the real top lid before the hand lowers to supplies');
+});
+
+test('all reload hand paths and weapon settle transforms stay finite, continuous and cancellable across mechanical stages', () => {
+  for (const weapon of ['carbine', 'pistol', 'shotgun', 'shorty', 'revolver', 'crossbow', 'odin', 'dualpistols', 'dualsmg']) for (const hand of [0, 1]) {
+    let previous;
+    for (let frame = 0; frame <= 1000; frame++) {
+      const pose = weaponReloadPose(weapon, frame / 1000, { hand });
+      assert.ok(pose.support.every(Number.isFinite)); assert.ok(Object.values(pose.weapon).every(Number.isFinite));
+      assert.ok(Math.hypot(...pose.support) < .8, 'cosmetic hand reach remains bounded');
+      if (previous) assert.ok(Math.hypot(...pose.support.map((value, axis) => value - previous.support[axis])) < .020, `${weapon}: no palm jump between adjacent mechanical stages`);
+      previous = pose;
+    }
+    const cancelled = weaponReloadPose(weapon, .45, { active: false, hand }), ready = weaponReloadPose(weapon, 1, { hand });
+    assert.deepEqual(cancelled.support, ready.support); assert.deepEqual(cancelled.weapon, ready.weapon);
+  }
 });

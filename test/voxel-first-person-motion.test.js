@@ -105,6 +105,66 @@ test('pause freezes the displayed stride and lifecycle transitions discard old m
   assert.equal(resumed.bobY, 0); assert.equal(resumed.roll, 0);
 });
 
+test('held gun shoulder rotation follows travelled strafe cadence at every refresh without changing the actor', () => {
+  let reference;
+  for (const hz of [60, 120, 144, 240]) {
+    const present = createFirstPersonMotionPresenter(); present(actor(), 0, 'strafe');
+    let pose;
+    for (let frame = 1; frame <= hz; frame++) {
+      const player = actor({ x: 5 * frame / hz, yaw: 0, pitch: .12 }), before = structuredClone(player);
+      pose = present(Object.freeze(player), frame * 1000 / hz, 'strafe');
+      assert.deepEqual(player, before);
+      assert.ok(Math.abs(pose.weaponYaw) <= .025 && Math.abs(pose.weaponRoll) <= .043);
+    }
+    assert.ok(pose.weaponYaw < -.024, 'a real lateral step shifts the held shoulder rather than the aim');
+    if (reference) for (const field of ['weaponYaw', 'weaponRoll']) close(pose[field], reference[field]);
+    else reference = pose;
+    for (let frame = 1; frame <= hz; frame++) pose = present(actor({ x: 5, vx: 6 }), 1000 + frame * 1000 / hz, 'strafe');
+    assert.ok(Math.abs(pose.weaponYaw) < .000001 && Math.abs(pose.weaponRoll) < .000001, 'stale velocity at a wall cannot keep the shoulder turning');
+  }
+});
+
+test('crouched gun ready posture eases in and out and fully aimed sights discard the added carry offset', () => {
+  const present = createFirstPersonMotionPresenter(); present(actor(), 0, 'crouch');
+  const lowered = present(actor({ crouching: true }), 50, 'crouch');
+  assert.ok(lowered.crouchCarry > .45 && lowered.crouchCarry < .55);
+  assert.ok(lowered.weaponY > -.014 && lowered.weaponY < -.006);
+  assert.ok(lowered.weaponPitch > 0 && lowered.weaponPitch < .025);
+  const settled = present(actor({ crouching: true }), 500, 'crouch');
+  assert.ok(settled.weaponY < -.0139);
+  const released = present(actor(), 550, 'crouch');
+  assert.ok(released.weaponY > settled.weaponY && released.weaponY < 0, 'standing raises the hands without a posture snap');
+  const aimed = present(actor({ crouching: true }), 600, 'crouch', { aim: 1 });
+  for (const field of ['bobY', 'roll', 'weaponY', 'weaponZ', 'weaponPitch', 'weaponYaw', 'weaponRoll']) assert.equal(aimed[field], 0, field);
+});
+
+test('jump and landing hands absorb the accepted flight posture while the camera stays within its old envelope', () => {
+  const present = createFirstPersonMotionPresenter(); present(actor(), 0, 'flight');
+  let pose;
+  for (let frame = 1; frame <= 12; frame++) pose = present(actor({ y: frame * .04, vy: 5, grounded: false }), frame * 1000 / 120, 'flight');
+  assert.ok(pose.weaponY > .008 && pose.weaponPitch > .025, 'takeoff lifts the hands slightly');
+  for (let frame = 1; frame <= 24; frame++) pose = present(actor({ y: .48 - frame * .016, vy: -5, grounded: false }), 100 + frame * 1000 / 120, 'flight');
+  assert.ok(pose.weaponY < -.005 && pose.weaponZ > .005, 'falling arms settle toward the body');
+  pose = present(actor({ y: .03, grounded: true }), 310, 'flight');
+  assert.ok(pose.land > .7 && pose.weaponY < -.015 && pose.weaponZ > .015 && pose.weaponPitch < -.05);
+  assert.ok(pose.bobY >= -.018 && pose.bobY <= 0 && Math.abs(pose.roll) <= .0034);
+  const paused = present(actor({ y: .03 }), 330, 'flight', { paused: true });
+  assert.deepEqual(paused, pose);
+  const resumed = present(actor({ y: .03 }), 350, 'flight');
+  for (const field of ['weaponY', 'weaponZ', 'weaponPitch', 'weaponYaw', 'weaponRoll']) assert.equal(resumed[field], 0, field);
+});
+
+test('reduced motion suppresses head and hand oscillation through walking, jumping and landing', () => {
+  const present = createFirstPersonMotionPresenter(); present(actor(), 0, 'reduced', { reducedMotion: true });
+  for (let frame = 1; frame <= 120; frame++) {
+    const flight = frame >= 40 && frame <= 70;
+    const pose = present(actor({ z: -frame / 24, y: flight ? .5 : 0, grounded: !flight, vy: flight ? -3 : 0 }), frame * 1000 / 120, 'reduced', { reducedMotion: true });
+    for (const field of ['bobY', 'roll', 'weaponX', 'weaponY', 'weaponZ', 'weaponPitch', 'weaponYaw', 'weaponRoll']) assert.equal(pose[field], 0, field);
+  }
+  const changed = present(actor({ z: -5.05 }), 1010, 'reduced', { reducedMotion: false });
+  assert.equal(changed.stride, 0, 'a preference change primes a fresh quiet pose');
+});
+
 test('all catalog guns have a distinct fast strike followed by an analytic smooth recovery', () => {
   const signatures = new Set();
   for (const weapon of Object.keys(WEAPONS)) {

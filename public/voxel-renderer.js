@@ -14,7 +14,7 @@ import { EMPTY_WORLD_LABELS, presentWorldLabels } from './voxel-label-presentati
 import { createSlashImpactPresenter } from './voxel-slash-effects.js';
 import { MONSTER_VARIANT_ART, appendMonsterVariant } from './voxel-monster-variants.js';
 import { MONSTER_SPECIAL_RULES } from './voxel-monster-specials.js';
-import { monsterLocomotionPose, monsterGaitCycleMetres, appendMonsterLimb } from './voxel-monster-animation.js';
+import { monsterLocomotionPose, monsterGaitCycleMetres, appendMonsterLimb, createMonsterAttackPresenter } from './voxel-monster-animation.js';
 import { MAP_EXPANSION_ART, MAP_EXPANSION_ATMOSPHERE, appendVoxelMapExpansionCollider, appendVoxelMapExpansionFloor, appendVoxelMapExpansionDecoration, appendVoxelMapExpansionFloors, appendVoxelIdentityFloors, resolveVoxelWallSign } from './voxel-map-expansion-art.js';
 
 // All solid world surfaces come directly from the engine's minimum-corner
@@ -3219,10 +3219,12 @@ export function monsterAnimationPose(player, time = 0) {
 /** Bounded, independent creature gaits observe the final rendered positions. */
 export function createMonsterAnimationPresenter({ maxMonsters = 20 } = {}) {
   const capacity = clamp(Number.isSafeInteger(maxMonsters) ? maxMonsters : 20, 1, 32), histories = new Map();
-  const present = (player, time, context = null, { paused = false } = {}) => {
+  const presentAttack = createMonsterAttackPresenter({ maxMonsters: capacity });
+  const present = (player, time, context = null, { paused = false, acceptedPlayer = player } = {}) => {
     const id = player?.id;
+    const attack = presentAttack(acceptedPlayer, time, context, { paused });
     if (!Number.isSafeInteger(id) || id < 0 || ![player?.x, player?.y, player?.z, time].every(Number.isFinite) || player?.alive === false || !Object.hasOwn(MONSTER_ART, player?.monsterType)) {
-      histories.delete(id); return { phase: 0, stride: 0, speed: 0 };
+      histories.delete(id); return { phase: 0, stride: 0, speed: 0, attack };
     }
     let history = histories.get(id);
     const elapsed = history ? time - history.time : 0;
@@ -3239,7 +3241,7 @@ export function createMonsterAnimationPresenter({ maxMonsters = 20 } = {}) {
     if (paused || history.paused) {
       // A tab resuming from pause keeps its held pose and discards elapsed wall time.
       history.x = history.gaitX = player.x; history.y = player.y; history.z = history.gaitZ = player.z; history.gaitTime = history.time = time; history.paused = paused;
-      return history.pose;
+      return { ...history.pose, attack };
     }
     if (!reset && elapsed > 0) {
       const travelled = Math.hypot(player.x - history.gaitX, player.z - history.gaitZ), distance = travelled > .001 ? travelled : 0;
@@ -3258,21 +3260,22 @@ export function createMonsterAnimationPresenter({ maxMonsters = 20 } = {}) {
     }
     history.x = player.x; history.y = player.y; history.z = player.z; history.time = time;
     histories.delete(id); histories.set(id, history);
-    return history.pose;
+    return { ...history.pose, attack };
   };
-  present.retain = ids => { const retained = new Set(ids); for (const id of histories.keys()) if (!retained.has(id)) histories.delete(id); };
-  present.reset = () => histories.clear();
+  present.retain = ids => { const retained = new Set(ids); for (const id of histories.keys()) if (!retained.has(id)) histories.delete(id); presentAttack.retain(retained); };
+  present.reset = () => { histories.clear(); presentAttack.reset(); };
   Object.defineProperty(present, 'size', { get: () => histories.size });
+  Object.defineProperty(present, 'attackSize', { get: () => presentAttack.size });
   return present;
 }
 
 function creatureParts(mesh, player, type, art, pose, front, animation, motion) {
   const box = (x, y, z, w, h, d, color) => mesh.box(x, y + (motion.active && y >= .30 && y + h <= .64 && z >= -.20 && z + d <= .34 ? motion.bodyBob : 0), z, w, h, d, color, pose);
   const phase = finite(animation.phase), stride = clamp(finite(animation.stride), 0, 1), sprint = clamp(finite(animation.sprint), 0, 1);
-  const windup = ['windup', 'lungeWindup'].includes(player.monsterState) ? smooth(1 - clamp(finite(player.attackTicks) / Math.max(1, finite(player.attackDuration, 1)), 0, 1)) : 0;
+  const windup = motion.attack.kind === 'roar' ? 0 : motion.attack.windup;
   const leap = player.monsterState === 'leap' && finite(player.lungeTicks) > 0;
   const roaring = player.monsterState === 'roar' && finite(player.roarTicks) > 0;
-  const roar = roaring ? smooth(1 - clamp(finite(player.roarTicks) / Math.max(1, finite(player.roarDuration, 1)), 0, 1)) : 0;
+  const roar = motion.attack.kind === 'roar' ? motion.attack.windup : 0;
   const rally = finite(player.monsterRallyTicks) > 0, eye = windup > .45 || leap || roaring ? '#ffe0a3' : art.eye;
   if (type === 'hound') {
     // The four independently planted paws, short docked tail, ears and muzzle
@@ -3386,8 +3389,8 @@ function monsterParts(mesh, player, time, animation = null) {
   const type = MONSTER_ART[player.monsterType] ? player.monsterType : 'stalker', art = MONSTER_ART[type];
   const yaw = finite(player.yaw), pose = { x: player.x, y: finite(player.y), z: player.z, yaw };
   const gait = player.alive === false ? STILL_MONSTER_GAIT : animation || monsterAnimationPose(player, time), motion = monsterLocomotionPose(player, gait);
-  const windup = player.monsterState === 'windup' ? 1 - clamp(finite(player.attackTicks) / Math.max(1, finite(player.attackDuration, 1)), 0, 1) : 0;
   const aiming = player.monsterState === 'aiming', armed = type === 'gunner' || type === 'sniper';
+  const windup = armed && player.monsterState === 'windup' ? 1 - clamp(finite(player.attackTicks) / Math.max(1, finite(player.attackDuration, 1)), 0, 1) : motion.attack.windup;
   const stride = Math.sin(finite(gait.phase)) * clamp(finite(gait.stride), 0, 1) * .025;
   const box = (x, y, z, w, h, d, color) => mesh.box(x, y + (motion.active && y >= .79 && y + h <= 1.38 ? motion.bodyBob : 0), z, w, h, d, color, pose);
   const front = (x, y, z, w, h, color) => {
@@ -3745,6 +3748,60 @@ export function humanAppearance(player = {}, freeForAll = false) {
     face: { front: -.126, eyesY: .178, mouthY: .096, exposed: true } };
 }
 
+const gripPoint = (pose, point) => {
+  const offset = rotate(point, pose.yaw, pose.pitch, finite(pose.roll)).map(value => value * finite(pose.scale, 1));
+  return [pose.x + offset[0], pose.y + offset[1], pose.z + offset[2]];
+};
+const playerLocalPoint = (player, point) => rotate([point[0] - finite(player.x), point[1] - finite(player.y), point[2] - finite(player.z)], -finite(player.yaw));
+
+/** One transform binds the visible firearm, firing hand and staged reload hand. */
+export function operativeFirearmPose(player, animation = {}, presentedReload = animation.reload, hand = 0) {
+  if (!gunHeld(player)) return null;
+  const paired = WEAPONS[player.weapon]?.dualWield === true, side = paired && hand === 1 ? -1 : 1, crouch = !!player.crouching;
+  const reloadProgress = presentedReload?.globalProgress ?? (player.reloadTicks > 0 ? clamp(1 - player.reloadTicks / (weaponReloadDuration(player.weapon, player.ammo) || 252), 0, 1) : 0);
+  const active = presentedReload ? presentedReload.reloadActive : finite(player.reloadTicks) > 0;
+  const reload = paired ? weaponReloadPose(player.weapon, reloadProgress, { active, hand }) : presentedReload || weaponReloadPose(player.weapon, reloadProgress, { active });
+  const shotAge = paired && player.lastShotHand !== hand ? Infinity : playerShotAge(player), shot = weaponShotPose(player.weapon, shotAge, aimProgress(player), side);
+  const sprint = clamp(finite(animation.sprint), 0, 1), stride = clamp(finite(animation.stride), 0, 1), carry = (1 - aimProgress(player) * .92) * (1 - reload.weight);
+  const offset = rotate([side * (paired ? .128 : .14) + finite(reload.weapon.x) * side + shot.x,
+    (crouch ? .82 : 1.24) + finite(animation.bodyBob) + finite(reload.weapon.y) + shot.y - sprint * .04,
+    -.14 + finite(reload.weapon.z) + shot.z + Math.sin(finite(animation.phase)) * stride * .012 * carry], finite(player.yaw));
+  const pose = { x: finite(player.x) + offset[0], y: finite(player.y) + offset[1], z: finite(player.z) + offset[2],
+    yaw: finite(player.yaw) + shot.yaw + finite(reload.weapon.yaw) * side + finite(animation.shoulderYaw) * .30 * carry,
+    pitch: clamp(finite(player.pitch) + finite(player.recoil), -1.45, 1.45) + shot.pitch + finite(reload.weapon.pitch) - sprint * .08,
+    roll: finite(reload.weapon.roll), scale: 1 };
+  const rightLocal = paired ? [0, -.122, -.010] : [.004, -.131, .002];
+  const support = [...reload.support], cycle = weaponCyclePose(player.weapon, shotAge);
+  support[2] += (active ? reload.pump : cycle.pump) * finite(weaponVisualModel(player.weapon)?.pumpTravel, .16);
+  // The whole gun lowers at steep upward aim instead of stretching a flesh
+  // hand above the real head. Its sight direction and mechanical contacts stay
+  // unchanged; the first-person camera and authoritative hitboxes are separate.
+  const hands = [gripPoint(pose, rightLocal), ...(paired ? [] : [gripPoint(pose, support)])];
+  const top = finite(player.y) + (crouch ? WORLD.crouchHeight : WORLD.standHeight) - .044;
+  const excess = Math.max(0, ...hands.map(point => point[1] - top));
+  pose.y -= excess;
+  const right = gripPoint(pose, rightLocal);
+  return { pose, reload, right, support: gripPoint(pose, support), cycle, shotAge, hand, paired };
+}
+
+/** Each blade and its palm share this transform, including both idle tonfas. */
+export function operativeBladePose(player, hand = player.meleeHand === 1 ? 1 : 0) {
+  const motion = meleeMotion(player), dual = !!meleeProfile(player).dualWield;
+  const held = dual ? { ...player, meleeHand: hand, ...(!motion.guarding && hand !== (player.meleeHand === 1 ? 1 : 0) ? { meleeTicks: 0 } : {}) } : player;
+  return { pose: meleeWorldPose(held, meleeMotion(held)), motion: meleeMotion(held), hand };
+}
+
+/** An outward elbow bend keeps each sleeve attached to its real hand target. */
+function elbowForGrip(shoulder, hand, side, load = 0) {
+  const delta = hand.map((value, axis) => value - shoulder[axis]), distance = Math.hypot(...delta);
+  if (distance < 1e-8) return [shoulder[0] + side * .08, shoulder[1] - .12, shoulder[2]];
+  const axis = delta.map(value => value / distance), preferred = [side * .84, -.52, .16];
+  const along = preferred.reduce((sum, value, index) => sum + value * axis[index], 0);
+  const bend = normalized(preferred.map((value, index) => value - axis[index] * along), [side, 0, 0]);
+  const reach = Math.max(.255, distance * .5 + .024), height = Math.min(.18, Math.sqrt(Math.max(0, reach * reach - distance * distance / 4))) * (1 + load * .12);
+  return shoulder.map((value, index) => value + delta[index] * .5 + bend[index] * height);
+}
+
 /** Articulated joints in player-local metres: +X right, +Y up, -Z forward. */
 export function operativePose(player, animation = playerAnimationPose(player, 0)) {
   // Structural height follows the actual stance. Only joint flex settles after
@@ -3756,24 +3813,33 @@ export function operativePose(player, animation = playerAnimationPose(player, 0)
   const hipY = lerp(.81, .53, crouch) + bob - land * .014, chestY = lerp(1.12, .68, crouch) + bob;
   const legs = [-1, 1].map((side, index) => {
     const swing = Math.sin(phase + index * Math.PI), raised = Math.max(0, Math.cos(phase + index * Math.PI));
-    const lift = airborne ? .055 + finite(animation.jump) * .050 : raised ** 1.4 * stride * lerp(.108 + sprint * .022, .046, crouch);
-    const travel = swing * stride * lerp(.080 + sprint * .020, .040, crouch);
+    const step = animation.legs?.[index], clearance = clamp(finite(step?.clearance, raised ** 1.4), 0, 1);
+    const contact = airborne ? 0 : clamp(finite(step?.contact, clearance < .001 ? 1 : 0), 0, 1);
+    const lift = airborne ? .055 + finite(animation.jump) * .050 : clearance * stride * lerp(.108 + sprint * .022, .046, crouch);
+    const travel = finite(step?.travel, swing) * stride * lerp(.098 + sprint * .014, .045, crouch);
     const foot = [side * .108 + strafe * travel * .55, .018 + lift, -.012 - forward * travel];
     const ankle = [foot[0], foot[1] + .112, foot[2] + .015];
-    const hip = [side * .098, hipY, .024 + crouch * .036];
+    const hipOffset = rotate([side * .098, 0, .024 + crouch * .036], finite(animation.hipsYaw));
+    const hip = [hipOffset[0], hipY, hipOffset[2]];
     // The raised swing foot bends its knee; the planted leg remains extended.
     // Crouch bends both knees forward rather than shrinking two rigid poles.
     const knee = [side * .111 + strafe * travel * .28, lerp(.445, .295, crouch) + lift * .55 + bob * .5 - land * .010,
       -.020 - crouchBlend * .090 - forward * travel * .28 - lift * .52];
-    return { hip, knee, ankle, foot, lift };
+    return { hip, knee, ankle, foot, lift, clearance, contact, planted: !airborne && clearance < .001 };
   });
   const aiming = aimProgress(player), reloadProgress = animation.reload?.globalProgress ?? clamp(1 - finite(player.reloadTicks) / (weaponReloadDuration(player.weapon, player.ammo) || 252), 0, 1);
   const reloading = gunHeld(player) && (animation.reload ? animation.reload.reloadActive : finite(player.reloadTicks) > 0), reloadPose = animation.reload || weaponReloadPose(player.weapon, reloadProgress, { active: reloading }), reload = reloadPose.weight;
   const healing = finite(player.healTicks) > 0, potion = healing || player.slot === 'potion', melee = player.slot === 'sword', dual = !potion && (melee ? !!meleeProfile(player).dualWield : gunHeld(player) && !!WEAPONS[player.weapon]?.dualWield), single = melee || potion || player.slot === 'grenade' || player.slot === 'empty', swing = meleeMotion(player);
+  const firearms = gunHeld(player) && !healing ? (dual ? [0, 1].map(hand => operativeFirearmPose(player, animation, reloadPose, hand)) : [operativeFirearmPose(player, animation, reloadPose)]) : [];
+  const combatTurn = !melee || meleeWeaponId(player) === 'knife' ? 0 : swing.guarding ? -.035 * swing.grip : swing.phase === 'startup' ? -.10 * swing.slashDirection * swing.progress
+    : swing.phase === 'active' ? .10 * swing.slashDirection * (swing.progress * 2 - 1) : swing.phase === 'recovery' ? .10 * swing.slashDirection * swing.grip : 0;
+  const shoulderYaw = finite(animation.shoulderYaw) + combatTurn;
   const throwLift = finite(player.grenadeThrowTicks) > 0 ? .085 : 0;
   const arms = [-1, 1].map((side, index) => {
     const armSwing = Math.sin(phase + index * Math.PI + Math.PI) * stride * (.034 + sprint * .013) * (1 - aiming * .75);
-    const shoulder = [side * .211, lerp(1.295, .767, crouch) + bob, .012];
+    const shoulderOffset = rotate([side * .211, 0, .012], shoulderYaw);
+    const shoulder = [shoulderOffset[0] + clamp(finite(animation.leanSide), -.045, .045) * .30, lerp(1.295, .767, crouch) + bob,
+      shoulderOffset[2] - clamp(finite(animation.leanForward), -.075, .075) * .35];
     const elbow = [side * .192, lerp(1.065, .638, crouch) + bob + aiming * .020, -.053 + armSwing];
     const hand = [side * (side < 0 ? .106 : .125), lerp(1.145, .735, crouch) + bob + aiming * .070 - (side < 0 ? reload * .110 : 0), -.185 + armSwing * .42];
     if (!single && !dual && side < 0) { hand[0] = .074 - reload * .080 + reloadPose.bolt * .045; hand[1] += .015 + reloadPose.seat * .010 + reloadPose.bolt * .040; hand[2] = -.215 + armSwing * .30 + reload * .042 + reloadPose.bolt * .025; }
@@ -3786,33 +3852,46 @@ export function operativePose(player, animation = playerAnimationPose(player, 0)
     }
     if (sprint > 0) { hand[1] -= sprint * .040; hand[2] += sprint * .018; elbow[2] += sprint * .016; }
     const twoHandedBlade = melee && !dual && meleeWeaponId(player) !== 'knife';
-    const posedBladeArm = melee && (dual ? swing.guarding || index === (player.meleeHand === 1 ? 0 : 1) : side > 0 || twoHandedBlade);
+    const posedBladeArm = melee && (dual || side > 0 || twoHandedBlade);
     if (posedBladeArm) {
-      if (swing.phase !== 'idle' || twoHandedBlade) {
-        const heldPlayer = dual && swing.guarding ? { ...player, meleeHand: side > 0 ? 0 : 1 } : player;
-        const grip = meleeWorldPose(heldPlayer, heldPlayer === player ? swing : meleeMotion(heldPlayer));
+        const grip = operativeBladePose(player, side > 0 ? 0 : 1).pose;
         const support = twoHandedBlade && side < 0 ? meleeSupportGrip(player, grip) : null;
         const contact = support || [grip.x, grip.y - .025, grip.z];
         const local = rotate([contact[0] - finite(player.x), contact[1] - finite(player.y), contact[2] - finite(player.z)], -finite(player.yaw));
         hand[0] = local[0]; hand[1] = local[1]; hand[2] = local[2];
-        elbow[0] = lerp(shoulder[0], hand[0], .55); elbow[1] = lerp(shoulder[1], hand[1], .48) - .09; elbow[2] = hand[2] * .48;
-      } else { hand[0] += Math.sin(swing.yaw) * .028; hand[1] += -.035 + Math.sin(-swing.pitch) * .035; elbow[2] -= .025; }
+        const bend = elbowForGrip(shoulder, hand, side, swing.phase === 'startup' ? swing.progress : swing.guarding ? swing.grip : 0);
+        elbow[0] = bend[0]; elbow[1] = bend[1]; elbow[2] = bend[2];
     }
     if (throwLift && side < 0) { hand[1] += throwLift * (1 - crouch * .65); hand[2] += .025; elbow[1] += .055 * (1 - crouch * .6); }
-    if (!(posedBladeArm && swing.phase !== 'idle')) hand[1] = Math.min((player.crouching ? .83 : 1.48) - .044, hand[1]);
+    if (firearms.length) {
+      const held = dual ? firearms[side > 0 ? 0 : 1] : firearms[0], target = dual || side > 0 ? held.right : held.support;
+      const contact = playerLocalPoint(player, target);
+      hand[0] = contact[0]; hand[1] = contact[1]; hand[2] = contact[2];
+      const bend = elbowForGrip(shoulder, hand, side, held.reload.weight);
+      elbow[0] = bend[0]; elbow[1] = bend[1]; elbow[2] = bend[2];
+    } else if (!posedBladeArm) hand[1] = Math.min((player.crouching ? .83 : 1.48) - .044, hand[1]);
     return { shoulder, elbow, hand };
   });
-  return { phase, crouch, airborne, stride, legs, arms, torso: { hipY, chestY, bob }, head: { base: player.crouching ? .83 : 1.48 } };
+  return { phase, crouch, airborne, stride, legs, arms, firearms, combat: melee ? { phase: swing.phase, progress: swing.progress, guarding: !!swing.guarding, comboStep: swing.comboStep, turn: combatTurn } : null,
+    torso: { hipY, chestY, bob, shoulderYaw, hipsYaw: finite(animation.hipsYaw) }, head: { base: player.crouching ? .83 : 1.48 } };
 }
 
-function operativeParts(mesh, player, time, freeForAll = false, animation = null) {
+function operativeParts(mesh, player, time, freeForAll = false, animation = null, options = {}) {
   const crouch = !!player.crouching, yaw = finite(player.yaw), pitch = clamp(finite(player.pitch) + finite(player.recoil), -1.45, 1.45);
   const art = humanAppearance(player, freeForAll), joints = operativePose(player, animation || playerAnimationPose(player, time / 1000));
   const pose = { x: finite(player.x), y: finite(player.y), z: finite(player.z), yaw, pitch: 0 };
   const color = art.accent, team = rgba(color), uniform = rgba(art.shirt), headBase = crouch ? .83 : 1.48;
+  const hipY = joints.torso.hipY, torsoTop = lerp(1.375, .812, joints.crouch) + joints.torso.bob;
+  const partPose = y => y >= hipY - .065 && y < hipY + .065 ? { ...pose, yaw: yaw + joints.torso.hipsYaw }
+    : y >= hipY + .065 && y <= torsoTop + .002 ? { ...pose, yaw: yaw + joints.torso.shoulderYaw } : pose;
   const world = point => { const p = rotate(point, yaw); return [pose.x + p[0], pose.y + p[1], pose.z + p[2]]; };
   const box = (x, y, z, w, h, d, c) => mesh.box(x, y, z, w, h, d, c, pose);
-  const paint = (points, normal, c) => mesh.quad(...points.map(world), rotate(normal, yaw), rgba(c));
+  const coreBox = (x, y, z, w, h, d, c) => mesh.box(x, y, z, w, h, d, c, partPose(y + h / 2));
+  const paint = (points, normal, c) => {
+    const angle = partPose(points.reduce((sum, point) => sum + point[1], 0) / points.length).yaw;
+    const transform = point => { const p = rotate(point, angle); return [pose.x + p[0], pose.y + p[1], pose.z + p[2]]; };
+    mesh.quad(...points.map(transform), rotate(normal, angle), rgba(c));
+  };
   const front = (x, y, z, w, h, c) => paint([[x, y, z], [x, y + h, z], [x + w, y + h, z], [x + w, y, z]], [0, 0, -1], c);
   const back = (x, y, z, w, h, c) => paint([[x + w, y, z], [x + w, y + h, z], [x, y + h, z], [x, y, z]], [0, 0, 1], c);
   const limb = (a, b, width, depth, c) => {
@@ -3826,15 +3905,14 @@ function operativeParts(mesh, player, time, freeForAll = false, animation = null
     front(leg.foot[0] - .057, leg.foot[1] + .009, leg.foot[2] - .0885, .114, .019, '#968778');
     front(leg.foot[0] - .050, leg.foot[1] + .068, leg.foot[2] - .0885, .100, .017, '#5a6156');
   }
-  const hipY = joints.torso.hipY, torsoTop = lerp(1.375, .812, joints.crouch) + joints.torso.bob;
-  box(-.168, hipY - .060, -.121, .336, .106, .258, art.pants);
-  box(-.178, hipY + .024, -.134, .356, torsoTop - hipY - .024, .268, art.shirt);
+  coreBox(-.168, hipY - .060, -.121, .336, .106, .258, art.pants);
+  coreBox(-.178, hipY + .024, -.134, .356, torsoTop - hipY - .024, .268, art.shirt);
   box(-.057, torsoTop, -.056, .114, Math.max(.018, headBase + .043 - torsoTop), .112, art.skin);
   // A compact cloth carrier, three printed pockets and straps keep the human
   // silhouette readable without spending triangles on hidden enclosed gear.
   const vestBottom = hipY + .073, vestTop = torsoTop - .058, vestHeight = Math.max(.08, vestTop - vestBottom);
-  box(-.155, vestBottom, -.162, .310, vestHeight, .029, art.vest);
-  box(-.117, vestBottom + .010, .134, .234, Math.max(.08, vestHeight - .018), .067, '#4a5550');
+  coreBox(-.155, vestBottom, -.162, .310, vestHeight, .029, art.vest);
+  coreBox(-.117, vestBottom + .010, .134, .234, Math.max(.08, vestHeight - .018), .067, '#4a5550');
   front(-.159, hipY - .021, -.1215, .318, .031, '#303735');
   front(-.018, hipY - .017, -.122, .036, .023, '#b6aa81');
   for (const x of [-.135, -.039, .057]) {
@@ -3846,7 +3924,7 @@ function operativeParts(mesh, player, time, freeForAll = false, animation = null
   back(-.083, vestBottom + vestHeight * .57, .2015, .166, .023, team);
   back(-.097, vestBottom + .012, .2015, .017, Math.max(.02, vestHeight - .045), '#87947f');
   back(.080, vestBottom + .012, .2015, .017, Math.max(.02, vestHeight - .045), '#87947f');
-  for (const [index, arm] of joints.arms.entries()) {
+  for (const [index, arm] of (options.includeArms === false ? [] : joints.arms).entries()) {
     limb(arm.shoulder, arm.elbow, .079, .090, art.shirt);
     limb(arm.elbow, arm.hand, .063, .069, art.skin);
     box(arm.hand[0] - .037, arm.hand[1] - .037, arm.hand[2] - .037, .074, .074, .074, art.skin);
@@ -3854,7 +3932,7 @@ function operativeParts(mesh, player, time, freeForAll = false, animation = null
     // The stitched team stripe lies on the sleeve, so it remains depth-tested.
     const stripe = [[side * .253, arm.shoulder[1] - .069, -.028], [side * .253, arm.shoulder[1] - .035, -.028], [side * .253, arm.shoulder[1] - .035, .040], [side * .253, arm.shoulder[1] - .069, .040]];
     if (side < 0) stripe.reverse();
-    paint(stripe, [side, 0, 0], team);
+    mesh.quad(...stripe.map(world), rotate([side, 0, 0], yaw), team);
   }
   const headPose = { ...pose, y: pose.y + headBase };
   const headBox = (x, y, z, w, h, d, c) => mesh.box(x, y, z, w, h, d, c, headPose);
@@ -3891,8 +3969,8 @@ function operativeParts(mesh, player, time, freeForAll = false, animation = null
 }
 
 /** Body/head art is inspectable separately from the continuously aimed gun. */
-export function operativeMeshes(player, time = 0, freeForAll = false, animation = null) {
-  const mesh = new Mesh(); operativeParts(mesh, player, finite(time), freeForAll, animation); return mesh.array;
+export function operativeMeshes(player, time = 0, freeForAll = false, animation = null, options = {}) {
+  const mesh = new Mesh(); operativeParts(mesh, player, finite(time), freeForAll, animation, options); return mesh.array;
 }
 
 /** Authored ninja clothing uses the same accepted joints and blade grips. */
@@ -3902,11 +3980,14 @@ export function ninjaAppearance(player = {}, freeForAll = false) {
   return { ...human, shirt: cloth, pants: '#17252c', vest: '#33434a', accent: freeForAll ? survivorColor(player) : TEAM_COLORS[player.team === 1 ? 1 : 0], mask: '#15232b' };
 }
 
-function ninjaParts(mesh, player, time, freeForAll = false, animation = null, reducedMotion = false) {
+function ninjaParts(mesh, player, time, freeForAll = false, animation = null, reducedMotion = false, options = {}) {
   const crouch = !!player.crouching, yaw = finite(player.yaw), pitch = clamp(finite(player.pitch), -1.45, 1.45);
   const art = ninjaAppearance(player, freeForAll), joints = operativePose(player, animation || playerAnimationPose(player, time / 1000));
   const pose = { x: finite(player.x), y: finite(player.y), z: finite(player.z), yaw, pitch: 0 };
+  const hipY = joints.torso.hipY, top = lerp(1.375, .812, joints.crouch) + joints.torso.bob;
+  const hipPose = { ...pose, yaw: yaw + joints.torso.hipsYaw }, chestPose = { ...pose, yaw: yaw + joints.torso.shoulderYaw };
   const box = (x, y, z, w, h, d, color) => mesh.box(x, y, z, w, h, d, color, pose);
+  const coreBox = (x, y, z, w, h, d, color) => mesh.box(x, y, z, w, h, d, color, y >= hipY - .065 && y + h <= hipY + .080 ? hipPose : chestPose);
   const limb = (a, b, width, depth, color) => {
     const aa = rotate(a, yaw), bb = rotate(b, yaw), dx = bb[0] - aa[0], dy = bb[1] - aa[1], dz = bb[2] - aa[2], horizontal = Math.hypot(dx, dz);
     mesh.box(-width / 2, 0, -depth / 2, width, Math.hypot(horizontal, dy), depth, color, { x: pose.x + aa[0], y: pose.y + aa[1], z: pose.z + aa[2], yaw: horizontal > 1e-7 ? Math.atan2(-dx, dz) : yaw, pitch: Math.atan2(horizontal, dy) });
@@ -3918,15 +3999,14 @@ function ninjaParts(mesh, player, time, freeForAll = false, animation = null, re
     box(leg.foot[0] - .067, leg.foot[1], leg.foot[2] - .091, .134, .105, .178, '#111c23');
     box(leg.foot[0] - .052, leg.foot[1] + .072, leg.foot[2] - .092, .104, .018, .181, '#7c8d8b');
   }
-  const hipY = joints.torso.hipY, top = lerp(1.375, .812, joints.crouch) + joints.torso.bob;
-  box(-.17, hipY - .060, -.133, .34, .127, .277, art.pants);
-  box(-.181, hipY + .024, -.143, .362, Math.max(.08, top - hipY - .024), .286, art.shirt);
-  box(-.187, hipY - .020, -.149, .374, .075, .301, art.accent);
-  box(-.055, hipY - .027, -.162, .11, .084, .018, '#ddd4aa');
+  coreBox(-.17, hipY - .060, -.133, .34, .127, .277, art.pants);
+  coreBox(-.181, hipY + .024, -.143, .362, Math.max(.08, top - hipY - .024), .286, art.shirt);
+  coreBox(-.187, hipY - .020, -.149, .374, .075, .301, art.accent);
+  coreBox(-.055, hipY - .027, -.162, .11, .084, .018, '#ddd4aa');
   // Segmented chest armour and crossed back cords distinguish the silhouette.
-  for (let panel = 0; panel < 3; panel++) box(-.146, hipY + .12 + panel * .105, -.168, .292, .077, .035, panel === 1 ? '#405463' : art.vest);
-  box(-.025, hipY + .17, .142, .050, Math.max(.08, top - hipY - .17), .030, '#a5a997');
-  for (const arm of joints.arms) {
+  for (let panel = 0; panel < 3; panel++) coreBox(-.146, hipY + .12 + panel * .105, -.168, .292, .077, .035, panel === 1 ? '#405463' : art.vest);
+  coreBox(-.025, hipY + .17, .142, .050, Math.max(.08, top - hipY - .17), .030, '#a5a997');
+  for (const arm of options.includeArms === false ? [] : joints.arms) {
     limb(arm.shoulder, arm.elbow, .091, .098, art.shirt);
     limb(arm.elbow, arm.hand, .078, .083, '#17262e');
     box(arm.hand[0] - .04, arm.hand[1] - .039, arm.hand[2] - .04, .08, .078, .08, '#bd9778');
@@ -3952,7 +4032,7 @@ function ninjaParts(mesh, player, time, freeForAll = false, animation = null, re
 }
 
 export function ninjaOperativeMeshes(player, time = 0, animation = null, options = {}) {
-  const mesh = new Mesh(); ninjaParts(mesh, player, finite(time), !!options.freeForAll, animation, !!options.reducedMotion); return mesh.array;
+  const mesh = new Mesh(); ninjaParts(mesh, player, finite(time), !!options.freeForAll, animation, !!options.reducedMotion, options); return mesh.array;
 }
 
 function humanDeathTemplate(death, freeForAll = false, ninja = false) {
@@ -4020,7 +4100,7 @@ function playerMesh(mesh, player, map, time, allied, freeForAll = false, animati
   const reloadPose = presentedReload || weaponReloadPose(player.weapon, reloadProgress, { active: gunHeld(player) && finite(player.reloadTicks) > 0 });
   const shotAge = playerShotAge(player);
   const worldShot = weaponShotPose(player.weapon, shotAge, aimProgress(player)), worldCycle = weaponCyclePose(player.weapon, shotAge);
-  const gunPose = sword && !healing ? meleeWorldPose(player, motion) : { x: pose.x + handOffset[0], y: pose.y + handOffset[1] + reloadPose.weapon.y + (gunHeld(player) ? worldShot.y : 0) - finite(animation?.sprint) * .04, z: pose.z + handOffset[2], yaw: heldYaw + (gunHeld(player) ? worldShot.yaw : 0), pitch: heldPitch + reloadPose.weapon.pitch + (gunHeld(player) ? worldShot.pitch : 0) - finite(animation?.sprint) * .08, scale: 1 };
+  const gunPose = sword && !healing ? meleeWorldPose(player, motion) : joints.firearms[0]?.pose || { x: pose.x + handOffset[0], y: pose.y + handOffset[1] + reloadPose.weapon.y + (gunHeld(player) ? worldShot.y : 0) - finite(animation?.sprint) * .04, z: pose.z + handOffset[2], yaw: heldYaw + (gunHeld(player) ? worldShot.yaw : 0), pitch: heldPitch + reloadPose.weapon.pitch + (gunHeld(player) ? worldShot.pitch : 0) - finite(animation?.sprint) * .08, scale: 1 };
   const direction = [Math.sin(gunPose.yaw) * Math.cos(gunPose.pitch), Math.sin(gunPose.pitch), -Math.cos(gunPose.yaw) * Math.cos(gunPose.pitch)];
   const limit = sword ? meleeWorldCoverLimit(player, gunPose, map.colliders || []) : Math.max(0, rayCoverDistance([gunPose.x, gunPose.y, gunPose.z], direction, map.colliders || [], weaponLength(player.weapon) + .12, weaponCoverPadding(player.weapon, gunPose.scale, reloadProgress)) - .025) / gunPose.scale;
   if (potion) {
@@ -4035,37 +4115,31 @@ function playerMesh(mesh, player, map, time, allied, freeForAll = false, animati
     mesh.box(-.050, -.10, -.024, .10, .095, .12, art.skin, gunPose);
   } else if (sword && meleeProfile(player).dualWield) {
     for (const hand of [0, 1]) {
-      const arm = joints.arms[hand === 0 ? 1 : 0], offset = rotate(arm.hand, yaw);
-      const heldPlayer = motion.guarding ? { ...player, meleeHand: hand } : hand === (player.meleeHand === 1 ? 1 : 0) ? player : { ...player, meleeTicks: 0, meleeHand: hand };
-      const swing = meleeMotion(heldPlayer);
-      const handPose = swing.phase !== 'idle' ? meleeWorldPose(heldPlayer, swing) : { x: pose.x + offset[0], y: pose.y + offset[1] + .085, z: pose.z + offset[2] - .016, yaw: heldYaw + swing.yaw, pitch: heldPitch + swing.pitch, roll: finite(swing.roll), scale: 1.15 };
+      const held = operativeBladePose(player, hand), handPose = held.pose, swing = held.motion;
       const limit = meleeWorldCoverLimit(player, handPose, map.colliders || []);
       meleeParts(mesh, player, handPose, { hand, limit, active: swing.active || swing.guardActive });
-      mesh.box(-.043, -.142, -.048, .086, .108, .11, art.skin, handPose);
     }
   } else if (sword) {
     meleeParts(mesh, player, gunPose, { limit, active: motion.active || motion.guardActive });
-    mesh.box(-.047, -.080, -.025, .094, .110, .160, art.skin, gunPose);
-    mesh.box(-.060, -.075, .15, .12, .15, .27, uniform, gunPose);
   } else if (!empty && gunHeld(player) && WEAPONS[player.weapon]?.dualWield) {
     const age = playerShotAge(player);
     for (const hand of [0, 1]) {
-      const arm = joints.arms[hand === 0 ? 1 : 0], offset = rotate(arm.hand, yaw);
-      const kick = weaponShotPose(player.weapon, hand === player.lastShotHand ? age : Infinity, aimProgress(player), hand === 0 ? 1 : -1);
-      const pairedReload = weaponReloadPose(player.weapon, reloadProgress, { active: finite(player.reloadTicks) > 0, hand });
-      const handPose = { x: pose.x + offset[0], y: pose.y + offset[1] + .12 + kick.y, z: pose.z + offset[2], yaw: heldYaw + kick.yaw + pairedReload.weapon.yaw * (hand === 0 ? 1 : -1), pitch: heldPitch + kick.pitch + pairedReload.weapon.pitch, scale: 1 };
+      const held = joints.firearms[hand], pairedReload = held.reload, handPose = held.pose;
       const forward = rotate([0, 0, -1], handPose.yaw, handPose.pitch), limit = Math.max(0, rayCoverDistance([handPose.x, handPose.y, handPose.z], forward, map.colliders || [], weaponLength(player.weapon) + .12, weaponCoverPadding(player.weapon, 1, reloadProgress)) - .025);
       weaponParts(mesh, player.weapon, handPose, { hand, limit, reloadProgress, reloadMotion: pairedReload, bolt: weaponCyclePose(player.weapon, hand === player.lastShotHand ? age : Infinity).bolt, aim: aimProgress(player) });
-      mesh.box(-.043, -.128, -.041, .086, .108, .10, art.skin, handPose);
     }
   } else if (!empty && gunHeld(player)) {
     weaponParts(mesh, player.weapon, gunPose, { limit, stock: color, reloadProgress, reloadMotion: reloadPose, bolt: worldCycle.bolt, pump: worldCycle.pump, aim: aimProgress(player), loaded: player.ammo > 0, spin: finite(player.spinTicks) / (WEAPONS[player.weapon]?.spinupTicks || 1), cycle: 1 - finite(player.shotCooldown) / (WEAPONS[player.weapon]?.cooldown || 1) });
-    mesh.box(-.067, -.135, -.11, .104, .115, .140, art.skin, gunPose);
   }
   if (allied) {
     // A small in-world team tab is depth-tested like every other triangle.
     mesh.box(-.055, (crouch ? 1.15 : 1.8) + .09, -.045, .11, .045, .09, team, pose);
   }
+}
+
+/** Inspection uses the same bounded world body/equipment batch as gameplay. */
+export function operativePlayerMeshes(player, map = MAPS.courtyard, time = 0, animation = null, options = {}) {
+  const mesh = new Mesh(); playerMesh(mesh, player, map, finite(time), false, !!options.freeForAll, animation, animation?.reload, options); return mesh.array;
 }
 
 export class VoxelRenderer {
@@ -4452,8 +4526,9 @@ export class VoxelRenderer {
         const pose = { x: side * lerp(.275, .175, aim) + (this.swayX + motion.weaponX) * steady + handShot.x + reloadWeapon.x * side,
           y: lerp(-.29, -.212, aim) + (this.swayY + motion.weaponY) * steady + handShot.y + reloadWeapon.y - throwing * .15,
           z: lerp(-.49, -.405, aim) + handShot.z + reloadWeapon.z + finite(motion.weaponZ) * steady,
-          yaw: -side * lerp(.08, .055, aim) + this.swayX * 2 * steady + handShot.yaw + reloadWeapon.yaw * side,
-          pitch: handShot.pitch + reloadWeapon.pitch + finite(motion.weaponPitch) * steady - throwing * .20, scale: .74 };
+          yaw: -side * lerp(.08, .055, aim) + this.swayX * 2 * steady + handShot.yaw + reloadWeapon.yaw * side + finite(motion.weaponYaw) * steady,
+          pitch: handShot.pitch + reloadWeapon.pitch + finite(motion.weaponPitch) * steady - throwing * .20,
+          roll: finite(motion.weaponRoll) * steady, scale: .74 };
         const limit = coverLimit(pose, weaponLength(player.weapon) + .20, weaponCoverPadding(player.weapon, pose.scale, visualReloadProgress));
         const handAge = this.presentShots ? this.presentShots.age(player.weapon, time, hand) : this.localShot?.hand === hand ? age : Infinity;
         const length = weaponParts(mesh, player.weapon, pose, { hand, limit, reloadProgress, reloadMotion: handReload, bolt: weaponCyclePose(player.weapon, handAge).bolt, aim });
@@ -4472,9 +4547,9 @@ export class VoxelRenderer {
       x: lerp(.29, 0, aim) + (this.swayX + motion.weaponX) * steady + firing.x + reloadPose.weapon.x,
       y: lerp(-.29, -(WEAPONS[player.weapon]?.adsSightHeight || .152) * .74, aim) + (this.swayY + motion.weaponY) * steady + firing.y + reloadPose.weapon.y - throwing * .15,
       z: lerp(-.49, -.35, aim) + firing.z + reloadPose.weapon.z + finite(motion.weaponZ) * steady,
-      yaw: -.065 * (1 - aim) + this.swayX * 2 * steady + firing.yaw + reloadPose.weapon.yaw,
+      yaw: -.065 * (1 - aim) + this.swayX * 2 * steady + firing.yaw + reloadPose.weapon.yaw + finite(motion.weaponYaw) * steady,
       pitch: firing.pitch + reloadPose.weapon.pitch + finite(motion.weaponPitch) * steady - throwing * .20,
-      scale: .74,
+      roll: finite(motion.weaponRoll) * steady, scale: .74,
     };
     const cyclePose = weaponCyclePose(player.weapon, age), pump = Math.max(cyclePose.pump, reloadPose.pump);
     const limit = coverLimit(pose, weaponLength(player.weapon) + .20, weaponCoverPadding(player.weapon, pose.scale, visualReloadProgress));
@@ -4542,7 +4617,7 @@ export class VoxelRenderer {
     let pitch = clamp(finite(options.aimPitch ?? options.pitch, finite(cameraPlayer.pitch)), -1.48, 1.48);
     const aim = aimProgress(cameraPlayer), zoom = weaponAimFovRatio(cameraPlayer.weapon, ADS);
     const headContext = `${state.gameId || 'voxel-breach'}:${map.id}:${state.matchId ?? ''}:${state.round ?? ''}`;
-    const motion = this.presentHead(cameraPlayer, time, headContext, { aim, paused: state.phase === 'paused' || !!options.paused });
+    const motion = this.presentHead(cameraPlayer, time, headContext, { aim, reducedMotion, paused: state.phase === 'paused' || !!options.paused });
     this.presentReloads.retain([...players.map(player => player.id), cameraPlayer.id]);
     const acceptedPlayers = Array.isArray(options.acceptedPlayers) ? options.acceptedPlayers : players;
     this.monsterDeaths = this.presentMonsterDeaths({ ...state, players: acceptedPlayers }, time, { paused: state.phase === 'paused' || !!options.paused });
@@ -4633,7 +4708,10 @@ export class VoxelRenderer {
         continue;
       }
       if (player.id === cameraPlayer.id && (!options.showLocalPlayer || cameraPose?.nearBody)) continue;
-      const monsterAnimation = horde && player.monsterType ? this.presentMonsters(player, time, humanContext, { paused: animationPaused }) : null;
+      const acceptedMonster = acceptedById.get(player.id);
+      const sameMonster = acceptedMonster && ['id', 'alive', 'lifeId', 'deaths', 'monsterType'].every(field => acceptedMonster[field] === player[field]);
+      const monsterAnimation = horde && player.monsterType ? this.presentMonsters(player, time, humanContext, { paused: animationPaused,
+        acceptedPlayer: sameMonster ? acceptedMonster : { ...player, monsterState: null, attackTicks: 0, roarTicks: 0 } }) : null;
       if (monsterAnimation) {
         if (this.monsterPoses.size < 32) this.monsterPoses.set(player.id, { player, monsterType: player.monsterType, animation: monsterAnimation });
         monsterMesh(dynamic, player, map, time, monsterAnimation, reloadAnimation);
@@ -4739,11 +4817,21 @@ export class VoxelRenderer {
     const humanDeaths = Object.freeze({ ...this.presentHumanDeaths?.getStats(), geometryBuilds: humanDeathGeometry?.geometryBuilds || 0, vertices: humanDeathGeometry?.vertices || 0, templateBytes: humanDeathGeometry?.templateBytes || 0,
       corpses: Object.freeze((this.humanDeaths || []).map(death => { const pose = humanDeathPose(death, death.ageMs, { reducedMotion: this._reducedMotion }); return Object.freeze({ targetId: death.targetId, lifeId: death.lifeId, deaths: death.deaths, x: death.x, y: death.y, z: death.z, ageMs: death.ageMs, progress: pose.progress, collapse: pose.collapse, dissolve: pose.dissolve }); })),
       camera: this.deathCamera ? Object.freeze({ ...this.deathCamera }) : null });
-    const humanAnimation = Object.freeze({ cachedPlayers: this.presentHumans?.size || 0, poses: Object.freeze([...this.humanPoses].map(([id, { animation, joints }]) => Object.freeze({ id, phase: animation.phase, stride: animation.stride, speed: animation.speed, sprint: animation.sprint, forward: animation.forward, strafe: animation.strafe, crouch: animation.crouch, airborne: animation.airborne, jump: animation.jump, land: animation.land, bodyBob: animation.bodyBob, knees: Object.freeze(joints.legs.map(leg => Object.freeze([...leg.knee]))), feet: Object.freeze(joints.legs.map(leg => Object.freeze([...leg.foot]))) }))) });
-    const monsterAnimation = Object.freeze({ cachedMonsters: this.presentMonsters?.size || 0, poses: Object.freeze([...this.monsterPoses].map(([id, { player, monsterType, animation }]) => {
+    const frozenPoint = point => Object.freeze([...point]);
+    const frozenArm = arm => Object.freeze({ shoulder: frozenPoint(arm.shoulder), elbow: frozenPoint(arm.elbow), hand: frozenPoint(arm.hand) });
+    const humanAnimation = Object.freeze({ cachedPlayers: this.presentHumans?.size || 0, poses: Object.freeze([...this.humanPoses].map(([id, { animation, joints }]) => Object.freeze({ id, phase: animation.phase, stride: animation.stride, speed: animation.speed, sprint: animation.sprint, forward: animation.forward, strafe: animation.strafe, crouch: animation.crouch, airborne: animation.airborne, jump: animation.jump, land: animation.land, bodyBob: animation.bodyBob,
+      shoulderYaw: joints.torso.shoulderYaw, hipsYaw: joints.torso.hipsYaw,
+      combat: joints.combat ? Object.freeze({ ...joints.combat }) : null,
+      arms: Object.freeze(joints.arms.map(frozenArm)),
+      legs: Object.freeze(joints.legs.map(leg => Object.freeze({ hip: frozenPoint(leg.hip), knee: frozenPoint(leg.knee), ankle: frozenPoint(leg.ankle), foot: frozenPoint(leg.foot), lift: leg.lift, clearance: leg.clearance, contact: leg.contact, planted: leg.planted }))),
+      firearms: Object.freeze(joints.firearms.map(held => Object.freeze({ hand: held.hand, paired: held.paired, pose: Object.freeze({ ...held.pose }), right: frozenPoint(held.right), support: frozenPoint(held.support),
+        reload: Object.freeze({ stage: held.reload.stage, style: held.reload.style, supportGrip: held.reload.supportGrip, progress: held.reload.globalProgress, weight: held.reload.weight, magazineDrop: held.reload.magazineDrop, bolt: held.reload.bolt, pump: held.reload.pump, cylinder: held.reload.cylinder, lid: held.reload.lid, shell: held.reload.shell }) }))),
+      knees: Object.freeze(joints.legs.map(leg => frozenPoint(leg.knee))), feet: Object.freeze(joints.legs.map(leg => frozenPoint(leg.foot))) }))) });
+    const monsterAnimation = Object.freeze({ cachedMonsters: this.presentMonsters?.size || 0, cachedAttacks: this.presentMonsters?.attackSize || 0, poses: Object.freeze([...this.monsterPoses].map(([id, { player, monsterType, animation }]) => {
       const motion = monsterLocomotionPose(player, animation), legs = monsterType === 'hound' ? motion.paws : motion.legs;
       return Object.freeze({ id, monsterType, phase: animation.phase, stride: animation.stride, speed: animation.speed, run: animation.run,
         forward: animation.forward, strafe: animation.strafe, airborne: animation.airborne, land: animation.land, bodyBob: motion.bodyBob,
+        active: motion.active, attack: Object.freeze({ ...motion.attack }), charge: motion.attack.windup, extension: motion.attack.extension, combatBlend: motion.attack.weight, recovery: motion.attack.phase === 'recovery', arms: Object.freeze(motion.arms.map(frozenArm)),
         feet: Object.freeze(legs.map(leg => Object.freeze([...leg.foot]))), knees: Object.freeze(legs.map(leg => Object.freeze([...leg.knee]))),
         planted: Object.freeze(legs.map(leg => leg.planted)) });
     })) });
