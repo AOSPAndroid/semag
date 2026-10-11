@@ -381,6 +381,8 @@ The revolver rewards deliberate six-shot accuracy; the suppressed PDW has a fast
 
 **Spear, tomahawk and chain whip.** The **Pike Spear** is the longest blade: a straight thrust that lands where a sword can't reach; it parries and takes heavy cuts like the sword. The **Tomahawk** is a quick short chop; right click throws it in an arc for heavy damage, and it flies back to your hand four seconds later (you can't cut while it's away). The **Chain Whip** lashes a wide, long arc for light damage and drags whoever it catches toward you. All three show up in the Armory, as Royale loot and in Last Stand loadouts.
 
+**Breach modes.** When you create a Voxel Breach room you pick a mode. **Classic** is the plant-and-defuse game. **Blade Arena** drops guns and the charge: everyone fights with the blade they pick in the lobby, and rounds are won by elimination. **Samurai Standoff** gives everyone a katana and makes any clean cut lethal; only a parry, a guard or a clash keeps you alive. **Gun Game** puts everyone on an eight-rung ladder (Vandal, Phantom, Spectre, Marshal, Shotgun, Sheriff, Classic, then the knife); each kill swaps you to the next weapon on the spot, rungs carry over between rounds, and the first knife kill from the last rung wins the match.
+
 **Mechanic weapons.** Four originals each test a different skill. They appear under **Special** in the armory.
 
 - **Kite Rail Lance** (charge sniper). Hold the trigger to charge for up to 0.7 s, then release to fire. Damage scales from 35% to 160 body / 320 head, and the cone tightens to a perfect line at full charge. A release under 25% fizzles and keeps the round. Full or partial, the round pierces cover with a high penetration budget and passes through two bodies. Four rounds per magazine.

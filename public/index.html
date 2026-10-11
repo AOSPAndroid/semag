@@ -112,6 +112,12 @@
       <div class="setup-field" data-slot="field"><label class="voxel-map-label" for="voxel-map">Map</label>
       <select id="voxel-map" name="mapId"><option value="courtyard">Sunset Courtyard</option><option value="depot">Freight Depot</option><option value="canal">Canal Exchange</option><option value="rooftops">Roofline District</option><option value="foundry">Iron Foundry</option><option value="bastion">Signal Bastion</option><option value="paris">Paris Rooftops</option></select></div>
       <div class="voxel-map-preview" data-map-preview aria-label="Map overview"></div><p class="voxel-map-note" data-map-note aria-live="polite"></p>
+      <fieldset class="voxel-modes voxel-game-modes"><legend>Mode</legend>
+        <label><input type="radio" name="mode" value="classic" checked><span><strong>Classic</strong><small>Plant or defuse</small></span></label>
+        <label><input type="radio" name="mode" value="blades"><span><strong>Blade Arena</strong><small>Blades only</small></span></label>
+        <label><input type="radio" name="mode" value="standoff"><span><strong>Samurai Standoff</strong><small>Katanas, one cut</small></span></label>
+        <label><input type="radio" name="mode" value="gungame"><span><strong>Gun Game</strong><small>Kills climb a ladder to the knife</small></span></label>
+      </fieldset>
       <label class="voxel-round-utility"><input type="checkbox" name="roundUtility"> <span><strong>Round utility</strong> <small>Everyone starts each round with a smoke and a flashbang in slots 3–4.</small></span></label>
       <div class="voxel-setup-actions" data-slot="dialog-footer"><button type="button" data-cancel-voxel>Cancel</button><button id="voxel-create" type="submit">Create room <span aria-hidden="true">↗</span></button></div>
     </form>

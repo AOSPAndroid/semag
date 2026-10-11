@@ -143,11 +143,24 @@ export function createCombatPlayer(id, teamSize = 1, loadout = 'carbine') {
 }
 const newPlayer = createCombatPlayer;
 function freshBomb() { return { status: 'carried', carrierId: 0, x: 0, y: 0, z: 0, vy: 0, siteId: null, plantPlayerId: null, plantTicks: 0, defusePlayerId: null, defuseTicks: 0, timerTicks: 0 }; }
-export function createState({ teamSize = 1, mapId = 'courtyard', roundUtility = false } = {}) {
+/** Breach room modes. Classic is the bomb game; the rest are elimination rounds with blades or a gun ladder. */
+export const BREACH_MODES = Object.freeze({
+  classic: Object.freeze({ id: 'classic', name: 'Classic', objective: 'Attackers: plant A or B. Defenders: deny the plant or defuse.' }),
+  blades: Object.freeze({ id: 'blades', name: 'Blade Arena', objective: 'Blades only. Eliminate the other squad.' }),
+  standoff: Object.freeze({ id: 'standoff', name: 'Samurai Standoff', objective: 'Katanas only. One clean cut kills: parry, then answer.' }),
+  gungame: Object.freeze({ id: 'gungame', name: 'Gun Game', objective: 'Every kill moves you up a gun. The first knife kill on the last rung wins.' }),
+});
+/** Gun Game's ladder: the last rung is the knife. */
+export const GUN_GAME_LADDER = Object.freeze(['vandal', 'phantom', 'spectre', 'marshal', 'shotgun', 'sheriff', 'classic', 'knife']);
+/** A Samurai Standoff cut is scaled past any health pool; a held guard still softens it. */
+export const STANDOFF_DAMAGE_SCALE = 8;
+const bladeMode = state => state.mode === 'blades' || state.mode === 'standoff';
+export function createState({ teamSize = 1, mapId = 'courtyard', roundUtility = false, mode = 'classic' } = {}) {
   if (![1, 2, 3].includes(teamSize)) throw new RangeError('teamSize must be 1, 2 or 3.');
+  if (!Object.hasOwn(BREACH_MODES, mode)) throw new RangeError('Unknown Voxel Breach mode.');
   if (!Object.hasOwn(MAPS, mapId)) throw new RangeError('Unknown Voxel Breach map.');
   const players = Array.from({ length: teamSize * 2 }, (_, id) => newPlayer(id, teamSize));
-  const state = { gameId: 'voxel-breach', teamSize, capacity: teamSize * 2, mapId, mapName: MAPS[mapId].name, ...(roundUtility === true ? { roundUtility: true } : {}), tick: 0, phase: 'lobby', phaseTicks: 0, round: 1, maxRounds: 7, roundTicks: WORLD.roundSeconds * TICK_RATE, scores: [0, 0], attackTeam: 0, winner: null, roundWinner: null, roundReason: null, players, fighters: players, bomb: freshBomb(), grenades: [], grenadeId: 0, bolts: [], boltId: 0, loot: [], lootId: 0, events: [], eventId: 0, objective: 'Attackers plant at A or B. Defenders deny the plant or defuse. First to four rounds.' };
+  const state = { gameId: 'voxel-breach', teamSize, capacity: teamSize * 2, mapId, mapName: MAPS[mapId].name, ...(roundUtility === true ? { roundUtility: true } : {}), ...(mode !== 'classic' ? { mode } : {}), tick: 0, phase: 'lobby', phaseTicks: 0, round: 1, maxRounds: 7, roundTicks: WORLD.roundSeconds * TICK_RATE, scores: [0, 0], attackTeam: 0, winner: null, roundWinner: null, roundReason: null, players, fighters: players, bomb: freshBomb(), grenades: [], grenadeId: 0, bolts: [], boltId: 0, loot: [], lootId: 0, events: [], eventId: 0, objective: 'Attackers plant at A or B. Defenders deny the plant or defuse. First to four rounds.' };
   spawnPlayers(state, false); return state;
 }
 export function emitCombatEvent(state, type, data = {}) {
@@ -161,6 +174,13 @@ function spawnPlayers(state, preserveStats = true) {
   state.players = state.players.map(old => {
     const f = newPlayer(old.id, state.teamSize, old.weapon), side = f.team === state.attackTeam ? 0 : 1, spawn = arena.spawns[side][f.id % state.teamSize];
     f.meleeLoadout = 'knife'; setInventoryMeleeLoadout(f, 'knife');
+    if (bladeMode(state)) {
+      // Blade modes carry no gun: the chosen blade (or the katana) is the whole kit.
+      const blade = state.mode === 'standoff' ? 'katana' : Object.hasOwn(MELEE_WEAPONS, old.meleeLoadout) ? old.meleeLoadout : 'sword';
+      initializeInventory(f, { knifeOnly: true, melee: blade }); f.meleeLoadout = blade;
+    } else if (state.mode === 'gungame') {
+      f.gunGameLevel = preserveStats ? Math.max(0, Math.floor(finite(old.gunGameLevel))) : 0; equipGunGameRung(f);
+    }
     // Rooms that opt in issue one smoke and one flash into the two free slots each round.
     if (state.roundUtility === true) { addInventoryStack(f, 'grenade', 1, 'smoke'); addInventoryStack(f, 'grenade', 1, 'flash'); refreshInventory(f); }
     Object.assign(f, spawn); f.previousInput = emptyInput(spawn);
@@ -171,22 +191,42 @@ function spawnPlayers(state, preserveStats = true) {
   state.grenades = []; state.smokes = []; state.bolts = []; state.boltId = 0; state.loot = [];
   state.bomb = freshBomb(); state.bomb.carrierId = state.players.find(f => f.team === state.attackTeam).id; const carrier = state.players[state.bomb.carrierId];
   Object.assign(state.bomb, { x: carrier.x, y: carrier.y, z: carrier.z });
+  // Only Classic plays the charge.
+  if (state.mode && state.mode !== 'classic') Object.assign(state.bomb, { status: 'disabled', carrierId: null });
+}
+function equipGunGameRung(f) {
+  const rung = GUN_GAME_LADDER[Math.min(f.gunGameLevel, GUN_GAME_LADDER.length - 1)];
+  if (rung === 'knife') { initializeInventory(f, { knifeOnly: true, melee: 'knife' }); f.meleeLoadout = 'knife'; return; }
+  setInventoryLoadout(f, rung); f.weapon = rung;
+}
+/** Each kill climbs one rung, mid-fight. A kill from the last rung wins the match. */
+function advanceGunGame(state, f, kills) {
+  for (let kill = 0; kill < kills && state.phase !== 'matchEnd'; kill++) {
+    f.gunGameLevel = (f.gunGameLevel || 0) + 1;
+    if (f.gunGameLevel >= GUN_GAME_LADDER.length) {
+      state.phase = 'matchEnd'; state.phaseTicks = 0; state.winner = f.team; state.gunGameWinnerId = f.id;
+      state.objective = 'Gun Game complete. Both squads must ready up for a rematch.';
+      emit(state, 'matchEnd', { winner: f.team, playerId: f.id, scores: [...state.scores], mode: 'gungame' }); return;
+    }
+    f.reloadTicks = f.burstRemaining = f.spinTicks = f.pendingFireTicks = 0; equipGunGameRung(f);
+    emit(state, 'gunGameLevel', { playerId: f.id, level: f.gunGameLevel, weapon: GUN_GAME_LADDER[f.gunGameLevel], rungs: GUN_GAME_LADDER.length });
+  }
 }
 function prepareRound(state, countdown = TICK_RATE * 2) {
   state.attackTeam = state.round <= 3 ? 0 : 1; spawnPlayers(state);
   state.phase = 'countdown'; state.phaseTicks = countdown; state.roundTicks = WORLD.roundSeconds * TICK_RATE; state.roundWinner = null; state.roundReason = null;
-  state.objective = 'Choose a weapon. Attackers carry the charge to site A or B.';
+  state.objective = !state.mode || state.mode === 'classic' ? 'Choose a weapon. Attackers carry the charge to site A or B.' : `${BREACH_MODES[state.mode].name}: ${BREACH_MODES[state.mode].objective}`;
   emit(state, 'round', { round: state.round, attackTeam: state.attackTeam, mapId: state.mapId });
 }
 export function startMatch(state) {
-  const tick = state.tick, eventId = state.eventId, loadouts = state.players.map(f => f.weapon);
-  const fresh = createState({ teamSize: state.teamSize, mapId: state.mapId }); Object.assign(state, fresh, { tick, eventId });
-  for (const f of state.players) { f.weapon = loadouts[f.id] || 'carbine'; f.meleeLoadout = 'knife'; setInventoryMeleeLoadout(f, 'knife'); } prepareRound(state, 3 * TICK_RATE); return state;
+  const tick = state.tick, eventId = state.eventId, loadouts = state.players.map(f => f.weapon), blades = state.players.map(f => f.meleeLoadout);
+  const fresh = createState({ teamSize: state.teamSize, mapId: state.mapId }); Object.assign(state, fresh, { tick, eventId }); delete state.gunGameWinnerId;
+  for (const f of state.players) { f.weapon = loadouts[f.id] || 'carbine'; f.meleeLoadout = state.mode === 'blades' && Object.hasOwn(MELEE_WEAPONS, blades[f.id]) ? blades[f.id] : 'knife'; setInventoryMeleeLoadout(f, 'knife'); } prepareRound(state, 3 * TICK_RATE); return state;
 }
 export function resetLobby(state) {
-  const tick = state.tick, eventId = state.eventId, loadouts = state.players.map(f => f.weapon);
-  Object.assign(state, createState({ teamSize: state.teamSize, mapId: state.mapId }), { tick, eventId });
-  for (const f of state.players) { setInventoryLoadout(f, loadouts[f.id] || 'carbine'); f.meleeLoadout = 'knife'; setInventoryMeleeLoadout(f, 'knife'); }
+  const tick = state.tick, eventId = state.eventId, loadouts = state.players.map(f => f.weapon), blades = state.players.map(f => f.meleeLoadout);
+  Object.assign(state, createState({ teamSize: state.teamSize, mapId: state.mapId }), { tick, eventId }); delete state.gunGameWinnerId;
+  for (const f of state.players) { setInventoryLoadout(f, loadouts[f.id] || 'carbine'); f.meleeLoadout = state.mode === 'blades' && Object.hasOwn(MELEE_WEAPONS, blades[f.id]) ? blades[f.id] : 'knife'; setInventoryMeleeLoadout(f, 'knife'); }
   return state;
 }
 export function selectLoadout(state, playerId, weaponId) {
@@ -194,6 +234,7 @@ export function selectLoadout(state, playerId, weaponId) {
   if (!f || !Number.isInteger(playerId)) return { ok: false, changed: false, error: 'Unknown player.' };
   if (typeof weaponId !== 'string' || !Object.hasOwn(WEAPONS, weaponId) || WEAPONS[weaponId].gadget) return { ok: false, changed: false, error: 'Choose a weapon from the loadout list.' };
   if (!['lobby', 'countdown', 'buy', 'roundEnd'].includes(state.phase)) return { ok: false, changed: false, error: 'Weapons can be changed between rounds.' };
+  if (state.mode && state.mode !== 'classic') return { ok: false, changed: false, error: `${BREACH_MODES[state.mode].name} sets your weapon.` };
   if (f.hasGun && f.weapon === weaponId) return { ok: true, changed: false };
   setInventoryLoadout(f, weaponId);
   emit(state, 'loadout', { playerId, weapon: weaponId }); return { ok: true, changed: true };
@@ -203,7 +244,7 @@ export function validateMeleeLoadout(state, playerId, weaponId) {
   const f = state.players[playerId];
   if (!f || !Number.isInteger(playerId)) return { ok: false, changed: false, error: 'Unknown player.' };
   if (typeof weaponId !== 'string' || !Object.hasOwn(MELEE_WEAPONS, weaponId)) return { ok: false, changed: false, error: 'Choose a close-combat weapon from the loadout list.' };
-  if (weaponId !== 'knife') return { ok: false, changed: false, error: 'Start with a knife. Collect other blades from dropped supplies.' };
+  if (weaponId !== 'knife' && state.mode !== 'blades') return { ok: false, changed: false, error: 'Start with a knife. Collect other blades from dropped supplies.' };
   if (!['lobby', 'countdown', 'buy', 'roundEnd'].includes(state.phase)) return { ok: false, changed: false, error: 'Close-combat weapons can be changed between rounds.' };
   return { ok: true, changed: false };
 }
@@ -1572,7 +1613,8 @@ function winRound(state, team, reason) {
   state.grenades = []; state.smokes = []; state.bolts = []; state.boltId = 0;
   for (const f of state.players) { f.vx = f.vy = f.vz = 0; clearKnockback(f); resetSprint(f); f.jumpBufferTicks = 0; f.interaction = null; f.interactTicks = 0; f.reloadTicks = 0; f.burstRemaining = 0; f.spinTicks = 0; f.aiming = false; f.aimTicks = 0; cancelHeal(state, f, 'round'); f.grenadeThrowTicks = 0; clearMelee(f); }
   emit(state, 'roundEnd', { winner: team, reason, round: state.round, scores: [...state.scores] });
-  if (state.scores[team] >= WORLD.winsToMatch) { state.phase = 'matchEnd'; state.phaseTicks = 0; state.winner = team; state.objective = 'Match complete. Both squads must ready up for a rematch.'; emit(state, 'matchEnd', { winner: team, scores: [...state.scores] }); }
+  // Gun Game ends only on the ladder.
+  if (state.mode !== 'gungame' && state.scores[team] >= WORLD.winsToMatch) { state.phase = 'matchEnd'; state.phaseTicks = 0; state.winner = team; state.objective = 'Match complete. Both squads must ready up for a rematch.'; emit(state, 'matchEnd', { winner: team, scores: [...state.scores] }); }
 }
 function resolveRound(state) {
   if (state.phase !== 'fight') return;
@@ -1590,16 +1632,19 @@ export function step(state, rawInputs = []) {
     for (const f of state.players) { f.yaw = inputs[f.id].yaw; f.pitch = inputs[f.id].pitch; f.previousInput = inputs[f.id]; f.jumpBufferTicks = 0; f.spinTicks = 0; }
     if (--state.phaseTicks <= 0) {
       if (state.phase === 'countdown') { state.phase = 'buy'; state.phaseTicks = WORLD.buySeconds * TICK_RATE; state.objective = 'Choose your weapon. Movement and shots unlock at the bell.'; emit(state, 'buy'); }
-      else { state.phase = 'fight'; state.phaseTicks = 0; for (const f of state.players) { f.triggerBlocked = inputs[f.id].fire; f.meleeAimBlocked = inputs[f.id].aim; } state.objective = 'Attackers: plant A or B. Defenders: deny the plant or defuse.'; emit(state, 'fight', { round: state.round }); }
+      else { state.phase = 'fight'; state.phaseTicks = 0; for (const f of state.players) { f.triggerBlocked = inputs[f.id].fire; f.meleeAimBlocked = inputs[f.id].aim; } state.objective = BREACH_MODES[state.mode || 'classic'].objective; emit(state, 'fight', { round: state.round }); }
     }
     return state;
   }
   if (state.phase !== 'fight') return state;
   state.roundTicks = Math.max(0, state.roundTicks - 1);
   if (state.bomb.status === 'planted') { state.bomb.timerTicks = Math.max(0, state.bomb.timerTicks - 1); if (!state.bomb.timerTicks) { resolveRound(state); return state; } }
-  const previous = state.players.map(f => ({ ...f.previousInput }));
-  combatStep(state, inputs, MAPS[state.mapId]);
-  updateBomb(state, inputs); resolveRound(state);
+  const previous = state.players.map(f => ({ ...f.previousInput })), killsBefore = state.players.map(f => f.kills);
+  combatStep(state, inputs, MAPS[state.mapId], state.mode === 'standoff' ? { meleeDamageScale: STANDOFF_DAMAGE_SCALE } : {});
+  if (state.mode === 'gungame') for (const f of state.players) if (f.kills > killsBefore[f.id]) advanceGunGame(state, f, f.kills - killsBefore[f.id]);
+  if (state.phase === 'matchEnd') return state;
+  if (!state.mode || state.mode === 'classic') updateBomb(state, inputs); else for (const f of state.players) { f.interaction = null; f.interactTicks = 0; }
+  resolveRound(state);
   if (state.phase === 'fight') for (const f of state.players) if (f.alive && inputs[f.id].interact && !previous[f.id].interact && !f.interaction && !f.healTicks && !f.reloadTicks && !f.meleeTicks && !f.parryTicks && !f.grenadeThrowTicks && !inputs[f.id].fire) { const loot = findNearbyLoot(state, f.id); if (loot) pickupCombatLoot(state, f, loot, inputs[f.id]); }
   advanceInventoryLoot(state);
   return state;

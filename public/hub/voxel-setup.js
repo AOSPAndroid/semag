@@ -49,7 +49,9 @@ export function chooseVoxelRoom(dialog) {
       const teamSize = Number(form.elements.namedItem('teamSize').value);
       if (![1, 2, 3].includes(teamSize) || !Object.hasOwn(MAPS, map.value)) return;
       const roundUtility = form.elements.namedItem('roundUtility')?.checked === true;
-      finish({ teamSize, mapId: map.value, ...(roundUtility ? { roundUtility } : {}) });
+      const mode = form.elements.namedItem('mode')?.value || 'classic';
+      if (!['classic', 'blades', 'standoff', 'gungame'].includes(mode)) return;
+      finish({ teamSize, mapId: map.value, ...(roundUtility ? { roundUtility } : {}), ...(mode !== 'classic' ? { mode } : {}) });
     };
     form.addEventListener('submit', submit);
     dialog.addEventListener('close', cancel);
