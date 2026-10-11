@@ -118,3 +118,53 @@ body .practice-card.practice-result-card .practice-result-actions > .practice-pr
 @media (max-width: 380px) {
   body .practice-card.practice-result-card .practice-result-stats dt { font-size: .5625rem; }
 }
+
+/* The dojo's camera preference lives in setup and pause, outside the live HUD. */
+body .practice-camera-motion {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(150px, 210px);
+  align-items: center;
+  gap: 8px 16px;
+  margin: 16px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border, #27272a);
+  border-radius: calc(var(--radius, .75rem) - .25rem);
+  background: var(--background, #09090b);
+  font-family: var(--font, Arial, sans-serif);
+}
+body .practice-camera-motion[hidden] { display: none; }
+body .practice-camera-motion label {
+  color: var(--foreground, #fafafa);
+  font-size: .8125rem;
+  font-weight: 500;
+  line-height: 1.5;
+}
+body .practice-camera-motion select {
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid var(--border, #27272a);
+  border-radius: calc(var(--radius, .75rem) - .375rem);
+  background: var(--muted, #18181b);
+  color: var(--foreground, #fafafa);
+  color-scheme: dark;
+  font: inherit;
+  font-size: .75rem;
+}
+body .practice-camera-motion select:focus-visible {
+  outline: 2px solid var(--ring, #a1a1aa);
+  outline-offset: 2px;
+}
+body .practice-camera-motion small {
+  grid-column: 1 / -1;
+  color: var(--muted-foreground, #a1a1aa);
+  font-size: .6875rem;
+  line-height: 1.5;
+}
+@media (max-width: 460px) {
+  body .practice-camera-motion { grid-template-columns: minmax(0, 1fr); gap: 7px; padding: 11px 12px; }
+}
+@media (any-pointer: coarse) {
+  body .practice-camera-motion select { min-height: 44px; }
+}

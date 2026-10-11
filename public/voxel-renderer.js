@@ -6,7 +6,7 @@ import { grenadeCapacity } from './voxel-ordnance.js';
 import { MELEE_WEAPONS, meleeProfile, meleeWeaponId, meleeSlashOrigin, meleeSlashGeometry, meleeSlashPhase, parryPhase } from './voxel-melee.js';
 import { frameAlpha } from './display-timing.js';
 import { createPlayerAnimationPresenter, playerAnimationPose, weaponReloadPose, createWeaponReloadPresenter } from './voxel-player-animation.js';
-import { createFirstPersonMotionPresenter, createWeaponShotPresenter, weaponShotPose, weaponCyclePose } from './voxel-first-person-motion.js';
+import { createFirstPersonMotionPresenter, createWeaponShotPresenter, weaponShotPose, weaponCyclePose, resolveCameraMotion } from './voxel-first-person-motion.js';
 import { MONSTER_BODIES, monsterBodyProfile } from './voxel-monster-bodies.js';
 import { MONSTER_DEATH_RULES, MONSTER_DEATH_STYLES, monsterDeathPose, createMonsterDeathPresenter } from './voxel-monster-death.js';
 import { HUMAN_DEATH_RULES, humanDeathPose, humanDeathCameraPose, createHumanDeathPresenter } from './voxel-human-death.js';
@@ -4622,12 +4622,14 @@ export class VoxelRenderer {
     }
     this.shotContext = shotContext;
     const reducedMotion = this.reducedMotion?.matches === true || options.reducedMotion === true || options.quality === 'reduced';
+    const cameraMotion = resolveCameraMotion(options.cameraMotion, reducedMotion);
+    this._cameraMotion = cameraMotion.cameraMotion; this._headReducedMotion = cameraMotion.headReducedMotion;
     this._events(state, time, localId, { reducedMotion });
     let yaw = finite(options.aimYaw ?? options.yaw, finite(cameraPlayer.yaw));
     let pitch = clamp(finite(options.aimPitch ?? options.pitch, finite(cameraPlayer.pitch)), -1.48, 1.48);
     const aim = aimProgress(cameraPlayer), zoom = weaponAimFovRatio(cameraPlayer.weapon, ADS);
     const headContext = `${state.gameId || 'voxel-breach'}:${map.id}:${state.matchId ?? ''}:${state.round ?? ''}`;
-    const motion = this.presentHead(cameraPlayer, time, headContext, { aim, reducedMotion, paused: state.phase === 'paused' || !!options.paused });
+    const motion = this.presentHead(cameraPlayer, time, headContext, { aim, reducedMotion: cameraMotion.headReducedMotion, cameraMotion: cameraMotion.cameraMotion, paused: state.phase === 'paused' || !!options.paused });
     this.presentReloads.retain([...players.map(player => player.id), cameraPlayer.id]);
     const acceptedPlayers = Array.isArray(options.acceptedPlayers) ? options.acceptedPlayers : players;
     this.monsterDeaths = this.presentMonsterDeaths({ ...state, players: acceptedPlayers }, time, { paused: state.phase === 'paused' || !!options.paused });
@@ -4668,7 +4670,7 @@ export class VoxelRenderer {
     const cameraPose = options.cameraPose;
     const customCamera = cameraPose?.eye?.length === 3 && cameraPose.eye.every(Number.isFinite) && Number.isFinite(cameraPose.yaw) && Number.isFinite(cameraPose.pitch);
     if (customCamera) { eye = [...cameraPose.eye]; yaw = cameraPose.yaw; pitch = clamp(cameraPose.pitch, -1.48, 1.48); roll = finite(cameraPose.roll); bobY = 0; }
-    this.firstPersonMotion = { ...motion, roll, bobY, eye: [...eye], yaw, pitch };
+    this.firstPersonMotion = { ...motion, cameraMotion: cameraMotion.cameraMotion, headReducedMotion: cameraMotion.headReducedMotion, roll, bobY, eye: [...eye], yaw, pitch };
     this.shotMotion = gunHeld(cameraPlayer) ? this.presentShots.sample(cameraPlayer.weapon, time, aim) : weaponShotPose(cameraPlayer.weapon, Infinity, 0);
     this.cameraEyeHeight = eye[1] - finite(cameraPlayer.y);
     const gl = this.gl;
@@ -4846,13 +4848,13 @@ export class VoxelRenderer {
         planted: Object.freeze(legs.map(leg => leg.planted)) });
     })) });
     const firstPerson = this.firstPersonMotion ? Object.freeze({ ...this.firstPersonMotion, eye: Object.freeze([...this.firstPersonMotion.eye]), shot: Object.freeze({ ...this.shotMotion }), melee: this.meleePose ? Object.freeze({ ...this.meleePose }) : null, reload: this.reloadMotion ? Object.freeze({ ...this.reloadMotion, hands: Object.freeze(this.reloadMotion.hands.map(hand => Object.freeze({ ...hand }))) }) : null, ...this.presentShots.getStats() }) : null;
-    return Object.freeze({ mapId: this.mapId, mapVertices: this._mapVertices, cachedMaps: this.mapCache.size, drawCalls: this._frameDrawCalls, dynamicVertices: this._frameDynamicVertices, lootItems: this._lootItems, stormVertices: this._stormVertices, spawnWarnings: this._spawnWarnings || 0, meleeTrailVertices: this._meleeTrailVertices || 0, meleeTrailActors: this._meleeTrailActors || 0, slashImpacts: Object.freeze(this.presentSlashImpacts?.getStats() || {}), monsterSpecials: Object.freeze(this._monsterSpecials || { shards: 0, runes: 0, fuses: 0, vertices: 0 }), reducedMotion: this._reducedMotion === true, cachedSpawnWarnings: warnings?.cachedItems || 0, spawnWarningBuilds: warnings?.builds || 0, bloodParticles: this.particles.filter(particle => particle.material === 'blood').length, visibleBloodParticles: this._visibleBloodParticles || 0, cachedLootItems: loot?.cachedItems || 0, lootGeometryBuilds: loot?.builds || 0, geometryBufferBytes: Object.values(this.frameMeshes || {}).reduce((bytes, mesh) => bytes + mesh.storage.byteLength, 0) + (loot?.bufferBytes || 0) + (loot?.templateBytes || 0) + (warnings?.bufferBytes || 0) + (warnings?.templateBytes || 0) + (deathGeometry?.bufferBytes || 0) + (deathGeometry?.templateBytes || 0) + (humanDeathGeometry?.bufferBytes || 0) + (humanDeathGeometry?.templateBytes || 0), cameraEyeHeight: this.cameraEyeHeight, resizeReads: this.resizeReads, humanAnimation, monsterAnimation, firstPerson, monsterDeaths, humanDeaths });
+    return Object.freeze({ mapId: this.mapId, mapVertices: this._mapVertices, cachedMaps: this.mapCache.size, drawCalls: this._frameDrawCalls, dynamicVertices: this._frameDynamicVertices, lootItems: this._lootItems, stormVertices: this._stormVertices, spawnWarnings: this._spawnWarnings || 0, meleeTrailVertices: this._meleeTrailVertices || 0, meleeTrailActors: this._meleeTrailActors || 0, slashImpacts: Object.freeze(this.presentSlashImpacts?.getStats() || {}), monsterSpecials: Object.freeze(this._monsterSpecials || { shards: 0, runes: 0, fuses: 0, vertices: 0 }), reducedMotion: this._reducedMotion === true, cameraMotion: this._cameraMotion || 'system', headReducedMotion: this._headReducedMotion === true, cachedSpawnWarnings: warnings?.cachedItems || 0, spawnWarningBuilds: warnings?.builds || 0, bloodParticles: this.particles.filter(particle => particle.material === 'blood').length, visibleBloodParticles: this._visibleBloodParticles || 0, cachedLootItems: loot?.cachedItems || 0, lootGeometryBuilds: loot?.builds || 0, geometryBufferBytes: Object.values(this.frameMeshes || {}).reduce((bytes, mesh) => bytes + mesh.storage.byteLength, 0) + (loot?.bufferBytes || 0) + (loot?.templateBytes || 0) + (warnings?.bufferBytes || 0) + (warnings?.templateBytes || 0) + (deathGeometry?.bufferBytes || 0) + (deathGeometry?.templateBytes || 0) + (humanDeathGeometry?.bufferBytes || 0) + (humanDeathGeometry?.templateBytes || 0), cameraEyeHeight: this.cameraEyeHeight, resizeReads: this.resizeReads, humanAnimation, monsterAnimation, firstPerson, monsterDeaths, humanDeaths });
   }
   resetEffects() {
     this._worldLabels = EMPTY_WORLD_LABELS;
     this.eventIds.clear(); this.eventQueue.length = 0; this.particles.length = 0; this.tracers.length = 0;
     this.presentSlashImpacts?.reset();
-    this.presentMonsterSpecialImpacts?.reset(); this._monsterSpecials = null; this._reducedMotion = false;
+    this.presentMonsterSpecialImpacts?.reset(); this._monsterSpecials = null; this._reducedMotion = false; this._cameraMotion = 'system'; this._headReducedMotion = false;
     this._visibleBloodParticles = 0; this._meleeTrailVertices = 0; this._meleeTrailActors = 0;
     this.localShot = null; this.localReload = null; this.shotContext = null; this.lastAim = null; this.swayX = 0; this.swayY = 0;
     this.presentLoot?.reset(); this.presentWarnings?.reset(); this.presentEye?.reset(); this.presentHumans?.reset(); this.presentMonsters?.reset(); this.presentHead?.reset(); this.presentShots?.reset(); this.presentReloads?.reset(); this.cameraReload = null; this.firstPersonMotion = null; this.shotMotion = null; this.reloadMotion = null; this.meleePose = null; this.humanPoses?.clear(); this.monsterPoses?.clear(); this._locomotionActors = Object.freeze([]); this._spawnWarnings = 0;

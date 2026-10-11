@@ -79,12 +79,25 @@
             </div>
             <p class="practice-weapon-note" id="practice-weapon-note"></p>
             <p class="practice-weapon-note" id="practice-melee-note"></p>
+            <div class="practice-camera-motion" id="practice-camera-motion-field" hidden>
+              <label for="practice-camera-motion">Camera wobble</label>
+              <select id="practice-camera-motion" aria-describedby="practice-camera-motion-status"><option value="system">System preference</option><option value="normal">Normal</option><option value="strong">Strong</option><option value="off">Off</option></select>
+              <small id="practice-camera-motion-status" role="status" aria-live="polite">Follows your device's motion preference.</small>
+            </div>
             <div class="practice-setup-actions">
               <button id="practice-start" class="practice-primary" type="submit" disabled>Start practice <span aria-hidden="true">→</span></button>
               <small class="practice-start-note">Solo · no second player needed · no ranked scores</small>
             </div>
           </form>
-          <div class="practice-card practice-pause-card" id="practice-pause-card" hidden><span class="practice-eyebrow">TAKE A BREATH</span><h2>Practice paused.</h2><p>The bots, shots and clock are waiting. Your progress stays exactly where you left it. Press P to resume. Changing setup or loadout starts a fresh drill.</p><button id="practice-resume" class="practice-primary" type="button">Resume practice →</button><div class="practice-secondary-actions"><button id="practice-restart" type="button">Restart drill</button><button id="practice-change-setup" type="button">Change setup / loadout</button></div></div>
+          <div class="practice-card practice-pause-card" id="practice-pause-card" hidden>
+            <span class="practice-eyebrow">TAKE A BREATH</span><h2>Practice paused.</h2><p>The bots, shots and clock are waiting. Your progress stays exactly where you left it. Press P to resume. Changing setup or loadout starts a fresh drill.</p>
+            <div class="practice-camera-motion" id="practice-pause-camera-motion-field" hidden>
+              <label for="practice-pause-camera-motion">Camera wobble</label>
+              <select id="practice-pause-camera-motion" aria-describedby="practice-pause-camera-motion-status"><option value="system">System preference</option><option value="normal">Normal</option><option value="strong">Strong</option><option value="off">Off</option></select>
+              <small id="practice-pause-camera-motion-status" role="status" aria-live="polite">Follows your device's motion preference.</small>
+            </div>
+            <button id="practice-resume" class="practice-primary" type="button">Resume practice →</button><div class="practice-secondary-actions"><button id="practice-restart" type="button">Restart drill</button><button id="practice-change-setup" type="button">Change setup / loadout</button></div>
+          </div>
           <section class="practice-card practice-result-card" id="practice-result-card" role="region" aria-labelledby="practice-result-title" aria-describedby="practice-result-context practice-result-copy" hidden>
             <header class="practice-result-heading">
               <div id="practice-result-royale-rank" class="royale-result-rank" hidden><svg id="practice-result-crown" viewBox="0 0 56 40" shape-rendering="crispEdges" aria-hidden="true"><path fill="#a96e22" d="M4 12h8v8h8v-8h4V4h8v8h4v8h8v-8h8v24H4z"/><path fill="#f6c663" d="M4 8h8v8h8V8h4V0h8v8h4v8h8V8h8v20H4z"/><path fill="#fff0b0" d="M4 8h8v4H4zm20-8h8v4h-8zm20 8h8v4h-8zM4 28h48v4H4z"/></svg><strong id="practice-result-place">#1</strong><span id="practice-result-field">OF 11 SURVIVORS</span></div>

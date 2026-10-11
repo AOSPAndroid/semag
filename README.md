@@ -40,7 +40,7 @@ Use WASD or ZQSD to move, Shift to sprint, Ctrl to crouch, C to walk and Space t
 
 Shared voxel operators and Shinobi have smoother supporting steps, directional torso motion and connected weapon grips. Cuts and parries move the shoulders and elbows; reloads follow ammunition, magazine and charging-handle stages. These images come from actual keyboard/mouse gameplay.
 
-First-person sprinting has a more noticeable shoulder roll than walking, alongside the gentle distance-driven head dip and low weapon carry. The motion eases in and out, settles against walls and pauses, and stays still while fully scoped or using reduced motion. It follows the shared voxel FPS renderer in Breach, Royale, Last Stand and the Dojo.
+First-person sprinting has a more noticeable shoulder roll than walking, alongside the gentle distance-driven head dip and low weapon carry. The motion eases in and out, settles against walls and pauses, and stays still while fully scoped or using reduced motion. It follows the shared voxel FPS renderer in Breach, Royale, Last Stand and the Dojo. In the Dojo, **Camera wobble** in setup or the **P** menu offers **System preference**, **Normal**, **Strong** and **Off**. System follows the browser’s reduced-motion preference; Normal and Strong explicitly enable walking and running sway. Strong increases shoulder roll without increasing the gentle head dip. The choice is saved in your browser and does not restart training; aiming remains steady. Refresh an already-open tab after updating the hub.
 
 | Moving ninja | Carbine reload |
 | --- | --- |

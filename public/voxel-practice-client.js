@@ -26,6 +26,7 @@ import { mountVoxelVictory } from './voxel-victory.js';
 import { createPracticeInputQueue } from './voxel-practice-input.js';
 import { DOJO_MAPS } from './voxel-dojo-maps.js';
 import { DOJO_ACTIONS, findDojoStation, findDojoStationLoot } from './voxel-dojo-engine.js';
+import { createCameraMotionStore, cameraMotionStatus } from './voxel-camera-motion-settings.js';
 import { inventoryLootPresentation, inventoryEventFeedback, inventorySwapPresentation, mountInventoryHotbar, mountWeaponWheel } from './voxel-inventory-ui.js';
 
 const STEP = 1 / TICK_RATE;
@@ -108,6 +109,7 @@ export function bootPractice() {
   let renderer = null, graphicsError = '', destroyed = false, frameId = null, previousFrame = null, accumulator = 0;
   let state, aim = { yaw: 0, pitch: 0 }, previousPlayers = [], presentationPlayer = null, lastHudAt = -Infinity, lastPhase = '', finishTime = 0;
   const hitFeedback = createHitFeedback(), hitMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  const cameraMotion = createCameraMotionStore();
   const hitElements = { crosshair: $('practice-crosshair'), scope: $('practice-scope'), marker: $('practice-hit') };
   const presentCrosshair = createCrosshairPresenter();
   let reticleView = null;
@@ -135,6 +137,13 @@ export function bootPractice() {
   let touchMode = matchMedia('(pointer: coarse)').matches;
   const setText = (id, value) => { const element = $(id); if (element.textContent !== String(value)) element.textContent = String(value); };
   const listen = (target, name, callback, options) => { target.addEventListener(name, callback, options); listeners.push(() => target.removeEventListener(name, callback, options)); };
+  function syncCameraMotion() {
+    for (const prefix of ['practice', 'practice-pause']) {
+      setHidden($(`${prefix}-camera-motion-field`), !dojo);
+      $(`${prefix}-camera-motion`).value = cameraMotion.get();
+      setText(`${prefix}-camera-motion-status`, cameraMotionStatus(cameraMotion.get(), hitMotion.matches));
+    }
+  }
   const locked = () => document.pointerLockElement === canvas;
   const active = () => !destroyed && !modalOpen && ['countdown', 'fight'].includes(state?.phase);
   const currentInput = () => ({ ...composeInput(keys, touch, mouse, aim, active()), ...(dojo ? { dojoWeapon: $('dojo-weapon').value, dojoBlade: $('dojo-blade').value, dojoTools: dojoToolsOpen } : {}) });
@@ -446,7 +455,7 @@ export function bootPractice() {
     // Fractional player endpoints share one collision-safe rendered world.
     // The camera follows that same body batch without changing real combat.
     view.players = resolvePresentationContacts(view.players, state.map);
-    view.fighters = view.players; presentationPlayer = view.players[0]; renderer.render(view, { acceptedPlayers: state.players, playerId: 0, localId: 0, localPlayer: presentationPlayer, cameraPlayer: presentationPlayer, yaw: aim.yaw, pitch: aim.pitch + (presentationPlayer.recoil || 0), time: sceneLive ? now : lastDrawAt }); renderCount++; lastFraction = tickFraction(accumulator, STEP);
+    view.fighters = view.players; presentationPlayer = view.players[0]; renderer.render(view, { acceptedPlayers: state.players, playerId: 0, localId: 0, localPlayer: presentationPlayer, cameraPlayer: presentationPlayer, yaw: aim.yaw, pitch: aim.pitch + (presentationPlayer.recoil || 0), time: sceneLive ? now : lastDrawAt, cameraMotion: dojo ? cameraMotion.get() : 'system' }); renderCount++; lastFraction = tickFraction(accumulator, STEP);
     paintVitals(presentationPlayer, 'Your', activeSession && active());
     enemyFootsteps.observe(renderer.locomotionActors, { now, context: `${state.mapId}:${state.practice.sessionId}`, listener: presentationPlayer, yaw: aim.yaw, active: activeSession && active() && !dojoToolsOpen && state.phase === 'fight', freeForAll: royale });
     reloadAudio.observe(state.players[0], { tick: state.tick, context: `${state.mapId}:${state.practice.sessionId}`, active: active() && state.phase === 'fight' });
@@ -550,8 +559,11 @@ export function bootPractice() {
     try { if (document.fullscreenElement) await document.exitFullscreen(); else await shell.requestFullscreen(); } catch { feedback('Fullscreen is unavailable in this browser.', performance.now()); }
   }
   function destroy() {
-    if (destroyed) return; destroyed = true; endPresentation.reset(); victory.destroy(); clearTimeout(resultActionTimer); resultActions.cancel(); for (const armory of armories.values()) armory.destroy(); stopFrame(); release(); unlock(); for (const remove of listeners) remove(); unsubscribe(); picker.destroy(); audio.destroy(); inventory.destroy(); weaponWheel.destroy(); renderer?.destroy(); movement.clear();
+    if (destroyed) return; destroyed = true; endPresentation.reset(); victory.destroy(); clearTimeout(resultActionTimer); resultActions.cancel(); for (const armory of armories.values()) armory.destroy(); stopFrame(); release(); unlock(); for (const remove of listeners) remove(); unsubscribe(); unsubscribeCameraMotion(); cameraMotion.destroy(); picker.destroy(); audio.destroy(); inventory.destroy(); weaponWheel.destroy(); renderer?.destroy(); movement.clear();
   }
+  const unsubscribeCameraMotion = cameraMotion.subscribe(() => { syncCameraMotion(); draw(performance.now()); });
+  for (const id of ['practice-camera-motion', 'practice-pause-camera-motion']) listen($(id), 'change', event => { if (dojo) cameraMotion.set(event.target.value); });
+  listen(hitMotion, 'change', syncCameraMotion); syncCameraMotion();
   listen($('practice-setup-form'), 'submit', event => { event.preventDefault(); start(); });
   for (const id of ['practice-map', 'practice-count', 'practice-mode', 'practice-difficulty', 'practice-weapon', 'practice-blade', 'dojo-start-motion']) listen($(id), 'change', preview);
   listen($('dojo-tools-toggle'), 'click', () => setDojoTools(!dojoToolsOpen)); listen($('dojo-tools-close'), 'click', () => setDojoTools(false)); listen($('dojo-return'), 'click', () => setDojoTools(false));
@@ -596,7 +608,7 @@ export function bootPractice() {
   listen(window, 'blur', () => { finishFocused = false; resultActions.clearHeld(); paintResultActions(); if (active()) pause(); else { release(); if (endView.holding) { updateHud(performance.now(), true); stopFrame(); } } }); listen(document, 'visibilitychange', () => { if (document.hidden && active()) pause(); else if (document.hidden && endView.holding) { updateHud(performance.now(), true); stopFrame(); } }); listen(window, 'pagehide', destroy);
   listen(canvas, 'voxel-renderer-error', event => { if (event.detail?.message) { graphicsError = event.detail.message; if (active()) pause(); else if (endView.holding) { updateHud(performance.now(), true); stopFrame(); } setHidden($('practice-error'), false); setText('practice-error-text', graphicsError); } else { graphicsError = ''; setHidden($('practice-error'), true); updateHud(performance.now(), true); draw(performance.now()); } });
   const unsubscribe = subscribeKeyboardLayout(() => { release(); hints(); }); hints(); preview(); graphics();
-  const inspect = () => copy({ state: { ...state, map: undefined, fighters: undefined }, stats: getPracticeStats(state), trainingReport, input: currentInput(), queuedActions: inputQueue.inspect(), presentationPlayer, controls: { pointerLocked: locked(), fallback, modalOpen, paused: state.phase === 'paused', entered: activeSession, touch: touchMode }, ending: { ...endView, resultsVisible, reward: rewardView, rewardAudio: victory.inspect().audio, victory: victory.inspect() }, renderCount, crosshair: reticleView, renderStats: renderer?.stats || null, audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), meleeImpactAudio: meleeImpacts.inspect(), reloadAudio: reloadAudio.inspect(), reloadSounds: audio.inspectReloads(), enemyFootsteps: enemyFootsteps.inspect(), footstepSounds: audio.inspectFootsteps(), gunImpactAudio: gunImpacts.inspect(), parryAudio: parryAudio.inspect(), parrySounds: audio.inspectParries(), stamina: staminaView, weaponWheel: weaponWheel.inspect(), graphicsError, displayTiming: { physicsSamples, renderSamples: renderCount, lastFraction } });
+  const inspect = () => copy({ state: { ...state, map: undefined, fighters: undefined }, stats: getPracticeStats(state), trainingReport, input: currentInput(), queuedActions: inputQueue.inspect(), presentationPlayer, controls: { pointerLocked: locked(), fallback, modalOpen, paused: state.phase === 'paused', cameraMotion: dojo ? cameraMotion.get() : 'system', browserReducedMotion: hitMotion.matches, entered: activeSession, touch: touchMode }, ending: { ...endView, resultsVisible, reward: rewardView, rewardAudio: victory.inspect().audio, victory: victory.inspect() }, renderCount, crosshair: reticleView, renderStats: renderer?.stats || null, audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), meleeImpactAudio: meleeImpacts.inspect(), reloadAudio: reloadAudio.inspect(), reloadSounds: audio.inspectReloads(), enemyFootsteps: enemyFootsteps.inspect(), footstepSounds: audio.inspectFootsteps(), gunImpactAudio: gunImpacts.inspect(), parryAudio: parryAudio.inspect(), parrySounds: audio.inspectParries(), stamina: staminaView, weaponWheel: weaponWheel.inspect(), graphicsError, displayTiming: { physicsSamples, renderSamples: renderCount, lastFraction } });
   const api = Object.freeze({ getState: inspect, getDisplayTiming: () => ({ physicsSamples, renderSamples: renderCount, lastFraction }) }); window.firesidePractice = api;
   return { destroy, inspect };
 }

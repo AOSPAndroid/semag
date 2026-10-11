@@ -6,38 +6,45 @@ const approach = (current, target, elapsed, duration) => target + (current - tar
 const smooth = value => { const t = clamp(value, 0, 1); return t * t * (3 - 2 * t); };
 const neutral = () => ({ bobY: 0, roll: 0, weaponX: 0, weaponY: 0, phase: 0, stride: 0, speed: 0, land: 0, sprint: 0, weaponZ: 0, weaponPitch: 0, weaponYaw: 0, weaponRoll: 0, crouchCarry: 0, airborne: false });
 
+/** Explicit camera choices affect locomotion only, never other effect preferences. */
+export function resolveCameraMotion(preference, reducedMotion = false) {
+  const cameraMotion = preference === 'normal' || preference === 'strong' || preference === 'off' ? preference : 'system';
+  return { cameraMotion, headReducedMotion: cameraMotion === 'off' || cameraMotion === 'system' && reducedMotion === true, rollMultiplier: cameraMotion === 'strong' ? 2 : 1 };
+}
+
 /** Cosmetic head motion follows travelled distance, including predicted sub-tick poses. */
 export function createFirstPersonMotionPresenter() {
   const gait = createPlayerAnimationPresenter({ maxPlayers: 1 });
   let previous = null, pose = neutral();
-  const present = (player, time, contextKey = null, { aim = 0, paused = false, reducedMotion = false } = {}) => {
+  const present = (player, time, contextKey = null, { aim = 0, paused = false, reducedMotion = false, cameraMotion: preference = 'system' } = {}) => {
+    const { cameraMotion, headReducedMotion, rollMultiplier } = resolveCameraMotion(preference, reducedMotion);
     const valid = player?.alive !== false && [player?.x, player?.y, player?.z, time].every(Number.isFinite);
     if (!valid) { present.reset(); return pose; }
     const elapsed = previous ? time - previous.time : 0;
     const reset = !previous || previous.id !== player.id || previous.contextKey !== contextKey || previous.lifeId !== player.lifeId || previous.deaths !== player.deaths
-      || elapsed < 0 || elapsed > 1000 || previous.paused && !paused || previous.reducedMotion !== reducedMotion
+      || elapsed < 0 || elapsed > 1000 || previous.paused && !paused || previous.reducedMotion !== headReducedMotion || previous.cameraMotion !== cameraMotion
       || Math.hypot(player.x - previous.x, player.y - previous.y, player.z - previous.z) > Math.max(.5, elapsed * .016);
     if (reset) gait.reset();
     const animation = gait(player, time, contextKey, { paused });
     const ground = reset ? (animation.airborne ? 0 : 1) : approach(previous.ground, animation.airborne ? 0 : 1, elapsed, 55);
     const crouchCarry = reset ? Number(!!player.crouching) : approach(previous.crouchCarry, Number(!!player.crouching), elapsed, 75);
     if (!paused || reset) {
-      const modelSteadiness = 1 - clamp(finite(aim), 0, 1);
-      const steadiness = reducedMotion ? 0 : modelSteadiness;
+      const modelSteadiness = cameraMotion === 'off' ? 0 : 1 - clamp(finite(aim), 0, 1);
+      const steadiness = headReducedMotion ? 0 : modelSteadiness;
       const weight = animation.stride * ground * steadiness * (1 - animation.crouch * .55);
-      const handStride = reducedMotion ? 0 : animation.stride * ground;
+      const handStride = headReducedMotion ? 0 : animation.stride * ground;
       // The hands follow the real gait and flight posture, rather than adding a
       // second walking clock. Only the held model takes these larger motions.
-      const jump = reducedMotion || reset ? 0 : animation.jump;
-      const fall = reducedMotion || reset ? 0 : animation.fall;
-      const landing = reducedMotion || reset ? 0 : animation.land;
-      const carry = animation.sprint;
+      const jump = headReducedMotion || reset ? 0 : animation.jump;
+      const fall = headReducedMotion || reset ? 0 : animation.fall;
+      const landing = headReducedMotion || reset ? 0 : animation.land;
+      const carry = cameraMotion === 'off' ? 0 : animation.sprint;
       // Sprint shares the distance-driven footfall clock, with a more readable
       // shoulder-to-shoulder weight transfer. The accepted sprint blend eases
       // its roll rather than switching the camera on a key press. Keep the
       // released vertical envelope: a larger dip would add near-cover parallax
       // between the fixed reticle and the authoritative gun origin.
-      const headRoll = .0034 + carry * .0036;
+      const headRoll = (.0034 + carry * .0036) * rollMultiplier;
       // Downward-only eye travel cannot reveal anything above the real head.
       // Roll leaves the central forward ray and mouse angles exactly unchanged.
       pose = {
@@ -53,7 +60,7 @@ export function createFirstPersonMotionPresenter() {
         phase: animation.phase, stride: animation.stride, speed: animation.speed, land: animation.land, airborne: animation.airborne,
       };
     }
-    previous = { x: player.x, y: player.y, z: player.z, time, id: player.id, lifeId: player.lifeId, deaths: player.deaths, contextKey, ground, crouchCarry, paused, reducedMotion };
+    previous = { x: player.x, y: player.y, z: player.z, time, id: player.id, lifeId: player.lifeId, deaths: player.deaths, contextKey, ground, crouchCarry, paused, reducedMotion: headReducedMotion, cameraMotion };
     return pose;
   };
   present.reset = () => { gait.reset(); previous = null; pose = neutral(); };
