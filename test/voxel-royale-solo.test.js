@@ -72,13 +72,19 @@ test('all ten bots move on authored larger ground maps and collect real caches w
   for (const mapId of ['forest', 'maze', 'desert']) {
     const state = tenBots({ mapId, difficulty: 'rookie' });
     const initial = state.players.slice(1).map(player => [player.x, player.z]);
+    const maxMovement = initial.map(() => 0);
     let pickups = 0;
     for (let tick = 0; tick < 600 && state.phase === 'fight'; tick++) {
       stepPractice(state);
+      state.players.slice(1).forEach((bot, index) => {
+        maxMovement[index] = Math.max(maxMovement[index], Math.hypot(bot.x - initial[index][0], bot.z - initial[index][1]));
+      });
       if (tick % 20 === 0) for (const bot of state.players.slice(1).filter(player => player.alive)) bodyClear(state.map, bot);
       pickups = Math.max(pickups, state.events.filter(event => event.type === 'lootPickup' && event.playerId > 0).length);
     }
-    assert.ok(state.players.slice(1).every((bot, index) => Math.hypot(bot.x - initial[index][0], bot.z - initial[index][1]) > .5), `${mapId}: an idle bot never left its spawn`);
+    // An active bot can loot, fight and strafe back past its original spawn.
+    // Observe its whole path rather than mistaking that final pose for idling.
+    assert.ok(maxMovement.every(distance => distance > .5), `${mapId}: an idle bot never left its spawn`);
     assert.ok(pickups > 0, `${mapId}: no real bot loot pickup`);
   }
 });

@@ -199,6 +199,10 @@ test('Owned F/R cancellations withdraw only unconsumed presses and stale cancell
 test('Accepted two-player healing and reloading continue through the natural next-wave boundary without repeating held F/R', async t => {
   const game = await intermission(t, 2), { app, room } = game, { healer, reloader, duration, magazine } = recoveryFixture(game);
   while (room.state.phaseTicks > 12) app.tick();
+  // Accelerated ticking queues hundreds of real snapshots. Drain both peers
+  // before sending fresh holds, so socket backlog cannot age the first hold
+  // past the server's legitimate 350 ms input-idle cutoff while peer 2 drains.
+  await Promise.all(game.peers.map(peer => flushPeer(peer)));
   // Each physical key remains held, unlike the short released taps above.
   await game.input({ heal: true }, {}, 0, 0); await game.input({ reload: true }, {}, 0, 1);
   app.tick(); assert.equal(healer.healTicks, HEAL.ticks); assert.equal(reloader.reloadTicks, duration);
