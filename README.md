@@ -369,6 +369,8 @@ The revolver rewards deliberate six-shot accuracy; the suppressed PDW has a fast
 
 **Blade impact.** Every sword, katana and axe cut now staggers a player for 0.12 s (axe 0.15 s), 0.18 s on a finisher (axe 0.22 s), and shoves them back about twice as hard as before. Knife and tonfa strikes stay quick and light. The existing 0.6 s guard still prevents chain stuns.
 
+**Blade mobility.** Holding a blade makes you 12% faster than holding a gun. While sprinting with a blade, right-click to **lunge** 4 m forward (0.25 s); the cut is timed to land as you arrive. A lunge costs 20 stamina and has a 2.5 s cooldown. A cut started mid-slide sweeps low for 25% more damage.
+
 **Mechanic weapons.** Four originals each test a different skill. They appear under **Special** in the armory.
 
 - **Kite Rail Lance** (charge sniper). Hold the trigger to charge for up to 0.7 s, then release to fire. Damage scales from 35% to 160 body / 320 head, and the cone tightens to a perfect line at full charge. A release under 25% fizzles and keeps the round. Full or partial, the round pierces cover with a high penetration budget and passes through two bodies. Four rounds per magazine.
