@@ -375,6 +375,8 @@ The revolver rewards deliberate six-shot accuracy; the suppressed PDW has a fast
 
 **Backstabs and executions.** A knife hit from behind (the target's rear 120°) kills outright when you sneak in crouched, and a guard can't stop it because the guard only faces forward. Killing with a combo finisher or a backstab is an **execution**: you recover 30 HP (up to full), with an **EXECUTION** or **BACKSTAB** callout and sound. Blade kills make no gunshot report, so a quiet flank stays quiet.
 
+**Blades that feel heavy.** Every confirmed cut briefly freezes your blade at the point of impact (hit-stop) and kicks the camera by the weapon's weight: a knife flicks, a sword bites, an axe lands. Finishers and slide-slashes hit harder, an execution pulses the view in, and being cut makes your view flinch. Reduced-motion settings turn all of this off. When two fighters' cuts meet while both swings are live and facing each other, the blades **clash**: neither lands, both swings drop into recovery, and both fighters are thrown apart. Carrying a blade also makes your footsteps 40% quieter.
+
 **Mechanic weapons.** Four originals each test a different skill. They appear under **Special** in the armory.
 
 - **Kite Rail Lance** (charge sniper). Hold the trigger to charge for up to 0.7 s, then release to fire. Damage scales from 35% to 160 body / 320 head, and the cone tightens to a perfect line at full charge. A release under 25% fizzles and keeps the round. Full or partial, the round pierces cover with a high penetration budget and passes through two bodies. Four rounds per magazine.

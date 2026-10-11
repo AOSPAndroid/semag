@@ -445,17 +445,17 @@ test('sword commits attack direction and cannot reach through solid cover, allie
   const team = lane(fighting({ teamSize: 2 }), { az: 1.4, bz: -.65 }); Object.assign(team.players[1], { x: 20, z: .6 }); Object.assign(team.players[3], { x: -20, z: -18 }); swordReady(team); shot(team); advance(team, fullSwing); assert.equal(team.players[1].hp, 200); assert.equal(team.players[2].hp, 200, 'nearest friendly body blocks sword contact');
   const high = lane(fighting(), { az: .7, bz: -.7 }); Object.assign(high.players[1], { y: 4, grounded: false }); swordReady(high); shot(high); advance(high, fullSwing); assert.equal(high.players[1].hp, 200);
 });
-test('sword attacks trade in the same authoritative active tick and swap cannot bypass recovery', () => {
+test('sword attacks meeting in the same active window clash instead of trading, and swap cannot bypass recovery', () => {
   const trade = lane(fighting(), { az: .7, bz: -.7 }); for (const f of trade.players) { equipSword(f); f.slot = 'sword'; f.hp = 50; }
   game.step(trade, trade.players.map(f => input({ fire: true }, f))); const commitmentTick = trade.tick;
   advance(trade, game.MELEE.startupTicks - 1); assert.deepEqual(trade.players.map(f => f.alive), [true, true]);
   advance(trade, 1); assert.ok(trade.players.every(f => f.meleePhase === 'active'));
   for (let tick = 1; tick < game.MELEE.activeTicks && trade.phase === 'fight'; tick++) advance(trade, 1);
-  assert.deepEqual(trade.players.map(f => f.alive), [false, false]); assert.deepEqual(trade.players.map(f => f.kills), [1, 1]);
-  const contacts = trade.events.filter(e => e.type === 'damage' && e.attack === 'sword');
-  assert.equal(contacts.length, 2); assert.equal(contacts[0].tick, contacts[1].tick, 'both accepted contacts resolve before either lethal hit removes the opposing attack');
-  assert.ok(contacts[0].tick >= commitmentTick + game.MELEE.startupTicks && contacts[0].tick < commitmentTick + game.MELEE.startupTicks + game.MELEE.activeTicks);
-  assert.deepEqual(contacts.map(e => e.damage), [50, 50]); assert.deepEqual(trade.players.map(f => f.hp), [0, 0]);
+  assert.deepEqual(trade.players.map(f => f.alive), [true, true]); assert.deepEqual(trade.players.map(f => f.hp), [50, 50]);
+  assert.equal(trade.events.filter(e => e.type === 'damage' && e.attack === 'sword').length, 0);
+  const clash = trade.events.find(e => e.type === 'meleeClash');
+  assert.ok(clash && clash.tick >= commitmentTick + game.MELEE.startupTicks && clash.tick < commitmentTick + game.MELEE.startupTicks + game.MELEE.activeTicks);
+  assert.ok(trade.players.every(f => f.meleePhase === 'recovery' || f.meleePhase === 'idle'));
   const state = lane(fighting()), f = swordReady(state); shot(state, 0, { yaw: Math.PI / 2 });
   advance(state, 1); game.step(state, [input({ swap: true }, f), input({}, state.players[1])]); advance(state, 1); game.step(state, [input({ swap: true }, f), input({}, state.players[1])]); advance(state, 1); shot(state, 0, { yaw: Math.PI / 2 });
   assert.equal(state.events.filter(e => e.type === 'meleeStart').length, 1); assert.ok(f.meleeCooldown > 0);

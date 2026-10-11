@@ -1308,6 +1308,17 @@ const facesFront = (player, point, halfAngle) => {
   const yaw = finite(player.yaw), pitch = clamp(finite(player.pitch), -1.35, 1.35), cp = Math.cos(pitch);
   return (dx * Math.sin(yaw) * cp + dy * Math.sin(pitch) - dz * Math.cos(yaw) * cp) / distance >= Math.cos(halfAngle);
 };
+/** Blade-on-blade: the defender's own committed cut is live and faces the attacker. */
+export const CLASH = Object.freeze({ halfAngle: .9, pushSpeed: 2.2 });
+function bladeClash(state, hit) {
+  const defender = state.players[hit.targetId], attacker = state.players[hit.playerId];
+  if (!defender?.alive || !attacker?.alive || attacker.id === defender.id || attacker.team === defender.team) return null;
+  if (defender.monster === true || attacker.monster === true || !Number.isFinite(hit.damage) || hit.damage <= 0) return null;
+  const blade = player => player.slot === 'sword' && selectedInventoryItem(player)?.kind === 'melee';
+  if (!blade(attacker) || !blade(defender) || hit.attack !== meleeWeaponId(attacker) || hit.meleeStartTick !== attacker.meleeStartTick) return null;
+  if (defender.meleePhase !== 'active' || defender.meleeAction === 'secondary' || hit.backstab === true) return null;
+  return facesFront(defender, eyePosition(attacker), CLASH.halfAngle) ? { attacker, defender } : null;
+}
 /** A raised sword or katana meets rounds from the front: a live parry sends one back, a held guard soaks it for stamina. */
 function bladeGuardContact(state, hit, pending, arena) {
   const defender = state.players[hit.targetId], attacker = state.players[hit.playerId];
@@ -1359,6 +1370,21 @@ export function applyCombatDamage(state, pending, { onMeleeHit, arena = state.ma
       stoppedSwings.add(swingKey(hit)); attacker.meleeTicks = Math.min(attacker.meleeTicks, meleeProfile(attacker).recoveryTicks); attacker.meleePhase = 'recovery'; resetMeleeCombo(attacker);
     }
     emit(state, 'meleeParry', { playerId: defender.id, targetId: attacker.id, weapon: meleeWeaponId(defender), attackWeapon: hit.weapon || hit.attack, defenderLifeId: defender.lifeId || 0, attackerLifeId: attacker.lifeId || 0, parryIndex: defender.parryIndex, parryStartTick: defender.parryStartTick, meleeIndex: hit.meleeIndex, meleeStartTick: hit.meleeStartTick, x: contact.x, y: contact.y, z: contact.z });
+  }
+  // Two blades meeting mid-swing clash: neither cut lands and both fighters are thrown apart.
+  if (state.phase === 'fight') for (const hit of pending) {
+    if (parried.has(hit) || stoppedSwings.has(swingKey(hit))) continue;
+    const clash = bladeClash(state, hit); if (!clash) continue;
+    const { attacker, defender } = clash;
+    parried.add(hit);
+    for (const fighter of [attacker, defender]) {
+      stoppedSwings.add(`${fighter.id}:${fighter.lifeId || 0}:${fighter.meleeStartTick}:${fighter.meleeIndex}`);
+      fighter.meleeTicks = Math.min(fighter.meleeTicks, meleeProfile(fighter).recoveryTicks); fighter.meleePhase = 'recovery'; resetMeleeCombo(fighter);
+      const other = fighter === attacker ? defender : attacker, dx = fighter.x - other.x, dz = fighter.z - other.z, length = Math.hypot(dx, dz) || 1;
+      fighter.knockbackX = dx / length * CLASH.pushSpeed; fighter.knockbackZ = dz / length * CLASH.pushSpeed;
+      fighter.knockbackTicks = KNOCKBACK.playerTicks; fighter.knockbackReadyTicks = KNOCKBACK.playerReadyTicks;
+    }
+    emit(state, 'meleeClash', { playerId: attacker.id, targetId: defender.id, weapon: meleeWeaponId(attacker), targetWeapon: meleeWeaponId(defender), x: (attacker.x + defender.x) / 2, y: (finite(attacker.y) + finite(defender.y)) / 2 + 1.2, z: (attacker.z + defender.z) / 2 });
   }
   if (state.phase === 'fight') for (const hit of pending) bladeGuardContact(state, hit, pending, arena);
   for (const hit of pending) {

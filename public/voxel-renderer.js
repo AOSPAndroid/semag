@@ -1,3 +1,4 @@
+import { createBladeFeel } from './voxel-blade-feel.js';
 import { MAPS, ADS, HEAL, WORLD, LEAN } from './voxel-engine.js';
 import { WEAPONS, weaponAimFovRatio } from './voxel-weapons.js';
 import { valorantModel, legacyShotgunModel } from './voxel-valorant-models.js';
@@ -4441,6 +4442,7 @@ export class VoxelRenderer {
       while (this.eventQueue.length > MAX_EVENT_IDS) this.eventIds.delete(this.eventQueue.shift());
       if (Number.isFinite(state.tick) && Number.isFinite(event.tick) && state.tick - event.tick > 18) continue;
       if (!combat) continue;
+      (this.bladeFeel ||= createBladeFeel()).observe(event, localId, time);
       if (event.type === 'shot') {
         // Ballistic bolts are represented only by their moving world geometry.
         if (WEAPONS[event.weapon]?.projectile) continue;
@@ -4665,7 +4667,10 @@ export class VoxelRenderer {
       return mesh.array;
     }
     if (player.slot === 'sword') {
-      const motion = meleeMotion(player), knife = meleeWeaponId(player) === 'knife';
+      // Hit-stop: a confirmed contact holds the blade at its impact pose for a few frames.
+      const held = this.bladeFeel?.holding(time, { reducedMotion: this._reducedMotion === true }) && this.heldMelee?.weapon === meleeWeaponId(player) ? this.heldMelee.motion : null;
+      const motion = held || meleeMotion(player), knife = meleeWeaponId(player) === 'knife';
+      this.heldMelee = { weapon: meleeWeaponId(player), motion };
       this.meleePose = { weapon: meleeWeaponId(player), ...motion };
       // Convert the locked world direction into the current camera basis.
       // Looking away cannot rotate the committed blade or its real trail.
@@ -4863,13 +4868,16 @@ export class VoxelRenderer {
     // camera. FPS games continue through the existing eye/death/bob path.
     const cameraPose = options.cameraPose;
     const customCamera = cameraPose?.eye?.length === 3 && cameraPose.eye.every(Number.isFinite) && Number.isFinite(cameraPose.yaw) && Number.isFinite(cameraPose.pitch);
+    // Blade contacts kick the view by the weapon's weight; the offset decays within a few frames.
+    const bladeKick = (this.bladeFeel ||= createBladeFeel()).sample(time, { reducedMotion });
+    if (!this.deathCamera && cameraPlayer.alive !== false) { pitch = clamp(pitch + bladeKick.pitch, -1.48, 1.48); yaw += bladeKick.yaw; roll += bladeKick.roll; }
     if (customCamera) { eye = [...cameraPose.eye]; yaw = cameraPose.yaw; pitch = clamp(cameraPose.pitch, -1.48, 1.48); roll = finite(cameraPose.roll); bobY = 0; }
     this.firstPersonMotion = { ...motion, cameraMotion: cameraMotion.cameraMotion, headReducedMotion: cameraMotion.headReducedMotion, roll, bobY, eye: [...eye], yaw, pitch };
     this.shotMotion = gunHeld(cameraPlayer) ? this.presentShots.sample(cameraPlayer.weapon, time, aim) : weaponShotPose(cameraPlayer.weapon, Infinity, 0);
     this.cameraEyeHeight = eye[1] - finite(cameraPlayer.y);
     const gl = this.gl;
     this._frameDrawCalls = 0; this._frameDynamicVertices = 0;
-    const fov = clamp(finite(options.fov, 70), 55, 95) * lerp(1, zoom, aim) * Math.PI / 180;
+    const fov = clamp(finite(options.fov, 70), 55, 95) * lerp(1, zoom, aim) * this.bladeFeel.fovScale(time, { reducedMotion }) * Math.PI / 180;
     const projection = perspective(fov, this.aspect || 16 / 9, .025, 110), view = viewMatrix(eye, yaw, pitch, roll);
     const sky = rgba(map.skyColor || (map.id === 'canal' ? '#a3bdc2' : map.id === 'depot' ? '#8da6b0' : '#a8bcb9'));
     const atmosphere = voxelMapAtmosphere(map);
@@ -4925,7 +4933,7 @@ export class VoxelRenderer {
       const locomotion = monsterAnimation || gaitAnimation;
       if (locomotion && locomotionActors.length < 32) locomotionActors.push(Object.freeze({ id: player.id, x: player.x, y: finite(player.y), z: player.z,
         alive: true, grounded: player.grounded !== false, lifeId: player.lifeId, deaths: player.deaths, monsterType: player.monsterType ?? null,
-        team: player.team, crouching: !!player.crouching, walking: !player.monsterType && !!player.previousInput?.walk, sprinting: !!player.sprinting,
+        team: player.team, crouching: !!player.crouching, walking: !player.monsterType && !!player.previousInput?.walk, sprinting: !!player.sprinting, blade: !player.monsterType && player.slot === 'sword',
         phase: locomotion.phase, stride: locomotion.stride, speed: locomotion.speed, airborne: !!locomotion.airborne,
         paused: animationPaused, contextKey: humanContext }));
       const support = surfaceBelow(map.colliders, player.x, player.z, finite(player.y) + .045);
@@ -5056,7 +5064,7 @@ export class VoxelRenderer {
     this._worldLabels = EMPTY_WORLD_LABELS;
     this.eventIds.clear(); this.eventQueue.length = 0; this.particles.length = 0; this.tracers.length = 0;
     this.presentSlashImpacts?.reset();
-    this.presentMonsterSpecialImpacts?.reset(); this._monsterSpecials = null; this._reducedMotion = false; this._cameraMotion = this.cameraMotionPreference?.get() ?? DEFAULT_CAMERA_MOTION; this._headReducedMotion = false;
+    this.presentMonsterSpecialImpacts?.reset(); this._monsterSpecials = null; this._reducedMotion = false; this.bladeFeel?.reset(); this.heldMelee = null; this._cameraMotion = this.cameraMotionPreference?.get() ?? DEFAULT_CAMERA_MOTION; this._headReducedMotion = false;
     this._visibleBloodParticles = 0; this._meleeTrailVertices = 0; this._meleeTrailActors = 0;
     this.localShot = null; this.localReload = null; this.shotContext = null; this.lastAim = null; this.swayX = 0; this.swayY = 0;
     this.presentLoot?.reset(); this.presentWarnings?.reset(); this.presentEye?.reset(); this.presentHumans?.reset(); this.presentMonsters?.reset(); this.presentHead?.reset(); this.presentShots?.reset(); this.presentReloads?.reset(); this.presentEquip?.reset(); this.equipMotion = null; this.cameraReload = null; this.firstPersonMotion = null; this.shotMotion = null; this.reloadMotion = null; this.meleePose = null; this.humanPoses?.clear(); this.monsterPoses?.clear(); this._locomotionActors = Object.freeze([]); this._spawnWarnings = 0;
