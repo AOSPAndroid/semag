@@ -721,6 +721,25 @@ const GLYPHS = Object.freeze({
   '<': ['00100','01000','10000','11111','10000','01000','00100'], '>': ['00100','00010','00001','11111','00001','00010','00100'],
 });
 
+function voxelBitmapRectangles(rows) {
+  const rectangles = [], active = new Map();
+  for (let row = 0; row < rows.length; row++) {
+    const current = new Map(), pixels = rows[row];
+    for (let column = 0; column < pixels.length;) {
+      const tone = pixels[column], first = column++;
+      while (column < pixels.length && pixels[column] === tone) column++;
+      if (tone === '.' || tone === '0') continue;
+      const width = column - first, key = `${tone}:${first}:${width}`, previous = active.get(key);
+      if (previous) { previous.h++; current.set(key, previous); }
+      else { const rect = { x: first, row, w: width, h: 1, tone }; rectangles.push(rect); current.set(key, rect); }
+    }
+    active.clear();
+    for (const [key, rect] of current) active.set(key, rect);
+  }
+  return Object.freeze(rectangles.map(rect => Object.freeze(rect)));
+}
+const SOLID_GLYPHS = new Map(Object.values(GLYPHS).map(rows => [rows, voxelBitmapRectangles(rows)]));
+
 function wallPatch(mesh, collider, face, left, bottom, width, height, color, offset = .015) {
   if (width <= 0 || height <= 0) return;
   const { x, y, z, w, d } = collider, c = rgba(color), low = y + bottom, high = low + height;
@@ -732,16 +751,85 @@ function wallPatch(mesh, collider, face, left, bottom, width, height, color, off
   if (face === 'east') mesh.quad([x + w + offset, low, z + left], [x + w + offset, high, z + left], [x + w + offset, high, z + left + width], [x + w + offset, low, z + left + width], [1, 0, 0], c);
 }
 
-function wallText(mesh, collider, face, text, left, bottom, height, color, offset = .026) {
+function wallText(mesh, collider, face, text, left, bottom, height, color, offset = .026, solid = false) {
   const pixel = height / 7, reversed = face === 'north' || face === 'east';
   const glyphs = [...text].map(character => GLYPHS[character.toUpperCase()]);
   const total = glyphs.reduce((sum, glyph) => sum + (glyph ? glyph[0].length + 1 : 3), 0) - 1;
   let cursor = 0;
   for (const rows of glyphs) {
-    if (rows) for (let row = 0; row < rows.length; row++) for (let column = 0; column < rows[row].length; column++) {
+    if (rows && solid) {
+      const rectangles = SOLID_GLYPHS.get(rows);
+      for (const rect of rectangles) wallPatch(mesh, collider, face, left + (reversed ? total - cursor - rect.x - rect.w : cursor + rect.x) * pixel, bottom + (7 - rect.row - rect.h) * pixel, rect.w * pixel, rect.h * pixel, color, offset);
+    } else if (rows) for (let row = 0; row < rows.length; row++) for (let column = 0; column < rows[row].length; column++) {
       if (rows[row][column] === '1') wallPatch(mesh, collider, face, left + (reversed ? total - cursor - column - 1 : cursor + column) * pixel, bottom + (6 - row) * pixel, pixel * .88, pixel * .88, color, offset);
     }
     cursor += rows ? rows[0].length + 1 : 3;
+  }
+}
+
+// A feathered, spread-wing eagle with a turned head and three tail feathers.
+// Horizontal colour runs keep this finer voxel identity inexpensive to cache.
+const BARCLAYS_EAGLE = Object.freeze([
+  '22..........................22',
+  '2222......................2222',
+  '22111....................11122',
+  '.21111..................11112.',
+  '..21111................11112..',
+  '..211111......222.....111112..',
+  '...211111....22122...111112...',
+  '....211111...21.1222111112....',
+  '.....211111..211112111112.....',
+  '......21111111111111112.......',
+  '......32111111111111123.......',
+  '.......321111111111123........',
+  '........3211111111123.........',
+  '.........32111111123..........',
+  '..........321111123...........',
+  '..........321111123...........',
+  '...........3211123............',
+  '...........3211123............',
+  '............21112.............',
+  '...........21.1.12............',
+  '...........21.1.12............',
+  '............2.1.2.............',
+  '..............2...............',
+]);
+const BARCLAYS_EAGLE_PATCHES = voxelBitmapRectangles(BARCLAYS_EAGLE);
+
+function paintTradingTerminal(mesh, collider, patch) {
+  const { w, h, d } = collider, id = String(collider.id || '');
+  const displayFaces = w >= d ? ['north', 'south'] : ['west', 'east'];
+  for (const face of displayFaces) {
+    const width = face === 'north' || face === 'south' ? w : d;
+    if (width < .34 || h < .3) continue;
+    const panes = clamp(Number.isInteger(collider.screens) ? collider.screens : Math.round(width / 1.85), 1, 4);
+    const bezel = Math.min(.045, width * .035), paneWidth = (width - bezel * 2) / panes;
+    const chartBottom = h * .22, chartHeight = h * .53;
+    // The dark chassis remains the complete real solid; everything below is
+    // surface paint, including the price ladder beside each candlestick plot.
+    patch(face, bezel, bezel, width - bezel * 2, h - bezel * 2, '#0b1721', .003);
+    for (let pane = 0; pane < panes; pane++) {
+      const left = bezel + pane * paneWidth, inset = Math.min(.055, paneWidth * .06);
+      const chartWidth = paneWidth * .66 - inset * 2;
+      patch(face, left + inset, h * .80, paneWidth - inset * 2, h * .10, '#143849', .005);
+      patch(face, left + inset * 1.2, h * .836, paneWidth * .38, h * .026, '#70a1ac', .007);
+      for (const fraction of [.33, .66]) patch(face, left + inset, chartBottom + chartHeight * fraction, chartWidth, .009, '#243f4a', .006);
+      for (let candle = 0; candle < 3; candle++) {
+        const seed = hash(`${id}:${pane}:${candle}`), center = chartBottom + chartHeight * (.25 + seed % 44 / 100);
+        const body = chartHeight * (.13 + seed % 5 / 40), cx = left + inset + chartWidth * (.15 + candle * .30);
+        const tint = candle === 1 ? '#d29a7f' : '#70b69e';
+        patch(face, cx, center - body * .7, Math.min(.012, paneWidth * .016), body * 1.4, tint, .008);
+        patch(face, cx - chartWidth * .035, center - body * .35, chartWidth * .085, body * .7, tint, .009);
+      }
+      for (let row = 0; row < 3; row++) {
+        const seed = hash(`${id}:book:${pane}:${row}`);
+        patch(face, left + paneWidth * .73, chartBottom + chartHeight * (.16 + row * .27), paneWidth * (.10 + seed % 9 / 100), h * .032, row === 2 ? '#70b69e' : '#d29a7f', .008);
+      }
+      for (let bar = 0; bar < 3; bar++) patch(face, left + inset + chartWidth * bar / 3, h * .13, chartWidth * .22, h * (.028 + hash(`${id}:volume:${pane}:${bar}`) % 3 * .012), '#3b7187', .007);
+      if (pane > 0) patch(face, left - .013, bezel, .026, h - bezel * 2, '#1a2830', .009);
+    }
+    patch(face, bezel * 2, h * .075, width - bezel * 4, h * .020, '#8aa6af', .007);
+    patch(face, width - bezel * 1.4, bezel * .36, bezel * .4, bezel * .3, '#51c8ef', .009);
   }
 }
 
@@ -1271,6 +1359,7 @@ function paintExpansionCollider(mesh, collider, theme) {
     return;
   }
   if (/screen|monitor/.test(material)) {
+    if (theme === 'trading') return paintTradingTerminal(mesh, collider, patch);
     // Each screen is a real collision slab. A restrained bezel surrounds
     // authored chart panes and a ticker; a monitor bank is useful solid cover.
     const displayFaces = w >= d ? ['north', 'south'] : ['west', 'east'];
@@ -1296,15 +1385,41 @@ function paintExpansionCollider(mesh, collider, theme) {
       patch(face, .09, .085, width - .18, .026, '#87999b', .008);
       patch(face, width - .08, .018, .02, .012, '#88c7a6', .009);
     }
+  } else if (material === 'office-pc' && theme === 'trading') {
+    mesh.floor(x + .012, z + .012, w - .024, d - .024, '#617886', y + h + .003);
+    for (const face of faces) {
+      const width = face === 'north' || face === 'south' ? w : d;
+      patch(face, .025, .025, width - .05, h - .05, '#24333e', .003);
+      if (face === 'north' || face === 'south') {
+        patch(face, .05, h * .68, width - .10, .025, '#7d8f99', .005);
+        patch(face, width * .68, h * .81, .026, .026, '#51c8ef', .007);
+        patch(face, width * .24, h * .80, .022, .016, '#b5c2c7', .006);
+        for (const fraction of [.23, .34, .45]) patch(face, width * .19, h * fraction, width * .62, .018, '#627d8b', .006);
+      } else {
+        for (const fraction of [.27, .39, .51]) patch(face, width * .21, h * fraction, width * .58, .018, '#445c6b', .005);
+        patch(face, width * .12, h * .81, width * .24, .022, '#8598a3', .006);
+      }
+    }
   } else if (/desk|table/.test(material)) {
     mesh.floor(x + .008, z + .008, Math.max(.01, w - .016), Math.max(.01, d - .016), '#b4a38b', y + h + .003);
     for (let grain = .11; grain < d - .03; grain += .27) mesh.floor(x + .025, z + grain, w - .05, .012, '#a79780', y + h + .004);
-    if (/top|table|desk/.test(id) && h < .4) for (let station = .50; station < w - .35; station += 1.45) {
-      mesh.floor(x + station - .24, z + d * .23, .48, Math.min(.21, d * .20), '#29312e', y + h + .005);
-      for (let row = 0; row < 3; row++) mesh.floor(x + station - .21, z + d * .23 + .035 + row * .049, .42, .015, '#b0b3a6', y + h + .006);
-      mesh.floor(x + station + .35, z + d * .24, .10, .135, '#4b5048', y + h + .005);
-      mesh.floor(x + station - .38, z + d * .70, .28, .36, '#e9e4d4', y + h + .006);
-      mesh.floor(x + station - .34, z + d * .70 + .055, .20, .015, '#7d8b86', y + h + .007);
+    if (/top|table|desk/.test(id) && h < .4) {
+      const stations = theme === 'trading' ? clamp(Number.isInteger(collider.desktopStations) ? collider.desktopStations : Math.round(w / 2.3), 1, 4) : 0;
+      const offsets = collider.desktopStationOffsets, explicitOffsets = stations && Array.isArray(offsets) && offsets.length === stations && offsets.every(value => Number.isFinite(value) && value >= .5 && value <= w - .5);
+      const positions = explicitOffsets ? offsets : stations ? Array.from({ length: stations }, (_, index) => w * (index + .5) / stations) : Array.from({ length: Math.max(0, Math.ceil((w - .85) / 1.45)) }, (_, index) => .50 + index * 1.45);
+      const keyboardZ = z + d * (theme === 'trading' && collider.desktopFacing === 'south' ? .72 : .23);
+      const paperZ = z + d * (theme === 'trading' && collider.desktopFacing === 'south' ? .17 : .70);
+      for (const station of positions) {
+        mesh.floor(x + station - .24, keyboardZ, .48, Math.min(.21, d * .20), '#29312e', y + h + .005);
+        for (let row = 0; row < 3; row++) mesh.floor(x + station - .21, keyboardZ + .035 + row * .049, .42, .015, '#b0b3a6', y + h + .006);
+        mesh.floor(x + station + .35, keyboardZ + d * .01, .10, .135, '#4b5048', y + h + .005);
+        mesh.floor(x + station - .38, paperZ, .28, .36, '#e9e4d4', y + h + .006);
+        mesh.floor(x + station - .34, paperZ + .055, .20, .015, '#7d8b86', y + h + .007);
+        if (theme === 'trading') {
+          mesh.floor(x + station - .12, keyboardZ + .17, .24, .019, '#70838c', y + h + .007);
+          mesh.floor(x + station + .375, keyboardZ + d * .01 + .025, .05, .02, '#a6b6b9', y + h + .007);
+        }
+      }
     }
     for (const face of faces) {
       const width = face === 'north' || face === 'south' ? w : d;
@@ -1786,31 +1901,29 @@ function mapPaint(mesh, map, theme) {
     if (!sign) return;
     const { wall, face, left, bottom, w, h } = sign;
     const brand = sign.emblem === 'barclays' || sign.label === 'BARCLAYS';
-    const bg = brand ? '#07314c' : theme === 'sewers' ? '#303e34' : '#345465';
+    const bg = brand ? '#06273b' : theme === 'sewers' ? '#303e34' : '#345465';
     const ink = brand ? '#e0f5ff' : theme === 'sewers' ? '#f0d29a' : '#e4f0e7';
     const accent = brand ? '#25b7e7' : theme === 'sewers' ? '#d0ad67' : '#8ccacb';
     wallPatch(mesh, wall, face, left, bottom, w, h, bg, .008);
     wallPatch(mesh, wall, face, left + .06, bottom + h - .065, w - .12, .025, accent, .016);
     const label = String(sign.label || '').toUpperCase().slice(0, 22), subtitle = String(sign.sublabel || '').toUpperCase().slice(0, 28);
     const units = text => [...text].reduce((sum, letter) => sum + (GLYPHS[letter]?.[0].length || 2) + 1, 0) - 1;
-    const emblemWidth = brand ? h * .67 : 0, gap = brand ? h * .14 : 0;
-    const height = Math.min(h * (subtitle ? .33 : .44), (w - .24 - emblemWidth - gap) * 7 / Math.max(1, units(label)));
+    const emblemWidth = brand ? h * .80 : 0, gap = brand ? h * .15 : 0;
+    const height = Math.min(h * (subtitle ? brand ? .38 : .33 : .44), (w - .24 - emblemWidth - gap) * 7 / Math.max(1, units(label)));
     if (height < .05) return;
     const textWidth = units(label) * height / 7, groupWidth = emblemWidth + gap + textWidth, start = left + (w - groupWidth) / 2;
     const reversed = face === 'north' || face === 'east';
     const textLeft = reversed ? start : start + emblemWidth + gap;
-    wallText(mesh, wall, face, label, textLeft, bottom + h * (subtitle ? .43 : .31), height, ink, .024);
+    wallText(mesh, wall, face, label, textLeft, bottom + h * (subtitle ? .40 : .31), height, ink, .024, brand);
     if (brand) {
-      // Pixel eagle: wings and feathered tail are surface pixels, not a
-      // floating logo model or a plate that could masquerade as real cover.
-      const rows = ['100000000001','110000000011','111000000111','011100001110','001111111100','000111111000','000111111000','000011110000','000011110000','000001100000','000001100000'];
-      const pixel = emblemWidth / 12, logoLeft = reversed ? start + textWidth + gap : start, logoBottom = bottom + h * .22;
-      for (let row = 0; row < rows.length; row++) for (let column = 0; column < 12; column++) if (rows[row][column] === '1')
-        wallPatch(mesh, wall, face, logoLeft + (reversed ? 11 - column : column) * pixel, logoBottom + (10 - row) * pixel, pixel * .92, pixel * .92, accent, .024);
+      const columns = BARCLAYS_EAGLE[0].length, pixel = emblemWidth / columns;
+      const logoLeft = reversed ? start + textWidth + gap : start, logoBottom = bottom + h * .25;
+      const palette = { 1: accent, 2: '#6bd9ef', 3: '#1387be' };
+      for (const rect of BARCLAYS_EAGLE_PATCHES) wallPatch(mesh, wall, face, logoLeft + (reversed ? columns - rect.x - rect.w : rect.x) * pixel, logoBottom + (BARCLAYS_EAGLE.length - rect.row - rect.h) * pixel, rect.w * pixel, rect.h * pixel, palette[rect.tone], .024);
     }
     if (subtitle) {
       const subHeight = Math.min(h * .14, (w - .3) * 7 / Math.max(1, units(subtitle)));
-      wallText(mesh, wall, face, subtitle, left + (w - units(subtitle) * subHeight / 7) / 2, bottom + h * .16, subHeight, accent, .024);
+      wallText(mesh, wall, face, subtitle, left + (w - units(subtitle) * subHeight / 7) / 2, bottom + h * .16, subHeight, accent, .024, brand);
     }
   };
   const authoredSigns = (map.decorations || []).filter(item => item.kind === 'wall-sign');

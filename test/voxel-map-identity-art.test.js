@@ -25,17 +25,21 @@ test('wall signs resolve one real face, reject door-spanning panels and retain b
   for (const invalid of [{ ...sign, w: 3.4 }, { ...sign, left: -.2 }, { ...sign, bottom: 3.7 }, { ...sign, face: 'up' }, { ...sign, colliderId: 'door-opening' }, { ...sign, h: NaN }]) assert.equal(resolveVoxelWallSign(map, invalid), null);
 });
 
-test('Barclays wordmarks and pixel eagles stay on genuine signs in all four wall directions', () => {
+test('joined Barclays wordmarks and feathered pixel eagles face the viewer on all four real wall directions', () => {
   for (const face of ['north', 'south', 'west', 'east']) {
     const alongX = face === 'north' || face === 'south';
     const wall = { id: 'real-sign-wall', x: -5, y: 0, z: -5, w: alongX ? 10 : .4, h: 6, d: alongX ? .4 : 10, material: 'office-panel', color: '#718994' };
     const sign = { kind: 'wall-sign', colliderId: wall.id, face, left: 1, bottom: 1.3, w: 8, h: 1.45, label: 'BARCLAYS', sublabel: 'GLOBAL MARKETS', emblem: 'barclays' };
     const map = fixture('trading', [wall], [sign]), mesh = mapMeshes(map).opaque;
     const letters = colored(mesh, '#e0f5ff'), eagle = colored(mesh, '#25b7e7');
-    assert.ok(letters.length >= 600, `${face}: the complete eight-letter wordmark remains visible`);
+    const highlights = colored(mesh, '#6bd9ef'), shadows = colored(mesh, '#1387be');
+    assert.ok(letters.length >= 240, `${face}: joined eight-letter wordmark uses merged solid rectangles`);
     assert.ok(eagle.length >= 300, `${face}: pixel eagle and cyan sign trim remain visible`);
+    assert.ok(highlights.length >= 200 && shadows.length >= 60, `${face}: wing feathers and darker body edges are distinct from the flat cyan silhouette`);
     const normal = face === 'north' ? [0, 0, -1] : face === 'south' ? [0, 0, 1] : face === 'west' ? [-1, 0, 0] : [1, 0, 0];
-    for (const [x, y, z, nx, ny, nz] of [...letters, ...eagle]) {
+    const screenRight = vertex => (face === 'north' || face === 'east' ? -1 : 1) * (alongX ? vertex[0] : vertex[2]);
+    assert.ok(Math.min(...letters.map(screenRight)) > Math.max(...highlights.map(screenRight)), `${face}: eagle is left of the readable wordmark from the player's viewpoint`);
+    for (const [x, y, z, nx, ny, nz] of [...letters, ...eagle, ...highlights, ...shadows]) {
       assert.deepEqual([nx, ny, nz], normal);
       assert.ok(y >= sign.bottom && y <= sign.bottom + sign.h);
       const horizontal = alongX ? x - wall.x : z - wall.z;
@@ -43,6 +47,12 @@ test('Barclays wordmarks and pixel eagles stay on genuine signs in all four wall
       const plane = alongX ? z : x, actual = alongX ? wall.z + (face === 'south' ? wall.d : 0) : wall.x + (face === 'east' ? wall.w : 0);
       assert.ok(Math.abs(plane - actual) >= .0159 && Math.abs(plane - actual) <= .0241, 'logo pixels are visibly separated paint on the actual bullet-blocking face');
     }
+    const textRectangles = [];
+    for (let at = 0; at < mesh.length; at += 60) if (rgb('#e0f5ff').every((value, i) => close(mesh[at + 6 + i], value))) {
+      const ys = Array.from({ length: 6 }, (_, index) => mesh[at + index * 10 + 1]);
+      textRectangles.push(Math.max(...ys) - Math.min(...ys));
+    }
+    assert.ok(textRectangles.some(height => height > .4), 'long letter stems are uninterrupted surfaces rather than disconnected squares');
     const malformed = mapMeshes({ ...map, decorations: [{ ...sign, w: 16 }] }).opaque;
     assert.equal(colored(malformed, '#e0f5ff').length, 0, 'oversized branding never hides an adjacent physical doorway');
   }
@@ -55,11 +65,57 @@ test('both trading scales display inward-facing Barclays identity at the desk fl
       const wall = map.colliders.find(item => item.id === `wall-${side}` || item.id === `boundary-${side}`);
       const plane = wall.z + (side === 'north' ? wall.d : 0);
       const panel = letters.filter(([x, y, z, nx, ny, nz]) => x >= wall.x && x <= wall.x + wall.w && y >= 1 && y < 7 && close(z, plane + expectedNormal * .024) && nx === 0 && ny === 0 && nz === expectedNormal);
-      assert.ok(panel.length >= 600, `${map.mode}/${side}: branding faces the actual playing room`);
+      assert.ok(panel.length >= 240, `${map.mode}/${side}: joined branding faces the actual playing room`);
       assert.ok(panel.some(([, y]) => y > 4.7), 'perimeter branding remains legible from the upper galleries');
     }
     const brand = map.colliders.find(item => item.id === 'trading-brand-wall');
     assert.ok(letters.some(([x, y, z]) => x >= brand.x && x <= brand.x + brand.w && y >= brand.y && y <= brand.y + brand.h && z >= brand.z - .025 && z <= brand.z + brand.d + .025), 'desk-floor players see the lower main market wordmark');
+  }
+});
+
+test('paired trading terminals have separate bezels and financial charts on both actual broad screen faces', () => {
+  for (const [w, d] of [[2.15, .18], [.18, 2.15]]) {
+    const screen = { id: 'trading-paired-terminal', x: 1, y: 4, z: 2, w, h: 1.1, d, material: 'screen', color: '#16394b', screenProfile: 'trading-terminal', screens: 2 };
+    const mesh = mapMeshes(fixture('trading', [screen])).opaque, axis = w > d ? 2 : 0;
+    for (const sign of [-1, 1]) {
+      const headers = [];
+      for (let at = 0; at < mesh.length; at += 60) if (rgb('#143849').every((value, i) => close(mesh[at + 6 + i], value)) && mesh[at + 3 + axis] === sign) {
+        const horizontal = Array.from({ length: 6 }, (_, index) => mesh[at + index * 10 + (axis === 2 ? 0 : 2)]);
+        headers.push([Math.min(...horizontal), Math.max(...horizontal)]);
+      }
+      assert.equal(headers.length, 2, 'each real screen bank reads as two separately framed displays');
+      headers.sort((a, b) => a[0] - b[0]);
+      assert.ok(headers[0][1] < headers[1][0] - .02, 'the panel gap remains visible');
+      for (const color of ['#70b69e', '#d29a7f', '#3b7187', '#8aa6af']) {
+        const marks = colored(mesh, color).filter(vertex => vertex[3 + axis] === sign);
+        assert.ok(marks.length > 0, `${color}: candles, price ladder, volume and ticker are present`);
+        for (const [x, y, z] of marks) assert.ok(x >= screen.x - .01 && x <= screen.x + screen.w + .01 && y >= screen.y && y <= screen.y + screen.h && z >= screen.z - .01 && z <= screen.z + screen.d + .01, 'all terminal markings remain paint on the actual bullet-blocking slab');
+      }
+    }
+  }
+});
+
+test('desktop PC cases have readable vent slots and power lights within their real solid silhouette', () => {
+  const pc = { id: 'trading-workstation-pc', x: 1, y: 4, z: 2, w: .32, h: .5, d: .56, material: 'office-pc', color: '#273b48' };
+  const mesh = mapMeshes(fixture('trading', [pc])).opaque;
+  const lights = colored(mesh, '#51c8ef'), vents = colored(mesh, '#627d8b');
+  assert.ok(lights.some(vertex => vertex[5] === -1) && lights.some(vertex => vertex[5] === 1), 'power indicators remain visible from either desk approach');
+  assert.ok(vents.length >= 36, 'front and rear have three physical-surface vent slots each');
+  for (const [x, y, z] of [...lights, ...vents]) assert.ok(x >= pc.x - .009 && x <= pc.x + pc.w + .009 && y >= pc.y && y <= pc.y + pc.h && z >= pc.z - .009 && z <= pc.z + pc.d + .009, 'case details do not add fake cover or floating geometry');
+});
+
+test('upper-desk keyboards align with their two monitor banks and face the chairs', () => {
+  const desk = { id: 'trading-upper-office-art-desk', x: 1, y: 3.88, z: -15.8, w: 6.2, h: .12, d: 1.8, material: 'desk', color: '#a5a5a0', desktopStations: 2, desktopStationOffsets: [1.775, 4.425], desktopFacing: 'south' };
+  const mesh = mapMeshes(fixture('trading', [desk])).opaque, keyboards = [];
+  for (let at = 0; at < mesh.length; at += 60) if (rgb('#29312e').every((value, i) => close(mesh[at + 6 + i], value))) {
+    const xs = Array.from({ length: 6 }, (_, index) => mesh[at + index * 10]), zs = Array.from({ length: 6 }, (_, index) => mesh[at + index * 10 + 2]);
+    keyboards.push({ x: (Math.min(...xs) + Math.max(...xs)) / 2, near: Math.min(...zs), far: Math.max(...zs) });
+  }
+  assert.equal(keyboards.length, 2, 'one keyboard for each dual-monitor station');
+  keyboards.sort((a, b) => a.x - b.x);
+  for (const [index, keyboard] of keyboards.entries()) {
+    assert.ok(close(keyboard.x, desk.x + desk.desktopStationOffsets[index]), 'keyboard is centred on its actual monitor bank');
+    assert.ok(keyboard.near > desk.z + 1.03 && keyboard.far < desk.z + desk.d, 'keyboard lies between the monitor bank and the south-facing chair without leaving its real tabletop');
   }
 });
 
