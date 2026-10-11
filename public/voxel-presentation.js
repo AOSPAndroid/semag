@@ -1,5 +1,5 @@
 import { tickFraction } from './display-timing.js';
-import { ADS, INPUT_KEYS, copyMovementState, movementPredictionRevision, separatePresentationBodies, sweepPresentationOffset } from './voxel-engine.js';
+import { ADS, INPUT_KEYS, copyMovementState, movementPredictionRevision, separatePresentationBodies, sweepPresentationOffset, clampPresentationLean } from './voxel-engine.js';
 import { advanceBolts, MAX_BOLTS } from './voxel-projectiles.js';
 import { meleeProfile, meleeStartupAim } from './voxel-melee.js';
 import { MONSTER_SPECIAL_RULES } from './voxel-monster-specials.js';
@@ -7,6 +7,7 @@ import { MONSTER_SPECIAL_RULES } from './voxel-monster-specials.js';
 const STEP = 1 / 120;
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const finite = value => Number.isFinite(value) ? value : 0;
+const TRANSFORM_FIELDS = ['x', 'y', 'z', 'vx', 'vy', 'vz', 'lean', 'leanOffset', 'leanX', 'leanZ'];
 const COMBAT_FIELDS = ['aimTicks', 'recoil', 'recoilYaw', 'reloadTicks', 'healTicks', 'grenadeThrowTicks', 'meleeTicks', 'meleeCooldown', 'shotCooldown', 'parryTicks', 'parryCooldown', 'meleeSecondaryCooldown', 'meleeComboWindowTicks', 'hitStunTicks', 'hitStunReadyTicks'];
 const INPUT_FIELDS = [...INPUT_KEYS, 'yaw', 'pitch', 'moveYaw'];
 const MOVEMENT_FIELDS = ['x', 'y', 'z', 'vx', 'vy', 'vz', 'yaw', 'pitch', 'grounded', 'crouching', 'lean', 'leanOffset', 'leanX', 'leanZ', 'slideTicks', 'slideCooldown', 'slideX', 'slideZ', 'slideSpeed', 'mantleTicks', 'mantleFrom', 'mantleTo', 'grappleTicks', 'grappleX', 'grappleY', 'grappleZ', 'grappleStuckTicks', 'jumpBufferTicks', 'knockbackX', 'knockbackZ', 'knockbackTicks', 'knockbackReadyTicks', 'hitStunTicks', 'hitStunReadyTicks', 'stamina', 'staminaRegenTicks', 'sprintExhausted', 'sprinting', 'previousInput'];
@@ -29,7 +30,7 @@ export function reconcileMovement(player, history, ack, map, predictMovement, al
 
 function interpolateMovement(player, next, fraction) {
   const pose = copyMovementState(player);
-  for (const field of ['x', 'y', 'z', 'vx', 'vy', 'vz', 'lean', 'leanOffset', 'leanX', 'leanZ']) {
+  for (const field of TRANSFORM_FIELDS) {
     if (Number.isFinite(player[field]) && Number.isFinite(next[field])) pose[field] += (next[field] - player[field]) * fraction;
   }
   return pose;
@@ -160,11 +161,11 @@ export function interpolatedVoxelState(samples, targetTime, localId, { predictMo
     if (path) {
       const progress = ratio * (path.length - 1), index = Math.min(path.length - 2, Math.floor(progress));
       const pose = interpolateMovement(path[index], path[index + 1], progress - index);
-      for (const axis of ['x', 'y', 'z', 'vx', 'vy', 'vz']) player[axis] = pose[axis];
+      for (const axis of TRANSFORM_FIELDS) if (Number.isFinite(pose[axis])) player[axis] = pose[axis];
       const swept = sweepPresentationOffset(path[index], { x: pose.x - path[index].x, y: pose.y - path[index].y, z: pose.z - path[index].z }, map, from.state.players);
       for (const axis of ['x', 'y', 'z']) player[axis] = swept[axis];
     } else {
-      for (const axis of ['x', 'y', 'z', 'vx', 'vy', 'vz']) {
+      for (const axis of TRANSFORM_FIELDS) {
         if (Number.isFinite(old[axis]) && Number.isFinite(endpoint[axis])) player[axis] = old[axis] + (endpoint[axis] - old[axis]) * ratio;
       }
       const anchor = { ...old, crouching: old.crouching || endpoint.crouching || player.crouching };
@@ -206,7 +207,8 @@ export function interpolatedVoxelState(samples, targetTime, localId, { predictMo
     while (seconds > 1e-8 && projection.bolts.length) { const dt = Math.min(1 / 120, seconds); projection.tick++; advanceBolts(projection, { dt, trace: traceProjectile }); seconds -= dt; }
     state.bolts = projection.bolts;
   }
-  state.players = resolvePresentationContacts(state.players, newest.state.map || newest.state.mapId);
+  state.players = resolvePresentationContacts(state.players, newest.state.map || newest.state.mapId)
+    .map(player => clampPresentationLean(player, newest.state.map || newest.state.mapId));
   state.fighters = state.players;
   return state;
 }

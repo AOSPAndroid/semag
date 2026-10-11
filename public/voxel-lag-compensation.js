@@ -69,7 +69,7 @@ export function recordLagCompensation(state) {
     }
     Object.assign(actor, { ref: player, team: player.team, alive: player.alive, x: player.x, y: player.y, z: player.z, bodyKey: bodyKey(player), yaw: player.yaw });
     history.actors.set(player.id, actor);
-    poses.set(player.id, { generation: actor.generation, alive: player.alive, x: player.x, y: player.y, z: player.z, leanX: Number.isFinite(player.leanX) ? player.leanX : 0, leanZ: Number.isFinite(player.leanZ) ? player.leanZ : 0, ...(actor.bodyKey ? { yaw: player.yaw } : {}) });
+    poses.set(player.id, { generation: actor.generation, alive: player.alive, x: player.x, y: player.y, z: player.z, leanX: Number.isFinite(player.leanX) ? player.leanX : 0, leanZ: Number.isFinite(player.leanZ) ? player.leanZ : 0, leanOffset: Number.isFinite(player.leanOffset) ? player.leanOffset : 0, ...(actor.bodyKey ? { yaw: player.yaw } : {}) });
   }
   for (const id of history.actors.keys()) if (!poses.has(id)) {
     history.actors.delete(id);
@@ -108,7 +108,7 @@ export function traceCompensatedShot(state, shooterId, origin, direction, maxDis
       ? a.yaw + Math.atan2(Math.sin(b.yaw - a.yaw), Math.cos(b.yaw - a.yaw)) * ratio : player.yaw;
     // A peeking head is rewound with its body, so a shot at an older lean still lands.
     const lean = axis => Number.isFinite(a[axis]) && Number.isFinite(b[axis]) ? a[axis] + (b[axis] - a[axis]) * ratio : player[axis];
-    return { ...player, x: a.x + (b.x - a.x) * ratio, y: a.y + (b.y - a.y) * ratio, z: a.z + (b.z - a.z) * ratio, ...(Number.isFinite(player.leanX) ? { leanX: lean('leanX'), leanZ: lean('leanZ') } : {}), ...(actor.bodyKey ? { yaw } : {}) };
+    return { ...player, x: a.x + (b.x - a.x) * ratio, y: a.y + (b.y - a.y) * ratio, z: a.z + (b.z - a.z) * ratio, ...(Number.isFinite(player.leanX) ? { leanX: lean('leanX'), leanZ: lean('leanZ'), leanOffset: lean('leanOffset') } : {}), ...(actor.bodyKey ? { yaw } : {}) };
   });
   return traceShot({ ...state, players, fighters: players }, shooterId, origin, direction, maxDistance, arena);
 }

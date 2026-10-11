@@ -1,5 +1,6 @@
 /** Screen annotations use the same camera and actors as the world draw. */
 import { monsterBodyProfile, monsterTypeId } from './voxel-monster-bodies.js';
+import { smokeBlocksSight } from './voxel-ordnance.js';
 
 export const MAX_WORLD_LABELS = 23;
 export const EMPTY_WORLD_LABELS = Object.freeze([]);
@@ -111,6 +112,7 @@ export function presentWorldLabels({ state, players = state?.players, roster = [
   const map = state.map;
   if (!Array.isArray(map?.colliders)) return EMPTY_WORLD_LABELS;
   const local = players.find(actor => actor?.id === localId), names = new Map();
+  const origin = { x: eye[0], y: eye[1], z: eye[2] };
   for (const person of Array.isArray(roster) ? roster.slice(0, 10) : []) {
     if (person?.connected === true && Number.isSafeInteger(person.id) && person.id >= 0 && person.id < 10) names.set(person.id, typeof person.name === 'string' ? person.name.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 24) : '');
   }
@@ -126,7 +128,7 @@ export function presentWorldLabels({ state, players = state?.players, roster = [
     const cover = candidateCover(map.colliders, eye, geometry);
     // Checking the anchor alone would reveal a short dog behind a low wall.
     // Both the floating anchor AND real on-screen flesh must be uncovered.
-    if (!unobstructed(eye, geometry.anchor, cover) || !geometry.samples.some(point => projectWorldLabel(point, view, projection) && unobstructed(eye, point, cover))) continue;
+    if (!unobstructed(eye, geometry.anchor, cover) || smokeBlocksSight(state, origin, geometry.anchor) || !geometry.samples.some(point => projectWorldLabel(point, view, projection) && unobstructed(eye, point, cover) && !smokeBlocksSight(state, origin, point))) continue;
     const lifeId = Number.isSafeInteger(actor.lifeId) && actor.lifeId >= 0 ? actor.lifeId : 0;
     const kind = monster ? 'monster' : opponent ? 'opponent' : 'teammate';
     const base = { key: `${kind}:${actor.id}:${lifeId}`, id: actor.id, lifeId, kind, x: position.x, y: position.y };

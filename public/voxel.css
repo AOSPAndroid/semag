@@ -291,3 +291,6 @@
 }
 
 .practice-link{display:inline-flex;align-items:center;justify-content:space-between;gap:12px;text-decoration:none;min-height:40px}
+
+/* Controls stay readable above utility effects; the world stays blinded. */
+.game-overlay{z-index:7}

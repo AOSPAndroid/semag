@@ -193,7 +193,7 @@ export function startPractice(state) {
   sessionMaps.set(state, state.map); return state;
 }
 function neutralize(state) {
-  for (const player of state.players) { clearMeleeComboContinuation(player); player.previousInput = emptyInput(player); player.triggerBlocked = true;player.sprinting=false; }
+  for (const player of state.players) { clearMeleeComboContinuation(player); player.chargeTicks = 0; player.leverQueued = false; player.previousInput = emptyInput(player); player.triggerBlocked = true;player.sprinting=false; }
 }
 export function pausePractice(state) {
   if (!state?.practice || !['countdown', 'fight'].includes(state.phase)) return state;
@@ -378,9 +378,18 @@ function botInput(state, bot, brain) {
   if (practice.config.mode !== 'combat' || !enemy || !visible || brain.seenTick < 0 || state.tick - brain.seenTick < settings.reactionTicks || bot.reloadTicks) return input;
   const desiredYaw = Math.atan2(enemy.x - bot.x, -(enemy.z - bot.z)), distance = Math.hypot(enemy.x - bot.x, enemy.z - bot.z);
   if (Math.abs(wrap(input.yaw - desiredYaw)) > .16 || (bot.slot === 'sword' && distance > 1.6)) return input;
-  if (state.tick >= brain.nextBurstTick && state.tick >= brain.burstUntil) { brain.burstUntil = state.tick + settings.burstTicks; brain.nextBurstTick = brain.burstUntil + settings.restTicks + Math.floor(random(practice) * 18); }
   const weapon = WEAPONS[bot.weapon], mode = weapon.mode;
-  input.fire = state.tick < brain.burstUntil && (bot.slot === 'primary' && (!mode || mode === 'auto') ? true : !bot.previousInput.fire);
+  const chargeGun = bot.slot === 'primary' && mode === 'charge';
+  if (state.tick >= brain.nextBurstTick && state.tick >= brain.burstUntil && (!chargeGun || !bot.shotCooldown)) {
+    // A rail shot needs a complete hold/release cycle rather than a sidearm's
+    // one-tick press. Allow the final release tick inside this paced burst.
+    brain.burstUntil = state.tick + (chargeGun ? weapon.chargeTicks + 1 : settings.burstTicks);
+    brain.nextBurstTick = brain.burstUntil + settings.restTicks + Math.floor(random(practice) * 18);
+  }
+  const firingWindow = state.tick < brain.burstUntil;
+  input.fire = chargeGun ? firingWindow && !bot.shotCooldown && bot.chargeTicks < weapon.chargeTicks
+    : bot.slot === 'primary' && mode === 'lever' ? firingWindow && !bot.previousInput.fire && !bot.leverQueued && bot.shotCooldown <= weapon.rhythmWindowTicks
+      : firingWindow && (bot.slot === 'primary' && (!mode || mode === 'auto') ? true : !bot.previousInput.fire);
   input.aim = bot.slot === 'primary' && weapon.adsSupported !== false && practice.config.difficulty !== 'rookie';
   // An ally may have stepped into the lane after the target was acquired.
   if (input.fire) {

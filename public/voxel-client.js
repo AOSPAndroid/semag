@@ -989,7 +989,8 @@ async function boot() {
     renderer.render(renderedState, { acceptedPlayers: state.players, playerId, localId: playerId, localPlayer: presentationPlayer, viewPlayer, cameraPlayer: viewPlayer, yaw: viewAim.yaw + (viewPlayer?.recoilYaw || 0), pitch: viewAim.pitch + (viewPlayer?.recoil || 0), time: now, roster, cameraMotion: cameraMotion.get() });
     reticleView = presentCrosshair(viewPlayer, now, `${state.mapId}:${state.matchId}:${state.round}:${state.phase}`, { width: canvas.clientWidth, height: canvas.clientHeight, rules: engine.ADS, active: controlsActive() && !teamSwitchPending && state.phase === 'fight', reducedMotion: hitMotion.matches });
     paintCrosshair(hitElements.crosshair, reticleView);
-    utilityOverlay.update(utilityView(renderedState, viewPlayer));
+    // Online rounds continue behind menus: keep accepted blindness over the world.
+    utilityOverlay.update(utilityView(renderedState, viewPlayer), { active: connected && entered && !graphicsError && state.phase === 'fight' });
     setHidden(hitElements.scope, !reticleView.visible || !reticleView.scoped);
     setText($('scope-label'), `${WEAPONS[viewPlayer?.weapon]?.label || 'PRECISION'} / PRECISION SIGHT`);
     worldLabels.paint(renderer.worldLabels, { active: labelsActive() });
@@ -1216,7 +1217,7 @@ async function boot() {
     const layout = getKeyboardLayout();
     setText($('move-keys'), layout.toUpperCase());
     for (const label of document.querySelectorAll('[data-voxel-key]')) label.textContent = displayKey(label.dataset.voxelKey, layout);
-    canvas.setAttribute('aria-label', `3D tactical shooter. ${layout.toUpperCase()} or arrows to move, mouse to look, left click to use your selected item, right click to aim guns, stab with a knife or parry with other blades, 1 to 4 equip inventory slots, wheel up or down cycles occupied inventory slots, including potions and grenades, X drops the selected item, V switches blade and gun, ${displayKey('Q', layout)} grenade, F healing potion, R reload, E picks up loot or holds to plant or defuse, Space jumps, Control crouches, Shift sprints, C walks quietly. P opens Pause and loadout or resumes controls; online rounds keep running. Escape exits fullscreen or mouse capture. Choose any weapon in setup; number keys 1 to 9 select the first nine.`);
+    canvas.setAttribute('aria-label', `3D tactical shooter. ${layout.toUpperCase()} or arrows to move, mouse to look, left click to use your selected item, right click to aim guns, stab with a knife or parry with other blades, 1 to 4 equip inventory slots, wheel up or down cycles occupied inventory slots, including potions and grenades, X drops the selected item, V switches blade and gun, ${displayKey('Q / E', layout)} lean, G grenade, H healing potion, R reload, F picks up loot or holds to plant or defuse, Space jumps, Control crouches, Shift sprints, C walks quietly. P opens Pause and loadout or resumes controls; online rounds keep running. Escape exits fullscreen or mouse capture. Choose any weapon in setup; number keys 1 to 9 select the first nine.`);
   }
   function updateLayout() { neutralize({ pause: entered, unlock: true }); updateKeyLabels(); }
   const unsubscribeLayout = subscribeKeyboardLayout(updateLayout); updateKeyLabels();

@@ -123,6 +123,18 @@ export function createMedievalMap(mode = 'breach') {
     cover('keep-arrival-east-supply-wagon', -.3, 0, 14, 5.1, 2.2, 1.5, '#816344', 'castle-timber', 'supply-cart', 'Gate supplies');
   }
 
+  // The outer castle court is a working settlement: masonry, delivery wagons
+  // and armoury chests break bare approaches without closing the central road.
+  // Each position is off the planting circles, watchtower stairs and door axes.
+  for (const [name, x, z, w, h, d, color, material, kind, label] of [
+    ['north-mason-blocks', -10, -20, 4, .84, 1.8, '#aaa58f', 'castle-stone', 'ruined-masonry', 'Masons yard'],
+    ['north-mason-screen', 5, -19, 3.2, 1.65, .65, '#969785', 'castle-stone', 'ruined-masonry', 'Masons screen'],
+    ['west-delivery-wagon', -26, 8.7, 3.8, 1.2, 1.6, '#94714c', 'castle-timber', 'supply-cart', 'West deliveries'],
+    ['east-armoury-chest', 21, 12, 3, .84, 1.4, '#81613d', 'castle-timber', 'armoury-chest', 'Armoury supplies'],
+    ['west-stone-supplies', -26, -17, 3, .68, 1.4, '#a09d89', 'castle-stone', 'ruined-masonry', 'Stone supplies'],
+    ['south-market-chests', 13, 19, 3.2, .84, 1.6, '#a17d4d', 'castle-timber', 'armoury-chest', 'Market deliveries'],
+  ]) cover(`medieval-sparse-${name}`, x, 0, z, w, h, d, color, material, kind, label);
+
   // Paired low props offer short hop plays without blocking an entrance or stair.
   for (const [name, x, z, color, material] of (royale ? [['supplies', -9, 14, '#97754d', 'castle-timber'],
     ['masonry', 9, -14, '#aaa58f', 'castle-stone'], ['stables', -23, 13, '#8e714b', 'castle-timber']] : [])) {
@@ -168,6 +180,14 @@ export function createMedievalMap(mode = 'breach') {
         solid(box(`village-ruin-${index}-return`, x, 0, z + .65, .65, 2.45, 3, '#8d9582'))];
       mark(`village-ruin-${index}`, 'ruined-masonry', 'Village ruins', pieces);
     }
+    // The wider village retains separate northern and southern rotations,
+    // with roadside cover between its scattered houses and spawn clearings.
+    for (const [name, x, z, w, h, d, color, material, kind, label] of [
+      ['north-road-wagon', 2, -34, 4, 1.2, 1.8, '#8a6b47', 'castle-timber', 'supply-cart', 'Kingsroad wagon'],
+      ['south-inn-chests', 16, 36, 3.2, .84, 1.8, '#9b774b', 'castle-timber', 'armoury-chest', 'Inn deliveries'],
+      ['south-stable-chests', -36, 35, 3.8, .84, 1.8, '#876b44', 'castle-timber', 'armoury-chest', 'Stable deliveries'],
+      ['east-orchard-screen', 36, -12, 3, 1.65, .7, '#999e88', 'castle-stone', 'ruined-masonry', 'Orchard ruins'],
+    ]) cover(`medieval-sparse-${name}`, x, 0, z, w, h, d, color, material, kind, label);
     for (const x of [-29, 27]) decorations.push(paint('village-cobbled-lane', x, -43, 2, 86, '#94927b'));
     for (const z of [-25, 23]) decorations.push(paint('village-cobbled-lane', -43, z, 86, 2, '#94927b'));
     const caches = [[-35, -22], [-34, -11], [-39, 10], [-37, 28], [38, -36], [34, -18], [39, 5], [42, 19],

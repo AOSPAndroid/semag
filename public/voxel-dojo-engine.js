@@ -69,7 +69,10 @@ export function findDojoStation(state, id = null) {
 export function findDojoStationLoot(state) {
   const station = findDojoStation(state); if (!station || station.id === 'recovery') return null;
   const player = state.players[0];
-  const items = (state.loot || []).filter(item => item.dojoStation === station.id && (station.id !== 'supplies' || inventoryCanTake(player, item) && (item.kind === 'heal' ? player.potions < 2 : player.grenades < 2)));
+  // Throwable capacity belongs to each typed physical stack. Two smokes must
+  // not block a flash in another free slot; a full stack/pack is filtered by
+  // the same inventory predicate as ordinary loot.
+  const items = (state.loot || []).filter(item => item.dojoStation === station.id && (station.id !== 'supplies' || inventoryCanTake(player, item) && (item.kind !== 'heal' || player.potions < 2)));
   return findNearbyLoot({ ...state, loot: items }, 0, state.map);
 }
 function freeTargetPose(state, id) {

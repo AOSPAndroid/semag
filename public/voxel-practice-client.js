@@ -217,12 +217,14 @@ export function bootPractice() {
   function hints() {
     const layout = getKeyboardLayout(); app.dataset.keyboardLayout = layout;
     setText('practice-move-keys', displayKey('WASD')); setText('practice-grenade-key', 'G'); setText('practice-guide-grenade', 'G');
-    canvas.setAttribute('aria-label', `First-person ${royale ? 'Royale' : 'Breach'} practice. ${displayKey('WASD')} or arrows move, mouse looks, left click or B / J uses your selected item, right click aims guns, stabs with a knife or parries with other blades, Space jumps, Control crouches, Shift sprints, C walks quietly, R reloads, 1 to 4 equip inventory slots, wheel up or down cycles occupied inventory slots, including potions and grenades, X drops your selected item, V switches blade, ${displayKey('Q')} throws a grenade, F heals, E picks up supplies, P pauses or resumes. Escape releases the cursor or exits fullscreen.`);
+    for (const label of document.querySelectorAll('[data-practice-key]')) label.textContent = displayKey(label.dataset.practiceKey, layout);
+    canvas.setAttribute('aria-label', `First-person ${royale ? 'Royale' : 'Breach'} practice. ${displayKey('WASD')} or arrows move, mouse looks, left click or B / J uses your selected item, right click aims guns, stabs with a knife or parries with other blades, Space jumps, Control crouches, Shift sprints, C walks quietly, R reloads, 1 to 4 equip inventory slots, wheel up or down cycles occupied inventory slots, including potions and grenades, X drops your selected item, V switches blade, ${displayKey('Q / E', layout)} lean, G throws a grenade, H heals, F picks up supplies, P pauses or resumes. Escape releases the cursor or exits fullscreen.`);
     setText('practice-look-hint', dojo ? `TAB RANGE TOOLS · ${displayKey('WASD')} MOVE · P MENU` : fallback ? 'DRAG TO LOOK · P MENU' : `${displayKey('WASD')} MOVE · RMB SECONDARY · P MENU`);
   }
   function stopFrame() { if (frameId !== null) cancelAnimationFrame(frameId); frameId = null; previousFrame = null; accumulator = 0; }
   function release() {
     weaponWheel.reset();
+    utilityOverlay.update(null);
     clearReticle();
     reloadAudio.suspend(); enemyFootsteps.suspend(); paintVitals(null, 'Your', false);
     hitFeedback.reset(); paintHitFeedback(hitElements, { visible: false });
@@ -387,7 +389,7 @@ export function bootPractice() {
     for (const [id, marker] of mapMarkers) { const peer = state.players[id]; setAttribute(marker, 'cx', peer.x); setAttribute(marker, 'cy', peer.z); setStyle(marker, 'display', peer.alive && ['targets', 'blades', 'dojo'].includes(state.practice.config.mode) ? '' : 'none'); }
     if (stormMarker && royale) { setAttribute(stormMarker, 'r', state.storm.radius); setStyle(stormMarker, 'display', state.storm.active ? '' : 'none'); }
     setText('practice-objective', phase === 'ready' ? 'Choose your arena. Start when you’re ready.' : phase === 'paused' ? 'All movement and combat paused.' : royale ? `${stats.botsRemaining + (player.alive ? 1 : 0)} survivors · ${state.storm.active ? state.storm.mode === 'shrinking' ? 'Storm closing — move to the ring.' : `Storm closes in ${Math.ceil(state.storm.ticksUntilShrink / TICK_RATE)}s.` : 'Start with a knife. Search for supplies.'}` : blades ? 'Blade training: LMB cuts. Release before the next strike; a late recovery tap queues one cut. RMB stabs or guards. Targets never attack.' : state.practice.config.mode === 'targets' ? 'Targets move and use solid cover. Track, counter-strafe and settle before firing.' : 'Bots react to sight and shoot in bursts. Use cover and choose your timing.');
-    if (dojo && phase === 'fight') setText('practice-objective', player.alive ? 'E equipment stations · R reload · F potion · Q frag · Tab range tools · targets reset after 2 seconds' : 'Training accident. Returning you to the entrance in two seconds.');
+    if (dojo && phase === 'fight') setText('practice-objective', player.alive ? 'F equipment stations · R reload · H potion · G throw · Tab range tools · targets reset after 2 seconds' : 'Training accident. Returning you to the entrance in two seconds.');
     if (phase === 'countdown') { const seconds = Math.ceil(state.phaseTicks / TICK_RATE); setText('practice-countdown-value', seconds); setText('practice-countdown-copy', royale ? 'Knife first. Find cover and supplies.' : blades ? 'Your blade is equipped. Step in and time each cut.' : 'Read the cover. Settle your aim.'); if (seconds !== lastCountdown) { lastCountdown = seconds; audio.countdown(seconds); } }
     if (phase === 'fight' && changed) audio.fight();
     if (reporting) {
@@ -462,7 +464,7 @@ export function bootPractice() {
     view.players = resolvePresentationContacts(view.players, state.map);
     view.fighters = view.players; presentationPlayer = view.players[0]; renderer.render(view, { acceptedPlayers: state.players, playerId: 0, localId: 0, localPlayer: presentationPlayer, cameraPlayer: presentationPlayer, yaw: aim.yaw + (presentationPlayer.recoilYaw || 0), pitch: aim.pitch + (presentationPlayer.recoil || 0), time: sceneLive ? now : lastDrawAt, cameraMotion: cameraMotion.get() }); renderCount++; lastFraction = tickFraction(accumulator, STEP);
     paintVitals(presentationPlayer, 'Your', activeSession && active());
-    utilityOverlay.update(utilityView(view, presentationPlayer));
+    utilityOverlay.update(utilityView(view, presentationPlayer), { active: activeSession && active() && !dojoToolsOpen });
     enemyFootsteps.observe(renderer.locomotionActors, { now, context: `${state.mapId}:${state.practice.sessionId}`, listener: presentationPlayer, yaw: aim.yaw, active: activeSession && active() && !dojoToolsOpen && state.phase === 'fight', freeForAll: royale });
     reloadAudio.observe(state.players[0], { tick: state.tick, context: `${state.mapId}:${state.practice.sessionId}`, active: active() && state.phase === 'fight' });
     reticleView = presentCrosshair(presentationPlayer, now, `${state.mapId}:${state.practice.sessionId}:${state.phase}`, { width: canvas.clientWidth, height: canvas.clientHeight, rules: ADS, active: live && state.phase === 'fight' && !modalOpen && !dojoToolsOpen, reducedMotion: hitMotion.matches });

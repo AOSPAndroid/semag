@@ -87,6 +87,22 @@ function forest() {
     a.add(`pine-${i}-crown`, x - 1.25, 5.3, z - 1.25, 2.5, 1.7, 2.5, '#497b52', 'foliage');
   }
   for (const [i, [x, z, w, d]] of [[-39, -7, 5, 1.2], [35, 5, 4, 1.2], [-7, -39, 1.2, 4], [6, 35, 1.2, 4], [-37, 35, 4, 1.2], [33, -39, 4, 1.2], [-16, 5, 4, 1.2], [11, 9, 4, 1.2]].entries()) a.add(`forest-trail-timber-${i}`, x, 0, z, w, .78, d, '#94714a');
+  // Working clearings interrupt the long bare perimeter runs. Logs and ranger
+  // supplies offer low hops; taller deliveries and river rocks protect a peek.
+  // Their staggered footprints leave the cabin doors and canopy climbs open.
+  for (const [name, x, z, w, h, d, color, material, kind] of [
+    ['north-fallen-logs', 10, -36, 4, .72, 1.8, '#97734b', 'wood', 'logging-pile'],
+    ['north-ranger-crates', 15, -32, 2.2, 1.55, 1.8, '#7e6946', 'wood', 'ranger-supplies'],
+    ['south-fallen-timber', -7, 34, 4, .84, 1.8, '#a48051', 'wood', 'logging-pile'],
+    ['south-ranger-cases', 22, 34, 2.2, 1.55, 1.8, '#70846b', 'crate', 'ranger-supplies'],
+    ['east-river-boulder', 37, -1, 3, 1.55, 1.8, '#879180', 'stone', 'river-rock'],
+    ['east-stream-rock', 33, -5, 2.2, .84, 2.2, '#9aa48c', 'stone', 'river-rock'],
+    ['west-fallen-logs', -26, 14, 4, .72, 1.8, '#8b6948', 'wood', 'logging-pile'],
+    ['west-ranger-delivery', -27, 9, 2.2, 1.55, 1.8, '#a3875a', 'wood', 'ranger-supplies'],
+  ]) {
+    const id = `forest-sparse-${name}`;
+    a.add(id, x, 0, z, w, h, d, color, material); a.mark(name, kind, '', [id]);
+  }
   for (const [name, x, z, y] of [['west-high', -17, -2, level], ['east-high', 17, -2, level], ['ranger-high', 0, -2, level], ['south-high', 0, 22, level], ['firewatch-high', 28.5, -34, 5.04]]) a.cache(name, x, z, 'weapon', y);
   for (const [i, [x, z]] of [[-39, -19], [-35, -4], [-36, 22], [-35, 42], [39, -24], [40, -8], [40, 8], [41, 21], [-23, -40], [-9, -41], [10, -40], [22, -42], [-37, 41], [-10, 39], [13, 40], [23, 37], [-8, 7], [8, 14], [-23, 10], [23, -9]].entries()) a.cache(`trail-cache-${i}`, x, z, ['weapon', 'heal', 'ammo', 'weapon', 'grenade'][i % 5]);
   for (const [name, x, z] of [['Lumber clearing', -35, -27], ['Birch grove', -10, -26], ['Canopy village', 0, 12], ['River camp', -25, 26]]) a.district(name, x, z);
@@ -104,6 +120,21 @@ function maze() {
   // The ground route is a winding, asymmetric maze, not four mirrored rooms.
   for (const [i, [x, z, w, d]] of [[-18, -9, 10, .8], [-8.8, -9, .8, 5], [-18, -3, 5, .8], [-13.8, -3, .8, 6], [-18, 3, 7, .8], [-4, -12, .8, 8], [-3.2, -5, 10, .8], [6, -12, .8, 7], [6, -12, 7, .8], [11.5, -3, .8, 7], [3, 2, 9.3, .8], [-15, 13, 12, .8], [-15, 13, .8, 8], [-9, 18, 9, .8], [0, 13, .8, 10], [7, 17, 12, .8], [7, 17, .8, 6]].entries()) a.add(`maze-labyrinth-wall-${i}`, x, 0, z, w, 2.52, d, i % 2 ? '#82978d' : '#a1aa92');
   for (const [i, [x, z]] of [[-38, -18], [-35, 15], [36, -12], [33, 15], [-23, -37], [19, -39], [-20, 36], [23, 35]].entries()) a.add(`maze-archive-plinth-${i}`, x, 0, z, 2.8, .84, 1.8, '#abb49c');
+  // Low archive blocks and broken, narrow screens create readable dog-legs in
+  // the outer paths, rather than repeating the central labyrinth wall pattern.
+  for (const [name, x, z, w, h, d, color] of [
+    ['north-record-plinth', 4, -34, 3.6, .84, 1.8, '#abb59c'],
+    ['north-carved-screen', 8, -30, 3, 1.9, .65, '#879b90'],
+    ['east-fallen-records', 34, -1, 2.2, .68, 2.2, '#a3ad93'],
+    ['east-archive-screen', 37, 3, 3, 1.9, .65, '#849a8c'],
+    ['south-library-plinth', 22, 30, 3.6, .84, 1.8, '#b1b99f'],
+    ['south-carved-screen', 20, 26, 3, 1.9, .65, '#8b9f90'],
+    ['west-rooted-records', -24, -28, 3.6, .68, 1.8, '#9da98f'],
+    ['west-archive-screen', -23, -24, 3, 1.9, .65, '#85998c'],
+  ]) {
+    const id = `maze-sparse-${name}`;
+    a.add(id, x, 0, z, w, h, d, color); a.mark(name, 'carved-marker', '', [id]);
+  }
   for (const [name, x, z, y] of [['west-high', -10, -17, height], ['east-high', 21, -17, height], ['record-high', 19, 11, height], ['root-high', -28, 6, height], ['south-link-high', 5, 8, height]]) a.cache(name, x, z, 'weapon', y);
   for (const [i, [x, z]] of [[-39, -22], [-37, -6], [-36, 19], [-35, 42], [40, -24], [39, -8], [41, 8], [43, 20], [-24, -41], [-4, -42], [9, -40], [24, -38], [-23, 40], [-9, 37], [20, 41], [28, 38], [-10, -6], [0, -9], [9, -8], [-5, 15], [3, 13], [14, 21]].entries()) a.cache(`archive-cache-${i}`, x, z, ['weapon', 'ammo', 'heal', 'weapon', 'grenade'][i % 5]);
   for (const [name, x, z] of [['Western archive', -35, -29], ['Echo library', 35, 21], ['Observatory court', 0, 0], ['Rooted gallery', -28, 17]]) a.district(name, x, z);
@@ -125,6 +156,22 @@ function desert() {
   for (const [side, start, steps] of [['south', point(0, 11.7), tiers.map((tier, i) => freeze({ colliderId: tier.id, x: 0, z: i === 4 ? 4 : 9.4 - i * 1.2 }))], ['west', point(-7.7, 4), tiers.map((tier, i) => freeze({ colliderId: tier.id, x: i === 4 ? 0 : -5.4 + i * 1.2, z: 4 }))]]) a.route({ id: `pyramid-${side}`, name: `Pyramid / ${side} terraces`, role: 'mid', start, steps });
   for (const [i, [x, z]] of [[-38, 11], [33, 11], [-24, -39], [21, -39], [-18, 35], [18, 35], [-37, 21], [36, -21]].entries()) a.add(`desert-caravan-supply-${i}`, x, 0, z, 2.2, .84, 1.8, '#a88350', 'wood');
   for (const [i, [x, z]] of [[-11, -8], [9.6, -8], [-10, 12], [8.6, 12]].entries()) a.add(`desert-obelisk-${i}`, x, 0, z, 1.4, 4.5, 1.4, '#ad8958');
+  // The southern caravan halt and the outer shrine approaches are distinct
+  // scavenging stops, with supplies to vault and carved stone to fight around.
+  // None of them occupies the temple stairs or the exposed pyramid terraces.
+  for (const [name, x, z, w, h, d, color, material, kind] of [
+    ['south-caravan-pallet', 0, 35, 4, .84, 1.8, '#a98855', 'wood', 'caravan-supplies'],
+    ['south-shrine-screen', 5, 31, 3.2, 1.8, .7, '#c3a16d', 'sandstone', 'carved-marker'],
+    ['east-fallen-column', 35, -2, 4, .72, 1.8, '#d0af7c', 'sandstone', 'carved-marker'],
+    ['east-shrine-plinth', 39, 2, 2.2, 1.8, 2.2, '#b58e59', 'sandstone', 'carved-marker'],
+    ['west-caravan-pallet', -27, 13, 4, .84, 1.8, '#977543', 'wood', 'caravan-supplies'],
+    ['west-shrine-screen', -25, 17, 3.2, 1.8, .7, '#c8a777', 'sandstone', 'carved-marker'],
+    ['north-fallen-column', -14, -31, 3.6, .72, 1.8, '#cdb080', 'sandstone', 'carved-marker'],
+    ['north-shrine-plinth', -17, -35, 2.2, 1.8, 2.2, '#b89262', 'sandstone', 'carved-marker'],
+  ]) {
+    const id = `desert-sparse-${name}`;
+    a.add(id, x, 0, z, w, h, d, color, material); a.mark(name, kind, '', [id]);
+  }
   for (const [name, x, z, y] of [['north-high', 0, -20, top], ['west-high', -19, 4, top], ['east-high', 19, -5, top], ['south-high', -10, 18.5, top], ['pyramid-summit', 0, 4, 4.2]]) a.cache(name, x, z, 'weapon', y);
   for (const [i, [x, z]] of [[-39, -22], [-37, 4], [-35, 18], [-35, 42], [40, -24], [39, -8], [41, 8], [43, 20], [-23, -41], [-11, -38], [13, -40], [24, -35], [-23, 40], [-9, 37], [15, 41], [24, 38], [-9, -3], [9, 2], [-8, 9], [8, 9], [0, 13], [0, -15]].entries()) a.cache(`ruin-cache-${i}`, x, z, ['weapon', 'heal', 'ammo', 'weapon', 'grenade'][i % 5]);
   for (const [name, x, z] of [['Buried tomb', -35, -25], ['Sun temple', 0, -20], ['Pyramid court', 0, 12], ['Caravan archive', 34, 21]]) a.district(name, x, z);

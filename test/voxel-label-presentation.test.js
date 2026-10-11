@@ -4,6 +4,7 @@ import { createCombatPlayer, ADS } from '../public/voxel-engine.js';
 import { weaponAimFovRatio } from '../public/voxel-weapons.js';
 import { EMPTY_WORLD_LABELS, MAX_WORLD_LABELS, presentWorldLabels, projectWorldLabel } from '../public/voxel-label-presentation.js';
 import { VoxelRenderer } from '../public/voxel-renderer.js';
+import { SMOKE } from '../public/voxel-ordnance.js';
 
 const map = colliders => ({ id: 'labels-fixture', theme: 'custom', colliders, sites: [], bounds: { minX: -30, maxX: 30, minZ: -30, maxZ: 30 } });
 const human = (id, fields = {}) => ({ ...createCombatPlayer(id), x: 0, y: 0, z: -6, team: 0, human: true, monster: false, connected: true, participating: true, lifeId: 1, ...fields });
@@ -53,6 +54,15 @@ test('a short dog fully concealed by low cover has no bar even when the above-he
   const clear = present([monster(3, 'hound')]); assert.equal(clear.length, 1);
   const { view, projection } = matrices(); assert.ok(projectWorldLabel({ x: 0, y: .96, z: -6.26 }, view, projection));
   assert.equal(present([monster(3, 'hound'), monster(4)], { state: { map: map([wall(.9)]) } }).length, 1, 'only the tall ghoul has visible flesh over the wall');
+});
+
+test('smoke hides monster bars and co-op names until its sight-blocking volume clears', () => {
+  const actors = [monster(), human(1, { x: .5 })];
+  assert.equal(present(actors).length, 2);
+  const cloud = { id: 1, x: 0, y: 1.4, z: -3, ageTicks: SMOKE.growTicks };
+  assert.equal(present(actors, { state: { smokes: [cloud] } }).length, 0, 'names and health cannot reveal actors through opaque smoke');
+  assert.equal(present(actors, { state: { smokes: [{ ...cloud, x: 12 }] } }).length, 2, 'a cloud beside the sight line does not conceal actors');
+  assert.equal(present(actors, { state: { smokes: [{ ...cloud, ageTicks: SMOKE.ticks }] } }).length, 2, 'expired smoke cannot leave labels hidden');
 });
 
 test('a tall monster fully concealed by a near wall does not leak a floating anchor over its top', () => {

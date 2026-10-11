@@ -108,8 +108,10 @@ test('all 36 gun meshes, pump strokes, reloads, ADS and cover states match the r
   const wall = { colliders: [{ x: -5, y: 0, z: -.35, w: 10, h: 4, d: .015 }] };
   const states = [{}, { aimTicks: 12 }, { reloadTicks: 160 }, { shotIndex: 1, shotCooldown: 10 }, { crouching: true }];
   const add = mesh => digest.update(Buffer.from(mesh.buffer, mesh.byteOffset, mesh.byteLength));
-  assert.equal(Object.keys(WEAPONS).length, 36);
-  for (const weapon of Object.keys(WEAPONS)) {
+  const addedEquipment = new Set(['railgun', 'leveraction', 'throwingknife', 'grapple']);
+  const originalGuns = Object.keys(WEAPONS).filter(id => !addedEquipment.has(id));
+  assert.equal(originalGuns.length, 36);
+  for (const weapon of originalGuns) {
     for (const limit of [Infinity, -.10, 0, .25, .70]) for (const reloadProgress of [0, .4, .83]) {
       add(weaponMeshes(weapon, { x: .13, y: -.19, z: -.47, yaw: .63, pitch: -.27, scale: .91 }, { limit, reloadProgress, pump: .75 }));
     }

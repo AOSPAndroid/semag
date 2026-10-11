@@ -4226,7 +4226,8 @@ export function createHumanDeathMeshPresenter() {
 /** A peeking body tilts from its planted feet so the head reaches its real lean offset. */
 export function leanTiltAngle(player) {
   const offset = finite(player?.leanOffset);
-  return offset ? Math.asin(clamp(offset / WORLD.eyeHeight, -.5, .5)) : 0;
+  const height = player?.crouching ? WORLD.crouchEyeHeight : WORLD.eyeHeight;
+  return offset ? Math.asin(clamp(offset / height, -.5, .5)) : 0;
 }
 function tiltMeshVertices(mesh, start, player) {
   const angle = leanTiltAngle(player);
@@ -4541,19 +4542,21 @@ export class VoxelRenderer {
   /** Opaque voxel clouds: they hide what is behind them exactly as authority does. */
   _smokes(mesh, state, time) {
     let cubes = 0;
-    for (const smoke of (state.smokes || []).slice(-8)) {
-      if (![smoke.x, smoke.y, smoke.z].every(Number.isFinite)) continue;
-      const radius = smokeRadius(smoke); if (radius < .25) continue;
-      const cell = .8, reach = Math.ceil(radius / cell), seed = finite(smoke.id) * 7.13;
-      for (let ix = -reach; ix <= reach; ix++) for (let iy = -reach; iy <= reach; iy++) for (let iz = -reach; iz <= reach; iz++) {
-        const jitter = Math.sin(seed + ix * 12.9 + iy * 78.2 + iz * 37.7) * .5 + .5;
-        const x = ix * cell, y = iy * cell * .8, z = iz * cell, distance = Math.hypot(x, y, z);
-        // Only the outer shell is drawn; the core is never visible from outside.
-        if (distance > radius - jitter * .35 || distance < radius - 1.4) continue;
-        if (smoke.y + y < -.2) continue;
-        const drift = Math.sin(time * .0006 + jitter * 6.28) * .08, size = cell * (.95 + jitter * .35);
+    const clouds = (state.smokes || []).slice(-8).filter(cloud => [cloud.x, cloud.y, cloud.z].every(Number.isFinite) && smokeRadius(cloud) >= .25);
+    for (const smoke of clouds) {
+      const radius = smokeRadius(smoke), cell = Math.max(.5, radius / (clouds.length >= 4 ? 3 : 5));
+      const reach = Math.floor(radius / cell), seed = finite(smoke.id) * 7.13;
+      // Merge horizontal voxels into opaque rows. Every live cloud remains
+      // visible; eight full clouds need at most 392 boxes instead of thousands.
+      for (let iy = -reach; iy <= reach; iy++) for (let iz = -reach; iz <= reach; iz++) {
+        const y = iy * cell, z = iz * cell, remaining = radius * radius - y * y - z * z;
+        if (remaining < 0 || smoke.y + y + cell / 2 <= 0) continue;
+        const half = Math.floor(Math.sqrt(remaining) / cell), width = (half * 2 + 1) * cell;
+        const jitter = Math.sin(seed + iy * 78.2 + iz * 37.7) * .5 + .5;
+        const drift = Math.sin(time * .0006 + jitter * 6.28) * .04;
+        const low = Math.max(0, smoke.y + y - cell / 2), high = smoke.y + y + cell / 2;
         const tone = 150 + Math.round(jitter * 38) - Math.round(Math.max(0, -y) * 6);
-        mesh.box(smoke.x + x - size / 2 + drift, Math.max(0, smoke.y + y - size / 2), smoke.z + z - size / 2 - drift, size, size, size, [tone / 255, (tone + 3) / 255, (tone + 7) / 255, 1]);
+        mesh.box(smoke.x - width / 2 + drift, low, smoke.z + z - cell / 2, width, high - low, cell, [tone / 255, (tone + 3) / 255, (tone + 7) / 255, 1]);
         cubes++;
       }
     }

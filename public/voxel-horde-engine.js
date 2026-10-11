@@ -152,7 +152,7 @@ export function chooseMelee(state, id, melee) {
   return valid;
 }
 function neutralize(state, { stop = true } = {}) {
-  for (const player of state.players) { clearMeleeComboContinuation(player); player.previousInput = emptyInput(player); player.triggerBlocked = true; player.sprinting = false; if (stop) player.vx = player.vy = player.vz = 0; player.aiming = false; player.aimTicks = 0; }
+  for (const player of state.players) { clearMeleeComboContinuation(player); player.chargeTicks = 0; player.leverQueued = false; player.previousInput = emptyInput(player); player.triggerBlocked = true; player.sprinting = false; if (stop) player.vx = player.vy = player.vz = 0; player.aiming = false; player.aimTicks = 0; }
 }
 function prepareWave(state) {
   const horde = state.horde, count = Math.max(1, horde.participantIds.length);
@@ -564,7 +564,7 @@ function interactionClear(state, player, point) {
 }
 export function findNearbyLoot(state, id) {
   const player = state.players[id]; if (!humanSlot(state, id) || !player?.alive || !player.participating) return null;
-  return state.loot.filter(drop => Math.hypot(drop.x - player.x, drop.z - player.z) <= HORDE_RULES.pickupRange && Math.abs(drop.y - player.y) < 1.5 && (drop.type === 'ammo' ? player.inventory.some(item => item?.kind === 'weapon' && item.reserve < WEAPONS[item.weapon].reserve * 2) : ['weapon', 'melee', 'heal', 'grenade'].includes(drop.kind) && inventoryCanTake(player,drop)) && interactionClear(state, player, drop)).sort((a, b) => Math.hypot(a.x - player.x, a.z - player.z) - Math.hypot(b.x - player.x, b.z - player.z) || a.id - b.id)[0] || null;
+  return state.loot.filter(drop => Math.hypot(drop.x - player.x, drop.z - player.z) <= HORDE_RULES.pickupRange && Math.abs(drop.y - player.y) < 1.5 && (drop.type === 'ammo' ? player.inventory.some(item => item?.kind === 'weapon' && item.reserve < WEAPONS[item.weapon].reserve * 2) : ['weapon', 'melee', 'heal', 'grenade', 'ammo'].includes(drop.kind) && inventoryCanTake(player,drop)) && interactionClear(state, player, drop)).sort((a, b) => Math.hypot(a.x - player.x, a.z - player.z) - Math.hypot(b.x - player.x, b.z - player.z) || a.id - b.id)[0] || null;
 }
 export function findReviveTarget(state, id) {
   const player = state.players[id]; if (!humanSlot(state, id) || !player?.alive || !player.participating) return null;

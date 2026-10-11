@@ -350,7 +350,7 @@ const bodyFits = (x, y, z, radius, height, arena) => x - radius >= arena.bounds.
   && !arena.colliders.some(rect => y < rect.y + rect.h - EPS && y + height > rect.y + EPS && circleRectOverlap(x, z, radius, rect));
 /** The ledge in front of you that a climb can reach, or null. The climb rises in
  * place, then steps forward, so both the column above you and the landing must be clear. */
-export function findMantleTarget(f, arena, airborne = false) {
+export function findMantleTarget(f, arena, airborne = false, peers = []) {
   const dirX = Math.sin(f.yaw), dirZ = -Math.cos(f.yaw), radius = f.radius || WORLD.radius;
   const lowest = f.y + (airborne ? MANTLE.airMinRise : MANTLE.minRise), highest = f.y + (airborne ? MANTLE.airMaxRise : MANTLE.maxRise);
   for (let reach = radius + .08; reach <= radius + MANTLE.reach + EPS; reach += .08) {
@@ -366,19 +366,35 @@ export function findMantleTarget(f, arena, airborne = false) {
     if (!bodyFits(f.x, f.y + .02, f.z, radius, top - f.y + WORLD.standHeight, arena)) return null;
     if (!bodyFits(landX, top + EPS, landZ, radius, WORLD.standHeight, arena)) return null;
     const supported = arena.colliders.some(rect => Math.abs(rect.y + rect.h - top) < 1e-6 && circleRectOverlap(landX, landZ, radius * .5, rect));
-    return supported ? { x: landX, y: top, z: landZ } : null;
+    if (!supported) return null;
+    // Legal endpoints do not guarantee a clear route: narrow pillars and a
+    // teammate can sit between them. Sweep the same rise/step the climb uses.
+    const probe = { ...f, radius, crouching: false, vx: 0, vy: 0, vz: 0 };
+    if (peers.some(peer => bodyOverlapsPlayer({ ...probe, y: f.y + .02 }, peer, top - f.y + WORLD.standHeight))) return null;
+    bodyMove(probe, 0, top - f.y, 0, arena, peers);
+    bodyMove(probe, landX - probe.x, top - probe.y, landZ - probe.z, arena, peers);
+    return Math.hypot(probe.x - landX, probe.y - top, probe.z - landZ) < 1e-6 ? { x: landX, y: top, z: landZ } : null;
   }
   return null;
 }
-function advanceMantle(f) {
+function advanceMantle(f, arena, peers = []) {
   const progress = 1 - (f.mantleTicks - 1) / MANTLE.ticks, from = f.mantleFrom, to = f.mantleTo;
   const rise = clamp(progress / MANTLE.riseShare, 0, 1), across = clamp((progress - MANTLE.riseShare) / (1 - MANTLE.riseShare), 0, 1);
   const ease = t => t * t * (3 - 2 * t);
-  f.y = from.y + (to.y - from.y) * ease(rise);
-  f.x = from.x + (to.x - from.x) * ease(across); f.z = from.z + (to.z - from.z) * ease(across);
   f.vx = f.vy = f.vz = 0; f.crouching = false; f.lean = f.leanOffset = f.leanX = f.leanZ = 0;
+  const target = { x: from.x + (to.x - from.x) * ease(across), y: from.y + (to.y - from.y) * ease(rise), z: from.z + (to.z - from.z) * ease(across) };
+  const abort = () => { f.mantleTicks = 0; f.mantleFrom = f.mantleTo = null; };
+  if (peers.some(peer => bodyOverlapsPlayer({ ...f, y: target.y }, peer))) { abort(); return; }
+  // Finish the rising leg before sweeping across the ledge. Combining the
+  // transition tick into a diagonal would catch the crate's side below its top.
+  bodyMove(f, 0, target.y - f.y, 0, arena, peers);
+  if (Math.abs(f.y - target.y) > 1e-6) { abort(); return; }
+  bodyMove(f, target.x - f.x, 0, target.z - f.z, arena, peers);
+  // A moving teammate or new obstruction can invalidate a previously clear
+  // climb. Keep the swept contact instead of snapping back onto the path.
+  if (Math.hypot(f.x - target.x, f.y - target.y, f.z - target.z) > 1e-6) { abort(); return; }
   f.mantleTicks--;
-  if (!f.mantleTicks) { f.x = to.x; f.y = to.y; f.z = to.z; f.mantleFrom = f.mantleTo = null; }
+  if (!f.mantleTicks) f.mantleFrom = f.mantleTo = null;
 }
 /** A taut line drags the body straight to its anchor. Jump lets go, keeping the swing's momentum. */
 function advanceGrapple(f, input, arena, peers, hitStunned) {
@@ -420,6 +436,13 @@ function updateLeanReach(f, arena) {
   }
   f.leanOffset = side * reach; f.leanX = rightX * reach; f.leanZ = rightZ * reach;
 }
+/** Keep a displayed peek legal after its body has been collision-corrected. */
+export function clampPresentationLean(player, mapIdOrMap = 'courtyard') {
+  const copy = { ...player };
+  const arena = typeof mapIdOrMap === 'string' ? MAPS[mapIdOrMap] : mapIdOrMap;
+  if (Number.isFinite(copy.lean) && arena?.bounds && Array.isArray(arena.colliders)) updateLeanReach(copy, arena);
+  return copy;
+}
 function movementTick(f, input, arena, peers = [], headroomPeers = peers, actions = f) {
   f.yaw = input.yaw; f.pitch = input.pitch;
   if (!f.alive) { f.vx = f.vy = f.vz = 0; f.jumpBufferTicks = 0; clearKnockback(f); resetSprint(f, { refill: false }); return null; }
@@ -428,7 +451,7 @@ function movementTick(f, input, arena, peers = [], headroomPeers = peers, action
   f.hitStunReadyTicks = Math.max(0, Math.min(72, Number.isFinite(f.hitStunReadyTicks) ? f.hitStunReadyTicks : 0) - 1);
   const monsterBody = monsterBodyProfile(f);
   if (f.mantleTicks > 0 && f.mantleFrom && f.mantleTo && !monsterBody) {
-    advanceMantle(f); f.jumpBufferTicks = 0; refreshGrounded(f, arena);
+    advanceMantle(f, arena, headroomPeers); f.jumpBufferTicks = 0; refreshGrounded(f, arena);
     if (f.mantleTicks) f.grounded = false;
     return stillPlan(f);
   }
@@ -460,11 +483,11 @@ function movementTick(f, input, arena, peers = [], headroomPeers = peers, action
   // catches a ledge just above your feet.
   const climbing = !monsterBody && f.monster !== true && !hitStunned && !f.crouching && input.up && !input.down;
   const groundClimb = climbing && f.grounded && f.jumpBufferTicks > 0, airClimb = climbing && !f.grounded && input.jump && f.vy < 3;
-  const ledge = groundClimb || airClimb ? findMantleTarget(f, arena, airClimb) : null;
+  const ledge = groundClimb || airClimb ? findMantleTarget(f, arena, airClimb, headroomPeers) : null;
   if (ledge) {
     f.mantleTicks = MANTLE.ticks; f.mantleFrom = { x: f.x, y: f.y, z: f.z }; f.mantleTo = ledge; f.jumpBufferTicks = 0; f.slideTicks = 0;
     f.lean = f.leanOffset = f.leanX = f.leanZ = 0;
-    advanceMantle(f); f.grounded = false;
+    advanceMantle(f, arena, headroomPeers); f.grounded = false;
     return stillPlan(f);
   }
   if (!hitStunned && f.grounded && f.jumpBufferTicks > 0 && !f.crouching) {
@@ -880,6 +903,9 @@ function tickActions(state, f, input, arena) {
   if (!input.fire) f.triggerBlocked = false;
   if (!input.aim) f.meleeAimBlocked = false;
   const selecting = INVENTORY_ACTIONS.some(key => input[key] && !f.previousInput[key]);
+  // A hand change cancels a charge or queued lever shot; neither may transfer
+  // into the next gun simply because it shares the same mechanic.
+  if (selecting || input.swap && !f.previousInput.swap) { f.chargeTicks = 0; f.leverQueued = false; f.leverStacks = f.leverReadyTicks = 0; }
   const alternatePressed = f.slot === 'primary' && WEAPONS[f.weapon].alternateFire && input.aim && !f.previousInput.aim;
   const attackInterrupt = alternatePressed || input.fire && (!f.previousInput.fire || f.slot === 'primary' || f.slot === 'sword');
   if (f.healTicks && (attackInterrupt || input.swap || input.grenade || input.jump || input.interact || input.reload || selecting)) cancelHeal(state, f, 'action');
@@ -1108,6 +1134,9 @@ function fireRound(state, f, weapon, pendingDamage, arena, fire = null) {
 }
 /** Hold to charge, release to fire. Reloading, a blocked trigger or an empty gun drops the charge. */
 function tickCharge(state, f, weapon, input, pendingDamage, arena) {
+  // Interruption is not a trigger release. In particular, mantling supplies
+  // a neutral trigger while the hands are busy and must never discharge it.
+  if (!f.alive || f.mantleTicks > 0 || input.interact || f.triggerBlocked || f.reloadTicks) { f.chargeTicks = 0; return; }
   const holding = input.fire && !f.triggerBlocked && !f.reloadTicks && !input.interact && f.ammo > 0;
   if (holding) { if (!f.shotCooldown) f.chargeTicks = Math.min(weapon.chargeTicks, (f.chargeTicks || 0) + 1); return; }
   const charge = (f.chargeTicks || 0) / weapon.chargeTicks; f.chargeTicks = 0;
@@ -1157,7 +1186,7 @@ function tickGrappleGun(state, f, weapon, input, arena) {
   Object.assign(f, { grappleTicks: weapon.maxPullTicks, grappleX: anchor.x, grappleY: anchor.y, grappleZ: anchor.z, grappleStuckTicks: 0 });
 }
 function tickWeapon(state, f, input, pendingDamage, arena, meleeOptions = {}) {
-  if (WEAPONS[f.weapon]?.mode !== 'charge' || f.slot !== 'primary' || f.healTicks || f.grenadeThrowTicks || f.hitStunTicks > 0) f.chargeTicks = 0;
+  if (!f.alive || WEAPONS[f.weapon]?.mode !== 'charge' || f.slot !== 'primary' || f.healTicks || f.grenadeThrowTicks || f.hitStunTicks > 0 || f.mantleTicks > 0) f.chargeTicks = 0;
   if (!f.alive) { f.pendingMeleeTicks = 0; return; }
   if (f.hitStunTicks > 0) {
     f.pendingMeleeTicks = f.pendingFireTicks = f.burstRemaining = f.spinTicks = 0;

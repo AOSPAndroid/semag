@@ -205,7 +205,7 @@ export function inventorySwapPresentation(player) {
     const blade = catalogItem(MELEE_WEAPONS, carried[0].weapon), label = blade?.label || 'BLADE';
     return { label, ariaLabel: `${blade?.name || 'Close-combat weapon'} equipped; no other carried item`, shortcut: '1–4 EQUIP' };
   }
-  return { label: carried.length ? 'NEXT' : 'EMPTY', ariaLabel: carried.length ? 'Cycle carried items' : 'No carried items; E picks up loot', shortcut: '1–4 EQUIP' };
+  return { label: carried.length ? 'NEXT' : 'EMPTY', ariaLabel: carried.length ? 'Cycle carried items' : 'No carried items; F picks up loot', shortcut: '1–4 EQUIP' };
 }
 
 export function inventoryLootPresentation(loot, player) {

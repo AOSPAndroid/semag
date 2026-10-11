@@ -31,8 +31,8 @@ export function createUtilityOverlay(host) {
   let last = '';
   return {
     element,
-    update(view) {
-      const flash = clamp(finite(view?.flash), 0, 1), smoke = clamp(finite(view?.smoke), 0, 1);
+    update(view, { active = true } = {}) {
+      const flash = active ? clamp(finite(view?.flash), 0, 1) : 0, smoke = active ? clamp(finite(view?.smoke), 0, 1) : 0;
       const key = `${flash.toFixed(3)}:${smoke.toFixed(3)}`; if (key === last) return; last = key;
       if (flash >= smoke * .9 && flash > 0) { element.style.background = '#fffdf6'; element.style.opacity = String(flash); }
       else { element.style.background = 'radial-gradient(circle at 50% 50%, #b9bec4 0%, #9aa0a6 70%, #8a9096 100%)'; element.style.opacity = String(smoke); }

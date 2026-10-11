@@ -104,7 +104,7 @@ export function hordeWavePresentation(state, tickRate = 120) {
   const seconds = Math.ceil(Math.max(0, finite(horde.phaseTicks ?? state?.phaseTicks)) / tickRate);
   return { wave, threats: Math.max(0, finite(horde.alive)) + Math.max(0, finite(horde.pending)), kills: Math.max(0, finite(horde.totalKills)), seconds,
     elapsed: Math.max(0, finite(horde.elapsedTicks)) / tickRate,
-    banner: state?.phase === 'intermission' ? { tag: 'WAVE CLEARED', title: `NEXT WAVE IN ${seconds}`, detail: 'F heal · R reload · collect supplies and reposition.' } :
+    banner: state?.phase === 'intermission' ? { tag: 'WAVE CLEARED', title: `NEXT WAVE IN ${seconds}`, detail: 'H heal · R reload · F collect supplies and reposition.' } :
       state?.phase === 'fight' && finite(horde.waveTicks) < tickRate * 2 ? { tag: 'HOLD YOUR GROUND', title: `WAVE ${wave}`, detail: wave >= 4 ? 'Armed hostiles — use solid cover.' : 'Watch the entry points.' } : null };
 }
 
@@ -233,8 +233,9 @@ export async function bootHorde() {
   function feedback(message, now = performance.now(), duration = 1400) { text('horde-feedback', message); feedbackUntil = now + duration; }
   function hints() {
     app.dataset.keyboardLayout = getKeyboardLayout(); text('horde-guide-move', displayKey('WASD')); text('horde-grenade-key', 'G'); text('horde-guide-grenade', 'G');
+    for (const label of document.querySelectorAll('[data-horde-key]')) label.textContent = displayKey(label.dataset.hordeKey);
     text('horde-look-hint', fallback ? 'DRAG TO LOOK · P MENU · ESC RELEASE' : `${displayKey('WASD')} MOVE · RMB SECONDARY · P ${solo ? 'PAUSE' : 'MENU'} · ESC RELEASE`);
-    canvas.setAttribute('aria-label', `First-person monster survival. ${displayKey('WASD')} or arrows move, mouse looks, left click or B / J uses your selected item, right click aims guns, stabs with a knife or parries with other blades, Space jumps, Control crouches, Shift sprints, C walks quietly, R reloads, 1 to 4 equip inventory slots, wheel up or down cycles occupied inventory slots, including potions and grenades, X drops the selected item, V switches blade, ${displayKey('Q')} throws a grenade, F heals, E picks up supplies or holds to revive. P ${solo ? 'toggles pause and opens the setup menu' : 'opens the controls menu or resumes controls'}. Escape exits fullscreen and releases your controls.`);
+    canvas.setAttribute('aria-label', `First-person monster survival. ${displayKey('WASD')} or arrows move, mouse looks, left click or B / J uses your selected item, right click aims guns, stabs with a knife or parries with other blades, Space jumps, Control crouches, Shift sprints, C walks quietly, R reloads, 1 to 4 equip inventory slots, wheel up or down cycles occupied inventory slots, including potions and grenades, X drops the selected item, V switches blade, ${displayKey('Q / E')} lean, G throws a grenade, H heals, F picks up supplies or holds to revive. P ${solo ? 'toggles pause and opens the setup menu' : 'opens the controls menu or resumes controls'}. Escape exits fullscreen and releases your controls.`);
   }
   function sendInput(buttons = currentInput(), edge = false, now = performance.now(), cancelActions = false, cancelPress = null) {
     const nextSequence = sequence >= 999999000 ? 1 : sequence + 1;
