@@ -1,0 +1,106 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 320" role="img" aria-labelledby="title desc">
+  <title id="title">Shinobi Showdown 3D</title>
+  <desc id="desc">A hooded voxel ninja seen from behind raises a glowing katana above connected cedar rooftops. A rival waits beyond a wooden bridge beneath a torii gate, cherry blossoms and a pixel moon.</desc>
+  <defs>
+    <linearGradient id="sky" x2="0" y2="1"><stop stop-color="#101827"/><stop offset="1" stop-color="#38435c"/></linearGradient>
+    <linearGradient id="mist" x2="0" y2="1"><stop stop-color="#74808f" stop-opacity=".3"/><stop offset="1" stop-color="#74808f" stop-opacity="0"/></linearGradient>
+    <pattern id="slates" width="36" height="18" patternUnits="userSpaceOnUse"><path fill="#33495b" d="M0 0h36v18H0z"/><path fill="#456073" d="M1 1h16v7H1zM19 10h16v7H19z"/><path fill="#253b4c" d="M0 8h36v2H0zM17 0h2v8h-2zM0 10h2v8H0z"/></pattern>
+    <g id="lantern" shape-rendering="crispEdges"><path fill="#211e2c" d="M-6-2h12v18H-6zM-8-5H8v3H-8zM-8 16H8v3H-8z"/><path fill="#bb784d" d="M-5-1H5v16H-5z"/><path fill="#efd799" d="M-3 1h6v12h-6z"/><path fill="#ffe9ac" d="M-1 2h2v10h-2z"/><path fill="#825043" d="M-5 4H5v2H-5zM-5 10H5v2H-5z"/></g>
+    <g id="roof"><path fill="#142330" d="m-72 0 72-28 72 28-72 28z"/><path fill="url(#slates)" d="m-70-4 70-28 70 28L0 20z"/><path fill="#637d89" d="m-70-4 70-28 70 28-5 2L0-27-65-2z"/><path fill="#1a2f3d" d="m-70-4 70 24v8L-70 4z"/><path fill="#253d4c" d="m0 20 70-24v8L0 28z"/><path fill="#86a2a5" d="m-70-4 70 24v2L-70-2zm70 24 70-24v2L0 22z"/></g>
+    <g id="torii"><path fill="#683a3d" d="M-27-36h9v75h-9zM18-36h9v75h-9z"/><path fill="#a8645c" d="M-25-36h3v72h-3zM20-36h3v72h-3z"/><path fill="#362b35" d="M-42-40h84v7h-84zM-45-47h90v7h-90z"/><path fill="#b3796c" d="M-45-47h90v2h-90z"/><path fill="#96575a" d="M-34-20h68v7h-68z"/><path fill="#ba8070" d="M-34-20h68v2h-68z"/><path fill="#d5b488" d="M-5-35H5v15H-5z"/><path fill="#655c53" d="M-3-32h6v9h-6z"/><path fill="#293841" d="M-31 35h17v5h-17zM14 35h17v5H14z"/></g>
+  </defs>
+  <path fill="url(#sky)" d="M0 0h600v320H0z"/>
+  <g shape-rendering="crispEdges">
+    <path fill="#b6c6c7" d="M427 35h30v5h10v10h5v30h-5v10h-10v5h-30v-5h-10V80h-5V50h5V40h10z"/>
+    <path fill="#dfe5d2" d="M431 39h22v5h10v10h5v22h-5v10h-10v5h-22v-5h-10V76h-5V54h5V44h10z"/>
+    <path fill="#9eafb4" d="M438 46h8v4h-8zM452 65h10v9h-10zM427 78h8v5h-8z" opacity=".5"/>
+    <path fill="#a8b7bb" d="M75 35h2v2h-2zM197 61h2v2h-2zM296 25h2v2h-2zM382 46h2v2h-2zM512 80h2v2h-2zM550 37h2v2h-2z"/>
+    <path fill="#202e43" d="M0 128h21v-18h37V92h18v18h36v20h29v-19h41V99h16v12h45v29h38v-27h41V97h15v16h41v20h39v-25h38V96h18v12h39v21h52V108h38v25h42v-17h47v34H0z"/>
+    <path fill="#293a4d" d="M0 154h75v-16h42v15h68v-13h46v12h67v-19h37v23h72v-16h43v13h72v-20h47v22h33v40H0z"/>
+    <path fill="url(#mist)" d="M0 132h600v97H0z"/>
+  </g>
+  <!-- The distant roofbank, elevated gate and connected timber walkway. -->
+  <path fill="#172631" d="m266 157 123-31 123 31v67l-123 32-123-32z"/>
+  <path fill="#304653" d="m389 157 123-31v98l-123 32z"/>
+  <path fill="#596a6b" d="m260 154 129-38 129 38-129 39z"/>
+  <path fill="#728685" d="m260 154 129-38 129 38-6 2-123-36-123 36z"/>
+  <path fill="#364e5a" d="m260 154 129 39v7l-129-39z"/>
+  <path fill="#233b49" d="m389 193 129-39v7l-129 39z"/>
+  <g transform="translate(389 112) scale(.69)"><use href="#torii"/></g>
+  <path fill="#956e50" d="m225 195 116-34 25 9-113 39z"/>
+  <path fill="#543f38" d="m225 195 28 14v8l-28-14zm28 14 113-39v8l-113 39z"/>
+  <path stroke="#b49b73" stroke-width="2" d="m236 195 20 10m-7-14 20 9m-7-13 20 9m-7-13 20 9m-7-13 20 9m-7-13 20 9m-7-13 20 9m-7-13 20 9"/>
+  <path stroke="#51463f" stroke-width="4" d="m234 185 112-34m-101 48 113-37"/>
+  <path stroke="#a78d65" stroke-width="2" d="m234 184 112-34m-101 48 113-37"/>
+  <path stroke="#80664e" stroke-width="4" d="m237 183 1 13m31-24v15m31-25v15m31-25v15m-82 19v14m31-25v15m31-25v15m31-25v15"/>
+  <!-- Near rooftops and timber architecture. -->
+  <path fill="#1a2a36" d="m13 212 89-28 89 28v86l-89 29-89-29z"/>
+  <path fill="#314554" d="m102 212 89-28v114l-89 29z"/>
+  <g transform="translate(102 187) scale(1.35)"><use href="#roof"/></g>
+  <path fill="#d09c65" d="M39 240h20v32H39zM69 250h20v32H69z"/>
+  <path fill="#394b50" d="M41 242h16v28H41zM71 252h16v28H71z"/>
+  <path fill="#8c8468" d="M41 252h16v2H41zM48 242h2v28h-2zM71 262h16v2H71zM78 252h2v28h-2z"/>
+  <path fill="#172a37" d="m431 241 84-26 84 26v79H431z"/>
+  <g transform="translate(515 218) scale(1.25)"><use href="#roof"/></g>
+  <path fill="#809195" d="m108 275 133-64 245 98v11H108z"/>
+  <path fill="#3b5360" d="m116 278 129-60 227 90-10 12H108z"/>
+  <path stroke="#66818a" stroke-width="2" d="m130 281 192-52m-175 64 205-52m-169 68 199-56m-72-30 86 97m-113-102 82 102m-112-88 72 88m-107-72 68 72m-102-56 52 56"/>
+  <path fill="#203844" d="m108 275 7 3 129-60-3-7zm133-64 245 98-14 2-227-93z"/>
+  <use href="#lantern" transform="translate(184 201) scale(.8)"/>
+  <use href="#lantern" transform="translate(442 160) scale(.7)"/>
+  <!-- Cherry tree is a distinct silhouette, with cubic blossom clusters. -->
+  <g shape-rendering="crispEdges">
+    <path fill="#3f3943" d="M516 89h8v100h-8zM508 76h8v38h-8zM525 68h7v53h-7zM496 62h8v24h-8zM532 48h7v25h-7z"/>
+    <path fill="#705156" d="M518 91h2v98h-2zM510 76h2v31h-2zM527 69h2v45h-2z"/>
+    <path fill="#805b6b" d="M484 32h47v35h-47zM519 21h41v42h-41zM549 36h42v30h-42zM504 62h47v31h-47zM463 54h32v26h-32z"/>
+    <path fill="#b2818a" d="M482 32h40v22h-40zM520 19h37v23h-37zM551 35h38v22h-38zM502 60h40v20h-40zM464 52h29v17h-29z"/>
+    <path fill="#d5a7a5" d="M486 34h13v8h-13zM526 23h14v8h-14zM555 39h13v8h-13zM506 64h14v7h-14zM469 55h10v6h-10z"/>
+    <path fill="#c3989c" d="M478 117h5v3h-5zM458 135h4v3h-4zM401 196h4v3h-4zM337 114h5v3h-5zM316 185h4v3h-4zM282 248h5v3h-5zM172 227h4v3h-4z"/>
+  </g>
+  <!-- Third-person foreground ninja: back, hood, articulated legs and a drawn blade. -->
+  <g shape-rendering="crispEdges">
+    <path fill="#06131e" opacity=".65" d="m188 297 39-16 47 17-36 16z"/>
+    <path fill="#182938" d="m210 226-5 52 12 8 15-6 4-49zM238 230l5 47 14 9 16-8-15-50z"/>
+    <path fill="#344959" d="m213 236-4 38 8 4 10-4 5-37zm27 2 6 36 10 5 12-5-12-35z"/>
+    <path fill="#617886" d="m214 242 8 2-3 28-7-3zm32 2 7 1 6 27-7-2z"/>
+    <path fill="#0d1d2b" d="m204 275 10-4 14 7v12l-12 5-13-8zm41 0 11-5 17 8v12l-13 5-14-8z"/>
+    <path fill="#91a3a4" d="m205 279 11 6 12-5v3l-12 5-11-6zm41 0 14 7 13-5v3l-13 5-14-7z"/>
+    <path fill="#162735" d="m199 188 29-12 32 12 3 48-33 13-33-14z"/>
+    <path fill="#3a5060" d="m201 190 28-10 29 10-2 42-26 11-29-12z"/>
+    <path fill="#233a49" d="m230 181 29 9-3 42-26 11z"/>
+    <path fill="#79909a" d="m202 191 26-10 2 4-25 9z"/>
+    <path fill="#b09079" d="m198 224 32 12 28-11v6l-28 11-32-12z"/>
+    <path fill="#ddc39b" d="m200 225 29 11v2l-29-10z"/>
+    <path fill="#172a38" d="m199 192-14 8-5 27 12 9 13-6 3-28zm58-3 16 5 14 22-7 14-14-4-13-24z"/>
+    <path fill="#415b6c" d="m194 200-6 5-5 20 9 6 8-4 5-24zm67-4 9 3 12 18-7 9-9-5-10-19z"/>
+    <path fill="#b7b6a1" d="m183 220 14 8-2 6-14-9zm91-9 9 10-4 8-11-8z"/>
+    <path fill="#172733" d="m207 151 21-10 25 9 7 27-29 17-26-14-5-16z"/>
+    <path fill="#425b6a" d="m210 153 18-8 22 7 5 23-25 13-22-12-3-13z"/>
+    <path fill="#283e4c" d="m229 145 21 7 5 23-25 13z"/>
+    <path fill="#73929e" d="m210 155 17-7 1 4-15 6z"/>
+    <path fill="#a48577" d="m206 173 23 11 26-12v6l-26 12-23-11z"/>
+    <path fill="#c5a58d" d="m207 174 23 10v2l-23-10z"/>
+    <path fill="#a48577" d="m230 185 18 3 31-9-9 13-22 3-14-3 18 8 19-1-13 9-26-13z"/>
+    <path fill="#d8b696" d="m243 188 13 1 14-5-5 6-12 2z"/>
+  </g>
+  <path stroke="#92d5cd" stroke-width="12" stroke-opacity=".1" d="m279 209 67-104"/>
+  <path fill="#112431" d="m269 225 7 5 12-17-7-5z"/>
+  <path fill="#cfad75" d="m277 208 12 8 3-4-13-8z"/>
+  <path fill="#c6e8dc" d="m282 205 58-97 8-11-3 17-57 95z"/>
+  <path fill="#f2ffef" d="m284 203 55-93 7-10-4 11-56 93z"/>
+  <path fill="#66a5ac" d="m287 206 54-93 4-3-57 99z"/>
+  <!-- A small rival and crosshair anchor communicate the new camera viewpoint. -->
+  <g shape-rendering="crispEdges">
+    <path fill="#11232d" d="M365 144h18v28h-18zM365 170h7v19h-7zM376 170h7v19h-7z"/>
+    <path fill="#6f7e88" d="M368 146h12v23h-12z"/>
+    <path fill="#cc9278" d="M367 162h14v3h-14z"/>
+    <path fill="#283d4c" d="M366 133h16v14h-16z"/>
+    <path fill="#b6c8c7" d="M369 137h10v3h-10z"/>
+    <path fill="#2b424f" d="M360 148h7v16h-7zM381 148h7v16h-7z"/>
+    <path fill="#d5e5d7" d="m386 156 13-23 3-3-1 5-13 23z"/>
+  </g>
+  <path fill="none" stroke="#deeee7" stroke-width="1.5" opacity=".8" d="M363 155h5m12 0h5m-11-11v5m0 12v5"/>
+  <path fill="#dbece4" d="M373 154h2v2h-2z"/>
+  <path fill="#0f1924" opacity=".5" d="M0 302h600v18H0z"/>
+  <text x="26" y="314" fill="#c1d0d1" font-family="monospace" font-size="8" letter-spacing="1.6">ROOFTOPS · COMBOS · PERFECT PARRY</text>
+</svg>

@@ -14,6 +14,10 @@
   background: radial-gradient(ellipse at 50% 46%, #94702e24, #09090bc4 76%);
 }
 .voxel-victory[hidden] { display: none !important; }
+.voxel-victory[data-voxel-kind=shinobi] { background: radial-gradient(ellipse at 50% 46%, #aa493d30, #09090bdb 76%); }
+.voxel-victory[data-voxel-kind=shinobi] .voxel-victory-board { border-color: #ef947a66; background: linear-gradient(145deg, #36221fd9, #111113f2 68%); }
+[data-voxel-kind=shinobi] .voxel-crest-frame { fill: #e98767; }
+[data-voxel-kind=shinobi] .voxel-crest-symbol { fill: #ffd4aa; }
 .voxel-victory-board {
   position: relative;
   width: min(100%, 610px);

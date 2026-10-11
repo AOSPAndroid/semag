@@ -1,0 +1,18 @@
+.modern-hub .shinobi-voxel-setup{width:min(780px,calc(100% - 32px));overflow:auto}
+.shinobi-voxel-setup .shinobi-arena-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;border:0;margin:0;padding:0}
+.shinobi-voxel-setup [data-shinobi-arenas]{display:contents}
+.shinobi-voxel-setup .shinobi-arena-grid legend{margin:0 0 12px;color:var(--muted-foreground);font:600 10px var(--font);letter-spacing:1px}
+.shinobi-arena-choice{position:relative;min-width:0;cursor:pointer}
+.shinobi-arena-choice input{position:absolute;width:1px;height:1px;opacity:0}
+.shinobi-arena-choice>span{display:flex;flex-direction:column;gap:5px;height:100%;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--background);transition:border-color .15s,background .15s}
+.shinobi-arena-choice input:checked+span{border-color:var(--foreground);background:var(--muted);box-shadow:inset 0 0 0 1px var(--foreground)}
+.shinobi-arena-choice input:focus-visible+span{outline:2px solid var(--ring,var(--accent));outline-offset:3px}
+.shinobi-arena-preview{display:flex;align-items:center;justify-content:center;width:100%;height:125px;margin:0 0 6px;overflow:hidden;border-radius:5px;background:#101a24}
+.shinobi-arena-preview svg{display:block;width:100%;height:100%;padding:7px;filter:drop-shadow(0 5px 5px #0004)}
+.shinobi-arena-choice strong{color:var(--foreground);font:600 13px/1.4 var(--font)}
+.shinobi-arena-choice small{color:var(--muted-foreground);font:11px/1.4 var(--font)}
+.modern-hub .shinobi-voxel-setup .shinobi-arena-note{min-height:42px;margin:14px 0 18px;font-size:12px}
+.modern-hub .shinobi-voxel-setup .shinobi-room-rules{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 22px}
+.shinobi-room-rules span{padding:5px 9px;border:1px solid var(--border);border-radius:5px;color:var(--muted-foreground);font:11px var(--font);white-space:nowrap}
+@media(max-width:550px){.shinobi-voxel-setup .shinobi-arena-grid{grid-template-columns:minmax(0,1fr);gap:9px}.shinobi-arena-choice>span{display:grid;grid-template-columns:82px minmax(0,1fr);grid-template-rows:auto auto;gap:4px 12px;padding:9px}.shinobi-arena-preview{grid-column:1;grid-row:1/3;height:66px;margin:0}.shinobi-arena-choice strong{grid-column:2;align-self:end}.shinobi-arena-choice small{grid-column:2;align-self:start}.modern-hub .shinobi-voxel-setup .shinobi-arena-note{min-height:0}}
+@media(prefers-reduced-motion:reduce){.shinobi-arena-choice>span{transition:none}}

@@ -109,6 +109,33 @@ test('Royale never provides enemy human labels, health bars or spectator informa
   assert.equal(present([human(1), monster()], { state: { gameId: 'voxel-royale' } }).length, 0);
 });
 
+test('Shinobi 3D opponents expose their accepted name and HP only in this game mode', () => {
+  const actor = human(3, { team: 1, shinobiBot: true, name: '\u0000 Ash Crane <b> ', hp: 87, maxHp: 200 });
+  const labels = present([actor], { state: { gameId: 'shinobi-voxel' }, roster: [] });
+  assert.equal(labels.length, 1); assert.equal(labels[0].kind, 'opponent'); assert.equal(labels[0].name, 'Ash Crane <b>');
+  assert.equal(labels[0].hp, 87); assert.equal(labels[0].maxHp, 200); assert.equal(labels[0].key, 'opponent:3:1');
+  assert.equal(present([actor], { state: { gameId: 'voxel-breach' }, roster: [] }).length, 0);
+  assert.equal(present([actor], { state: { gameId: 'voxel-royale' }, roster: [] }).length, 0);
+  const online = present([human(1, { team: 1, name: 'Engine fallback', hp: 12 })], { state: { gameId: 'shinobi-voxel' } });
+  assert.equal(online[0].name, 'Alice', 'connected player identity comes from the roster');
+});
+
+test('Shinobi opponent names and health disappear behind walls, crouch cover and beams', () => {
+  const actor = human(3, { team: 1, shinobiBot: true, name: 'Ash Crane' });
+  assert.equal(present([actor], { state: { gameId: 'shinobi-voxel', map: map([wall(3)]) } }).length, 0);
+  assert.equal(present([{ ...actor, crouching: true }], { state: { gameId: 'shinobi-voxel', map: map([wall(1.35, { z: -5.95, d: .02 })]) } }).length, 0);
+  assert.equal(present([actor], { state: { gameId: 'shinobi-voxel', map: map([wall(1.35, { z: -5.95, d: .02 })]) } }).length, 1, 'real standing head remains visible above cover');
+  assert.equal(present([actor], { state: { gameId: 'shinobi-voxel', map: map([wall(.4, { y: 1.86, z: -5.8, d: .1 })]) } }).length, 0, 'blocked anchor never leaks a floating name');
+});
+
+test('Shinobi opponent labels reject dead health and follow actual articulated crouch heights', () => {
+  const actor = human(3, { team: 1, shinobiBot: true });
+  for (const fields of [{ alive: false }, { hp: 0 }, { hp: NaN }, { maxHp: 0 }, { maxHp: Infinity }]) assert.equal(present([{ ...actor, ...fields }], { state: { gameId: 'shinobi-voxel' } }).length, 0);
+  const normal = present([actor], { state: { gameId: 'shinobi-voxel' } });
+  const crouched = present([{ ...actor, crouching: true }], { state: { gameId: 'shinobi-voxel' }, humanPoses: new Map([[3, { joints: { head: { base: .83 }, torso: { chestY: .68 } } }]]) });
+  assert.ok(crouched[0].y > normal[0].y); assert.ok(Object.isFrozen(crouched[0]));
+});
+
 test('spectators skip the watched actor and preserve the original player team filter', () => {
   const watched = human(1), ally = human(2), enemy = human(4, { team: 1 }), players = [camera(), watched, ally, enemy, monster()];
   players[0].alive = false;

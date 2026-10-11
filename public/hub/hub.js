@@ -3,6 +3,7 @@ import { GAMES, roomUrl, roomCapacity, soloUrl, practiceUrl, getName, saveName, 
 import { chooseVoxelRoom } from './voxel-setup.js';
 import { chooseRoyaleRoom } from './royale-setup.js';
 import { chooseHordeSettings } from './horde-setup.js';
+import { chooseShinobiRoom } from './shinobi-voxel-setup.js';
 import { setText, toggleClass } from './dom.js';
 import { isBrowserHosted, pcHostUrl } from './hosting-mode.js';
 import { mountPcHostDialog } from './site-mode.js';
@@ -35,7 +36,7 @@ document.querySelectorAll('[data-play-practice]').forEach(link => {
   link.href = url;
   link.addEventListener('click', updateName);
 });
-const matchesFilter = (game, filter) => filter === 'all' || (['ninja', 'voxel'].includes(filter) ? game?.theme === filter : filter === 'roguelike' ? game?.roguelike === true : ['driving', 'action'].includes(filter) ? game?.genre === filter : filter === 'solo' ? game?.kind === 'solo' || game?.supportsSolo === true || game?.supportsPractice === true : game?.kind !== 'solo');
+const matchesFilter = (game, filter) => filter === 'all' || (['ninja', 'voxel'].includes(filter) ? game?.theme === filter || game?.themes?.includes(filter) === true : filter === 'roguelike' ? game?.roguelike === true : ['driving', 'action'].includes(filter) ? game?.genre === filter : filter === 'solo' ? game?.kind === 'solo' || game?.supportsSolo === true || game?.supportsPractice === true : game?.kind !== 'solo');
 let activeFilter = 'all';
 function filterShelf() {
   const query = $('game-search').value.trim().toLowerCase();
@@ -62,7 +63,7 @@ document.querySelectorAll('[data-create-game]').forEach(button => button.addEven
   if (browserHosted) { openPcHost(); return; }
   if (creating) return;
   const gameId = button.dataset.createGame;
-  const settings = gameId === 'voxel-breach' ? await chooseVoxelRoom($('voxel-setup')) : gameId === 'voxel-royale' ? await chooseRoyaleRoom($('royale-setup')) : gameId === 'voxel-horde' ? await chooseHordeSettings($('horde-setup')) : {};
+  const settings = gameId === 'voxel-breach' ? await chooseVoxelRoom($('voxel-setup')) : gameId === 'voxel-royale' ? await chooseRoyaleRoom($('royale-setup')) : gameId === 'voxel-horde' ? await chooseHordeSettings($('horde-setup')) : gameId === 'shinobi-voxel' ? await chooseShinobiRoom($('shinobi-voxel-setup')) : {};
   if (!settings || creating) return;
   updateName(); creating = true; error('');
   const buttonLabel = button.firstChild.textContent;

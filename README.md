@@ -2,13 +2,27 @@
 
 ![semaG pixel-art logo](public/hub/logo.svg)
 
-A self-hosted browser hub with **24 games**, including solo challenges, duels, a tactical team FPS, battle royale, and three-player co-op wave survival. Pick **Open game** to preview a solo game, then press **Start game** when ready, or create a room and share your PC address or room link with a colleague. Voxel Royale holds up to ten players; the host starts with any two or more connected players. Voxel Last Stand supports solo play or co-op with up to three players: everyone connected presses **Ready**, then the host explicitly starts. Voxel Breach has two, four or six seats and requires every seat to be ready; the remaining multiplayer rooms have two. The server can run several independent rooms at once. Every PvP game also has a **Vs bots** link for solo play, including Shinobi Showdown against one to four opponents.
+A self-hosted browser hub with **26 games**, including solo challenges, duels, a tactical team FPS, battle royale, and three-player co-op wave survival. Pick **Open game** to preview a solo game, then press **Start game** when ready, or create a room and share your PC address or room link with a colleague. Voxel Royale holds up to ten players; the host starts with any two or more connected players. Voxel Last Stand supports solo play or co-op with up to three players: everyone connected presses **Ready**, then the host explicitly starts. Voxel Breach has two, four or six seats and requires every seat to be ready; the remaining multiplayer rooms have two. The server can run several independent rooms at once. Every PvP game also has a **Vs bots** link for solo play, including Shinobi Showdown against one to four opponents.
 
 [Run on your PC](#run-on-your-pc)
 
 ## Screenshots
 
 Click an image to open it at full size.
+
+**Shinobi Showdown 3D · a separate third-person duel**
+
+The original 2D Showdown remains available. The 3D game uses the voxel movement and collision system with a visible animated ninja, a wall-aware shoulder camera and a centered crosshair. Choose a distinct courtyard, connected roofwalk or indoor dojo, then start against one to four bots at Normal, Hard or Expert, or create a two-player PC-hosted room and ready together.
+
+Use WASD or ZQSD to move, Shift to sprint, Ctrl to crouch, C to walk and Space to jump. Left-click cuts; right-click commits a timed parry. E dashes, F feints during a cut startup, and Q throws a kunai (A on ZQSD). Consecutive confirmed cuts build a three-hit finisher. Cover blocks throws, parries can reflect them, and dashes obey walls and player bodies. P opens the menu. Online opponents keep playing while your controls are released.
+
+[![Actual Shinobi Showdown 3D gameplay with a katana slash, animated ninja and centered crosshair in Sakura Courtyard](docs/screenshots/shinobi-3d-courtyard.png)](docs/screenshots/shinobi-3d-courtyard.png)
+
+| Moonlit Roofwalk | Lantern Dojo |
+| --- | --- |
+| [![Real third-person play on the connected roofwalk under a blue night sky](docs/screenshots/shinobi-3d-rooftops.png)](docs/screenshots/shinobi-3d-rooftops.png) | [![Real third-person play with shoji cover, warm lanterns and an elevated dojo gallery](docs/screenshots/shinobi-3d-dojo.png)](docs/screenshots/shinobi-3d-dojo.png) |
+
+[![Completed two-player Shinobi duel with a 2–0 score, 440 damage, two eliminations and guarded rematch controls](docs/screenshots/shinobi-3d-victory.png)](docs/screenshots/shinobi-3d-victory.png)
 
 **Distinct arenas · connected upper floors**
 
@@ -102,11 +116,13 @@ Finish the final fight, watch the gold crown reveal, and review your placement a
 
 | Game | Mode | Goal |
 | --- | --- | --- |
+| Voxel Dojo | Solo first-person training | Try every gun and blade against resettable targets on three training maps, inspect equipment and review your training report. |
 | Voxel Wilds | Solo first-person voxel survival | Mine editable woodland terrain, craft tools and supplies, build shelter, and survive escalating nights with an eight-slot inventory and a saved world. |
 | Voxel Last Stand | First-person monster survival: solo / 1–3 player co-op | Survive endless escalating waves on thirteen maps, fight eleven monster types, collect health, ammo and occasional weapon drops, manage four flexible inventory slots, and revive your squad. |
 | Voxel Breach | Tactical voxel 3D FPS: 1v1 / 2v2 / 3v3 | Hold angles, plant or defuse the bomb, and win four rounds on one of thirteen authored maps. |
 | Voxel Royale | First-person voxel battle royale: 2–10 players / solo vs 1–10 bots | Spawn randomly, scavenge weapons and supplies, escape the shrinking storm, and be the last survivor on one of ten authored maps. |
 | Shadow Lantern | Solo ninja stealth campaign | Collect guarded seals and extract across nine authored heists in three districts, using cover, sneaking, distractions and limited smoke. |
+| Shinobi Showdown 3D | Third-person voxel duel: online 1v1 / solo vs 1–4 bots | Win two rounds across Sakura Courtyard, Moonlit Roofwalk or Lantern Dojo. Confirm katana combos, reflect kunai with timed parries, feint a startup and spend stamina on physical dashes. |
 | Shinobi Showdown | Real-time 1v1 duel / solo vs 1–4 bots | Confirm katana chains, feint heavy strikes, land precise parries and manage stamina across three arenas. Choose Normal, Hard or Expert opponents in solo play. |
 | Skyline Hook | Solo precision grappling platformer | Swing through twelve authored rooftops in three districts with campaign lives and a completed-run time record. |
 | Starfall Squadron | Solo bullet-hell shooter | Focus through six stages, defeat six guardians, graze shots and shape your ship with upgrades. |

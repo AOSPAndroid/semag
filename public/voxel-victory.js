@@ -8,6 +8,7 @@ const FINISHES = Object.freeze({
   ember: { kicker: 'DESCENT COMPLETE', title: 'Rise from the embers.', mark: 'EMBER DELVE', path: 'M28 8h8v12h8v12h8v12H40v12H24V44H12V32h8V20h8zm0 28v12h8V36z', accent: 'M28 36h8v12h-8zM16 44h8v4h-8zm24 0h8v4h-8z' },
   wilds: { kicker: 'EXPEDITION COMPLETE', title: 'You made the wilds yours.', mark: 'VOXEL WILDS', path: 'M28 8h8v8h8v8h8v8H36v8h8v8H36v8h-8v-8H16v-8h12v-8H12v-8h8v-8h8z', accent: 'M8 48h8v8H8zm40 0h8v8h-8zM28 52h8v8h-8z' },
   dojo: { kicker: 'TRAINING COMPLETE', title: 'Your next move starts here.', mark: 'VOXEL DOJO', path: 'M8 16h48v8H8zm8 8h8v32h-8zm24 0h8v32h-8zM24 32h16v8H24z', accent: 'M12 8h40v8H12zM8 52h48v4H8z' },
+  shinobi: { kicker: 'DUEL WON', title: 'Master of the rooftops.', mark: 'SHINOBI 3D', path: 'M8 12h8v8h8v8h8v8h8v8h8v8h-8v-8h-8v-8h-8v-8h-8v-8H8zm40 0h8v12h-8v8h-8v8h-8v-8h8v-8h8zM8 44h8v-8h8v8h-8v8H8z', accent: 'M8 8h8v4H8zm40 0h8v4h-8zM4 48h8v8H4zm44 0h8v8h-8z' },
 });
 
 const idle = phase => ({ stage: phase === 'matchEnd' ? 'results' : 'idle', holding: false, visible: false, started: false, remainingMs: 0, progress: 0 });

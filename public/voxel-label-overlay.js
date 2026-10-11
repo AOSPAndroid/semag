@@ -2,13 +2,13 @@
 export const VOXEL_LABEL_LIMIT = 23;
 
 function labelPresentation(label) {
-  if (!label || !['teammate', 'monster'].includes(label.kind) || typeof label.key !== 'string' || !label.key || label.key.length > 120 ||
+  if (!label || !['teammate', 'monster', 'opponent'].includes(label.kind) || typeof label.key !== 'string' || !label.key || label.key.length > 120 ||
       !Number.isInteger(label.id) || label.id < 0 || !Number.isInteger(label.lifeId) || label.lifeId < 0 ||
       !Number.isFinite(label.x) || !Number.isFinite(label.y) || label.x < 0 || label.x > 1 || label.y < 0 || label.y > 1) return null;
-  if (label.kind === 'monster' && (!Number.isFinite(label.hp) || !Number.isFinite(label.maxHp) || label.hp <= 0 || label.maxHp <= 0)) return null;
+  if (label.kind !== 'teammate' && (!Number.isFinite(label.hp) || !Number.isFinite(label.maxHp) || label.hp <= 0 || label.maxHp <= 0)) return null;
   return { key: label.key, id: label.id, lifeId: label.lifeId, kind: label.kind, x: label.x, y: label.y,
-    ...(label.kind === 'teammate' ? { name: typeof label.name === 'string' && label.name.trim() ? label.name : `Player ${label.id + 1}` } :
-      { hp: label.hp, maxHp: label.maxHp }) };
+    ...(label.kind !== 'monster' ? { name: typeof label.name === 'string' && label.name.trim() ? label.name : `Player ${label.id + 1}` } : {}),
+    ...(label.kind !== 'teammate' ? { hp: label.hp, maxHp: label.maxHp } : {}) };
 }
 
 /** The canvas fills its positioned parent; percentages avoid layout reads at refresh rate. */
@@ -57,10 +57,12 @@ export function mountVoxelLabelOverlay(canvas) {
       }
       const before = entry.label;
       if (before?.kind !== label.kind) {
-        entry.node.dataset.voxelLabel = label.kind; entry.name.hidden = label.kind !== 'teammate'; entry.track.hidden = label.kind !== 'monster';
+        entry.node.dataset.voxelLabel = label.kind; entry.name.hidden = label.kind === 'monster'; entry.track.hidden = label.kind === 'teammate';
+      }
+      if (label.kind !== 'monster') {
+        if (entry.name.textContent !== label.name) entry.name.textContent = label.name;
       }
       if (label.kind === 'teammate') {
-        if (entry.name.textContent !== label.name) entry.name.textContent = label.name;
         if (entry.node.dataset.hp != null) { delete entry.node.dataset.hp; delete entry.node.dataset.maxHp; }
       } else {
         const fraction = Math.max(0, Math.min(1, label.hp / label.maxHp));

@@ -144,7 +144,7 @@ test('result decoration preserves existing IDs, real stats, button state and nod
 
 test('every supported mode has a distinct pixel crest and dojo completion remains a neutral finish', () => {
   const symbols = new Set();
-  for (const kind of ['breach', 'royale', 'horde', 'ember', 'wilds', 'dojo']) {
+  for (const kind of ['breach', 'royale', 'horde', 'ember', 'wilds', 'dojo', 'shinobi']) {
     const scene = dom(), component = mountVoxelVictory({ container: scene.container, resultCard: scene.card, kind });
     component.decorateResult({ won: false });
     assert.equal(scene.card.getAttribute('data-voxel-kind'), kind); assert.equal(scene.card.getAttribute('data-voxel-result'), 'lost');
@@ -152,7 +152,7 @@ test('every supported mode has a distinct pixel crest and dojo completion remain
     if (kind === 'dojo') assert.equal(scene.card.querySelector('.voxel-finish-label').textContent, 'TRAINING COMPLETE');
     component.destroy();
   }
-  assert.equal(symbols.size, 6);
+  assert.equal(symbols.size, 7);
   const scene = dom(), fallback = mountVoxelVictory({ container: scene.container, kind: 'invalid' }); assert.equal(fallback.inspect().kind, 'breach');
 });
 

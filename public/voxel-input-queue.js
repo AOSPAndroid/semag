@@ -18,7 +18,18 @@ export function releaseFpsTouchAction(pointer, pointers, actions, isHeld, cancel
   return null;
 }
 
-export function createFpsInputQueue({ maxPending = 16, maxAgeMs = 120 } = {}) {
+export function createFpsInputQueue({ maxPending = 16, maxAgeMs = 120, edgeActions = FPS_EDGE_ACTIONS, aimActions = ['fire', 'grenade', 'aim'], movementActions = [] } = {}) {
+  // Copy the caller's action lists: a later mutation cannot change a live
+  // queue's press validation, release fences or captured-look commitments.
+  const edges = Object.freeze([...new Set((Array.isArray(edgeActions) ? edgeActions : FPS_EDGE_ACTIONS)
+    .filter(action => typeof action === 'string' && /^[a-zA-Z][a-zA-Z0-9]*$/.test(action)))]);
+  const edgeSet = new Set(edges);
+  const commitments = Object.freeze([...new Set((Array.isArray(aimActions) ? aimActions : ['fire', 'grenade', 'aim'])
+    .filter(action => edgeSet.has(action)))]);
+  const commitmentSet = new Set(commitments);
+  const movementCommitments = Object.freeze([...new Set((Array.isArray(movementActions) ? movementActions : [])
+    .filter(action => edgeSet.has(action)))]);
+  const movementCommitmentSet = new Set(movementCommitments);
   const limit = Number.isFinite(maxPending) ? Math.max(1, Math.min(32, Math.floor(maxPending))) : 16;
   const lifetime = Number.isFinite(maxAgeMs) ? Math.max(0, Math.min(250, maxAgeMs)) : 120;
   let observed = {}, latest = {}, viewTick = null, prime = false;
@@ -29,7 +40,7 @@ export function createFpsInputQueue({ maxPending = 16, maxAgeMs = 120 } = {}) {
   const select = (input, now) => {
     const buttons = { ...input };
     const isBlocked = action => blocked.has(action) && input[action] === true;
-    for (const action of FPS_EDGE_ACTIONS) if (prime || isBlocked(action)) buttons[action] = false;
+    for (const action of edges) if (prime || isBlocked(action)) buttons[action] = false;
     let discard = 0, selectedViewTick = viewTick;
     while (discard < pending.length && finiteTime(now) - pending[discard].at > lifetime) discard++;
     // ADS remains a continuous hold. A held aim already delivered beside another
@@ -38,15 +49,16 @@ export function createFpsInputQueue({ maxPending = 16, maxAgeMs = 120 } = {}) {
     if (!prime && discard < pending.length) {
       // Keep existing holds but serialize fresh commitments. Two rapid taps
       // of one action need a real release step between their rising edges.
-      for (const action of FPS_EDGE_ACTIONS) buttons[action] = !isBlocked(action) && (action === 'aim' || sampled.has(action)) && input[action] === true;
-      const freshAim = buttons.aim && !sampled.has('aim') ? pending.slice(discard).find(edge => edge.action === 'aim') : null;
+      for (const action of edges) buttons[action] = !isBlocked(action) && (action === 'aim' || sampled.has(action)) && input[action] === true;
+      const freshAim = commitmentSet.has('aim') && buttons.aim && !sampled.has('aim') ? pending.slice(discard).find(edge => edge.action === 'aim') : null;
       const edge = pending[discard];
       if (isBlocked(edge.action)) discard++;
       else if (sampled.has(edge.action)) buttons[edge.action] = false;
       else {
         buttons[edge.action] = true; discard++;
         if (edge.action === 'drop' && edge.inventorySlot) buttons[edge.inventorySlot] = true;
-        if (edge.action === 'fire' || edge.action === 'grenade' || edge.action === 'aim') {
+        if (movementCommitmentSet.has(edge.action) && Number.isFinite(edge.moveYaw)) buttons.moveYaw = edge.moveYaw;
+        if (commitmentSet.has(edge.action)) {
           selectedViewTick = edge.viewTick;
           if (Number.isFinite(edge.yaw)) buttons.yaw = edge.yaw;
           if (Number.isFinite(edge.pitch)) buttons.pitch = edge.pitch;
@@ -62,8 +74,8 @@ export function createFpsInputQueue({ maxPending = 16, maxAgeMs = 120 } = {}) {
   return Object.freeze({
     observe(input, now = 0, context = {}) {
       latest = { ...input }; viewTick = Number.isFinite(context.viewTick) ? context.viewTick : null;
-      const inventoryCommit = ['slot1', 'slot2', 'slot3', 'slot4', 'drop'].some(action => input[action] === true && observed[action] !== true && !blocked.has(action));
-      const handChange = inventoryCommit || input.swap === true && observed.swap !== true && !blocked.has('swap');
+      const inventoryCommit = ['slot1', 'slot2', 'slot3', 'slot4', 'drop'].some(action => edgeSet.has(action) && input[action] === true && observed[action] !== true && !blocked.has(action));
+      const handChange = inventoryCommit || edgeSet.has('swap') && input.swap === true && observed.swap !== true && !blocked.has('swap');
       if (handChange) {
         // A slot/drop commitment supersedes an unconsumed attack and fences a
         // still-held physical trigger until a genuine release is observed.
@@ -71,10 +83,11 @@ export function createFpsInputQueue({ maxPending = 16, maxAgeMs = 120 } = {}) {
         if (inventoryCommit && input.fire === true) blocked.add('fire');
         if (input.aim === true) blocked.add('aim');
       }
-      for (const action of FPS_EDGE_ACTIONS) {
+      for (const action of edges) {
         if (input[action] !== true) blocked.delete(action);
         if (input[action] === true && observed[action] !== true && !blocked.has(action) && pending.length < limit) {
-      pending.push({ action, at: finiteTime(now), yaw: input.yaw, pitch: input.pitch, viewTick,
+          pending.push({ action, at: finiteTime(now), yaw: input.yaw, pitch: input.pitch, viewTick,
+            ...(movementCommitmentSet.has(action) && Number.isFinite(input.moveYaw) ? { moveYaw: input.moveYaw } : {}),
             ...(action === 'drop' ? { inventorySlot: ['slot1', 'slot2', 'slot3', 'slot4'].find(key => input[key] === true) || null } : {}),
             ...(Number.isSafeInteger(context.sequence) && context.sequence >= 0 ? { seq: context.sequence } : {}) });
         }
@@ -84,7 +97,7 @@ export function createFpsInputQueue({ maxPending = 16, maxAgeMs = 120 } = {}) {
     // Only the owned, unconsumed press may be withdrawn. Holds and other taps
     // retain their sampled state; old/unknown sequences cannot cancel a new press.
     cancel(press) {
-      if (!FPS_EDGE_ACTIONS.includes(press?.action) || !Number.isSafeInteger(press?.seq) || press.seq < 0) return false;
+      if (!edgeSet.has(press?.action) || !Number.isSafeInteger(press?.seq) || press.seq < 0) return false;
       const index = pending.findIndex(edge => edge.action === press.action && edge.seq === press.seq);
       if (index < 0) return false;
       pending.splice(index, 1); return true;
@@ -92,15 +105,15 @@ export function createFpsInputQueue({ maxPending = 16, maxAgeMs = 120 } = {}) {
     reset({ held = {}, neutral = false } = {}) {
       pending.length = 0; sampled.clear(); blocked.clear(); prime = neutral === true;
       observed = { ...held }; latest = { ...held }; viewTick = null;
-      for (const action of FPS_EDGE_ACTIONS) if (held[action] === true) blocked.add(action);
+      for (const action of edges) if (held[action] === true) blocked.add(action);
     },
     preview: (input = latest, now = 0) => select(input, now).buttons,
     sample(input = latest, now = 0) {
       const { buttons, viewTick: selectedViewTick, discard } = select(input, now);
-      for (const action of FPS_EDGE_ACTIONS) if (input[action] !== true) blocked.delete(action);
+      for (const action of edges) if (input[action] !== true) blocked.delete(action);
       if (discard) pending.splice(0, discard);
       sampled.clear();
-      for (const action of FPS_EDGE_ACTIONS) if (buttons[action] === true) sampled.add(action);
+      for (const action of edges) if (buttons[action] === true) sampled.add(action);
       prime = false;
       return { buttons, viewTick: selectedViewTick };
     },

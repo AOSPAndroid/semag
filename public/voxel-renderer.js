@@ -52,6 +52,17 @@ const ATMOSPHERE = Object.freeze({
   dojo: { sun: [-.37, .82, .43], direct: [.67, .57, .44], ambient: [.51, .57, .59], top: '#7ea4b0', horizon: '#ecdbc4', sunColor: '#ffebbc' },
   ...MAP_EXPANSION_ATMOSPHERE,
 });
+// These two authored Shinobi environments have independent lighting. Keep the
+// shared Dojo and every FPS map on their existing atmosphere and sky artwork.
+const SHINOBI_ATMOSPHERE = Object.freeze({
+  'shinobi-rooftops': Object.freeze({ sun: [-.44, .84, -.31], direct: [.16, .22, .34], ambient: [.50, .59, .76], top: '#101d35', horizon: '#304965', sunColor: '#dceaff' }),
+  'shinobi-dojo': Object.freeze({ sun: [-.15, .98, .12], direct: [.22, .17, .10], ambient: [.74, .62, .46], top: '#242333', horizon: '#71503b', sunColor: '#ffd69a' }),
+});
+
+export function voxelMapAtmosphere(map) {
+  const authored = map?.mode === 'shinobi' && Object.hasOwn(SHINOBI_ATMOSPHERE, map.id) ? SHINOBI_ATMOSPHERE[map.id] : null;
+  return authored || ATMOSPHERE[map?.theme || map?.id] || ATMOSPHERE.courtyard;
+}
 const ART = Object.freeze({
   courtyard: { paving: '#d7c7aa', accent: '#cc9d76', skyline: '#748b90', cloud: '#f4dcc0', tile: 2.5 },
   depot: { paving: '#4f626c', accent: '#c79152', skyline: '#5f747c', cloud: '#dfe9df', tile: 5 },
@@ -2040,7 +2051,7 @@ export function mapMeshes(map) {
     if (theme === 'desert') for (let i = 0; i < 2; i++) opaque.floor(x + .35 + i * .28, z + .65 + i * 1.15, 2.4 - i * .5, .025, shade(floorColor, .90), .002);
     if (theme === 'maze' && seed % 3 === 0) opaque.floor(x + .35, z + .42, .81, .31, '#728b71', .002);
   }
-  const atmosphere = ATMOSPHERE[theme] || ATMOSPHERE.courtyard;
+  const atmosphere = voxelMapAtmosphere(map);
   const shadowFloor = map.mode === 'dojo' || ['snow', 'sewers', 'trading', 'paris'].includes(theme) ? .020 : theme === 'medieval' ? .024 : .005;
   for (const collider of map.colliders || []) {
     paintCollider(opaque, collider, theme);
@@ -2178,7 +2189,8 @@ export function mapMeshes(map) {
   }
   if (theme === 'paris') opaque.append(parisLandmarkMesh(bounds));
   const cloud = rgba(art.cloud);
-  for (let i = 0; i < (indoor ? 0 : 6); i++) {
+  const shinobiNight = map.mode === 'shinobi' && Object.hasOwn(SHINOBI_ATMOSPHERE, map.id);
+  for (let i = 0; i < (indoor || shinobiNight ? 0 : 6); i++) {
     const seed = hash(`${map.id}:cloud:${i}`), xx = minX - 22 + i * 17, zz = minZ - 28 + (seed % 35), yy = 23 + seed % 7;
     opaque.box(xx, yy, zz, 8 + seed % 5, .65, 3.6, cloud);
     opaque.box(xx + 2, yy + .62, zz + .7, 5.5, .65, 2.5, shade(cloud, 1.025));
@@ -3883,7 +3895,67 @@ export function operativeMeshes(player, time = 0, freeForAll = false, animation 
   const mesh = new Mesh(); operativeParts(mesh, player, finite(time), freeForAll, animation); return mesh.array;
 }
 
-function humanDeathTemplate(death, freeForAll = false) {
+/** Authored ninja clothing uses the same accepted joints and blade grips. */
+export function ninjaAppearance(player = {}, freeForAll = false) {
+  const human = humanAppearance(player, freeForAll), identity = Number.isInteger(player.id) ? Math.abs(player.id) : hash(player.id ?? 'shinobi');
+  const cloth = ['#213544', '#352d47', '#284039', '#43322e'][identity % 4];
+  return { ...human, shirt: cloth, pants: '#17252c', vest: '#33434a', accent: freeForAll ? survivorColor(player) : TEAM_COLORS[player.team === 1 ? 1 : 0], mask: '#15232b' };
+}
+
+function ninjaParts(mesh, player, time, freeForAll = false, animation = null, reducedMotion = false) {
+  const crouch = !!player.crouching, yaw = finite(player.yaw), pitch = clamp(finite(player.pitch), -1.45, 1.45);
+  const art = ninjaAppearance(player, freeForAll), joints = operativePose(player, animation || playerAnimationPose(player, time / 1000));
+  const pose = { x: finite(player.x), y: finite(player.y), z: finite(player.z), yaw, pitch: 0 };
+  const box = (x, y, z, w, h, d, color) => mesh.box(x, y, z, w, h, d, color, pose);
+  const limb = (a, b, width, depth, color) => {
+    const aa = rotate(a, yaw), bb = rotate(b, yaw), dx = bb[0] - aa[0], dy = bb[1] - aa[1], dz = bb[2] - aa[2], horizontal = Math.hypot(dx, dz);
+    mesh.box(-width / 2, 0, -depth / 2, width, Math.hypot(horizontal, dy), depth, color, { x: pose.x + aa[0], y: pose.y + aa[1], z: pose.z + aa[2], yaw: horizontal > 1e-7 ? Math.atan2(-dx, dz) : yaw, pitch: Math.atan2(horizontal, dy) });
+  };
+  for (const leg of joints.legs) {
+    limb(leg.hip, leg.knee, .126, .138, art.pants);
+    limb(leg.knee, leg.ankle, .113, .122, '#263943');
+    box(leg.knee[0] - .060, leg.knee[1] - .032, leg.knee[2] - .066, .12, .064, .018, art.accent);
+    box(leg.foot[0] - .067, leg.foot[1], leg.foot[2] - .091, .134, .105, .178, '#111c23');
+    box(leg.foot[0] - .052, leg.foot[1] + .072, leg.foot[2] - .092, .104, .018, .181, '#7c8d8b');
+  }
+  const hipY = joints.torso.hipY, top = lerp(1.375, .812, joints.crouch) + joints.torso.bob;
+  box(-.17, hipY - .060, -.133, .34, .127, .277, art.pants);
+  box(-.181, hipY + .024, -.143, .362, Math.max(.08, top - hipY - .024), .286, art.shirt);
+  box(-.187, hipY - .020, -.149, .374, .075, .301, art.accent);
+  box(-.055, hipY - .027, -.162, .11, .084, .018, '#ddd4aa');
+  // Segmented chest armour and crossed back cords distinguish the silhouette.
+  for (let panel = 0; panel < 3; panel++) box(-.146, hipY + .12 + panel * .105, -.168, .292, .077, .035, panel === 1 ? '#405463' : art.vest);
+  box(-.025, hipY + .17, .142, .050, Math.max(.08, top - hipY - .17), .030, '#a5a997');
+  for (const arm of joints.arms) {
+    limb(arm.shoulder, arm.elbow, .091, .098, art.shirt);
+    limb(arm.elbow, arm.hand, .078, .083, '#17262e');
+    box(arm.hand[0] - .04, arm.hand[1] - .039, arm.hand[2] - .04, .08, .078, .08, '#bd9778');
+    box(arm.elbow[0] - .049, arm.elbow[1] - .045, arm.elbow[2] - .052, .098, .068, .105, '#697d80');
+  }
+  const head = crouch ? .83 : 1.48;
+  box(-.157, head + .009, -.133, .314, .311, .27, art.shirt);
+  box(-.133, head + .132, -.145, .266, .082, .018, art.skin);
+  box(-.144, head + .015, -.151, .288, .118, .035, art.mask);
+  box(-.163, head + .235, -.139, .326, .053, .282, art.accent);
+  box(-.058, head + .239, -.149, .116, .040, .013, '#d6d4b8');
+  box(-.011, head + .244, -.164, .022, .026, .008, '#445761');
+  for (const x of [-.103, .051]) { box(x, head + .155, -.155, .052, .027, .012, '#e8d9ba'); box(x + .021, head + .157, -.169, .015, .023, .008, '#2c2928'); }
+  // Two cloth tails trail actual running/dashing, with a bounded ripple.
+  const sprint = finite(animation?.sprint), stride = finite(animation?.stride), dash = finite(player.dashTicks) > 0;
+  const wind = .09 + stride * .13 + sprint * .12 + (dash ? .24 : 0), ripple = reducedMotion ? 0 : Math.sin(time * .011 + finite(player.id) * 1.7) * (.025 + stride * .025);
+  for (const side of [-1, 1]) {
+    const first = [side * .062, head + .242, .144], middle = [side * (.077 + ripple), head + .178 + wind * .16, .144 + wind];
+    const end = [side * (.108 - ripple), head + .103 + wind * .36, .234 + wind * 1.7];
+    limb(first, middle, .046, .035, art.accent); limb(middle, end, .040, .029, art.accent);
+  }
+  return { crouch, yaw, pitch, pose, color: art.accent, team: rgba(art.accent), uniform: rgba(art.shirt), art, joints };
+}
+
+export function ninjaOperativeMeshes(player, time = 0, animation = null, options = {}) {
+  const mesh = new Mesh(); ninjaParts(mesh, player, finite(time), !!options.freeForAll, animation, !!options.reducedMotion); return mesh.array;
+}
+
+function humanDeathTemplate(death, freeForAll = false, ninja = false) {
   const mesh = new Mesh(), parts = [], crouch = death.crouching === true;
   for (const name of ['box', 'quad']) {
     const original = mesh[name];
@@ -3898,7 +3970,7 @@ function humanDeathTemplate(death, freeForAll = false) {
       parts.push({ start, end: this.length, center, joint, order: hash(`human:${death.targetId}:${start}`) / 4294967296 });
     };
   }
-  operativeParts(mesh, { id: death.targetId, team: death.team, alive: false, crouching: crouch, slot: 'empty', weapon: 'carbine', x: 0, y: 0, z: 0, yaw: 0 }, 0, freeForAll,
+  (ninja ? ninjaParts : operativeParts)(mesh, { id: death.targetId, team: death.team, alive: false, crouching: crouch, slot: 'empty', weapon: 'carbine', x: 0, y: 0, z: 0, yaw: 0 }, 0, freeForAll,
     { phase: 0, stride: 0, speed: 0, crouch: crouch ? 1 : 0 });
   return { base: mesh.array.slice(), parts };
 }
@@ -3908,7 +3980,7 @@ export function humanDeathMeshes(death, ageMs = 0, map = MAPS.courtyard, options
   const pose = humanDeathPose(death, ageMs, options);
   if (!pose.visible || !death || ![death.x, death.y, death.z, death.yaw].every(Number.isFinite)) return new Float32Array(0);
   const normalized = { ...death, key: death.key || `${death.targetId}:${death.lifeId}:${death.deaths}`, dx: finite(death.dx), dz: finite(death.dz) };
-  return writeDeathPose(prepareDeathMesh(normalized, map, humanDeathTemplate(death, options.freeForAll)), pose).array;
+  return writeDeathPose(prepareDeathMesh(normalized, map, humanDeathTemplate(death, options.freeForAll, options.ninjaSkins)), pose).array;
 }
 
 /** Bodies stay in the existing depth-tested world batch, with bounded buffers. */
@@ -3918,10 +3990,10 @@ export function createHumanDeathMeshPresenter() {
     mesh.reset(); const keep = new Set(), keepTemplates = new Set();
     for (const death of deaths.slice(0, HUMAN_DEATH_RULES.maxCorpses)) {
       const pose = humanDeathPose(death, death.ageMs, options); if (!pose.visible) continue;
-      const key = death.key || `${death.targetId}:${death.lifeId}:${death.deaths}`, templateKey = `${death.targetId}:${death.team}:${death.crouching}:${!!options.freeForAll}`;
+      const key = death.key || `${death.targetId}:${death.lifeId}:${death.deaths}`, templateKey = `${death.targetId}:${death.team}:${death.crouching}:${!!options.freeForAll}:${!!options.ninjaSkins}`;
       let entry = entries.get(key);
       if (!entry) {
-        if (!templates.has(templateKey)) templates.set(templateKey, humanDeathTemplate(death, options.freeForAll));
+        if (!templates.has(templateKey)) templates.set(templateKey, humanDeathTemplate(death, options.freeForAll, options.ninjaSkins));
         entry = prepareDeathMesh(death, map, templates.get(templateKey)); entries.set(key, entry); builds++;
       }
       mesh.append(writeDeathPose(entry, pose).array); keep.add(key); keepTemplates.add(templateKey);
@@ -3936,8 +4008,8 @@ export function createHumanDeathMeshPresenter() {
   return present;
 }
 
-function playerMesh(mesh, player, map, time, allied, freeForAll = false, animation = null, presentedReload = null) {
-  const { crouch, yaw, pitch, pose, color, team, uniform, art, joints } = operativeParts(mesh, player, time, freeForAll, animation);
+function playerMesh(mesh, player, map, time, allied, freeForAll = false, animation = null, presentedReload = null, options = {}) {
+  const { crouch, yaw, pitch, pose, color, team, uniform, art, joints } = options.ninjaSkins ? ninjaParts(mesh, player, time, freeForAll, animation, options.reducedMotion) : operativeParts(mesh, player, time, freeForAll, animation);
   const healing = finite(player.healTicks) > 0;
   const potion = healing || player.slot === 'potion', grenade = player.slot === 'grenade', empty = player.slot === 'empty';
   const sword = player.slot === 'sword', knife = sword && meleeWeaponId(player) === 'knife', motion = meleeMotion(player);
@@ -4466,7 +4538,7 @@ export class VoxelRenderer {
     this.shotContext = shotContext;
     const reducedMotion = this.reducedMotion?.matches === true || options.reducedMotion === true || options.quality === 'reduced';
     this._events(state, time, localId, { reducedMotion });
-    const yaw = finite(options.aimYaw ?? options.yaw, finite(cameraPlayer.yaw));
+    let yaw = finite(options.aimYaw ?? options.yaw, finite(cameraPlayer.yaw));
     let pitch = clamp(finite(options.aimPitch ?? options.pitch, finite(cameraPlayer.pitch)), -1.48, 1.48);
     const aim = aimProgress(cameraPlayer), zoom = weaponAimFovRatio(cameraPlayer.weapon, ADS);
     const headContext = `${state.gameId || 'voxel-breach'}:${map.id}:${state.matchId ?? ''}:${state.round ?? ''}`;
@@ -4485,7 +4557,7 @@ export class VoxelRenderer {
       return this.presentReloads(source, time, headContext, { durationTicks: weaponReloadDuration(source.weapon, source.ammo) || undefined, paused: state.phase === 'paused' || !!options.paused });
     };
     this.cameraReload = presentReload(cameraPlayer);
-    const eye = this.presentEye(cameraPlayer, map, time);
+    let eye = this.presentEye(cameraPlayer, map, time);
     let bobY = motion.bobY;
     if (bobY < 0 && map.colliders?.length) {
       const contact = rayCoverDistance(eye, [0, -1, 0], map.colliders, -bobY, .04);
@@ -4506,6 +4578,11 @@ export class VoxelRenderer {
       eye[1] -= lower; roll += this.deathCamera.roll; pitch = clamp(pitch + this.deathCamera.pitch, -1.48, 1.48);
       this.deathCamera = { ...this.deathCamera, lower };
     }
+    // A separate third-person mode may provide its already collision-tested
+    // camera. FPS games continue through the existing eye/death/bob path.
+    const cameraPose = options.cameraPose;
+    const customCamera = cameraPose?.eye?.length === 3 && cameraPose.eye.every(Number.isFinite) && Number.isFinite(cameraPose.yaw) && Number.isFinite(cameraPose.pitch);
+    if (customCamera) { eye = [...cameraPose.eye]; yaw = cameraPose.yaw; pitch = clamp(cameraPose.pitch, -1.48, 1.48); roll = finite(cameraPose.roll); bobY = 0; }
     this.firstPersonMotion = { ...motion, roll, bobY, eye: [...eye], yaw, pitch };
     this.shotMotion = gunHeld(cameraPlayer) ? this.presentShots.sample(cameraPlayer.weapon, time, aim) : weaponShotPose(cameraPlayer.weapon, Infinity, 0);
     this.cameraEyeHeight = eye[1] - finite(cameraPlayer.y);
@@ -4514,7 +4591,7 @@ export class VoxelRenderer {
     const fov = clamp(finite(options.fov, 70), 55, 95) * lerp(1, zoom, aim) * Math.PI / 180;
     const projection = perspective(fov, this.aspect || 16 / 9, .025, 110), view = viewMatrix(eye, yaw, pitch, roll);
     const sky = rgba(map.skyColor || (map.id === 'canal' ? '#a3bdc2' : map.id === 'depot' ? '#8da6b0' : '#a8bcb9'));
-    const atmosphere = ATMOSPHERE[map.theme || map.id] || ATMOSPHERE.courtyard;
+    const atmosphere = voxelMapAtmosphere(map);
     gl.clearColor(...sky); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     gl.disable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE); gl.disable(gl.BLEND);
     gl.useProgram(this.skyProgram); gl.bindBuffer(gl.ARRAY_BUFFER, this.skyBuffer);
@@ -4555,12 +4632,12 @@ export class VoxelRenderer {
         if (horde && player.human && player.connected && player.participating && player.revivesThisWave < 1 && ['fight', 'paused'].includes(state.phase)) fallenSurvivorKit(dynamic, contacts, player, yaw);
         continue;
       }
-      if (player.id === cameraPlayer.id) continue;
+      if (player.id === cameraPlayer.id && (!options.showLocalPlayer || cameraPose?.nearBody)) continue;
       const monsterAnimation = horde && player.monsterType ? this.presentMonsters(player, time, humanContext, { paused: animationPaused }) : null;
       if (monsterAnimation) {
         if (this.monsterPoses.size < 32) this.monsterPoses.set(player.id, { player, monsterType: player.monsterType, animation: monsterAnimation });
         monsterMesh(dynamic, player, map, time, monsterAnimation, reloadAnimation);
-      } else playerMesh(dynamic, player, map, time, !freeForAll && player.team === local.team, freeForAll, humanAnimation, reloadAnimation);
+      } else playerMesh(dynamic, player, map, time, !freeForAll && player.team === local.team, freeForAll, humanAnimation, reloadAnimation, { ninjaSkins: options.ninjaSkins === true, reducedMotion });
       const locomotion = monsterAnimation || gaitAnimation;
       if (locomotion && locomotionActors.length < 32) locomotionActors.push(Object.freeze({ id: player.id, x: player.x, y: finite(player.y), z: player.z,
         alive: true, grounded: player.grounded !== false, lifeId: player.lifeId, deaths: player.deaths, monsterType: player.monsterType ?? null,
@@ -4580,7 +4657,7 @@ export class VoxelRenderer {
     this._locomotionActors = Object.freeze(locomotionActors);
     this._worldLabels = presentWorldLabels({ state: { ...state, map }, players, roster: options.roster, localId, cameraPlayer, eye, view, projection, humanPoses: this.humanPoses });
     dynamic.append(this.presentMonsterDeathMeshes(this.monsterDeaths, map));
-    dynamic.append(this.presentHumanDeathMeshes(this.humanDeaths.filter(death => death.targetId !== cameraPlayer.id), map, { reducedMotion, freeForAll }));
+    dynamic.append(this.presentHumanDeathMeshes(this.humanDeaths.filter(death => options.showLocalPlayer || death.targetId !== cameraPlayer.id), map, { reducedMotion, freeForAll, ninjaSkins: options.ninjaSkins === true }));
     this._lootItems = 0; this._stormVertices = 0; this._spawnWarnings = 0;
     const loot = this.presentLoot(state.loot || [], time);
     dynamic.append(loot.opaque); contacts.append(loot.contacts);
@@ -4608,6 +4685,7 @@ export class VoxelRenderer {
       dynamic.box(point[0] - size / 2, point[1] - size / 2, point[2] - size / 2, size, size, size, shade(rgba(particle.color), .7 + fade * .3));
       if (particle.material === 'blood') this._visibleBloodParticles++;
     }
+    if (typeof options.appendWorldGeometry === 'function') options.appendWorldGeometry(dynamic, { state, players, map, eye, time, reducedMotion });
     this._draw(this._dynamic(dynamic.array));
     if (contacts.length) {
       gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false);
@@ -4621,6 +4699,7 @@ export class VoxelRenderer {
       const count = meleeTrailParts(traces, actor, map.colliders || [], eye, { reducedMotion });
       this._meleeTrailVertices += count; if (count) this._meleeTrailActors++;
     }
+    if (typeof options.appendEffectGeometry === 'function') options.appendEffectGeometry(traces, { state, players, map, eye, time, reducedMotion });
     if (this.tracers.length || traces.length) {
       for (const trace of this.tracers) {
         // Start local tracers just beyond the eye to avoid a giant full-screen

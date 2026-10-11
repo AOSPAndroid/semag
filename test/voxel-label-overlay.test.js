@@ -61,6 +61,25 @@ test('monster bars track actual per-species maximum health and accepted damage w
   overlay.paint([monster(3, { hp: 0 })]); assert.equal(shown(layer).length, 0); assert.equal(overlay.inspect().visible.length, 0);
 });
 
+test('Shinobi opponents display literal safe names and accepted orange health together', () => {
+  const { overlay, layer } = fixture(), name = 'Ash Crane <img src=x onerror=alert(1)>';
+  const label = { key: 'opponent:3:1', id: 3, lifeId: 1, kind: 'opponent', name, hp: 87, maxHp: 200, x: .5, y: .3 };
+  overlay.paint([label]); const node = shown(layer)[0];
+  assert.equal(node.dataset.voxelLabel, 'opponent'); assert.equal(node.children[0].hidden, false); assert.equal(node.children[0].textContent, name);
+  assert.equal(node.children[1].hidden, false); assert.equal(node.children[1].children[0].style.transform, 'scaleX(0.435)');
+  assert.equal(node.dataset.hp, '87'); assert.equal(node.dataset.maxHp, '200');
+  overlay.paint([{ ...label, hp: 35 }]); assert.equal(node.children[1].children[0].style.transform, 'scaleX(0.175)');
+  overlay.paint([]); assert.equal(node.hidden, true); assert.equal(layer.hidden, true);
+});
+
+test('recycling opponent labels releases both HP and names for all older label kinds', () => {
+  const { overlay, layer } = fixture();
+  overlay.paint([{ key: 'opponent:3:1', id: 3, lifeId: 1, kind: 'opponent', name: 'Ash Crane', hp: 100, maxHp: 200, x: .5, y: .4 }]); const node = shown(layer)[0];
+  overlay.paint([teammate(3, { name: 'Ally' })]); assert.equal(node.children[1].hidden, true); assert.equal(node.dataset.hp, undefined); assert.equal(node.children[0].textContent, 'Ally');
+  overlay.paint([monster(3)]); assert.equal(node.children[0].hidden, true); assert.equal(node.children[1].hidden, false);
+  overlay.paint([{ key: 'opponent:3:2', id: 3, lifeId: 2, kind: 'opponent', name: 'Crane Returns', hp: 0, maxHp: 200, x: .5, y: .4 }]); assert.equal(shown(layer).length, 0);
+});
+
 test('a renderer-occluded or absent marker disappears immediately and cannot reappear from a cache', () => {
   const { layer, overlay } = fixture(); overlay.paint([teammate(), monster()]); const nodes = [...layer.children];
   overlay.paint([teammate()]); assert.equal(shown(layer).length, 1); assert.equal(nodes[1].hidden, true);

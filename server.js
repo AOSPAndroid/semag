@@ -15,6 +15,8 @@ import * as Topdown from './public/topdown-engine.js';
 import * as Cards from './public/cards-engine.js';
 import * as Vector from './public/vector-engine.js';
 import * as Shinobi from './public/shinobi-engine.js';
+import * as ShinobiVoxel from './public/shinobi-voxel-engine.js';
+import { createShinobiVoxelInputQueue, SHINOBI_VOXEL_EDGE_ACTIONS } from './public/shinobi-voxel-input.js';
 import * as Voxel from './public/voxel-engine.js';
 import * as Royale from './public/voxel-royale-engine.js';
 import * as Horde from './public/voxel-horde-engine.js';
@@ -49,6 +51,12 @@ const GAMES = {
   'shinobi-showdown': {
     title: 'Shinobi Showdown', engine: Shinobi, makeState: () => Shinobi.createState(), inputKeys: Shinobi.INPUT_KEYS,
     numericControls: { aimX: { min: -1, max: 1, default: 1 }, aimY: { min: -1, max: 1, default: 0 } },
+  },
+  'shinobi-voxel': {
+    title: 'Shinobi Showdown 3D', engine: ShinobiVoxel, makeState: settings => ShinobiVoxel.createState({ ...settings, online: true, bots: 0 }), inputKeys: ShinobiVoxel.INPUT_KEYS,
+    numericControls: { yaw: { min: -Math.PI, max: Math.PI, default: 0 }, pitch: { min: -1.35, max: 1.35, default: 0 }, moveYaw: { min: -Math.PI, max: Math.PI, default: 0 } },
+    latestInput: true, snapshotInterval: 4, inputQueue: createShinobiVoxelInputQueue, edgeActions: SHINOBI_VOXEL_EDGE_ACTIONS,
+    snapshotState: state => ({ ...state, map: undefined, fighters: undefined }),
   },
   'voxel-breach': {
     title: 'Voxel Breach', engine: Voxel, makeState: settings => Voxel.createState(settings), inputKeys: Voxel.INPUT_KEYS,
@@ -229,8 +237,8 @@ export function createServer(options = {}) {
     const createdAt = Date.now();
     const teamSize = gameId === 'voxel-breach' ? settings.teamSize : ['voxel-royale', 'voxel-horde'].includes(gameId) ? undefined : 1;
     const capacity = gameId === 'voxel-horde' ? 3 : gameId === 'voxel-royale' ? settings.capacity : teamSize * 2;
-    const mapId = ['voxel-breach', 'voxel-royale', 'voxel-horde'].includes(gameId) ? settings.mapId : undefined;
-    const maps = gameId === 'voxel-horde' ? Horde.MAPS : gameId === 'voxel-royale' ? Royale.MAPS : Voxel.MAPS;
+    const mapId = ['voxel-breach', 'voxel-royale', 'voxel-horde', 'shinobi-voxel'].includes(gameId) ? settings.mapId : undefined;
+    const maps = gameId === 'shinobi-voxel' ? ShinobiVoxel.MAPS : gameId === 'voxel-horde' ? Horde.MAPS : gameId === 'voxel-royale' ? Royale.MAPS : Voxel.MAPS;
     const difficulty = gameId === 'voxel-horde' ? settings.difficulty : undefined;
     const melee = gameId === 'voxel-horde' ? settings.melee : undefined;
     const state = adapter.makeState({ teamSize, capacity, mapId, difficulty, ...(gameId === 'voxel-horde' ? { melee } : {}) });
@@ -265,7 +273,12 @@ export function createServer(options = {}) {
     if (!Object.hasOwn(GAMES, gameId)) throw Object.assign(new Error('Choose an available game.'), { status: 400 });
     if (name !== undefined && typeof name !== 'string') throw Object.assign(new Error('Room name must be text.'), { status: 400 });
     if (!settings || typeof settings !== 'object' || Array.isArray(settings)) throw Object.assign(new Error('Room settings must be an object.'), { status: 400 });
-    if (gameId === 'voxel-breach') {
+    if (gameId === 'shinobi-voxel') {
+      if (Object.keys(settings).some(key => key !== 'mapId')) throw Object.assign(new Error('Choose only an arena for this Shinobi duel.'), { status: 400 });
+      const mapId = Object.hasOwn(settings, 'mapId') ? settings.mapId : Object.keys(ShinobiVoxel.MAPS)[0];
+      if (typeof mapId !== 'string' || !Object.hasOwn(ShinobiVoxel.MAPS, mapId)) throw Object.assign(new Error('Choose an available Shinobi 3D arena.'), { status: 400 });
+      settings = { mapId };
+    } else if (gameId === 'voxel-breach') {
       if (Object.keys(settings).some(key => !['teamSize', 'mapId'].includes(key))) throw Object.assign(new Error('Choose only a team size and map for this room.'), { status: 400 });
       const teamSize = Object.hasOwn(settings, 'teamSize') ? settings.teamSize : 1;
       const mapId = Object.hasOwn(settings, 'mapId') ? settings.mapId : 'courtyard';
@@ -326,6 +339,9 @@ export function createServer(options = {}) {
       try {
         const data = await readJSON(req);
         if (typeof data.gameId !== 'string') throw Object.assign(new Error('Choose an available game.'), { status: 400 });
+        if (data.gameId === 'shinobi-voxel' && Object.keys(data).some(key => !['gameId', 'name', 'mapId'].includes(key))) {
+          throw Object.assign(new Error('Choose only a room name and Shinobi arena.'), { status: 400 });
+        }
         if (data.gameId === 'voxel-breach' && Object.keys(data).some(key => !['gameId', 'name', 'teamSize', 'mapId'].includes(key))) {
           throw Object.assign(new Error('Choose only a room name, team size, and map.'), { status: 400 });
         }
@@ -520,7 +536,7 @@ export function createServer(options = {}) {
       ws.close(4403, 'Room full'); return;
     }
     const slot = {
-      id, ws, queue: [], buttons: freshInput(room, id), latestButtons: freshInput(room, id), actionInputs: room.adapter.latestInput ? createFpsInputQueue() : null, lastAccepted: -1,
+      id, ws, queue: [], buttons: freshInput(room, id), latestButtons: freshInput(room, id), actionInputs: room.adapter.latestInput ? (room.adapter.inputQueue || createFpsInputQueue)() : null, lastAccepted: -1,
       lastInputTime: performance.now(), alive: true, rateWindow: performance.now(), messages: 0,
     };
     room.slots[id] = slot;
@@ -675,11 +691,11 @@ export function createServer(options = {}) {
         }
         if (!data.buttons || typeof data.buttons !== 'object' || Array.isArray(data.buttons) ||
             Object.keys(data.buttons).some(key => !validControl(room.adapter, key, data.buttons[key]))) {
-          error(ws, ['voxel-breach', 'voxel-royale', 'voxel-horde'].includes(room.gameId) ? 'Use boolean controls, yaw between -π and π, and pitch between -1.35 and 1.35.' : room.adapter.numericControls ? 'Use boolean controls and finite aim components between -1 and 1.' : 'Input buttons must contain only valid boolean controls for this game.'); return;
+          error(ws, ['voxel-breach', 'voxel-royale', 'voxel-horde', 'shinobi-voxel'].includes(room.gameId) ? 'Use boolean controls, yaw between -π and π, and pitch between -1.35 and 1.35.' : room.adapter.numericControls ? 'Use boolean controls and finite aim components between -1 and 1.' : 'Input buttons must contain only valid boolean controls for this game.'); return;
         }
         if (Object.hasOwn(data, 'cancelActions') && (typeof data.cancelActions !== 'boolean' || !room.adapter.latestInput)) { error(ws, 'Action cancellation must be a boolean FPS control.'); return; }
         if (Object.hasOwn(data, 'cancelPress') && (!room.adapter.latestInput || !data.cancelPress || typeof data.cancelPress !== 'object' || Array.isArray(data.cancelPress)
-            || Object.keys(data.cancelPress).length !== 2 || !FPS_EDGE_ACTIONS.includes(data.cancelPress.action)
+            || Object.keys(data.cancelPress).length !== 2 || !(room.adapter.edgeActions || FPS_EDGE_ACTIONS).includes(data.cancelPress.action)
             || !Number.isSafeInteger(data.cancelPress.seq) || data.cancelPress.seq < 0 || data.cancelPress.seq >= data.seq)) {
           error(ws, 'A cancelled FPS press needs its action and earlier input sequence.'); return;
         }
@@ -691,6 +707,7 @@ export function createServer(options = {}) {
         for (const key of Object.keys(room.adapter.numericControls || {})) {
           if (Object.hasOwn(data.buttons, key)) buttons[key] = data.buttons[key];
         }
+        if (room.gameId === 'shinobi-voxel' && !Object.hasOwn(data.buttons, 'moveYaw')) buttons.moveYaw = buttons.yaw;
         if (room.adapter.latestInput) {
           slot.queue.length = 0;
           if (data.cancelActions) { clearMeleeComboContinuation(room.state.players[id]); slot.actionInputs.reset({ held: buttons, neutral: true }); }

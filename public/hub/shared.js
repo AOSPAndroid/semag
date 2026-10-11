@@ -6,6 +6,7 @@ export const GAMES = {
   'voxel-royale': { supportsPractice: true, title: 'Voxel Royale', category: 'VOXEL / BATTLE ROYALE', kind: 'battle-royale', genre: 'action', theme: 'voxel', maxPlayers: 10, icon: '◈', description: 'Find your kit. Escape the storm. Be the last alive.', color: '#75957b' },
   'shadow-lantern': { title: 'Shadow Lantern', category: 'NINJA / STEALTH CAMPAIGN', kind: 'solo', genre: 'action', theme: 'ninja', icon: '☾', description: 'Watch the patrol. Take the seal. Leave no trail.', color: '#7b8198' },
   'shinobi-showdown': { supportsPractice: true, title: 'Shinobi Showdown', category: 'NINJA / REAL-TIME DUEL', kind: 'duel', genre: 'action', theme: 'ninja', icon: '✣', description: 'Confirm the cut. Feint the parry. Outplay your rival.', color: '#8e7b87' },
+  'shinobi-voxel': { supportsPractice: true, title: 'Shinobi Showdown 3D', category: 'NINJA / THIRD-PERSON VOXEL DUEL', kind: 'duel', genre: 'action', theme: 'ninja', themes: ['ninja', 'voxel'], maxPlayers: 2, icon: '✣', description: 'Vault the rooftops. Chain your cuts. Catch the perfect parry.', color: '#8496a6' },
   'skyline-hook': { title: 'Skyline Hook', category: 'PRECISION GRAPPLING', kind: 'solo', genre: 'action', icon: '↗', description: 'Build momentum. Catch an anchor. Earn the next rooftop.', color: '#71958b' },
   'starfall-squadron': { title: 'Starfall Squadron', category: 'BULLET-HELL SHOOTER', kind: 'solo', genre: 'action', icon: '✺', description: 'Read the pattern. Find the gap. Bring your squadron home.', color: '#7e81a4' },
   'ironwood-tactics': { title: 'Ironwood Tactics', category: 'SQUAD TACTICS ROGUELIKE', kind: 'solo', genre: 'strategy', roguelike: true, icon: '♜', description: 'Read their intent. Push the line. Protect the beacon.', color: '#8c9b72' },
@@ -35,15 +36,18 @@ export function practiceUrl(gameId) {
   if (gameId === 'voxel-breach') return '/voxel-practice.html?game=voxel';
   if (gameId === 'voxel-royale') return '/voxel-practice.html?game=voxel-royale';
   if (gameId === 'afterimage') return '/afterimage.html?practice=1';
+  if (gameId === 'shinobi-voxel') return '/shinobi-voxel.html?practice=1';
   return `/play.html?game=${encodeURIComponent(gameId)}&practice=1`;
 }
 export function roomUrl(room) {
+  if (room.gameId === 'shinobi-voxel') return `/shinobi-voxel.html?room=${encodeURIComponent(room.id)}`;
   if (room.gameId === 'voxel-horde') return `/voxel-horde.html?room=${encodeURIComponent(room.id)}`;
   if (room.gameId === 'voxel-royale') return `/voxel-royale.html?room=${encodeURIComponent(room.id)}`;
   if (room.gameId === 'voxel-breach') return `/voxel.html?room=${encodeURIComponent(room.id)}`;
   return room.gameId === 'afterimage' ? `/afterimage.html?room=${encodeURIComponent(room.id)}` : `/play.html?room=${encodeURIComponent(room.id)}&game=${encodeURIComponent(room.gameId)}`;
 }
 export function roomCapacity(room) {
+  if (room.gameId === 'shinobi-voxel') return 2;
   if (room.gameId === 'voxel-horde') return 3;
   if (room.gameId === 'voxel-royale') {
     if (Number.isInteger(room.capacity) && room.capacity >= 2 && room.capacity <= 10) return room.capacity;

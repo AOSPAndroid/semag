@@ -91,8 +91,8 @@ function unobstructed(eye, point, colliders) {
 /** Bounded, immutable presentation; it never alters authority, aim or physics. */
 export function presentWorldLabels({ state, players = state?.players, roster = [], localId, cameraPlayer, eye, view, projection, humanPoses } = {}) {
   if (!state || !PHASES.has(state.phase) || !Array.isArray(players) || !Array.isArray(eye) || eye.length !== 3 || !eye.every(Number.isFinite)) return EMPTY_WORLD_LABELS;
-  const horde = state.gameId === 'voxel-horde', breach = !state.gameId || state.gameId === 'voxel-breach';
-  if (!horde && !breach) return EMPTY_WORLD_LABELS;
+  const horde = state.gameId === 'voxel-horde', breach = !state.gameId || state.gameId === 'voxel-breach', shinobi = state.gameId === 'shinobi-voxel';
+  if (!horde && !breach && !shinobi) return EMPTY_WORLD_LABELS;
   const map = state.map;
   if (!Array.isArray(map?.colliders)) return EMPTY_WORLD_LABELS;
   const local = players.find(actor => actor?.id === localId), names = new Map();
@@ -104,7 +104,8 @@ export function presentWorldLabels({ state, players = state?.players, roster = [
     if (!actor || !Number.isSafeInteger(actor.id) || actor.id < 0 || actor.id >= MAX_WORLD_LABELS || kept.has(actor.id) || actor.id === cameraPlayer?.id || actor.alive !== true || ![actor.x, actor.y, actor.z].every(Number.isFinite)) continue;
     const monster = horde && monsterTypeId(actor) !== null;
     const teammate = actor.bot !== true && !actor.monster && !actor.monsterType && names.has(actor.id) && local && actor.team === local.team && actor.id !== localId && (!horde || actor.human === true && actor.connected === true && actor.participating === true);
-    if (!monster && !teammate || monster && (finite(actor.emergenceTicks) > 0 || actor.monsterState === 'emerging' || !Number.isFinite(actor.hp) || actor.hp <= 0 || !Number.isFinite(actor.maxHp) || actor.maxHp <= 0)) continue;
+    const opponent = shinobi && local && actor.id !== localId && actor.team !== local.team && !actor.monster && !actor.monsterType;
+    if (!monster && !teammate && !opponent || (monster || opponent) && (!Number.isFinite(actor.hp) || actor.hp <= 0 || !Number.isFinite(actor.maxHp) || actor.maxHp <= 0) || monster && (finite(actor.emergenceTicks) > 0 || actor.monsterState === 'emerging')) continue;
     const geometry = anatomy(actor, monster, humanPoses?.get(actor.id)?.joints), position = projectWorldLabel(geometry.anchor, view, projection);
     if (!position) continue;
     const cover = candidateCover(map.colliders, eye, geometry);
@@ -112,8 +113,11 @@ export function presentWorldLabels({ state, players = state?.players, roster = [
     // Both the floating anchor AND real on-screen flesh must be uncovered.
     if (!unobstructed(eye, geometry.anchor, cover) || !geometry.samples.some(point => projectWorldLabel(point, view, projection) && unobstructed(eye, point, cover))) continue;
     const lifeId = Number.isSafeInteger(actor.lifeId) && actor.lifeId >= 0 ? actor.lifeId : 0;
-    const base = { key: `${monster ? 'monster' : 'teammate'}:${actor.id}:${lifeId}`, id: actor.id, lifeId, kind: monster ? 'monster' : 'teammate', x: position.x, y: position.y };
-    result.push(Object.freeze(monster ? { ...base, hp: clamp(actor.hp, 0, actor.maxHp), maxHp: actor.maxHp } : { ...base, name: names.get(actor.id) || `Player ${actor.id + 1}` }));
+    const kind = monster ? 'monster' : opponent ? 'opponent' : 'teammate';
+    const base = { key: `${kind}:${actor.id}:${lifeId}`, id: actor.id, lifeId, kind, x: position.x, y: position.y };
+    const actorName = opponent && typeof actor.name === 'string' ? actor.name.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 24) : '';
+    const name = names.get(actor.id) || actorName || `${opponent ? 'Shinobi' : 'Player'} ${actor.id + 1}`;
+    result.push(Object.freeze(monster ? { ...base, hp: clamp(actor.hp, 0, actor.maxHp), maxHp: actor.maxHp } : opponent ? { ...base, name, hp: clamp(actor.hp, 0, actor.maxHp), maxHp: actor.maxHp } : { ...base, name }));
     kept.add(actor.id);
   }
   return result.length ? Object.freeze(result) : EMPTY_WORLD_LABELS;

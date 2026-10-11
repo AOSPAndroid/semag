@@ -186,6 +186,9 @@ function readInput(player, raw) {
   const input = Object.fromEntries(INPUT_KEYS.map(key => [key, raw?.[key] === true]));
   input.yaw = Number.isFinite(raw?.yaw) ? clamp(raw.yaw, -Math.PI, Math.PI) : player.yaw;
   input.pitch = Number.isFinite(raw?.pitch) ? clamp(raw.pitch, -1.35, 1.35) : player.pitch;
+  // Third-person shoulder aim may differ from the camera's movement heading.
+  // Omitted by FPS clients, preserving their existing yaw-based movement.
+  if (Number.isFinite(raw?.moveYaw)) input.moveYaw = clamp(raw.moveYaw, -Math.PI, Math.PI);
   return input;
 }
 function circleRectOverlap(x, z, radius, rect) { const dx = x - clamp(x, rect.x, rect.x + rect.w), dz = z - clamp(z, rect.z, rect.z + rect.d); return dx * dx + dz * dz < radius * radius - EPS; }
@@ -356,7 +359,8 @@ function movementTick(f, input, arena, peers = [], headroomPeers = peers, action
     const velocity = Math.hypot(f.vx, f.vz);
     if (velocity > normalSpeed) { f.vx *= normalSpeed / velocity; f.vz *= normalSpeed / velocity; }
   }
-  const targetX = (Math.sin(f.yaw) * forward + Math.cos(f.yaw) * strafe) * speed, targetZ = (-Math.cos(f.yaw) * forward + Math.sin(f.yaw) * strafe) * speed;
+  const movementYaw = Number.isFinite(input.moveYaw) ? input.moveYaw : f.yaw;
+  const targetX = (Math.sin(movementYaw) * forward + Math.cos(movementYaw) * strafe) * speed, targetZ = (-Math.cos(movementYaw) * forward + Math.sin(movementYaw) * strafe) * speed;
   const accel = f.grounded ? (length ? 43 : 58) : 7;
   const velocityX = targetX - f.vx, velocityZ = targetZ - f.vz, velocityDelta = Math.hypot(velocityX, velocityZ), accelerationFraction = velocityDelta > EPS ? Math.min(1, accel * DT / velocityDelta) : 0;
   f.vx += velocityX * accelerationFraction; f.vz += velocityZ * accelerationFraction;
