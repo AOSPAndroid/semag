@@ -9,6 +9,7 @@ import { createPlayerAnimationPresenter, playerAnimationPose, weaponReloadPose, 
 import { createFirstPersonMotionPresenter, createWeaponShotPresenter, weaponShotPose, weaponCyclePose, resolveCameraMotion } from './voxel-first-person-motion.js';
 import { createCameraMotionStore, DEFAULT_CAMERA_MOTION } from './voxel-camera-motion-settings.js';
 import { createItemEquipPresenter } from './voxel-item-equip.js';
+import { appendParisShopCollider } from './voxel-paris-shop-art.js';
 import { MONSTER_BODIES, monsterBodyProfile } from './voxel-monster-bodies.js';
 import { MONSTER_DEATH_RULES, MONSTER_DEATH_STYLES, monsterDeathPose, createMonsterDeathPresenter } from './voxel-monster-death.js';
 import { HUMAN_DEATH_RULES, humanDeathPose, humanDeathCameraPose, createHumanDeathPresenter } from './voxel-human-death.js';
@@ -986,6 +987,7 @@ function paintRoyaleCollider(mesh, collider, theme) {
 }
 
 function paintParisCollider(mesh, collider) {
+  if (appendParisShopCollider(mesh, collider, { wallPatch, wallText })) return;
   const { x, y, z, w, h, d } = collider, id = String(collider.id || '');
   const material = String(collider.material || 'stone').toLowerCase();
   if (id.startsWith('paris-bus-stop-')) {
@@ -2172,6 +2174,12 @@ export function mapMeshes(map) {
   for (const collider of map.colliders || []) {
     paintCollider(opaque, collider, theme);
     if (collider.h < .15 || collider.overhead) continue;
+    // Shop furnishings sit beneath solid roofs. Keep their contact shadow;
+    // an outdoor sun projection through the ceiling would darken the aisle.
+    if (collider.material === 'paris-shop') {
+      if (collider.y < .05) shadows.floor(collider.x - .05, collider.z - .05, collider.w + .10, collider.d + .10, [.055, .07, .08, .16], shadowFloor + .002);
+      continue;
+    }
     const sun = atmosphere.sun, elevation = collider.y + collider.h, dx = -sun[0] / sun[1] * elevation, dz = -sun[2] / sun[1] * elevation;
     for (let layer = 3; layer >= 0; layer--) {
       const soft = .035 + layer * .075;

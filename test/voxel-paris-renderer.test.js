@@ -10,6 +10,26 @@ const pointKey = point => point.map(value => value.toFixed(3)).join(',');
 const close = (a, b) => Math.abs(a - b) < 1e-4;
 const catalogMaps = [BREACH_MAPS.paris, ROYALE_MAPS.paris];
 
+test('shop furniture keeps its real silhouette, with bounded countertop details and open table underside', () => {
+  const base = { id: 'paris-furniture-fixture', theme: 'paris', bounds: { minX: -8, maxX: 8, minZ: -8, maxZ: 8 }, colliders: [], sites: [], buildings: [] };
+  const background = new Set(points(mapMeshes(base).opaque).map(pointKey));
+  const signatures = new Set();
+  for (const map of catalogMaps) for (const collider of map.colliders.filter(value => value.material === 'paris-shop')) {
+    const before = JSON.stringify(collider), mesh = mapMeshes({ ...base, colliders: [collider] }).opaque;
+    assert.equal(JSON.stringify(collider), before, 'art cannot change physical furniture');
+    assert.ok(mesh.every(Number.isFinite));
+    const additions = points(mesh).filter(point => !background.has(pointKey(point)));
+    assert.ok(additions.length > 36, `${collider.id}: detailed furniture rather than an undecorated box`);
+    for (const [x, y, z] of additions) {
+      assert.ok(x >= collider.x - .0201 && x <= collider.x + collider.w + .0201 && z >= collider.z - .0201 && z <= collider.z + collider.d + .0201, `${collider.id}: no invented cover outside its footprint`);
+      assert.ok(y >= collider.y - .001 && y <= collider.y + collider.h + .187, `${collider.id}: only small countertop objects exceed the true solid`);
+    }
+    if (collider.shopProp === 'bistro-top') assert.ok(additions.every(([, y]) => y >= collider.y - .001), 'the tabletop has no false solid skirting across the pedestal gap');
+    signatures.add(collider.shopProp);
+  }
+  assert.ok(signatures.size >= 15, 'shops have a varied equipment vocabulary');
+});
+
 test('both Paris districts retain every exact collider corner below the static budget', () => {
   for (const map of catalogMaps) {
     const mesh = mapMeshes(map), vertices = new Set(points(mesh.opaque).map(pointKey));

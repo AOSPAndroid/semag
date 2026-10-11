@@ -1,11 +1,53 @@
 import { environmentCover } from './voxel-environment-cover.js';
 
 /** Irregular Paris blocks and a connected slate-roof circuit share their actual solids. */
-const box = (id, x, y, z, w, h, d, color, material = 'stone') => Object.freeze({ id, x, y, z, w, h, d, color, material });
+const box = (id, x, y, z, w, h, d, color, material = 'stone', extra = {}) => Object.freeze({ id, x, y, z, w, h, d, color, material, ...extra });
 const point = (x, z, y = 0) => Object.freeze({ x, y, z });
 const loot = (id, x, z, kind, y = 0) => Object.freeze({ id, x, y, z, kind });
 const step = (colliderId, x, z) => Object.freeze({ colliderId, x, z });
 const paint = (kind, x, z, w, d, color) => Object.freeze({ kind, x, z, w, d, color });
+
+/** Each shop has furniture of its own. Solid cabinets and low cover stay out
+ * of the full-width door axis, corner supply sites and external roof routes.
+ * The café table's slab and pedestal are separate real solids, so grenades
+ * and low shots can travel through the visible space beneath its top. */
+function shopFurnishings(id, x, z, w, d) {
+  const room = id.replace('paris-', ''), left = x + .4, right = x + w - .4;
+  const centreX = x + w / 2, centreZ = z + d / 2;
+  const piece = (kind, suffix, xx, yy, zz, ww, hh, dd, color) =>
+    box(`paris-shop-${room}-${suffix}`, xx, yy, zz, ww, hh, dd, color, 'paris-shop', {
+      shopRoom: id, shopProp: kind,
+      shopFacing: ww >= dd ? (centreZ >= zz + dd / 2 ? 'south' : 'north') : (centreX >= xx + ww / 2 ? 'east' : 'west'),
+    });
+  if (room === 'cafe') {
+    const tableX = centreX + 2.15, tableZ = centreZ - 1.9;
+    return [
+      piece('coffee-counter', 'coffee-counter', left + .08, 0, centreZ - 1.5, 1.4, 1.05, 3, '#986c4c'),
+      piece('espresso-cabinet', 'espresso-cabinet', right - .95, 0, centreZ - 1, .87, 1.65, 2, '#597570'),
+      piece('bistro-top', 'bistro-top', tableX, .72, tableZ, 1.2, .12, 1.25, '#cfb88e'),
+      piece('bistro-base', 'bistro-base', tableX + .40, 0, tableZ + .425, .40, .72, .40, '#64736b'),
+      piece('cafe-booth', 'booth', right - 1.15, 0, centreZ + 1.05, 1.07, .95, 1.45, '#935f4d'),
+    ];
+  }
+  if (room === 'atelier') return [
+    piece('workbench', 'workbench', left + .08, 0, centreZ - 1.65, 1.55, .92, 3.3, '#9c8057'),
+    piece('tool-cabinet', 'tool-cabinet', right - .98, 0, centreZ - 1.45, .90, 1.85, 2.15, '#627b7b'),
+    piece('paint-rack', 'paint-rack', right - 1.05, 0, centreZ + 1.25, .97, 1.48, 1.45, '#836b70'),
+    piece('display-plinth', 'display-plinth', centreX - 3.4, 0, centreZ + 1.65, 1.1, .78, 1.1, '#b9a88b'),
+  ];
+  if (room === 'librairie') return [
+    piece('bookcase', 'bookcase-west', left + .08, 0, centreZ - 1.65, .72, 2.25, 3.3, '#826748'),
+    piece('bookcase', 'bookcase-east', right - .80, 0, centreZ - 1.55, .72, 2.1, 3.1, '#766747'),
+    piece('book-display', 'book-display', centreX + 2.15, 0, centreZ - 2, 1.2, .76, 1.15, '#a48a5c'),
+    piece('cashier-desk', 'cashier-desk', centreX - 3.3, 0, centreZ + 1.8, 1.2, .98, 1.05, '#6f8775'),
+  ];
+  return [
+    piece('ticket-counter', 'ticket-counter', left + .08, 0, centreZ - 1.4, 1.4, 1.12, 2.8, '#5a7a7d'),
+    piece('programme-display', 'programme-display', right - .90, 0, centreZ - 1.9, .82, 1.65, 1.25, '#a58b65'),
+    piece('upright-piano', 'upright-piano', right - 1.15, 0, centreZ + .1, 1.07, 1.48, 2.2, '#65564b'),
+    piece('travel-trunks', 'travel-trunks', centreX - 3.55, 0, centreZ + 1.85, 1.25, .74, 1, '#9b7954'),
+  ];
+}
 
 /** Wide contiguous delivery crates make every rooftop attainable by the heaviest gun. */
 function stairs(id, name, axis, offset, edge, direction, roofId, landing, side) {
@@ -48,8 +90,10 @@ function building(id, name, x, z, w, d, side, left, accent, innerZ = z + d / 2) 
   const inner = stairs(`${id}-inner`, `${name} / courtyard masonry stair`, 'x', innerZ, innerEdge, left ? -1 : 1,
     roofId, point(left ? x + w - .7 : x + .7, innerZ), side);
   const wallIds = Object.freeze(colliders.filter(value => value.id !== roofId && !value.id.endsWith('-chimney')).map(value => value.id));
+  const furnishings = shopFurnishings(id, x, z, w, d);
   const metadata = Object.freeze({
     id, name, roofId, wallIds,
+    interiorPropIds: Object.freeze(furnishings.map(value => value.id)),
     interior: Object.freeze({ minX: x + t, maxX: x + w - t, minZ: z + t, maxZ: z + d - t }),
     facade: Object.freeze({ x, z, w, d, wallHeight, doorWidth, doorCenterX: x + w / 2, roofY: 4, accent }),
     doorways: Object.freeze([0, 1].map(index => Object.freeze({ x: x + w / 2, z: z + (index ? d - t / 2 : t / 2), width: doorWidth, height: doorHeight,
@@ -63,7 +107,7 @@ function building(id, name, x, z, w, d, side, left, accent, innerZ = z + d / 2) 
     loot(`${id}-roof-cache`, x + 2.3, z + d - 1.5, 'weapon', 4),
     loot(`${id}-roof-medicine`, x + w - 2.3, z + 1.5, 'heal', 4),
   ];
-  return { colliders: [...colliders, ...outer.colliders, ...inner.colliders], routes: [outer.route, inner.route], metadata, lootPoints };
+  return { colliders: [...colliders, ...outer.colliders, ...inner.colliders, ...furnishings], routes: [outer.route, inner.route], metadata, lootPoints };
 }
 
 export function createParisMap(mode = 'breach') {

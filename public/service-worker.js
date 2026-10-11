@@ -1,6 +1,6 @@
 /* Installation keeps a small connection screen, not copies of games or room data. */
 const CACHE_PREFIX = 'semag-pwa-';
-const CACHE_NAME = `${CACHE_PREFIX}3.70.0`;
+const CACHE_NAME = `${CACHE_PREFIX}3.71.0`;
 const SCOPE_URL = new URL(self.registration.scope);
 const OFFLINE_URL = new URL('offline.html', SCOPE_URL).href;
 
