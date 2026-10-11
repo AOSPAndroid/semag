@@ -7,7 +7,7 @@ import { MONSTER_SPECIAL_RULES } from './voxel-monster-specials.js';
 const STEP = 1 / 120;
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const finite = value => Number.isFinite(value) ? value : 0;
-const COMBAT_FIELDS = ['aimTicks', 'recoil', 'reloadTicks', 'healTicks', 'grenadeThrowTicks', 'meleeTicks', 'meleeCooldown', 'shotCooldown', 'parryTicks', 'parryCooldown', 'meleeSecondaryCooldown', 'meleeComboWindowTicks', 'hitStunTicks', 'hitStunReadyTicks'];
+const COMBAT_FIELDS = ['aimTicks', 'recoil', 'recoilYaw', 'reloadTicks', 'healTicks', 'grenadeThrowTicks', 'meleeTicks', 'meleeCooldown', 'shotCooldown', 'parryTicks', 'parryCooldown', 'meleeSecondaryCooldown', 'meleeComboWindowTicks', 'hitStunTicks', 'hitStunReadyTicks'];
 const INPUT_FIELDS = [...INPUT_KEYS, 'yaw', 'pitch', 'moveYaw'];
 const MOVEMENT_FIELDS = ['x', 'y', 'z', 'vx', 'vy', 'vz', 'yaw', 'pitch', 'grounded', 'crouching', 'jumpBufferTicks', 'knockbackX', 'knockbackZ', 'knockbackTicks', 'knockbackReadyTicks', 'hitStunTicks', 'hitStunReadyTicks', 'stamina', 'staminaRegenTicks', 'sprintExhausted', 'sprinting', 'previousInput'];
 const CONTEXT_FIELDS = [...MOVEMENT_FIELDS, 'alive', 'radius', 'weapon', 'slot', 'reloadTicks', 'healTicks', 'grenadeThrowTicks', 'meleeTicks', 'meleeCooldown', 'pendingMeleeTicks', 'meleeComboStep', 'meleeComboConfirmed', 'meleeComboWindowTicks', 'meleeComboWeapon', 'inventoryIndex', 'meleeIndex', 'meleeInitialYaw', 'meleeInitialPitch', 'meleeYaw', 'meleePitch', 'meleeAction', 'meleeSecondaryCooldown', 'meleeAimBlocked', 'parryTicks', 'parryCooldown', 'parryYaw', 'parryPitch', 'parryStartTick', 'parryIndex', 'parryConsumed', 'burstRemaining', 'pendingFireTicks', 'shotCooldown', 'triggerBlocked', 'ammo', 'reserve', 'lifeId', 'deaths', 'meleeStartTick', 'healStartTick', 'interaction', 'interactTicks', 'meleeWeapon', 'bot', 'monster', 'dashTicks', 'dashX', 'dashZ'];
@@ -262,7 +262,11 @@ export function combatPresentation(player, old, ratio, elapsedMs = 0) {
   pose.aimTicks = clamp((continuingAim ? interpolate('aimTicks') : finite(player.aimTicks)) + extra * (player.aiming ? 1 : -2), 0, ADS.ticks);
   // A fresh recoil impulse is never delayed behind an interpolation window.
   pose.recoil = Math.max(0, (finite(player.recoil) <= finite(old.recoil) ? interpolate('recoil') : finite(player.recoil)) - extra * .04 / 120);
-  for (const field of COMBAT_FIELDS.slice(2)) {
+  // The signed spray offset eases toward centre at the same recovery rate.
+  const yawRecovering = Math.abs(finite(player.recoilYaw)) <= Math.abs(finite(old.recoilYaw)) && Math.sign(finite(player.recoilYaw)) * Math.sign(finite(old.recoilYaw)) >= 0;
+  const recoilYaw = yawRecovering ? interpolate('recoilYaw') : finite(player.recoilYaw), yawRecovery = extra * .04 / 120;
+  pose.recoilYaw = Math.abs(recoilYaw) <= yawRecovery ? 0 : recoilYaw - Math.sign(recoilYaw) * yawRecovery;
+  for (const field of COMBAT_FIELDS.slice(3)) {
     if (!(player[field] > 0)) continue;
     if (field === 'healTicks' && player.healStartTick !== old.healStartTick) continue;
     if (field === 'parryTicks' && player.parryStartTick !== old.parryStartTick) continue;

@@ -25,6 +25,7 @@ import { royaleBattleResult } from './voxel-royale-reward.js';
 import { mountVoxelVictory } from './voxel-victory.js';
 import { createPracticeInputQueue } from './voxel-practice-input.js';
 import { DOJO_MAPS } from './voxel-dojo-maps.js';
+import { createSprayTrainer } from './voxel-spray-trainer.js';
 import { DOJO_ACTIONS, findDojoStation, findDojoStationLoot } from './voxel-dojo-engine.js';
 import { createCameraMotionStore, cameraMotionStatus } from './voxel-camera-motion-settings.js';
 import { inventoryLootPresentation, inventoryEventFeedback, inventorySwapPresentation, mountInventoryHotbar, mountWeaponWheel } from './voxel-inventory-ui.js';
@@ -123,6 +124,7 @@ export function bootPractice() {
   let rewardView = { stage: 'idle', visible: false, holding: false };
   let trainingReport = null;
   const trainingLedger = createDojoTrainingLedger();
+  const sprayTrainer = createSprayTrainer({ card: $('dojo-spray'), canvas: $('dojo-spray-canvas'), label: $('dojo-spray-label'), score: $('dojo-spray-score') });
   let finishFocused = true;
   const listeners = [], keys = new Set(), physicalKeys = new Map(), mouse = { fire: false, aim: false }, inputQueue = createPracticeInputQueue({ extraActions: dojo ? DOJO_ACTIONS : [] });
   const touch = { move: { x: 0, y: 0 }, look: { x: 0, y: 0 }, actions: new Set() }, pointers = new Map(), movement = new Map();
@@ -246,7 +248,7 @@ export function bootPractice() {
   function captureFailed() { if (!active() || dojoToolsOpen || locked()) return; fallback = true; hints(); }
   function resetView() {
     endPresentation.reset(); endView = { holding: false }; resultsVisible = false; finishTime = 0;
-    victory.reset(); rewardView = { stage: 'idle', visible: false, holding: false }; trainingReport = null; trainingLedger.reset();
+    victory.reset(); rewardView = { stage: 'idle', visible: false, holding: false }; trainingReport = null; trainingLedger.reset(); sprayTrainer.reset();
     setHidden($('practice-royale-victory'), true);
     resultActions.cancel(); clearTimeout(resultActionTimer); resultActionTimer = null;
     setDisabled($('practice-replay'), true); setDisabled($('practice-result-setup'), true);
@@ -332,7 +334,7 @@ export function bootPractice() {
       if (audio.enabled && event.type === 'grenadeExplosion') { audio.noise(.4, { highpass: 40, lowpass: 1500, gain: .3 }); audio.tone(70, .3, { end: 25, gain: .2 }); }
     }
     gunImpacts.consume(freshEvents, 0, { context: `${state.mapId}:${state.practice.sessionId}` });
-    if (dojo) trainingLedger.consume(freshEvents);
+    if (dojo) { trainingLedger.consume(freshEvents); sprayTrainer.consume(freshEvents, 0); sprayTrainer.update(state.tick); }
     parryAudio.consume(freshEvents, 0, { context: `${state.mapId}:${state.practice.sessionId}`, active: active() && state.phase === 'fight' });
     hitFeedback.consume(freshEvents, state.players[0], state.players, { now, lifeKey: `${state.mapId}:${state.practice.sessionId}`, active: state.phase === 'fight' && !modalOpen });
   }
@@ -358,7 +360,7 @@ export function bootPractice() {
     const swap = inventorySwapPresentation(player), swapButton = document.querySelector('[data-practice-action="swap"]'); if (swap && swapButton) { swapButton.textContent = swap.label; swapButton.setAttribute('aria-label', swap.ariaLabel); }
     paintSecondaryAction(document.querySelector('[data-practice-action="aim"]'), secondaryActionPresentation(player, { active: active() && phase === 'fight', requireGun: royale }));
     setText('practice-map-label', state.mapName); setText('practice-mode-label', royale ? 'SOLO BATTLE ROYALE' : dojo ? 'FREE PRACTICE' : blades ? 'BLADE TRAINING' : state.practice.config.mode === 'targets' ? 'MOVING TARGETS' : 'RETURN FIRE'); setText('practice-bots-left', stats.botsRemaining); setText('practice-hits', dojo ? state.dojo.headContacts + state.dojo.bodyContacts : stats.hits); setText('practice-clock', clock(stats.seconds));
-    setHidden($('dojo-tools-toggle'), !dojo || !activeSession || reporting); setDisabled($('dojo-tools-toggle'), phase !== 'fight'); setHidden($('dojo-contact'), !dojo || !activeSession || reporting);
+    setHidden($('dojo-tools-toggle'), !dojo || !activeSession || reporting); setDisabled($('dojo-tools-toggle'), phase !== 'fight'); setHidden($('dojo-contact'), !dojo || !activeSession || reporting); setHidden($('dojo-spray'), !dojo || !activeSession || reporting || !sprayTrainer.summary);
     if (dojo) {
       const hit = state.dojo.lastHit, station = findDojoStation(state), recovery = findDojoStation(state, 'recovery');
       const distances = [...new Set(state.map.rangeLanes.filter(lane => lane.distance >= 5).map(lane => Math.round(lane.distance)))].sort((a, b) => a - b);
@@ -455,7 +457,7 @@ export function bootPractice() {
     // Fractional player endpoints share one collision-safe rendered world.
     // The camera follows that same body batch without changing real combat.
     view.players = resolvePresentationContacts(view.players, state.map);
-    view.fighters = view.players; presentationPlayer = view.players[0]; renderer.render(view, { acceptedPlayers: state.players, playerId: 0, localId: 0, localPlayer: presentationPlayer, cameraPlayer: presentationPlayer, yaw: aim.yaw, pitch: aim.pitch + (presentationPlayer.recoil || 0), time: sceneLive ? now : lastDrawAt, cameraMotion: cameraMotion.get() }); renderCount++; lastFraction = tickFraction(accumulator, STEP);
+    view.fighters = view.players; presentationPlayer = view.players[0]; renderer.render(view, { acceptedPlayers: state.players, playerId: 0, localId: 0, localPlayer: presentationPlayer, cameraPlayer: presentationPlayer, yaw: aim.yaw + (presentationPlayer.recoilYaw || 0), pitch: aim.pitch + (presentationPlayer.recoil || 0), time: sceneLive ? now : lastDrawAt, cameraMotion: cameraMotion.get() }); renderCount++; lastFraction = tickFraction(accumulator, STEP);
     paintVitals(presentationPlayer, 'Your', activeSession && active());
     enemyFootsteps.observe(renderer.locomotionActors, { now, context: `${state.mapId}:${state.practice.sessionId}`, listener: presentationPlayer, yaw: aim.yaw, active: activeSession && active() && !dojoToolsOpen && state.phase === 'fight', freeForAll: royale });
     reloadAudio.observe(state.players[0], { tick: state.tick, context: `${state.mapId}:${state.practice.sessionId}`, active: active() && state.phase === 'fight' });

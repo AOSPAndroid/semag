@@ -977,7 +977,7 @@ async function boot() {
     if (local?.alive) presentationPlayer = presentationPlayers.find(player => player.id === playerId) || presentationPlayer;
     const viewPlayer = local?.alive ? presentationPlayer : renderedState.players.find(player => player.id === spectatorId && player.team === local?.team && player.alive) || local;
     const viewAim = local?.alive ? aim : { yaw: viewPlayer?.yaw || 0, pitch: viewPlayer?.pitch || 0 };
-    renderer.render(renderedState, { acceptedPlayers: state.players, playerId, localId: playerId, localPlayer: presentationPlayer, viewPlayer, cameraPlayer: viewPlayer, yaw: viewAim.yaw, pitch: viewAim.pitch + (viewPlayer?.recoil || 0), time: now, roster, cameraMotion: cameraMotion.get() });
+    renderer.render(renderedState, { acceptedPlayers: state.players, playerId, localId: playerId, localPlayer: presentationPlayer, viewPlayer, cameraPlayer: viewPlayer, yaw: viewAim.yaw + (viewPlayer?.recoilYaw || 0), pitch: viewAim.pitch + (viewPlayer?.recoil || 0), time: now, roster, cameraMotion: cameraMotion.get() });
     reticleView = presentCrosshair(viewPlayer, now, `${state.mapId}:${state.matchId}:${state.round}:${state.phase}`, { width: canvas.clientWidth, height: canvas.clientHeight, rules: engine.ADS, active: controlsActive() && !teamSwitchPending && state.phase === 'fight', reducedMotion: hitMotion.matches });
     paintCrosshair(hitElements.crosshair, reticleView);
     setHidden(hitElements.scope, !reticleView.visible || !reticleView.scoped);

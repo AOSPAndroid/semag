@@ -487,7 +487,7 @@ async function boot() {
     const viewed = spectatorPlayer(rendered, playerId, spectatorId);
     const camera = state.phase === 'lobby' ? { ...state.map.spawnPoints[0], alive: false, id: playerId, y: finite(state.map.spawnPoints[0]?.y) } : local?.alive ? presentationPlayer : viewed;
     const viewAim = local?.alive ? aim : cleanAim(camera?.yaw, camera?.pitch);
-    renderer.render(rendered, { acceptedPlayers: state.players, playerId, localId: playerId, localPlayer: presentationPlayer, viewPlayer: camera, yaw: viewAim.yaw, pitch: viewAim.pitch + finite(camera?.recoil), time: now, cameraMotion: cameraMotion.get() }); renderCount++;
+    renderer.render(rendered, { acceptedPlayers: state.players, playerId, localId: playerId, localPlayer: presentationPlayer, viewPlayer: camera, yaw: viewAim.yaw + finite(camera?.recoilYaw), pitch: viewAim.pitch + finite(camera?.recoil), time: now, cameraMotion: cameraMotion.get() }); renderCount++;
     reticleView = presentCrosshair(camera, now, `${state.mapId}:${state.matchId}:${state.round}:${state.phase}`, { width: canvas.clientWidth, height: canvas.clientHeight, rules: engine.ADS, active: controlsActive() && state.phase === 'fight', reducedMotion: hitMotion.matches });
     paintCrosshair(hitElements.crosshair, reticleView); setHidden(hitElements.scope, !reticleView.visible || !reticleView.scoped);
     setText($('scope-label'), `${WEAPONS[camera?.weapon]?.label || 'PRECISION'} / PRECISION SIGHT`);

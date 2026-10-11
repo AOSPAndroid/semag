@@ -1,11 +1,14 @@
 /** Four physical inventory slots shared by every voxel FPS mode. */
 import { WEAPONS } from './voxel-weapons.js';
 import { MELEE_WEAPONS, resetMeleeDefense } from './voxel-melee.js';
+import { recoverRecoil } from './voxel-recoil.js';
 
 export const INVENTORY_SIZE = 4;
 export const ITEM_STACK_LIMIT = 2;
 export const INVENTORY_ACTIONS = Object.freeze(['slot1', 'slot2', 'slot3', 'slot4', 'drop']);
-const GUN_FIELDS = Object.freeze(['ammo', 'reserve', 'reloadTicks', 'shotCooldown', 'burstRemaining', 'spinTicks', 'recoil', 'heat', 'shotIndex', 'lastShotHand', 'pendingFireTicks']);
+const GUN_FIELDS = Object.freeze(['ammo', 'reserve', 'reloadTicks', 'shotCooldown', 'burstRemaining', 'spinTicks', 'recoil', 'recoilYaw', 'sprayShots', 'sprayIdleTicks', 'heat', 'shotIndex', 'lastShotHand', 'pendingFireTicks']);
+// Horizontal spray offset is the only signed gun clock.
+const gunField = (field, value) => field === 'recoilYaw' ? finite(value) : Math.max(0, finite(value));
 const finite = (value, fallback = 0) => Number.isFinite(value) ? value : fallback;
 const count = (value, maximum = 2) => Math.max(0, Math.min(maximum, Math.floor(finite(value))));
 const copy = value => value ? { ...value } : null;
@@ -13,7 +16,7 @@ const copy = value => value ? { ...value } : null;
 export function createInventoryGun(weapon = 'carbine', source = {}) {
   if (typeof weapon !== 'string' || !Object.hasOwn(WEAPONS, weapon)) return null;
   const catalog = WEAPONS[weapon], item = { kind: 'weapon', weapon };
-  for (const field of GUN_FIELDS) item[field] = Math.max(0, finite(source[field]));
+  for (const field of GUN_FIELDS) item[field] = gunField(field, source[field]);
   item.ammo = count(source.ammo ?? catalog.magazine, catalog.magazine);
   item.reserve = count(source.reserve ?? catalog.reserve, catalog.reserve * 8);
   return item;
@@ -64,7 +67,7 @@ export function storeInventoryGun(player) {
   const item = player.inventory?.[player.inventoryGunIndex];
   if (item?.kind === 'weapon') {
     if (typeof player.weapon === 'string' && Object.hasOwn(WEAPONS, player.weapon)) item.weapon = player.weapon;
-    for (const field of GUN_FIELDS) item[field] = Math.max(0, finite(player[field]));
+    for (const field of GUN_FIELDS) item[field] = gunField(field, player[field]);
   }
   const held = selectedInventoryItem(player);
   if (held?.kind === 'melee') { held.weapon = typeof player.meleeWeapon === 'string' && Object.hasOwn(MELEE_WEAPONS, player.meleeWeapon) ? player.meleeWeapon : held.weapon; held.meleeCooldown = Math.max(0, finite(player.meleeCooldown)); held.parryCooldown = Math.max(0, finite(player.parryCooldown)); held.meleeIndex = Math.max(0, Math.floor(finite(player.meleeIndex))); held.meleeHand = player.meleeHand === 1 ? 1 : 0; }
@@ -110,7 +113,7 @@ export function selectInventorySlot(player, index) {
 export function tickHolsteredInventory(player) {
   for (let index = 0; index < INVENTORY_SIZE; index++) {
     const item = player.inventory[index];
-    if (item?.kind === 'weapon' && index !== player.inventoryGunIndex) { item.shotCooldown = Math.max(0, item.shotCooldown - 1); item.recoil = Math.max(0, item.recoil - .04 / 120); item.heat = Math.max(0, item.heat - 2.8 / 120); }
+    if (item?.kind === 'weapon' && index !== player.inventoryGunIndex) { item.shotCooldown = Math.max(0, item.shotCooldown - 1); recoverRecoil(item, WEAPONS[item.weapon]); item.heat = Math.max(0, item.heat - 2.8 / 120); }
     if (item?.kind === 'melee') { item.meleeCooldown = Math.max(0, finite(item.meleeCooldown) - 1); item.parryCooldown = Math.max(0, finite(item.parryCooldown) - 1); }
   }
   const held = selectedInventoryItem(player), blade = held?.kind === 'melee' ? held : player.inventory.find(item => item?.kind === 'melee');

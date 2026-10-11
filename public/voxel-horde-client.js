@@ -494,7 +494,7 @@ export async function bootHorde() {
     }
     presentationPlayers = view.players; view.fighters = view.players;
     const camera = hordeSpectatorPlayer(view, playerId, spectatorId) || presentationPlayer || state.players[0], viewAim = camera?.id === playerId && camera.alive ? aim : cleanAim(camera?.yaw, camera?.pitch);
-    renderer.render(view, { acceptedPlayers: state.players, playerId, localId: playerId, localPlayer: presentationPlayer, viewPlayer: camera, cameraPlayer: camera, yaw: viewAim.yaw, pitch: viewAim.pitch + finite(camera?.recoil), time: live || state.phase === 'matchEnd' ? now : lastDrawAt || now, roster, cameraMotion: cameraMotion.get() });
+    renderer.render(view, { acceptedPlayers: state.players, playerId, localId: playerId, localPlayer: presentationPlayer, viewPlayer: camera, cameraPlayer: camera, yaw: viewAim.yaw + finite(camera?.recoilYaw), pitch: viewAim.pitch + finite(camera?.recoil), time: live || state.phase === 'matchEnd' ? now : lastDrawAt || now, roster, cameraMotion: cameraMotion.get() });
     worldLabels.paint(renderer.worldLabels, { active: labelsActive() });
     paintVitals(camera, camera?.id !== playerId ? `${nameFor(camera?.id)}’s` : 'Your', labelsActive());
     enemyFootsteps.observe(renderer.locomotionActors, { now, context: `${state.mapId}:${state.matchId}:${state.round}:${state.horde?.sessionId ?? 0}`, listener: camera, yaw: viewAim.yaw, active: connected && entered && !!localPlayer()?.alive && !paused && !modalOpen && state.phase === 'fight' });

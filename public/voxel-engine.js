@@ -3,6 +3,7 @@ import { throwGrenade, advanceGrenades } from './voxel-ordnance.js';
 import { MAPS } from './voxel-maps.js';
 import { WEAPONS, weaponDamage, weaponSpread, weaponHand } from './voxel-weapons.js';
 import { advanceWeaponFireClock } from './voxel-fire-modes.js';
+import { applyRecoilKick, recoverRecoil } from './voxel-recoil.js';
 import { launchBolt, advanceBolts, MAX_BOLTS } from './voxel-projectiles.js';
 import { MELEE, KNIFE, KNIFE_SECONDARY, MELEE_WEAPONS, meleeProfile, meleeWeaponId, meleeHand, meleeSlashOrigin, meleeSlashPhase, meleeSlashGeometry, meleeSegmentBoxContact, advanceMeleePrimaryPress, meleeStartupAim, parryProfile, parryPhase, parryFacesOrigin, resetMeleeDefense, resetMeleeCombo, clearMeleeComboContinuation, beginMeleeCombo } from './voxel-melee.js';
 import { recordLagCompensation, traceCompensatedShot } from './voxel-lag-compensation.js';
@@ -106,7 +107,7 @@ export function resetSprint(player, { refill = true } = {}) {
 }
 export function createCombatPlayer(id, teamSize = 1, loadout = 'carbine') {
   const weapon = typeof loadout === 'string' && Object.hasOwn(WEAPONS, loadout) ? loadout : 'carbine', w = WEAPONS[weapon];
-  const player = { id, team: Math.floor(id / teamSize), x: 0, y: 0, z: 0, yaw: 0, pitch: 0, vx: 0, vy: 0, vz: 0, knockbackX: 0, knockbackZ: 0, knockbackTicks: 0, knockbackReadyTicks: 0, radius: WORLD.radius, grounded: true, jumpBufferTicks: 0, stamina: SPRINT.maxStamina, staminaRegenTicks: 0, sprintExhausted: false, sprinting: false, crouching: false, alive: true, hp: PLAYER_HEALTH, maxHp: PLAYER_HEALTH, weapon, slot: 'primary', meleeWeapon: 'knife', meleeLoadout: 'knife', ammo: w.magazine, reserve: w.reserve, reloadTicks: 0, shotCooldown: 0, burstRemaining: 0, spinTicks: 0, recoil: 0, heat: 0, shotIndex: 0, lastShotHand: 0, pendingFireTicks: 0, shots: 0, kills: 0, deaths: 0, damageDealt: 0, lastHitTick: -1000, triggerBlocked: false, aiming: false, aimTicks: 0, meleeTicks: 0, meleeCooldown: 0, meleeIndex: 0, meleeHand: 0, meleeYaw: 0, meleePitch: 0, meleeStartTick: 0, meleePhase: 'idle', meleeHitIds: [], meleeHitLives: [], healing: false, healTicks: 0, healStartTick: -1, potions: 0, grenades: 0, grenadeThrowTicks: 0, interaction: null, interactTicks: 0, previousInput: emptyInput() };
+  const player = { id, team: Math.floor(id / teamSize), x: 0, y: 0, z: 0, yaw: 0, pitch: 0, vx: 0, vy: 0, vz: 0, knockbackX: 0, knockbackZ: 0, knockbackTicks: 0, knockbackReadyTicks: 0, radius: WORLD.radius, grounded: true, jumpBufferTicks: 0, stamina: SPRINT.maxStamina, staminaRegenTicks: 0, sprintExhausted: false, sprinting: false, crouching: false, alive: true, hp: PLAYER_HEALTH, maxHp: PLAYER_HEALTH, weapon, slot: 'primary', meleeWeapon: 'knife', meleeLoadout: 'knife', ammo: w.magazine, reserve: w.reserve, reloadTicks: 0, shotCooldown: 0, burstRemaining: 0, spinTicks: 0, recoil: 0, recoilYaw: 0, sprayShots: 0, sprayIdleTicks: 0, heat: 0, shotIndex: 0, lastShotHand: 0, pendingFireTicks: 0, shots: 0, kills: 0, deaths: 0, damageDealt: 0, lastHitTick: -1000, triggerBlocked: false, aiming: false, aimTicks: 0, meleeTicks: 0, meleeCooldown: 0, meleeIndex: 0, meleeHand: 0, meleeYaw: 0, meleePitch: 0, meleeStartTick: 0, meleePhase: 'idle', meleeHitIds: [], meleeHitLives: [], healing: false, healTicks: 0, healStartTick: -1, potions: 0, grenades: 0, grenadeThrowTicks: 0, interaction: null, interactTicks: 0, previousInput: emptyInput() };
   Object.assign(player, { pendingMeleeTicks: 0, meleeComboStep: 0, meleeComboConfirmed: false, meleeComboWindowTicks: 0, meleeComboWeapon: null, hitStunTicks: 0, hitStunReadyTicks: 0, meleeInitialYaw: 0, meleeInitialPitch: 0, meleeAction: 'primary', meleeAimBlocked: false, meleeSecondaryCooldown: 0, parryTicks: 0, parryCooldown: 0, parryYaw: 0, parryPitch: 0, parryStartTick: 0, parryIndex: 0, parryConsumed: false });
   Object.assign(player, { healUseIndex: 0, healUseId: null, healInventoryIndex: -1, healSelectedIndex: -1 });
   return initializeInventory(player, { weapon });
@@ -893,7 +894,8 @@ function fireRound(state, f, weapon, pendingDamage, arena, fire = null) {
   const spread = weaponSpread(weapon, { motion, grounded: f.grounded, heat: fire?.heat ?? f.heat, ads }, ADS);
   // Fixed indexed spread and fixed pellet geometry replay independently of frames.
   const index = ++f.shotIndex, angle = index * 2.399963229728653, radius = spread * Math.sqrt(((index * 73) % 101 + 1) / 102);
-  const roundRecoil = fire?.recoil ?? f.recoil, horizontalRecoil = (fire?.heat ?? f.heat) > .25 ? Math.sin(index * 1.73) * Math.min(.009, roundRecoil * .24) : 0;
+  // The accumulated spray offset is the gun's learnable pattern position.
+  const roundRecoil = fire?.recoil ?? f.recoil, horizontalRecoil = fire?.recoilYaw ?? (f.recoilYaw || 0);
   const yaw = f.yaw + horizontalRecoil + Math.cos(angle) * radius, pitch = clamp(f.pitch + roundRecoil + Math.sin(angle) * radius, -1.5, 1.5);
   const eyeOrigin = { x: f.x, y: f.y + eyeHeight(f), z: f.z };
   let origin = eyeOrigin, pelletCount = weapon.pellets || 1, pelletSpread = weapon.pelletSpread, distanceOffset = 0, range = weapon.range, fireMode = fire?.mode || weapon.mode || 'auto';
@@ -907,7 +909,7 @@ function fireRound(state, f, weapon, pendingDamage, arena, fire = null) {
     } else { pelletCount = 1; pelletSpread = 0; range = clearDistance; fireMode = 'airburstSlug'; }
   }
   if (weapon.projectile && !launchBolt(state, f, weapon, origin, aimDirection(yaw, pitch), { emit: (type, data) => emit(state, type, data) })) { f.shotIndex--; return false; }
-  f.ammo--; f.shots++; f.recoil = Math.min(.13, f.recoil + weapon.recoil * (1 - ads * (1 - ADS.recoilMultiplier))); f.heat = Math.min(12, f.heat + 1);
+  f.ammo--; f.shots++; applyRecoilKick(f, weapon, ads); f.heat = Math.min(12, f.heat + 1);
   f.lastShotHand = weaponHand(weapon, index);
   if (weapon.projectile) return true;
   if (weapon.valorant) state.eventLimit = 256;
@@ -952,9 +954,9 @@ function tickWeapon(state, f, input, pendingDamage, arena, meleeOptions = {}) {
     return;
   }
   if (f.slot !== 'sword' || f.healTicks || f.grenadeThrowTicks) f.pendingMeleeTicks = 0;
-  const weapon = WEAPONS[f.weapon]; f.recoil = Math.max(0, f.recoil - .04 * DT); f.heat = Math.max(0, f.heat - 2.8 * DT);
+  const weapon = WEAPONS[f.weapon]; recoverRecoil(f, weapon); f.heat = Math.max(0, f.heat - 2.8 * DT);
   if (weapon.valorant) {
-    if (weapon.shotRecoveryTicks && f.shotCooldown > 0 && f.shotCooldown <= weapon.fireIntervalTicks - weapon.shotRecoveryTicks + EPS) f.recoil = f.heat = 0;
+    if (weapon.shotRecoveryTicks && f.shotCooldown > 0 && f.shotCooldown <= weapon.fireIntervalTicks - weapon.shotRecoveryTicks + EPS) { f.recoil = f.heat = f.recoilYaw = 0; f.sprayShots = 0; }
     const clock = advanceWeaponFireClock(weapon, f, input, f.previousInput), fire = clock.fireProfile;
     for (const field of ['reserve', 'reloadTicks', 'shotCooldown', 'burstRemaining', 'spinTicks', 'pendingFireTicks']) f[field] = clock[field];
     f.ammo = clock.ammo + clock.rounds;
@@ -963,9 +965,9 @@ function tickWeapon(state, f, input, pendingDamage, arena, meleeOptions = {}) {
     if (clock.dryFire) emit(state, 'dryFire', { playerId: f.id, weapon: f.weapon });
     if (f.slot === 'sword' && !f.healTicks && !f.grenadeThrowTicks) tickMelee(state, f, input, pendingDamage, arena, meleeOptions);
     if (fire) {
-      const recoil = f.recoil, heat = f.heat;
+      const recoil = f.recoil, recoilYaw = f.recoilYaw || 0, heat = f.heat;
       const activeWeapon = fire.alternate ? { ...weapon, hipSpread: fire.spread, aimedSpread: 0 } : weapon;
-      for (let round = 0; round < clock.rounds; round++) fireRound(state, f, activeWeapon, pendingDamage, arena, { ...fire, recoil, heat });
+      for (let round = 0; round < clock.rounds; round++) fireRound(state, f, activeWeapon, pendingDamage, arena, { ...fire, recoil, recoilYaw, heat });
     }
     return;
   }

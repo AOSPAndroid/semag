@@ -3900,7 +3900,7 @@ export function operativeFirearmPose(player, animation = {}, presentedReload = a
     (crouch ? .82 : 1.24) + finite(animation.bodyBob) + finite(reload.weapon.y) + shot.y - sprint * .04,
     -.14 + finite(reload.weapon.z) + shot.z + Math.sin(finite(animation.phase)) * stride * .012 * carry], finite(player.yaw));
   const pose = { x: finite(player.x) + offset[0], y: finite(player.y) + offset[1], z: finite(player.z) + offset[2],
-    yaw: finite(player.yaw) + shot.yaw + finite(reload.weapon.yaw) * side + finite(animation.shoulderYaw) * .30 * carry,
+    yaw: finite(player.yaw) + finite(player.recoilYaw) + shot.yaw + finite(reload.weapon.yaw) * side + finite(animation.shoulderYaw) * .30 * carry,
     pitch: clamp(finite(player.pitch) + finite(player.recoil), -1.45, 1.45) + shot.pitch + finite(reload.weapon.pitch) - sprint * .08,
     roll: finite(reload.weapon.roll), scale: 1 };
   const rightLocal = paired ? [0, -.122, -.010] : [.004, -.131, .002];

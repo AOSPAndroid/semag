@@ -168,3 +168,6 @@ body .practice-camera-motion small {
 @media (any-pointer: coarse) {
   body .practice-camera-motion select { min-height: 44px; }
 }
+
+.dojo-spray{position:absolute;right:16px;top:96px;width:174px;padding:9px 12px;border:1px solid #ffffff1f;border-radius:9px;background:#09090bdb;color:#fafafa;pointer-events:none;display:grid;gap:4px;font-family:Arial,sans-serif;backdrop-filter:blur(10px)}.dojo-spray>span{font-size:9px;font-weight:600;letter-spacing:.08em;color:#a1a1aa}.dojo-spray>canvas{width:150px;height:120px}.dojo-spray>strong{font-size:16px;letter-spacing:-.03em;color:#f5cc72}.dojo-spray>small{font-size:9px;color:#a1a1aa}.dojo-spray[hidden]{display:none}
+@media(max-width:600px){.dojo-spray{display:none}}
