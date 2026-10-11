@@ -1,0 +1,17 @@
+{
+  "id": "/",
+  "name": "semaG — Game hub",
+  "short_name": "semaG",
+  "description": "Your game library: voxel adventures, FPS battles, roguelikes and games with friends.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#09090b",
+  "theme_color": "#09090b",
+  "lang": "en",
+  "icons": [
+    { "src": "/icons/semag-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/semag-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/semag-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

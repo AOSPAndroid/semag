@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#09090b">
+  <meta name="robots" content="noindex">
+  <title>Offline · semaG</title>
+  <style>
+    :root{color-scheme:dark;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#09090b;color:#fafafa}
+    *{box-sizing:border-box}body{margin:0;min-height:100vh;min-height:100svh;display:grid;place-items:center;padding:32px 20px;background:radial-gradient(ellipse at 50% 15%,#18181b 0,transparent 65%)}
+    main{width:100%;max-width:480px}.brand{display:block;width:186px;height:48px;margin:0 auto 36px;overflow:visible;color:#fafafa;shape-rendering:crispEdges}
+    .card{padding:32px;background:#111113;border:1px solid #27272a;border-radius:20px;box-shadow:0 24px 80px #0006}
+    .status{display:flex;align-items:center;gap:9px;color:#a1a1aa;font-size:12px;font-weight:500}.status::before{content:"";width:7px;height:7px;background:#f59e0b;box-shadow:0 0 0 4px #f59e0b12}
+    h1{font-size:clamp(28px,7vw,36px);line-height:1.15;letter-spacing:-.045em;margin:24px 0 14px;font-weight:700}
+    p{color:#a1a1aa;font-size:15px;line-height:1.65;margin:0 0 26px}.retry{display:flex;justify-content:space-between;align-items:center;gap:16px;min-height:48px;padding:12px 16px;background:#fafafa;color:#18181b;text-decoration:none;border:1px solid #fafafa;border-radius:9px;font-size:14px;font-weight:600}
+    .retry:hover{background:#e4e4e7;border-color:#e4e4e7}.retry:focus-visible{outline:3px solid #f59e0b;outline-offset:4px}.retry span{font-size:19px;font-weight:400}
+    .note{margin:24px 0 0;padding-top:22px;border-top:1px solid #27272a;color:#71717a;font-size:12px;line-height:1.6}.footer{text-align:center;margin:24px 0 0;color:#71717a;font-size:11px;letter-spacing:.08em}
+    @media(max-width:380px){body{padding:24px 16px}.card{padding:24px}.brand{margin-bottom:28px}}
+  </style>
+</head>
+<body>
+  <main>
+    <svg class="brand" viewBox="0 0 62 16" role="img" aria-labelledby="offline-brand-title">
+      <title id="offline-brand-title">semaG</title>
+      <path fill="#f59e0b" d="M2 1h9v1h1v1h1v9h-1v1h-1v1H2v-1H1v-1H0V3h1V2h1Z"/>
+      <path fill="#18181b" d="M4 3h6v1h-6zM3 4h2v1h-2zM3 5h2v1h-2zM3 6h2v1h-2zM4 7h5v1h-5zM8 8h2v1h-2zM8 9h2v1h-2zM8 10h2v1h-2zM3 11h6v1h-6z"/>
+      <g fill="currentColor">
+        <path d="M20 5h5v1h-5zM19 6h2v1h-2zM19 7h2v1h-2zM20 8h4v1h-4zM23 9h2v1h-2zM23 10h2v1h-2zM19 11h5v1h-5z"/>
+        <path d="M29 5h5v1h-5zM28 6h2v1h-2zM33 6h2v1h-2zM28 7h7v1h-7zM28 8h2v1h-2zM28 9h2v1h-2zM28 10h2v1h-2zM33 10h2v1h-2zM29 11h5v1h-5z"/>
+        <path d="M37 5h2v1h-2zM40 5h2v1h-2zM37 6h6v1h-6zM37 7h2v1h-2zM40 7h1v1h-1zM42 7h2v1h-2zM37 8h2v1h-2zM40 8h1v1h-1zM42 8h2v1h-2zM37 9h2v1h-2zM42 9h2v1h-2zM37 10h2v1h-2zM42 10h2v1h-2zM37 11h2v1h-2zM42 11h2v1h-2z"/>
+        <path d="M47 5h4v1h-4zM50 6h2v1h-2zM47 7h5v1h-5zM46 8h2v1h-2zM50 8h2v1h-2zM46 9h2v1h-2zM50 9h2v1h-2zM46 10h2v1h-2zM50 10h2v1h-2zM47 11h5v1h-5z"/>
+        <path d="M56 3h6v1h-6zM55 4h2v1h-2zM55 5h2v1h-2zM55 6h2v1h-2zM55 7h2v1h-2zM58 7h4v1h-4zM55 8h2v1h-2zM60 8h2v1h-2zM55 9h2v1h-2zM60 9h2v1h-2zM55 10h2v1h-2zM60 10h2v1h-2zM56 11h5v1h-5z"/>
+      </g>
+    </svg>
+    <section class="card" aria-labelledby="offline-title">
+      <div class="status" id="offline-connection">Connection needed</div>
+      <h1 id="offline-title">You’re offline.</h1>
+      <p>semaG needs a connection to load the library and its games. Reconnect, then try again.</p>
+      <a class="retry" id="offline-retry" href="/">Try game library <span aria-hidden="true">→</span></a>
+      <p class="note">Playing with friends? Your game host also needs to be reachable.</p>
+    </section>
+    <p class="footer">YOUR GAMES. YOUR NEXT CHALLENGE.</p>
+  </main>
+</body>
+</html>

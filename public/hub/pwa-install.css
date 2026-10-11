@@ -1,0 +1,26 @@
+.modern-hub .pwa-install-button { display: inline-flex; flex-shrink: 0; align-items: center; justify-content: center; gap: 7px; min-height: 36px; padding: 8px 11px; border: 1px solid var(--border); border-radius: 6px; background: var(--card); color: var(--foreground); font: 500 12px var(--font); cursor: pointer; }
+.modern-hub .pwa-install-button[hidden] { display: none; }
+.modern-hub .pwa-install-button:hover { background: var(--muted); border-color: var(--input); }
+.pwa-install-button svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; }
+.pwa-install-dialog { box-sizing: border-box; width: min(460px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 24px; overflow-y: auto; color: var(--foreground); background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-dialog); }
+.pwa-install-dialog::backdrop { background: #000b; backdrop-filter: blur(5px); }
+.pwa-install-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 26px; }
+.pwa-install-heading > .pixel-logo { width: 110px; height: 29px; color: var(--foreground); }
+.pwa-install-dialog .pwa-install-close { display: grid; place-items: center; width: 36px; height: 36px; padding: 8px; border: 1px solid var(--border); border-radius: 6px; background: transparent; color: var(--muted-foreground); cursor: pointer; }
+.pwa-install-close:hover { background: var(--muted); color: var(--foreground); }
+.pwa-install-close svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; }
+.pwa-install-dialog h2 { margin: 9px 0 10px; font: 600 27px/1.2 var(--font); letter-spacing: -.7px; }
+.pwa-install-dialog p { margin: 0; color: var(--muted-foreground); font: 13px/1.65 var(--font); overflow-wrap: anywhere; }
+.pwa-install-dialog .pwa-install-status, .pwa-install-dialog .pwa-install-security { margin-top: 16px; padding: 11px 12px; border: 1px solid var(--border); border-radius: 7px; background: var(--muted); color: var(--foreground); font-size: 12px; }
+.pwa-install-dialog .pwa-install-security a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+.pwa-install-dialog [hidden] { display: none; }
+.pwa-install-steps { display: grid; gap: 0; margin: 22px 0 18px; padding: 0; list-style: none; }
+.pwa-install-steps li { display: grid; grid-template-columns: 30px minmax(0, 1fr); align-items: start; gap: 12px; padding: 16px 0; border-top: 1px solid var(--border); }
+.pwa-step-icon { display: grid; place-items: center; width: 30px; height: 30px; border: 1px solid var(--border); border-radius: 7px; background: var(--muted); color: var(--muted-foreground); font: 11px var(--mono); }
+.pwa-install-steps strong { display: block; margin: 0 0 4px; font: 500 13px var(--font); }
+.pwa-install-steps p { font-size: 12px; }
+.pwa-install-steps b { color: var(--foreground); font-weight: 500; }
+.pwa-install-dialog .pwa-install-footnote { padding-top: 16px; border-top: 1px solid var(--border); font-size: 11px; }
+@media (max-width: 900px) { .modern-hub .hub-topbar { flex-wrap: wrap; column-gap: 16px; } }
+@media (max-width: 700px) { .modern-hub .hub-topbar > .breadcrumb { flex: 1 1 130px; } .modern-hub .pwa-install-button { order: 1; margin-left: auto; min-height: 38px; } .modern-hub .hub-topbar > [data-keyboard-layout-picker], .modern-hub .hub-topbar > .hub-identity { order: 2; } }
+@media (max-width: 359px) { .pwa-install-dialog { padding: 20px; } .pwa-install-dialog h2 { font-size: 25px; } }

@@ -249,6 +249,12 @@ For players on separate networks, use a VPN that lets both computers reach each 
 
 **Internet play from KOOBZ3:** the PC can host the match while Sites hosts the library. On Windows, install Cloudflare's `cloudflared` tunnel client, then run **start-online-windows.bat** from the game folder. It starts or reuses the local semaG host and displays a temporary public **HTTPS** address. Open the [semaG website](https://semag.daaalil.chatgpt.site/), choose **Play with friends**, and paste that address. The browser opens the PC's public hub; create a room there and share its invitation. Keep KOOBZ3 and the launcher running while playing. See [the online-host guide](docs/online-hosting.md) for installation, shutdown and troubleshooting.
 
+## Install semaG as an app
+
+Open **https://semag.lol/** and choose **Install semaG** in the library. Chrome and Edge show their installation prompt when available. On iPhone/iPad, open the site in Safari and choose **Share → Add to Home Screen**; on supported versions, keep **Open as Web App** enabled. Safari on Mac offers **File → Add to Dock**. The installed app opens the same hub in its own window and uses the pixel semaG icon.
+
+Games need a connection to load; multiplayer still needs a reachable PC host. If the connection drops while opening a page, the app shows a clear offline screen with a retry link. Game files and multiplayer responses always load from the network, so installation does not pin old game releases. PWA installation requires HTTPS (or localhost for testing); a plain HTTP LAN address uses the normal browser.
+
 ## Controls and rules
 
 Voxel Dojo:

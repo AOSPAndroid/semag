@@ -3,16 +3,23 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#09090b">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="semaG">
   <meta name="semag-hosting" content="pc">
   <meta name="description" content="Semag: your self-hosted game hub. Voxel FPS teams, ninja games, driving, roguelikes, puzzles, cards, and co-op adventures.">
   <title>semaG — Game library</title>
   <link rel="icon" type="image/svg+xml" href="/hub/favicon.svg"><link rel="stylesheet" href="/hub/hub.css"><link rel="stylesheet" href="/hub/theme.css">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png">
   <link rel="stylesheet" href="/keyboard-layout.css">
   <link rel="stylesheet" href="/hub/voxel-setup.css">
   <link rel="stylesheet" href="/hub/royale-setup.css">
   <link rel="stylesheet" href="/hub/horde-setup.css">
   <link rel="stylesheet" href="/hub/modern-hub.css">
   <link rel="stylesheet" href="/hub/shinobi-voxel-setup.css">
+  <link rel="stylesheet" href="/hub/pwa-install.css">
 </head>
 <body class="modern-hub">
   <aside class="sidebar">
@@ -21,7 +28,7 @@
     <div class="server-state"><i id="host-dot"></i><div><strong id="host-status">Finding your host</strong><span>SELF-HOSTED · NO ACCOUNTS</span></div></div>
   </aside>
   <main class="hub-main">
-    <header class="hub-topbar"><div class="breadcrumb">HOME <span>/</span> GAME LIBRARY</div><div data-keyboard-layout-picker></div><label class="hub-identity"><span>PLAYING AS</span><input id="hub-name" maxlength="20" placeholder="Your name" value="Challenger" aria-label="Your player name"><i id="name-avatar">C</i></label></header>
+    <header class="hub-topbar"><div class="breadcrumb">HOME <span>/</span> GAME LIBRARY</div><button class="pwa-install-button" id="pwa-install" type="button" aria-haspopup="dialog" aria-controls="pwa-install-dialog" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="M12 7v8m-3-3 3 3 3-3M9 18h6"/></svg><span>Install semaG</span></button><div data-keyboard-layout-picker></div><label class="hub-identity"><span>PLAYING AS</span><input id="hub-name" maxlength="20" placeholder="Your name" value="Challenger" aria-label="Your player name"><i id="name-avatar">C</i></label></header>
     <div class="library-heading" id="games"><div><span class="eyebrow">YOUR NEXT CHALLENGE</span><h1>Game library<span>.</span></h1><p>Pick a game. Challenge a friend. Take on the bots.</p></div><span class="library-count"><i></i> <b id="library-game-count">26</b> GAMES · READY TO PLAY</span></div>
     <div class="hub-error" id="hub-error" role="alert" hidden></div>
     <div class="library-layout">
@@ -67,6 +74,19 @@
     <footer class="hub-footer"><span>YOUR HOST. YOUR GAMES.</span><a id="hub-download" href="/download/fireside-hub.zip" download hidden>Download the PC host <span>↓</span></a><span>26 GAMES · ONE HUB <i>✦</i></span></footer>
   </main>
   <div class="hub-toast" id="hub-toast" role="status" hidden></div>
+  <dialog class="pwa-install-dialog" id="pwa-install-dialog" aria-labelledby="pwa-install-title" aria-describedby="pwa-install-intro">
+    <header class="pwa-install-heading"><svg class="pixel-logo" viewBox="0 0 62 16" aria-hidden="true"><use href="/hub/logo.svg#brand" width="62" height="16"/></svg><button id="pwa-install-close" class="pwa-install-close" type="button" aria-label="Close install instructions" autofocus><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 5 10 10M15 5 5 15"/></svg></button></header>
+    <span class="eyebrow">ONE TAP FROM YOUR NEXT GAME</span><h2 id="pwa-install-title">Install semaG.</h2>
+    <p id="pwa-install-intro">Keep the hub on your home screen or desktop. Open your games in their own window.</p>
+    <p class="pwa-install-status" id="pwa-install-status" role="status" aria-live="polite" hidden></p>
+    <p class="pwa-install-security" id="pwa-install-security" hidden>Installation needs a secure address. Open <a href="https://semag.lol/">semag.lol</a> to install. Local hostname and IP addresses over HTTP usually cannot be installed.</p>
+    <ol class="pwa-install-steps">
+      <li><span class="pwa-step-icon" aria-hidden="true">01</span><div><strong>Chrome &amp; Edge</strong><p>Open the browser menu <b>⋮</b> or <b>…</b> and choose <b>Install semaG</b> or <b>Install app</b>. You may find it under <b>Apps</b> or <b>Cast, save and share</b>.</p></div></li>
+      <li><span class="pwa-step-icon" aria-hidden="true">02</span><div><strong>iPhone &amp; iPad</strong><p>Open in <b>Safari</b>, tap <b>Share</b>, then <b>Add to Home Screen</b>. Leave <b>Open as Web App</b> enabled if shown, then tap <b>Add</b>.</p></div></li>
+      <li><span class="pwa-step-icon" aria-hidden="true">03</span><div><strong>Safari on Mac</strong><p>Choose <b>File → Add to Dock</b>, then <b>Add</b>.</p></div></li>
+    </ol>
+    <p class="pwa-install-footnote">Games still need a connection. Multiplayer players connect to the same game host.</p>
+  </dialog>
   <dialog class="voxel-setup shinobi-voxel-setup" id="shinobi-voxel-setup" aria-labelledby="shinobi-voxel-setup-title" aria-describedby="shinobi-voxel-setup-note">
     <img class="voxel-setup-art" src="/hub/shinobi-voxel-cover.svg" alt="" width="600" height="320">
     <form data-slot="field-group">
@@ -135,5 +155,6 @@
     </form>
   </dialog>
   <script type="module" src="/hub/hub.js"></script>
+  <script type="module" src="/hub/pwa-install.js"></script>
 </body>
 </html>
