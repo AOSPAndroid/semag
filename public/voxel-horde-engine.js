@@ -700,7 +700,7 @@ function beginIntermission(state) {
     const cache = addInventoryLoot(state, supplier, createInventoryMelee(weapon));
     if (cache) { cache.source = 'wave-clear'; emitLootEvent(state, 'hordeSupply', cache, { wave: horde.wave }); }
   }
-  state.fighters = state.players; state.objective = 'Wave cleared. Regroup, collect the close-combat supply and choose your next loadout.';
+  state.fighters = state.players; state.objective = 'Wave cleared. Heal, reload, collect supplies and choose your next loadout.';
   for (const id of horde.participantIds) horde.inputFences[id] = ACTIONS.filter(key => state.players[id].previousInput[key]);
   neutralize(state, { stop: false }); emitCombatEvent(state, 'hordeClear', { wave: horde.wave, seconds: horde.waveTicks / TICK_RATE });
 }
@@ -719,7 +719,7 @@ export function step(state, rawInputs = []) {
     const previous = state.players.slice(0, state.capacity).map(player => ({ ...player.previousInput }));
     const inputs = state.players.map(player => {
       const input = !player.monster && player.participating && player.connected ? lookInput(state, player, rawInputs[player.id]) : emptyInput(player);
-      for (const key of ['fire', 'aim', 'grenade', 'heal', 'swap', 'reload']) input[key] = false;
+      for (const key of ['fire', 'aim', 'grenade']) input[key] = false;
       return input;
     });
     combatStep(state, inputs, arenaFor(state));

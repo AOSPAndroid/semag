@@ -28,7 +28,7 @@ const copy = value => value == null ? value : structuredClone(value);
 const clock = seconds => `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
 const LIVE_PHASES = Object.freeze(['countdown', 'fight', 'intermission']);
 const MOVEMENT_PHASES = Object.freeze(['fight', 'intermission']);
-const INTERMISSION_COMBAT_ACTIONS = Object.freeze(['fire', 'aim', 'grenade', 'heal', 'swap', 'reload']);
+const INTERMISSION_COMBAT_ACTIONS = Object.freeze(['fire', 'aim', 'grenade']);
 
 /** Keep controls and the two collapsible guide sections in the modal tab loop. */
 export function hordeGuideTabTarget(controls, active, backwards = false) {
@@ -39,7 +39,7 @@ export function hordeGuideTabTarget(controls, active, backwards = false) {
   return null;
 }
 
-/** Repositioning previews cannot invent an attack while the squad is resupplying. */
+/** Recover and re-equip while resupplying; attacks remain blocked. */
 export function hordeInputForPhase(input, phase) {
   if (phase !== 'intermission') return input;
   const allowed = { ...input };
@@ -102,7 +102,7 @@ export function hordeWavePresentation(state, tickRate = 120) {
   const seconds = Math.ceil(Math.max(0, finite(horde.phaseTicks ?? state?.phaseTicks)) / tickRate);
   return { wave, threats: Math.max(0, finite(horde.alive)) + Math.max(0, finite(horde.pending)), kills: Math.max(0, finite(horde.totalKills)), seconds,
     elapsed: Math.max(0, finite(horde.elapsedTicks)) / tickRate,
-    banner: state?.phase === 'intermission' ? { tag: 'WAVE CLEARED', title: `NEXT WAVE IN ${seconds}`, detail: 'Recover, resupply and choose your next angle.' } :
+    banner: state?.phase === 'intermission' ? { tag: 'WAVE CLEARED', title: `NEXT WAVE IN ${seconds}`, detail: 'F heal · R reload · collect supplies and reposition.' } :
       state?.phase === 'fight' && finite(horde.waveTicks) < tickRate * 2 ? { tag: 'HOLD YOUR GROUND', title: `WAVE ${wave}`, detail: wave >= 4 ? 'Armed hostiles — use solid cover.' : 'Watch the entry points.' } : null };
 }
 
@@ -216,7 +216,7 @@ export async function bootHorde() {
   const controlsActive = () => !endView.holding && running() && entered && !paused && !modalOpen && localPlayer()?.alive && (locked() || fallback || touchMode);
   const currentInput = () => composeInput(keys, touch, mouse, aim, controlsActive());
   const weaponWheel = mountWeaponWheel(canvas, {
-    context: () => ({ player: localPlayer(), active: controlsActive() && state?.phase === 'fight', pointerLocked: locked(), fallback, crouchHeld: keys.has('crouch') }),
+    context: () => ({ player: localPlayer(), active: controlsActive() && MOVEMENT_PHASES.includes(state?.phase), pointerLocked: locked(), fallback, crouchHeld: keys.has('crouch') }),
     dispatch: action => { const input = currentInput(); if (input[action]) return false; sendInput({ ...input, [action]: true }, true); sendInput(input, true); wake(); return true; },
   });
   const inventory = mountInventoryHotbar($('horde-inventory'), actions => {
@@ -409,7 +409,7 @@ export async function bootHorde() {
     if (vitals && readout) {
       text('horde-health-subject', vitals.id !== playerId ? nameFor(vitals.id).toUpperCase() : 'HEALTH'); $('horde-health-rail').setAttribute('aria-label', vitals.id !== playerId ? `${nameFor(vitals.id)} health` : 'Your health');
       text('horde-health', Math.ceil(vitals.hp)); text('horde-health-max', `/ ${vitals.maxHp || PLAYER_HEALTH}`); $('horde-health-fill').style.width = `${clamp(vitals.hp / (vitals.maxHp || PLAYER_HEALTH), 0, 1) * 100}%`; $('horde-health-rail').setAttribute('aria-valuenow', String(vitals.hp)); $('horde-health-rail').setAttribute('aria-valuemax', String(vitals.maxHp || PLAYER_HEALTH)); $('horde-health-rail').dataset.low = String(vitals.hp < (vitals.maxHp || PLAYER_HEALTH) * .3);
-      text('horde-grenades', readout.grenades); text('horde-potions', readout.potions); text('horde-weapon-name', readout.label); text('horde-ammo', readout.ammo); text('horde-reserve', readout.sword || readout.healing || readout.utility ? '' : `/ ${readout.reserve}`); text('horde-weapon-status', phase === 'intermission' && !readout.progress ? 'E SUPPLIES · X DROP · REPOSITION' : readout.status); $('horde-weapon-panel').dataset.sword = String(readout.sword || readout.healing || readout.utility); hide('horde-action-track', !readout.progress); if (readout.progress) $('horde-action-fill').style.width = `${readout.progress.percent}%`;
+      text('horde-grenades', readout.grenades); text('horde-potions', readout.potions); text('horde-weapon-name', readout.label); text('horde-ammo', readout.ammo); text('horde-reserve', readout.sword || readout.healing || readout.utility ? '' : `/ ${readout.reserve}`); text('horde-weapon-status', phase === 'intermission' && !readout.progress ? 'F HEAL · R RELOAD · E SUPPLIES' : readout.status); $('horde-weapon-panel').dataset.sword = String(readout.sword || readout.healing || readout.utility); hide('horde-action-track', !readout.progress); if (readout.progress) $('horde-action-fill').style.width = `${readout.progress.percent}%`;
       $('horde-action-track').setAttribute('aria-label', readout.progress?.label || 'Weapon action'); $('horde-action-track').setAttribute('aria-valuenow', String(Math.round(readout.progress?.percent || 0))); $('horde-action-track').setAttribute('aria-valuetext', `${((readout.progress?.remaining || 0) / 120).toFixed(1)} seconds remaining`);
     }
     const loot = player?.alive && MOVEMENT_PHASES.includes(phase) ? engine.findNearbyLoot?.(state, playerId) : null, revive = player?.alive && phase === 'fight' ? engine.findReviveTarget?.(state, playerId) : null;
@@ -442,7 +442,7 @@ export async function bootHorde() {
         if (solo && !modalOpen) { $('horde-result-title').setAttribute('tabindex', '-1'); $('horde-result-title').focus({ preventScroll: true }); }
       }
     }
-    text('horde-objective', lobby ? solo ? 'Choose your arena and loadout. Start when you’re ready.' : 'Invite up to two friends. Everyone readies; the host starts.' : phase === 'paused' ? 'All movement and combat paused.' : phase === 'matchEnd' ? solo ? 'Your stand is over. Replay the same challenge, or change your setup.' : 'Squad overrun. The host can open the next lobby.' : phase === 'intermission' ? `Next wave in ${wave.seconds}s · recover, resupply, reposition.` : !player?.alive ? downCopy : 'Keep an escape route. E picks up drops · F drinks a potion · hold E near a fallen teammate.');
+    text('horde-objective', lobby ? solo ? 'Choose your arena and loadout. Start when you’re ready.' : 'Invite up to two friends. Everyone readies; the host starts.' : phase === 'paused' ? 'All movement and combat paused.' : phase === 'matchEnd' ? solo ? 'Your stand is over. Replay the same challenge, or change your setup.' : 'Squad overrun. The host can open the next lobby.' : phase === 'intermission' ? `Next wave in ${wave.seconds}s · F heal · R reload · E collect supplies.` : !player?.alive ? downCopy : 'Keep an escape route. E picks up drops · F drinks a potion · hold E near a fallen teammate.');
     const banner = wave.banner || (phase === 'fight' && now < waveBannerUntil ? { tag: 'HOLD YOUR GROUND', title: `WAVE ${wave.wave}`, detail: wave.wave >= 4 ? 'Armed hostiles — use solid cover.' : 'Watch the entry points.' } : null);
     hide('horde-wave-banner', !banner || modalOpen || paused || phase === 'intermission' && victoryView.visible); if (banner) { text('horde-wave-tag', banner.tag); text('horde-wave-copy', banner.title); text('horde-wave-detail', banner.detail); }
     updateTeam();
@@ -496,7 +496,7 @@ export async function bootHorde() {
     worldLabels.paint(renderer.worldLabels, { active: labelsActive() });
     paintVitals(camera, camera?.id !== playerId ? `${nameFor(camera?.id)}’s` : 'Your', labelsActive());
     enemyFootsteps.observe(renderer.locomotionActors, { now, context: `${state.mapId}:${state.matchId}:${state.round}:${state.horde?.sessionId ?? 0}`, listener: camera, yaw: viewAim.yaw, active: connected && entered && !!localPlayer()?.alive && !paused && !modalOpen && state.phase === 'fight' });
-    reloadAudio.observe(state.players.find(player => player.id === camera?.id), { tick: state.tick, context: `${state.mapId}:${state.matchId}:${state.round}`, active: connected && !paused && !modalOpen && state.phase === 'fight' }); renderCount++; lastFraction = tickFraction(accumulator, 1 / engine.TICK_RATE);
+    reloadAudio.observe(state.players.find(player => player.id === camera?.id), { tick: state.tick, context: `${state.mapId}:${state.matchId}:${state.horde?.sessionId ?? 0}`, active: connected && !paused && !modalOpen && MOVEMENT_PHASES.includes(state.phase) }); renderCount++; lastFraction = tickFraction(accumulator, 1 / engine.TICK_RATE);
     reticleView = presentCrosshair(camera, now, `${state.mapId}:${state.matchId}:${state.round}:${state.phase}`, { width: canvas.clientWidth, height: canvas.clientHeight, rules: ADS, active: labelsActive() && !paused && state.phase === 'fight', reducedMotion: hitMotion.matches });
     paintCrosshair(hitElements.crosshair, reticleView); hide('horde-scope', !reticleView.visible || !reticleView.scoped);
     paintHitFeedback(hitElements, hitFeedback.present(localPlayer(), { now, lifeKey: `${state.mapId}:${state.matchId}:${localPlayer()?.lifeId}`, active: state.phase === 'fight' && !paused && !modalOpen && connected, reducedMotion: hitMotion.matches })); hide('horde-feedback', now >= feedbackUntil || !LIVE_PHASES.includes(state.phase));
@@ -507,7 +507,8 @@ export async function bootHorde() {
     if (state.phase !== oldPhase || localPlayer()?.lifeId !== oldLife) {
       hitFeedback.reset();
       const held = currentInput(); pending = []; predictionTick = state.tick; accumulator = 0; correction.reset(); movement.clear();
-      if (!solo) sendInput(composeInput(keys, touch, mouse, aim, false), true, now, true);
+      // Cancel queued taps without manufacturing a release of physically held keys.
+      if (!solo) sendInput(held, true, now, true);
       inputQueue.reset({ held });
     }
     if (state.horde.wave !== lastWave) { lastWave = state.horde.wave; waveBannerUntil = now + 2200; }
@@ -543,7 +544,7 @@ export async function bootHorde() {
         previousPlayers = state.players.map(player => ({ ...player })); const oldPhase = state.phase, oldLife = localPlayer()?.lifeId;
         let input = MOVEMENT_PHASES.includes(state.phase) ? inputQueue.sample(hordeInputForPhase(buttons, state.phase), now).buttons : buttons;
         // The engine sees held combat intent for next-wave release fences, while
-        // intermission's real rules suppress every attack and item commitment.
+        // intermission blocks attacks while queued recovery and equipment taps survive.
         if (state.phase === 'intermission') { input = { ...input }; for (const action of INTERMISSION_COMBAT_ACTIONS) input[action] = buttons[action]; }
         engine.step(state, [input]); physicsSamples++; phaseTransition(oldPhase, oldLife, now);
       } else {

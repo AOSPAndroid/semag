@@ -115,11 +115,11 @@ test('disconnects never leave invisible living human targets and lobby reset pre
   assert.equal(state.players[0].connected, false); assert.equal(state.players[0].alive, false); assert.equal(state.players[2].connected, true); assert.equal(state.players[2].alive, true);
 });
 
-test('intermission permits real movement and E resupply while all combat commitments are disabled', () => {
+test('intermission permits real movement and E resupply while attacks remain disabled', () => {
   const state = started(), player = state.players[0];
   state.horde.pending = 0; state.horde.nextSpawnTick = Number.MAX_SAFE_INTEGER; step(state);
   assert.equal(state.phase, 'intermission'); const start = { x: player.x, z: player.z }, clock = state.horde.elapsedTicks;
-  advance(state, 60, [{ up: true, fire: true, grenade: true, heal: true, swap: true, reload: true }]);
+  advance(state, 60, [{ up: true, fire: true, grenade: true, heal: true, reload: true }]);
   assert.ok(Math.hypot(player.x - start.x, player.z - start.z) > 1.5); assert.equal(player.shots, 0); assert.equal(state.grenades.length, 0); assert.equal(player.slot, 'primary'); assert.equal(player.healTicks, 0);
   assert.equal(state.horde.elapsedTicks, clock);
   advance(state, 25); player.hp = 100;

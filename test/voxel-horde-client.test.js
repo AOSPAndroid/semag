@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import * as Horde from '../public/voxel-horde-engine.js';
-import { applyCombatDamage, emptyInput, predictLocalMovement } from '../public/voxel-engine.js';
+import { applyCombatDamage, emptyInput, predictLocalMovement, HEAL } from '../public/voxel-engine.js';
+import { refreshInventory } from '../public/voxel-inventory.js';
 import { createFpsInputQueue, releaseFpsTouchAction } from '../public/voxel-input-queue.js';
 import { interpolatedVoxelState } from '../public/voxel-presentation.js';
 import { hordeLobbyPresentation, hordeSpectatorPlayer, hordeInterpolationSamples, hordeWavePresentation, hordeResultPresentation, hordeOverlayPresentation, hordeRevivePresentation, hordeInputForPhase } from '../public/voxel-horde-client.js';
@@ -248,7 +249,7 @@ test('revive progress reflects real uninterrupted channel ticks and clears immed
   assert.equal(hordeRevivePresentation(state.players[0], null, rules), null);
 });
 
-test('intermission permits a real carried-potion pickup while combat previews stay inert', () => {
+test('intermission permits a real carried-potion pickup and recovery inputs while attacks stay inert', () => {
   const state = active(), player = state.players[0];
   state.map = { ...Horde.MAPS.courtyard, id: 'client-intermission-fixture', colliders: [], bounds: { minX: -20, maxX: 20, minZ: -20, maxZ: 20 } };
   Object.assign(player, { x: 0, y: 0, z: 0, yaw: 0, hp: 100, vx: 0, vy: 0, vz: 0, grounded: true });
@@ -258,9 +259,11 @@ test('intermission permits a real carried-potion pickup while combat previews st
   state.loot = [];
   state.loot.push({ id: 55, type: 'potion', kind: 'heal', amount: 1, x: .5, y: 0, z: 0, expiresTick: state.tick + 1000 });
   const inventory = { ammo: player.ammo, grenades: player.grenades, potions: player.potions, shots: player.shots };
-  const raw = { up: true, aim: true, fire: true, grenade: true, heal: true, reload: true, swap: true, yaw: 0, pitch: .2 }, rawCopy = { ...raw };
+  const raw = { up: true, aim: true, fire: true, grenade: true, heal: false, reload: false, swap: false, yaw: 0, pitch: .2 }, rawCopy = { ...raw };
   const preview = hordeInputForPhase(raw, state.phase);
-  for (const action of ['fire', 'aim', 'grenade', 'heal', 'reload', 'swap']) assert.equal(preview[action], false);
+  for (const action of ['fire', 'aim', 'grenade']) assert.equal(preview[action], false);
+  const recovery = hordeInputForPhase({ heal: true, reload: true, swap: true }, state.phase);
+  for (const action of ['heal', 'reload', 'swap']) assert.equal(recovery[action], true);
   assert.equal(preview.up, true); assert.equal(preview.pitch, .2); assert.deepEqual(raw, rawCopy);
   const predicted = structuredClone(player);
   for (let tick = 0; tick < 16; tick++) { predictLocalMovement(predicted, preview, state.map, 1, state.players); Horde.step(state, [raw]); }
@@ -270,4 +273,32 @@ test('intermission permits a real carried-potion pickup while combat previews st
   assert.equal(player.hp, hp, 'collecting a potion does not drink it'); assert.equal(player.potions, inventory.potions + 1); assert.equal(state.loot.some(loot => loot.id === 55), false);
   assert.deepEqual({ ammo: player.ammo, grenades: player.grenades, potions: player.potions, shots: player.shots }, { ...inventory, potions: inventory.potions + 1 });
   assert.equal(hordeInputForPhase(raw, 'fight'), raw, 'combat controls resume unchanged in the real fight');
+});
+
+test('released F and R taps survive the client wave-break filter and commit real recovery once', () => {
+  for (const action of ['heal', 'reload']) {
+    const state = active(), player = state.players[0], queue = createFpsInputQueue();
+    state.horde.pending = 0; state.horde.nextSpawnTick = Number.MAX_SAFE_INTEGER; Horde.step(state);
+    assert.equal(state.phase, 'intermission');
+    // Controlled recovery eligibility; resource spending uses the shared engine.
+    player.hp = 100; player.inventory[2] = { kind: 'heal', amount: 2 };
+    player.inventory[1].ammo = 3; refreshInventory(player);
+    const before = { hp: player.hp, ammo: player.ammo, reserve: player.reserve, potions: player.potions };
+    queue.observe(hordeInputForPhase({ [action]: true }, state.phase), 0, { sequence: 1 });
+    queue.observe(hordeInputForPhase({ [action]: false }, state.phase), 1, { sequence: 2 });
+    const input = queue.sample(hordeInputForPhase({ [action]: false }, state.phase), 2).buttons;
+    assert.equal(input[action], true, 'a quick press is not lost between presentation frames');
+    Horde.step(state, [input]);
+    assert.ok(action === 'heal' ? player.healTicks > 0 : player.reloadTicks > 0);
+    const duration = action === 'heal' ? HEAL.ticks : player.reloadTicks;
+    for (let tick = 0; tick <= duration; tick++) Horde.step(state, [queue.sample(hordeInputForPhase({}, state.phase), tick + 3).buttons]);
+    if (action === 'heal') {
+      assert.equal(player.hp, before.hp + HEAL.amount); assert.equal(player.potions, before.potions - 1);
+      assert.equal(state.events.filter(event => event.type === 'healComplete').length, 1);
+    } else {
+      assert.ok(player.ammo > before.ammo); assert.equal(player.reserve, before.reserve - (player.ammo - before.ammo));
+      assert.equal(state.events.filter(event => event.type === 'reloadComplete').length, 1);
+    }
+    assert.equal(player.shots, 0); assert.equal(state.phase, 'intermission');
+  }
 });
