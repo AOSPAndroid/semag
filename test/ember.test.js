@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createState, step, togglePause, chooseRoute, chooseReward, chooseCamp, RELICS, BOSSES, DIFFICULTIES, getRelicInfo } from '../public/solo/ember-engine.js';
+import { emberRunSummary } from '../public/solo/ember-view.js';
 const ticks = (s, n, input = {}) => { for (let i = 0; i < n; i++) step(s, input); };
 const reward = (s, id) => { s.phase = 'reward'; s.choices = [{ ...RELICS[id] }]; s.pending = 'treasure'; assert.equal(chooseReward(s, id), true); };
 
@@ -130,6 +131,7 @@ function finishRun(seed, risky = false) {
 }
 test('actual input run traverses all twelve rooms and defeats three bosses on safe branches', () => {
   const { s, visited, bosses } = finishRun(12345); assert.equal(s.phase, 'won'); assert.equal(visited.size, 12); assert.equal(bosses.size, 3); assert.equal(s.roomsCleared, 12); assert.ok(s.kills >= 18); assert.ok(s.player.hp > 0); assert.ok(s.elapsed < 500); assert.ok(s.score > 5000);
+  const result = Object.fromEntries(emberRunSummary(s)); assert.equal(result.KEEPERS, `${bosses.size}/3`); assert.equal(result.CHAMBERS, `${visited.size}/12`); assert.equal(result.SCORE, s.score.toLocaleString()); assert.equal(result.GOLD, s.gold); assert.equal(result.FALLEN, s.kills);
 });
 test('actual input run wins combat and elite branches with greater risk rewards', () => {
   const safe = finishRun(12345), risky = finishRun(12345, true); assert.equal(risky.s.phase, 'won'); assert.equal(risky.visited.size, 12); assert.ok(risky.s.kills > safe.s.kills); assert.ok(risky.s.score > safe.s.score); assert.ok(risky.s.routeHistory.some(r => r.kind === 'elite'));

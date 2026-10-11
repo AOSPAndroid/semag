@@ -4,6 +4,8 @@ import { ACT_NAMES, BOSSES, RELICS, DIFFICULTIES, getRelicInfo, createState, ste
 import { EmberVoxelRenderer } from './ember-voxel-renderer.js';
 import { gameKey, getKeyboardLayout, displayKey, subscribeKeyboardLayout } from '../keyboard-layout.js';
 import { blocksSoloShortcut } from './input-shortcuts.js';
+import { createResultActionGate } from '../practice-result-actions.js';
+import { mountVoxelVictory } from '../voxel-victory.js';
 
 const copy = state => JSON.parse(JSON.stringify(state));
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
@@ -19,6 +21,18 @@ const controls = {
   j: 'melee', e: 'spell', k: 'spell', ' ': 'dash', Shift: 'sprint', Control: 'crouch', c: 'walk', f: 'interact',
   ',': 'turnLeft', '<': 'turnLeft', '.': 'turnRight', '>': 'turnRight',
 };
+
+/** Report only the counters retained by the dungeon simulation. */
+export function emberRunSummary(state) {
+  const completedKeepers = Math.max(0, Math.min(3, state.act - 1 + Number(state.room.kind === 'boss' && !state.enemies.some(enemy => enemy.boss && enemy.hp > 0))));
+  return [
+    ['SCORE', state.score.toLocaleString()], ['CHAMBERS', `${state.roomsCleared}/12`],
+    ['KEEPERS', `${completedKeepers}/3`], ['FALLEN', state.kills],
+    ['TIME', `${Math.floor(state.elapsed / 60)}:${String(Math.floor(state.elapsed % 60)).padStart(2, '0')}`],
+    ['GOLD', state.gold], ['DESCENT', DIFFICULTIES[state.difficulty].title],
+    ['RELICS', Object.values(state.relics).reduce((total, count) => total + count, 0)],
+  ];
+}
 
 export function emberControl(event, layout = getKeyboardLayout(), { captured = false, crouchHeld = false } = {}) {
   const key = gameKey(event, layout);
@@ -81,6 +95,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   let lastPhase = '', mapKey = '', buildKey = '', choiceKey = '', expectedUnlock = false, mouseLocked = false;
   let lookFallback = false, dragPoint = null, graphicsFailed = false, graphicsError = '';
   let capturedPauseKey = null;
+  let resultStarted = null, resultSignature = '', resultTimer = null, runId = 0, rewardHolding = false;
+  const resultGate = createResultActionGate({ cooldownMs: 1400, quietMs: 300 });
   const held = new Map(), pointers = new Map(), queue = new Set();
   const sticks = { move: { x: 0, y: 0 }, aim: { x: 0, y: 0 } };
   const textCache = new WeakMap();
@@ -132,18 +148,23 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   hud.append(heading, map, meters, purse, reticle, boss, prompt, lookButton);
 
   const overlay = node('section', 'ember-overlay'); overlay.hidden = true; overlay.setAttribute('aria-label', 'Run status');
+  const resultCard = node('div', 'ember-result-card');
   const overlayTitle = node('h2', ''), overlayText = node('p', '');
   const resume = node('button', 'ember-primary', 'Resume descent →'); resume.type = 'button';
   const replay = node('button', 'ember-primary', 'Begin another descent →'); replay.type = 'button';
   const returnHub = node('a', 'ember-primary ember-return', 'Return to the hub →'); returnHub.href = '/'; returnHub.hidden = true;
-  const stats = node('div', 'ember-run-stats');
-  overlay.append(node('span', 'ember-eyebrow', 'THE DESCENT'), overlayTitle, overlayText, stats, resume, replay, returnHub);
+  const stats = node('div', 'ember-run-stats'), resultRelics = node('div', 'ember-result-relics');
+  resultRelics.setAttribute('aria-label', 'Relics carried through the descent');
+  const resultNote = node('p', 'ember-result-note'), resultActions = node('div', 'ember-result-actions');
+  resultActions.append(resultNote, resume, replay, returnHub);
+  resultCard.append(node('span', 'ember-eyebrow', 'THE DESCENT'), overlayTitle, overlayText, stats, resultRelics, resultActions); overlay.append(resultCard);
   const decisions = node('section', 'ember-decisions'); decisions.hidden = true;
   decisions.setAttribute('aria-label', 'Dungeon choices');
   const decisionTitle = node('h2', 'ember-decision-title'), decisionNote = node('p', 'ember-decision-note');
   const decisionList = node('div', 'ember-choice-list');
   decisions.append(node('span', 'ember-eyebrow', 'YOUR NEXT CHAPTER'), decisionTitle, decisionNote, decisionList);
   board.append(canvas, hud, overlay, decisions);
+  const victory = mountVoxelVictory({ container: board, resultCard, kind: 'ember' });
 
   const footer = node('div', 'ember-footer');
   const build = node('div', 'ember-build'); build.setAttribute('aria-label', 'Run relics');
@@ -190,9 +211,10 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   const keyboardNote = node('p', 'ember-keyboard-note', 'Shift sprints using stamina; Ctrl crouches; C walks quietly. Space dodges. Keyboard only: comma / period turn the camera, J swings and E casts. Open settings pauses the run.');
   settingBody.append(difficultyLabel, seedLabel, seedButton, newButton, difficultyNote, keyboardNote);
   settings.append(settingTitle, settingBody); view.append(board, footer, touch, settings); container.append(view);
+  if (document.head && !document.getElementById('semag-voxel-victory-styles')) { const stylesheet = node('link', ''); stylesheet.id = 'semag-voxel-victory-styles'; stylesheet.rel = 'stylesheet'; stylesheet.href = '/voxel-victory.css'; document.head.append(stylesheet); }
 
   const renderer = new EmberVoxelRenderer(canvas);
-  if (!renderer.available) { const reason = renderer.error || 'WebGL is unavailable.'; renderer.destroy(); view.remove(); throw new Error(`Ember Delve needs WebGL for its 3D dungeon. ${reason}`); }
+  if (!renderer.available) { const reason = renderer.error || 'WebGL is unavailable.'; victory.destroy(); renderer.destroy(); view.remove(); throw new Error(`Ember Delve needs WebGL for its 3D dungeon. ${reason}`); }
   function draw(fraction = 1) {
     if (dead || graphicsFailed) return;
     if (!renderer.available) { failGraphics(); return; }
@@ -218,6 +240,28 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       sticks[id] = { x: 0, y: 0 }; pads[id].knob.style.transform = 'translate(0,0)'; pads[id].pad.setAttribute('aria-pressed', 'false');
     }
     for (const button of Object.values(actionRefs)) button.setAttribute('aria-pressed', 'false');
+  }
+  function refreshResultActions() {
+    if (resultTimer !== null) clearTimeout(resultTimer); resultTimer = null;
+    const terminal = ['won', 'lost'].includes(state.phase), now = performance.now();
+    const ready = !terminal || resultGate.isReady(now);
+    replay.disabled = terminal && !ready;
+    hidden(resultNote, !terminal || ready);
+    text(resultNote, resultGate.waitingForRelease() ? 'Release your controls to prepare the next descent.' : 'Take in your descent. Your next run will be ready in a moment.');
+    if (terminal && !ready) {
+      const delay = resultGate.nextDelay(now);
+      if (delay !== null) resultTimer = setTimeout(() => { resultTimer = null; if (!dead) refreshResultActions(); }, delay);
+    }
+  }
+  function resultPress(event) {
+    if (dead || !['playing', 'won', 'lost'].includes(state.phase)) return;
+    if (event.type === 'pointerdown' && event.target !== canvas && !board.contains?.(event.target)) return;
+    resultGate.press(event.type === 'keydown' ? `key:${event.code || event.key}` : `pointer:${event.pointerId}`, performance.now());
+    if (['won', 'lost'].includes(state.phase)) refreshResultActions();
+  }
+  function resultRelease(event) {
+    resultGate.release(event.type === 'keyup' ? `key:${event.code || event.key}` : `pointer:${event.pointerId}`, performance.now());
+    if (['won', 'lost'].includes(state.phase)) refreshResultActions();
   }
   function updateUI() {
     view.dataset.phase = state.phase; view.dataset.difficulty = state.difficulty;
@@ -266,18 +310,33 @@ export function mount(container, { onUpdate = () => {} } = {}) {
         button.addEventListener('click', () => select(choice.id)); decisionList.append(button);
       }
     }
-    const showOverlay = ['paused', 'won', 'lost'].includes(state.phase);
-    hidden(overlay, !showOverlay); hidden(resume, state.phase !== 'paused'); hidden(replay, state.phase === 'paused'); hidden(stats, state.phase === 'paused');
+    const terminal = ['won', 'lost'].includes(state.phase);
+    if (terminal && resultStarted === null) { resultStarted = performance.now(); resultGate.begin(resultStarted); }
+    const reward = victory.observe({ phase: state.phase === 'won' ? 'matchEnd' : state.phase, now: performance.now(), contextKey: `ember:${runId}:${state.seed}:${state.difficulty}`, death: { started: resultStarted !== null, remainingMs: 0 }, won: state.phase === 'won', eligible: !graphicsFailed, reducedMotion: reducedMotion.matches, title: 'The Crown is yours.', kicker: 'DESCENT COMPLETE', copy: 'Three keepers defeated. Your flame outlasted the furnace.' });
+    rewardHolding = reward.holding;
+    const showOverlay = ['paused', 'won', 'lost'].includes(state.phase) && !rewardHolding;
+    hidden(overlay, !showOverlay); hidden(resume, state.phase !== 'paused'); hidden(replay, state.phase === 'paused'); hidden(stats, state.phase === 'paused'); hidden(returnHub, !terminal);
+    hidden(resultRelics, !terminal); overlay.dataset.result = terminal ? state.phase : 'paused';
     if (showOverlay) {
+      if (terminal) victory.decorateResult({ won: state.phase === 'won', kicker: state.phase === 'won' ? 'DESCENT COMPLETE' : 'FLAME EXTINGUISHED', context: `${DIFFICULTIES[state.difficulty].title} · Seed ${state.seed}`, rank: state.phase === 'won' ? `${emberRunSummary(state).find(([title]) => title === 'KEEPERS')[1]} KEEPERS` : `ACT ${state.act} / 3` });
       text(overlayTitle, state.phase === 'paused' ? 'Keep your flame.' : state.phase === 'won' ? 'The Crown is yours.' : 'A flame worth remembering.');
       text(overlayText, state.phase === 'paused' ? 'Your room, resources and choices are frozen. P resumes; click the dungeon to capture the mouse.' : state.phase === 'won' ? 'Three keepers defeated. Twelve chambers conquered. Your descent is complete.' : 'The dungeon keeps its secrets. Take what you learned into the next descent.');
-      if (state.phase !== 'paused') {
+      const nextResultSignature = terminal ? `${runId}:${state.phase}:${state.score}:${state.roomsCleared}:${state.kills}` : '';
+      if (terminal && nextResultSignature !== resultSignature) {
+        resultSignature = nextResultSignature;
         stats.replaceChildren();
-        for (const [title, value] of [['SCORE', state.score.toLocaleString()], ['FALLEN', state.kills], ['CHAMBERS', `${state.roomsCleared}/12`], ['TIME', `${Math.floor(state.elapsed / 60)}:${String(Math.floor(state.elapsed % 60)).padStart(2, '0')}`]]) {
+        for (const [title, value] of emberRunSummary(state)) {
           const stat = node('div', ''); stat.append(node('span', '', title), node('b', '', value)); stats.append(stat);
+        }
+        resultRelics.replaceChildren(node('span', 'ember-result-relic-label', 'YOUR RELIC BUILD'));
+        if (!Object.keys(state.relics).length) resultRelics.append(node('span', 'ember-build-empty', 'No relics recovered this descent.'));
+        else for (const [id, count] of Object.entries(state.relics)) {
+          const chip = node('span', 'ember-relic', `${RELICS[id].title}${count > 1 ? ` ×${count}` : ''}`);
+          chip.title = getRelicInfo(state, id).description; resultRelics.append(chip);
         }
       }
     }
+    refreshResultActions();
     hidden(reticle, state.phase !== 'playing'); hidden(lookButton, state.phase !== 'playing' || mouseLocked);
     text(lookButton, lookFallback ? 'Drag to look · comma / period also turn' : 'Click to capture mouse · drag also turns');
     const nearExit = Math.hypot(state.player.x - state.room.exit.x, state.player.y - state.room.exit.y) < 70;
@@ -315,7 +374,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     }
     return result;
   }
-  function schedule() { if (!dead && state.phase === 'playing' && !raf) raf = requestAnimationFrame(frame); }
+  function schedule() { if (!dead && (state.phase === 'playing' || state.phase === 'won' && rewardHolding) && !raf) raf = requestAnimationFrame(frame); }
   function stopFrame() { if (raf) cancelAnimationFrame(raf); raf = 0; previous = null; accumulator = 0; presentation.reset(); }
   function select(id) {
     if (graphicsFailed) return;
@@ -327,7 +386,9 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   }
   function restart(seed = Date.now()) {
     if (graphicsFailed) return;
+    if (['won', 'lost'].includes(state.phase) && !resultGate.isReady(performance.now())) return;
     release(); unlockMouse(); stopFrame();
+    resultGate.cancel(); resultGate.clearHeld(); victory.reset(); resultStarted = null; resultSignature = ''; rewardHolding = false; runId++;
     state = createState({ seed, difficulty }); camera = { yaw: Math.PI / 2, pitch: .32 };
     seedInput.value = state.seed; choiceKey = ''; mapKey = ''; buildKey = '';
     updateUI(); draw(); emit(); canvas.focus({ preventScroll: true }); schedule();
@@ -338,7 +399,10 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     release(); unlockMouse(); stopFrame(); updateUI(); draw(); emit(); schedule();
   }
   function frame(time) {
-    raf = 0; if (dead || state.phase !== 'playing') return;
+    raf = 0; if (dead) return;
+    // A finish is presentation only. The accepted dungeon state stays frozen.
+    if (state.phase === 'won' && rewardHolding) { updateUI(); draw(1); schedule(); return; }
+    if (state.phase !== 'playing') return;
     if (graphicsFailed || !renderer.available) { failGraphics(); return; }
     if (previous === null) previous = time;
     const delta = Math.min(.05, Math.max(0, (time - previous) / 1000)); previous = time; accumulator += delta;
@@ -459,13 +523,15 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     for (const event of ['pointerup', 'pointercancel', 'lostpointercapture']) button.addEventListener(event, pointerEnd);
     button.addEventListener('click', event => { if (event.detail === 0 && state.phase === 'playing') queue.add(id); });
   }
-  function blur() { release(); if (['playing', 'route', 'reward', 'camp'].includes(state.phase)) togglePause(); }
+  function blur() { release(); resultGate.clearHeld(); if (['playing', 'route', 'reward', 'camp'].includes(state.phase)) togglePause(); else refreshResultActions(); }
   function visibility() { if (document.hidden) blur(); }
   function resized() { if (!dead) { renderer.resize(); draw(); } }
   function motionChanged() { if (!dead) draw(); }
   function settingsToggled() { if (settings.open && state.phase === 'playing') togglePause(); }
   const preventContextMenu = event => event.preventDefault();
   window.addEventListener('keydown', keydown); window.addEventListener('keyup', keyup); window.addEventListener('blur', blur); window.addEventListener('resize', resized);
+  window.addEventListener('keydown', resultPress, true); window.addEventListener('keyup', resultRelease, true);
+  document.addEventListener('pointerdown', resultPress, true); document.addEventListener('pointerup', resultRelease, true); document.addEventListener('pointercancel', resultRelease, true);
   document.addEventListener('visibilitychange', visibility); document.addEventListener('mousemove', mouseMove);
   document.addEventListener('pointerlockchange', pointerLockChanged); document.addEventListener('pointerlockerror', pointerLockError);
   canvas.addEventListener('pointermove', aimMove); canvas.addEventListener('pointerdown', canvasDown);
@@ -493,11 +559,13 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   return {
     getState: () => copy(state),
     getDisplayTiming: () => presentation.getStats(),
-    getPresentationDiagnostics: () => ({ ...renderer.diagnostics, camera: { ...renderer.diagnostics.camera, ...camera }, mouseLocked, lookFallback, graphicsFailed }),
+    getPresentationDiagnostics: () => ({ ...renderer.diagnostics, camera: { ...renderer.diagnostics.camera, ...camera }, mouseLocked, lookFallback, graphicsFailed, victory: victory.inspect() }),
     restart: () => restart(), togglePause,
     destroy() {
-      dead = true; stopFrame(); release(); unsubscribeKeyboardLayout(); resizeObserver.disconnect();
+      dead = true; stopFrame(); release(); victory.destroy(); if (resultTimer !== null) clearTimeout(resultTimer); resultTimer = null; unsubscribeKeyboardLayout(); resizeObserver.disconnect();
       window.removeEventListener('keydown', keydown); window.removeEventListener('keyup', keyup); window.removeEventListener('blur', blur); window.removeEventListener('resize', resized);
+      window.removeEventListener('keydown', resultPress, true); window.removeEventListener('keyup', resultRelease, true);
+      document.removeEventListener('pointerdown', resultPress, true); document.removeEventListener('pointerup', resultRelease, true); document.removeEventListener('pointercancel', resultRelease, true);
       document.removeEventListener('visibilitychange', visibility); document.removeEventListener('mousemove', mouseMove);
       document.removeEventListener('pointerlockchange', pointerLockChanged); document.removeEventListener('pointerlockerror', pointerLockError);
       document.removeEventListener('pointerup', pointerEnd); document.removeEventListener('pointercancel', pointerEnd);

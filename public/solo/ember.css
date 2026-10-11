@@ -39,6 +39,12 @@
 .ember-look-button:hover{background:#111c19da;border-color:#f3bd7770}
 .ember-view .ember-overlay,.ember-view .ember-decisions{position:absolute;inset:0;z-index:3;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:15px;padding:32px;background:#0b0f14e6;color:var(--ember-ink);text-align:center;overflow:auto;backdrop-filter:blur(8px);overscroll-behavior:contain}
 .ember-view .ember-overlay[hidden],.ember-view .ember-decisions[hidden]{display:none}
+.ember-view .ember-overlay{background:#080a0da6;backdrop-filter:blur(5px)}
+.ember-result-card{box-sizing:border-box;display:flex;flex-direction:column;align-items:stretch;gap:14px;width:min(760px,100%);max-height:100%;padding:30px;border:1px solid #ffffff1c;border-radius:16px;background:#111113ed;box-shadow:0 28px 90px #0008;text-align:left;overflow:auto}
+.ember-view .ember-overlay .ember-result-card.voxel-finish-card{width:min(760px,100%);min-height:0;max-height:100%;gap:14px;padding:30px}
+.ember-result-card>.ember-eyebrow{display:none}.ember-result-card>p{max-width:none;color:var(--ember-muted);font-size:12px;line-height:1.6;margin:0}
+.ember-result-card .voxel-finish-hero{margin-bottom:0;padding-bottom:20px}
+.ember-view .voxel-victory-title{font-size:clamp(30px,4.5vw,52px)}
 .ember-view h2{font-size:clamp(24px,3vw,38px);line-height:1.15;letter-spacing:-.045em;font-weight:600;margin:0}
 .ember-overlay>p,.ember-decision-note{font-size:12px;line-height:1.65;max-width:500px;color:var(--ember-muted);margin:0}
 .ember-primary{min-height:42px;width:min(420px,100%);padding:11px 20px;border:1px solid #f2dec2;border-radius:6px;background:#f2dec2;color:#171d19;font-weight:600;font-size:12px;margin-top:9px}
@@ -48,6 +54,21 @@
 .ember-run-stats>div{display:flex;flex-direction:column;gap:9px}
 .ember-run-stats span{font:8px var(--mono,Consolas,monospace);letter-spacing:.08em;color:var(--ember-muted)}
 .ember-run-stats b{font-size:23px;letter-spacing:-.03em;font-weight:500;font-variant-numeric:tabular-nums}
+.ember-result-card .ember-run-stats{box-sizing:border-box;width:100%;gap:21px 18px;padding:20px 0;margin:2px 0;border-color:#ffffff13}
+.ember-result-card .ember-run-stats b{font-size:clamp(18px,2.3vw,25px);white-space:nowrap}
+.ember-result-relics{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:2px 0 5px;line-height:1.5}
+.ember-result-relic-label{display:block;flex:0 0 100%;margin-bottom:3px;font:8px var(--mono,Consolas,monospace);letter-spacing:.1em;color:#93938e}
+.ember-result-actions{display:flex;flex-direction:column;align-items:stretch;gap:9px;margin-top:auto;padding-top:22px}
+.ember-result-actions .ember-primary{width:100%;margin-top:0;min-height:45px}
+.ember-result-actions .ember-return{border-color:#ffffff22;background:#ffffff05;color:#c5c6ba;font-weight:500}
+.ember-result-actions .ember-return:hover{border-color:#ffffff40;background:#ffffff0b}
+.ember-result-card[data-voxel-result=won] .ember-primary{background:#f0cc80;border-color:#f0cc80;color:#241a10}
+.ember-result-card[data-voxel-result=won] .ember-primary:hover:not(:disabled){background:#ffe2a1;border-color:#ffe2a1}
+.ember-result-actions .ember-primary:disabled{opacity:.42;cursor:wait}
+.ember-result-note{margin:0;font:10px/1.6 var(--mono,Consolas,monospace);color:#b1a58d;text-align:center}
+.ember-result-card .ember-run-stats>div,.ember-result-relics,.ember-result-actions{animation:ember-result-arrive .38s ease-out both}
+.ember-result-card .ember-run-stats>div:nth-child(n+5){animation-delay:.06s}.ember-result-relics{animation-delay:.1s}.ember-result-actions{animation-delay:.14s}
+@keyframes ember-result-arrive{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
 .ember-choice-list{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;width:min(780px,100%);margin-top:12px;text-align:left}
 .ember-choice-list:has(>:last-child:nth-child(2)){grid-template-columns:repeat(2,minmax(0,1fr));max-width:620px}
 .ember-choice{position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:11px;min-height:185px;padding:22px 19px 36px;border:1px solid #ffffff23;border-radius:9px;background:#ffffff06;color:var(--ember-ink);text-align:left;font:inherit;transition:border-color .15s,background .15s,transform .15s}
@@ -96,10 +117,15 @@
   .ember-action b{font-size:16px;font-weight:400}.ember-action[aria-pressed=true]{background:#37382b;border-color:#f3bd7760}
   .ember-view .ember-overlay,.ember-view .ember-decisions{padding:18px;gap:11px;justify-content:flex-start;padding-top:38px}
   .ember-view h2{font-size:24px}.ember-overlay>p,.ember-decision-note{font-size:10px}
+  .ember-view .ember-overlay{justify-content:center;padding:14px}
+  .ember-result-card,.ember-view .ember-overlay .ember-result-card.voxel-finish-card{padding:20px;gap:12px;border-radius:13px}
+  .ember-result-card .ember-run-stats{grid-template-columns:repeat(2,minmax(0,1fr));gap:15px 20px;padding:16px 0}
+  .ember-result-card .ember-run-stats span{font-size:8px}.ember-result-card .ember-run-stats b{font-size:21px}
+  .ember-result-actions{padding-top:13px}.ember-result-card>p{font-size:11px}
   .ember-run-stats{gap:12px;padding:15px 0}.ember-run-stats b{font-size:19px}.ember-run-stats span{font-size:6px}
   .ember-choice-list,.ember-choice-list:has(>:last-child:nth-child(2)){grid-template-columns:1fr;gap:8px;margin-top:4px}
   .ember-choice{min-height:105px;padding:15px 32px 15px 15px;gap:6px}.ember-choice strong{font-size:14px}.ember-choice p{font-size:10px}.ember-choice-category{font-size:7px}
   .ember-setting-body select,.ember-setting-body input,.ember-setting-body button{min-height:44px}
 }
 @media(max-width:370px){.ember-controls{grid-template-columns:59px minmax(110px,1fr) 59px;gap:8px;padding-inline:9px}.ember-stick{width:58px;height:58px}.ember-route-map{display:none}.ember-meters{width:123px}.ember-purse span{max-width:100px;text-align:right}}
-@media(prefers-reduced-motion:reduce){.ember-view *{transition:none!important}.ember-choice:hover:not(:disabled){transform:none}}
+@media(prefers-reduced-motion:reduce){.ember-view *{transition:none!important}.ember-choice:hover:not(:disabled){transform:none}.ember-result-card .ember-run-stats>div,.ember-result-relics,.ember-result-actions{animation:none}}

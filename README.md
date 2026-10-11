@@ -40,6 +40,14 @@ A visible adventurer, animated guards, torch-lit rooms and camera-relative WASD/
 
 [![Ember Delve crouched adventurer with compact stamina and ember HUD](docs/screenshots/ember-delve-crouch.png)](docs/screenshots/ember-delve-crouch.png)
 
+**Voxel victories and session reports**
+
+Breach and Royale wins now finish with a short voxel crest reveal and a dark results panel. Online results include the real team score or survivor placement and personal combat totals. Ember Delve celebrates the completed descent with chambers, keepers, time, score and your relic build. Replay and rematch actions sit below the statistics and wait for held controls to be released. Reduced motion uses a shorter, still reveal; victory sound follows the game sound toggle.
+
+Last Stand celebrates each cleared wave without blocking looting or movement. Voxel Wilds marks actual nights survived and records expedition statistics when the run ends. In the Dojo, open the range tools with **Tab** and choose **Finish training** for a contact, damage and blade report; resume the same session or change your setup. Endless modes keep their ongoing goals.
+
+[![Real Voxel Breach victory results with a gold pixel crest, recorded combat statistics and guarded lower replay actions](docs/screenshots/voxel-breach-results.png)](docs/screenshots/voxel-breach-results.png)
+
 **Royale victory**
 
 Finish the final fight, watch the gold crown reveal, and review your placement and combat stats. Every bot starts with a knife and scavenges real supplies.

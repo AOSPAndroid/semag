@@ -3,6 +3,8 @@ import { createSurvivalRenderer } from '../voxel-survival-renderer.js';
 import { createSurvivalPresentation } from '../voxel-survival-presentation.js';
 import { gameKey, displayKey, getKeyboardLayout, subscribeKeyboardLayout } from '../keyboard-layout.js';
 import { tickFraction } from '../display-timing.js';
+import { createResultActionGate } from '../practice-result-actions.js';
+import { mountVoxelVictory } from '../voxel-victory.js';
 
 const SAVE_KEY = 'semag-voxel-wilds-world:v1';
 const SAVE_LIMIT = 500000;
@@ -12,6 +14,27 @@ const setText = (element, value) => { const string = String(value); if (element.
 const isUI = target => target instanceof Element && Boolean(target.closest('input,textarea,select,button,a,summary,[contenteditable]:not([contenteditable="false"])'));
 const phaseOf = state => state.phase === 'dead' ? 'lost' : state.paused ? 'paused' : 'playing';
 const newSeed = () => { const value = new Uint32Array(1); try { crypto.getRandomValues(value); } catch { value[0] = Date.now() >>> 0; } return value[0] || 1; };
+
+export function wildsExpeditionSummary(state) {
+  return [
+    ['TIME ALIVE', `${Math.floor(state.elapsed / 60)}:${String(Math.floor(state.elapsed % 60)).padStart(2, '0')}`],
+    ['NIGHTS SURVIVED', state.stats.nights], ['CREATURES DEFEATED', state.stats.kills],
+    ['BLOCKS MINED', state.stats.mined], ['BLOCKS PLACED', state.stats.built], ['ITEMS CRAFTED', state.stats.crafted],
+  ];
+}
+
+/** Restored expeditions do not replay old milestones. Only a new accepted dawn counts. */
+export function createWildsDawnTracker(initial) {
+  let eventId = initial.eventId || 0, nights = initial.stats.nights, day = initial.day;
+  return {
+    observe(state) {
+      const dawn = state.events.find(event => event.id > eventId && event.type === 'dawn' && event.day === state.day);
+      const survived = Boolean(dawn && state.phase === 'playing' && state.player.hp > 0 && !state.night && state.day > day && state.stats.nights > nights);
+      eventId = Math.max(eventId, state.eventId || 0); nights = state.stats.nights; day = state.day;
+      return survived ? { night: state.day - 1, day: state.day, nights: state.stats.nights } : null;
+    },
+  };
+}
 
 function icon(item) {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -30,6 +53,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   let yaw = state.player.yaw, pitch = state.player.pitch, drag = null, ignoreLockLoss = false, pointerRequest = false;
   let lastPublish = -1, lastPublishedPhase = '', lastSave = -1, lastMessage = '', saveStatus = 'Not saved yet', storage = null, saveAvailable = false;
   let muted = false, audio = null, soundEvent = 0;
+  let dawnTracker = createWildsDawnTracker(state), dawnTimer = null, dawnStarted = null, dawnDay = null, resultTimer = null, resultSignature = '', resultStarted = false;
+  const resultGate = createResultActionGate({ cooldownMs: 1000, quietMs: 300 });
   const held = new Map(), pressed = new Set(), reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
   try { storage = window.localStorage; const raw = storage.getItem(SAVE_KEY); if (raw && raw.length <= SAVE_LIMIT) pendingSave = restore(raw); if (pendingSave?.phase === 'dead') pendingSave = null; saveAvailable = Boolean(pendingSave); } catch { storage = null; saveStatus = 'Saving unavailable in this browser'; }
 
@@ -49,8 +74,9 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   const selectedName = node('div', 'wilds-selected-name'), objective = node('div', 'wilds-objective'), objectiveTitle = node('b', '', 'BEFORE NIGHTFALL'), objectiveText = node('span', 'Gather wood. Make a workbench. Build shelter before dusk.'); objective.append(objectiveTitle, objectiveText);
   const status = node('p', 'wilds-status'); status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
   const overlay = node('div', 'wilds-overlay'), overlayCard = node('div', 'wilds-overlay-card'), overlayTag = node('span', 'wilds-overlay-tag'), overlayTitle = node('h3', ''), overlayText = node('p', ''), overlayActions = node('div', 'wilds-overlay-actions');
+  const expeditionStats = node('div', 'wilds-expedition-stats'), resultNote = node('p', 'wilds-result-note'); expeditionStats.hidden = true; resultNote.hidden = true;
   const resumeButton = node('button', 'wilds-pause-resume', 'Return to the wilds'), continueButton = node('button', 'wilds-continue-save', 'Continue saved expedition'), freshButton = node('button', 'wilds-new-world', 'Start a new world'); for (const button of [resumeButton, continueButton, freshButton]) button.type = 'button';
-  const seedField = node('label', 'wilds-seed-field', 'NEW WORLD SEED'), seedInput = node('input', 'wilds-seed'); seedInput.type = 'text'; seedInput.maxLength = 48; seedInput.placeholder = 'Leave blank for a new wilderness'; seedField.append(seedInput); overlayActions.append(resumeButton, continueButton, seedField, freshButton); overlayCard.append(overlayTag, overlayTitle, overlayText, overlayActions); overlay.append(overlayCard);
+  const seedField = node('label', 'wilds-seed-field', 'NEW WORLD SEED'), seedInput = node('input', 'wilds-seed'); seedInput.type = 'text'; seedInput.maxLength = 48; seedInput.placeholder = 'Leave blank for a new wilderness'; seedField.append(seedInput); overlayActions.append(resumeButton, continueButton, seedField, resultNote, freshButton); overlayCard.append(overlayTag, overlayTitle, overlayText, expeditionStats, overlayActions); overlay.append(overlayCard);
   const inventory = node('div', 'wilds-inventory'); inventory.id = 'wilds-inventory'; inventory.hidden = true; inventory.setAttribute('role', 'dialog'); inventory.setAttribute('aria-modal', 'true'); inventory.setAttribute('aria-labelledby', 'wilds-inventory-title');
   const inventoryCard = node('div', 'wilds-inventory-card'), inventoryHeader = node('div', 'wilds-inventory-header'), inventoryTitle = node('h3', '', 'Pack & craft'); inventoryTitle.id = 'wilds-inventory-title';
   const closeInventory = node('button', 'wilds-close-inventory', 'Back to world · Tab'); closeInventory.type = 'button'; inventoryHeader.append(inventoryTitle, closeInventory);
@@ -61,8 +87,11 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   const craftStatus = node('p', 'wilds-craft-status'); craftStatus.setAttribute('role', 'status'); craftStatus.setAttribute('aria-live', 'polite');
   inventoryCard.append(inventoryHeader, inventoryNote, inventorySummary, packActions, recipeList, craftStatus); inventory.append(inventoryCard);
   board.append(canvas, hud, compass, crosshair, aimHint, target, selectedName, hotbar, overlay, inventory);
+  const victory = mountVoxelVictory({ container: board, resultCard: overlayCard, kind: 'wilds' });
+  const dawnVictory = mountVoxelVictory({ container: board, kind: 'wilds' });
   const hint = node('p', 'wilds-controls-hint'), help = node('details', 'wilds-field-guide'), helpTitle = node('summary', '', 'Field guide & survival tips'), helpText = node('p', '', 'Wood becomes planks. Craft a workbench, then a stone pick. Put a campfire inside your shelter and keep food in your pack. Mine deeper for iron to make a stronger pick and sword; stronger enemies arrive each night. Hold your aim on a block to finish mining. Place blocks on the face you are looking at: you cannot build inside yourself or enemies. Falling hurts. Sprinting spends food. Your world saves in this browser on this host.'); help.append(helpTitle, helpText);
   view.append(toolbar, board, objective, status, hint, help); container.append(view);
+  if (document.head && !document.getElementById('semag-voxel-victory-styles')) { const stylesheet = node('link', ''); stylesheet.id = 'semag-voxel-victory-styles'; stylesheet.rel = 'stylesheet'; stylesheet.href = '/voxel-victory.css'; document.head.append(stylesheet); }
 
   try { renderer = createSurvivalRenderer(canvas); } catch (error) { rendererError = error?.message || 'A WebGL capable browser is required.'; setPaused(state, true); }
   if (pendingSave) { choosingSave = true; setPaused(state, true); saveStatus = 'Saved expedition available'; }
@@ -86,8 +115,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   function pause() { if (destroyed || state.phase === 'dead' || state.paused) return; release(); setPaused(state, true); resetPresentation(); exitLook(); save(true); refresh(); }
   function resume() { if (destroyed || choosingSave || rendererError || state.phase === 'dead') return; inventoryOpen = false; inventory.hidden = true; release(); setPaused(state, false); resetPresentation(); refresh(); canvas.focus({ preventScroll: true }); }
   function togglePause() { if (inventoryOpen) { leaveInventory(); return; } if (state.paused) resume(); else pause(); }
-  function replaceWorld(next) { release(); exitLook(); state = next; soundEvent = state.eventId; choosingSave = false; pendingSave = null; inventoryOpen = false; inventory.hidden = true; yaw = state.player.yaw; pitch = state.player.pitch; setPaused(state, Boolean(rendererError)); lastMessage = ''; lastSave = -1; resetPresentation(); save(true); refresh(); canvas.focus({ preventScroll: true }); }
-  function restart() { if (destroyed) return; replaceWorld(createState({ seed: seedInput.value.trim() || newSeed() })); }
+  function replaceWorld(next) { release(); exitLook(); state = next; victory.reset(); dawnVictory.reset(); resultGate.cancel(); resultGate.clearHeld(); resultStarted = false; resultSignature = ''; dawnTracker = createWildsDawnTracker(state); dawnStarted = dawnDay = null; if (dawnTimer !== null) clearTimeout(dawnTimer); dawnTimer = null; if (resultTimer !== null) clearTimeout(resultTimer); resultTimer = null; soundEvent = state.eventId; choosingSave = false; pendingSave = null; inventoryOpen = false; inventory.hidden = true; yaw = state.player.yaw; pitch = state.player.pitch; setPaused(state, Boolean(rendererError)); lastMessage = ''; lastSave = -1; resetPresentation(); save(true); refresh(); canvas.focus({ preventScroll: true }); }
+  function restart() { if (destroyed || state.phase === 'dead' && !resultGate.isReady(performance.now())) return; replaceWorld(createState({ seed: seedInput.value.trim() || newSeed() })); }
   function continueSaved() { if (!pendingSave || rendererError) return; replaceWorld(pendingSave); }
   function openInventory() { if (destroyed || choosingSave || rendererError || state.phase === 'dead' || inventoryOpen) return; release(); setPaused(state, true); resetPresentation(); inventoryOpen = true; exitLook(); save(true); refresh(); closeInventory.focus({ preventScroll: true }); }
   function leaveInventory() { if (!inventoryOpen) return; inventoryOpen = false; inventory.hidden = true; setText(craftStatus, ''); resume(); }
@@ -108,13 +137,46 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     const selected = state.inventory[state.selectedSlot]; setText(packSelected, selected ? `SELECTED · ${ITEMS[selected.id]?.name || selected.id}` : 'SELECTED · Empty slot'); discardButton.disabled = !selected;
     for (const recipe of recipeRows) { const result = canCraft(state, recipe.id); recipe.row.disabled = !result.ok; recipe.row.dataset.available = String(result.ok); setText(recipe.availability, result.ok ? 'CRAFT' : result.error || 'Needs materials'); recipe.row.title = result.ok ? `Craft ${RECIPES[recipe.id]?.name || recipe.id}` : result.error || 'Collect more materials'; }
   }
+  function refreshResultActions() {
+    if (resultTimer !== null) clearTimeout(resultTimer); resultTimer = null;
+    const terminal = state.phase === 'dead', now = performance.now(), ready = !terminal || resultGate.isReady(now);
+    freshButton.disabled = terminal && !ready; resultNote.hidden = !terminal || ready;
+    setText(resultNote, resultGate.waitingForRelease() ? 'Release your controls before beginning a new world.' : 'Take a breath. A new expedition will be ready in a moment.');
+    if (terminal && !ready) { const delay = resultGate.nextDelay(now); if (delay !== null) resultTimer = setTimeout(() => { resultTimer = null; if (!destroyed) refreshResultActions(); }, delay); }
+  }
+  function resultPress(event) {
+    if (destroyed || choosingSave || state.paused) return;
+    if (event.type === 'pointerdown' && !board.contains(event.target)) return;
+    resultGate.press(event.type === 'keydown' ? `key:${event.code || event.key}` : `pointer:${event.pointerId}`, performance.now());
+    if (state.phase === 'dead') refreshResultActions();
+  }
+  function resultRelease(event) {
+    resultGate.release(event.type === 'keyup' ? `key:${event.code || event.key}` : `pointer:${event.pointerId}`, performance.now());
+    if (state.phase === 'dead') refreshResultActions();
+  }
+  function showDawnMilestone() {
+    const dawn = dawnTracker.observe(state), now = performance.now();
+    if (dawn) {
+      if (dawnTimer !== null) clearTimeout(dawnTimer); dawnStarted = now; dawnDay = dawn.day;
+      dawnTimer = setTimeout(() => { dawnTimer = null; dawnStarted = null; if (!destroyed) dawnVictory.reset(); }, 2600);
+    }
+    if (state.paused || state.phase !== 'playing' || rendererError) { dawnVictory.reset(); dawnStarted = null; return; }
+    dawnVictory.observe({ phase: dawnStarted === null ? 'playing' : 'matchEnd', now, contextKey: `wilds:${state.seed}:dawn:${dawnDay}`, death: { started: dawnStarted !== null, remainingMs: 0 }, won: true, eligible: true, reducedMotion: reduced.matches, milestone: true, title: `Night ${dawnDay - 1} survived.`, kicker: 'DAWN BREAKS', copy: `Day ${dawnDay} begins · Reinforce. Restock. Keep building.` });
+  }
   function updateOverlay() {
     const phase = phaseOf(state), visible = Boolean(rendererError || choosingSave || phase === 'lost' || phase === 'paused' && !inventoryOpen); overlay.hidden = !visible;
     resumeButton.hidden = Boolean(rendererError || choosingSave || phase === 'lost'); continueButton.hidden = !choosingSave || Boolean(rendererError); freshButton.hidden = Boolean(rendererError) || !choosingSave && phase !== 'lost'; seedField.hidden = freshButton.hidden;
     if (rendererError) { setText(overlayTag, 'GRAPHICS UNAVAILABLE'); setText(overlayTitle, renderer?.contextLost ? 'Your expedition is safe' : 'The wilderness needs WebGL'); setText(overlayText, renderer?.contextLost ? rendererError : `${rendererError} Try a browser with hardware acceleration enabled.`); }
     else if (choosingSave) { setText(overlayTag, 'YOUR WORLD IS WAITING'); setText(overlayTitle, 'Continue your expedition?'); setText(overlayText, `Return to day ${pendingSave.day || 1} with your shelter and pack intact, or choose a seed for a new wilderness. A new world replaces the saved expedition.`); }
-    else if (phase === 'lost') { setText(overlayTag, 'EXPEDITION ENDED'); setText(overlayTitle, `You survived ${Math.floor(state.elapsed)} seconds`); setText(overlayText, `${state.stats.nights} nights weathered · ${state.stats.mined} blocks mined · ${state.stats.built} blocks placed. Build cover and prepare food before the next night.`); }
+    else if (phase === 'lost') { setText(overlayTag, 'EXPEDITION ENDED'); setText(overlayTitle, 'A world worth building.'); setText(overlayText, 'Every shelter started with one block. Take what you learned into your next expedition.'); }
     else { setText(overlayTag, 'WORLD PAUSED'); setText(overlayTitle, 'A quiet moment'); setText(overlayText, 'Your expedition is saved. Return when you are ready, then click the world to look around.'); }
+    if (phase === 'lost' && !rendererError) {
+      if (!resultStarted) { resultStarted = true; resultGate.begin(performance.now()); }
+      victory.decorateResult({ won: false, kicker: 'EXPEDITION ENDED', context: `Day ${state.day} · Seed ${state.seed}`, rank: `${state.stats.nights} ${state.stats.nights === 1 ? 'NIGHT' : 'NIGHTS'} SURVIVED` });
+      const signature = `${state.seed}:${state.tick}`;
+      if (signature !== resultSignature) { resultSignature = signature; expeditionStats.replaceChildren(); for (const [title, value] of wildsExpeditionSummary(state)) { const stat = node('div', ''); stat.append(node('span', '', title), node('b', '', value)); expeditionStats.append(stat); } }
+    } else victory.reset();
+    expeditionStats.hidden = phase !== 'lost' || Boolean(rendererError); overlay.dataset.result = phase; refreshResultActions();
     inventory.hidden = !inventoryOpen; inventoryButton.setAttribute('aria-expanded', String(inventoryOpen));
   }
   function publish(force = false) {
@@ -127,7 +189,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     const aimed = state.target, block = aimed && BLOCKS[aimed.id]; target.hidden = !aimed; setText(targetName, block?.name || ''); miningTrack.hidden = !state.mining || state.mining.progress <= 0; miningFill.style.width = `${state.mining ? clamp(state.mining.progress / Math.max(.001, state.mining.total), 0, 1) * 100 : 0}%`;
     const message = state.message || 'Gather wood and berries. Make a workbench, then prepare a shelter before nightfall.'; if (message !== lastMessage) { lastMessage = message; setText(status, message); }
     aimHint.hidden = Boolean(document.pointerLockElement === canvas || drag || phase !== 'playing' || inventoryOpen); crosshair.hidden = phase !== 'playing' || inventoryOpen;
-    updateSlots(); updateOverlay(); if (inventoryOpen) updateCrafting();
+    showDawnMilestone(); updateSlots(); updateOverlay(); if (inventoryOpen) updateCrafting();
     onUpdate({ phase, score: Math.floor(state.elapsed), scoreLabel: 'TIME ALIVE', scoreUnit: 's', scoreDigits: 0, recordKey: 'wilds-survival-v1', record: phase === 'lost' ? Math.floor(state.elapsed) : null, recordLabel: 'LONGEST RUN', detail: state.night ? `Night ${state.day}: find cover, keep food, and defend your shelter.` : `Day ${state.day}: ${state.objective || 'build shelter before dusk.'}` });
   }
   function render(fraction = 1, deltaMs = 0) {
@@ -184,7 +246,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   function contextmenu(event) { event.preventDefault(); }
   function graphicsError(event) { rendererError = event.detail?.message || 'Graphics interrupted. Waiting for the browser to restore WebGL.'; release(); inventoryOpen = false; inventory.hidden = true; setPaused(state, true); resetPresentation(); exitLook(); save(true); refresh(); }
   function graphicsRestored() { rendererError = ''; setPaused(state, true); resetPresentation(); refresh(); }
-  function blur() { release(); pause(); }
+  function blur() { release(); resultGate.clearHeld(); pause(); refreshResultActions(); }
   function visibility() { if (document.hidden) blur(); }
   function pagehide() { release(); save(true); }
   function keyboardHints() { setText(hint, `${displayKey('W A S D')} / arrows move · Mouse look (click to capture, drag fallback) · C / left click mine & attack · E / right click place · F eat / use · Space jump · Shift sprint · 1–8 / wheel select · Tab pack & craft · P pause · Esc release mouse`); }
@@ -197,6 +259,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   window.addEventListener('resize', fitViewport); document.addEventListener('fullscreenchange', fitViewport);
   const motion = () => { if (state.paused) render(); };
   window.addEventListener('keydown', keydown); window.addEventListener('keyup', keyup); window.addEventListener('blur', blur); window.addEventListener('pagehide', pagehide); document.addEventListener('visibilitychange', visibility); document.addEventListener('pointerlockchange', lockchange); document.addEventListener('pointerlockerror', lockerror);
+  window.addEventListener('keydown', resultPress, true); window.addEventListener('keyup', resultRelease, true); document.addEventListener('pointerdown', resultPress, true); document.addEventListener('pointerup', resultRelease, true); document.addEventListener('pointercancel', resultRelease, true);
   canvas.addEventListener('pointerdown', pointerdown); document.addEventListener('pointermove', pointermove); window.addEventListener('pointerup', pointerup); window.addEventListener('pointercancel', pointercancel); canvas.addEventListener('lostpointercapture', pointerup); canvas.addEventListener('wheel', wheel, { passive: false }); canvas.addEventListener('contextmenu', contextmenu); canvas.addEventListener('voxel-survival-renderer-error', graphicsError); canvas.addEventListener('voxel-survival-renderer-restored', graphicsRestored);
   hotbar.addEventListener('click', slotClick); inventorySummary.addEventListener('click', slotClick); discardButton.addEventListener('click', discardClick); recipeList.addEventListener('click', recipeClick); inventoryButton.addEventListener('click', openInventory); closeInventory.addEventListener('click', leaveInventory); resumeButton.addEventListener('click', resume); continueButton.addEventListener('click', continueSaved); freshButton.addEventListener('click', restart); soundButton.addEventListener('click', toggleSound); reduced.addEventListener('change', motion);
   keyboardHints(); refresh();
@@ -204,6 +267,6 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   return {
     getState() { return { ...snapshot(state), phase: phaseOf(state), enginePhase: state.phase, paused: state.paused, day: state.day, night: state.night, world: { width: state.world.width, height: state.world.height, depth: state.world.depth, revision: state.world.revision }, target: state.target ? JSON.parse(JSON.stringify(state.target)) : null, mining: state.mining ? { ...state.mining } : null, placement: getPlacement(state), menuOpen: inventoryOpen, choosingSave, saveAvailable, saveStatus, controls: { pointerLocked: document.pointerLockElement === canvas, lookYaw: yaw, lookPitch: pitch, held: [...held.values()] }, graphicsAvailable: Boolean(renderer?.available), displayTiming: presentation.getStats(), presentation: presentation.getPresentation(), renderer: renderer?.getStats?.() || null }; },
     getDisplayTiming: () => presentation.getStats(), restart, togglePause, pause, resume,
-    destroy() { if (destroyed) return; save(true); destroyed = true; release(); exitLook(); if (raf !== null) cancelAnimationFrame(raf); unsubscribe(); resize.disconnect(); window.removeEventListener('resize', fitViewport); document.removeEventListener('fullscreenchange', fitViewport); reduced.removeEventListener('change', motion); window.removeEventListener('keydown', keydown); window.removeEventListener('keyup', keyup); window.removeEventListener('blur', blur); window.removeEventListener('pagehide', pagehide); document.removeEventListener('visibilitychange', visibility); document.removeEventListener('pointerlockchange', lockchange); document.removeEventListener('pointerlockerror', lockerror); canvas.removeEventListener('pointerdown', pointerdown); document.removeEventListener('pointermove', pointermove); window.removeEventListener('pointerup', pointerup); window.removeEventListener('pointercancel', pointercancel); canvas.removeEventListener('lostpointercapture', pointerup); canvas.removeEventListener('wheel', wheel); canvas.removeEventListener('contextmenu', contextmenu); canvas.removeEventListener('voxel-survival-renderer-error', graphicsError); canvas.removeEventListener('voxel-survival-renderer-restored', graphicsRestored); audio?.close().catch(() => {}); renderer?.destroy(); view.remove(); },
+    destroy() { if (destroyed) return; save(true); destroyed = true; release(); victory.destroy(); dawnVictory.destroy(); if (dawnTimer !== null) clearTimeout(dawnTimer); if (resultTimer !== null) clearTimeout(resultTimer); dawnTimer = resultTimer = null; exitLook(); if (raf !== null) cancelAnimationFrame(raf); unsubscribe(); resize.disconnect(); window.removeEventListener('resize', fitViewport); document.removeEventListener('fullscreenchange', fitViewport); reduced.removeEventListener('change', motion); window.removeEventListener('keydown', keydown); window.removeEventListener('keyup', keyup); window.removeEventListener('keydown', resultPress, true); window.removeEventListener('keyup', resultRelease, true); document.removeEventListener('pointerdown', resultPress, true); document.removeEventListener('pointerup', resultRelease, true); document.removeEventListener('pointercancel', resultRelease, true); window.removeEventListener('blur', blur); window.removeEventListener('pagehide', pagehide); document.removeEventListener('visibilitychange', visibility); document.removeEventListener('pointerlockchange', lockchange); document.removeEventListener('pointerlockerror', lockerror); canvas.removeEventListener('pointerdown', pointerdown); document.removeEventListener('pointermove', pointermove); window.removeEventListener('pointerup', pointerup); window.removeEventListener('pointercancel', pointercancel); canvas.removeEventListener('lostpointercapture', pointerup); canvas.removeEventListener('wheel', wheel); canvas.removeEventListener('contextmenu', contextmenu); canvas.removeEventListener('voxel-survival-renderer-error', graphicsError); canvas.removeEventListener('voxel-survival-renderer-restored', graphicsRestored); audio?.close().catch(() => {}); renderer?.destroy(); view.remove(); },
   };
 }

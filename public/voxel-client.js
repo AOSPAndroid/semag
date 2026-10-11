@@ -19,6 +19,8 @@ import { inventoryControlForKey, inventoryItemReadout, inventoryLootPresentation
 import { mountVoxelLabelOverlay } from './voxel-label-overlay.js';
 import { isPauseShortcut } from './pause-shortcut.js';
 import { createEndPresentation } from './voxel-end-presentation.js';
+import { mountVoxelVictory } from './voxel-victory.js';
+import { createResultActionGate } from './practice-result-actions.js';
 
 export const LOOK_SENSITIVITY = 0.0025;
 export const FPS_BUTTONS = Object.freeze(['up', 'down', 'left', 'right', 'jump', 'crouch', 'walk', 'sprint', 'fire', 'reload', 'interact', 'aim', 'swap', 'grenade', 'heal', 'slot1', 'slot2', 'slot3', 'slot4', 'drop']);
@@ -100,6 +102,20 @@ export function roundResult(state, localTeam) {
   const won = winner === localTeam;
   const reason = ({ defuse: 'Device defused.', explosion: 'Device detonated.', time: 'Time expired. Both sites held.', elimination: won ? 'Opposing squad eliminated.' : 'Your squad was eliminated.' })[state.roundReason] || 'Round complete.';
   return { won, title: won ? 'Round secured.' : 'Round lost.', team: winner === 0 ? 'AMBER' : 'TEAL', role: winner === state.attackTeam ? 'BREACH' : 'HOLD', reason };
+}
+
+/** Final scores are team identities, including team zero; never infer a win from kills. */
+export function breachMatchResult(state, localId) {
+  const local = state?.players?.find(player => player.id === localId);
+  const count = value => Number.isFinite(value) ? Math.max(0, Math.round(value)) : 0;
+  const winner = state?.winner === 0 || state?.winner === 1 ? state.winner : null;
+  const won = !!local && winner !== null && winner === local.team;
+  const scores = [count(state?.scores?.[0]), count(state?.scores?.[1])];
+  const rows = (state?.players || []).filter(player => player && (player.team === 0 || player.team === 1))
+    .map(player => ({ id: player.id, team: player.team, self: player.id === localId, kills: count(player.kills), deaths: count(player.deaths), damage: count(player.damageDealt) }))
+    .sort((a, b) => a.team - b.team || b.kills - a.kills || b.damage - a.damage || a.id - b.id);
+  return { won, winner, team: local?.team ?? null, scores, map: state?.mapName || '',
+    kills: count(local?.kills), deaths: count(local?.deaths), damage: count(local?.damageDealt), shots: count(local?.shots), rows };
 }
 
 /** Navigation contains only connected, living teammates; opponents never supply markers. */
@@ -393,6 +409,8 @@ async function boot() {
   const hitFeedback = createHitFeedback(), hitMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const endPresentation = createEndPresentation();
   let endView = { holding: false, started: false, finished: false, remainingMs: 0 };
+  let resultVisible = false, resultActionsReady = false, resultContext = null, resultActionTimer = null;
+  const resultActions = createResultActionGate();
   let endObservedAt = -Infinity;
   function observeEnd(now = performance.now()) {
     // Network/UI callbacks use performance.now(); RAF supplies a frame timestamp.
@@ -400,7 +418,18 @@ async function boot() {
     now = Math.max(now, endObservedAt); endObservedAt = now;
     const viewedSelf = presentationPlayers.find(player => player.id === playerId);
     const spectating = viewedSelf?.alive === false && presentationPlayers.some(player => player.id !== playerId && player.team === viewedSelf.team && player.alive);
-    endView = endPresentation.observe(state?.phase, now, { contextKey: `${state?.mapId}:${state?.matchId}:${state?.round}`, eligible: !destroyed && connected && !graphicsError && !document.hidden && !modalOpen && (endView.holding || entered && (!paused || spectating)), reducedMotion: hitMotion.matches });
+    const contextKey = `${state?.mapId}:${state?.matchId}:${state?.round}`;
+    const eligible = !destroyed && connected && !graphicsError && !document.hidden && !modalOpen && (endView.holding || entered && (!paused || spectating));
+    const death = endPresentation.observe(state?.phase, now, { contextKey, eligible, reducedMotion: hitMotion.matches });
+    const battle = breachMatchResult(state, playerId);
+    const reward = victory.observe({ phase: state?.phase, now, contextKey, death, won: battle.won, eligible, reducedMotion: hitMotion.matches,
+      title: battle.won ? 'Your squad takes the match.' : 'The match is settled.', kicker: battle.won ? 'MATCH VICTORY' : 'MATCH COMPLETE', copy: battle.map });
+    endView = { ...death, holding: death.holding || reward.holding, remainingMs: Math.max(death.remainingMs, reward.remainingMs), reward };
+    if (state?.phase !== 'matchEnd' || !connected) {
+      resultActions.cancel(); clearTimeout(resultActionTimer); resultActionTimer = null; resultVisible = false; resultActionsReady = false; resultContext = null;
+    } else if (!endView.holding && (!resultVisible || resultContext !== contextKey)) {
+      resultVisible = true; resultActionsReady = false; resultContext = contextKey; resultActions.begin(now);
+    }
     return endView;
   }
   const hitElements = { crosshair: $('crosshair'), scope: $('scope-reticle'), marker: $('hit-marker') };
@@ -424,6 +453,7 @@ async function boot() {
   let healthView = null; let healthGain = 0; let healthGainUntil = 0; let previewWeapon = null;
   let squadSignature = ''; let rosterSignature = ''; let idleDrawSignature = ''; let mapPlanId = ''; const mapMarkers = new Map();
   const audio = new GameAudio(); const eventSeen = new Set(); const eventOrder = []; const kills = [];
+  const victory = mountVoxelVictory({ container: $('game-shell'), resultCard: $('game-overlay').querySelector('.overlay-card'), kind: 'breach', audio });
   const meleeImpacts = createMeleeImpactReporter(audio), gunImpacts = createGunImpactReporter(audio), parryAudio = createParryAudioReporter(audio);
   const enemyFootsteps = createEnemyFootstepPresenter(audio);
   const reloadAudio = createReloadAudioPresenter(audio), staminaElements = { meter: $('stamina-meter'), fill: $('stamina-fill') };
@@ -684,6 +714,41 @@ async function boot() {
     }
   }
 
+  function paintResultActions() {
+    clearTimeout(resultActionTimer); resultActionTimer = null;
+    const visible = !destroyed && connected && state?.phase === 'matchEnd' && resultVisible && !endView.holding;
+    setHidden($('result-action-note'), !visible);
+    if (!visible) { resultActionsReady = false; return; }
+    const now = performance.now(), ready = resultActions.isReady(now); resultActionsReady = ready;
+    for (const id of ['rematch-button', 'overlay-ready']) setDisabled($(id), !ready || !(connected && allConnected() && !graphicsError));
+    setText($('result-action-note'), ready ? 'Return to the lobby when your squad is ready.' : resultActions.waitingForRelease() ? 'Release held controls to continue.' : 'Take a moment. Your next match can wait.');
+    const delay = resultActions.nextDelay(now);
+    if (delay !== null) resultActionTimer = setTimeout(paintResultActions, delay);
+  }
+  function paintMatchResults() {
+    const visible = connected && !graphicsError && state?.phase === 'matchEnd' && !endView.holding;
+    const firstResult = $('match-results').hidden;
+    setHidden($('match-results'), !visible); if (!visible) return;
+    if (firstResult && !modalOpen) $('overlay-title').focus({ preventScroll: true });
+    const result = breachMatchResult(state, playerId);
+    victory.decorateResult({ won: result.won, kicker: result.won ? 'MATCH VICTORY' : 'MATCH COMPLETE', title: result.won ? 'Your squad takes the match.' : 'The match is settled.', context: `${mapName || result.map} · ${teamSize}v${teamSize}`, rank: result.team === 0 ? 'AMBER SQUAD' : result.team === 1 ? 'TEAL SQUAD' : 'MATCH REPORT' });
+    setText($('result-kills'), result.kills); setText($('result-deaths'), result.deaths); setText($('result-damage'), result.damage.toLocaleString()); setText($('result-shots'), result.shots);
+    const signature = JSON.stringify([result, roster.map(person => [person?.id, person?.name])]);
+    if ($('result-roster').dataset.signature === signature) return;
+    $('result-roster').dataset.signature = signature;
+    $('result-scoreline').replaceChildren(...result.scores.map((score, team) => {
+      const side = document.createElement('div'); side.dataset.team = String(team); side.classList.toggle('is-winner', result.winner === team);
+      const label = document.createElement('span'); label.textContent = team === 0 ? 'AMBER' : 'TEAL';
+      const value = document.createElement('strong'); value.textContent = String(score); side.append(label, value); return side;
+    }));
+    $('result-roster').replaceChildren(...result.rows.map(player => {
+      const row = document.createElement('li'); row.dataset.team = String(player.team); row.classList.toggle('is-self', player.self);
+      const name = document.createElement('strong'); name.textContent = `${lookupName(player.id)}${player.self ? ' · YOU' : ''}`;
+      const team = document.createElement('span'); team.textContent = player.team === 0 ? 'AMBER' : 'TEAL';
+      const total = document.createElement('span'); total.textContent = `${player.kills} K / ${player.deaths} D · ${player.damage.toLocaleString()} DMG`; row.append(name, team, total); return row;
+    }));
+  }
+
   function updateUI() {
     if (!labelsActive()) worldLabels.clear();
     lastHUDAt = performance.now(); paintedHUDKey = hudKey();
@@ -711,7 +776,7 @@ async function boot() {
       const readyArrow = document.createElement('span'); readyArrow.textContent = me?.ready ? '✓' : '→'; $('ready-button').append(readyArrow);
     }
     setAttribute($('ready-button'), 'aria-pressed', String(!!me?.ready));
-    setDisabled($('rematch-button'), ending.holding || !connected || !allConnected() || !!graphicsError);
+    setDisabled($('rematch-button'), ending.holding || !resultVisible || !resultActions.isReady(lastHUDAt) || !connected || !allConnected() || !!graphicsError);
     const overlayReady = $('overlay-ready'), readySource = phase === 'matchEnd' ? $('rematch-button') : $('ready-button');
     overlayReady.hidden = ending.holding || !connected || !['lobby', 'matchEnd'].includes(phase) || !!graphicsError;
     overlayReady.disabled = readySource.disabled;
@@ -857,7 +922,7 @@ async function boot() {
       overlay = true; kicker = `${teamSize}V${teamSize} / ${mapName || 'PRIVATE MATCH'}`; title = me?.ready ? `Ready. Waiting for ${waiting}.` : 'Take your position.';
       subtitle = me?.ready ? `${readyCount} of ${capacity} players ready. Share your room invite; the countdown begins when everyone is ready.` : `Open Room setup to choose your loadout and invite the other ${capacity - 1} players, then ready up. Every seat must be connected and ready.`;
     }
-    else if (phase === 'matchEnd' && !ending.holding) { overlay = true; kicker = 'MATCH COMPLETE'; title = state.winner === local?.team ? 'Your team takes the match.' : 'A hard-fought match.'; subtitle = `${state.scores?.[0] || 0} — ${state.scores?.[1] || 0}. Rematch returns everyone to the lobby. All players must ready up again.`; }
+    else if (phase === 'matchEnd' && !ending.holding) { const battle = breachMatchResult(state, playerId); overlay = true; kicker = battle.won ? 'MATCH VICTORY' : 'MATCH COMPLETE'; title = battle.won ? 'Your squad takes the match.' : 'The match is settled.'; subtitle = battle.won ? 'Every angle held. Every round earned. Take this one with your squad.' : 'Review your angles, reset your loadout, and bring the squad back stronger.'; }
     else if (local?.alive && ['countdown', 'buy', 'fight'].includes(phase) && (paused || !entered) && !modalOpen) { overlay = true; kicker = phase === 'countdown' || phase === 'buy' ? `${roles.toUpperCase()} / ROUND ${String(state.round).padStart(2, '0')}` : 'CONTROLS RELEASED'; title = !entered ? 'Enter the arena.' : 'Controls released.'; subtitle = phase === 'countdown' || phase === 'buy' ? `${roles}: ${local.team === attackTeam ? 'plant at A or B.' : 'protect A and B, then defuse.'} Choose a weapon; movement unlocks when live.` : 'The multiplayer round keeps running. Press P or Enter arena to resume; Pause & loadout opens your menu.'; enter = true; }
     setHidden($('game-overlay'), !overlay); setText($('overlay-kicker'), kicker); setText($('overlay-title'), title); setText($('overlay-subtitle'), subtitle);
     setHidden($('enter-arena'), !enter); setHidden($('retry-graphics'), !graphicsError);
@@ -876,6 +941,7 @@ async function boot() {
     setText($('phase-title'), phase === 'roundEnd' ? result?.title || 'Round complete.' : phase === 'buy' ? 'Choose your weapon.' : 'Take your angle.');
     setText($('phase-detail'), phase === 'roundEnd' ? `${result?.reason || ''} Next round in ${clock.seconds}s.${state.round === 3 ? ' Teams switch roles.' : ''}` : phase === 'buy' ? `${clock.seconds}s until live · ${(local?.weapon || 'carbine').toUpperCase()} selected` : `${clock.seconds}s until setup · ${roles === 'Breach' ? 'Plant at A or B.' : 'Protect both sites.'}`);
     setHidden($('phase-shortcuts'), phase === 'roundEnd' || touchMode);
+    paintMatchResults(); paintResultActions();
     updateTacticalMap();
     renderRoster();
   }
@@ -1043,7 +1109,7 @@ async function boot() {
     });
     ws.addEventListener('close', event => {
       if (socket !== ws || destroyed) return;
-      connected = false; endPresentation.reset(); neutralize({ pause: true, unlock: true }); playerId = null; pending = []; snapshots = []; timeline.reset(); correction.reset(); setText($('ping'), '— ms');
+      connected = false; endPresentation.reset(); victory.reset(); resultActions.cancel(); resultVisible = false; resultActionsReady = false; clearTimeout(resultActionTimer); neutralize({ pause: true, unlock: true }); playerId = null; pending = []; snapshots = []; timeline.reset(); correction.reset(); setText($('ping'), '— ms');
       if (event.code === 4403 || event.code === 4404) permanentError = true;
       if (frameId) cancelAnimationFrame(frameId); frameId = null; lastFrameAt = 0;
       updateUI();
@@ -1142,6 +1208,19 @@ async function boot() {
   function updateLayout() { neutralize({ pause: entered, unlock: true }); updateKeyLabels(); }
   const unsubscribeLayout = subscribeKeyboardLayout(updateLayout); updateKeyLabels();
   // Capture before nested armory widgets; text entry still owns P inside search/name fields.
+  // Gameplay neutralize() must not erase a physical attack still held at the final kill.
+  listen(window, 'mousedown', event => { resultActions.press(`mouse:${event.button}`, performance.now()); paintResultActions(); }, true);
+  listen(window, 'mouseup', event => { resultActions.release(`mouse:${event.button}`, performance.now()); paintResultActions(); }, true);
+  listen(window, 'pointerdown', event => { resultActions.press(`pointer:${event.pointerId}`, performance.now()); paintResultActions(); }, true);
+  for (const type of ['pointerup', 'pointercancel']) listen(window, type, event => {
+    const now = performance.now(); resultActions.release(`pointer:${event.pointerId}`, now);
+    if (event.pointerType === 'mouse' && (event.buttons === 0 || type === 'pointercancel')) {
+      for (let button = 0; button < 5; button++) resultActions.release(`mouse:${button}`, now);
+    }
+    paintResultActions();
+  }, true);
+  listen(window, 'keydown', event => { resultActions.press(`key:${event.code || event.key}`, performance.now()); paintResultActions(); }, true);
+  listen(window, 'keyup', event => { resultActions.release(`key:${event.code || event.key}`, performance.now()); paintResultActions(); }, true);
   listen(window, 'keydown', event => {
     if (!isPauseShortcut(event) || destroyed || document.hidden) return;
     event.preventDefault(); togglePauseMenu(event);
@@ -1166,9 +1245,9 @@ async function boot() {
     if (action && !isFormTarget(event.target)) event.preventDefault();
   });
   listen(document, 'focusin', event => { if (isFormTarget(event.target) && !actionPointers.size && !padPointers.size) neutralize(); });
-  listen(window, 'blur', () => neutralize({ pause: entered, unlock: true }));
+  listen(window, 'blur', () => { resultActions.clearHeld(); paintResultActions(); neutralize({ pause: entered, unlock: true }); });
   listen(document, 'visibilitychange', () => {
-    if (document.hidden) { endPresentation.reset(); endView = observeEnd(); neutralize({ pause: entered, unlock: true }); if (frameId) cancelAnimationFrame(frameId); frameId = null; lastFrameAt = 0; }
+    if (document.hidden) { endPresentation.reset(); victory.reset(); endView = observeEnd(); neutralize({ pause: entered, unlock: true }); if (frameId) cancelAnimationFrame(frameId); frameId = null; lastFrameAt = 0; }
     else { renderer?.resize(); updateUI(); wake(); }
   });
   listen(document, 'pointerlockchange', () => {
@@ -1206,7 +1285,7 @@ async function boot() {
   listen($('close-room'), 'click', closeRoom); listen($('close-room-bottom'), 'click', resumeRoom);
   listen($('arena-guide-button'), 'click', openGuide); listen($('room-guide-button'), 'click', openGuide);
   listen($('ready-button'), 'click', () => { playerName = saveName($('player-name').value); $('player-name').value = playerName; send({ type: 'join', name: playerName }); send({ type: 'ready', ready: !roster.find(player => player?.id === playerId)?.ready }); });
-  listen($('rematch-button'), 'click', () => { if (!observeEnd().holding && state?.phase === 'matchEnd') send({ type: 'rematch' }); });
+  listen($('rematch-button'), 'click', () => { if (!observeEnd().holding && resultVisible && resultActions.isReady(performance.now()) && connected && allConnected() && !graphicsError && state?.phase === 'matchEnd') send({ type: 'rematch' }); });
   listen($('overlay-ready'), 'click', () => (state?.phase === 'matchEnd' ? $('rematch-button') : $('ready-button')).click());
   listen($('player-name'), 'change', () => { playerName = saveName($('player-name').value); $('player-name').value = playerName; send({ type: 'join', name: playerName }); });
   listen($('loadout-select'), 'change', () => {
@@ -1220,7 +1299,7 @@ async function boot() {
     spectatorId = allies[(allies.findIndex(player => player.id === spectatorId) + 1) % Math.max(1, allies.length)]?.id ?? null; updateUI(); draw();
   });
   listen($('sound-button'), 'click', async () => {
-    const enabled = await audio.setEnabled(!audio.enabled); setAttribute($('sound-button'), 'aria-pressed', String(enabled)); setAttribute($('sound-button'), 'aria-label', enabled ? 'Mute sound' : 'Enable sound'); $('sound-button').title = enabled ? 'Mute sound' : 'Enable sound'; toast(enabled ? 'Sound on.' : 'Sound off.');
+    const enabled = await audio.setEnabled(!audio.enabled); observeEnd(); setAttribute($('sound-button'), 'aria-pressed', String(enabled)); setAttribute($('sound-button'), 'aria-label', enabled ? 'Mute sound' : 'Enable sound'); $('sound-button').title = enabled ? 'Mute sound' : 'Enable sound'; toast(enabled ? 'Sound on.' : 'Sound off.');
   });
   async function toggleFullscreen() {
     neutralize({ pause: entered, unlock: true });
@@ -1291,7 +1370,7 @@ async function boot() {
   listen($('copy-invite'), 'click', async () => { try { await copyText(invite); toast('Invite link copied.'); } catch (cause) { toast(cause.message); } });
   const pingTimer = setInterval(() => { if (connected && !document.hidden) send({ type: 'ping', time: performance.now() }); }, 1500);
   function destroy() {
-    if (destroyed) return; neutralize({ pause: true, unlock: true }); destroyed = true; endPresentation.reset();
+    if (destroyed) return; neutralize({ pause: true, unlock: true }); destroyed = true; endPresentation.reset(); victory.destroy(); resultActions.cancel(); clearTimeout(resultActionTimer);
     loadoutArmory.destroy(); arenaArmory.destroy();
     clearTimeout(reconnectTimer); clearTimeout(toastTimer); clearInterval(pingTimer);
     clearInterval(inputHeartbeat); inputHeartbeat = null;
@@ -1299,7 +1378,7 @@ async function boot() {
     for (const remove of removers) remove(); pending = []; snapshots = []; kills.length = 0; eventSeen.clear();
   }
   listen(window, 'pagehide', destroy);
-  const inspect = () => clone({ state, players: roster, playerId, input: currentInput(), predictedPlayer, presentationPlayer, presentationPlayers, predictionRemainder: accumulator, predictionTick, actionQueue: actionInputs.inspect(), timeline: timeline.getState(), correction: correction.getState(), ending: { ...endView }, connected, controls: { pointerLocked: pointerLocked(), fallback, touch: touchMode, paused, entered, modalOpen }, queueLength: pending.length, renderCount, crosshair: reticleView, renderStats: renderer?.stats || null, worldLabels: worldLabels.inspect(), audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), meleeImpactAudio: meleeImpacts.inspect(), reloadAudio: reloadAudio.inspect(), reloadSounds: audio.inspectReloads(), enemyFootsteps: enemyFootsteps.inspect(), footstepSounds: audio.inspectFootsteps(), gunImpactAudio: gunImpacts.inspect(), parryAudio: parryAudio.inspect(), parrySounds: audio.inspectParries(), stamina: staminaView, weaponWheel: weaponWheel.inspect(), graphicsError, spectatorId });
+  const inspect = () => clone({ state, players: roster, playerId, input: currentInput(), predictedPlayer, presentationPlayer, presentationPlayers, predictionRemainder: accumulator, predictionTick, actionQueue: actionInputs.inspect(), timeline: timeline.getState(), correction: correction.getState(), ending: { ...endView, resultVisible, resultActionsReady, victory: victory.inspect() }, connected, controls: { pointerLocked: pointerLocked(), fallback, touch: touchMode, paused, entered, modalOpen }, queueLength: pending.length, renderCount, crosshair: reticleView, renderStats: renderer?.stats || null, worldLabels: worldLabels.inspect(), audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), meleeImpactAudio: meleeImpacts.inspect(), reloadAudio: reloadAudio.inspect(), reloadSounds: audio.inspectReloads(), enemyFootsteps: enemyFootsteps.inspect(), footstepSounds: audio.inspectFootsteps(), gunImpactAudio: gunImpacts.inspect(), parryAudio: parryAudio.inspect(), parrySounds: audio.inspectParries(), stamina: staminaView, weaponWheel: weaponWheel.inspect(), graphicsError, spectatorId });
   window.SemagVoxel = Object.freeze({ getState: inspect, inspect });
   updateUI();
   try {

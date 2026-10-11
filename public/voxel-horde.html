@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="/voxel-armory-ui.css">
   <link rel="stylesheet" href="/voxel-crosshair.css">
   <link rel="stylesheet" href="/voxel-setup-ui.css">
+  <link rel="stylesheet" href="/voxel-victory.css">
 </head>
 <body>
   <main class="practice-app horde-app" id="horde-app" data-phase="lobby">
@@ -62,7 +63,26 @@
             <div class="practice-setup-actions"><button class="practice-primary" id="horde-start" type="submit"><span id="horde-start-label">Start survival</span><span aria-hidden="true">→</span></button><small class="practice-start-note" id="horde-start-note">Solo · starts only when you choose · P pauses</small></div>
           </form>
           <div class="practice-card" id="horde-pause-card" hidden><span class="practice-eyebrow" id="horde-pause-tag">TAKE A BREATH</span><h2 id="horde-pause-title">Paused.</h2><p id="horde-pause-copy">The world and every enemy are frozen. Press P to return, or change your loadout and setup for a new run.</p><button class="practice-primary" id="horde-resume" type="button" aria-keyshortcuts="P"><span>Return to the fight</span><span aria-hidden="true">→</span></button><div class="practice-secondary-actions"><button id="horde-restart" type="button">New solo run</button><button id="horde-change-setup" type="button">Change loadout &amp; setup</button></div></div>
-          <div class="practice-card" id="horde-result" role="region" aria-labelledby="horde-result-title" hidden><span class="practice-eyebrow">THE HORDE HELD THE LINE</span><h2 id="horde-result-title">Overrun.</h2><p id="horde-result-copy">Every wave asks more of your aim, positioning and timing.</p><dl class="practice-result-stats horde-result-stats"><div><dt>DAMAGE DEALT</dt><dd id="horde-result-damage">0</dd></div><div><dt>WAVE REACHED</dt><dd id="horde-result-wave">1</dd></div><div><dt id="horde-result-kills-label">HOSTILES DEFEATED</dt><dd id="horde-result-kills">0</dd></div><div><dt>SURVIVED</dt><dd id="horde-result-time">0:00</dd></div></dl><button class="practice-primary" id="horde-replay" type="button"><span id="horde-replay-label">Replay</span><span aria-hidden="true">→</span></button><button class="practice-secondary" id="horde-result-setup" type="button">Change setup</button></div>
+          <div class="practice-card" id="horde-result" role="region" aria-labelledby="horde-result-title" hidden>
+            <span class="practice-eyebrow">THE LAST STAND · <span id="horde-result-map"></span></span>
+            <h2 id="horde-result-title">Overrun.</h2><p id="horde-result-copy">Every wave asks more of your aim, positioning and timing.</p>
+            <dl class="practice-result-stats horde-result-stats">
+              <div><dt>YOUR DAMAGE</dt><dd id="horde-result-damage">0</dd></div>
+              <div><dt>WAVES CLEARED</dt><dd id="horde-result-cleared">0</dd></div>
+              <div><dt id="horde-result-kills-label">HOSTILES DEFEATED</dt><dd id="horde-result-kills">0</dd></div>
+              <div><dt>SURVIVED</dt><dd id="horde-result-time">0:00</dd></div>
+              <div><dt>WAVE REACHED</dt><dd id="horde-result-wave">1</dd></div>
+              <div><dt>YOUR SHOTS FIRED</dt><dd id="horde-result-shots">0</dd></div>
+              <div id="horde-result-personal-kills-stat"><dt>YOUR ELIMINATIONS</dt><dd id="horde-result-personal-kills">0</dd></div>
+              <div><dt id="horde-result-team-damage-label">SQUAD DAMAGE TAKEN</dt><dd id="horde-result-team-damage">0</dd></div>
+              <div id="horde-result-revives-stat"><dt>SQUAD REVIVES</dt><dd id="horde-result-revives">0</dd></div>
+            </dl>
+            <div class="voxel-result-footer">
+              <p class="practice-weapon-note" id="horde-result-action-note" role="status">A moment to review your stand…</p>
+              <button class="practice-primary" id="horde-replay" type="button" disabled><span id="horde-replay-label">Make another stand</span><span aria-hidden="true">→</span></button>
+              <button class="practice-secondary" id="horde-result-setup" type="button" disabled>Change setup</button>
+            </div>
+          </div>
           <div class="practice-countdown" id="horde-countdown" hidden><span>YOUR STAND BEGINS</span><strong id="horde-countdown-value">3</strong><small>Watch the entry points. Protect your reloads.</small><button class="practice-primary" id="horde-enter" type="button" hidden><span>Enter the arena</span><span aria-hidden="true">→</span></button></div>
           <div class="practice-card" id="horde-connection-card" hidden><span class="practice-eyebrow">YOUR SQUAD</span><h2 id="horde-connection-title">Connecting…</h2><p id="horde-connection-copy">Finding your seat on the host.</p><a class="practice-primary" href="/"><span>Return to Semag</span><span aria-hidden="true">→</span></a></div>
         </div>

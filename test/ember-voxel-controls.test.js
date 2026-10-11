@@ -112,14 +112,18 @@ function mountedFixture() {
     createBuffer: () => { const buffer = { id: ++bufferId }; buffers.add(buffer); return buffer; }, deleteBuffer: buffer => buffers.delete(buffer),
   }, { get: (target, key) => target[key] ?? (() => {}) });
   class Node {
-    constructor(tag) { this.tagName = tag.toUpperCase(); this.className = ''; this.children = []; this.listeners = new Map(); this.dataset = {}; this.style = {}; this.attrs = {}; this.width = 960; this.height = 540; this.hidden = false; }
-    append(...children) { for (const child of children) { child.parent = this; this.children.push(child); } }
-    insertBefore(child, reference) { child.parent = this; this.children.splice(this.children.indexOf(reference), 0, child); }
+    constructor(tag) { this.tagName = tag.toUpperCase(); this.className = ''; this.children = []; this.listeners = new Map(); this.dataset = {}; this.style = {}; this.attrs = {}; this.width = 960; this.height = 540; this.hidden = false; this.classList = { contains: name => this.className.split(' ').includes(name), add: name => { if (!this.classList.contains(name)) this.className = `${this.className} ${name}`.trim(); }, remove: name => { this.className = this.className.split(' ').filter(value => value !== name).join(' '); } }; }
+    append(...children) { for (const child of children) { child.parent = child.parentElement = this; child.ownerDocument ||= this.ownerDocument; this.children.push(child); } }
+    insertBefore(child, reference) { child.parent = child.parentElement = this; child.ownerDocument ||= this.ownerDocument; const index = this.children.indexOf(reference); this.children.splice(index < 0 ? this.children.length : index, 0, child); }
+    get firstChild() { return this.children[0] || null; }
+    contains(target) { return this === target || this.children.some(child => child.contains(target)); }
     replaceChildren(...children) { this.children = []; this.append(...children); }
     remove() { if (this.parent) this.parent.children = this.parent.children.filter(child => child !== this); }
     setAttribute(key, value) { this.attrs[key] = String(value); }
+    getAttribute(key) { return this.attrs[key] ?? null; }
+    removeAttribute(key) { delete this.attrs[key]; }
     closest(selector) { return selector.split(',').some(value => value.trim() === this.tagName.toLowerCase()) ? this : this.parent?.closest(selector) || null; }
-    querySelector(selector) { for (const child of this.children) { if (child.tagName.toLowerCase() === selector || selector.startsWith('.') && child.className.split(' ').includes(selector.slice(1))) return child; const found = child.querySelector(selector); if (found) return found; } return null; }
+    querySelector(selector) { for (const child of this.children) { if (selector.split(',').some(value => child.tagName.toLowerCase() === value.trim() || value.trim().startsWith('.') && child.className.split(' ').includes(value.trim().slice(1)))) return child; const found = child.querySelector(selector); if (found) return found; } return null; }
     addEventListener(type, handler) { if (!this.listeners.has(type)) this.listeners.set(type, new Set()); this.listeners.get(type).add(handler); }
     removeEventListener(type, handler) { this.listeners.get(type)?.delete(handler); }
     emit(type, values = {}) { const event = { target: this, preventDefault() { this.defaultPrevented = true; }, ...values }; for (const handler of this.listeners.get(type) || []) handler(event); }
@@ -131,7 +135,8 @@ function mountedFixture() {
   }
   const documentNode = new Node('document'), windowNode = new Node('window'), motion = new Node('media');
   motion.matches = false; windowNode.matchMedia = () => motion;
-  documentNode.createElement = tag => new Node(tag); documentNode.createTextNode = value => { const node = new Node('text'); node.textContent = value; return node; };
+  documentNode.ownerDocument = documentNode;
+  documentNode.createElement = tag => { const node = new Node(tag); node.ownerDocument = documentNode; return node; }; documentNode.createElementNS = (_namespace, tag) => documentNode.createElement(tag); documentNode.createTextNode = value => { const node = documentNode.createElement('text'); node.textContent = value; return node; };
   documentNode.exitPointerLock = () => { documentNode.pointerLockElement = null; documentNode.emit('pointerlockchange'); };
   const values = {
     document: documentNode, window: windowNode, Element: Node,
@@ -140,7 +145,7 @@ function mountedFixture() {
   };
   for (const [key, value] of Object.entries(values)) { saved.set(key, Object.getOwnPropertyDescriptor(globalThis, key)); Object.defineProperty(globalThis, key, { configurable: true, writable: true, value }); }
   return {
-    container: new Node('main'), document: documentNode, window: windowNode, buffers, frames,
+    container: documentNode.createElement('main'), document: documentNode, window: windowNode, buffers, frames,
     key(key, repeat = false, down = true, extra = {}) { windowNode.emit(down ? 'keydown' : 'keyup', { key, code: key.length === 1 ? `Key${key.toUpperCase()}` : `${key}Left`, repeat, target: this.container, ...extra }); },
     frame(time) { const due = [...frames.values()]; frames.clear(); for (const callback of due) callback(time); },
     cleanup() { for (const [key, descriptor] of saved) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key]; } },

@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="/voxel-crosshair.css">
   <link rel="stylesheet" href="/voxel-setup-ui.css">
   <link rel="stylesheet" href="/voxel-royale-reward.css">
+  <link rel="stylesheet" href="/voxel-victory.css">
 </head>
 <body>
   <main class="practice-app" id="practice-app" data-phase="ready">
@@ -45,6 +46,7 @@
           <div class="dojo-tool-actions"><button id="dojo-motion" type="button" aria-pressed="false">Stationary targets</button><button id="dojo-reset" type="button">Reset targets</button><button id="dojo-wound" type="button" disabled>Healing test · −60 HP</button><button id="dojo-recover" type="button" disabled>Restore health</button></div>
           <small id="dojo-station-note">Recovery station: try a training wound, collect a potion at the supply bench, then press F to heal.</small>
           <button id="dojo-return" class="practice-primary" type="button">Return to range →</button>
+          <button id="dojo-finish" type="button">Finish training · view session stats</button>
         </section>
         <div class="practice-pickup" id="practice-pickup" hidden><kbd>E</kbd><span><b id="practice-pickup-name"></b><small id="practice-pickup-detail">Pick up supplies</small></span></div>
         <div class="practice-combat" id="practice-combat" hidden>
@@ -92,18 +94,25 @@
               <p id="practice-result-copy"></p>
             </header>
             <dl class="practice-result-stats">
-              <div><dt>ELIMINATIONS</dt><dd id="practice-result-kills">0</dd></div>
+              <div><dt id="practice-result-kills-label">ELIMINATIONS</dt><dd id="practice-result-kills">0</dd></div>
               <div><dt id="practice-result-accuracy-label">ACCURACY</dt><dd id="practice-result-accuracy">0%</dd></div>
               <div><dt>TIME</dt><dd id="practice-result-time">0:00</dd></div>
             </dl>
             <dl class="practice-result-details">
               <div><dt>DAMAGE DEALT</dt><dd id="practice-result-damage-dealt">0</dd></div>
               <div><dt>DAMAGE TAKEN</dt><dd id="practice-result-damage-taken">0</dd></div>
-              <div><dt>HEADSHOT ELIMINATIONS</dt><dd id="practice-result-headshots">0</dd></div>
+              <div><dt id="practice-result-headshots-label">HEADSHOT ELIMINATIONS</dt><dd id="practice-result-headshots">0</dd></div>
               <div><dt id="practice-result-shots-label">SHOTS FIRED</dt><dd id="practice-result-shots">0</dd></div>
               <div><dt id="practice-result-hits-label">SHOTS LANDED</dt><dd id="practice-result-hits">0</dd></div>
               <div><dt>HEALTH REMAINING</dt><dd id="practice-result-health">0 / 200</dd></div>
               <div id="practice-result-outlasted-field" hidden><dt>RIVALS OUTLASTED</dt><dd id="practice-result-outlasted">0 / 10</dd></div>
+            </dl>
+            <dl class="practice-result-details" id="practice-result-dojo-stats" hidden>
+              <div><dt>BODY CONTACTS</dt><dd id="practice-result-body-contacts">0</dd></div>
+              <div><dt>HEAD DAMAGE</dt><dd id="practice-result-head-damage">0</dd></div>
+              <div><dt>BODY DAMAGE</dt><dd id="practice-result-body-damage">0</dd></div>
+              <div><dt>BLADE STRIKES</dt><dd id="practice-result-blade-strikes">0</dd></div>
+              <div><dt>STRIKES LANDED</dt><dd id="practice-result-blade-landed">0</dd></div>
             </dl>
             <footer class="practice-result-footer">
               <p id="practice-result-action-note" class="practice-result-action-note">Review your results. Start your next drill when you’re ready.</p>
