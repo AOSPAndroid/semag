@@ -212,7 +212,8 @@ export class EmberVoxelRenderer {
       live.add(id); const previous = this.actorHistory.get(id); const delta = previous ? time - previous.time : 0;
       const travel = previous && delta > 0 && delta < .1 ? Math.hypot(actor.x - previous.x, actor.y - previous.y) / 32 : 0;
       const walk = travel > .0005 && travel < 1.0;
-      const phase = reducedMotion ? 0 : finite(this.gaitById.get(id)) + (walk ? travel * TAU / (actor.boss ? 1.8 : 1.20) : 0);
+      const stride = id === 'hero' ? actor.crouching ? .72 : actor.walking ? .86 : actor.sprinting ? 1.45 : 1.20 : actor.boss ? 1.8 : 1.20;
+      const phase = reducedMotion ? 0 : finite(this.gaitById.get(id)) + (walk ? travel * TAU / stride : 0);
       this.gaitById.set(id, phase % TAU); this.walkingById.set(id, walk);
       const aimX = finite(actor.aimX, 1), aimY = finite(actor.aimY);
       if (id !== 'hero') this.enemyYawById.set(id, Math.atan2(aimX, -aimY));
@@ -330,7 +331,7 @@ export class EmberVoxelRenderer {
       if (this.roomCache.size > MAX_ROOM_CACHE) { const oldest = this.roomCache.keys().next().value; gl.deleteBuffer(this.roomCache.get(oldest).buffer); this.roomCache.delete(oldest); }
     }
     this.heroVisible = this.pose.collisionDistance >= .68;
-    const actors = this.appendCorpses(ensureMesh(buildEmberActorMesh(state, time, { reducedMotion, hideHero: !this.heroVisible, gaitById: this.gaitById, walkingById: this.walkingById, enemyYawById: this.enemyYawById })), time);
+    const actors = this.appendCorpses(ensureMesh(buildEmberActorMesh(state, time, { reducedMotion, heroCrouch: this.pose.crouchAmount, hideHero: !this.heroVisible, gaitById: this.gaitById, walkingById: this.walkingById, enemyYawById: this.enemyYawById })), time);
     const effects = this.buildCombatMesh(state, time, reducedMotion), shadows = this.buildShadowMesh(state);
     this.upload(this.actorBuffer, actors); this.upload(this.effectBuffer, effects); this.upload(this.shadowBuffer, shadows);
     gl.clearColor(...theme.fog, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT); gl.useProgram(this.program);
@@ -355,7 +356,7 @@ export class EmberVoxelRenderer {
     return groundAimDirection(x, y, state.player, pose, Math.max(1, rectangle.width) / Math.max(1, rectangle.height), .84);
   }
   get diagnostics() {
-    return { available: this.available, error: this.error, backend: this.available ? 'webgl' : 'unavailable', frames: this.frameCount, staticBuilds: this.staticBuilds, roomCache: this.roomCache.size, gpuBuffers: this.available ? this.roomCache.size + 3 : 0, drawCalls: this.drawCalls || 0, roomVertices: this.roomVertices, actorVertices: this.actorVertices, effectVertices: this.effectVertices, particles: this.particles.length, trails: this.trails.length, corpses: this.corpses.length, actors: this.actorHistory.size, heroVisible: this.heroVisible ?? false, projectileHeight: .84, centerAimDirection: this.pose && this.lastPlayer ? groundAimDirection(0, 0, this.lastPlayer, this.pose, this.canvas.width / Math.max(1, this.canvas.height), .84) : null, renderPixels: [this.canvas.width, this.canvas.height], camera: this.pose ? { eye: [...this.pose.eye], target: [...this.pose.target], yaw: this.pose.yaw, pitch: this.pose.pitch, collisionDistance: this.pose.collisionDistance } : null };
+    return { available: this.available, error: this.error, backend: this.available ? 'webgl' : 'unavailable', frames: this.frameCount, staticBuilds: this.staticBuilds, roomCache: this.roomCache.size, gpuBuffers: this.available ? this.roomCache.size + 3 : 0, drawCalls: this.drawCalls || 0, roomVertices: this.roomVertices, actorVertices: this.actorVertices, effectVertices: this.effectVertices, particles: this.particles.length, trails: this.trails.length, corpses: this.corpses.length, actors: this.actorHistory.size, heroVisible: this.heroVisible ?? false, projectileHeight: .84, centerAimDirection: this.pose && this.lastPlayer ? groundAimDirection(0, 0, this.lastPlayer, this.pose, this.canvas.width / Math.max(1, this.canvas.height), .84) : null, renderPixels: [this.canvas.width, this.canvas.height], camera: this.pose ? { eye: [...this.pose.eye], target: [...this.pose.target], yaw: this.pose.yaw, pitch: this.pose.pitch, crouchAmount: this.pose.crouchAmount, collisionDistance: this.pose.collisionDistance } : null };
   }
   destroy() {
     if (this.destroyed) return; this.destroyed = true; this.available = false; this.canvas.removeEventListener('webglcontextlost', this.onLost);

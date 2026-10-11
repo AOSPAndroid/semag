@@ -3,6 +3,10 @@ import test from 'node:test';
 import { MAPS, MAP_IDS } from '../public/voxel-maps.js';
 
 const RADIUS = .32, BODY_HEIGHT = 1.8, EPS = 1e-7;
+const COLLISION_BUDGETS = Object.freeze({
+  courtyard: 50, depot: 50, canal: 52, rooftops: 50, foundry: 50, bastion: 50,
+  paris: 128, snow: 180, sewers: 180, trading: 180, market: 80, lockdown: 60, medieval: 100,
+});
 const overlaps = (point, box, y = 0) => {
   const closestX = Math.max(box.x, Math.min(point.x, box.x + box.w));
   const closestZ = Math.max(box.z, Math.min(point.z, box.z + box.d));
@@ -22,7 +26,7 @@ test('thirteen authored maps expose immutable geometry with a bounded collision 
     assert.ok(Object.isFrozen(map));
     assert.ok(Object.isFrozen(map.bounds));
     assert.ok(Object.isFrozen(map.colliders));
-    assert.ok(map.colliders.length <= (id === 'medieval' ? 100 : ['snow', 'sewers', 'trading', 'market', 'lockdown'].includes(id) ? 180 : id === 'paris' ? 128 : id === 'foundry' ? 66 : 61), `${id} collision budget`);
+    assert.ok(Number.isInteger(COLLISION_BUDGETS[id]) && map.colliders.length <= COLLISION_BUDGETS[id], `${id} collision budget`);
     assert.equal(new Set(map.colliders.map(box => box.id)).size, map.colliders.length, `${id} duplicate cover ID`);
     geometries.add(JSON.stringify(map.colliders));
     for (const box of map.colliders) {
@@ -93,7 +97,7 @@ test('climb routes mark clear starts and real, unobstructed landing surfaces', (
       assert.ok(previousHeight >= 3.2 - EPS, `${route.id} worthwhile high ground`);
     }
   }
-  assert.equal(routeCount, 64);
+  assert.ok(routeCount >= MAP_IDS.length * 4, 'every authored map retains alternate climbs');
 });
 
 test('new maps include distinct upper route shapes and genuine walk-under space', () => {

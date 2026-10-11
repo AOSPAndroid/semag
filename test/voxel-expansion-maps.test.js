@@ -50,6 +50,26 @@ function connectedFloor(map) {
   return { reachable: p => Boolean(seen[nearest(p)]), count: queue.length };
 }
 
+// New catwalk intersections can have two honest floor slabs at the old fixed
+// probe coordinate. Find a clear standing point below a single visible roof so
+// removing only that roof remains a meaningful shielding counterfactual.
+function ceilingProbe(map) {
+  const state = createState({ mapId: map.id }); state.map = map; state.players = [];
+  for (const id of map.ceilings) {
+    const surface = map.colliders.find(box => box.id === id);
+    for (const fx of [.17, .37, .61, .83]) for (const fz of [.17, .37, .61, .83]) {
+      const origin = { x: surface.x + surface.w * fx, y: 1.64, z: surface.z + surface.d * fz };
+      if (!navigationCanOccupy(map, { ...origin, y: 0 })) continue;
+      const hit = traceShot(state, -1, origin, { x: 0, y: 1, z: 0 });
+      if (hit.kind !== 'wall' || !map.ceilings.includes(hit.colliderId)) continue;
+      const roof = map.colliders.find(box => box.id === hit.colliderId), destination = { ...origin, y: roof.y + .1 };
+      const exposed = { ...map, colliders: map.colliders.filter(box => box.id !== roof.id) };
+      if (navigationVisible(exposed, origin, destination)) return { origin, hit, roof, destination, exposed };
+    }
+  }
+  assert.fail(`${map.mode}/${map.id}: no clear roof shielding probe`);
+}
+
 test('expansion factories reject unknown modes and retain immutable authored geometry in both catalogs', () => {
   for (const mode of ['breach', 'royale']) for (const id of IDS) {
     const actual = createExpansionMap(id, mode), catalog = mode === 'breach' ? BREACH : ROYALE;
@@ -117,22 +137,39 @@ for (const [mode, catalog] of [['breach', BREACH], ['royale', ROYALE]]) {
         assert.ok(above.length, `${route.id}: genuinely indoors`);
         assert.ok(Math.min(...above.map(box => box.y)) - (support.y + support.h) > WORLD.standHeight + 1.1, 'standing jump clears overhead structure');
       }
-      const state = createState({ mapId: id }); state.map = map;
-      const origin = id === 'trading' ? { x: 0, y: 1.64, z: 6 } : { x: 4.5, y: 1.64, z: 0 };
-      const hit = traceShot(state, state.players[0].id, origin, { x: 0, y: 1, z: 0 });
+      const { origin, hit, destination, exposed } = ceilingProbe(map);
       assert.ok(map.ceilings.includes(hit.colliderId)); assert.equal(hit.kind, 'wall');
-      const contactedRoof = map.colliders.find(value => value.id === hit.colliderId);
-      assert.equal(navigationVisible(map, origin, { ...origin, y: contactedRoof.y + .1 }), false);
-      assert.equal(navigationVisible({ ...map, colliders: map.colliders.filter(value => value.id !== contactedRoof.id) }, origin, { ...origin, y: contactedRoof.y + .1 }), true);
+      assert.equal(navigationVisible(map, origin, destination), false);
+      assert.equal(navigationVisible(exposed, origin, destination), true);
       for (const boundary of map.colliders.filter(value => /^(wall|boundary)-/.test(value.id))) assert.ok(boundary.h >= ceiling.y + ceiling.h);
     }
   });
 }
 
-test('snow stays open outdoors with four snowy research roofs and readable supply-cover sight lines', () => {
+test('snow combines exposed research roofs with a genuine enclosed upper skybridge and readable supply-cover sight lines', () => {
   for (const map of [BREACH.snow, ROYALE.snow]) {
-    assert.deepEqual(map.ceilings, []); assert.equal(map.tunnels.length, 0);
+    assert.ok(map.ceilings.length >= 1); assert.equal(map.tunnels.length, 0);
     assert.equal(map.colliders.filter(value => value.material === 'snow-roof').length, 4);
+    for (const id of map.ceilings) {
+      const roof = map.colliders.find(box => box.id === id);
+      assert.equal(roof.material, 'snow-ceiling'); assert.equal(roof.overhead, true);
+      assert.ok(roof.y >= 4 + WORLD.standHeight + 1.1, 'standing jumps fit inside the upper skybridge');
+      const upper = map.upperFloors.flatMap(floor => floor.traverse).find(point => point.y >= 3.2
+        && point.x > roof.x && point.x < roof.x + roof.w && point.z > roof.z && point.z < roof.z + roof.d
+        && navigationCanOccupy(map, point));
+      assert.ok(upper, 'a genuine upper route passes inside the glazed enclosure');
+      const state = createState({ mapId: 'snow' }); state.map = map; state.players = [];
+      const origin = { ...upper, y: upper.y + WORLD.eyeHeight };
+      const hit = traceShot(state, -1, origin, { x: 0, y: 1, z: 0 });
+      assert.equal(hit.kind, 'wall'); assert.equal(hit.colliderId, id, 'glazed bridge roof stops an actual shot');
+      assert.equal(navigationVisible(map, origin, { ...origin, y: roof.y + .1 }), false);
+      assert.equal(navigationVisible({ ...map, colliders: map.colliders.filter(box => box.id !== id) }, origin, { ...origin, y: roof.y + .1 }), true);
+    }
+    const outdoorRoof = map.colliders.find(box => box.id === 'snow-radio-lodge-roof');
+    const outdoorPoint = [ .2, .8 ].flatMap(fx => [ .2, .8 ].map(fz => ({ x: outdoorRoof.x + outdoorRoof.w * fx,
+      y: outdoorRoof.y + outdoorRoof.h, z: outdoorRoof.z + outdoorRoof.d * fz })))
+      .find(point => navigationCanOccupy(map, point) && navigationVisible(map, { ...point, y: point.y + WORLD.eyeHeight }, { ...point, y: 20 }));
+    assert.ok(outdoorPoint, 'the radar roof still offers exposed outdoor high ground');
     assert.ok(map.colliders.some(value => value.material === 'snow-crate'));
     assert.ok(map.landmarks.some(value => value.kind === 'snow-generator'));
     const a = { x: 0, y: 1.64, z: 10 }, b = { x: 0, y: 1.64, z: -10 };

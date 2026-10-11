@@ -193,9 +193,12 @@ test('128 of every supply kind remain below the full ten-player, twenty-frag fir
 test('segmented live grenade shells, safety levers and fuse lights tumble inside the real collision sphere', () => {
   const { renderer, world } = renderHarness();
   const map = { id: 'grenade-art-fixture', theme: 'custom', colliders: [], sites: [], bounds: { minX: -4, maxX: 4, minZ: -4, maxZ: 4 } };
+  // Exercise the same living camera roster as a real match. The renderer omits
+  // the local body, so the world batch below still contains only grenade art.
+  const camera = { ...createCombatPlayer(0), x: -3, y: 0, z: 3 };
   for (const radius of [.04, .12, .25]) for (const time of [0, 79, 477, 1000]) {
     const grenade = { id: 0, x: 1, y: 2, z: -1, radius, vx: 4, vy: 2, vz: 1, bounces: 2, fuseTicks: 90 };
-    renderer.render({ gameId: 'voxel-royale', map, phase: 'fight', round: 1, maxGrenades: 1, players: [], grenades: [grenade], events: [] }, { time, hideWeapon: true });
+    renderer.render({ gameId: 'voxel-royale', map, phase: 'fight', round: 1, maxGrenades: 1, players: [camera], grenades: [grenade], events: [] }, { localId: 0, time, hideWeapon: true });
     const mesh = world.at(-1);
     assert.ok(mesh.length > 0 && mesh.every(Number.isFinite));
     for (const [x, y, z] of vertices(mesh)) assert.ok(Math.hypot(x - grenade.x, y - grenade.y, z - grenade.z) <= radius + 1e-6, `${radius}/${time}: no fake grenade corners beyond physical contact`);

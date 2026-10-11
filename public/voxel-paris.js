@@ -1,4 +1,6 @@
-/** Paris streets shared by the tactical and scavenging modes. Solids are the visual geometry. */
+import { environmentCover } from './voxel-environment-cover.js';
+
+/** Irregular Paris blocks and a connected slate-roof circuit share their actual solids. */
 const box = (id, x, y, z, w, h, d, color, material = 'stone') => Object.freeze({ id, x, y, z, w, h, d, color, material });
 const point = (x, z, y = 0) => Object.freeze({ x, y, z });
 const loot = (id, x, z, kind, y = 0) => Object.freeze({ id, x, y, z, kind });
@@ -12,7 +14,7 @@ function stairs(id, name, axis, offset, edge, direction, roofId, landing, side) 
     const distance = edge - direction * (7.7 - i * 2.2);
     const x = axis === 'x' ? distance : offset, z = axis === 'z' ? distance : offset;
     const colliderId = `${id}-step-${i + 1}`;
-    colliders.push(box(colliderId, x - 1.1, 0, z - 1.1, 2.2, .8 * (i + 1), 2.2, i % 2 ? '#ad8661' : '#ba9672', 'wood'));
+    colliders.push(box(colliderId, x - 1.1, 0, z - 1.1, 2.2, .8 * (i + 1), 2.2, i % 2 ? '#9d9486' : '#b9ad9b', 'stone'));
     steps.push(step(colliderId, x, z));
   }
   steps.push(step(roofId, landing.x, landing.z));
@@ -21,7 +23,7 @@ function stairs(id, name, axis, offset, edge, direction, roofId, landing, side) 
   return { colliders, route: Object.freeze({ id, name, side, role: 'flank', start, steps: Object.freeze(steps), approach: Object.freeze([start]) }) };
 }
 
-function building(id, name, x, z, w, d, side, left, accent) {
+function building(id, name, x, z, w, d, side, left, accent, innerZ = z + d / 2) {
   const t = .4, doorWidth = 2.4, wallHeight = 3.6, doorHeight = 2.45, wing = (w - doorWidth) / 2;
   const color = left ? '#d1c2a8' : '#c7b79e', roofId = `${id}-roof`;
   const colliders = [
@@ -43,8 +45,8 @@ function building(id, name, x, z, w, d, side, left, accent) {
   const outer = stairs(`${id}-outer`, `${name} / ${outerNorth ? 'northern' : 'southern'} delivery rise`, 'z', left ? x + 1.6 : x + w - 1.6, outerEdge, outerNorth ? 1 : -1,
     roofId, point(left ? x + 1.6 : x + w - 1.6, outerNorth ? z + .7 : z + d - .7), side);
   const innerEdge = left ? x + w : x;
-  const inner = stairs(`${id}-inner`, `${name} / boulevard delivery rise`, 'x', z + d / 2, innerEdge, left ? -1 : 1,
-    roofId, point(left ? x + w - .7 : x + .7, z + d / 2), side);
+  const inner = stairs(`${id}-inner`, `${name} / courtyard masonry stair`, 'x', innerZ, innerEdge, left ? -1 : 1,
+    roofId, point(left ? x + w - .7 : x + .7, innerZ), side);
   const wallIds = Object.freeze(colliders.filter(value => value.id !== roofId && !value.id.endsWith('-chimney')).map(value => value.id));
   const metadata = Object.freeze({
     id, name, roofId, wallIds,
@@ -67,14 +69,21 @@ function building(id, name, x, z, w, d, side, left, accent) {
 export function createParisMap(mode = 'breach') {
   if (mode !== 'breach' && mode !== 'royale') throw new TypeError('Paris mode must be breach or royale');
   const royale = mode === 'royale', halfW = royale ? 32 : 25, halfD = royale ? 32 : 22;
-  const width = royale ? 9 : 8, depth = royale ? 8 : 7, leftX = royale ? -24 : -18, rightX = royale ? 15 : 10;
-  const northZ = royale ? -19 : -11, southZ = royale ? 11 : 4;
-  const homes = [
-    building('paris-opera', 'Maison de l’Opéra', leftX, northZ, width, depth, 'north', true, '#406f75'),
-    building('paris-atelier', 'Atelier du Boulevard', rightX, northZ, width, depth, 'north', false, '#7d637d'),
-    building('paris-cafe', 'Café des Toits', leftX, southZ, width, depth, 'south', true, '#944f43'),
-    building('paris-librairie', 'Librairie Saint-Martin', rightX, southZ, width, depth, 'south', false, '#5e745a'),
+  // A wide opera frontage, shallow atelier, recessed café court and deep book
+  // warehouse form offset streets. Neither the ground nor roofs is mirrored.
+  const definitions = royale ? [
+    ['paris-opera', 'Maison de l’Opéra', -26, -18, 13, 12, 'north', true, '#406f75', -11],
+    ['paris-atelier', 'Atelier du Boulevard', 10, -20, 17, 10, 'north', false, '#7d637d', -12],
+    ['paris-cafe', 'Café des Toits', -23, 7, 11, 13, 'south', true, '#944f43', 10],
+    ['paris-librairie', 'Librairie Saint-Martin', 9, 3, 15, 15, 'south', false, '#5e745a', 5],
+  ] : [
+    ['paris-opera', 'Maison de l’Opéra', -22, -10, 12, 7.5, 'north', true, '#406f75', -3.6],
+    ['paris-atelier', 'Atelier du Boulevard', 8, -12, 13, 8, 'north', false, '#7d637d', -6.5],
+    ['paris-cafe', 'Café des Toits', -19, 3, 10, 7.5, 'south', true, '#944f43', 4.4],
+    ['paris-librairie', 'Librairie Saint-Martin', 7, 1, 14, 9, 'south', false, '#5e745a', 6.8],
   ];
+  const homes = definitions.map(value => building(...value));
+  const leftX = definitions[2][2], rightX = definitions[3][2], width = definitions[3][4];
   const prefix = royale ? 'boundary' : 'wall';
   const perimeter = [
     box(`${prefix}-west`, -halfW - 1, 0, -halfD - 1, 1, 5.6, halfD * 2 + 2, '#a9a08f'),
@@ -90,12 +99,12 @@ export function createParisMap(mode = 'breach') {
     box('paris-bus-stop-west', -3.4, 0, -.9, .7, 2.2, 1.8, '#647a70'),
     box('paris-bus-stop-east', 2.7, 0, -.9, .7, 2.2, 1.8, '#647a70'),
     ...[[-6.4, -1.2], [4.4, -1.2]].map(([x, z], i) => box(`paris-planter-${i}`, x, 0, z, 2, .85, 2.4, '#738866')),
-    box('paris-cafe-terrace-table', leftX + 2, 0, 0, 2.2, .75, 1.4, '#94694b', 'wood'),
+    box('paris-cafe-terrace-table', leftX + 2, 0, royale ? 1 : -.8, 2.2, .75, 1.4, '#94694b', 'wood'),
     box('paris-cafe-terrace-screen', leftX + .3, 0, -1.5, .7, 1.3, 3.6, '#7b9273'),
-    box('paris-courtyard-bench', rightX + 1.4, 0, -.7, 3.4, .65, 1.1, '#977652', 'wood'),
+    box('paris-courtyard-bench', rightX + 1.4, 0, royale ? -.7 : -2.6, 3.4, .65, 1.1, '#977652', 'wood'),
     box('paris-courtyard-planter', rightX + width - 2.1, 0, -1.5, 1.4, 1.1, 2.5, '#71896a'),
-    box('paris-west-arcade-cart', leftX - 3.2, 0, -1, 2, .9, 2.3, '#9c7650', 'wood'),
-    box('paris-east-arcade-cart', rightX + width + 1.2, 0, -1, 2, .9, 2.3, '#9c7650', 'wood'),
+    box('paris-west-arcade-cart', royale ? -30 : -24.3, 0, royale ? 2 : -1, 1.8, .9, 2.3, '#9c7650', 'wood'),
+    box('paris-east-arcade-cart', royale ? 28.5 : 22.7, 0, -1, 1.8, .9, 2.3, '#9c7650', 'wood'),
     box('paris-west-site-crate', -15.9, 0, royale ? -24 : -15.6, 1.7, .8, 1.7, '#a28c6f', 'wood'),
     box('paris-east-site-crate', 14.2, 0, royale ? -24 : -15.6, 1.7, .8, 1.7, '#a28c6f', 'wood'),
   ];
@@ -108,12 +117,51 @@ export function createParisMap(mode = 'breach') {
     paint('park', rightX + .4, -3, width - .8, 5.9, '#899a76'),
     paint('cafe', leftX + .4, -3, width - .8, 5.9, '#c3ad8c'),
   ];
+  const roofLinks = [], roofLandmarks = [];
+  const roof = (id, x, z, w, d) => {
+    const value = box(id, x, 3.68, z, w, .32, d, '#5b6873', 'slate');
+    roofLinks.push(value); roofLandmarks.push(Object.freeze({ kind: 'roof-passage', ...value, collisionIds: Object.freeze([id]) }));
+  };
+  const westX = royale ? -21 : -17, eastX = royale ? 18 : 17;
+  const northZ = royale ? -16 : -10.5, southZ = royale ? 15 : 8.6;
+  const westEnd = definitions[0][3] + definitions[0][5], eastEnd = definitions[1][3] + definitions[1][5];
+  roof('paris-west-roof-passage', westX, westEnd, 3, definitions[2][3] - westEnd);
+  roof('paris-east-roof-passage', eastX, eastEnd, 3, definitions[3][3] - eastEnd);
+  roof('paris-north-roof-bridge', definitions[0][2] + definitions[0][4] - 1.5, northZ,
+    definitions[1][2] - definitions[0][2] - definitions[0][4] + 3, 3.2);
+  roof('paris-south-roof-bridge', definitions[2][2] + definitions[2][4] - 1.5, southZ,
+    definitions[3][2] - definitions[2][2] - definitions[2][4] + 3, 3.2);
+  // Roof gardens and dormer housings break the cross-street sniper angles.
+  for (const [index, [x, z]] of [[westX, 0], [eastX, royale ? -4 : -2], [royale ? -6 : -5, northZ], [royale ? 2 : 2, southZ]].entries()) {
+    const value = box(`paris-roof-dormer-${index}`, x, 4, z, .8, 1.25, .7, '#ac9e88', 'stone');
+    roofLinks.push(value); roofLandmarks.push(Object.freeze({ kind: 'roof-dormer', ...value, collisionIds: Object.freeze([value.id]) }));
+  }
+  const lowerCover = environmentCover([
+    { id: 'paris-florist-hops', name: 'Florist stone planters', kind: 'stone-planter', start: [royale ? -28 : -23, 7], end: [royale ? -28 : -23, 12],
+      boxes: [0, 1].map(i => ({ id: `paris-florist-${i}`, x: (royale ? -28 : -23) - .7, z: 8 + i * 1.8, w: 1.4, h: i ? .84 : .48, d: 1.4,
+        color: '#879777', material: 'stone', approaches: [[royale ? -26.6 : -21.6, 8.7 + i * 1.8]] })) },
+    { id: 'paris-courier-hops', name: 'Boulevard courier supplies', kind: 'delivery-case', start: [-6, 13.6], end: [-1, 13.6],
+      boxes: [0, 1].map(i => ({ id: `paris-courier-${i}`, x: -5 + i * 1.8, z: 12.9, w: 1.4, h: i ? .84 : .48, d: 1.4,
+        color: '#b78d5c', material: 'wood', approaches: [[-4.3 + i * 1.8, 15.0]] })) },
+    { id: 'paris-metro-hops', name: 'Métro repair supplies', kind: 'service-case', start: [royale ? 2.7 : 22.7, royale ? -26 : -13.5], end: [royale ? 2.7 : 22.7, royale ? -21 : -8.5],
+      boxes: [0, 1].map(i => ({ id: `paris-metro-${i}`, x: royale ? 2 : 22, z: (royale ? -25 : -12.5) + i * 1.8, w: 1.4, h: i ? .84 : .48, d: 1.4,
+        color: '#608e89', material: 'metal', approaches: [[royale ? 4.2 : 24.2, (royale ? -24.3 : -11.8) + i * 1.8]] })) },
+  ]);
+  const roofY = 4;
+  const upperFloors = Object.freeze([Object.freeze({ id: 'paris-mansard-circuit', name: 'Connected mansard roof circuit',
+    colliderIds: Object.freeze([...homes.map(home => home.metadata.roofId), ...roofLinks.filter(value => value.material === 'slate').map(value => value.id)]),
+    routeIds: Object.freeze(homes.flatMap(home => home.routes.map(route => route.id))),
+    underpasses: Object.freeze([point(westX + 1.5, royale ? 3.8 : 1.4), point(0, northZ + 1.1)]),
+    traverse: Object.freeze([point(westX + 1.5, northZ + 1.1, roofY), point(westX + 1.5, southZ + .7, roofY),
+      point(eastX + (royale ? 2.2 : 1.5), southZ + .7, roofY), point(eastX + (royale ? 2.2 : 1.5), northZ + 1.1, roofY)]) })]);
   const common = {
     id: 'paris', name: 'Paris Rooftops',
-    description: 'Open cafés, stone apartment courtyards and a bus-lined boulevard. Two delivery-crate routes reach every slate rooftop; both street doors stay open for fast flanks.',
+    description: 'Irregular stone blocks form narrow courtyards around a bus boulevard. Eight masonry rises reach a complete mansard-roof circuit: cross the street high above traffic, turn around chimney cover, or counter through open café and atelier interiors underneath.',
     bounds: Object.freeze({ minX: -halfW, maxX: halfW, minZ: -halfD, maxZ: halfD }),
-    colliders: Object.freeze([...perimeter, ...homes.flatMap(home => home.colliders), ...cover]),
+    authoredLayout: true, ...lowerCover, upperFloors,
+    colliders: Object.freeze([...perimeter, ...homes.flatMap(home => home.colliders), ...cover, ...roofLinks, ...lowerCover.colliders]),
     routes: Object.freeze(homes.flatMap(home => home.routes)), buildings: Object.freeze(homes.map(home => home.metadata)),
+    landmarks: Object.freeze([...roofLandmarks, ...lowerCover.landmarks]),
     decorations: Object.freeze(decorations), floorColor: '#b6afa2', skyColor: '#d1e0e5', theme: 'paris',
   };
   if (!royale) return Object.freeze({ ...common,
@@ -126,9 +174,9 @@ export function createParisMap(mode = 'breach') {
     loot('paris-west-passage', -28, 5, 'weapon'), loot('paris-east-passage', 28, 5, 'ammo'),
     loot('paris-northwest-arch', -19, -25, 'weapon'), loot('paris-northeast-arch', 19, -25, 'ammo'),
     loot('paris-southwest-arch', -19, 25, 'heal'), loot('paris-southeast-arch', 19, 25, 'weapon'),
-    loot('paris-bus-north', 0, -4.6, 'grenade'), loot('paris-bus-south', 0, 4.6, 'heal'),
+    loot('paris-bus-north', 0, -4.6, 'grenade'), loot('paris-bus-south', 0, 7.2, 'heal'),
     loot('paris-west-planter-shadow', -8, 0, 'ammo'), loot('paris-east-planter-shadow', 8, 0, 'grenade'),
-    loot('paris-north-boulevard', 2.5, -23, 'weapon'), loot('paris-south-boulevard', -2.5, 23, 'weapon'),
+    loot('paris-north-boulevard', 5.2, -23, 'weapon'), loot('paris-south-boulevard', -2.5, 23, 'weapon'),
     loot('paris-west-courtyard', -14, 4, 'ammo'), loot('paris-east-courtyard', 14, 4, 'heal'),
   ];
   return Object.freeze({ ...common, sites: Object.freeze([]),

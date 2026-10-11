@@ -88,6 +88,48 @@ export function navigationVisible(map, origin, target) {
   });
 }
 
+/** Exact disc contact with the union of same-height floor tops along a walk. */
+function continuousSupport(boxes, from, to, body) {
+  const dx = to.x - from.x, dz = to.z - from.z, lengthSquared = dx * dx + dz * dz;
+  const radiusSquared = body.radius * body.radius - EPS, radius = Math.sqrt(radiusSquared), intervals = [];
+  for (const box of boxes) {
+    if (Math.abs(box.y + box.h - footY(from)) > EPS) continue;
+    // A rectangle expanded by a disc is two edge strips and four round corners.
+    // Its segment intersection is convex, so their outer interval is exact.
+    let entry = Infinity, exit = -Infinity;
+    const accept = (low, high) => {
+      low = Math.max(0, low); high = Math.min(1, high);
+      if (low <= high) { entry = Math.min(entry, low); exit = Math.max(exit, high); }
+    };
+    const rectangle = (minX, maxX, minZ, maxZ) => {
+      let low = 0, high = 1;
+      for (const [start, delta, min, max] of [[from.x, dx, minX, maxX], [from.z, dz, minZ, maxZ]]) {
+        if (Math.abs(delta) < EPS) { if (start < min || start > max) return; }
+        else { let first = (min - start) / delta, last = (max - start) / delta; if (first > last) [first, last] = [last, first]; low = Math.max(low, first); high = Math.min(high, last); }
+      }
+      if (low <= high) accept(low, high);
+    };
+    rectangle(box.x - radius, box.x + box.w + radius, box.z, box.z + box.d);
+    rectangle(box.x, box.x + box.w, box.z - radius, box.z + box.d + radius);
+    for (const x of [box.x, box.x + box.w]) for (const z of [box.z, box.z + box.d]) {
+      const ox = x - from.x, oz = z - from.z, center = (ox * dx + oz * dz) / lengthSquared;
+      const cross = ox * dz - oz * dx, distanceSquared = cross * cross / lengthSquared;
+      if (distanceSquared > radiusSquared) continue;
+      const reach = Math.sqrt((radiusSquared - distanceSquared) / lengthSquared);
+      accept(center - reach, center + reach);
+    }
+    if (entry <= exit) intervals.push([entry, exit]);
+  }
+  intervals.sort((a, b) => a[0] - b[0]);
+  let covered = 0;
+  for (const [entry, exit] of intervals) {
+    if (entry > covered) return false;
+    covered = Math.max(covered, exit);
+    if (covered >= 1) return true;
+  }
+  return false;
+}
+
 function clearWalk(map, from, to, trustedEndpoints = false, body = humanBody) {
   if (Math.abs(footY(from) - footY(to)) > EPS || (!trustedEndpoints && (!navigationCanOccupy(map, from, body) || !navigationCanOccupy(map, to, body)))) return false;
   const dx = to.x - from.x, dz = to.z - from.z, lengthSquared = dx * dx + dz * dz, y = footY(from), radius = body.radius;
@@ -107,11 +149,7 @@ function clearWalk(map, from, to, trustedEndpoints = false, body = humanBody) {
       if (ox * ox + oz * oz < radius * radius - EPS) return false;
     }
   }
-  if (y > EPS) {
-    const steps = Math.ceil(Math.sqrt(lengthSquared) / .18);
-    const localMap = { bounds: map.bounds, colliders: boxes };
-    for (let step = 0; step <= steps; step++) if (!contactSupported(localMap, { x: from.x + dx * step / steps, y, z: from.z + dz * step / steps }, body)) return false;
-  }
+  if (y > EPS && !continuousSupport(boxes, from, to, body)) return false;
   return true;
 }
 

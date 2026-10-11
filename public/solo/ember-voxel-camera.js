@@ -1,5 +1,5 @@
 /** Third-person camera in the engine's unchanged ground plane (32 px = 1 m). */
-export const EMBER_CAMERA = Object.freeze({ scale: 1 / 32, distance: 5.4, shoulder: .58, targetHeight: 1.18, clearance: .20, coverHeight: 2.65, minPitch: .12, maxPitch: 1.05, fov: Math.PI / 3.1, near: .075, far: 72, followRate: 18 });
+export const EMBER_CAMERA = Object.freeze({ scale: 1 / 32, distance: 5.4, shoulder: .58, targetHeight: 1.18, crouchDrop: .42, clearance: .20, coverHeight: 2.65, minPitch: .12, maxPitch: 1.05, fov: Math.PI / 3.1, near: .075, far: 72, followRate: 18 });
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 const finite = (v, d = 0) => Number.isFinite(v) ? v : d;
 export const cameraForward = yaw => ({ x: Math.sin(finite(yaw)), y: -Math.cos(finite(yaw)) });
@@ -73,16 +73,18 @@ export function groundAimDirection(ndcX, ndcY, player, camera, aspect = 1, heigh
 }
 
 export class EmberVoxelCamera {
-  constructor() { this.pose = null; this.roomId = null; this.lastTime = null; }
-  reset() { this.pose = null; this.roomId = null; this.lastTime = null; }
+  constructor() { this.pose = null; this.roomId = null; this.lastTime = null; this.crouchAmount = 0; }
+  reset() { this.pose = null; this.roomId = null; this.lastTime = null; this.crouchAmount = 0; }
   update(state, { yaw = 0, pitch = .32, time = state.elapsed } = {}) {
     yaw = finite(yaw); pitch = clamp(finite(pitch, .32), EMBER_CAMERA.minPitch, EMBER_CAMERA.maxPitch); time = finite(time, state.elapsed);
     if (state.phase !== 'playing' && this.pose && this.roomId === state.room.id && state.elapsed >= finite(this.lastTime) - .01) return this.pose;
     const changedRoom = this.roomId !== state.room.id || this.lastTime !== null && time < this.lastTime - .01;
-    const anchor = [state.player.x / 32, EMBER_CAMERA.targetHeight, state.player.y / 32];
+    const elapsedDelta = Math.max(0, time - finite(this.lastTime, time));
+    const requestedCrouch = state.player.crouching ? 1 : 0;
+    this.crouchAmount = !this.pose || changedRoom ? requestedCrouch : this.crouchAmount + (requestedCrouch - this.crouchAmount) * (1 - Math.exp(-EMBER_CAMERA.followRate * Math.min(.05, elapsedDelta)));
+    const anchor = [state.player.x / 32, EMBER_CAMERA.targetHeight - this.crouchAmount * EMBER_CAMERA.crouchDrop, state.player.y / 32];
     const forward = cameraForward(yaw), right = cameraRight(yaw);
     const wanted = clampCameraBoom(anchor, [anchor[0] - forward.x * EMBER_CAMERA.distance + right.x * EMBER_CAMERA.shoulder, anchor[1] + Math.tan(pitch) * EMBER_CAMERA.distance, anchor[2] - forward.y * EMBER_CAMERA.distance + right.y * EMBER_CAMERA.shoulder], state.room);
-    const elapsedDelta = Math.max(0, time - finite(this.lastTime, time));
     const orbit = this.pose && Math.abs(yaw - this.pose.yaw) + Math.abs(pitch - this.pose.pitch) > .0001;
     // Zero simulation time means pause/decision frames cannot continue creeping.
     let eye = wanted;
@@ -93,7 +95,7 @@ export class EmberVoxelCamera {
     const target = [anchor[0] + forward.x * .8, anchor[1] - .10, anchor[2] + forward.y * .8];
     // Near-wall orbit can shorten the boom to centimetres. Keep a finite basis.
     if (Math.hypot(...target.map((v, i) => v - eye[i])) < .1) target[1] -= .2;
-    this.pose = { eye, target, yaw, pitch, collisionDistance: Math.hypot(...eye.map((v, i) => v - anchor[i])) };
+    this.pose = { eye, target, yaw, pitch, crouchAmount: this.crouchAmount, collisionDistance: Math.hypot(...eye.map((v, i) => v - anchor[i])) };
     this.roomId = state.room.id; this.lastTime = time;
     return this.pose;
   }

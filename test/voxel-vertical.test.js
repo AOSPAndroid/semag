@@ -64,7 +64,8 @@ test('jump queues reset through weapon preparation, round changes, death and rem
 test('authority and prediction consume the same landing jump queue on real map cover', () => {
   const state = game.createState(); game.startMatch(state);
   for (let tick = 0; tick < 11 * game.TICK_RATE; tick++) game.step(state, state.players.map(f => input({}, f)));
-  const box = game.MAPS.courtyard.colliders.find(box => box.id === 'west-site-crate');
+  const box = game.MAPS.courtyard.colliders.find(box => box.id === 'courtyard-hop-garden-deliveries-2');
+  assert.ok(box && box.h < game.WORLD.jumpSpeed ** 2 / (2 * game.WORLD.gravity), 'the actual supply crate supports a legal jump');
   const fighter = state.players[0];
   Object.assign(fighter, { x: box.x + box.w / 2, z: box.z + box.d / 2, y: box.y + box.h + .06, vy: -1, grounded: false });
   const predicted = game.cloneState(fighter);
@@ -230,7 +231,12 @@ test('authored roof and gallery underpasses share solid ceiling, shot and blast 
     for (let tick = 0; tick < 110; tick++) {
       move(below, { jump: true }, arena); maxY = Math.max(maxY, below.y);
     }
-    near(maxY, deck.y - game.WORLD.standHeight);
+    // Semi-implicit 120Hz gravity is applied before the position step. A high
+    // ceiling lets the shipped jump peak naturally instead of clipping it.
+    const ascentTicks = Math.floor(game.WORLD.jumpSpeed * game.TICK_RATE / game.WORLD.gravity);
+    const freeApex = (ascentTicks * game.WORLD.jumpSpeed
+      - game.WORLD.gravity / game.TICK_RATE * ascentTicks * (ascentTicks + 1) / 2) / game.TICK_RATE;
+    near(maxY, Math.min(deck.y - game.WORLD.standHeight, freeApex));
     near(below.y, 0); assert.equal(below.grounded, true);
     move(below, { up: true }, arena, 30);
     assert.ok(below.z < z - .7, `${mapId} permits ordinary standing movement under its deck`);

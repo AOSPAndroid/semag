@@ -2,6 +2,8 @@
 export const ARENA = Object.freeze({ width: 960, height: 640 });
 export const ACT_NAMES = Object.freeze(['The Coal Galleries', 'The Glass Burrows', 'The Crown Furnace']);
 export const BOSSES = Object.freeze(['Ash Warden', 'Mirror Stag', 'Cinder Queen']);
+/** Match the voxel hub's sprint budget, with fantasy combat sharing stamina. */
+export const LOCOMOTION = Object.freeze({ sprintMultiplier: 1.4, drainPerSecond: 24, regenDelay: 1.2, restartStamina: 25, crouchMultiplier: .48, walkMultiplier: .57 });
 export const DIFFICULTIES = Object.freeze({
   standard: Object.freeze({ title: 'Standard', description: 'A gentler descent. Familiar patrols and generous recovery.', extra: 0, speed: 1, lead: 0, mana: 100, manaRegen: 10, staminaRegen: 32, bladeCost: 10, boltCost: 12, heal: 1 }),
   veteran: Object.freeze({ title: 'Veteran', description: 'Guarded relics, mixed boss fights, limited kill recovery. Attacks briefly slow movement and delay stamina recovery. Change direction after tells; reserve a dodge.', extra: 2, speed: 1.55, lead: .58, mana: 75, manaRegen: 6, staminaRegen: 22, bladeCost: 14, boltCost: 16, heal: .6, healingBudget: 10, bladeMana: 6, summonLimit: 3 }),
@@ -29,6 +31,10 @@ const motions = new WeakMap();
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const unit = (x, y, fx = 1, fy = 0) => { const l = Math.hypot(x, y); return l > .001 ? { x: x / l, y: y / l } : { x: fx, y: fy }; };
+function clearLocomotion(player) {
+  player.sprinting = player.crouching = player.walking = false;
+  player.velocityX = player.velocityY = 0;
+}
 function rng(s) { let x = s.randomState; x ^= x << 13; x ^= x >>> 17; x ^= x << 5; s.randomState = x >>> 0 || 1; return s.randomState / 4294967296; }
 function event(s, type, extra = {}) { s.events.push({ id: ++s.eventId, type, time: s.elapsed, x: s.player.x, y: s.player.y, ...extra }); if (s.events.length > 40) s.events.shift(); }
 function solid(s, x, y, r) { return s.room.obstacles.some(o => Math.hypot(x - clamp(x, o.x, o.x + o.width), y - clamp(y, o.y, o.y + o.height)) < r); }
@@ -260,7 +266,7 @@ function roomStart(s, kind) {
   s.phase = 'playing'; s.choices = []; s.projectiles = []; s.enemies = []; s.effects = []; s.roomHealing = 0;
   const layout = kind === 'boss' ? 3 : (s.act + s.depth + s.roomsCleared) % 3;
   s.room = { id: `${s.act}-${s.depth}-${kind}`, kind, title: kind === 'boss' ? BOSSES[s.act - 1] : `${['Ember', 'Crystal', 'Crown'][s.act - 1]} ${kind === 'elite' ? 'Crucible' : kind === 'treasure' ? 'Reliquary' : kind === 'camp' ? 'Sanctuary' : ['Gallery', 'Crossing', 'Vault'][layout]}`, obstacles: layouts[layout].map(o => ({ ...o })), exit: { x: 890, y: 320, radius: 42 }, shrine: { x: 570, y: 320, radius: 50 }, cleared: false, rewardTaken: false };
-  s.player.x = 105; s.player.y = 320; s.player.velocityX = s.player.velocityY = 0; s.player.invulnerable = .6; s.player.dashTime = 0; s.player.attackTime = 0; s.player.castTime = 0; s.player.staminaDelay = 0; s.player.attackCooldown = 0; s.player.spellCooldown = 0;
+  s.player.x = 105; s.player.y = 320; clearLocomotion(s.player); s.player.invulnerable = .6; s.player.dashTime = 0; s.player.attackTime = 0; s.player.castTime = 0; s.player.staminaDelay = 0; s.player.attackCooldown = 0; s.player.spellCooldown = 0;
   if (kind === 'boss') {
     spawn(s, 'boss');
     if (s.difficulty !== 'standard') {
@@ -283,7 +289,7 @@ export function createState({ seed = Date.now(), difficulty = 'standard' } = {})
   difficulty = Object.hasOwn(DIFFICULTIES, difficulty) ? difficulty : 'standard';
   const normalized = Number.isFinite(Number(seed)) ? Number(seed) >>> 0 : 1;
   const s = { gameId: 'ember-delve', difficulty, seed: normalized || 1, randomState: normalized || 1, phase: 'playing', pausedPhase: null, act: 1, depth: 1, roomsCleared: 0, kills: 0, score: 0, elapsed: 0, tick: 0, result: null, gold: 0, relics: {}, choices: [], routeHistory: [], enemies: [], enemyId: 0, projectiles: [], projectileId: 0, effects: [], events: [], eventId: 0, attackId: 0, pending: null,
-    player: { x: 105, y: 320, radius: 12, hp: 140, maxHp: 140, mana: 100, maxMana: 100, manaRegen: 10, stamina: 100, maxStamina: 100, staminaRegen: 32, moveSpeed: 245, swordDamage: 30, spellDamage: 28, aimX: 1, aimY: 0, attackCooldown: 0, attackTime: 0, spellCooldown: 0, dodgeCooldown: 0, dashTime: 0, castTime: 0, staminaDelay: 0, bladeManaRemaining: 0, dashX: 1, dashY: 0, invulnerable: 0, damageCooldown: 0, empowered: 0, dashHeld: false, interactHeld: false } };
+    player: { x: 105, y: 320, radius: 12, hp: 140, maxHp: 140, mana: 100, maxMana: 100, manaRegen: 10, stamina: 100, maxStamina: 100, staminaRegen: 32, moveSpeed: 245, swordDamage: 30, spellDamage: 28, aimX: 1, aimY: 0, attackCooldown: 0, attackTime: 0, spellCooldown: 0, dodgeCooldown: 0, dashTime: 0, castTime: 0, staminaDelay: 0, sprintRegenDelay: 0, sprintExhausted: false, sprinting: false, crouching: false, walking: false, bladeManaRemaining: 0, dashX: 1, dashY: 0, invulnerable: 0, damageCooldown: 0, empowered: 0, dashHeld: false, interactHeld: false } };
   const rules = profile(s); s.player.mana = s.player.maxMana = rules.mana; s.player.manaRegen = rules.manaRegen; s.player.staminaRegen = rules.staminaRegen;
   s.player.velocityX = s.player.velocityY = 0;
   roomStart(s, 'combat'); return s;
@@ -299,6 +305,7 @@ export function getRelicInfo(s, id) {
 }
 function choices(s, phase) {
   s.phase = phase;
+  clearLocomotion(s.player);
   if (phase === 'reward') {
     const ids = Object.keys(RELICS); for (let i = ids.length - 1; i > 0; i--) { const j = Math.floor(rng(s) * (i + 1)); [ids[i], ids[j]] = [ids[j], ids[i]]; }
     s.choices = ids.slice(0, 3).map(id => getRelicInfo(s, id));
@@ -340,7 +347,7 @@ export function chooseCamp(s, id) {
   s.phase = 'playing'; s.room.cleared = true; s.room.rewardTaken = true; s.roomsCleared++; s.choices = []; event(s, 'camp', { choice: id }); return true;
 }
 export function togglePause(s) {
-  if (['playing', 'route', 'reward', 'camp'].includes(s.phase)) { s.pausedPhase = s.phase; s.phase = 'paused'; return true; }
+  if (['playing', 'route', 'reward', 'camp'].includes(s.phase)) { s.pausedPhase = s.phase; s.phase = 'paused'; clearLocomotion(s.player); return true; }
   if (s.phase === 'paused') { s.phase = s.pausedPhase || 'playing'; s.pausedPhase = null; return true; }
   return false;
 }
@@ -353,7 +360,7 @@ function hurt(s, damage, attackId = 0, contact = null) {
   }
   if (p.damageCooldown > 0) return;
   p.hp = Math.max(0, p.hp - damage); p.damageCooldown = .65; event(s, 'hurt', { damage, ...contact });
-  if (p.hp <= 0) { s.phase = 'lost'; s.result = 'The flame went out'; event(s, 'defeat'); }
+  if (p.hp <= 0) { s.phase = 'lost'; s.result = 'The flame went out'; clearLocomotion(p); event(s, 'defeat'); }
 }
 function damageEnemy(s, e, damage, weapon, contact = null) {
   if (e.hp <= 0) return;
@@ -476,7 +483,7 @@ function interaction(s) {
   if (!s.room.cleared && s.room.kind === 'treasure' && s.enemies.length === 0 && dist(s.player, s.room.shrine) < 70) { s.pending = 'treasure'; choices(s, 'reward'); return; }
   if (!s.room.cleared && s.room.kind === 'camp' && dist(s.player, s.room.shrine) < 70) { choices(s, 'camp'); return; }
   if (!s.room.cleared || dist(s.player, s.room.exit) > 70) return;
-  if (s.act === 3 && s.depth === 4) { s.phase = 'won'; s.result = 'The Crown Furnace is quiet'; s.score += 1500; event(s, 'victory'); return; }
+  if (s.act === 3 && s.depth === 4) { s.phase = 'won'; s.result = 'The Crown Furnace is quiet'; s.score += 1500; clearLocomotion(s.player); event(s, 'victory'); return; }
   if (!s.room.rewardTaken && ['combat', 'elite', 'boss'].includes(s.room.kind)) { s.pending = 'advance'; choices(s, 'reward'); }
   else advance(s);
 }
@@ -487,8 +494,13 @@ export function step(s, input = {}, dt = 1 / 120) {
   const existing = new Set(s.projectiles);
   for (const body of [p, ...s.enemies]) motions.set(body, stationary(body));
   for (const key of ['attackCooldown', 'attackTime', 'castTime', 'staminaDelay', 'spellCooldown', 'dodgeCooldown', 'dashTime', 'invulnerable', 'damageCooldown', 'empowered']) p[key] = Math.max(0, p[key] - dt);
+  p.sprintRegenDelay = Math.max(0, (Number.isFinite(p.sprintRegenDelay) ? p.sprintRegenDelay : 0) - dt);
+  p.sprintExhausted = p.sprintExhausted === true || p.stamina <= 1e-8;
   p.mana = Math.min(p.maxMana, p.mana + p.manaRegen * dt);
-  if (s.difficulty === 'standard' || p.staminaDelay <= 0) p.stamina = Math.min(p.maxStamina, p.stamina + p.staminaRegen * dt);
+  const staminaBeforeRecovery = p.stamina;
+  if (p.sprintRegenDelay <= 0 && (s.difficulty === 'standard' || p.staminaDelay <= 0)) p.stamina = Math.min(p.maxStamina, p.stamina + p.staminaRegen * dt);
+  const staminaRecovery = p.stamina - staminaBeforeRecovery;
+  if (p.sprintExhausted && input.sprint !== true && p.stamina >= LOCOMOTION.restartStamina) p.sprintExhausted = false;
   const aim = unit(Number.isFinite(input.aimX) ? input.aimX : p.aimX, Number.isFinite(input.aimY) ? input.aimY : p.aimY, p.aimX, p.aimY); p.aimX = aim.x; p.aimY = aim.y;
   const rawX = Number.isFinite(input.moveX) ? clamp(input.moveX, -1, 1) : (input.right === true ? 1 : 0) - (input.left === true ? 1 : 0);
   const rawY = Number.isFinite(input.moveY) ? clamp(input.moveY, -1, 1) : (input.down === true ? 1 : 0) - (input.up === true ? 1 : 0);
@@ -497,9 +509,32 @@ export function step(s, input = {}, dt = 1 / 120) {
   const dash = input.dash === true, dashCost = Math.max(hard ? 26 : 14, 34 - (s.relics.fleet || 0) * (hard ? 5 : 8));
   if (dash && !p.dashHeld && p.stamina >= dashCost && p.dodgeCooldown <= 0) { p.stamina -= dashCost; if (hard) p.staminaDelay = .6; p.dashTime = .18; p.invulnerable = .22; p.dodgeCooldown = .32; p.dashX = movement.x || movement.y ? movement.x : aim.x; p.dashY = movement.x || movement.y ? movement.y : aim.y; event(s, 'dash'); }
   p.dashHeld = dash;
+  p.crouching = input.crouch === true && p.dashTime <= 0;
+  p.walking = input.walk === true && !p.crouching && p.dashTime <= 0;
+  p.sprinting = false;
   const oldX = p.x, oldY = p.y;
   if (p.dashTime > 0) move(s, p, p.dashX * 660 * dt, p.dashY * 660 * dt);
-  else { const pace = hard && (p.attackTime > 0 || p.castTime > 0) ? .85 : 1; move(s, p, movement.x * p.moveSpeed * pace * dt, movement.y * p.moveSpeed * pace * dt); }
+  else {
+    const pace = hard && (p.attackTime > 0 || p.castTime > 0) ? .85 : 1;
+    const stance = p.crouching ? LOCOMOTION.crouchMultiplier : p.walking ? LOCOMOTION.walkMultiplier : 1;
+    const sprint = input.sprint === true && !p.crouching && !p.walking && !p.sprintExhausted && staminaBeforeRecovery > 1e-8
+      && movement.x * aim.x + movement.y * aim.y > .05 && input.melee !== true && input.spell !== true && !dash && input.interact !== true
+      && p.attackTime <= 0 && p.castTime <= 0;
+    // Spend the last fraction of a sprint at its real cost, then return to jog.
+    const budget = sprint ? Math.min(1, staminaBeforeRecovery / (LOCOMOTION.drainPerSecond * dt)) : 0;
+    const speed = p.moveSpeed * pace * stance * (1 + (LOCOMOTION.sprintMultiplier - 1) * budget);
+    move(s, p, movement.x * speed * dt, movement.y * speed * dt);
+    const travel = (p.x - oldX) * movement.x + (p.y - oldY) * movement.y;
+    const fraction = sprint ? clamp(travel / (speed * dt), 0, 1) : 0;
+    if (fraction > 1e-8) {
+      // Cover still sweeps and slides at sprint pace. A blocked run costs nothing.
+      // Ordinary combat recovery is retained, but never paid during a real sprint.
+      p.stamina = Math.max(0, p.stamina - staminaRecovery - LOCOMOTION.drainPerSecond * dt * budget * fraction);
+      p.sprintRegenDelay = LOCOMOTION.regenDelay;
+      p.sprinting = p.stamina > 1e-8;
+      if (!p.sprinting) { p.stamina = 0; p.sprintExhausted = true; }
+    }
+  }
   // Dash velocity is deliberately excluded from the opponent's prediction.
   p.velocityX = p.dashTime > 0 ? 0 : (p.x - oldX) / dt; p.velocityY = p.dashTime > 0 ? 0 : (p.y - oldY) / dt;
   const rules = profile(s);

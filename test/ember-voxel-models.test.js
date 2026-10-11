@@ -99,6 +99,30 @@ test('distance-driven gait, camera-facing yaw, near-camera hero hiding and reduc
   assert.deepEqual(buildEmberActorMesh(state, 2, { reducedMotion: true }), buildEmberActorMesh(state, 20, { reducedMotion: true }));
 });
 
+test('crouched knees lower the hero silhouette with grounded boots and keep blade and spell poses attached', () => {
+  const idle = inspect(buildEmberActorGeometry({ kind: 'hero' }));
+  const half = inspect(buildEmberActorGeometry({ kind: 'hero', crouch: .5 }));
+  const low = inspect(buildEmberActorGeometry({ kind: 'hero', crouch: 1 }));
+  assert.ok(idle.max[1] - low.max[1] > .4);
+  assert.ok(half.max[1] < idle.max[1] && half.max[1] > low.max[1]);
+  assert.ok(Math.abs(low.min[1]) < .001, 'crouching keeps boots planted rather than sinking the model');
+  for (const pose of [{ walking: true, gait: 1.5 }, { attack: .08 }, { cast: .14 }]) {
+    const mesh = buildEmberActorGeometry({ kind: 'hero', crouch: 1, ...pose });
+    inspect(mesh); assert.notDeepEqual(mesh, buildEmberActorGeometry({ kind: 'hero', crouch: 1 }));
+  }
+  const state = createState({ seed: 91 }), before = JSON.stringify(state);
+  buildEmberActorMesh(state, 1, { heroCrouch: .65 }); assert.equal(JSON.stringify(state), before);
+});
+
+test('sprint and quiet walk have distinct purposeful gaits while reduced motion keeps a stable stance', () => {
+  const pose = { kind: 'hero', walking: true, gait: 1.3 };
+  const regular = buildEmberActorGeometry(pose), sprint = buildEmberActorGeometry({ ...pose, sprinting: true }), quiet = buildEmberActorGeometry({ ...pose, quiet: true });
+  inspect(sprint); inspect(quiet);
+  assert.notDeepEqual(sprint, regular); assert.notDeepEqual(quiet, regular); assert.notDeepEqual(quiet, sprint);
+  const low = { ...pose, crouch: 1, reducedMotion: true };
+  assert.deepEqual(buildEmberActorGeometry(low), buildEmberActorGeometry({ ...low, gait: 4.5 }));
+});
+
 test('maximum combat population and every room prop stay within the dynamic geometry budget', () => {
   const state = createState({ seed: 11 });
   state.enemies = Array.from({ length: 18 }, (_, i) => ({ ...state.enemies[0], type: 'boss', boss: true, id: i + 1 }));

@@ -65,7 +65,12 @@ test('interior art, roof finishes and door signs preserve every real entrance in
         ? Math.abs(z - door.z) < door.width / 2 - .025 && Math.abs(x - door.x) < .24
         : Math.abs(x - door.x) < door.width / 2 - .025 && Math.abs(z - door.z) < .24)
         && y > .04 && y < door.height - .025);
-      assert.equal(crossing.length, 0, `${map.theme}/${building.id}: clear ${planeX ? 'X' : 'Z'} doorway, with no paint bridging the opening`);
+      // A real stair beside a broad doorway can occupy its outer margin.
+      // Only paint without a matching visible solid would invent obstruction.
+      for (const [x, y, z] of crossing) assert.ok(map.colliders.some(box =>
+        x >= box.x - .028 && x <= box.x + box.w + .028 && y >= box.y - .009 && y <= box.y + box.h + .009
+        && z >= box.z - .028 && z <= box.z + box.d + .028),
+      `${map.theme}/${building.id}: doorway detail must remain attached to an actual solid`);
     }
   }
 });

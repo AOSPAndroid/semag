@@ -114,6 +114,15 @@ export function createMedievalMap(mode = 'breach') {
     mark(`keep-market-${index}`, 'market-stall', stallName, [screen, canopy]);
   }
 
+  // Staggered supply wagons protect the tactical arrival from spawn shots.
+  // The 1.7m space between them gives a real ground dog-leg; the crown gate,
+  // planting areas and every existing stone rise stay open. Royale retains its
+  // already separated village spawn ring and surrounding scavenging routes.
+  if (!royale) {
+    cover('keep-arrival-west-supply-wagon', -4.8, 0, 17.2, 5.1, 2.2, 1.5, '#92724e', 'castle-timber', 'supply-cart', 'Gate supplies');
+    cover('keep-arrival-east-supply-wagon', -.3, 0, 14, 5.1, 2.2, 1.5, '#816344', 'castle-timber', 'supply-cart', 'Gate supplies');
+  }
+
   // Paired low props offer short hop plays without blocking an entrance or stair.
   for (const [name, x, z, color, material] of (royale ? [['supplies', -9, 14, '#97754d', 'castle-timber'],
     ['masonry', 9, -14, '#aaa58f', 'castle-stone'], ['stables', -23, 13, '#8e714b', 'castle-timber']] : [])) {

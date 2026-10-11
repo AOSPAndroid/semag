@@ -1,4 +1,6 @@
-/** An asymmetric alpine weather station, with honest roofs, banks and equipment cover. */
+import { environmentCover } from './voxel-environment-cover.js';
+
+/** A terraced alpine campus with an enclosed research skybridge and roof circuit. */
 const box = (id, x, y, z, w, h, d, color, material) => Object.freeze({ id, x, y, z, w, h, d, color, material });
 const point = (x, z, y = 0) => Object.freeze({ x, y, z });
 const step = (colliderId, x, z) => Object.freeze({ colliderId, x, z });
@@ -98,14 +100,43 @@ export function createSnowMap(mode = 'breach') {
   add('research-gallery', box(galleryIds[1], survey.x, 3.68, galleryZ + 3, 3, .32, survey.z + .8 - galleryZ - 3, '#668593', 'metal'));
   for (const [index, x] of [-4.5, 4.5].entries())
     add('weather-equipment', box(`snow-gallery-instrument-${index}`, x, 4, galleryZ + .2, 1.2, 1.35, .7, index ? '#da985e' : '#669fa8', 'weather-equipment'));
+  // The campus has two separate upper rotations: an enclosed warm research
+  // gallery and an exposed northern roof spur. Long walks below pass beneath
+  // the exact same deck, instead of walking through painted raised terrain.
+  const upperIds = [...galleryIds], skybridgeCeilings = [];
+  const northernZ = royale ? -11.5 : -8.4;
+  for (const [id, x, z, w, d] of [
+    ['snow-north-roof-link', lab.x + lab.w, northernZ, radio.x + 1.4 - lab.x - lab.w, 2.4],
+    ['snow-upper-east-return', radio.x - 2.7, northernZ + 1.1, 2.7, galleryZ - northernZ - 1.1],
+    ['snow-upper-observation-walk', -3.5, galleryZ + 3, 3, 12.5 - galleryZ - 3],
+    ['snow-south-roof-link', definitions[2].x + definitions[2].w, 12.5,
+      survey.x + 3 - definitions[2].x - definitions[2].w, 2],
+    // Royale's deeper survey roof already joins the southern bridge; a return
+    // is only needed across the open gap of the shorter tactical building.
+    ...(!royale ? [['snow-upper-survey-return', survey.x, survey.z + survey.d - .8, 3, 14.5 - survey.z - survey.d + .8]] : []),
+  ]) {
+    const value = box(id, x, 3.68, z, w, .32, d, '#7898a7', 'metal');
+    add('research-gallery', value); upperIds.push(id);
+  }
+  const bridgeW = survey.x + 3 - galleryX;
+  const skyRoof = Object.freeze({ ...box('snow-enclosed-gallery-ceiling', galleryX, 7.2, galleryZ, bridgeW, .24, 3, '#d1e1e8', 'snow-ceiling'), overhead: true });
+  extras.push(skyRoof); skybridgeCeilings.push(skyRoof.id);
+  // Glazed side walls have real frames and openings at the roof ends. Every
+  // visible panel remains a physical bullet stop, including its blue glazing.
+  for (const [side, z] of [['north', galleryZ], ['south', galleryZ + 2.8]])
+    for (const [index, [x, w]] of [[galleryX + 1.5, bridgeW * .3], [galleryX + bridgeW * .55,
+      side === 'north' ? radio.x - 3.4 - galleryX - bridgeW * .55 : bridgeW * .35 - 1.5]].entries())
+      add('research-glazing', box(`snow-gallery-${side}-window-${index}`, x, 4, z, w, 3.2, .2, '#86b3c4', 'glass'));
   for (const [index, [x, z]] of [[-8.3, -10.2], [5.8, 10.2]].entries())
     add('rescue-cargo', box(`snow-rescue-cargo-${index}`, x, 0, z, 1.4, 1.3, 1.2, index ? '#da985e' : '#829ba9', 'snow-crate'));
-  const upperFloors = Object.freeze([Object.freeze({ id: 'snow-research-level', name: 'Research roof gallery',
-    colliderIds: Object.freeze([`${lab.id}-roof`, ...galleryIds, `${survey.id}-roof`]),
-    routeIds: Object.freeze([lab, survey].flatMap(value => [`${value.id}-outer`, `${value.id}-inner`])),
+  const upperFloors = Object.freeze([Object.freeze({ id: 'snow-research-level', name: 'Enclosed research skybridge and observation circuit',
+    colliderIds: Object.freeze([`${lab.id}-roof`, ...upperIds, `${survey.id}-roof`, `${definitions[2].id}-roof`, `${radio.id}-roof`]),
+    routeIds: Object.freeze(definitions.flatMap(value => [`${value.id}-outer`, `${value.id}-inner`])),
     underpasses: Object.freeze([point(-8, galleryZ + 2), point(6, galleryZ + 2)]),
     traverse: Object.freeze([point(galleryX - 1, galleryZ + .2, 4), point(galleryX + .8, galleryZ + 2, 4),
-      point(survey.x + 1.5, galleryZ + 2, 4), point(survey.x + 1.5, survey.z + 1.5, 4)]) })]);
+      point(survey.x + 1.5, galleryZ + 2, 4), point(survey.x + 1.5, survey.z + 1.5, 4),
+      point(radio.x - 1.4, northernZ + 2, 4), point(lab.x + lab.w - 1, northernZ + 1.2, 4),
+      point(-2, 11.4, 4), point(survey.x + 1.5, 13.5, 4)]) })]);
   // Banked spawn approaches and irregular side banks create distinct snowy rotations.
   const bankDefinitions = royale ? [
     ['north', -5.5, -24, 11, 1.8, 1.3], ['south', -5, 23, 10, 1.8, 1.3],
@@ -121,17 +152,29 @@ export function createSnowMap(mode = 'breach') {
     // The lower toe is physical too; the narrow ground ledge never claims an invisible slope.
     add('snowbank', box(`snow-bank-${name}-toe`, x, 0, z + d, w, h * .42, .5, '#e4edf3', 'snow-bank'));
   }
+  const lowerCover = environmentCover([
+    { id: 'snow-rescue-hops', name: 'Rescue skids', kind: 'rescue-case', start: [royale ? -27 : -20, royale ? 23.8 : 18], end: [royale ? -21.6 : -16.2, royale ? 23.8 : 15.9],
+      boxes: [0, 1].map(i => ({ id: `snow-rescue-skid-${i}`, x: (royale ? -26 : -19) + i * 2, z: royale ? 23.1 : 17.3, w: 1.6, h: i ? .84 : .48, d: 1.4,
+        color: '#daa465', material: 'snow-crate', approaches: [[(royale ? -25.2 : -18.2) + i * 2, royale ? 21.7 : 15.9]] })) },
+    { id: 'snow-antenna-hops', name: 'Radio calibration cases', kind: 'instrument-case', start: [royale ? 26 : 21.7, -13], end: [royale ? 26 : 21.7, -8],
+      boxes: [0, 1].map(i => ({ id: `snow-radio-case-${i}`, x: (royale ? 26 : 21.7) - .7, z: -12 + i * 1.8, w: 1.4, h: i ? .84 : .48, d: 1.4,
+        color: '#799aa9', material: 'snow-crate', approaches: [[royale ? 28 : 23.7, -11.3 + i * 1.8]] })) },
+    { id: 'snow-survey-hops', name: 'Southern survey samples', kind: 'supply-pallet', start: [5, 19], end: [10.4, 19],
+      boxes: [0, 1].map(i => ({ id: `snow-survey-sample-${i}`, x: 6 + i * 2, z: 18.3, w: 1.6, h: i ? .84 : .48, d: 1.4,
+        color: '#aac3cd', material: 'snow-crate', approaches: [[6.8 + i * 2, 16.9]] })) },
+  ]);
   const prefix = royale ? 'boundary' : 'wall';
   const perimeter = [box(`${prefix}-west`, -halfW - 1, 0, -halfD - 1, 1, 5.8, halfD * 2 + 2, '#b9d0db', 'snow-wall'),
     box(`${prefix}-east`, halfW, 0, -halfD - 1, 1, 5.8, halfD * 2 + 2, '#b9d0db', 'snow-wall'),
     box(`${prefix}-north`, -halfW, 0, -halfD - 1, halfW * 2, 5.8, 1, '#b9d0db', 'snow-wall'),
     box(`${prefix}-south`, -halfW, 0, halfD, halfW * 2, 5.8, 1, '#b9d0db', 'snow-wall')];
   const common = { id: 'snow', name: 'Frostline Research', theme: 'snow', mode,
-    description: 'An asymmetric alpine research station: a radar laboratory, radio lodge, survey office and supply shelter overlook a banked snow yard. A suspended research gallery joins the higher roofs above two open yard crossings. Eight equipment climbs, instrument housings, rescue cargo and icy side routes provide contested approaches.',
+    description: 'A terraced alpine research campus: an enclosed glazed skybridge, exposed radar-roof spur and a southern observation walk form different upper rotations. Eight equipment stairs and banked snow trails connect laboratories, radio rooms and supply shelters around an asymmetric yard.',
     bounds: Object.freeze({ minX: -halfW, maxX: halfW, minZ: -halfD, maxZ: halfD }),
-    colliders: Object.freeze([...perimeter, ...buildings.flatMap(value => value.colliders), ...extras]),
+    authoredLayout: true, ...lowerCover,
+    colliders: Object.freeze([...perimeter, ...buildings.flatMap(value => value.colliders), ...extras, ...lowerCover.colliders]),
     routes: Object.freeze(buildings.flatMap(value => value.routes)), buildings: Object.freeze(buildings.map(value => value.metadata)),
-    landmarks: Object.freeze(landmarks), tunnels: Object.freeze([]), ceilings: Object.freeze([]),
+    landmarks: Object.freeze([...landmarks, ...lowerCover.landmarks]), tunnels: Object.freeze([]), ceilings: Object.freeze(skybridgeCeilings),
     upperFloors,
     decorations: Object.freeze([paint('snow-yard', -8, -3.5, 16, 8.5, '#bdd0dc'),
       paint('snow-path', -2.3, -halfD, 4.6, halfD * 2, '#b2c9d8'),

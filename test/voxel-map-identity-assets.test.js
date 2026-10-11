@@ -53,7 +53,7 @@ test('new office, sewer and alpine materials remain on their complete actual sol
   ];
   for (const [theme, material, id, w, h, d, y] of fixtures) {
     const collider = { id, material, color: '#87958a', x: 0, y, z: 0, w, h, d };
-    const { mesh, vertices } = isolate(theme, collider), positions = new Set(vertices.map(vertex => key(vertex.position)));
+    const { mesh, vertices } = isolate(theme, collider), positions = new Set(vertexPositions(mesh).map(key));
     assert.ok(mesh.every(Number.isFinite));
     for (const x of [0, w]) for (const yy of [y, y + h]) for (const z of [0, d]) assert.ok(positions.has(key([x, yy, z])), `${id}: exact collision corner is visible`);
     for (const { position: [x, yy, z] } of vertices) {

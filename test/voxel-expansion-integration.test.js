@@ -115,10 +115,20 @@ test('stack limits apply per flexible slot and partial pickups leave the real re
   player.hp = 40;
   tick(state, { slot3: true }); tick(state);
   tick(state, { fire: true });
-  assert.equal(player.potions, 3); assert.equal(player.shots, 0, 'selected potion fired a hidden gun');
+  assert.equal(player.potions, 4, 'starting a drink must only reserve the selected physical potion');
+  assert.equal(player.inventory[2].amount, 2); assert.equal(player.hp, 40);
+  assert.equal(player.shots, 0, 'selected potion fired a hidden gun');
   assert.equal(player.healTicks, Combat.HEAL.ticks);
-  tick(state, {}, Combat.HEAL.ticks);
+  tick(state, {}, Combat.HEAL.ticks - 1);
+  assert.equal(player.healTicks, 1); assert.equal(player.hp, 40); assert.equal(player.potions, 4);
+  tick(state);
   assert.equal(player.hp, 100); assert.equal(player.potions, 3);
+  assert.equal(player.inventory[2].amount, 1, 'completion spends the selected stack exactly once');
+  assert.equal(player.inventory[0].amount, 2, 'the other physical potion stack stays intact');
+  assert.equal(supply.amount, 1, 'drinking cannot consume the dropped remainder');
+  assert.equal(state.events.filter(event => event.type === 'healComplete').length, 1);
+  tick(state, {}, Combat.HEAL.ticks);
+  assert.equal(player.hp, 100); assert.equal(player.potions, 3, 'a released drink cannot spend again');
   assert.ok(player.inventory.every(item => !item || !['heal', 'grenade'].includes(item.kind) || item.amount <= 2));
 });
 

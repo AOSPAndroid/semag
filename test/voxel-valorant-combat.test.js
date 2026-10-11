@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createCombatPlayer, combatStep, emptyInput, cloneState, traceShot, traceWeaponShot, predictLocalMovement, WEAPON_PENETRATION } from '../public/voxel-engine.js';
+import { createCombatPlayer, combatStep, emptyInput, cloneState, traceShot, traceWeaponShot, predictLocalMovement, WEAPON_PENETRATION, HEAL } from '../public/voxel-engine.js';
 import { WEAPONS, weaponDamage } from '../public/voxel-weapons.js';
 import { resolveActiveFire, weaponReloadDuration, weaponFireIntervalTicks } from '../public/voxel-fire-modes.js';
 import { enableLagCompensation, setShotViewTick } from '../public/voxel-lag-compensation.js';
@@ -221,9 +221,23 @@ test('Classic and Bucky fresh RMB interrupt a real potion and prediction release
     assert.equal(pickupInventoryItem(own, { kind: 'heal', amount: 1 }).ok, true);
     ticks(state, 1, { 0: { heal: true } }); assert.ok(own.healTicks > 0);
     const predicted = cloneState(own), controls = { ...emptyInput(own), aim: true, up: true };
+    const predictedInventory = JSON.stringify(predicted.inventory);
     predictLocalMovement(predicted, controls, arena); ticks(state, 1, { 0: controls });
     assert.equal(own.healTicks, 0); assert.ok(shots(state).length > 0); assert.ok(Math.abs(predicted.vz - own.vz) < 1e-8);
-    assert.equal(own.hp, 140); assert.equal(own.potions, 0);
+    assert.equal(own.hp, 140); assert.equal(own.potions, 1, 'interrupted drink retains its physical potion');
+    assert.equal(own.inventory.find(item => item?.kind === 'heal').amount, 1);
+    assert.equal(own.healUseId, null); assert.equal(own.healInventoryIndex, -1);
+    assert.ok(own.inventory.every(item => !item?.healUseId), 'cancellation releases the inventory reservation');
+    assert.equal(JSON.stringify(predicted.inventory), predictedInventory, 'movement prediction cannot consume or cancel physical inventory');
+    assert.equal(predicted.potions, 1); assert.equal(predicted.hp, 140);
+    ticks(state, HEAL.ticks + 1);
+    assert.equal(own.hp, 140); assert.equal(own.potions, 1);
+    assert.equal(state.events.filter(event => event.type === 'healComplete').length, 0, 'cancelled commitment cannot finish later');
+    ticks(state, 1, { 0: { heal: true } });
+    assert.equal(own.healTicks, HEAL.ticks); assert.equal(own.potions, 1);
+    ticks(state, HEAL.ticks);
+    assert.equal(own.hp, 200); assert.equal(own.potions, 0, 'retained potion remains usable and spends on real completion');
+    assert.equal(state.events.filter(event => event.type === 'healComplete').length, 1);
   }
 });
 

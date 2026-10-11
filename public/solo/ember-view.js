@@ -16,13 +16,21 @@ const node = (tag, className, value) => {
 const controls = {
   ArrowUp: 'up', w: 'up', ArrowDown: 'down', s: 'down',
   ArrowLeft: 'left', a: 'left', ArrowRight: 'right', d: 'right',
-  c: 'melee', j: 'melee', e: 'spell', k: 'spell', ' ': 'dash', Shift: 'dash', f: 'interact',
+  j: 'melee', e: 'spell', k: 'spell', ' ': 'dash', Shift: 'sprint', Control: 'crouch', c: 'walk', f: 'interact',
   ',': 'turnLeft', '<': 'turnLeft', '.': 'turnRight', '>': 'turnRight',
 };
 
-export function emberControl(event, layout = getKeyboardLayout()) {
-  if (blocksSoloShortcut(event, { allowRepeat: true })) return null;
+export function emberControl(event, layout = getKeyboardLayout(), { captured = false, crouchHeld = false } = {}) {
   const key = gameKey(event, layout);
+  // Ctrl is a held stance. Its gameplay chords only override browser shortcuts
+  // while this dungeon owns mouse capture and the physical crouch is held.
+  const crouchChord = captured && crouchHeld;
+  const shortcut = {
+    defaultPrevented: event.defaultPrevented, isComposing: event.isComposing,
+    repeat: event.repeat, metaKey: event.metaKey, altKey: event.altKey, target: event.target,
+    ctrlKey: event.ctrlKey && key !== 'Control' && !crouchChord,
+  };
+  if (blocksSoloShortcut(shortcut, { allowRepeat: true })) return null;
   return controls[key.length === 1 ? key.toLowerCase() : key] || null;
 }
 
@@ -42,6 +50,7 @@ export function emberCameraInput(actions, move, yaw) {
     aimX: Math.sin(yaw), aimY: -Math.cos(yaw),
     melee: Boolean(actions.melee), spell: Boolean(actions.spell),
     dash: Boolean(actions.dash), interact: Boolean(actions.interact),
+    sprint: Boolean(actions.sprint), crouch: Boolean(actions.crouch), walk: Boolean(actions.walk),
   };
 }
 
@@ -71,6 +80,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   let raf = 0, dead = false, previous = null, accumulator = 0, lastUpdate = 0;
   let lastPhase = '', mapKey = '', buildKey = '', choiceKey = '', expectedUnlock = false, mouseLocked = false;
   let lookFallback = false, dragPoint = null, graphicsFailed = false, graphicsError = '';
+  let capturedPauseKey = null;
   const held = new Map(), pointers = new Map(), queue = new Set();
   const sticks = { move: { x: 0, y: 0 }, aim: { x: 0, y: 0 } };
   const textCache = new WeakMap();
@@ -107,6 +117,8 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     label.append(node('span', '', title), value); rail.append(fill); wrap.append(label, rail); meters.append(wrap);
     meterRefs[key] = { value, rail, fill };
   }
+  const stance = node('span', 'ember-stance', 'READY');
+  stance.setAttribute('aria-label', 'Movement stance'); meters.append(stance);
   const purse = node('div', 'ember-purse');
   const goldLabel = node('b', '', ''), killLabel = node('span', '', ''); purse.append(goldLabel, killLabel);
   const reticle = node('div', 'ember-reticle'); reticle.setAttribute('aria-hidden', 'true');
@@ -136,7 +148,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   const footer = node('div', 'ember-footer');
   const build = node('div', 'ember-build'); build.setAttribute('aria-label', 'Run relics');
   const hints = node('div', 'ember-hints');
-  for (const [key, title] of [['WASD', 'Move'], ['Mouse', 'Look'], ['LMB / C', 'Blade'], ['RMB / E', 'Bolt'], ['Space', 'Dodge'], ['F', 'Use'], ['P', 'Pause']]) {
+  for (const [key, title] of [['WASD', 'Move'], ['Mouse', 'Look'], ['Shift', 'Sprint'], ['Ctrl', 'Crouch'], ['C', 'Quiet'], ['LMB / J', 'Blade'], ['RMB / E', 'Bolt'], ['Space', 'Dodge'], ['F', 'Use'], ['P', 'Pause']]) {
     const hint = node('span', ''); hint.append(node('kbd', '', key), document.createTextNode(title)); hints.append(hint);
   }
   footer.append(build, hints);
@@ -154,6 +166,13 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     button.append(node('b', '', icon), node('span', '', title)); actions.append(button); actionRefs[id] = button;
   }
   touch.insertBefore(actions, touch.lastChild);
+  const mobility = node('div', 'ember-mobility');
+  for (const [id, icon, title] of [['sprint', '»', 'SPRINT'], ['crouch', '⌄', 'CROUCH'], ['walk', '·', 'QUIET']]) {
+    const button = node('button', 'ember-action ember-mobility-action'); button.type = 'button'; button.dataset.control = id;
+    button.setAttribute('aria-label', `Hold to ${title.toLowerCase()}`);
+    button.append(node('b', '', icon), node('span', '', title)); mobility.append(button); actionRefs[id] = button;
+  }
+  touch.append(mobility);
   const settings = node('details', 'ember-settings'), settingTitle = node('summary', '', 'Descent settings · seed & difficulty');
   const settingBody = node('div', 'ember-setting-body');
   const difficultyLabel = node('label', '', 'DESCENT'), difficultySelect = node('select', '');
@@ -168,7 +187,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   seedInput.type = 'text'; seedInput.inputMode = 'numeric'; seedInput.value = state.seed; seedInput.maxLength = 10;
   seedInput.setAttribute('aria-label', 'Run seed, a number from 1 to 4294967295'); seedLabel.append(seedInput);
   seedButton.type = newButton.type = 'button';
-  const keyboardNote = node('p', 'ember-keyboard-note', 'Keyboard only: comma / period turn the camera. C swings; E casts. Open settings pauses the run.');
+  const keyboardNote = node('p', 'ember-keyboard-note', 'Shift sprints using stamina; Ctrl crouches; C walks quietly. Space dodges. Keyboard only: comma / period turn the camera, J swings and E casts. Open settings pauses the run.');
   settingBody.append(difficultyLabel, seedLabel, seedButton, newButton, difficultyNote, keyboardNote);
   settings.append(settingTitle, settingBody); view.append(board, footer, touch, settings); container.append(view);
 
@@ -185,7 +204,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   function emit() {
     onUpdate({
       phase: ['route', 'reward', 'camp'].includes(state.phase) ? 'playing' : state.phase,
-      score: state.score, record: state.score, recordKey: `${state.difficulty}-thirdperson-v1`,
+      score: state.score, record: state.score, recordKey: `${state.difficulty}-thirdperson-v2`,
       recordLabel: `${DIFFICULTIES[state.difficulty].title.toUpperCase()} 3D BEST`,
       detail: `${DIFFICULTIES[state.difficulty].title} · Act ${state.act}/3 · ${state.room.title} · ${state.gold} gold`,
     });
@@ -205,6 +224,11 @@ export function mount(container, { onUpdate = () => {} } = {}) {
     text(actLabel, ACT_NAMES[state.act - 1]); text(roomLabel, `ACT ${state.act} · ${state.room.title} · ${state.depth}/4`);
     text(difficultyNote, DIFFICULTIES[state.difficulty].description);
     text(goldLabel, `${state.gold} GOLD`); text(killLabel, `${state.kills} fallen · ${state.score.toLocaleString()} score`);
+    const p = state.player;
+    const stanceId = p.crouching ? 'crouch' : p.walking ? 'quiet' : p.sprinting ? 'sprint' : p.sprintExhausted ? 'exhausted' : Math.hypot(p.velocityX || 0, p.velocityY || 0) > 3 ? 'move' : 'ready';
+    view.dataset.stance = stanceId;
+    stance.dataset.stance = stanceId;
+    text(stance, ({ crouch: 'CROUCHED · LOW PROFILE', quiet: 'QUIET WALK', sprint: 'SPRINTING · STAMINA', exhausted: 'CATCHING BREATH · RELEASE SHIFT', move: 'MOVING', ready: 'READY' })[stanceId]);
     for (const [key, refs] of Object.entries(meterRefs)) {
       const max = state.player[key === 'hp' ? 'maxHp' : key === 'mana' ? 'maxMana' : 'maxStamina'];
       const value = Math.ceil(state.player[key]), width = `${clamp(state.player[key] / max * 100, 0, 100)}%`;
@@ -332,8 +356,17 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   }
   const native = target => target instanceof Element && Boolean(target.closest('input,textarea,select,[contenteditable],button,a,summary'));
   function keydown(event) {
+    const physical = event.code || event.key;
+    // Once a captured Ctrl+P has paused and released the mouse, suppress its
+    // auto-repeat until keyup rather than opening the browser's Print dialog.
+    if (event.repeat && capturedPauseKey === physical) { event.preventDefault(); return; }
     if (native(event.target)) return;
-    const control = emberControl(event);
+    const captured = document.pointerLockElement === canvas, crouchHeld = [...held.values()].includes('crouch');
+    if (captured && crouchHeld && event.ctrlKey && gameKey(event).toLowerCase() === 'p' &&
+      !blocksSoloShortcut({ defaultPrevented: event.defaultPrevented, repeat: event.repeat, isComposing: event.isComposing, altKey: event.altKey, metaKey: event.metaKey, target: event.target })) {
+      event.preventDefault(); capturedPauseKey = physical; togglePause(); return;
+    }
+    const control = emberControl(event, getKeyboardLayout(), { captured, crouchHeld });
     if (!control) return;
     event.preventDefault();
     // Resume/layout changes require a fresh physical press; stale key repeats
@@ -344,7 +377,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
       if (!event.repeat) queue.add(control);
     }
   }
-  function keyup(event) { held.delete(event.code || event.key); }
+  function keyup(event) { const physical = event.code || event.key; held.delete(physical); if (capturedPauseKey === physical) capturedPauseKey = null; }
   function requestLook() {
     if (dead || state.phase !== 'playing') return;
     canvas.focus({ preventScroll: true });
@@ -453,7 +486,7 @@ export function mount(container, { onUpdate = () => {} } = {}) {
   const resizeObserver = new ResizeObserver(resized); resizeObserver.observe(board);
   function updateKeyboardHints() {
     view.dataset.keyboardLayout = getKeyboardLayout(); text(hints.querySelector('kbd'), displayKey('WASD'));
-    canvas.setAttribute('aria-label', `Third-person voxel dungeon. ${displayKey('WASD')} or arrows move relative to the camera. Mouse or drag to look. Click or C swings, right click or E casts. Space or Shift dodges. F uses gates and shrines. Comma and period turn with the keyboard. P pauses.`);
+    canvas.setAttribute('aria-label', `Third-person voxel dungeon. ${displayKey('WASD')} or arrows move relative to the camera. Mouse or drag to look. Shift sprints using stamina; Control crouches; C walks quietly. Click or J swings, right click or E casts. Space dodges. F uses gates and shrines. Comma and period turn with the keyboard. P pauses.`);
   }
   const unsubscribeKeyboardLayout = subscribeKeyboardLayout(() => { release(); updateKeyboardHints(); });
   updateKeyboardHints(); updateUI(); draw(); emit(); schedule();

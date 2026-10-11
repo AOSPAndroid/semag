@@ -80,7 +80,19 @@ test('short utility taps start actual reload, grenade, healing and jump commitme
     shortPress(queue, action); tick(state, queue);
     if (action === 'reload') assert.ok(player.reloadTicks > 0);
     if (action === 'grenade') { assert.equal(player.grenades, 0); assert.equal(state.grenades.length, 1); assert.ok(player.grenadeThrowTicks > 0); }
-    if (action === 'heal') { assert.equal(player.potions, 0); assert.ok(player.healTicks > 0); }
+    if (action === 'heal') {
+      assert.equal(player.potions, 1, 'a queued tap reserves its potion until completion');
+      assert.equal(player.healTicks, Voxel.HEAL.ticks); assert.equal(player.hp, 125);
+      assert.equal(state.events.filter(event => event.type === 'healStart').length, 1);
+      for (let index = 0; index < Voxel.HEAL.ticks - 1; index++) tick(state, queue, undefined, 103 + index);
+      assert.equal(player.healTicks, 1); assert.equal(player.potions, 1); assert.equal(player.hp, 125);
+      tick(state, queue, undefined, 103 + Voxel.HEAL.ticks);
+      assert.equal(player.healTicks, 0); assert.equal(player.potions, 0); assert.equal(player.hp, 185);
+      for (let index = 0; index < Voxel.HEAL.ticks; index++) tick(state, queue, undefined, 104 + Voxel.HEAL.ticks + index);
+      assert.equal(state.events.filter(event => event.type === 'healStart').length, 1, 'released tap never restarts healing');
+      assert.equal(state.events.filter(event => event.type === 'healComplete').length, 1);
+      assert.equal(queue.inspect().pending.length, 0); assert.equal(player.hp, 185);
+    }
     if (action === 'jump') { assert.ok(player.y > 0); assert.ok(player.vy > 0); assert.equal(player.grounded, false); }
   }
 });

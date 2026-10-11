@@ -66,3 +66,43 @@ test('camera screen-centre aim compensates shoulder offset at the actual bolt he
   const projected = projectWorld([state.player.x / 32 + aim.x * distance, .84, state.player.y / 32 + aim.y * distance], pose, 16 / 9);
   close(projected.x, 0); close(projected.y, 0);
 });
+
+test('crouching smoothly lowers both camera and hero stance at every refresh rate, with frozen pause poses', () => {
+  const state = createState({ seed: 19 }); state.player.x = 480; state.room.obstacles = [];
+  const c60 = new EmberVoxelCamera(), c144 = new EmberVoxelCamera();
+  const standing = c60.update(state, { yaw: Math.PI / 2 }); c144.update(state, { yaw: Math.PI / 2 });
+  state.player.crouching = true;
+  const first = c60.update(state, { yaw: Math.PI / 2, time: 1 / 60 });
+  assert.ok(first.crouchAmount > 0 && first.crouchAmount < 1);
+  assert.ok(first.target[1] < standing.target[1]); assert.ok(first.target[1] > standing.target[1] - EMBER_CAMERA.crouchDrop);
+  assert.ok(standing.eye[1] - first.eye[1] < .08, 'a stance press cannot teleport the camera');
+  for (let tick = 2; tick <= 60; tick++) c60.update(state, { yaw: Math.PI / 2, time: tick / 60 });
+  for (let tick = 1; tick <= 144; tick++) c144.update(state, { yaw: Math.PI / 2, time: tick / 144 });
+  close(c60.pose.crouchAmount, c144.pose.crouchAmount); close(c60.pose.target[1], c144.pose.target[1]);
+  close(c60.pose.eye[1], c144.pose.eye[1], .000001);
+  close(c60.pose.target[1], standing.target[1] - EMBER_CAMERA.crouchDrop);
+  state.phase = 'paused'; state.elapsed = 1; state.player.crouching = false;
+  const paused = structuredClone(c60.pose); c60.update(state, { time: 50 }); assert.deepEqual(c60.pose, paused);
+  state.phase = 'playing';
+  const rising = c60.update(state, { yaw: Math.PI / 2, time: 1 + 1 / 60 });
+  assert.ok(rising.crouchAmount > 0 && rising.crouchAmount < paused.crouchAmount);
+  assert.ok(rising.target[1] < standing.target[1]);
+});
+
+test('a lowered crouch camera still stops at pillar faces throughout stance transitions', () => {
+  const state = createState({ seed: 29 }); state.player.x = 374; state.player.y = 320;
+  for (let index = 0; index < 32; index++) {
+    const camera = new EmberVoxelCamera(), yaw = index * Math.PI / 16;
+    camera.update(state, { yaw, pitch: .12, time: 0 });
+    for (let tick = 1; tick <= 60; tick++) {
+      state.player.crouching = tick < 30;
+      const pose = camera.update(state, { yaw, pitch: .12, time: tick / 120 });
+      const anchor = [state.player.x / 32, EMBER_CAMERA.targetHeight - pose.crouchAmount * EMBER_CAMERA.crouchDrop, state.player.y / 32];
+      assert.ok(pose.eye.every(Number.isFinite));
+      for (const o of state.room.obstacles) {
+        const hit = segmentBoxFraction(anchor, pose.eye, { min: [o.x / 32 - .19, -.19, o.y / 32 - .19], max: [(o.x + o.width) / 32 + .19, 2.84, (o.y + o.height) / 32 + .19] });
+        assert.equal(hit, null, 'stance transitions cannot slide the boom through a pillar');
+      }
+    }
+  }
+});

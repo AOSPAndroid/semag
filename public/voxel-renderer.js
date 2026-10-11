@@ -15,7 +15,7 @@ import { createSlashImpactPresenter } from './voxel-slash-effects.js';
 import { MONSTER_VARIANT_ART, appendMonsterVariant } from './voxel-monster-variants.js';
 import { MONSTER_SPECIAL_RULES } from './voxel-monster-specials.js';
 import { monsterLocomotionPose, monsterGaitCycleMetres, appendMonsterLimb } from './voxel-monster-animation.js';
-import { MAP_EXPANSION_ART, MAP_EXPANSION_ATMOSPHERE, appendVoxelMapExpansionCollider, appendVoxelMapExpansionFloor, appendVoxelMapExpansionDecoration, appendVoxelMapExpansionFloors } from './voxel-map-expansion-art.js';
+import { MAP_EXPANSION_ART, MAP_EXPANSION_ATMOSPHERE, appendVoxelMapExpansionCollider, appendVoxelMapExpansionFloor, appendVoxelMapExpansionDecoration, appendVoxelMapExpansionFloors, appendVoxelIdentityFloors, resolveVoxelWallSign } from './voxel-map-expansion-art.js';
 
 // All solid world surfaces come directly from the engine's minimum-corner
 // colliders. Decoration is either painted on those surfaces or outside bounds.
@@ -693,8 +693,10 @@ const GLYPHS = Object.freeze({
   E: ['11111','10000','10000','11110','10000','10000','11111'], F: ['11111','10000','10000','11110','10000','10000','10000'],
   G: ['01111','10000','10000','10111','10001','10001','01111'], H: ['10001','10001','10001','11111','10001','10001','10001'],
   I: ['111','010','010','010','010','010','111'], L: ['10000','10000','10000','10000','10000','10000','11111'],
+  J: ['00111','00010','00010','00010','10010','10010','01100'], K: ['10001','10010','10100','11000','10100','10010','10001'],
   M: ['10001','11011','10101','10101','10001','10001','10001'], N: ['10001','11001','10101','10011','10001','10001','10001'],
   O: ['01110','10001','10001','10001','10001','10001','01110'], P: ['11110','10001','10001','11110','10000','10000','10000'],
+  Q: ['01110','10001','10001','10001','10101','10010','01101'], Z: ['11111','00001','00010','00100','01000','10000','11111'],
   R: ['11110','10001','10001','11110','10100','10010','10001'], S: ['01111','10000','10000','01110','00001','00001','11110'],
   T: ['11111','00100','00100','00100','00100','00100','00100'], U: ['10001','10001','10001','10001','10001','10001','01110'],
   V: ['10001','10001','10001','10001','10001','01010','00100'], W: ['10001','10001','10001','10101','10101','10101','01010'],
@@ -731,12 +733,12 @@ function wallText(mesh, collider, face, text, left, bottom, height, color, offse
   }
 }
 
-function siteSign(mesh, collider, siteId) {
+function siteSign(mesh, collider, siteId, edge = null) {
   const color = siteId === 'A' ? '#ecb964' : '#64c9bc', dark = '#263b3e';
   for (const face of ['north', 'south', 'west', 'east']) {
     const width = face === 'north' || face === 'south' ? collider.w : collider.d;
     if (width < .8) continue;
-    const size = Math.min(.83, width - .22), left = (width - size) / 2;
+    const size = Math.min(.83, width - .22), left = edge === 'left' ? .12 : edge === 'right' ? width - size - .12 : (width - size) / 2;
     wallPatch(mesh, collider, face, left, 1.42, size, 1.02, dark, .025);
     wallPatch(mesh, collider, face, left + .04, 1.47, size - .08, .065, color, .028);
     wallText(mesh, collider, face, siteId, left + (size - .50) / 2, 1.67, .70, color, .03);
@@ -951,7 +953,14 @@ function paintParisCollider(mesh, collider) {
   if (/foliage|bark/.test(material)) return paintRoyaleCollider(mesh, collider, 'forest');
   if (/wood|crate|metal/.test(material)) {
     paintRoyaleCollider(mesh, collider, 'paris');
-    if (/terrace-table/.test(id)) {
+    if (/zinc|rail|roof-bridge|roof-link|balcony/.test(material + id)) {
+      for (const face of ['north', 'south', 'west', 'east']) {
+        const span = face === 'north' || face === 'south' ? w : d;
+        if (span < .2 || h < .08) continue;
+        wallPatch(mesh, collider, face, .025, .025, span - .05, Math.min(.034, h - .05), '#c3c6b5', .008);
+        for (let at = .15; at < span - .07; at += Math.max(1.0, span / 8)) wallPatch(mesh, collider, face, at, h * .48, .026, .026, '#d4d1b7', .012);
+      }
+    } else if (/terrace-table/.test(id)) {
       mesh.floor(x + .08, z + .08, w - .16, d - .16, '#d0c4aa', y + h + .004);
       for (let row = .25; row < d - .10; row += .35) mesh.floor(x + .12, z + row, w - .24, .013, '#abac97', y + h + .005);
       mesh.floor(x + .16, z + .16, .48, .27, '#715652', y + h + .006);
@@ -966,7 +975,7 @@ function paintParisCollider(mesh, collider) {
   mesh.box(x, y, z, w, h, d, color);
   if (h < .08) return;
   const dark = mix(color, rgba(slate ? '#253b48' : '#887d6b'), .35), pale = mix(color, rgba('#f0e3c9'), .42);
-  const buildingWall = /paris-(opera|atelier|cafe|librairie)-/.test(id) && !/climb|roof|chimney/.test(id);
+  const buildingWall = /paris-(opera|atelier|cafe|librairie)-/.test(id) && !/climb|roof|chimney|step|riser|tread|stairs?|deck|bridge|balcony|rail/.test(id);
   const innerFace = !buildingWall ? null : /-north-/.test(id) ? 'south' : /-south-/.test(id) ? 'north' : id.endsWith('-west') ? 'east' : id.endsWith('-east') ? 'west' : null;
   for (const face of ['north', 'south', 'west', 'east']) {
     const width = face === 'north' || face === 'south' ? w : d;
@@ -1087,12 +1096,25 @@ function paintExpansionCollider(mesh, collider, theme) {
         underside(cx - lw / 2, cz - ld / 2, lw, ld, '#313f37', .006);
         underside(cx - lw / 2 + .045, cz - ld / 2 + .045, lw - .09, ld - .09, '#ffe0a0', .008);
       }
+    } else if (theme === 'snow') {
+      // An insulated research skybridge has ribbed alloy panels and cool
+      // instrument lighting, rather than an office suspended-tile ceiling.
+      underside(x + .012, z + .012, w - .024, d - .024, '#91aeba');
+      const alongZ = d >= w, length = alongZ ? d : w;
+      for (let at = .55; at < length - .08; at += 2.0) {
+        if (alongZ) underside(x + .03, z + at, w - .06, .045, '#577887', .012);
+        else underside(x + at, z + .03, .045, d - .06, '#577887', .012);
+      }
+      for (let at = 1.2; at < length - .5; at += 5.5) {
+        if (alongZ) underside(x + w * .22, z + at, w * .56, .16, '#d8f5ff', .020);
+        else underside(x + at, z + d * .22, .16, d * .56, '#d8f5ff', .020);
+      }
     } else {
-      for (let xx = .03; xx < w - .03; xx += 3.2) for (let zz = .03; zz < d - .03; zz += 3.2) {
-        const ww = Math.min(3.16, w - xx - .03), dd = Math.min(3.16, d - zz - .03);
+      for (let xx = .03; xx < w - .03; xx += 4.8) for (let zz = .03; zz < d - .03; zz += 4.8) {
+        const ww = Math.min(4.76, w - xx - .03), dd = Math.min(4.76, d - zz - .03);
         if (Math.min(ww, dd) <= .03) continue;
         underside(x + xx, z + zz, ww, dd, '#dbdbd2');
-        if (ww > 2 && dd > 1) {
+        if (ww > 2 && dd > 1 && (Math.round(xx / 4.8) + Math.round(zz / 4.8)) % 2 === 0) {
           underside(x + xx + .4, z + zz + .65, Math.min(2.2, ww - .7), .36, '#8a8c85', .006);
           underside(x + xx + .44, z + zz + .69, Math.min(2.12, ww - .78), .28, '#fff7e8', .008);
         }
@@ -1187,7 +1209,7 @@ function paintExpansionCollider(mesh, collider, theme) {
       if (brick) {
         // Large, staggered brick courses survive at FPS distance without
         // thousands of tiny boxes. Mortar remains flush against real masonry.
-        const rows = clamp(Math.ceil(h / .43), 1, 10), columns = clamp(Math.ceil(width / 1.2), 1, 12);
+        const rows = clamp(Math.ceil(h / .60), 1, 6), columns = clamp(Math.ceil(width / 1.6), 1, 8);
         for (let row = 1; row < rows; row++) {
           patch(face, .012, h * row / rows, width - .024, .026, '#3c4036', .003);
           for (let column = 0; column < columns; column++) patch(face, (column + .2 + row % 2 * .5) * width / columns, h * (row - 1) / rows + .025, .020, h / rows - .05, '#46483d', .004);
@@ -1245,14 +1267,14 @@ function paintExpansionCollider(mesh, collider, theme) {
       if (width < .16 || h < .14) continue;
       patch(face, .035, .035, width - .07, h - .07, '#151f24', .003);
       patch(face, .07, .07, width - .14, h - .14, '#26373b', .005);
-      const panes = clamp(Math.round(width / 1.25), 1, 8), paneWidth = (width - .20) / panes;
+      const panes = clamp(Math.round(width / 1.7), 1, 6), paneWidth = (width - .20) / panes;
       for (let pane = 0; pane < panes; pane++) {
         const left = .10 + pane * paneWidth, graphHeight = Math.max(.05, h - .30), graphBottom = .15;
         patch(face, left, h - .12, paneWidth - .06, .025, '#70a1ac', .007);
         for (let row = 1; row < 4; row++) patch(face, left, graphBottom + graphHeight * row / 4, paneWidth - .06, .010, '#3d5052', .006);
-        for (let candle = 0; candle < 5; candle++) {
+        for (let candle = 0; candle < 4; candle++) {
           const seed = hash(`${id}:${pane}:${candle}`), center = graphBottom + graphHeight * (.25 + seed % 50 / 100);
-          const graph = Math.min(graphHeight * .22, .16 + seed % 5 / 80), cx = left + .06 + candle * Math.max(.018, (paneWidth - .18) / 5);
+          const graph = Math.min(graphHeight * .22, .16 + seed % 5 / 80), cx = left + .06 + candle * Math.max(.018, (paneWidth - .18) / 4);
           const tint = seed % 3 ? '#70b69e' : '#d29a7f';
           patch(face, cx + .018, center - graph * .7, .012, graph * 1.4, tint, .008);
           patch(face, cx, center - graph * .35, Math.max(.016, (paneWidth - .20) / 11), graph * .7, tint, .009);
@@ -1424,7 +1446,10 @@ function paintCollider(mesh, collider, theme) {
     if (/metal|container/.test(material) && w > 2 && h > 2) {
       for (const face of ['north', 'south']) {
         wallPatch(mesh, collider, face, w * .15, h * .57, w * .70, .78, shade(c, .73), .018);
-        wallText(mesh, collider, face, 'CARGO', w * .19, h * .63, .48, '#e5dac2', .031);
+        // A real furnace already carries its authored Foundry wordmark.
+        // Preserve its plate, serial and metalwork without competing cargo text.
+        if (!(theme === 'foundry' && collider.id === 'foundry-furnace'))
+          wallText(mesh, collider, face, 'CARGO', w * .19, h * .63, .48, '#e5dac2', .031);
         wallText(mesh, collider, face, String(hash(collider.id) % 90 + 10), w * .18, h * .34, .34, '#dcc29a', .032);
       }
       for (const zz of [z - skin - .002, z + d + .002]) {
@@ -1502,7 +1527,9 @@ function paintCollider(mesh, collider, theme) {
       const width = face === 'north' || face === 'south' ? w : d;
       for (let left = .24; left < width - .60; left += 1.46) {
         const seed = hash(`${collider.id}:${face}:${left}`), bottom = .35 + seed % Math.max(1, Math.floor((h - .7) * 10)) / 10;
-        wallPatch(mesh, collider, face, left, bottom, Math.min(.64, width - left - .10), .23, shade(c, seed % 2 ? 1.06 : .94), .004);
+        // A masonry scuff must fit this solid, including thin roof decks
+        // and the low hop obstacles used to reach them.
+        if (bottom + .23 <= h) wallPatch(mesh, collider, face, left, bottom, Math.min(.64, width - left - .10), .23, shade(c, seed % 2 ? 1.06 : .94), .004);
       }
       wallPatch(mesh, collider, face, 0, .02, width, Math.min(.14, h / 6), shade(c, .54), .014);
       wallPatch(mesh, collider, face, 0, h - .23, width, .085, mix(c, rgba('#e6dbc6'), .6), .014);
@@ -1742,120 +1769,86 @@ function dojoMapPaint(mesh, map) {
 function mapPaint(mesh, map, theme) {
   if (map.mode === 'dojo') { dojoMapPaint(mesh, map); routePaint(mesh, map); return; }
   const find = id => map.colliders.find(collider => collider.id === id);
+  const paintWallSign = decoration => {
+    const sign = resolveVoxelWallSign(map, decoration);
+    if (!sign) return;
+    const { wall, face, left, bottom, w, h } = sign;
+    const brand = sign.emblem === 'barclays' || sign.label === 'BARCLAYS';
+    const bg = brand ? '#07314c' : theme === 'sewers' ? '#303e34' : '#345465';
+    const ink = brand ? '#e0f5ff' : theme === 'sewers' ? '#f0d29a' : '#e4f0e7';
+    const accent = brand ? '#25b7e7' : theme === 'sewers' ? '#d0ad67' : '#8ccacb';
+    wallPatch(mesh, wall, face, left, bottom, w, h, bg, .008);
+    wallPatch(mesh, wall, face, left + .06, bottom + h - .065, w - .12, .025, accent, .016);
+    const label = String(sign.label || '').toUpperCase().slice(0, 22), subtitle = String(sign.sublabel || '').toUpperCase().slice(0, 28);
+    const units = text => [...text].reduce((sum, letter) => sum + (GLYPHS[letter]?.[0].length || 2) + 1, 0) - 1;
+    const emblemWidth = brand ? h * .67 : 0, gap = brand ? h * .14 : 0;
+    const height = Math.min(h * (subtitle ? .33 : .44), (w - .24 - emblemWidth - gap) * 7 / Math.max(1, units(label)));
+    if (height < .05) return;
+    const textWidth = units(label) * height / 7, groupWidth = emblemWidth + gap + textWidth, start = left + (w - groupWidth) / 2;
+    const reversed = face === 'north' || face === 'east';
+    const textLeft = reversed ? start : start + emblemWidth + gap;
+    wallText(mesh, wall, face, label, textLeft, bottom + h * (subtitle ? .43 : .31), height, ink, .024);
+    if (brand) {
+      // Pixel eagle: wings and feathered tail are surface pixels, not a
+      // floating logo model or a plate that could masquerade as real cover.
+      const rows = ['100000000001','110000000011','111000000111','011100001110','001111111100','000111111000','000111111000','000011110000','000011110000','000001100000','000001100000'];
+      const pixel = emblemWidth / 12, logoLeft = reversed ? start + textWidth + gap : start, logoBottom = bottom + h * .22;
+      for (let row = 0; row < rows.length; row++) for (let column = 0; column < 12; column++) if (rows[row][column] === '1')
+        wallPatch(mesh, wall, face, logoLeft + (reversed ? 11 - column : column) * pixel, logoBottom + (10 - row) * pixel, pixel * .92, pixel * .92, accent, .024);
+    }
+    if (subtitle) {
+      const subHeight = Math.min(h * .14, (w - .3) * 7 / Math.max(1, units(subtitle)));
+      wallText(mesh, wall, face, subtitle, left + (w - units(subtitle) * subHeight / 7) / 2, bottom + h * .16, subHeight, accent, .024);
+    }
+  };
+  const authoredSigns = (map.decorations || []).filter(item => item.kind === 'wall-sign');
+  for (const sign of authoredSigns) paintWallSign(sign);
   const siteColumn = id => {
     const side = id === 'A' ? 'west' : 'east';
     const prefix = ({ rooftops: 'roofline', foundry: 'foundry', bastion: 'bastion' })[theme];
     return find(prefix ? `${prefix}-${side}-site-column` : `${side}-${theme === 'courtyard' ? 'site-column' : theme === 'depot' ? 'loading-column' : 'site-pillar'}`);
   };
+  const themeSign = ['rooftops', 'foundry', 'bastion'].includes(theme)
+    ? map.colliders.find(collider => collider.w >= 5 && collider.h >= 2.7 && collider.y < .1 && !String(collider.id).startsWith('wall-')) : null;
   for (const site of map.sites || []) {
     const column = siteColumn(site.id) || map.colliders.filter(collider => collider.h >= 2.5 && collider.y < .1 && collider.w >= .8 && collider.d >= .8 && !String(collider.id).startsWith('wall-')).sort((a, b) => Math.hypot(a.x + a.w / 2 - site.x, a.z + a.d / 2 - site.z) - Math.hypot(b.x + b.w / 2 - site.x, b.z + b.d / 2 - site.z))[0];
-    if (column) siteSign(mesh, column, site.id);
+    if (column) siteSign(mesh, column, site.id, column === themeSign ? (site.id === 'A' ? 'left' : 'right') : null);
   }
   if (['snow', 'sewers', 'trading'].includes(theme)) {
-    for (const decoration of map.decorations || []) {
-      const { x, z, w, d } = decoration;
-      if (![x, z, w, d].every(Number.isFinite) || Math.min(w, d) <= 0) continue;
-      mesh.floor(x, z, w, d, decoration.color || ART[theme].paving, finite(decoration.y, 0) + .003);
-      if (theme === 'snow' && /path|yard|trail/.test(decoration.kind || '')) {
-        const alongZ = d > w, length = alongZ ? d : w;
-        for (let at = .4, index = 0; at < length - .3; at += .9, index++) {
-          const side = index % 2 ? .14 : -.14;
-          if (alongZ) mesh.floor(x + w / 2 + side, z + at, .11, .22, '#96b3c1', .006);
-          else mesh.floor(x + at, z + d / 2 + side, .22, .11, '#96b3c1', .006);
-        }
-      }
-      if (theme === 'sewers' && !/water/.test(decoration.kind || '')) {
-        for (let at = .5; at < d - .15; at += 1.4) mesh.floor(x + .13, z + at, Math.min(.44, w - .2), .065, '#4b5b43', .006);
-      }
-      if (/aisle|path/.test(decoration.kind || '')) {
-        const alongZ = d > w, length = alongZ ? d : w;
-        for (let at = .3; at < length - .3; at += 2.8) {
-          if (alongZ) mesh.floor(x + .09, z + at, .026, Math.min(1.1, length - at - .15), ART[theme].accent, .004);
-          else mesh.floor(x + at, z + .09, Math.min(1.1, length - at - .15), .026, ART[theme].accent, .004);
-        }
-      }
-    }
+    appendVoxelIdentityFloors(mesh, map);
     for (const building of map.buildings || []) {
       const room = building.interior;
       if (!room) continue;
-      const x = room.minX + .016, z = room.minZ + .016, w = room.maxX - room.minX - .032, d = room.maxZ - room.minZ - .032;
-      const base = theme === 'trading' ? '#8e958b' : theme === 'sewers' ? '#797760' : '#b6c4ca';
-      mesh.floor(x, z, w, d, base, .004);
-      for (let line = .35; line < d - .04; line += theme === 'trading' ? 1.5 : 1.0) mesh.floor(x + .03, z + line, w - .06, .016, shade(rgba(base), .82), .005);
       const wall = find(`${building.id}-west`);
       if (wall && wall.d > 3 && wall.h > 2) {
-        const left = Math.max(.12, (wall.d - 2.2) / 2), color = theme === 'trading' ? '#4f6f72' : theme === 'sewers' ? '#595b40' : '#557c8b';
-        wallPatch(mesh, wall, 'east', left, 1.12, 2.2, .72, color, .009);
-        wallText(mesh, wall, 'east', '0' + ((map.buildings || []).indexOf(building) + 1), left + .82, 1.27, .32, '#dbe8df', .012);
-        wallPatch(mesh, wall, 'east', left + .10, 1.20, .40, .035, ART[theme].accent, .013);
+        const label = ({ 'snow-weather-lab': 'FROSTLINE', 'snow-radio-lodge': 'RADIO', 'snow-supply-shelter': 'SUPPLY', 'snow-survey-office': 'SURVEY', 'trading-meeting': 'RESEARCH' })[building.id] || 'MAINTENANCE';
+        const width = Math.min(3.8, wall.d - .3);
+        paintWallSign({ kind: 'wall-sign', colliderId: wall.id, face: 'east', left: (wall.d - width) / 2, bottom: 1.12, w: width, h: .82, label, sublabel: theme === 'snow' ? 'RESEARCH STATION' : theme === 'trading' ? 'RISK AND RESEARCH' : 'SERVICE ACCESS' });
       }
     }
     if (theme === 'trading') {
+      const authoredFaces = new Set(authoredSigns.map(sign => `${sign.colliderId}:${sign.face}`));
+      // Inward-facing wordmarks are legible from both the trading desks and
+      // the second-floor galleries. They attach to actual perimeter panels.
+      for (const [side, face, bottom] of [['north', 'south', 5.05], ['south', 'north', 1.40]]) {
+        const wall = find(`wall-${side}`) || find(`boundary-${side}`);
+        if (!wall || wall.w < 8 || wall.h < bottom + 1.5 || authoredFaces.has(`${wall.id}:${face}`)) continue;
+        paintWallSign({ kind: 'wall-sign', colliderId: wall.id, face, left: (wall.w - 8) / 2, bottom, w: 8, h: 1.45, label: 'BARCLAYS', sublabel: side === 'north' ? 'GLOBAL MARKETS' : 'TRADING FLOOR', emblem: 'barclays' });
+      }
       const brand = find('trading-brand-wall');
       if (brand && brand.w >= 6 && brand.h >= .8) {
         for (const face of ['north', 'south']) {
-          wallPatch(mesh, brand, face, .12, .12, brand.w - .24, brand.h - .24, '#154d6d', .006);
-          for (const [label, bottom, height, tint] of [['BARCLAYS', .49, .46, '#d5f0ff'], ['TRADING', .20, .21, '#5cc3ec']]) {
-            const textWidth = ([...label].reduce((width, character) => width + (GLYPHS[character]?.[0].length || 2) + 1, 0) - 1) * height / 7;
-            wallText(mesh, brand, face, label, (brand.w - textWidth) / 2, bottom, height, tint, .010);
-          }
-          wallPatch(mesh, brand, face, .30, .28, .05, brand.h - .56, '#36b4e3', .012);
-          wallPatch(mesh, brand, face, brand.w - .35, .28, .05, brand.h - .56, '#36b4e3', .012);
+          if (authoredFaces.has(`${brand.id}:${face}`)) continue;
+          paintWallSign({ kind: 'wall-sign', colliderId: brand.id, face, left: .10, bottom: .06, w: brand.w - .20, h: brand.h - .12, label: 'BARCLAYS', sublabel: 'GLOBAL MARKETS', emblem: 'barclays' });
         }
       }
     }
   } else if (theme === 'paris') {
-    for (const decoration of map.decorations || []) {
-      const { kind, x, z, w, d } = decoration;
-      if (![x, z, w, d].every(Number.isFinite) || w <= 0 || d <= 0) continue;
-      if (kind === 'road') {
-        mesh.floor(x, z, w, d, decoration.color || '#667076', .003);
-        const vertical = d > w;
-        const length = vertical ? d : w;
-        for (let cursor = .8; cursor < length - .8; cursor += 3.6) {
-          if (vertical) mesh.floor(x + w / 2 - .045, z + cursor, .09, Math.min(1.35, length - cursor), '#e3d6af', .004);
-          else mesh.floor(x + cursor, z + d / 2 - .045, Math.min(1.35, length - cursor), .09, '#e3d6af', .004);
-        }
-        if (vertical) for (const xx of [x + .13, x + w - .18]) {
-          mesh.floor(xx, z + .05, .05, d - .10, '#b7b8a5', .005);
-          for (let cursor = 2.5; cursor < d - 1; cursor += 9) {
-            mesh.floor(xx + (xx < x + w / 2 ? .10 : -.28), z + cursor, .18, .42, '#596d70', .005);
-            for (let grate = 0; grate < 4; grate++) mesh.floor(xx + (xx < x + w / 2 ? .11 : -.27), z + cursor + .06 + grate * .085, .16, .022, '#919e97', .006);
-          }
-        }
-      } else if (kind === 'crosswalk') {
-        for (let cursor = .15; cursor < d - .20; cursor += .68) mesh.floor(x + .25, z + cursor, Math.max(.01, w - .50), Math.min(.30, d - cursor), '#e9e2cd', .004);
-      } else if (kind === 'park') {
-        mesh.floor(x, z, w, d, decoration.color || '#829465', .003);
-        for (let i = 0; i < 14; i++) {
-          const seed = hash(`${map.id}:park:${x}:${z}:${i}`), xx = x + .25 + seed % 90 / 100 * Math.max(0, w - .5), zz = z + .25 + (seed >>> 8) % 90 / 100 * Math.max(0, d - .5);
-          mesh.floor(xx, zz, .045, .045, i % 3 ? '#d4c489' : '#b98377', .004);
-        }
-      } else if (kind === 'sidewalk' || kind === 'cafe') {
-        mesh.floor(x, z, w, d, decoration.color || (kind === 'cafe' ? '#c6b292' : '#c7c1b1'), .003);
-        for (let row = .12; row < d - .12; row += 1.2) mesh.floor(x + .04, z + row, w - .08, .014, '#a49d8e', .004);
-        if (kind === 'cafe') {
-          for (let xx = .16; xx < w - .20; xx += .8) for (let zz = .16; zz < d - .20; zz += .8) {
-            if ((Math.round(xx / .8) + Math.round(zz / .8)) % 2 === 0) mesh.floor(x + xx, z + zz, Math.min(.58, w - xx - .08), Math.min(.58, d - zz - .08), '#b79f82', .005);
-          }
-        } else for (let row = .15; row < d - .2; row += .60) mesh.floor(x + .07, z + row, .14, .32, '#ccc5b0', .005);
-      }
-    }
+    appendVoxelIdentityFloors(mesh, map);
     for (const building of map.buildings || []) {
       const label = ({ 'paris-opera': 'OPERA', 'paris-atelier': 'ATELIER', 'paris-cafe': 'CAFE', 'paris-librairie': 'LIVRES' })[building.id] || 'PARIS';
       const interior = building.interior;
       if (interior && [interior.minX, interior.maxX, interior.minZ, interior.maxZ].every(Number.isFinite)) {
-        const ix = interior.minX + .025, iz = interior.minZ + .025, iw = interior.maxX - interior.minX - .05, id = interior.maxZ - interior.minZ - .05;
-        mesh.floor(ix, iz, iw, id, building.id === 'paris-cafe' ? '#c0ad8d' : '#a99272', .003);
-        // Floorboards and tile inlays are entirely flat. Both genuine door
-        // thresholds remain open and there are no decorative interior props.
-        for (let row = .06, index = 0; row < id - .08; row += .48, index++) {
-          mesh.floor(ix + .025, iz + row, iw - .05, Math.min(.45, id - row - .025), index % 2 ? '#af9978' : '#b9a584', .004);
-          for (let column = .55 + index % 2 * .86; column < iw - .05; column += 1.72) mesh.floor(ix + column, iz + row, .014, Math.min(.45, id - row - .025), '#827661', .005);
-        }
-        mesh.floor(ix + .08, iz + .08, iw - .16, .045, '#6f7b69', .006);
-        mesh.floor(ix + .08, iz + id - .125, iw - .16, .045, '#6f7b69', .006);
-        for (const xx of [ix + .08, ix + iw - .125]) mesh.floor(xx, iz + .08, .045, id - .16, '#6f7b69', .006);
         for (const side of ['west', 'east']) {
           const wall = find(`${building.id}-${side}`);
           if (!wall || wall.d < 3 || wall.h < 2.8) continue;
@@ -1928,7 +1921,7 @@ function mapPaint(mesh, map, theme) {
   } else if (theme === 'courtyard') {
     for (const side of ['west', 'east']) {
       const collider = find(`${side}-arcade`), color = side === 'west' ? '#dfa962' : '#68aaa2';
-      if (!collider) continue;
+      if (!collider || collider.h < 2.3) continue;
       for (const face of ['north', 'south']) {
         wallPatch(mesh, collider, face, .24, 1.57, 2.02, .73, '#354648', .027);
         const label = face === 'south' ? (side === 'west' ? 'A <' : '> B') : (side === 'west' ? '> A' : 'B <');
@@ -1959,7 +1952,7 @@ function mapPaint(mesh, map, theme) {
   } else if (theme === 'canal') {
     for (const side of ['west', 'east']) {
       const market = find(`${side}-market`), accent = side === 'west' ? '#527f81' : '#bf7f59';
-      if (!market) continue;
+      if (!market || market.h < 3.1) continue;
       for (const face of ['north', 'south']) {
         wallPatch(mesh, market, face, .08, .19, market.w - .16, .55, accent, .024);
         for (let left = .10; left < market.w - .10; left += .72) wallPatch(mesh, market, face, left, 2.74, .33, .34, '#d6d4b6', .025);
@@ -2006,7 +1999,7 @@ function mapPaint(mesh, map, theme) {
     }
   }
   if (['rooftops', 'foundry', 'bastion'].includes(theme)) {
-    const sign = map.colliders.find(collider => collider.w >= 5 && collider.h >= 2.7 && collider.y < .1 && !String(collider.id).startsWith('wall-'));
+    const sign = themeSign;
     if (sign) {
       const label = theme === 'rooftops' ? 'ROOFLINE' : theme === 'foundry' ? 'FOUNDRY' : 'BASTION';
       const width = Math.min(4.2, sign.w - .4), left = (sign.w - width) / 2;
@@ -2028,7 +2021,7 @@ export function mapMeshes(map) {
   const floorColor = mix(rgba(map.floorColor || '#929b8b'), rgba(art.paving), .36);
   const { minX, maxX, minZ, maxZ } = bounds;
   const width = maxX - minX, depth = maxZ - minZ;
-  const expansion = Object.hasOwn(MAP_EXPANSION_ART, theme);
+  const expansion = Object.hasOwn(MAP_EXPANSION_ART, theme) || ['snow', 'sewers', 'trading', 'paris'].includes(theme);
   opaque.floor(minX - 35, minZ - 35, width + 70, depth + 70, shade(floorColor, .72), -.025);
   if (!expansion) opaque.floor(minX, minZ, width, depth, floorColor, 0);
   // Repeating paving seams are flat markings, so visible traversable ground is
@@ -2048,7 +2041,7 @@ export function mapMeshes(map) {
     if (theme === 'maze' && seed % 3 === 0) opaque.floor(x + .35, z + .42, .81, .31, '#728b71', .002);
   }
   const atmosphere = ATMOSPHERE[theme] || ATMOSPHERE.courtyard;
-  const shadowFloor = map.mode === 'dojo' ? .020 : theme === 'medieval' ? .024 : .005;
+  const shadowFloor = map.mode === 'dojo' || ['snow', 'sewers', 'trading', 'paris'].includes(theme) ? .020 : theme === 'medieval' ? .024 : .005;
   for (const collider of map.colliders || []) {
     paintCollider(opaque, collider, theme);
     if (collider.h < .15 || collider.overhead) continue;

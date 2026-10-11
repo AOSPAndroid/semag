@@ -24,9 +24,10 @@ test('touch movement has a dead zone and shares the camera orientation and actio
   const yaw = Math.PI / 2;
   const centered = emberCameraInput({ right: true }, { x: .08, y: -.08 }, yaw);
   near(centered.moveX, 0); near(centered.moveY, 1);
-  const stick = emberCameraInput({ left: true, melee: true, spell: true, dash: true, interact: true }, { x: 0, y: -1 }, yaw);
+  const stick = emberCameraInput({ left: true, melee: true, spell: true, dash: true, interact: true, sprint: true, crouch: true, walk: true }, { x: 0, y: -1 }, yaw);
   near(stick.moveX, 1); near(stick.moveY, 0);
   assert.equal(stick.melee, true); assert.equal(stick.spell, true); assert.equal(stick.dash, true); assert.equal(stick.interact, true);
+  assert.equal(stick.sprint, true); assert.equal(stick.crouch, true); assert.equal(stick.walk, true);
   const tooFar = emberCameraInput({}, { x: 1, y: -1 }, yaw);
   near(Math.hypot(tooFar.moveX, tooFar.moveY), 1);
 });
@@ -34,11 +35,26 @@ test('touch movement has a dead zone and shares the camera orientation and actio
 test('native printed AZERTY keys, arrows and keyboard-only turn retain nearby combat controls', () => {
   for (const [key, code, action] of [['z', 'KeyW', 'up'], ['q', 'KeyA', 'left'], ['s', 'KeyS', 'down'], ['d', 'KeyD', 'right'], ['Z', 'KeyW', 'up']])
     assert.equal(emberControl({ key, code }, 'zqsd'), action);
-  for (const [key, action] of [['w', 'up'], ['a', 'left'], ['ArrowRight', 'right'], ['Shift', 'dash'], [' ', 'dash'], ['c', 'melee'], ['e', 'spell'], ['f', 'interact'], [',', 'turnLeft'], ['.', 'turnRight']])
+  for (const [key, action] of [['w', 'up'], ['a', 'left'], ['ArrowRight', 'right'], ['Shift', 'sprint'], ['Control', 'crouch'], [' ', 'dash'], ['c', 'walk'], ['j', 'melee'], ['e', 'spell'], ['f', 'interact'], [',', 'turnLeft'], ['.', 'turnRight']])
     assert.equal(emberControl({ key }, 'wasd'), action);
   assert.equal(emberControl({ key: 'w', repeat: true }, 'wasd'), 'up', 'a held movement key is not dropped when the browser repeats it');
   for (const event of [{ key: 'p' }, { key: 'r' }, { key: 'Escape' }, { key: 'w', ctrlKey: true }, { key: 'e', metaKey: true }, { key: 'f', isComposing: true }, { key: 'w', defaultPrevented: true }, { key: 'f', target: { closest: () => ({}) } }])
     assert.equal(emberControl(event, 'wasd'), null, 'session keys, text entry and browser shortcuts never become attacks');
+});
+
+test('captured Ctrl stance permits movement and combat chords while outside browser shortcuts remain protected', () => {
+  const captured = { captured: true, crouchHeld: true };
+  assert.equal(emberControl({ key: 'Control', ctrlKey: true }), 'crouch');
+  for (const [key, action] of [['w', 'up'], ['c', 'walk'], ['j', 'melee'], ['e', 'spell'], [' ', 'dash']]) {
+    const event = { key, ctrlKey: true };
+    assert.equal(emberControl(event, 'wasd', captured), action);
+    assert.equal(emberControl(event, 'wasd'), null);
+    assert.equal(emberControl(event, 'wasd', { captured: true, crouchHeld: false }), null);
+    assert.equal(emberControl(event, 'wasd', { captured: false, crouchHeld: true }), null);
+  }
+  assert.equal(emberControl({ key: 'z', code: 'KeyW', ctrlKey: true }, 'zqsd', captured), 'up');
+  for (const extra of [{ altKey: true }, { metaKey: true }, { isComposing: true }, { defaultPrevented: true }, { target: { closest: () => ({}) } }])
+    assert.equal(emberControl({ key: 'w', ctrlKey: true, ...extra }, 'wasd', captured), null);
 });
 
 test('mouse look updates the camera immediately and keeps it above the ground without mutating physics', () => {
@@ -73,15 +89,15 @@ test('third-person records preserve earlier top-down scores and separate all thr
   let store = createBestStore(storage);
   store.update('ember-delve', 1200); store.update('ember-delve', 900, { scope: 'veteran-v3' });
   for (const [index, difficulty] of ['standard', 'veteran', 'nightmare'].entries()) {
-    const recordKey = `${difficulty}-thirdperson-v1`;
+    const recordKey = `${difficulty}-thirdperson-v2`;
     const policy = recordDetails('ember-delve', { phase: 'lost', recordKey, record: 200 + index });
     assert.equal(policy.scope, recordKey); assert.equal(policy.candidate, 200 + index);
     store.update('ember-delve', policy.candidate, policy);
   }
   store = createBestStore(storage);
   assert.equal(store.read('ember-delve'), 1200); assert.equal(store.read('ember-delve', 'veteran-v3'), 900);
-  for (const [index, difficulty] of ['standard', 'veteran', 'nightmare'].entries()) assert.equal(store.read('ember-delve', `${difficulty}-thirdperson-v1`), 200 + index);
-  const unknown = recordDetails('ember-delve', { phase: 'won', recordKey: 'veteran-thirdperson-v2', record: 99999 });
+  for (const [index, difficulty] of ['standard', 'veteran', 'nightmare'].entries()) assert.equal(store.read('ember-delve', `${difficulty}-thirdperson-v2`), 200 + index);
+  const unknown = recordDetails('ember-delve', { phase: 'won', recordKey: 'veteran-thirdperson-v3', record: 99999 });
   assert.equal(unknown.candidate, null);
   assert.equal(recordDetails('deckbound', { phase: 'won', recordKey: 'veteran-thirdperson-v1', record: 99999 }).candidate, null);
 });
@@ -125,7 +141,7 @@ function mountedFixture() {
   for (const [key, value] of Object.entries(values)) { saved.set(key, Object.getOwnPropertyDescriptor(globalThis, key)); Object.defineProperty(globalThis, key, { configurable: true, writable: true, value }); }
   return {
     container: new Node('main'), document: documentNode, window: windowNode, buffers, frames,
-    key(key, repeat = false, down = true) { windowNode.emit(down ? 'keydown' : 'keyup', { key, code: `Key${key.toUpperCase()}`, repeat, target: this.container }); },
+    key(key, repeat = false, down = true, extra = {}) { windowNode.emit(down ? 'keydown' : 'keyup', { key, code: key.length === 1 ? `Key${key.toUpperCase()}` : `${key}Left`, repeat, target: this.container, ...extra }); },
     frame(time) { const due = [...frames.values()]; frames.clear(); for (const callback of due) callback(time); },
     cleanup() { for (const [key, descriptor] of saved) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key]; } },
   };
@@ -148,6 +164,27 @@ test('mounted pause clears held inputs, ignores stale repeats and releases captu
   } finally { game?.destroy(); env.cleanup(); }
 });
 
+test('mounted stance controls reach simulation and HUD, release on pause and require a fresh press', () => {
+  const env = mountedFixture(); let game;
+  try {
+    game = mount(env.container); const canvas = env.container.querySelector('canvas'), stance = env.container.querySelector('.ember-stance');
+    env.frame(0); env.key('w'); env.key('Shift'); env.frame(50);
+    let snapshot = game.getState(); assert.equal(snapshot.player.sprinting, true); assert.ok(snapshot.player.stamina < snapshot.player.maxStamina);
+    assert.match(stance.textContent, /SPRINTING/); assert.equal(snapshot.player.dashTime, 0, 'Shift does not dodge');
+    canvas.requestPointerLock(); env.key('Control', false, true, { ctrlKey: true }); env.key('w', false, true, { ctrlKey: true }); env.frame(100);
+    snapshot = game.getState(); assert.equal(snapshot.player.crouching, true); assert.equal(snapshot.player.sprinting, false);
+    assert.match(stance.textContent, /CROUCHED/); assert.ok(game.getPresentationDiagnostics().camera.crouchAmount > 0);
+    env.key('Control', false, false); env.key('w', false, false); env.key('c'); env.key('w'); env.frame(150);
+    snapshot = game.getState(); assert.equal(snapshot.player.walking, true); assert.equal(snapshot.player.crouching, false); assert.equal(snapshot.player.attackTime, 0);
+    assert.match(stance.textContent, /QUIET WALK/);
+    game.togglePause(); const paused = game.getState(); assert.equal(paused.phase, 'paused'); assert.equal(env.document.pointerLockElement, null);
+    game.togglePause(); env.frame(200); env.key('c', true); env.key('w', true); env.key('Shift', true); env.frame(250);
+    snapshot = game.getState(); assert.equal(snapshot.player.walking, false); assert.equal(snapshot.player.sprinting, false); assert.equal(snapshot.player.crouching, false);
+    assert.equal(snapshot.player.x, paused.player.x); assert.equal(snapshot.player.y, paused.player.y);
+    env.key('c', false, false); env.key('j'); env.frame(300); assert.ok(game.getState().events.some(event => event.type === 'swing'));
+  } finally { game?.destroy(); env.cleanup(); }
+});
+
 test('a real mounted graphics loss stops combat immediately and cannot be resumed behind a blank canvas', () => {
   const env = mountedFixture(); let game;
   try {
@@ -160,5 +197,20 @@ test('a real mounted graphics loss stops combat immediately and cannot be resume
     assert.equal(overlay.querySelector('.ember-return').hidden, false);
     game.togglePause(); game.restart(); env.key('e'); env.frame(6000); assert.deepEqual(game.getState(), paused);
     game.destroy(); game = null; assert.equal(env.buffers.size, 0); assert.equal(env.frames.size, 0);
+  } finally { game?.destroy(); env.cleanup(); }
+});
+
+test('captured P pauses even while crouching, swallows only its repeat, and releases movement/capture', () => {
+  const env = mountedFixture(); let game;
+  try {
+    game = mount(env.container); const canvas = env.container.querySelector('canvas');
+    env.frame(0); canvas.requestPointerLock(); env.key('Control', false, true, { ctrlKey: true }); env.key('w', false, true, { ctrlKey: true }); env.frame(50);
+    assert.equal(game.getState().player.crouching, true);
+    env.key('p', false, true, { ctrlKey: true }); const paused = game.getState();
+    assert.equal(paused.phase, 'paused'); assert.equal(paused.player.crouching, false); assert.equal(env.document.pointerLockElement, null);
+    env.key('p', true, true, { ctrlKey: true }); env.frame(300); assert.deepEqual(game.getState(), paused);
+    env.key('p', false, false, { ctrlKey: true }); env.key('Control', false, false); game.togglePause(); env.frame(350); env.frame(400);
+    assert.equal(game.getState().player.x, paused.player.x); assert.equal(game.getState().player.crouching, false);
+    env.key('p', false, true, { ctrlKey: true }); assert.equal(game.getState().phase, 'playing', 'outside capture Ctrl+P remains a browser shortcut');
   } finally { game?.destroy(); env.cleanup(); }
 });

@@ -45,10 +45,19 @@ test('upper instrument housings, pressure-pipe alcoves and office screens provid
   for (const mode of ['breach', 'royale']) for (const [factory, id] of fixtures) {
     const map = factory(mode), cover = map.colliders.find(box => box.id === id);
     const center = { x: cover.x + cover.w / 2, y: cover.y + cover.h / 2, z: cover.z + cover.d / 2 };
-    const entry = { ...center, z: cover.z - .2 }, exit = { ...center, z: cover.z + cover.d + .2 };
     const group = map.landmarks.find(landmark => landmark.collisionIds.includes(id)).collisionIds;
+    const withoutCover = { ...map, colliders: map.colliders.filter(box => !group.includes(box.id)) };
+    // A new glazed bridge legitimately blocks the old north/south ray even
+    // after its equipment is removed. Probe a genuinely clear local aisle.
+    const axes = [
+      [{ ...center, z: cover.z - .2 }, { ...center, z: cover.z + cover.d + .2 }],
+      [{ ...center, x: cover.x - .2 }, { ...center, x: cover.x + cover.w + .2 }],
+    ];
+    const lane = axes.find(([entry, exit]) => navigationVisible(withoutCover, entry, exit));
+    assert.ok(lane, `${mode}/${id}: equipment protects a clear local shot lane`);
+    const [entry, exit] = lane;
     assert.equal(navigationVisible(map, entry, exit), false, `${mode}/${id}: cover blocks the real shot lane`);
-    assert.equal(navigationVisible({ ...map, colliders: map.colliders.filter(box => !group.includes(box.id)) }, entry, exit), true,
+    assert.equal(navigationVisible(withoutCover, entry, exit), true,
       `${mode}/${id}: no hidden collision extends beyond the visible cover`);
     assert.equal(navigationCanOccupy(map, { ...center, y: cover.y }), false, `${mode}/${id}: visible housing blocks a body`);
   }

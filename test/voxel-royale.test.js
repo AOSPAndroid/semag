@@ -241,9 +241,17 @@ test('the storm warns, contracts continuously, escalates honest periodic damage 
   tick(state); assert.ok(state.storm.radius < radius); assert.ok(state.storm.radius > radius * .72);
   state.matchTicks = 60 * 120 - 1; tick(state); assert.equal(state.storm.stage, 1); assert.equal(state.storm.mode, 'waiting'); assert.ok(Math.abs(state.storm.radius - radius * .72) < 1e-9);
   assert.equal(state.storm.damagePerSecond, 4);
-  Object.assign(state.players[0], { x: 30, z: 30 }); state.players[0].hp = 100;
+  // Place the survivor between the first two circles; authored arenas now
+  // have different sizes and final centres, so a fixed corner can be safe.
+  const extent = radius + 2;
+  state.map = { ...openArena, bounds: { minX: state.storm.x - extent, maxX: state.storm.x + extent, minZ: state.storm.z - extent, maxZ: state.storm.z + extent } };
+  const distance = radius * (Royale.STORM_STAGES[0].ratio + Royale.STORM_STAGES[1].ratio) / 2;
+  Object.assign(state.players[0], { x: state.storm.x + distance, z: state.storm.z, hp: 100 });
+  assert.ok(distance < state.storm.radius, 'the survivor is safe before the second contraction');
   state.matchTicks = 105 * 120 - 1; tick(state); assert.equal(state.storm.stage, 2); assert.equal(state.players[0].hp, 93);
-  assert.equal(state.events.findLast(event => event.type === 'damage' && event.targetId === 0).attack, 'storm');
+  assert.ok(Math.hypot(state.players[0].x - state.storm.x, state.players[0].z - state.storm.z) > state.storm.radius, 'the survivor remains outside the contracted ring after movement');
+  const hit = state.events.findLast(event => event.type === 'damage' && event.targetId === 0);
+  assert.equal(hit.attack, 'storm'); assert.equal(hit.damage, 7);
   assert.ok(state.players.every(player => player.kills === 0));
   assert.equal(Royale.STORM_STAGES.reduce((sum, stage) => sum + stage.wait + stage.shrink, 0), 240);
   assert.ok(state.events.filter(event => event.type === 'stormStage').length >= 3); finiteState(state);

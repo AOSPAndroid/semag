@@ -242,6 +242,95 @@ function floorSupport(map, decoration) {
   return supports.length ? Math.max(...supports.map(box => box.y + box.h)) : 0;
 }
 
+/** Resolve a sign to one complete real wall face. A malformed or oversized
+ * panel is omitted rather than stretched across neighbouring door jambs. */
+export function resolveVoxelWallSign(map, decoration) {
+  if (decoration.kind !== 'wall-sign' || !FACES.includes(decoration.face)) return null;
+  const wall = (map.colliders || []).find(item => item.id === decoration.colliderId);
+  if (!wall) return null;
+  const { left, bottom, w, h } = decoration;
+  const span = decoration.face === 'north' || decoration.face === 'south' ? wall.w : wall.d;
+  if (![left, bottom, w, h].every(Number.isFinite) || left < .025 || bottom < .025 || w < .4 || h < .25
+    || left + w > span - .025 || bottom + h > wall.h - .025) return null;
+  return { ...decoration, wall };
+}
+
+const IDENTITY_THEMES = new Set(['snow', 'sewers', 'trading', 'paris']);
+
+/** Shared floor-layer plan for outdoor routes and genuine office/Paris rooms.
+ * Later authored paths take precedence, room interiors remain on their own
+ * support level, and every background rectangle is disjoint at that level. */
+export function voxelIdentityFloorRegions(map) {
+  if (!IDENTITY_THEMES.has(map.theme)) return [];
+  const floors = (map.decorations || []).filter(item => item.kind !== 'wall-sign'
+    && [item.x, item.z, item.w, item.d].every(Number.isFinite) && item.w > 0 && item.d > 0)
+    .map(item => ({ ...item, support: floorSupport(map, item) }));
+  for (const building of map.buildings || []) {
+    const room = building.interior;
+    if (!room || ![room.minX, room.minZ, room.maxX, room.maxZ].every(Number.isFinite)) continue;
+    const x = room.minX + .025, z = room.minZ + .025, w = room.maxX - room.minX - .05, d = room.maxZ - room.minZ - .05;
+    if (w <= 0 || d <= 0) continue;
+    const floorY = Number.isFinite(building.floorY) ? building.floorY : Number.isFinite(room.y) ? room.y : 0;
+    floors.push({ kind: `${map.theme}-interior`, buildingId: building.id, x, z, w, d, support: floorY,
+      color: map.theme === 'trading' ? '#78858a' : map.theme === 'sewers' ? '#797760' : map.theme === 'snow' ? '#b6c4ca'
+        : building.id === 'paris-cafe' ? '#c0ad8d' : '#a99272' });
+  }
+  return floors.flatMap((floor, index) => clipRectangle(floor,
+    floors.slice(index + 1).filter(item => Math.abs(item.support - floor.support) < .001))
+    .map(rect => ({ ...floor, ...rect, y: floor.support + .008 })));
+}
+
+/** Emit broad floors once, followed by bounded, flush route-specific detail.
+ * Geometry is clipped before paint, so a water crossing or overlapping path
+ * does not fight a second broad rectangle at the same GPU depth. */
+export function appendVoxelIdentityFloors(mesh, map) {
+  if (!IDENTITY_THEMES.has(map.theme)) return false;
+  for (const region of voxelIdentityFloorRegions(map)) {
+    const { x, z, w, d, y, kind = '', color = '#8e958b' } = region;
+    mesh.floor(x, z, w, d, color, y);
+    const detail = (xx, zz, ww, dd, tint) => {
+      const left = Math.max(x, xx), front = Math.max(z, zz), right = Math.min(x + w, xx + ww), back = Math.min(z + d, zz + dd);
+      if (right > left && back > front) mesh.floor(left, front, right - left, back - front, tint, y + .008);
+    };
+    if (/water/.test(kind)) {
+      const alongZ = d > w, length = alongZ ? d : w;
+      for (let at = .4; at < length - .1; at += 1.25) detail(x + (alongZ ? .04 : at), z + (alongZ ? at : .04), alongZ ? w - .08 : .018, alongZ ? .018 : d - .08, '#70816b');
+    } else if (map.theme === 'snow') {
+      if (/path|yard|trail/.test(kind)) {
+        const alongZ = d > w, length = alongZ ? d : w;
+        for (let at = .4, index = 0; at < length - .3; at += 1.1, index++) detail(x + (alongZ ? w / 2 + (index % 2 ? .14 : -.14) : at), z + (alongZ ? at : d / 2 + (index % 2 ? .14 : -.14)), alongZ ? .11 : .22, alongZ ? .22 : .11, '#96b3c1');
+      }
+      if (/interior/.test(kind)) for (let at = 1; at < d; at += 1.8) detail(x + .04, z + at, w - .08, .018, '#819aa4');
+    } else if (map.theme === 'trading') {
+      for (let at = 1.5; at < d; at += 2.4) detail(x + .03, z + at, w - .06, .025, '#626f75');
+      if (/aisle/.test(kind)) detail(x + .12, z + .04, .035, d - .08, '#6bb4ce');
+    } else if (map.theme === 'sewers') {
+      for (let at = .5; at < d - .15; at += 1.8) detail(x + .13, z + at, Math.min(.44, w - .2), .065, '#4b5b43');
+      if (/bridge/.test(kind)) for (let at = .18; at < d; at += .45) detail(x + .05, z + at, w - .10, .025, '#2e443c');
+    } else if (kind === 'road') {
+      const alongZ = d > w, length = alongZ ? d : w;
+      for (let at = .8; at < length - .8; at += 3.6) detail(x + (alongZ ? w / 2 - .045 : at), z + (alongZ ? at : d / 2 - .045), alongZ ? .09 : Math.min(1.35, length - at), alongZ ? Math.min(1.35, length - at) : .09, '#e3d6af');
+      if (alongZ) for (const xx of [x + .13, x + w - .18]) detail(xx, z + .05, .05, d - .10, '#b7b8a5');
+    } else if (kind === 'crosswalk') {
+      for (let at = .15; at < d - .20; at += .68) detail(x + .25, z + at, w - .50, Math.min(.30, d - at), '#e9e2cd');
+    } else if (kind === 'park') {
+      for (let index = 0; index < 14; index++) {
+        const seed = hash(`${map.id}:park:${x}:${z}:${index}`);
+        detail(x + .25 + seed % 90 / 100 * Math.max(0, w - .5), z + .25 + (seed >>> 8) % 90 / 100 * Math.max(0, d - .5), .045, .045, index % 3 ? '#d4c489' : '#b98377');
+      }
+    } else {
+      const interior = kind === 'paris-interior';
+      for (let at = .12; at < d - .12; at += interior ? .8 : 1.2) detail(x + .04, z + at, w - .08, .018, interior ? '#827661' : '#a49d8e');
+      if (kind === 'cafe' || interior && region.buildingId === 'paris-cafe') {
+        for (let xx = .16; xx < w - .20; xx += 1.1) for (let zz = .16; zz < d - .20; zz += 1.1) {
+          if ((Math.round(xx / 1.1) + Math.round(zz / 1.1)) % 2 === 0) detail(x + xx, z + zz, Math.min(.58, w - xx - .08), Math.min(.58, d - zz - .08), '#b79f82');
+        }
+      }
+    }
+  }
+  return true;
+}
+
 /** New-map floor layers have no overlapping background rectangles. Detail is
  * 8mm above that single background; later paths/pads clip both layers instead
  * of relying on nearly-coplanar depth ordering at a distant grazing angle.

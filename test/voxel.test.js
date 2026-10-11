@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import * as game from '../public/voxel-engine.js';
+import { navigationCanOccupy, navigationPath } from '../public/voxel-navigation.js';
 const input = (buttons = {}, player = null) => ({ ...game.emptyInput(player || {}), ...buttons });
 const neutral = state => state.players.map(f => input({}, f));
 function advance(state, ticks, inputs = null) { for (let i = 0; i < ticks; i++) game.step(state, inputs || neutral(state)); }
@@ -57,10 +58,14 @@ test('slab rays handle finite range, parallel axes, inside starts and exact face
 test('world ray contacts are truly three dimensional and walls win ties', () => {
   const state = lane(fighting(), { ax: 0, az: 8, bx: 0, bz: -8 }), origin = { x: 0, y: 1.62, z: 8 }, dir = { x: 0, y: 0, z: -1 };
   assert.equal(game.traceShot(state, 0, origin, dir).colliderId, 'central-north');
-  const low = { x: -15.2, y: 1.62, z: -6 }; assert.equal(game.traceShot(state, 0, low, dir).colliderId, 'wall-north');
-  assert.equal(game.traceShot(state, 0, { ...low, y: .7 }, dir).colliderId, 'west-site-crate');
-  Object.assign(state.players[1], { x: -15.2, y: 0, z: -10.62 });
-  const tie = game.traceShot(state, 0, { x: -15.2, y: .7, z: -6 }, dir); assert.equal(tie.kind, 'wall'); assert.equal(tie.colliderId, 'west-site-crate');
+  const cover = game.MAPS.courtyard.colliders.find(box => box.id === 'courtyard-hop-east-potting-1');
+  const low = { x: cover.x + cover.w / 2, y: 1.62, z: cover.z + cover.d + 2 };
+  assert.equal(game.traceShot(state, 0, low, dir).colliderId, 'wall-north', 'a head-height ray passes over the real low potting block');
+  assert.equal(game.traceShot(state, 0, { ...low, y: cover.h / 2 }, dir).colliderId, cover.id);
+  // Deliberately align a ray-body face with the cover face to exercise the
+  // solver tie rule independently of ordinary body separation.
+  Object.assign(state.players[1], { x: low.x, y: 0, z: cover.z + cover.d - .29 });
+  const tie = game.traceShot(state, 0, { ...low, y: cover.h / 2 }, dir); assert.equal(tie.kind, 'wall'); assert.equal(tie.colliderId, cover.id);
 });
 test('the nearest physical body blocks a shot and crouched heads lower precisely', () => {
   const state = lane(fighting({ teamSize: 2 })); Object.assign(state.players[1], { x: 20, z: 0 }); Object.assign(state.players[3], { x: -20, z: -18 });
@@ -93,7 +98,8 @@ test('kill credit belongs to the actual lethal contact, not a later zero-damage 
   assert.equal(state.players[2].alive, false); assert.equal(state.players[0].kills, 1); assert.equal(state.players[1].kills, 0); const kill = state.events.findLast(e => e.type === 'kill'); assert.equal(kill.playerId, 0); assert.equal(kill.headshot, true); assert.equal(state.events.filter(e => e.type === 'damage' && e.targetId === 2).length, 1);
 });
 test('a solid intervening wall blocks fire and records its actual contact face', () => {
-  const state = lane(fighting(), { ax: -4, az: 8, bx: -4, bz: -8 }); shot(state); assert.equal(state.players[1].hp, 200); const event = state.events.findLast(e => e.type === 'shot'); assert.equal(event.hitKind, 'wall'); close(event.hitZ, 6); assert.equal(event.colliderId, 'central-west');
+  const cover = game.MAPS.courtyard.colliders.find(box => box.id === 'central-west'), x = cover.x + cover.w / 2, face = cover.z + cover.d;
+  const state = lane(fighting(), { ax: x, az: face + 2, bx: x, bz: cover.z - 2 }); shot(state); assert.equal(state.players[1].hp, 200); const event = state.events.findLast(e => e.type === 'shot'); assert.equal(event.hitKind, 'wall'); close(event.hitZ, face); assert.equal(event.colliderId, cover.id);
 });
 test('SMG damage falls at long range without inventing hits beyond weapon range', () => {
   const results = [];
@@ -123,7 +129,8 @@ test('wall contacts slide and rounded corners leave real diagonal clearance', ()
 });
 test('physical bodies cannot run through one another or be pushed through solid cover', () => {
   const state = lane(fighting(), { ax: 20, az: .4, bx: 20, bz: -.4 }); advance(state, 120, [input({ up: true, yaw: 0 }), input({ up: true, yaw: Math.PI })]); assert.ok(state.players[0].z > state.players[1].z); close(Math.hypot(state.players[0].x - state.players[1].x, state.players[0].z - state.players[1].z), .64, 1e-5);
-  const covered = lane(fighting(), { ax: -4, az: 6.34, bx: -4, bz: 7 }); advance(covered, 120, [input({}, covered.players[0]), input({ up: true, yaw: 0 })]); assert.ok(covered.players[0].z >= 6.32 - 1e-7); assert.ok(covered.players[1].z >= covered.players[0].z + .64 - 1e-7);
+  const wall = game.MAPS.courtyard.colliders.find(box => box.id === 'central-west'), x = wall.x + wall.w / 2, face = wall.z + wall.d;
+  const covered = lane(fighting(), { ax: x, az: face + .34, bx: x, bz: face + 1 }); advance(covered, 120, [input({}, covered.players[0]), input({ up: true, yaw: 0 })]); assert.ok(covered.players[0].z >= face + game.WORLD.radius - 1e-7); assert.ok(covered.players[1].z >= covered.players[0].z + .64 - 1e-7);
 });
 test('crouching cannot expand into a ceiling and can pass under genuine low overhangs', () => {
   const arena = fixtureMap([{ x: -2, y: 1.25, z: -2, w: 4, h: 1, d: 4 }]), f = fixturePlayer(); Object.assign(f, { x: 0, z: 0, crouching: true });
@@ -172,11 +179,13 @@ test('a stationary body blocks pressure without moving, and prediction agrees at
 });
 test('wall-pinned six-player queues preserve all body and solid clearances under continuous pressure', () => {
   const state = fighting({ teamSize: 3 });
-  for (const f of state.players) Object.assign(f, { x: -4, y: 0, z: 6.32 + f.id * .64 });
+  const wall = game.MAPS.courtyard.colliders.find(box => box.id === 'central-west'), face = wall.z + wall.d;
+  for (const f of state.players) Object.assign(f, { x: wall.x + wall.w / 2, y: 0, z: face + game.WORLD.radius + f.id * .64 });
   for (let tick = 0; tick < 240; tick++) {
     game.step(state, state.players.map(f => input({ up: true }, f)));
     for (let i = 0; i < state.players.length; i++) {
-      assert.ok(state.players[i].z >= 6.32 - 1e-8);
+      assert.ok(state.players[i].z >= face + game.WORLD.radius - 1e-8);
+      assert.ok(navigationCanOccupy(game.MAPS.courtyard, state.players[i]), 'continuous squad pressure stays outside every physical solid');
       if (i) assert.ok(state.players[i].z - state.players[i - 1].z >= .64 - 1e-8);
     }
   }
@@ -229,9 +238,10 @@ test('oblique airborne player contacts against the canal boundary converge witho
 });
 test('body correction off a crate refreshes grounded state before the next jump', () => {
   const state = fighting(), [a, b] = state.players;
-  Object.assign(a, { x: 1.5, y: 1.2, z: 12.2, grounded: true }); Object.assign(b, { x: 1.05, y: 1.2, z: 12.2, grounded: true });
-  game.step(state, neutral(state)); assert.ok(a.x > 1.52); assert.equal(a.grounded, false); close(a.y, 1.2);
-  game.step(state, [input({ jump: true }, a), input({}, b)]); assert.ok(a.vy < 0); assert.ok(a.y < 1.2);
+  const crate = game.MAPS.courtyard.colliders.find(box => box.id === 'courtyard-hop-garden-deliveries-2'), edge = crate.x + crate.w, top = crate.y + crate.h, z = crate.z + crate.d / 2;
+  Object.assign(a, { x: edge + .3, y: top, z, grounded: true }); Object.assign(b, { x: edge - .15, y: top, z, grounded: true });
+  game.step(state, neutral(state)); assert.ok(a.x > edge + game.WORLD.radius); assert.equal(a.grounded, false); close(a.y, top);
+  game.step(state, [input({ jump: true }, a), input({}, b)]); assert.ok(a.vy < 0); assert.ok(a.y < top);
 });
 test('prediction and authority use the same local movement physics', () => {
   const state = lane(fighting(), { ax: 20, az: 10, bx: -20, bz: -18 }), predicted = game.cloneState(state.players[0]);
@@ -271,9 +281,13 @@ test('defuse requires five continuous seconds and release or distance resets pro
   hold(state, 1, 599); assert.equal(state.phase, 'fight'); hold(state, 1, 1); assert.equal(state.bomb.status, 'defused'); assert.equal(state.roundWinner, 1); assert.equal(state.roundReason, 'defuse');
 });
 test('a nearby charge cannot be defused through a solid low-cover corner', () => {
-  const state = fighting(); Object.assign(state.players[0], { x: -14.4, z: -10.9 }); hold(state, 0, 360); assert.equal(state.bomb.status, 'planted');
-  Object.assign(state.players[1], { x: -13.6, z: -9.9, crouching: true }); assert.equal(game.canInteractWithBomb(state, state.players[1]), false); hold(state, 1, 600, { crouch: true }); assert.equal(state.bomb.defuseTicks, 0); assert.equal(state.bomb.status, 'planted');
-  Object.assign(state.players[1], { x: -13.5, z: -10.9 }); assert.equal(game.canInteractWithBomb(state, state.players[1]), true); hold(state, 1, 600); assert.equal(state.bomb.status, 'defused');
+  const state = fighting({ mapId: 'foundry' }), cover = game.MAPS.foundry.colliders.find(box => box.id === 'landmark-foundry-west-slag-vat');
+  const corner = { x: cover.x + cover.w, z: cover.z + cover.d };
+  Object.assign(state.players[0], { x: corner.x + .5, z: corner.z - .6 }); hold(state, 0, 360); assert.equal(state.bomb.status, 'planted');
+  Object.assign(state.players[1], { x: corner.x - .6, z: corner.z + .5, crouching: true });
+  assert.ok(navigationCanOccupy(game.MAPS.foundry, state.players[1]), 'the crouched defender is on real clear floor beside the low vat');
+  assert.equal(game.canInteractWithBomb(state, state.players[1]), false); hold(state, 1, 600, { crouch: true }); assert.equal(state.bomb.defuseTicks, 0); assert.equal(state.bomb.status, 'planted');
+  Object.assign(state.players[1], { x: corner.x + 1.4, z: corner.z - .6 }); assert.equal(game.canInteractWithBomb(state, state.players[1]), true); hold(state, 1, 600); assert.equal(state.bomb.status, 'defused');
 });
 test('bomb expiry beats an unfinished defuse and preplant timeout rewards defenders', () => {
   const expired = fighting(), f = atSite(expired); hold(expired, 0, 360); Object.assign(expired.players[1], { x: f.x + 1, z: f.z }); expired.bomb.timerTicks = 10; hold(expired, 1, 10); assert.equal(expired.roundReason, 'explosion');
@@ -294,28 +308,23 @@ test('full seven-round normal-input match preserves scores, switches sides and r
 test('authored maps have two reachable sites and distinct geometry for every mode', () => {
   for (const mapId of Object.keys(game.MAPS)) for (const siteIndex of [0, 1]) {
     const arena = game.MAPS[mapId], state = fighting({ mapId }); const f = state.players[0];
-    // Use each arena's ground flank with ordinary direction buttons, then plant.
-    const driveTo = (x, z) => {
-      for (let i = 0; i < 2500 && Math.hypot(f.x - x, f.z - z) > .25; i++) {
-        const dx = x - f.x, dz = z - f.z, keys = neutral(state); keys[0] = input({ up: Math.hypot(dx, dz) > .25, walk: Math.hypot(dx, dz) < 1, yaw: Math.atan2(dx, -dz) }, f); game.step(state, keys);
-      }
-      advance(state, 18); assert.ok(Math.hypot(f.x - x, f.z - z) < .3, `${mapId} route stopped ${f.x},${f.z}`);
-    };
-    const paris = mapId === 'paris', flank = (siteIndex ? 1 : -1) * (paris ? 23 : 20), crossing = paris ? -21 : siteIndex && mapId === 'depot' ? -10 : -7, site = arena.sites[siteIndex];
-    if (arena.groundRoutes) {
-      const route = arena.groundRoutes.find(route => route.siteId === site.id);
-      assert.ok(route, `${mapId} authored ground flank to ${site.id}`);
-      for (const point of route.waypoints) driveTo(point.x, point.z);
-    } else if (mapId === 'market' || mapId === 'lockdown') {
-      // Compact halls end at 18 m. Their outer delivery lanes bypass the
-      // shops/workshops, while the north cross-lane reaches both sites.
-      const deliveryFlank = (siteIndex ? 1 : -1) * (arena.bounds.maxX - .6);
-      driveTo(deliveryFlank, 15.5); driveTo(deliveryFlank, site.z); driveTo(site.x, site.z);
-    } else {
-      // Paris delivery stairs occupy the inner lane, so skirt them at the perimeter.
-      if (paris) driveTo(f.x, 20.5);
-      driveTo(flank, paris ? 20.5 : 18); driveTo(flank, crossing); driveTo(site.x, crossing); driveTo(site.x, site.z);
+    const site = arena.sites[siteIndex], path = navigationPath(arena, f, { ...site, y: 0 });
+    assert.ok(path.length, `${mapId} has a connected approach to ${site.id}`);
+    // A navigation graph alone is insufficient: follow its current authored
+    // approach through the authority's real direction/jump inputs, then plant.
+    let waypoint = 0;
+    for (let tick = 0; tick < 4000 && waypoint < path.length; tick++) {
+      const point = path[waypoint], dx = point.x - f.x, dz = point.z - f.z, distance = Math.hypot(dx, dz);
+      if (distance < .22 && Math.abs(point.y - f.y) < .04 && f.grounded) { waypoint++; continue; }
+      const keys = neutral(state);
+      keys[0] = input({ up: distance > .1, yaw: Math.atan2(dx, -dz), jump: Boolean(point.jump && f.grounded && f.y < point.y - .1 && !f.previousInput.jump) }, f);
+      game.step(state, keys);
+      assert.equal(state.phase, 'fight', `${mapId} approach finishes within the real round time`);
+      assert.ok(navigationCanOccupy(arena, f), `${mapId} ${site.id} approach crosses solid geometry`);
     }
+    assert.equal(waypoint, path.length, `${mapId} ${site.id} approach stopped at ${f.x},${f.y},${f.z}`);
+    advance(state, 18);
+    assert.ok(Math.hypot(f.x - site.x, f.z - site.z) < .3 && Math.abs(f.y) < .04 && f.grounded, `${mapId} reaches the physical ground-level site`);
     hold(state, 0, 360); assert.equal(state.bomb.status, 'planted', `${mapId} ${site.id}`);
   }
   assert.equal(new Set(Object.values(game.MAPS).map(map => JSON.stringify(map.colliders))).size, Object.keys(game.MAPS).length);
@@ -424,7 +433,9 @@ test('sword windup, active contact and recovery apply one hit per swing without 
 test('sword commits attack direction and cannot reach through solid cover, allies or vertical gaps', () => {
   const fullSwing = game.MELEE.startupTicks + game.MELEE.activeTicks;
   const turn = lane(fighting(), { az: .7, bz: -.7 }), f = swordReady(turn); shot(turn, 0, { yaw: Math.PI }); advance(turn, fullSwing, [input({ yaw: 0 }, f), input({}, turn.players[1])]); assert.equal(turn.players[1].hp, 200, 'turning after windup does not rotate a committed strike');
-  const covered = lane(fighting({ mapId: 'canal' }), { ax: 5.27, az: -4.8, bx: 7.33, bz: -4.8 });
+  const screen = game.MAPS.canal.colliders.find(box => box.id === 'canal-fish-market-screen'), z = screen.z + screen.d / 2;
+  const covered = lane(fighting({ mapId: 'canal' }), { ax: screen.x - .5, az: z, bx: screen.x + screen.w + .5, bz: z });
+  assert.ok(covered.players.every(player => navigationCanOccupy(game.MAPS.canal, player)), 'both blade poses are physically beside the current market screen');
   Object.assign(covered.players[0], { yaw: Math.PI / 2 }); swordReady(covered); shot(covered); advance(covered, fullSwing);
   assert.ok(Math.hypot(covered.players[0].x - covered.players[1].x, covered.players[0].z - covered.players[1].z) < game.MELEE.reach, 'target is within the sword range across the narrow stone pillar');
   assert.equal(covered.players[1].hp, 200);

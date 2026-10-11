@@ -116,7 +116,10 @@ test('the three expansion arenas have independent physical topology beyond mater
       assert.ok(overlap / Math.min(shapes[a].size, shapes[b].size) < .35,
         `${mode}/${IDS[a]} and ${IDS[b]} retain too much identical geometry`);
     }
-    assert.equal(catalog.snow.colliders.some(b => b.overhead), false, 'snow research remains outdoors');
+    assert.ok(catalog.snow.ceilings.length >= 1 && catalog.snow.ceilings.every(id => {
+      const roof = catalog.snow.colliders.find(box => box.id === id);
+      return roof?.overhead && roof.material === 'snow-ceiling';
+    }), 'snow research includes a real enclosed upper skybridge');
     assert.ok(catalog.sewers.tunnels.length >= 6, 'sewers form a genuinely branching tunnel network');
     assert.ok(catalog.trading.landmarks.filter(value => value.kind === 'desk-pod').length >= 8, 'office has substantial double-sided trading desks');
   }
@@ -182,9 +185,9 @@ test('both tactical charge sites belong to the defending end and have genuine at
   }
 });
 
-test('legacy arenas expose distinct immutable landmarks backed by real solids', () => {
+test('combat arenas expose distinct immutable landmarks backed by real solids', () => {
   const expected = { courtyard: 'fountain-sculpture', depot: 'forklift', canal: 'market-stall', rooftops: 'water-tank',
-    foundry: 'industrial-generator', bastion: 'signal-array', paris: 'metro-kiosk', forest: 'logging-pile', maze: 'astrolabe', desert: 'carved-obelisk' };
+    foundry: 'industrial-generator', bastion: 'signal-array', paris: 'metro-kiosk', forest: 'canopy-village', maze: 'broken-archive', desert: 'pyramid' };
   for (const [id, kind] of Object.entries(expected)) for (const map of [BREACH[id], ROYALE[id]].filter(Boolean)) {
     assert.ok(Object.isFrozen(map.landmarks) && Object.isFrozen(map.props));
     assert.ok(map.landmarks.some(value => value.kind === kind), `${id}: authored map-specific focal prop`);

@@ -131,10 +131,12 @@ test('opposing bolts queue both contacts in one tick without prematurely killing
 
 test('real map cover blocks the bolt at the nearest contact, including a zero-distance inside start', () => {
   const { state, shooter } = lane();
-  launchBolt(state, shooter, weapon(), { x: -4, y: 1.62, z: 8 }, direction);
+  const cover = MAPS.courtyard.colliders.find(box => box.id === 'central-west');
+  const x = cover.x + cover.w / 2, face = cover.z + cover.d;
+  launchBolt(state, shooter, weapon(), { x, y: 1.62, z: face + 2 }, direction);
   const result = run(state, 15); assert.equal(result.hits.length, 0); assert.equal(result.events[0].colliderId, 'central-west');
-  close(result.events[0].z, 6); close(result.events[0].nz, 1);
-  launchBolt(state, shooter, weapon(), { x: -4, y: 1.62, z: 5 }, direction);
+  close(result.events[0].z, face); close(result.events[0].nz, 1);
+  launchBolt(state, shooter, weapon(), { x, y: 1.62, z: cover.z + cover.d / 2 }, direction);
   const inside = run(state, 1); assert.equal(inside.events[0].ageTicks, 1); assert.equal(inside.events[0].colliderId, 'central-west'); assert.equal(state.bolts.length, 0);
 });
 

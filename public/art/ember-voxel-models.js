@@ -219,17 +219,40 @@ function sword(builder, hand, attack, color = '#c6d8cd', length = 1.03) {
   builder.box(base.x + forward[0] * (length / 2 + .12), base.y + .03, base.z + forward[2] * (length / 2 + .12), .032, .015, length * .84, '#e5f3dd', { yaw });
 }
 
+/** Articulated knees keep the boots grounded while the hips lower. */
+function crouchedLeg(builder, x, gait, crouch, palette) {
+  const hip = [.67 - .24 * crouch, .02 + .08 * crouch];
+  const knee = [.40 - .075 * crouch + Math.max(0, gait) * .035, -.23 * crouch - gait * .05];
+  const ankle = [.16 + Math.max(0, gait) * .06, .035 + gait * .13];
+  for (const [a, b] of [[hip, knee], [knee, ankle]]) {
+    const dy = b[0] - a[0], dz = b[1] - a[1];
+    builder.box(x, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2, .2, Math.hypot(dy, dz), .22, palette.leg, { pitch: Math.atan2(dz, dy) });
+  }
+  builder.box(x, .085 + Math.max(0, gait) * .06, ankle[1] - .075, .234, .17, .33, palette.boot);
+}
+
 function hero(builder, spec, gait) {
   const { attack, cast, dash, hurt } = spec;
+  const crouch = clamp(Number.isFinite(spec.crouch) ? spec.crouch : spec.crouching ? 1 : 0, 0, 1);
+  const swing = gait * (spec.sprinting ? 1.22 : spec.quiet ? .5 : 1);
   const palette = { leg: '#435447', boot: '#302e29', arm: '#527563', hand: '#d4aa7d' };
-  leg(builder, -.16, .67, .02, .55, gait * .68, palette);
-  leg(builder, .16, .67, .02, .55, -gait * .68, palette);
+  if (crouch > .001) {
+    crouchedLeg(builder, -.16, gait * .55, crouch, palette);
+    crouchedLeg(builder, .16, -gait * .55, crouch, palette);
+  } else {
+    leg(builder, -.16, .67, .02, .55, swing * .68, palette);
+    leg(builder, .16, .67, .02, .55, -swing * .68, palette);
+  }
+  // Lower the upper body as a unit; its armor, hands, blade and spell keep their
+  // attachment points instead of squashing the entire character vertically.
+  const base = builder;
+  builder = { box: (x, y, z, ...rest) => base.box(x, y - .42 * crouch, z - .10 * crouch, ...rest) };
   builder.box(0, .93, 0, .54, .56, .35, '#956e43');
   builder.box(0, 1.05, -.18, .42, .26, .045, '#b79b6a');
   builder.box(0, .75, 0, .61, .095, .39, '#414335');
   builder.box(.06, .75, -.205, .115, .11, .035, '#d9b467');
   // Visible from behind: layered cloak, leather satchel and scabbard.
-  const flutter = spec.reducedMotion ? 0 : gait * .04 + (dash ? .14 : 0);
+  const flutter = spec.reducedMotion ? 0 : swing * .04 + (dash ? .14 : spec.sprinting ? .075 : 0);
   for (let i = 0; i < 4; i++) builder.box(0, 1.15 - i * .16, .215 + i * .037 + flutter, .59 - i * .055, .2, .07, i % 2 ? '#3c6454' : '#46755e', { pitch: -.06 - flutter });
   builder.box(0, 1.22, .22, .6, .1, .08, '#a59566');
   builder.box(-.28, .86, .2, .22, .31, .22, '#624c37');
@@ -238,8 +261,8 @@ function hero(builder, spec, gait) {
   builder.box(-.08, 1.34, .34, .24, .065, .07, '#b9a069', { roll: -.32 });
   builder.box(.29, .74, .08, .13, .22, .13, '#55898c');
   builder.box(.29, .86, .08, .065, .055, .065, '#9fa78a');
-  const left = arm(builder, -.36, 1.15, 0, cast ? 1.22 : gait * -.55 - .1, palette);
-  const right = arm(builder, .36, 1.15, 0, attack ? 1.04 : .23 + gait * .35, palette);
+  const left = arm(builder, -.36, 1.15, 0, cast ? 1.22 : swing * -.55 - .1 + crouch * .25, palette);
+  const right = arm(builder, .36, 1.15, 0, attack ? 1.04 : .23 + swing * .35 + crouch * .2, palette);
   sword(builder, right, attack);
   if (cast) {
     builder.box(left.x, left.y + .16, left.z - .18, .2, .2, .2, '#a8e0d9', { yaw: .7 });
@@ -425,9 +448,10 @@ export function buildEmberActorGeometry(spec) {
 }
 
 function writeActor(builder, spec) {
-  const options = { kind: 'hero', x: 0, y: 0, z: 0, yaw: 0, gait: 0, walking: false, attack: 0, cast: 0, dash: 0, hurt: 0, act: 1, reducedMotion: false, ...spec };
+  const options = { kind: 'hero', x: 0, y: 0, z: 0, yaw: 0, gait: 0, walking: false, crouch: 0, sprinting: false, quiet: false, attack: 0, cast: 0, dash: 0, hurt: 0, act: 1, reducedMotion: false, ...spec };
   const gait = options.walking && !options.reducedMotion ? Math.sin(options.gait) : 0;
-  builder.setTransform({ x: options.x, y: options.y + (options.walking && !options.reducedMotion ? Math.abs(gait) * .025 : 0), z: options.z, yaw: options.yaw });
+  const bob = options.kind === 'hero' ? options.crouch > .01 ? .008 : options.quiet ? .01 : options.sprinting ? .04 : .025 : .025;
+  builder.setTransform({ x: options.x, y: options.y + (options.walking && !options.reducedMotion ? Math.abs(gait) * bob : 0), z: options.z, yaw: options.yaw });
   if (options.kind === 'boss' || options.boss) [ashWarden, mirrorStag, cinderQueen][clamp(options.act, 1, 3) - 1](builder, options, gait);
   else (actorKinds[options.kind] || crawler)(builder, options, gait);
 }
@@ -474,6 +498,7 @@ export function buildEmberActorMesh(state, time = state.elapsed || 0, options = 
   if (!options.hideHero) writeActor(builder, { kind: 'hero', x: player.x / 32, z: player.y / 32,
     yaw: options.heroYaw ?? Math.atan2(player.aimX || 0, -(player.aimY || 0)),
     gait: idValue(options.gaitById, 'hero', time * 10), walking: idValue(options.walkingById, 'hero', playerSpeed > 3),
+    crouch: options.heroCrouch ?? (player.crouching ? 1 : 0), sprinting: player.sprinting === true, quiet: player.walking === true,
     attack: player.attackTime || 0, cast: player.castTime || 0, dash: player.dashTime || 0, hurt: player.damageCooldown || 0,
     act: state.act, reducedMotion });
   for (const e of state.enemies) {

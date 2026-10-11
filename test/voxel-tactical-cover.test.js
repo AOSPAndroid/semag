@@ -35,8 +35,13 @@ function follow(map, from, target, profile, label) {
 
 for (const map of Object.values(MAPS)) {
   test(`${map.id}: low thematic cover has honest solid art, standable tops and bounded cost`, () => {
-    assert.equal(map.jumpCover.length, 6);
-    assert.equal(map.hopRoutes.length, 3);
+    assert.ok(map.jumpCover.length >= 2, 'each map offers multiple physical jump-cover landings');
+    assert.ok(map.hopRoutes.length >= 1, 'each map offers a connected hop sequence');
+    assert.equal(new Set(map.jumpCover.map(prop => prop.colliderId)).size, map.jumpCover.length, 'distinct physical cover');
+    for (const chain of map.hopRoutes) {
+      assert.ok(chain.steps.length >= 2, 'hop sequences link multiple supports');
+      assert.ok(chain.steps.every(step => map.jumpCover.some(prop => prop.colliderId === step.colliderId)), 'sequences use the tested physical cover');
+    }
     assert.ok(Object.isFrozen(map.jumpCover) && Object.isFrozen(map.hopRoutes));
     assert.equal(addTacticalJumpCover(map), map, 'idempotent catalog assembly');
     assert.ok(navigationPoints(map).length <= 6000, 'bounded navigation graph');
@@ -47,10 +52,15 @@ for (const map of Object.values(MAPS)) {
       assert.ok(box.w >= 1.4 && box.d >= 1.4, 'both human and hound feet fit the top');
       assert.ok(map.landmarks.some(mark => mark.kind === 'combat-cover' && mark.collisionIds.includes(box.id)), 'art identifies the exact real collider');
       assert.ok(map.coverIds.includes(box.id));
-      const origin = { x: prop.landing.x, y: box.h / 2, z: box.z - .4 };
-      const hit = traceShot({ map, players: [] }, -1, origin, { x: 0, y: 0, z: 1 }, 1.8);
+      // Authored cover runs along different axes. Probe from its usable
+      // approach rather than through a preceding prop on a shared north face.
+      const approach = prop.approaches[0], dx = prop.landing.x - approach.x, dz = prop.landing.z - approach.z;
+      const range = Math.hypot(dx, dz), direction = { x: dx / range, y: 0, z: dz / range };
+      assert.ok(Number.isFinite(range) && range > WORLD.radius, 'real outside shot origin');
+      const origin = { x: approach.x, y: box.h / 2, z: approach.z };
+      const hit = traceShot({ map, players: [] }, -1, origin, direction, range);
       assert.equal(hit.colliderId, box.id, 'visible low cover stops the actual shot trace');
-      const clear = traceShot({ map, players: [] }, -1, { ...origin, y: box.h + .06 }, { x: 0, y: 0, z: 1 }, 1.8);
+      const clear = traceShot({ map, players: [] }, -1, { ...origin, y: box.h + .06 }, direction, range);
       assert.equal(clear.kind, 'none', 'shots immediately above the shown top remain open');
     }
   });

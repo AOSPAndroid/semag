@@ -62,7 +62,7 @@ export function enhanceMapIdentity(arena) {
       box(`landmark-canal-${side}-post-east`, x + 3.18, 1, z + .10, .16, 1.55, .16, tint, 'wood'),
       box(`landmark-canal-${side}-awning`, x, 2.55, z, 3.4, .20, 1.8, tint, 'market-awning'),
     ]);
-    existing('canal-lock', 'canal-lock', 'Central lock crossing', 'ECLUSE', ['canal-mid-screen', 'canal-west-bank', 'canal-east-bank']);
+    existing('canal-lock', 'canal-lock', 'Northern and southern lock crossings', 'ECLUSE', ['canal-lock-north-crossing', 'canal-lock-south-crossing', 'canal-west-bank-0', 'canal-east-bank-0']);
     decorations.push(paint('market-paving', -24, 3.4, 3.7, 2.6, '#baa88b'), paint('market-paving', 20.3, -6.2, 3.7, 2.6, '#baa88b'));
   } else if (arena.id === 'rooftops') {
     solid('roofline-water-tank', 'water-tank', 'West roof water tank', 'WATER', [
@@ -85,8 +85,8 @@ export function enhanceMapIdentity(arena) {
     decorations.push(paint('hazard-pad', -23.8, -2.8, 3.4, 4.2, '#988c66'), paint('hazard-pad', 20.4, 4.2, 3.4, 4.2, '#988c66'));
   } else if (arena.id === 'bastion') {
     for (const [side, x, tint] of [['west', -16.35, '#6d8b8b'], ['east', 15.15, '#989070']]) solid(`bastion-${side}-signal`, 'signal-array', `${side} signal relay`, side === 'west' ? 'RELAY A' : 'RELAY B', [
-      box(`landmark-bastion-${side}-mast`, x + .31, 4.05, -.95, .48, 2.35, .48, '#627777', 'signal-mast'),
-      box(`landmark-bastion-${side}-array`, x, 6.4, -1.1, 1.1, .65, .8, tint, 'signal-array'),
+      box(`landmark-bastion-${side}-mast`, x + .31, 3.2, -.95, .48, 2.35, .48, '#627777', 'signal-mast'),
+      box(`landmark-bastion-${side}-array`, x, 5.55, -1.1, 1.1, .65, .8, tint, 'signal-array'),
     ]);
     for (const [side, x] of [['west', -23.2], ['east', 21]]) solid(`bastion-${side}-battery`, 'signal-battery', `${side} field battery`, 'POWER', [
       box(`landmark-bastion-${side}-battery`, x, 0, 6.4, 2.2, 1.1, 2, '#667a6e', 'metal'),
@@ -141,7 +141,9 @@ export function enhanceMapIdentity(arena) {
   } else return arena;
 
   return Object.freeze({ ...arena,
-    description: DESCRIPTIONS[arena.id] || arena.description,
+    // Layout authors describe their actual routes and floors. Identity paint
+    // and props must not replace that account with an old generic arena blurb.
+    description: arena.description || DESCRIPTIONS[arena.id],
     colliders: Object.freeze([...arena.colliders, ...colliders]),
     landmarks: Object.freeze([...(arena.landmarks || []), ...landmarks]),
     props: Object.freeze([...(arena.props || []), ...props]),

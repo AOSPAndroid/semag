@@ -4,6 +4,8 @@ import test from 'node:test';
 import { createServer } from '../server.js';
 import * as Voxel from '../public/voxel-engine.js';
 import { getLagCompensationDiagnostics } from '../public/voxel-lag-compensation.js';
+import { navigationPath, navigationCanOccupy } from '../public/voxel-navigation.js';
+import { MAPS } from '../public/voxel-maps.js';
 import { Peer, flushPeer } from './ws-helper.js';
 
 async function host(t) {
@@ -55,7 +57,11 @@ function advance(app, room, phase, maximum = 2_000) {
 async function inputFrames(game, room, seat, buttons, ticks) {
   seat.sequence = (seat.sequence ?? -1) + 1;
   seat.peer.send({ type: 'input', seq: seat.sequence, buttons });
-  await flushPeer(seat.peer);
+  try { await flushPeer(seat.peer); }
+  catch (error) {
+    error.message += `; input sequence ${seat.sequence}, phase ${room.state.phase}, actor ${JSON.stringify(room.state.players[seat.welcome.playerId] && { x: room.state.players[seat.welcome.playerId].x, y: room.state.players[seat.welcome.playerId].y, z: room.state.players[seat.welcome.playerId].z })}, last messages ${JSON.stringify(seat.peer.messages.slice(-2).map(({ type, message }) => ({ type, ...(message ? { message } : {}) })))}`;
+    throw error;
+  }
   for (let tick = 0; tick < ticks; tick++) game.app.tick();
 }
 
@@ -74,17 +80,44 @@ async function collectSupply(game, room, seat, kind) {
   await inputFrames(game, room, seat, {}, 1);
 }
 
-async function walkRoute(game, room, seat, waypoints) {
+async function walkToSite(game, room, seat, site) {
   const id = seat.welcome.playerId;
-  for (const [x, z, tolerance = .35] of waypoints) {
-    let attempts = 0;
-    while (Math.hypot(room.state.players[id].x - x, room.state.players[id].z - z) > tolerance && attempts++ < 100) {
-      const player = room.state.players[id], distance = Math.hypot(x - player.x, z - player.z);
-      await inputFrames(game, room, seat, { up: true, yaw: Math.atan2(x - player.x, -(z - player.z)), pitch: 0 }, Math.max(1, Math.min(48, Math.floor(distance / 5.4 * 120))));
-    }
-    assert.ok(attempts < 100, `Player ${id} could not reach ${x},${z}; was ${room.state.players[id].x},${room.state.players[id].z}`);
-    await inputFrames(game, room, seat, {}, 20);
+  const actor = room.state.players[id], map = MAPS[room.state.mapId];
+  let destination = { x: site.x, y: 0, z: site.z };
+  if (room.state.bomb.status === 'planted') {
+    // The planter still occupies the charge's exact position. A real defender
+    // uses an adjacent clear interaction point rather than walking into them.
+    const bomb = room.state.bomb, angle = Math.atan2(actor.z - bomb.z, actor.x - bomb.x);
+    const candidates = Array.from({ length: 8 }, (_, index) => {
+      const heading = angle + index * Math.PI / 4;
+      return { x: bomb.x + Math.cos(heading) * 1.05, y: 0, z: bomb.z + Math.sin(heading) * 1.05 };
+    }).filter(point => navigationCanOccupy(map, point) && Voxel.canInteractWithBomb(room.state, { ...actor, ...point })
+      && room.state.players.every(peer => peer.id === id || !peer.alive || Math.hypot(peer.x - point.x, peer.z - point.z) >= actor.radius + peer.radius + .1));
+    const reachable = candidates.map(point => ({ point, path: navigationPath(map, actor, point) })).filter(value => value.path.length);
+    assert.ok(reachable.length, 'the planted charge has an unobstructed legal defuse approach');
+    reachable.sort((a, b) => a.path.length - b.path.length);
+    destination = reachable[0].point;
   }
+  const waypoints = navigationPath(map, actor, destination);
+  assert.ok(waypoints.length, 'the authored site has a physical route from this squad start');
+  for (const point of waypoints) {
+    let attempts = 0;
+    while (attempts++ < 96) {
+      const player = room.state.players[id], distance = Math.hypot(point.x - player.x, point.z - player.z);
+      if (distance < .23 && Math.abs(player.y - point.y) < .04 && player.grounded) break;
+      const jump = Boolean(point.jump && player.grounded && player.y < point.y - .1 && !player.previousInput.jump);
+      const frames = jump ? 1 : Math.max(1, Math.min(28, Math.floor(Math.max(0, distance - .16) / 2.8 * Voxel.TICK_RATE)));
+      await inputFrames(game, room, seat, { up: distance > .1, walk: true,
+        jump, yaw: Math.atan2(point.x - player.x, -(point.z - player.z)), pitch: 0 }, frames);
+      assert.ok(navigationCanOccupy(map, player), 'socket movement stays outside the rendered solids');
+    }
+    assert.ok(attempts < 96, `Player ${id} could not reach ${JSON.stringify(point)}; actual ${JSON.stringify({ x: actor.x, y: actor.y, z: actor.z, vx: actor.vx, vz: actor.vz, alive: actor.alive, phase: room.state.phase, sequence: seat.sequence })}`);
+  }
+  await inputFrames(game, room, seat, {}, 24);
+  assert.ok(Math.hypot(actor.x - destination.x, actor.z - destination.z) < .35 && actor.y === 0, 'a real grounded player reaches the planned interaction point');
+  if (room.state.bomb.status === 'planted') {
+    assert.ok(Math.hypot(actor.x - room.state.bomb.x, actor.z - room.state.bomb.z) <= 1.6 && Voxel.canInteractWithBomb(room.state, actor), 'the defender really reaches the visible charge within defuse range');
+  } else assert.ok(Math.hypot(actor.x - site.x, actor.z - site.z) < .6, 'the attacker really reaches the charge site');
 }
 
 for (const teamSize of [1, 2, 3]) {
@@ -324,7 +357,7 @@ test('Voxel starter loadouts and finite weapon actions are authoritative through
   Voxel.applyCombatDamage(room.state, Array.from({ length: 3 }, () => ({ playerId: 2, targetId: 0, damage: Voxel.WEAPONS.burst.damage, weapon: 'burst', attack: 'gun' })));
   assert.equal(actor.hp, Voxel.PLAYER_HEALTH - injury);
   await inputFrames(game, room, seats[0], { heal: true }, 1);
-  assert.equal(actor.potions, 0); assert.equal(actor.healTicks, Voxel.HEAL.ticks); assert.equal(actor.healing, true);
+  assert.equal(actor.potions, 1, 'the potion is retained until the short heal completes'); assert.equal(actor.healTicks, Voxel.HEAL.ticks); assert.equal(actor.healing, true);
   await inputFrames(game, room, seats[0], { heal: true }, Voxel.HEAL.ticks);
   assert.equal(actor.healTicks, 0); assert.equal(actor.healing, false); assert.equal(actor.hp, Voxel.PLAYER_HEALTH - injury + Voxel.HEAL.amount);
   assert.equal(room.state.events.filter(event => event.type === 'healStart' && event.playerId === 0).length, 1);
@@ -450,17 +483,20 @@ test('six Voxel clients observe a normal-input plant, defuse and authoritative r
   const game = await host(t), room = await game.make(3, 'courtyard'), seats = await game.fill(room);
   await readyEveryone(room, seats); advance(game.app, room, 'fight');
   assert.equal(room.state.bomb.carrierId, 0);
-  await walkRoute(game, room, seats[0], [[-18, 18], [-18, -12], [-13, -12]]);
+  const site = MAPS[room.state.mapId].sites.find(value => value.id === 'A');
+  await walkToSite(game, room, seats[0], site);
   for (let tick = 0; tick < 4; tick++) await inputFrames(game, room, seats[0], { interact: true }, 120);
   assert.equal(room.state.bomb.status, 'planted'); assert.equal(room.state.bomb.siteId, 'A');
   const plantedAfter = seats.map(({ peer }) => peer.messages.length); game.app.broadcast(room);
   const planted = await Promise.all(seats.map(({ peer }, id) => peer.untilState(message => message.state.bomb.status === 'planted', { after: plantedAfter[id] })));
   for (const snapshot of planted) assert.deepEqual(snapshot.state.bomb, planted[0].state.bomb);
   await inputFrames(game, room, seats[0], {}, 1);
-  await walkRoute(game, room, seats[3], [[3, -20], [-13, -20], [-13, -12, .9]]);
+  await walkToSite(game, room, seats[3], site);
   for (let tick = 0; tick < 6; tick++) await inputFrames(game, room, seats[3], { interact: true }, 120);
   assert.equal(room.state.bomb.status, 'defused'); assert.equal(room.state.phase, 'roundEnd');
   assert.equal(room.state.roundReason, 'defuse'); assert.deepEqual(room.state.scores, [0, 1]);
+  assert.ok(seats[0].sequence < 120 && seats[3].sequence < 120,
+    'efficient socket steering and interaction stay below the unchanged 300-message policy, including flush pings');
   const defusedAfter = seats.map(({ peer }) => peer.messages.length); game.app.broadcast(room);
   const defused = await Promise.all(seats.map(({ peer }, id) => peer.untilState(message => message.state.roundReason === 'defuse', { after: defusedAfter[id] })));
   for (const snapshot of defused) assert.deepEqual(snapshot.state, defused[0].state);
@@ -481,6 +517,10 @@ test('flagship maps and weapons round-trip through real team rooms without live 
     }
     await readyEveryone(room, seats);
     advance(game.app, room, 'fight');
+    // Fast-forwarding the whole buy phase synchronously queues snapshots that
+    // live clients receive over eleven seconds. Drain them before a fresh tap
+    // so the unchanged 120 ms action expiry measures the new command itself.
+    await Promise.all(seats.map(({ peer }) => flushPeer(peer)));
     const shooter = room.state.players[0], ammo = shooter.ammo;
     await inputFrames(game, room, seats[0], { fire: true, yaw: 1.5, pitch: 0 }, 1);
     assert.equal(shooter.ammo, ammo - 1);

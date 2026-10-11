@@ -95,7 +95,7 @@ test('Royale has ten distinct immutable authored arenas with bounded geometry an
     for (const box of map.colliders) {
       assert.ok(Object.isFrozen(box));
       for (const field of ['x', 'y', 'z', 'w', 'h', 'd']) assert.ok(Number.isFinite(box[field]));
-      for (const field of ['w', 'h', 'd']) assert.ok(box[field] > 0);
+      for (const field of ['w', 'h', 'd']) assert.ok(box[field] > 0, `${map.id}/${box.id}: positive ${field}, got ${box[field]}`);
       assert.match(box.color, /^#[0-9a-f]{6}$/i);
       if (!box.id.startsWith('boundary-')) assert.ok(box.x >= map.bounds.minX && box.x + box.w <= map.bounds.maxX && box.z >= map.bounds.minZ && box.z + box.d <= map.bounds.maxZ, `${map.id}/${box.id} bounds`);
     }
@@ -126,7 +126,10 @@ for (const map of Object.values(MAPS)) {
         return Math.abs(top.y + top.h - p.y) < EPS && p.x >= top.x + WORLD.radius && p.x <= top.x + top.w - WORLD.radius && p.z >= top.z + WORLD.radius && p.z <= top.z + top.d - WORLD.radius;
       }), `${map.id}/${p.id} has an authored climb to its support`);
     }
-    for (const building of map.buildings) assert.ok(map.lootPoints.filter(p => !p.y && p.x > building.interior.minX && p.x < building.interior.maxX && p.z > building.interior.minZ && p.z < building.interior.maxZ).length >= 3, `${building.id} has real interior supplies`);
+    for (const building of map.buildings) {
+      const supplies = map.lootPoints.filter(p => !p.y && p.x > building.interior.minX && p.x < building.interior.maxX && p.z > building.interior.minZ && p.z < building.interior.maxZ);
+      assert.ok(supplies.length >= 3, `${building.id} has at least three real interior supplies, got ${supplies.length}`);
+    }
     for (const [xSign, zSign] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) assert.ok(map.lootPoints.filter(p => p.x * xSign > 8 && p.z * zSign > 8).length >= 4, `${map.id} decentralized quadrant loot`);
   });
 
@@ -237,7 +240,7 @@ test('bounded real navigation reaches the final circle and nearest supplies from
 });
 
 test('outer trail logs, broken archive plinths and caravan supplies work as real hop cover', () => {
-  for (const [id, colliderId] of [['forest', 'forest-outer-timber-0'], ['maze', 'maze-outer-gallery-0-broken-plinth'], ['desert', 'desert-outer-caravan-crate-0']]) {
+  for (const [id, colliderId] of [['forest', 'forest-trail-timber-0'], ['maze', 'maze-archive-plinth-0'], ['desert', 'desert-caravan-supply-0']]) {
     const map = MAPS[id], support = map.colliders.find(box => box.id === colliderId);
     const target = { x: support.x + support.w / 2, z: support.z + support.d / 2 };
     const player = Object.assign(createCombatPlayer(0, 1, 'lmg'), { x: target.x, z: support.z + support.d + .45 });

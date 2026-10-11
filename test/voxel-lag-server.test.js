@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { once } from 'node:events';
 import { createServer } from '../server.js';
 import * as Voxel from '../public/voxel-engine.js';
 import { getLagCompensationDiagnostics } from '../public/voxel-lag-compensation.js';
@@ -50,6 +51,15 @@ async function movingHeadShot(t, view = 'valid') {
   for (const peer of game.peers) peer.send({ type: 'ready', ready: true });
   await flushPeer(targetPeer);
   while (room.state.phase !== 'fight') app.tick();
+  // Drain snapshots emitted by the synchronous countdown before fresh taps.
+  await Promise.all(game.peers.map(flushPeer));
+  // A stationary live client still sends neutral inputs. Release the stale
+  // connection fence before isolating the historic aiming test.
+  const neutralReceived = once(room.slots[0].ws, 'message').then(([raw]) => {
+    assert.equal(JSON.parse(raw.toString()).seq, 0); app.tick();
+  });
+  shooterPeer.send({ type: 'input', seq: 0, buttons: {} });
+  await neutralReceived; await flushPeer(shooterPeer);
   const [shooter, target] = room.state.players;
   Object.assign(shooter, { x: -20, y: 0, z: 10, vx: 0, vy: 0, vz: 0, yaw: 0, pitch: 0, grounded: true });
   Object.assign(target, { x: -20, y: 0, z: 0, vx: 5.4, vy: 0, vz: 0, yaw: 0, pitch: 0, grounded: true });
@@ -62,9 +72,18 @@ async function movingHeadShot(t, view = 'valid') {
   assert.equal(currentRay.playerId, null, 'moving rendered head is outside the unrewound current head box');
   const metadata = view === 'valid' ? { viewTick: displayedTick } : view === 'stale' ? { viewTick: room.state.tick - 19 } : view === 'future' ? { viewTick: room.state.tick + 500 } : {};
   const hp = target.hp, ammo = shooter.ammo, currentX = target.x;
-  shooterPeer.send({ type: 'input', seq: 0, buttons: { fire: true, yaw, pitch: 0 }, ...metadata }); await flushPeer(shooterPeer);
-  app.tick();
-  assert.equal(room.acks[0], 0); assert.equal(shooter.ammo, ammo - 1);
+  await flushPeer(shooterPeer);
+  // A live host samples an accepted tap before its client receives the next
+  // pong. Advance that real host tick on socket delivery, so a slow test client
+  // cannot expire the 120ms action while decoding earlier snapshots.
+  const consumed = once(room.slots[0].ws, 'message').then(([raw]) => {
+    const message = JSON.parse(raw.toString());
+    assert.equal(message.type, 'input'); assert.equal(message.seq, 1);
+    app.tick();
+  });
+  shooterPeer.send({ type: 'input', seq: 1, buttons: { fire: true, yaw, pitch: 0 }, ...metadata });
+  await consumed; await flushPeer(shooterPeer);
+  assert.equal(room.acks[0], 1); assert.equal(shooter.ammo, ammo - 1);
   assert.equal(target.x > currentX, true, 'historical tracing never rewinds authoritative movement');
   const shot = room.state.events.findLast(event => event.type === 'shot' && event.playerId === 0);
   assert.ok(shot);

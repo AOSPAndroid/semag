@@ -142,7 +142,7 @@ for (const [mode, catalog] of [['breach', BREACH], ['royale', ROYALE]]) for (con
 }
 
 test('short open peeks reward actual shotgun pellets and sword contact, while authored turns stop distant rifle and shotgun damage', () => {
-  for (const [id, x, nearZ, targetZ, farZ] of [['market', 0, 5, 3.6, -9.5], ['lockdown', -5.2, 4, 2.6, -10]]) {
+  for (const [id, x, nearZ, targetZ, farZ] of [['market', -5.5, 5, 3.6, -9.5], ['lockdown', -5.2, 4, 2.6, -10]]) {
     const map = BREACH[id], from = { x, z: nearZ }, close = { x, z: targetZ }, far = { x, z: farZ };
     const shotgun = encounter(map, 'shotgun', from, close), rifle = encounter(map, 'carbine', from, close), sword = encounter(map, 'carbine', from, close, true);
     assert.ok(shotgun.damage > rifle.damage && rifle.damage > 0, `${id}: a genuine close pellet advantage`);
@@ -160,8 +160,8 @@ test('short open peeks reward actual shotgun pellets and sword contact, while au
 
 test('thin shop walls and blast screens block a sword within reach as well as bullets', () => {
   for (const [id, from, target] of [
-    ['market', { x: -16.05, z: 2.5 }, { x: -14.55, z: 2.5 }],
-    ['lockdown', { x: -4.4, z: 8.55 }, { x: -4.4, z: 6.75 }],
+    ['market', { x: -16.05, z: -6.5 }, { x: -14.55, z: -6.5 }],
+    ['lockdown', { x: 2.5, z: -10.65 }, { x: 2.5, z: -8.85 }],
   ]) for (const blade of [false, true]) {
     const result = encounter(BREACH[id], 'shotgun', from, target, blade);
     assert.equal(result.damage, 0, `${id}: ${blade ? 'sword' : 'pellets'} cannot cut through honest protection`);

@@ -1,4 +1,6 @@
-/** A fictional trading office: workstation islands, market walls and two distinct upper flanks. */
+import { environmentCover } from './voxel-environment-cover.js';
+
+/** A fictional two-floor trading office: desk neighbourhoods around an open atrium. */
 const box = (id, x, y, z, w, h, d, color, material) => Object.freeze({ id, x, y, z, w, h, d, color, material });
 const point = (x, z, y = 0) => Object.freeze({ x, y, z });
 const loot = (id, x, z, kind, y = 0) => Object.freeze({ id, x, y, z, kind });
@@ -50,8 +52,11 @@ export function createTradingMap(mode = 'breach') {
       color: '#2f434f', material: 'office-chair', seatId: chairParts[0].id, backId: chairParts[1].id,
       collisionIds: Object.freeze(chairParts.map(value => value.id)) }));
   }
-  const podPositions = [[-10.4, -10.3], [4.2, -8.7], [-9.2, -4.4], [5.4, -2.8],
-    [-10.4, 1.5], [4.2, 3.1], [-9.2, 7.4], [5.4, 9.0]];
+  // Rates, equities and currencies use separate desk neighbourhoods. Their
+  // broken spacing makes cross aisles turn around screens rather than repeat
+  // eight equally spaced copies down the two sides of a straight corridor.
+  const podPositions = [[-10.4, -10.3], [-9.2, -5.6], [4.2, -8.7], [5.4, -3.9],
+    [-10.4, 3.3], [-7.6, 8.2], [4.2, 3.1], [7.0, 9.0]];
   for (const [index, [x, z]] of podPositions.entries()) {
     desk(`trading-desk-${index}`, x, z);
     solid('monitor', box(`trading-monitor-${index}`, x + .3, .8, z + .92, 4.2, 1.2, .36, '#16394b', 'screen'));
@@ -105,6 +110,31 @@ export function createTradingMap(mode = 'breach') {
   for (const [index, [x, z]] of [[-5.2, -5.6], [3.8, 5.4]].entries())
     solid('archive-cabinet', box(`trading-archive-cabinet-${index}`, x, 0, z, 1.4, 1.35, 1.2, '#748b97', 'desk-cabinet'));
 
+  // A complete second floor spans the northern risk offices. Its two side
+  // balconies connect to the existing cross-atrium bridge, leaving an open
+  // central atrium and genuinely usable floor routes below all three links.
+  const secondFloorIds = ['trading-risk-office-floor', 'trading-west-balcony', 'trading-east-balcony'];
+  solid('office-mezzanine', box(secondFloorIds[0], -16.4, 2.9, -17, 32.8, .3, 8.2, '#6e8997', 'office-roof'));
+  solid('office-mezzanine', box(secondFloorIds[1], -16.4, 2.9, -8.8, 3.6, .3, 10.3, '#6e8997', 'office-roof'));
+  solid('office-mezzanine', box(secondFloorIds[2], 12.8, 2.9, -8.8, 3.6, .3, 17.6, '#6e8997', 'office-roof'));
+  for (const [index, x] of [-15.4, -5.3, 4.8].entries()) {
+    const label = ['RISK', 'RESEARCH', 'GLOBAL MARKETS'][index];
+    const pieces = [
+      box(`trading-upper-office-${index}-back`, x, 3.2, -16.5, 8.8, 2.5, .2, '#87b0bc', 'glass'),
+      box(`trading-upper-office-${index}-west`, x, 3.2, -16.3, .2, 2.5, 4.1, '#87b0bc', 'glass'),
+      box(`trading-upper-office-${index}-east`, x + 8.6, 3.2, -16.3, .2, 2.5, 4.1, '#87b0bc', 'glass'),
+      box(`trading-upper-office-${index}-front-west`, x, 3.2, -12.4, 2.8, 2.5, .2, '#87b0bc', 'glass'),
+      box(`trading-upper-office-${index}-front-east`, x + 5.8, 3.2, -12.4, 3, 2.5, .2, '#87b0bc', 'glass'),
+    ];
+    pieces.forEach(piece => solid('upper-office-glazing', piece));
+    solid('upper-office-screen', box(`trading-upper-office-${index}-screen`, x + 1.2, 3.2, -15.7, 2.4, 1.5, .45, '#153e54', 'screen'));
+    solid('mezzanine-desk', box(`trading-upper-office-${index}-table`, x + 4.7, 3.2, -15.0, 2.2, .85, 1.4, '#a5a5a0', 'desk-cabinet'));
+    landmarks.push(Object.freeze({ kind: 'upper-office', id: `trading-upper-office-${index}`, label,
+      ...pieces[0], collisionIds: Object.freeze(pieces.map(piece => piece.id)) }));
+  }
+  for (const [index, [x, z]] of [[-16, -8], [13.4, -6], [13.4, 5.6]].entries())
+    solid('balcony-screen', box(`trading-balcony-sight-screen-${index}`, x, 3.2, z, 1, 1.2, 1.4, '#1478a0', 'metal'));
+
   function climb(id, name, x, edge, direction, deckId, landing, side, role) {
     const steps = [];
     for (let index = 0; index < 3; index++) {
@@ -124,9 +154,10 @@ export function createTradingMap(mode = 'breach') {
   climb('trading-server-north-climb', 'Operations / backup racks', 19, -2.4, 1, 'trading-server-gallery', point(19, -1.7), 'north', 'mid');
   climb('trading-server-south-climb', 'Operations / equipment risers', 19, 8.8, -1, 'trading-server-gallery', point(19, 8.1), 'south', 'mid');
   const upperFloors = Object.freeze([Object.freeze({ id: 'trading-mezzanine-level', name: 'Research and operations mezzanine',
-    colliderIds: Object.freeze(['trading-meeting-mezzanine', 'trading-cross-floor-mezzanine', 'trading-server-gallery']),
+    colliderIds: Object.freeze(['trading-meeting-mezzanine', 'trading-cross-floor-mezzanine', 'trading-server-gallery', ...secondFloorIds]),
     routeIds: Object.freeze(routes.map(route => route.id)), underpasses: Object.freeze([point(0, .95), point(-12, .8)]),
-    traverse: Object.freeze([point(-19, -.3, 3.2), point(-13, .95, 3.2), point(0, .95, 3.2), point(13, .95, 3.2), point(19, .95, 3.2)]) })]);
+    traverse: Object.freeze([point(-19, -.3, 3.2), point(-14, -9.8, 3.2), point(-2, -10.2, 3.2), point(14.8, -10.2, 3.2),
+      point(15.2, .95, 3.2), point(0, .95, 3.2), point(-13, .95, 3.2), point(19, .95, 3.2)]) })]);
 
   const decorations = [paint('office-aisle', -2.6, -halfD, 5.2, halfD * 2, '#969e92'),
     paint('office-cross-aisle', -15, -1.1, 12.4, 1.2, '#4897b3'),
@@ -137,6 +168,9 @@ export function createTradingMap(mode = 'breach') {
     paint('office-workstations', 3.2, .1, 8.6, 12.3, '#727d75'),
     paint('office-meeting-carpet', -22.7, -6.3, 7.4, 10.6, '#8d9080'),
     paint('office-operations-carpet', 15, -2.4, 8, 11.2, '#6f7874')];
+  for (const [face, colliderId] of [['south', `${prefix}-north`], ['north', `${prefix}-south`]])
+    decorations.push(Object.freeze({ kind: 'wall-sign', colliderId, face, label: 'BARCLAYS', sublabel: 'GLOBAL MARKETS', emblem: 'barclays', left: halfW - 5, bottom: 4.2, w: 10, h: 1.8 }));
+  decorations.push(Object.freeze({ kind: 'wall-sign', colliderId: 'trading-upper-office-0-back', face: 'south', label: 'BARCLAYS', emblem: 'barclays', left: .8, bottom: 1.3, w: 5.8, h: .8 }));
 
   // The larger Royale floor adds reception and break-room workstation islands,
   // rather than stretching every desk and doorway to an implausible scale.
@@ -150,10 +184,22 @@ export function createTradingMap(mode = 'breach') {
     for (const x of [-26, 2.6]) decorations.push(paint('office-annex', x, -26, 23.4, 4.6, '#69766f'), paint('office-annex', x, 20, 23.4, 5.6, '#69766f'));
   }
 
+  const lowerCover = environmentCover([
+    { id: 'trading-reception-hops', name: 'Reception archive cabinets', kind: 'archive-pedestal', start: [-12, 16], end: [-6.4, 16],
+      boxes: [0, 1].map(i => ({ id: `trading-reception-cabinet-${i}`, x: -11 + i * 2.1, z: 15.3, w: 1.6, h: i ? .84 : .48, d: 1.4,
+        color: '#91a3ac', material: 'desk-cabinet', approaches: [[-10.2 + i * 2.1, 17.5]] })) },
+    { id: 'trading-operations-hops', name: 'Operations backup cases', kind: 'equipment-case', start: [23.5, 9.8], end: [23.5, 15],
+      boxes: [0, 1].map(i => ({ id: `trading-operations-case-${i}`, x: 22.8, z: 10.8 + i * 1.8, w: 1.4, h: i ? .84 : .48, d: 1.4,
+        color: '#527e97', material: 'metal', approaches: [[21.4, 11.5 + i * 1.8]] })) },
+    { id: 'trading-research-hops', name: 'Research print cabinets', kind: 'archive-pedestal', start: [-23, -19], end: [-18, -19],
+      boxes: [0, 1].map(i => ({ id: `trading-research-cabinet-${i}`, x: -22 + i * 1.8, z: -19.7, w: 1.4, h: i ? .84 : .48, d: 1.4,
+        color: '#a7aaa2', material: 'desk-cabinet', approaches: [[-21.3 + i * 1.8, -17.5]] })) },
+  ]);
   const common = { id: 'trading', name: 'Barclays Trading Floor',
-    description: 'A fictional corporate trading floor: staggered workstation islands, archive cabinets and head-height monitor banks divide broad cross aisles. A real suspended mezzanine connects the glass research suite and open server gallery, with desk and screen protection above open ground aisles. Four separate climbs keep both levels contested.',
+    description: 'A fictional Barclays trading office with clustered rates, equities and currency desks below a full second floor of glass risk and research offices. Connecting side balconies and an atrium bridge create a complete upper loop; huge market displays, monitor banks and server racks protect different routes on each floor.',
     theme: 'trading', mode, bounds: Object.freeze({ minX: -halfW, maxX: halfW, minZ: -halfD, maxZ: halfD }),
-    colliders: Object.freeze(colliders), routes: Object.freeze(routes), buildings: Object.freeze(buildings), landmarks: Object.freeze(landmarks),
+    authoredLayout: true, ...lowerCover,
+    colliders: Object.freeze([...colliders, ...lowerCover.colliders]), routes: Object.freeze(routes), buildings: Object.freeze(buildings), landmarks: Object.freeze([...landmarks, ...lowerCover.landmarks]),
     upperFloors,
     decorations: Object.freeze(decorations), tunnels: Object.freeze([]), ceilings: Object.freeze([ceiling.id]), floorColor: '#777c77', skyColor: '#d4d4c4' };
   if (!royale) return Object.freeze({ ...common,

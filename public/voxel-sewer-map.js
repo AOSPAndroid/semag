@@ -1,4 +1,6 @@
-/** Brick collectors are carved as a connected network, rather than rooms in an open yard. */
+import { environmentCover } from './voxel-environment-cover.js';
+
+/** A carved drainage network, vaulted pump hall and overhead service duct circuit. */
 const freeze = Object.freeze;
 const point = (x, z, y = 0) => freeze({ x, y, z });
 const box = (id, x, y, z, w, h, d, color, material, extra = {}) => freeze({ id, x, y, z, w, h, d, color, material, ...extra });
@@ -39,7 +41,10 @@ export function createSewerMap(mode = 'breach') {
     R('north-crossing', -22, -13.5, 44, 4), R('south-crossing', -22, 9.5, 44, 4),
     R('west-pump-access', -17, -2.5, 8, 5), R('east-pump-access', 9, -2.5, 8, 5),
     R('valve-passage', 11, -14, 4, 4.5), R('valve-bypass', 17, -17, 5, 3.5), R('maintenance-passage', -15, 9.5, 4, 4.5)];
-  const walkspaces = [...chambers, ...collectors], colliders = [], landmarks = [], decorations = [], ceilings = [], routes = [], tunnels = [];
+  // One dog-leg service vault crosses the west collector at a second level,
+  // while the lower wet route remains open. It is carved into the rock too.
+  const serviceVaults = [R('upper-service-link', -18, -10.2, 14.3, 3, 7.2), R('upper-filter-return', -18, -12, 4, 4.8, 7.2)];
+  const walkspaces = [...chambers, ...collectors, ...serviceVaults], colliders = [], landmarks = [], decorations = [], ceilings = [], routes = [], tunnels = [];
   const add = collider => { colliders.push(collider); if (collider.overhead) ceilings.push(collider.id); return collider; };
   const solid = (id, x, y, z, w, h, d, color = '#61655b', material = 'sewer-brick', extra = {}) => add(box(id, x * sx, y, z * sz, w * sx, h, d * sz, color, material, extra));
   const mark = (kind, solids, label, extra = {}) => {
@@ -57,12 +62,12 @@ export function createSewerMap(mode = 'breach') {
   solid(`${prefix}-north`, -halfW / sx, 0, -halfD / sz - .8 / sz, 2 * halfW / sx, 8, .8 / sz);
   solid(`${prefix}-south`, -halfW / sx, 0, halfD / sz, 2 * halfW / sx, 8, .8 / sz);
 
-  for (const room of chambers) {
+  for (const room of [...chambers, ...serviceVaults]) {
     const roof = add(box(`sewers-${room.id}-ceiling`, room.x, room.height, room.z, room.w, .32, room.d, '#454d43', 'sewer-ceiling', { overhead: true }));
     paint('chamber-floor', room.x / sx, room.z / sz, room.w / sx, room.d / sz, '#696b5e');
     mark('chamber', [roof], room.id.replaceAll('-', ' '));
   }
-  const lowRoofs = partition(bounds, walkspaces, (x, z) => collectors.some(r => inside(r, x, z)) && !chambers.some(r => inside(r, x, z)));
+  const lowRoofs = partition(bounds, walkspaces, (x, z) => collectors.some(r => inside(r, x, z)) && ![...chambers, ...serviceVaults].some(r => inside(r, x, z)));
   for (const [index, r] of lowRoofs.entries()) add(box(`sewers-collector-roof-${index}`, r.x, 3.4, r.z, r.w, .32, r.d, '#575f4f', 'sewer-roof', { overhead: true }));
   // Vault-to-collector bulkheads close the space above the low entrances. A
   // gallery jump cannot escape onto the outside of a tunnel's ceiling slab.
@@ -137,6 +142,20 @@ export function createSewerMap(mode = 'breach') {
     const deck = solid(maintenanceIds[index], x, 2.96, z, w, .24, d, '#758079', 'sewer-roof', { overhead: true });
     mark('maintenance-catwalk', [deck], index === 2 ? 'Pump maintenance crossing' : `${index ? 'East' : 'West'} maintenance bank`);
   }
+  for (const [id, x, z, w, d, label] of [
+    ['sewers-maintenance-south-crossing', -3.7, 2.3, 7.4, 2.2, 'South pump inspection bridge'],
+    ['sewers-maintenance-pump-crossing', -6.1, -.95, 12.2, 1.9, 'Pump overhead bridge'],
+    ['sewers-service-duct-floor', -18, -9.8, 14.3, 1.8, 'Upper storm-feed service duct'],
+    ['sewers-filter-return-floor', -17.6, -14.7, 2.4, 4.9, 'Filter control return'],
+    ['sewers-pump-west-upper-return', -5.9, -8, 2.2, 3.6, 'Upper pump west return'],
+  ]) {
+    const deck = solid(id, x, 2.96, z, w, .24, d, '#758079', 'sewer-roof', { overhead: true });
+    maintenanceIds.push(id); mark('maintenance-catwalk', [deck], label);
+  }
+  // A service wall separates the upper duct from its vaulted wet bank. Its
+  // two end openings connect to the pump balcony and the filter chamber.
+  const ductWall = solid('sewers-upper-duct-wall', -15, 3.2, -9.8, 6, 2.5, .22, '#6c7563', 'sewer-brick');
+  mark('service-duct', [ductWall], 'Raised storm-feed duct');
   for (const [index, x] of [-6.1, 5.5].entries()) {
     const pipe = solid(`sewers-gallery-pressure-pipe-${index}`, x, 3.2, 2.8, .6, 1.3, 1.2, '#968157', 'pipe');
     const collar = solid(`sewers-gallery-pipe-collar-${index}`, x - .06, 3.48, 3.05, .72, .62, .7, '#738070', 'metal');
@@ -144,14 +163,15 @@ export function createSewerMap(mode = 'breach') {
   }
   const manifold = solid('sewers-gallery-manifold', -.5, 3.2, -4.5, 1, 1.3, .8, '#405b53', 'metal');
   mark('maintenance-manifold', [manifold], 'Upper pump manifold');
-  for (const [index, [x, z]] of [[-14.5, -10.8], [13.3, 10.1]].entries()) {
+  for (const [index, [x, z]] of [[-13.6, -17.6], [13.3, 10.1]].entries()) {
     const cargo = solid(`sewers-service-cargo-${index}`, x, 0, z, 1.2, .8, 1.1, '#748070', 'metal');
     mark('service-cargo', [cargo], 'Drain service tools');
   }
   const upperFloors = freeze([freeze({ id: 'sewers-maintenance-level', name: 'Pump maintenance walk',
     colliderIds: freeze(['sewers-gallery-0', 'sewers-gallery-1', ...maintenanceIds]),
     routeIds: freeze(routes.map(route => route.id)), underpasses: freeze([P(-4.8, 0), P(0, -3.1)]),
-    traverse: freeze([P(-4.8, 3.5, 3.2), P(-4.8, -3.1, 3.2), P(0, -3.1, 3.2), P(4.8, -3.1, 3.2), P(4.8, 3.5, 3.2)]) })]);
+    traverse: freeze([P(-4.8, 3.5, 3.2), P(-4.8, -3.1, 3.2), P(0, -3.1, 3.2), P(4.8, -3.1, 3.2), P(4.8, 1.8, 3.2),
+      P(-4.8, 1.8, 3.2), P(-4.8, -8.7, 3.2), P(-16.4, -8.7, 3.2), P(-16.4, -13.9, 3.2)]) })]);
 
   const tunnelSpecs = [ ['north-feed', 0, -14.2, 0, -11.75, 0, -9.3, 6], ['south-feed', 0, 9.3, 0, 11.75, 0, 14.2, 6],
     ['west-drain', -19.5, -7.5, -19.5, 0, -19.5, 7.5, 5], ['east-drain', 19.5, -7.5, 19.5, 0, 19.5, 7.5, 5],
@@ -186,9 +206,21 @@ export function createSewerMap(mode = 'breach') {
         outside: P(doorX, doorZ + (east ? 1 : -1)), inside: P(doorX, doorZ + (east ? -1 : 1)) }),
         ...(east ? [freeze({ x: 18 * sx, z: -14.6 * sz, width: 3 * sz, height: 3.4, axis: 'x', outside: P(19, -14.6), inside: P(17, -14.6) })] : [])]) });
   });
+  const lowerCover = environmentCover([
+    { id: 'sewers-filter-hops', name: 'Filter service blocks', kind: 'filter-block', start: [P(-15.8, -8.9).x, P(-15.8, -8.9).z], end: [P(-11.0, -8.9).x, P(-11.0, -8.9).z],
+      boxes: [0, 1].map(i => ({ id: `sewers-filter-block-${i}`, x: (-15 + i * 1.8) * sx, z: -9.6 * sz, w: 1.4 * sx, h: i ? .84 : .48, d: 1.4 * sz,
+        color: '#858b72', material: 'sewer-brick', approaches: [[(-14.3 + i * 1.8) * sx, -10.8 * sz]] })) },
+    { id: 'sewers-valve-hops', name: 'Valve repair chests', kind: 'repair-case', start: [P(13.3, -15.5).x, P(13.3, -15.5).z], end: [P(13.3, -17.3).x, P(13.3, -17.3).z],
+      boxes: [0, 1].map(i => ({ id: `sewers-valve-case-${i}`, x: 14.5 * sx, z: (-16.2 - i * 1.8) * sz, w: 1.4 * sx, h: i ? .84 : .48, d: 1.4 * sz,
+        color: '#758974', material: 'metal', approaches: [[13.3 * sx, (-15.5 - i * 1.8) * sz]] })) },
+    { id: 'sewers-maintenance-hops', name: 'Maintenance tool skids', kind: 'repair-case', start: [P(-17, 18).x, P(-17, 18).z], end: [P(-12.6, 18).x, P(-12.6, 18).z],
+      boxes: [0, 1].map(i => ({ id: `sewers-maintenance-skid-${i}`, x: (-16.4 + i * 1.8) * sx, z: 17.3 * sz, w: 1.4 * sx, h: i ? .84 : .48, d: 1.4 * sz,
+        color: '#92957b', material: 'metal', approaches: [[(-15.7 + i * 1.8) * sx, 19.4 * sz]] })) },
+  ]);
   const common = { id: 'sewers', name: 'Undercity Sewers', theme: 'sewers', mode,
-    description: 'A brick drainage network with wet collectors, branching maintenance loops, treatment basins and solid pressure pipes. Four inspection stairways reach a connected upper maintenance walk with pipe alcoves and a manifold overlooking the vaulted pump junction; both ground banks stay open underneath.',
-    bounds, colliders: freeze(colliders), routes: freeze(routes), buildings: freeze(buildings), landmarks: freeze(landmarks), decorations: freeze(decorations), tunnels: freeze(tunnels),
+    description: 'A carved brick drainage network with wet collectors, treatment basins and a vaulted pump hall. Four inspection stairs climb a full maintenance ring and pump bridge, then a raised dog-leg service duct reaches the filter vault over a separate lower bank. Real pipes and bulkheads create tight corners on both levels.',
+    authoredLayout: true, ...lowerCover,
+    bounds, colliders: freeze([...colliders, ...lowerCover.colliders]), routes: freeze(routes), buildings: freeze(buildings), landmarks: freeze([...landmarks, ...lowerCover.landmarks]), decorations: freeze(decorations), tunnels: freeze(tunnels),
     ceilings: freeze(ceilings), groundRegions: freeze(walkspaces.map(r => freeze({ x: r.x, z: r.z, w: r.w, d: r.d }))),
     upperFloors,
     channelRoutes: freeze([freeze({ id: 'sewers-west-bank', points: freeze([P(-18.5, -8), P(-18.5, 0), P(-18.5, 8)]) }),
@@ -208,7 +240,7 @@ export function createSewerMap(mode = 'breach') {
   const lootCoordinates = [[-4.5,-19],[0,-19],[4.5,-19],[-4.5,19],[0,19],[4.5,19],[-19.5,-12],[-19.5,-7],[-19.5,0],[-19.5,7],[-19.5,12],
     [19.5,-12],[19.5,-7],[19.5,0],[19.5,7],[19.5,12],[-12,-11.5],[-6,-11.5],[0,-11.5],[6,-11.5],[12,-11.5],
     [-12,11.5],[-6,11.5],[0,11.5],[6,11.5],[12,11.5],[-4.5,-6],[4.5,-6],[-4.5,6],[4.5,6],[-13,0],[13,0],
-    [-9.5,-16],[-17,-11],[-17,-17],[9.5,16],[17,11],[17,17],[9.5,-18],[14.5,-18],[16,-15.2],[-9.5,18],[-16,18],[-16,15.2]];
+    [-9.5,-16],[-17,-11],[-17,-17],[9.5,16],[17,11],[17,17],[9.5,-18],[13.2,-18.6],[16.7,-14.7],[-9.5,18],[-16,19.4],[-16,15.2]];
   const kinds = ['weapon', 'heal', 'ammo', 'grenade'];
   const lootPoints = lootCoordinates.map(([x, z], index) => freeze({ id: `sewers-cache-${index}`, ...P(x, z), kind: kinds[index % kinds.length] }));
   for (const [index, route] of routes.filter(r => r.side === 'north').entries()) {
