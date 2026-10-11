@@ -21,6 +21,8 @@ import { isPauseShortcut } from './pause-shortcut.js';
 import { createEndPresentation } from './voxel-end-presentation.js';
 import { mountVoxelVictory } from './voxel-victory.js';
 import { createResultActionGate } from './practice-result-actions.js';
+import { createCameraMotionStore } from './voxel-camera-motion-settings.js';
+import { mountCameraMotionControls } from './voxel-camera-motion-ui.js';
 
 export const LOOK_SENSITIVITY = 0.0025;
 export const FPS_BUTTONS = Object.freeze(['up', 'down', 'left', 'right', 'jump', 'crouch', 'walk', 'sprint', 'fire', 'reload', 'interact', 'aim', 'swap', 'grenade', 'heal', 'slot1', 'slot2', 'slot3', 'slot4', 'drop']);
@@ -407,6 +409,7 @@ async function boot() {
   let rightDrag = false; let graphicsError = ''; let modalOpen = false; let spectatorId = null; let teamSwitchPending = false; let requestedTeam = null;
   let previousPhase = null; let previousRound = null; let aim = { yaw: 0, pitch: 0 };
   const hitFeedback = createHitFeedback(), hitMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  const cameraMotion = createCameraMotionStore();
   const endPresentation = createEndPresentation();
   let endView = { holding: false, started: false, finished: false, remainingMs: 0 };
   let resultVisible = false, resultActionsReady = false, resultContext = null, resultActionTimer = null;
@@ -955,7 +958,7 @@ async function boot() {
       const camera = local || players.find(player => player.id === spectatorId && player.alive);
       const viewAim = local?.alive ? aim : cleanAim(camera?.yaw, camera?.pitch);
       presentationPlayer = local; presentationPlayers = players;
-      renderer.render({ ...state, players, fighters: players }, { acceptedPlayers: state.players, playerId, localId: playerId, localPlayer: local, viewPlayer: camera, cameraPlayer: camera, yaw: viewAim.yaw, pitch: viewAim.pitch, time: now, roster });
+      renderer.render({ ...state, players, fighters: players }, { acceptedPlayers: state.players, playerId, localId: playerId, localPlayer: local, viewPlayer: camera, cameraPlayer: camera, yaw: viewAim.yaw, pitch: viewAim.pitch, time: now, roster, cameraMotion: cameraMotion.get() });
       clearReticle(); worldLabels.clear(); reloadAudio.suspend(); enemyFootsteps.suspend(); paintVitals(null, 'Your', false); renderCount++;
       return;
     }
@@ -974,7 +977,7 @@ async function boot() {
     if (local?.alive) presentationPlayer = presentationPlayers.find(player => player.id === playerId) || presentationPlayer;
     const viewPlayer = local?.alive ? presentationPlayer : renderedState.players.find(player => player.id === spectatorId && player.team === local?.team && player.alive) || local;
     const viewAim = local?.alive ? aim : { yaw: viewPlayer?.yaw || 0, pitch: viewPlayer?.pitch || 0 };
-    renderer.render(renderedState, { acceptedPlayers: state.players, playerId, localId: playerId, localPlayer: presentationPlayer, viewPlayer, cameraPlayer: viewPlayer, yaw: viewAim.yaw, pitch: viewAim.pitch + (viewPlayer?.recoil || 0), time: now, roster });
+    renderer.render(renderedState, { acceptedPlayers: state.players, playerId, localId: playerId, localPlayer: presentationPlayer, viewPlayer, cameraPlayer: viewPlayer, yaw: viewAim.yaw, pitch: viewAim.pitch + (viewPlayer?.recoil || 0), time: now, roster, cameraMotion: cameraMotion.get() });
     reticleView = presentCrosshair(viewPlayer, now, `${state.mapId}:${state.matchId}:${state.round}:${state.phase}`, { width: canvas.clientWidth, height: canvas.clientHeight, rules: engine.ADS, active: controlsActive() && !teamSwitchPending && state.phase === 'fight', reducedMotion: hitMotion.matches });
     paintCrosshair(hitElements.crosshair, reticleView);
     setHidden(hitElements.scope, !reticleView.visible || !reticleView.scoped);
@@ -1207,6 +1210,8 @@ async function boot() {
   }
   function updateLayout() { neutralize({ pause: entered, unlock: true }); updateKeyLabels(); }
   const unsubscribeLayout = subscribeKeyboardLayout(updateLayout); updateKeyLabels();
+  const cameraMotionControls = mountCameraMotionControls(document, { store: cameraMotion, reducedMotion: hitMotion });
+  const unsubscribeCameraMotion = cameraMotion.subscribe(() => draw(performance.now()));
   // Capture before nested armory widgets; text entry still owns P inside search/name fields.
   // Gameplay neutralize() must not erase a physical attack still held at the final kill.
   listen(window, 'mousedown', event => { resultActions.press(`mouse:${event.button}`, performance.now()); paintResultActions(); }, true);
@@ -1374,11 +1379,11 @@ async function boot() {
     loadoutArmory.destroy(); arenaArmory.destroy();
     clearTimeout(reconnectTimer); clearTimeout(toastTimer); clearInterval(pingTimer);
     clearInterval(inputHeartbeat); inputHeartbeat = null;
-    if (frameId) cancelAnimationFrame(frameId); frameId = null; socket?.close(); renderer?.destroy(); worldLabels.destroy(); audio.destroy(); inventory.destroy(); weaponWheel.destroy(); layoutPicker.destroy(); unsubscribeLayout();
+    if (frameId) cancelAnimationFrame(frameId); frameId = null; socket?.close(); renderer?.destroy(); worldLabels.destroy(); audio.destroy(); inventory.destroy(); weaponWheel.destroy(); layoutPicker.destroy(); unsubscribeLayout(); unsubscribeCameraMotion(); cameraMotionControls.destroy(); cameraMotion.destroy();
     for (const remove of removers) remove(); pending = []; snapshots = []; kills.length = 0; eventSeen.clear();
   }
   listen(window, 'pagehide', destroy);
-  const inspect = () => clone({ state, players: roster, playerId, input: currentInput(), predictedPlayer, presentationPlayer, presentationPlayers, predictionRemainder: accumulator, predictionTick, actionQueue: actionInputs.inspect(), timeline: timeline.getState(), correction: correction.getState(), ending: { ...endView, resultVisible, resultActionsReady, victory: victory.inspect() }, connected, controls: { pointerLocked: pointerLocked(), fallback, touch: touchMode, paused, entered, modalOpen }, queueLength: pending.length, renderCount, crosshair: reticleView, renderStats: renderer?.stats || null, worldLabels: worldLabels.inspect(), audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), meleeImpactAudio: meleeImpacts.inspect(), reloadAudio: reloadAudio.inspect(), reloadSounds: audio.inspectReloads(), enemyFootsteps: enemyFootsteps.inspect(), footstepSounds: audio.inspectFootsteps(), gunImpactAudio: gunImpacts.inspect(), parryAudio: parryAudio.inspect(), parrySounds: audio.inspectParries(), stamina: staminaView, weaponWheel: weaponWheel.inspect(), graphicsError, spectatorId });
+  const inspect = () => clone({ state, players: roster, playerId, input: currentInput(), predictedPlayer, presentationPlayer, presentationPlayers, predictionRemainder: accumulator, predictionTick, actionQueue: actionInputs.inspect(), timeline: timeline.getState(), correction: correction.getState(), ending: { ...endView, resultVisible, resultActionsReady, victory: victory.inspect() }, connected, controls: { pointerLocked: pointerLocked(), fallback, touch: touchMode, paused, entered, modalOpen, cameraMotion: cameraMotion.get(), browserReducedMotion: hitMotion.matches }, queueLength: pending.length, renderCount, crosshair: reticleView, renderStats: renderer?.stats || null, worldLabels: worldLabels.inspect(), audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), meleeImpactAudio: meleeImpacts.inspect(), reloadAudio: reloadAudio.inspect(), reloadSounds: audio.inspectReloads(), enemyFootsteps: enemyFootsteps.inspect(), footstepSounds: audio.inspectFootsteps(), gunImpactAudio: gunImpacts.inspect(), parryAudio: parryAudio.inspect(), parrySounds: audio.inspectParries(), stamina: staminaView, weaponWheel: weaponWheel.inspect(), graphicsError, spectatorId });
   window.SemagVoxel = Object.freeze({ getState: inspect, inspect });
   updateUI();
   try {

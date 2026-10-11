@@ -21,6 +21,8 @@ import { isPauseShortcut } from './pause-shortcut.js';
 import { createEndPresentation } from './voxel-end-presentation.js';
 import { mountVoxelVictory } from './voxel-victory.js';
 import { createResultActionGate } from './practice-result-actions.js';
+import { createCameraMotionStore } from './voxel-camera-motion-settings.js';
+import { mountCameraMotionControls } from './voxel-camera-motion-ui.js';
 
 export const LOOK_SENSITIVITY = .0025;
 export const INPUT_ACTIONS = Object.freeze(['up', 'down', 'left', 'right', 'jump', 'crouch', 'walk', 'sprint', 'fire', 'reload', 'interact', 'aim', 'swap', 'grenade', 'heal', 'slot1', 'slot2', 'slot3', 'slot4', 'drop']);
@@ -196,6 +198,7 @@ async function boot() {
   let destroyed = false, permanentError = false, reconnectTimer, reconnectAttempts = 0, frameId = null, lastFrameAt = 0, accumulator = 0, renderCount = 0;
   let heartbeat = null, lastTouchLookAt = performance.now(), lastHUDAt = 0, previousPhase = null, previousMatch = null;
   const hitFeedback = createHitFeedback(), hitMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  const cameraMotion = createCameraMotionStore();
   const endPresentation = createEndPresentation();
   let endView = { holding: false, started: false, finished: false, remainingMs: 0 };
   let resultVisible = false, resultActionsReady = false, resultContext = null, resultActionTimer = null;
@@ -465,7 +468,7 @@ async function boot() {
       const camera = players.find(player => player.id === playerId) || spectatorPlayer(view, playerId, spectatorId);
       const viewAim = camera?.id === playerId && camera.alive ? aim : cleanAim(camera?.yaw, camera?.pitch);
       presentationPlayer = players.find(player => player.id === playerId); presentationPlayers = players;
-      renderer.render(view, { acceptedPlayers: state.players, playerId, localId: playerId, localPlayer: presentationPlayer, viewPlayer: camera, cameraPlayer: camera, yaw: viewAim.yaw, pitch: viewAim.pitch, time: now, roster });
+      renderer.render(view, { acceptedPlayers: state.players, playerId, localId: playerId, localPlayer: presentationPlayer, viewPlayer: camera, cameraPlayer: camera, yaw: viewAim.yaw, pitch: viewAim.pitch, time: now, roster, cameraMotion: cameraMotion.get() });
       clearReticle(); reloadAudio.suspend(); enemyFootsteps.suspend(); paintVitals(null, 'Your', false); renderCount++;
       return;
     }
@@ -484,7 +487,7 @@ async function boot() {
     const viewed = spectatorPlayer(rendered, playerId, spectatorId);
     const camera = state.phase === 'lobby' ? { ...state.map.spawnPoints[0], alive: false, id: playerId, y: finite(state.map.spawnPoints[0]?.y) } : local?.alive ? presentationPlayer : viewed;
     const viewAim = local?.alive ? aim : cleanAim(camera?.yaw, camera?.pitch);
-    renderer.render(rendered, { acceptedPlayers: state.players, playerId, localId: playerId, localPlayer: presentationPlayer, viewPlayer: camera, yaw: viewAim.yaw, pitch: viewAim.pitch + finite(camera?.recoil), time: now }); renderCount++;
+    renderer.render(rendered, { acceptedPlayers: state.players, playerId, localId: playerId, localPlayer: presentationPlayer, viewPlayer: camera, yaw: viewAim.yaw, pitch: viewAim.pitch + finite(camera?.recoil), time: now, cameraMotion: cameraMotion.get() }); renderCount++;
     reticleView = presentCrosshair(camera, now, `${state.mapId}:${state.matchId}:${state.round}:${state.phase}`, { width: canvas.clientWidth, height: canvas.clientHeight, rules: engine.ADS, active: controlsActive() && state.phase === 'fight', reducedMotion: hitMotion.matches });
     paintCrosshair(hitElements.crosshair, reticleView); setHidden(hitElements.scope, !reticleView.visible || !reticleView.scoped);
     setText($('scope-label'), `${WEAPONS[camera?.weapon]?.label || 'PRECISION'} / PRECISION SIGHT`);
@@ -632,6 +635,8 @@ async function boot() {
   }
   function updateKeyLabels() { setText($('move-keys'), getKeyboardLayout().toUpperCase()); for (const label of document.querySelectorAll('[data-royale-key]')) label.textContent = displayKey(label.dataset.royaleKey); canvas.setAttribute('aria-label', `3D battle royale. ${getKeyboardLayout().toUpperCase()} or arrows move; mouse looks; left click uses your selected item; right click aims guns, stabs with a knife or parries with other blades; 1 to 4 equip inventory slots; wheel up or down switches carried weapons; X drops the selected item; E picks up loot; V swaps blade and gun; ${displayKey('Q')} throws grenade; F heals; R reloads; Space jumps; Control crouches; Shift sprints, C walks quietly; P opens the controls menu or resumes controls; Escape exits fullscreen and releases controls.`); }
   const unsubscribeLayout = subscribeKeyboardLayout(() => { neutralize({ pause: entered, unlock: true }); updateKeyLabels(); }); updateKeyLabels();
+  const cameraMotionControls = mountCameraMotionControls(document, { store: cameraMotion, reducedMotion: hitMotion });
+  const unsubscribeCameraMotion = cameraMotion.subscribe(() => draw(performance.now()));
   // Gameplay neutralize() must not erase a physical attack still held at the final kill.
   listen(window, 'mousedown', event => { resultActions.press(`mouse:${event.button}`, performance.now()); paintResultActions(); }, true);
   listen(window, 'mouseup', event => { resultActions.release(`mouse:${event.button}`, performance.now()); paintResultActions(); }, true);
@@ -739,9 +744,9 @@ async function boot() {
   hostInfo().then(info => { invite = `${info.origin}/voxel-royale.html?room=${encodeURIComponent(roomId)}`; setText($('invite-address'), invite); }).catch(() => {});
   listen($('copy-code'), 'click', async () => { try { await copyText(roomId); toast('Room code copied.'); } catch (cause) { toast(cause.message); } }); listen($('copy-invite'), 'click', async () => { try { await copyText(invite); toast('Invite link copied.'); } catch (cause) { toast(cause.message); } });
   const pingTimer = setInterval(() => { if (connected && !document.hidden) send({ type: 'ping', time: performance.now() }); }, 1500);
-  function destroy() { if (destroyed) return; neutralize({ pause: true, unlock: true }); destroyed = true; endPresentation.reset(); victory.destroy(); resultActions.cancel(); clearTimeout(resultActionTimer); clearTimeout(reconnectTimer); clearTimeout(toastTimer); clearInterval(pingTimer); clearInterval(heartbeat); heartbeat = null; if (frameId) cancelAnimationFrame(frameId); frameId = null; socket?.close(); renderer?.destroy(); audio.destroy(); inventory.destroy(); weaponWheel.destroy(); layoutPicker.destroy(); unsubscribeLayout(); for (const remove of removers) remove(); pending = []; snapshots = []; kills.length = 0; eventSeen.clear(); }
+  function destroy() { if (destroyed) return; neutralize({ pause: true, unlock: true }); destroyed = true; endPresentation.reset(); victory.destroy(); resultActions.cancel(); clearTimeout(resultActionTimer); clearTimeout(reconnectTimer); clearTimeout(toastTimer); clearInterval(pingTimer); clearInterval(heartbeat); heartbeat = null; if (frameId) cancelAnimationFrame(frameId); frameId = null; socket?.close(); renderer?.destroy(); audio.destroy(); inventory.destroy(); weaponWheel.destroy(); layoutPicker.destroy(); unsubscribeLayout(); unsubscribeCameraMotion(); cameraMotionControls.destroy(); cameraMotion.destroy(); for (const remove of removers) remove(); pending = []; snapshots = []; kills.length = 0; eventSeen.clear(); }
   listen(window, 'pagehide', destroy);
-  const inspect = () => { const { map, ...snapshot } = state || {}; return clone({ state: state ? snapshot : null, players: roster, playerId, hostId, input: currentInput(), predictedPlayer, presentationPlayer, presentationPlayers, predictionRemainder: accumulator, predictionTick, actionQueue: actionInputs.inspect(), timeline: timeline.getState(), correction: correction.getState(), ending: { ...endView, resultVisible, resultActionsReady, victory: victory.inspect() }, connected, controls: { pointerLocked: pointerLocked(), fallback, touch: touchMode, paused, entered, modalOpen }, queueLength: pending.length, renderCount, crosshair: reticleView, renderStats: renderer?.stats || null, audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), meleeImpactAudio: meleeImpacts.inspect(), reloadAudio: reloadAudio.inspect(), reloadSounds: audio.inspectReloads(), enemyFootsteps: enemyFootsteps.inspect(), footstepSounds: audio.inspectFootsteps(), gunImpactAudio: gunImpacts.inspect(), parryAudio: parryAudio.inspect(), parrySounds: audio.inspectParries(), stamina: staminaView, weaponWheel: weaponWheel.inspect(), graphicsError, spectatorId }); };
+  const inspect = () => { const { map, ...snapshot } = state || {}; return clone({ state: state ? snapshot : null, players: roster, playerId, hostId, input: currentInput(), predictedPlayer, presentationPlayer, presentationPlayers, predictionRemainder: accumulator, predictionTick, actionQueue: actionInputs.inspect(), timeline: timeline.getState(), correction: correction.getState(), ending: { ...endView, resultVisible, resultActionsReady, victory: victory.inspect() }, connected, controls: { pointerLocked: pointerLocked(), fallback, touch: touchMode, paused, entered, modalOpen, cameraMotion: cameraMotion.get(), browserReducedMotion: hitMotion.matches }, queueLength: pending.length, renderCount, crosshair: reticleView, renderStats: renderer?.stats || null, audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), meleeImpactAudio: meleeImpacts.inspect(), reloadAudio: reloadAudio.inspect(), reloadSounds: audio.inspectReloads(), enemyFootsteps: enemyFootsteps.inspect(), footstepSounds: audio.inspectFootsteps(), gunImpactAudio: gunImpacts.inspect(), parryAudio: parryAudio.inspect(), parrySounds: audio.inspectParries(), stamina: staminaView, weaponWheel: weaponWheel.inspect(), graphicsError, spectatorId }); };
   window.SemagRoyale = Object.freeze({ getState: inspect, inspect }); updateUI();
   try { const [rules, visual] = await Promise.all([import('./voxel-royale-engine.js'), import('./voxel-renderer.js')]); if (destroyed) return; engine = { ...rules, predictLocalMovement, sweepPresentationOffset, traceShot, ADS, HEAL, PLAYER_HEALTH }; renderer = new visual.VoxelRenderer(canvas); renderer.resize(); } catch (cause) { graphicsError = cause?.message || 'This game requires WebGL. Enable hardware acceleration and reload graphics.'; error(graphicsError); updateUI(); return; }
   connect();

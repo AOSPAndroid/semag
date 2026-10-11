@@ -1,4 +1,5 @@
 import { createPlayerAnimationPresenter } from './voxel-player-animation.js';
+import { normalizeCameraMotion } from './voxel-camera-motion-settings.js';
 
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 const finite = (value, fallback = 0) => Number.isFinite(value) ? value : fallback;
@@ -8,7 +9,7 @@ const neutral = () => ({ bobY: 0, roll: 0, weaponX: 0, weaponY: 0, phase: 0, str
 
 /** Explicit camera choices affect locomotion only, never other effect preferences. */
 export function resolveCameraMotion(preference, reducedMotion = false) {
-  const cameraMotion = preference === 'normal' || preference === 'strong' || preference === 'off' ? preference : 'system';
+  const cameraMotion = normalizeCameraMotion(preference);
   return { cameraMotion, headReducedMotion: cameraMotion === 'off' || cameraMotion === 'system' && reducedMotion === true, rollMultiplier: cameraMotion === 'strong' ? 2 : 1 };
 }
 
@@ -16,7 +17,7 @@ export function resolveCameraMotion(preference, reducedMotion = false) {
 export function createFirstPersonMotionPresenter() {
   const gait = createPlayerAnimationPresenter({ maxPlayers: 1 });
   let previous = null, pose = neutral();
-  const present = (player, time, contextKey = null, { aim = 0, paused = false, reducedMotion = false, cameraMotion: preference = 'system' } = {}) => {
+  const present = (player, time, contextKey = null, { aim = 0, paused = false, reducedMotion = false, cameraMotion: preference } = {}) => {
     const { cameraMotion, headReducedMotion, rollMultiplier } = resolveCameraMotion(preference, reducedMotion);
     const valid = player?.alive !== false && [player?.x, player?.y, player?.z, time].every(Number.isFinite);
     if (!valid) { present.reset(); return pose; }

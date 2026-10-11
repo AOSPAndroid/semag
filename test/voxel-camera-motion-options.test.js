@@ -4,6 +4,10 @@ import { aimDirection, combatStep, createCombatPlayer, createState, emptyInput, 
 import { createMovementPresenter } from '../public/voxel-presentation.js';
 import { createFirstPersonMotionPresenter, resolveCameraMotion } from '../public/voxel-first-person-motion.js';
 import { VoxelRenderer } from '../public/voxel-renderer.js';
+import { createPractice } from '../public/voxel-practice-engine.js';
+import { createState as createHordeState } from '../public/voxel-horde-engine.js';
+import { createState as createRoyaleState } from '../public/voxel-royale-engine.js';
+import { CAMERA_MOTION_STORAGE_KEY } from '../public/voxel-camera-motion-settings.js';
 
 const arena = { id: 'camera-motion-options', bounds: { minX: -40, maxX: 40, minZ: -40, maxZ: 40 }, colliders: [], sites: [] };
 const near = (a, b, tolerance = 1e-9) => assert.ok(Math.abs(a - b) <= tolerance, `${a} versus ${b}`);
@@ -22,12 +26,13 @@ function frames({ hz = 120, map = arena, sprint = true } = {}) {
   return result;
 }
 
-test('only known camera choices override system motion preferences', () => {
+test('missing or corrupt camera choices enable natural sway while explicit system still honors device motion preferences', () => {
   for (const value of [undefined, null, '', 'unknown', 'constructor', {}, ['normal'], new String('normal'), true, 1]) {
-    assert.deepEqual(resolveCameraMotion(value, true), { cameraMotion: 'system', headReducedMotion: true, rollMultiplier: 1 });
+    assert.deepEqual(resolveCameraMotion(value, true), { cameraMotion: 'normal', headReducedMotion: false, rollMultiplier: 1 });
     assert.equal(resolveCameraMotion(value, false).headReducedMotion, false);
   }
   assert.deepEqual(resolveCameraMotion('normal', true), { cameraMotion: 'normal', headReducedMotion: false, rollMultiplier: 1 });
+  assert.deepEqual(resolveCameraMotion('system', true), { cameraMotion: 'system', headReducedMotion: true, rollMultiplier: 1 });
   assert.deepEqual(resolveCameraMotion('strong', true), { cameraMotion: 'strong', headReducedMotion: false, rollMultiplier: 2 });
   assert.deepEqual(resolveCameraMotion('off', false), { cameraMotion: 'off', headReducedMotion: true, rollMultiplier: 1 });
 });
@@ -56,10 +61,10 @@ test('strong doubles actual travelled roll while vertical bob, held equipment an
   }
 });
 
-test('absent camera options preserve system suppression, while explicit off also suppresses sprint and crouch carry', () => {
-  const defaultHead = createFirstPersonMotionPresenter(), systemHead = createFirstPersonMotionPresenter(), offHead = createFirstPersonMotionPresenter();
+test('absent camera options preserve normal sway despite device reduction, while explicit off suppresses sprint and crouch carry', () => {
+  const defaultHead = createFirstPersonMotionPresenter(), normalHead = createFirstPersonMotionPresenter(), offHead = createFirstPersonMotionPresenter();
   for (const { player, time } of frames()) {
-    assert.deepEqual(defaultHead(player, time, arena.id, { reducedMotion: true }), systemHead(player, time, arena.id, { reducedMotion: true, cameraMotion: 'system' }));
+    assert.deepEqual(defaultHead(player, time, arena.id, { reducedMotion: true }), normalHead(player, time, arena.id, { reducedMotion: true, cameraMotion: 'normal' }));
     const off = offHead(player, time, arena.id, { cameraMotion: 'off' });
     for (const field of visualFields) assert.equal(off[field], 0, `off clears ${field}, including static sprint carry`);
   }
@@ -181,4 +186,90 @@ test('strong and normal upload the same first-shot eye and center ray at a near 
     for (const map of [arena, edgeMap]) assert.deepEqual(traceShot(state, 0, eye(strong), direction, 100, map), traceShot(state, 0, eye(normal), direction, 100, map));
     assert.equal(JSON.stringify(state), original);
   } finally { normal.renderer.destroy(); strong.renderer.destroy(); }
+});
+
+function withSavedPreference(value, callback) {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  const access = { reads: 0, writes: 0 };
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: {
+    getItem(key) { assert.equal(key, CAMERA_MOTION_STORAGE_KEY); access.reads++; return value; },
+    setItem() { access.writes++; },
+  } });
+  try { callback(access); } finally {
+    if (descriptor) Object.defineProperty(globalThis, 'localStorage', descriptor);
+    else delete globalThis.localStorage;
+  }
+}
+
+test('renderer fallback reads a saved preference once and allows an explicit option without rewriting storage', () => {
+  for (const saved of [null, '{corrupt}', 'normal', 'strong', 'system', 'off']) withSavedPreference(saved, access => {
+    const { renderer } = harness({ systemReduced: true });
+    const expected = resolveCameraMotion(saved, true);
+    let peak = 0;
+    try {
+      assert.equal(access.reads, 1);
+      for (const { player, time } of frames()) {
+        renderer.render({ gameId: 'voxel-breach', map: arena, phase: 'fight', players: [player], events: [] }, { localId: 0, time });
+        assert.equal(renderer.stats.cameraMotion, expected.cameraMotion);
+        assert.equal(renderer.stats.headReducedMotion, expected.headReducedMotion);
+        peak = Math.max(peak, Math.abs(renderer.stats.firstPerson.roll));
+      }
+      if (expected.headReducedMotion) assert.equal(peak, 0);
+      else assert.ok(peak > (saved === 'strong' ? .0135 : .0067));
+      renderer.render({ gameId: 'voxel-breach', map: arena, phase: 'fight', players: [frames().at(-1).player], events: [] }, { localId: 0, time: 1010, cameraMotion: 'off' });
+      assert.equal(renderer.stats.cameraMotion, 'off'); assert.equal(renderer.stats.firstPerson.roll, 0);
+      assert.equal(renderer.stats.firstPerson.bobY, 0); assert.equal(access.reads, 1); assert.equal(access.writes, 0);
+    } finally { renderer.destroy(); }
+  });
+});
+
+test('real Breach, Royale, Dojo and Last Stand state families share the saved travelling gait and steady scope', () => {
+  const modes = [
+    ['Breach online', () => createState()],
+    ['Breach practice', () => createPractice({ game: 'voxel', mode: 'combat', bots: 1, seed: 1 })],
+    ['Dojo', () => createPractice({ game: 'voxel', mode: 'dojo', bots: 1, seed: 1 })],
+    ['Royale online', () => createRoyaleState({ capacity: 2, seed: 1 })],
+    ['Royale bots', () => createPractice({ game: 'voxel-royale', bots: 1, seed: 1 })],
+    ['Last Stand solo', () => createHordeState({ capacity: 1, seed: 1 })],
+    ['Last Stand co-op', () => createHordeState({ capacity: 3, seed: 1 })],
+  ];
+  for (const saved of [null, 'strong']) withSavedPreference(saved, access => {
+    const expected = resolveCameraMotion(saved, true), points = frames();
+    let reference = null;
+    for (const [name, factory] of modes) {
+      const { renderer, uploads } = harness({ systemReduced: true }), state = factory(), poses = [];
+      state.map = arena; state.mapId = arena.id; state.phase = 'fight'; state.events = []; state.loot = []; state.grenades = []; state.bolts = []; state.storm = null;
+      try {
+        for (const { player, time } of points) {
+          const players = [player];
+          const frame = freeze({ ...state, players, fighters: players }), before = JSON.stringify(frame);
+          assert.equal(renderer.render(frame, { localId: 0, time }), true, name);
+          const pose = renderer.stats.firstPerson;
+          assert.equal(pose.cameraMotion, expected.cameraMotion, name); assert.equal(pose.headReducedMotion, false, name);
+          assert.equal(renderer.stats.reducedMotion, true, 'other effects retain the device preference');
+          assert.equal(JSON.stringify(frame), before, name);
+          poses.push({ bobY: pose.bobY, roll: pose.roll });
+        }
+        assert.ok(Math.max(...poses.map(pose => Math.abs(pose.roll))) > (saved === 'strong' ? .0135 : .0067), name);
+        if (reference) assert.deepEqual(poses, reference, `${name} uses the exact Dojo envelope`);
+        else reference = poses;
+        assert.ok(uploads.effects.every(value => value === true), name);
+        const moving = points.at(-1).player;
+        renderer.render({ ...state, players: [moving], phase: 'paused' }, { localId: 0, time: 1020 });
+        const paused = renderer.stats.firstPerson;
+        renderer.render({ ...state, players: [moving], phase: 'paused' }, { localId: 0, time: 1300 });
+        assert.equal(renderer.stats.firstPerson.roll, paused.roll); assert.equal(renderer.stats.firstPerson.bobY, paused.bobY);
+        renderer.render({ ...state, players: [moving] }, { localId: 0, time: 1310 });
+        assert.equal(renderer.stats.firstPerson.roll, 0); assert.equal(renderer.stats.firstPerson.bobY, 0);
+        const scoped = points.map(({ player, time }) => ({ player: { ...player, aiming: true, aimTicks: 1000 }, time: time + 1400 }));
+        for (const { player, time } of scoped) {
+          renderer.render({ ...state, players: [player] }, { localId: 0, time });
+          assert.equal(renderer.stats.firstPerson.roll, 0, `${name} scoped roll`); assert.equal(renderer.stats.firstPerson.bobY, 0, `${name} scoped bob`);
+        }
+        renderer.render({ ...state, players: [{ ...moving, alive: false }] }, { localId: 0, time: 2410 });
+        assert.equal(renderer.stats.firstPerson.stride, 0, name); assert.equal(renderer.stats.firstPerson.bobY, 0, name);
+      } finally { renderer.destroy(); }
+    }
+    assert.equal(access.reads, modes.length, 'each new renderer reads storage once'); assert.equal(access.writes, 0);
+  });
 });

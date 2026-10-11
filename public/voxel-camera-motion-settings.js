@@ -1,9 +1,10 @@
 /** Camera locomotion preference only; other motion keeps the device preference. */
 export const CAMERA_MOTION_STORAGE_KEY = 'semag-camera-motion';
 export const CAMERA_MOTION_CHOICES = Object.freeze(['system', 'normal', 'strong', 'off']);
+export const DEFAULT_CAMERA_MOTION = 'normal';
 
 export function normalizeCameraMotion(value) {
-  return typeof value === 'string' && CAMERA_MOTION_CHOICES.includes(value) ? value : 'system';
+  return typeof value === 'string' && CAMERA_MOTION_CHOICES.includes(value) ? value : DEFAULT_CAMERA_MOTION;
 }
 
 export function cameraMotionStatus(value, reducedMotion = false) {
@@ -23,8 +24,8 @@ function browserStorage() {
 
 /** A blocked browser store never prevents an in-session camera choice. */
 export function createCameraMotionStore({ storage = browserStorage() } = {}) {
-  let value = 'system';
-  try { value = normalizeCameraMotion(storage?.getItem(CAMERA_MOTION_STORAGE_KEY)); } catch { /* Retain the accessible default. */ }
+  let value = DEFAULT_CAMERA_MOTION;
+  try { value = normalizeCameraMotion(storage?.getItem(CAMERA_MOTION_STORAGE_KEY)); } catch { /* Retain natural camera sway. */ }
   const listeners = new Set();
   return {
     get: () => value,

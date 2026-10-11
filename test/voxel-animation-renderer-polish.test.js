@@ -171,7 +171,7 @@ test('first-person gun-only yaw and roll use the actual motion while reduced-mot
   const present = renderer.presentHead;
   renderer.presentHead = (actor, time, context, options) => { reduced = options.reducedMotion; return present(actor, time, context, options); };
   renderer.presentHead.reset = () => present.reset();
-  renderer.render(scene([player]), { localId: 0, time: 0, reducedMotion: true });
+  renderer.render(scene([player]), { localId: 0, time: 0, cameraMotion: 'system', reducedMotion: true });
   assert.equal(reduced, true); assert.equal(renderer.stats.firstPerson.bobY, 0); assert.equal(renderer.stats.firstPerson.roll, 0);
   renderer.destroy();
 });

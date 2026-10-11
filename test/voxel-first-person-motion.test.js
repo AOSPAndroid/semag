@@ -154,14 +154,14 @@ test('jump and landing hands absorb the accepted flight posture while the camera
   for (const field of ['weaponY', 'weaponZ', 'weaponPitch', 'weaponYaw', 'weaponRoll']) assert.equal(resumed[field], 0, field);
 });
 
-test('reduced motion suppresses head and hand oscillation through walking, jumping and landing', () => {
-  const present = createFirstPersonMotionPresenter(); present(actor(), 0, 'reduced', { reducedMotion: true });
+test('an explicit system choice suppresses head and hand oscillation through reduced-motion walking, jumping and landing', () => {
+  const present = createFirstPersonMotionPresenter(); present(actor(), 0, 'reduced', { cameraMotion: 'system', reducedMotion: true });
   for (let frame = 1; frame <= 120; frame++) {
     const flight = frame >= 40 && frame <= 70;
-    const pose = present(actor({ z: -frame / 24, y: flight ? .5 : 0, grounded: !flight, vy: flight ? -3 : 0 }), frame * 1000 / 120, 'reduced', { reducedMotion: true });
+    const pose = present(actor({ z: -frame / 24, y: flight ? .5 : 0, grounded: !flight, vy: flight ? -3 : 0 }), frame * 1000 / 120, 'reduced', { cameraMotion: 'system', reducedMotion: true });
     for (const field of ['bobY', 'roll', 'weaponX', 'weaponY', 'weaponZ', 'weaponPitch', 'weaponYaw', 'weaponRoll']) assert.equal(pose[field], 0, field);
   }
-  const changed = present(actor({ z: -5.05 }), 1010, 'reduced', { reducedMotion: false });
+  const changed = present(actor({ z: -5.05 }), 1010, 'reduced', { cameraMotion: 'system', reducedMotion: false });
   assert.equal(changed.stride, 0, 'a preference change primes a fresh quiet pose');
 });
 

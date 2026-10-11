@@ -7,6 +7,7 @@ import { MELEE_WEAPONS, meleeProfile, meleeWeaponId, meleeSlashOrigin, meleeSlas
 import { frameAlpha } from './display-timing.js';
 import { createPlayerAnimationPresenter, playerAnimationPose, weaponReloadPose, createWeaponReloadPresenter } from './voxel-player-animation.js';
 import { createFirstPersonMotionPresenter, createWeaponShotPresenter, weaponShotPose, weaponCyclePose, resolveCameraMotion } from './voxel-first-person-motion.js';
+import { createCameraMotionStore, DEFAULT_CAMERA_MOTION } from './voxel-camera-motion-settings.js';
 import { MONSTER_BODIES, monsterBodyProfile } from './voxel-monster-bodies.js';
 import { MONSTER_DEATH_RULES, MONSTER_DEATH_STYLES, monsterDeathPose, createMonsterDeathPresenter } from './voxel-monster-death.js';
 import { HUMAN_DEATH_RULES, humanDeathPose, humanDeathCameraPose, createHumanDeathPresenter } from './voxel-human-death.js';
@@ -4275,6 +4276,9 @@ export class VoxelRenderer {
     this.mapCache = new Map(); this.hordeMaps = new WeakMap(); this.mapId = null; this.effectMap = null; this.effectGameId = null; this.effectRound = null; this.effectPhase = null; this.eventIds = new Set(); this.eventQueue = [];
     this.particles = []; this.tracers = []; this.localShot = null; this.localReload = null; this.shotContext = null;
     this.reducedMotion = typeof globalThis.matchMedia === 'function' ? globalThis.matchMedia('(prefers-reduced-motion: reduce)') : null;
+    // FPS paths that omit an explicit option still inherit the saved choice.
+    // Read storage once at construction, never on the animation hot path.
+    this.cameraMotionPreference = createCameraMotionStore();
     this.presentSlashImpacts = createSlashImpactPresenter();
     this.presentMonsterSpecialImpacts = createMonsterSpecialImpactPresenter();
     this.lastAim = null; this.swayX = 0; this.swayY = 0;
@@ -4735,7 +4739,7 @@ export class VoxelRenderer {
     }
     this.shotContext = shotContext;
     const reducedMotion = this.reducedMotion?.matches === true || options.reducedMotion === true || options.quality === 'reduced';
-    const cameraMotion = resolveCameraMotion(options.cameraMotion, reducedMotion);
+    const cameraMotion = resolveCameraMotion(options.cameraMotion ?? this.cameraMotionPreference.get(), reducedMotion);
     this._cameraMotion = cameraMotion.cameraMotion; this._headReducedMotion = cameraMotion.headReducedMotion;
     this._events(state, time, localId, { reducedMotion });
     let yaw = finite(options.aimYaw ?? options.yaw, finite(cameraPlayer.yaw));
@@ -4961,13 +4965,13 @@ export class VoxelRenderer {
         planted: Object.freeze(legs.map(leg => leg.planted)) });
     })) });
     const firstPerson = this.firstPersonMotion ? Object.freeze({ ...this.firstPersonMotion, eye: Object.freeze([...this.firstPersonMotion.eye]), shot: Object.freeze({ ...this.shotMotion }), melee: this.meleePose ? Object.freeze({ ...this.meleePose }) : null, reload: this.reloadMotion ? Object.freeze({ ...this.reloadMotion, hands: Object.freeze(this.reloadMotion.hands.map(hand => Object.freeze({ ...hand }))) }) : null, ...this.presentShots.getStats() }) : null;
-    return Object.freeze({ mapId: this.mapId, mapVertices: this._mapVertices, cachedMaps: this.mapCache.size, drawCalls: this._frameDrawCalls, dynamicVertices: this._frameDynamicVertices, lootItems: this._lootItems, stormVertices: this._stormVertices, spawnWarnings: this._spawnWarnings || 0, meleeTrailVertices: this._meleeTrailVertices || 0, meleeTrailActors: this._meleeTrailActors || 0, slashImpacts: Object.freeze(this.presentSlashImpacts?.getStats() || {}), monsterSpecials: Object.freeze(this._monsterSpecials || { shards: 0, runes: 0, fuses: 0, vertices: 0 }), reducedMotion: this._reducedMotion === true, cameraMotion: this._cameraMotion || 'system', headReducedMotion: this._headReducedMotion === true, cachedSpawnWarnings: warnings?.cachedItems || 0, spawnWarningBuilds: warnings?.builds || 0, bloodParticles: this.particles.filter(particle => particle.material === 'blood').length, visibleBloodParticles: this._visibleBloodParticles || 0, cachedLootItems: loot?.cachedItems || 0, lootGeometryBuilds: loot?.builds || 0, geometryBufferBytes: Object.values(this.frameMeshes || {}).reduce((bytes, mesh) => bytes + mesh.storage.byteLength, 0) + (loot?.bufferBytes || 0) + (loot?.templateBytes || 0) + (warnings?.bufferBytes || 0) + (warnings?.templateBytes || 0) + (deathGeometry?.bufferBytes || 0) + (deathGeometry?.templateBytes || 0) + (humanDeathGeometry?.bufferBytes || 0) + (humanDeathGeometry?.templateBytes || 0), cameraEyeHeight: this.cameraEyeHeight, resizeReads: this.resizeReads, humanAnimation, monsterAnimation, firstPerson, monsterDeaths, humanDeaths });
+    return Object.freeze({ mapId: this.mapId, mapVertices: this._mapVertices, cachedMaps: this.mapCache.size, drawCalls: this._frameDrawCalls, dynamicVertices: this._frameDynamicVertices, lootItems: this._lootItems, stormVertices: this._stormVertices, spawnWarnings: this._spawnWarnings || 0, meleeTrailVertices: this._meleeTrailVertices || 0, meleeTrailActors: this._meleeTrailActors || 0, slashImpacts: Object.freeze(this.presentSlashImpacts?.getStats() || {}), monsterSpecials: Object.freeze(this._monsterSpecials || { shards: 0, runes: 0, fuses: 0, vertices: 0 }), reducedMotion: this._reducedMotion === true, cameraMotion: this._cameraMotion || this.cameraMotionPreference.get(), headReducedMotion: this._headReducedMotion === true, cachedSpawnWarnings: warnings?.cachedItems || 0, spawnWarningBuilds: warnings?.builds || 0, bloodParticles: this.particles.filter(particle => particle.material === 'blood').length, visibleBloodParticles: this._visibleBloodParticles || 0, cachedLootItems: loot?.cachedItems || 0, lootGeometryBuilds: loot?.builds || 0, geometryBufferBytes: Object.values(this.frameMeshes || {}).reduce((bytes, mesh) => bytes + mesh.storage.byteLength, 0) + (loot?.bufferBytes || 0) + (loot?.templateBytes || 0) + (warnings?.bufferBytes || 0) + (warnings?.templateBytes || 0) + (deathGeometry?.bufferBytes || 0) + (deathGeometry?.templateBytes || 0) + (humanDeathGeometry?.bufferBytes || 0) + (humanDeathGeometry?.templateBytes || 0), cameraEyeHeight: this.cameraEyeHeight, resizeReads: this.resizeReads, humanAnimation, monsterAnimation, firstPerson, monsterDeaths, humanDeaths });
   }
   resetEffects() {
     this._worldLabels = EMPTY_WORLD_LABELS;
     this.eventIds.clear(); this.eventQueue.length = 0; this.particles.length = 0; this.tracers.length = 0;
     this.presentSlashImpacts?.reset();
-    this.presentMonsterSpecialImpacts?.reset(); this._monsterSpecials = null; this._reducedMotion = false; this._cameraMotion = 'system'; this._headReducedMotion = false;
+    this.presentMonsterSpecialImpacts?.reset(); this._monsterSpecials = null; this._reducedMotion = false; this._cameraMotion = this.cameraMotionPreference?.get() ?? DEFAULT_CAMERA_MOTION; this._headReducedMotion = false;
     this._visibleBloodParticles = 0; this._meleeTrailVertices = 0; this._meleeTrailActors = 0;
     this.localShot = null; this.localReload = null; this.shotContext = null; this.lastAim = null; this.swayX = 0; this.swayY = 0;
     this.presentLoot?.reset(); this.presentWarnings?.reset(); this.presentEye?.reset(); this.presentHumans?.reset(); this.presentMonsters?.reset(); this.presentHead?.reset(); this.presentShots?.reset(); this.presentReloads?.reset(); this.cameraReload = null; this.firstPersonMotion = null; this.shotMotion = null; this.reloadMotion = null; this.meleePose = null; this.humanPoses?.clear(); this.monsterPoses?.clear(); this._locomotionActors = Object.freeze([]); this._spawnWarnings = 0;
@@ -4977,6 +4981,7 @@ export class VoxelRenderer {
   destroy() {
     if (this.destroyed) return;
     this.destroyed = true; this.available = false; this._worldLabels = EMPTY_WORLD_LABELS;
+    this.cameraMotionPreference?.destroy();
     this.canvas.removeEventListener('webglcontextlost', this._onLost);
     this.canvas.removeEventListener('webglcontextrestored', this._onRestored);
     this.resizeObserver?.disconnect();

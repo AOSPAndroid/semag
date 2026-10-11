@@ -14,6 +14,7 @@
   <link rel="stylesheet" href="/voxel-crosshair.css">
   <link rel="stylesheet" href="/voxel-setup-ui.css">
   <link rel="stylesheet" href="/voxel-victory.css">
+  <link rel="stylesheet" href="/voxel-camera-motion-ui.css">
   <style>
     body #horde-guide .practice-guide-card { width: min(100%, 850px); }
     #horde-field-guide { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 42px; margin-top: 14px; padding: 10px 13px; border: 1px solid var(--border); border-radius: calc(var(--radius) - 4px); background: var(--background); color: var(--foreground); text-align: left; font-size: 12px; }
@@ -83,6 +84,11 @@
               <label id="horde-difficulty-field">THREAT<select id="horde-difficulty" aria-label="Difficulty"><option value="veteran">Veteran · relentless</option><option value="nightmare">Nightmare · unforgiving</option></select></label>
               <label class="practice-loadout" id="horde-name-field" hidden>YOUR NAME<input id="horde-name" maxlength="20" autocomplete="nickname" aria-label="Player name"></label>
             </div>
+          <div class="voxel-camera-motion" id="horde-camera-motion-field">
+            <label for="horde-camera-motion">Camera wobble</label>
+            <select id="horde-camera-motion" data-camera-motion aria-describedby="horde-camera-motion-status"><option value="normal">Normal</option><option value="strong">Strong</option><option value="system">System preference</option><option value="off">Off</option></select>
+            <small id="horde-camera-motion-status" role="status" aria-live="polite">Natural walking and running sway. Aiming stays steady.</small>
+          </div>
             <div class="practice-equipment" aria-label="Starting equipment">
               <div class="armory-field"><span>STARTING GUN</span><select id="horde-weapon" aria-label="Weapon loadout"></select></div>
               <div class="fps-starter-kit"><span>STARTING KIT</span><p>Knife + chosen gun<br>Slots 3–4 empty · no supplies</p></div>
@@ -93,7 +99,13 @@
             <button id="horde-field-guide" type="button" aria-controls="horde-guide horde-bestiary" disabled>Meet the horde <span>Six new threats · tactics &amp; first appearances ↗</span></button>
             <div class="practice-setup-actions"><button class="practice-primary" id="horde-start" type="submit"><span id="horde-start-label">Start survival</span><span aria-hidden="true">→</span></button><small class="practice-start-note" id="horde-start-note">Solo · starts only when you choose · P pauses</small></div>
           </form>
-          <div class="practice-card" id="horde-pause-card" hidden><span class="practice-eyebrow" id="horde-pause-tag">TAKE A BREATH</span><h2 id="horde-pause-title">Paused.</h2><p id="horde-pause-copy">The world and every enemy are frozen. Press P to return, or change your loadout and setup for a new run.</p><button class="practice-primary" id="horde-resume" type="button" aria-keyshortcuts="P"><span>Return to the fight</span><span aria-hidden="true">→</span></button><div class="practice-secondary-actions"><button id="horde-restart" type="button">New solo run</button><button id="horde-change-setup" type="button">Change loadout &amp; setup</button></div></div>
+          <div class="practice-card" id="horde-pause-card" hidden><span class="practice-eyebrow" id="horde-pause-tag">TAKE A BREATH</span><h2 id="horde-pause-title">Paused.</h2><p id="horde-pause-copy">The world and every enemy are frozen. Press P to return, or change your loadout and setup for a new run.</p>
+          <div class="voxel-camera-motion" id="horde-pause-camera-motion-field">
+            <label for="horde-pause-camera-motion">Camera wobble</label>
+            <select id="horde-pause-camera-motion" data-camera-motion aria-describedby="horde-pause-camera-motion-status"><option value="normal">Normal</option><option value="strong">Strong</option><option value="system">System preference</option><option value="off">Off</option></select>
+            <small id="horde-pause-camera-motion-status" role="status" aria-live="polite">Natural walking and running sway. Aiming stays steady.</small>
+          </div>
+          <button class="practice-primary" id="horde-resume" type="button" aria-keyshortcuts="P"><span>Return to the fight</span><span aria-hidden="true">→</span></button><div class="practice-secondary-actions"><button id="horde-restart" type="button">New solo run</button><button id="horde-change-setup" type="button">Change loadout &amp; setup</button></div></div>
           <div class="practice-card" id="horde-result" role="region" aria-labelledby="horde-result-title" hidden>
             <span class="practice-eyebrow">THE LAST STAND · <span id="horde-result-map"></span></span>
             <h2 id="horde-result-title">Overrun.</h2><p id="horde-result-copy">Every wave asks more of your aim, positioning and timing.</p>

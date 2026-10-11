@@ -1,3 +1,5 @@
+import { createFirstPersonMotionPresenter, resolveCameraMotion } from './voxel-first-person-motion.js';
+
 // Exact block surfaces, cached per horizontal chunk. Art never changes the
 // engine's collision volume: even a torch or hearth occupies its full cube.
 const STRIDE = 12;
@@ -149,11 +151,28 @@ function projection(fov, aspect) {
   out[0] = f / aspect; out[5] = f; out[10] = (far + near) / (near - far); out[11] = -1; out[14] = 2 * far * near / (near - far);
   return out;
 }
-function viewMatrix(eye, yaw, pitch) {
+function cameraBasis(yaw, pitch, roll = 0) {
   const sy = Math.sin(yaw), cy = Math.cos(yaw), sp = Math.sin(pitch), cp = Math.cos(pitch);
   const right = [cy, 0, sy], up = [-sy * sp, cp, cy * sp], forward = [sy * cp, sp, -cy * cp];
+  const cosine = Math.cos(roll), sine = Math.sin(roll);
+  return { right: right.map((value, axis) => value * cosine + up[axis] * sine), up: up.map((value, axis) => value * cosine - right[axis] * sine), forward };
+}
+function viewMatrix(eye, { right, up, forward }) {
   const dot = vector => vector[0] * eye[0] + vector[1] * eye[1] + vector[2] * eye[2];
   return new Float32Array([right[0], up[0], -forward[0], 0, right[1], up[1], -forward[1], 0, right[2], up[2], -forward[2], 0, -dot(right), -dot(up), dot(forward), 1]);
+}
+/** Cosmetic eye travel remains in clear space, including beside a voxel lip. */
+function cameraDrop(world, eye, bobY) {
+  let drop = clamp(-finite(bobY), 0, .018);
+  const bottom = Math.floor(eye[1] - drop - .005);
+  for (const [dx, dz] of [[0, 0], [-.04, -.04], [.04, -.04], [-.04, .04], [.04, .04]]) {
+    const x = Math.floor(eye[0] + dx), z = Math.floor(eye[2] + dz), top = Math.floor(eye[1]);
+    if (survivalBlockAt(world, x, top, z)) return 0;
+    for (let y = top - 1; y >= bottom; y--) if (survivalBlockAt(world, x, y, z)) {
+      drop = Math.min(drop, Math.max(0, eye[1] - (y + 1) - .005));
+    }
+  }
+  return -drop || 0;
 }
 const QUAD_ORDER = [0, 1, 2, 0, 2, 3];
 const WHITE_UV = atlasUV(0, .5, .5);
@@ -356,7 +375,8 @@ export function survivalHandMotion(state, camera, options = {}) {
   const player = options.player || state.player || camera;
   const time = finite(options.displayTime, finite(state.time));
   const moving = Math.hypot(finite(camera.vx), finite(camera.vz));
-  const bob = options.reducedMotion ? 0 : Math.sin(time * 9) * Math.min(.011, moving * .0018);
+  const bob = options.firstPersonMotion ? finite(options.firstPersonMotion.weaponY)
+    : options.reducedMotion ? 0 : Math.sin(time * 9) * Math.min(.011, moving * .0018);
   const miningState = options.mining === undefined ? state.mining : options.mining;
   const mining = miningState && finite(miningState.progress) > 0;
   const swinging = finite(player.swingTime) > 0 || mining;
@@ -368,7 +388,10 @@ export function survivalHandMotion(state, camera, options = {}) {
 }
 function handMesh(state, camera, item, options, mesh) {
   const { bob, swing } = survivalHandMotion(state, camera, options);
-  const pose = { x: .36 - swing * .30, y: -.38 + bob - Math.abs(swing) * .50, z: -.74 - Math.max(0, swing), yaw: -.20 - swing * 2.8, pitch: -.12 + swing * 2.1, scale: .70 };
+  const motion = options.firstPersonMotion;
+  const pose = { x: .36 + finite(motion?.weaponX) - swing * .30, y: -.38 + bob - Math.abs(swing) * .50,
+    z: -.74 + finite(motion?.weaponZ) - Math.max(0, swing), yaw: -.20 + finite(motion?.weaponYaw) - swing * 2.8,
+    pitch: -.12 + finite(motion?.weaponPitch) + swing * 2.1, scale: .70 };
   mesh.box(-.078, -.20, -.02, .15, .27, .16, color('#52614d'), pose);
   mesh.box(-.08, .01, -.04, .16, .14, .18, color('#c9a37b'), pose);
   const id = item?.id || '';
@@ -413,6 +436,7 @@ export class SurvivalRenderer {
     if (!this.gl) throw new Error('Voxel Wilds needs WebGL. Enable browser hardware acceleration to play.');
     this.available = true; this.contextLost = false; this.destroyed = false; this.error = null;
     this.world = null; this.chunks = new Map(); this.lamps = []; this.particles = []; this.eventIds = new Set(); this.eventQueue = [];
+    this.presentHead = createFirstPersonMotionPresenter(); this.firstPersonMotion = null; this._headPlayer = {};
     this.frameStats = {}; this._lastRevision = -1; this._lampCell = null; this._nearestLamps = []; this._lampArray = new Float32Array(16);
     this._dynamicMesh = new Mesh(); this._outlineMesh = new Mesh(); this._ghostMesh = new Mesh(); this._handMesh = new Mesh();
     this._onLost = event => {
@@ -461,6 +485,7 @@ export class SurvivalRenderer {
   _clearWorld() {
     if (!this.contextLost) for (const chunk of this.chunks.values()) this.gl.deleteBuffer(chunk.buffer);
     this.chunks.clear(); this.lamps.length = 0; this._lampCell = null; this._nearestLamps = []; this.particles.length = 0; this.eventIds.clear(); this.eventQueue.length = 0; this._lastRevision = -1;
+    this.presentHead?.reset(); this.firstPersonMotion = null;
   }
   _updateWorld(world) {
     if (this.world !== world) { this._clearWorld(); this.world = world; }
@@ -530,6 +555,20 @@ export class SurvivalRenderer {
     const gl = this.gl, yaw = finite(camera.yaw), pitch = clamp(finite(camera.pitch), -1.54, 1.54);
     const eye = [finite(camera.x), finite(camera.y) + finite(camera.eye, 1.62), finite(camera.z)];
     const time = finite(options.displayTime, finite(state.time)), dayTime = ((time % 180) + 180) % 180;
+    const policy = resolveCameraMotion(options.cameraMotion, options.reducedMotion === true);
+    // Use the collision-tested display pose, never requested movement or a
+    // separate animation clock. Wilds does not retain sprint input, so accepted
+    // velocity above its 3.5 m/s walk speed identifies food-funded running.
+    const headPlayer = Object.assign(this._headPlayer, { id: 0, x: camera.x, y: camera.y, z: camera.z,
+      yaw, pitch, vx: camera.vx, vy: camera.vy, vz: camera.vz, grounded: camera.grounded,
+      alive: state.phase !== 'dead' && state.player.hp > 0, crouching: camera.crouching === true,
+      sprinting: Math.hypot(finite(camera.vx), finite(camera.vz)) > 3.55 && state.player.hunger > 8 });
+    const motion = this.presentHead(headPlayer, time * 1000, state, { paused: state.paused === true,
+      aim: clamp(finite(options.aim), 0, 1), reducedMotion: options.reducedMotion === true, cameraMotion: policy.cameraMotion });
+    const bobY = cameraDrop(state.world, eye, motion.bobY), roll = motion.roll;
+    eye[1] += bobY;
+    this.firstPersonMotion = { ...motion, ...policy, bobY, roll, eye: [...eye], yaw, pitch };
+    const basis = cameraBasis(yaw, pitch, roll);
     // Twilight gives a useful transition before the engine's night attack wave.
     let daylight = state.night ? .10 : 1;
     if (dayTime > 100 && dayTime < 118) daylight = lerp(1, .10, (dayTime - 100) / 18);
@@ -540,18 +579,17 @@ export class SurvivalRenderer {
     const light = [-.48, Math.sin(sunAngle), .58], lightLength = Math.hypot(...light);
     for (let i = 0; i < 3; i++) light[i] /= lightLength;
     const fov = finite(options.fov, Math.PI * .405), fovScale = Math.tan(fov / 2);
-    const sy = Math.sin(yaw), cy = Math.cos(yaw), sp = Math.sin(pitch), cp = Math.cos(pitch);
     gl.clearColor(...horizon, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     gl.disable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE); gl.useProgram(this.skyProgram);
     const sky = this.skyUniforms;
     gl.uniform3fv(sky.top, top); gl.uniform3fv(sky.horizon, horizon); gl.uniform3fv(sky.sundirection, light);
-    gl.uniform3fv(sky.right, [cy, 0, sy]); gl.uniform3fv(sky.up, [-sy * sp, cp, cy * sp]); gl.uniform3fv(sky.forward, [sy * cp, sp, -cy * cp]);
+    gl.uniform3fv(sky.right, basis.right); gl.uniform3fv(sky.up, basis.up); gl.uniform3fv(sky.forward, basis.forward);
     gl.uniform2fv(sky.scale, [fovScale * this.aspect, fovScale]); gl.uniform1f(sky.daylight, daylight); gl.uniform1f(sky.time, time);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.skyBuffer); gl.enableVertexAttribArray(this.skyPosition); gl.vertexAttribPointer(this.skyPosition, 2, gl.FLOAT, false, 0, 0); gl.drawArrays(gl.TRIANGLES, 0, 3);
     this.frameStats.drawCalls++;
     gl.enable(gl.DEPTH_TEST); gl.enable(gl.CULL_FACE); gl.useProgram(this.program);
     const u = this.uniforms;
-    gl.uniformMatrix4fv(u.projection, false, projection(fov, this.aspect)); gl.uniformMatrix4fv(u.view, false, viewMatrix(eye, yaw, pitch)); gl.uniform3fv(u.eye, eye);
+    gl.uniformMatrix4fv(u.projection, false, projection(fov, this.aspect)); gl.uniformMatrix4fv(u.view, false, viewMatrix(eye, basis)); gl.uniform3fv(u.eye, eye);
     gl.uniform3fv(u.light, light); gl.uniform3fv(u.ambient, mix([.29, .35, .39], [.61, .65, .54], daylight)); gl.uniform3fv(u.sun, mix([.10, .13, .15], [.42, .39, .27], daylight));
     gl.uniform3fv(u.fog, horizon); gl.uniform1f(u.fogstrength, .69); gl.uniform1f(u.opacity, 1);
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.atlas); gl.uniform1i(u.atlas, 0);
@@ -622,11 +660,13 @@ export class SurvivalRenderer {
     if (!options.hideHands && state.phase !== 'dead') {
       gl.clear(gl.DEPTH_BUFFER_BIT); gl.uniformMatrix4fv(u.view, false, IDENTITY); gl.uniform3fv(u.eye, [0, 0, 0]); gl.uniform1f(u.fogstrength, 0);
       gl.uniform3fv(u.light, [-.36, .66, .62]); gl.uniform3fv(u.ambient, [.65, .68, .61]); gl.uniform3fv(u.sun, [.32, .31, .27]); gl.uniform4fv(u.lamps, new Float32Array(16));
-      this._draw(this._dynamic(handMesh(state, camera, item, options, this._handMesh.reset()), 'hand'));
+      this._draw(this._dynamic(handMesh(state, camera, item, { ...options, firstPersonMotion: motion }, this._handMesh.reset()), 'hand'));
     }
     return true;
   }
-  getStats() { return Object.freeze({ ...this.frameStats, cachedChunks: this.chunks.size, maxParticles: MAX_PARTICLES, maxEnemies: MAX_ENEMIES, pixelWidth: this.canvas.width, pixelHeight: this.canvas.height,
+  getStats() { const firstPerson = this.firstPersonMotion ? Object.freeze({ ...this.firstPersonMotion, eye: Object.freeze([...this.firstPersonMotion.eye]) }) : null;
+    return Object.freeze({ ...this.frameStats, firstPerson, cameraMotion: firstPerson?.cameraMotion, headReducedMotion: firstPerson?.headReducedMotion,
+    cachedChunks: this.chunks.size, maxParticles: MAX_PARTICLES, maxEnemies: MAX_ENEMIES, pixelWidth: this.canvas.width, pixelHeight: this.canvas.height,
     dynamicScratchBytes: this._dynamicMesh.vertices.byteLength + this._outlineMesh.vertices.byteLength + this._ghostMesh.vertices.byteLength + this._handMesh.vertices.byteLength }); }
   get stats() { return this.getStats(); }
   destroy() {

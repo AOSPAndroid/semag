@@ -13,7 +13,7 @@ const freeze = value => { if (value && typeof value === 'object' && !Object.isFr
 
 // Both the fixed physics and the projected display endpoint are real game code.
 // The cosmetic presenter only observes immutable copies of their output.
-function observe({ hz = 120, seconds = 2, map = arena, sprint = true, aim = 0, reducedMotion = false, controls = null } = {}) {
+function observe({ hz = 120, seconds = 2, map = arena, sprint = true, aim = 0, reducedMotion = false, cameraMotion, controls = null } = {}) {
   const player = createCombatPlayer(0), movement = createMovementPresenter(), head = createFirstPersonMotionPresenter(), frames = [];
   let remainder = 0;
   for (let frame = 0; frame <= hz * seconds; frame++) {
@@ -23,7 +23,7 @@ function observe({ hz = 120, seconds = 2, map = arena, sprint = true, aim = 0, r
     while (remainder + 1e-12 >= STEP) { remainder = Math.max(0, remainder - STEP); predictLocalMovement(player, input, map); }
     const display = freeze(structuredClone(movement(player, input, map, remainder, predictLocalMovement)));
     const before = JSON.stringify(display), time = secondsNow * 1000;
-    const pose = head(display, time, map.id, { aim, reducedMotion });
+    const pose = head(display, time, map.id, { aim, reducedMotion, cameraMotion });
     assert.equal(JSON.stringify(display), before, 'cosmetic gait cannot mutate movement, look angles, stamina or combat state');
     frames.push({ time, player: display, pose });
   }
@@ -88,13 +88,13 @@ test('pinned sprint input and correction wiggle settle the head after a real wal
 });
 
 test('sprint ADS and reduced-motion preferences suppress head motion exactly and partial ADS damps the same accepted pose', () => {
-  const normal = observe(), partial = observe({ aim: .6 }), aimed = observe({ aim: 1 }), reduced = observe({ reducedMotion: true });
+  const normal = observe(), partial = observe({ aim: .6 }), aimed = observe({ aim: 1 }), reduced = observe({ reducedMotion: true, cameraMotion: 'system' });
   for (let index = 0; index < normal.frames.length; index++) {
     const pose = normal.frames[index].pose;
     near(partial.frames[index].pose.bobY, pose.bobY * .4); near(partial.frames[index].pose.roll, pose.roll * .4);
     for (const sequence of [aimed, reduced]) { assert.equal(sequence.frames[index].pose.bobY, 0); assert.equal(sequence.frames[index].pose.roll, 0); }
   }
-  const changed = normal.head(normal.player, 2010, arena.id, { reducedMotion: true });
+  const changed = normal.head(normal.player, 2010, arena.id, { reducedMotion: true, cameraMotion: 'system' });
   assert.equal(changed.stride, 0); assert.equal(changed.bobY, 0); assert.equal(changed.roll, 0);
 });
 

@@ -79,6 +79,12 @@
 .wilds-overlay-card > h3 { margin: 13px 0 10px; color: #efeed1; font: 21px var(--wilds-mono); font-weight: 500; line-height: 1.3; }
 .wilds-overlay-card > p { margin: 0 0 18px; color: #bdccae; font-size: 11px; line-height: 1.9; }
 .wilds-overlay-actions { display: flex; flex-direction: column; gap: 10px; }
+.wilds-view .wilds-camera-motion { display: grid; grid-template-columns: minmax(0, 1fr) minmax(130px, 170px); align-items: center; gap: 8px 12px; margin: 0 0 18px; padding: 12px; border: 1px solid var(--wilds-border); border-radius: 5px; background: #13281e; font: 11px var(--font, Arial, sans-serif); }
+.wilds-view .wilds-camera-motion label { color: #e0e6d4; font-weight: 500; }
+.wilds-view .wilds-camera-motion select { width: 100%; min-height: 40px; box-sizing: border-box; padding: 8px 10px; border: 1px solid #566853; border-radius: 4px; color: #e5ebdc; background: #213529; color-scheme: dark; font: inherit; }
+.wilds-view .wilds-camera-motion select:focus-visible { outline: 2px solid #b8cea2; outline-offset: 2px; }
+.wilds-view .wilds-camera-motion small { grid-column: 1 / -1; color: #a9bca0; font-size: 10px; line-height: 1.5; }
+@media (max-width: 460px) { .wilds-view .wilds-camera-motion { grid-template-columns: minmax(0, 1fr); } }
 .wilds-overlay-actions > button { padding: 13px 16px; border: 1px solid #b9c692; border-radius: 3px; background: #dbe4b9; color: #203d2c; font: 11px var(--wilds-mono); cursor: pointer; }
 .wilds-overlay-actions > .wilds-new-world { border-color: #879a72; background: #263e2f; color: #ceddb6; }
 .wilds-overlay[data-result='lost'] { background: #080b0ca8; backdrop-filter: blur(5px); }
