@@ -7,7 +7,7 @@ import { TICK_RATE, INPUT_KEYS, emptyInput, WORLD, eyeHeight, rayBox, createComb
 import { initializeInventory, ensureInventory, inventoryCanTake } from './voxel-inventory.js';
 export { MAPS, MAP_IDS, WEAPONS, INPUT_KEYS, emptyInput, TICK_RATE };
 
-export const ROYALE = Object.freeze({ maxPlayers: 10, minPlayers: 2, countdownTicks: 3 * TICK_RATE, pickupRadius: 1.7, pickupHeight: 1.2, potionCapacity: 2, grenadeCapacity: 2, maxLoot: 128, eventLimit: 256 });
+export const ROYALE = Object.freeze({ maxPlayers: 10, minPlayers: 2, countdownTicks: 3 * TICK_RATE, pickupRadius: 1.7, pickupHeight: 1.2, gunSpawnClearance: 4, potionCapacity: 2, grenadeCapacity: 2, maxLoot: 128, eventLimit: 256 });
 /** Solo sessions have one human plus ten bots; online rooms keep their ten-seat limit. */
 export const SOLO_MAX_PLAYERS = 11;
 // Every contraction is announced before it moves. The last circle disappears
@@ -91,13 +91,19 @@ function addLoot(state, details) {
   state.loot.push(loot); return loot;
 }
 function seedLoot(state) {
-  const points = shuffled(state, state.map.lootPoints).slice(0, ROYALE.maxLoot);
+  const shuffledPoints = shuffled(state, state.map.lootPoints).slice(0, ROYALE.maxLoot);
+  // A sewer/office cache can coincide with an authored start. Keep those
+  // locations for supplies, but put every gun outside every survivor's spawn
+  // radius: bots and humans must actually leave their knife-only start.
+  const gunPoints = shuffledPoints.filter(point => state.participantIds.every(id => Math.hypot(point.x - state.players[id].x, point.z - state.players[id].z) >= ROYALE.gunSpawnClearance));
+  const safePoints = new Set(gunPoints);
+  const points = [...gunPoints, ...shuffledPoints.filter(point => !safePoints.has(point))];
   const blades = shuffled(state, MELEE_IDS.filter(id => id !== 'knife'));
   let weapons = shuffled(state, WEAPON_IDS);
   // Scavenge a varied subset each round. Expanding the catalogue must never
   // consume the healing, ammunition, grenades or four non-knife blade caches.
   const gunBudget = Math.max(0, points.length - blades.length - 8);
-  const gunCount = Math.min(gunBudget, Math.max(state.players.length, Math.ceil(points.length * .44)));
+  const gunCount = Math.min(gunBudget, gunPoints.length, Math.max(state.players.length, Math.ceil(points.length * .44)));
   if (state.map.combatStyle === 'close') {
     const shotgunIds = WEAPON_IDS.filter(id => WEAPONS[id].category === 'shotgun'
       || id === 'shotgun' || id === 'autoshotgun' || id === 'slugshotgun');
@@ -144,12 +150,13 @@ function canTakeLoot(player, loot) {
   return loot.kind === 'ammo' ? inventoryCanTake(player, loot) : ['weapon', 'melee', 'heal', 'grenade'].includes(loot.kind);
 }
 /** Pure prompt/pickup predicate: no through-wall or vertically remote supplies. */
-export function findNearbyLoot(state, playerId) {
+export function findNearbyLoot(state, playerId, { kind = null, takeableOnly = false } = {}) {
   const player = state.players[playerId], arena = state.map || MAPS[state.mapId];
   if (!player?.alive || state.phase !== 'fight' || !arena) return null;
   const origin = { x: player.x, y: player.y + eyeHeight(player), z: player.z };
   let nearest = null, nearestDistance = ROYALE.pickupRadius + EPS;
   for (const loot of state.loot || []) {
+    if (kind && loot.kind !== kind || takeableOnly && !inventoryCanTake(player, loot)) continue;
     if (![loot.x, loot.y, loot.z].every(Number.isFinite) || !canTakeLoot(player, loot) || Math.abs(player.y - loot.y) > ROYALE.pickupHeight) continue;
     const horizontal = Math.hypot(player.x - loot.x, player.z - loot.z);
     if (horizontal > nearestDistance) continue;
@@ -257,7 +264,10 @@ export function step(state, rawInputs = []) {
   for (const player of state.players) {
     const input = inputs[player.id];
     if (player.alive && input.interact === true && !player.previousInput.interact && !player.healTicks && !player.reloadTicks && !player.meleeTicks && !player.grenadeThrowTicks && input.fire !== true) {
-      const loot = findNearbyLoot(state, player.id);
+      // Local bots choose equipment deliberately rather than filling their
+      // three free slots with incidental utility while walking toward a gun.
+      // The same distance, height, wall and finite-loot rules still apply.
+      const loot = findNearbyLoot(state, player.id, player.bot ? { takeableOnly: true, kind: player.hasGun ? null : 'weapon' } : undefined);
       if (loot) pickup(state, player, loot, input);
     }
   }

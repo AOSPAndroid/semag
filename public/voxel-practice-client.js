@@ -21,6 +21,7 @@ import { tickFraction } from './display-timing.js';
 import { isPauseShortcut } from './pause-shortcut.js';
 import { createResultActionGate } from './practice-result-actions.js';
 import { createEndPresentation } from './voxel-end-presentation.js';
+import { createRoyaleRewardPresenter, createRoyaleRewardAudio, royaleBattleResult } from './voxel-royale-reward.js';
 import { createPracticeInputQueue } from './voxel-practice-input.js';
 import { DOJO_MAP } from './voxel-dojo-map.js';
 import { DOJO_ACTIONS, findDojoStation, findDojoStationLoot } from './voxel-dojo-engine.js';
@@ -89,9 +90,13 @@ export function bootPractice() {
   let resultActionTimer = null;
   const endPresentation = createEndPresentation();
   let endView = { holding: false }, resultsVisible = false;
+  const royaleReward = createRoyaleRewardPresenter();
+  let rewardView = { stage: 'idle', visible: false, holding: false };
+  let finishFocused = true;
   const listeners = [], keys = new Set(), physicalKeys = new Map(), mouse = { fire: false, aim: false }, inputQueue = createPracticeInputQueue({ extraActions: dojo ? DOJO_ACTIONS : [] });
   const touch = { move: { x: 0, y: 0 }, look: { x: 0, y: 0 }, actions: new Set() }, pointers = new Map(), movement = new Map();
   const audio = new GameAudio(), picker = mountKeyboardLayoutPicker($('practice-keyboard'), { id: 'practice-keyboard-select' });
+  const rewardAudio = createRoyaleRewardAudio(audio);
   const meleeImpacts = createMeleeImpactReporter(audio), gunImpacts = createGunImpactReporter(audio), parryAudio = createParryAudioReporter(audio);
   const enemyFootsteps = createEnemyFootstepPresenter(audio);
   const reloadAudio = createReloadAudioPresenter(audio), staminaElements = { meter: $('practice-stamina-meter'), fill: $('practice-stamina-fill') };
@@ -120,9 +125,10 @@ export function bootPractice() {
 
   setText('practice-title', royale ? 'Voxel Royale' : 'Voxel Breach'); document.title = `${royale ? 'Voxel Royale' : 'Voxel Breach'} Practice — Semag`;
   if (royale) {
+    app.dataset.game = 'voxel-royale';
     setText('practice-subtitle', 'SOLO BATTLE ROYALE'); document.title = 'Voxel Royale — Solo Battle | semaG';
     setText('practice-setup-title', 'Be the last one standing.');
-    setText('practice-setup-copy', 'You against up to 10 bots. Start with a knife, find your weapons, and fight through the closing storm. Bots scavenge and battle each other too.');
+    setText('practice-setup-copy', 'Everyone starts with the same knife. Find your gun in the arena, outplay up to 10 bots, and survive the closing storm. Bots loot and battle each other too.');
     setText('practice-count-label', 'BOT OPPONENTS');
     $('practice-count').replaceChildren(...Array.from({ length: 10 }, (_, index) => {
       const option = document.createElement('option'); option.value = String(index + 1); option.textContent = `${index + 1} ${index ? 'bots' : 'bot'} + you`; return option;
@@ -134,6 +140,7 @@ export function bootPractice() {
     $('practice-setup-form').querySelector('.practice-eyebrow').textContent = 'SOLO / 1–10 BOT OPPONENTS';
     $('practice-setup-form').querySelector('.practice-start-note').textContent = 'One life · no server needed · P pauses the battle';
     $('practice-pause-card').querySelector('h2').textContent = 'Battle paused.';
+    setText('practice-replay', 'Drop in again →');
     setHidden($('practice-loadout-field'), true); setHidden($('practice-melee-field'), true); setHidden($('practice-melee-note'), true);
   }
   if (royale) $('practice-mode').querySelector('option[value="blades"]')?.remove();
@@ -176,6 +183,7 @@ export function bootPractice() {
     weaponWheel.reset();
     clearReticle();
     reloadAudio.suspend(); enemyFootsteps.suspend(); paintVitals(null, 'Your', false);
+    rewardAudio.stop();
     hitFeedback.reset(); paintHitFeedback(hitElements, { visible: false });
     inputQueue.reset();
     keys.clear(); physicalKeys.clear(); mouse.fire = mouse.aim = false; touch.move = { x: 0, y: 0 }; touch.look = { x: 0, y: 0 }; touch.actions.clear();
@@ -201,6 +209,8 @@ export function bootPractice() {
   function captureFailed() { if (!active() || dojoToolsOpen || locked()) return; fallback = true; hints(); }
   function resetView() {
     endPresentation.reset(); endView = { holding: false }; resultsVisible = false;
+    royaleReward.reset(); rewardAudio.reset(); rewardView = { stage: 'idle', visible: false, holding: false };
+    setHidden($('practice-royale-victory'), true);
     resultActions.cancel(); clearTimeout(resultActionTimer); resultActionTimer = null;
     setDisabled($('practice-replay'), true); setDisabled($('practice-result-setup'), true);
     for (const armory of armories.values()) armory.close();
@@ -281,7 +291,15 @@ export function bootPractice() {
   function updateHud(now, force = false) {
     const phase = state.phase, local = state.players[0];
     const wasHolding = endView.holding;
-    endView = endPresentation.observe(phase, now, { contextKey: `${state.mapId}:${state.practice.sessionId}`, eligible: activeSession && !destroyed && !graphicsError && !!renderer?.available && !document.hidden && !modalOpen, reducedMotion: hitMotion.matches });
+    const finishEligible = activeSession && !destroyed && !graphicsError && !!renderer?.available && !document.hidden && !modalOpen && (!royale || finishFocused);
+    const deathView = endPresentation.observe(phase, now, { contextKey: `${state.mapId}:${state.practice.sessionId}`, eligible: finishEligible, reducedMotion: hitMotion.matches });
+    if (royale) {
+      rewardView = royaleReward.observe(phase, now, { contextKey: `${state.mapId}:${state.practice.sessionId}`, death: deathView, won: state.practice.result === 'won', eligible: finishEligible, reducedMotion: hitMotion.matches });
+      rewardAudio.observe(rewardView, { eligible: finishEligible });
+      setHidden($('practice-royale-victory'), !rewardView.visible);
+      setStyle($('practice-royale-victory'), '--royale-reward-progress', String(rewardView.progress || 0));
+    }
+    endView = royale ? { ...deathView, holding: deathView.holding || rewardView.holding, finished: deathView.finished && !rewardView.holding, stage: rewardView.stage, remainingMs: rewardView.remainingMs } : deathView;
     const signature = [phase, local.hp, local.alive, local.weapon, local.slot, local.hasGun, local.ammo, local.reserve, local.potions, local.grenades, local.aiming, local.healTicks > 0, local.reloadTicks > 0, local.grenadeThrowTicks > 0, local.shotCooldown > 0, local.burstRemaining > 0, local.meleeWeapon, local.meleePhase, local.pendingMeleeTicks > 0, local.parryTicks > 0, local.parryConsumed, local.parryCooldown > 0, local.kills, local.damageDealt].join(':');
     if (!force && wasHolding === endView.holding && phase === lastPhase && signature === urgentHud && now - lastHudAt < 80) return;
     for (const armory of armories.values()) armory.sync();
@@ -332,6 +350,16 @@ export function bootPractice() {
       setText('practice-result-headshots', stats.headshotKills); setText('practice-result-health', `${Math.ceil(stats.healthRemaining)} / ${Math.round(stats.healthMax)}`);
       setText('practice-result-shots-label', blades ? 'STRIKES' : 'SHOTS FIRED'); setText('practice-result-shots', blades ? stats.swings : stats.shots);
       setText('practice-result-hits-label', blades ? 'STRIKES LANDED' : 'HITS'); setText('practice-result-hits', blades ? stats.landedSwings : stats.hits);
+      setHidden($('practice-result-royale-rank'), !royale); setHidden($('practice-result-outlasted-field'), !royale);
+      if (royale) {
+        const battle = royaleBattleResult(state, stats);
+        setAttribute($('practice-result-card'), 'data-royale-result', battle.won ? 'won' : 'lost');
+        setText('practice-result-tag', battle.label); setText('practice-result-title', battle.title); setText('practice-result-copy', battle.copy);
+        setText('practice-result-place', `#${battle.place}`); setText('practice-result-field', `OF ${battle.total} SURVIVORS`); setText('practice-result-outlasted', `${battle.outlasted} / ${battle.total - 1}`);
+        setHidden($('practice-result-crown'), !battle.won);
+        setText('practice-royale-victory-copy', `${battle.total - 1} ${battle.total === 2 ? 'rival' : 'rivals'} outlasted · ${stats.kills} ${stats.kills === 1 ? 'elimination' : 'eliminations'}`);
+        setText('practice-objective', rewardView.stage === 'death' ? battle.won ? 'Final rival down. You survived.' : 'You’re down. Your battle is being recorded.' : rewardView.stage === 'victory' ? 'Last survivor. The arena is yours.' : 'Battle complete. Review your results or drop in again.');
+      }
       if (changed) { release(); unlock(); previousFrame = null; accumulator = 0; }
       if (!endView.holding && !resultsVisible) {
         resultsVisible = true; resultActions.begin(now); stopFrame(); $('practice-result-title').focus({ preventScroll: true });
@@ -344,7 +372,7 @@ export function bootPractice() {
     if (destroyed || state?.phase !== 'matchEnd' || !resultsVisible) return;
     const now = performance.now(), ready = resultActions.isReady(now);
     setDisabled($('practice-replay'), !ready); setDisabled($('practice-result-setup'), !ready);
-    setText('practice-result-action-note', ready ? 'Choose your next drill when you’re ready.' : resultActions.waitingForRelease() ? 'Release held controls to continue.' : 'A moment to review your run…');
+    setText('practice-result-action-note', ready ? royale ? 'Keep the moment. Drop in again when you’re ready.' : 'Choose your next drill when you’re ready.' : resultActions.waitingForRelease() ? 'Release held controls to continue.' : royale ? 'A moment to take in your battle…' : 'A moment to review your run…');
     const delay = resultActions.nextDelay(now);
     if (delay !== null) resultActionTimer = setTimeout(paintResultActions, delay);
   }
@@ -353,7 +381,7 @@ export function bootPractice() {
     action();
   }
   function draw(now = performance.now()) {
-    if (destroyed || !renderer?.available || graphicsError || document.hidden) { clearReticle(); reloadAudio.suspend(); enemyFootsteps.suspend(); paintVitals(null, 'Your', false); return; } const live = active(), sceneLive = live || endView.holding || endView.finished; if (sceneLive) lastDrawAt = now;
+    if (destroyed || !renderer?.available || graphicsError || document.hidden) { clearReticle(); reloadAudio.suspend(); enemyFootsteps.suspend(); rewardAudio.stop(); paintVitals(null, 'Your', false); return; } const live = active(), sceneLive = live || endView.holding || endView.finished; if (sceneLive) lastDrawAt = now;
     const view = { ...state, players: state.players.map(player => {
       let pose = player;
       if (state.phase === 'fight' && player.alive) { if (!movement.has(player.id)) movement.set(player.id, createMovementPresenter()); pose = movement.get(player.id)(player, player.id === 0 ? inputQueue.preview(currentInput()) : player.previousInput, state.map, accumulator, predictLocalMovement, state.players); }
@@ -465,7 +493,7 @@ export function bootPractice() {
     try { if (document.fullscreenElement) await document.exitFullscreen(); else await shell.requestFullscreen(); } catch { feedback('Fullscreen is unavailable in this browser.', performance.now()); }
   }
   function destroy() {
-    if (destroyed) return; destroyed = true; endPresentation.reset(); clearTimeout(resultActionTimer); resultActions.cancel(); for (const armory of armories.values()) armory.destroy(); stopFrame(); release(); unlock(); for (const remove of listeners) remove(); unsubscribe(); picker.destroy(); audio.destroy(); inventory.destroy(); weaponWheel.destroy(); renderer?.destroy(); movement.clear();
+    if (destroyed) return; destroyed = true; endPresentation.reset(); royaleReward.reset(); rewardAudio.destroy(); clearTimeout(resultActionTimer); resultActions.cancel(); for (const armory of armories.values()) armory.destroy(); stopFrame(); release(); unlock(); for (const remove of listeners) remove(); unsubscribe(); picker.destroy(); audio.destroy(); inventory.destroy(); weaponWheel.destroy(); renderer?.destroy(); movement.clear();
   }
   listen($('practice-setup-form'), 'submit', event => { event.preventDefault(); start(); });
   for (const id of ['practice-map', 'practice-count', 'practice-mode', 'practice-difficulty', 'practice-weapon', 'practice-blade', 'dojo-start-motion']) listen($(id), 'change', preview);
@@ -477,7 +505,7 @@ export function bootPractice() {
   listen($('practice-change-setup'), 'click', setup); listen($('practice-result-setup'), 'click', () => resultAction(setup));
   listen($('practice-help'), 'click', showHelp); listen($('practice-guide-close'), 'click', hideHelp); listen($('practice-guide-back'), 'click', hideHelp);
   listen($('practice-fullscreen'), 'click', fullscreen); listen($('retry-graphics'), 'click', graphics);
-  listen($('practice-sound'), 'click', async () => { const enabled = await audio.setEnabled(!audio.enabled); setAttribute($('practice-sound'), 'aria-pressed', String(enabled)); setAttribute($('practice-sound'), 'aria-label', enabled ? 'Mute sound' : 'Enable sound'); });
+  listen($('practice-sound'), 'click', async () => { rewardAudio.stop(); const enabled = await audio.setEnabled(!audio.enabled); setAttribute($('practice-sound'), 'aria-pressed', String(enabled)); setAttribute($('practice-sound'), 'aria-label', enabled ? 'Mute sound' : 'Enable sound'); });
   listen(document, 'pointerdown', event => { if (event.pointerType === 'touch') touchMode = true; else if (event.pointerType === 'mouse') touchMode = false; }, true);
   // Track physical releases independently of release(), which clears gameplay
   // state at the final kill. An attack held through the transition stays fenced.
@@ -506,10 +534,11 @@ export function bootPractice() {
   listen(document, 'pointerlockerror', captureFailed);
   listen(document, 'fullscreenchange', () => { const full = document.fullscreenElement === shell, exited = wasFullscreen && !full; wasFullscreen = full; if (exited && active()) pause(); setAttribute($('practice-fullscreen'), 'aria-pressed', String(full)); setAttribute($('practice-fullscreen'), 'aria-label', full ? 'Exit fullscreen' : 'Enter fullscreen'); renderer?.resize(); draw(performance.now()); });
   listen(window, 'resize', () => { renderer?.resize(); if (!active()) draw(performance.now()); });
-  listen(window, 'blur', () => { resultActions.clearHeld(); paintResultActions(); if (active()) pause(); else release(); }); listen(document, 'visibilitychange', () => { if (document.hidden && active()) pause(); else if (document.hidden && endView.holding) { updateHud(performance.now(), true); stopFrame(); } }); listen(window, 'pagehide', destroy);
-  listen(canvas, 'voxel-renderer-error', event => { if (event.detail?.message) { graphicsError = event.detail.message; if (active()) pause(); setHidden($('practice-error'), false); setText('practice-error-text', graphicsError); } else { graphicsError = ''; setHidden($('practice-error'), true); updateHud(performance.now(), true); draw(performance.now()); } });
+  listen(window, 'focus', () => { finishFocused = true; });
+  listen(window, 'blur', () => { finishFocused = false; resultActions.clearHeld(); paintResultActions(); if (active()) pause(); else { release(); if (royale && endView.holding) { updateHud(performance.now(), true); stopFrame(); } } }); listen(document, 'visibilitychange', () => { if (document.hidden) rewardAudio.stop(); if (document.hidden && active()) pause(); else if (document.hidden && endView.holding) { updateHud(performance.now(), true); stopFrame(); } }); listen(window, 'pagehide', destroy);
+  listen(canvas, 'voxel-renderer-error', event => { if (event.detail?.message) { graphicsError = event.detail.message; rewardAudio.stop(); if (active()) pause(); else if (royale && endView.holding) { updateHud(performance.now(), true); stopFrame(); } setHidden($('practice-error'), false); setText('practice-error-text', graphicsError); } else { graphicsError = ''; setHidden($('practice-error'), true); updateHud(performance.now(), true); draw(performance.now()); } });
   const unsubscribe = subscribeKeyboardLayout(() => { release(); hints(); }); hints(); preview(); graphics();
-  const inspect = () => copy({ state: { ...state, map: undefined, fighters: undefined }, stats: getPracticeStats(state), input: currentInput(), queuedActions: inputQueue.inspect(), presentationPlayer, controls: { pointerLocked: locked(), fallback, modalOpen, paused: state.phase === 'paused', entered: activeSession, touch: touchMode }, ending: { ...endView, resultsVisible }, renderCount, crosshair: reticleView, renderStats: renderer?.stats || null, audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), meleeImpactAudio: meleeImpacts.inspect(), reloadAudio: reloadAudio.inspect(), reloadSounds: audio.inspectReloads(), enemyFootsteps: enemyFootsteps.inspect(), footstepSounds: audio.inspectFootsteps(), gunImpactAudio: gunImpacts.inspect(), parryAudio: parryAudio.inspect(), parrySounds: audio.inspectParries(), stamina: staminaView, weaponWheel: weaponWheel.inspect(), graphicsError, displayTiming: { physicsSamples, renderSamples: renderCount, lastFraction } });
+  const inspect = () => copy({ state: { ...state, map: undefined, fighters: undefined }, stats: getPracticeStats(state), input: currentInput(), queuedActions: inputQueue.inspect(), presentationPlayer, controls: { pointerLocked: locked(), fallback, modalOpen, paused: state.phase === 'paused', entered: activeSession, touch: touchMode }, ending: { ...endView, resultsVisible, ...(royale ? { reward: rewardView, rewardAudio: rewardAudio.inspect() } : {}) }, renderCount, crosshair: reticleView, renderStats: renderer?.stats || null, audio: audio.inspectGunshots(), meleeAudio: audio.inspectMelee(), meleeImpactAudio: meleeImpacts.inspect(), reloadAudio: reloadAudio.inspect(), reloadSounds: audio.inspectReloads(), enemyFootsteps: enemyFootsteps.inspect(), footstepSounds: audio.inspectFootsteps(), gunImpactAudio: gunImpacts.inspect(), parryAudio: parryAudio.inspect(), parrySounds: audio.inspectParries(), stamina: staminaView, weaponWheel: weaponWheel.inspect(), graphicsError, displayTiming: { physicsSamples, renderSamples: renderCount, lastFraction } });
   const api = Object.freeze({ getState: inspect, getDisplayTiming: () => ({ physicsSamples, renderSamples: renderCount, lastFraction }) }); window.firesidePractice = api;
   return { destroy, inspect };
 }

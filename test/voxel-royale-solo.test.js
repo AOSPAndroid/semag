@@ -4,6 +4,7 @@ import { createPractice, startPractice, stepPractice, pausePractice, resumePract
 import * as Royale from '../public/voxel-royale-engine.js';
 import { WORLD } from '../public/voxel-engine.js';
 import { MAX_GRENADES } from '../public/voxel-ordnance.js';
+import { selectedInventoryItem, initializeInventory } from '../public/voxel-inventory.js';
 
 const ids = Array.from({ length: 11 }, (_, id) => id);
 const openArena = { id: 'solo-royale-fixture', bounds: { minX: -48, maxX: 48, minZ: -48, maxZ: 48 }, colliders: [], sites: [] };
@@ -82,21 +83,91 @@ test('all ten bots move on authored larger ground maps and collect real caches w
   }
 });
 
-test('the tenth bot really picks up a gun and shoots other bots in free-for-all combat', () => {
+test('all Royale gun caches require travel from every knife-only start, including sewer and office spawn caches', () => {
+  for (const mapId of Royale.MAP_IDS) for (const seed of [1, 7, 12, 151]) {
+    const state = createPractice({ game: 'voxel-royale', mapId, bots: 10, seed }); startPractice(state);
+    const spawns = state.players.map(({ x, z }) => ({ x, z }));
+    const guns = state.loot.filter(loot => loot.kind === 'weapon');
+    assert.ok(guns.length >= 11, `${mapId}/${seed}: not enough actual gun caches`);
+    assert.equal(state.loot.length, state.map.lootPoints.length);
+    const authored = new Set(state.map.lootPoints.map(point => `${point.x}/${point.y}/${point.z}`));
+    for (const loot of state.loot) assert.ok(authored.has(`${loot.x}/${loot.y}/${loot.z}`), 'loot was teleported to an unauthored point');
+    for (const gun of guns) for (const spawn of spawns) assert.ok(Math.hypot(gun.x - spawn.x, gun.z - spawn.z) >= Royale.ROYALE.gunSpawnClearance, `${mapId}/${seed}: gun at a start`);
+    advance(state, state.phaseTicks); stepPractice(state);
+    for (const player of state.players) {
+      assert.equal(player.hasGun, false); assert.equal(selectedInventoryItem(player)?.weapon, 'knife'); assert.equal(player.shots, 0);
+    }
+    assert.ok(!state.events.some(event => event.type === 'lootPickup' && event.kind === 'weapon'));
+  }
+});
+
+test('all ten bots travel to finite gun caches before shooting other bots in free-for-all combat', () => {
   const state = tenBots({ difficulty: 'rookie' }); state.map = openArena;
   Object.assign(state.players[0], { x: 0, z: 40, hp: 5000, maxHp: 5000 });
   for (const bot of state.players.slice(1)) Object.assign(bot, { x: -25 + bot.id * 5, y: 0, z: -8, hp: 1000, maxHp: 1000 });
-  state.loot = state.players.slice(1).map(bot => ({ id: 200 + bot.id, kind: 'weapon', weapon: 'carbine', ammo: 24, reserve: 48, x: bot.x, y: 0, z: bot.z }));
-  const seen = new Map();
+  state.loot = state.players.slice(1).map(bot => ({ id: 200 + bot.id, kind: 'weapon', weapon: 'carbine', ammo: 24, reserve: 48, x: bot.x, y: 0, z: bot.z - 6 }));
+  const origins = state.players.map(({ x, z }) => ({ x, z })), seen = new Map(), collected = new Set();
   for (let tick = 0; tick < 1000 && state.phase === 'fight'; tick++) {
-    stepPractice(state); for (const event of state.events) seen.set(event.id, event);
+    stepPractice(state);
+    for (const event of state.events) {
+      if (seen.has(event.id)) continue;
+      seen.set(event.id, event);
+      if (event.type === 'lootPickup' && event.kind === 'weapon') {
+        assert.ok(!state.loot.some(loot => loot.id === event.lootId), 'picked-up gun still exists in the world');
+        assert.ok(Math.hypot(state.players[event.playerId].x - origins[event.playerId].x, state.players[event.playerId].z - origins[event.playerId].z) >= 4, 'bot skipped the walk to the cache');
+        collected.add(event.playerId);
+      }
+      if (event.type === 'shot' && event.playerId > 0) assert.ok(collected.has(event.playerId), 'bot shot before collecting an actual gun');
+    }
+    for (const bot of state.players.slice(1)) if (!bot.hasGun) { assert.equal(bot.shots, 0); assert.equal(bot.ammo + bot.reserve, 0); assert.equal(bot.slot, 'sword'); }
   }
   const events = [...seen.values()];
   assert.equal(state.players[10].hasGun, true); assert.ok(state.players[10].shots > 0);
   assert.ok(events.some(event => event.type === 'lootPickup' && event.playerId === 10));
   assert.ok(events.some(event => event.type === 'damage' && event.playerId === 10 && event.targetId > 0 && event.targetId !== 10 && event.damage > 0));
   assert.ok(state.players.slice(1).some(bot => bot.hp < 1000));
+  assert.deepEqual([...collected].sort((a, b) => a - b), ids.slice(1));
   assert.ok(state.events.length <= Royale.ROYALE.eventLimit); assert.ok(state.bolts.length <= 24);
+});
+
+test('Royale survivors can only use their knife before looting even when stale gun fields or slot inputs request a gun', () => {
+  const state = tenBots({ difficulty: 'rookie' }); state.map = openArena; state.loot = [];
+  Object.assign(state.players[0], { x: 0, y: 0, z: 0, yaw: 0, hp: 5000, maxHp: 5000 });
+  Object.assign(state.players[1], { x: 0, y: 0, z: -1.2, yaw: Math.PI, hp: 5000, maxHp: 5000 });
+  for (const bot of state.players.slice(2)) Object.assign(bot, { x: bot.id * 4 - 20, y: 0, z: -30, hp: 5000, maxHp: 5000 });
+  // Old active-gun scalar fields are compatibility state, never owned equipment.
+  for (const player of state.players) Object.assign(player, { slot: 'primary', weapon: 'sniper', ammo: 99, reserve: 99 });
+  const seen = new Map();
+  for (let tick = 0; tick < 360; tick++) {
+    const player = state.players[0], target = state.players[1], dx = target.x - player.x, dz = target.z - player.z;
+    stepPractice(state, { fire: tick % 60 === 8, slot2: tick === 1, swap: tick === 2, yaw: Math.atan2(dx, -dz), pitch: Math.atan2(target.y + 1.2 - player.y - WORLD.eyeHeight, Math.hypot(dx, dz)) });
+    for (const event of state.events) seen.set(event.id, event);
+  }
+  const events = [...seen.values()];
+  assert.ok(events.some(event => event.type === 'meleeHit' && event.playerId === 0 && event.weapon === 'knife'));
+  assert.ok(events.some(event => event.type === 'meleeHit' && event.playerId === 1 && event.weapon === 'knife'));
+  assert.ok(!events.some(event => event.type === 'shot'));
+  for (const player of state.players) { assert.equal(player.hasGun, false); assert.equal(player.shots, 0); assert.equal(player.slot, 'sword'); assert.equal(player.ammo + player.reserve, 0); }
+});
+
+test('Royale bots reserve their free slots for a real gun and never collect utility or full inventory caches by mistake', () => {
+  const state = tenBots({ difficulty: 'rookie' }); state.map = openArena;
+  for (const player of state.players) Object.assign(player, { x: player.id * 4 - 20, y: 0, z: -20, hp: 5000, maxHp: 5000 });
+  const bot = state.players[10];
+  state.loot = [{ id: 600, kind: 'heal', amount: 2, x: bot.x, y: 0, z: bot.z }, { id: 601, kind: 'grenade', amount: 2, x: bot.x, y: 0, z: bot.z + .4 }, { id: 602, kind: 'weapon', weapon: 'carbine', ammo: 24, reserve: 48, x: bot.x, y: 0, z: bot.z + 1.4 }];
+  advance(state, 90);
+  assert.equal(bot.hasGun, true); assert.equal(bot.weapon, 'carbine');
+  assert.ok(state.events.some(event => event.type === 'lootPickup' && event.playerId === 10 && event.lootId === 602));
+  assert.ok(state.loot.some(loot => loot.id === 600) && state.loot.some(loot => loot.id === 601));
+  assert.equal(bot.inventory[0].weapon, 'knife');
+  initializeInventory(bot, { weapon: 'carbine', potions: 2, grenades: 2 });
+  bot.ammo = bot.reserve = 0;
+  state.loot = [{ id: 700, kind: 'heal', amount: 2, x: bot.x, y: 0, z: bot.z }, { id: 701, kind: 'weapon', weapon: 'smg', ammo: 30, reserve: 60, x: bot.x, y: 0, z: bot.z + 1.4 }];
+  state.practice.brains.find(brain => brain.id === 10).nextPlanTick = 0;
+  advance(state, 30);
+  assert.equal(bot.weapon, 'smg'); assert.ok(state.loot.some(loot => loot.id === 700));
+  assert.ok(state.events.some(event => event.type === 'lootPickup' && event.playerId === 10 && event.lootId === 701));
+  assert.ok(!state.events.some(event => event.type === 'inventoryFull' && event.playerId === 10));
 });
 
 test('ten-bot Royale freezes completely with P pause, resumes with input fences, and replay restores the knife start', () => {

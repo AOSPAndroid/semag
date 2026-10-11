@@ -1,0 +1,103 @@
+/* One short, finite Royale celebration. Gameplay and its final camera are frozen. */
+.royale-victory {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  pointer-events: none;
+  text-align: center;
+  color: #fff5d3;
+  padding: 24px;
+  background: radial-gradient(ellipse at 50% 45%, #c6902230, #0c0c11c4 75%);
+  text-shadow: 0 3px 20px #000b;
+}
+.royale-victory[hidden] { display: none; }
+.royale-victory::before, .royale-victory::after {
+  content: '';
+  position: absolute;
+  top: calc(50% + 80px);
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #fac65e90, transparent);
+  transform: rotate(-5deg);
+}
+.royale-victory::after { top: calc(50% + 84px); opacity: .25; }
+.royale-victory-rays {
+  position: absolute;
+  width: min(800px, 130vw);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  opacity: .3;
+  background: repeating-conic-gradient(from 10deg, #ffcf7226 0 10deg, transparent 10deg 30deg);
+  mask-image: radial-gradient(circle, #000 10%, transparent 68%);
+  animation: royale-rays 1850ms ease-out both;
+}
+.royale-victory-medal {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  margin-bottom: 20px;
+  animation: royale-crown-arrive 380ms cubic-bezier(.12,.7,.25,1.2) both;
+}
+.royale-victory-medal svg { width: 86px; height: 62px; filter: drop-shadow(0 0 22px #ffc7596e); }
+.royale-victory-medal strong {
+  color: #ffd97b;
+  font: 800 clamp(58px, 7vw, 94px)/1 var(--font, Arial, sans-serif);
+  letter-spacing: -.08em;
+  padding-right: .08em;
+}
+.royale-victory-kicker { position: relative; color: #fbd27b; font: 600 10px/1.5 var(--font, Arial, sans-serif); letter-spacing: .22em; }
+.royale-victory h2 { position: relative; font: 700 clamp(30px, 4.6vw, 56px)/1.08 var(--font, Arial, sans-serif); letter-spacing: -.055em; margin: 12px 0 15px; }
+.royale-victory p { position: relative; color: #ded7c3; font: 400 13px/1.5 var(--font, Arial, sans-serif); margin: 0; }
+.royale-victory-pixels { position: absolute; inset: 0; pointer-events: none; }
+.royale-victory-pixels i {
+  position: absolute;
+  left: 50%;
+  top: 46%;
+  width: 7px;
+  height: 7px;
+  background: #ffd373;
+  animation: royale-pixel-burst 1250ms ease-out both;
+  --burst-x: -180px;
+  --burst-y: -160px;
+}
+.royale-victory-pixels i:nth-child(2) { --burst-x: -300px; --burst-y: -30px; animation-delay: 80ms; background: #fff4b8; }
+.royale-victory-pixels i:nth-child(3) { --burst-x: -220px; --burst-y: 160px; animation-delay: 40ms; width: 5px; height: 5px; }
+.royale-victory-pixels i:nth-child(4) { --burst-x: 180px; --burst-y: -180px; animation-delay: 60ms; }
+.royale-victory-pixels i:nth-child(5) { --burst-x: 300px; --burst-y: -40px; animation-delay: 100ms; background: #fff4b8; }
+.royale-victory-pixels i:nth-child(6) { --burst-x: 240px; --burst-y: 170px; animation-delay: 50ms; width: 5px; height: 5px; }
+.royale-victory-pixels i:nth-child(7) { --burst-x: -90px; --burst-y: -240px; animation-delay: 160ms; }
+.royale-victory-pixels i:nth-child(8) { --burst-x: 110px; --burst-y: 250px; animation-delay: 180ms; }
+@keyframes royale-crown-arrive { from { opacity: 0; transform: translateY(24px) scale(.72); } to { opacity: 1; transform: none; } }
+@keyframes royale-rays { from { transform: rotate(-12deg) scale(.75); opacity: 0; } 30% { opacity: .45; } to { transform: rotate(8deg) scale(1.1); opacity: .18; } }
+@keyframes royale-pixel-burst { from { opacity: 0; transform: translate(0, 0) scale(.4); } 15% { opacity: .9; } to { opacity: 0; transform: translate(var(--burst-x), var(--burst-y)) rotate(90deg); } }
+body .practice-result-card[data-royale-result] { width: min(100%, 740px); }
+.royale-result-rank { display: flex; align-items: center; gap: 14px; margin-bottom: 22px; padding-bottom: 20px; border-bottom: 1px solid var(--border, #27272a); }
+.royale-result-rank[hidden] { display: none; }
+.royale-result-rank svg { width: 43px; height: 33px; flex: 0 0 auto; }
+.royale-result-rank strong { font: 800 48px/1 var(--font, Arial, sans-serif); letter-spacing: -.06em; font-variant-numeric: tabular-nums; }
+.royale-result-rank span { color: var(--muted-foreground, #a1a1aa); font: 500 10px/1.6 var(--font, Arial, sans-serif); letter-spacing: .08em; }
+body .practice-result-card[data-royale-result=won] { border-color: #cfa95052; background: radial-gradient(ellipse at 5% 0%, #b985171a, transparent 58%), var(--card, #111113); }
+body .practice-result-card[data-royale-result=won] .royale-result-rank strong,
+body .practice-result-card[data-royale-result=won] .practice-eyebrow { color: #f4cf7c; }
+body .practice-result-card[data-royale-result=won] .practice-result-actions > .practice-primary { background: #f2d18a; border-color: #f2d18a; color: #201709; }
+body .practice-result-card[data-royale-result=won] .practice-result-actions > .practice-primary:hover:not(:disabled) { background: #ffe4a5; border-color: #ffe4a5; }
+body .practice-result-card[data-royale-result] .practice-result-footer { margin-top: 26px; }
+@media (max-width: 600px) {
+  .royale-victory-medal { margin-bottom: 16px; }
+  .royale-victory-medal svg { width: 65px; height: 48px; }
+  .royale-victory p { font-size: 11px; }
+  .royale-result-rank { gap: 11px; margin-bottom: 18px; padding-bottom: 16px; }
+  .royale-result-rank strong { font-size: 40px; }
+  .royale-result-rank span { font-size: 9px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .royale-victory-rays, .royale-victory-pixels { display: none; }
+  .royale-victory-medal { animation: none; }
+}

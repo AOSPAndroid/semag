@@ -12,6 +12,7 @@
   <link rel="stylesheet" href="/voxel-armory-ui.css">
   <link rel="stylesheet" href="/voxel-crosshair.css">
   <link rel="stylesheet" href="/voxel-setup-ui.css">
+  <link rel="stylesheet" href="/voxel-royale-reward.css">
 </head>
 <body>
   <main class="practice-app" id="practice-app" data-phase="ready">
@@ -51,6 +52,14 @@
           <div class="practice-weapon"><span id="practice-weapon-name">CARBINE</span><div><strong id="practice-ammo">24</strong><small id="practice-reserve">/ 72</small></div><p id="practice-weapon-status">RMB AIM · V KNIFE</p><div class="practice-action-track" id="practice-action-track" role="progressbar" aria-label="Weapon action" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" hidden><i id="practice-action-fill"></i></div></div>
         </div>
         <div id="practice-inventory" class="voxel-inventory" aria-label="Four flexible inventory slots" hidden></div>
+        <section id="practice-royale-victory" class="royale-victory" role="status" aria-live="polite" aria-atomic="true" hidden>
+          <div class="royale-victory-rays" aria-hidden="true"></div>
+          <div class="royale-victory-pixels" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          <div class="royale-victory-medal" aria-hidden="true"><svg viewBox="0 0 56 40" shape-rendering="crispEdges"><path fill="#a96e22" d="M4 12h8v8h8v-8h4V4h8v8h4v8h8v-8h8v24H4z"/><path fill="#f6c663" d="M4 8h8v8h8V8h4V0h8v8h4v8h8V8h8v20H4z"/><path fill="#fff0b0" d="M4 8h8v4H4zm20-8h8v4h-8zm20 8h8v4h-8zM4 28h48v4H4z"/><path fill="#ed963b" d="M24 18h8v8h-8z"/></svg><strong>#1</strong></div>
+          <span class="royale-victory-kicker">LAST SURVIVOR</span>
+          <h2>Victory secured.</h2>
+          <p id="practice-royale-victory-copy"></p>
+        </section>
         <div class="practice-overlay" id="practice-overlay">
           <form class="practice-card" id="practice-setup-form">
             <span class="practice-eyebrow">YOUR OWN TRAINING GROUND</span><h2 id="practice-setup-title">Make every shot count.</h2><p id="practice-setup-copy">Practice movement and weapon handling against moving targets. Add return fire when you’re ready.</p>
@@ -76,6 +85,7 @@
           <div class="practice-card practice-pause-card" id="practice-pause-card" hidden><span class="practice-eyebrow">TAKE A BREATH</span><h2>Practice paused.</h2><p>The bots, shots and clock are waiting. Your progress stays exactly where you left it. Press P to resume. Changing setup or loadout starts a fresh drill.</p><button id="practice-resume" class="practice-primary" type="button">Resume practice →</button><div class="practice-secondary-actions"><button id="practice-restart" type="button">Restart drill</button><button id="practice-change-setup" type="button">Change setup / loadout</button></div></div>
           <section class="practice-card practice-result-card" id="practice-result-card" role="region" aria-labelledby="practice-result-title" aria-describedby="practice-result-context practice-result-copy" hidden>
             <header class="practice-result-heading">
+              <div id="practice-result-royale-rank" class="royale-result-rank" hidden><svg id="practice-result-crown" viewBox="0 0 56 40" shape-rendering="crispEdges" aria-hidden="true"><path fill="#a96e22" d="M4 12h8v8h8v-8h4V4h8v8h4v8h8v-8h8v24H4z"/><path fill="#f6c663" d="M4 8h8v8h8V8h4V0h8v8h4v8h8V8h8v20H4z"/><path fill="#fff0b0" d="M4 8h8v4H4zm20-8h8v4h-8zm20 8h8v4h-8zM4 28h48v4H4z"/></svg><strong id="practice-result-place">#1</strong><span id="practice-result-field">OF 11 SURVIVORS</span></div>
               <span class="practice-eyebrow" id="practice-result-tag">DRILL COMPLETE</span>
               <h2 id="practice-result-title" tabindex="-1">Clean angles.</h2>
               <p id="practice-result-context" class="practice-result-context"></p>
@@ -93,6 +103,7 @@
               <div><dt id="practice-result-shots-label">SHOTS FIRED</dt><dd id="practice-result-shots">0</dd></div>
               <div><dt id="practice-result-hits-label">SHOTS LANDED</dt><dd id="practice-result-hits">0</dd></div>
               <div><dt>HEALTH REMAINING</dt><dd id="practice-result-health">0 / 200</dd></div>
+              <div id="practice-result-outlasted-field" hidden><dt>RIVALS OUTLASTED</dt><dd id="practice-result-outlasted">0 / 10</dd></div>
             </dl>
             <footer class="practice-result-footer">
               <p id="practice-result-action-note" class="practice-result-action-note">Review your results. Start your next drill when you’re ready.</p>

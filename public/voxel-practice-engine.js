@@ -3,7 +3,7 @@ import { MAPS as BREACH_MAPS, createState as createBreachState, createCombatPlay
 import * as Royale from './voxel-royale-engine.js';
 import { WEAPONS } from './voxel-weapons.js';
 import { MELEE_WEAPONS, resetMeleeDefense, clearMeleeComboContinuation } from './voxel-melee.js';
-import { setInventoryMeleeLoadout, selectInventorySlot } from './voxel-inventory.js';
+import { setInventoryMeleeLoadout, selectInventorySlot, inventoryCanTake } from './voxel-inventory.js';
 import { DOJO_MAP } from './voxel-dojo-map.js';
 import { initializeDojo, dojoTargetInput, processDojoActions, advanceDojo, findDojoStationLoot, DOJO_ACTIONS } from './voxel-dojo-engine.js';
 
@@ -223,7 +223,11 @@ function supplyGoal(state, bot, brain) {
   else if (!bot.ammo && !bot.reserve) kind = 'ammo';
   else if (bot.hp < 110 && !bot.potions) kind = 'heal';
   if (!kind) return null;
-  const candidates = (state.loot || []).filter(item => item.kind === kind && Math.abs(item.y - bot.y) <= Royale.ROYALE.pickupHeight && (kind !== 'ammo' || !item.weapon || item.weapon === bot.weapon)).sort((a, b) => Math.hypot(a.x - bot.x, a.z - bot.z) - Math.hypot(b.x - bot.x, b.z - bot.z));
+  const available = (state.loot || []).filter(item => inventoryCanTake(bot, item) && Math.abs(item.y - bot.y) <= Royale.ROYALE.pickupHeight);
+  // Exhausted guns are not magically refilled. If matching ammo has run out,
+  // the bot must collect another actual gun with a loaded magazine instead.
+  if (kind === 'ammo' && !available.some(item => item.kind === 'ammo' && (!item.weapon || item.weapon === bot.weapon))) kind = 'weapon';
+  const candidates = available.filter(item => item.kind === kind && (kind !== 'ammo' || !item.weapon || item.weapon === bot.weapon) && (kind !== 'weapon' || item.ammo > 0 || item.reserve > 0)).sort((a, b) => Math.hypot(a.x - bot.x, a.z - bot.z) - Math.hypot(b.x - bot.x, b.z - bot.z));
   for (const item of candidates.slice(0, 8)) {
     const path = route(state.map, bot, item), end = path.at(-1);
     if (!end || Math.hypot(end.x - item.x, end.z - item.z) > Royale.ROYALE.pickupRadius - .1) continue;
@@ -351,7 +355,7 @@ function botInput(state, bot, brain) {
   }
   if (bot.healTicks) return input;
   if (practice.config.mode === 'combat' && bot.hp < 105 && bot.potions && !visible && bot.grounded && !bot.reloadTicks && !bot.meleeTicks) { input.heal = !bot.previousInput.heal; return input; }
-  if (state.gameId === 'voxel-royale' && brain.goalKind === 'loot' && Royale.findNearbyLoot(state, bot.id)) { input.interact = !bot.previousInput.interact; return input; }
+  if (state.gameId === 'voxel-royale' && brain.goalKind === 'loot' && Royale.findNearbyLoot(state, bot.id, { takeableOnly: true, kind: bot.hasGun ? null : 'weapon' })) { input.interact = !bot.previousInput.interact; return input; }
   steer(state, bot, brain, input);
   if (bot.slot === 'primary' && bot.ammo === 0 && bot.reserve > 0 && !bot.reloadTicks) { input.reload = !bot.previousInput.reload; return input; }
   if (practice.config.mode !== 'combat' || !enemy || !visible || brain.seenTick < 0 || state.tick - brain.seenTick < settings.reactionTicks || bot.reloadTicks) return input;

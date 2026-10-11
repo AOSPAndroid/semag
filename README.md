@@ -10,6 +10,18 @@ A self-hosted browser hub with **24 games**, including solo challenges, duels, a
 
 Click an image to open it at full size.
 
+**Ember Delve · third-person voxel dungeon**
+
+A visible adventurer, animated guards, torch-lit rooms and camera-relative WASD/ZQSD controls. The twelve-room descent, relics, three bosses and Veteran challenge remain.
+
+[![Real third-person Ember Delve gameplay with a hooded voxel adventurer, animated guards, dungeon cover and compact health, stamina and ember bars](docs/screenshots/ember-delve-3d.png)](docs/screenshots/ember-delve-3d.png)
+
+**Royale victory**
+
+Finish the final fight, watch the gold crown reveal, and review your placement and combat stats. Every bot starts with a knife and scavenges real supplies.
+
+[![A real Voxel Royale win with a gold voxel crown, first-place banner and arena visible behind the celebration](docs/screenshots/voxel-royale-victory.png)](docs/screenshots/voxel-royale-victory.png)
+
 **Game hub**
 
 [![semaG dark game library with the available games and room controls](docs/screenshots/game-hub-dark.png)](docs/screenshots/game-hub-dark.png)
@@ -46,7 +58,6 @@ Click an image to open it at full size.
 | --- | --- |
 | [![Trading floor mezzanine with a connected upper crossing, monitor cover and desks below](docs/screenshots/voxel-trading-upper-floor.png)](docs/screenshots/voxel-trading-upper-floor.png) | [![Connected sewer maintenance walkway with a manifold, pressure pipes and ground passages below](docs/screenshots/voxel-sewers-upper-floor.png)](docs/screenshots/voxel-sewers-upper-floor.png) |
 
-| Voxel Dojo | First-person equipment sandbox: solo | Japanese training range, all 36 guns and five blades, repeatable moving targets, real grenades/healing and cover tests |
 | Voxel Last Stand | Voxel Royale |
 | --- | --- |
 | [![Voxel Last Stand courtyard with a monster and its visible health bar](docs/screenshots/voxel-last-stand.jpg)](docs/screenshots/voxel-last-stand.jpg) | [![Voxel Royale desert practice with a knife and four inventory slots](docs/screenshots/voxel-royale.jpg)](docs/screenshots/voxel-royale.jpg) |
@@ -79,7 +90,7 @@ Click an image to open it at full size.
 | Paris Pedal | Solo Paris e-bike survival | Weave between cars, buses and cyclists as speed keeps rising. Survive as long as possible through endless Paris districts. |
 | Vector Arena | Real-time 1v1 shooter | Lead aimed projectiles, control cover, and manage dashes, ammunition, and reload windows. |
 | Prism Shift | Solo falling blocks | Master wall kicks, holds, T-spins, and combos in Marathon or a timed 40-line Sprint. |
-| Ember Delve | Solo action roguelike | Explore twelve branching rooms, build relic synergies, and defeat three distinct bosses. |
+| Ember Delve | Solo third-person 3D voxel roguelike | Explore twelve branching dungeon rooms, build relic synergies, and defeat three distinct bosses. |
 | Deckbound | Solo deckbuilding roguelike | Survive eighteen encounters with 24 cards, eight relics, enemy intent, and three act bosses. |
 | Oddstock Rumble | Bonus 1v1 platform brawler | Choose one of six comic fighters; use knockback, recovery, and stage control to take three stocks. |
 | Rift Survivor | Solo survival arena | Read enemy attack patterns, choose upgrades, and build synergistic relics and defeat four guardians across twenty waves. |
@@ -196,7 +207,7 @@ Voxel Royale:
 
 Choose **Cedarfall Reserve**, a pine forest with cabins and a watchtower; **Verdant Labyrinth**, a maze of ruined walls, archive houses and observatories; **Dunes of Anubis**, with caravan houses, temple columns and a climbable stepped pyramid; or **Paris Rooftops**, with stone apartment interiors, café courtyards, boulevard cover and connected roofs. Doors lead into actual interiors, and connected ledges and crates provide routes to rooftops. A map preview helps the host choose an arena.
 
-Choose **Vs bots** for a solo battle against **1–10 opponents**. Ten bots means eleven survivors including you. Bots start with a knife, scavenge supplies, fight one another and move toward the storm's safe ground. Review the setup before starting; **P** pauses everyone, and Replay retains your map, difficulty and bot count. Online rooms still hold up to ten human players.
+Choose **Vs bots** for a solo battle against **1–10 opponents**. Ten bots means eleven survivors including you. Every survivor starts with the same knife. Gun caches stay at least four metres from active spawn positions, so bots must visibly move to a real cache and pick up their equipment before firing. Bots fight one another and move toward the storm's safe ground. Review the setup before starting; **P** pauses everyone, and Replay retains your map, difficulty and bot count. Online rooms still hold up to ten human players. A solo victory lets the final death animation finish, then reveals a gold pixel crown and a short chime before placement, outlasted rivals and combat stats. Replay remains protected from held fire; reduced motion and the sound toggle are respected.
 
 The forest, maze and desert arenas now cover **96 × 96 metres**, with outer settlements, ruined galleries, shelters and low cover around their original landmarks. Additional ground-level supplies support the wider routes, while roofs and lookouts reward climbing.
 
@@ -385,7 +396,7 @@ For Checkers, click a piece and then a highlighted destination. Captures are man
 
 **Ironwood Tactics:** select a hero with 1/2/3 or click/tap, choose an action, and select a highlighted grid tile. Arrows/WASD move the cursor; Enter chooses a tile and E ends the squad turn. C selects movement and F selects attack; M remains a movement alias. The Warden pushes and shields, the Ranger controls firing lines, and the Weaver pulls and heals with limited bandages. Exact enemy attack tiles and their resolution order are shown before you commit. Bosses resist displacement and cannot have their intent canceled; royal lines can hit the beacon, and living bosses also deal one, two, or three beacon siege damage per turn by biome. Protect the beacon, exploit cover and terrain, and finish nine missions across three biomes and guardians. Health and unique upgrades persist; mission deadlines bring escalating storm pressure. Veteran starts by default. Renown requires the complete expedition and stays separate by difficulty. The turn-based board has no running clock between decisions.
 
-**Ember Delve:** move with WASD/arrows, aim with the mouse, attack with click/C (J still works), cast with right-click/E (K still works), dodge with Space/Shift, and interact with F. Clear the room and physically reach an exit to claim a relic and choose a road. Safe routes include camps and treasuries; risky combat and elite routes yield stronger rewards. Health, stamina, mana, and relic effects carry through twelve rooms across three acts. Each act has a different boss. Veteran starts by default with predictive charges, flanking crawlers, marked ground attacks, stronger boss patterns, and reduced healing loops. React after attacks commit and manage dodge stamina. Attacks briefly slow movement and delay stamina recovery. Relic rooms are guarded, bosses bring mixed support, summons are finite, and healing shares a room allowance. Enemies recover from cover corners so they cannot be parked there indefinitely. Standard and Nightmare are selectable. The seed and difficulty can be replayed, but a new descent resets the build.
+**Ember Delve:** explore a third-person voxel dungeon with a visible adventurer, animated enemies and three themed acts. Move with WASD/ZQSD/arrows relative to the camera, use the mouse to look, attack with click/C (J still works), cast with right-click/E (K still works), dodge with Space/Shift, and interact with F. Click to capture the mouse, or drag to look if capture is unavailable; comma and period also turn the camera. **P** pauses and releases the mouse. Solid walls and pillars stop the camera from passing through them. Clear the room and physically reach an exit to claim a relic and choose a road. Safe routes include camps and treasuries; risky combat and elite routes yield stronger rewards. Health, stamina, mana, and relic effects carry through twelve rooms across three acts. Each act has a different boss. Veteran starts by default with predictive charges, flanking crawlers, marked ground attacks, stronger boss patterns, and reduced healing loops. React after attacks commit and manage dodge stamina. Attacks briefly slow movement and delay stamina recovery. Relic rooms are guarded, bosses bring mixed support, summons are finite, and healing shares a room allowance. Enemies recover from cover corners so they cannot be parked there indefinitely. Standard and Nightmare are selectable. The seed and difficulty can be replayed, but a new descent resets the build.
 
 **Deckbound:** click/tap cards, or use 1–9 to play hand slots and E to end your turn. Read enemy intent before spending energy on attacks, block, and statuses. Select a target when several enemies are present. Eighteen encounters cross three acts with combat, elites, shops, rest stops, and events. Shape a deck of 24 card types with upgrades, removal, rewards, and eight relics. Rest can heal or upgrade; shops spend earned gold. Defeat the three bosses to win. Veteran starts by default with three mandatory road battles per act; Nightmare requires four. Complementary enemy pairs and disclosed allied shields make targeting matter. Card healing is limited to 18/12 HP per battle in Veteran/Nightmare, while late turns bring stronger pressure. Different offensive and defensive builds remain viable. Zero-cost Quickstep exhausts after use. Standard and Nightmare are selectable. Death ends the expedition; replay the seed or start again.
 
