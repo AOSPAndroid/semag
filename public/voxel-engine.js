@@ -21,6 +21,7 @@ export const ADS = Object.freeze({ ticks: 18, speedMultiplier: .65, spreadMultip
 export const PLAYER_HEALTH = 200;
 export const HEAL = Object.freeze({ ticks: 24, amount: 60, speedMultiplier: .3 });
 export const KNOCKBACK = Object.freeze({ decay: 10, maxMonsterSpeed: 10, maxPlayerSpeed: 2.4, monsterTicks: 36, playerTicks: 24, monsterReadyTicks: 12, playerReadyTicks: 24 });
+export const MOVEMENT = Object.freeze({ counterStrafeAccel: 110 });
 export const SPRINT = Object.freeze({ maxStamina: 100, speedMultiplier: 1.4, drainPerSecond: 24, regenPerSecond: 18, regenDelayTicks: 144, restartStamina: 25 });
 const EPS = 1e-8, DT = 1 / TICK_RATE;
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
@@ -362,8 +363,13 @@ function movementTick(f, input, arena, peers = [], headroomPeers = peers, action
   }
   const movementYaw = Number.isFinite(input.moveYaw) ? input.moveYaw : f.yaw;
   const targetX = (Math.sin(movementYaw) * forward + Math.cos(movementYaw) * strafe) * speed, targetZ = (-Math.cos(movementYaw) * forward + Math.sin(movementYaw) * strafe) * speed;
-  const accel = f.grounded ? (length ? 43 : 58) : 7;
-  const velocityX = targetX - f.vx, velocityZ = targetZ - f.vz, velocityDelta = Math.hypot(velocityX, velocityZ), accelerationFraction = velocityDelta > EPS ? Math.min(1, accel * DT / velocityDelta) : 0;
+  // Pressing against your own momentum brakes harder than coasting: a crisp
+  // counter-strafe settles the gun sooner than simply releasing the keys.
+  // The brake aims at a full stop, never past it, so a held counter key settles
+  // for a moment before ordinary acceleration carries you the other way.
+  const countering = f.grounded && length && !monsterBody && f.vx * targetX + f.vz * targetZ < -EPS;
+  const accel = f.grounded ? (countering ? MOVEMENT.counterStrafeAccel : length ? 43 : 58) : 7;
+  const velocityX = (countering ? 0 : targetX) - f.vx, velocityZ = (countering ? 0 : targetZ) - f.vz, velocityDelta = Math.hypot(velocityX, velocityZ), accelerationFraction = velocityDelta > EPS ? Math.min(1, accel * DT / velocityDelta) : 0;
   f.vx += velocityX * accelerationFraction; f.vz += velocityZ * accelerationFraction;
   f.vy -= WORLD.gravity * DT;
   const pushed = Number.isInteger(f.knockbackTicks) && f.knockbackTicks > 0 && f.knockbackTicks <= KNOCKBACK.monsterTicks;
