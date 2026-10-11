@@ -894,7 +894,7 @@ async function boot() {
       let label; let detail;
       if (bomb.status === 'planted') { label = `SITE ${String(bomb.siteId || 'A').toUpperCase()} / DEVICE PLANTED`; detail = `${Math.ceil((bomb.timerTicks || 0) / 120)}S TO DETONATION`; }
       else if (bomb.status === 'dropped') { label = 'DEVICE DROPPED'; detail = local?.team === attackTeam ? 'Recover it and reach A or B' : 'Hold your angle'; }
-      else { label = local?.team === attackTeam ? 'BREACH / PLANT AT A OR B' : 'HOLD / PROTECT A AND B'; detail = bomb.carrierId === playerId ? 'YOU CARRY THE DEVICE · HOLD E AT A SITE' : bomb.carrierId != null ? `${lookupName(bomb.carrierId)} carries the device` : 'The device is in play'; }
+      else { label = local?.team === attackTeam ? 'BREACH / PLANT AT A OR B' : 'HOLD / PROTECT A AND B'; detail = bomb.carrierId === playerId ? 'YOU CARRY THE DEVICE · HOLD F AT A SITE' : bomb.carrierId != null ? `${lookupName(bomb.carrierId)} carries the device` : 'The device is in play'; }
       const planting = bomb.plantPlayerId === playerId && bomb.plantTicks > 0;
       const defusing = bomb.defusePlayerId === playerId && bomb.defuseTicks > 0;
       if (planting || defusing) {
@@ -908,9 +908,9 @@ async function boot() {
         setAttribute($('interaction-track'), 'aria-valuetext', `${((total - ticks) / 120).toFixed(1)} seconds remaining`);
       } else if (phase === 'fight' && local?.alive && local.grounded && bomb.status === 'carried' && bomb.carrierId === playerId) {
         const nearSite = engine.MAPS?.[state.mapId]?.sites?.find(site => Math.hypot(local.x - site.x, local.z - site.z) <= site.radius);
-        if (nearSite) detail = `SITE ${nearSite.id} · STOP AND HOLD E TO PLANT`;
+        if (nearSite) detail = `SITE ${nearSite.id} · STOP AND HOLD F TO PLANT`;
       } else if (phase === 'fight' && local?.alive && local.team !== attackTeam && bomb.status === 'planted' && Math.hypot(local.x - bomb.x, local.z - bomb.z) <= 1.6) {
-        detail = engine.canInteractWithBomb?.(state, local) ? 'STOP AND HOLD E TO DEFUSE' : 'Find a clear angle to the device';
+        detail = engine.canInteractWithBomb?.(state, local) ? 'STOP AND HOLD F TO DEFUSE' : 'Find a clear angle to the device';
       }
       setText($('objective-label'), label); setText($('objective-detail'), detail);
       toggleClass($('objective-hud'), 'interacting', planting || defusing);

@@ -93,7 +93,7 @@ test('pickup readout explains gun exchanges, consumables and ammunition without 
   assert.equal(exchange.name, WEAPONS.sniper.name); assert.match(exchange.detail, /Replace Kestrel Carbine.*slot 2.*2 \/ 8/);
   assert.match(lootPresentation({ id: 1, kind: 'weapon', weapon: 'smg' }, player()).detail, /Pick up/);
   assert.match(lootPresentation({ id: 1, kind: 'ammo', amount: 24 }, own).detail, /\+24 RESERVE/);
-  assert.match(lootPresentation({ id: 1, kind: 'heal' }, own).detail, /STACK TO 2.*F TO HEAL/);
+  assert.match(lootPresentation({ id: 1, kind: 'heal' }, own).detail, /STACK TO 2.*H TO HEAL/);
   assert.equal(lootPresentation(null, own), null);
   assert.equal(lootPresentation({ kind: 'weapon', weapon: 'unknown' }, own), null);
   assert.equal(lootPresentation({ kind: 'heal' }, { ...own, alive: false }), null);

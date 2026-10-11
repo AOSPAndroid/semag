@@ -107,8 +107,8 @@ export function lootPresentation(loot, player) {
     const exchange = player.hasGun && player.weapon !== loot.weapon;
     return { id: loot.id, name: weapon.name, detail: exchange ? `EXCHANGE ${WEAPONS[player.weapon]?.label || 'GUN'} · ${loot.ammo ?? weapon.magazine} / ${loot.reserve ?? weapon.reserve}` : `PICK UP · ${loot.ammo ?? weapon.magazine} / ${loot.reserve ?? weapon.reserve}`, kind: 'weapon' };
   }
-  if (loot.kind === 'heal') return { id: loot.id, name: 'Healing potion', detail: `PICK UP · F TO HEAL UP TO ${HEAL.amount} HP`, kind: 'heal' };
-  if (loot.kind === 'grenade') return { id: loot.id, name: 'Fragmentation grenade', detail: 'PICK UP · THROW WITH Q', kind: 'grenade' };
+  if (loot.kind === 'heal') return { id: loot.id, name: 'Healing potion', detail: `PICK UP · H TO HEAL UP TO ${HEAL.amount} HP`, kind: 'heal' };
+  if (loot.kind === 'grenade') return { id: loot.id, name: 'Fragmentation grenade', detail: 'PICK UP · THROW WITH G', kind: 'grenade' };
   if (loot.kind === 'ammo') return { id: loot.id, name: 'Ammunition', detail: `PICK UP · +${Math.max(0, loot.amount || 0)} RESERVE`, kind: 'ammo' };
   return null;
 }

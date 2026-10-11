@@ -182,7 +182,7 @@ export function inventoryItemReadout(player) {
   const kind = item?.kind;
   return { label: kind === 'heal' ? 'HEALING POTION' : kind === 'grenade' ? 'FRAG GRENADE' : 'EMPTY HANDS',
     ammo: item ? `×${item.amount}` : '—', reserve: '—', sword: false, healing: false, reloading: false, utility: true,
-    status: kind === 'heal' ? player.hp >= player.maxHp ? 'FULL HEALTH · SAVE POTION' : 'LMB DRINK · F QUICK HEAL' : kind === 'grenade' ? 'LMB THROW · Q QUICK THROW' : '1–4 EQUIP · E PICK UP', progress: null };
+    status: kind === 'heal' ? player.hp >= player.maxHp ? 'FULL HEALTH · SAVE POTION' : 'LMB DRINK · H QUICK HEAL' : kind === 'grenade' ? 'LMB THROW · G QUICK THROW' : '1–4 EQUIP · F PICK UP', progress: null };
 }
 
 /** Name the blade/gun actually targeted by V; old bare-player records stay legacy. */
@@ -205,20 +205,20 @@ export function inventorySwapPresentation(player) {
 
 export function inventoryLootPresentation(loot, player) {
   if (!loot || !player?.alive) return null;
-  if (loot.type === 'health') return { id: loot.id, name: 'Healing supply', kind: 'health', detail: `E TO RECOVER UP TO ${Math.min(Math.max(0, loot.amount || 0), Math.max(0, (player.maxHp || 200) - player.hp))} HP` };
+  if (loot.type === 'health') return { id: loot.id, name: 'Healing supply', kind: 'health', detail: `F TO RECOVER UP TO ${Math.min(Math.max(0, loot.amount || 0), Math.max(0, (player.maxHp || 200) - player.hp))} HP` };
   const weapon = loot.kind === 'weapon' ? catalogItem(WEAPONS, loot.weapon) : null;
   const blade = loot.kind === 'melee' ? catalogItem(MELEE_WEAPONS, loot.weapon) : null;
   if (loot.kind === 'weapon' && !weapon || loot.kind === 'melee' && !blade || !['weapon', 'melee', 'heal', 'grenade', 'ammo'].includes(loot.kind)) return null;
   const name = weapon?.name || blade?.name || (loot.kind === 'heal' ? 'Healing potion' : loot.kind === 'grenade' ? 'Frag grenade' : 'Ammunition');
   const hint = inventoryPickupHint(player, loot);
-  const detail = weapon ? ` · ${loot.ammo ?? loot.item?.ammo ?? weapon.magazine} / ${loot.reserve ?? loot.item?.reserve ?? weapon.reserve}` : loot.kind === 'ammo' ? ` · +${Math.max(0, loot.amount || 0)} RESERVE` : loot.kind === 'heal' ? ' · STACK TO 2 · F TO HEAL' : loot.kind === 'grenade' ? ' · STACK TO 2 · Q TO THROW' : '';
+  const detail = weapon ? ` · ${loot.ammo ?? loot.item?.ammo ?? weapon.magazine} / ${loot.reserve ?? loot.item?.reserve ?? weapon.reserve}` : loot.kind === 'ammo' ? ` · +${Math.max(0, loot.amount || 0)} RESERVE` : loot.kind === 'heal' ? ' · STACK TO 2 · H TO HEAL' : loot.kind === 'grenade' ? ' · STACK TO 2 · G TO THROW' : '';
   return { id: loot.id, name, kind: loot.kind, detail: `${hint}${detail}` };
 }
 
 export function inventoryEventFeedback(event) {
   if (event?.type === 'inventoryFull') return 'INVENTORY FULL · SELECT A GUN OR BLADE TO REPLACE OR X TO DROP';
-  if (event?.type === 'inventoryEmpty') return 'EMPTY SLOT · E PICKS UP NEARBY ITEMS';
-  if (event?.type === 'inventoryDrop') return 'ITEM DROPPED · E TO PICK IT UP';
+  if (event?.type === 'inventoryEmpty') return 'EMPTY SLOT · F PICKS UP NEARBY ITEMS';
+  if (event?.type === 'inventoryDrop') return 'ITEM DROPPED · F TO PICK IT UP';
   return null;
 }
 

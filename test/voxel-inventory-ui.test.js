@@ -84,7 +84,7 @@ test('pickup hints explain free slots, full packs and deliberate gun replacement
 
 test('full-inventory and drop feedback stays explicit and only reports real events', () => {
   assert.match(inventoryEventFeedback({ type: 'inventoryFull' }), /INVENTORY FULL.*X TO DROP/);
-  assert.match(inventoryEventFeedback({ type: 'inventoryDrop' }), /DROPPED.*E/);
+  assert.match(inventoryEventFeedback({ type: 'inventoryDrop' }), /DROPPED.*F TO PICK/);
   assert.match(inventoryEventFeedback({ type: 'inventoryEmpty' }), /EMPTY SLOT/);
   assert.equal(inventoryEventFeedback({ type: 'shot' }), null);
 });
@@ -92,7 +92,7 @@ test('full-inventory and drop feedback stays explicit and only reports real even
 test('monster healing drops are carried potions and never recover health on pickup', () => {
   const own = createCombatPlayer(0); own.hp = 175;
   const before = JSON.stringify(own), supply = inventoryLootPresentation({ kind: 'heal', type: 'potion', amount: 1 }, own);
-  assert.equal(supply.name, 'Healing potion'); assert.match(supply.detail, /Pick up.*STACK TO 2.*F TO HEAL/); assert.equal(supply.kind, 'heal');
+  assert.equal(supply.name, 'Healing potion'); assert.match(supply.detail, /Pick up.*STACK TO 2.*H TO HEAL/); assert.equal(supply.kind, 'heal');
   assert.match(inventoryLootPresentation({ kind: 'heal', amount: 1 }, own).detail, /STACK TO 2/);
   assert.equal(JSON.stringify(own), before);
 });
