@@ -23,6 +23,10 @@ export const HEAL = Object.freeze({ ticks: 24, amount: 60, speedMultiplier: .3 }
 export const KNOCKBACK = Object.freeze({ decay: 10, maxMonsterSpeed: 10, maxPlayerSpeed: 2.4, monsterTicks: 36, playerTicks: 24, monsterReadyTicks: 12, playerReadyTicks: 24 });
 export const MOVEMENT = Object.freeze({ counterStrafeAccel: 110 });
 /** Peeking: the head travels sideways and slightly down; walls stop it short. */
+/** A sprinting crouch press slides: a short low burst that fades to a crouch walk. */
+export const SLIDE = Object.freeze({ ticks: 66, boost: 1.12, endSpeed: 2.35, minSprintRatio: 1.2, cooldownTicks: 90, stamina: 15 });
+/** Jump into chest-high cover to climb it. The gun is down while you climb. */
+export const MANTLE = Object.freeze({ ticks: 34, minRise: 1.0, maxRise: 1.7, airMinRise: .3, airMaxRise: 1.3, reach: .55, riseShare: .65 });
 export const LEAN = Object.freeze({ offset: .38, rampTicks: 14, speedMultiplier: .8, drop: .12, bodyShare: .45, clearance: .26, viewRoll: .55 });
 export const SPRINT = Object.freeze({ maxStamina: 100, speedMultiplier: 1.4, drainPerSecond: 24, regenPerSecond: 18, regenDelayTicks: 144, restartStamina: 25 });
 const EPS = 1e-8, DT = 1 / TICK_RATE;
@@ -114,7 +118,7 @@ export function resetSprint(player, { refill = true } = {}) {
 }
 export function createCombatPlayer(id, teamSize = 1, loadout = 'carbine') {
   const weapon = typeof loadout === 'string' && Object.hasOwn(WEAPONS, loadout) ? loadout : 'carbine', w = WEAPONS[weapon];
-  const player = { id, team: Math.floor(id / teamSize), x: 0, y: 0, z: 0, yaw: 0, pitch: 0, vx: 0, vy: 0, vz: 0, knockbackX: 0, knockbackZ: 0, knockbackTicks: 0, knockbackReadyTicks: 0, radius: WORLD.radius, grounded: true, jumpBufferTicks: 0, stamina: SPRINT.maxStamina, staminaRegenTicks: 0, sprintExhausted: false, sprinting: false, crouching: false, lean: 0, leanOffset: 0, leanX: 0, leanZ: 0, alive: true, hp: PLAYER_HEALTH, maxHp: PLAYER_HEALTH, weapon, slot: 'primary', meleeWeapon: 'knife', meleeLoadout: 'knife', ammo: w.magazine, reserve: w.reserve, reloadTicks: 0, shotCooldown: 0, burstRemaining: 0, spinTicks: 0, recoil: 0, recoilYaw: 0, sprayShots: 0, sprayIdleTicks: 0, heat: 0, shotIndex: 0, lastShotHand: 0, pendingFireTicks: 0, shots: 0, kills: 0, deaths: 0, damageDealt: 0, lastHitTick: -1000, triggerBlocked: false, aiming: false, aimTicks: 0, meleeTicks: 0, meleeCooldown: 0, meleeIndex: 0, meleeHand: 0, meleeYaw: 0, meleePitch: 0, meleeStartTick: 0, meleePhase: 'idle', meleeHitIds: [], meleeHitLives: [], healing: false, healTicks: 0, healStartTick: -1, potions: 0, grenades: 0, grenadeThrowTicks: 0, interaction: null, interactTicks: 0, previousInput: emptyInput() };
+  const player = { id, team: Math.floor(id / teamSize), x: 0, y: 0, z: 0, yaw: 0, pitch: 0, vx: 0, vy: 0, vz: 0, knockbackX: 0, knockbackZ: 0, knockbackTicks: 0, knockbackReadyTicks: 0, radius: WORLD.radius, grounded: true, jumpBufferTicks: 0, stamina: SPRINT.maxStamina, staminaRegenTicks: 0, sprintExhausted: false, sprinting: false, crouching: false, lean: 0, leanOffset: 0, leanX: 0, leanZ: 0, slideTicks: 0, slideCooldown: 0, slideX: 0, slideZ: 0, slideSpeed: 0, mantleTicks: 0, mantleFrom: null, mantleTo: null, alive: true, hp: PLAYER_HEALTH, maxHp: PLAYER_HEALTH, weapon, slot: 'primary', meleeWeapon: 'knife', meleeLoadout: 'knife', ammo: w.magazine, reserve: w.reserve, reloadTicks: 0, shotCooldown: 0, burstRemaining: 0, spinTicks: 0, recoil: 0, recoilYaw: 0, sprayShots: 0, sprayIdleTicks: 0, heat: 0, shotIndex: 0, lastShotHand: 0, pendingFireTicks: 0, shots: 0, kills: 0, deaths: 0, damageDealt: 0, lastHitTick: -1000, triggerBlocked: false, aiming: false, aimTicks: 0, meleeTicks: 0, meleeCooldown: 0, meleeIndex: 0, meleeHand: 0, meleeYaw: 0, meleePitch: 0, meleeStartTick: 0, meleePhase: 'idle', meleeHitIds: [], meleeHitLives: [], healing: false, healTicks: 0, healStartTick: -1, potions: 0, grenades: 0, grenadeThrowTicks: 0, interaction: null, interactTicks: 0, previousInput: emptyInput() };
   Object.assign(player, { pendingMeleeTicks: 0, meleeComboStep: 0, meleeComboConfirmed: false, meleeComboWindowTicks: 0, meleeComboWeapon: null, hitStunTicks: 0, hitStunReadyTicks: 0, meleeInitialYaw: 0, meleeInitialPitch: 0, meleeAction: 'primary', meleeAimBlocked: false, meleeSecondaryCooldown: 0, parryTicks: 0, parryCooldown: 0, parryYaw: 0, parryPitch: 0, parryStartTick: 0, parryIndex: 0, parryConsumed: false });
   Object.assign(player, { healUseIndex: 0, healUseId: null, healInventoryIndex: -1, healSelectedIndex: -1 });
   return initializeInventory(player, { weapon });
@@ -340,6 +344,41 @@ function finishSprint(player, plan) {
   } else if (player.staminaRegenTicks > 0) player.staminaRegenTicks--;
   else player.stamina = Math.min(SPRINT.maxStamina, player.stamina + SPRINT.regenPerSecond * DT);
 }
+const bodyFits = (x, y, z, radius, height, arena) => x - radius >= arena.bounds.minX - EPS && x + radius <= arena.bounds.maxX + EPS && z - radius >= arena.bounds.minZ - EPS && z + radius <= arena.bounds.maxZ + EPS
+  && !arena.colliders.some(rect => y < rect.y + rect.h - EPS && y + height > rect.y + EPS && circleRectOverlap(x, z, radius, rect));
+/** The ledge in front of you that a climb can reach, or null. The climb rises in
+ * place, then steps forward, so both the column above you and the landing must be clear. */
+export function findMantleTarget(f, arena, airborne = false) {
+  const dirX = Math.sin(f.yaw), dirZ = -Math.cos(f.yaw), radius = f.radius || WORLD.radius;
+  const lowest = f.y + (airborne ? MANTLE.airMinRise : MANTLE.minRise), highest = f.y + (airborne ? MANTLE.airMaxRise : MANTLE.maxRise);
+  for (let reach = radius + .08; reach <= radius + MANTLE.reach + EPS; reach += .08) {
+    const probeX = f.x + dirX * reach, probeZ = f.z + dirZ * reach;
+    let top = null;
+    for (const rect of arena.colliders) {
+      const surface = rect.y + rect.h;
+      if (surface <= lowest || surface > highest + EPS || probeX < rect.x || probeX > rect.x + rect.w || probeZ < rect.z || probeZ > rect.z + rect.d) continue;
+      top = Math.max(top ?? -Infinity, surface);
+    }
+    if (top === null) continue;
+    const landX = f.x + dirX * (reach + radius + .04), landZ = f.z + dirZ * (reach + radius + .04);
+    if (!bodyFits(f.x, f.y + .02, f.z, radius, top - f.y + WORLD.standHeight, arena)) return null;
+    if (!bodyFits(landX, top + EPS, landZ, radius, WORLD.standHeight, arena)) return null;
+    const supported = arena.colliders.some(rect => Math.abs(rect.y + rect.h - top) < 1e-6 && circleRectOverlap(landX, landZ, radius * .5, rect));
+    return supported ? { x: landX, y: top, z: landZ } : null;
+  }
+  return null;
+}
+function advanceMantle(f) {
+  const progress = 1 - (f.mantleTicks - 1) / MANTLE.ticks, from = f.mantleFrom, to = f.mantleTo;
+  const rise = clamp(progress / MANTLE.riseShare, 0, 1), across = clamp((progress - MANTLE.riseShare) / (1 - MANTLE.riseShare), 0, 1);
+  const ease = t => t * t * (3 - 2 * t);
+  f.y = from.y + (to.y - from.y) * ease(rise);
+  f.x = from.x + (to.x - from.x) * ease(across); f.z = from.z + (to.z - from.z) * ease(across);
+  f.vx = f.vy = f.vz = 0; f.crouching = false; f.lean = f.leanOffset = f.leanX = f.leanZ = 0;
+  f.mantleTicks--;
+  if (!f.mantleTicks) { f.x = to.x; f.y = to.y; f.z = to.z; f.mantleFrom = f.mantleTo = null; }
+}
+const stillPlan = f => ({ allowed: false, x: f.x, z: f.z, unitX: 0, unitZ: 0, speed: 0, normalSpeed: 0, pushAlong: 0 });
 /** Head travel stops short of solid cover so a lean can never see or shoot through it. */
 function updateLeanReach(f, arena) {
   const lean = Number.isFinite(f.lean) ? f.lean : 0;
@@ -368,12 +407,42 @@ function movementTick(f, input, arena, peers = [], headroomPeers = peers, action
   f.hitStunTicks = Math.max(0, Math.min(16, Number.isFinite(f.hitStunTicks) ? f.hitStunTicks : 0) - 1);
   f.hitStunReadyTicks = Math.max(0, Math.min(72, Number.isFinite(f.hitStunReadyTicks) ? f.hitStunReadyTicks : 0) - 1);
   const monsterBody = monsterBodyProfile(f);
+  if (f.mantleTicks > 0 && f.mantleFrom && f.mantleTo && !monsterBody) {
+    advanceMantle(f); f.jumpBufferTicks = 0; refreshGrounded(f, arena);
+    if (f.mantleTicks) f.grounded = false;
+    return stillPlan(f);
+  }
+  f.mantleTicks = 0;
+  const primarySpeed = monsterMovementSpeed(f) ?? (f.slot === 'sword' ? meleeProfile(f).speed : WEAPONS[f.weapon].speed);
+  // A fresh crouch at full sprint starts a slide; the body stays low throughout.
+  f.slideCooldown = Math.max(0, (Number.isFinite(f.slideCooldown) ? f.slideCooldown : 0) - 1);
+  const horizontalSpeed = Math.hypot(f.vx, f.vz);
+  if (!monsterBody && f.monster !== true && f.bot !== true && !(f.slideTicks > 0) && !f.slideCooldown && input.crouch && !f.previousInput?.crouch && f.grounded && f.sprinting
+    && horizontalSpeed >= primarySpeed * SLIDE.minSprintRatio && !hitStunned) {
+    f.slideTicks = SLIDE.ticks; f.slideSpeed = horizontalSpeed * SLIDE.boost; f.slideX = f.vx / horizontalSpeed; f.slideZ = f.vz / horizontalSpeed;
+    f.stamina = Math.max(0, (Number.isFinite(f.stamina) ? f.stamina : SPRINT.maxStamina) - SLIDE.stamina); f.staminaRegenTicks = SPRINT.regenDelayTicks;
+  }
+  // Jumping out of a slide stands up (headroom permitting) so the jump can fire.
+  const slideJump = f.slideTicks > 0 && input.jump && !f.previousInput?.jump;
+  if (f.slideTicks > 0 && (!input.crouch || !f.grounded || hitStunned || slideJump)) { f.slideTicks = 0; f.slideCooldown = SLIDE.cooldownTicks; }
+  const sliding = f.slideTicks > 0;
   if (monsterBody) { f.radius = monsterBody.radius; f.crouching = false; }
-  else if (input.crouch) f.crouching = true;
+  else if (input.crouch && !slideJump || sliding) f.crouching = true;
   else if (!arena.colliders.some(rect => bodyOverlapsBox(f, rect, WORLD.standHeight)) && !headroomPeers.some(peer => bodyOverlapsPlayer(f, peer, WORLD.standHeight))) f.crouching = false;
   // Queue only a fresh press. It may survive a short descent onto the next
   // platform, but holding jump never repeats and leaving a ledge grants no lift.
   if (!hitStunned && input.jump && !f.previousInput?.jump) f.jumpBufferTicks = WORLD.jumpBufferTicks;
+  // Jumping while moving into chest-high cover climbs it. Mid-air, holding jump
+  // catches a ledge just above your feet.
+  const climbing = !monsterBody && f.monster !== true && !hitStunned && !f.crouching && input.up && !input.down;
+  const groundClimb = climbing && f.grounded && f.jumpBufferTicks > 0, airClimb = climbing && !f.grounded && input.jump && f.vy < 3;
+  const ledge = groundClimb || airClimb ? findMantleTarget(f, arena, airClimb) : null;
+  if (ledge) {
+    f.mantleTicks = MANTLE.ticks; f.mantleFrom = { x: f.x, y: f.y, z: f.z }; f.mantleTo = ledge; f.jumpBufferTicks = 0; f.slideTicks = 0;
+    f.lean = f.leanOffset = f.leanX = f.leanZ = 0;
+    advanceMantle(f); f.grounded = false;
+    return stillPlan(f);
+  }
   if (!hitStunned && f.grounded && f.jumpBufferTicks > 0 && !f.crouching) {
     f.vy = monsterBody?.jumpSpeed ?? WORLD.jumpSpeed; f.grounded = false; f.jumpBufferTicks = 0;
   } else f.jumpBufferTicks = Math.max(0, (f.jumpBufferTicks || 0) - 1);
@@ -386,7 +455,6 @@ function movementTick(f, input, arena, peers = [], headroomPeers = peers, action
   if (Math.abs(f.lean) < 1e-9) f.lean = 0;
   let strafe = Number(input.right) - Number(input.left), forward = Number(input.up) - Number(input.down); const length = Math.hypot(strafe, forward);
   if (length > 0) { strafe /= length; forward /= length; }
-  const primarySpeed = monsterMovementSpeed(f) ?? (f.slot === 'sword' ? meleeProfile(f).speed : WEAPONS[f.weapon].speed);
   const heldWeapon = WEAPONS[f.weapon], ads = input.aim && heldWeapon.adsSupported !== false && f.slot === 'primary' && !actions.reloadTicks && !actions.healTicks && !actions.grenadeThrowTicks;
   const adsSpeed = heldWeapon.valorant && Number.isFinite(heldWeapon.adsSpeed) ? heldWeapon.adsSpeed / heldWeapon.speed : ADS.speedMultiplier;
   const allowed = sprintAllowed(f, input, forward, actions), normalSpeed = (f.crouching ? 2.35 : input.walk ? 2.8 : primarySpeed) * (actions.healTicks ? HEAL.speedMultiplier : ads ? adsSpeed : 1) * monsterMovementMultiplier(f) * (hitStunned ? .35 : 1) * (1 - Math.abs(f.lean) * (1 - LEAN.speedMultiplier));
@@ -405,6 +473,11 @@ function movementTick(f, input, arena, peers = [], headroomPeers = peers, action
   const accel = f.grounded ? (countering ? MOVEMENT.counterStrafeAccel : length ? 43 : 58) : 7;
   const velocityX = (countering ? 0 : targetX) - f.vx, velocityZ = (countering ? 0 : targetZ) - f.vz, velocityDelta = Math.hypot(velocityX, velocityZ), accelerationFraction = velocityDelta > EPS ? Math.min(1, accel * DT / velocityDelta) : 0;
   f.vx += velocityX * accelerationFraction; f.vz += velocityZ * accelerationFraction;
+  if (sliding) {
+    // The slide keeps its own heading and fades from its boost to a crouch walk.
+    const slideSpeed = SLIDE.endSpeed + (f.slideSpeed - SLIDE.endSpeed) * (f.slideTicks / SLIDE.ticks);
+    f.vx = f.slideX * slideSpeed; f.vz = f.slideZ * slideSpeed;
+  }
   f.vy -= WORLD.gravity * DT;
   const pushed = Number.isInteger(f.knockbackTicks) && f.knockbackTicks > 0 && f.knockbackTicks <= KNOCKBACK.monsterTicks;
   if (!pushed) f.knockbackX = f.knockbackZ = f.knockbackTicks = 0;
@@ -426,6 +499,12 @@ function movementTick(f, input, arena, peers = [], headroomPeers = peers, action
   f.knockbackReadyTicks = Number.isInteger(f.knockbackReadyTicks) && f.knockbackReadyTicks > 0 ? Math.max(0, Math.min(KNOCKBACK.playerReadyTicks, f.knockbackReadyTicks) - 1) : 0;
   refreshGrounded(f, arena);
   updateLeanReach(f, arena);
+  if (sliding) {
+    f.slideTicks--;
+    // A wall contact or a ledge ends the slide early.
+    if (!f.grounded || Math.hypot(f.vx, f.vz) < SLIDE.endSpeed * .5) f.slideTicks = 0;
+    if (!f.slideTicks) f.slideCooldown = SLIDE.cooldownTicks;
+  }
   return sprintPlan;
 }
 function separatePrediction(player, peers, arena) {
@@ -1156,13 +1235,14 @@ export function applyCombatDamage(state, pending, { onMeleeHit, arena = state.ma
 export function combatStep(state, rawInputs = [], arena = state.map || MAPS[state.mapId], { additionalDamage = [], meleeDamageScale = 1, onMeleeHit } = {}) {
   if (!arena?.colliders || !arena?.bounds) throw new TypeError('Combat requires a physical arena.');
   const inputs = state.players.map(f => readInput(f, rawInputs[f.id])), pending = [], meleeOptions = { meleeDamageScale };
-  for (const f of state.players) tickActions(state, f, inputs[f.id], arena);
+  for (const f of state.players) tickActions(state, f, f.mantleTicks > 0 ? { ...inputs[f.id], fire: false, aim: false, grenade: false, heal: false } : inputs[f.id], arena);
   const sprintPlans = [];
   for (const f of impactMovementOrder(state.players)) sprintPlans[f.id] = movementTick(f, inputs[f.id], arena, [], state.players);
   separatePlayers(state, arena);
   for (const f of state.players) finishSprint(f, sprintPlans[f.id]);
   recordLagCompensation(state);
-  for (const f of state.players) tickWeapon(state, f, inputs[f.id], pending, arena, meleeOptions);
+  // Climbing hands are busy: no shots, sights, blades, throws or drinks until the climb ends.
+  for (const f of state.players) tickWeapon(state, f, f.mantleTicks > 0 ? { ...inputs[f.id], fire: false, aim: false } : inputs[f.id], pending, arena, meleeOptions);
   advanceGrenades(state, arena, { emit: (type, data) => emit(state, type, data), queueDamage: hit => pending.push(hit) });
   // Traces use the same explicit arena as movement, including custom mode maps.
   advanceBolts(state, { trace: (snapshot, id, origin, direction, distance) => traceShot(snapshot, id, origin, direction, distance, arena), arena, emit: (type, data) => emit(state, type, data), queueDamage: hit => pending.push(hit) });

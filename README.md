@@ -320,7 +320,8 @@ Voxel Breach:
 | Reload | R |
 | Pick up nearby loot / plant / defuse | F; hold it near a site or planted bomb |
 | Jump | Space |
-| Crouch | Ctrl |
+| Crouch / slide while sprinting | Ctrl |
+| Climb chest-high cover | Space while moving into it |
 | Sprint | Hold Shift while moving forward |
 | Quiet walk | C |
 | Choose a loadout between rounds | On-screen weapon buttons; 1–9 shortcuts choose the original nine guns |
@@ -361,6 +362,8 @@ The revolver rewards deliberate six-shot accuracy; the suppressed PDW has a fast
 **Tactical and empty reloads.** Reloading before the magazine is empty is a tactical reload. It keeps the round in the chamber, so a 25-round rifle holds 25+1. Reloading an empty gun also chambers a fresh round, which takes 25% longer. Revolvers, pump and box shotguns, bolt actions, crossbows and paired guns have no chambered round and keep one reload time. Outlaw keeps its researched empty timing. The loadout comparison lists both times.
 
 **Lean and peek.** Hold **Q** to lean left or **E** to lean right (**A** / **E** on ZQSD). Your head travels up to 0.38 m sideways and dips slightly over about 0.12 s, the view tilts toward the peek, and rounds leave from the leaned eye. Your torso follows part of the way; your legs stay planted. A wall stops the lean short, so the head never enters cover. The exposed head and shoulder can be hit, and other players see your body tilt. Leaning slows movement to 80%. Sprinting, jumping and holding a blade straighten you up. Pick up, plant, defuse and revive moved to **F**; the potion is on **H** and the grenade on **G**. Practice bots aim at whatever part of you they can see, including a peeking head.
+
+**Slide and climb.** Press **Ctrl** while sprinting at full speed to slide. You keep your heading, start about 12% faster than a sprint and fade to crouch speed over 0.55 s, staying low the whole way. Releasing **Ctrl**, leaving the ground or hitting a wall ends the slide. **Space** jumps out of it and stands up, though you don't keep the extra slide speed in the air. A slide costs 15 stamina, and after one there is a 0.75 s pause before the next. Shots fired while sliding have moving-fire spread. Press **Space** while moving forward into chest-high cover (1.0–1.7 m) to climb onto it in 0.28 s. Holding **Space** in mid-air catches a ledge just above your feet. You can only climb when there is room to stand on top and nothing overhead. Your gun is down while you climb: no shots, sights, throws or potions until you are up. Low crates are still jumped as before.
 
 Shotguns have filled pellet patterns instead of a hollow ring, so accurate close-range aim gives more consistent hits. The original **Warden Shotgun** fires eight 28-damage pellets, the **Harrier Auto Shotgun** fires seven 18-damage pellets, and the **Goshawk Slug Shotgun** fires one 120-damage slug with 216 head damage at close range. Their original firing cadence, reload windows and distance falloff remain. Shorty, Bucky and Judge keep their researched damage bands and handling. All six have distinct voxel barrels, receivers and mechanisms, heavier firing sounds, and sharper weapon kick with a stable camera. Pump guns include a timed rack and closing sound; each shell produces one sound and kick regardless of pellet count.
 

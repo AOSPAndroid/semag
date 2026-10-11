@@ -165,6 +165,8 @@ export function combatReadout(player, weapons = WEAPONS, rules = {}) {
   else if (fire?.alternate) status = fire.mode === 'airburst' ? `RMB AIRBURST · ${fire.popDistance}M POP` : `RMB BURST · ${Math.min(fire.ammoCost || fire.count, player.ammo)} ROUNDS`;
   else if (weapon?.adsBurst && fire?.mode === 'burst') status = `ADS ${fire.count}-SHOT BURST · HOLD LMB`;
   else if (weapon?.fireRamp && player?.spinTicks > 0 && player.spinTicks < weapon.fireRamp.rampTicks && !player?.aiming) status = 'FIRE RATE RAMPING · HOLD LMB';
+  else if (player?.mantleTicks > 0) status = 'CLIMBING · GUN DOWN';
+  else if (player?.slideTicks > 0) status = 'SLIDING / UNSTEADY';
   else if (!player?.grounded) status = 'AIRBORNE / UNSTEADY';
   else if (player?.aiming) status = Math.hypot(player.vx || 0, player.vz || 0) > .22 ? 'AIMING / MOVING' : 'AIMING / STEADY';
   else if (player?.crouching) status = Math.hypot(player.vx || 0, player.vz || 0) > .22 ? 'CROUCHED / MOVING' : 'CROUCHED / STEADY';
