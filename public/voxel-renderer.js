@@ -119,7 +119,9 @@ export function meleeMotion(player) {
   const idleYaw = (knife ? -.10 : id === 'axe' ? -.13 : id === 'tonfas' ? -.08 : -.18) * hand;
   const idlePitch = knife ? .22 : id === 'axe' ? .60 : id === 'tonfas' ? .12 : .48;
   const idleRoll = knife ? 0 : (id === 'katana' ? -.32 : id === 'tonfas' ? .12 : -.18) * hand;
-  const defense = player.slot === 'sword' && player.alive !== false && !player.monsterType && phase.phase === 'idle' ? parryPhase(player) : { phase: 'idle' };
+  const parry = player.slot === 'sword' && player.alive !== false && !player.monsterType && phase.phase === 'idle' ? parryPhase(player) : { phase: 'idle' };
+  // A held sword or katana guard keeps the blade raised across the body.
+  const defense = player.guarding === true && phase.phase === 'idle' && ['idle', 'recovery'].includes(parry.phase) ? { phase: 'active', progress: 1 } : parry;
   if (defense.phase !== 'idle') {
     const progress = smooth(defense.progress), weight = defense.phase === 'startup' ? progress : defense.phase === 'active' ? 1 : 1 - progress;
     // The blade crosses the committed frontal guard. Paired batons meet in
@@ -4464,7 +4466,7 @@ export class VoxelRenderer {
         this.particles.push(...impactParticles(event, origin, [-finite(event.nx), -finite(event.ny), -finite(event.nz)], map, time, key));
       } else if (event.type === 'damage') {
         this.particles.push(...bloodParticles(event, state, time, key));
-      } else if (event.type === 'meleeParry' && [event.x, event.y, event.z].every(Number.isFinite)) {
+      } else if (['meleeParry', 'bulletBlock', 'bulletDeflect'].includes(event.type) && [event.x, event.y, event.z].every(Number.isFinite)) {
         // A confirmed blade contact emits a tiny depth-tested clash. Guard
         // startup/holding never manufactures a contact, flash or camera kick.
         const origin = [event.x, event.y, event.z];

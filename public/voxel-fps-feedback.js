@@ -38,6 +38,7 @@ export function meleeActionReadout(player, profile = meleeProfile(player)) {
     && player.meleeComboWeapon === profile.id && held?.kind === 'melee' && held.weapon === profile.id
     && !player.reloadTicks && !player.grenadeThrowTicks && !player.parryTicks && !player.triggerBlocked;
   const comboLabel = combo ? `${profile.comboFinisher ? 'FINISHER' : profile.id === 'knife' ? 'STAB' : 'CUT'} ${profile.comboStep}/${profile.comboLength} · ` : '';
+  if (player.guarding === true) return { state: 'guard', ammo: 'GUARD', status: `GUARD UP · ${Math.round(player.stamina || 0)} STAMINA · BULLETS BLOCKED`, progress: null };
   if (guard && guardTicks) {
     const phase = parryPhase(player).phase;
     return { state: phase, ammo: player.parryConsumed ? 'PARRIED' : ({ startup: 'SET', active: 'PARRY', recovery: 'RECOVER' })[phase] || 'RECOVER',

@@ -106,10 +106,14 @@ test('front guard direction is committed in three dimensions and rejects side, r
   }
 });
 
-test('bullets, bolts, grenades and environmental damage always penetrate a melee guard', () => {
-  for (const attack of ['gun', 'bolt', 'grenade', 'storm', 'disconnect']) {
-    const { state, player } = readyGuard(); Combat.applyCombatDamage(state, [claw(state, 1, { attack, weapon: attack === 'bolt' ? 'crossbow' : 'carbine' })]);
-    assert.equal(player.hp, 480, attack); assert.equal(player.parryConsumed, false); assert.equal(state.events.some(event => event.type === 'meleeParry'), false);
+test('grenades and environmental damage always penetrate a melee guard; only blades turn bullets', () => {
+  for (const [weapon, attack] of [['sword', 'grenade'], ['sword', 'storm'], ['sword', 'disconnect'], ['axe', 'gun'], ['axe', 'bolt'], ['tonfas', 'gun']]) {
+    const { state, player } = readyGuard(weapon); Combat.applyCombatDamage(state, [claw(state, 1, { attack, weapon: attack === 'bolt' ? 'crossbow' : 'carbine' })]);
+    assert.equal(player.hp, 480, `${weapon} ${attack}`); assert.equal(player.parryConsumed, false); assert.equal(state.events.some(event => event.type === 'meleeParry'), false);
+  }
+  for (const attack of ['gun', 'bolt']) {
+    const { state, player } = readyGuard('sword'); Combat.applyCombatDamage(state, [claw(state, 1, { attack, weapon: attack === 'bolt' ? 'crossbow' : 'carbine' })]);
+    assert.equal(player.hp, 500, attack); assert.equal(state.events.some(event => event.type === 'bulletDeflect'), true, attack);
   }
 });
 

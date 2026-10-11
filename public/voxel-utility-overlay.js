@@ -48,5 +48,7 @@ export function utilityEventAudio(audio, event, playerId) {
     const mine = (event.blinded || []).find(entry => entry.playerId === playerId);
     if (mine) audio.tone?.(3900, Math.min(2.4, mine.ticks / 120), { end: 3600, gain: .05, type: 'sine' });
   } else if (event.type === 'smokePop') audio.noise?.(1.1, { highpass: 300, lowpass: 2400, gain: .12 });
+  else if (event.type === 'bulletBlock' || event.type === 'bulletDeflect') audio.tone?.(event.type === 'bulletDeflect' ? 2600 : 1900, .09, { end: 900, gain: event.playerId === playerId ? .12 : .06, type: 'square' });
+  else if (event.type === 'guardBreak') audio.noise?.(.25, { highpass: 200, lowpass: 1800, gain: .2 });
   else if (event.type === 'meleeLunge') audio.noise?.(.18, { highpass: 700, lowpass: 3200, gain: event.playerId === playerId ? .22 : .1 });
 }

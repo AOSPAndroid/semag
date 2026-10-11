@@ -116,7 +116,7 @@ export function meleeStartupAim(player, input = player) {
 /** Cancel transient defense; genuine physical-item and global recovery survive. */
 export function resetMeleeDefense(player, { clearCooldown = false, blockAim = player.meleeAimBlocked === true } = {}) {
   clearMeleeBuffer(player); resetMeleeCombo(player); player.meleeInitialYaw = player.meleeInitialPitch = 0;
-  player.parryTicks = 0; player.parryYaw = 0; player.parryPitch = 0; player.parryStartTick = 0; player.parryConsumed = false; player.meleeAction = 'primary'; player.meleeAimBlocked = blockAim === true;
+  player.parryTicks = 0; player.parryYaw = 0; player.parryPitch = 0; player.parryStartTick = 0; player.parryConsumed = false; player.meleeAction = 'primary'; player.meleeAimBlocked = blockAim === true; player.guarding = false;
   if (clearCooldown) {
     player.parryCooldown = player.meleeSecondaryCooldown = 0;
     for (const item of player.inventory || []) if (item?.kind === 'melee') item.parryCooldown = 0;

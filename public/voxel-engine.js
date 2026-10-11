@@ -31,10 +31,15 @@ export const MANTLE = Object.freeze({ ticks: 34, minRise: 1.0, maxRise: 1.7, air
 export const LUNGE = Object.freeze({ ticks: 30, speed: 16, cooldownTicks: 300, stamina: 20 });
 /** Carrying a blade is lighter than a gun; slides and lunges reward the flanker. */
 export const BLADE_MOVEMENT = Object.freeze({ speedMultiplier: 1.12, slideSlashDamage: 1.25 });
+/** Sword and katana guard: hold right-click to block bullets from the front for stamina;
+ * a parry's active window instead deflects the round back at the shooter. */
+export const BLADE_GUARD = Object.freeze({ weapons: Object.freeze(['sword', 'katana']), halfAngle: .9, speedMultiplier: .6, staminaBase: 5, staminaPerDamage: .12, breakStunTicks: 30, deflectShare: .6, meleeShare: .3 });
+const guardsBullets = player => player?.slot === 'sword' && BLADE_GUARD.weapons.includes(meleeWeaponId(player)) && player.monster !== true;
 export const LEAN = Object.freeze({ offset: .38, rampTicks: 14, speedMultiplier: .8, drop: .12, bodyShare: .45, clearance: .26, viewRoll: .55 });
 export const SPRINT = Object.freeze({ maxStamina: 100, speedMultiplier: 1.4, drainPerSecond: 24, regenPerSecond: 18, regenDelayTicks: 144, restartStamina: 25 });
 const EPS = 1e-8, DT = 1 / TICK_RATE;
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
+const finite = (value, fallback = 0) => Number.isFinite(value) ? value : fallback;
 const movementActionClock = Symbol('movement-only action clock');
 const ACTION_CLOCK_SOURCE = ['reloadTicks', 'healTicks', 'grenadeThrowTicks', 'meleeTicks', 'meleeCooldown', 'pendingMeleeTicks', 'meleeComboStep', 'meleeComboConfirmed', 'meleeComboWindowTicks', 'meleeComboWeapon', 'meleeAction', 'meleeWeapon', 'parryTicks', 'parryCooldown', 'meleeSecondaryCooldown', 'meleeAimBlocked', 'parryStartTick', 'parryConsumed', 'burstRemaining', 'pendingFireTicks', 'shotCooldown', 'spinTicks', 'triggerBlocked', 'meleeStartTick', 'healStartTick', 'interaction', 'interactTicks', 'alive', 'lifeId', 'deaths', 'weapon', 'slot', 'inventoryIndex', 'ammo', 'reserve'];
 const actionTicks = value => Number.isFinite(value) ? Math.max(0, value) : 0;
@@ -122,7 +127,7 @@ export function resetSprint(player, { refill = true } = {}) {
 }
 export function createCombatPlayer(id, teamSize = 1, loadout = 'carbine') {
   const weapon = typeof loadout === 'string' && Object.hasOwn(WEAPONS, loadout) ? loadout : 'carbine', w = WEAPONS[weapon];
-  const player = { id, team: Math.floor(id / teamSize), x: 0, y: 0, z: 0, yaw: 0, pitch: 0, vx: 0, vy: 0, vz: 0, knockbackX: 0, knockbackZ: 0, knockbackTicks: 0, knockbackReadyTicks: 0, radius: WORLD.radius, grounded: true, jumpBufferTicks: 0, stamina: SPRINT.maxStamina, staminaRegenTicks: 0, sprintExhausted: false, sprinting: false, crouching: false, lean: 0, leanOffset: 0, leanX: 0, leanZ: 0, bladeLungeTicks: 0, bladeLungeCooldown: 0, bladeLungeX: 0, bladeLungeZ: 0, bladeLungeSlashPending: false, meleeSlide: false, chargeTicks: 0, leverStacks: 0, leverReadyTicks: 0, leverQueued: false, grappleTicks: 0, grappleX: 0, grappleY: 0, grappleZ: 0, grappleStuckTicks: 0, slideTicks: 0, slideCooldown: 0, slideX: 0, slideZ: 0, slideSpeed: 0, mantleTicks: 0, mantleFrom: null, mantleTo: null, alive: true, hp: PLAYER_HEALTH, maxHp: PLAYER_HEALTH, weapon, slot: 'primary', meleeWeapon: 'knife', meleeLoadout: 'knife', ammo: w.magazine, reserve: w.reserve, reloadTicks: 0, shotCooldown: 0, burstRemaining: 0, spinTicks: 0, recoil: 0, recoilYaw: 0, sprayShots: 0, sprayIdleTicks: 0, heat: 0, shotIndex: 0, lastShotHand: 0, pendingFireTicks: 0, shots: 0, kills: 0, deaths: 0, damageDealt: 0, lastHitTick: -1000, triggerBlocked: false, aiming: false, aimTicks: 0, meleeTicks: 0, meleeCooldown: 0, meleeIndex: 0, meleeHand: 0, meleeYaw: 0, meleePitch: 0, meleeStartTick: 0, meleePhase: 'idle', meleeHitIds: [], meleeHitLives: [], healing: false, healTicks: 0, healStartTick: -1, potions: 0, grenades: 0, flashTicks: 0, flashTotal: 0, grenadeThrowTicks: 0, interaction: null, interactTicks: 0, previousInput: emptyInput() };
+  const player = { id, team: Math.floor(id / teamSize), x: 0, y: 0, z: 0, yaw: 0, pitch: 0, vx: 0, vy: 0, vz: 0, knockbackX: 0, knockbackZ: 0, knockbackTicks: 0, knockbackReadyTicks: 0, radius: WORLD.radius, grounded: true, jumpBufferTicks: 0, stamina: SPRINT.maxStamina, staminaRegenTicks: 0, sprintExhausted: false, sprinting: false, crouching: false, lean: 0, leanOffset: 0, leanX: 0, leanZ: 0, guarding: false, guardBroken: false, bladeLungeTicks: 0, bladeLungeCooldown: 0, bladeLungeX: 0, bladeLungeZ: 0, bladeLungeSlashPending: false, meleeSlide: false, chargeTicks: 0, leverStacks: 0, leverReadyTicks: 0, leverQueued: false, grappleTicks: 0, grappleX: 0, grappleY: 0, grappleZ: 0, grappleStuckTicks: 0, slideTicks: 0, slideCooldown: 0, slideX: 0, slideZ: 0, slideSpeed: 0, mantleTicks: 0, mantleFrom: null, mantleTo: null, alive: true, hp: PLAYER_HEALTH, maxHp: PLAYER_HEALTH, weapon, slot: 'primary', meleeWeapon: 'knife', meleeLoadout: 'knife', ammo: w.magazine, reserve: w.reserve, reloadTicks: 0, shotCooldown: 0, burstRemaining: 0, spinTicks: 0, recoil: 0, recoilYaw: 0, sprayShots: 0, sprayIdleTicks: 0, heat: 0, shotIndex: 0, lastShotHand: 0, pendingFireTicks: 0, shots: 0, kills: 0, deaths: 0, damageDealt: 0, lastHitTick: -1000, triggerBlocked: false, aiming: false, aimTicks: 0, meleeTicks: 0, meleeCooldown: 0, meleeIndex: 0, meleeHand: 0, meleeYaw: 0, meleePitch: 0, meleeStartTick: 0, meleePhase: 'idle', meleeHitIds: [], meleeHitLives: [], healing: false, healTicks: 0, healStartTick: -1, potions: 0, grenades: 0, flashTicks: 0, flashTotal: 0, grenadeThrowTicks: 0, interaction: null, interactTicks: 0, previousInput: emptyInput() };
   Object.assign(player, { pendingMeleeTicks: 0, meleeComboStep: 0, meleeComboConfirmed: false, meleeComboWindowTicks: 0, meleeComboWeapon: null, hitStunTicks: 0, hitStunReadyTicks: 0, meleeInitialYaw: 0, meleeInitialPitch: 0, meleeAction: 'primary', meleeAimBlocked: false, meleeSecondaryCooldown: 0, parryTicks: 0, parryCooldown: 0, parryYaw: 0, parryPitch: 0, parryStartTick: 0, parryIndex: 0, parryConsumed: false });
   Object.assign(player, { healUseIndex: 0, healUseId: null, healInventoryIndex: -1, healSelectedIndex: -1 });
   return initializeInventory(player, { weapon });
@@ -494,7 +499,7 @@ function movementTick(f, input, arena, peers = [], headroomPeers = peers, action
   if (length > 0) { strafe /= length; forward /= length; }
   const heldWeapon = WEAPONS[f.weapon], ads = input.aim && heldWeapon.adsSupported !== false && f.slot === 'primary' && !actions.reloadTicks && !actions.healTicks && !actions.grenadeThrowTicks;
   const adsSpeed = heldWeapon.valorant && Number.isFinite(heldWeapon.adsSpeed) ? heldWeapon.adsSpeed / heldWeapon.speed : ADS.speedMultiplier;
-  const allowed = sprintAllowed(f, input, forward, actions), normalSpeed = (f.crouching ? 2.35 : input.walk ? 2.8 : primarySpeed) * (actions.healTicks ? HEAL.speedMultiplier : ads ? adsSpeed : 1) * monsterMovementMultiplier(f) * (hitStunned ? .35 : 1) * (1 - Math.abs(f.lean) * (1 - LEAN.speedMultiplier));
+  const allowed = sprintAllowed(f, input, forward, actions), normalSpeed = (f.crouching ? 2.35 : input.walk ? 2.8 : primarySpeed) * (actions.healTicks ? HEAL.speedMultiplier : ads ? adsSpeed : 1) * monsterMovementMultiplier(f) * (hitStunned ? .35 : 1) * (1 - Math.abs(f.lean) * (1 - LEAN.speedMultiplier)) * (guardsBullets(f) && input.aim && !f.guardBroken ? BLADE_GUARD.speedMultiplier : 1);
   const speed = normalSpeed * (allowed ? SPRINT.speedMultiplier : 1);
   if (!f.grounded && !monsterBody) {
     const velocity = Math.hypot(f.vx, f.vz);
@@ -1007,6 +1012,9 @@ const comboMetadata = profile => ({ comboStep: profile.comboStep || 0, comboLeng
 function tickMelee(state, f, input, pendingDamage, arena, { meleeDamageScale } = {}) {
   const primary = advanceMeleePrimaryPress(f, input);
   f.pendingMeleeTicks = primary.pendingMeleeTicks;
+  // Holding right-click after the parry window keeps the guard up until released or broken.
+  if (!input.aim) f.guardBroken = false;
+  f.guarding = guardsBullets(f) && input.aim && !f.guardBroken && !f.meleeTicks && !['startup', 'active'].includes(parryPhase(f).phase) && !(f.bladeLungeTicks > 0) && f.stamina > 0;
   if (f.parryTicks > 0) { f.parryTicks--; return; }
   let melee = meleeProfile(f); const meleeWeapon = meleeWeaponId(f);
   if (f.meleeTicks > 0) {
@@ -1284,6 +1292,46 @@ function parryContact(state, hit, arena) {
   const contact = traceShot(state, attacker.id, origin, { x: dx / distance, y: dy / distance, z: dz / distance }, distance + .001, arena);
   return contact.playerId === defender.id ? { defender, attacker, contact, distance, hit } : null;
 }
+const facesFront = (player, point, halfAngle) => {
+  const eye = eyePosition(player), dx = point.x - eye.x, dy = point.y - eye.y, dz = point.z - eye.z, distance = Math.hypot(dx, dy, dz);
+  if (distance <= EPS) return false;
+  const yaw = finite(player.yaw), pitch = clamp(finite(player.pitch), -1.35, 1.35), cp = Math.cos(pitch);
+  return (dx * Math.sin(yaw) * cp + dy * Math.sin(pitch) - dz * Math.cos(yaw) * cp) / distance >= Math.cos(halfAngle);
+};
+/** A raised sword or katana meets rounds from the front: a live parry sends one back, a held guard soaks it for stamina. */
+function bladeGuardContact(state, hit, pending, arena) {
+  const defender = state.players[hit.targetId], attacker = state.players[hit.playerId];
+  if (!defender?.alive || !attacker || attacker.id === defender.id || attacker.team === defender.team || !guardsBullets(defender) || !(hit.damage > 0) || hit.blocked) return;
+  const bullet = hit.attack === 'gun' || hit.attack === 'bolt', blade = typeof hit.attack === 'string' && Object.hasOwn(MELEE_WEAPONS, hit.attack);
+  if (!bullet && !blade) return;
+  const source = bullet ? eyePosition(attacker) : { x: attacker.x, y: attacker.y + 1.2, z: attacker.z };
+  const parrying = bullet && parryPhase(defender).phase === 'active';
+  // A staggered defender has no guard; the flag can be stale while stunned.
+  if (!(parrying || defender.guarding && !(defender.hitStunTicks > 0)) || !facesFront(defender, source, BLADE_GUARD.halfAngle)) return;
+  const point = [hit.hitX, hit.hitY, hit.hitZ].every(Number.isFinite) ? { x: hit.hitX, y: hit.hitY, z: hit.hitZ } : eyePosition(defender);
+  if (parrying) {
+    const returned = Math.round(hit.damage * BLADE_GUARD.deflectShare);
+    hit.blocked = true; hit.damage = 0;
+    // Send the round back along the line it came, if that line is clear.
+    const origin = eyePosition(defender), dx = source.x - origin.x, dy = source.y - origin.y, dz = source.z - origin.z, distance = Math.hypot(dx, dy, dz);
+    const direction = distance > EPS ? { x: dx / distance, y: dy / distance, z: dz / distance } : null;
+    const back = direction ? traceShot(state, defender.id, origin, direction, distance + .5, arena) : null, landed = back?.playerId === attacker.id && returned > 0;
+    if (landed) pending.push({ playerId: defender.id, targetId: attacker.id, targetLifeId: attacker.lifeId || 0, damage: returned, hitKind: back.kind, headshot: back.kind === 'head', attack: 'deflect', weapon: meleeWeaponId(defender), hitX: back.x, hitY: back.y, hitZ: back.z, dx: direction.x, dy: direction.y, dz: direction.z });
+    emit(state, 'bulletDeflect', { playerId: defender.id, targetId: attacker.id, weapon: meleeWeaponId(defender), attackWeapon: hit.weapon, x: point.x, y: point.y, z: point.z, returned: landed, ...(landed ? { toX: back.x, toY: back.y, toZ: back.z } : {}) });
+    return;
+  }
+  const share = blade ? BLADE_GUARD.meleeShare : 0, cost = BLADE_GUARD.staminaBase + hit.damage * BLADE_GUARD.staminaPerDamage;
+  if (defender.stamina < cost) {
+    // An exhausted guard breaks: the round lands and the defender staggers.
+    defender.stamina = 0; defender.sprintExhausted = true; defender.guarding = false; defender.guardBroken = true;
+    defender.hitStunTicks = Math.max(defender.hitStunTicks || 0, BLADE_GUARD.breakStunTicks); defender.triggerBlocked = defender.meleeAimBlocked = true;
+    emit(state, 'guardBreak', { playerId: defender.id, targetId: attacker.id, x: point.x, y: point.y, z: point.z });
+    return;
+  }
+  defender.stamina -= cost; defender.staminaRegenTicks = SPRINT.regenDelayTicks;
+  hit.blocked = true; hit.damage = Math.round(hit.damage * share);
+  emit(state, 'bulletBlock', { playerId: defender.id, targetId: attacker.id, weapon: meleeWeaponId(defender), attack: hit.attack, x: point.x, y: point.y, z: point.z, stamina: defender.stamina });
+}
 export function applyCombatDamage(state, pending, { onMeleeHit, arena = state.map || MAPS[state.mapId] } = {}) {
   const lethalHits = new Map();
   // Decide from the complete tick before any HP ordering changes a guard. One
@@ -1302,6 +1350,7 @@ export function applyCombatDamage(state, pending, { onMeleeHit, arena = state.ma
     }
     emit(state, 'meleeParry', { playerId: defender.id, targetId: attacker.id, weapon: meleeWeaponId(defender), attackWeapon: hit.weapon || hit.attack, defenderLifeId: defender.lifeId || 0, attackerLifeId: attacker.lifeId || 0, parryIndex: defender.parryIndex, parryStartTick: defender.parryStartTick, meleeIndex: hit.meleeIndex, meleeStartTick: hit.meleeStartTick, x: contact.x, y: contact.y, z: contact.z });
   }
+  if (state.phase === 'fight') for (const hit of pending) bladeGuardContact(state, hit, pending, arena);
   for (const hit of pending) {
     const f = state.players[hit.targetId], attacker = state.players[hit.playerId];
     if (parried.has(hit) || stoppedSwings.has(swingKey(hit)) || !f?.alive || f.hp <= 0 || !Number.isFinite(hit.damage) || hit.damage <= 0 || hit.targetLifeId !== undefined && hit.targetLifeId !== (f.lifeId || 0)) continue;
