@@ -373,6 +373,8 @@ The revolver rewards deliberate six-shot accuracy; the suppressed PDW has a fast
 
 **Sword and katana guard.** Hold right-click with a sword or katana to raise your guard. It blocks bullets and crossbow bolts from the front (a 100° cone) and takes 70% off blade hits. Each block costs 5 stamina plus 12% of the damage, and you move at 60% speed with the guard up. When you run out of stamina the guard breaks: the hit lands and you stagger for 0.25 s. Time a right-click so the parry window meets an incoming round and it **deflects**: you take nothing, and 60% of the damage goes back to the shooter if the line is clear. Axes, knives and tonfas cannot block bullets.
 
+**Backstabs and executions.** A knife hit from behind (the target's rear 120°) kills outright when you sneak in crouched, and a guard can't stop it because the guard only faces forward. Killing with a combo finisher or a backstab is an **execution**: you recover 30 HP (up to full), with an **EXECUTION** or **BACKSTAB** callout and sound. Blade kills make no gunshot report, so a quiet flank stays quiet.
+
 **Mechanic weapons.** Four originals each test a different skill. They appear under **Special** in the armory.
 
 - **Kite Rail Lance** (charge sniper). Hold the trigger to charge for up to 0.7 s, then release to fire. Damage scales from 35% to 160 body / 320 head, and the cone tightens to a perfect line at full charge. A release under 25% fizzles and keeps the round. Full or partial, the round pierces cover with a high penetration budget and passes through two bodies. Four rounds per magazine.

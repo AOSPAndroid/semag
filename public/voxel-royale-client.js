@@ -451,6 +451,7 @@ async function boot() {
         kills.push({ at: performance.now(), own: source === playerId && target !== playerId, text: `${source == null ? 'THE STORM' : source === target ? 'SELF FRAG' : lookupName(source)} ${event.headshot ? '[HS]' : '›'} ${lookupName(target)}` }); if (kills.length > 4) kills.shift();
       }
       if (source === playerId && ['healStart', 'healCancel', 'healComplete'].includes(event.type)) { feedbackUntil = performance.now() + 1100; setText($('combat-feedback'), event.type === 'healComplete' ? `HEALED +${Math.round(event.amount || 0)} HP` : event.type === 'healCancel' ? 'HEALING INTERRUPTED' : 'DRINKING POTION'); if (event.type === 'healComplete') { healthGain = Math.max(0, Math.round(event.amount || 0)); healthGainUntil = performance.now() + 1400; } }
+      if (event.type === 'execution' && event.playerId === playerId) toast(event.backstab ? `BACKSTAB · +${event.healed} HP` : `EXECUTION · +${event.healed} HP`);
       if (event.type === 'lootPickup' && source === playerId) toast(event.kind === 'weapon' ? `${WEAPONS[event.weapon]?.label || 'Weapon'} equipped.` : event.kind === 'heal' ? 'Healing potion collected.' : event.kind === 'grenade' ? 'Frag grenade collected.' : 'Ammunition collected.');
       if (!audio.enabled) continue;
       try {

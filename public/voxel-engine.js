@@ -35,6 +35,14 @@ export const BLADE_MOVEMENT = Object.freeze({ speedMultiplier: 1.12, slideSlashD
  * a parry's active window instead deflects the round back at the shooter. */
 export const BLADE_GUARD = Object.freeze({ weapons: Object.freeze(['sword', 'katana']), halfAngle: .9, speedMultiplier: .6, staminaBase: 5, staminaPerDamage: .12, breakStunTicks: 30, deflectShare: .6, meleeShare: .3 });
 const guardsBullets = player => player?.slot === 'sword' && BLADE_GUARD.weapons.includes(meleeWeaponId(player)) && player.monster !== true;
+/** A crouched knife from the rear 120° cone: an instant kill. Finisher and backstab kills heal the killer. */
+export const EXECUTION = Object.freeze({ rearHalfAngle: Math.PI / 3, heal: 30 });
+const isBehind = (target, attacker) => {
+  const dx = attacker.x - target.x, dz = attacker.z - target.z, distance = Math.hypot(dx, dz);
+  if (distance <= EPS || target.monster === true && target.human !== true && !Number.isFinite(target.yaw)) return false;
+  const facing = { x: Math.sin(target.yaw || 0), z: -Math.cos(target.yaw || 0) };
+  return (dx * facing.x + dz * facing.z) / distance <= -Math.cos(EXECUTION.rearHalfAngle);
+};
 export const LEAN = Object.freeze({ offset: .38, rampTicks: 14, speedMultiplier: .8, drop: .12, bodyShare: .45, clearance: .26, viewRoll: .55 });
 export const SPRINT = Object.freeze({ maxStamina: 100, speedMultiplier: 1.4, drainPerSecond: 24, regenPerSecond: 18, regenDelayTicks: 144, restartStamina: 25 });
 const EPS = 1e-8, DT = 1 / TICK_RATE;
@@ -1067,7 +1075,9 @@ function tickMelee(state, f, input, pendingDamage, arena, { meleeDamageScale } =
     f.meleeHitLives.push(life);
     const scale = typeof meleeDamageScale === 'function' ? meleeDamageScale(state, f, target, melee) : meleeDamageScale ?? 1;
     const damage = Math.round(melee.damage * (Number.isFinite(scale) && scale >= 0 ? Math.min(scale, 8) : 1) * (f.meleeSlide ? BLADE_MOVEMENT.slideSlashDamage : 1));
-    pendingDamage.push({ ...swing, playerId: f.id, targetId: target.id, targetLifeId: target.lifeId || 0, damage, hitKind: 'body', headshot: false, attack: meleeWeapon, weapon: meleeWeapon, hand: f.meleeHand, attackX: origin.x, attackY: origin.y, attackZ: origin.z, hitX: hit.x, hitY: hit.y, hitZ: hit.z, dx: direction.x, dy: direction.y, dz: direction.z });
+    // A knife driven in from behind by a crouch-sneaking attacker is an instant, silent kill.
+    const backstab = meleeWeapon === 'knife' && f.crouching === true && isBehind(target, f);
+    pendingDamage.push({ ...swing, ...(backstab ? { backstab: true } : {}), playerId: f.id, targetId: target.id, targetLifeId: target.lifeId || 0, damage: backstab ? Math.max(damage, Math.ceil(target.hp)) : damage, hitKind: 'body', headshot: false, attack: meleeWeapon, weapon: meleeWeapon, hand: f.meleeHand, attackX: origin.x, attackY: origin.y, attackZ: origin.z, hitX: hit.x, hitY: hit.y, hitZ: hit.z, dx: direction.x, dy: direction.y, dz: direction.z });
   }
 }
 function rayBoundsDistance(origin, direction, bounds, maximum) {
@@ -1374,6 +1384,12 @@ export function applyCombatDamage(state, pending, { onMeleeHit, arena = state.ma
     f.alive = false; f.deaths++; f.vx = f.vy = f.vz = 0; clearKnockback(f); resetSprint(f, { refill: false }); f.jumpBufferTicks = 0; f.reloadTicks = 0; f.burstRemaining = 0; f.spinTicks = f.pendingFireTicks = 0; f.aiming = false; f.aimTicks = 0; f.healing = false; f.healTicks = 0; f.grenadeThrowTicks = 0; clearMelee(f); f.interaction = null; f.interactTicks = 0;
     const killer = lethalHits.get(f.id), attacker = killer && state.players[killer.playerId];
     if (attacker && attacker.id !== f.id && attacker.team !== f.team) attacker.kills++;
+    // A finishing cut or a backstab is an execution: the killer recovers health.
+    const execution = attacker?.alive && attacker.id !== f.id && attacker.team !== f.team && typeof killer?.attack === 'string' && Object.hasOwn(MELEE_WEAPONS, killer.attack) && (killer.comboFinisher === true || killer.backstab === true);
+    if (execution) {
+      const healed = Math.min(EXECUTION.heal, Math.max(0, attacker.maxHp - attacker.hp)); attacker.hp += healed;
+      emit(state, 'execution', { playerId: attacker.id, targetId: f.id, weapon: killer.attack, backstab: killer.backstab === true, healed, hp: attacker.hp, x: f.x, y: f.y, z: f.z });
+    }
     // Horde slots can be reused before the next network snapshot. Preserve the
     // defeated monster's identity and pose for presentation, independently of
     // its replacement; corpses never become combat actors or delay loot.

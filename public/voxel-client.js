@@ -631,6 +631,7 @@ async function boot() {
       const meleeImpact = meleeImpacts.consume(event, playerId, impactOptions);
       const shooter = perspective.source; const target = perspective.target;
       const inventoryFeedback = shooter === playerId ? inventoryEventFeedback(event) : null; if (inventoryFeedback) toast(inventoryFeedback);
+      if (event.type === 'execution' && event.playerId === playerId) toast(event.backstab ? `BACKSTAB · +${event.healed} HP` : `EXECUTION · +${event.healed} HP`);
       if (shooter === playerId && event.type === 'lootPickup') toast(`PICKED UP ${event.kind === 'weapon' ? WEAPONS[event.weapon]?.label || 'WEAPON' : event.kind === 'heal' ? 'POTION' : event.kind === 'grenade' ? 'FRAG' : 'SUPPLIES'}`);
       if (event.type === 'damage' && event.damage > 0) {
         const viewed = healthHUDPlayer(state, playerId, spectatorId);
