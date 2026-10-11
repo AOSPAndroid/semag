@@ -25,7 +25,7 @@ import { createCameraMotionStore } from './voxel-camera-motion-settings.js';
 import { mountCameraMotionControls } from './voxel-camera-motion-ui.js';
 
 export const LOOK_SENSITIVITY = .0025;
-export const INPUT_ACTIONS = Object.freeze(['up', 'down', 'left', 'right', 'jump', 'crouch', 'walk', 'sprint', 'fire', 'reload', 'interact', 'aim', 'swap', 'grenade', 'heal', 'slot1', 'slot2', 'slot3', 'slot4', 'drop']);
+export const INPUT_ACTIONS = Object.freeze(['up', 'down', 'left', 'right', 'jump', 'crouch', 'walk', 'sprint', 'fire', 'reload', 'interact', 'aim', 'swap', 'grenade', 'heal', 'slot1', 'slot2', 'slot3', 'slot4', 'drop', 'leanLeft', 'leanRight']);
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const finite = (n, fallback = 0) => Number.isFinite(n) ? n : fallback;
 const clone = value => value == null ? value : structuredClone(value);
@@ -56,7 +56,7 @@ export function neutralInput(yaw = 0, pitch = 0) {
 }
 export function controlForKey(event, layout = getKeyboardLayout()) {
   if (event.defaultPrevented || event.isComposing || event.altKey || event.metaKey) return null;
-  return inventoryControlForKey(event) || ({ w: 'up', s: 'down', a: 'left', d: 'right', arrowup: 'up', arrowdown: 'down', arrowleft: 'left', arrowright: 'right', ' ': 'jump', control: 'crouch', shift: 'sprint', c: 'walk', b: 'fire', j: 'fire', r: 'reload', e: 'interact', v: 'swap', q: 'grenade', g: 'grenade', f: 'heal', h: 'heal' })[gameKey(event, layout).toLowerCase()] || null;
+  return inventoryControlForKey(event) || ({ w: 'up', s: 'down', a: 'left', d: 'right', arrowup: 'up', arrowdown: 'down', arrowleft: 'left', arrowright: 'right', ' ': 'jump', control: 'crouch', shift: 'sprint', c: 'walk', b: 'fire', j: 'fire', r: 'reload', f: 'interact', v: 'swap', q: 'leanLeft', e: 'leanRight', g: 'grenade', h: 'heal' })[gameKey(event, layout).toLowerCase()] || null;
 }
 export function isFormTarget(target) {
   return !!(target?.isContentEditable || target?.closest?.('input, select, textarea, button, a, [contenteditable]:not([contenteditable="false"]), [role="dialog"]'));
@@ -284,7 +284,7 @@ async function boot() {
       else if (player.hp >= player.maxHp) toast('Health is full. Save your potion.');
       else if (!player.grounded) toast('Land before drinking.');
     } else if (action === 'grenade' && !player.grenades) toast('No grenades. Scavenge one first.');
-    else if (action === 'swap' && !player.hasGun) toast('Knife equipped. Find a gun and press E to pick it up.');
+    else if (action === 'swap' && !player.hasGun) toast('Knife equipped. Find a gun and press F to pick it up.');
   }
   function refreshHeartbeat() {
     const needed = !destroyed && connected && !document.hidden && ['countdown', 'fight'].includes(state?.phase);
@@ -633,7 +633,7 @@ async function boot() {
     if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
   }
-  function updateKeyLabels() { setText($('move-keys'), getKeyboardLayout().toUpperCase()); for (const label of document.querySelectorAll('[data-royale-key]')) label.textContent = displayKey(label.dataset.royaleKey); canvas.setAttribute('aria-label', `3D battle royale. ${getKeyboardLayout().toUpperCase()} or arrows move; mouse looks; left click uses your selected item; right click aims guns, stabs with a knife or parries with other blades; 1 to 4 equip inventory slots; wheel up or down cycles occupied inventory slots, including potions and grenades; X drops the selected item; E picks up loot; V swaps blade and gun; ${displayKey('Q')} throws grenade; F heals; R reloads; Space jumps; Control crouches; Shift sprints, C walks quietly; P opens the controls menu or resumes controls; Escape exits fullscreen and releases controls.`); }
+  function updateKeyLabels() { setText($('move-keys'), getKeyboardLayout().toUpperCase()); for (const label of document.querySelectorAll('[data-royale-key]')) label.textContent = displayKey(label.dataset.royaleKey); canvas.setAttribute('aria-label', `3D battle royale. ${getKeyboardLayout().toUpperCase()} or arrows move; mouse looks; left click uses your selected item; right click aims guns, stabs with a knife or parries with other blades; 1 to 4 equip inventory slots; wheel up or down cycles occupied inventory slots, including potions and grenades; X drops the selected item; F picks up loot; Q / E lean; V swaps blade and gun; G throws grenade; H heals; R reloads; Space jumps; Control crouches; Shift sprints, C walks quietly; P opens the controls menu or resumes controls; Escape exits fullscreen and releases controls.`); }
   const unsubscribeLayout = subscribeKeyboardLayout(() => { neutralize({ pause: entered, unlock: true }); updateKeyLabels(); }); updateKeyLabels();
   const cameraMotionControls = mountCameraMotionControls(document, { store: cameraMotion, reducedMotion: hitMotion });
   const unsubscribeCameraMotion = cameraMotion.subscribe(() => draw(performance.now()));

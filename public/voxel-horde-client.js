@@ -164,7 +164,7 @@ export function hordeRevivePresentation(player, target, { reviveTicks = 360, tic
   const total = Math.max(1, finite(reviveTicks)), active = player?.interaction === `revive:${target.id}` && player.interactTicks > 0;
   const ticks = active ? clamp(finite(player.interactTicks), 0, total) : 0, percent = Math.floor(ticks / total * 100);
   return { active, percent, seconds: (total - ticks) / tickRate,
-    text: active ? `REVIVING ${percent}% · HOLD E · ${((total - ticks) / tickRate).toFixed(1)}s` : `Hold E · stay still in cover for ${(total / tickRate).toFixed(0)} seconds` };
+    text: active ? `REVIVING ${percent}% · HOLD F · ${((total - ticks) / tickRate).toFixed(1)}s` : `Hold F · stay still in cover for ${(total / tickRate).toFixed(0)} seconds` };
 }
 
 export async function bootHorde() {
@@ -232,7 +232,7 @@ export async function bootHorde() {
   function error(message = '') { text('horde-error-text', message); hide('horde-error', !message); hide('horde-retry', !graphicsError); }
   function feedback(message, now = performance.now(), duration = 1400) { text('horde-feedback', message); feedbackUntil = now + duration; }
   function hints() {
-    app.dataset.keyboardLayout = getKeyboardLayout(); text('horde-guide-move', displayKey('WASD')); text('horde-grenade-key', displayKey('Q')); text('horde-guide-grenade', displayKey('Q'));
+    app.dataset.keyboardLayout = getKeyboardLayout(); text('horde-guide-move', displayKey('WASD')); text('horde-grenade-key', 'G'); text('horde-guide-grenade', 'G');
     text('horde-look-hint', fallback ? 'DRAG TO LOOK · P MENU · ESC RELEASE' : `${displayKey('WASD')} MOVE · RMB SECONDARY · P ${solo ? 'PAUSE' : 'MENU'} · ESC RELEASE`);
     canvas.setAttribute('aria-label', `First-person monster survival. ${displayKey('WASD')} or arrows move, mouse looks, left click or B / J uses your selected item, right click aims guns, stabs with a knife or parries with other blades, Space jumps, Control crouches, Shift sprints, C walks quietly, R reloads, 1 to 4 equip inventory slots, wheel up or down cycles occupied inventory slots, including potions and grenades, X drops the selected item, V switches blade, ${displayKey('Q')} throws a grenade, F heals, E picks up supplies or holds to revive. P ${solo ? 'toggles pause and opens the setup menu' : 'opens the controls menu or resumes controls'}. Escape exits fullscreen and releases your controls.`);
   }
@@ -444,7 +444,7 @@ export async function bootHorde() {
         if (solo && !modalOpen) { $('horde-result-title').setAttribute('tabindex', '-1'); $('horde-result-title').focus({ preventScroll: true }); }
       }
     }
-    text('horde-objective', lobby ? solo ? 'Choose your arena and loadout. Start when you’re ready.' : 'Invite up to two friends. Everyone readies; the host starts.' : phase === 'paused' ? 'All movement and combat paused.' : phase === 'matchEnd' ? solo ? 'Your stand is over. Replay the same challenge, or change your setup.' : 'Squad overrun. The host can open the next lobby.' : phase === 'intermission' ? `Next wave in ${wave.seconds}s · F heal · R reload · E collect supplies.` : !player?.alive ? downCopy : 'Keep an escape route. E picks up drops · F drinks a potion · hold E near a fallen teammate.');
+    text('horde-objective', lobby ? solo ? 'Choose your arena and loadout. Start when you’re ready.' : 'Invite up to two friends. Everyone readies; the host starts.' : phase === 'paused' ? 'All movement and combat paused.' : phase === 'matchEnd' ? solo ? 'Your stand is over. Replay the same challenge, or change your setup.' : 'Squad overrun. The host can open the next lobby.' : phase === 'intermission' ? `Next wave in ${wave.seconds}s · H heal · R reload · F collect supplies.` : !player?.alive ? downCopy : 'Keep an escape route. F picks up drops · H drinks a potion · hold F near a fallen teammate.');
     const banner = wave.banner || (phase === 'fight' && now < waveBannerUntil ? { tag: 'HOLD YOUR GROUND', title: `WAVE ${wave.wave}`, detail: wave.wave >= 4 ? 'Armed hostiles — use solid cover.' : 'Watch the entry points.' } : null);
     hide('horde-wave-banner', !banner || modalOpen || paused || phase === 'intermission' && victoryView.visible); if (banner) { text('horde-wave-tag', banner.tag); text('horde-wave-copy', banner.title); text('horde-wave-detail', banner.detail); }
     updateTeam();

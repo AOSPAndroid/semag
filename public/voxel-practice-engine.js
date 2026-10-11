@@ -1,5 +1,5 @@
 /** Local drills use the shipped movement, weapons, damage and Royale rules at 120 Hz. */
-import { MAPS as BREACH_MAPS, createState as createBreachState, createCombatPlayer, combatStep, emptyInput, eyeHeight, playerHeight, aimDirection, traceShot, emitCombatEvent, TICK_RATE, WORLD, PLAYER_HEALTH, findNearbyLoot, pickupCombatLoot, advanceInventoryLoot, resetSprint } from './voxel-engine.js';
+import { MAPS as BREACH_MAPS, createState as createBreachState, createCombatPlayer, combatStep, emptyInput, eyeHeight, eyePosition, playerHeight, aimDirection, traceShot, emitCombatEvent, TICK_RATE, WORLD, PLAYER_HEALTH, findNearbyLoot, pickupCombatLoot, advanceInventoryLoot, resetSprint } from './voxel-engine.js';
 import * as Royale from './voxel-royale-engine.js';
 import { WEAPONS } from './voxel-weapons.js';
 import { MELEE_WEAPONS, resetMeleeDefense, clearMeleeComboContinuation } from './voxel-melee.js';
@@ -204,14 +204,19 @@ export function resumePractice(state) {
   state.practice.inputFence = ['fire', 'aim', 'jump', 'swap', 'grenade', 'heal', 'interact', 'reload', 'sprint', 'slot1', 'slot2', 'slot3', 'slot4', 'drop', ...(state.dojo ? DOJO_ACTIONS : [])];
   neutralize(state); return state;
 }
-function visibleEnemy(state, bot, enemy) {
-  if (!enemy.alive || enemy.team === bot.team || enemy.id === bot.id) return false;
-  const origin = { x: bot.x, y: bot.y + eyeHeight(bot), z: bot.z }, target = { x: enemy.x, y: enemy.y + playerHeight(enemy) * .58, z: enemy.z };
-  const dx = target.x - origin.x, dy = target.y - origin.y, dz = target.z - origin.z, distance = Math.hypot(dx, dy, dz);
-  if (distance > 46 || distance < EPS) return false;
-  const hit = traceShot(state, bot.id, origin, { x: dx / distance, y: dy / distance, z: dz / distance }, distance + .3, state.map);
-  return hit.playerId === enemy.id;
+/** The first point of an enemy a bot can actually see: torso, then a peeking head. */
+function visiblePoint(state, bot, enemy) {
+  if (!enemy.alive || enemy.team === bot.team || enemy.id === bot.id) return null;
+  const origin = eyePosition(bot), head = eyePosition(enemy);
+  for (const target of [{ x: enemy.x, y: enemy.y + playerHeight(enemy) * .58, z: enemy.z }, { ...head, y: head.y - .05 }]) {
+    const dx = target.x - origin.x, dy = target.y - origin.y, dz = target.z - origin.z, distance = Math.hypot(dx, dy, dz);
+    if (distance > 46 || distance < EPS) continue;
+    const hit = traceShot(state, bot.id, origin, { x: dx / distance, y: dy / distance, z: dz / distance }, distance + .3, state.map);
+    if (hit.playerId === enemy.id) return target;
+  }
+  return null;
 }
+const visibleEnemy = (state, bot, enemy) => visiblePoint(state, bot, enemy) !== null;
 function patrolGoal(state, bot, brain) {
   const nodes = navigationFor(state.map).nodes, local = state.players[0];
   brain.path = [];
@@ -353,11 +358,13 @@ function botInput(state, bot, brain) {
   if (state.tick >= brain.nextAimTick) {
     brain.aimYaw = (random(practice) * 2 - 1) * settings.aimError; brain.aimPitch = (random(practice) * 2 - 1) * settings.aimError * .65; brain.nextAimTick = state.tick + 24;
   }
-  const look = visible && enemy ? { x: enemy.x, z: enemy.z } : brain.path[0] || brain.goal;
+  // Aim at what is actually exposed, so a peeking head is the target.
+  const aimPoint = visible && enemy ? visiblePoint(state, bot, enemy) : null;
+  const look = aimPoint || brain.path[0] || brain.goal;
   if (look) {
     const desiredYaw = Math.atan2(look.x - bot.x, -(look.z - bot.z)) + (visible ? brain.aimYaw : 0);
     input.yaw = wrap(bot.yaw + clamp(wrap(desiredYaw - bot.yaw), -settings.turnSpeed / TICK_RATE, settings.turnSpeed / TICK_RATE));
-    const desiredPitch = visible ? Math.atan2(enemy.y + playerHeight(enemy) * .58 - bot.y - eyeHeight(bot), Math.hypot(enemy.x - bot.x, enemy.z - bot.z)) + brain.aimPitch : 0;
+    const desiredPitch = aimPoint ? Math.atan2(aimPoint.y - bot.y - eyeHeight(bot), Math.hypot(aimPoint.x - bot.x, aimPoint.z - bot.z)) + brain.aimPitch : 0;
     input.pitch = bot.pitch + clamp(desiredPitch - bot.pitch, -settings.turnSpeed / TICK_RATE, settings.turnSpeed / TICK_RATE);
   }
   if (bot.healTicks) return input;

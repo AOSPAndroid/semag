@@ -16,12 +16,14 @@ export const TICK_RATE = 120;
 // network snapshot, including utility and damage feedback in the same interval.
 export const EVENT_LIMIT = 160;
 export const WORLD = Object.freeze({ radius: .32, standHeight: 1.8, crouchHeight: 1.15, eyeHeight: 1.62, crouchEyeHeight: .98, gravity: 18.4, jumpSpeed: 6.4, jumpBufferTicks: 10, roundSeconds: 100, bombSeconds: 35, plantSeconds: 3, defuseSeconds: 5, buySeconds: 8, winsToMatch: 4 });
-export const INPUT_KEYS = Object.freeze(['up', 'down', 'left', 'right', 'jump', 'crouch', 'walk', 'sprint', 'fire', 'reload', 'interact', 'aim', 'swap', 'grenade', 'heal', ...INVENTORY_ACTIONS]);
+export const INPUT_KEYS = Object.freeze(['up', 'down', 'left', 'right', 'jump', 'crouch', 'walk', 'sprint', 'fire', 'reload', 'interact', 'aim', 'swap', 'grenade', 'heal', ...INVENTORY_ACTIONS, 'leanLeft', 'leanRight']);
 export const ADS = Object.freeze({ ticks: 18, speedMultiplier: .65, spreadMultiplier: .4, recoilMultiplier: .62, fovRatio: 54 / 70, scopedFovRatio: 40 / 70 });
 export const PLAYER_HEALTH = 200;
 export const HEAL = Object.freeze({ ticks: 24, amount: 60, speedMultiplier: .3 });
 export const KNOCKBACK = Object.freeze({ decay: 10, maxMonsterSpeed: 10, maxPlayerSpeed: 2.4, monsterTicks: 36, playerTicks: 24, monsterReadyTicks: 12, playerReadyTicks: 24 });
 export const MOVEMENT = Object.freeze({ counterStrafeAccel: 110 });
+/** Peeking: the head travels sideways and slightly down; walls stop it short. */
+export const LEAN = Object.freeze({ offset: .38, rampTicks: 14, speedMultiplier: .8, drop: .12, bodyShare: .45, clearance: .26, viewRoll: .55 });
 export const SPRINT = Object.freeze({ maxStamina: 100, speedMultiplier: 1.4, drainPerSecond: 24, regenPerSecond: 18, regenDelayTicks: 144, restartStamina: 25 });
 const EPS = 1e-8, DT = 1 / TICK_RATE;
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
@@ -98,6 +100,10 @@ function advanceMovementActions(player, input, context) {
 }
 export const eyeHeight = player => monsterBodyProfile(player)?.eyeHeight ?? (player.crouching ? WORLD.crouchEyeHeight : WORLD.eyeHeight);
 export const playerHeight = player => monsterBodyProfile(player)?.height ?? (player.crouching ? WORLD.crouchHeight : WORLD.standHeight);
+const leanOffset = player => Number.isFinite(player?.leanOffset) ? clamp(player.leanOffset, -LEAN.offset, LEAN.offset) : 0;
+const leanAxis = (player, axis) => Number.isFinite(player?.[axis]) ? clamp(player[axis], -LEAN.offset, LEAN.offset) : 0;
+/** The real head position, including a wall-limited lean. Shots leave from here. */
+export const eyePosition = player => ({ x: player.x + leanAxis(player, 'leanX'), y: player.y + eyeHeight(player) - Math.abs(leanOffset(player)) * LEAN.drop, z: player.z + leanAxis(player, 'leanZ') });
 export const emptyInput = (aim = {}) => ({ ...Object.fromEntries(INPUT_KEYS.map(key => [key, false])), yaw: Number.isFinite(aim.yaw) ? clamp(aim.yaw, -Math.PI, Math.PI) : 0, pitch: Number.isFinite(aim.pitch) ? clamp(aim.pitch, -1.35, 1.35) : 0 });
 export function cloneState(state) { const copy = JSON.parse(JSON.stringify(state)); if (copy.players) copy.fighters = copy.players; return copy; }
 /** New lives refill stamina; dead bodies clear it without leaving a sprint pose. */
@@ -108,7 +114,7 @@ export function resetSprint(player, { refill = true } = {}) {
 }
 export function createCombatPlayer(id, teamSize = 1, loadout = 'carbine') {
   const weapon = typeof loadout === 'string' && Object.hasOwn(WEAPONS, loadout) ? loadout : 'carbine', w = WEAPONS[weapon];
-  const player = { id, team: Math.floor(id / teamSize), x: 0, y: 0, z: 0, yaw: 0, pitch: 0, vx: 0, vy: 0, vz: 0, knockbackX: 0, knockbackZ: 0, knockbackTicks: 0, knockbackReadyTicks: 0, radius: WORLD.radius, grounded: true, jumpBufferTicks: 0, stamina: SPRINT.maxStamina, staminaRegenTicks: 0, sprintExhausted: false, sprinting: false, crouching: false, alive: true, hp: PLAYER_HEALTH, maxHp: PLAYER_HEALTH, weapon, slot: 'primary', meleeWeapon: 'knife', meleeLoadout: 'knife', ammo: w.magazine, reserve: w.reserve, reloadTicks: 0, shotCooldown: 0, burstRemaining: 0, spinTicks: 0, recoil: 0, recoilYaw: 0, sprayShots: 0, sprayIdleTicks: 0, heat: 0, shotIndex: 0, lastShotHand: 0, pendingFireTicks: 0, shots: 0, kills: 0, deaths: 0, damageDealt: 0, lastHitTick: -1000, triggerBlocked: false, aiming: false, aimTicks: 0, meleeTicks: 0, meleeCooldown: 0, meleeIndex: 0, meleeHand: 0, meleeYaw: 0, meleePitch: 0, meleeStartTick: 0, meleePhase: 'idle', meleeHitIds: [], meleeHitLives: [], healing: false, healTicks: 0, healStartTick: -1, potions: 0, grenades: 0, grenadeThrowTicks: 0, interaction: null, interactTicks: 0, previousInput: emptyInput() };
+  const player = { id, team: Math.floor(id / teamSize), x: 0, y: 0, z: 0, yaw: 0, pitch: 0, vx: 0, vy: 0, vz: 0, knockbackX: 0, knockbackZ: 0, knockbackTicks: 0, knockbackReadyTicks: 0, radius: WORLD.radius, grounded: true, jumpBufferTicks: 0, stamina: SPRINT.maxStamina, staminaRegenTicks: 0, sprintExhausted: false, sprinting: false, crouching: false, lean: 0, leanOffset: 0, leanX: 0, leanZ: 0, alive: true, hp: PLAYER_HEALTH, maxHp: PLAYER_HEALTH, weapon, slot: 'primary', meleeWeapon: 'knife', meleeLoadout: 'knife', ammo: w.magazine, reserve: w.reserve, reloadTicks: 0, shotCooldown: 0, burstRemaining: 0, spinTicks: 0, recoil: 0, recoilYaw: 0, sprayShots: 0, sprayIdleTicks: 0, heat: 0, shotIndex: 0, lastShotHand: 0, pendingFireTicks: 0, shots: 0, kills: 0, deaths: 0, damageDealt: 0, lastHitTick: -1000, triggerBlocked: false, aiming: false, aimTicks: 0, meleeTicks: 0, meleeCooldown: 0, meleeIndex: 0, meleeHand: 0, meleeYaw: 0, meleePitch: 0, meleeStartTick: 0, meleePhase: 'idle', meleeHitIds: [], meleeHitLives: [], healing: false, healTicks: 0, healStartTick: -1, potions: 0, grenades: 0, grenadeThrowTicks: 0, interaction: null, interactTicks: 0, previousInput: emptyInput() };
   Object.assign(player, { pendingMeleeTicks: 0, meleeComboStep: 0, meleeComboConfirmed: false, meleeComboWindowTicks: 0, meleeComboWeapon: null, hitStunTicks: 0, hitStunReadyTicks: 0, meleeInitialYaw: 0, meleeInitialPitch: 0, meleeAction: 'primary', meleeAimBlocked: false, meleeSecondaryCooldown: 0, parryTicks: 0, parryCooldown: 0, parryYaw: 0, parryPitch: 0, parryStartTick: 0, parryIndex: 0, parryConsumed: false });
   Object.assign(player, { healUseIndex: 0, healUseId: null, healInventoryIndex: -1, healSelectedIndex: -1 });
   return initializeInventory(player, { weapon });
@@ -334,6 +340,27 @@ function finishSprint(player, plan) {
   } else if (player.staminaRegenTicks > 0) player.staminaRegenTicks--;
   else player.stamina = Math.min(SPRINT.maxStamina, player.stamina + SPRINT.regenPerSecond * DT);
 }
+/** Head travel stops short of solid cover so a lean can never see or shoot through it. */
+function updateLeanReach(f, arena) {
+  const lean = Number.isFinite(f.lean) ? f.lean : 0;
+  if (!f.alive || !lean) { f.leanOffset = f.leanX = f.leanZ = 0; return; }
+  const side = Math.sign(lean), rightX = Math.cos(f.yaw) * side, rightZ = Math.sin(f.yaw) * side;
+  const direction = { x: rightX, y: 0, z: rightZ };
+  let reach = Math.abs(lean) * LEAN.offset;
+  // Test the eye and the shoulder line the lean carries sideways.
+  for (const height of [eyeHeight(f), eyeHeight(f) - .38]) {
+    const origin = { x: f.x, y: f.y + height, z: f.z };
+    for (const rect of arena.colliders) {
+      const distance = rayBox(origin, direction, rect, reach + LEAN.clearance);
+      if (distance !== null) reach = Math.min(reach, Math.max(0, distance - LEAN.clearance));
+    }
+    if (rightX > EPS) reach = Math.min(reach, Math.max(0, arena.bounds.maxX - LEAN.clearance - f.x) / rightX);
+    if (rightX < -EPS) reach = Math.min(reach, Math.max(0, f.x - arena.bounds.minX - LEAN.clearance) / -rightX);
+    if (rightZ > EPS) reach = Math.min(reach, Math.max(0, arena.bounds.maxZ - LEAN.clearance - f.z) / rightZ);
+    if (rightZ < -EPS) reach = Math.min(reach, Math.max(0, f.z - arena.bounds.minZ - LEAN.clearance) / -rightZ);
+  }
+  f.leanOffset = side * reach; f.leanX = rightX * reach; f.leanZ = rightZ * reach;
+}
 function movementTick(f, input, arena, peers = [], headroomPeers = peers, actions = f) {
   f.yaw = input.yaw; f.pitch = input.pitch;
   if (!f.alive) { f.vx = f.vy = f.vz = 0; f.jumpBufferTicks = 0; clearKnockback(f); resetSprint(f, { refill: false }); return null; }
@@ -350,12 +377,19 @@ function movementTick(f, input, arena, peers = [], headroomPeers = peers, action
   if (!hitStunned && f.grounded && f.jumpBufferTicks > 0 && !f.crouching) {
     f.vy = monsterBody?.jumpSpeed ?? WORLD.jumpSpeed; f.grounded = false; f.jumpBufferTicks = 0;
   } else f.jumpBufferTicks = Math.max(0, (f.jumpBufferTicks || 0) - 1);
+  // Lean eases toward the held side. Sprinting, jumping, blades and stuns
+  // straighten up; a wall clamps the actual head travel after movement.
+  const leanInput = Number(input.leanRight === true) - Number(input.leanLeft === true);
+  const leanTarget = !monsterBody && f.monster !== true && f.grounded && !hitStunned && f.slot !== 'sword' && !(input.sprint && Number(input.up) > Number(input.down)) ? leanInput : 0;
+  const currentLean = Number.isFinite(f.lean) ? clamp(f.lean, -1, 1) : 0;
+  f.lean = currentLean + clamp(leanTarget - currentLean, -1 / LEAN.rampTicks, 1 / LEAN.rampTicks);
+  if (Math.abs(f.lean) < 1e-9) f.lean = 0;
   let strafe = Number(input.right) - Number(input.left), forward = Number(input.up) - Number(input.down); const length = Math.hypot(strafe, forward);
   if (length > 0) { strafe /= length; forward /= length; }
   const primarySpeed = monsterMovementSpeed(f) ?? (f.slot === 'sword' ? meleeProfile(f).speed : WEAPONS[f.weapon].speed);
   const heldWeapon = WEAPONS[f.weapon], ads = input.aim && heldWeapon.adsSupported !== false && f.slot === 'primary' && !actions.reloadTicks && !actions.healTicks && !actions.grenadeThrowTicks;
   const adsSpeed = heldWeapon.valorant && Number.isFinite(heldWeapon.adsSpeed) ? heldWeapon.adsSpeed / heldWeapon.speed : ADS.speedMultiplier;
-  const allowed = sprintAllowed(f, input, forward, actions), normalSpeed = (f.crouching ? 2.35 : input.walk ? 2.8 : primarySpeed) * (actions.healTicks ? HEAL.speedMultiplier : ads ? adsSpeed : 1) * monsterMovementMultiplier(f) * (hitStunned ? .35 : 1);
+  const allowed = sprintAllowed(f, input, forward, actions), normalSpeed = (f.crouching ? 2.35 : input.walk ? 2.8 : primarySpeed) * (actions.healTicks ? HEAL.speedMultiplier : ads ? adsSpeed : 1) * monsterMovementMultiplier(f) * (hitStunned ? .35 : 1) * (1 - Math.abs(f.lean) * (1 - LEAN.speedMultiplier));
   const speed = normalSpeed * (allowed ? SPRINT.speedMultiplier : 1);
   if (!f.grounded && !monsterBody) {
     const velocity = Math.hypot(f.vx, f.vz);
@@ -391,6 +425,7 @@ function movementTick(f, input, arena, peers = [], headroomPeers = peers, action
   }
   f.knockbackReadyTicks = Number.isInteger(f.knockbackReadyTicks) && f.knockbackReadyTicks > 0 ? Math.max(0, Math.min(KNOCKBACK.playerReadyTicks, f.knockbackReadyTicks) - 1) : 0;
   refreshGrounded(f, arena);
+  updateLeanReach(f, arena);
   return sprintPlan;
 }
 function separatePrediction(player, peers, arena) {
@@ -541,11 +576,14 @@ export function rayBox(origin, direction, rect, maxDistance = Infinity) {
 export function aimDirection(yaw, pitch) { const c = Math.cos(pitch); return { x: Math.sin(yaw) * c, y: Math.sin(pitch), z: -Math.cos(yaw) * c }; }
 function playerBoxes(f) {
   const h = playerHeight(f), legHeight = f.crouching ? .3 : .55;
+  // A lean carries the head fully and the torso partly; legs stay planted.
+  const headX = leanAxis(f, 'leanX'), headZ = leanAxis(f, 'leanZ'), drop = Math.abs(leanOffset(f)) * LEAN.drop;
+  const bodyX = headX * LEAN.bodyShare, bodyZ = headZ * LEAN.bodyShare;
   // Split the original body silhouette without growing it. Head wins shared
   // faces, then torso; only contacts below the knee boundary count as legs.
   return [
-    { kind: 'head', x: f.x - .22, y: f.y + h - .32, z: f.z - .22, w: .44, h: .32, d: .44 },
-    { kind: 'body', x: f.x - .29, y: f.y + legHeight, z: f.z - .29, w: .58, h: h - .32 - legHeight, d: .58 },
+    { kind: 'head', x: f.x + headX - .22, y: f.y + h - .32 - drop, z: f.z + headZ - .22, w: .44, h: .32, d: .44 },
+    { kind: 'body', x: f.x + bodyX - .29, y: f.y + legHeight, z: f.z + bodyZ - .29, w: .58, h: h - .32 - drop - legHeight, d: .58 },
     { kind: 'leg', x: f.x - .29, y: f.y, z: f.z - .29, w: .58, h: legHeight, d: .58 },
   ];
 }
@@ -903,7 +941,7 @@ function fireRound(state, f, weapon, pendingDamage, arena, fire = null) {
   // The accumulated spray offset is the gun's learnable pattern position.
   const roundRecoil = fire?.recoil ?? f.recoil, horizontalRecoil = fire?.recoilYaw ?? (f.recoilYaw || 0);
   const yaw = f.yaw + horizontalRecoil + Math.cos(angle) * radius, pitch = clamp(f.pitch + roundRecoil + Math.sin(angle) * radius, -1.5, 1.5);
-  const eyeOrigin = { x: f.x, y: f.y + eyeHeight(f), z: f.z };
+  const eyeOrigin = eyePosition(f);
   let origin = eyeOrigin, pelletCount = weapon.pellets || 1, pelletSpread = weapon.pelletSpread, distanceOffset = 0, range = weapon.range, fireMode = fire?.mode || weapon.mode || 'auto';
   if (fire?.mode === 'airburst') {
     const center = aimDirection(yaw, pitch), popDistance = fire.burstDistance;

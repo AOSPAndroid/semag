@@ -214,7 +214,7 @@ export function bootPractice() {
   function config() { return { game, mapId: $('practice-map').value, bots: Number($('practice-count').value), mode: $('practice-mode').value, difficulty: $('practice-difficulty').value, weapon: $('practice-weapon').value, melee: !royale && ['blades', 'dojo'].includes($('practice-mode').value) ? $('practice-blade').value : 'knife', ...(dojo ? { targetMotion: $('dojo-start-motion').value } : {}) }; }
   function hints() {
     const layout = getKeyboardLayout(); app.dataset.keyboardLayout = layout;
-    setText('practice-move-keys', displayKey('WASD')); setText('practice-grenade-key', displayKey('Q')); setText('practice-guide-grenade', displayKey('Q'));
+    setText('practice-move-keys', displayKey('WASD')); setText('practice-grenade-key', 'G'); setText('practice-guide-grenade', 'G');
     canvas.setAttribute('aria-label', `First-person ${royale ? 'Royale' : 'Breach'} practice. ${displayKey('WASD')} or arrows move, mouse looks, left click or B / J uses your selected item, right click aims guns, stabs with a knife or parries with other blades, Space jumps, Control crouches, Shift sprints, C walks quietly, R reloads, 1 to 4 equip inventory slots, wheel up or down cycles occupied inventory slots, including potions and grenades, X drops your selected item, V switches blade, ${displayKey('Q')} throws a grenade, F heals, E picks up supplies, P pauses or resumes. Escape releases the cursor or exits fullscreen.`);
     setText('practice-look-hint', dojo ? `TAB RANGE TOOLS · ${displayKey('WASD')} MOVE · P MENU` : fallback ? 'DRAG TO LOOK · P MENU' : `${displayKey('WASD')} MOVE · RMB SECONDARY · P MENU`);
   }
@@ -279,7 +279,7 @@ export function bootPractice() {
     }
     setText('practice-weapon-note', royale ? 'Knife start · 200 health · weapons, ammo and healing are found in structures.' : WEAPONS[state.practice.config.weapon].description);
     if (!royale) renderWeaponDetails(detailCard, state.practice.config.weapon);
-    setText('practice-melee-note', dojo ? 'Your chosen gun + blade. E uses equipment stations; supplies restock, reserve ammo is unlimited, magazines and reloads stay real. Tab opens range tools.' : royale ? 'Knife only. Collect every gun and supply with E.' : blades ? `Training kit: ${MELEE_WEAPONS[state.practice.config.melee].name} in slot 1, chosen gun in slot 2. No supplies. ${MELEE_WEAPONS[state.practice.config.melee].description}` : 'Knife + chosen gun. Slots 3–4 are empty; E collects blades, guns and supplies.');
+    setText('practice-melee-note', dojo ? 'Your chosen gun + blade. F uses equipment stations; supplies restock, reserve ammo is unlimited, magazines and reloads stay real. Tab opens range tools.' : royale ? 'Knife only. Collect every gun and supply with F.' : blades ? `Training kit: ${MELEE_WEAPONS[state.practice.config.melee].name} in slot 1, chosen gun in slot 2. No supplies. ${MELEE_WEAPONS[state.practice.config.melee].description}` : 'Knife + chosen gun. Slots 3–4 are empty; F collects blades, guns and supplies.');
     updateHud(performance.now(), true); draw(performance.now());
   }
   function start() {

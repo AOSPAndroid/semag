@@ -1,4 +1,4 @@
-import { MAPS, ADS, HEAL, WORLD } from './voxel-engine.js';
+import { MAPS, ADS, HEAL, WORLD, LEAN } from './voxel-engine.js';
 import { WEAPONS, weaponAimFovRatio } from './voxel-weapons.js';
 import { valorantModel, legacyShotgunModel } from './voxel-valorant-models.js';
 import { weaponReloadDuration } from './voxel-fire-modes.js';
@@ -4221,7 +4221,29 @@ export function createHumanDeathMeshPresenter() {
   return present;
 }
 
-function playerMesh(mesh, player, map, time, allied, freeForAll = false, animation = null, presentedReload = null, options = {}) {
+/** A peeking body tilts from its planted feet so the head reaches its real lean offset. */
+export function leanTiltAngle(player) {
+  const offset = finite(player?.leanOffset);
+  return offset ? Math.asin(clamp(offset / WORLD.eyeHeight, -.5, .5)) : 0;
+}
+function tiltMeshVertices(mesh, start, player) {
+  const angle = leanTiltAngle(player);
+  if (!angle || mesh.length <= start) return;
+  const yaw = finite(player.yaw), axis = [Math.sin(yaw), 0, -Math.cos(yaw)], pivot = [finite(player.x), finite(player.y), finite(player.z)], out = mesh.storage;
+  for (let at = start; at < mesh.length; at += VERTEX_STRIDE) {
+    const point = rotateAxis([out[at] - pivot[0], out[at + 1] - pivot[1], out[at + 2] - pivot[2]], axis, angle);
+    const normal = rotateAxis([out[at + 3], out[at + 4], out[at + 5]], axis, angle);
+    out[at] = point[0] + pivot[0]; out[at + 1] = point[1] + pivot[1]; out[at + 2] = point[2] + pivot[2];
+    out[at + 3] = normal[0]; out[at + 4] = normal[1]; out[at + 5] = normal[2];
+  }
+}
+function playerMesh(mesh, player, ...rest) {
+  const start = mesh.length;
+  const result = playerMeshParts(mesh, player, ...rest);
+  tiltMeshVertices(mesh, start, player);
+  return result;
+}
+function playerMeshParts(mesh, player, map, time, allied, freeForAll = false, animation = null, presentedReload = null, options = {}) {
   const { crouch, yaw, pitch, pose, color, team, uniform, art, joints } = options.ninjaSkins ? ninjaParts(mesh, player, time, freeForAll, animation, options.reducedMotion) : operativeParts(mesh, player, time, freeForAll, animation);
   const healing = finite(player.healTicks) > 0;
   const potion = healing || player.slot === 'potion', grenade = player.slot === 'grenade', empty = player.slot === 'empty';
@@ -4789,6 +4811,9 @@ export class VoxelRenderer {
     if (options.hideWeapon || cameraPlayer.id !== localId || !cameraPlayer.alive) { this.presentEquip.reset(); this.equipMotion = null; }
     else this.equipMotion = this.presentEquip(cameraPlayer, time, headContext, { reducedMotion, actionActive: equipAction, paused: state.phase === 'paused' || !!options.paused });
     let eye = this.presentEye(cameraPlayer, map, time);
+    // A lean moves the real eye sideways and tilts the view toward the peek.
+    const leanEye = [finite(cameraPlayer.leanX), -Math.abs(finite(cameraPlayer.leanOffset)) * LEAN.drop, finite(cameraPlayer.leanZ)];
+    if (cameraPlayer.alive !== false) { eye[0] += leanEye[0]; eye[1] += leanEye[1]; eye[2] += leanEye[2]; }
     let bobY = motion.bobY;
     if (bobY < 0 && map.colliders?.length) {
       const contact = rayCoverDistance(eye, [0, -1, 0], map.colliders, -bobY, .04);
@@ -4803,7 +4828,7 @@ export class VoxelRenderer {
     this.deathCameraActor = localDeath || (sameCameraLife(this.deathCameraActor) ? this.deathCameraActor : null);
     this.deathCamera = this.deathCameraActor ? humanDeathCameraPose({ ...this.deathCameraActor,
       ageMs: Math.max(this.deathCameraActor.ageMs, this.presentHumanDeaths.getStats().clockMs - this.deathCameraActor.born) }, { reducedMotion }) : null;
-    let roll = motion.roll;
+    let roll = motion.roll - (cameraPlayer.alive !== false ? leanTiltAngle(cameraPlayer) * LEAN.viewRoll : 0);
     if (this.deathCamera) {
       const lower = Math.min(this.deathCamera.lower, Math.max(0, rayCoverDistance(eye, [0, -1, 0], map.colliders || [], this.deathCamera.lower + .05, .04) - .05));
       eye[1] -= lower; roll += this.deathCamera.roll; pitch = clamp(pitch + this.deathCamera.pitch, -1.48, 1.48);

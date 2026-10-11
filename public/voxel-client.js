@@ -25,7 +25,7 @@ import { createCameraMotionStore } from './voxel-camera-motion-settings.js';
 import { mountCameraMotionControls } from './voxel-camera-motion-ui.js';
 
 export const LOOK_SENSITIVITY = 0.0025;
-export const FPS_BUTTONS = Object.freeze(['up', 'down', 'left', 'right', 'jump', 'crouch', 'walk', 'sprint', 'fire', 'reload', 'interact', 'aim', 'swap', 'grenade', 'heal', 'slot1', 'slot2', 'slot3', 'slot4', 'drop']);
+export const FPS_BUTTONS = Object.freeze(['up', 'down', 'left', 'right', 'jump', 'crouch', 'walk', 'sprint', 'fire', 'reload', 'interact', 'aim', 'swap', 'grenade', 'heal', 'slot1', 'slot2', 'slot3', 'slot4', 'drop', 'leanLeft', 'leanRight']);
 const TAU = Math.PI * 2;
 const clone = value => value == null ? value : structuredClone(value);
 
@@ -41,7 +41,7 @@ export function neutralInput(yaw = 0, pitch = 0) {
 export function controlForKey(event, layout = getKeyboardLayout()) {
   if (event.defaultPrevented || event.isComposing || event.altKey || event.metaKey) return null;
   const key = gameKey(event, layout).toLowerCase();
-  const action = inventoryControlForKey(event) || ({ w: 'up', arrowup: 'up', s: 'down', arrowdown: 'down', a: 'left', arrowleft: 'left', d: 'right', arrowright: 'right', ' ': 'jump', control: 'crouch', shift: 'sprint', c: 'walk', b: 'fire', j: 'fire', r: 'reload', e: 'interact', v: 'swap', q: 'grenade', g: 'grenade', f: 'heal', h: 'heal' })[key] || null;
+  const action = inventoryControlForKey(event) || ({ w: 'up', arrowup: 'up', s: 'down', arrowdown: 'down', a: 'left', arrowleft: 'left', d: 'right', arrowright: 'right', ' ': 'jump', control: 'crouch', shift: 'sprint', c: 'walk', b: 'fire', j: 'fire', r: 'reload', f: 'interact', v: 'swap', q: 'leanLeft', e: 'leanRight', g: 'grenade', h: 'heal' })[key] || null;
   // Ctrl is the crouch control, so captured gameplay actions must work while it is held.
   return action;
 }
@@ -391,7 +391,7 @@ async function boot() {
   const loadoutArmory = mountWeaponArmory({ select: $('loadout-select'), title: 'Build your loadout', portalContainer: $('room-dialog') });
   const arenaArmory = mountWeaponArmory({ select: arenaSelect, title: 'Choose your round weapon', portalContainer: $('game-shell') });
   const comparisonBands = document.createElement('section'); comparisonBands.id = 'comparison-bands'; comparisonBands.setAttribute('aria-label', 'Weapon damage at each range and handling'); $('weapon-comparison').append(comparisonBands);
-  setText($('arena-melee-note'), 'Slot 1: knife · Slot 2: chosen gun · Slots 3–4: empty. Scavenge blades, guns and supplies with E.');
+  setText($('arena-melee-note'), 'Slot 1: knife · Slot 2: chosen gun · Slots 3–4: empty. Scavenge blades, guns and supplies with F.');
   setText($('phase-shortcuts'), 'CHOOSE A GUN DURING SETUP · IN PLAY: 1–4 EQUIP, WHEEL SWITCH, X DROP');
   const roomId = new URLSearchParams(location.search).get('room')?.trim().toUpperCase() || '';
   const roomLabel = /^[A-Z0-9]{6}$/.test(roomId) ? roomId : 'NO ROOM';
@@ -489,10 +489,10 @@ async function boot() {
   function utilityFeedback(action) {
     const local = ownPlayer(); if (state?.phase !== 'fight' || !local?.alive) return;
     if (action === 'heal' && !local.healTicks) {
-      if (!local.potions) toast('No potions. Press E near a drop to collect one, then F to drink it.');
+      if (!local.potions) toast('No potions. Press F near a drop to collect one, then H to drink it.');
       else if (local.hp >= local.maxHp) toast('Health is full. Save your potion.');
       else if (!local.grounded) toast('Land before drinking your potion.');
-    } else if (action === 'grenade' && !local.grenades) toast('No grenades. Scavenge a drop with E first.');
+    } else if (action === 'grenade' && !local.grenades) toast('No grenades. Scavenge a drop with F first.');
   }
   function sendInput(buttons = currentInput(), edge = true, now = performance.now(), cancelActions = false, cancelPress = null) {
     const nextSequence = sequence >= 999999000 ? 1 : sequence + 1;
@@ -915,7 +915,7 @@ async function boot() {
       toggleClass($('objective-hud'), 'device-live', bomb.status === 'planted');
     }
     const roles = local?.team === attackTeam ? 'Breach' : 'Hold';
-    setText($('objective'), inLobby ? `All ${capacity} players must be connected and ready.` : phase === 'buy' ? `${roles}: choose your weapon. Movement is locked during setup.` : phase === 'fight' ? local?.alive ? `${roles}: ${local.team === attackTeam ? 'plant at A or B, or eliminate Hold.' : 'protect the sites; hold E to defuse.'}` : 'Eliminated. Watch your own team until the next round.' : phase === 'roundEnd' ? state?.objective || 'Round complete. The next round is on its way.' : phase === 'matchEnd' ? 'Match complete. Rematch returns to lobby; everyone must ready up.' : 'Round begins shortly. Enter the arena when ready.');
+    setText($('objective'), inLobby ? `All ${capacity} players must be connected and ready.` : phase === 'buy' ? `${roles}: choose your weapon. Movement is locked during setup.` : phase === 'fight' ? local?.alive ? `${roles}: ${local.team === attackTeam ? 'plant at A or B, or eliminate Hold.' : 'protect the sites; hold F to defuse.'}` : 'Eliminated. Watch your own team until the next round.' : phase === 'roundEnd' ? state?.objective || 'Round complete. The next round is on its way.' : phase === 'matchEnd' ? 'Match complete. Rematch returns to lobby; everyone must ready up.' : 'Round begins shortly. Enter the arena when ready.');
     let overlay = false; let kicker = ''; let title = ''; let subtitle = ''; let enter = false;
     if (graphicsError) { overlay = true; kicker = 'GRAPHICS UNAVAILABLE'; title = 'The arena could not render.'; subtitle = graphicsError; }
     else if (!connected) { overlay = true; kicker = 'CONNECTING TO THE HOST'; title = permanentError ? 'This room is unavailable.' : 'Waiting for the host.'; subtitle = permanentError ? 'Return to the game shelf and create or join a room.' : 'Your controls are released while the connection recovers.'; }

@@ -14,7 +14,7 @@ const player = (id = 0, values = {}) => {
 const active = { connected: true, entered: true, paused: false, modalOpen: false, graphicsError: '', hidden: false, alive: true, phase: 'fight', pointerLocked: true, fallback: false, touchMode: false };
 
 test('French printed movement and close-hand utilities work while Control crouches', () => {
-  for (const [key, code, expected] of [['z', 'KeyW', 'up'], ['q', 'KeyA', 'left'], ['a', 'KeyQ', 'grenade'], ['f', 'KeyF', 'heal'], ['e', 'KeyE', 'interact']]) assert.equal(controlForKey({ key, code, ctrlKey: true }, 'zqsd'), expected);
+  for (const [key, code, expected] of [['z', 'KeyW', 'up'], ['q', 'KeyA', 'left'], ['a', 'KeyQ', 'leanLeft'], ['f', 'KeyF', 'interact'], ['e', 'KeyE', 'leanRight'], ['g', 'KeyG', 'grenade'], ['h', 'KeyH', 'heal']]) assert.equal(controlForKey({ key, code, ctrlKey: true }, 'zqsd'), expected);
   assert.equal(controlForKey({ key: 'z', altKey: true }, 'zqsd'), null);
   assert.equal(controlForKey({ key: 'f', isComposing: true }), null);
   assert.equal(controlForKey({ key: 'ArrowUp' }), 'up');

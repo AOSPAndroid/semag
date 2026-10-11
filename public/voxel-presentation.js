@@ -9,7 +9,7 @@ const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const finite = value => Number.isFinite(value) ? value : 0;
 const COMBAT_FIELDS = ['aimTicks', 'recoil', 'recoilYaw', 'reloadTicks', 'healTicks', 'grenadeThrowTicks', 'meleeTicks', 'meleeCooldown', 'shotCooldown', 'parryTicks', 'parryCooldown', 'meleeSecondaryCooldown', 'meleeComboWindowTicks', 'hitStunTicks', 'hitStunReadyTicks'];
 const INPUT_FIELDS = [...INPUT_KEYS, 'yaw', 'pitch', 'moveYaw'];
-const MOVEMENT_FIELDS = ['x', 'y', 'z', 'vx', 'vy', 'vz', 'yaw', 'pitch', 'grounded', 'crouching', 'jumpBufferTicks', 'knockbackX', 'knockbackZ', 'knockbackTicks', 'knockbackReadyTicks', 'hitStunTicks', 'hitStunReadyTicks', 'stamina', 'staminaRegenTicks', 'sprintExhausted', 'sprinting', 'previousInput'];
+const MOVEMENT_FIELDS = ['x', 'y', 'z', 'vx', 'vy', 'vz', 'yaw', 'pitch', 'grounded', 'crouching', 'lean', 'leanOffset', 'leanX', 'leanZ', 'jumpBufferTicks', 'knockbackX', 'knockbackZ', 'knockbackTicks', 'knockbackReadyTicks', 'hitStunTicks', 'hitStunReadyTicks', 'stamina', 'staminaRegenTicks', 'sprintExhausted', 'sprinting', 'previousInput'];
 const CONTEXT_FIELDS = [...MOVEMENT_FIELDS, 'alive', 'radius', 'weapon', 'slot', 'reloadTicks', 'healTicks', 'grenadeThrowTicks', 'meleeTicks', 'meleeCooldown', 'pendingMeleeTicks', 'meleeComboStep', 'meleeComboConfirmed', 'meleeComboWindowTicks', 'meleeComboWeapon', 'inventoryIndex', 'meleeIndex', 'meleeInitialYaw', 'meleeInitialPitch', 'meleeYaw', 'meleePitch', 'meleeAction', 'meleeSecondaryCooldown', 'meleeAimBlocked', 'parryTicks', 'parryCooldown', 'parryYaw', 'parryPitch', 'parryStartTick', 'parryIndex', 'parryConsumed', 'burstRemaining', 'pendingFireTicks', 'shotCooldown', 'triggerBlocked', 'ammo', 'reserve', 'lifeId', 'deaths', 'meleeStartTick', 'healStartTick', 'interaction', 'interactTicks', 'meleeWeapon', 'bot', 'monster', 'dashTicks', 'dashX', 'dashZ'];
 const matches = (old, next, fields) => fields.every(field => old[field] === next[field]);
 
@@ -29,7 +29,7 @@ export function reconcileMovement(player, history, ack, map, predictMovement, al
 
 function interpolateMovement(player, next, fraction) {
   const pose = copyMovementState(player);
-  for (const field of ['x', 'y', 'z', 'vx', 'vy', 'vz']) {
+  for (const field of ['x', 'y', 'z', 'vx', 'vy', 'vz', 'lean', 'leanOffset', 'leanX', 'leanZ']) {
     if (Number.isFinite(player[field]) && Number.isFinite(next[field])) pose[field] += (next[field] - player[field]) * fraction;
   }
   return pose;
