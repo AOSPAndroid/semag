@@ -8,6 +8,7 @@ import { frameAlpha } from './display-timing.js';
 import { createPlayerAnimationPresenter, playerAnimationPose, weaponReloadPose, createWeaponReloadPresenter } from './voxel-player-animation.js';
 import { createFirstPersonMotionPresenter, createWeaponShotPresenter, weaponShotPose, weaponCyclePose, resolveCameraMotion } from './voxel-first-person-motion.js';
 import { createCameraMotionStore, DEFAULT_CAMERA_MOTION } from './voxel-camera-motion-settings.js';
+import { createItemEquipPresenter } from './voxel-item-equip.js';
 import { MONSTER_BODIES, monsterBodyProfile } from './voxel-monster-bodies.js';
 import { MONSTER_DEATH_RULES, MONSTER_DEATH_STYLES, monsterDeathPose, createMonsterDeathPresenter } from './voxel-monster-death.js';
 import { HUMAN_DEATH_RULES, humanDeathPose, humanDeathCameraPose, createHumanDeathPresenter } from './voxel-human-death.js';
@@ -4284,7 +4285,7 @@ export class VoxelRenderer {
     this.lastAim = null; this.swayX = 0; this.swayY = 0;
     this.frameMeshes = { world: new Mesh(), contact: new Mesh(), tracer: new Mesh(), weapon: new Mesh() };
     this.frameMeshes.tracer.ensure((MAX_MELEE_TRAIL_VERTICES + MAX_TRACERS * 6) * VERTEX_STRIDE);
-    this.presentLoot = createLootPresenter(); this.presentWarnings = createSpawnWarningPresenter(); this.presentEye = createEyeHeightPresenter(); this.presentHumans = createPlayerAnimationPresenter(); this.presentMonsters = createMonsterAnimationPresenter(); this.presentHead = createFirstPersonMotionPresenter(); this.presentShots = createWeaponShotPresenter(); this.presentReloads = createWeaponReloadPresenter({ maxPlayers: 32 }); this.cameraReload = null; this.firstPersonMotion = null; this.shotMotion = null; this.humanPoses = new Map(); this.monsterPoses = new Map(); this._locomotionActors = Object.freeze([]); this.resizeReads = 0;
+    this.presentLoot = createLootPresenter(); this.presentWarnings = createSpawnWarningPresenter(); this.presentEye = createEyeHeightPresenter(); this.presentHumans = createPlayerAnimationPresenter(); this.presentMonsters = createMonsterAnimationPresenter(); this.presentHead = createFirstPersonMotionPresenter(); this.presentShots = createWeaponShotPresenter(); this.presentReloads = createWeaponReloadPresenter({ maxPlayers: 32 }); this.presentEquip = createItemEquipPresenter(); this.equipMotion = null; this.cameraReload = null; this.firstPersonMotion = null; this.shotMotion = null; this.humanPoses = new Map(); this.monsterPoses = new Map(); this._locomotionActors = Object.freeze([]); this.resizeReads = 0;
     this._frameDrawCalls = 0; this._frameDynamicVertices = 0; this._mapVertices = 0; this._lootItems = 0; this._stormVertices = 0;
     this._worldLabels = EMPTY_WORLD_LABELS;
     this.presentMonsterDeaths = createMonsterDeathPresenter(); this.presentMonsterDeathMeshes = createMonsterDeathMeshPresenter(); this.monsterDeaths = [];
@@ -4522,6 +4523,16 @@ export class VoxelRenderer {
     }
   }
   _viewModel(player, yaw, pitch, time, freeForAll = false, map = null, viewEye = null, viewRoll = 0) {
+    const equip = this.equipMotion, suppressActions = equip?.suppressActions === true;
+    player = equip?.player || player;
+    // Each root transform moves the model and its gripping hands together.
+    // Apply it before cover clipping, without changing the camera or hit rays.
+    const equipPose = (pose, side = 1) => {
+      if (!equip?.active) return pose;
+      pose.x += finite(equip.x) * side; pose.y += finite(equip.y); pose.z += finite(equip.z);
+      pose.pitch = finite(pose.pitch) + finite(equip.pitch); pose.yaw = finite(pose.yaw) + finite(equip.yaw) * side; pose.roll = finite(pose.roll) + finite(equip.roll) * side;
+      return pose;
+    };
     const mesh = this.frameMeshes?.weapon?.reset() || new Mesh(), team = freeForAll ? survivorColor(player) : TEAM_COLORS[player.team === 1 ? 1 : 0], art = humanAppearance(player, freeForAll);
     let motion = this.firstPersonMotion;
     if (!motion) {
@@ -4530,8 +4541,8 @@ export class VoxelRenderer {
     }
     this.reloadMotion = null; this.meleePose = null;
     const aim = aimProgress(player);
-    const age = this.presentShots ? this.presentShots.age(player.weapon, time) : this.localShot?.weapon === player.weapon ? Math.max(0, time - this.localShot.born) : Infinity;
-    const effects = shotEffect(player.weapon), firing = gunHeld(player) ? (this.presentShots ? this.presentShots.sample(player.weapon, time, aim) : weaponShotPose(player.weapon, age, aim)) : weaponShotPose(player.weapon, Infinity, 0);
+    const age = suppressActions ? Infinity : this.presentShots ? this.presentShots.age(player.weapon, time) : this.localShot?.weapon === player.weapon ? Math.max(0, time - this.localShot.born) : Infinity;
+    const effects = shotEffect(player.weapon), firing = gunHeld(player) && !suppressActions ? (this.presentShots ? this.presentShots.sample(player.weapon, time, aim) : weaponShotPose(player.weapon, age, aim)) : weaponShotPose(player.weapon, Infinity, 0);
     this.shotMotion = firing;
     if (this.lastAim && Number.isFinite(this.lastAim.time) && time > this.lastAim.time) {
       let yawDelta = yaw - this.lastAim.yaw;
@@ -4592,7 +4603,7 @@ export class VoxelRenderer {
     };
     if (finite(player.healTicks) > 0 || player.slot === 'potion') {
       const healing = finite(player.healTicks) > 0, progress = healing ? clamp(1 - player.healTicks / HEAL.ticks, 0, 1) : 0, drink = healing ? Math.sin(progress * Math.PI) : 0;
-      const pose = { x: -.14 - drink * .025 + finite(motion.weaponX), y: -.22 + drink * .11 + finite(motion.weaponY), z: -.43 + drink * .08, yaw: .12, pitch: drink * .72, scale: .93 };
+      const pose = equipPose({ x: -.14 - drink * .025 + finite(motion.weaponX), y: -.22 + drink * .11 + finite(motion.weaponY), z: -.43 + drink * .08, yaw: .12, pitch: drink * .72, scale: .93 });
       const limit = coverLimit(pose, .32, .23 * pose.scale);
       potionParts(mesh, pose, progress, limit);
       glove(pose, 0, -.081, .025, 'blade', limit);
@@ -4607,14 +4618,14 @@ export class VoxelRenderer {
         for (const hand of [0, 1]) {
           const activeHand = hand === (player.meleeHand === 1 ? 1 : 0);
           const swing = motion.guarding ? meleeMotion({ ...player, meleeHand: hand }) : activeHand ? motion : meleeMotion({ ...player, meleeTicks: 0, meleeHand: hand });
-          const pose = meleeViewPose(player, swing, { yaw, pitch, roll: viewRoll, swayX: this.swayX, weaponY: finite(this.firstPersonMotion?.weaponY) }, hand);
+          const pose = equipPose(meleeViewPose(player, swing, { yaw, pitch, roll: viewRoll, swayX: this.swayX, weaponY: finite(this.firstPersonMotion?.weaponY) }, hand), hand === 0 ? 1 : -1);
           const limit = coverLimit(pose, meleeLength(player), meleePadding(player) * pose.scale);
           meleeParts(mesh, player, pose, { hand, limit, active: swing.active || swing.guardActive });
           glove(pose, 0, -.105, -.014, hand === 0 ? 'blade' : 'support', limit);
         }
         return mesh.array;
       }
-      const pose = meleeViewPose(player, motion, { yaw, pitch, roll: viewRoll, swayX: this.swayX, weaponY: finite(this.firstPersonMotion?.weaponY) });
+      const pose = equipPose(meleeViewPose(player, motion, { yaw, pitch, roll: viewRoll, swayX: this.swayX, weaponY: finite(this.firstPersonMotion?.weaponY) }));
       const limit = coverLimit(pose, meleeLength(player), meleePadding(player) * pose.scale);
       meleeParts(mesh, player, pose, { limit, active: motion.active || motion.guardActive });
       glove(pose, .003, -.057, knife ? .071 : .026, 'blade', limit);
@@ -4623,7 +4634,7 @@ export class VoxelRenderer {
     }
     if (player.slot === 'grenade') {
       const throwing = Math.sin(clamp(finite(player.grenadeThrowTicks) / 24, 0, 1) * Math.PI);
-      const pose = { x: .21 + finite(motion.weaponX), y: -.24 - throwing * .12 + finite(motion.weaponY), z: -.44 - throwing * .13, yaw: -.12, pitch: throwing * -.22, scale: .94 };
+      const pose = equipPose({ x: .21 + finite(motion.weaponX), y: -.24 - throwing * .12 + finite(motion.weaponY), z: -.44 - throwing * .13, yaw: -.12, pitch: throwing * -.22, scale: .94 });
       const limit = coverLimit(pose, .34, .20 * pose.scale);
       grenadeParts(mesh, pose, .12, 288, time, true, limit);
       glove(pose, 0, -.078, .029, 'blade', limit);
@@ -4631,15 +4642,16 @@ export class VoxelRenderer {
     }
     if (player.slot === 'empty' || !gunHeld(player)) {
       for (const side of [-1, 1]) {
-        const pose = { x: side * .20 + finite(motion.weaponX), y: -.33 + finite(motion.weaponY), z: -.38, yaw: side * -.13, pitch: .06, scale: .90 };
+        const pose = equipPose({ x: side * .20 + finite(motion.weaponX), y: -.33 + finite(motion.weaponY), z: -.38, yaw: side * -.13, pitch: .06, scale: .90 }, side);
         glove(pose, 0, -.035, .015, 'blade', coverLimit(pose, .34, .14));
       }
       return mesh.array;
     }
-    const acceptedReloadTicks = this.cameraReload?.authoritativeTicks ?? finite(player.reloadTicks);
-    const reloadActive = acceptedReloadTicks > 0 && (this.cameraReload ? this.cameraReload.reloadActive : true);
+    const cameraReload = suppressActions ? null : this.cameraReload;
+    const acceptedReloadTicks = suppressActions ? 0 : cameraReload?.authoritativeTicks ?? finite(player.reloadTicks);
+    const reloadActive = acceptedReloadTicks > 0 && (cameraReload ? cameraReload.reloadActive : true);
     const reloadProgress = reloadActive ? clamp(1 - acceptedReloadTicks / (weaponReloadDuration(player.weapon, player.ammo) || WEAPONS.carbine.reloadTicks), 0, 1) : 0;
-    const reloadPose = this.cameraReload || weaponReloadPose(player.weapon, reloadProgress, { active: reloadActive });
+    const reloadPose = cameraReload || weaponReloadPose(player.weapon, reloadProgress, { active: reloadActive });
     const visualReloadProgress = reloadPose.globalProgress;
     const reloadHands = WEAPONS[player.weapon]?.dualWield ? [reloadPose, weaponReloadPose(player.weapon, visualReloadProgress, { active: reloadActive, hand: 1 })] : [reloadPose];
     this.reloadMotion = { weapon: player.weapon, active: reloadActive, progress: reloadProgress, visualProgress: visualReloadProgress, authoritativeTicks: acceptedReloadTicks, visualTicks: reloadPose.remainingTicks ?? acceptedReloadTicks, hands: reloadHands.map(hand => ({ hand: hand.hand, active: hand.active, stage: hand.stage, audioPhase: hand.audioPhase, magazineDrop: hand.magazineDrop, bolt: hand.bolt, pump: hand.pump, cylinder: hand.cylinder, lid: hand.lid, draw: hand.draw })) };
@@ -4648,7 +4660,7 @@ export class VoxelRenderer {
     if (WEAPONS[player.weapon]?.dualWield) {
       for (const hand of [0, 1]) {
         const side = hand === 0 ? 1 : -1;
-        const handShot = this.presentShots ? this.presentShots.sample(player.weapon, time, aim, hand) : weaponShotPose(player.weapon, this.localShot?.hand === hand ? age : Infinity, aim, side);
+        const handShot = !suppressActions && this.presentShots ? this.presentShots.sample(player.weapon, time, aim, hand) : weaponShotPose(player.weapon, this.localShot?.hand === hand ? age : Infinity, aim, side);
         const handReload = reloadHands[hand], reloadWeapon = handReload.weapon;
         const pose = { x: side * lerp(.275, .175, aim) + (this.swayX + motion.weaponX) * steady + handShot.x + reloadWeapon.x * side,
           y: lerp(-.29, -.212, aim) + (this.swayY + motion.weaponY) * steady + handShot.y + reloadWeapon.y - throwing * .15,
@@ -4656,8 +4668,9 @@ export class VoxelRenderer {
           yaw: -side * lerp(.08, .055, aim) + this.swayX * 2 * steady + handShot.yaw + reloadWeapon.yaw * side + finite(motion.weaponYaw) * steady,
           pitch: handShot.pitch + reloadWeapon.pitch + finite(motion.weaponPitch) * steady - throwing * .20,
           roll: finite(motion.weaponRoll) * steady, scale: .74 };
+        equipPose(pose, side);
         const limit = coverLimit(pose, weaponLength(player.weapon) + .20, weaponCoverPadding(player.weapon, pose.scale, visualReloadProgress));
-        const handAge = this.presentShots ? this.presentShots.age(player.weapon, time, hand) : this.localShot?.hand === hand ? age : Infinity;
+        const handAge = !suppressActions && this.presentShots ? this.presentShots.age(player.weapon, time, hand) : this.localShot?.hand === hand ? age : Infinity;
         const length = weaponParts(mesh, player.weapon, pose, { hand, limit, reloadProgress, reloadMotion: handReload, bolt: weaponCyclePose(player.weapon, handAge).bolt, aim });
         glove(pose, 0, -.122, -.010, hand === 0 ? 'gun' : 'support', limit);
         const flashDuration = finite(effects.muzzleTicks, 5) * 1000 / 120;
@@ -4678,6 +4691,7 @@ export class VoxelRenderer {
       pitch: firing.pitch + reloadPose.weapon.pitch + finite(motion.weaponPitch) * steady - throwing * .20,
       roll: finite(motion.weaponRoll) * steady, scale: .74,
     };
+    equipPose(pose);
     const cyclePose = weaponCyclePose(player.weapon, age), pump = Math.max(cyclePose.pump, reloadPose.pump);
     const limit = coverLimit(pose, weaponLength(player.weapon) + .20, weaponCoverPadding(player.weapon, pose.scale, visualReloadProgress));
     const length = weaponParts(mesh, player.weapon, pose, { stock: team, limit, reloadProgress, reloadMotion: reloadPose, bolt: cyclePose.bolt, pump, aim, loaded: player.ammo > 0, spin: finite(player.spinTicks) / (WEAPONS[player.weapon]?.spinupTicks || 1), cycle: 1 - finite(player.shotCooldown) / (WEAPONS[player.weapon]?.cooldown || 1) });
@@ -4761,6 +4775,11 @@ export class VoxelRenderer {
       return this.presentReloads(source, time, headContext, { durationTicks: weaponReloadDuration(source.weapon, source.ammo) || undefined, paused: state.phase === 'paused' || !!options.paused });
     };
     this.cameraReload = presentReload(cameraPlayer);
+    const equipAction = finite(cameraPlayer.reloadTicks) > 0 || finite(cameraPlayer.healTicks) > 0 || finite(cameraPlayer.grenadeThrowTicks) > 0
+      || finite(cameraPlayer.meleeTicks) > 0 || finite(cameraPlayer.parryTicks) > 0 || finite(cameraPlayer.burstRemaining) > 0
+      || gunHeld(cameraPlayer) && this.presentShots.age(cameraPlayer.weapon, time) < 55;
+    if (options.hideWeapon || cameraPlayer.id !== localId || !cameraPlayer.alive) { this.presentEquip.reset(); this.equipMotion = null; }
+    else this.equipMotion = this.presentEquip(cameraPlayer, time, headContext, { reducedMotion, actionActive: equipAction, paused: state.phase === 'paused' || !!options.paused });
     let eye = this.presentEye(cameraPlayer, map, time);
     let bobY = motion.bobY;
     if (bobY < 0 && map.colliders?.length) {
@@ -4964,7 +4983,8 @@ export class VoxelRenderer {
         feet: Object.freeze(legs.map(leg => Object.freeze([...leg.foot]))), knees: Object.freeze(legs.map(leg => Object.freeze([...leg.knee]))),
         planted: Object.freeze(legs.map(leg => leg.planted)) });
     })) });
-    const firstPerson = this.firstPersonMotion ? Object.freeze({ ...this.firstPersonMotion, eye: Object.freeze([...this.firstPersonMotion.eye]), shot: Object.freeze({ ...this.shotMotion }), melee: this.meleePose ? Object.freeze({ ...this.meleePose }) : null, reload: this.reloadMotion ? Object.freeze({ ...this.reloadMotion, hands: Object.freeze(this.reloadMotion.hands.map(hand => Object.freeze({ ...hand }))) }) : null, ...this.presentShots.getStats() }) : null;
+    const equip = this.equipMotion ? Object.freeze(Object.fromEntries(['phase', 'progress', 'active', 'suppressActions', 'x', 'y', 'z', 'pitch', 'yaw', 'roll', 'visibleKind', 'visibleWeapon', 'targetKind', 'targetWeapon'].map(key => [key, this.equipMotion[key]]))) : null;
+    const firstPerson = this.firstPersonMotion ? Object.freeze({ ...this.firstPersonMotion, eye: Object.freeze([...this.firstPersonMotion.eye]), shot: Object.freeze({ ...this.shotMotion }), equip, melee: this.meleePose ? Object.freeze({ ...this.meleePose }) : null, reload: this.reloadMotion ? Object.freeze({ ...this.reloadMotion, hands: Object.freeze(this.reloadMotion.hands.map(hand => Object.freeze({ ...hand }))) }) : null, ...this.presentShots.getStats() }) : null;
     return Object.freeze({ mapId: this.mapId, mapVertices: this._mapVertices, cachedMaps: this.mapCache.size, drawCalls: this._frameDrawCalls, dynamicVertices: this._frameDynamicVertices, lootItems: this._lootItems, stormVertices: this._stormVertices, spawnWarnings: this._spawnWarnings || 0, meleeTrailVertices: this._meleeTrailVertices || 0, meleeTrailActors: this._meleeTrailActors || 0, slashImpacts: Object.freeze(this.presentSlashImpacts?.getStats() || {}), monsterSpecials: Object.freeze(this._monsterSpecials || { shards: 0, runes: 0, fuses: 0, vertices: 0 }), reducedMotion: this._reducedMotion === true, cameraMotion: this._cameraMotion || this.cameraMotionPreference.get(), headReducedMotion: this._headReducedMotion === true, cachedSpawnWarnings: warnings?.cachedItems || 0, spawnWarningBuilds: warnings?.builds || 0, bloodParticles: this.particles.filter(particle => particle.material === 'blood').length, visibleBloodParticles: this._visibleBloodParticles || 0, cachedLootItems: loot?.cachedItems || 0, lootGeometryBuilds: loot?.builds || 0, geometryBufferBytes: Object.values(this.frameMeshes || {}).reduce((bytes, mesh) => bytes + mesh.storage.byteLength, 0) + (loot?.bufferBytes || 0) + (loot?.templateBytes || 0) + (warnings?.bufferBytes || 0) + (warnings?.templateBytes || 0) + (deathGeometry?.bufferBytes || 0) + (deathGeometry?.templateBytes || 0) + (humanDeathGeometry?.bufferBytes || 0) + (humanDeathGeometry?.templateBytes || 0), cameraEyeHeight: this.cameraEyeHeight, resizeReads: this.resizeReads, humanAnimation, monsterAnimation, firstPerson, monsterDeaths, humanDeaths });
   }
   resetEffects() {
@@ -4974,7 +4994,7 @@ export class VoxelRenderer {
     this.presentMonsterSpecialImpacts?.reset(); this._monsterSpecials = null; this._reducedMotion = false; this._cameraMotion = this.cameraMotionPreference?.get() ?? DEFAULT_CAMERA_MOTION; this._headReducedMotion = false;
     this._visibleBloodParticles = 0; this._meleeTrailVertices = 0; this._meleeTrailActors = 0;
     this.localShot = null; this.localReload = null; this.shotContext = null; this.lastAim = null; this.swayX = 0; this.swayY = 0;
-    this.presentLoot?.reset(); this.presentWarnings?.reset(); this.presentEye?.reset(); this.presentHumans?.reset(); this.presentMonsters?.reset(); this.presentHead?.reset(); this.presentShots?.reset(); this.presentReloads?.reset(); this.cameraReload = null; this.firstPersonMotion = null; this.shotMotion = null; this.reloadMotion = null; this.meleePose = null; this.humanPoses?.clear(); this.monsterPoses?.clear(); this._locomotionActors = Object.freeze([]); this._spawnWarnings = 0;
+    this.presentLoot?.reset(); this.presentWarnings?.reset(); this.presentEye?.reset(); this.presentHumans?.reset(); this.presentMonsters?.reset(); this.presentHead?.reset(); this.presentShots?.reset(); this.presentReloads?.reset(); this.presentEquip?.reset(); this.equipMotion = null; this.cameraReload = null; this.firstPersonMotion = null; this.shotMotion = null; this.reloadMotion = null; this.meleePose = null; this.humanPoses?.clear(); this.monsterPoses?.clear(); this._locomotionActors = Object.freeze([]); this._spawnWarnings = 0;
     this.presentMonsterDeaths?.reset(); this.presentMonsterDeathMeshes?.reset(); this.monsterDeaths = [];
     this.presentHumanDeaths?.reset(); this.presentHumanDeathMeshes?.reset(); this.humanDeaths = []; this.deathCamera = null; this.deathCameraActor = null;
   }
