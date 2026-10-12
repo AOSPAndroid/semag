@@ -79,7 +79,7 @@ const PLANS = {
   ],
   medieval: [
     ['cart', 'wagon', 'Broken merchant wagon', -8, 4, 1, 'TRADE'],
-    ['throne', 'throne', 'Abandoned stone throne', 8, -12, 0, 'KING'],
+    ['throne', 'throne', 'Abandoned stone throne', 5, -14, 0, 'KING'],
     ['forge', 'forge', 'Blacksmith bellows and anvil', 12, 17, 0, 'FORGE'],
     ['feast', 'table', 'Overturned great hall feast', -10.5, -17, 1, 'FEAST'],
   ],

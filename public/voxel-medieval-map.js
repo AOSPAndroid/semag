@@ -1,4 +1,5 @@
 /** Crownfall Keep: honest castle rooms, connected battlements and a looted village. */
+import { addCastleStoreys } from './voxel-castle-storeys.js';
 const freeze = Object.freeze;
 const point = (x, z, y = 0) => freeze({ x, y, z });
 const box = (id, x, y, z, w, h, d, color = '#96978a', material = 'castle-stone') => freeze({ id, x, y, z, w, h, d, color, material });
@@ -7,7 +8,7 @@ const paint = (kind, x, z, w, d, color) => freeze({ kind, x, y: .012, z, w, d, c
 
 export function createMedievalMap(mode = 'breach') {
   if (mode !== 'breach' && mode !== 'royale') throw new TypeError('Medieval mode must be breach or royale');
-  const royale = mode === 'royale', half = royale ? 48 : 28, top = royale ? 3.36 : 3.2;
+  const royale = mode === 'royale', half = royale ? 48 : 28, top = 3.6;
   const colliders = [], landmarks = [], decorations = [], routes = [], buildings = [], upperFloors = [], coverIds = [], lootPoints = [];
   const jumpCover = [], hopRoutes = [], regions = [];
   const solid = value => { colliders.push(value); return value; };
@@ -68,6 +69,7 @@ export function createMedievalMap(mode = 'breach') {
     const routeIds = [];
     for (const [face, edge, direction] of [['north', z, 1], ['south', z + d, -1]]) {
       const routeX = typeof stairX === 'number' ? stairX : stairX[face];
+      if (!Number.isFinite(routeX)) continue;
       routeIds.push(climb(`${id}-${face}-rise`, `${name} / ${face} stone terraces`, routeX, edge, direction, roofId, face));
     }
     // Merlons stop shots and bodies. Open centre lanes connect the roof routes.
@@ -93,11 +95,12 @@ export function createMedievalMap(mode = 'breach') {
 
   const west = room('keep-west-tower', 'West Watch', -21, -5, 9, 10, -19.1);
   const east = room('keep-east-tower', 'East Watch', 12, -5, 9, 10, 19.1);
-  const gate = room('keep-gatehouse', 'Crown Gate', -4, -3, 8, 6, { north: 2.7, south: -2.7 }, 'gatehouse');
+  const gate = room('keep-gatehouse', 'Crown Gate', -5, -5, 10, 10, { north: null, south: -3.4 }, 'gatehouse');
+  room('keep-royal-hall', 'Royal Keep', -9, -19, 18, 10, { north: -6.9, south: null });
   const bridgeIds = [];
-  for (const [name, x] of [['west', -12], ['east', 4]]) {
+  for (const [name, x] of [['west', -12], ['east', 5]]) {
     const id = `keep-${name}-wallwalk`;
-    const deck = solid(box(id, x, top - .32, -1.3, 8, .32, 2.6)); bridgeIds.push(id);
+    const deck = solid(box(id, x, top - .32, -1.3, 7, .32, 2.6)); bridgeIds.push(id);
     mark(id, 'battlement', `${name} wall walk`, [deck]);
     cover(`${id}-north-parapet`, x + 2.8, top, -1.22, 2.4, .72, .28, '#929680', 'castle-stone', 'battlement');
     cover(`${id}-south-parapet`, x + 2.8, top, .94, 2.4, .72, .28, '#929680', 'castle-stone', 'battlement');
@@ -105,8 +108,8 @@ export function createMedievalMap(mode = 'breach') {
   // Furniture is off the door-to-door axis; it creates real shotgun/sword cover.
   cover('keep-west-armoury-chest', -20.1, 0, -.8, 1.5, .84, 1.6, '#81613e', 'castle-timber', 'armoury-chest');
   cover('keep-east-forge-anvil', 18.6, 0, -.8, 1.5, .84, 1.6, '#5b6564', 'castle-iron', 'blacksmith');
-  cover('keep-gate-chest', -3.1, 0, -.6, 1.2, .74, 1.2, '#866740', 'castle-timber', 'armoury-chest');
-  for (const [index, [x, z, tint]] of [[-9.5, -13, '#8e343b'], [6.3, 10.8, '#b2995d']].entries()) {
+  cover('keep-gate-chest', 3.2, 0, 2.8, 1.2, .74, 1.2, '#866740', 'castle-timber', 'armoury-chest');
+  for (const [index, [x, z, tint]] of [[-15.5, -13, '#8e343b'], [6.3, 10.8, '#b2995d']].entries()) {
     const stallName = index ? 'Goldsmith' : 'Market';
     const screen = cover(`keep-market-${index}-screen`, x, 0, z, 3.2, 2.4, .42, tint, 'castle-timber', 'market-stall', stallName);
     cover(`keep-market-${index}-counter`, x, 0, z + .5, 3.2, .9, 1.15, '#9d774c', 'castle-timber', 'market-stall', stallName);
@@ -127,8 +130,8 @@ export function createMedievalMap(mode = 'breach') {
   // and armoury chests break bare approaches without closing the central road.
   // Each position is off the planting circles, watchtower stairs and door axes.
   for (const [name, x, z, w, h, d, color, material, kind, label] of [
-    ['north-mason-blocks', -10, -20, 4, .84, 1.8, '#aaa58f', 'castle-stone', 'ruined-masonry', 'Masons yard'],
-    ['north-mason-screen', 5, -19, 3.2, 1.65, .65, '#969785', 'castle-stone', 'ruined-masonry', 'Masons screen'],
+    ['north-mason-blocks', -16, -22, 4, .84, 1.8, '#aaa58f', 'castle-stone', 'ruined-masonry', 'Masons yard'],
+    ['north-mason-screen', 15, -21, 3.2, 1.65, .65, '#969785', 'castle-stone', 'ruined-masonry', 'Masons screen'],
     ['west-delivery-wagon', -26, 8.7, 3.8, 1.2, 1.6, '#94714c', 'castle-timber', 'supply-cart', 'West deliveries'],
     ['east-armoury-chest', 21, 12, 3, .84, 1.4, '#81613d', 'castle-timber', 'armoury-chest', 'Armoury supplies'],
     ['west-stone-supplies', -26, -17, 3, .68, 1.4, '#a09d89', 'castle-stone', 'ruined-masonry', 'Stone supplies'],
@@ -137,7 +140,7 @@ export function createMedievalMap(mode = 'breach') {
 
   // Paired low props offer short hop plays without blocking an entrance or stair.
   for (const [name, x, z, color, material] of (royale ? [['supplies', -9, 14, '#97754d', 'castle-timber'],
-    ['masonry', 9, -14, '#aaa58f', 'castle-stone'], ['stables', -23, 13, '#8e714b', 'castle-timber']] : [])) {
+    ['masonry', 13, -14, '#aaa58f', 'castle-stone'], ['stables', -23, 13, '#8e714b', 'castle-timber']] : [])) {
     const supports = [];
     for (const [index, [offset, height]] of [[-.95, .48], [.95, .84]].entries()) {
       const centreX = x + offset, id = `medieval-hop-${name}-${index + 1}`;
@@ -154,6 +157,7 @@ export function createMedievalMap(mode = 'breach') {
     routeIds: freeze([...west.routeIds, ...east.routeIds, ...gate.routeIds]),
     underpasses: freeze([west.centre, point(-8, 0), gate.centre, point(8, 0), east.centre]),
     traverse: freeze([west.traverse, point(-8, 0, top), gate.traverse, point(8, 0, top), east.traverse]) }));
+  addCastleStoreys({ colliders, routes, buildings, upperFloors, landmarks, decorations, coverIds, lootPoints, top });
   decorations.push(paint('castle-processional-road', -2, -25, 4, 50, '#8f8d79'),
     paint('castle-inner-court', -11.7, -9, 23.4, 18, '#a2a087'));
   const addRegion = (id, name, x, z, extent = 8) => regions.push(freeze({ id, name, anchor: point(x, z),
@@ -205,13 +209,13 @@ export function createMedievalMap(mode = 'breach') {
   for (const floor of upperFloors) for (const id of floor.colliderIds) {
     const support = colliders.find(value => value.id === id);
     for (let x = support.x + .56; x <= support.x + support.w - .55; x += .8)
-      for (let z = support.z + .56; z <= support.z + support.d - .55; z += .8) anchors.push(point(x, z, top));
+      for (let z = support.z + .56; z <= support.z + support.d - .55; z += .8) anchors.push(point(x, z, support.y + support.h));
   }
   const authoredRoutes = routes.map(route => freeze({ ...route, approach: freeze([route.start, ...anchors]) }));
   const common = { id: 'medieval', name: 'Crownfall Keep', theme: 'medieval', mode, combatStyle: 'close',
     description: royale
-      ? 'A 96-metre castle and village. Loot two-door towers, the blacksmith and inn; cross connected battlements, cobbled tracks and broken outer courtyards. Short stone corners favour swords and shotguns.'
-      : 'A 56-metre castle court. Two-door watchtowers flank an open gatehouse; six stone climbs reach connected battlements. Market stalls, armoury chests and walk-under routes reward swords, shotguns and quick escapes.',
+      ? 'A 96-metre medieval fortress and village. Climb three-floor watchtowers and a four-floor royal keep, explore a tall great hall and connected wall walks, then loot the blacksmith and inn. Stone corners favour swords and shotguns.'
+      : 'A medieval fortress with three-floor watchtowers, a four-floor royal keep, arched entrances and a tall central hall. Interior stone climbs link galleries and protected battlements. Tight rooms reward swords, shotguns and quick escapes.',
     bounds: freeze({ minX: -half, maxX: half, minZ: -half, maxZ: half }), colliders: freeze(colliders),
     landmarks: freeze(landmarks), decorations: freeze(decorations), routes: freeze(authoredRoutes), buildings: freeze(buildings),
     upperFloors: freeze(upperFloors), coverIds: freeze(coverIds), ...(royale ? { jumpCover: freeze(jumpCover), hopRoutes: freeze(hopRoutes) } : {}), regions: freeze(regions),

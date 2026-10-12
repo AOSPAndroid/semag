@@ -12,6 +12,7 @@ import { createCameraMotionStore, DEFAULT_CAMERA_MOTION } from './voxel-camera-m
 import { createItemEquipPresenter } from './voxel-item-equip.js';
 import { appendParisShopCollider } from './voxel-paris-shop-art.js';
 import { appendHordeCoverArt } from './voxel-horde-cover-art.js';
+import { BARCLAYS_EAGLE, BARCLAYS_MARK_COLORS } from './voxel-barclays-mark.js';
 import { MONSTER_BODIES, monsterBodyProfile } from './voxel-monster-bodies.js';
 import { MONSTER_DEATH_RULES, MONSTER_DEATH_STYLES, monsterDeathPose, createMonsterDeathPresenter } from './voxel-monster-death.js';
 import { HUMAN_DEATH_RULES, humanDeathPose, humanDeathCameraPose, createHumanDeathPresenter } from './voxel-human-death.js';
@@ -774,33 +775,7 @@ function wallText(mesh, collider, face, text, left, bottom, height, color, offse
   }
 }
 
-// A feathered, spread-wing eagle with a turned head and three tail feathers.
-// Horizontal colour runs keep this finer voxel identity inexpensive to cache.
-const BARCLAYS_EAGLE = Object.freeze([
-  '22..........................22',
-  '2222......................2222',
-  '22111....................11122',
-  '.21111..................11112.',
-  '..21111................11112..',
-  '..211111......222.....111112..',
-  '...211111....22122...111112...',
-  '....211111...21.1222111112....',
-  '.....211111..211112111112.....',
-  '......21111111111111112.......',
-  '......32111111111111123.......',
-  '.......321111111111123........',
-  '........3211111111123.........',
-  '.........32111111123..........',
-  '..........321111123...........',
-  '..........321111123...........',
-  '...........3211123............',
-  '...........3211123............',
-  '............21112.............',
-  '...........21.1.12............',
-  '...........21.1.12............',
-  '............2.1.2.............',
-  '..............2...............',
-]);
+// Merged runs preserve the reference eagle without adding a texture pass.
 const BARCLAYS_EAGLE_PATCHES = voxelBitmapRectangles(BARCLAYS_EAGLE);
 
 function paintTradingTerminal(mesh, collider, patch) {
@@ -1916,7 +1891,7 @@ function mapPaint(mesh, map, theme) {
     wallPatch(mesh, wall, face, left + .06, bottom + h - .065, w - .12, .025, accent, .016);
     const label = String(sign.label || '').toUpperCase().slice(0, 22), subtitle = String(sign.sublabel || '').toUpperCase().slice(0, 28);
     const units = text => [...text].reduce((sum, letter) => sum + (GLYPHS[letter]?.[0].length || 2) + 1, 0) - 1;
-    const emblemWidth = brand ? h * .80 : 0, gap = brand ? h * .15 : 0;
+    const emblemWidth = brand ? h * .70 : 0, gap = brand ? h * .15 : 0;
     const height = Math.min(h * (subtitle ? brand ? .38 : .33 : .44), (w - .24 - emblemWidth - gap) * 7 / Math.max(1, units(label)));
     if (height < .05) return;
     const textWidth = units(label) * height / 7, groupWidth = emblemWidth + gap + textWidth, start = left + (w - groupWidth) / 2;
@@ -1925,8 +1900,8 @@ function mapPaint(mesh, map, theme) {
     wallText(mesh, wall, face, label, textLeft, bottom + h * (subtitle ? .40 : .31), height, ink, .024, brand);
     if (brand) {
       const columns = BARCLAYS_EAGLE[0].length, pixel = emblemWidth / columns;
-      const logoLeft = reversed ? start + textWidth + gap : start, logoBottom = bottom + h * .25;
-      const palette = { 1: accent, 2: '#6bd9ef', 3: '#1387be' };
+      const logoLeft = reversed ? start + textWidth + gap : start, logoBottom = bottom + h * .19;
+      const palette = BARCLAYS_MARK_COLORS;
       for (const rect of BARCLAYS_EAGLE_PATCHES) wallPatch(mesh, wall, face, logoLeft + (reversed ? columns - rect.x - rect.w : rect.x) * pixel, logoBottom + (BARCLAYS_EAGLE.length - rect.row - rect.h) * pixel, rect.w * pixel, rect.h * pixel, palette[rect.tone], .024);
     }
     if (subtitle) {
@@ -2179,6 +2154,12 @@ export function mapMeshes(map) {
   for (const collider of map.colliders || []) {
     paintCollider(opaque, collider, theme);
     if (collider.h < .15 || collider.overhead) continue;
+    // Interior castle flights and upper gallery walls are covered by real
+    // floors. Projecting their shadows through all floors onto the courtyard
+    // adds false dark strips and needless triangles; ground walls cast the
+    // fortress silhouette instead.
+    if (theme === 'medieval' && (collider.material === 'castle-floor'
+      || collider.material === 'castle-stair' || /-story-/.test(collider.id))) continue;
     // Shop furnishings sit beneath solid roofs. Keep their contact shadow;
     // an outdoor sun projection through the ceiling would darken the aisle.
     if (collider.material === 'paris-shop') {
@@ -2208,7 +2189,7 @@ export function mapMeshes(map) {
   // create misleading obstacles, routes, or peek-through decorative windows.
   const skylineColor = rgba(art.skyline);
   const backdrop = (axis, side, start, length) => {
-    for (let i = 0; i < length; i += theme === 'paris' ? 9 : ROYALE_THEMES.has(theme) ? 8 : 4.5) {
+    for (let i = 0; i < length; i += theme === 'paris' ? 9 : theme === 'medieval' || ROYALE_THEMES.has(theme) ? 8 : 4.5) {
       const seed = hash(`${map.id}:${axis}:${side}:${i}`), h = 6 + seed % 7;
       const x = axis === 'x' ? side : start + i;
       const z = axis === 'z' ? side : start + i;

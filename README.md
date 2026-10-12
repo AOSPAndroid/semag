@@ -54,7 +54,7 @@ First-person sprinting has a more noticeable shoulder roll than walking, alongsi
 
 **Distinct arenas · connected upper floors**
 
-The combat maps now use different floor plans and height routes. Barclays has an open upper trading floor with long workstation benches, paired market-monitor banks, PC towers and chairs. A detailed voxel eagle and Barclays wordmarks identify its actual interior walls. Desks and screens provide physical cover on both levels. Paris connects mansard roofs above real apartment courtyards; Frostline links laboratories through an enclosed skybridge; the Sewers combine branching tunnels with a raised pump-and-service circuit.
+The combat maps now use different floor plans and height routes. Barclays has an open upper trading floor with long workstation benches, paired market-monitor banks, PC towers and chairs. The rounded Barclays eagle, based on the supplied reference, and Barclays wordmarks identify its actual interior walls. Desks and screens provide physical cover on both levels. Paris connects mansard roofs above real apartment courtyards; Frostline links laboratories through an enclosed skybridge; the Sewers combine branching tunnels with a raised pump-and-service circuit.
 
 Royale's original three arenas have also been rebuilt: Cedarfall has a suspended canopy village and firewatch tower; Verdant has an asymmetric ground maze below an observatory circuit; Anubis has a columned temple second floor around a climbable pyramid. Each upper route has several physical approaches, cover and space to pass underneath.
 
@@ -62,11 +62,13 @@ Royale's original three arenas have also been rebuilt: Cedarfall has a suspended
 | --- | --- |
 | [![Actual upstairs Barclays trading bench with a detailed blue eagle, financial displays and PC towers](docs/screenshots/voxel-barclays-risk-office.png)](docs/screenshots/voxel-barclays-risk-office.png) | [![Live Paris rooftop route overlooking an apartment courtyard](docs/screenshots/voxel-paris-connected-roofs.png)](docs/screenshots/voxel-paris-connected-roofs.png) |
 
+[See the corrected Barclays eagle in-game](docs/screenshots/voxel-barclays-eagle.png). The eagle silhouette uses the Simple Icons CC0 vector, sampled as static voxel wall geometry.
+
 [Explore the full Barclays upper-floor view](docs/screenshots/voxel-barclays-connected-floor.png). Compare [Courtyard](docs/screenshots/voxel-courtyard-authored-layout.png) and [Canal](docs/screenshots/voxel-canal-authored-layout.png).
 
 **New training maps · Crownfall Keep**
 
-Lantern Hall brings indoor blade and peek practice; Iron Range adds long shots and an elevated gantry. Crownfall Keep brings linked medieval battlements and enterable towers to the combat modes, with a larger village in Royale.
+Lantern Hall brings indoor blade and peek practice; Iron Range adds long shots and an elevated gantry. Crownfall Keep now has a four-storey royal keep, a tall central hall, three-storey watchtowers, arched entrances, interior stone jump flights and connected wall walks at three heights. Its Royale version includes the surrounding medieval village.
 
 [![Lantern Hall gameplay showing shoji panels, warm lanterns and the raised firing gallery](docs/screenshots/lantern-hall.png)](docs/screenshots/lantern-hall.png)
 
@@ -265,7 +267,7 @@ Voxel Dojo:
 
 Open **Voxel Dojo** from the library, choose a training map, then press **Enter dojo**. **Cedar Dojo** is a Japanese courtyard with an equipment hall, a tatami melee pad and a real cover wall. **Lantern Hall** adds indoor corner peeks, blade practice and a raised gallery. **Iron Range** offers longer firing lanes and an elevated industrial range. Each map has its own five repeatable targets, measured lanes, equipment stations and physical cover. Try all 39 guns and five blades at the equipment racks, then use real reloads, recoil, head/body/leg damage and hit feedback against repeatable targets. The dojo never ends after a kill: defeated targets return after a short delay. Press **Tab** for the compact range panel, switch stationary/moving targets or reset the drill, and use **F** at the nearby weapon, blade, supply and recovery stations. Recovery and a deliberate training wound let you test real potion healing; grenade supplies let you practice real blasts. Normal magazines and reload times remain, with reserve ammunition replenished in this sandbox. [Dojo guide](docs/voxel-dojo.md).
 
-**Crownfall Keep** is available in Breach, Last Stand and Royale, including bot practice. Its medieval gatehouse and watchtowers have real entrances, linked battlements and stone jump routes. Courtyard stalls, chests and masonry provide close-range cover. Royale uses a larger 96 m layout with additional village buildings and finite loot in interiors and on rooftops.
+**Crownfall Keep** is available in Breach, Last Stand and Royale, including bot practice. Its royal keep rises 14.4 metres over a three-storey gatehouse and watchtowers. Actual floor plates surround a tall central hall; alternating stone jump flights, two roof approaches and connected wall walks link all levels. Arched entrances, crenellations and heraldic banners give the fortress its medieval silhouette. Courtyard stalls, chests and masonry provide close-range cover. Royale uses a larger 96 m layout with additional village buildings and finite loot in interiors and on rooftops.
 
 Voxel Last Stand:
 

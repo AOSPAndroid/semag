@@ -135,6 +135,14 @@ function heraldry(patch, width, h) {
 function medievalFinish(mesh, box) {
   const material = String(box.material), id = String(box.id), { w, h, d } = box;
   const dark = '#625e52', mortar = '#5c6058', pale = '#b0ac92';
+  if (material === 'castle-floor' || material === 'castle-stair') {
+    // Thin galleries and solid treads need paving, rather than full wall art.
+    for (const face of FACES) surface(mesh, box, face, .025, h - .07,
+      face === 'north' || face === 'south' ? w - .05 : d - .05, .025, pale);
+    for (let i = 1; i < Math.min(4, Math.ceil(w / 2)); i++) top(mesh, box, i * w / Math.min(4, Math.ceil(w / 2)), .025, .025, d - .05, mortar);
+    for (let i = 1; i < Math.min(4, Math.ceil(d / 2)); i++) top(mesh, box, .025, i * d / Math.min(4, Math.ceil(d / 2)), w - .05, .025, mortar);
+    return;
+  }
   for (const face of FACES) {
     const width = face === 'north' || face === 'south' ? w : d;
     const patch = (left, bottom, ww, hh, color, offset) => surface(mesh, box, face, left, bottom, ww, hh, color, offset);
@@ -155,7 +163,8 @@ function medievalFinish(mesh, box) {
     } else {
       // Four courses and at most four joints per face bound the entire castle
       // mesh even when its Royale village contains hundreds of solids.
-      const rows = clamp(Math.round(h / .66), 1, 4), columns = clamp(Math.round(width / 1.18), 1, 4);
+      const courses = /story-/.test(id) ? 3 : 4;
+      const rows = clamp(Math.round(h / .66), 1, courses), columns = clamp(Math.round(width / 1.18), 1, courses);
       for (let row = 1; row < rows; row++) patch(.025, row * h / rows, width - .05, .024, mortar);
       for (let row = 0; row < rows; row++) for (let column = 1; column < columns; column++) {
         const left = (column + (row % 2) * .31) * width / columns;

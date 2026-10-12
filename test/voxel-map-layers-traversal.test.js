@@ -33,7 +33,13 @@ function follow(map, from, target, profile, label) {
   let waypoint = 0, jumps = 0;
   for (let tick = 0; tick < 4200 && waypoint < path.length; tick++) {
     const point = path[waypoint], dx = point.x - player.x, dz = point.z - player.z, gap = Math.hypot(dx, dz);
-    if (gap < .22 && Math.abs(point.y - player.y) < .04 && player.grounded) { waypoint++; continue; }
+    if (gap < .22 && Math.abs(point.y - player.y) < .04 && player.grounded) {
+      // Release movement on a small landing before turning into the next
+      // flight. Air control deliberately preserves momentum; immediately
+      // jumping through a 90-degree turn is not a careful traversal check.
+      if (Math.hypot(player.vx, player.vz) > .12) { predictLocalMovement(player, emptyInput(player), map); continue; }
+      waypoint++; continue;
+    }
     const input = emptyInput({ yaw: Math.atan2(dx, -dz) });
     input.up = gap > .1;
     // Descending feet must leave their current support before falling. Slow
@@ -137,6 +143,20 @@ function pursuitFixture(map, route, target, type) {
   monster.emergenceTicks = 0;
   return { state, monster, human };
 }
+
+test('Crownfall highest roof remains contestable by actual Last Stand melee enemies', () => {
+  const map = BREACH.medieval;
+  const target = map.upperFloors.find(f => f.id === 'keep-royal-hall-floor-4').traverse.at(-1);
+  const approach = map.routes.find(r => r.id === 'keep-west-tower-south-rise');
+  for (const type of ['stalker', 'hound']) {
+    const { state, monster, human } = pursuitFixture(map, approach, target, type);
+    for (let tick = 0; tick < 6000 && human.hp === human.maxHp; tick++) {
+      Horde.step(state);
+      assert.ok(navigationCanOccupy(map, monster), `${type}: real pursuit respects castle walls and floors`);
+    }
+    assert.ok(human.hp < human.maxHp, `${type}: four-storey roof must not be an invulnerable camping spot; ${JSON.stringify({ x: monster.x, y: monster.y, z: monster.z, mode: monster.monsterState, path: state.horde.brains[monster.id]?.path.slice(0, 4) })}`);
+  }
+});
 
 for (const map of Object.values(BREACH)) {
   test(`breach/${map.id}: real Last Stand melee AI chases and damages a player on the second floor`, () => {

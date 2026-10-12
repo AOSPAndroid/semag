@@ -258,7 +258,7 @@ function spawnPoint(state, type) {
   return choices[Math.floor(random(state) * choices.length)];
 }
 function newBrain(state, player) {
-  return { id: player.id, lifeId: player.lifeId, targetId: null, path: [], nextPlanTick: state.tick + player.id % 12, nextSightTick: 0, visible: false, firstSeenTick: -1, attackTargetId: null, attackTargetLifeId: null, attackYaw: 0, attackPitch: 0, attackTicks: 0, attackReady: false, blastReady: false, recoverTicks: 0, staggerTicks: 0, staggerReadyTick: 0, gunTicks: 0, burstUntil: 0, burstStartShots: 0, burstShotLimit: 0, nextBurstTick: 0, lungeTicks: 0, lungeDamageReady: false, roarTicks: 0, nextRoarTick: state.tick + HORDE_RULES.emergenceTicks + 60, rallyUntilTick: 0, lastX: player.x, lastZ: player.z, lastMotionTick: state.tick, stuckTicks: 0, aimYaw: player.yaw, aimPitch: 0 };
+  return { preciseClimbs: state.mapId === 'medieval', id: player.id, lifeId: player.lifeId, targetId: null, path: [], nextPlanTick: state.tick + player.id % 12, nextSightTick: 0, visible: false, firstSeenTick: -1, attackTargetId: null, attackTargetLifeId: null, attackYaw: 0, attackPitch: 0, attackTicks: 0, attackReady: false, blastReady: false, recoverTicks: 0, staggerTicks: 0, staggerReadyTick: 0, gunTicks: 0, burstUntil: 0, burstStartShots: 0, burstShotLimit: 0, nextBurstTick: 0, lungeTicks: 0, lungeDamageReady: false, roarTicks: 0, nextRoarTick: state.tick + HORDE_RULES.emergenceTicks + 60, rallyUntilTick: 0, lastX: player.x, lastZ: player.z, lastMotionTick: state.tick, stuckTicks: 0, aimYaw: player.yaw, aimPitch: 0 };
 }
 function survivorMelee(state, attacker, target) {
   return humanSlot(state, attacker?.id) && attacker.human && attacker.connected && attacker.participating && target?.monster && target.team !== attacker.team;
@@ -353,18 +353,31 @@ function targetVisible(state, player, target) {
   return traceShot(state, player.id, origin, { x: dx / distance, y: dy / distance, z: dz / distance }, distance + .4, arenaFor(state)).playerId === target.id;
 }
 function steer(player, brain, input) {
-  while (brain.path.length && Math.hypot(brain.path[0].x - player.x, brain.path[0].z - player.z) < .38 && Math.abs((brain.path[0].y || 0) - player.y) < .24) brain.path.shift();
+  const precise = brain.preciseClimbs;
+  while ((!precise || player.grounded) && brain.path.length && Math.hypot(brain.path[0].x - player.x, brain.path[0].z - player.z) < .38 && Math.abs((brain.path[0].y || 0) - player.y) < .24) {
+    // Settle on the tread before the next jump. A staircase turns through
+    // right angles; its old horizontal momentum cannot turn that far in air.
+    if (precise && brain.path[1]?.jump && Math.hypot(player.vx, player.vz) > .12) { input.walk = true; return; }
+    brain.path.shift();
+  }
   const point = brain.path[0]; if (!point) return;
   const dx = point.x - player.x, dz = point.z - player.z, distance = Math.hypot(dx, dz); if (distance < EPS) return;
   // Brake on the approach and centering tread before changing direction for a
   // rise. A fast hound's lateral ground speed cannot be undone during a jump.
   // Ordinary flat pursuit keeps the species' full chase speed.
-  if (point.jump || point.y > player.y + .3 || brain.path[1]?.jump) input.walk = true;
-  const forward = (Math.sin(input.yaw) * dx - Math.cos(input.yaw) * dz) / distance, right = (Math.cos(input.yaw) * dx + Math.sin(input.yaw) * dz) / distance;
-  input.up = forward > .25; input.down = forward < -.25; input.right = right > .25; input.left = right < -.25;
+  if (point.jump || point.y > player.y + .3 || brain.path[1]?.jump || precise && point.y > 0 && distance < .9) input.walk = true;
+  // Face the fight while moving along the exact route heading. Quantizing the
+  // steering into eight keyboard directions oscillates beside narrow landings.
+  if (precise) {
+    input.moveYaw = Math.atan2(dx, -dz);
+    input.up = true; input.down = input.right = input.left = false;
+  } else {
+    const forward = (Math.sin(input.yaw) * dx - Math.cos(input.yaw) * dz) / distance, right = (Math.cos(input.yaw) * dx + Math.sin(input.yaw) * dz) / distance;
+    input.up = forward > .25; input.down = forward < -.25; input.right = right > .25; input.left = right < -.25;
+  }
   // Jump is an edge in the shared engine. Holding it through landing would make
   // the next crate unreachable, so release between the authored stair rises.
-  input.jump = (point.jump || point.y > player.y + .3) && player.grounded && !player.previousInput.jump;
+  input.jump = (precise ? point.y > player.y + .1 : point.jump || point.y > player.y + .3) && player.grounded && !player.previousInput.jump;
 }
 function rallyRecipients(state, player, profile) {
   const origin = monsterEyeOrigin(player) || { x: player.x, y: player.y + eyeHeight(player), z: player.z };
@@ -442,7 +455,10 @@ function monsterInput(state, player, brain) {
     if (!brain.visible) brain.firstSeenTick = -1;
     else if (brain.firstSeenTick < 0) brain.firstSeenTick = state.tick;
   }
-  if (state.tick >= brain.nextPlanTick) {
+  // Finish an airborne transition before choosing a new nearest floor node.
+  // Replanning at the apex can point back to a lower tread and create a loop
+  // on multi-storey flights, even though the complete route is reachable.
+  if (state.tick >= brain.nextPlanTick && (!brain.preciseClimbs || player.grounded || !brain.path.length)) {
     brain.nextPlanTick = state.tick + 90 + player.id % 12;
     brain.path = navigationPath(arenaFor(state), player, pursuitPoint(state, player, target, profile));
   }

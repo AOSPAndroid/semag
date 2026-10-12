@@ -9,7 +9,7 @@ const cluster = (id, name, x, z, color, material, kind, approachSide = 0) => fre
 const LAYOUTS = freeze({
   medieval: freeze([
     cluster('supplies', 'Castle supply chests', -9, 14, '#97754d', 'castle-timber', 'castle-supplies'),
-    cluster('masonry', 'Broken castle masonry', 9, -14, '#aaa58f', 'castle-stone', 'castle-masonry'),
+    cluster('masonry', 'Broken castle masonry', 13, -14, '#aaa58f', 'castle-stone', 'castle-masonry'),
     cluster('stables', 'Stable deliveries', -23, 13, '#8e714b', 'castle-timber', 'castle-supplies'),
   ]),
   courtyard: freeze([

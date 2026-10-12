@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { MAPS as BREACH } from '../public/voxel-maps.js';
 import { MAPS as ROYALE } from '../public/voxel-royale-maps.js';
 import { mapMeshes } from '../public/voxel-renderer.js';
+import { BARCLAYS_EAGLE } from '../public/voxel-barclays-mark.js';
 import { resolveVoxelWallSign, voxelIdentityFloorRegions, appendVoxelIdentityFloors } from '../public/voxel-map-expansion-art.js';
 
 const close = (a, b) => Math.abs(a - b) < .0001;
@@ -16,6 +17,14 @@ const colored = (mesh, color) => {
 const fixture = (theme, colliders = [], decorations = []) => ({ id: `identity-art-${theme}`, theme, bounds: { minX: -8, maxX: 8, minZ: -8, maxZ: 8 }, colliders, decorations, buildings: [], sites: [] });
 const overlap = (a, b) => Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.z + a.d, b.z + b.d) - Math.max(a.z, b.z));
 
+test('Barclays mark retains the rounded shield, curled head and cut-out feathers from the reference', () => {
+  const width = row => row.replaceAll('.', '').length;
+  assert.ok(width(BARCLAYS_EAGLE[20]) > 40, 'broad rounded wings');
+  assert.ok(width(BARCLAYS_EAGLE.at(-1)) < 6, 'tapered shield point');
+  assert.ok(width(BARCLAYS_EAGLE[0]) < 6 && width(BARCLAYS_EAGLE[10]) < 30, 'curled head above distinct shoulders');
+  assert.match(BARCLAYS_EAGLE[30].replace(/^\.+|\.+$/g, ''), /\d+\.\d+\.\.\d+/, 'white feather notches cut into the wings');
+});
+
 test('wall signs resolve one real face, reject door-spanning panels and retain both horizontal wall orientations', () => {
   const wall = { id: 'left-jamb', x: -5, y: 0, z: 2, w: 2, h: 4, d: .4 }, vertical = { ...wall, id: 'long-wall', w: .4, d: 6 };
   const map = fixture('trading', [wall, vertical]);
@@ -25,17 +34,17 @@ test('wall signs resolve one real face, reject door-spanning panels and retain b
   for (const invalid of [{ ...sign, w: 3.4 }, { ...sign, left: -.2 }, { ...sign, bottom: 3.7 }, { ...sign, face: 'up' }, { ...sign, colliderId: 'door-opening' }, { ...sign, h: NaN }]) assert.equal(resolveVoxelWallSign(map, invalid), null);
 });
 
-test('joined Barclays wordmarks and feathered pixel eagles face the viewer on all four real wall directions', () => {
+test('joined Barclays wordmarks and rounded shield eagles face the viewer on all four real wall directions', () => {
   for (const face of ['north', 'south', 'west', 'east']) {
     const alongX = face === 'north' || face === 'south';
     const wall = { id: 'real-sign-wall', x: -5, y: 0, z: -5, w: alongX ? 10 : .4, h: 6, d: alongX ? .4 : 10, material: 'office-panel', color: '#718994' };
     const sign = { kind: 'wall-sign', colliderId: wall.id, face, left: 1, bottom: 1.3, w: 8, h: 1.45, label: 'BARCLAYS', sublabel: 'GLOBAL MARKETS', emblem: 'barclays' };
     const map = fixture('trading', [wall], [sign]), mesh = mapMeshes(map).opaque;
-    const letters = colored(mesh, '#e0f5ff'), eagle = colored(mesh, '#25b7e7');
-    const highlights = colored(mesh, '#6bd9ef'), shadows = colored(mesh, '#1387be');
+    const letters = colored(mesh, '#e0f5ff'), eagle = colored(mesh, '#00aeef');
+    const highlights = colored(mesh, '#05c5eb'), shadows = colored(mesh, '#0096bd');
     assert.ok(letters.length >= 240, `${face}: joined eight-letter wordmark uses merged solid rectangles`);
     assert.ok(eagle.length >= 300, `${face}: pixel eagle and cyan sign trim remain visible`);
-    assert.ok(highlights.length >= 200 && shadows.length >= 60, `${face}: wing feathers and darker body edges are distinct from the flat cyan silhouette`);
+    assert.ok(highlights.length >= 200 && shadows.length >= 60, `${face}: cyan highlights and darker lower body preserve the reference silhouette`);
     const normal = face === 'north' ? [0, 0, -1] : face === 'south' ? [0, 0, 1] : face === 'west' ? [-1, 0, 0] : [1, 0, 0];
     const screenRight = vertex => (face === 'north' || face === 'east' ? -1 : 1) * (alongX ? vertex[0] : vertex[2]);
     assert.ok(Math.min(...letters.map(screenRight)) > Math.max(...highlights.map(screenRight)), `${face}: eagle is left of the readable wordmark from the player's viewpoint`);

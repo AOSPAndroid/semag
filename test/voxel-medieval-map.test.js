@@ -60,7 +60,7 @@ test('Crownfall factory validates mode and deterministically shares honest immut
     assert.equal(map.combatStyle, 'close'); assert.match(map.description, /swords.*shotguns/);
     assert.ok(Object.isFrozen(map) && Object.isFrozen(map.bounds));
     for (const field of ['colliders', 'buildings', 'routes', 'upperFloors', 'landmarks', 'decorations', 'jumpCover', 'hopRoutes']) assert.ok(Object.isFrozen(map[field]));
-    assert.ok(map.colliders.length <= (map.mode === 'royale' ? 160 : 100), 'bounded authored physics geometry');
+    assert.ok(map.colliders.length <= (map.mode === 'royale' ? 440 : 380), 'bounded authored multi-storey physics geometry');
     assert.equal(new Set(map.colliders.map(b => b.id)).size, map.colliders.length);
     for (const b of map.colliders) {
       assert.ok(Object.isFrozen(b) && [b.x, b.y, b.z, b.w, b.h, b.d].every(Number.isFinite));
@@ -74,6 +74,11 @@ test('Crownfall factory validates mode and deterministically shares honest immut
     assert.ok(map.landmarks.filter(value => value.kind === 'keep-tower').length >= 2);
     assert.ok(map.decorations.filter(value => value.kind === 'castle-banner').length >= 6);
     assert.ok(map.colliders.some(value => value.material === 'castle-stone') && map.colliders.some(value => value.material === 'castle-timber'));
+    const keep = map.buildings.find(b => b.id === 'keep-royal-hall');
+    assert.equal(keep.storeys, 4); assert.equal(keep.height, 14.4);
+    assert.ok(map.buildings.filter(b => /tower|gatehouse/.test(b.id)).every(b => b.storeys === 3 && b.height === 10.8));
+    assert.ok(navigationCanOccupy(map, { x: 0, y: 8, z: -14 }), 'the central hall is a real multi-floor atrium');
+    assert.ok(map.upperFloors.find(f => f.id === 'keep-royal-hall-floor-4').routeIds.length >= 2, 'two contested roof approaches');
   }
   assert.equal(BREACH.medieval.bounds.maxX - BREACH.medieval.bounds.minX, 56);
   assert.equal(ROYALE.medieval.bounds.maxX - ROYALE.medieval.bounds.minX, 96);
@@ -82,7 +87,7 @@ test('Crownfall factory validates mode and deterministically shares honest immut
 for (const map of [BREACH.medieval, ROYALE.medieval]) test(`${map.mode}/Crownfall: ground loops connect every doorway, approach, cache and gameplay start`, () => {
   const graph = floorGraph(map);
   assert.ok(graph.count > (map.mode === 'royale' ? 24000 : 7500), 'substantial connected standing ground');
-  const positions = [...(map.spawns?.flat() || map.spawnPoints), ...map.sites, ...map.routes.map(route => route.start),
+  const positions = [...(map.spawns?.flat() || map.spawnPoints), ...map.sites, ...map.routes.map(route => route.start).filter(p => !p.y),
     ...map.buildings.flatMap(room => room.doorways.flatMap(door => [door.inside, door.outside])),
     ...(map.lootPoints || []).filter(point => !point.y), ...(map.stormCenter ? [map.stormCenter] : [])];
   for (const position of positions) assert.ok(graph.connected(position), `unreachable ${position.id || JSON.stringify(position)}`);
@@ -115,7 +120,7 @@ test('Crownfall initializes every Breach team size, Last Stand team and solo dri
 
 test('Crownfall Royale gives eleven knife-only starts, finite rich loot and real travel to every gun', () => {
   const map = ROYALE.medieval;
-  assert.equal(map.spawnPoints.length, 16); assert.equal(map.buildings.length, 5); assert.equal(map.lootPoints.length, 56);
+  assert.equal(map.spawnPoints.length, 16); assert.equal(map.buildings.length, 6); assert.ok(map.lootPoints.length >= 65);
   assert.equal(new Set(map.lootPoints.map(p => `${p.x}/${p.y}/${p.z}`)).size, map.lootPoints.length);
   assert.ok(map.lootPoints.filter(p => p.kind === 'weapon').length >= 11);
   for (const seed of [1, 7, 151, 7143]) {
