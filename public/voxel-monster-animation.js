@@ -1,5 +1,6 @@
 /** Cosmetic joints in local metres. Heads and authoritative bodies never move. */
 import { monsterTypeId } from './voxel-monster-bodies.js';
+import { footEnvelopeScale } from './voxel-locomotion.js';
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 const finite = (value, fallback = 0) => Number.isFinite(value) ? value : fallback;
 const TAU = Math.PI * 2;
@@ -12,19 +13,19 @@ export const monsterGaitCycleMetres = type => typeof type === 'string' && Object
 const styles = Object.freeze({
   // Reach, swing clearance and bare-arm swing. Bulky brutes stamp; runners
   // pick their knees up, while ranged monsters retain their weapon grip.
-  stalker: [.092, .134, .120], runner: [.104, .162, .162], brute: [.078, .105, .091],
-  gunner: [.090, .140, .034], sniper: [.078, .120, .027], leaper: [.099, .157, .159],
-  screecher: [.082, .122, .103], bomber: [.096, .149, .126],
-  spitter: [.084, .127, .098], weaver: [.078, .115, .087],
-  vampire: [.102, .155, .154], witch: [.072, .112, .087],
+  stalker: [.155, .260, .170], runner: [.170, .310, .210], brute: [.140, .210, .135],
+  gunner: [.150, .245, .060], sniper: [.140, .225, .048], leaper: [.165, .300, .210],
+  screecher: [.145, .245, .150], bomber: [.160, .260, .175],
+  spitter: [.145, .235, .140], weaver: [.138, .225, .125],
+  vampire: [.170, .300, .210], witch: [.130, .225, .125],
 });
 /** The same grounded chains drive live anatomy and species-sized corpse folds. */
 export const MONSTER_QUADRUPED_GAITS = Object.freeze({
-  hound: Object.freeze({ x: .13, frontZ: -.19, rearZ: .21, hipY: .300, kneeY: .175, ankleY: .063, footY: .006, travel: .035, clearance: .094, weight: .004, maxBob: .010, pairing: 'diagonal' }),
-  wolf: Object.freeze({ x: .16, frontZ: -.19, rearZ: .21, hipY: .320, kneeY: .190, ankleY: .065, footY: .008, travel: .040, clearance: .095, weight: .004, maxBob: .010, pairing: 'diagonal' }),
-  pig: Object.freeze({ x: .18, frontZ: -.16, rearZ: .27, hipY: .260, kneeY: .160, ankleY: .058, footY: .009, travel: .033, clearance: .064, weight: .003, maxBob: .008, pairing: 'diagonal' }),
-  rat: Object.freeze({ x: .065, frontZ: -.07, rearZ: .105, hipY: .105, kneeY: .068, ankleY: .031, footY: .004, travel: .014, clearance: .034, weight: .001, maxBob: .004, pairing: 'diagonal' }),
-  stag: Object.freeze({ x: .17, frontZ: -.20, rearZ: .24, hipY: .675, kneeY: .405, ankleY: .120, footY: .018, travel: .035, clearance: .108, weight: .005, maxBob: .012, pairing: 'forehind' }),
+  hound: Object.freeze({ x: .13, frontZ: -.19, rearZ: .21, hipY: .300, kneeY: .175, ankleY: .063, footY: .006, travel: .038, clearance: .140, weight: .005, maxBob: .010, pairing: 'diagonal' }),
+  wolf: Object.freeze({ x: .16, frontZ: -.19, rearZ: .21, hipY: .320, kneeY: .190, ankleY: .065, footY: .008, travel: .040, clearance: .145, weight: .005, maxBob: .010, pairing: 'diagonal' }),
+  pig: Object.freeze({ x: .18, frontZ: -.16, rearZ: .27, hipY: .260, kneeY: .160, ankleY: .058, footY: .009, travel: .036, clearance: .100, weight: .004, maxBob: .008, pairing: 'diagonal' }),
+  rat: Object.freeze({ x: .065, frontZ: -.07, rearZ: .105, hipY: .105, kneeY: .068, ankleY: .031, footY: .004, travel: .014, clearance: .046, weight: .0015, maxBob: .004, pairing: 'diagonal' }),
+  stag: Object.freeze({ x: .17, frontZ: -.20, rearZ: .24, hipY: .675, kneeY: .405, ankleY: .120, footY: .018, travel: .035, clearance: .175, weight: .006, maxBob: .012, pairing: 'forehind' }),
 });
 const STARTUP_STATES = new Set(['windup', 'lungeWindup', 'bomberFuse', 'spitting', 'weaving', 'hexing', 'roar']);
 const ATTACK_PHASES = new Set(['idle', 'startup', 'contact', 'recovery']);
@@ -155,7 +156,7 @@ export function monsterLocomotionPose(player, animation = {}) {
   const run = alive ? clamp(finite(animation.run, (finite(animation.speed) - 2.5) / 3.5), 0, 1) : 0;
   const active = stride > .00001 || airborne || land > .00001 || attack.active;
   const quadruped = Object.hasOwn(MONSTER_QUADRUPED_GAITS, type) ? MONSTER_QUADRUPED_GAITS[type] : null;
-  const weight = quadruped?.weight ?? (type === 'brute' ? .019 : .016);
+  const weight = quadruped?.weight ?? (type === 'brute' ? .036 : .028);
   const bob = airborne ? 0 : -(1 - Math.cos(phase * 2)) * stride * weight * (1 + run * .18) - land * (quadruped ? Math.min(.003, weight) : .015) - attack.brace * (quadruped ? 0 : .010);
   const bodyBob = quadruped ? Math.max(-quadruped.maxBob, bob) : bob;
   if (quadruped) {
@@ -182,13 +183,16 @@ export function monsterLocomotionPose(player, animation = {}) {
   const hipY = (['bomber', 'spitter', 'weaver'].includes(type) ? .560 : .795) + bodyBob - crouch;
   const legs = [-1, 1].map((side, index) => {
     const step = monsterStepArc(phase + index * Math.PI);
-    const lift = airborne ? .055 + jump * .060 + fall * .015 : step.lift * stride * style[1] * (.85 + run * .15);
+    const compact = hipY < .7;
+    const lift = airborne ? .055 + jump * .060 + fall * .015 : step.lift * stride * Math.min(compact ? .17 : .33, style[1]) * (.85 + run * .15);
     const travel = airborne ? -.020 * jump : step.travel * stride * style[0];
     const x = side * (['leaper', 'screecher'].includes(type) ? .130 : .140);
     const foot = [x + strafe * travel * .15, .018 + lift, -.010 - forward * travel];
+    const scale = footEnvelopeScale(foot[0], foot[2], .081 - stride * .0125, Math.max(.0875, .1305 - stride * .0425), .28);
+    foot[0] *= scale; foot[2] *= scale;
     const hip = [x, hipY, .012];
     const knee = [x + strafe * travel * .08, (hipY > .7 ? .440 : .335) + lift * .52 + bodyBob * .5 - land * .008,
-      -.015 - forward * travel * .27 - lift * .40];
+      -.015 - forward * travel * .27 - lift * .32];
     return { hip, knee, ankle: [foot[0], foot[1] + .135, foot[2] + .012], foot, lift, planted: !airborne && (step.planted || stride === 0) };
   });
   const arms = [-1, 1].map((side, index) => {

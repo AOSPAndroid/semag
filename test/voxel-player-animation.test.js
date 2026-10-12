@@ -114,7 +114,7 @@ test('real jump and descent freeze ground stride; landing compresses briefly the
   }
   assert.ok(rising && falling && landed, 'actual ballistic movement traverses both air poses');
   near(landed.phase, groundPhase);
-  assert.ok(landed.land > .6 && landed.bodyBob < 0 && landed.bodyBob >= -.028);
+  assert.ok(landed.land > .6 && landed.bodyBob < 0 && landed.bodyBob >= -.060);
   for (let i = 0; i < 120; i++) { tick++; pose = present({ ...player }, (tick + 1) * 1000 / 120, 'jump'); }
   assert.ok(pose.land < 1e-4 && pose.stride < 1e-6);
 });
@@ -172,7 +172,7 @@ test('all pose outputs are finite, small and pure for malformed or extreme prese
     for (const pose of [playerAnimationPose(player, Number.MAX_VALUE), present(player, 100000)]) {
       for (const value of Object.values(pose)) if (typeof value === 'number') assert.ok(Number.isFinite(value));
       assert.ok(pose.stride >= 0 && pose.stride <= 1 && pose.crouch >= 0 && pose.crouch <= 1);
-      assert.ok(pose.bodyBob <= 0 && pose.bodyBob >= -.028);
+      assert.ok(pose.bodyBob <= 0 && pose.bodyBob >= -.060);
       assert.ok(Math.abs(pose.leanForward) <= .08 && Math.abs(pose.leanSide) <= .08);
       for (const leg of pose.legs) for (const value of Object.values(leg)) assert.ok(Number.isFinite(value));
     }
@@ -256,7 +256,7 @@ test('displacement-based stopping settles feet and opposing torso twist without 
   for (let tick = 1; tick <= 100; tick++) {
     predictLocalMovement(player, { ...emptyInput(), up: true }, openMap);
     pose = present(player, tick * 1000 / 120, 'settle');
-    assert.ok(pose.shoulderYaw * pose.hipsYaw <= 1e-12); assert.ok(Math.abs(pose.shoulderYaw) <= .045);
+    assert.ok(pose.shoulderYaw * pose.hipsYaw <= 1e-12); assert.ok(Math.abs(pose.shoulderYaw) <= .095);
   }
   const movingLift = Math.max(...pose.legs.map(leg => leg.lift)); assert.ok(movingLift > .01);
   for (let tick = 101; tick <= 220; tick++) {

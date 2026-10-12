@@ -42,7 +42,11 @@ Use WASD or ZQSD to move, Shift to sprint, Ctrl to crouch, C to walk and Space t
 
 **Walking, combat and reload motion**
 
-Shared voxel operators and Shinobi have smoother supporting steps, directional torso motion and connected weapon grips. Cuts and parries move the shoulders and elbows; reloads follow ammunition, magazine and charging-handle stages. These images come from actual keyboard/mouse gameplay.
+Shared voxel operators and Shinobi now have much clearer walking and sprinting: higher foot lifts, stronger knee bends, larger directional strides and opposing hip/shoulder weight shifts. Slow walking keeps an expressive step, and crouching stays compact. Zombies have stronger shambles; dogs, wolves, boars, rats and stags have more visible alternating paws. Cuts and parries move the shoulders and elbows; reloads follow ammunition, magazine and charging-handle stages. These images come from actual keyboard/mouse gameplay.
+
+[![Controlled preview of the shared walking rigs: a human operator, Ash Stalker and running Grave Hound](docs/screenshots/voxel-stronger-walking.gif)](docs/screenshots/voxel-stronger-walking.gif)
+
+The strip above previews the actual exported game rigs in a controlled scene. Live Breach bots and Last Stand monsters are also checked in the browser. Movement, weapon grip, collision bodies and footstep contact timing stay shared with gameplay.
 
 First-person sprinting has a more noticeable shoulder roll than walking, alongside the gentle distance-driven head dip and low weapon carry. The motion eases in and out, settles against walls and pauses, and stays still while fully scoped or using reduced motion. It follows the shared voxel FPS renderer in Breach, Royale, Last Stand and the Dojo. **Camera wobble** is shared across every first-person voxel game: Breach, Royale, Last Stand, their solo practice modes, the Dojo and Voxel Wilds. Use the **P** menu to choose **Normal**, **Strong**, **System preference** or **Off**; practice and Last Stand also expose it in setup. New players start with Strong sway. Existing saved choices carry across modes. System follows the browser’s reduced-motion preference; Normal and Strong explicitly enable walking and running sway. Strong increases shoulder roll without increasing the gentle head dip. Changing the choice does not restart the game; aiming remains steady. Refresh an already-open tab after updating the hub.
 

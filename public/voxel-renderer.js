@@ -19,6 +19,7 @@ import { HUMAN_DEATH_RULES, humanDeathPose, humanDeathCameraPose, createHumanDea
 import { EMPTY_WORLD_LABELS, presentWorldLabels } from './voxel-label-presentation.js';
 import { createSlashImpactPresenter } from './voxel-slash-effects.js';
 import { MONSTER_VARIANT_ART, MONSTER_BESTIARY_ART, MONSTER_SHAMBLER_ART, appendMonsterVariant, appendMonsterBestiary, appendMonsterShambler } from './voxel-monster-variants.js';
+import { locomotionStride, footEnvelopeScale } from './voxel-locomotion.js';
 import { MONSTER_SPECIAL_RULES, MONSTER_HEX_RULES } from './voxel-monster-specials.js';
 import { monsterLocomotionPose, monsterGaitCycleMetres, appendMonsterLimb, createMonsterAttackPresenter, MONSTER_QUADRUPED_GAITS } from './voxel-monster-animation.js';
 import { MAP_EXPANSION_ART, MAP_EXPANSION_ATMOSPHERE, appendVoxelMapExpansionCollider, appendVoxelMapExpansionFloor, appendVoxelMapExpansionDecoration, appendVoxelMapExpansionFloors, appendVoxelIdentityFloors, resolveVoxelWallSign } from './voxel-map-expansion-art.js';
@@ -3357,7 +3358,7 @@ export function monsterAnimationPose(player, time = 0) {
   const airborne = player?.alive !== false && player?.grounded === false;
   const phase = speed && !airborne ? (finite(time) * .001 * speed * TAU / monsterCycleLength(player?.monsterType) + hash(player?.id) % 13) % TAU : 0;
   const yaw = finite(player?.yaw), vx = finite(player?.vx), vz = finite(player?.vz);
-  return { phase, stride: airborne ? 0 : clamp(speed / 5, 0, 1), speed, run: clamp((speed - 2.5) / 3.5, 0, 1), airborne, land: 0,
+  return { phase, stride: airborne ? 0 : locomotionStride(speed), speed, run: clamp((speed - 2.5) / 3.5, 0, 1), airborne, land: 0,
     jump: airborne ? clamp(finite(player?.vy) / 6.4, 0, 1) : 0, fall: airborne ? clamp(-finite(player?.vy) / 8, 0, 1) : 0,
     forward: speed > .05 ? (Math.sin(yaw) * vx - Math.cos(yaw) * vz) / speed : 1,
     strafe: speed > .05 ? (Math.cos(yaw) * vx + Math.sin(yaw) * vz) / speed : 0 };
@@ -3395,7 +3396,7 @@ export function createMonsterAnimationPresenter({ maxMonsters = 20 } = {}) {
       const speed = distance ? Math.min(14, distance * 1000 / Math.max(1, time - history.gaitTime)) : 0;
       const amount = 1 - Math.exp(-elapsed / (speed > .05 ? 45 : 70));
       const airborne = player.grounded === false, yaw = finite(player.yaw), length = Math.hypot(dx, dz);
-      const stride = history.pose.stride + ((airborne ? 0 : clamp(speed / 5, 0, 1)) - history.pose.stride) * amount;
+      const stride = history.pose.stride + ((airborne ? 0 : locomotionStride(speed)) - history.pose.stride) * amount;
       const run = finite(history.pose.run) + ((airborne ? 0 : clamp((speed - 2.5) / 3.5, 0, 1)) - finite(history.pose.run)) * amount;
       const land = airborne ? 0 : history.pose.airborne ? clamp(Math.max(.25, -finite(player.vy) / 8, (history.y - player.y) * 1000 / elapsed / 8), 0, 1) : finite(history.pose.land) * Math.exp(-elapsed / 95);
       history.pose = { phase: (history.pose.phase + (airborne ? 0 : distance) * TAU / monsterCycleLength(player.monsterType)) % TAU, stride: stride < .00001 ? 0 : stride, speed, run: run < .00001 ? 0 : run, airborne,
@@ -3964,22 +3965,24 @@ export function operativePose(player, animation = playerAnimationPose(player, 0)
   const crouch = player.crouching ? 1 : 0, crouchBlend = player.crouching ? 1 : clamp(finite(animation.crouch), 0, 1), airborne = !!animation.airborne;
   const phase = finite(animation.phase), stride = clamp(finite(animation.stride), 0, 1), sprint = clamp(finite(animation.sprint), 0, 1);
   const forward = clamp(finite(animation.forward, 1), -1, 1), strafe = clamp(finite(animation.strafe), -1, 1);
-  const bob = clamp(finite(animation.bodyBob), -.028, 0), land = clamp(finite(animation.land), 0, 1);
+  const bob = clamp(finite(animation.bodyBob), -.060, 0), land = clamp(finite(animation.land), 0, 1);
   const hipY = lerp(.81, .53, crouch) + bob - land * .014, chestY = lerp(1.12, .68, crouch) + bob;
   const legs = [-1, 1].map((side, index) => {
     const swing = Math.sin(phase + index * Math.PI), raised = Math.max(0, Math.cos(phase + index * Math.PI));
     const step = animation.legs?.[index], clearance = clamp(finite(step?.clearance, raised ** 1.4), 0, 1);
     const contact = airborne ? 0 : clamp(finite(step?.contact, clearance < .001 ? 1 : 0), 0, 1);
-    const lift = airborne ? .055 + finite(animation.jump) * .050 : clearance * stride * lerp(.108 + sprint * .022, .046, crouch);
-    const travel = finite(step?.travel, swing) * stride * lerp(.098 + sprint * .014, .045, crouch);
+    const lift = airborne ? .055 + finite(animation.jump) * .050 : clearance * stride * lerp(.230 + sprint * .080, .100, crouch);
+    const travel = finite(step?.travel, swing) * stride * lerp(.155 + sprint * .018, .085, crouch);
     const foot = [side * .108 + strafe * travel * .55, .018 + lift, -.012 - forward * travel];
+    const footScale = footEnvelopeScale(foot[0], foot[2], .068, .093);
+    foot[0] *= footScale; foot[2] *= footScale;
     const ankle = [foot[0], foot[1] + .112, foot[2] + .015];
     const hipOffset = rotate([side * .098, 0, .024 + crouch * .036], finite(animation.hipsYaw));
     const hip = [hipOffset[0], hipY, hipOffset[2]];
     // The raised swing foot bends its knee; the planted leg remains extended.
     // Crouch bends both knees forward rather than shrinking two rigid poles.
     const knee = [side * .111 + strafe * travel * .28, lerp(.445, .295, crouch) + lift * .55 + bob * .5 - land * .010,
-      -.020 - crouchBlend * .090 - forward * travel * .28 - lift * .52];
+      -.020 - crouchBlend * .090 - forward * travel * .28 - lift * .35];
     return { hip, knee, ankle, foot, lift, clearance, contact, planted: !airborne && clearance < .001 };
   });
   const aiming = aimProgress(player), reloadProgress = animation.reload?.globalProgress ?? clamp(1 - finite(player.reloadTicks) / (weaponReloadDuration(player.weapon, player.ammo) || 252), 0, 1);
@@ -3991,7 +3994,7 @@ export function operativePose(player, animation = playerAnimationPose(player, 0)
   const shoulderYaw = finite(animation.shoulderYaw) + combatTurn;
   const throwLift = finite(player.grenadeThrowTicks) > 0 ? .085 : 0;
   const arms = [-1, 1].map((side, index) => {
-    const armSwing = Math.sin(phase + index * Math.PI + Math.PI) * stride * (.034 + sprint * .013) * (1 - aiming * .75);
+    const armSwing = Math.sin(phase + index * Math.PI + Math.PI) * stride * (.070 + sprint * .030) * (1 - aiming * .75);
     const shoulderOffset = rotate([side * .211, 0, .012], shoulderYaw);
     const shoulder = [shoulderOffset[0] + clamp(finite(animation.leanSide), -.045, .045) * .30, lerp(1.295, .767, crouch) + bob,
       shoulderOffset[2] - clamp(finite(animation.leanForward), -.075, .075) * .35];

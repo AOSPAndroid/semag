@@ -1,4 +1,5 @@
 /** Cosmetic human motion. Rendered positions are observed; combat state is never changed. */
+import { locomotionStride } from './voxel-locomotion.js';
 const TAU = Math.PI * 2;
 // Each human foot begins its grounded supporting stance here, half a cycle apart.
 export const HUMAN_FOOT_CONTACT_PHASE = 0;
@@ -135,23 +136,23 @@ function gaitLeg(phase, crouch, sprint) {
 function poseOf(motion) {
   const { phase, speed, stride, forward, strafe, crouch, airborne, jump, fall, land, sprint } = motion;
   // Bob goes down into the real body silhouette, never above the head hitbox.
-  const bodyBob = airborne ? 0 : -Math.min(.028, (1 - Math.cos(phase * 2)) * .009 * stride * (1 - crouch * .35) + land * .022);
+  const bodyBob = airborne ? 0 : -Math.min(.060, (1 - Math.cos(phase * 2)) * .021 * stride * (1 - crouch * .35) + land * .030);
   const lean = airborne ? 0 : Math.min(1, speed / 5.5) * stride;
   const legs = [0, Math.PI].map(offset => {
     const gait = gaitLeg(phase + offset, crouch, sprint);
-    const travel = airborne ? 0 : gait.travel * stride * .18;
+    const travel = airborne ? 0 : gait.travel * stride * (.155 + sprint * .018) * (1 - crouch * .45);
     const clearance = airborne ? 0 : gait.clearance;
-    const lift = airborne ? jump * .07 + fall * .018 : clearance * stride * (.075 + sprint * .024) * (1 - crouch * .45);
+    const lift = airborne ? jump * .07 + fall * .018 : clearance * stride * (.230 + sprint * .080) * (1 - crouch * .57);
     const hip = airborne ? jump * .12 : gait.travel * stride * forward * .38;
     const knee = .10 + crouch * .9 + (airborne ? jump * .48 + fall * .18 : clearance * stride * .58) + land * .12;
     return { hip, knee, ankle: -hip - knee * .25, lift, forward: travel * forward, side: travel * strafe * .55,
       cycle: gait.cycle, stance: !airborne && gait.stance ? 1 : 0, swing: airborne ? 0 : gait.swing, travel: airborne ? 0 : gait.travel,
       clearance, contact: airborne ? 0 : 1 - (1 - gait.contact) * stride };
   });
-  const twist = airborne ? 0 : Math.sin(phase) * stride * forward * .045 * (1 - crouch * .65);
+  const twist = airborne ? 0 : Math.sin(phase) * stride * forward * .095 * (1 - crouch * .65);
   return { phase, speed, stride, forward, strafe, crouch, airborne, jump, fall, land, sprint, bodyBob, torsoBob: bodyBob,
     leanForward: forward * lean * (.065 + sprint * .01), leanSide: strafe * lean * .045,
-    armSwing: -legs[0].travel * stride * (.027 + sprint * .014), shoulderYaw: -twist, hipsYaw: twist * .55, legs };
+    armSwing: -legs[0].travel * stride * (.060 + sprint * .030), shoulderYaw: -twist, hipsYaw: twist * .55, legs };
 }
 
 function initialMotion(player) {
@@ -166,7 +167,7 @@ export function playerAnimationPose(player, timeSeconds = 0) {
   const vx = finite(player?.vx), vz = finite(player?.vz), speed = Math.min(10, Math.hypot(vx, vz));
   const movement = direction(vx, vz, finite(player?.yaw));
   motion.speed = speed;
-  motion.stride = speed < .05 ? 0 : clamp(speed / 5, 0, 1);
+  motion.stride = locomotionStride(speed);
   motion.forward = movement.forward; motion.strafe = movement.strafe;
   motion.sprint = player?.sprinting && !motion.crouch ? motion.stride : 0;
   const cycleLength = cycleLengthFor(motion.crouch, player?.sprinting ? 1 : 0);
@@ -221,7 +222,7 @@ export function createPlayerAnimationPresenter({ maxPlayers = 16 } = {}) {
     const landed = motion.airborne && !airborne;
     const crouch = player.crouching ? 1 : approach(motion.crouch, 0, elapsed, 60);
     motion.speed = approach(motion.speed, speed, elapsed, 45);
-    motion.stride = approach(motion.stride, !airborne && speed >= .05 ? clamp(speed / 5, 0, 1) : 0, elapsed, speed >= .05 ? 45 : 70);
+    motion.stride = approach(motion.stride, !airborne ? locomotionStride(speed) : 0, elapsed, speed >= .05 ? 45 : 70);
     motion.sprint = approach(motion.sprint, player.sprinting && !player.crouching && !airborne && speed >= .05 ? 1 : 0, elapsed, 85);
     if (!airborne && !motion.airborne && distance >= 1e-8) {
       motion.phase = (motion.phase + distance * TAU / cycleLengthFor(crouch, player.sprinting ? 1 : 0)) % TAU;
