@@ -85,7 +85,7 @@ test('knife movement prediction follows the authoritative faster profile without
     Royale.step(state, controls(state, { 0: raw }));
     assert.ok(Math.abs(predicted.x - player.x) < 1e-8 && Math.abs(predicted.vx - player.vx) < 1e-8);
   }
-  assert.ok(Math.abs(player.vx - 6.1) < 1e-8);
+  assert.ok(Math.abs(player.vx - 6.1 * Breach.BLADE_MOVEMENT.speedMultiplier) < 1e-8, 'blades carry a 12% movement bonus');
   assert.deepEqual([predicted.hp, predicted.maxHp, predicted.meleeWeapon, predicted.ammo, predicted.potions], initialKit);
 });
 

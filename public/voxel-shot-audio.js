@@ -136,6 +136,9 @@ export const VOXEL_MELEE_AUDIO = Object.freeze(Object.fromEntries(Object.entries
   katana: { duration: .28, peak: .134, width: .046, brightness: 4600, air: .37, body: .036, frequency: 280 },
   axe: { duration: .43, peak: .278, width: .064, brightness: 1700, air: .34, body: .10, frequency: 103 },
   tonfas: { duration: .19, peak: .082, width: .032, brightness: 1150, air: .27, body: .075, frequency: 330 },
+  spear: { duration: .26, peak: .120, width: .040, brightness: 3100, air: .40, body: .030, frequency: 210 },
+  hatchet: { duration: .24, peak: .110, width: .042, brightness: 2200, air: .33, body: .070, frequency: 150 },
+  whip: { duration: .36, peak: .230, width: .030, brightness: 5200, air: .46, body: .020, frequency: 360 },
 }).map(([id, profile]) => [id, Object.freeze(profile)])));
 
 /** One bounded deterministic sample buffer is cached per melee weapon. */
@@ -163,6 +166,9 @@ export const VOXEL_BLADE_IMPACT_AUDIO = Object.freeze(Object.fromEntries(Object.
   katana: { duration: .145, body: .30, frequency: 123, bodyDecay: .024, cut: .40, cutDecay: .022, brightness: 3350, edge: .10, edgeFrequency: 1120, edgeDecay: .008 },
   axe: { duration: .23, body: .58, frequency: 61, bodyDecay: .046, cut: .32, cutDecay: .032, brightness: 1450, edge: .035, edgeFrequency: 410, edgeDecay: .008 },
   tonfas: { duration: .12, body: .40, frequency: 157, bodyDecay: .022, cut: .23, cutDecay: .013, brightness: 1050, edge: .055, edgeFrequency: 480, edgeDecay: .006 },
+  spear: { duration: .15, body: .34, frequency: 110, bodyDecay: .026, cut: .36, cutDecay: .020, brightness: 2600, edge: .07, edgeFrequency: 820, edgeDecay: .008 },
+  hatchet: { duration: .19, body: .50, frequency: 74, bodyDecay: .038, cut: .30, cutDecay: .028, brightness: 1700, edge: .045, edgeFrequency: 520, edgeDecay: .008 },
+  whip: { duration: .11, body: .22, frequency: 190, bodyDecay: .016, cut: .42, cutDecay: .012, brightness: 4200, edge: .09, edgeFrequency: 1400, edgeDecay: .005 },
 }).map(([id, profile]) => [id, Object.freeze(profile)])));
 
 /** Deterministic, bounded contact buffers; no oscillator beep or per-victim allocation. */

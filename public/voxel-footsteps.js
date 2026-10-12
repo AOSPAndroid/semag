@@ -6,6 +6,7 @@ const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 const phaseOf = phase => (phase % TAU + TAU) % TAU;
 const MAX_ACTORS = 64, MAX_RECENT_REPORTS = 18, REPORT_WINDOW_MS = 1000;
 
+export const BLADE_FOOTSTEP_QUIET = .6;
 export const VOXEL_FOOTSTEP_AUDIO = Object.freeze({
   boot: Object.freeze({ duration: .105, tone: 114, grain: .23, seed: 127, range: 22, gain: .42, intervalMs: 145 }),
   hound: Object.freeze({ duration: .072, tone: 174, grain: .38, seed: 619, range: 18, gain: .35, intervalMs: 100 }),
@@ -92,7 +93,8 @@ export function createEnemyFootstepPresenter(audio, { maxActors = MAX_ACTORS } =
       history.lastContact = now;
       const dx = actor.x - listener.x, dy = actor.y - listener.y, dz = actor.z - listener.z;
       const rangeDistance = Math.hypot(dx, dy * 1.5, dz), attenuation = Math.max(0, 1 - rangeDistance / profile.range) ** 2;
-      const quiet = actor.crouching ? .14 : actor.walking ? .12 : 1;
+      // Light blade carriers run quieter than gun carriers.
+      const quiet = (actor.crouching ? .14 : actor.walking ? .12 : 1) * (actor.blade === true ? BLADE_FOOTSTEP_QUIET : 1);
       const gain = profile.gain * attenuation * quiet * clamp(actor.stride, .2, 1) * (actor.sprinting ? 1.1 : 1);
       if (gain < .008) continue;
       const horizontal = Math.hypot(dx, dz), pan = horizontal > .001 ? clamp((Math.cos(yaw) * dx + Math.sin(yaw) * dz) / horizontal, -1, 1) * .86 : 0;

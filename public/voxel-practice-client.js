@@ -336,6 +336,7 @@ export function bootPractice() {
       if (audio.enabled && event.type === 'meleeStart') audio.meleeSwing(event.weapon, { gain: perspective.source === 0 ? 1 : .28 });
       if (audio.enabled && hasGunshotReport(event)) audio.gunshot(event.weapon, { gain: perspective.source === 0 ? 1 : .28 });
       utilityEventAudio(audio, event, 0);
+      if (event.type === 'execution' && event.playerId === 0) feedback(event.backstab ? `BACKSTAB · +${event.healed} HP` : `EXECUTION · +${event.healed} HP`, now, 1200);
       if (audio.enabled && event.type === 'grenadeExplosion') { audio.noise(.4, { highpass: 40, lowpass: 1500, gain: .3 }); audio.tone(70, .3, { end: 25, gain: .2 }); }
     }
     gunImpacts.consume(freshEvents, 0, { context: `${state.mapId}:${state.practice.sessionId}` });

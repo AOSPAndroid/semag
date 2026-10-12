@@ -11,7 +11,7 @@
     "activeContexts": 0,
     "contextsCreated": 1,
     "contextsReleased": 1,
-    "drawCalls": 48
+    "drawCalls": 51
   },
   "items": [
     {
@@ -1677,6 +1677,117 @@
         "contextsCreated": 1,
         "contextsReleased": 0,
         "drawCalls": 48
+      }
+    },
+    {
+      "id": "spear",
+      "name": "Pike Spear",
+      "kind": "melee",
+      "file": "melee_spear.webp",
+      "pixels": [
+        640,
+        360
+      ],
+      "alphaBounds": [
+        56,
+        125,
+        585,
+        238
+      ],
+      "bytes": 1780,
+      "vertices": 324,
+      "meshSha256": "2748870fde2b6e49ba947792b2eb1ff59a9e4777b8878732eeeba1c213474ffa",
+      "bounds": {
+        "min": [
+          -0.04500000178813934,
+          -0.029999999329447746,
+          -1.7200000286102295
+        ],
+        "max": [
+          0.04500000178813934,
+          0.029999999329447746,
+          0.20000000298023224
+        ]
+      },
+      "diagnostics": {
+        "activeContexts": 1,
+        "contextsCreated": 1,
+        "contextsReleased": 0,
+        "drawCalls": 49
+      }
+    },
+    {
+      "id": "hatchet",
+      "name": "Tomahawk",
+      "kind": "melee",
+      "file": "melee_hatchet.webp",
+      "pixels": [
+        640,
+        360
+      ],
+      "alphaBounds": [
+        198,
+        119,
+        437,
+        211
+      ],
+      "bytes": 1708,
+      "vertices": 288,
+      "meshSha256": "166e16228656d5b5ee86082863dce270a8edab43eb5569bd9be330b642c9447f",
+      "bounds": {
+        "min": [
+          -0.23499999940395355,
+          -0.03999999910593033,
+          -0.6299999952316284
+        ],
+        "max": [
+          0.10400000214576721,
+          0.03999999910593033,
+          0.18000000715255737
+        ]
+      },
+      "diagnostics": {
+        "activeContexts": 1,
+        "contextsCreated": 1,
+        "contextsReleased": 0,
+        "drawCalls": 50
+      }
+    },
+    {
+      "id": "whip",
+      "name": "Chain Whip",
+      "kind": "melee",
+      "file": "melee_whip.webp",
+      "pixels": [
+        640,
+        360
+      ],
+      "alphaBounds": [
+        115,
+        129,
+        525,
+        228
+      ],
+      "bytes": 2126,
+      "vertices": 576,
+      "meshSha256": "2730edfa8ca2a8e00d570a5679d356556e308e1573b2ba8022fe5d1c329fb7b4",
+      "bounds": {
+        "min": [
+          -0.03755060210824013,
+          -0.03400000184774399,
+          -1.2999999523162842
+        ],
+        "max": [
+          0.03400000184774399,
+          0.03400000184774399,
+          0.18000000715255737
+        ]
+      },
+      "diagnostics": {
+        "activeContexts": 1,
+        "contextsCreated": 1,
+        "contextsReleased": 0,
+        "drawCalls": 51
       }
     }
   ]

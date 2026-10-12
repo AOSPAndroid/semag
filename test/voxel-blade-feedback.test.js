@@ -10,7 +10,7 @@ import { MELEE_IDS, MELEE_WEAPONS, MELEE_PRESS_BUFFER_TICKS, clearMeleeBuffer } 
 import { setInventoryMeleeLoadout, selectInventorySlot } from '../public/voxel-inventory.js';
 
 const arena = { id: 'blade-feedback-arena', bounds: { minX: -30, maxX: 30, minZ: -30, maxZ: 30 }, colliders: [], sites: [] };
-const contactIds = ['sword', 'katana', 'axe', 'tonfas'];
+const contactIds = ['sword', 'katana', 'axe', 'tonfas', 'spear', 'hatchet', 'whip'];
 const energy = samples => samples.reduce((sum, value) => sum + value * value, 0);
 
 function context() {
@@ -55,7 +55,7 @@ test('each physical blade has a finite distinct weighted contact with clean edge
     assert.deepEqual(createVoxelBladeImpactSamples(id, rate), samples);
     if (rate === 48000) fingerprints.add(createHash('sha256').update(Buffer.from(samples.buffer)).digest('hex'));
   }
-  assert.equal(fingerprints.size, 4);
+  assert.equal(fingerprints.size, contactIds.length);
   assert.ok(energy(createVoxelBladeImpactSamples('axe')) > energy(createVoxelBladeImpactSamples('katana')) * 2, 'the heavy chop carries a stronger body than a quick cut');
 });
 
@@ -70,7 +70,7 @@ test('all 36 firearm reports, all five miss whooshes and parry samples retain th
   // Independently captured from released 19a148b, over four normal device rates.
   const golden = [
     [Object.keys(VOXEL_SHOT_AUDIO).filter(id => !MECHANIC_WEAPONS.includes(id)), createVoxelShotSamples, 'cd7e8b55036478485dee0560e9de59f8779f644a6f9618cf72420ddadc22cb2f'],
-    [Object.keys(VOXEL_MELEE_AUDIO), createVoxelMeleeSamples, 'aab20bc5bc39ed346423f3d5bd8c2feb63e81de4bdb9742b1621d7c13448a0f3'],
+    [['knife', 'sword', 'katana', 'axe', 'tonfas'], createVoxelMeleeSamples, 'aab20bc5bc39ed346423f3d5bd8c2feb63e81de4bdb9742b1621d7c13448a0f3'],
     [['parry'], (_, rate) => createVoxelParrySamples(rate), '55798782c08bbfa667d528d95d30d4ccd9e2aa6507eef1d9976eca4969d94385'],
   ];
   assert.equal(Object.keys(VOXEL_SHOT_AUDIO).length, 36 + MECHANIC_WEAPONS.length);
@@ -147,12 +147,12 @@ test('self, incoming, unseen, rejected and speculative contacts cannot trigger a
 test('confirmed contacts respect each distinct blade, attacker life, watched teammate and session', () => {
   const state = fight(12), { audio, ctx, reporter } = enabledAudio();
   for (const [index, weapon] of contactIds.entries()) reporter.consume(accepted(state, index + 1, { attack: weapon, weapon, meleeIndex: index + 1 }), 0);
-  assert.equal(ctx.sources.length, 4); assert.equal(new Set(ctx.sources.map(source => source.buffer)).size, 4);
+  assert.equal(ctx.sources.length, contactIds.length); assert.equal(new Set(ctx.sources.map(source => source.buffer)).size, contactIds.length);
   const event = accepted(state, 5);
   reporter.consume({ ...event, attackerLifeId: 11 }, 0); reporter.consume({ ...event, attackerDeaths: 1 }, 0);
   reporter.consume({ ...event, playerId: 7 }, 0, { viewedId: 7 });
   reporter.consume(event, 0, { lifeKey: 'another-round' });
-  assert.equal(audio.inspectBladeImpacts().played, 8);
+  assert.equal(audio.inspectBladeImpacts().played, contactIds.length + 4);
   reporter.reset(); assert.deepEqual(reporter.inspect(), { reports: 0, trackedSwings: 0, limit: 512 });
 });
 

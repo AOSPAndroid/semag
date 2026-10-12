@@ -18,7 +18,7 @@ function actor(id, fields = {}) { return Object.assign(createCombatPlayer(id), {
 function fixture(spec, { yaw = 0, pitch = 0, crouching = false, targetCrouching = false, map = arena, gameId = 'voxel-breach', targets } = {}) {
   const attacker = actor(0, { x: 0, z: 0, yaw, pitch, crouching, human: true });
   setInventoryMeleeLoadout(attacker, spec.weapon, { equip: true });
-  targets ||= [actor(1, { x: Math.sin(yaw) * spec.distance, z: -Math.cos(yaw) * spec.distance, crouching: targetCrouching })];
+  targets ||= [actor(1, { x: Math.sin(yaw) * spec.distance, z: -Math.cos(yaw) * spec.distance, crouching: targetCrouching, yaw: yaw + Math.PI })];
   const players = [attacker];
   for (const target of targets) players[target.id] = target;
   for (let id = 0; id < players.length; id++) players[id] ||= actor(id, { alive: false });

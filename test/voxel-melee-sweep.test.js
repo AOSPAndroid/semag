@@ -140,7 +140,7 @@ test('accepted nonlethal hits give weapon-specific physical impulses after stagg
 test('heavy brute resistance and modest PvP shoves add only brief interruptible-control stagger', () => {
   const light = shove({ weapon: 'axe' }), heavy = shove({ weapon: 'axe', type: 'brute' }), player = shove({ weapon: 'axe', monster: false, fields: { meleeTicks: 30, meleePhase: 'active' } });
   near(vectorLength(light.target), 10); near(vectorLength(heavy.target), 3.5); near(vectorLength(player.target), 2.4);
-  assert.equal(player.target.meleeTicks, 26, 'brief impact ends a vulnerable knife commitment into its original recovery'); assert.equal(player.target.hitStunTicks, 10); assert.equal(player.target.knockbackTicks, 24);
+  assert.equal(player.target.meleeTicks, 26, 'brief impact ends a vulnerable knife commitment into its original recovery'); assert.equal(player.target.hitStunTicks, 18, 'long blades stagger players a little longer'); assert.equal(player.target.knockbackTicks, 24);
   const before = player.target.x;
   predictLocalMovement(player.target, { ...emptyInput(player.target), right: true }, arena, 12);
   assert.ok(player.target.x > before + .12, 'the victim can still steer throughout impact');

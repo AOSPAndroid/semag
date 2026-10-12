@@ -12,11 +12,14 @@ export const MELEE_WEAPONS = Object.freeze({
   katana: Object.freeze({ id: 'katana', name: 'Raven Katana', label: 'KATANA', startupTicks: 8, activeTicks: 10, recoveryTicks: 24, damage: 75, reach: 3.35, arcRadians: .52, speed: 6, slashRadius: .22, slashTilt: -.12, slashDropRadians: .34, pushSpeed: 3, description: 'A fast long cut with modest pushback. Land three timed alternating cuts for a stronger finishing slash.' }),
   axe: Object.freeze({ id: 'axe', name: 'Bulwark Axe', label: 'AXE', startupTicks: 22, activeTicks: 12, recoveryTicks: 50, damage: 140, reach: 2.85, arcRadians: .72, speed: 5.1, slashRadius: .26, slashTilt: -.72, slashDropRadians: .32, pushSpeed: 10, description: 'A heavy committed chop. Confirm the first hit and time a second cut for a heavier finishing blow.' }),
   tonfas: Object.freeze({ id: 'tonfas', name: 'Twin Tonfas', label: 'DUAL TONFAS', startupTicks: 6, activeTicks: 7, recoveryTicks: 17, damage: 42, reach: 2, arcRadians: .58, speed: 6.15, dualWield: true, slashRadius: .20, slashTilt: -.20, pushSpeed: 2.6, description: 'Alternate quick close strikes with both hands. Four confirmed presses chain into a harder finishing strike; each fresh press is one blow.' }),
+  spear: Object.freeze({ id: 'spear', name: 'Pike Spear', label: 'SPEAR', startupTicks: 14, activeTicks: 10, recoveryTicks: 32, damage: 85, reach: 4.0, arcRadians: .16, speed: 5.7, slashRadius: .16, slashTilt: 0, pushSpeed: 6, stab: true, description: 'The longest reach. A straight thrust that keeps swords at arm\'s length; land three timed thrusts for a harder finisher. Right click parries.' }),
+  hatchet: Object.freeze({ id: 'hatchet', name: 'Tomahawk', label: 'HATCHET', startupTicks: 9, activeTicks: 9, recoveryTicks: 26, damage: 60, reach: 2.2, arcRadians: .6, speed: 6.05, slashRadius: .2, slashTilt: -.6, slashDropRadians: .2, pushSpeed: 3, throwable: true, description: 'A quick short chop. Right click throws it in an arc for heavy damage; it flies back to your hand a few seconds later.' }),
+  whip: Object.freeze({ id: 'whip', name: 'Chain Whip', label: 'CHAIN WHIP', startupTicks: 12, activeTicks: 12, recoveryTicks: 30, damage: 45, reach: 5.0, arcRadians: .95, speed: 5.9, slashRadius: .14, slashTilt: -.1, slashDropRadians: .2, pushSpeed: 7, pull: true, description: 'A wide, long lash that drags whoever it catches toward you. Light damage, three-cut chain.' }),
 });
 /** A precise RMB commitment extends the starter knife without widening its band. */
 export const KNIFE_SECONDARY = Object.freeze({ ...KNIFE, startupTicks: 20, activeTicks: 6, recoveryTicks: 54, damage: 60, reach: 2.15, slashRadius: .10, pushSpeed: 3.2 });
 const guard = (startupTicks, activeTicks, recoveryTicks, cooldownTicks, staminaCost, halfAngle) => Object.freeze({ startupTicks, activeTicks, recoveryTicks, cooldownTicks, staminaCost, halfAngle });
-export const PARRY_PROFILES = Object.freeze({ sword: guard(4, 12, 24, 72, 12, .75), katana: guard(4, 12, 24, 72, 12, .75), axe: guard(7, 8, 38, 96, 16, .6), tonfas: guard(3, 14, 22, 66, 10, .8) });
+export const PARRY_PROFILES = Object.freeze({ sword: guard(4, 12, 24, 72, 12, .75), katana: guard(4, 12, 24, 72, 12, .75), axe: guard(7, 8, 38, 96, 16, .6), tonfas: guard(3, 14, 22, 66, 10, .8), spear: guard(6, 10, 30, 84, 14, .7) });
 export const MELEE_IDS = Object.freeze(Object.keys(MELEE_WEAPONS));
 export const MELEE_WEAPON_IDS = MELEE_IDS;
 export const meleeWeaponId = playerOrId => {
@@ -25,21 +28,60 @@ export const meleeWeaponId = playerOrId => {
 };
 /** Confirmed primary chains reward timing without changing first-hit handling. */
 export const MELEE_COMBO_WINDOW_TICKS = 42;
-const COMBO_LENGTHS = Object.freeze({ knife: 3, sword: 3, katana: 3, axe: 2, tonfas: 4 });
+const COMBO_LENGTHS = Object.freeze({ knife: 3, sword: 3, katana: 3, axe: 2, tonfas: 4, spear: 3, hatchet: 2, whip: 3 });
+/** Long blades stagger and shove players on every confirmed cut; quick blades stay light. */
+export const BLADE_IMPACT = Object.freeze({
+  sword: Object.freeze({ stunTicks: 14, finisherStunTicks: 22, playerPush: .5 }),
+  katana: Object.freeze({ stunTicks: 14, finisherStunTicks: 22, playerPush: .5 }),
+  axe: Object.freeze({ stunTicks: 18, finisherStunTicks: 26, playerPush: .5 }),
+  spear: Object.freeze({ stunTicks: 16, finisherStunTicks: 24, playerPush: .5 }),
+});
+const impactFor = id => BLADE_IMPACT[id] || { stunTicks: 10, finisherStunTicks: 16, playerPush: .28 };
 export const meleeComboLength = playerOrId => COMBO_LENGTHS[meleeWeaponId(playerOrId)];
 const COMBO_PROFILES = Object.freeze(Object.fromEntries(Object.entries(MELEE_WEAPONS).map(([id, profile]) => [id, Object.freeze(Array.from({ length: COMBO_LENGTHS[id] }, (_, index) => {
   const comboStep = index + 1, comboFinisher = comboStep === COMBO_LENGTHS[id];
-  return Object.freeze({ ...profile, comboStep, comboLength: COMBO_LENGTHS[id], comboFinisher, slashDirection: comboStep % 2 ? 1 : -1, damage: comboFinisher ? Math.round(profile.damage * (id === 'axe' ? 1.15 : 1.2)) : profile.damage, pushSpeed: profile.pushSpeed * (comboFinisher ? 1.25 : 1), hitStunTicks: comboFinisher ? 16 : 10 });
+  return Object.freeze({ ...profile, comboStep, comboLength: COMBO_LENGTHS[id], comboFinisher, slashDirection: comboStep % 2 ? 1 : -1, damage: comboFinisher ? Math.round(profile.damage * (id === 'axe' ? 1.15 : 1.2)) : profile.damage, pushSpeed: profile.pushSpeed * (comboFinisher ? 1.25 : 1), hitStunTicks: comboFinisher ? impactFor(id).finisherStunTicks : impactFor(id).stunTicks, playerPush: impactFor(id).playerPush });
 }))])));
+/** Duel styles for long blades. A held-then-released primary is a heavy cut that
+ * breaks guards; a cut inside the window after a clean parry is a riposte; a cut
+ * thrown in the air is an overhead chop that comes over a held guard; a strafe
+ * picks which side the sweep comes from. */
+export const DUEL_WEAPONS = Object.freeze(['sword', 'katana', 'axe', 'spear']);
+/** The hatchet's right-click throw: an arcing projectile that returns to hand after the cooldown. */
+export const HATCHET_THROW = Object.freeze({ id: 'hatchet', projectileSpeed: 26, projectileGravity: 10, damage: 95, headMultiplier: 1.6, legMultiplier: .8, range: 35, projectileTicks: 150, cooldownTicks: 240 });
+export const HEAVY = Object.freeze({ chargeExtraTicks: 18, damage: 1.6, push: 1.5, startupExtraTicks: 6, stunExtraTicks: 8 });
+export const RIPOSTE = Object.freeze({ windowTicks: 72, damage: 1.5 });
+export const OVERHEAD = Object.freeze({ tilt: -1.3, damage: 1.15 });
+/** Ticks the primary must be held before release turns into a heavy cut. */
+export const heavyChargeTicks = playerOrId => {
+  const base = MELEE_WEAPONS[meleeWeaponId(playerOrId)];
+  return base.startupTicks + base.activeTicks + base.recoveryTicks + HEAVY.chargeExtraTicks;
+};
+const STYLE_PROFILES = new Map();
+const styled = (profile, style, side) => {
+  const key = `${profile.id}:${profile.comboStep || 0}:${style || ''}:${side || 0}`;
+  let cached = STYLE_PROFILES.get(key); if (cached) return cached;
+  const impact = impactFor(profile.id), changes = {};
+  if (style === 'heavy') Object.assign(changes, { comboStep: 0, comboLength: 0, comboFinisher: false, heavy: true, startupTicks: profile.startupTicks + HEAVY.startupExtraTicks, damage: Math.round(profile.damage * HEAVY.damage), pushSpeed: profile.pushSpeed * HEAVY.push, hitStunTicks: impact.finisherStunTicks + HEAVY.stunExtraTicks });
+  else if (style === 'riposte') Object.assign(changes, { comboStep: 0, comboLength: 0, comboFinisher: false, riposte: true, damage: Math.round(profile.damage * RIPOSTE.damage), hitStunTicks: impact.finisherStunTicks });
+  else if (style === 'overhead') Object.assign(changes, { overhead: true, slashTilt: OVERHEAD.tilt, damage: Math.round(profile.damage * OVERHEAD.damage) });
+  if (side === 1 || side === -1) changes.slashDirection = side;
+  cached = Object.freeze({ ...profile, ...changes }); STYLE_PROFILES.set(key, cached); return cached;
+};
 export const meleeProfile = playerOrId => {
   const id = meleeWeaponId(playerOrId);
   if (id === 'knife' && playerOrId?.meleeAction === 'secondary') return KNIFE_SECONDARY;
   const step = playerOrId?.meleeComboStep;
-  return playerOrId?.monster !== true && playerOrId?.bot !== true && playerOrId?.meleeAction !== 'secondary' && playerOrId?.meleeComboWeapon === id && Number.isInteger(step) && step > 0 ? COMBO_PROFILES[id][Math.min(step, COMBO_LENGTHS[id]) - 1] : MELEE_WEAPONS[id];
+  const profile = playerOrId?.monster !== true && playerOrId?.bot !== true && playerOrId?.meleeAction !== 'secondary' && playerOrId?.meleeComboWeapon === id && Number.isInteger(step) && step > 0 ? COMBO_PROFILES[id][Math.min(step, COMBO_LENGTHS[id]) - 1] : MELEE_WEAPONS[id];
+  const style = playerOrId?.meleeStyle, side = playerOrId?.meleeSide;
+  return DUEL_WEAPONS.includes(id) && playerOrId?.meleeAction !== 'secondary' && (style || side) ? styled(profile, style, side) : profile;
 };
 export function resetMeleeCombo(player) { player.meleeComboStep = 0; player.meleeComboConfirmed = false; player.meleeComboWindowTicks = 0; player.meleeComboWeapon = null; return player; }
 /** Neutralization drops the next click without rewriting an accepted cut. */
 export function clearMeleeComboContinuation(player) {
+  // A control cancellation must not turn an armed charge into a release attack.
+  // Keep any already committed swing, its style and its recovery intact.
+  player.heavyChargeTicks = 0;
   player.meleeComboConfirmed = false; player.meleeComboWindowTicks = 0; player.pendingMeleeTicks = 0;
   return player.meleeTicks > 0 ? player : resetMeleeCombo(player);
 }
@@ -69,7 +111,8 @@ export const MELEE_PRESS_BUFFER_TICKS = 10;
 export function clearMeleeBuffer(player) { player.pendingMeleeTicks = 0; return player; }
 export function advanceMeleePrimaryPress(player, input, actions = player) {
   let pendingMeleeTicks = Math.max(0, Math.min(MELEE_PRESS_BUFFER_TICKS, finite(actions.pendingMeleeTicks)) - 1);
-  const cancelled = player.alive === false || player.slot !== 'sword' || actions.reloadTicks || actions.healTicks || actions.grenadeThrowTicks || actions.parryTicks || actions.hitStunTicks || actions.triggerBlocked
+  // A thrown hatchet is not in hand until it flies back.
+  const cancelled = player.alive === false || player.slot !== 'sword' || meleeWeaponId(player) === 'hatchet' && actions.meleeSecondaryCooldown > 0 || actions.reloadTicks || actions.healTicks || actions.grenadeThrowTicks || actions.parryTicks || actions.hitStunTicks || actions.triggerBlocked
     || input.interact || input.reload || input.heal || input.grenade || input.swap || input.drop || ['slot1', 'slot2', 'slot3', 'slot4'].some(key => input[key]);
   if (cancelled) return { pendingMeleeTicks: 0, primaryPressed: false };
   // Defense clears a queued followup, but a fresh cut keeps primary precedence
@@ -109,7 +152,7 @@ export function meleeStartupAim(player, input = player) {
 /** Cancel transient defense; genuine physical-item and global recovery survive. */
 export function resetMeleeDefense(player, { clearCooldown = false, blockAim = player.meleeAimBlocked === true } = {}) {
   clearMeleeBuffer(player); resetMeleeCombo(player); player.meleeInitialYaw = player.meleeInitialPitch = 0;
-  player.parryTicks = 0; player.parryYaw = 0; player.parryPitch = 0; player.parryStartTick = 0; player.parryConsumed = false; player.meleeAction = 'primary'; player.meleeAimBlocked = blockAim === true;
+  player.parryTicks = 0; player.parryYaw = 0; player.parryPitch = 0; player.parryStartTick = 0; player.parryConsumed = false; player.meleeAction = 'primary'; player.meleeAimBlocked = blockAim === true; player.guarding = false;
   if (clearCooldown) {
     player.parryCooldown = player.meleeSecondaryCooldown = 0;
     for (const item of player.inventory || []) if (item?.kind === 'melee') item.parryCooldown = 0;
@@ -159,7 +202,7 @@ export function meleeSlashPhase(player) {
  * Knife is a focused stab; the two short tonfa cuts alternate their sweep.
  */
 export function meleeSlashGeometry(player, { from = 0, to = 1, origin = meleeSlashOrigin(player) } = {}) {
-  const profile = meleeProfile(player), kind = profile.id === 'knife' ? 'stab' : 'slash';
+  const profile = meleeProfile(player), kind = profile.id === 'knife' || profile.stab === true ? 'stab' : 'slash';
   from = clamp(finite(from), 0, 1); to = clamp(finite(to, 1), from, 1);
   const radius = profile.slashRadius, innerLength = .18, outerLength = profile.reach - radius;
   const yaw = finite(player?.meleeYaw, finite(player?.yaw)), pitch = clamp(finite(player?.meleePitch, finite(player?.pitch)), -1.35, 1.35);

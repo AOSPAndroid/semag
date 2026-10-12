@@ -132,8 +132,8 @@ test('Horde intermission cancels transient defense, suppresses RMB and still per
 test('a genuine co-op death and revive clear live defense while retaining the carried blade recovery and held-input fence', () => {
   const { state, monster } = horde({ capacity: 2 }), survivor = state.players[0], victim = state.players[1]; collectBlade(state, victim);
   Horde.step(state, [{}, {}]); Horde.step(state, [{}, { aim: true }]); const cooldown = victim.inventory[victim.inventoryIndex].parryCooldown;
-  Combat.applyCombatDamage(state, [{ playerId: monster.id, targetId: victim.id, damage: victim.hp, attack: 'gun', weapon: 'carbine' }]);
-  assert.equal(victim.alive, false); assert.equal(victim.parryTicks, 0);
+  Combat.applyCombatDamage(state, [{ playerId: monster.id, targetId: victim.id, damage: victim.hp, attack: 'grenade', weapon: 'grenade' }]);
+  assert.equal(victim.alive, false); assert.equal(victim.parryTicks, 0); assert.equal(victim.guarding, false);
   advance(Horde.step, state, Horde.HORDE_RULES.reviveTicks, [{ interact: true }, { aim: true }]);
   const revived = state.players[1]; assert.equal(revived.alive, true); assert.equal(revived.hp, Horde.HORDE_RULES.reviveHealth); assert.equal(revived.parryTicks, 0);
   assert.equal(revived.inventory[revived.inventoryIndex].weapon, 'katana'); assert.equal(revived.inventory[revived.inventoryIndex].parryCooldown, cooldown);

@@ -50,7 +50,7 @@ test('every arena starts 2 or 10 genuine participants at distinct safe random sp
     const guns = state.loot.filter(loot => loot.kind === 'weapon' && loot.weapon !== 'grapple').map(loot => loot.weapon);
     assert.equal(new Set(guns).size, guns.length, 'fresh caches contain distinct guns');
     assert.ok(guns.every(id => WEAPON_IDS.includes(id)), 'all cache guns belong to the researched catalogue');
-    assert.equal(state.loot.filter(loot => loot.kind === 'melee').length, 4);
+    assert.equal(state.loot.filter(loot => loot.kind === 'melee').length, 7);
     assert.ok(state.loot.filter(loot => ['heal', 'ammo', 'grenade'].includes(loot.kind)).length >= 8);
     assert.ok(state.loot.length <= Royale.ROYALE.maxLoot); finiteState(state);
   }

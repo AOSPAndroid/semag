@@ -244,13 +244,14 @@ export function createServer(options = {}) {
     const difficulty = gameId === 'voxel-horde' ? settings.difficulty : undefined;
     const melee = gameId === 'voxel-horde' ? settings.melee : undefined;
     const roundUtility = gameId === 'voxel-breach' && settings.roundUtility === true;
-    const state = adapter.makeState({ teamSize, capacity, mapId, difficulty, ...(gameId === 'voxel-horde' ? { melee } : {}), ...(roundUtility ? { roundUtility } : {}) });
+    const mode = gameId === 'voxel-breach' && typeof settings.mode === 'string' && settings.mode !== 'classic' ? settings.mode : undefined;
+    const state = adapter.makeState({ teamSize, capacity, mapId, difficulty, ...(gameId === 'voxel-horde' ? { melee } : {}), ...(roundUtility ? { roundUtility } : {}), ...(mode ? { mode } : {}) });
     if (gameId === 'voxel-horde') for (let id = 0; id < capacity; id++) Horde.setConnected(state, id, false);
     // Pose history belongs to authoritative rooms and never enters snapshots or practice.
     if (adapter.compensateHitscan) enableLagCompensation(state);
     return {
       id, gameId, name: cleanName(name || adapter.title, 48) || adapter.title,
-      capacity, teamSize, difficulty, melee: gameId === 'voxel-horde' ? state.horde.config.melee : melee, mapId, mapName: mapId === undefined ? undefined : maps[mapId].name, ...(roundUtility ? { roundUtility } : {}),
+      capacity, teamSize, difficulty, melee: gameId === 'voxel-horde' ? state.horde.config.melee : melee, mapId, mapName: mapId === undefined ? undefined : maps[mapId].name, ...(roundUtility ? { roundUtility } : {}), ...(mode ? { mode } : {}),
       ...(['voxel-royale', 'voxel-horde'].includes(gameId) ? { hostId: null } : {}),
       adapter, createdAt, emptySince: createdAt, hadPlayers: false, sessionId: randomUUID(),
       state, players: Array(capacity).fill(null), slots: Array(capacity).fill(null), acks: Array(capacity).fill(-1),
@@ -262,6 +263,7 @@ export function createServer(options = {}) {
     ...(['voxel-royale', 'voxel-horde'].includes(room.gameId) ? { hostId: room.hostId } : {}),
     ...(room.gameId === 'voxel-horde' ? { difficulty: room.difficulty, melee: room.melee } : {}),
     ...(room.roundUtility ? { roundUtility: true } : {}),
+    ...(room.mode ? { mode: room.mode } : {}),
   });
   const summary = room => ({ id: room.id, gameId: room.gameId, name: room.name, ...roomSettings(room), players: room.players, phase: room.state.phase, createdAt: room.createdAt });
   function reapRooms(now = Date.now()) {
@@ -283,14 +285,16 @@ export function createServer(options = {}) {
       if (typeof mapId !== 'string' || !Object.hasOwn(ShinobiVoxel.MAPS, mapId)) throw Object.assign(new Error('Choose an available Shinobi 3D arena.'), { status: 400 });
       settings = { mapId };
     } else if (gameId === 'voxel-breach') {
-      if (Object.keys(settings).some(key => !['teamSize', 'mapId', 'roundUtility'].includes(key))) throw Object.assign(new Error('Choose only a team size, map and round utility for this room.'), { status: 400 });
+      if (Object.keys(settings).some(key => !['teamSize', 'mapId', 'roundUtility', 'mode'].includes(key))) throw Object.assign(new Error('Choose only a team size, map, mode and round utility for this room.'), { status: 400 });
       const teamSize = Object.hasOwn(settings, 'teamSize') ? settings.teamSize : 1;
       const mapId = Object.hasOwn(settings, 'mapId') ? settings.mapId : 'courtyard';
       const roundUtility = Object.hasOwn(settings, 'roundUtility') ? settings.roundUtility : false;
       if (typeof roundUtility !== 'boolean') throw Object.assign(new Error('Round utility must be on or off.'), { status: 400 });
+      const mode = Object.hasOwn(settings, 'mode') ? settings.mode : 'classic';
+      if (typeof mode !== 'string' || !Object.hasOwn(Voxel.BREACH_MODES, mode)) throw Object.assign(new Error('Choose Classic, Blade Arena, Samurai Standoff or Gun Game.'), { status: 400 });
       if (!Number.isInteger(teamSize) || ![1, 2, 3].includes(teamSize)) throw Object.assign(new Error('Choose 1v1, 2v2, or 3v3.'), { status: 400 });
       if (typeof mapId !== 'string' || !Object.hasOwn(Voxel.MAPS, mapId)) throw Object.assign(new Error('Choose an available Voxel Breach map.'), { status: 400 });
-      settings = { teamSize, mapId, ...(roundUtility ? { roundUtility } : {}) };
+      settings = { teamSize, mapId, ...(roundUtility ? { roundUtility } : {}), ...(mode !== 'classic' ? { mode } : {}) };
     } else if (gameId === 'voxel-royale') {
       if (Object.keys(settings).some(key => !['capacity', 'mapId'].includes(key))) throw Object.assign(new Error('Choose only a player capacity and map for this room.'), { status: 400 });
       const capacity = Object.hasOwn(settings, 'capacity') ? settings.capacity : 10;
@@ -348,8 +352,8 @@ export function createServer(options = {}) {
         if (data.gameId === 'shinobi-voxel' && Object.keys(data).some(key => !['gameId', 'name', 'mapId'].includes(key))) {
           throw Object.assign(new Error('Choose only a room name and Shinobi arena.'), { status: 400 });
         }
-        if (data.gameId === 'voxel-breach' && Object.keys(data).some(key => !['gameId', 'name', 'teamSize', 'mapId', 'roundUtility'].includes(key))) {
-          throw Object.assign(new Error('Choose only a room name, team size, map, and round utility.'), { status: 400 });
+        if (data.gameId === 'voxel-breach' && Object.keys(data).some(key => !['gameId', 'name', 'teamSize', 'mapId', 'roundUtility', 'mode'].includes(key))) {
+          throw Object.assign(new Error('Choose only a room name, team size, map, mode, and round utility.'), { status: 400 });
         }
         if (data.gameId === 'voxel-royale' && Object.keys(data).some(key => !['gameId', 'name', 'capacity', 'mapId'].includes(key))) {
           throw Object.assign(new Error('Choose only a room name, player capacity, and map.'), { status: 400 });
@@ -363,6 +367,7 @@ export function createServer(options = {}) {
         if (data.gameId === 'voxel-horde' && Object.hasOwn(data, 'difficulty')) settings.difficulty = data.difficulty;
         if (data.gameId === 'voxel-horde' && Object.hasOwn(data, 'melee')) settings.melee = data.melee;
         if (data.gameId === 'voxel-breach' && Object.hasOwn(data, 'roundUtility')) settings.roundUtility = data.roundUtility;
+        if (data.gameId === 'voxel-breach' && Object.hasOwn(data, 'mode')) settings.mode = data.mode;
         const room = createRoom(data.gameId, data.name, settings);
         json(res, 201, { room: summary(room) });
       } catch (error) { if (!res.writableEnded) json(res, error.status || 400, { error: error.message }); }

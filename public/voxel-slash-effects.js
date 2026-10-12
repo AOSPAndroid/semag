@@ -2,7 +2,7 @@ import { MELEE_WEAPONS, meleeComboLength } from './voxel-melee.js';
 
 const finite = (value, fallback = 0) => Number.isFinite(value) ? value : fallback;
 const life = player => Number.isSafeInteger(player?.lifeId) ? player.lifeId : 0;
-const color = Object.freeze({ sword: '#d7fbff', katana: '#fff0b5', axe: '#ffd094', tonfas: '#d9c8ff', knife: '#d9ece2' });
+const color = Object.freeze({ sword: '#d7fbff', katana: '#fff0b5', axe: '#ffd094', tonfas: '#d9c8ff', knife: '#d9ece2', spear: '#e4f2ff', hatchet: '#ffd9a8', whip: '#ffe0d2' });
 
 /** Only authority-confirmed flesh contacts may create a small blade impact. */
 export function createSlashImpactPresenter({ capacity = 128 } = {}) {

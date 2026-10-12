@@ -794,3 +794,19 @@ test('Breach rooms opt into round utility explicitly and reject anything but a b
     assert.equal(player.inventory[2]?.type, 'smoke'); assert.equal(player.inventory[3]?.type, 'flash');
   }
 });
+
+test('Breach rooms choose a mode; Blade Arena accepts any blade and refuses guns', async t => {
+  const game = await host(t);
+  for (const mode of ['deathmatch', 3, null]) assert.equal((await game.post({ gameId: 'voxel-breach', teamSize: 1, mapId: 'courtyard', mode })).status, 400);
+  assert.equal((await game.make()).state.mode, undefined, 'Classic stays the default');
+  for (const mode of ['blades', 'standoff', 'gungame']) {
+    const response = await game.post({ gameId: 'voxel-breach', teamSize: 1, mapId: 'courtyard', mode });
+    assert.equal(response.status, 201);
+    const { room: summary } = await response.json();
+    assert.equal(summary.mode, mode); assert.equal(game.app.rooms.get(summary.id).state.mode, mode);
+  }
+  const response = await game.post({ gameId: 'voxel-breach', teamSize: 1, mapId: 'courtyard', mode: 'blades' });
+  const room = game.app.rooms.get((await response.json()).room.id);
+  assert.equal(room.adapter.engine.selectMeleeLoadout(room.state, 0, 'katana').ok, true);
+  assert.equal(room.adapter.engine.selectLoadout(room.state, 0, 'vandal').ok, false);
+});

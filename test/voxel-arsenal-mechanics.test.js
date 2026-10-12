@@ -23,7 +23,7 @@ function ticks(state, count = 1, input = {}, options = {}) {
 const shots = state => state.events.filter(event => event.type === 'shot');
 
 test('five immutable melee profiles preserve the starter knife and distinct blade tradeoffs', () => {
-  assert.deepEqual(MELEE_IDS, ['knife', 'sword', 'katana', 'axe', 'tonfas']);
+  assert.deepEqual(MELEE_IDS, ['knife', 'sword', 'katana', 'axe', 'tonfas', 'spear', 'hatchet', 'whip']);
   assert.deepEqual([KNIFE.startupTicks, KNIFE.activeTicks, KNIFE.recoveryTicks, KNIFE.damage, KNIFE.reach, KNIFE.arcRadians, KNIFE.speed], [10, 8, 26, 28, 1.7, .64, 6.1]);
   assert.deepEqual([MELEE.startupTicks, MELEE.activeTicks, MELEE.recoveryTicks, MELEE.damage, MELEE.reach, MELEE.arcRadians, MELEE.speed], [12, 12, 30, 100, 3.05, .70, 5.85]);
   for (const id of MELEE_IDS) { assert.ok(Object.isFrozen(MELEE_WEAPONS[id])); assert.equal(meleeProfile(id), MELEE_WEAPONS[id]); }
@@ -172,7 +172,7 @@ test('Breach close-combat selection validates enum and phase while starts and re
 test('Royale seeds every new blade while every participant still starts with only the small knife', () => {
   for (const mapId of Object.keys(Royale.MAPS)) {
     const state = Royale.createState({ mapId, seed: 920 }); Royale.startMatch(state, [0, 1]);
-    assert.deepEqual(new Set(state.loot.filter(loot => loot.kind === 'melee').map(loot => loot.weapon)), new Set(['sword', 'katana', 'axe', 'tonfas']));
+    assert.deepEqual(new Set(state.loot.filter(loot => loot.kind === 'melee').map(loot => loot.weapon)), new Set(['sword', 'katana', 'axe', 'tonfas', 'spear', 'hatchet', 'whip']));
     for (const player of state.players.filter(player => player.participating)) assert.deepEqual(player.inventory.map(item => item?.weapon || null), ['knife', null, null, null]);
   }
 });

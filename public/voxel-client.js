@@ -8,8 +8,8 @@ import { createEnemyFootstepPresenter } from './voxel-footsteps.js';
 import { WEAPONS, WEAPON_IDS, WEAPON_GROUPS, weaponDamage, weaponStats } from './voxel-weapons.js';
 import { resolveActiveFire, weaponReloadDuration, weaponFireIntervalTicks, weaponChambers } from './voxel-fire-modes.js';
 import { crosshairAngularSpread, createCrosshairPresenter, paintCrosshair } from './voxel-crosshair.js';
-import { PLAYER_HEALTH, HEAL } from './voxel-engine.js';
-import { meleeLabel, meleeProfile, MELEE_IDS } from './voxel-melee.js';
+import { PLAYER_HEALTH, HEAL, BREACH_MODES, GUN_GAME_LADDER } from './voxel-engine.js';
+import { meleeLabel, meleeProfile, MELEE_IDS, MELEE_WEAPONS } from './voxel-melee.js';
 import { incomingDamageFeedback, damageFeedbackPresentation, paintDamageFeedback } from './voxel-damage-feedback.js';
 import { createHitFeedback, paintHitFeedback } from './voxel-hit-feedback.js';
 import { combatPresentation, createCorrectionPresenter, createMovementPresenter, hudTransitionKey, interpolatedVoxelState, reconcileMovement, resolvePresentationContacts, withCombatPresentation } from './voxel-presentation.js';
@@ -237,7 +237,7 @@ export function createMeleeImpactReporter(audio) {
           return true;
         }
         const heavy = weapon === 'axe';
-        const frequency = ({ knife: 285, sword: 195, katana: 225, axe: 155, tonfas: 255 })[weapon] || 195;
+        const frequency = ({ knife: 285, sword: 195, katana: 225, axe: 155, tonfas: 255, spear: 210, hatchet: 175, whip: 300 })[weapon] || 195;
         const volume = Math.min(.3, gain);
         audio.tone(frequency, heavy ? .085 : .065, { end: heavy ? 55 : 75, type: 'triangle', gain: volume }); reports++;
         audio.noise(heavy ? .04 : .028, { highpass: 100, lowpass: 1500, gain: volume * .38 });
@@ -398,6 +398,14 @@ async function boot() {
   const arenaSelect = document.createElement('select'); arenaSelect.id = 'arena-loadout-select'; arenaSelect.setAttribute('aria-label', 'Choose your setup weapon');
   populateWeaponSelect(arenaSelect); arenaField.append(arenaCaption, arenaSelect); $('arena-loadouts').replaceChildren(arenaField);
   const loadoutArmory = mountWeaponArmory({ select: $('loadout-select'), title: 'Build your loadout', portalContainer: $('room-dialog') });
+  // Blade Arena replaces the gun choice with a blade choice.
+  const bladeField = document.createElement('div'); bladeField.className = 'loadout-field fps-starter-kit blade-loadout-field'; bladeField.hidden = true;
+  const bladeCaption = document.createElement('span'); bladeCaption.textContent = 'YOUR BLADE';
+  const bladeSelect = document.createElement('select'); bladeSelect.id = 'blade-loadout-select'; bladeSelect.setAttribute('aria-label', 'Choose your blade');
+  for (const id of MELEE_IDS) { const option = document.createElement('option'); option.value = id; option.textContent = MELEE_WEAPONS[id].name; bladeSelect.append(option); }
+  bladeField.append(bladeCaption, bladeSelect); $('loadout-select').closest('.loadout-field')?.after(bladeField);
+  const bladeArmory = mountWeaponArmory({ select: bladeSelect, kind: 'melee', title: 'Choose your arena blade', portalContainer: $('room-dialog') });
+  const modeOf = () => BREACH_MODES[state?.mode] || BREACH_MODES.classic;
   const arenaArmory = mountWeaponArmory({ select: arenaSelect, title: 'Choose your round weapon', portalContainer: $('game-shell') });
   const comparisonBands = document.createElement('section'); comparisonBands.id = 'comparison-bands'; comparisonBands.setAttribute('aria-label', 'Weapon damage at each range and handling'); $('weapon-comparison').append(comparisonBands);
   setText($('arena-melee-note'), 'Slot 1: knife · Slot 2: chosen gun · Slots 3–4: empty, or smoke and flash with round utility. Scavenge blades, guns and supplies with F.');
@@ -631,6 +639,8 @@ async function boot() {
       const meleeImpact = meleeImpacts.consume(event, playerId, impactOptions);
       const shooter = perspective.source; const target = perspective.target;
       const inventoryFeedback = shooter === playerId ? inventoryEventFeedback(event) : null; if (inventoryFeedback) toast(inventoryFeedback);
+      if (event.type === 'execution' && event.playerId === playerId) toast(event.backstab ? `BACKSTAB · +${event.healed} HP` : `EXECUTION · +${event.healed} HP`);
+      if (event.type === 'gunGameLevel' && event.playerId === playerId) toast(event.weapon === 'knife' ? `FINAL RUNG · KNIFE · ONE KILL TO WIN` : `RUNG ${event.level + 1}/${event.rungs} · ${(WEAPONS[event.weapon]?.name || event.weapon).toUpperCase()}`);
       if (shooter === playerId && event.type === 'lootPickup') toast(`PICKED UP ${event.kind === 'weapon' ? WEAPONS[event.weapon]?.label || 'WEAPON' : event.kind === 'heal' ? 'POTION' : event.kind === 'grenade' ? 'FRAG' : 'SUPPLIES'}`);
       if (event.type === 'damage' && event.damage > 0) {
         const viewed = healthHUDPlayer(state, playerId, spectatorId);
@@ -770,14 +780,25 @@ async function boot() {
     const phase = state?.phase || 'lobby'; const local = ownPlayer(); const inLobby = phase === 'lobby';
     document.querySelector('.voxel-app').dataset.phase = phase;
     setText($('seat-count'), `${roster.filter(player => player?.connected).length} / ${capacity} PLAYERS · ${teamSize}V${teamSize}`);
-    setText($('mode-tag'), `${teamSize}V${teamSize} · FIRST TO FOUR`);
-    setText($('stage-mode'), `${teamSize}V${teamSize} / FIRST TO FOUR`);
-    setText($('objective-mode'), `${teamSize}V${teamSize} / ${mapName || 'VOXEL BREACH'}`);
+    const mode = modeOf(), goal = mode.id === 'gungame' ? `${GUN_GAME_LADDER.length} RUNGS` : 'FIRST TO FOUR';
+    const rung = mode.id === 'gungame' && local ? ` · RUNG ${Math.min((local.gunGameLevel || 0) + 1, GUN_GAME_LADDER.length)}/${GUN_GAME_LADDER.length}` : '';
+    setText($('mode-tag'), `${teamSize}V${teamSize} · ${mode.id === 'classic' ? '' : `${mode.name.toUpperCase()} · `}${goal}`);
+    setText($('stage-mode'), `${teamSize}V${teamSize} / ${mode.id === 'classic' ? goal : mode.name.toUpperCase()}`);
+    setText($('objective-mode'), `${teamSize}V${teamSize} / ${mode.id === 'classic' ? mapName || 'VOXEL BREACH' : mode.name.toUpperCase()}${rung}`);
+    // Only Classic lets players pick a gun; Blade Arena picks a blade instead.
+    const pickPhase = ['lobby', 'countdown', 'buy', 'roundEnd'].includes(phase);
+    bladeField.hidden = mode.id !== 'blades';
+    setHidden($('loadout-select').closest('.loadout-field'), mode.id !== 'classic'); setHidden($('weapon-comparison'), mode.id === 'blades' || mode.id === 'standoff');
+    const kit = document.querySelector('.lobby-panel .fps-starter-kit:not(.blade-loadout-field) p');
+    if (kit) kit.innerHTML = ({ classic: 'Knife + chosen gun<br>No starting supplies', blades: 'Your chosen blade only<br>No guns, no charge', standoff: 'Raven Katana only<br>One clean cut kills', gungame: `Rung ${Math.min((local?.gunGameLevel || 0) + 1, GUN_GAME_LADDER.length)} of ${GUN_GAME_LADDER.length}<br>Each kill: next weapon` })[mode.id];
+    setDisabled(bladeSelect, ending.holding || !connected || !pickPhase || mode.id !== 'blades');
+    if (local?.meleeLoadout && !bladeArmory.isOpen() && document.activeElement !== bladeSelect) bladeSelect.value = local.meleeLoadout;
+    bladeArmory.sync(); if (bladeField.hidden) bladeArmory.close();
     setDisabled($('player-name'), !inLobby || !connected);
-    setDisabled($('loadout-select'), ending.holding || !connected || !['lobby', 'countdown', 'buy', 'roundEnd'].includes(phase));
+    setDisabled($('loadout-select'), ending.holding || !connected || !['lobby', 'countdown', 'buy', 'roundEnd'].includes(phase) || mode.id !== 'classic');
     if (local?.weapon && !loadoutArmory.isOpen() && document.activeElement !== $('loadout-select')) $('loadout-select').value = local.weapon;
     loadoutArmory.sync();
-    setText($('arena-melee-note'), 'Knife + chosen gun. No starting potions or grenades; E collects dropped equipment.');
+    setText($('arena-melee-note'), mode.id === 'classic' ? 'Knife + chosen gun. F collects dropped equipment.' : mode.objective);
     const me = roster.find(player => player?.id === playerId);
     setHidden($('ready-button'), phase === 'matchEnd'); setHidden($('rematch-button'), phase !== 'matchEnd' || ending.holding);
     const mayCancelCountdown = phase === 'countdown' && state?.round === 1 && !(state?.scores?.[0] || state?.scores?.[1]) && !!me?.ready;
@@ -941,7 +962,7 @@ async function boot() {
     setHidden($('arena-loadouts'), !enter || !['countdown', 'buy'].includes(phase));
     setHidden($('arena-weapon-stats'), $('arena-loadouts').hidden);
     setHidden($('arena-melee-field'), $('arena-loadouts').hidden); setHidden($('arena-melee-note'), $('arena-loadouts').hidden);
-    setDisabled(arenaSelect, !connected || !['countdown', 'buy'].includes(phase));
+    setDisabled(arenaSelect, !connected || !['countdown', 'buy'].includes(phase) || modeOf().id !== 'classic');
     if (local?.weapon && !arenaArmory.isOpen() && document.activeElement !== arenaSelect) arenaSelect.value = local.weapon;
     arenaArmory.sync(); if ($('arena-loadouts').hidden) arenaArmory.close();
     setHidden($('aim-note'), !enter); setText($('aim-note'), touchMode ? 'Touch: Move / Look pads. AIM becomes STAB with a knife or PARRY with another blade; tap a slot to equip.' : 'RMB: gun sights / knife stab / blade parry. If mouse capture is unavailable, hold RMB and drag to look.');
@@ -1154,7 +1175,7 @@ async function boot() {
     else layoutPickerHome.insertBefore(layoutPickerHost, $('sound-button'));
   }
   function setDialog(kind) {
-    loadoutArmory.close(); arenaArmory.close();
+    loadoutArmory.close(); arenaArmory.close(); bladeArmory.close();
     modalOpen = !!kind;
     if (modalOpen) worldLabels.clear();
     setHidden($('room-dialog'), kind !== 'room');
@@ -1308,6 +1329,7 @@ async function boot() {
     if (endView.holding || !connected || !['lobby', 'countdown', 'buy', 'roundEnd'].includes(state?.phase)) { updateUI(); return; }
     previewWeapon = null; renderWeaponComparison($('loadout-select').value); neutralize(); send({ type: 'fps-loadout', weaponId: $('loadout-select').value });
   });
+  listen(bladeSelect, 'change', () => { neutralize(); send({ type: 'fps-loadout', meleeId: bladeSelect.value }); });
   listen(arenaSelect, 'change', () => { previewWeapon = null; renderWeaponComparison(arenaSelect.value); selectArenaLoadout(arenaSelect.value); });
   for (const button of document.querySelectorAll('[data-choose-team]')) listen(button, 'click', () => { neutralize({ pause: true, unlock: true }); teamSwitchPending = true; requestedTeam = Number(button.dataset.chooseTeam); send({ type: 'fps-team', team: requestedTeam }); updateUI(); });
   listen($('next-spectator'), 'click', () => {
@@ -1387,7 +1409,7 @@ async function boot() {
   const pingTimer = setInterval(() => { if (connected && !document.hidden) send({ type: 'ping', time: performance.now() }); }, 1500);
   function destroy() {
     if (destroyed) return; neutralize({ pause: true, unlock: true }); destroyed = true; endPresentation.reset(); victory.destroy(); resultActions.cancel(); clearTimeout(resultActionTimer);
-    loadoutArmory.destroy(); arenaArmory.destroy();
+    loadoutArmory.destroy(); arenaArmory.destroy(); bladeArmory.destroy();
     clearTimeout(reconnectTimer); clearTimeout(toastTimer); clearInterval(pingTimer);
     clearInterval(inputHeartbeat); inputHeartbeat = null;
     if (frameId) cancelAnimationFrame(frameId); frameId = null; socket?.close(); renderer?.destroy(); worldLabels.destroy(); audio.destroy(); inventory.destroy(); weaponWheel.destroy(); layoutPicker.destroy(); unsubscribeLayout(); unsubscribeCameraMotion(); cameraMotionControls.destroy(); cameraMotion.destroy();

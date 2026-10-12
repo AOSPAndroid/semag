@@ -204,7 +204,7 @@ test('Accepted two-player healing and reloading continue through the natural nex
   // past the server's legitimate 350 ms input-idle cutoff while peer 2 drains.
   await Promise.all(game.peers.map(peer => flushPeer(peer)));
   // Each physical key remains held, unlike the short released taps above.
-  await game.input({ heal: true }, {}, 0, 0); await game.input({ reload: true }, {}, 0, 1);
+  await Promise.all([game.input({ heal: true }, {}, 0, 0), game.input({ reload: true }, {}, 0, 1)]);
   app.tick(); assert.equal(healer.healTicks, HEAL.ticks); assert.equal(reloader.reloadTicks, duration);
   await holdThroughBreak(game, [[0, { heal: true }], [1, { reload: true }]]);
   assert.equal(room.state.horde.wave, 2); assert.equal(room.state.horde.wavesCleared, 1);
