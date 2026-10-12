@@ -790,7 +790,8 @@ async function boot() {
     bladeField.hidden = mode.id !== 'blades';
     setHidden($('loadout-select').closest('.loadout-field'), mode.id !== 'classic'); setHidden($('weapon-comparison'), mode.id === 'blades' || mode.id === 'standoff');
     const kit = document.querySelector('.lobby-panel .fps-starter-kit:not(.blade-loadout-field) p');
-    if (kit) kit.innerHTML = ({ classic: 'Knife + chosen gun<br>No starting supplies', blades: 'Your chosen blade only<br>No guns, no charge', standoff: 'Raven Katana only<br>One clean cut kills', gungame: `Rung ${Math.min((local?.gunGameLevel || 0) + 1, GUN_GAME_LADDER.length)} of ${GUN_GAME_LADDER.length}<br>Each kill: next weapon` })[mode.id];
+    const kitHtml = ({ classic: 'Knife + chosen gun<br>No starting supplies', blades: 'Your chosen blade only<br>No guns, no charge', standoff: 'Raven Katana only<br>One clean cut kills', gungame: `Rung ${Math.min((local?.gunGameLevel || 0) + 1, GUN_GAME_LADDER.length)} of ${GUN_GAME_LADDER.length}<br>Each kill: next weapon` })[mode.id];
+    if (kit && kit.innerHTML !== kitHtml) kit.innerHTML = kitHtml;
     setDisabled(bladeSelect, ending.holding || !connected || !pickPhase || mode.id !== 'blades');
     if (local?.meleeLoadout && !bladeArmory.isOpen() && document.activeElement !== bladeSelect) bladeSelect.value = local.meleeLoadout;
     bladeArmory.sync(); if (bladeField.hidden) bladeArmory.close();

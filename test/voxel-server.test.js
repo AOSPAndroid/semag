@@ -500,7 +500,8 @@ test('six Voxel clients observe a normal-input plant, defuse and authoritative r
   const defusedAfter = seats.map(({ peer }) => peer.messages.length); game.app.broadcast(room);
   const defused = await Promise.all(seats.map(({ peer }, id) => peer.untilState(message => message.state.roundReason === 'defuse', { after: defusedAfter[id] })));
   for (const snapshot of defused) assert.deepEqual(snapshot.state, defused[0].state);
-  assert.ok(defused[0].state.events.some(event => event.type === 'plant'));
+  // Snapshots carry recent events only; every client received the plant when it happened.
+  for (const { peer } of seats) assert.ok(peer.messages.some(message => message.state?.events?.some(event => event.type === 'plant')));
   assert.ok(defused[0].state.events.some(event => event.type === 'defuse'));
 });
 

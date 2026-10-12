@@ -1,4 +1,5 @@
-/** Last Stand's wire view preserves authority and every combat event. */
+import { recentSnapshotEvents } from './voxel-snapshot-events.js';
+/** Last Stand's wire view preserves authority and every recent combat event. */
 const SPATIAL_FIELDS = new Set(['x', 'y', 'z', 'dx', 'dy', 'dz', 'distance', 'attackX', 'attackY', 'attackZ', 'hitX', 'hitY', 'hitZ']);
 const PRECISION = 100000;
 
@@ -24,6 +25,6 @@ function spatialEventView(value, field) {
 
 export function snapshotHordeState(state) {
   return { ...state, map: undefined, fighters: undefined,
-    events: state.events.map(event => spatialEventView(event)),
+    events: recentSnapshotEvents(state).map(event => spatialEventView(event)),
     horde: { ...state.horde, brains: undefined } };
 }

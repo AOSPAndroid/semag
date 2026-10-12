@@ -21,6 +21,7 @@ import * as Voxel from './public/voxel-engine.js';
 import * as Royale from './public/voxel-royale-engine.js';
 import * as Horde from './public/voxel-horde-engine.js';
 import { snapshotHordeState } from './public/voxel-horde-snapshot.js';
+import { recentSnapshotEvents } from './public/voxel-snapshot-events.js';
 import { MELEE_WEAPONS, clearMeleeComboContinuation } from './public/voxel-melee.js';
 import { enableLagCompensation, isValidViewTick, setShotViewTick } from './public/voxel-lag-compensation.js';
 import * as Brawl from './public/brawl-engine.js';
@@ -64,13 +65,13 @@ const GAMES = {
     title: 'Voxel Breach', engine: Voxel, makeState: settings => Voxel.createState(settings), inputKeys: Voxel.INPUT_KEYS,
     numericControls: { yaw: { min: -Math.PI, max: Math.PI, default: 0 }, pitch: { min: -1.35, max: 1.35, default: 0 } },
     latestInput: true, snapshotInterval: 4, compensateHitscan: true,
-    snapshotState: state => ({ ...state, fighters: undefined }),
+    snapshotState: state => ({ ...state, fighters: undefined, events: recentSnapshotEvents(state) }),
   },
   'voxel-royale': {
     title: 'Voxel Royale', engine: Royale, makeState: settings => Royale.createState(settings), inputKeys: Royale.INPUT_KEYS,
     numericControls: { yaw: { min: -Math.PI, max: Math.PI, default: 0 }, pitch: { min: -1.35, max: 1.35, default: 0 } },
     latestInput: true, snapshotInterval: 4, compensateHitscan: true,
-    snapshotState: state => ({ ...state, map: undefined, fighters: undefined }),
+    snapshotState: state => ({ ...state, map: undefined, fighters: undefined, events: recentSnapshotEvents(state) }),
   },
   'voxel-horde': {
     title: 'Voxel Last Stand', engine: Horde, makeState: settings => Horde.createState(settings), inputKeys: Horde.INPUT_KEYS,

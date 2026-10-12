@@ -20,7 +20,7 @@ export const BLADE_FEEL = Object.freeze({
 const weightFor = weapon => BLADE_WEIGHT[weapon] || (Object.hasOwn(MELEE_WEAPONS, weapon) ? BLADE_WEIGHT.sword : BLADE_WEIGHT.knife);
 
 export function createBladeFeel() {
-  let stopUntil = -Infinity, slowFrom = -Infinity, kickPitch = 0, kickYaw = 0, kickRoll = 0, last = null, flip = 1;
+  let stopUntil = -Infinity, slowFrom = -Infinity, kickPitch = 0, kickYaw = 0, kickRoll = 0, last = null, flip = 1, lastSwing = null;
   const kick = (pitch, yaw = 0, roll = 0) => {
     flip = -flip; kickPitch += pitch; kickYaw += yaw * flip; kickRoll += roll * flip;
   };
@@ -31,7 +31,13 @@ export function createBladeFeel() {
       const mine = event.playerId === localId, hitMe = event.targetId === localId;
       if (event.type === 'meleeHit' && finite(event.damage) > 0) {
         const weight = weightFor(event.weapon), heavy = event.heavy === true ? BLADE_FEEL.finisherMultiplier * 1.3 : event.comboFinisher === true || event.slideSlash === true || event.riposte === true ? BLADE_FEEL.finisherMultiplier : 1;
-        if (mine) { stopUntil = Math.max(stopUntil, time + weight.stopMs * heavy); kick(weight.kick * heavy, weight.kick * .45 * heavy, weight.kick * .6); return true; }
+        if (mine) {
+          // One swing kicks once, however many bodies a cleave passes through.
+          const swing = `${event.meleeIndex}:${event.meleeStartTick}`;
+          stopUntil = Math.max(stopUntil, time + weight.stopMs * heavy);
+          if (swing !== lastSwing) { lastSwing = swing; kick(weight.kick * heavy, weight.kick * .45 * heavy, weight.kick * .6); }
+          return true;
+        }
         if (hitMe) { kick(-BLADE_FEEL.flinchKick * heavy, BLADE_FEEL.flinchKick * .7, BLADE_FEEL.flinchKick); return true; }
       } else if (event.type === 'meleeClash' && (mine || hitMe)) {
         stopUntil = Math.max(stopUntil, time + BLADE_FEEL.clashStopMs); kick(BLADE_FEEL.clashKick, BLADE_FEEL.clashKick * .6, BLADE_FEEL.clashKick); return true;
@@ -58,7 +64,7 @@ export function createBladeFeel() {
       if (Math.abs(kickPitch) + Math.abs(kickYaw) + Math.abs(kickRoll) < 1e-5) kickPitch = kickYaw = kickRoll = 0;
       return reducedMotion ? { pitch: 0, yaw: 0, roll: 0 } : { pitch: kickPitch, yaw: kickYaw, roll: kickRoll };
     },
-    reset() { stopUntil = slowFrom = -Infinity; kickPitch = kickYaw = kickRoll = 0; last = null; flip = 1; },
+    reset() { stopUntil = slowFrom = -Infinity; kickPitch = kickYaw = kickRoll = 0; last = null; flip = 1; lastSwing = null; },
   };
   return feel;
 }
