@@ -244,6 +244,7 @@ export function validateMeleeLoadout(state, playerId, weaponId) {
   const f = state.players[playerId];
   if (!f || !Number.isInteger(playerId)) return { ok: false, changed: false, error: 'Unknown player.' };
   if (typeof weaponId !== 'string' || !Object.hasOwn(MELEE_WEAPONS, weaponId)) return { ok: false, changed: false, error: 'Choose a close-combat weapon from the loadout list.' };
+  if (state.mode === 'standoff' || state.mode === 'gungame') return { ok: false, changed: false, error: `${BREACH_MODES[state.mode].name} sets your blade.` };
   if (weaponId !== 'knife' && state.mode !== 'blades') return { ok: false, changed: false, error: 'Start with a knife. Collect other blades from dropped supplies.' };
   if (!['lobby', 'countdown', 'buy', 'roundEnd'].includes(state.phase)) return { ok: false, changed: false, error: 'Close-combat weapons can be changed between rounds.' };
   return { ok: true, changed: false };
@@ -931,12 +932,21 @@ export function dropCombatInventory(state, player) {
   ensureInventory(player);
   for (let index = 0; index < 4; index++) addInventoryLoot(state, player, dropInventoryItem(player, index));
 }
+function modeAllowsCombatLoot(state, loot, player) {
+  if (!loot) return false;
+  if (state.gameId !== 'voxel-breach') return true;
+  if (state.mode === 'gungame' && loot.kind === 'weapon') return loot.weapon === GUN_GAME_LADDER[player.gunGameLevel || 0] && !player.inventory?.some(item => item?.kind === 'weapon');
+  if (state.mode === 'gungame' && loot.kind === 'melee') return loot.weapon === 'knife' && !player.inventory?.some(item => item?.kind === 'melee');
+  if (bladeMode(state) && loot.kind === 'weapon') return false;
+  return !(state.mode === 'standoff' && loot.kind === 'melee' && loot.weapon !== 'katana');
+}
 export function findNearbyLoot(state, playerId, arena = state.map || MAPS[state.mapId]) {
   const player = state.players[playerId]; if (!player?.alive || !arena || !['fight', 'intermission'].includes(state.phase)) return null;
   const origin = { x: player.x, y: player.y + eyeHeight(player), z: player.z };
   let nearest = null, range = 1.7;
   const priority = item => item.kind === 'heal' && inventoryCanTake(player, item) ? 1 : 0;
   for (const loot of state.loot || []) {
+    if (!modeAllowsCombatLoot(state, loot, player)) continue;
     if (!['weapon', 'melee', 'heal', 'grenade', 'ammo'].includes(loot.kind) || ![loot.x, loot.y, loot.z].every(Number.isFinite) || Math.abs(loot.y - player.y) > 1.2) continue;
     if (loot.kind === 'ammo' && !inventoryCanTake(player, loot)) continue;
     const horizontal = Math.hypot(loot.x - player.x, loot.z - player.z); if (horizontal > range + EPS) continue;
@@ -947,6 +957,7 @@ export function findNearbyLoot(state, playerId, arena = state.map || MAPS[state.
   return nearest;
 }
 export function pickupCombatLoot(state, player, loot, input = {}) {
+  if (!modeAllowsCombatLoot(state, loot, player)) return false;
   const result = pickupInventoryItem(player, loot);
   if (!result.ok) { emit(state, 'inventoryFull', { playerId: player.id, lootId: loot.id }); return false; }
   if (result.dropped) addInventoryLoot(state, player, result.dropped);
@@ -972,7 +983,7 @@ function tickActions(state, f, input, arena) {
   f.yaw = input.yaw; f.pitch = input.pitch;
   f.meleeComboWindowTicks = Math.max(0, (f.meleeComboWindowTicks || 0) - 1);
   if (!f.meleeComboWindowTicks && !f.meleeTicks || f.slot !== 'sword') resetMeleeCombo(f);
-  else if (input.interact || input.reload || input.heal) clearMeleeComboContinuation(f);
+  if (input.interact || input.reload || input.heal) clearMeleeComboContinuation(f);
   f.grenadeThrowTicks = Math.max(0, f.grenadeThrowTicks - 1);
   f.meleeSecondaryCooldown = Math.max(0, (f.meleeSecondaryCooldown || 0) - 1);
   if (!input.fire) f.triggerBlocked = false;

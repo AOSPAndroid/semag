@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import * as Voxel from '../public/voxel-engine.js';
 import { MELEE_WEAPONS } from '../public/voxel-melee.js';
+import { initializeInventory } from '../public/voxel-inventory.js';
 
 const { BREACH_MODES, GUN_GAME_LADDER, TICK_RATE } = Voxel;
 const input = (f, fields = {}) => ({ ...Voxel.emptyInput(f), yaw: f.yaw, pitch: f.pitch, ...fields });
@@ -77,4 +78,47 @@ test('Gun Game never ends on round score alone', () => {
   assert.equal(state.phase, 'roundEnd'); assert.equal(state.scores[a.team], 4);
   for (let tick = 0; tick < TICK_RATE * 5; tick++) Voxel.step(state, state.players.map(f => input(f)));
   assert.notEqual(state.phase, 'matchEnd');
+});
+
+test('Gun Game cannot bypass the ladder by looting another gun or replacing the last knife', () => {
+  const state = Voxel.createState({ mode: 'gungame' }); toFight(state);
+  const player = state.players[0]; player.gunGameLevel = GUN_GAME_LADDER.length - 1;
+  initializeInventory(player, { knifeOnly: true });
+  for (const item of [{ kind: 'weapon', weapon: 'sheriff', ammo: 6, reserve: 0 }, { kind: 'melee', weapon: 'sword' }]) {
+    const loot = Voxel.addInventoryLoot(state, player, item), before = JSON.stringify(state);
+    assert.ok(loot);
+    assert.equal(Voxel.pickupCombatLoot(state, player, loot), false, 'the last rung remains a knife');
+    assert.equal(JSON.stringify(state), before, 'forbidden equipment stays on the ground without modifying authority');
+    assert.notEqual(Voxel.findNearbyLoot(state, player.id)?.id, loot.id, 'unusable equipment cannot hide nearby supplies');
+  }
+  const heal = Voxel.addInventoryLoot(state, player, { kind: 'heal', amount: 1 });
+  assert.equal(Voxel.findNearbyLoot(state, player.id)?.id, heal.id);
+  assert.equal(Voxel.pickupCombatLoot(state, player, heal), true, 'healing supplies remain collectible');
+});
+
+test('blade-only modes reject guns while Classic still permits scavenging', () => {
+  for (const mode of ['blades', 'standoff', 'classic']) {
+    const state = Voxel.createState({ mode }); toFight(state); const player = state.players[0];
+    const loot = Voxel.addInventoryLoot(state, player, { kind: 'weapon', weapon: 'sheriff', ammo: 6, reserve: 0 });
+    assert.equal(Voxel.pickupCombatLoot(state, player, loot), mode === 'classic', mode);
+  }
+});
+
+test('Gun Game can recover a dropped current-rung gun and knife without stocking duplicate weapons', () => {
+  const state = Voxel.createState({ mode: 'gungame' }); toFight(state); const player = state.players[0];
+  Voxel.dropCombatInventory(state, player);
+  const gun = state.loot.find(item => item.kind === 'weapon'), knife = state.loot.find(item => item.kind === 'melee');
+  assert.equal(Voxel.pickupCombatLoot(state, player, gun), true);
+  assert.equal(Voxel.pickupCombatLoot(state, player, knife), true);
+  assert.equal(player.gunGameLevel, 0);
+  const duplicate = Voxel.addInventoryLoot(state, player, { kind: 'weapon', weapon: GUN_GAME_LADDER[0], ammo: 30, reserve: 0 });
+  assert.equal(Voxel.pickupCombatLoot(state, player, duplicate), false, 'old-rung duplicates cannot survive a future promotion');
+});
+
+test('fixed-mode blade choices cannot be changed through the authoritative loadout API', () => {
+  for (const mode of ['standoff', 'gungame']) {
+    const state = Voxel.createState({ mode }), before = JSON.stringify(state);
+    assert.equal(Voxel.selectMeleeLoadout(state, 0, 'knife').ok, false, mode);
+    assert.equal(JSON.stringify(state), before);
+  }
 });

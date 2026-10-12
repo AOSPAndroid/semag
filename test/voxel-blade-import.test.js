@@ -33,6 +33,15 @@ test('interacting instead of firing cancels the armed heavy attack before releas
   assert.equal(heavyStarts(state).length, 0);
 });
 
+test('interaction also cancels an armed charge after the initial light cut missed', () => {
+  const state = fixture(); state.players[1].z = -12; charge(state);
+  for (let tick = 0; tick < 100 && state.players[0].meleeComboWindowTicks > 0; tick++) step(state, { fire: true });
+  assert.equal(state.players[0].damageDealt, 0);
+  assert.equal(state.players[0].meleeComboWindowTicks, 0);
+  step(state, { interact: true });
+  assert.equal(heavyStarts(state).length, 0);
+});
+
 test('clearing unaccepted charge preserves an already committed heavy cut and its recovery', () => {
   const state = fixture(); charge(state); step(state); const player = state.players[0];
   const accepted = { ticks: player.meleeTicks, cooldown: player.meleeCooldown, style: player.meleeStyle, stamina: player.stamina, inventory: structuredClone(player.inventory) };
