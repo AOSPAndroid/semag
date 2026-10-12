@@ -99,10 +99,10 @@ test('monster healing drops are carried potions and never recover health on pick
 
 test('gun hints and swap labels name the carried knife or sword and never invent a dropped blade', () => {
   const own = createCombatPlayer(0), before = JSON.stringify(own);
-  assert.equal(inventorySwapPresentation(own).label, 'KNIFE'); assert.equal(combatReadout(own).status, 'RMB AIM · V KNIFE');
+  assert.equal(inventorySwapPresentation(own).label, 'KNIFE'); assert.equal(combatReadout(own).status, 'RMB AIM · T KNIFE');
   assert.equal(JSON.stringify(own), before, 'copy presentation cannot mutate ownership');
   initializeInventory(own, { melee: 'sword' });
-  assert.equal(inventorySwapPresentation(own).label, 'SWORD'); assert.equal(combatReadout(own).status, 'RMB AIM · V SWORD');
+  assert.equal(inventorySwapPresentation(own).label, 'SWORD'); assert.equal(combatReadout(own).status, 'RMB AIM · T SWORD');
   own.inventory[0] = null; refreshInventory(own);
   assert.equal(inventorySwapPresentation(own).label, 'NEXT'); assert.equal(combatReadout(own).status, 'RMB AIM · 1–4 EQUIP');
   own.inventory = ['carbine', 'smg', 'sniper', 'pdw'].map(weapon => createInventoryGun(weapon)); own.inventoryIndex = 0; refreshInventory(own);
@@ -116,7 +116,7 @@ test('knife secondary hints and carried-gun swap labels remain honest with a kni
   assert.equal(inventorySwapPresentation(own).label, 'KNIFE'); assert.match(inventorySwapPresentation(own).ariaLabel, /no other carried item/);
   assert.equal(combatReadout(own).status, 'LMB COMBO · RMB STAB');
   const legacy = { weapon: 'carbine', slot: 'primary', grounded: true, ammo: 10, reserve: 20 };
-  assert.equal(inventorySwapPresentation(legacy), null); assert.equal(combatReadout(legacy).status, 'RMB AIM · V SWORD');
+  assert.equal(inventorySwapPresentation(legacy), null); assert.equal(combatReadout(legacy).status, 'RMB AIM · T SWORD');
   assert.equal(inventorySwapPresentation({ ...legacy, slot: 'sword', meleeWeapon: 'knife' }), null);
   assert.equal(combatReadout({ ...legacy, slot: 'sword', meleeWeapon: 'knife' }).status, 'LMB COMBO · RMB STAB');
 });

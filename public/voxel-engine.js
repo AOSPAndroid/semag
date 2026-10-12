@@ -16,7 +16,7 @@ export const TICK_RATE = 120;
 // network snapshot, including utility and damage feedback in the same interval.
 export const EVENT_LIMIT = 160;
 export const WORLD = Object.freeze({ radius: .32, standHeight: 1.8, crouchHeight: 1.15, eyeHeight: 1.62, crouchEyeHeight: .98, gravity: 18.4, jumpSpeed: 6.4, jumpBufferTicks: 10, roundSeconds: 100, bombSeconds: 35, plantSeconds: 3, defuseSeconds: 5, buySeconds: 8, winsToMatch: 4 });
-export const INPUT_KEYS = Object.freeze(['up', 'down', 'left', 'right', 'jump', 'crouch', 'walk', 'sprint', 'fire', 'reload', 'interact', 'aim', 'swap', 'grenade', 'heal', ...INVENTORY_ACTIONS, 'leanLeft', 'leanRight']);
+export const INPUT_KEYS = Object.freeze(['up', 'down', 'left', 'right', 'jump', 'crouch', 'walk', 'sprint', 'fire', 'reload', 'interact', 'aim', 'swap', 'grenade', 'heal', ...INVENTORY_ACTIONS, 'leanLeft', 'leanRight', 'punch']);
 export const ADS = Object.freeze({ ticks: 18, speedMultiplier: .65, spreadMultiplier: .4, recoilMultiplier: .62, fovRatio: 54 / 70, scopedFovRatio: 40 / 70 });
 export const PLAYER_HEALTH = 200;
 export const HEAL = Object.freeze({ ticks: 24, amount: 60, speedMultiplier: .3 });
@@ -36,6 +36,17 @@ export const BLADE_MOVEMENT = Object.freeze({ speedMultiplier: 1.12, slideSlashD
 export const BLADE_GUARD = Object.freeze({ weapons: Object.freeze(['sword', 'katana']), halfAngle: .9, speedMultiplier: .6, staminaBase: 5, staminaPerDamage: .12, breakStunTicks: 30, deflectShare: .6, meleeShare: .3 });
 const guardsBullets = player => player?.slot === 'sword' && BLADE_GUARD.weapons.includes(meleeWeaponId(player)) && player.monster !== true;
 /** A crouched knife from the rear 120° cone: an instant kill. Finisher and backstab kills heal the killer. */
+/** The free left hand: a quick jab with its own cooldown, whatever the right hand holds.
+ * It shoves and briefly staggers, cancels a heavy charge and knocks a raised guard down. */
+/** Minecraft-style melee: sprint hits shove harder (W-tap to sprint again), hits while
+ * falling are crits, every hit lifts a little, a player shrugs off further melee for a
+ * moment after one lands, and a standing long-blade cut sweeps the bodies beside its target. */
+export const MELEE_FEEL = Object.freeze({ sprintGraceTicks: 6, sprintKnockback: 1.8, critFallSpeed: .5, critDamage: 1.5, lift: 3.2, sprintLift: 4, immuneTicks: 24,
+  sweepWeapons: Object.freeze(['sword', 'katana', 'axe']), sweepMaxSpeed: 1.5, sweepRadius: 1.6, sweepShare: .3, sweepMin: 10 });
+const SWEEP_PROFILE = Object.freeze({ id: 'sweep', pushSpeed: 3.2, playerPush: .5 });
+const meleeLikeHit = hit => hit.attack === 'punch' || hit.attack === 'sweep' || typeof hit.attack === 'string' && Object.hasOwn(MELEE_WEAPONS, hit.attack);
+export const PUNCH = Object.freeze({ ticks: 18, contactTick: 5, cooldownTicks: 72, damage: 12, reach: 1.7, halfAngle: .6, pushSpeed: 7, playerPush: .6, stunTicks: 12 });
+const PUNCH_PROFILE = Object.freeze({ id: 'fist', pushSpeed: PUNCH.pushSpeed, playerPush: PUNCH.playerPush, hitStunTicks: PUNCH.stunTicks });
 export const EXECUTION = Object.freeze({ rearHalfAngle: Math.PI / 3, heal: 30 });
 const isBehind = (target, attacker) => {
   const dx = attacker.x - target.x, dz = attacker.z - target.z, distance = Math.hypot(dx, dz);
@@ -136,7 +147,7 @@ export function resetSprint(player, { refill = true } = {}) {
 }
 export function createCombatPlayer(id, teamSize = 1, loadout = 'carbine') {
   const weapon = typeof loadout === 'string' && Object.hasOwn(WEAPONS, loadout) ? loadout : 'carbine', w = WEAPONS[weapon];
-  const player = { id, team: Math.floor(id / teamSize), x: 0, y: 0, z: 0, yaw: 0, pitch: 0, vx: 0, vy: 0, vz: 0, knockbackX: 0, knockbackZ: 0, knockbackTicks: 0, knockbackReadyTicks: 0, radius: WORLD.radius, grounded: true, jumpBufferTicks: 0, stamina: SPRINT.maxStamina, staminaRegenTicks: 0, sprintExhausted: false, sprinting: false, crouching: false, lean: 0, leanOffset: 0, leanX: 0, leanZ: 0, guarding: false, guardBroken: false, meleeStyle: null, meleeSide: 0, heavyChargeTicks: 0, riposteTicks: 0, bladeLungeTicks: 0, bladeLungeCooldown: 0, bladeLungeX: 0, bladeLungeZ: 0, bladeLungeSlashPending: false, meleeSlide: false, chargeTicks: 0, leverStacks: 0, leverReadyTicks: 0, leverQueued: false, grappleTicks: 0, grappleX: 0, grappleY: 0, grappleZ: 0, grappleStuckTicks: 0, slideTicks: 0, slideCooldown: 0, slideX: 0, slideZ: 0, slideSpeed: 0, mantleTicks: 0, mantleFrom: null, mantleTo: null, alive: true, hp: PLAYER_HEALTH, maxHp: PLAYER_HEALTH, weapon, slot: 'primary', meleeWeapon: 'knife', meleeLoadout: 'knife', ammo: w.magazine, reserve: w.reserve, reloadTicks: 0, shotCooldown: 0, burstRemaining: 0, spinTicks: 0, recoil: 0, recoilYaw: 0, sprayShots: 0, sprayIdleTicks: 0, heat: 0, shotIndex: 0, lastShotHand: 0, pendingFireTicks: 0, shots: 0, kills: 0, deaths: 0, damageDealt: 0, lastHitTick: -1000, triggerBlocked: false, aiming: false, aimTicks: 0, meleeTicks: 0, meleeCooldown: 0, meleeIndex: 0, meleeHand: 0, meleeYaw: 0, meleePitch: 0, meleeStartTick: 0, meleePhase: 'idle', meleeHitIds: [], meleeHitLives: [], healing: false, healTicks: 0, healStartTick: -1, potions: 0, grenades: 0, flashTicks: 0, flashTotal: 0, grenadeThrowTicks: 0, interaction: null, interactTicks: 0, previousInput: emptyInput() };
+  const player = { id, team: Math.floor(id / teamSize), x: 0, y: 0, z: 0, yaw: 0, pitch: 0, vx: 0, vy: 0, vz: 0, knockbackX: 0, knockbackZ: 0, knockbackTicks: 0, knockbackReadyTicks: 0, radius: WORLD.radius, grounded: true, jumpBufferTicks: 0, stamina: SPRINT.maxStamina, staminaRegenTicks: 0, sprintExhausted: false, sprinting: false, crouching: false, lean: 0, leanOffset: 0, leanX: 0, leanZ: 0, guarding: false, guardBroken: false, knockbackCap: 0, punchTicks: 0, punchCooldown: 0, punchIndex: 0, punchSprint: false, lastSprintTick: -1000, sprintLock: false, meleeImmuneTicks: 0, meleeSprintHit: false, meleeSweep: false, meleeSweptIndex: 0, meleeStyle: null, meleeSide: 0, heavyChargeTicks: 0, riposteTicks: 0, bladeLungeTicks: 0, bladeLungeCooldown: 0, bladeLungeX: 0, bladeLungeZ: 0, bladeLungeSlashPending: false, meleeSlide: false, chargeTicks: 0, leverStacks: 0, leverReadyTicks: 0, leverQueued: false, grappleTicks: 0, grappleX: 0, grappleY: 0, grappleZ: 0, grappleStuckTicks: 0, slideTicks: 0, slideCooldown: 0, slideX: 0, slideZ: 0, slideSpeed: 0, mantleTicks: 0, mantleFrom: null, mantleTo: null, alive: true, hp: PLAYER_HEALTH, maxHp: PLAYER_HEALTH, weapon, slot: 'primary', meleeWeapon: 'knife', meleeLoadout: 'knife', ammo: w.magazine, reserve: w.reserve, reloadTicks: 0, shotCooldown: 0, burstRemaining: 0, spinTicks: 0, recoil: 0, recoilYaw: 0, sprayShots: 0, sprayIdleTicks: 0, heat: 0, shotIndex: 0, lastShotHand: 0, pendingFireTicks: 0, shots: 0, kills: 0, deaths: 0, damageDealt: 0, lastHitTick: -1000, triggerBlocked: false, aiming: false, aimTicks: 0, meleeTicks: 0, meleeCooldown: 0, meleeIndex: 0, meleeHand: 0, meleeYaw: 0, meleePitch: 0, meleeStartTick: 0, meleePhase: 'idle', meleeHitIds: [], meleeHitLives: [], healing: false, healTicks: 0, healStartTick: -1, potions: 0, grenades: 0, flashTicks: 0, flashTotal: 0, grenadeThrowTicks: 0, interaction: null, interactTicks: 0, previousInput: emptyInput() };
   Object.assign(player, { pendingMeleeTicks: 0, meleeComboStep: 0, meleeComboConfirmed: false, meleeComboWindowTicks: 0, meleeComboWeapon: null, hitStunTicks: 0, hitStunReadyTicks: 0, meleeInitialYaw: 0, meleeInitialPitch: 0, meleeAction: 'primary', meleeAimBlocked: false, meleeSecondaryCooldown: 0, parryTicks: 0, parryCooldown: 0, parryYaw: 0, parryPitch: 0, parryStartTick: 0, parryIndex: 0, parryConsumed: false });
   Object.assign(player, { healUseIndex: 0, healUseId: null, healInventoryIndex: -1, healSelectedIndex: -1 });
   return initializeInventory(player, { weapon });
@@ -381,6 +392,9 @@ function sprintAllowed(player, input, forward, actions = player) {
   player.staminaRegenTicks = Number.isInteger(player.staminaRegenTicks) ? clamp(player.staminaRegenTicks, 0, SPRINT.regenDelayTicks) : 0;
   player.sprintExhausted = player.sprintExhausted === true || player.stamina <= EPS;
   if (player.sprintExhausted && !input.sprint && player.stamina >= SPRINT.restartStamina) player.sprintExhausted = false;
+  // After a sprint hit, release forward or sprint once before sprinting again (the W-tap).
+  if (player.sprintLock && (!(forward > 0) || !input.sprint)) player.sprintLock = false;
+  if (player.sprintLock) return false;
   return player.monster !== true && player.bot !== true && input.sprint && forward > 0 && player.grounded && !player.crouching && !player.sprintExhausted && player.stamina > EPS
     && !input.walk && !input.aim && !input.fire && !input.reload && !input.interact && !input.heal && !input.grenade && !input.swap && !input.drop
     && !player.hitStunTicks && !actions.reloadTicks && !actions.healTicks && !actions.grenadeThrowTicks && !actions.meleeTicks && !actions.parryTicks && !actions.burstRemaining && !actions.pendingFireTicks && !actions.interaction;
@@ -597,8 +611,9 @@ function movementTick(f, input, arena, peers = [], headroomPeers = peers, action
   }
   f.vy -= WORLD.gravity * DT;
   const pushed = Number.isInteger(f.knockbackTicks) && f.knockbackTicks > 0 && f.knockbackTicks <= KNOCKBACK.monsterTicks;
-  if (!pushed) f.knockbackX = f.knockbackZ = f.knockbackTicks = 0;
-  const cap = f.monster === true && f.human !== true ? KNOCKBACK.maxMonsterSpeed : KNOCKBACK.maxPlayerSpeed;
+  if (!pushed) { f.knockbackX = f.knockbackZ = f.knockbackTicks = 0; f.knockbackCap = 0; }
+  // A sprint hit carries its own higher ceiling for the length of that one shove.
+  const cap = Math.max(f.monster === true && f.human !== true ? KNOCKBACK.maxMonsterSpeed : KNOCKBACK.maxPlayerSpeed, finite(f.knockbackCap));
   let pushX = Number.isFinite(f.knockbackX) ? f.knockbackX : 0, pushZ = Number.isFinite(f.knockbackZ) ? f.knockbackZ : 0;
   const pushLength = Math.hypot(pushX, pushZ);
   if (pushLength > cap) { pushX *= cap / pushLength; pushZ *= cap / pushLength; }
@@ -1095,6 +1110,8 @@ function beginMelee(state, f, action = 'primary', { style = null, side = 0 } = {
   f.meleeStartTick = state.tick;
   // A cut started mid-slide sweeps low and hits harder.
   f.meleeSlide = action === 'primary' && f.slideTicks > 0;
+  f.meleeSprintHit = action === 'primary' && state.tick - finite(f.lastSprintTick, -1000) <= MELEE_FEEL.sprintGraceTicks;
+  f.meleeSweep = action === 'primary' && MELEE_FEEL.sweepWeapons.includes(meleeWeaponId(f)) && f.grounded && !f.meleeSprintHit && Math.hypot(finite(f.vx), finite(f.vz)) <= MELEE_FEEL.sweepMaxSpeed;
   emit(state, 'meleeStart', { ...(f.meleeSlide ? { slideSlash: true } : {}), ...comboMetadata(melee), playerId: f.id, weapon, meleeAction: action, hand: f.meleeHand, meleeIndex: f.meleeIndex, meleeStartTick: f.meleeStartTick, attackerLifeId: f.lifeId || 0, attackerDeaths: f.deaths || 0, x: f.x, y: f.y + eyeHeight(f), z: f.z, yaw: f.meleeYaw, pitch: f.meleePitch });
 }
 const comboMetadata = profile => ({ comboStep: profile.comboStep || 0, comboLength: profile.comboLength || 0, comboFinisher: profile.comboFinisher === true, slashDirection: profile.slashDirection || 1, ...(profile.heavy ? { heavy: true } : {}), ...(profile.riposte ? { riposte: true } : {}), ...(profile.overhead ? { overhead: true } : {}) });
@@ -1170,11 +1187,32 @@ function tickMelee(state, f, input, pendingDamage, arena, { meleeDamageScale } =
     f.meleeHitIds.push(target.id);
     f.meleeHitLives.push(life);
     const scale = typeof meleeDamageScale === 'function' ? meleeDamageScale(state, f, target, melee) : meleeDamageScale ?? 1;
-    const damage = Math.round(melee.damage * (Number.isFinite(scale) && scale >= 0 ? Math.min(scale, 8) : 1) * (f.meleeSlide ? BLADE_MOVEMENT.slideSlashDamage : 1));
+    // A cut landed while falling is a critical hit.
+    const crit = !f.grounded && f.vy < -MELEE_FEEL.critFallSpeed;
+    const damage = Math.round(melee.damage * (Number.isFinite(scale) && scale >= 0 ? Math.min(scale, 8) : 1) * (f.meleeSlide ? BLADE_MOVEMENT.slideSlashDamage : 1) * (crit ? MELEE_FEEL.critDamage : 1));
     // A knife driven in from behind by a crouch-sneaking attacker is an instant, silent kill.
     const backstab = meleeWeapon === 'knife' && f.crouching === true && isBehind(target, f);
-    pendingDamage.push({ ...swing, ...(backstab ? { backstab: true } : {}), playerId: f.id, targetId: target.id, targetLifeId: target.lifeId || 0, damage: backstab ? Math.max(damage, Math.ceil(target.hp)) : damage, hitKind: 'body', headshot: false, attack: meleeWeapon, weapon: meleeWeapon, hand: f.meleeHand, attackX: origin.x, attackY: origin.y, attackZ: origin.z, hitX: hit.x, hitY: hit.y, hitZ: hit.z, dx: direction.x, dy: direction.y, dz: direction.z });
+    if (f.meleeSweep && f.meleeSweptIndex !== f.meleeIndex) sweepAround(state, f, target, origin, melee, damage, pendingDamage, arena);
+    pendingDamage.push({ ...swing, ...(backstab ? { backstab: true } : {}), ...(crit ? { crit: true } : {}), ...(f.meleeSprintHit ? { sprintHit: true } : {}), playerId: f.id, targetId: target.id, targetLifeId: target.lifeId || 0, damage: backstab ? Math.max(damage, Math.ceil(target.hp)) : damage, hitKind: 'body', headshot: false, attack: meleeWeapon, weapon: meleeWeapon, hand: f.meleeHand, attackX: origin.x, attackY: origin.y, attackZ: origin.z, hitX: hit.x, hitY: hit.y, hitZ: hit.z, dx: direction.x, dy: direction.y, dz: direction.z });
   }
+}
+/** A standing long-blade cut also catches the bodies right beside its first target. */
+function sweepAround(state, f, main, origin, melee, damage, pendingDamage, arena) {
+  f.meleeSweptIndex = f.meleeIndex;
+  const swept = [];
+  for (const other of state.players) {
+    const life = `${other.id}:${other.lifeId || 0}`;
+    // Last Stand crowds already take the blade's own cleave; the sweep is for player fights.
+    if (other === main || !other.alive || other.id === f.id || other.team === f.team || other.monster === true || f.meleeHitLives.includes(life)) continue;
+    if (Math.hypot(other.x - main.x, other.z - main.z) > MELEE_FEEL.sweepRadius || Math.hypot(other.x - f.x, other.z - f.z) > melee.reach + MELEE_FEEL.sweepRadius) continue;
+    const chest = { x: other.x, y: other.y + playerHeight(other) * .55, z: other.z }, dx = chest.x - origin.x, dy = chest.y - origin.y, dz = chest.z - origin.z, distance = Math.hypot(dx, dy, dz);
+    if (distance <= EPS) continue;
+    const ray = { x: dx / distance, y: dy / distance, z: dz / distance };
+    if (traceShot(state, f.id, origin, ray, distance + .5, arena).playerId !== other.id) continue;
+    f.meleeHitLives.push(life); swept.push(other.id);
+    pendingDamage.push({ playerId: f.id, targetId: other.id, targetLifeId: other.lifeId || 0, damage: Math.max(MELEE_FEEL.sweepMin, Math.round(damage * MELEE_FEEL.sweepShare)), hitKind: 'body', headshot: false, attack: 'sweep', weapon: meleeWeaponId(f), attackerLifeId: f.lifeId || 0, attackX: origin.x, attackY: origin.y, attackZ: origin.z, hitX: chest.x, hitY: chest.y, hitZ: chest.z });
+  }
+  emit(state, 'meleeSweep', { playerId: f.id, weapon: meleeWeaponId(f), targets: swept, x: main.x, y: main.y + 1.1, z: main.z, yaw: f.meleeYaw });
 }
 function rayBoundsDistance(origin, direction, bounds, maximum) {
   let distance = maximum;
@@ -1299,6 +1337,34 @@ function tickGrappleGun(state, f, weapon, input, arena) {
   f.ammo--; f.shots++;
   Object.assign(f, { grappleTicks: weapon.maxPullTicks, grappleX: anchor.x, grappleY: anchor.y, grappleZ: anchor.z, grappleStuckTicks: 0 });
 }
+function tickPunch(state, f, input, pendingDamage, arena) {
+  f.punchCooldown = Math.max(0, finite(f.punchCooldown) - 1);
+  if (!f.alive || f.monster === true || f.bot === true) { f.punchTicks = 0; return; }
+  if (f.punchTicks > 0) {
+    f.punchTicks--;
+    if (f.punchTicks === PUNCH.ticks - PUNCH.contactTick) {
+      // The jab lands on the nearest open enemy in a short frontal cone.
+      const eye = eyePosition(f);
+      let best = null;
+      for (const target of state.players) {
+        if (target.id === f.id || !target.alive || target.team === f.team) continue;
+        const chest = { x: target.x, y: target.y + playerHeight(target) * .62, z: target.z }, dx = chest.x - eye.x, dy = chest.y - eye.y, dz = chest.z - eye.z, distance = Math.hypot(dx, dy, dz);
+        if (distance > PUNCH.reach + (monsterBodyProfile(target)?.radius ?? target.radius) || distance <= EPS || !facesFront(f, chest, PUNCH.halfAngle)) continue;
+        const ray = { x: dx / distance, y: dy / distance, z: dz / distance }, traced = traceShot(state, f.id, eye, ray, distance + .5, arena);
+        if (traced.playerId === target.id && (!best || traced.distance < best.distance)) best = { target, traced, ray, distance: traced.distance };
+      }
+      if (best) {
+        const { target, ray, traced } = best, at = { x: eye.x + ray.x * traced.distance, y: eye.y + ray.y * traced.distance, z: eye.z + ray.z * traced.distance };
+        pendingDamage.push({ playerId: f.id, targetId: target.id, targetLifeId: target.lifeId || 0, damage: Math.round(PUNCH.damage * (!f.grounded && f.vy < -MELEE_FEEL.critFallSpeed ? MELEE_FEEL.critDamage : 1)), ...(!f.grounded && f.vy < -MELEE_FEEL.critFallSpeed ? { crit: true } : {}), ...(f.punchSprint ? { sprintHit: true } : {}), hitKind: 'body', headshot: false, attack: 'punch', weapon: 'fist', punchIndex: f.punchIndex, attackerLifeId: f.lifeId || 0, hitX: at.x, hitY: at.y, hitZ: at.z, dx: ray.x, dy: ray.y, dz: ray.z });
+      }
+    }
+    return;
+  }
+  const fresh = input.punch === true && f.previousInput?.punch !== true;
+  if (!fresh || f.punchCooldown > 0 || f.hitStunTicks > 0 || f.healTicks > 0 || f.grenadeThrowTicks > 0 || f.mantleTicks > 0) return;
+  f.punchTicks = PUNCH.ticks; f.punchCooldown = PUNCH.cooldownTicks; f.punchIndex = finite(f.punchIndex) + 1; f.punchSprint = state.tick - finite(f.lastSprintTick, -1000) <= MELEE_FEEL.sprintGraceTicks;
+  emit(state, 'punchStart', { playerId: f.id, punchIndex: f.punchIndex, x: f.x, y: f.y, z: f.z, yaw: f.yaw });
+}
 function tickWeapon(state, f, input, pendingDamage, arena, meleeOptions = {}) {
   if (!f.alive || WEAPONS[f.weapon]?.mode !== 'charge' || f.slot !== 'primary' || f.healTicks || f.grenadeThrowTicks || f.hitStunTicks > 0 || f.mantleTicks > 0) f.chargeTicks = 0;
   if (!f.alive) { f.pendingMeleeTicks = 0; return; }
@@ -1367,13 +1433,17 @@ function applyMeleeKnockback(state, hit, attacker, target, profile) {
   const cap = monster ? KNOCKBACK.maxMonsterSpeed : KNOCKBACK.maxPlayerSpeed;
   // Players resist most shoves; long blades still visibly push them back.
   const resistance = monster ? target.monsterType === 'brute' ? .35 : target.monsterType === 'screecher' ? .8 : 1 : profile.playerPush ?? BLADE_IMPACT[profile.id]?.playerPush ?? .28;
-  const speed = Math.min(cap, profile.pushSpeed * resistance), dx = target.x - attacker.x, dz = target.z - attacker.z, length = Math.hypot(dx, dz);
+  const sprint = hit.sprintHit === true ? MELEE_FEEL.sprintKnockback : 1;
+  const speed = Math.min(cap * sprint, profile.pushSpeed * resistance * sprint), dx = target.x - attacker.x, dz = target.z - attacker.z, length = Math.hypot(dx, dz);
+  // Every melee hit pops a player slightly off the ground, more after a sprint.
+  if (!monster && target.grounded !== false && target.mantleTicks !== true && !(target.mantleTicks > 0)) { target.vy = Math.max(finite(target.vy), hit.sprintHit ? MELEE_FEEL.sprintLift : MELEE_FEEL.lift); target.grounded = false; }
+  if (hit.sprintHit === true) attacker.sprintLock = true;
   const nx = length > EPS ? dx / length : Math.sin(attacker.meleeYaw || 0), nz = length > EPS ? dz / length : -Math.cos(attacker.meleeYaw || 0);
   // Replace a direction rather than add forces. Three simultaneous partners
   // cannot multiply launch speed or refresh this short impact guard.
   // A whip drags its catch toward the wielder instead of shoving it away.
   const pull = profile.pull === true ? -1 : 1;
-  target.knockbackX = nx * speed * pull; target.knockbackZ = nz * speed * pull;
+  target.knockbackX = nx * speed * pull; target.knockbackZ = nz * speed * pull; target.knockbackCap = sprint > 1 ? cap * sprint : 0;
   target.knockbackTicks = monster ? KNOCKBACK.monsterTicks : KNOCKBACK.playerTicks;
   target.knockbackReadyTicks = monster ? KNOCKBACK.monsterReadyTicks : KNOCKBACK.playerReadyTicks;
   emit(state, 'meleeKnockback', { ...comboMetadata(profile), playerId: attacker.id, targetId: target.id, targetLifeId: target.lifeId || 0, weapon: profile.id, meleeIndex: hit.meleeIndex, meleeStartTick: hit.meleeStartTick, attackerLifeId: attacker.lifeId || 0, x: target.x, y: target.y, z: target.z, dx: nx, dz: nz, speed, ticks: target.knockbackTicks });
@@ -1495,12 +1565,25 @@ export function applyCombatDamage(state, pending, { onMeleeHit, arena = state.ma
   for (const hit of pending) {
     const f = state.players[hit.targetId], attacker = state.players[hit.playerId];
     if (parried.has(hit) || stoppedSwings.has(swingKey(hit)) || !f?.alive || f.hp <= 0 || !Number.isFinite(hit.damage) || hit.damage <= 0 || hit.targetLifeId !== undefined && hit.targetLifeId !== (f.lifeId || 0)) continue;
+    // A player who just took a melee hit shrugs off the next one for a moment.
+    const meleeContact = meleeLikeHit(hit) && f.monster !== true && attacker && attacker.id !== f.id;
+    if (meleeContact && f.meleeImmuneTicks > 0) continue;
+    if (meleeContact) f.meleeImmuneTicks = MELEE_FEEL.immuneTicks;
     const damage = Math.min(f.hp, hit.damage); f.hp -= damage; f.lastHitTick = state.tick;
     cancelHeal(state, f, 'damage');
     if (attacker && attacker.id !== f.id && attacker.team !== f.team) attacker.damageDealt += damage;
     if (f.hp <= 0) lethalHits.set(f.id, hit);
-    if (typeof hit.attack === 'string' && Object.hasOwn(MELEE_WEAPONS, hit.attack) && Number.isInteger(hit.meleeIndex) && [hit.hitX, hit.hitY, hit.hitZ].every(Number.isFinite)) emit(state, 'meleeHit', { ...(hit.heavy ? { heavy: true } : {}), ...(hit.riposte ? { riposte: true } : {}), ...(hit.overhead ? { overhead: true } : {}), comboStep: hit.comboStep || 0, comboLength: hit.comboLength || 0, comboFinisher: hit.comboFinisher === true, slashDirection: hit.slashDirection || 1, meleeIndex: hit.meleeIndex, meleeStartTick: hit.meleeStartTick, meleeAction: hit.meleeAction || 'primary', attackerLifeId: hit.attackerLifeId || 0, attackerDeaths: hit.attackerDeaths || 0, playerId: hit.playerId, targetId: hit.targetId, targetLifeId: hit.targetLifeId || 0, weapon: hit.attack, hand: hit.hand, damage, x: hit.hitX, y: hit.hitY, z: hit.hitZ });
+    if (typeof hit.attack === 'string' && Object.hasOwn(MELEE_WEAPONS, hit.attack) && Number.isInteger(hit.meleeIndex) && [hit.hitX, hit.hitY, hit.hitZ].every(Number.isFinite)) emit(state, 'meleeHit', { ...(hit.crit ? { crit: true } : {}), ...(hit.sprintHit ? { sprintHit: true } : {}), ...(hit.heavy ? { heavy: true } : {}), ...(hit.riposte ? { riposte: true } : {}), ...(hit.overhead ? { overhead: true } : {}), comboStep: hit.comboStep || 0, comboLength: hit.comboLength || 0, comboFinisher: hit.comboFinisher === true, slashDirection: hit.slashDirection || 1, meleeIndex: hit.meleeIndex, meleeStartTick: hit.meleeStartTick, meleeAction: hit.meleeAction || 'primary', attackerLifeId: hit.attackerLifeId || 0, attackerDeaths: hit.attackerDeaths || 0, playerId: hit.playerId, targetId: hit.targetId, targetLifeId: hit.targetLifeId || 0, weapon: hit.attack, hand: hit.hand, damage, x: hit.hitX, y: hit.hitY, z: hit.hitZ });
     emit(state, 'damage', { ...hit, damage, hp: f.hp, x: f.x, y: f.y + eyeHeight(f), z: f.z });
+    if (hit.attack === 'sweep' && attacker && attacker.id !== f.id && attacker.team !== f.team) applyMeleeKnockback(state, hit, attacker, f, SWEEP_PROFILE);
+    if (hit.attack === 'punch' && attacker && attacker.id !== f.id && attacker.team !== f.team) {
+      // A punch breaks a raised guard and a charging heavy, then shoves and staggers.
+      f.heavyChargeTicks = 0;
+      if (f.guarding) { f.guarding = false; f.guardBroken = true; }
+      emit(state, 'punchHit', { playerId: attacker.id, targetId: f.id, targetLifeId: f.lifeId || 0, punchIndex: hit.punchIndex, damage, x: hit.hitX, y: hit.hitY, z: hit.hitZ });
+      applyMeleeHitStun(state, hit, attacker, f, PUNCH_PROFILE);
+      applyMeleeKnockback(state, hit, attacker, f, PUNCH_PROFILE);
+    }
     if (typeof hit.attack === 'string' && Object.hasOwn(MELEE_WEAPONS, hit.attack) && attacker && attacker.id !== f.id && attacker.team !== f.team) {
       const profile = meleeProfile({ meleeWeapon: hit.attack, meleeAction: hit.meleeAction || 'primary', meleeComboWeapon: hit.attack, meleeComboStep: hit.comboStep });
       if (hit.meleeAction !== 'secondary' && attacker.alive && attacker.meleeComboStep > 0 && attacker.meleeComboWindowTicks > 0 && hit.comboStep === attacker.meleeComboStep && hit.meleeIndex === attacker.meleeIndex && hit.meleeStartTick === attacker.meleeStartTick && (hit.attackerLifeId || 0) === (attacker.lifeId || 0) && (hit.attackerDeaths || 0) === (attacker.deaths || 0)) attacker.meleeComboConfirmed = true;
@@ -1554,10 +1637,11 @@ export function combatStep(state, rawInputs = [], arena = state.map || MAPS[stat
   const sprintPlans = [];
   for (const f of impactMovementOrder(state.players)) sprintPlans[f.id] = movementTick(f, inputs[f.id], arena, [], state.players);
   separatePlayers(state, arena);
-  for (const f of state.players) finishSprint(f, sprintPlans[f.id]);
+  for (const f of state.players) { finishSprint(f, sprintPlans[f.id]); if (f.sprinting) f.lastSprintTick = state.tick; }
   recordLagCompensation(state);
   // Climbing hands are busy: no shots, sights, blades, throws or drinks until the climb ends.
   for (const f of state.players) tickWeapon(state, f, f.mantleTicks > 0 ? { ...inputs[f.id], fire: false, aim: false } : inputs[f.id], pending, arena, meleeOptions);
+  for (const f of state.players) tickPunch(state, f, f.mantleTicks > 0 ? { ...inputs[f.id], punch: false } : inputs[f.id], pending, arena);
   // A lunge that ended without its cut (stunned, busy, blade put away) never queues a late slash.
   for (const f of state.players) if (f.bladeLungeSlashPending && !(f.bladeLungeTicks > 0)) f.bladeLungeSlashPending = false;
   advanceSmokes(state);
@@ -1571,6 +1655,7 @@ export function combatStep(state, rawInputs = [], arena = state.map || MAPS[stat
   for (const f of state.players) tickHealing(state, f);
   for (const f of state.players) {
     storeInventoryGun(f); refreshInventory(f); f.previousInput = inputs[f.id];
+    if (f.meleeImmuneTicks > 0) f.meleeImmuneTicks--;
     if (f.flashTicks > 0) f.flashTicks = f.alive ? f.flashTicks - 1 : 0;
     if (!(f.flashTicks > 0)) f.flashTicks = f.flashTotal = 0;
   }

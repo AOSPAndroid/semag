@@ -52,4 +52,6 @@ export function utilityEventAudio(audio, event, playerId) {
   else if (event.type === 'guardBreak') audio.noise?.(.25, { highpass: 200, lowpass: 1800, gain: .2 });
   else if (event.type === 'execution' && event.playerId === playerId) { audio.tone?.(180, .22, { end: 90, gain: .2, type: 'triangle' }); audio.tone?.(660, .18, { end: 990, gain: .1, type: 'sine', delay: .08 }); }
   else if (event.type === 'meleeLunge') audio.noise?.(.18, { highpass: 700, lowpass: 3200, gain: event.playerId === playerId ? .22 : .1 });
+  else if (event.type === 'punchStart') audio.noise?.(.09, { highpass: 900, lowpass: 3000, gain: event.playerId === playerId ? .12 : .05 });
+  else if (event.type === 'punchHit') { const near = event.playerId === playerId || event.targetId === playerId; audio.tone?.(95, .1, { end: 60, gain: near ? .24 : .1, type: 'triangle' }); audio.noise?.(.06, { highpass: 200, lowpass: 1400, gain: near ? .14 : .06 }); }
 }

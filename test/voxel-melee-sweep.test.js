@@ -141,9 +141,13 @@ test('heavy brute resistance and modest PvP shoves add only brief interruptible-
   const light = shove({ weapon: 'axe' }), heavy = shove({ weapon: 'axe', type: 'brute' }), player = shove({ weapon: 'axe', monster: false, fields: { meleeTicks: 30, meleePhase: 'active' } });
   near(vectorLength(light.target), 10); near(vectorLength(heavy.target), 3.5); near(vectorLength(player.target), 2.4);
   assert.equal(player.target.meleeTicks, 26, 'brief impact ends a vulnerable knife commitment into its original recovery'); assert.equal(player.target.hitStunTicks, 18, 'long blades stagger players a little longer'); assert.equal(player.target.knockbackTicks, 24);
+  // A melee hit pops a player briefly off the ground (Minecraft-style); control returns on landing.
+  assert.equal(player.target.grounded, false, 'the hit lifts the victim');
+  for (let tick = 0; tick < 90 && !player.target.grounded; tick++) predictLocalMovement(player.target, emptyInput(player.target), arena, 1);
+  assert.equal(player.target.grounded, true, 'the victim lands within a moment');
   const before = player.target.x;
   predictLocalMovement(player.target, { ...emptyInput(player.target), right: true }, arena, 12);
-  assert.ok(player.target.x > before + .12, 'the victim can still steer throughout impact');
+  assert.ok(player.target.x > before + .12, 'the victim steers freely once landed');
 });
 
 test('simultaneous cooperative impacts retain all damage but cannot stack launch speeds or refresh the guard', () => {

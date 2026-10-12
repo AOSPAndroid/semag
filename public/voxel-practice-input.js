@@ -1,5 +1,5 @@
 /** Native action edges wait for the next 120 Hz step; presentation stays read only. */
-export const PRACTICE_EDGE_ACTIONS = Object.freeze(['slot1', 'slot2', 'slot3', 'slot4', 'drop', 'fire', 'aim', 'jump', 'reload', 'interact', 'swap', 'grenade', 'heal']);
+export const PRACTICE_EDGE_ACTIONS = Object.freeze(['slot1', 'slot2', 'slot3', 'slot4', 'drop', 'fire', 'aim', 'jump', 'reload', 'interact', 'swap', 'grenade', 'heal', 'punch']);
 
 export function createPracticeInputQueue({ extraActions = [] } = {}) {
   const edgeActions = [...new Set([...PRACTICE_EDGE_ACTIONS, ...extraActions.filter(action => typeof action === 'string' && /^dojo[A-Z]\w*$/.test(action))])];

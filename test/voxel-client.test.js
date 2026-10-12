@@ -71,7 +71,7 @@ test('FPS controls use printed French letters and preserve arrows and actions', 
   assert.equal(controlForKey({ key: 'a', code: 'KeyQ' }, 'zqsd'), 'leanLeft');
   assert.equal(controlForKey({ key: 'q', code: 'KeyQ' }, 'wasd'), 'leanLeft');
   assert.equal(controlForKey({ key: 'ArrowLeft', code: 'ArrowLeft' }, 'zqsd'), 'left');
-  for (const [key, action] of [[' ', 'jump'], ['Control', 'crouch'], ['Shift', 'sprint'], ['c', 'walk'], ['b', 'fire'], ['j', 'fire'], ['r', 'reload'], ['e', 'leanRight'], ['g', 'grenade'], ['v', 'swap'], ['f', 'interact'], ['h', 'heal']]) assert.equal(controlForKey({ key }, 'zqsd'), action);
+  for (const [key, action] of [[' ', 'jump'], ['Control', 'crouch'], ['Shift', 'sprint'], ['c', 'walk'], ['b', 'fire'], ['j', 'fire'], ['r', 'reload'], ['e', 'leanRight'], ['g', 'grenade'], ['t', 'swap'], ['v', 'punch'], ['f', 'interact'], ['h', 'heal']]) assert.equal(controlForKey({ key }, 'zqsd'), action);
 });
 
 test('FPS nearby utility keys reject consumed input and work while crouch is held', () => {
@@ -83,7 +83,7 @@ test('FPS nearby utility keys reject consumed input and work while crouch is hel
   assert.equal(controlForKey({ key: 'Control', ctrlKey: true }, 'wasd'), 'crouch');
   assert.equal(controlForKey({ key: 'q', code: 'KeyA', ctrlKey: true }, 'zqsd'), 'left');
   assert.equal(controlForKey({ key: 'z', code: 'KeyW', ctrlKey: true }, 'zqsd'), 'up');
-  for (const [key, action] of [['a', 'leanLeft'], ['f', 'interact'], ['g', 'grenade'], ['h', 'heal'], ['r', 'reload'], ['e', 'leanRight'], ['v', 'swap']]) {
+  for (const [key, action] of [['a', 'leanLeft'], ['f', 'interact'], ['g', 'grenade'], ['h', 'heal'], ['r', 'reload'], ['e', 'leanRight'], ['t', 'swap'], ['v', 'punch']]) {
     assert.equal(controlForKey({ key, ctrlKey: true }, 'zqsd'), action, `crouch + ${key}`);
   }
   assert.equal(controlForKey({ key: 'A', code: 'KeyQ', shiftKey: true }, 'zqsd'), 'leanLeft');

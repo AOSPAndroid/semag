@@ -193,15 +193,15 @@ export function inventoryItemReadout(player) {
     status: kind === 'heal' ? player.hp >= player.maxHp ? 'FULL HEALTH · SAVE POTION' : 'LMB DRINK · H QUICK HEAL' : kind === 'grenade' ? 'LMB THROW · G QUICK THROW' : '1–4 EQUIP · F PICK UP', progress: null };
 }
 
-/** Name the blade/gun actually targeted by V; old bare-player records stay legacy. */
+/** Name the blade/gun actually targeted by T; old bare-player records stay legacy. */
 export function inventorySwapPresentation(player) {
   if (!Array.isArray(player?.inventory)) return null;
   const desired = player.slot === 'sword' ? 'weapon' : 'melee';
   const item = player.inventory.find(item => item?.kind === desired);
-  if (item?.kind === 'weapon') return { label: 'GUN', ariaLabel: 'Switch to carried gun', shortcut: 'V GUN' };
+  if (item?.kind === 'weapon') return { label: 'GUN', ariaLabel: 'Switch to carried gun', shortcut: 'T GUN' };
   if (item?.kind === 'melee') {
     const label = catalogItem(MELEE_WEAPONS, item.weapon)?.label || 'BLADE';
-    return { label, ariaLabel: `Switch to ${label.toLowerCase()}`, shortcut: `V ${label}` };
+    return { label, ariaLabel: `Switch to ${label.toLowerCase()}`, shortcut: `T ${label}` };
   }
   const carried = player.inventory.filter(Boolean);
   if (carried.length === 1 && carried[0].kind === 'melee') {

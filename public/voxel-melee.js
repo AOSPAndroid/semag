@@ -51,7 +51,7 @@ export const DUEL_WEAPONS = Object.freeze(['sword', 'katana', 'axe', 'spear']);
 export const HATCHET_THROW = Object.freeze({ id: 'hatchet', projectileSpeed: 26, projectileGravity: 10, damage: 95, headMultiplier: 1.6, legMultiplier: .8, range: 35, projectileTicks: 150, cooldownTicks: 240 });
 export const HEAVY = Object.freeze({ chargeExtraTicks: 18, damage: 1.6, push: 1.5, startupExtraTicks: 6, stunExtraTicks: 8 });
 export const RIPOSTE = Object.freeze({ windowTicks: 72, damage: 1.5 });
-export const OVERHEAD = Object.freeze({ tilt: -1.3, damage: 1.15 });
+export const OVERHEAD = Object.freeze({ tilt: -1.3, damage: 1 });
 /** Ticks the primary must be held before release turns into a heavy cut. */
 export const heavyChargeTicks = playerOrId => {
   const base = MELEE_WEAPONS[meleeWeaponId(playerOrId)];

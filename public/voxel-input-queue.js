@@ -1,5 +1,5 @@
 /** Fresh FPS presses survive packet coalescing; movement and look remain current. */
-export const FPS_EDGE_ACTIONS = Object.freeze(['slot1', 'slot2', 'slot3', 'slot4', 'drop', 'fire', 'aim', 'jump', 'reload', 'interact', 'swap', 'grenade', 'heal']);
+export const FPS_EDGE_ACTIONS = Object.freeze(['slot1', 'slot2', 'slot3', 'slot4', 'drop', 'fire', 'aim', 'jump', 'reload', 'interact', 'swap', 'grenade', 'heal', 'punch']);
 
 /** Release one touch source while preserving valid taps and surviving aliases. */
 export function releaseFpsTouchAction(pointer, pointers, actions, isHeld, cancelled = false) {

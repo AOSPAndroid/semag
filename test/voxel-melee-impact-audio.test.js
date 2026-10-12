@@ -27,6 +27,8 @@ function fixture(count = 20) {
 }
 function accepted(state, targetId, extra = {}) {
   const start = state.events.length;
+  // These fixtures replay many synthetic contacts at once; skip the 0.2 s melee hit window between them.
+  if (state.players[targetId]) state.players[targetId].meleeImmuneTicks = 0;
   applyCombatDamage(state, [{ playerId: 0, targetId, damage: 55, hp: undefined, attack: 'sword', weapon: 'sword', hitKind: 'body', meleeIndex: 7,
     meleeStartTick: 100, attackerLifeId: state.players[0].lifeId, attackerDeaths: 0, ...extra }]);
   const damage = state.events.slice(start).find(event => event.type === 'damage'); assert.ok(damage, 'the shared damage commit must confirm real HP loss'); return damage;

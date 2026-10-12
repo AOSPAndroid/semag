@@ -26,7 +26,7 @@ import { createCameraMotionStore } from './voxel-camera-motion-settings.js';
 import { mountCameraMotionControls } from './voxel-camera-motion-ui.js';
 
 export const LOOK_SENSITIVITY = 0.0025;
-export const FPS_BUTTONS = Object.freeze(['up', 'down', 'left', 'right', 'jump', 'crouch', 'walk', 'sprint', 'fire', 'reload', 'interact', 'aim', 'swap', 'grenade', 'heal', 'slot1', 'slot2', 'slot3', 'slot4', 'drop', 'leanLeft', 'leanRight']);
+export const FPS_BUTTONS = Object.freeze(['up', 'down', 'left', 'right', 'jump', 'crouch', 'walk', 'sprint', 'fire', 'reload', 'interact', 'aim', 'swap', 'grenade', 'heal', 'slot1', 'slot2', 'slot3', 'slot4', 'drop', 'leanLeft', 'leanRight', 'punch']);
 const TAU = Math.PI * 2;
 const clone = value => value == null ? value : structuredClone(value);
 
@@ -42,7 +42,7 @@ export function neutralInput(yaw = 0, pitch = 0) {
 export function controlForKey(event, layout = getKeyboardLayout()) {
   if (event.defaultPrevented || event.isComposing || event.altKey || event.metaKey) return null;
   const key = gameKey(event, layout).toLowerCase();
-  const action = inventoryControlForKey(event) || ({ w: 'up', arrowup: 'up', s: 'down', arrowdown: 'down', a: 'left', arrowleft: 'left', d: 'right', arrowright: 'right', ' ': 'jump', control: 'crouch', shift: 'sprint', c: 'walk', b: 'fire', j: 'fire', r: 'reload', f: 'interact', v: 'swap', q: 'leanLeft', e: 'leanRight', g: 'grenade', h: 'heal' })[key] || null;
+  const action = inventoryControlForKey(event) || ({ w: 'up', arrowup: 'up', s: 'down', arrowdown: 'down', a: 'left', arrowleft: 'left', d: 'right', arrowright: 'right', ' ': 'jump', control: 'crouch', shift: 'sprint', c: 'walk', b: 'fire', j: 'fire', r: 'reload', f: 'interact', t: 'swap', v: 'punch', q: 'leanLeft', e: 'leanRight', g: 'grenade', h: 'heal' })[key] || null;
   // Ctrl is the crouch control, so captured gameplay actions must work while it is held.
   return action;
 }
@@ -149,7 +149,7 @@ export function combatReadout(player, weapons = WEAPONS, rules = {}) {
   let ammo = sword ? bladeAction?.ammo || 'READY' : player?.ammo ?? '—';
   let status; let progress = null;
   if (sword) {
-    status = bladeAction?.status || `LMB STRIKE · ${swap?.shortcut || 'V GUN'}`;
+    status = bladeAction?.status || `LMB STRIKE · ${swap?.shortcut || 'T GUN'}`;
     progress = bladeAction?.progress || null;
   } else if (player?.ammo === 0) status = player.reserve > 0 ? weapon?.projectile ? 'R TO RELOAD BOLT' : 'R TO RELOAD' : 'OUT OF AMMUNITION';
   else if (weapon?.spinupTicks && player?.spinTicks > 0 && player.spinTicks < weapon.spinupTicks) {
@@ -171,7 +171,7 @@ export function combatReadout(player, weapons = WEAPONS, rules = {}) {
   else if (!player?.grounded) status = 'AIRBORNE / UNSTEADY';
   else if (player?.aiming) status = Math.hypot(player.vx || 0, player.vz || 0) > .22 ? 'AIMING / MOVING' : 'AIMING / STEADY';
   else if (player?.crouching) status = Math.hypot(player.vx || 0, player.vz || 0) > .22 ? 'CROUCHED / MOVING' : 'CROUCHED / STEADY';
-  else status = weapon?.projectile ? 'LEAD TARGET · CLICK EACH BOLT' : weapon?.spinupTicks ? 'HOLD FIRE · WIND-UP' : ({ semi: 'CLICK EACH SHOT', burst: 'CLICK EACH BURST', pump: 'CLICK EACH SHELL', bolt: 'SETTLE INTO SCOPE' })[weapon?.mode] || (weapon?.adsSupported === false ? 'HOLD FIRE · HIP FIRE' : `RMB AIM · ${swap?.shortcut || 'V SWORD'}`);
+  else status = weapon?.projectile ? 'LEAD TARGET · CLICK EACH BOLT' : weapon?.spinupTicks ? 'HOLD FIRE · WIND-UP' : ({ semi: 'CLICK EACH SHOT', burst: 'CLICK EACH BURST', pump: 'CLICK EACH SHELL', bolt: 'SETTLE INTO SCOPE' })[weapon?.mode] || (weapon?.adsSupported === false ? 'HOLD FIRE · HIP FIRE' : `RMB AIM · ${swap?.shortcut || 'T SWORD'}`);
   // Mechanic weapons explain their own timing.
   if (weapon?.mode === 'charge' && player?.chargeTicks > 0) { const percent = Math.round(player.chargeTicks / weapon.chargeTicks * 100); status = percent >= 100 ? 'FULL CHARGE · RELEASE TO FIRE' : percent < weapon.minCharge * 100 ? `CHARGING ${percent}% · TOO WEAK` : `CHARGING ${percent}% · RELEASE TO FIRE`; progress = { label: 'Charge', remaining: weapon.chargeTicks - player.chargeTicks, total: weapon.chargeTicks }; }
   else if (weapon?.mode === 'lever' && player?.leverStacks > 0) status = `RHYTHM ${player.leverStacks}/${weapon.rhythmMaxStacks} · CLICK AS THE LEVER CLOSES`;
@@ -1239,7 +1239,7 @@ async function boot() {
     const layout = getKeyboardLayout();
     setText($('move-keys'), layout.toUpperCase());
     for (const label of document.querySelectorAll('[data-voxel-key]')) label.textContent = displayKey(label.dataset.voxelKey, layout);
-    canvas.setAttribute('aria-label', `3D tactical shooter. ${layout.toUpperCase()} or arrows to move, mouse to look, left click to use your selected item, right click to aim guns, stab with a knife or parry with other blades, 1 to 4 equip inventory slots, wheel up or down cycles occupied inventory slots, including potions and grenades, X drops the selected item, V switches blade and gun, ${displayKey('Q / E', layout)} lean, G grenade, H healing potion, R reload, F picks up loot or holds to plant or defuse, Space jumps, Control crouches, Shift sprints, C walks quietly. P opens Pause and loadout or resumes controls; online rounds keep running. Escape exits fullscreen or mouse capture. Choose any weapon in setup; number keys 1 to 9 select the first nine.`);
+    canvas.setAttribute('aria-label', `3D tactical shooter. ${layout.toUpperCase()} or arrows to move, mouse to look, left click to use your selected item, right click to aim guns, stab with a knife or parry with other blades, 1 to 4 equip inventory slots, wheel up or down cycles occupied inventory slots, including potions and grenades, X drops the selected item, T switches blade and gun, V punches with the left hand, ${displayKey('Q / E', layout)} lean, G grenade, H healing potion, R reload, F picks up loot or holds to plant or defuse, Space jumps, Control crouches, Shift sprints, C walks quietly. P opens Pause and loadout or resumes controls; online rounds keep running. Escape exits fullscreen or mouse capture. Choose any weapon in setup; number keys 1 to 9 select the first nine.`);
   }
   function updateLayout() { neutralize({ pause: entered, unlock: true }); updateKeyLabels(); }
   const unsubscribeLayout = subscribeKeyboardLayout(updateLayout); updateKeyLabels();

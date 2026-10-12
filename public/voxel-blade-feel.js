@@ -30,7 +30,7 @@ export function createBladeFeel() {
       if (!event || localId == null) return false;
       const mine = event.playerId === localId, hitMe = event.targetId === localId;
       if (event.type === 'meleeHit' && finite(event.damage) > 0) {
-        const weight = weightFor(event.weapon), heavy = event.heavy === true ? BLADE_FEEL.finisherMultiplier * 1.3 : event.comboFinisher === true || event.slideSlash === true || event.riposte === true ? BLADE_FEEL.finisherMultiplier : 1;
+        const weight = weightFor(event.weapon), heavy = event.heavy === true || event.crit === true ? BLADE_FEEL.finisherMultiplier * 1.3 : event.comboFinisher === true || event.slideSlash === true || event.riposte === true || event.sprintHit === true ? BLADE_FEEL.finisherMultiplier : 1;
         if (mine) {
           // One swing kicks once, however many bodies a cleave passes through.
           const swing = `${event.meleeIndex}:${event.meleeStartTick}`;

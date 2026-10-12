@@ -1,3 +1,4 @@
+import { utilityEventAudio } from './voxel-utility-overlay.js';
 import { mountWeaponArmory } from './voxel-armory-ui.js';
 import { createCameraMotionStore } from './voxel-camera-motion-settings.js';
 import { mountCameraMotionControls } from './voxel-camera-motion-ui.js';
@@ -235,7 +236,7 @@ export async function bootHorde() {
     app.dataset.keyboardLayout = getKeyboardLayout(); text('horde-guide-move', displayKey('WASD')); text('horde-grenade-key', 'G'); text('horde-guide-grenade', 'G');
     for (const label of document.querySelectorAll('[data-horde-key]')) label.textContent = displayKey(label.dataset.hordeKey);
     text('horde-look-hint', fallback ? 'DRAG TO LOOK · P MENU · ESC RELEASE' : `${displayKey('WASD')} MOVE · RMB SECONDARY · P ${solo ? 'PAUSE' : 'MENU'} · ESC RELEASE`);
-    canvas.setAttribute('aria-label', `First-person monster survival. ${displayKey('WASD')} or arrows move, mouse looks, left click or B / J uses your selected item, right click aims guns, stabs with a knife or parries with other blades, Space jumps, Control crouches, Shift sprints, C walks quietly, R reloads, 1 to 4 equip inventory slots, wheel up or down cycles occupied inventory slots, including potions and grenades, X drops the selected item, V switches blade, ${displayKey('Q / E')} lean, G throws a grenade, H heals, F picks up supplies or holds to revive. P ${solo ? 'toggles pause and opens the setup menu' : 'opens the controls menu or resumes controls'}. Escape exits fullscreen and releases your controls.`);
+    canvas.setAttribute('aria-label', `First-person monster survival. ${displayKey('WASD')} or arrows move, mouse looks, left click or B / J uses your selected item, right click aims guns, stabs with a knife or parries with other blades, Space jumps, Control crouches, Shift sprints, C walks quietly, R reloads, 1 to 4 equip inventory slots, wheel up or down cycles occupied inventory slots, including potions and grenades, X drops the selected item, T switches blade, V punches, ${displayKey('Q / E')} lean, G throws a grenade, H heals, F picks up supplies or holds to revive. P ${solo ? 'toggles pause and opens the setup menu' : 'opens the controls menu or resumes controls'}. Escape exits fullscreen and releases your controls.`);
   }
   function sendInput(buttons = currentInput(), edge = false, now = performance.now(), cancelActions = false, cancelPress = null) {
     const nextSequence = sequence >= 999999000 ? 1 : sequence + 1;
@@ -318,7 +319,7 @@ export async function bootHorde() {
     const impactOptions = { lifeKey: `${state?.mapId}:${state?.matchId}`, viewedId: hordeSpectatorPlayer(state, playerId, spectatorId)?.id, gain: .13 };
     for (const event of state?.events || []) {
       const identity = `${state.matchId}:${event.id}`; if (eventSeen.has(identity)) continue; eventSeen.add(identity);
-      freshEvents.push(event);
+      freshEvents.push(event); utilityEventAudio(audio, event, playerId);
       if (eventSeen.size > 512) eventSeen.delete(eventSeen.values().next().value);
       const perspective = combatEventPerspective(event, playerId);
       const meleeImpact = meleeImpacts.consume(event, playerId, impactOptions);

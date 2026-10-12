@@ -1,5 +1,5 @@
 import { createBladeFeel } from './voxel-blade-feel.js';
-import { MAPS, ADS, HEAL, WORLD, LEAN } from './voxel-engine.js';
+import { MAPS, ADS, HEAL, WORLD, LEAN, PUNCH } from './voxel-engine.js';
 import { WEAPONS, weaponAimFovRatio } from './voxel-weapons.js';
 import { valorantModel, legacyShotgunModel } from './voxel-valorant-models.js';
 import { weaponReloadDuration } from './voxel-fire-modes.js';
@@ -92,6 +92,13 @@ const ART = Object.freeze({
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const finite = (value, fallback = 0) => Number.isFinite(value) ? value : fallback;
 const smooth = value => { const t = clamp(value, 0, 1); return t * t * (3 - 2 * t); };
+/** 0 → 1 → 0 over a punch: a snapped jab out to contact, then a slower recoil. */
+export function punchReach(player) {
+  const ticks = Number.isFinite(player?.punchTicks) ? player.punchTicks : 0;
+  if (!(ticks > 0) || player.alive === false) return 0;
+  const progress = 1 - ticks / PUNCH.ticks, contact = PUNCH.contactTick / PUNCH.ticks;
+  return progress < contact ? smooth(progress / contact) : 1 - smooth((progress - contact) / (1 - contact));
+}
 const lerp = (a, b, amount) => a + (b - a) * amount;
 const gunHeld = player => !['sword', 'potion', 'grenade', 'empty'].includes(player?.slot) && !!WEAPONS[player?.weapon];
 
@@ -4028,6 +4035,13 @@ export function operativePose(player, animation = playerAnimationPose(player, 0)
       const bend = elbowForGrip(shoulder, hand, side, held.reload.weight);
       elbow[0] = bend[0]; elbow[1] = bend[1]; elbow[2] = bend[2];
     } else if (!posedBladeArm) hand[1] = Math.min((player.crouching ? .83 : 1.48) - .044, hand[1]);
+    // A left jab leaves its support grip for the strike and returns.
+    const jab = side < 0 ? punchReach(player) : 0;
+    if (jab > 0) {
+      const strike = [-.05, lerp(1.34, .86, crouch), -.60];
+      for (let axis = 0; axis < 3; axis++) hand[axis] = lerp(hand[axis], strike[axis], jab);
+      const bend = elbowForGrip(shoulder, hand, side, 0); elbow[0] = bend[0]; elbow[1] = bend[1]; elbow[2] = bend[2];
+    }
     return { shoulder, elbow, hand };
   });
   return { phase, crouch, airborne, stride, legs, arms, firearms, combat: melee ? { phase: swing.phase, progress: swing.progress, guarding: !!swing.guarding, comboStep: swing.comboStep, turn: combatTurn } : null,
@@ -4500,6 +4514,17 @@ export class VoxelRenderer {
       } else if (event.type === 'meleeHit') {
         this.presentSlashImpacts ||= createSlashImpactPresenter();
         this.particles.push(...this.presentSlashImpacts(event, state, time, { reducedMotion }));
+        // A critical hit bursts a ring of gold stars around the contact.
+        if (event.crit === true && [event.x, event.y, event.z].every(Number.isFinite)) for (let i = 0; i < (reducedMotion ? 4 : 9); i++) {
+          const angle = i * 2.39996;
+          this.particles.push({ origin: [event.x, event.y, event.z], born: time, vx: Math.sin(angle) * .9, vy: .5 + (i % 3) * .25, vz: Math.cos(angle) * .9, color: i % 2 ? '#ffe28a' : '#fff6d0', life: 260 + i * 12, gravity: 2.2, cover: true, radius: .3, size: .016, material: 'parry', shrink: true });
+        }
+      } else if (event.type === 'meleeSweep' && [event.x, event.y, event.z].every(Number.isFinite)) {
+        // A pale arc of dust traces the sweep across the bodies beside the target.
+        for (let i = 0; i < (reducedMotion ? 5 : 11); i++) {
+          const angle = finite(event.yaw) + (i / 10 - .5) * 2.2, dx = Math.sin(angle), dz = -Math.cos(angle);
+          this.particles.push({ origin: [event.x + dx * .6, event.y - .25, event.z + dz * .6], born: time, vx: dx * .8, vy: .08, vz: dz * .8, color: '#e8eee6', life: 220 + i * 6, gravity: .4, cover: true, radius: .25, size: .02, material: 'parry', shrink: true });
+        }
       } else if (['monsterBlast', 'monsterMark', 'monsterShardImpact', 'monsterHex'].includes(event.type)) {
         this.presentMonsterSpecialImpacts ||= createMonsterSpecialImpactPresenter();
         this.particles.push(...this.presentMonsterSpecialImpacts(event, state, time, { reducedMotion }));
@@ -4610,7 +4635,20 @@ export class VoxelRenderer {
       mesh.box(-.006, -.042, .32, .012, .084, .09, feather, pose);
     }
   }
+  /** The free left hand jabs on top of whatever the right hand holds. */
   _viewModel(player, yaw, pitch, time, freeForAll = false, map = null, viewEye = null, viewRoll = 0) {
+    const array = VoxelRenderer.prototype._heldViewModel.call(this, player, yaw, pitch, time, freeForAll, map, viewEye, viewRoll), owner = this.equipMotion?.player || player;
+    const reach = punchReach(owner);
+    if (!(reach > 0)) return array;
+    const fist = new Mesh(), art = humanAppearance(owner, freeForAll);
+    fist.append(array);
+    const pose = { x: lerp(-.26, -.09, reach), y: lerp(-.34, -.17, reach), z: lerp(-.34, -.64, reach), yaw: lerp(.45, .10, reach), pitch: lerp(.30, .04, reach), roll: 0, scale: .82 };
+    fist.box(-.040, -.038, -.046, .080, .076, .092, art.skin, pose);
+    fist.box(-.043, -.043, .046, .086, .086, .050, art.skinShadow, pose);
+    fist.box(-.046, -.046, .096, .092, .092, .17, art.shirt, pose);
+    return fist.array;
+  }
+  _heldViewModel(player, yaw, pitch, time, freeForAll = false, map = null, viewEye = null, viewRoll = 0) {
     const equip = this.equipMotion, suppressActions = equip?.suppressActions === true;
     player = equip?.player || player;
     // Each root transform moves the model and its gripping hands together.
