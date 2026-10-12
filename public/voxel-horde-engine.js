@@ -60,7 +60,7 @@ export function monsterWeaponFor(type, wave, seed) {
   return pool[((value ^ value >>> 15) >>> 0) % pool.length];
 }
 const EPS = 1e-7, clamp = (n, low, high) => Math.max(low, Math.min(high, n));
-const ACTIONS = Object.freeze(['fire', 'aim', 'jump', 'reload', 'interact', 'swap', 'grenade', 'heal', 'sprint', ...INVENTORY_ACTIONS]);
+const ACTIONS = Object.freeze(['fire', 'aim', 'punch', 'jump', 'reload', 'interact', 'swap', 'grenade', 'heal', 'sprint', ...INVENTORY_ACTIONS]);
 const groundSpawns = new WeakMap();
 const wrap = angle => Math.atan2(Math.sin(angle), Math.cos(angle));
 const arenaFor = state => state.map || MAPS[state.mapId];
@@ -611,7 +611,7 @@ function safeHumanPosition(state, preferred, radius = Infinity) {
 function humanInteractions(state, inputs, previous) {
   for (const player of activeHumans(state)) {
     const input = inputs[player.id], revive = input.interact && findReviveTarget(state, player.id);
-    const quiet = player.grounded && Math.hypot(player.vx, player.vz) < .35 && !input.fire && !input.jump && !input.grenade && !input.heal && !input.swap && !INVENTORY_ACTIONS.some(key => input[key]) && !player.healTicks && !player.reloadTicks && !player.grenadeThrowTicks && player.lastHitTick !== state.tick;
+    const quiet = player.grounded && Math.hypot(player.vx, player.vz) < .35 && !input.fire && !input.punch && !player.punchTicks && !input.jump && !input.grenade && !input.heal && !input.swap && !INVENTORY_ACTIONS.some(key => input[key]) && !player.healTicks && !player.reloadTicks && !player.grenadeThrowTicks && player.lastHitTick !== state.tick;
     if (revive && quiet) {
       if (player.interaction !== `revive:${revive.id}`) { player.interaction = `revive:${revive.id}`; player.interactTicks = 0; }
       if (++player.interactTicks >= HORDE_RULES.reviveTicks) {
@@ -743,7 +743,7 @@ export function step(state, rawInputs = []) {
     const previous = state.players.slice(0, state.capacity).map(player => ({ ...player.previousInput }));
     const inputs = state.players.map(player => {
       const input = !player.monster && player.participating && player.connected ? lookInput(state, player, rawInputs[player.id]) : emptyInput(player);
-      for (const key of ['fire', 'aim', 'grenade']) input[key] = false;
+      for (const key of ['fire', 'aim', 'punch', 'grenade']) input[key] = false;
       return input;
     });
     combatStep(state, inputs, arenaFor(state));
