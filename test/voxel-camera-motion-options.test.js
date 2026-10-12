@@ -26,9 +26,9 @@ function frames({ hz = 120, map = arena, sprint = true } = {}) {
   return result;
 }
 
-test('missing or corrupt camera choices enable natural sway while explicit system still honors device motion preferences', () => {
+test('missing or corrupt camera choices enable strong sway while explicit system still honors device motion preferences', () => {
   for (const value of [undefined, null, '', 'unknown', 'constructor', {}, ['normal'], new String('normal'), true, 1]) {
-    assert.deepEqual(resolveCameraMotion(value, true), { cameraMotion: 'normal', headReducedMotion: false, rollMultiplier: 1 });
+    assert.deepEqual(resolveCameraMotion(value, true), { cameraMotion: 'strong', headReducedMotion: false, rollMultiplier: 2 });
     assert.equal(resolveCameraMotion(value, false).headReducedMotion, false);
   }
   assert.deepEqual(resolveCameraMotion('normal', true), { cameraMotion: 'normal', headReducedMotion: false, rollMultiplier: 1 });
@@ -61,10 +61,10 @@ test('strong doubles actual travelled roll while vertical bob, held equipment an
   }
 });
 
-test('absent camera options preserve normal sway despite device reduction, while explicit off suppresses sprint and crouch carry', () => {
-  const defaultHead = createFirstPersonMotionPresenter(), normalHead = createFirstPersonMotionPresenter(), offHead = createFirstPersonMotionPresenter();
+test('absent camera options enable strong sway despite device reduction, while explicit off suppresses sprint and crouch carry', () => {
+  const defaultHead = createFirstPersonMotionPresenter(), strongHead = createFirstPersonMotionPresenter(), offHead = createFirstPersonMotionPresenter();
   for (const { player, time } of frames()) {
-    assert.deepEqual(defaultHead(player, time, arena.id, { reducedMotion: true }), normalHead(player, time, arena.id, { reducedMotion: true, cameraMotion: 'normal' }));
+    assert.deepEqual(defaultHead(player, time, arena.id, { reducedMotion: true }), strongHead(player, time, arena.id, { reducedMotion: true, cameraMotion: 'strong' }));
     const off = offHead(player, time, arena.id, { cameraMotion: 'off' });
     for (const field of visualFields) assert.equal(off[field], 0, `off clears ${field}, including static sprint carry`);
   }
@@ -144,7 +144,7 @@ test('actual renderer overrides only head motion, preserves global reduced effec
       }
       assert.ok(uploads.effects.every(value => value === true), 'explicit camera motion never unmutes reduced slash/monster/death effects');
       if (preference === 'normal') assert.ok(maxRoll > .0067 && maxRoll <= .007);
-      if (preference === 'strong') assert.ok(maxRoll > .0135 && maxRoll <= .014);
+      if (resolveCameraMotion(preference, true).cameraMotion === 'strong') assert.ok(maxRoll > .0135 && maxRoll <= .014);
     } finally { renderer.destroy(); }
   }
 });
@@ -215,7 +215,7 @@ test('renderer fallback reads a saved preference once and allows an explicit opt
         peak = Math.max(peak, Math.abs(renderer.stats.firstPerson.roll));
       }
       if (expected.headReducedMotion) assert.equal(peak, 0);
-      else assert.ok(peak > (saved === 'strong' ? .0135 : .0067));
+      else assert.ok(peak > (expected.cameraMotion === 'strong' ? .0135 : .0067));
       renderer.render({ gameId: 'voxel-breach', map: arena, phase: 'fight', players: [frames().at(-1).player], events: [] }, { localId: 0, time: 1010, cameraMotion: 'off' });
       assert.equal(renderer.stats.cameraMotion, 'off'); assert.equal(renderer.stats.firstPerson.roll, 0);
       assert.equal(renderer.stats.firstPerson.bobY, 0); assert.equal(access.reads, 1); assert.equal(access.writes, 0);
@@ -250,7 +250,7 @@ test('real Breach, Royale, Dojo and Last Stand state families share the saved tr
           assert.equal(JSON.stringify(frame), before, name);
           poses.push({ bobY: pose.bobY, roll: pose.roll });
         }
-        assert.ok(Math.max(...poses.map(pose => Math.abs(pose.roll))) > (saved === 'strong' ? .0135 : .0067), name);
+        assert.ok(Math.max(...poses.map(pose => Math.abs(pose.roll))) > .0135, name);
         if (reference) assert.deepEqual(poses, reference, `${name} uses the exact Dojo envelope`);
         else reference = poses;
         assert.ok(uploads.effects.every(value => value === true), name);

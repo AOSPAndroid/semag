@@ -36,11 +36,11 @@ test('actual sprinting has a readable alternating roll while walking and vertica
   const walking = observe({ sprint: false }), running = observe();
   assert.equal(walking.player.sprinting, false); assert.equal(running.player.sprinting, true);
   assert.ok(peakDrop(walking.frames) > .017 && peakDrop(walking.frames) <= .018);
-  assert.ok(peakRoll(walking.frames) > .0033 && peakRoll(walking.frames) <= .0034);
+  assert.ok(peakRoll(walking.frames) > .0066 && peakRoll(walking.frames) <= .0068);
   assert.ok(peakDrop(running.frames) > .017 && peakDrop(running.frames) <= .018);
-  assert.ok(peakRoll(running.frames) > .0067 && peakRoll(running.frames) <= .007);
+  assert.ok(peakRoll(running.frames) > .0134 && peakRoll(running.frames) <= .014);
   assert.ok(peakRoll(running.frames) > peakRoll(walking.frames) * 1.9);
-  assert.ok(running.frames.some(({ pose }) => pose.roll > .006) && running.frames.some(({ pose }) => pose.roll < -.006));
+  assert.ok(running.frames.some(({ pose }) => pose.roll > .012) && running.frames.some(({ pose }) => pose.roll < -.012));
   for (const { pose } of running.frames) assert.ok(pose.bobY <= 0, 'sprinting cannot reveal cover above the accepted head');
 });
 
@@ -53,7 +53,7 @@ test('sprint cadence and amplitude follow the same real physics at 60, 120, 144 
       assert.deepEqual(result.player, reference.player, 'the display schedule cannot change the authoritative sprint');
       for (let index = 0; index < checkpoints.length; index++) {
         const pose = checkpoints[index].pose, expected = reference.checkpoints[index].pose;
-        near(pose.bobY, expected.bobY, .002); near(pose.roll, expected.roll, .0007); near(pose.sprint, expected.sprint, .018);
+        near(pose.bobY, expected.bobY, .002); near(pose.roll, expected.roll, .0014); near(pose.sprint, expected.sprint, .018);
       }
     } else reference = { player: structuredClone(result.player), checkpoints };
   }
@@ -66,12 +66,12 @@ test('starting and releasing sprint blend amplitudes without restarting the trav
   const release = frames.find(({ time }) => time >= 1200 && time < 1210).pose;
   assert.ok(release.sprint > .8 && release.sprint < 1, 'the initial walking frame retains a decaying carry blend');
   const settled = frames.at(-1).pose;
-  assert.ok(settled.sprint < .0002 && Math.abs(settled.bobY) <= .01801 && Math.abs(settled.roll) <= .003401);
+  assert.ok(settled.sprint < .0002 && Math.abs(settled.bobY) <= .01801 && Math.abs(settled.roll) <= .006802);
   for (let index = 1; index < frames.length; index++) {
     const previous = frames[index - 1].pose, pose = frames[index].pose;
     const travelPhase = (pose.phase - previous.phase + Math.PI * 2) % (Math.PI * 2);
     assert.ok(travelPhase < .1, 'a sprint transition does not restart or leap the distance-based gait');
-    assert.ok(Math.abs(pose.bobY - previous.bobY) < .0028 && Math.abs(pose.roll - previous.roll) < .0007, 'no one-frame head snap occurs at either transition');
+    assert.ok(Math.abs(pose.bobY - previous.bobY) < .0028 && Math.abs(pose.roll - previous.roll) < .0014, 'no one-frame head snap occurs at either transition');
   }
 });
 
@@ -154,10 +154,10 @@ test('the renderer uploads sprint wobble without rotating the forward aim or cha
       assert.equal(contact.playerId, enemy.id); assert.equal(displayedContact.playerId, enemy.id); assert.equal(displayedContact.kind, contact.kind);
       assert.equal(JSON.stringify(state), original);
       const drop = origin.y - eye[1], roll = renderer.stats.firstPerson.roll;
-      assert.ok(drop >= -1e-8 && drop <= .01801 && Math.abs(roll) <= .00701);
+      assert.ok(drop >= -1e-8 && drop <= .01801 && Math.abs(roll) <= .01402);
       maxDrop = Math.max(maxDrop, drop); maxRoll = Math.max(maxRoll, Math.abs(roll));
     }
-    assert.ok(maxDrop > .017 && maxRoll > .0067, 'the stronger sprint roll reaches actual uploaded world-view matrices');
+    assert.ok(maxDrop > .017 && maxRoll > .0134, 'the stronger sprint roll reaches actual uploaded world-view matrices');
   } finally { renderer.destroy(); }
 });
 

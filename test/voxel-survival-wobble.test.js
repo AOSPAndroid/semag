@@ -37,7 +37,7 @@ function harness() {
   };
   return { renderer, render, recorded, uploads };
 }
-function observe({ sprint = true, mode = 'normal', reducedMotion = false, seconds = 1.5, hz = 120, state = fixture(), input = {} } = {}) {
+function observe({ sprint = true, mode = 'strong', reducedMotion = false, seconds = 1.5, hz = 120, state = fixture(), input = {} } = {}) {
   const capture = harness(), display = createSurvivalPresentation(), frames = [];
   let tick = 0;
   for (let frame = 0; frame <= Math.round(seconds * hz); frame++) {
@@ -61,9 +61,9 @@ test('real Wilds walking and food-funded sprint reach the shared camera envelope
       const { state, renderer, recorded, frames } = run, last = frames.at(-1), direction = lookDirection(state.player);
       const maxDrop = Math.max(...frames.map(frame => -frame.bobY)), maxRoll = Math.max(...frames.map(frame => Math.abs(frame.roll)));
       assert.ok(maxDrop > (sprint ? .017 : .011) && maxDrop <= .01800001);
-      assert.ok(maxRoll > (sprint ? .0067 : .0022));
+      assert.ok(maxRoll > (sprint ? .0134 : .0044));
       if (sprint) assert.ok(maxRoll > walkingRoll * 2); else walkingRoll = maxRoll;
-      near(last.speed, sprint ? 5.5 : 3.5, .02); assert.equal(last.cameraMotion, 'normal');
+      near(last.speed, sprint ? 5.5 : 3.5, .02); assert.equal(last.cameraMotion, 'strong');
       assert.equal(last.headReducedMotion, false); assert.equal(last.airborne, false);
       near(last.eye[1], state.player.y + state.player.eyeHeight + last.bobY);
       for (const [axis, matrixIndex] of [['x', 2], ['y', 6], ['z', 10]]) near(-recorded.view[matrixIndex], direction[axis]);
@@ -151,7 +151,7 @@ test('paused running poses freeze; resume, death, teleport, suspension and repla
     state.time += 2; render(state); assertQuiet();
     state.phase = 'dead'; state.player.hp = 0; render(state); assertQuiet();
     const replacement = fixture(); render(replacement); assertQuiet();
-    assert.equal(renderer.getStats().firstPerson.cameraMotion, 'normal');
+    assert.equal(renderer.getStats().firstPerson.cameraMotion, 'strong');
   } finally { renderer.destroy(); }
 });
 
@@ -173,7 +173,7 @@ test('jumping and crouched display stances settle head sway without raising the 
     for (let frame = 0; frame <= 60; frame++) {
       const camera = { ...crouched.player, crouching: true, grounded: true, vy: 0, x: 18 + frame * 3.5 / 120, y: 1 };
       last = render(crouched, camera, { displayTime: crouched.time + frame / 120 }).firstPerson;
-      assert.ok(Math.abs(last.roll) <= .0034 * .45 * .7 + 1e-7);
+      assert.ok(Math.abs(last.roll) <= .0068 * .45 * .7 + 1e-7);
     }
     assert.equal(last.crouchCarry, 1);
   } finally { renderer.destroy(); }

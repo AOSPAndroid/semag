@@ -19,7 +19,7 @@ test('head and hand cadence follows actual travelled distance at 60/120/144/240 
   for (const hz of [60, 120, 144, 240]) {
     const pose = walk(createFirstPersonMotionPresenter(), hz);
     assert.ok(pose.bobY < -.001 && pose.roll !== 0 && pose.weaponY < 0);
-    assert.ok(pose.bobY >= -.018 && Math.abs(pose.roll) <= .0034);
+    assert.ok(pose.bobY >= -.018 && Math.abs(pose.roll) <= .0068);
     if (reference) for (const field of ['phase', 'stride', 'speed', 'bobY', 'roll', 'weaponX', 'weaponY']) close(pose[field], reference[field]);
     else reference = pose;
   }
@@ -48,7 +48,7 @@ test('crouch reduces head motion and settled ADS preserves an exactly still aim 
   assert.ok(Math.abs(normal.bobY) > 0);
   assert.equal(aimed.bobY, 0); assert.equal(aimed.roll, 0);
   const crouching = walk(createFirstPersonMotionPresenter(), 120, 0, true);
-  assert.ok(crouching.bobY >= -.0081 && Math.abs(crouching.roll) <= .00153);
+  assert.ok(crouching.bobY >= -.0081 && Math.abs(crouching.roll) <= .00306);
   const partial = walk(createFirstPersonMotionPresenter(), 120, .8);
   close(partial.bobY, normal.bobY * .2); close(partial.roll, normal.roll * .2);
 });
@@ -60,7 +60,7 @@ test('sprint gives the held weapon a clear low carry while eye motion stays boun
     for (let frame = 1; frame <= hz; frame++) {
       const player = actor({ sprinting: true, z: -7.7 * frame / hz, yaw: .1, pitch: -.2 }), before = structuredClone(player);
       pose = present(player, frame * 1000 / hz, 'sprint');
-      assert.ok(pose.bobY >= -.018 && pose.bobY <= 0 && Math.abs(pose.roll) <= .007);
+      assert.ok(pose.bobY >= -.018 && pose.bobY <= 0 && Math.abs(pose.roll) <= .014);
       assert.ok(Math.abs(pose.weaponX) <= .015 && Math.abs(pose.weaponY) <= .066 && pose.weaponZ <= .035);
       assert.deepEqual(player, before, 'sprint carry cannot alter the real view angles or physical stance');
     }
@@ -147,7 +147,7 @@ test('jump and landing hands absorb the accepted flight posture while the camera
   assert.ok(pose.weaponY < -.005 && pose.weaponZ > .005, 'falling arms settle toward the body');
   pose = present(actor({ y: .03, grounded: true }), 310, 'flight');
   assert.ok(pose.land > .7 && pose.weaponY < -.015 && pose.weaponZ > .015 && pose.weaponPitch < -.05);
-  assert.ok(pose.bobY >= -.018 && pose.bobY <= 0 && Math.abs(pose.roll) <= .0034);
+  assert.ok(pose.bobY >= -.018 && pose.bobY <= 0 && Math.abs(pose.roll) <= .0068);
   const paused = present(actor({ y: .03 }), 330, 'flight', { paused: true });
   assert.deepEqual(paused, pose);
   const resumed = present(actor({ y: .03 }), 350, 'flight');

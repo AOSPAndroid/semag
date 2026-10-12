@@ -86,8 +86,8 @@
             </div>
           <div class="voxel-camera-motion" id="horde-camera-motion-field">
             <label for="horde-camera-motion">Camera wobble</label>
-            <select id="horde-camera-motion" data-camera-motion aria-describedby="horde-camera-motion-status"><option value="normal">Normal</option><option value="strong">Strong</option><option value="system">System preference</option><option value="off">Off</option></select>
-            <small id="horde-camera-motion-status" role="status" aria-live="polite">Natural walking and running sway. Aiming stays steady.</small>
+            <select id="horde-camera-motion" data-camera-motion aria-describedby="horde-camera-motion-status"><option value="normal">Normal</option><option value="strong" selected>Strong</option><option value="system">System preference</option><option value="off">Off</option></select>
+            <small id="horde-camera-motion-status" role="status" aria-live="polite">Stronger walking and running sway. Aiming stays steady.</small>
           </div>
             <div class="practice-equipment" aria-label="Starting equipment">
               <div class="armory-field"><span>STARTING GUN</span><select id="horde-weapon" aria-label="Weapon loadout"></select></div>
@@ -102,8 +102,8 @@
           <div class="practice-card" id="horde-pause-card" hidden><span class="practice-eyebrow" id="horde-pause-tag">TAKE A BREATH</span><h2 id="horde-pause-title">Paused.</h2><p id="horde-pause-copy">The world and every enemy are frozen. Press P to return, or change your loadout and setup for a new run.</p>
           <div class="voxel-camera-motion" id="horde-pause-camera-motion-field">
             <label for="horde-pause-camera-motion">Camera wobble</label>
-            <select id="horde-pause-camera-motion" data-camera-motion aria-describedby="horde-pause-camera-motion-status"><option value="normal">Normal</option><option value="strong">Strong</option><option value="system">System preference</option><option value="off">Off</option></select>
-            <small id="horde-pause-camera-motion-status" role="status" aria-live="polite">Natural walking and running sway. Aiming stays steady.</small>
+            <select id="horde-pause-camera-motion" data-camera-motion aria-describedby="horde-pause-camera-motion-status"><option value="normal">Normal</option><option value="strong" selected>Strong</option><option value="system">System preference</option><option value="off">Off</option></select>
+            <small id="horde-pause-camera-motion-status" role="status" aria-live="polite">Stronger walking and running sway. Aiming stays steady.</small>
           </div>
           <button class="practice-primary" id="horde-resume" type="button" aria-keyshortcuts="P"><span>Return to the fight</span><span aria-hidden="true">→</span></button><div class="practice-secondary-actions"><button id="horde-restart" type="button">New solo run</button><button id="horde-change-setup" type="button">Change loadout &amp; setup</button></div></div>
           <div class="practice-card" id="horde-result" role="region" aria-labelledby="horde-result-title" hidden>
