@@ -11,6 +11,7 @@ import { createFirstPersonMotionPresenter, createWeaponShotPresenter, weaponShot
 import { createCameraMotionStore, DEFAULT_CAMERA_MOTION } from './voxel-camera-motion-settings.js';
 import { createItemEquipPresenter } from './voxel-item-equip.js';
 import { appendParisShopCollider } from './voxel-paris-shop-art.js';
+import { appendHordeCoverArt } from './voxel-horde-cover-art.js';
 import { MONSTER_BODIES, monsterBodyProfile } from './voxel-monster-bodies.js';
 import { MONSTER_DEATH_RULES, MONSTER_DEATH_STYLES, monsterDeathPose, createMonsterDeathPresenter } from './voxel-monster-death.js';
 import { HUMAN_DEATH_RULES, humanDeathPose, humanDeathCameraPose, createHumanDeathPresenter } from './voxel-human-death.js';
@@ -2142,6 +2143,7 @@ function mapPaint(mesh, map, theme) {
     }
   }
   landmarkArt(mesh, map, theme);
+  appendHordeCoverArt(mesh, map, { wallPatch, wallText, glyphs: GLYPHS });
   routePaint(mesh, map);
 }
 

@@ -4,6 +4,7 @@ import test from 'node:test';
 import { createCombatPlayer, WORLD, MAPS as TACTICAL_MAPS } from '../public/voxel-engine.js';
 import { MAPS } from '../public/voxel-royale-maps.js';
 import { HORDE_RULES, createState, startMatch, step, emptyInput } from '../public/voxel-horde-engine.js';
+import { HORDE_MAPS } from '../public/voxel-horde-maps.js';
 import { monsterMeshes, operativeMeshes, createSpawnWarningPresenter, VoxelRenderer } from '../public/voxel-renderer.js';
 
 const TYPES = ['stalker', 'runner', 'brute', 'gunner', 'sniper'];
@@ -221,7 +222,8 @@ test('the real Last Stand countdown, spawn warning and first monster retain phys
   }
   assert.ok(sawWarning && sawMonster, 'actual engine telegraphs and then spawns its first original monster');
   assert.ok(builtMap.colliders.length > 0 && builtMap.spawns.length > 0, 'the real cover and physical start locations remain intact');
-  assert.equal(builtMap.colliders, TACTICAL_MAPS.courtyard.colliders, 'survival art shares the exact authoritative collider objects');
+  assert.equal(builtMap.colliders, HORDE_MAPS.courtyard.colliders, 'survival art shares the exact authoritative Last Stand collider objects');
+  assert.deepEqual(builtMap.colliders.slice(0, TACTICAL_MAPS.courtyard.colliders.length), TACTICAL_MAPS.courtyard.colliders, 'Last Stand additions preserve the tactical arena solids');
   assert.equal(builtMap.spawns, TACTICAL_MAPS.courtyard.spawns);
   assert.ok(TACTICAL_MAPS.courtyard.sites.length > 0, 'rendering survival never changes the tactical engine map');
   assert.equal(renderer.stats.cachedMaps, 1, 'an immutable survival descriptor is reused rather than rebuilt every frame');

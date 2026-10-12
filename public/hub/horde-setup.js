@@ -1,4 +1,4 @@
-import { MAPS } from '../voxel-maps.js';
+import { HORDE_MAPS as MAPS } from '../voxel-horde-maps.js';
 import { MELEE_WEAPONS } from '../voxel-melee.js';
 
 // Original pixel silhouettes. Names and debut waves come from the engine rather

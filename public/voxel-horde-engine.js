@@ -1,5 +1,6 @@
 /** Voxel Last Stand: deterministic, shared 120 Hz solo / three-player wave survival. */
-import { createCombatPlayer, combatStep, emitCombatEvent, emptyInput, INPUT_KEYS, TICK_RATE, MAPS, WEAPONS, WORLD, KNOCKBACK, PLAYER_HEALTH, eyeHeight, playerHeight, aimDirection, traceShot, pickupCombatLoot, addInventoryLoot, advanceInventoryLoot, resetSprint, resetHealing } from './voxel-engine.js';
+import { createCombatPlayer, combatStep, emitCombatEvent, emptyInput, INPUT_KEYS, TICK_RATE, WEAPONS, WORLD, KNOCKBACK, PLAYER_HEALTH, eyeHeight, playerHeight, aimDirection, traceShot, pickupCombatLoot, addInventoryLoot, advanceInventoryLoot, resetSprint, resetHealing } from './voxel-engine.js';
+import { HORDE_MAPS as MAPS } from './voxel-horde-maps.js';
 import { navigationPoints, navigationPath, navigationCanOccupy, navigationVisible } from './voxel-navigation.js';
 import { INVENTORY_ACTIONS, createInventoryGun, createInventoryMelee, ensureInventory, refreshInventory, storeInventoryGun, inventoryCanTake, setInventoryLoadout, setInventoryMeleeLoadout } from './voxel-inventory.js';
 import { MELEE_WEAPONS, clearMeleeComboContinuation, resetMeleeDefense } from './voxel-melee.js';
@@ -100,6 +101,7 @@ function humanPlayer(state, id, old = null) {
 export function createState(options = {}) {
   const config = normalizedOptions(options);
   const state = { gameId: 'voxel-horde', capacity: config.capacity, teamSize: config.capacity, mapId: config.mapId, mapName: MAPS[config.mapId].name, tick: 0, matchId: 0, phase: 'lobby', phaseTicks: 0, round: 1, maxRounds: 0, roundTicks: 0, scores: [0, 0], winner: null, roundWinner: null, roundReason: null, players: [], fighters: [], bomb: null, grenades: [], grenadeId: 0, bolts: [], boltId: 0, events: [], eventId: 0, eventLimit: 256, loot: [], spawnWarnings: [], objective: 'Survive together. Ready up, then start the first wave.', horde: { projectiles: [], hazards: [], specialId: 0, config, seed: config.seed, randomState: config.seed || 0x9e3779b9, sessionId: 0, wave: 0, waveKills: 0, totalKills: 0, alive: 0, pending: 0, phaseTicks: 0, participantIds: [], elapsedTicks: 0, waveTicks: 0, wavesCleared: 0, revives: 0, result: null, brains: [], nextSpawnTick: 0, spawnId: 0, monsterLifeId: 0, lootId: 0, killsSinceHeal: 0, lastEventId: 0, pausedPhase: null, inputFences: Array.from({ length: config.capacity }, () => []), teamstats: { kills: 0, damage: 0, damageTaken: 0, revives: 0 } } };
+  state.map = MAPS[config.mapId];
   state.players = Array.from({ length: config.capacity }, (_, id) => humanPlayer(state, id)); state.fighters = state.players;
   // Navigation is prepared before the live countdown, so the first monster does
   // not trigger construction during a combat frame.
@@ -452,7 +454,12 @@ function monsterInput(state, player, brain) {
   }
   const dx = target.x - player.x, dz = target.z - player.z, distance = Math.hypot(dx, dz), desiredYaw = Math.atan2(dx, -dz), desiredPitch = Math.atan2(target.y + playerHeight(target) * .57 - player.y - eyeHeight(player), distance);
   const committed = brain.attackTicks > 0 || brain.gunTicks > 0 || brain.lungeTicks > 0 || brain.roarTicks > 0 || state.tick < brain.burstUntil;
-  const yaw = committed ? brain.attackYaw : brain.visible ? desiredYaw : brain.path[0] ? Math.atan2(brain.path[0].x - player.x, -(brain.path[0].z - player.z)) : desiredYaw;
+  // A gunner peeking a corner can alternate between looking at the target and
+  // strafing into the same obstruction. Its existing stuck detector briefly
+  // gives the physical navigation path priority until it makes real progress.
+  const escapingCover = profile.gun && brain.stuckTicks > 0 && brain.path.length > 0;
+  const pathYaw = brain.path[0] ? Math.atan2(brain.path[0].x - player.x, -(brain.path[0].z - player.z)) : desiredYaw;
+  const yaw = committed ? brain.attackYaw : escapingCover ? pathYaw : brain.visible ? desiredYaw : pathYaw;
   const pitch = committed ? brain.attackPitch : desiredPitch;
   input.yaw = wrap(player.yaw + clamp(wrap(yaw - player.yaw), -5.2 / TICK_RATE, 5.2 / TICK_RATE));
   input.pitch = player.pitch + clamp(pitch - player.pitch, -4 / TICK_RATE, 4 / TICK_RATE);
@@ -467,6 +474,7 @@ function monsterInput(state, player, brain) {
   if (brain.recoverTicks > 0) { brain.recoverTicks--; player.monsterState = 'recover'; if (brain.recoverTicks > 18) return input; }
   if (profile.special) return specialMonsterInput(state, player, brain, input, profile, target, distance, desiredYaw);
   if (profile.gun) {
+    if (escapingCover && !committed) { steer(player, brain, input); return input; }
     const weapon = WEAPONS[player.weapon];
     // Alternate-trigger sidearms use their left shot. ADS-burst rifles use hip
     // automatic fire so monster bursts remain bounded without cancelling a

@@ -10,6 +10,10 @@ A self-hosted browser hub with **26 games**, including solo challenges, duels, a
 
 Click an image to open it at full size.
 
+**Last Stand · themed survival cover**
+
+Every zombie arena now has four authored cover groups: espresso carts and café barricades in Paris, fallen market screens and an upper-floor panic ticker in the trading office, valve elbows and filter drums in the sewers, a stranded rescue sled in the snow, and other props fitted to each setting. Low exposed surfaces form real hop routes; taller pieces block shots. Original doors, spawn spaces and roof climbs remain open to players and the wider hounds. Armed monsters use their physical escape path when stuck at a cover corner. These Last Stand layouts leave Breach maps unchanged.
+
 **Last Stand · vampires, witches and zombified wildlife**
 
 Six additions bring the horde to seventeen creature types. Rats scurry low, boars commit to a rushing charge, wolves approach your flanks, vampires heal from landed bites, witches cast dodgeable hexes and antlered stags shove with a melee hit. Each has distinct voxel anatomy, movement, attack warnings and collapse animation. Open **Meet the horde** before starting for first appearances and counters.
