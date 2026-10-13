@@ -62,6 +62,11 @@ const twoFloorTiles = floorThemes.flatMap(theme => {
   ];
 });
 const spawnPads = [0, 1].map(team => asset(`tile_spawn_team${team}`, 48, 48, [0, 0], `Spawn floor tile tinted for team ${team === 0 ? 'Amber (warm orange)' : 'Cyan (cool teal)'}.`, { group: 'tiles' }));
+// Approved painted-fantasy landmarks: visual dressing derived from the existing map.
+const environmentArt = [
+  asset('base_heal_station', 48, 64, [24, 56], 'A rounded red heart hovering above an ivory-and-bronze healing socket, with a gentle green underglow. Upright art; three stations mark each existing healing base.', { group: 'environment' }),
+  ...Object.keys(THEME_LOOKS).map(theme => asset(`prop_border_${theme}`, 64, 80, [32, 76], `A small painted border clump for ${theme}: foliage, moss, rocks or clockwork pipes. Upright, neutral materials, transparent background; placed sparsely beside existing walls.`, { group: 'environment' })),
+];
 
 /** The five drawn facings of a knight sheet, top row first. Left-hand directions mirror the
  * right-hand rows. `hand` is where that row's weapon grip is pinned (pixels in the 64x64 frame);
@@ -183,8 +188,8 @@ const pickups = [
   asset('fx_regen', 16, 16, [8, 8], 'Small green plus that drifts up from a knight healing inside their base.', { group: 'pickups' }),
 ];
 const pointArt = [
-  asset('point_base', 160, 160, [80, 80], 'Round neutral stone control-point floor inlay drawn straight from above, with a transparent centre. May be supplied at exactly 2x (320x320). The game foreshortens it into an oval and draws the capture indicator, beacon and letter separately.', { group: 'points' }),
-  asset('point_beacon', 48, 96, [24, 88], 'Beacon pylon at the centre of a control point; the game tints its light by owner.', { group: 'points' }),
+  asset('point_base', 160, 160, [80, 80], 'Round neutral bronze-and-ivory control-point machine drawn straight from above, with a solid dark metal hub and inset white lamps. Transparent outside the disc. May be supplied at exactly 2x (320x320). The game foreshortens it into an oval and draws the capture indicator, beacon and letter separately.', { group: 'points' }),
+  asset('point_beacon', 48, 96, [24, 88], 'Low broad neutral crystal core at the centre of a control point, upright in the ¾ view; the game colours its light by owner.', { group: 'points' }),
 ];
 const ui = [
   ...Object.values(ARMORS).map(armor => asset(`icon_armor_${armor.id}`, 48, 48, [24, 24], `${armor.name} equipment icon. Neutral clothing or armor silhouette on a transparent background.`, { group: 'icons' })),
@@ -194,7 +199,7 @@ const ui = [
   ...['dash', 'bubble', 'heal', 'cloak'].map(id => asset(`icon_ability_${id}`, 48, 48, [24, 24], `Ability icon: ${id}.`, { group: 'icons' })),
 ];
 
-export const MANIFEST = Object.freeze([...tiles, ...twoFloorTiles, ...spawnPads, ...characters, ...armors, ...gear, ...weapons, ...projectiles, ...bombs, ...effects, ...pickups, ...pointArt, ...ui]);
+export const MANIFEST = Object.freeze([...tiles, ...twoFloorTiles, ...spawnPads, ...environmentArt, ...characters, ...armors, ...gear, ...weapons, ...projectiles, ...bombs, ...effects, ...pickups, ...pointArt, ...ui]);
 export const MANIFEST_BY_KEY = Object.freeze(Object.fromEntries(MANIFEST.map(entry => [entry.key, entry])));
 
 /** Loads the sprites listed in /art/lockdown/index.json (written by

@@ -94,7 +94,35 @@ export class LockdownRenderer {
   /** Aim from the knight's chest to the cursor, so shots drawn at chest height pass under the pointer. */
   get aimLift() { return BODY_LIFT; }
 
+  /** Decorative art only: base landmarks and sparse terrain borders use existing map tiles. */
+  mapDecorations(map) {
+    if (this.decorationsKey === map.id) return this.decorations;
+    const marks = [];
+    for (const team of [0, 1]) {
+      const base = map.spawns[team], top = Math.min(...base.map(spot => spot.y));
+      const edge = base.filter(spot => spot.y === top).sort((a, b) => a.x - b.x);
+      for (const spot of edge.slice(0, 3)) marks.push({ key: 'base_heal_station', x: spot.x, y: spot.y - 10, scale: .52 });
+    }
+    for (let row = 1; row < map.rows - 1; row++) for (let col = 1; col < map.cols - 1; col++) {
+      const tile = map.grid[row][col], x = (col + .5) * TILE, y = (row + .5) * TILE;
+      if (tile !== '.' || map.points.some(point => Math.hypot(point.x - x, point.y - y) < RULES.pointRadius + 48)) continue;
+      if (isWall(map, col, row - 1) && hash(col, row) < .28) marks.push({ key: 'prop_border_' + map.theme, x, y: row * TILE + 12, scale: .4 });
+    }
+    this.decorationsKey = map.id; this.decorations = marks;
+    return marks;
+  }
+
   // ---------- static map ----------
+  /** One painted ground swatch spans four grid cells, giving broad pavers and quiet water.
+   * Sample the same swatch across cell boundaries; the collision grid and camera stay unchanged. */
+  drawGroundTile(ctx, key, col, row, x, y) {
+    const image = this.sprite(key);
+    if (!image) return false;
+    const sw = image.naturalWidth / 2, sh = image.naturalHeight / 2;
+    ctx.drawImage(image, (col % 2) * sw, (row % 2) * sh, sw, sh, x, y, TILE, TILE);
+    return true;
+  }
+
   buildMap(map) {
     const key = `${map.id}:${this.assets?.version || 0}`;
     if (this.mapKey === key) return this.mapCache;
@@ -152,8 +180,8 @@ export class LockdownRenderer {
         const x = col * TILE;
         if (cell === '1') {
           sctx.save(); sctx.scale(1, GROUND); // the raised floor's top, foreshortened like the ground
-          const tile = map.grid[row][col], spawnTeam = tile === '1' ? 0 : tile === '2' ? 1 : null, alt = hash(col, row) < .18;
-          if (!this.drawSprite(sctx, spawnTeam !== null ? `tile_spawn_team${spawnTeam}` : `tile_floor_${map.theme}${alt ? '_alt' : ''}`, x, 0)) {
+          const tile = map.grid[row][col], spawnTeam = tile === '1' ? 0 : tile === '2' ? 1 : null, alt = hash(Math.floor(col / 2), Math.floor(row / 2)) < .18;
+          if (!this.drawGroundTile(sctx, spawnTeam !== null ? `tile_spawn_team${spawnTeam}` : `tile_floor_${map.theme}${alt ? '_alt' : ''}`, col, row, x, 0)) {
             sctx.fillStyle = alt ? theme.floorAlt : theme.floor; sctx.fillRect(x, 0, TILE, TILE);
             sctx.strokeStyle = theme.grout; sctx.lineWidth = 1; sctx.strokeRect(x + .5, .5, TILE - 1, TILE - 1);
             if (spawnTeam !== null) { sctx.fillStyle = TEAM_COLORS[spawnTeam].main + '33'; sctx.fillRect(x, 0, TILE, TILE); }
@@ -181,8 +209,8 @@ export class LockdownRenderer {
       if (cell === '#' || levelCell(map, col, row) !== '0') continue;
       if (cell === '~') { this.drawPit(ctx, map, theme, col, row); continue; }
       const spawnTeam = cell === '1' ? 0 : cell === '2' ? 1 : null;
-      const alt = hash(col, row) < .18;
-      if (!this.drawSprite(ctx, spawnTeam !== null ? `tile_spawn_team${spawnTeam}` : `tile_floor_${map.theme}${alt ? '_alt' : ''}`, x, y)) {
+      const alt = hash(Math.floor(col / 2), Math.floor(row / 2)) < .18;
+      if (!this.drawGroundTile(ctx, spawnTeam !== null ? `tile_spawn_team${spawnTeam}` : `tile_floor_${map.theme}${alt ? '_alt' : ''}`, col, row, x, y)) {
         ctx.fillStyle = alt ? theme.floorAlt : theme.floor; ctx.fillRect(x, y, TILE, TILE);
         ctx.strokeStyle = theme.grout; ctx.lineWidth = 1; ctx.strokeRect(x + .5, y + .5, TILE - 1, TILE - 1);
         if (spawnTeam !== null) { ctx.fillStyle = TEAM_COLORS[spawnTeam].main + '33'; ctx.fillRect(x, y, TILE, TILE); }
@@ -232,7 +260,7 @@ export class LockdownRenderer {
   /** Chasm, water or lava: sunk below the floor, with a lip where it meets solid ground. */
   drawPit(ctx, map, theme, col, row) {
     const x = col * TILE, y = row * TILE;
-    const textured = this.drawSprite(ctx, `tile_pit_${map.theme}`, x, y);
+    const textured = this.drawGroundTile(ctx, `tile_pit_${map.theme}`, col, row, x, y);
     const solid = (c, r) => map.grid[r]?.[c] !== undefined && map.grid[r][c] !== '~';
     if (!textured) {
       ctx.fillStyle = theme.pit; ctx.fillRect(x, y, TILE, TILE);
@@ -349,6 +377,10 @@ export class LockdownRenderer {
     for (const wall of this.wallRows || []) items.push({ key: (wall.row + 1) * TILE, draw: () => ctx.drawImage(wall.canvas, 0, wall.row * TK - WALL_HEIGHT - FLOOR_RISE, map.width, TK + WALL_HEIGHT + FLOOR_RISE) });
     for (const floor of this.floorRows || []) items.push({ key: floor.row * TILE, draw: () => ctx.drawImage(floor.canvas, 0, floor.row * TK - FLOOR_RISE, map.width, TK + FLOOR_RISE) });
     const sortKey = (y, amount) => y + amount / FLOOR_RISE * RAISED_SORT;
+    for (const mark of this.mapDecorations(map)) {
+      const amount = lift(mark.x, mark.y);
+      items.push({ key: sortKey(mark.y, amount), draw: upright(mark.y, amount, () => this.drawSprite(ctx, mark.key, mark.x, mark.y, { scale: mark.scale })) });
+    }
     for (const point of state.points) items.push({ key: point.y, draw: upright(point.y, 0, () => this.drawBeacon(ctx, point, now)) });
     for (const bomb of state.bombs || []) { const amount = lift(bomb.x, bomb.y); items.push({ key: sortKey(bomb.y, amount), draw: upright(bomb.y, amount, () => this.drawBomb(ctx, bomb, state, now)) }); }
     for (const pickup of state.pickups || []) { const amount = lift(pickup.x, pickup.y); items.push({ key: sortKey(pickup.y, amount), draw: upright(pickup.y, amount, () => this.drawHeart(ctx, pickup, now)) }); }
@@ -427,14 +459,15 @@ export class LockdownRenderer {
   }
   drawBeacon(ctx, point, now) {
     const glow = point.owner === null ? '#cfd6e2' : TEAM_COLORS[point.owner].light;
-    if (!this.drawSprite(ctx, 'point_beacon', point.x, point.y + 6)) {
+    const drawn = this.drawSprite(ctx, 'point_beacon', point.x, point.y + 6, { scale: 1.65 });
+    if (!drawn) {
       ctx.fillStyle = '#20232a'; ctx.fillRect(point.x - 9, point.y - 52, 18, 58);
       ctx.fillStyle = '#353942'; ctx.fillRect(point.x - 9, point.y - 52, 18, 8);
     }
-    ctx.fillStyle = glow; ctx.globalAlpha = .6 + .4 * Math.sin(now / 300); ctx.beginPath(); ctx.arc(point.x, point.y - 60, 7, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
+    ctx.fillStyle = glow; ctx.globalAlpha = .6 + .4 * Math.sin(now / 300); ctx.beginPath(); ctx.arc(point.x, point.y - (drawn ? 24 : 60), drawn ? 5 : 7, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
     ctx.font = 'bold 22px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.fillText(point.id, point.x + 1, point.y - 83);
-    ctx.fillStyle = glow; ctx.fillText(point.id, point.x, point.y - 84);
+    ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.fillText(point.id, point.x + 1, point.y - (drawn ? 53 : 83));
+    ctx.fillStyle = glow; ctx.fillText(point.id, point.x, point.y - (drawn ? 54 : 84));
   }
 
   drawCloud(ctx, cloud, now) {
@@ -591,7 +624,14 @@ export class LockdownRenderer {
     if (facing.weaponBehind) drawWeapon();
     const key = `character_base_team${player.team}`, layer = armorKey(player), flash = this.flashes.has(player.id);
     const pose = { row, frame, flipX: flip };
-    if (!this.drawSprite(ctx, key, fx, fy, pose)) this.placeholderCharacter(ctx, { ...player, armor: 'none', y: player.y - leap }, team, { row, flip, frame, moving, now });
+    // Closed headgear supplies the head silhouette; loose hair must stay inside it.
+    const closedHelmet = ['sallet', 'bucket', 'hood'].includes(player.helmet) && this.sprite(`gear_helmet_${player.helmet}`);
+    const drawBody = draw => {
+      if (!closedHelmet) return draw();
+      ctx.save(); ctx.beginPath(); ctx.rect(fx - 64, fy - 28, 128, 96); ctx.clip();
+      const result = draw(); ctx.restore(); return result;
+    };
+    if (!drawBody(() => this.drawSprite(ctx, key, fx, fy, pose))) drawBody(() => this.placeholderCharacter(ctx, { ...player, armor: 'none', y: player.y - leap }, team, { row, flip, frame, moving, now }));
     if (layer) this.drawSprite(ctx, layer, fx, fy, pose);
     const layers = [key, layer];
     // Shoes, pants and helmet cover the body and armor with the exact same pose.
@@ -602,7 +642,10 @@ export class LockdownRenderer {
       if (!this.drawSprite(ctx, gearKey, fx, fy, pose)) this.placeholderGear(ctx, slot, id, fx, fy, { row, flip, frame, moving, now, team });
       layers.push(gearKey);
     }
-    if (flash) for (const name of layers) if (name) this.drawFlash(ctx, name, fx, fy, pose);
+    if (flash) for (const name of layers) if (name) {
+      if (name === key) drawBody(() => this.drawFlash(ctx, name, fx, fy, pose));
+      else this.drawFlash(ctx, name, fx, fy, pose);
+    }
     if (!facing.weaponBehind) drawWeapon();
     if (player.status?.freeze > 0) {
       ctx.globalAlpha = .55; ctx.fillStyle = STATUS_COLORS.freeze; ctx.fillRect(fx - 18, fy - 54, 36, 54);

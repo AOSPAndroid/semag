@@ -28,7 +28,7 @@ if (missing.length) console.log(`Missing (placeholders used):\n  ${missing.join(
 
 function brief(ready, problems) {
   const groups = [...new Set(MANIFEST.map(entry => entry.group))];
-  const title = { tiles: 'Tiles', characters: 'Bare character body', armors: 'Armor overlays', gear: 'Helmets, pants and shoes (overlays)', weapons: 'Held weapons', projectiles: 'Projectiles', bombs: 'Bombs', effects: 'Effects', pickups: 'Pickups', points: 'Control points', icons: 'Icons' };
+  const title = { tiles: 'Tiles', environment: 'Base landmarks and terrain borders', characters: 'Bare character body', armors: 'Armor overlays', gear: 'Helmets, pants and shoes (overlays)', weapons: 'Held weapons', projectiles: 'Projectiles', bombs: 'Bombs', effects: 'Effects', pickups: 'Pickups', points: 'Control points', icons: 'Icons' };
   const rows = group => MANIFEST.filter(entry => entry.group === group).map(entry => `| ${ready.has(entry.file) ? '✅' : '⬜'} | \`${entry.file}\` | ${entry.size.join('×')} | ${entry.frames}${entry.rows ? ` × ${entry.rows} rows` : ''} | ${entry.anchor.join(', ')} | ${entry.description.replace(/\|/g, '/')} |`).join('\n');
   return `# Lockdown art brief
 
@@ -48,11 +48,13 @@ shapes; every PNG listed below replaces one placeholder as soon as it is added.
     straight from above, undistorted. The game squashes it. Do not paint perspective into it.
   - **Upright art** (knights, gear, weapons, beacons, bombs, hearts, wall fronts, ledges, stairs): draw it as seen
     by the camera. The game shows it at full height.
-- **Look:** rounded, smoothly shaded fantasy inspired by Spiral Knights: broad painted highlights,
+- **Look (approved direction A, painted fantasy 3D):** rounded, smoothly shaded fantasy inspired by Spiral Knights: broad painted highlights,
   soft bevels and antialiased silhouettes. Avoid voxel cubes, pixel grids, harsh outlines and noisy textures.
   Make original characters and objects; use the reference game's shapes and materials as inspiration.
 - **Terrain:** quiet painted floor textures, lighter wall tops and darker front faces.
   Tile materials join seamlessly; hazards sit below the walking surface and keep their edge shadows.
+  The renderer spans each floor or pit swatch across a 2×2 group of map cells for broader, quieter detail.
+  Three heart healing stations mark each base; sparse plants and rubble sit beside walls, clear of capture points.
 - **Equipment:** all classes share the T-shirt-and-shorts body. Each armor is a separate transparent
   garment layer with the same 640×320 grid, row, frame, anchor and mirroring. Leave exposed body parts transparent.
   Armor contains no headgear, pants or shoes. Draw the body, armor, shoes, pants and helmet in that order;
