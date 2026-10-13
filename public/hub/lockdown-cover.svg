@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 320" role="img" aria-labelledby="title desc"><title id="title">Lockdown</title><desc id="desc">Top-down view of a stone arena with three control points. Amber knights hold point A, cyan knights push from the right, and the middle point is contested.</desc>
+<defs><pattern id="ld-tiles" width="24" height="24" patternUnits="userSpaceOnUse"><rect width="24" height="24" fill="#3c4048"/><path d="M0 .5H24M.5 0V24" stroke="#30333a"/></pattern><radialGradient id="ld-glow" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#fff" stop-opacity=".25"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient></defs>
+<rect width="600" height="320" fill="url(#ld-tiles)"/>
+<g fill="#6b6f78"><rect width="600" height="24"/><rect y="296" width="600" height="24"/><rect width="24" height="320"/><rect x="576" width="24" height="320"/><rect x="168" y="72" width="48" height="24"/><rect x="384" y="72" width="48" height="24"/><rect x="168" y="224" width="48" height="24"/><rect x="384" y="224" width="48" height="24"/><rect x="288" y="24" width="24" height="56"/><rect x="288" y="240" width="24" height="56"/></g>
+<g fill="#8a8f99"><rect x="171" y="74" width="42" height="14"/><rect x="387" y="74" width="42" height="14"/><rect x="171" y="226" width="42" height="14"/><rect x="387" y="226" width="42" height="14"/></g>
+<rect x="24" y="96" width="48" height="128" fill="#e39a3b" opacity=".18"/><rect x="528" y="96" width="48" height="128" fill="#3bb8c4" opacity=".18"/>
+<g fill="none" stroke-width="5"><circle cx="120" cy="160" r="40" stroke="#e39a3b"/><circle cx="300" cy="160" r="40" stroke="#dce1eb" stroke-dasharray="10 8" opacity=".6"/><circle cx="480" cy="160" r="40" stroke="#3bb8c4"/></g>
+<path d="M300 125a35 35 0 0 1 30 52" fill="none" stroke="#ffd08a" stroke-width="7"/>
+<circle cx="300" cy="160" r="70" fill="url(#ld-glow)"/>
+<g font-family="system-ui,sans-serif" font-weight="800" font-size="18" text-anchor="middle" fill="#eef1f5"><text x="120" y="166">A</text><text x="300" y="166">B</text><text x="480" y="166">C</text></g>
+<g stroke="#1a1206" stroke-width="2"><circle cx="105" cy="140" r="11" fill="#e39a3b"/><circle cx="140" cy="182" r="11" fill="#e39a3b"/><circle cx="276" cy="150" r="11" fill="#e39a3b"/><circle cx="246" cy="196" r="11" fill="#e39a3b"/></g>
+<g stroke="#06181a" stroke-width="2"><circle cx="326" cy="172" r="11" fill="#3bb8c4"/><circle cx="352" cy="130" r="11" fill="#3bb8c4"/><circle cx="470" cy="190" r="11" fill="#3bb8c4"/><circle cx="500" cy="138" r="11" fill="#3bb8c4"/></g>
+<g stroke="#fff" stroke-width="4" stroke-linecap="round"><path d="M287 150h14"/><path d="M315 172h-14"/></g>
+<g fill="#ffe08a"><circle cx="330" cy="135" r="3"/><circle cx="318" cy="140" r="3"/><circle cx="262" cy="190" r="3"/></g>
+<circle cx="300" cy="160" r="28" fill="none" stroke="#fff" stroke-opacity=".35" stroke-width="2" stroke-dasharray="3 5"/>
+</svg>

@@ -2,7 +2,7 @@
 
 ![semaG pixel-art logo](public/hub/logo.svg)
 
-A self-hosted browser hub with **26 games**, including solo challenges, duels, a tactical team FPS, battle royale, and three-player co-op wave survival. Pick **Open game** to preview a solo game, then press **Start game** when ready, or create a room and share your PC address or room link with a colleague. Voxel Royale holds up to ten players; the host starts with any two or more connected players. Voxel Last Stand supports solo play or co-op with up to three players: everyone connected presses **Ready**, then the host explicitly starts. Voxel Breach has two, four or six seats and requires every seat to be ready; the remaining multiplayer rooms have two. The server can run several independent rooms at once. Every PvP game also has a **Vs bots** link for solo play, including Shinobi Showdown against one to four opponents.
+A self-hosted browser hub with **27 games**, including solo challenges, duels, a tactical team FPS, battle royale, a top-down 4v4 point-control brawl, and three-player co-op wave survival. Pick **Open game** to preview a solo game, then press **Start game** when ready, or create a room and share your PC address or room link with a colleague. Voxel Royale holds up to ten players; the host starts with any two or more connected players. Lockdown holds up to eight; the host starts whenever they like and bots fill every empty seat. Voxel Last Stand supports solo play or co-op with up to three players: everyone connected presses **Ready**, then the host explicitly starts. Voxel Breach has two, four or six seats and requires every seat to be ready; the remaining multiplayer rooms have two. The server can run several independent rooms at once. Every PvP game also has a **Vs bots** link for solo play, including Shinobi Showdown against one to four opponents.
 
 [Run on your PC](#run-on-your-pc)
 
@@ -150,6 +150,7 @@ Finish the final fight, watch the gold crown reveal, and review your placement a
 
 | Game | Mode | Goal |
 | --- | --- | --- |
+| Lockdown | Top-down team brawl: up to 4v4 online / solo with 7 bots | Capture and hold three control points with swords, guns and bombs. Pick Striker, Guardian or Recon and three of ten weapons; first team to 500 points wins. |
 | Voxel Dojo | Solo first-person training | Try every gun and blade against resettable targets on three training maps, inspect equipment and review your training report. |
 | Voxel Wilds | Solo first-person voxel survival | Mine editable woodland terrain, craft tools and supplies, build shelter, and survive escalating nights with an eight-slot inventory and a saved world. |
 | Voxel Last Stand | First-person monster survival: solo / 1–3 player co-op | Survive endless escalating waves on thirteen maps, fight seventeen monster types, collect health, ammo and occasional weapon drops, manage four flexible inventory slots, and revive your squad. |
@@ -272,6 +273,16 @@ Voxel Dojo:
 Open **Voxel Dojo** from the library, choose a training map, then press **Enter dojo**. **Cedar Dojo** is a Japanese courtyard with an equipment hall, a tatami melee pad and a real cover wall. **Lantern Hall** adds indoor corner peeks, blade practice and a raised gallery. **Iron Range** offers longer firing lanes and an elevated industrial range. Each map has its own five repeatable targets, measured lanes, equipment stations and physical cover. Try all 39 guns and five blades at the equipment racks, then use real reloads, recoil, head/body/leg damage and hit feedback against repeatable targets. The dojo never ends after a kill: defeated targets return after a short delay. Press **Tab** for the compact range panel, switch stationary/moving targets or reset the drill, and use **F** at the nearby weapon, blade, supply and recovery stations. Recovery and a deliberate training wound let you test real potion healing; grenade supplies let you practice real blasts. Normal magazines and reload times remain, with reserve ammunition replenished in this sandbox. [Dojo guide](docs/voxel-dojo.md).
 
 **Crownfall Keep** is available in Breach, Last Stand and Royale, including bot practice. Its royal keep rises 14.4 metres over a three-storey gatehouse and watchtowers. Actual floor plates surround a tall central hall; alternating stone jump flights, two roof approaches and connected wall walks link all levels. Arched entrances, crenellations and heraldic banners give the fortress its medieval silhouette. Courtyard stalls, chests and masonry provide close-range cover. Royale uses a larger 96 m layout with additional village buildings and finite loot in interiors and on rooftops.
+
+Lockdown:
+
+A top-down team brawl in the spirit of Spiral Knights' Lockdown. Choose **Play solo** for a practice match against seven bots, or **Create room** and share the invite; up to eight people play, split into Amber and Cyan, and bots take every empty seat (including the seat of anyone who leaves mid-match). The host picks **Coliseum Gate** or **Clockwork Yard** and presses **Start match**. Each team scores every five seconds for the points it holds (5 for one, 8 for two, 9 for all three); the first team to 500 points, or the leader after ten minutes, wins. Stand inside a point's ring to capture it; enemies on the same point stop your progress. Knocked-out knights respawn at base after five seconds plus one per minute played.
+
+- **Classes:** **Striker** (100 HP, fastest) dashes for three seconds. **Guardian** (130 HP) raises a dome on right click that soaks shots and cuts from outside it, and pulses healing to nearby allies with **E**. **Recon** (90 HP) cloaks; the first hit out of the cloak marks the target to take 30% more damage.
+- **Weapons:** carry three of ten. Blades: Knight Brand (three-cut combo, charge spin), Troll Cleaver (slow and heavy, charge slam), Needle Rapier (fast thrusts, charge lunge). Guns: Pulse Blaster (charge piercing bolt), Rattle Autogun (charge burst), Scattergun (charge wide fan), Magnus Hand-cannon (charge explosive round). Bombs: Blast, Vortex (drags enemies in) and Shard. Every weapon has a charge attack: hold the button and release when the ring is full. Bombs are planted by a full charge.
+- **Controls:** **WASD** or arrows move (ZQSD on AZERTY), the mouse aims, **left click** attacks and charges, **right click** or **Space** uses the class ability, **E** heals as a Guardian, **1–3**, **Q** or the wheel switch weapons, **Esc** opens the menu (it pauses practice).
+
+The game runs fully on placeholder shapes. Sprites are listed in `public/lockdown-assets.js`; drop PNGs into `public/art/lockdown/` following `public/art/lockdown/ASSETS.md`, then run `node tools/lockdown-art-index.mjs`.
 
 Voxel Last Stand:
 
@@ -567,6 +578,8 @@ WebAssembly is supported by modern browsers, but this release keeps the simulati
 ```sh
 npm test
 ```
+
+Lockdown art: `node tools/lockdown-art-index.mjs` checks every PNG in `public/art/lockdown/` against the manifest, writes the `index.json` the game loads from and refreshes the checklist in `ASSETS.md`.
 
 Run `python test/compact-play-browser-smoke.py http://127.0.0.1:3000` for native checks of the compact layouts, controls panels, readiness, pause, fullscreen and responsive play areas.
 

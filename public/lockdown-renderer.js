@@ -1,0 +1,287 @@
+/** Lockdown top-down canvas renderer.
+ * Draws from the art manifest when a sprite exists and falls back to readable
+ * placeholder shapes otherwise. Pure presentation: it never changes the state. */
+import { MAPS, TILE, RULES, ABILITIES, WEAPONS, CLASSES } from './lockdown-engine.js';
+import { isWall } from './lockdown-maps.js';
+
+export const TEAM_COLORS = Object.freeze([
+  Object.freeze({ main: '#e39a3b', light: '#ffd08a', dark: '#7a4a14', name: 'Amber' }),
+  Object.freeze({ main: '#3bb8c4', light: '#9fe8ee', dark: '#14545c', name: 'Cyan' }),
+]);
+const THEMES = Object.freeze({
+  stone: { floor: '#3c4048', floorAlt: '#383b43', grout: '#30333a', wall: '#6b6f78', wallTop: '#8a8f99', wallEdge: '#24262b' },
+  brass: { floor: '#433b31', floorAlt: '#3e362d', grout: '#352e26', wall: '#7d6a4c', wallTop: '#a08a62', wallEdge: '#2a231a' },
+});
+const VIEW_WORLD_WIDTH = 1100; // world units across the screen at the default zoom
+const lerp = (a, b, t) => a + (b - a) * t;
+const hash = (a, b) => { let h = (a * 374761393 + b * 668265263) | 0; h = (h ^ (h >>> 13)) * 1274126177; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
+
+export class LockdownRenderer {
+  constructor(canvas, assets) {
+    this.canvas = canvas; this.ctx = canvas.getContext('2d'); this.assets = assets;
+    this.mapCache = null; this.mapKey = ''; this.effects = []; this.seenEvents = new Set(); this.eventOrder = [];
+    this.camera = { x: 0, y: 0, zoom: 1 };
+  }
+  resize() {
+    const ratio = Math.min(2, globalThis.devicePixelRatio || 1), rect = this.canvas.getBoundingClientRect();
+    const width = Math.max(1, Math.round(rect.width * ratio)), height = Math.max(1, Math.round(rect.height * ratio));
+    if (this.canvas.width !== width || this.canvas.height !== height) { this.canvas.width = width; this.canvas.height = height; }
+  }
+  /** Screen → world, for mouse aiming. */
+  screenToWorld(px, py) {
+    const ratio = this.canvas.width / Math.max(1, this.canvas.getBoundingClientRect().width);
+    const { x, y, zoom } = this.camera;
+    return { x: x + (px * ratio - this.canvas.width / 2) / zoom, y: y + (py * ratio - this.canvas.height / 2) / zoom };
+  }
+  sprite(key) { return this.assets?.get(key) || null; }
+  drawSprite(ctx, key, x, y, { rotation = 0, frame = 0, scale = 1, alpha = 1 } = {}) {
+    const image = this.sprite(key), entry = this.assets?.entry(key);
+    if (!image || !entry) return false;
+    const frames = entry.frames || 1, fw = entry.size[0] / frames, fh = entry.size[1];
+    ctx.save(); ctx.globalAlpha *= alpha; ctx.translate(x, y); ctx.rotate(rotation); ctx.scale(scale, scale);
+    ctx.drawImage(image, (Math.floor(frame) % frames) * fw, 0, fw, fh, -entry.anchor[0], -entry.anchor[1], fw, fh);
+    ctx.restore(); return true;
+  }
+
+  // ---------- static map ----------
+  buildMap(map) {
+    const key = `${map.id}:${this.assets?.version || 0}`;
+    if (this.mapKey === key) return this.mapCache;
+    const canvas = typeof OffscreenCanvas === 'function' ? new OffscreenCanvas(map.width, map.height) : Object.assign(document.createElement('canvas'), { width: map.width, height: map.height });
+    const ctx = canvas.getContext('2d'), theme = THEMES[map.theme] || THEMES.stone;
+    for (let row = 0; row < map.rows; row++) for (let col = 0; col < map.cols; col++) {
+      const x = col * TILE, y = row * TILE, cell = map.grid[row][col];
+      if (cell === '#') {
+        if (!this.drawSprite(ctx, `tile_wall_${map.theme}`, x, y)) {
+          ctx.fillStyle = theme.wallEdge; ctx.fillRect(x, y, TILE, TILE);
+          ctx.fillStyle = theme.wall; ctx.fillRect(x, y, TILE, TILE - 8);
+          ctx.fillStyle = theme.wallTop; ctx.fillRect(x + 3, y + 3, TILE - 6, TILE - 16);
+        }
+        continue;
+      }
+      const spawnTeam = cell === '1' ? 0 : cell === '2' ? 1 : null;
+      const alt = hash(col, row) < .18;
+      if (!this.drawSprite(ctx, spawnTeam !== null ? `tile_spawn_team${spawnTeam}` : `tile_floor_${map.theme}${alt ? '_alt' : ''}`, x, y)) {
+        ctx.fillStyle = alt ? theme.floorAlt : theme.floor; ctx.fillRect(x, y, TILE, TILE);
+        ctx.strokeStyle = theme.grout; ctx.lineWidth = 1; ctx.strokeRect(x + .5, y + .5, TILE - 1, TILE - 1);
+        if (spawnTeam !== null) { ctx.fillStyle = TEAM_COLORS[spawnTeam].main + '33'; ctx.fillRect(x, y, TILE, TILE); }
+      }
+      // A soft shadow under walls gives the floor depth.
+      if (isWall(map, col, row - 1)) { ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fillRect(x, y, TILE, 9); }
+    }
+    this.mapCache = canvas; this.mapKey = key; return canvas;
+  }
+
+  // ---------- events → short-lived effects ----------
+  consumeEvents(state, now) {
+    for (const event of state.events || []) {
+      if (this.seenEvents.has(event.id)) continue;
+      this.seenEvents.add(event.id); this.eventOrder.push(event.id);
+      if (this.eventOrder.length > 600) this.seenEvents.delete(this.eventOrder.shift());
+      if (state.tick - event.tick > 30) continue;
+      const add = (type, life, extra) => this.effects.push({ type, born: now, life, ...extra });
+      if (event.type === 'swing') add(event.charged ? event.kind : 'slash', event.charged ? 380 : 200, { x: event.x, y: event.y, angle: event.angle, step: event.step || 0, playerId: event.playerId });
+      else if (event.type === 'shot') add('muzzle', 90, { x: event.x, y: event.y, angle: event.angle });
+      else if (event.type === 'explosion') add('explosion', 480, { x: event.x, y: event.y, radius: event.radius, weapon: event.weapon });
+      else if (event.type === 'damage') add('number', 700, { x: event.x, y: event.y, amount: event.amount, targetId: event.targetId });
+      else if (event.type === 'heal') add('heal', 600, { x: event.x, y: event.y, radius: event.radius });
+      else if (event.type === 'capture') add('capture', 900, { x: event.x, y: event.y, team: event.team });
+      else if (event.type === 'bubblePop') add('pop', 300, { x: event.x, y: event.y });
+      else if (event.type === 'kill') add('kill', 600, { x: event.x, y: event.y });
+    }
+    this.effects = this.effects.filter(effect => now - effect.born < effect.life);
+  }
+
+  render(state, { localId = null, now = performance.now(), focus = null } = {}) {
+    this.resize();
+    const ctx = this.ctx, map = MAPS[state.mapId], canvas = this.canvas;
+    if (!map) return;
+    this.consumeEvents(state, now);
+    const local = localId !== null ? state.players[localId] : null;
+    const zoom = canvas.width / VIEW_WORLD_WIDTH;
+    const wanted = focus || (local ? { x: local.x, y: local.y } : { x: map.width / 2, y: map.height / 2 });
+    // Keep the arena filling the screen: clamp to the map edges (centre it when the view is larger).
+    const halfW = canvas.width / zoom / 2, halfH = canvas.height / zoom / 2;
+    const fit = (value, half, size) => size <= half * 2 ? size / 2 : Math.max(half, Math.min(size - half, value));
+    const target = { x: fit(wanted.x, halfW, map.width), y: fit(wanted.y, halfH, map.height) };
+    this.camera.zoom = zoom;
+    this.camera.x = lerp(this.camera.x || target.x, target.x, .25); this.camera.y = lerp(this.camera.y || target.y, target.y, .25);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = '#16181c'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.setTransform(zoom, 0, 0, zoom, canvas.width / 2 - this.camera.x * zoom, canvas.height / 2 - this.camera.y * zoom);
+    ctx.drawImage(this.buildMap(map), 0, 0);
+    for (const point of state.points) this.drawPoint(ctx, point, now);
+    for (const bomb of state.bombs || []) this.drawBomb(ctx, bomb, state, now);
+    const viewerTeam = local?.team ?? null;
+    const players = [...state.players].filter(player => player.alive).sort((a, b) => a.y - b.y);
+    for (const player of players) if (player.bubbleTicks > 0) this.drawBubble(ctx, player, now);
+    for (const player of players) {
+      // Cloaked enemies are hidden unless they are right next to you.
+      const hidden = player.cloakTicks > 0 && viewerTeam !== null && player.team !== viewerTeam && !(local?.alive && Math.hypot(local.x - player.x, local.y - player.y) < ABILITIES.cloak.revealRange);
+      if (hidden) continue;
+      this.drawKnight(ctx, player, state, now, { mine: player.id === localId, alpha: player.cloakTicks > 0 ? .4 : 1 });
+    }
+    for (const shot of state.projectiles || []) this.drawProjectile(ctx, shot);
+    this.drawEffects(ctx, now);
+  }
+
+  drawPoint(ctx, point, now) {
+    const radius = RULES.pointRadius, owner = point.owner, progress = point.progress / 100;
+    if (!this.drawSprite(ctx, 'point_base', point.x, point.y, { scale: radius * 2.2 / 160 })) {
+      ctx.fillStyle = 'rgba(255,255,255,.05)'; ctx.beginPath(); ctx.arc(point.x, point.y, radius, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.lineWidth = 4; ctx.strokeStyle = owner === null ? 'rgba(220,225,235,.45)' : TEAM_COLORS[owner].main;
+    ctx.setLineDash(owner === null ? [10, 8] : []); ctx.beginPath(); ctx.arc(point.x, point.y, radius, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+    if (Math.abs(progress) > .001) {
+      const team = progress > 0 ? 0 : 1;
+      ctx.strokeStyle = TEAM_COLORS[team].light; ctx.lineWidth = 7;
+      ctx.beginPath(); ctx.arc(point.x, point.y, radius - 8, -Math.PI / 2, -Math.PI / 2 + Math.abs(progress) * Math.PI * 2); ctx.stroke();
+    }
+    const glow = owner === null ? '#cfd6e2' : TEAM_COLORS[owner].light;
+    if (!this.drawSprite(ctx, 'point_beacon', point.x, point.y)) {
+      ctx.fillStyle = '#20232a'; ctx.beginPath(); ctx.arc(point.x, point.y, 14, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.fillStyle = glow; ctx.globalAlpha = .6 + .4 * Math.sin(now / 300); ctx.beginPath(); ctx.arc(point.x, point.y, 6, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
+    ctx.font = 'bold 22px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.fillText(point.id, point.x + 1, point.y - radius - 13);
+    ctx.fillStyle = glow; ctx.fillText(point.id, point.x, point.y - radius - 14);
+  }
+
+  drawBomb(ctx, bomb, state, now) {
+    const weapon = WEAPONS[bomb.weapon], left = bomb.fuse / bomb.total;
+    if (weapon.pull) this.drawSprite(ctx, 'fx_vortex', bomb.x, bomb.y, { frame: now / 80, scale: weapon.radius * 2 / 128, alpha: .6 }) || (ctx.strokeStyle = 'rgba(170,140,255,.35)', ctx.lineWidth = 2, ctx.beginPath(), ctx.arc(bomb.x, bomb.y, weapon.radius * (.6 + .4 * ((now / 400) % 1)), 0, Math.PI * 2), ctx.stroke());
+    ctx.strokeStyle = TEAM_COLORS[bomb.team].main + '88'; ctx.lineWidth = 2; ctx.setLineDash([6, 6]);
+    ctx.beginPath(); ctx.arc(bomb.x, bomb.y, weapon.radius, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+    if (!this.drawSprite(ctx, `bomb_${bomb.weapon}`, bomb.x, bomb.y)) {
+      ctx.fillStyle = '#2a2d33'; ctx.beginPath(); ctx.arc(bomb.x, bomb.y, 11, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = weapon.pull ? '#a88cff' : weapon.shards ? '#9fd8ff' : '#ff9a4a'; ctx.beginPath(); ctx.arc(bomb.x, bomb.y, 5, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.strokeStyle = left < .3 ? '#ff5a4a' : '#ffd36b'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(bomb.x, bomb.y, 15, -Math.PI / 2, -Math.PI / 2 + left * Math.PI * 2); ctx.stroke();
+  }
+
+  drawBubble(ctx, player, now) {
+    const radius = ABILITIES.bubble.radius, team = TEAM_COLORS[player.team], health = Math.max(0, player.bubbleHp / ABILITIES.bubble.hp);
+    if (!this.drawSprite(ctx, 'fx_bubble', player.x, player.y, { scale: radius * 2 / 192, alpha: .55 })) {
+      const gradient = ctx.createRadialGradient(player.x, player.y, radius * .4, player.x, player.y, radius);
+      gradient.addColorStop(0, team.main + '10'); gradient.addColorStop(1, team.light + '55');
+      ctx.fillStyle = gradient; ctx.beginPath(); ctx.arc(player.x, player.y, radius, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.strokeStyle = team.light; ctx.globalAlpha = .35 + .5 * health; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(player.x, player.y, radius + Math.sin(now / 120) * 1.5, 0, Math.PI * 2); ctx.stroke(); ctx.globalAlpha = 1;
+  }
+
+  drawKnight(ctx, player, state, now, { mine = false, alpha = 1 } = {}) {
+    const team = TEAM_COLORS[player.team], weapon = WEAPONS[player.weapons[player.slot]], moving = Math.hypot(player.vx, player.vy) > 20;
+    ctx.save(); ctx.globalAlpha = alpha;
+    // Shadow and team ring.
+    ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(player.x + 2, player.y + 5, 17, 11, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = mine ? '#ffffff' : team.main; ctx.lineWidth = mine ? 3 : 2; ctx.beginPath(); ctx.arc(player.x, player.y, RULES.radius + 6, 0, Math.PI * 2); ctx.stroke();
+    if (player.dashTicks > 0) this.drawSprite(ctx, 'fx_dash', player.x, player.y, { rotation: Math.atan2(player.vy, player.vx) + Math.PI }) || (ctx.fillStyle = team.light + '55', ctx.beginPath(), ctx.arc(player.x - player.vx * .06, player.y - player.vy * .06, 13, 0, Math.PI * 2), ctx.fill());
+    // Weapon first so the body overlaps its grip.
+    const swingOffset = player.action === 'swing' ? Math.sin((1 - player.actionTicks / Math.max(1, player.actionTotal)) * Math.PI) * (player.comboStep % 2 ? -1 : 1) * .9 : player.action === 'charge' ? (now / 40) % (Math.PI * 2) : 0;
+    const weaponAngle = player.aim + swingOffset;
+    const hx = player.x + Math.cos(player.aim + .9) * 10, hy = player.y + Math.sin(player.aim + .9) * 10;
+    if (!this.drawSprite(ctx, `weapon_${weapon.id}`, hx, hy, { rotation: weaponAngle })) this.placeholderWeapon(ctx, weapon, hx, hy, weaponAngle);
+    if (!this.drawSprite(ctx, `knight_${player.cls}_team${player.team}`, player.x, player.y, { rotation: player.aim, frame: moving ? now / 110 : 0 })) this.placeholderKnight(ctx, player, team);
+    ctx.restore();
+    // Overlays.
+    if (player.shieldTicks > 0) { ctx.strokeStyle = 'rgba(255,255,255,.5)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(player.x, player.y, RULES.radius + 10, 0, Math.PI * 2); ctx.stroke(); }
+    if (player.markTicks > 0 && !this.drawSprite(ctx, 'fx_mark', player.x, player.y - 34)) { ctx.fillStyle = '#ff4d6d'; ctx.font = 'bold 16px system-ui'; ctx.textAlign = 'center'; ctx.fillText('◎', player.x, player.y - 34); }
+    if (player.stunTicks > 0) { ctx.fillStyle = '#ffe680'; for (let i = 0; i < 3; i++) { const a = now / 150 + i * 2.1; ctx.beginPath(); ctx.arc(player.x + Math.cos(a) * 14, player.y - 22 + Math.sin(a) * 4, 2.5, 0, Math.PI * 2); ctx.fill(); } }
+    if (player.charging) {
+      const full = Math.min(1, player.chargeTicks / weapon.chargeTicks);
+      ctx.strokeStyle = full >= 1 ? '#ffffff' : '#ffd36b'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(player.x, player.y, RULES.radius + 13, -Math.PI / 2, -Math.PI / 2 + full * Math.PI * 2); ctx.stroke();
+    }
+    // Health bar and name.
+    const w = 38, pct = Math.max(0, player.hp / player.maxHp);
+    ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillRect(player.x - w / 2, player.y - 30, w, 5);
+    ctx.fillStyle = pct > .5 ? team.light : pct > .25 ? '#ffd36b' : '#ff6b5a'; ctx.fillRect(player.x - w / 2, player.y - 30, w * pct, 5);
+    ctx.font = '11px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.fillStyle = mine ? '#ffffff' : team.light;
+    ctx.fillText(player.name, player.x, player.y - 34);
+  }
+  placeholderKnight(ctx, player, team) {
+    ctx.save(); ctx.translate(player.x, player.y); ctx.rotate(player.aim);
+    ctx.fillStyle = team.dark; ctx.beginPath(); ctx.arc(0, 0, RULES.radius, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = team.main; ctx.beginPath(); ctx.arc(0, 0, RULES.radius - 3, 0, Math.PI * 2); ctx.fill();
+    // Class read: Striker crest, Guardian pauldrons, Recon hood.
+    ctx.fillStyle = team.light;
+    if (player.cls === 'striker') { ctx.beginPath(); ctx.moveTo(10, 0); ctx.lineTo(-8, -6); ctx.lineTo(-8, 6); ctx.closePath(); ctx.fill(); }
+    else if (player.cls === 'guardian') { ctx.fillRect(-6, -RULES.radius - 2, 10, 6); ctx.fillRect(-6, RULES.radius - 4, 10, 6); ctx.beginPath(); ctx.arc(2, 0, 6, 0, Math.PI * 2); ctx.fill(); }
+    else { ctx.beginPath(); ctx.arc(-3, 0, 9, Math.PI * .5, Math.PI * 1.5); ctx.fill(); ctx.fillRect(2, -2, 8, 4); }
+    ctx.fillStyle = '#16181c'; ctx.fillRect(7, -4, 5, 8); // visor
+    ctx.restore();
+  }
+  placeholderWeapon(ctx, weapon, x, y, angle) {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(angle);
+    if (weapon.family === 'blade') {
+      const length = weapon.id === 'cleaver' ? 34 : weapon.id === 'rapier' ? 40 : 34, width = weapon.id === 'cleaver' ? 9 : weapon.id === 'rapier' ? 2.5 : 5;
+      ctx.fillStyle = '#6b4a2b'; ctx.fillRect(-4, -2, 8, 4);
+      ctx.fillStyle = '#c9b27a'; ctx.fillRect(3, -6, 3, 12);
+      ctx.fillStyle = '#dfe6ee'; ctx.fillRect(6, -width / 2, length, width);
+    } else if (weapon.family === 'gun') {
+      const length = weapon.id === 'magnus' ? 26 : weapon.id === 'scatter' ? 22 : 20;
+      ctx.fillStyle = '#2e3138'; ctx.fillRect(0, -4, length, 8);
+      ctx.fillStyle = weapon.id === 'autogun' ? '#9fd8ff' : weapon.id === 'magnus' ? '#ffb36b' : '#ffe08a'; ctx.fillRect(length - 4, -3, 4, 6);
+    } else { ctx.fillStyle = '#2a2d33'; ctx.beginPath(); ctx.arc(10, 0, 7, 0, Math.PI * 2); ctx.fill(); }
+    ctx.restore();
+  }
+  drawProjectile(ctx, shot) {
+    const angle = Math.atan2(shot.vy, shot.vx), key = shot.kind === 'pierce' ? 'proj_pierce' : shot.kind === 'explosive' ? 'proj_explosive' : shot.kind === 'shard' ? 'proj_shard' : shot.weapon === 'scatter' ? 'proj_pellet' : 'proj_bullet';
+    if (this.drawSprite(ctx, key, shot.x, shot.y, { rotation: angle })) return;
+    const color = TEAM_COLORS[shot.team].light;
+    ctx.save(); ctx.translate(shot.x, shot.y); ctx.rotate(angle); ctx.fillStyle = color;
+    if (shot.kind === 'explosive') { ctx.beginPath(); ctx.arc(0, 0, 6, 0, Math.PI * 2); ctx.fill(); }
+    else { const length = shot.kind === 'pierce' ? 22 : shot.kind === 'shard' ? 10 : 12; ctx.fillRect(-length, -2, length, 4); ctx.fillStyle = '#ffffff'; ctx.fillRect(-3, -1.5, 3, 3); }
+    ctx.restore();
+  }
+  drawEffects(ctx, now) {
+    for (const effect of this.effects) {
+      const t = (now - effect.born) / effect.life;
+      ctx.save(); ctx.globalAlpha = Math.max(0, 1 - t);
+      if (effect.type === 'slash') {
+        if (!this.drawSprite(ctx, 'fx_slash', effect.x, effect.y, { rotation: effect.angle, frame: t * 4, scale: effect.step % 2 ? 1 : 1 })) {
+          ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 5; ctx.beginPath();
+          const dir = effect.step % 2 ? -1 : 1; ctx.arc(effect.x, effect.y, 52, effect.angle - .8 * dir, effect.angle - .8 * dir + 1.6 * dir * Math.min(1, t * 2.5), dir < 0); ctx.stroke();
+        }
+      } else if (effect.type === 'spin' || effect.type === 'slam' || effect.type === 'lunge') {
+        const key = effect.type === 'slam' ? 'fx_slam' : 'fx_spin';
+        if (!this.drawSprite(ctx, key, effect.x, effect.y, { frame: t * 4 })) { ctx.strokeStyle = effect.type === 'slam' ? '#ffcf8a' : '#ffffff'; ctx.lineWidth = 6; ctx.beginPath(); ctx.arc(effect.x, effect.y, 30 + t * 60, 0, Math.PI * 2); ctx.stroke(); }
+      } else if (effect.type === 'muzzle') {
+        if (!this.drawSprite(ctx, 'fx_muzzle', effect.x + Math.cos(effect.angle) * 26, effect.y + Math.sin(effect.angle) * 26, { rotation: effect.angle, frame: t * 3 })) { ctx.fillStyle = '#fff3c4'; ctx.beginPath(); ctx.arc(effect.x + Math.cos(effect.angle) * 28, effect.y + Math.sin(effect.angle) * 28, 6 * (1 - t), 0, Math.PI * 2); ctx.fill(); }
+      } else if (effect.type === 'explosion') {
+        if (!this.drawSprite(ctx, 'fx_explosion', effect.x, effect.y, { frame: t * 6, scale: (effect.radius || 90) * 2 / 128 })) {
+          ctx.fillStyle = effect.weapon === 'vortex' ? '#b49cff' : '#ffb35a'; ctx.beginPath(); ctx.arc(effect.x, effect.y, (effect.radius || 80) * (.4 + .6 * t), 0, Math.PI * 2); ctx.fill();
+        }
+      } else if (effect.type === 'number') {
+        ctx.fillStyle = '#ffffff'; ctx.font = 'bold 16px system-ui'; ctx.textAlign = 'center'; ctx.fillText(String(effect.amount), effect.x + 12, effect.y - 20 - t * 26);
+      } else if (effect.type === 'heal') {
+        if (!this.drawSprite(ctx, 'fx_heal', effect.x, effect.y, { scale: effect.radius * 2 / 256 * (.5 + t * .5) })) { ctx.strokeStyle = '#8dffb0'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(effect.x, effect.y, effect.radius * t, 0, Math.PI * 2); ctx.stroke(); }
+      } else if (effect.type === 'capture') {
+        ctx.strokeStyle = TEAM_COLORS[effect.team].light; ctx.lineWidth = 6; ctx.beginPath(); ctx.arc(effect.x, effect.y, RULES.pointRadius + t * 50, 0, Math.PI * 2); ctx.stroke();
+      } else if (effect.type === 'pop' || effect.type === 'kill') {
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(effect.x, effect.y, 20 + t * 40, 0, Math.PI * 2); ctx.stroke();
+      }
+      ctx.restore();
+    }
+  }
+
+  /** Small overview used by the HUD minimap and the respawn camera. */
+  drawMinimap(target, state, { localId = null } = {}) {
+    const ctx = target.getContext('2d'), map = MAPS[state.mapId]; if (!map) return;
+    const scale = Math.min(target.width / map.width, target.height / map.height);
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, target.width, target.height);
+    ctx.setTransform(scale, 0, 0, scale, (target.width - map.width * scale) / 2, (target.height - map.height * scale) / 2);
+    ctx.fillStyle = 'rgba(20,22,26,.85)'; ctx.fillRect(0, 0, map.width, map.height);
+    ctx.fillStyle = '#5b606b';
+    for (let row = 0; row < map.rows; row++) for (let col = 0; col < map.cols; col++) if (map.grid[row][col] === '#') ctx.fillRect(col * TILE, row * TILE, TILE, TILE);
+    for (const point of state.points) { ctx.fillStyle = point.owner === null ? '#cfd6e2' : TEAM_COLORS[point.owner].main; ctx.beginPath(); ctx.arc(point.x, point.y, RULES.pointRadius, 0, Math.PI * 2); ctx.fill(); }
+    const viewer = localId !== null ? state.players[localId] : null;
+    for (const player of state.players) {
+      if (!player.alive || player.cloakTicks > 0 && viewer && player.team !== viewer.team) continue;
+      ctx.fillStyle = player.id === localId ? '#ffffff' : TEAM_COLORS[player.team].light;
+      ctx.beginPath(); ctx.arc(player.x, player.y, player.id === localId ? 34 : 24, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+}
+export { CLASSES, WEAPONS };

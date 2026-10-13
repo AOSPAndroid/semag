@@ -14,6 +14,7 @@ export const GAMES = {
   'ember-delve': { title: 'Ember Delve', category: '3D VOXEL ROGUELIKE', kind: 'solo', genre: 'action', theme: 'voxel', roguelike: true, icon: '♨', description: 'A third-person descent. Read the windup. Keep the flame alive.', color: '#a07151' },
   'deckbound': { title: 'Deckbound', category: 'DECKBUILDING ROGUELIKE', kind: 'solo', genre: 'cards', roguelike: true, icon: '♧', description: 'Read their intent. Commit to battles. Build for the bosses.', color: '#8e815b' },
   'oddstock-rumble': { supportsPractice: true, title: 'Oddstock Rumble', category: 'BONUS PLATFORM BRAWLER', kind: 'duel', genre: 'action', icon: '★', description: 'Six unlikely heroes. Three stages. One glorious send-off.', color: '#927aa1' },
+  'lockdown': { title: 'Lockdown', category: 'TOP-DOWN TEAM PVP', kind: 'team', supportsSolo: true, genre: 'action', maxPlayers: 8, icon: '⛨', description: 'Three control points. Swords, guns and bombs. Up to 4v4, bots fill the gaps.', color: '#7c8fa8' },
   'relic-duel': { supportsPractice: true, title: 'Relic Duel', category: 'TOP-DOWN ARENA', kind: 'duel', genre: 'action', icon: '⚔', description: 'Sword, shield, and a little quick thinking.', color: '#779868' },
   'checkers': { supportsPractice: true, title: 'Checkers', category: 'THE CLASSIC', kind: 'board', icon: '◉', description: 'Every move is a conversation.', color: '#a88e62' },
   'dungeon-run': { title: 'Dungeon Run', category: 'CO-OP ADVENTURE', kind: 'coop', genre: 'action', icon: '✦', description: 'Two adventurers. One way through.', color: '#748766' },
@@ -29,6 +30,7 @@ export const GAMES = {
 export function soloUrl(gameId) {
   if (gameId === 'voxel-dojo') return '/voxel-practice.html?mode=dojo';
   if (gameId === 'voxel-horde') return '/voxel-horde.html?solo=1';
+  if (gameId === 'lockdown') return '/lockdown.html?solo=1';
   return `/solo.html?game=${encodeURIComponent(gameId)}`;
 }
 export function practiceUrl(gameId) {
@@ -42,6 +44,7 @@ export function practiceUrl(gameId) {
 export function roomUrl(room) {
   if (room.gameId === 'shinobi-voxel') return `/shinobi-voxel.html?room=${encodeURIComponent(room.id)}`;
   if (room.gameId === 'voxel-horde') return `/voxel-horde.html?room=${encodeURIComponent(room.id)}`;
+  if (room.gameId === 'lockdown') return `/lockdown.html?room=${encodeURIComponent(room.id)}`;
   if (room.gameId === 'voxel-royale') return `/voxel-royale.html?room=${encodeURIComponent(room.id)}`;
   if (room.gameId === 'voxel-breach') return `/voxel.html?room=${encodeURIComponent(room.id)}`;
   return room.gameId === 'afterimage' ? `/afterimage.html?room=${encodeURIComponent(room.id)}` : `/play.html?room=${encodeURIComponent(room.id)}&game=${encodeURIComponent(room.gameId)}`;
@@ -49,6 +52,7 @@ export function roomUrl(room) {
 export function roomCapacity(room) {
   if (room.gameId === 'shinobi-voxel') return 2;
   if (room.gameId === 'voxel-horde') return 3;
+  if (room.gameId === 'lockdown') return 8;
   if (room.gameId === 'voxel-royale') {
     if (Number.isInteger(room.capacity) && room.capacity >= 2 && room.capacity <= 10) return room.capacity;
     return room.players?.length >= 2 && room.players.length <= 10 ? room.players.length : 10;
