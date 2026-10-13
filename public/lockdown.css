@@ -10,7 +10,7 @@ button, input, select { font: inherit; color: inherit; }
 button { cursor: pointer; }
 kbd { display: inline-block; padding: 1px 6px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; background: var(--panel-2); font: 600 11px/1.4 ui-monospace, monospace; color: var(--text); }
 .ld-app { position: fixed; inset: 0; }
-.ld-arena { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; outline: none; }
+.ld-arena { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: none; outline: none; } /* the game draws a bold reticle */
 
 /* HUD */
 .ld-hud { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
@@ -52,7 +52,6 @@ kbd { display: inline-block; padding: 1px 6px; border: 1px solid var(--line); bo
 .ld-guard i { flex: 1; height: 6px; border-radius: 3px; background: rgba(255,255,255,.1); overflow: hidden; }
 .ld-guard em { display: block; height: 100%; width: 100%; background: #9fd8ff; }
 .ld-guard[data-state="up"] em { background: #ffffff; } .ld-guard[data-state="broken"] em { background: var(--danger); }
-.ld-guard[data-state="broken"] span::after { content: ' broken'; color: var(--danger); }
 .ld-statuses { margin: -4px 0 6px; min-height: 0; font-size: 11px; color: #ffcf8a; }
 .ld-statuses:empty { display: none; }
 .ld-ability { position: relative; display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 6px; background: var(--panel-2); overflow: hidden; font-size: 12px; }
@@ -200,3 +199,49 @@ kbd { display: inline-block; padding: 1px 6px; border: 1px solid var(--line); bo
 @media (max-width: 640px) { .ld-inv-slots { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 .ld-ability[data-locked="true"] span { color: #ffb4a8; }
+
+.ld-guard i.ld-dome { flex: 2; }
+.ld-guard i.ld-dome em { background: #8fd8ff; }
+.ld-guard[data-dome="broken"] i.ld-dome em { background: #6b7685; }
+
+/* Weapon slots in the lobby: thumbnails that open the Armory. */
+.ld-loadout { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.ld-slot-button { position: relative; display: grid; grid-template-columns: 40px 1fr; grid-template-rows: auto auto; column-gap: 10px; align-items: center; text-align: left; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text); min-height: 60px; }
+.ld-slot-button img, .ld-slot-button .ld-glyph { grid-row: span 2; width: 40px; height: 40px; font-size: 24px; line-height: 40px; text-align: center; }
+.ld-slot-button b { font-size: 13px; } .ld-slot-button small { color: var(--muted); font-size: 11px; }
+.ld-slot-button kbd { position: absolute; top: 6px; right: 6px; }
+.ld-slot-button:hover:not(:disabled) { border-color: #fff; }
+.ld-armory-open { margin-top: 8px; width: 100%; padding: 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text); font-weight: 600; }
+
+/* The Armory: every weapon with stats, pros and cons. */
+.ld-armory { position: fixed; inset: 24px; z-index: 30; display: flex; flex-direction: column; padding: 16px 18px; border-radius: 16px; background: rgba(13,15,19,.97); border: 1px solid var(--line); box-shadow: 0 30px 80px rgba(0,0,0,.6); color: var(--text); }
+.ld-armory[hidden] { display: none; }
+.ld-armory header { display: flex; align-items: center; gap: 16px; margin-bottom: 12px; }
+.ld-armory h2 { margin: 0; font-size: 20px; }
+.ld-armory-tabs { display: flex; gap: 6px; flex: 1; }
+.ld-armory-tabs button, .ld-armory-close { padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-2); color: var(--muted); font-weight: 600; }
+.ld-armory-tabs button[aria-selected="true"] { color: var(--text); border-color: #fff; }
+.ld-armory-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr); gap: 16px; }
+.ld-armory-grid { overflow: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; align-content: start; padding-right: 4px; }
+.ld-armory-card { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text); text-align: left; }
+.ld-armory-card[aria-pressed="true"] { border-color: #fff; background: #262c36; }
+.ld-armory-card img, .ld-armory-card .ld-glyph { width: 48px; height: 48px; font-size: 28px; line-height: 48px; }
+.ld-armory-card b { font-size: 13px; } .ld-armory-card small { color: var(--muted); font-size: 11px; }
+.ld-difficulty { color: #ffd36b; font-size: 11px; letter-spacing: 2px; }
+.ld-carried { position: absolute; top: 8px; right: 8px; }
+.ld-armory-detail { overflow: auto; padding: 14px; border-radius: 12px; background: var(--panel-2); border: 1px solid var(--line); }
+.ld-armory-hero { display: flex; gap: 14px; align-items: center; }
+.ld-armory-hero img, .ld-armory-hero .ld-glyph { width: 96px; height: 96px; font-size: 56px; line-height: 96px; text-align: center; }
+.ld-armory-hero h3 { margin: 0; font-size: 18px; }
+.ld-armory-type { margin: 2px 0 0; color: var(--muted); font-size: 12px; }
+.ld-armory-desc { font-size: 13px; line-height: 1.45; }
+.ld-armory-stats { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 10px 0; font-size: 12px; }
+.ld-armory-stats dt { color: var(--muted); } .ld-armory-stats dd { margin: 0; font-weight: 600; }
+.ld-armory-notes { list-style: none; padding: 0; margin: 8px 0 12px; display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.ld-armory-notes .pro { color: #9ff0b8; } .ld-armory-notes .con { color: #ffb4a8; }
+.ld-armory-equip { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.ld-armory-equip button, .ld-armory-clear { padding: 8px; border-radius: 8px; border: 1px solid var(--line); background: #1c2129; color: var(--text); font-weight: 600; text-align: left; }
+.ld-armory-equip button small { display: block; color: var(--muted); font-weight: 400; font-size: 11px; }
+.ld-armory-equip button.ld-primary { border-color: #fff; }
+.ld-armory-clear { margin-top: 6px; width: 100%; color: var(--muted); }
+@media (max-width: 760px) { .ld-armory { inset: 8px; } .ld-armory-body { grid-template-columns: 1fr; } .ld-armory-detail { max-height: 45vh; } }

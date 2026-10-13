@@ -189,6 +189,8 @@ const pointArt = [
 const ui = [
   ...Object.values(ARMORS).map(armor => asset(`icon_armor_${armor.id}`, 48, 48, [24, 24], `${armor.name} equipment icon. Neutral clothing or armor silhouette on a transparent background.`, { group: 'icons' })),
   ...Object.values(CLASSES).map(cls => asset(`icon_class_${cls.id}`, 64, 64, [32, 32], `${cls.name} class emblem for the lobby and scoreboard.`, { group: 'icons' })),
+  asset('ui_crosshair', 48, 48, [24, 24], 'Aiming reticle drawn at the mouse: bold white ring with a dark outline, four short ticks and a centre dot, readable on every floor. The game draws the charge arc around it.', { group: 'icons' }),
+  asset('ui_boost_bar', 48, 12, [24, 6], 'Frame for the Striker nitro bar shown under the knight: a slim dark capsule with a metallic rim, empty inside (the game fills it 40 px wide, 5 px tall, centred).', { group: 'icons' }),
   ...['dash', 'bubble', 'heal', 'cloak'].map(id => asset(`icon_ability_${id}`, 48, 48, [24, 24], `Ability icon: ${id}.`, { group: 'icons' })),
 ];
 

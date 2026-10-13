@@ -7,7 +7,7 @@ import { gameKey } from './keyboard-layout.js';
 import { GameAudio } from './audio.js';
 import { getName, saveName } from './hub/shared.js';
 
-const { TICK_RATE, RULES, CLASSES, ARMORS, ARMOR_IDS, GEAR, GEAR_SLOTS, combineGear, WEAPONS, WEAPON_IDS, DEFAULT_LOADOUTS, SLOT_COUNT, MAPS, MAP_IDS, ABILITIES, INPUT_KEYS, GUARD, STATUS, STATUS_IDS } = Engine;
+const { TICK_RATE, RULES, CLASSES, ARMORS, ARMOR_IDS, GEAR, GEAR_SLOTS, combineGear, WEAPONS, WEAPON_IDS, WEAPON_NOTES, DEFAULT_LOADOUTS, SLOT_COUNT, MAPS, MAP_IDS, ABILITIES, INPUT_KEYS, GUARD, STATUS, STATUS_IDS } = Engine;
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 const roomId = params.get('room');
@@ -140,6 +140,7 @@ function release(control) { held.delete(control); }
 addEventListener('keydown', event => {
   if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return;
   if (event.code === 'Escape' && inventoryOpen) { event.preventDefault(); toggleInventory(false); return; }
+  if (event.code === 'Escape' && armory.open) { event.preventDefault(); closeArmory(); return; }
   if (event.code === 'Escape' || event.code === 'KeyP') { event.preventDefault(); toggleMenu(); return; }
   if (event.code === 'Tab') { event.preventDefault(); showBoard(true); return; }
   if (gameKey(event) === 'i' && !event.repeat && !menuOpen) { event.preventDefault(); toggleInventory(); return; }
@@ -389,8 +390,13 @@ function updateHud(current) {
     $('ld-dash').querySelector('em').style.transform = `scaleX(${(me.dashCooldown || 0) / RULES.dash.cooldown})`;
     $('ld-dash').dataset.active = String(me.dodgeTicks > 0);
     const guardMax = GUARD.max;
+    // Two layers: the dome (covers teammates) and, once it breaks, the Guardian's own shield.
+    const domeLeft = !me.domeBroken && (me.domeHp ?? GUARD.domeMax) > 0;
+    $('ld-guard-label').textContent = me.guardBroken ? 'Shield broken' : domeLeft ? 'Dome' : me.domeBroken ? 'Dome down · Shield' : 'Shield';
+    $('ld-dome-bar').style.width = `${Math.max(0, (me.domeHp ?? GUARD.domeMax) / GUARD.domeMax * 100)}%`;
     $('ld-guard-bar').style.width = `${Math.max(0, (me.guardHp ?? guardMax) / guardMax * 100)}%`;
     $('ld-guard').dataset.state = me.guardBroken ? 'broken' : me.guarding ? 'up' : 'ready';
+    $('ld-guard').dataset.dome = me.domeBroken ? 'broken' : 'ok';
     $('ld-statuses').textContent = STATUS_IDS.filter(id => me.status?.[id] > 0).map(id => `${STATUS[id].name}${id === 'chill' ? ` ${me.chillStacks}/${STATUS.chill.freezeAt}` : ''} ${Math.ceil(me.status[id] / TICK_RATE)}s${id === 'curse' ? ' (no dash or ability)' : ''}`).join(' · ');
     buildWeaponCards(me);
     renderInventory();
@@ -473,27 +479,17 @@ function buildMenu() {
   });
   $('ld-gear-clear').addEventListener('click', () => { if (canChangeLoadout()) chooseSetup(Object.fromEntries(GEAR_SLOTS.map(slot => [slot, 'none']))); });
   buildGearCards();
+  // Weapons: four slot buttons with thumbnails; each opens the Armory to pick what goes in it.
   const loadout = $('ld-loadout');
   for (let slot = 0; slot < SLOT_COUNT; slot++) {
-    const label = document.createElement('label'), select = document.createElement('select');
-    label.append(Object.assign(document.createElement('kbd'), { textContent: String(slot + 1) }), select);
-    select.append(new Option('Empty (room for hearts)', ''));
-    for (const family of ['blade', 'gun', 'bomb']) {
-      const group = document.createElement('optgroup'); group.label = `${family[0].toUpperCase()}${family.slice(1)}s`;
-      for (const id of WEAPON_IDS.filter(weaponId => WEAPONS[weaponId].family === family)) group.append(new Option(`${WEAPONS[id].name}${ELEMENT_TAGS[WEAPONS[id].element] ? ` · ${ELEMENT_TAGS[WEAPONS[id].element]}` : ''}`, id));
-      select.append(group);
-    }
-    select.addEventListener('change', () => {
-      const value = select.value || null, weapons = [...setup.weapons], other = value ? weapons.indexOf(value) : -1;
-      if (other >= 0 && other !== slot) weapons[other] = weapons[slot]; // swap instead of duplicating
-      weapons[slot] = value;
-      if (!weapons.some(Boolean)) { setStatus('Carry at least one weapon.'); renderMenu(); return; }
-      chooseSetup({ weapons });
-    });
-    select.addEventListener('focus', () => { if (select.value) showWeaponNote(select.value); });
-    select.addEventListener('input', () => { if (select.value) showWeaponNote(select.value); });
-    loadout.append(label);
+    const button = document.createElement('button');
+    button.type = 'button'; button.className = 'ld-slot-button'; button.dataset.slot = slot;
+    button.addEventListener('click', () => openArmory(slot));
+    loadout.append(button);
   }
+  $('ld-armory-open').addEventListener('click', () => openArmory(null));
+  $('ld-armory-close').addEventListener('click', () => closeArmory());
+  for (const tab of document.querySelectorAll('[data-family]')) tab.addEventListener('click', () => { armory.family = tab.dataset.family; renderArmory(); });
   const mapSelect = $('ld-map');
   for (const id of MAP_IDS) mapSelect.append(new Option(MAPS[id].name, id));
   mapSelect.addEventListener('change', () => {
@@ -529,6 +525,74 @@ function buildGearCards() {
     list.append(card);
   }
 }
+// ---------- armory: every weapon, what it does, and picking one for a slot ----------
+const armory = { open: false, slot: null, family: 'all', selected: null };
+function openArmory(slot) {
+  armory.open = true; armory.slot = slot;
+  armory.selected = slot !== null && setup.weapons[slot] ? setup.weapons[slot] : armory.selected || WEAPON_IDS[0];
+  if (slot !== null && setup.weapons[slot]) armory.family = WEAPONS[setup.weapons[slot]].family;
+  $('ld-armory').hidden = false; renderArmory();
+}
+function closeArmory() { armory.open = false; $('ld-armory').hidden = true; }
+const seconds = ticks => `${(ticks / TICK_RATE).toFixed(ticks < TICK_RATE ? 2 : 1)} s`;
+/** Plain numbers for the detail card, by family. */
+function weaponStats(weapon) {
+  if (weapon.family === 'blade') {
+    const combo = weapon.combo, time = combo.reduce((sum, move) => sum + move.startup + move.active + move.recovery, 0);
+    return [['Damage per cut', combo.map(move => move.damage).join(' / ')], ['Full combo', `${combo.length} cuts in ${seconds(time)}`], ['Reach', `${Math.max(...combo.map(move => move.reach))}`], ['Charge', seconds(weapon.chargeTicks)]];
+  }
+  if (weapon.family === 'gun') return [['Damage per shot', String(weapon.damage)], ['Clip', `${weapon.clip} · ${(TICK_RATE / weapon.interval).toFixed(1)} shots/s`], ['Range', String(weapon.range)], ['Reload', seconds(weapon.reload)], ['Charge', seconds(weapon.chargeTicks)]];
+  return [['Blast', weapon.cloud ? `${weapon.cloud.status} cloud, ${seconds(weapon.cloud.ticks)}` : `${weapon.damage} damage`], ['Radius', String(weapon.cloud?.radius || weapon.radius)], ['Fuse', seconds(weapon.fuse)], ['Charge', seconds(weapon.chargeTicks)]];
+}
+function renderArmory() {
+  if (!armory.open) return;
+  for (const tab of document.querySelectorAll('[data-family]')) tab.setAttribute('aria-selected', String(tab.dataset.family === armory.family));
+  const grid = $('ld-armory-grid'), carried = setup.weapons, editable = canChangeLoadout();
+  // Only rebuild when something shown changed, so cards stay clickable between refreshes.
+  const key = [armory.family, armory.selected, armory.slot, carried.join(), editable, assets.version].join('|');
+  if (grid.dataset.key === key) return;
+  grid.dataset.key = key;
+  grid.textContent = '';
+  for (const id of WEAPON_IDS.filter(id => armory.family === 'all' || WEAPONS[id].family === armory.family)) {
+    const weapon = WEAPONS[id], note = WEAPON_NOTES[id], card = document.createElement('button');
+    card.type = 'button'; card.className = 'ld-armory-card'; card.dataset.weapon = id;
+    card.setAttribute('aria-pressed', String(armory.selected === id));
+    const slot = carried.indexOf(id);
+    card.innerHTML = `${iconMarkup(`icon_weapon_${id}`, FAMILY_GLYPH[weapon.family])}<b></b><small></small><span class="ld-difficulty" title="Difficulty">${'●'.repeat(note.difficulty)}${'○'.repeat(3 - note.difficulty)}</span>${slot >= 0 ? `<kbd class="ld-carried">${slot + 1}</kbd>` : ''}`;
+    card.querySelector('b').textContent = weapon.name;
+    card.querySelector('small').textContent = `${weapon.type}${ELEMENT_TAGS[weapon.element] ? ` · ${ELEMENT_TAGS[weapon.element]}` : ''}`;
+    card.addEventListener('click', () => { armory.selected = id; renderArmory(); });
+    card.addEventListener('dblclick', () => { if (armory.slot !== null) { equipFromArmory(id, armory.slot); } });
+    grid.append(card);
+  }
+  const id = armory.selected, weapon = WEAPONS[id], note = WEAPON_NOTES[id], detail = $('ld-armory-detail');
+  if (!weapon) { detail.textContent = ''; return; }
+  const list = (items, kind) => items.map(text => `<li class="${kind}">${kind === 'pro' ? '▲' : '▼'} ${text}</li>`).join('');
+  detail.innerHTML = `<div class="ld-armory-hero">${iconMarkup(`icon_weapon_${id}`, FAMILY_GLYPH[weapon.family])}<div><h3></h3><p class="ld-armory-type"></p></div></div>
+    <p class="ld-armory-desc"></p>
+    <dl class="ld-armory-stats">${weaponStats(weapon).map(([label, value]) => `<dt>${label}</dt><dd>${value}</dd>`).join('')}<dt>Difficulty</dt><dd>${['', 'Easy', 'Medium', 'Hard'][note.difficulty]}</dd></dl>
+    <ul class="ld-armory-notes">${list(note.pros, 'pro')}${list(note.cons, 'con')}</ul>
+    <div class="ld-armory-equip">${Array.from({ length: SLOT_COUNT }, (_, slot) => `<button type="button" data-equip="${slot}"${armory.slot === slot ? ' class="ld-primary"' : ''}${editable ? '' : ' disabled'}>Slot ${slot + 1}${carried[slot] ? `<small>${WEAPONS[carried[slot]].name}</small>` : '<small>Empty</small>'}</button>`).join('')}</div>
+    ${armory.slot !== null && carried[armory.slot] ? `<button type="button" class="ld-armory-clear" data-clear="${armory.slot}"${editable ? '' : ' disabled'}>Empty slot ${armory.slot + 1}</button>` : ''}
+    ${editable ? '' : '<p class="ld-hint">Return to your base to change weapons.</p>'}`;
+  detail.querySelector('h3').textContent = weapon.name;
+  detail.querySelector('.ld-armory-type').textContent = `${weapon.type}${ELEMENT_TAGS[weapon.element] ? ` · ${ELEMENT_TAGS[weapon.element]}` : ''}`;
+  detail.querySelector('.ld-armory-desc').textContent = weapon.description;
+  for (const button of detail.querySelectorAll('[data-equip]')) button.addEventListener('click', () => equipFromArmory(id, Number(button.dataset.equip)));
+  detail.querySelector('[data-clear]')?.addEventListener('click', () => {
+    const weapons = [...setup.weapons]; weapons[armory.slot] = null;
+    if (!weapons.some(Boolean)) { setStatus('Carry at least one weapon.'); return; }
+    chooseSetup({ weapons });
+  });
+}
+/** Put a weapon in a slot; if it is already carried elsewhere the two slots swap. */
+function equipFromArmory(id, slot) {
+  const weapons = [...setup.weapons], other = weapons.indexOf(id);
+  if (other >= 0 && other !== slot) weapons[other] = weapons[slot];
+  weapons[slot] = id; armory.slot = slot;
+  chooseSetup({ weapons }); showWeaponNote(id);
+}
+
 // ---------- inventory (I): drag and drop to reorder the four slots ----------
 let inventoryOpen = false, dragFrom = null;
 function toggleInventory(force) {
@@ -622,7 +686,16 @@ function renderMenu() {
   const total = combineGear(gear), piece = GEAR[gearTab][gear[gearTab]];
   $('ld-armor-summary').textContent = `${piece.name}: ${piece.description}`;
   $('ld-armor-summary-stats').innerHTML = `<b>Whole build</b> (${total.name}): ${Engine.maxHpFor(cls, gear)} max HP (${CLASSES[cls].hp} class ${total.maxHp >= 0 ? '+' : '−'} ${Math.abs(total.maxHp)} equipment) · ${armorStatMarkup(total)}`;
-  [...$('ld-loadout').querySelectorAll('select')].forEach((select, slot) => { if (document.activeElement !== select) select.value = weapons[slot] || ''; select.disabled = !editable; });
+  [...$('ld-loadout').querySelectorAll('.ld-slot-button')].forEach((button, slot) => {
+    const id = weapons[slot], weapon = WEAPONS[id], key = `${id}:${editable}`;
+    if (button.dataset.key === key) return;
+    button.dataset.key = key; button.disabled = !editable;
+    button.innerHTML = `<kbd>${slot + 1}</kbd>${weapon ? iconMarkup(`icon_weapon_${id}`, FAMILY_GLYPH[weapon.family]) : '<span class="ld-glyph" aria-hidden="true">+</span>'}<b></b><small></small>`;
+    button.querySelector('b').textContent = weapon ? weapon.name : 'Empty';
+    button.querySelector('small').textContent = weapon ? `${weapon.type}${ELEMENT_TAGS[weapon.element] ? ` · ${ELEMENT_TAGS[weapon.element]}` : ''}` : 'Room for hearts';
+    button.setAttribute('aria-label', `Slot ${slot + 1}: ${weapon ? weapon.name : 'empty'}. Choose in the Armory.`);
+  });
+  if (armory.open) renderArmory();
   const note = $('ld-base-note');
   note.hidden = lobby;
   if (!lobby) {
@@ -708,7 +781,10 @@ function frame(now) {
     // Show your own aim instantly instead of waiting for the server echo.
     const shown = me && !menuOpen && me.alive ? { ...view, players: view.players.map(player => player.id === localId ? { ...player, aim } : player) } : view;
     const focus = me && !me.alive ? overviewFocus(view, me) : null;
-    scene.render(shown, { localId, now, focus });
+    // In play the game draws its own bold reticle; otherwise the normal pointer comes back.
+    const reticle = mouse.inside && !menuOpen && !inventoryOpen && !!me?.alive;
+    if (canvas.dataset.reticle !== String(reticle)) { canvas.dataset.reticle = String(reticle); canvas.style.cursor = reticle ? 'none' : 'default'; }
+    scene.render(shown, { localId, now, focus, pointer: reticle ? mouse : null });
     playEvents(view);
     if (view.phase !== 'lobby') updateHud(view);
     if (view.phase !== lastPhase) {

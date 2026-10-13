@@ -114,7 +114,7 @@ test('blades only hit what the sweep covers', () => {
 
 test('a full Knight Brand charge lunges into the target and ends in a burning burst', () => {
   const { state, me, foe } = duel({ gap: 120 });
-  const swing = swingTicks(WEAPONS.brand.combo[0]);
+  const swing = swingTicks(WEAPONS.brand.combo[0]) + Math.round(WEAPONS.brand.combo[0].recovery * BLADE.whiffRecovery); // the first cut whiffs at this range
   run(state, swing + WEAPONS.brand.chargeTicks + 3, () => ({ 0: { attack: true } }));
   assert.ok(me.charging && me.chargeTicks >= WEAPONS.brand.chargeTicks);
   const startX = me.x;
@@ -188,28 +188,28 @@ test('Striker Boost: faster only while held, burns a meter, locks when empty and
   assert.equal(me.boostLocked, false, 'unlocked at a quarter');
 });
 
-test('the Guardian shield blocks at once, then grows into a dome that shields and heals teammates', () => {
-  const { state, me, foe } = duel({ gap: 260, a: { cls: 'guardian', weapons: ['cleaver', 'magnus', 'vortex'], hp: 120, maxHp: 120 }, b: { weapons: ['blaster', 'brand', 'blast'] } });
+test('the Guardian shield opens straight into a dome that shields and slowly heals teammates and the Guardian', () => {
+  const { state, me, foe } = duel({ gap: 260, a: { cls: 'guardian', weapons: ['cleaver', 'magnus', 'vortex'], hp: 80, maxHp: 120 }, b: { weapons: ['blaster', 'brand', 'blast'] } });
   const ally = state.players[1]; Object.assign(ally, { alive: true, x: me.x - 10, y: me.y + 40, hp: 40, maxHp: 100, shieldTicks: 0, respawnTicks: 0, bot: false });
-  run(state, GUARD.raiseTicks + 1, () => ({ 0: { ability: true } }));
-  assert.ok(me.guarding);
+  run(state, GUARD.expandTicks + 1, () => ({ 0: { ability: true } }));
+  assert.ok(me.guarding); assert.ok(events(state, 'dome').length === 1, 'the dome opens almost at once');
+  // A round at the Guardian is soaked by the dome, not the personal shield.
   run(state, 40, t => ({ 0: { ability: true }, 4: { attack: t === 0 } }));
-  assert.equal(me.hp, me.maxHp, 'the shield took the round');
-  assert.equal(me.guardHp, GUARD.max - WEAPONS.blaster.damage);
-  assert.equal(ally.hp, 40, 'no dome yet, no healing');
-  run(state, GUARD.expandTicks, () => ({ 0: { ability: true } }));
-  assert.ok(events(state, 'dome').length === 1);
-  const healthBefore = ally.hp;
+  assert.ok(me.hp >= 80 && me.hp < 80 + GUARD.healPerSecond, `no damage, only the slow dome healing (${me.hp})`);
+  assert.equal(me.domeHp, GUARD.domeMax - WEAPONS.blaster.damage); assert.equal(me.guardHp, GUARD.max);
+  // Everyone inside heals slowly, the Guardian too.
+  const allyBefore = ally.hp, meBefore = me.hp;
   run(state, TICK_RATE, () => ({ 0: { ability: true } }));
-  assert.ok(Math.abs(ally.hp - healthBefore - GUARD.healPerSecond) < .5, `ally healed by ${ally.hp - healthBefore}`);
-  // Shots from outside the dome stop at its edge.
-  const before = me.guardHp; Object.assign(foe, { aim: Math.atan2(ally.y - foe.y, ally.x - foe.x) });
+  assert.ok(Math.abs(ally.hp - allyBefore - GUARD.healPerSecond) < .5, `ally healed by ${ally.hp - allyBefore}`);
+  assert.ok(Math.abs(me.hp - meBefore - GUARD.healPerSecond) < .5);
+  // Shots from outside stop at the dome's edge.
+  const before = me.domeHp; Object.assign(foe, { aim: Math.atan2(ally.y - foe.y, ally.x - foe.x) });
   run(state, 40, t => ({ 0: { ability: true }, 4: { attack: t === 0, aim: foe.aim } }));
-  assert.ok(me.guardHp < before); assert.ok(ally.hp > 40);
+  assert.ok(me.domeHp < before); assert.ok(ally.hp > 40);
   // Only Guardians have a shield; for the others the ability is Boost or Cloak.
   const { state: other, me: striker } = duel();
   run(other, 3, () => ({ 0: { ability: true } }));
-  assert.equal(striker.guarding, false); assert.ok(striker.dodgeTicks > 0 || striker.dashTicks > 0);
+  assert.equal(striker.guarding, false); assert.ok(striker.boosting);
 });
 
 test('Recon cloak hides you; the first hit out of it marks the target for extra damage', () => {
@@ -405,23 +405,29 @@ test('personal score comes from taking and neutralising zones, and leads the sco
   assert.deepEqual(team1.map(entry => entry.score), [...team1.map(entry => entry.score)].sort((a, b) => b - a));
 });
 
-test('a raised Guardian shield blocks hits, then breaks into a stun and recharges', () => {
+test('when the dome breaks the Guardian keeps a personal shield for a few hits, then is stunned; both recharge', () => {
   const { state, me, foe } = duel({ gap: 200, a: { cls: 'guardian' }, b: { weapons: ['blaster', 'brand', 'blast'] } });
-  run(state, GUARD.raiseTicks + 1, () => ({ 0: { ability: true } }));
-  assert.ok(me.guarding && me.guardRaise >= GUARD.raiseTicks);
+  run(state, GUARD.expandTicks + 1, () => ({ 0: { ability: true } }));
+  me.domeHp = 5;
   run(state, 40, t => ({ 0: { ability: true }, 4: { attack: t === 0 } }));
-  assert.equal(me.hp, me.maxHp, 'the shield took the round');
-  assert.equal(me.guardHp, GUARD.max - WEAPONS.blaster.damage);
-  assert.ok(events(state, 'block').length === 1);
-  me.guardHp = 5;
+  assert.equal(events(state, 'domeBreak').length, 1); assert.equal(me.domeBroken, true); assert.ok(me.guarding, 'still shielded');
+  assert.equal(me.hp, me.maxHp);
+  // The personal shield now takes the hits.
+  foe.fireCooldown = 0;
+  run(state, 40, t => ({ 0: { ability: true }, 4: { attack: t === 0 } }));
+  assert.equal(me.hp, me.maxHp); assert.equal(me.guardHp, GUARD.max - WEAPONS.blaster.damage);
+  assert.ok(events(state, 'block').length >= 1);
+  me.guardHp = 5; foe.clips.blaster = WEAPONS.blaster.clip;
   run(state, 40, t => ({ 0: { ability: true }, 4: { attack: t === 0 } }));
   assert.ok(events(state, 'guardBreak').length === 1);
   assert.equal(me.guarding, false); assert.ok(me.stunTicks > 0 && me.guardBroken);
   run(state, 2, () => ({ 0: { ability: true } })); assert.equal(me.guarding, false, 'a broken shield cannot be raised');
-  // It regenerates after a pause and comes back at half strength.
-  run(state, GUARD.regenDelay + Math.ceil(GUARD.max * GUARD.recover / GUARD.regenPerSecond * TICK_RATE) + GUARD.breakStun + 5);
+  // Lowered, both recharge after a pause; the dome reopens only once half full.
+  run(state, GUARD.regenDelay + Math.ceil(GUARD.domeMax * GUARD.domeRecover / GUARD.domeRegenPerSecond * TICK_RATE) + GUARD.breakStun + 5);
   assert.equal(me.guardBroken, false);
-  run(state, GUARD.raiseTicks + 1, () => ({ 0: { ability: true } })); assert.ok(me.guarding);
+  run(state, 2, () => ({ 0: { ability: true } }));
+  assert.equal(me.domeBroken, false); assert.ok(me.domeHp >= GUARD.domeMax * GUARD.domeRecover);
+  run(state, GUARD.expandTicks + 1, () => ({ 0: { ability: true } })); assert.ok(me.guarding && events(state, 'dome').length >= 1);
 });
 
 test('statuses: burn ticks damage, poison stops healing, freeze holds you until hit', () => {
@@ -490,7 +496,7 @@ test('every weapon fires its charge without errors', () => {
   for (const id of L.WEAPON_IDS) {
     const { state, me } = duel({ gap: 140, a: { weapons: [id, ...L.WEAPON_IDS.filter(other => other !== id && WEAPONS[other].family !== WEAPONS[id].family).slice(0, 2)] } });
     me.clips = Object.fromEntries(me.weapons.filter(weaponId => WEAPONS[weaponId]?.family === 'gun').map(weaponId => [weaponId, WEAPONS[weaponId].clip]));
-    run(state, 60 + L.chargeTicksFor(me, WEAPONS[id]) + 3, () => ({ 0: { attack: true } }));
+    run(state, 140 + L.chargeTicksFor(me, WEAPONS[id]) + 3, () => ({ 0: { attack: true } }));
     run(state, 400);
     assert.ok(events(state, 'chargeRelease').some(event => event.weapon === id), `${id} released its charge`);
     assert.ok(state.players.every(player => Number.isFinite(player.x) && Number.isFinite(player.hp)), `${id} stays finite`);
@@ -514,20 +520,29 @@ test('animation cancels: the shield or a dodge cuts recovery short, and a queued
   run(shield.state, move.startup + move.active + 1, t => ({ 0: { attack: t === 0 } }));
   assert.equal(shield.me.action, 'swing');
   run(shield.state, 1, () => ({ 0: { ability: true } }));
-  assert.equal(shield.me.action, 'idle'); assert.equal(shield.me.comboStep, 1, 'a cancelled cut still advances the combo');
+  assert.equal(shield.me.action, 'idle'); assert.equal(shield.me.comboStep, 0, 'a whiffed cut breaks the combo, even cancelled');
   assert.ok(events(shield.state, 'cancel').some(event => event.by === 'guard'));
   // The shield cannot cancel the wind-up or the cut itself.
   const early = duel({ gap: 300, a: { cls: 'guardian' } });
   run(early.state, 2, t => ({ 0: { attack: t === 0 } }));
   run(early.state, 1, () => ({ 0: { ability: true } }));
   assert.equal(early.me.action, 'swing');
-  // Combo cancel: a queued press starts the next cut partway through the recovery.
-  const combo = duel({ gap: 300, a: { cls: 'recon' } });
+  // Combo cancel: after a cut that lands, a queued press starts the next cut partway through the recovery.
+  const combo = duel({ gap: 50, a: { cls: 'recon' } });
   run(combo.state, move.startup + 1, t => ({ 0: { attack: t === 0 } }));
   run(combo.state, 1, () => ({ 0: { attack: true } }));
-  run(combo.state, move.active + Math.ceil(move.recovery * BLADE.comboCancel) + 1);
+  run(combo.state, move.active + Math.ceil(move.recovery * BLADE.comboCancel) + 1 + BLADE.hitStop * 2);
   assert.deepEqual(events(combo.state, 'swing').map(event => event.step), [0, 1]);
   assert.ok(events(combo.state, 'swing')[1].tick - events(combo.state, 'swing')[0].tick < swingTicks(move), 'the next cut came early');
+  // A whiff cannot chain: the queued press is dropped, the recovery is longer and you barely move.
+  const air = duel({ gap: 300, a: { cls: 'recon' } });
+  run(air.state, move.startup + 1, t => ({ 0: { attack: t === 0 } }));
+  run(air.state, 1, () => ({ 0: { attack: true } }));
+  run(air.state, move.active + move.recovery, () => ({ 0: { right: true } }));
+  assert.deepEqual(events(air.state, 'swing').map(event => event.step), [0], 'no chained cut after a miss');
+  assert.equal(air.me.action, 'swing', 'still recovering from the whiff'); assert.ok(air.me.whiffed);
+  run(air.state, Math.round(move.recovery * BLADE.whiffRecovery) + 2);
+  assert.equal(air.me.action, 'idle'); assert.equal(air.me.comboStep, 0, 'the combo starts over');
   // Dodge cancel: a Striker's boost cuts recovery and slips away untouchable.
   const dodge = duel({ gap: 300, a: { cls: 'striker' } });
   run(dodge.state, 20, t => ({ 0: { attack: t === 0 } }));
@@ -618,7 +633,7 @@ test('outfit perks and drawbacks: speed vs swords, plate, bombs, berserk, mirror
   const bomber = duel({ gap: 60, a: { cls: 'recon', armor: 'bombardier', weapons: ['blast', 'brand', 'blaster'] } });
   assert.ok(L.chargeTicksFor(bomber.me, WEAPONS.blast) < WEAPONS.blast.chargeTicks);
   run(bomber.state, L.chargeTicksFor(bomber.me, WEAPONS.blast) + 2, () => ({ 0: { attack: true } })); run(bomber.state, WEAPONS.blast.fuse + 3);
-  assert.equal(bomber.foe.maxHp - bomber.foe.hp, Math.round(WEAPONS.blast.damage * A.bombardier.bombDamage * (1 - A[bomber.foe.armor].bombResistance)));
+  assert.equal(bomber.foe.maxHp - bomber.foe.hp, Math.round(WEAPONS.blast.damage * CLASSES.recon.bombDamage * A.bombardier.bombDamage * (1 - A[bomber.foe.armor].bombResistance)));
   // Mirrorweave: statuses wear off sooner.
   const mirror = duel({ b: { armor: 'mirrorweave' } });
   mirror.state.bombs.push({ id: 7, ownerId: 0, team: 0, weapon: 'haze', x: mirror.foe.x, y: mirror.foe.y, fuse: 1, total: 1, phase: 'fuse', pullTicks: 0 });

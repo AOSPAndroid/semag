@@ -143,29 +143,38 @@ test('blade projectiles and bursts, gun explosions and detonations, and bomb sha
   }
 });
 
-test('Recon gun bonuses and charge perks compose with armor on impact, explosions and catalyst detonations', () => {
-  for (const [weapon, kind, raw] of [
-    ['blaster', 'bullet', L.WEAPONS.blaster.damage],
-    ['magnus', 'explosion', L.WEAPONS.magnus.charge.damage],
-    ['catalyzer', 'detonate', L.WEAPONS.catalyzer.charge.perCharge * 3],
-  ]) {
-    const { state, me, foe } = duel({ weapon, armor: 'ballistic', cls: 'recon' });
-    assert.equal(L.chargeTicksFor(me, L.WEAPONS[weapon]), Math.round(L.WEAPONS[weapon].chargeTicks * L.CLASSES.recon.gunCharge));
-    if (weapon === 'catalyzer') { foe.catalysts = 3; foe.catalystTicks = 1000; }
-    if (weapon === 'blaster') run(state, 1, () => ({ 0: { attack: true } })); else releaseCharge(state, me);
-    run(state, 80);
-    assert.ok(hit(state, kind), weapon);
-    assert.equal(hit(state, kind).amount, Math.round(raw * L.CLASSES.recon.gunDamage * (1 - ARMORS.ballistic.gunResistance)), weapon);
-  }
+test('Recon bomb bonuses compose with armor, and the first hit out of cloak lands double', () => {
+  const { state, me, foe } = duel({ weapon: 'blast', armor: 'ballistic', cls: 'recon', gap: 60 });
+  assert.equal(L.chargeTicksFor(me, L.WEAPONS.blast), Math.round(L.WEAPONS.blast.chargeTicks * L.CLASSES.recon.bombCharge));
+  run(state, L.chargeTicksFor(me, L.WEAPONS.blast) + 2, () => ({ 0: { attack: true } })); run(state, L.WEAPONS.blast.fuse + 3);
+  assert.equal(hit(state, 'bomb').amount, Math.round(L.WEAPONS.blast.damage * L.CLASSES.recon.bombDamage * (1 - ARMORS.ballistic.bombResistance)));
+  // Ambush: cloak, then the first hit lands double and marks; the next is normal.
+  const ambush = duel({ weapon: 'blaster', cls: 'recon' });
+  run(ambush.state, 2, t => ({ 0: { ability: t === 0 } }));
+  assert.ok(ambush.me.cloakTicks > 0);
+  run(ambush.state, 40, t => ({ 0: { attack: t === 0 } }));
+  assert.equal(hit(ambush.state, 'bullet').amount, Math.round(L.WEAPONS.blaster.damage * L.ABILITIES.cloak.ambush));
+  assert.ok(ambush.state.events.some(event => event.type === 'ambush')); assert.ok(ambush.foe.markTicks > 0);
+  ambush.state.events = []; ambush.me.fireCooldown = 0;
+  run(ambush.state, 40, t => ({ 0: { attack: t === 0 } }));
+  assert.equal(hit(ambush.state, 'bullet').amount, Math.round(L.WEAPONS.blaster.damage * (1 + L.ABILITIES.cloak.markBonus)), 'marked, no longer an ambush');
+  // The ambush window closes a few seconds after the cloak ends.
+  const late = duel({ weapon: 'blaster', cls: 'recon' });
+  run(late.state, 2, t => ({ 0: { ability: t === 0 } }));
+  run(late.state, L.ABILITIES.cloak.ticks + L.ABILITIES.cloak.ambushTicks + 2);
+  run(late.state, 40, t => ({ 0: { attack: t === 0 } }));
+  assert.equal(hit(late.state, 'bullet').amount, L.WEAPONS.blaster.damage);
 });
 
 test('armor protects health after defenses, preserves poison/mark multipliers, and does not reduce status ticks', () => {
   const guarded = duel({ armor: 'heavy' });
+  Object.assign(guarded.foe, { domeHp: 0, domeBroken: true }); // dome already broken: the personal shield takes it
   run(guarded.state, L.GUARD.raiseTicks + 1, () => ({ 4: { ability: true } }));
   run(guarded.state, 40, tick => ({ 0: { attack: tick === 0 }, 4: { ability: true } }));
   assert.equal(guarded.foe.hp, 500);
   assert.equal(guarded.foe.guardHp, L.GUARD.max - L.WEAPONS.blaster.damage, 'armor does not protect shield stamina');
   const swordGuard = duel({ weapon: 'brand', armor: 'heavy', gap: 50 });
+  Object.assign(swordGuard.foe, { domeHp: 0, domeBroken: true });
   run(swordGuard.state, L.GUARD.raiseTicks + 1, () => ({ 4: { ability: true } }));
   run(swordGuard.state, 40, tick => ({ 0: { attack: tick === 0 }, 4: { ability: true } }));
   assert.equal(swordGuard.foe.hp, 500);
@@ -177,7 +186,7 @@ test('armor protects health after defenses, preserves poison/mark multipliers, a
   assert.ok(guardian.guarding && guardian.guardRaise >= L.GUARD.expandTicks);
   run(bubble.state, 50, tick => ({ 0: { attack: tick === 0 }, 5: { ability: true } }));
   assert.equal(bubble.foe.hp, 500);
-  assert.equal(guardian.guardHp, L.GUARD.max - L.WEAPONS.blaster.damage, 'armor does not protect a dome');
+  assert.equal(guardian.domeHp, L.GUARD.domeMax - L.WEAPONS.blaster.damage, 'armor does not protect a dome');
   const marked = duel({ armor: 'ballistic' });
   marked.me.status.poison = L.STATUS.poison.ticks; marked.foe.markTicks = L.ABILITIES.cloak.markTicks;
   run(marked.state, 40, tick => ({ 0: { attack: tick === 0 } }));

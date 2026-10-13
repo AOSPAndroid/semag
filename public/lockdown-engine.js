@@ -3,10 +3,10 @@
  * Up to 4v4; empty seats are filled by bots. Teams score every five seconds by
  * the points they hold; first to 500 (or the leader at the time limit) wins. */
 import { MAPS, MAP_IDS, TILE, isWall, isBlocked, wallAt, levelAt, levelCell, levelOk, canStep, shotBlocked } from './lockdown-maps.js';
-import { WEAPONS, WEAPON_IDS, DEFAULT_LOADOUTS, SLOT_COUNT, STATUS, STATUS_IDS, GUARD, BLADE } from './lockdown-weapons.js';
+import { WEAPONS, WEAPON_IDS, WEAPON_NOTES, DEFAULT_LOADOUTS, SLOT_COUNT, STATUS, STATUS_IDS, GUARD, BLADE, BLOOM } from './lockdown-weapons.js';
 import { ARMORS, ARMOR_IDS, HELMETS, PANTS, SHOES, GEAR, GEAR_SLOTS, combineGear } from './lockdown-equipment.js';
 
-export { MAPS, MAP_IDS, TILE, WEAPONS, WEAPON_IDS, DEFAULT_LOADOUTS, SLOT_COUNT, STATUS, STATUS_IDS, GUARD, BLADE, ARMORS, ARMOR_IDS, HELMETS, PANTS, SHOES, GEAR, GEAR_SLOTS, combineGear };
+export { MAPS, MAP_IDS, TILE, BLOOM, WEAPONS, WEAPON_IDS, WEAPON_NOTES, DEFAULT_LOADOUTS, SLOT_COUNT, STATUS, STATUS_IDS, GUARD, BLADE, ARMORS, ARMOR_IDS, HELMETS, PANTS, SHOES, GEAR, GEAR_SLOTS, combineGear };
 export const TICK_RATE = 120;
 const DT = 1 / TICK_RATE;
 export const TEAM_SIZE = 4;
@@ -40,16 +40,17 @@ export const CLASSES = Object.freeze({
   striker: Object.freeze({ id: 'striker', name: 'Striker', hp: 100, speed: 210, bladeDamage: 1.25, bladeSpeed: 1.2, bombCharge: 1.5, ability: 'Boost',
     perks: 'Swords +25% damage and +20% speed · slow bomb charge', description: 'The sword specialist. Hold Boost to sprint while its nitro meter lasts, to close in or get out; pressing it also cancels a cut and slips a hit.' }),
   guardian: Object.freeze({ id: 'guardian', name: 'Guardian', hp: 120, speed: 190, bombCharge: .7, ability: 'Shield',
-    perks: 'Most health · bombs charge 30% faster', description: 'The only knight with a shield. Hold it up to block everything; after a moment it grows into a dome that also covers and heals teammates inside. It breaks under fire and recharges in about eight seconds.' }),
-  recon: Object.freeze({ id: 'recon', name: 'Recon', hp: 95, speed: 200, gunDamage: 1.1, gunCharge: .8, ability: 'Cloak',
-    perks: 'Guns +10% damage · gun charges 20% faster · less health', description: 'The marksman. Cloak turns you invisible; the first hit out of it marks the target to take 30% more damage.' }),
+    perks: 'Most health · bombs charge 30% faster', description: 'The only knight with a shield. Hold it to raise a dome that covers teammates inside and slowly heals everyone in it. When the dome breaks you keep a small personal shield for a few hits; then it all recharges.' }),
+  recon: Object.freeze({ id: 'recon', name: 'Recon', hp: 95, speed: 200, bombDamage: 1.25, bombCharge: .85, ability: 'Cloak',
+    perks: 'Bombs +25% damage · bombs charge 15% faster · less health', description: 'The ambusher. Cloak turns you invisible; the first hit out of it (within a few seconds) deals double damage and marks the target to take 30% more from your team.' }),
 });
 export const ABILITIES = Object.freeze({
   // Striker Boost (nitro): hold the ability to run 50% faster while the meter lasts. Letting go stops it;
   // the meter refills after a short pause. Run it dry and it locks until it is a quarter full again.
   // Pressing it cancels a cut's recovery and gives a brief dodge.
   dash: { meter: 3 * TICK_RATE, speed: 1.5, regenDelay: TICK_RATE, refill: 6 * TICK_RATE, relock: .25, evadeTicks: 14 },
-  cloak: { ticks: 4 * TICK_RATE, cooldown: 12 * TICK_RATE, markTicks: 5 * TICK_RATE, markBonus: .3, revealRange: 64 },
+  // Recon Cloak: the first hit within `ambushTicks` of leaving it deals `ambush` times damage and marks the target.
+  cloak: { ticks: 4 * TICK_RATE, cooldown: 12 * TICK_RATE, markTicks: 5 * TICK_RATE, markBonus: .3, revealRange: 64, ambush: 2, ambushTicks: Math.round(2.5 * TICK_RATE) },
 });
 /** Ticks a full charge takes for this knight: class and outfit perks speed up or slow down a weapon family. */
 export function chargeTicksFor(player, weapon) {
@@ -62,7 +63,7 @@ const outfitOf = player => combineGear(player || {});
 /** Health = class health plus what the gear adds (or costs). `gear` is a player, a gear object or a body armour id. */
 export const maxHpFor = (cls, gear) => Math.max(40, CLASSES[cls].hp + combineGear(typeof gear === 'string' ? { armor: gear } : gear || {}).maxHp);
 export const gunPower = player => (CLASSES[player.cls]?.gunDamage || 1) * outfitOf(player).gunDamage;
-const bombPower = player => player ? outfitOf(player).bombDamage : 1;
+const bombPower = player => player ? (CLASSES[player.cls]?.bombDamage || 1) * outfitOf(player).bombDamage : 1;
 export const bladePower = player => (CLASSES[player.cls]?.bladeDamage || 1) * outfitOf(player).bladeDamage;
 const bladeSpeed = player => (CLASSES[player.cls]?.bladeSpeed || 1) * outfitOf(player).bladeSpeed;
 const CLASS_IDS = Object.keys(CLASSES);
@@ -92,9 +93,9 @@ function newPlayer(id) {
     clips: {}, reloadTicks: {}, sinceShot: {}, fireCooldown: 0, burst: null, hitStop: 0, bufferAttack: false,
     swingAim: 0, swingDir: 1, swingReach: 0, swingArc: 0, swingStartup: 0, swingActive: 0, swingRecovery: 0, swingDamage: 0, chargeMoveTicks: 0,
     dodgeTicks: 0, dodgeX: 0, dodgeY: 0, dodgeStep: 0, evadeTicks: 0, dashCooldown: 0,
-    guarding: false, guardRaise: 0, guardHp: GUARD.max, guardBroken: false, guardDelay: 0,
+    guarding: false, guardRaise: 0, guardHp: GUARD.max, guardBroken: false, guardDelay: 0, domeHp: GUARD.domeMax, domeBroken: false,
     status: Object.fromEntries(STATUS_IDS.map(key => [key, 0])), statusOwner: {}, freezeImmune: 0, chillStacks: 0, catalysts: 0, catalystTicks: 0,
-    dashTicks: 0, cloakTicks: 0, markTicks: 0, markReady: false, abilityCooldown: 0, boostMeter: 3 * TICK_RATE, boostDelay: 0, boostLocked: false, boosting: false,
+    dashTicks: 0, cloakTicks: 0, markTicks: 0, markReady: 0, abilityCooldown: 0, boostMeter: 3 * TICK_RATE, boostDelay: 0, boostLocked: false, boosting: false,
     kills: 0, deaths: 0, captures: 0, damage: 0, score: 0, previousInput: emptyInput(team === 0 ? 0 : Math.PI),
   };
 }
@@ -175,7 +176,7 @@ export function setPlayerSetup(state, id, { team, cls, armor, helmet, pants, sho
     }
     if (cls !== undefined && cls !== player.cls) {
       player.cls = cls; player.maxHp = maxHpFor(cls, player); player.hp = Math.max(1, fraction * player.maxHp);
-      player.dashTicks = player.cloakTicks = 0; player.markReady = false; player.guarding = false;
+      player.dashTicks = player.cloakTicks = 0; player.markReady = 0; player.guarding = false;
     }
     if (weapons !== undefined) {
       setWeapons(player, weapons);
@@ -279,9 +280,9 @@ function spawn(state, player) {
   Object.assign(player, {
     x: spot.x, y: spot.y, z: levelAt(map, spot.x, spot.y), vx: 0, vy: 0, alive: true, hp: maxHpFor(player.cls, player), maxHp: maxHpFor(player.cls, player), respawnTicks: 0, lastHurtTick: state.tick, shieldTicks: RULES.spawnShieldTicks,
     stunTicks: 0, pushX: 0, pushY: 0, action: 'idle', actionTicks: 0, actionTotal: 0, comboStep: 0, comboWindow: 0, hitIds: [], chargeTicks: 0, charging: false,
-    dashTicks: 0, cloakTicks: 0, markTicks: 0, markReady: false, fireCooldown: 0, boostMeter: ABILITIES.dash.meter, boostDelay: 0, boostLocked: false, boosting: false,
+    dashTicks: 0, cloakTicks: 0, markTicks: 0, markReady: 0, fireCooldown: 0, boostMeter: ABILITIES.dash.meter, boostDelay: 0, boostLocked: false, boosting: false,
     aim: player.team === 0 ? 0 : Math.PI, burst: null, hitStop: 0, bufferAttack: false, dodgeTicks: 0, evadeTicks: 0, dashCooldown: 0, guarding: false, guardRaise: 0, guardBroken: false, guardDelay: 0,
-    guardHp: GUARD.max, freezeImmune: 0, chillStacks: 0, catalysts: 0, catalystTicks: 0,
+    guardHp: GUARD.max, domeHp: GUARD.domeMax, domeBroken: false, freezeImmune: 0, chillStacks: 0, catalysts: 0, catalystTicks: 0,
     status: Object.fromEntries(STATUS_IDS.map(key => [key, 0])), statusOwner: {},
   });
   player.clips = Object.fromEntries(player.weapons.filter(isGun).map(id => [id, WEAPONS[id].clip]));
@@ -333,7 +334,7 @@ const sameFloor = (map, a, b) => Math.abs(levelAt(map, a.x, a.y) - levelAt(map, 
 
 // ---------- damage, shields and statuses ----------
 /** A Guardian whose shield has grown into a dome covering this knight (not the Guardian itself). */
-const domeUp = guard => guard.alive && guard.guarding && guard.guardRaise >= GUARD.expandTicks;
+const domeUp = guard => guard.alive && guard.guarding && guard.guardRaise >= GUARD.expandTicks && !guard.domeBroken && guard.domeHp > 0;
 function inAlliedBubble(state, target) {
   return state.players.find(guard => guard !== target && guard.team === target.team && domeUp(guard) && dist(guard, target) <= GUARD.radius) || null;
 }
@@ -348,8 +349,12 @@ function inRecovery(player) {
 }
 /** The animation cancel: drop the rest of the recovery. A cancelled cut still advances the combo. */
 function cancelRecovery(state, player, by) {
-  if (player.action === 'swing') { const weapon = currentWeapon(player); player.comboStep = (player.comboStep + 1) % weapon.combo.length; player.comboWindow = BLADE.comboWindow; }
-  player.action = 'idle'; player.actionTicks = 0; player.bufferAttack = false;
+  if (player.action === 'swing') {
+    const weapon = currentWeapon(player);
+    // A cut that hit nothing breaks the combo even when cancelled.
+    if (player.whiffed || !player.hitIds.length) { player.comboStep = 0; player.comboWindow = 0; } else { player.comboStep = (player.comboStep + 1) % weapon.combo.length; player.comboWindow = BLADE.comboWindow; }
+  }
+  player.action = 'idle'; player.actionTicks = 0; player.bufferAttack = false; player.whiffed = false;
   emit(state, 'cancel', { playerId: player.id, by });
 }
 const guardUp = player => player.guarding && player.guardRaise >= GUARD.raiseTicks;
@@ -410,8 +415,16 @@ function damage(state, attacker, target, amount, { push = 0, angle = 0, stun = 1
   const armor = outfitOf(target);
   const resistance = damageFamily === 'gun' ? armor.gunResistance : damageFamily === 'blade' ? armor.bladeResistance : damageFamily === 'bomb' ? armor.bombResistance : 0;
   total *= 1 - resistance;
-  if (attacker && attacker.markReady && attacker.cls === 'recon') { target.markTicks = ABILITIES.cloak.markTicks; attacker.markReady = false; emit(state, 'mark', { playerId: attacker.id, targetId: target.id, x: target.x, y: target.y }); }
+  if (attacker && attacker.markReady > 0 && attacker.cls === 'recon') {
+    // Ambush: the first hit out of the cloak lands double and marks the target for the team.
+    total *= ABILITIES.cloak.ambush; target.markTicks = ABILITIES.cloak.markTicks; attacker.markReady = 0;
+    emit(state, 'ambush', { playerId: attacker.id, targetId: target.id, x: target.x, y: target.y });
+    emit(state, 'mark', { playerId: attacker.id, targetId: target.id, x: target.x, y: target.y });
+  }
   total = Math.max(1, Math.round(total));
+  // Heavy weapons are unflinching: mid-swing, a hit hurts but neither stuns nor shoves you off the cut.
+  const unflinching = (target.action === 'swing' || target.action === 'slam') && !!WEAPONS[target.weapons?.[target.slot]]?.heavy;
+  if (unflinching) { stun = 0; push *= .35; emit(state, 'unflinching', { playerId: target.id, x: target.x, y: target.y }); }
   target.hp -= total; target.stunTicks = Math.max(target.stunTicks, stun);
   const shove = push * outfitOf(target).knockback;
   target.pushX = Math.cos(angle) * shove; target.pushY = Math.sin(angle) * shove; target.lastHurtTick = state.tick;
@@ -444,7 +457,17 @@ function weaponSpecials(state, attacker, target, dealt, weapon, damageFamily) {
 }
 /** Damage soaked by a Guardian's shield: swords chew through it, bombs hit it hardest; breaking it stuns. */
 function hitGuard(state, guard, amount, kind, attacker, push, angle, hitStop) {
-  guard.guardHp -= amount * (kind === 'bomb' ? GUARD.bombScale : BLADE_KINDS.has(kind) ? GUARD.bladeScale : 1); guard.guardDelay = GUARD.regenDelay;
+  const load = amount * (kind === 'bomb' ? GUARD.bombScale : BLADE_KINDS.has(kind) ? GUARD.bladeScale : 1);
+  guard.guardDelay = GUARD.regenDelay;
+  if (domeUp(guard)) {
+    // The dome takes it first; when it breaks, only the Guardian's own shield is left.
+    guard.domeHp -= load;
+    emit(state, 'domeHit', { playerId: guard.id, attackerId: attacker?.id ?? null, x: guard.x, y: guard.y, hp: Math.max(0, guard.domeHp) });
+    if (guard.domeHp <= 0) { guard.domeHp = 0; guard.domeBroken = true; emit(state, 'domeBreak', { playerId: guard.id, x: guard.x, y: guard.y }); }
+    if (attacker && hitStop) attacker.hitStop = Math.max(attacker.hitStop, hitStop);
+    return;
+  }
+  guard.guardHp -= load;
   guard.pushX = Math.cos(angle) * push * GUARD.knockback; guard.pushY = Math.sin(angle) * push * GUARD.knockback;
   if (attacker && hitStop) attacker.hitStop = Math.max(attacker.hitStop, hitStop);
   emit(state, 'block', { playerId: guard.id, attackerId: attacker?.id ?? null, x: guard.x, y: guard.y, hp: Math.max(0, guard.guardHp) });
@@ -454,7 +477,7 @@ function hitGuard(state, guard, amount, kind, attacker, push, angle, hitStop) {
   }
 }
 function breakCloak(state, player) {
-  if (player.cloakTicks > 0) { player.cloakTicks = 0; player.markReady = true; emit(state, 'uncloak', { playerId: player.id }); }
+  if (player.cloakTicks > 0) { player.cloakTicks = 0; player.markReady = ABILITIES.cloak.ambushTicks; emit(state, 'uncloak', { playerId: player.id }); }
 }
 function tickStatus(state, player) {
   const status = player.status;
@@ -474,18 +497,23 @@ function tickGuard(state, player, input) {
   if (player.cls !== 'guardian') { player.guarding = false; return; }
   const max = guardMax(player), held = input.ability;
   if (player.guardBroken && player.guardHp >= max * GUARD.recover) player.guardBroken = false;
+  if (player.domeBroken && player.domeHp >= GUARD.domeMax * GUARD.domeRecover) player.domeBroken = false;
   // Shield cancel: raising the shield cuts a sword's recovery short.
   if (held && !player.guarding && !player.guardBroken && inRecovery(player)) cancelRecovery(state, player, 'guard');
   const wants = held && !player.guardBroken && player.stunTicks === 0 && !(player.status.freeze > 0) && !(player.status.curse > 0) && player.actionTicks === 0;
   if (wants && !player.guarding) { player.guarding = true; player.guardRaise = 0; player.charging = false; player.chargeTicks = 0; player.bufferAttack = false; emit(state, 'guardUp', { playerId: player.id, x: player.x, y: player.y }); }
   if (!wants) player.guarding = false;
   if (player.guarding) {
-    if (++player.guardRaise === GUARD.expandTicks) emit(state, 'dome', { playerId: player.id, x: player.x, y: player.y, radius: GUARD.radius });
+    if (++player.guardRaise === GUARD.expandTicks && domeUp(player)) emit(state, 'dome', { playerId: player.id, x: player.x, y: player.y, radius: GUARD.radius });
     player.guardDelay = GUARD.regenDelay;
     if (domeUp(player)) for (const ally of state.players) if (ally.alive && ally.team === player.team && dist(ally, player) <= GUARD.radius) heal(ally, GUARD.healPerSecond / TICK_RATE);
   }
   else if (player.guardDelay > 0) player.guardDelay--;
-  else player.guardHp = Math.min(max, player.guardHp + GUARD.regenPerSecond / outfitOf(player).abilityCooldown / TICK_RATE);
+  else {
+    const pace = outfitOf(player).abilityCooldown * TICK_RATE;
+    player.guardHp = Math.min(max, player.guardHp + GUARD.regenPerSecond / pace);
+    player.domeHp = Math.min(GUARD.domeMax, (player.domeHp ?? GUARD.domeMax) + GUARD.domeRegenPerSecond / pace);
+  }
 }
 
 // ---------- weapons ----------
@@ -511,7 +539,11 @@ function bladeContacts(state, player, reach, from, to, amount, options) {
     if (high - low < Math.PI * 2 - 1e-6 && (bearing < low - pad || bearing > high + pad)) continue;
     if (!sameFloor(map, player, target) || !lineOfSight(map, player, target)) continue;
     player.hitIds.push(target.id);
-    damage(state, player, target, amount, { angle: Math.atan2(target.y - player.y, target.x - player.x), damageFamily: 'blade', ...options });
+    // Precise blades reward spacing: the tip of the reach (the sweet spot) hits harder.
+    const { sweetSpot, ...rest } = options;
+    const tip = sweetSpot && d >= reach * sweetSpot.from;
+    if (tip) emit(state, 'sweetSpot', { playerId: player.id, targetId: target.id, x: target.x, y: target.y });
+    damage(state, player, target, tip ? amount * sweetSpot.bonus : amount, { angle: Math.atan2(target.y - player.y, target.x - player.x), damageFamily: 'blade', ...rest });
   }
 }
 function radialHit(state, owner, team, center, radius, amount, options = {}) {
@@ -530,6 +562,7 @@ function spawnShot(state, player, weapon, spec, angle) {
     vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, size, grow: (spec.grow || 0) / Math.max(1, Math.ceil(spec.range / speed * TICK_RATE)),
     damage: spec.damage * power, push: spec.push ?? 0, ttl: Math.ceil(spec.range / speed * TICK_RATE), pierce: !!spec.pierce, bounces: spec.bounces || 0,
     status: spec.status || null, chance: spec.chance ?? 1, radius: spec.radius || 0, carry: spec.kind === 'wave', hitIds: [],
+    longShot: spec.longShot || (spec === weapon ? weapon.longShot : null) || null, ox: player.x, oy: player.y, range: spec.range,
     perCharge: (spec.perCharge || 0) * power, pushPerCharge: spec.pushPerCharge || 0,
   });
 }
@@ -564,7 +597,7 @@ function startSwing(state, player, weapon) {
   const move = weapon.combo[player.comboStep];
   breakCloak(state, player);
   const speed = bladeSpeed(player), startup = Math.max(2, Math.round(move.startup / speed)), active = Math.max(2, Math.round(move.active / speed)), recovery = Math.max(2, Math.round(move.recovery / speed));
-  Object.assign(player, { action: 'swing', actionTotal: startup + active + recovery, actionTicks: startup + active + recovery, hitIds: [], bufferAttack: false,
+  Object.assign(player, { action: 'swing', actionTotal: startup + active + recovery, actionTicks: startup + active + recovery, hitIds: [], bufferAttack: false, whiffed: false,
     swingAim: player.aim, swingDir: player.comboStep % 2 ? -1 : 1, swingReach: move.reach, swingArc: move.arc,
     swingStartup: startup, swingActive: active, swingRecovery: recovery, swingDamage: move.damage * bladePower(player) });
   emit(state, 'swing', { playerId: player.id, weapon: weapon.id, step: player.comboStep, x: player.x, y: player.y, angle: player.aim, dir: player.swingDir, arc: move.arc, reach: move.reach, startup, active });
@@ -596,8 +629,19 @@ function tickAction(state, player, weapon) {
     else if (elapsed < startup + active) {
       // The blade sweeps from one side of the arc to the other across the active ticks.
       const start = player.swingAim - player.swingDir * move.arc / 2, progress = (elapsed - startup + 1) / active;
-      bladeContacts(state, player, move.reach, start, start + player.swingDir * move.arc * progress, player.swingDamage, { push: move.push, stun: move.stun, kind: 'blade', hitStop: BLADE.hitStop, weapon: weapon.id, status: weapon.onHit?.status, chance: weapon.onHit?.chance });
-    } else if (player.bufferAttack && player.comboStep < weapon.combo.length - 1 && elapsed >= startup + active + Math.ceil(player.swingRecovery * BLADE.comboCancel)) {
+      bladeContacts(state, player, move.reach, start, start + player.swingDir * move.arc * progress, player.swingDamage, { push: move.push, stun: move.stun, kind: 'blade', hitStop: BLADE.hitStop, weapon: weapon.id, status: weapon.onHit?.status, chance: weapon.onHit?.chance, sweetSpot: weapon.sweetSpot });
+      // A heavy blow that shakes the ground sends a shockwave around the impact on its first active tick.
+      if (move.shockwave && elapsed === startup) {
+        const wave = move.shockwave, center = { x: player.x + Math.cos(player.swingAim) * wave.offset, y: player.y + Math.sin(player.swingAim) * wave.offset };
+        emit(state, 'slam', { playerId: player.id, weapon: weapon.id, x: center.x, y: center.y, radius: wave.radius });
+        radialHit(state, player, player.team, center, wave.radius, player.swingDamage * wave.scale, { push: move.push * .6, stun: Math.round(move.stun * .6), kind: 'slam', damageFamily: 'blade' });
+      }
+    } else if (elapsed === startup + active && !player.hitIds.length && !player.whiffed) {
+      // A whiff: nothing was hit. The recovery stretches, the queued press is dropped and the combo breaks.
+      const extra = Math.round(player.swingRecovery * BLADE.whiffRecovery);
+      Object.assign(player, { whiffed: true, bufferAttack: false, actionTicks: player.actionTicks + extra, actionTotal: player.actionTotal + extra, swingRecovery: player.swingRecovery + extra });
+      emit(state, 'whiff', { playerId: player.id, x: player.x, y: player.y });
+    } else if (player.bufferAttack && !player.whiffed && player.comboStep < weapon.combo.length - 1 && elapsed >= startup + active + Math.ceil(player.swingRecovery * BLADE.comboCancel)) {
       // Combo cancel: a queued press cuts the recovery short and goes straight into the next cut.
       player.comboStep++; player.action = 'idle'; player.actionTicks = 0; startSwing(state, player, weapon);
       return;
@@ -634,7 +678,8 @@ function tickAction(state, player, weapon) {
     const wasSwing = player.action === 'swing';
     player.action = 'idle';
     if (wasSwing) {
-      player.comboStep = (player.comboStep + 1) % weapon.combo.length; player.comboWindow = BLADE.comboWindow;
+      if (player.whiffed) { player.comboStep = 0; player.comboWindow = 0; player.whiffed = false; }
+      else { player.comboStep = (player.comboStep + 1) % weapon.combo.length; player.comboWindow = BLADE.comboWindow; }
       if (player.bufferAttack) startSwing(state, player, weapon); // a queued press chains straight into the next cut
     }
   }
@@ -643,6 +688,7 @@ function tickAction(state, player, weapon) {
 function tickWeapon(state, player, input, previous) {
   const weapon = currentWeapon(player), pressed = input.attack && !previous.attack, released = !input.attack && previous.attack;
   player.fireCooldown = Math.max(0, player.fireCooldown - 1);
+  if (player.bloom > 0) player.bloom = Math.max(0, player.bloom - BLOOM.settlePerSecond / TICK_RATE);
   // Guns reload on their own: after a short pause or when empty, even holstered.
   for (const id of Object.keys(player.clips)) {
     const gun = WEAPONS[id]; player.sinceShot[id] = (player.sinceShot[id] || 0) + 1;
@@ -678,7 +724,9 @@ function tickWeapon(state, player, input, previous) {
   if (!(player.clips[weapon.id] > 0)) { if (!(player.reloadTicks[weapon.id] > 0)) player.reloadTicks[weapon.id] = weapon.reload; emit(state, 'dryFire', { playerId: player.id, weapon: weapon.id }); return; }
   breakCloak(state, player);
   player.clips[weapon.id]--; player.fireCooldown = weapon.interval; player.reloadTicks[weapon.id] = 0; player.sinceShot[weapon.id] = 0;
-  fireVolley(state, player, weapon, weapon);
+  // Bloom: shots fired back to back spread wider; a short pause settles the aim again.
+  fireVolley(state, player, weapon, weapon, 1, (weapon.spread || 0) + (player.bloom || 0));
+  player.bloom = Math.min(BLOOM.max, (player.bloom || 0) + (weapon.bloom ?? BLOOM.perShot));
 }
 
 /** The quick dash every knight has (Space). Keeps a charge going; cancels a cut's recovery. */
@@ -699,7 +747,8 @@ function tickDash(state, player, input, previous) {
 function tickAbilities(state, player, input, previous) {
   player.abilityCooldown = Math.max(0, player.abilityCooldown - 1);
   player.dashTicks = Math.max(0, player.dashTicks - 1); player.markTicks = Math.max(0, player.markTicks - 1);
-  if (player.cloakTicks > 0 && --player.cloakTicks === 0) { player.markReady = true; emit(state, 'uncloak', { playerId: player.id }); }
+  if (player.markReady > 0) player.markReady--;
+  if (player.cloakTicks > 0 && --player.cloakTicks === 0) { player.markReady = ABILITIES.cloak.ambushTicks; emit(state, 'uncloak', { playerId: player.id }); }
   if (player.cls === 'striker') { tickBoost(state, player, input); return; }
   if (!(input.ability && !previous.ability) || player.abilityCooldown > 0 || player.cls === 'guardian') return;
   if (player.status.curse > 0) { emit(state, 'cursed', { playerId: player.id, x: player.x, y: player.y }); return; }
@@ -707,7 +756,7 @@ function tickAbilities(state, player, input, previous) {
   if (player.actionTicks > 0 && !inRecovery(player)) return;
   if (inRecovery(player)) cancelRecovery(state, player, 'cloak');
   if (player.cls === 'recon') {
-    player.cloakTicks = ABILITIES.cloak.ticks; player.abilityCooldown = Math.round(ABILITIES.cloak.cooldown * outfitOf(player).abilityCooldown); player.markReady = false;
+    player.cloakTicks = ABILITIES.cloak.ticks; player.abilityCooldown = Math.round(ABILITIES.cloak.cooldown * outfitOf(player).abilityCooldown); player.markReady = 0;
     emit(state, 'cloak', { playerId: player.id, x: player.x, y: player.y });
   }
 }
@@ -740,7 +789,7 @@ function moveScale(player, weapon) {
   if (player.status.freeze > 0 || ['lunge', 'lungeBurst', 'slam'].includes(player.action)) return 0;
   if (player.stunTicks > 0) return .25;
   if (player.held > 0) return .15;
-  if (player.action === 'swing') return .5;
+  if (player.action === 'swing') return player.whiffed ? BLADE.whiffMove : .5;
   if (player.action === 'cast') return .3;
   if (player.action === 'spin') return weapon.charge.speed;
   if (player.guarding) return GUARD.speed;
@@ -840,7 +889,10 @@ function tickProjectiles(state) {
         const owner = state.players[shot.ownerId], blocked = guardUp(target);
         if (shot.kind === 'explosive') { explodeShot(state, shot); alive = false; break; }
         const damageFamily = shot.damageFamily || WEAPONS[shot.weapon]?.family;
-        const landed = damage(state, owner, target, shot.damage, { push: shot.push, angle: Math.atan2(shot.vy, shot.vx), stun: 8, kind: shot.kind, damageFamily, source: shot, status: shot.status, chance: shot.chance, weapon: shot.weapon });
+        // Precision rounds hit harder the farther they have flown.
+        const flown = Math.hypot(shot.x - shot.ox, shot.y - shot.oy), long = shot.longShot ? 1 + shot.longShot.bonus * clamp((flown - shot.longShot.from) / Math.max(1, shot.range - shot.longShot.from), 0, 1) : 1;
+        if (long > 1.15) emit(state, 'longShot', { playerId: shot.ownerId, targetId: target.id, x: target.x, y: target.y, bonus: long });
+        const landed = damage(state, owner, target, shot.damage * long, { push: shot.push, angle: Math.atan2(shot.vy, shot.vx), stun: 8, kind: shot.kind, damageFamily, source: shot, status: shot.status, chance: shot.chance, weapon: shot.weapon });
         if (landed && shot.kind === 'catalyst') { target.catalysts = Math.min(3, (target.catalysts || 0) + 1); target.catalystTicks = 6 * TICK_RATE; emit(state, 'catalyst', { playerId: target.id, count: target.catalysts }); }
         if (shot.kind === 'detonator' && target.alive && target.catalysts > 0) {
           const count = target.catalysts; target.catalysts = 0;

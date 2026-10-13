@@ -6,7 +6,7 @@ Lockdown is a top-down team brawl in the spirit of Spiral Knights' Lockdown: up 
 three control points, swords, guns and bombs. The game is fully playable with placeholder
 shapes; every PNG listed below replaces one placeholder as soon as it is added.
 
-**Progress: 204/271 sprites ready.**
+**Progress: 204/277 sprites ready.**
 
 ## Style guide
 
@@ -233,12 +233,14 @@ shapes; every PNG listed below replaces one placeholder as soon as it is added.
 | ✅ | `icon_weapon_voltedge.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Voltedge. Clear silhouette on a transparent background. |
 | ✅ | `icon_weapon_sickle.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Sanguine Sickle. Clear silhouette on a transparent background. |
 | ✅ | `icon_weapon_hexblade.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Hexblade. Clear silhouette on a transparent background. |
+| ⬜ | `icon_weapon_maul.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Earthbreaker Maul. Clear silhouette on a transparent background. |
 | ✅ | `icon_weapon_blaster.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Pulse Blaster. Clear silhouette on a transparent background. |
 | ⬜ | `icon_weapon_pulsar.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Ripple Caster. Clear silhouette on a transparent background. |
 | ⬜ | `icon_weapon_alchemer.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Ricochet Coil. Clear silhouette on a transparent background. |
 | ✅ | `icon_weapon_autogun.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Rattle Autogun. Clear silhouette on a transparent background. |
 | ⬜ | `icon_weapon_catalyzer.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Tether Catalyst. Clear silhouette on a transparent background. |
 | ✅ | `icon_weapon_magnus.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Thunder Hand-cannon. Clear silhouette on a transparent background. |
+| ⬜ | `icon_weapon_rifle.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Longshot Rifle. Clear silhouette on a transparent background. |
 | ✅ | `icon_weapon_frostgun.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Winter Repeater. Clear silhouette on a transparent background. |
 | ✅ | `icon_weapon_embercaster.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Ember Caster. Clear silhouette on a transparent background. |
 | ✅ | `icon_weapon_voltneedle.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Volt Needle. Clear silhouette on a transparent background. |
@@ -269,6 +271,8 @@ shapes; every PNG listed below replaces one placeholder as soon as it is added.
 | ✅ | `icon_class_striker.png` | 64×64 | 1 | 32, 32 | Striker class emblem for the lobby and scoreboard. |
 | ✅ | `icon_class_guardian.png` | 64×64 | 1 | 32, 32 | Guardian class emblem for the lobby and scoreboard. |
 | ✅ | `icon_class_recon.png` | 64×64 | 1 | 32, 32 | Recon class emblem for the lobby and scoreboard. |
+| ⬜ | `ui_crosshair.png` | 48×48 | 1 | 24, 24 | Aiming reticle drawn at the mouse: bold white ring with a dark outline, four short ticks and a centre dot, readable on every floor. The game draws the charge arc around it. |
+| ⬜ | `ui_boost_bar.png` | 48×12 | 1 | 24, 6 | Frame for the Striker nitro bar shown under the knight: a slim dark capsule with a metallic rim, empty inside (the game fills it 40 px wide, 5 px tall, centred). |
 | ✅ | `icon_ability_dash.png` | 48×48 | 1 | 24, 24 | Ability icon: dash. |
 | ✅ | `icon_ability_bubble.png` | 48×48 | 1 | 24, 24 | Ability icon: bubble. |
 | ✅ | `icon_ability_heal.png` | 48×48 | 1 | 24, 24 | Ability icon: heal. |
@@ -289,12 +293,14 @@ shapes; every PNG listed below replaces one placeholder as soon as it is added.
 | ✅ | `weapon_voltedge.png` | 64×32 | 1 | 12, 16 | Voltedge (blade) held in the hand, pointing right; the grip sits at the anchor. Fast cuts that may shock (15%); a hit can arc lightning to two more enemies nearby. Charge: an electric spin. |
 | ✅ | `weapon_sickle.png` | 64×32 | 1 | 12, 16 | Sanguine Sickle (blade) held in the hand, pointing right; the grip sits at the anchor. Heals you for 30% of the damage it deals. Charge: a long draining lunge. |
 | ✅ | `weapon_hexblade.png` | 64×32 | 1 | 12, 16 | Hexblade (blade) held in the hand, pointing right; the grip sits at the anchor. Heavy cuts that may curse (35%): no dash and no class ability for a while. Charge: a cursing slam. |
+| ⬜ | `weapon_maul.png` | 64×32 | 1 | 12, 16 | Earthbreaker Maul (blade) held in the hand, pointing right; the grip sits at the anchor. The heaviest weapon: two huge, slow blows that are not interrupted when you are hit; the second shakes the ground around it. Charge: a crater-making slam. |
 | ✅ | `weapon_blaster.png` | 64×32 | 1 | 12, 16 | Pulse Blaster (gun) held in the hand, pointing right; the grip sits at the anchor. Reliable three-shot gun. Charge: a big bolt that pierces every knight in its path. |
 | ⬜ | `weapon_pulsar.png` | 64×32 | 1 | 12, 16 | Ripple Caster (gun) held in the hand, pointing right; the grip sits at the anchor. Slow waves that widen as they travel and pass through knights. Charge: one huge wave. |
 | ⬜ | `weapon_alchemer.png` | 64×32 | 1 | 12, 16 | Ricochet Coil (gun) held in the hand, pointing right; the grip sits at the anchor. Bolts that bounce off walls. Charge: four shocking bolts that bounce twice. |
 | ✅ | `weapon_autogun.png` | 64×32 | 1 | 12, 16 | Rattle Autogun (gun) held in the hand, pointing right; the grip sits at the anchor. Six fast, light rounds. Charge: a focused ten-round stream. |
 | ⬜ | `weapon_catalyzer.png` | 64×32 | 1 | 12, 16 | Tether Catalyst (gun) held in the hand, pointing right; the grip sits at the anchor. Shots stick up to three charges on a knight. Charge: a detonator that blows them all at once. |
 | ✅ | `weapon_magnus.png` | 64×32 | 1 | 12, 16 | Thunder Hand-cannon (gun) held in the hand, pointing right; the grip sits at the anchor. Two heavy rounds with big knockback. Charge: a round that explodes on impact. |
+| ⬜ | `weapon_rifle.png` | 64×32 | 1 | 12, 16 | Longshot Rifle (gun) held in the hand, pointing right; the grip sits at the anchor. A single tiny, very fast round with a long reload: up to 80% more damage at long range. Hard to land, punishing when it does. Charge: a piercing rail shot. |
 | ✅ | `weapon_frostgun.png` | 64×32 | 1 | 12, 16 | Winter Repeater (gun) held in the hand, pointing right; the grip sits at the anchor. Every round chills; three chills freeze. Charge: a piercing bolt that freezes on the spot. |
 | ✅ | `weapon_embercaster.png` | 64×32 | 1 | 12, 16 | Ember Caster (gun) held in the hand, pointing right; the grip sits at the anchor. Fire waves that may ignite (25%) every knight they pass. Charge: a huge wave that sets all of them alight. |
 | ✅ | `weapon_voltneedle.png` | 64×32 | 1 | 12, 16 | Volt Needle (gun) held in the hand, pointing right; the grip sits at the anchor. Six fast needles that may shock (8%) and arc to a nearby enemy. Charge: a shocking ten-needle stream. |

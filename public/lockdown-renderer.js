@@ -302,7 +302,7 @@ export class LockdownRenderer {
     if (near > 0) this.shake = Math.max(this.shake, amount * near);
   }
 
-  render(state, { localId = null, now = performance.now(), focus = null } = {}) {
+  render(state, { localId = null, now = performance.now(), focus = null, pointer = null } = {}) {
     this.resize();
     const ctx = this.ctx, map = MAPS[state.mapId], canvas = this.canvas;
     if (!map) return;
@@ -342,7 +342,7 @@ export class LockdownRenderer {
     const onFloor = (x, y, draw) => { const amount = lift(x, y); if (amount) raisedFloor.push(flat(amount, draw)); else flat(0, draw)(); };
     for (const cloud of state.clouds || []) onFloor(cloud.x, cloud.y, () => this.drawCloud(ctx, cloud, now));
     for (const bomb of state.bombs || []) onFloor(bomb.x, bomb.y, () => this.drawBombRadius(ctx, bomb, now));
-    for (const player of players) if (player.guarding && player.guardRaise >= GUARD.expandTicks) onFloor(player.x, player.y, () => this.drawDome(ctx, player, now));
+    for (const player of players) if (player.guarding && player.guardRaise >= GUARD.expandTicks && !player.domeBroken && player.domeHp > 0) onFloor(player.x, player.y, () => this.drawDome(ctx, player, now));
     for (const player of players) if (!lift(player.x, player.y)) upright(player.y, 0, () => this.drawFootprint(ctx, player, player.id === localId))();
     // Standing layer, back to front: wall rows, knights, beacons, bombs, hearts and shots.
     const items = [];
@@ -369,6 +369,47 @@ export class LockdownRenderer {
       this.drawKnightOverlay(ctx, player, now, player.id === localId);
       if (state.phase === 'fight' && player.hp < player.maxHp && inBase(state, player)) this.drawRegen(ctx, player, now);
     })();
+    if (pointer) this.drawCrosshair(ctx, pointer, local, now);
+  }
+  /** The Striker's nitro: a slim bar under the knight while boosting or refilling (gold while it burns,
+   * blue while it refills, red and blinking when run dry). Hidden when full and idle. */
+  drawBoostBar(ctx, player, now) {
+    const max = ABILITIES.dash.meter, fill = Math.max(0, Math.min(1, player.boostMeter / max));
+    if (!player.boosting && fill >= 1) return;
+    const w = 40, h = 5, x = player.x - w / 2, y = player.y + FEET + 12;
+    if (this.drawSprite(ctx, 'ui_boost_bar', player.x, y + h / 2)) { /* the frame art, with the game's fill on top */ }
+    else { ctx.fillStyle = 'rgba(0,0,0,.65)'; ctx.fillRect(x - 1.5, y - 1.5, w + 3, h + 3); }
+    ctx.fillStyle = player.boostLocked ? (Math.floor(now / 160) % 2 ? '#ff6b5a' : '#a8443a') : player.boosting ? '#ffd36b' : '#8fd8ff';
+    ctx.fillRect(x, y, w * fill, h);
+    ctx.fillStyle = 'rgba(255,255,255,.35)'; ctx.fillRect(x, y, w * fill, 1.5);
+    if (player.boostLocked) { ctx.fillStyle = '#ff6b5a'; ctx.fillRect(x + w * ABILITIES.dash.relock - .5, y - 2, 1, h + 4); }
+  }
+  /** The aiming reticle, in screen space: bold enough to find at a glance on any floor. A ring fills
+   * around it while you charge, and it turns gold when the charge is ready. */
+  drawCrosshair(ctx, pointer, me, now) {
+    const ratio = this.canvas.width / Math.max(1, this.canvas.getBoundingClientRect().width), x = pointer.x * ratio, y = pointer.y * ratio;
+    ctx.save(); ctx.setTransform(ratio, 0, 0, ratio, 0, 0); ctx.translate(x / ratio, y / ratio);
+    const weapon = me && WEAPONS[me.weapons?.[me.slot]], charge = me?.charging && weapon ? Math.min(1, me.chargeTicks / chargeTicksFor(me, weapon)) : 0;
+    if (!this.drawSprite(ctx, 'ui_crosshair', 0, 0)) {
+      // The ring opens up with gun bloom, so you can see when a pause will tighten your aim again.
+      const spread = Math.min(18, (me?.bloom || 0) * 60), base = 11 + spread;
+      const ring = (width, color, radius = base) => { ctx.lineWidth = width; ctx.strokeStyle = color; ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.stroke(); };
+      ring(5, 'rgba(0,0,0,.7)'); ring(2.5, spread > 4 ? '#ffd9a8' : '#ffffff');
+      ctx.lineCap = 'round';
+      for (let i = 0; i < 4; i++) {
+        const a = i * Math.PI / 2, inner = base + 4, outer = base + 11;
+        ctx.strokeStyle = 'rgba(0,0,0,.7)'; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(Math.cos(a) * inner, Math.sin(a) * inner); ctx.lineTo(Math.cos(a) * outer, Math.sin(a) * outer); ctx.stroke();
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2.5; ctx.stroke();
+      }
+      ctx.fillStyle = 'rgba(0,0,0,.7)'; ctx.beginPath(); ctx.arc(0, 0, 3.5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(0, 0, 2, 0, Math.PI * 2); ctx.fill();
+    }
+    if (charge > 0) {
+      ctx.lineCap = 'round'; ctx.lineWidth = 4; ctx.strokeStyle = charge >= 1 ? '#ffd36b' : 'rgba(255,211,107,.8)';
+      ctx.beginPath(); ctx.arc(0, 0, 17, -Math.PI / 2, -Math.PI / 2 + charge * Math.PI * 2); ctx.stroke();
+      if (charge >= 1) { ctx.globalAlpha = .4 + .3 * Math.sin(now / 80); ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, 25, 0, Math.PI * 2); ctx.stroke(); }
+    }
+    ctx.restore();
   }
 
   drawPoint(ctx, point, now) {
@@ -524,6 +565,20 @@ export class LockdownRenderer {
       ctx.restore();
     }
     ctx.save(); ctx.globalAlpha = alpha;
+    if (player.dashTicks > 0) {
+      // Boost speed lines streaming off the back of the knight.
+      const back = Math.atan2(player.vy, player.vx) + Math.PI, speed = Math.hypot(player.vx, player.vy);
+      if (speed > 30) {
+        ctx.save(); ctx.strokeStyle = 'rgba(255,255,255,.75)'; ctx.lineCap = 'round';
+        for (let i = 0; i < 4; i++) {
+          const phase = (now / 90 + i * .37) % 1, side = (i - 1.5) * 9, len = 14 + phase * 16;
+          const ox = fx + Math.cos(back) * (16 + phase * 18) - Math.sin(back) * side, oy = fy - 22 + Math.sin(back) * (16 + phase * 18) * .75 + Math.cos(back) * side * .5;
+          ctx.globalAlpha = .7 * (1 - phase); ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.moveTo(ox, oy); ctx.lineTo(ox + Math.cos(back) * len, oy + Math.sin(back) * len * .75); ctx.stroke();
+        }
+        ctx.restore();
+      }
+    }
     if (player.dashTicks > 0) this.drawSprite(ctx, 'fx_dash', fx, fy - 20, { rotation: Math.atan2(player.vy, player.vx) + Math.PI }) || (ctx.fillStyle = team.light + '55', ctx.beginPath(), ctx.ellipse(fx - player.vx * .06, fy - 20 - player.vy * .06, 12, 18, 0, 0, Math.PI * 2), ctx.fill());
     // The weapon is pinned to this facing's hand and rotated to the aim; facing away it goes behind the body.
     const swingOffset = player.action === 'swing' ? Math.sin((1 - player.actionTicks / Math.max(1, player.actionTotal)) * Math.PI) * (player.comboStep % 2 ? -1 : 1) * .9 : player.action === 'charge' ? (now / 40) % (Math.PI * 2) : 0;
@@ -615,6 +670,7 @@ export class LockdownRenderer {
   /** Name, health bar, mark and stun stars above the head. */
   drawKnightOverlay(ctx, player, now, mine) {
     const team = TEAM_COLORS[player.team], top = player.y + FEET - 58;
+    if (player.cls === 'striker' && player.boostMeter !== undefined) this.drawBoostBar(ctx, player, now);
     if (player.markTicks > 0 && !this.drawSprite(ctx, 'fx_mark', player.x, top - 18)) { ctx.fillStyle = '#ff4d6d'; ctx.font = 'bold 16px system-ui'; ctx.textAlign = 'center'; ctx.fillText('◎', player.x, top - 18); }
     if (player.stunTicks > 0) { ctx.fillStyle = '#ffe680'; for (let i = 0; i < 3; i++) { const a = now / 150 + i * 2.1; ctx.beginPath(); ctx.arc(player.x + Math.cos(a) * 14, top + 4 + Math.sin(a) * 4, 2.5, 0, Math.PI * 2); ctx.fill(); } }
     const statuses = STATUS_IDS.filter(id => player.status?.[id] > 0);

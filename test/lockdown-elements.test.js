@@ -157,3 +157,42 @@ test('capture zones are open circles big enough for six knights', () => {
   for (let i = 0; i < ring.length; i++) for (let j = i + 1; j < ring.length; j++) assert.ok(Math.hypot(ring[i].x - ring[j].x, ring[i].y - ring[j].y) >= RULES.radius * 2);
   assert.equal(ring.filter(player => Math.hypot(player.x - point.x, player.y - point.y) <= RULES.pointRadius).length, 6);
 });
+
+test('weapon traits: heavy swings are unflinching, the rapier tip hits harder, long shots and the maul shockwave', () => {
+  // Heavy: hit mid-swing, the Maul keeps swinging (no stun) where a Knight Brand is stunned.
+  for (const [weapon, unflinching] of [['maul', true], ['brand', false]]) {
+    const { state, me, foe } = duel({ a: { weapons: [weapon, 'blaster', 'blast', null], hp: 400, maxHp: 400 }, b: { weapons: ['blaster', 'brand', 'blast', null] }, gap: 160 });
+    run(state, 3, t => ({ 0: { attack: t === 0 } }));
+    assert.equal(me.action, 'swing');
+    run(state, 24, t => ({ 4: { attack: t === 0, aim: Math.PI } }));
+    assert.ok(me.hp < 400, `${weapon} took the round`);
+    assert.equal(me.stunTicks === 0, unflinching, weapon);
+  }
+  // Rapier sweet spot: the same thrust at the tip of its reach deals 40% more.
+  const thrust = gap => { const { state, foe } = duel({ a: { cls: 'recon', weapons: ['rapier', 'blaster', 'blast', null] }, gap }); run(state, 20, t => ({ 0: { attack: t === 0 } })); return { dealt: 400 - foe.hp, tip: state.events.some(e => e.type === 'sweetSpot') }; };
+  const close = thrust(40), far = thrust(WEAPONS.rapier.combo[0].reach * .9);
+  assert.equal(close.tip, false); assert.equal(far.tip, true);
+  assert.equal(far.dealt, Math.round(WEAPONS.rapier.combo[0].damage * WEAPONS.rapier.sweetSpot.bonus));
+  // Longshot Rifle: more damage the farther it flies.
+  const shoot = gap => { const { state, foe } = duel({ mapId: 'keep', a: { cls: 'guardian', weapons: ['rifle', 'brand', 'blast', null] }, gap }); run(state, 50, t => ({ 0: { attack: t === 0 } })); return 400 - foe.hp; };
+  const near = shoot(120), longer = shoot(600);
+  assert.equal(near, WEAPONS.rifle.damage); assert.ok(longer > near * 1.3, `${longer} vs ${near}`);
+  // Maul: the second blow shakes the ground and hits a second knight beside the target.
+  const { state, me, foe } = duel({ a: { cls: 'guardian', weapons: ['maul', 'blaster', 'blast', null] }, gap: 60, third: {} });
+  state.players[5].x = foe.x; state.players[5].y = foe.y + 60;
+  me.comboStep = 1; run(state, 60, t => ({ 0: { attack: t === 0 } }));
+  assert.ok(state.events.some(e => e.type === 'slam' && e.weapon === 'maul'));
+  assert.ok(state.players[5].hp < 400, 'the shockwave reached the second knight');
+});
+
+test('guns bloom when fired back to back and settle when you pause', () => {
+  const { state, me } = duel({ a: { weapons: ['blaster', 'brand', 'blast', null] }, gap: 300 });
+  run(state, 40, t => ({ 0: { attack: t % 17 === 0 } }));
+  const sprayed = me.bloom;
+  assert.ok(sprayed > 0.05, `bloom built up (${sprayed})`);
+  run(state, 120);
+  assert.ok(me.bloom < sprayed / 2, 'settled after a pause');
+  const rifle = duel({ a: { weapons: ['rifle', 'brand', 'blast', null] } });
+  run(rifle.state, 2, t => ({ 0: { attack: t === 0 } }));
+  assert.ok(rifle.me.bloom >= WEAPONS.rifle.bloom - .01, 'precise guns bloom hardest');
+});

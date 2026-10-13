@@ -27,7 +27,7 @@
           <span class="ld-class" id="ld-class">STRIKER</span>
           <div class="ld-hp"><em id="ld-hp-bar"></em><b id="ld-hp">100</b></div>
           <div class="ld-armor-hud" aria-label="Equipped armor"><b id="ld-armor-name">Unarmored</b><span id="ld-armor-stats">Gun 0% · Sword 0% · Blast 0% · Speed 0%</span></div>
-          <div class="ld-guard" id="ld-guard" data-state="ready" hidden><span>Shield</span><i><em id="ld-guard-bar"></em></i></div>
+          <div class="ld-guard" id="ld-guard" data-state="ready" hidden><span id="ld-guard-label">Dome</span><i class="ld-dome"><em id="ld-dome-bar"></em></i><i><em id="ld-guard-bar"></em></i></div>
           <p class="ld-statuses" id="ld-statuses"></p>
           <div class="ld-abilities">
             <div class="ld-ability" id="ld-ability1"><kbd>RMB</kbd><span id="ld-ability1-name">Boost</span><em></em></div>
@@ -46,6 +46,13 @@
       <section class="ld-board" id="ld-board" hidden aria-label="Scoreboard"></section>
     </section>
 
+    <section class="ld-armory" id="ld-armory" hidden role="dialog" aria-label="Armory">
+      <header><h2>Armory</h2><div class="ld-armory-tabs" role="tablist"><button type="button" data-family="all">All</button><button type="button" data-family="blade">Swords</button><button type="button" data-family="gun">Guns</button><button type="button" data-family="bomb">Bombs</button></div><button type="button" class="ld-armory-close" id="ld-armory-close" aria-label="Close the armory">✕</button></header>
+      <div class="ld-armory-body">
+        <div class="ld-armory-grid" id="ld-armory-grid"></div>
+        <article class="ld-armory-detail" id="ld-armory-detail"></article>
+      </div>
+    </section>
     <section class="ld-menu" id="ld-menu" aria-labelledby="ld-menu-title">
       <header class="ld-menu-head">
         <a class="ld-back" href="/" aria-label="Back to Semag">←</a>
@@ -84,6 +91,7 @@
           <h2>Weapons</h2>
           <p class="ld-hint">Four free slots: any weapon in any slot (four swords is fine), or leave one empty to carry hearts. Every weapon has a charge attack: hold the button, release when the ring is full. Right click is your class ability: Striker Boost (hold to sprint while the meter lasts), Guardian Shield (hold; grows into a healing dome), Recon Cloak. Space dashes. Press I in a match to reorder your slots.</p>
           <div class="ld-loadout" id="ld-loadout"></div>
+          <button type="button" class="ld-armory-open" id="ld-armory-open">Open the Armory</button>
           <p class="ld-weapon-note" id="ld-weapon-note"></p>
         </section>
         <section class="ld-panel">

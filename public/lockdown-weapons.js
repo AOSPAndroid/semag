@@ -20,11 +20,11 @@ export const WEAPONS = Object.freeze({
     charge: Object.freeze({ kind: 'lungeBurst', distance: 120, ticks: 14, damage: 22, reach: 50, arc: 1.6, push: 180, stun: 16, recovery: 16,
       burst: Object.freeze({ radius: 76, damage: 20, push: 260, status: 'burn', chance: 1 }) }),
     description: 'Balanced three-cut combo. Charge: lunge forward and end in a burning burst.' }),
-  cleaver: Object.freeze({ id: 'cleaver', family: 'blade', type: 'Heavy sword', name: 'Troll Cleaver', chargeTicks: 132,
+  cleaver: Object.freeze({ id: 'cleaver', family: 'blade', type: 'Heavy sword', name: 'Troll Cleaver', chargeTicks: 132, heavy: true,
     combo: [step(31, 14, 8, 22, 78, 2.0, 300, 24, 10), step(38, 16, 9, 28, 82, 2.3, 380, 30, 14)],
     charge: Object.freeze({ kind: 'slam', distance: 70, ticks: 30, radius: 104, offset: 34, damage: 42, push: 380, stun: 40, recovery: 24 }),
     description: 'Slow, brutal overhead chain that stuns. Charge: leap and slam the ground around you.' }),
-  rapier: Object.freeze({ id: 'rapier', family: 'blade', type: 'Fast sword', name: 'Needle Rapier', chargeTicks: 96,
+  rapier: Object.freeze({ id: 'rapier', family: 'blade', type: 'Fast sword', name: 'Needle Rapier', chargeTicks: 96, sweetSpot: Object.freeze({ from: .72, bonus: 1.4 }),
     combo: [step(10, 4, 4, 7, 82, .62, 80, 8, 14), step(10, 4, 4, 7, 82, .62, 80, 8, 14), step(10, 4, 4, 7, 82, .62, 80, 8, 14), step(13, 5, 4, 10, 86, .62, 130, 10, 22)],
     charge: Object.freeze({ kind: 'lunge', distance: 190, ticks: 18, damage: 28, reach: 36, arc: 1.2, push: 200, stun: 16, recovery: 14 }),
     description: 'Quick narrow thrusts that step you forward. Charge: a long lunge straight through the target.' }),
@@ -32,7 +32,7 @@ export const WEAPONS = Object.freeze({
     combo: [step(16, 6, 6, 12, 70, 1.9, 140, 14, 14), step(16, 6, 6, 12, 70, 1.9, 140, 14, 14), step(22, 8, 7, 18, 74, 2.2, 220, 18, 20)],
     charge: Object.freeze({ kind: 'thorns', count: 9, spread: 1.1, damage: 7, speed: 520, range: 220, size: 5, status: 'poison', chance: .5, recovery: 20 }),
     description: 'Balanced combo. Charge: spray a short, wide shower of poison thorns.' }),
-  greatblade: Object.freeze({ id: 'greatblade', family: 'blade', type: 'Dark sword', name: 'Umbral Greatblade', chargeTicks: 132,
+  greatblade: Object.freeze({ id: 'greatblade', family: 'blade', type: 'Dark sword', name: 'Umbral Greatblade', chargeTicks: 132, heavy: true,
     combo: [step(29, 12, 8, 20, 80, 2.0, 260, 20, 12), step(34, 14, 9, 24, 84, 2.3, 320, 24, 14)],
     charge: Object.freeze({ kind: 'wave', damage: 30, speed: 300, range: 420, size: 26, push: 160, status: 'shock', chance: .5, recovery: 26 }),
     description: 'Heavy two-hit chain. Charge: a slow wave of shadow that carries knights along with it.' }),
@@ -60,10 +60,16 @@ export const WEAPONS = Object.freeze({
     combo: [step(13, 6, 6, 12, 70, 2.0, 110, 12, 14), step(13, 6, 6, 12, 70, 2.0, 110, 12, 14), step(19, 8, 7, 18, 74, 2.4, 190, 16, 20)], lifesteal: .3,
     charge: Object.freeze({ kind: 'lunge', distance: 170, ticks: 18, damage: 24, reach: 40, arc: 1.4, push: 180, stun: 16, recovery: 14 }),
     description: 'Heals you for 30% of the damage it deals. Charge: a long draining lunge.' }),
-  hexblade: Object.freeze({ id: 'hexblade', family: 'blade', type: 'Curse sword', name: 'Hexblade', chargeTicks: 132, element: 'curse',
+  hexblade: Object.freeze({ id: 'hexblade', family: 'blade', type: 'Curse sword', name: 'Hexblade', chargeTicks: 132, element: 'curse', heavy: true,
     combo: [step(26, 13, 8, 22, 78, 2.0, 260, 22, 10), step(31, 15, 9, 26, 82, 2.3, 320, 26, 14)], onHit: Object.freeze({ status: 'curse', chance: .35 }),
     charge: Object.freeze({ kind: 'slam', distance: 60, ticks: 30, radius: 100, offset: 34, damage: 34, push: 320, stun: 36, recovery: 24, status: 'curse', chance: 1 }),
     description: 'Heavy cuts that may curse (35%): no dash and no class ability for a while. Charge: a cursing slam.' }),
+
+  // Heavy: a sledgehammer. Two enormous blows; the second sends a shockwave around the impact.
+  maul: Object.freeze({ id: 'maul', family: 'blade', type: 'Heavy hammer', name: 'Earthbreaker Maul', chargeTicks: 150, heavy: true,
+    combo: [step(40, 22, 9, 30, 80, 1.8, 420, 34, 8), Object.freeze({ ...step(52, 26, 10, 36, 84, 1.6, 520, 44, 10), shockwave: Object.freeze({ radius: 92, offset: 46, scale: .5 }) })],
+    charge: Object.freeze({ kind: 'slam', distance: 40, ticks: 36, radius: 130, offset: 30, damage: 58, push: 480, stun: 56, recovery: 34 }),
+    description: 'The heaviest weapon: two huge, slow blows that are not interrupted when you are hit; the second shakes the ground around it. Charge: a crater-making slam.' }),
 
   // ---------- guns ----------
   blaster: Object.freeze({ id: 'blaster', family: 'gun', type: 'Blaster', name: 'Pulse Blaster', chargeTicks: 120,
@@ -78,7 +84,7 @@ export const WEAPONS = Object.freeze({
     clip: 3, interval: 18, reload: 60, reloadDelay: 60, damage: 8, speed: 620, range: 760, push: 60, spread: .02, size: 5, kind: 'ricochet', bounces: 1,
     charge: Object.freeze({ kind: 'split', count: 4, spread: .5, damage: 10, speed: 600, range: 820, push: 70, size: 5, bounces: 2, status: 'shock', chance: .35 }),
     description: 'Bolts that bounce off walls. Charge: four shocking bolts that bounce twice.' }),
-  autogun: Object.freeze({ id: 'autogun', family: 'gun', type: 'Autogun', name: 'Rattle Autogun', chargeTicks: 120,
+  autogun: Object.freeze({ id: 'autogun', bloom: 0.03, family: 'gun', type: 'Autogun', name: 'Rattle Autogun', chargeTicks: 120,
     clip: 6, interval: 8, reload: 66, reloadDelay: 60, damage: 5, speed: 800, range: 560, push: 25, spread: .08, size: 4, kind: 'bullet',
     charge: Object.freeze({ kind: 'stream', count: 10, every: 4, damage: 5, speed: 820, range: 600, push: 30, size: 4, spread: .03 }),
     description: 'Six fast, light rounds. Charge: a focused ten-round stream.' }),
@@ -86,10 +92,16 @@ export const WEAPONS = Object.freeze({
     clip: 3, interval: 20, reload: 60, reloadDelay: 60, damage: 6, speed: 560, range: 520, push: 20, spread: .02, size: 6, kind: 'catalyst',
     charge: Object.freeze({ kind: 'detonator', damage: 10, speed: 720, range: 620, push: 80, size: 7, perCharge: 14, pushPerCharge: 180 }),
     description: 'Shots stick up to three charges on a knight. Charge: a detonator that blows them all at once.' }),
-  magnus: Object.freeze({ id: 'magnus', family: 'gun', type: 'Hand-cannon', name: 'Thunder Hand-cannon', chargeTicks: 132,
+  magnus: Object.freeze({ id: 'magnus', bloom: 0.12, family: 'gun', type: 'Hand-cannon', name: 'Thunder Hand-cannon', chargeTicks: 132, longShot: Object.freeze({ from: 220, bonus: .4 }),
     clip: 2, interval: 30, reload: 78, reloadDelay: 70, damage: 16, speed: 720, range: 640, push: 260, spread: .01, size: 6, kind: 'bullet',
     charge: Object.freeze({ kind: 'explosive', damage: 26, speed: 640, range: 640, push: 300, size: 9, radius: 72 }),
     description: 'Two heavy rounds with big knockback. Charge: a round that explodes on impact.' }),
+
+  // Precision: one round, tiny and fast, that hits harder the farther it flies.
+  rifle: Object.freeze({ id: 'rifle', bloom: 0.2, family: 'gun', type: 'Long rifle', name: 'Longshot Rifle', chargeTicks: 150, longShot: Object.freeze({ from: 180, bonus: .8 }),
+    clip: 1, interval: 60, reload: 84, reloadDelay: 30, damage: 20, speed: 1400, range: 940, push: 140, spread: 0, size: 3, kind: 'bullet',
+    charge: Object.freeze({ kind: 'pierce', damage: 30, speed: 1700, range: 1040, push: 200, size: 4, pierce: true, longShot: Object.freeze({ from: 180, bonus: .8 }) }),
+    description: 'A single tiny, very fast round with a long reload: up to 80% more damage at long range. Hard to land, punishing when it does. Charge: a piercing rail shot.' }),
 
   // Elemental guns.
   frostgun: Object.freeze({ id: 'frostgun', family: 'gun', type: 'Frost blaster', name: 'Winter Repeater', chargeTicks: 120, element: 'chill',
@@ -100,7 +112,7 @@ export const WEAPONS = Object.freeze({
     clip: 3, interval: 22, reload: 60, reloadDelay: 60, damage: 6, speed: 340, range: 320, push: 50, spread: 0, size: 8, grow: 14, kind: 'pulse', pierce: true, status: 'burn', chance: .25,
     charge: Object.freeze({ kind: 'bigPulse', damage: 18, speed: 250, range: 360, push: 120, size: 16, grow: 30, pierce: true, status: 'burn', chance: 1 }),
     description: 'Fire waves that may ignite (25%) every knight they pass. Charge: a huge wave that sets all of them alight.' }),
-  voltneedle: Object.freeze({ id: 'voltneedle', family: 'gun', type: 'Shock autogun', name: 'Volt Needle', chargeTicks: 120, element: 'shock',
+  voltneedle: Object.freeze({ id: 'voltneedle', bloom: 0.03, family: 'gun', type: 'Shock autogun', name: 'Volt Needle', chargeTicks: 120, element: 'shock',
     clip: 6, interval: 8, reload: 66, reloadDelay: 60, damage: 4, speed: 800, range: 540, push: 20, spread: .08, size: 4, kind: 'bullet', status: 'shock', chance: .08,
     chain: Object.freeze({ chance: .1, count: 1, radius: 120, damage: 4, status: 'shock', chance2: .3 }),
     charge: Object.freeze({ kind: 'stream', count: 10, every: 4, damage: 4, speed: 820, range: 580, push: 25, size: 4, spread: .03, status: 'shock', chance: .3 }),
@@ -109,7 +121,7 @@ export const WEAPONS = Object.freeze({
     clip: 3, interval: 18, reload: 60, reloadDelay: 60, damage: 7, speed: 660, range: 560, push: 50, spread: .02, size: 5, kind: 'bullet', status: 'poison', chance: .3,
     charge: Object.freeze({ kind: 'split', count: 5, spread: .6, damage: 7, speed: 600, range: 480, push: 50, size: 5, bounces: 0, status: 'poison', chance: .8 }),
     description: 'Rounds that may poison (30%): poisoned knights hit softer and cannot heal. Charge: a fan of five venom bolts.' }),
-  grimcannon: Object.freeze({ id: 'grimcannon', family: 'gun', type: 'Curse hand-cannon', name: 'Grim Hand-cannon', chargeTicks: 132, element: 'curse',
+  grimcannon: Object.freeze({ id: 'grimcannon', bloom: 0.12, family: 'gun', type: 'Curse hand-cannon', name: 'Grim Hand-cannon', chargeTicks: 132, element: 'curse', longShot: Object.freeze({ from: 220, bonus: .4 }),
     clip: 2, interval: 30, reload: 78, reloadDelay: 70, damage: 14, speed: 700, range: 620, push: 220, spread: .01, size: 6, kind: 'bullet', status: 'curse', chance: .3,
     charge: Object.freeze({ kind: 'explosive', damage: 22, speed: 620, range: 620, push: 260, size: 9, radius: 76, status: 'curse', chance: 1 }),
     description: 'Heavy rounds that may curse (30%). Charge: a blast that curses everyone it catches.' }),
@@ -134,6 +146,43 @@ export const WEAPONS = Object.freeze({
 });
 export const WEAPON_IDS = Object.freeze(Object.keys(WEAPONS));
 
+/** Armory notes: what each weapon is good and bad at, and how hard it is to use well (1 easy, 3 hard). */
+const note = (difficulty, pros, cons) => Object.freeze({ difficulty, pros: Object.freeze(pros), cons: Object.freeze(cons) });
+export const WEAPON_NOTES = Object.freeze({
+  brand: note(1, ['Reliable three-cut combo', 'Charge lunges in and sets a burning burst'], ['No special strength']),
+  cleaver: note(2, ['Huge two-cut damage and long stuns', 'Not interrupted when hit mid-swing', 'Charge: leaping ground slam'], ['Very slow wind-up', 'Easy to see coming']),
+  rapier: note(3, ['Fastest cuts, long narrow reach', 'Sweet spot: +40% at the tip of its reach'], ['Narrow arc misses moving targets', 'Low damage up close']),
+  thorn: note(1, ['Steady combo', 'Charge sprays poison thorns'], ['Thorns are short range']),
+  greatblade: note(2, ['Heavy two-cut combo, not interrupted when hit', 'Charge: a long shadow wave that drags knights'], ['Slow swings']),
+  spur: note(2, ['Very fast four-cut chain', 'Charge: three full spins'], ['Short reach, light hits']),
+  maul: note(3, ['Biggest single hits in the game', 'Second blow sends a shockwave', 'Never interrupted when hit mid-swing'], ['Extremely slow: whiffs are punished', 'Slowest charge']),
+  frostbite: note(2, ['Every cut chills; the third freezes', 'Charge ends in a freezing burst'], ['Slightly weaker cuts', 'Freeze breaks on the next hit']),
+  blazebrand: note(1, ['Cuts may set knights on fire', 'Charge: a wall of fire'], ['Burn is random on normal cuts']),
+  voltedge: note(2, ['Fast cuts that may shock', 'Lightning jumps to nearby enemies'], ['Light damage per cut']),
+  sickle: note(2, ['Heals you for 30% of its damage', 'Charge: a long draining lunge'], ['Lower damage than a plain sword']),
+  hexblade: note(2, ['Heavy cuts that may curse (no dash, no ability)', 'Not interrupted when hit mid-swing'], ['Slow two-cut combo']),
+  blaster: note(1, ['Reliable three-shot clip', 'Charge: a bolt that pierces everyone in line'], ['No special strength']),
+  pulsar: note(1, ['Wide waves are easy to land and pass through knights'], ['Low damage', 'Slow and short ranged']),
+  alchemer: note(3, ['Bolts bounce off walls: hit around corners', 'Charge: four shocking bolts'], ['Bank shots take practice']),
+  autogun: note(1, ['Six fast rounds, easy to keep on target'], ['Wide spread, light hits']),
+  catalyzer: note(3, ['Stack charges, then detonate them for a huge hit'], ['Weak until you detonate', 'Needs a follow-up shot']),
+  magnus: note(2, ['Heavy rounds with big knockback', 'Up to +40% damage at long range', 'Charge: explosive round'], ['Two-round clip, slow reload']),
+  rifle: note(3, ['Up to +80% damage at long range', 'Very fast, accurate round', 'Charge: piercing rail shot'], ['One round, long reload', 'Tiny bullet: hard to hit']),
+  frostgun: note(1, ['Every round chills; three freeze', 'Charge freezes on the spot'], ['Lower damage per round']),
+  embercaster: note(1, ['Fire waves are easy to land', 'Charge always burns everyone it passes'], ['Short range, low damage']),
+  voltneedle: note(1, ['Fast shocking needles that arc between enemies'], ['Very light hits']),
+  viper: note(2, ['Poison stops healing and weakens hits', 'Charge: a fan of venom bolts'], ['Poison is random on normal shots']),
+  grimcannon: note(2, ['Heavy rounds that may curse', 'Up to +40% damage at long range', 'Charge: a cursing explosion'], ['Two-round clip, slow reload']),
+  blast: note(1, ['Fast charge, big blast and knockback'], ['Short fuse: easy to dodge if seen']),
+  haze: note(1, ['Fire cloud burns everyone who stays in it'], ['No direct damage']),
+  frost: note(1, ['Cloud freezes enemies solid'], ['No direct damage', 'Frozen knights break free when hit']),
+  venom: note(1, ['Poison cloud: no healing, weaker hits'], ['No direct damage']),
+  storm: note(1, ['Shock cloud stuns over and over'], ['No direct damage']),
+  hex: note(1, ['Curse cloud: no dash or class ability'], ['No direct damage']),
+  shard: note(2, ['Eight shards cut across a point'], ['Shards spread out at range']),
+  vortex: note(2, ['Pulls enemies in and holds them, then blasts', 'Sets up big combos'], ['Slow charge']),
+});
+
 /** Status effects. Shields block them; a hit breaks freeze early. Chill stacks: each chilling
  * hit adds one (slowing you a little more) and the third freezes you. Curse locks dash and
  * class ability (including the Guardian shield). */
@@ -147,17 +196,24 @@ export const STATUS = Object.freeze({
 });
 export const STATUS_IDS = Object.freeze(Object.keys(STATUS));
 
-/** The Guardian's shield (its class ability; in Lockdown nobody else has one). Held, it
- * blocks hits and statuses from every side while it has health. After `expandTicks` it
- * grows into a dome of `radius` that shields teammates inside from outside fire and heals
- * everyone in it. Breaking it stuns; it then recharges (about eight seconds from empty). */
-export const GUARD = Object.freeze({ raiseTicks: 6, max: 140, regenPerSecond: 20, regenDelay: 90, breakStun: 72, recover: .5, speed: .5, knockback: .3, bombScale: 1.5, bladeScale: 1.3,
-  expandTicks: 120, radius: 92, healPerSecond: 10 });
+/** The Guardian's shield (class ability, held). Raised, it opens at once into a dome that shields
+ * every teammate inside from outside fire and slowly heals everyone in it, the Guardian included.
+ * The dome has its own health (`domeMax`); when it breaks, the Guardian keeps a personal shield for a
+ * few more hits (`max`), then is stunned. Both recharge after a pause once the shield is lowered;
+ * a broken dome only reopens once it is half recharged. */
+export const GUARD = Object.freeze({ raiseTicks: 6, max: 60, regenPerSecond: 15, regenDelay: 90, breakStun: 72, recover: .5, speed: .5, knockback: .3, bombScale: 1.5, bladeScale: 1.3,
+  expandTicks: 18, radius: 96, healPerSecond: 6, domeMax: 160, domeRegenPerSecond: 25, domeRecover: .5 });
 
 /** Sword timing rules. Raising the shield or dodging cancels a cut's recovery (the
  * animation cancel), and a queued press may start the next cut once this fraction of
  * the recovery has passed (the last cut of a combo always recovers fully unless cancelled). */
-export const BLADE = Object.freeze({ comboCancel: .4, comboWindow: 36, hitStop: 4 });
+export const BLADE = Object.freeze({ comboCancel: .4, comboWindow: 36, hitStop: 4,
+  // Commitment: a cut that hits nothing (a whiff) recovers this much longer, cannot chain into the next
+  // cut and drops the combo, and you barely move meanwhile, so spamming swings at air leaves you open.
+  whiffRecovery: 1, whiffMove: .2 });
+/** Guns bloom: every shot widens the spread, which settles back while you hold fire. Measured shots stay
+ * accurate; holding the trigger sprays. Precise guns bloom harder. */
+export const BLOOM = Object.freeze({ perShot: .07, max: .32, settlePerSecond: .3 });
 
 /** Four free inventory slots: any weapon in any slot (four swords is fine), or hearts, or nothing.
  * Loadouts list a weapon id or null per slot; the empty fourth slot is where hearts go. */
