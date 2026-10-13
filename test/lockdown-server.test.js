@@ -38,20 +38,26 @@ test('Lockdown rooms seat up to eight, take setup and map choices, and start wit
   const { peer: second } = await game.peer(body.room.id, 'Bo');
   assert.equal(welcome.gameId, 'lockdown'); assert.equal(room.hostId, 0);
   assert.equal(room.state.players[0].name, 'Ada'); assert.equal(room.state.players[1].human, true);
+  assert.equal(room.state.players[0].armor, 'none');
 
   await expectError(second, { type: 'start' }, /host/i);
   await expectError(second, { type: 'lockdown-map', mapId: 'keep' }, /host/i);
   await expectError(first, { type: 'lockdown-map', mapId: 'moon' }, /map/i);
   await expectError(first, { type: 'lockdown-setup', cls: 'wizard' }, /Striker/);
   await expectError(first, { type: 'lockdown-setup', weapons: ['brand', 'brand', 'blast'] }, /different/);
+  await expectError(first, { type: 'lockdown-setup', cls: 'guardian', armor: 'unobtainium' }, /armor/);
+  assert.equal(room.state.players[0].cls, 'striker', 'invalid armor does not partially apply the class');
+  await expectError(first, { type: 'lockdown-setup', armor: 'heavy', gunResistance: 1 }, /only/);
+  assert.equal(room.state.players[0].armor, 'none');
   await expectError(first, { type: 'lockdown-setup', cls: 'recon', hp: 999 }, /only/);
   await expectError(first, { type: 'start', mapId: 'keep' }, /no player, map/i);
 
   first.send({ type: 'lockdown-map', mapId: 'keep' });
-  second.send({ type: 'lockdown-setup', team: 1, cls: 'guardian', weapons: ['cleaver', 'pulsar', 'vortex'] });
+  second.send({ type: 'lockdown-setup', team: 1, cls: 'guardian', armor: 'ballistic', weapons: ['cleaver', 'pulsar', 'vortex'] });
   await flush(first); await flush(second);
   assert.equal(room.state.mapId, 'keep'); assert.equal(room.mapId, 'keep');
   assert.deepEqual([room.state.players[1].team, room.state.players[1].cls], [1, 'guardian']);
+  assert.equal(room.state.players[1].armor, 'ballistic');
 
   const beforeStart = first.messages.length;
   first.send({ type: 'start' });
@@ -60,8 +66,9 @@ test('Lockdown rooms seat up to eight, take setup and map choices, and start wit
   assert.equal(room.state.players.filter(player => player.human).length, 2);
   // Everyone starts in base, so loadouts can still change; teams cannot.
   await expectError(second, { type: 'lockdown-setup', team: 0 }, /lobby/);
-  second.send({ type: 'lockdown-setup', cls: 'recon' }); await flush(second);
+  second.send({ type: 'lockdown-setup', cls: 'recon', armor: 'scout' }); await flush(second);
   assert.equal(room.state.players[1].cls, 'recon');
+  assert.equal(room.state.players[1].armor, 'scout');
   for (let t = 0; t <= RULES.countdownTicks; t++) game.app.tick();
   assert.equal(room.state.phase, 'fight');
 
@@ -76,9 +83,12 @@ test('Lockdown rooms seat up to eight, take setup and map choices, and start wit
   for (let t = 0; t < 4; t++) game.app.tick();
   const snapshot = await first.untilState(message => message.state.phase === 'fight', { after: mark });
   assert.ok(snapshot.state.events.every(event => snapshot.state.tick - event.tick <= 240));
+  assert.equal(snapshot.state.players[1].armor, 'scout', 'authoritative armor reaches other clients');
   // Out on the field, a loadout change waits for the base.
   Object.assign(me, { x: room.state.points[1].x, y: room.state.points[1].y });
   await expectError(first, { type: 'lockdown-setup', cls: 'guardian' }, /base/);
+  await expectError(first, { type: 'lockdown-setup', armor: 'heavy' }, /base/);
+  assert.equal(me.armor, 'none');
 
   // Leaving mid-match hands the seat to a bot and the match carries on for everyone else.
   const after = first.messages.length;

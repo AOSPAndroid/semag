@@ -19,7 +19,7 @@
  *   world position and what it rotates around.
  * - Sheets are horizontal strips of `frames` equal frames.
  */
-import { WEAPONS, CLASSES, MAPS } from './lockdown-engine.js';
+import { WEAPONS, CLASSES, MAPS, ARMORS } from './lockdown-engine.js';
 
 export const ASSET_BASE = '/art/lockdown/';
 
@@ -61,6 +61,13 @@ const knights = Object.values(CLASSES).flatMap(cls => [0, 1].map(team => asset(
   `knight_${cls.id}_team${team}`, 384, 320, [32, 58],
   `${cls.name} knight, team ${team === 0 ? 'Amber' : 'Cyan'}, ¾ view, EMPTY-HANDED (the game draws the weapon at each row's hand point). Sheet of 64x64 frames: 6 columns × 5 facing rows. Columns 1–2 idle (gentle breathing bob), columns 3–6 walk cycle. Rows: ${facingList}. Left-facing directions are mirrored by the game. Feet rest on (32, 58) in every frame; the knight is about 36 px wide and 50 px tall with a big chibi helmet. Class must read at a glance from every side: ${cls.id === 'striker' ? 'light armour, swept-back crest plume, short cape' : cls.id === 'guardian' ? 'heavy rounded plate, broad pauldrons, flat-topped great helm' : 'slim, hooded cloak over a light helm, scarf'}. Team colour on the plume/cloak/trim.`,
   { group: 'knights', frames: 6, rows: KNIGHT_FACINGS.length, facings: KNIGHT_FACINGS },
+)));
+
+// Armor chooses the outfit; class abilities do not change the character's clothes.
+const characters = ['base', 'ballistic'].flatMap(outfit => [0, 1].map(team => asset(
+  `character_${outfit}_team${team}`, 384, 320, [32, 58],
+  `${outfit === 'base' ? 'Unarmored character in a white T-shirt, charcoal shorts and simple shoes, with an uncovered head and bare hands' : 'The same casual character wearing a neutral padded ballistic vest over the T-shirt'}. Team ${team === 0 ? 'Amber' : 'Cyan'} color on narrow clothing trim only. 6 columns by 5 facing rows of 64x64 frames; two idle and four walking poses. Feet at 32, 58; hands follow the same facing points as the armored outfits. Empty-handed.`,
+  { group: 'characters', frames: 6, rows: KNIGHT_FACINGS.length, facings: KNIGHT_FACINGS },
 )));
 
 const weapons = Object.values(WEAPONS).flatMap(weapon => [
@@ -109,11 +116,12 @@ const pointArt = [
   asset('point_beacon', 48, 96, [24, 88], 'Beacon pylon at the centre of a control point; the game tints its light by owner.', { group: 'points' }),
 ];
 const ui = [
+  ...Object.values(ARMORS).map(armor => asset(`icon_armor_${armor.id}`, 48, 48, [24, 24], `${armor.name} equipment icon. Neutral clothing or armor silhouette on a transparent background.`, { group: 'icons' })),
   ...Object.values(CLASSES).map(cls => asset(`icon_class_${cls.id}`, 64, 64, [32, 32], `${cls.name} class emblem for the lobby and scoreboard.`, { group: 'icons' })),
   ...['dash', 'bubble', 'heal', 'cloak'].map(id => asset(`icon_ability_${id}`, 48, 48, [24, 24], `Ability icon: ${id}.`, { group: 'icons' })),
 ];
 
-export const MANIFEST = Object.freeze([...tiles, ...spawnPads, ...knights, ...weapons, ...projectiles, ...bombs, ...effects, ...pickups, ...pointArt, ...ui]);
+export const MANIFEST = Object.freeze([...tiles, ...spawnPads, ...characters, ...knights, ...weapons, ...projectiles, ...bombs, ...effects, ...pickups, ...pointArt, ...ui]);
 export const MANIFEST_BY_KEY = Object.freeze(Object.fromEntries(MANIFEST.map(entry => [entry.key, entry])));
 
 /** Loads the sprites listed in /art/lockdown/index.json (written by

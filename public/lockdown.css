@@ -44,6 +44,9 @@ kbd { display: inline-block; padding: 1px 6px; border: 1px solid var(--line); bo
 .ld-hp { position: relative; height: 18px; margin: 6px 0 8px; border-radius: 5px; background: rgba(255,255,255,.08); overflow: hidden; }
 .ld-hp em { position: absolute; inset: 0 auto 0 0; width: 100%; background: linear-gradient(90deg, #5fd38a, #9ff0b8); }
 .ld-hp b { position: relative; display: block; text-align: center; font: 700 12px/18px ui-monospace, monospace; color: #0d1a12; }
+.ld-armor-hud { display: flex; flex-direction: column; gap: 2px; margin: 0 0 10px; max-width: 310px; }
+.ld-armor-hud b { font-size: 11px; font-weight: 600; }
+.ld-armor-hud span { color: var(--muted); font-size: 10px; line-height: 1.5; }
 .ld-abilities { display: flex; gap: 8px; }
 .ld-guard { display: flex; align-items: center; gap: 6px; margin: -2px 0 8px; font-size: 11px; color: var(--muted); }
 .ld-guard i { flex: 1; height: 6px; border-radius: 3px; background: rgba(255,255,255,.1); overflow: hidden; }
@@ -85,9 +88,10 @@ kbd { display: inline-block; padding: 1px 6px; border: 1px solid var(--line); bo
 .ld-room b { font: 700 18px/1 ui-monospace, monospace; letter-spacing: .12em; }
 .ld-room button, .ld-actions button, .ld-team-button { padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-2); }
 .ld-lede { max-width: 760px; color: var(--muted); }
-.ld-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-top: 12px; }
+.ld-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 16px; margin-top: 12px; align-items: start; }
 .ld-panel { padding: 16px; border-radius: 14px; background: var(--panel); border: 1px solid var(--line); }
 .ld-panel h2 { margin: 0 0 10px; font-size: 15px; letter-spacing: .04em; }
+.ld-panel h3 { margin: 0 0 6px; color: var(--muted); font-size: 12px; font-weight: 600; }
 .ld-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; color: var(--muted); font-size: 12px; }
 .ld-field input, .ld-field select, .ld-loadout select { padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text); }
 .ld-teams { display: flex; gap: 8px; }
@@ -100,6 +104,24 @@ kbd { display: inline-block; padding: 1px 6px; border: 1px solid var(--line); bo
 .ld-class-card .ld-glyph { font-size: 24px; }
 .ld-class-card b { display: block; font-size: 13px; }
 .ld-class-card small { color: var(--muted); font-size: 11px; }
+.ld-armors { display: flex; flex-direction: column; gap: 6px; }
+.ld-armor-card { display: grid; grid-template-columns: 36px 1fr; grid-template-rows: auto auto; gap: 3px 9px; align-items: center; padding: 8px; border: 2px solid var(--line); border-radius: 9px; background: var(--panel-2); color: var(--text); text-align: left; }
+.ld-armor-card[aria-pressed="true"] { border-color: #fff; background: #2a303a; }
+.ld-armor-card:not(:disabled):hover { background: #303640; }
+.ld-armor-card:focus-visible, .ld-class-card:focus-visible { outline: 2px solid var(--amber-light); outline-offset: 2px; }
+.ld-armor-card:disabled, .ld-class-card:disabled { opacity: .65; cursor: not-allowed; }
+.ld-armor-icon { grid-row: 1 / 3; }
+.ld-armor-icon img, .ld-armor-icon .ld-glyph { display: block; width: 36px; height: 36px; image-rendering: pixelated; }
+.ld-armor-title { font-size: 12px; }
+.ld-armor-tradeoffs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px 10px; color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+.ld-armor-tradeoffs span { white-space: nowrap; }
+.ld-armor-tradeoffs b { color: var(--text); font-weight: 600; }
+.ld-armor-tradeoffs .faster b { color: #9ff0b8; }
+.ld-armor-tradeoffs .slower b { color: #ffcf8a; }
+.ld-armor-summary-box { margin-top: 10px; padding: 9px 10px; border-radius: 8px; background: rgba(255,255,255,.04); font-size: 11px; }
+.ld-armor-summary-box p { margin: 0; }
+.ld-armor-summary-box p + p { margin-top: 5px; color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+.ld-armor-key { margin-bottom: 0; color: var(--muted); font-size: 10px; }
 .ld-class-note, .ld-weapon-note, .ld-hint, .ld-status { color: var(--muted); font-size: 12px; }
 .ld-status { color: var(--amber-light); min-height: 1.4em; }
 .ld-loadout { display: flex; flex-direction: column; gap: 8px; }

@@ -6,7 +6,7 @@ Lockdown is a top-down team brawl in the spirit of Spiral Knights' Lockdown: up 
 three control points, swords, guns and bombs. The game is fully playable with placeholder
 shapes; every PNG listed below replaces one placeholder as soon as it is added.
 
-**Progress: 56/117 sprites ready.**
+**Progress: 65/126 sprites ready.**
 
 ## Style guide
 
@@ -14,6 +14,8 @@ shapes; every PNG listed below replaces one placeholder as soon as it is added.
   Floors show their top; walls show a top face (raised 24 px) and a front face.
 - **Look:** chunky, readable "toy knight" fantasy: clean silhouettes, 2–3 px dark outlines,
   limited palette with a few bright accents. Avoid copying any existing game's characters, logos or UI.
+- **Equipment:** the unarmored base wears a T-shirt and shorts. Armor chooses the outfit independently
+  of class abilities: Scout uses Recon art, Duelist uses Striker art, Heavy uses Guardian art, and Ballistic adds a padded vest.
 - **Knights turn toward the mouse**, like Spiral Knights. Each sheet has 5 facing rows: down, down-right, right,
   up-right, up. The game mirrors the right-hand rows for the left-hand directions and never rotates a knight.
   Knights are drawn **empty-handed**: the game pins the weapon sprite to each row's hand point and rotates it to the aim
@@ -74,7 +76,16 @@ shapes; every PNG listed below replaces one placeholder as soon as it is added.
 | ✅ | `tile_spawn_team0.png` | 48×48 | 1 | 0, 0 | Spawn floor tile tinted for team Amber (warm orange). |
 | ✅ | `tile_spawn_team1.png` | 48×48 | 1 | 0, 0 | Spawn floor tile tinted for team Cyan (cool teal). |
 
-## Knights
+## Characters
+
+| | File | Size (px) | Frames | Anchor | Notes |
+|---|---|---|---|---|---|
+| ✅ | `character_base_team0.png` | 384×320 | 6 × 5 rows | 32, 58 | Unarmored character in a white T-shirt, charcoal shorts and simple shoes, with an uncovered head and bare hands. Team Amber color on narrow clothing trim only. 6 columns by 5 facing rows of 64x64 frames; two idle and four walking poses. Feet at 32, 58; hands follow the same facing points as the armored outfits. Empty-handed. |
+| ✅ | `character_base_team1.png` | 384×320 | 6 × 5 rows | 32, 58 | Unarmored character in a white T-shirt, charcoal shorts and simple shoes, with an uncovered head and bare hands. Team Cyan color on narrow clothing trim only. 6 columns by 5 facing rows of 64x64 frames; two idle and four walking poses. Feet at 32, 58; hands follow the same facing points as the armored outfits. Empty-handed. |
+| ✅ | `character_ballistic_team0.png` | 384×320 | 6 × 5 rows | 32, 58 | The same casual character wearing a neutral padded ballistic vest over the T-shirt. Team Amber color on narrow clothing trim only. 6 columns by 5 facing rows of 64x64 frames; two idle and four walking poses. Feet at 32, 58; hands follow the same facing points as the armored outfits. Empty-handed. |
+| ✅ | `character_ballistic_team1.png` | 384×320 | 6 × 5 rows | 32, 58 | The same casual character wearing a neutral padded ballistic vest over the T-shirt. Team Cyan color on narrow clothing trim only. 6 columns by 5 facing rows of 64x64 frames; two idle and four walking poses. Feet at 32, 58; hands follow the same facing points as the armored outfits. Empty-handed. |
+
+## Armored outfits
 
 | | File | Size (px) | Frames | Anchor | Notes |
 |---|---|---|---|---|---|
@@ -128,6 +139,11 @@ shapes; every PNG listed below replaces one placeholder as soon as it is added.
 | ⬜ | `icon_weapon_frost.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Frost Haze. Clear silhouette on a transparent background. |
 | ✅ | `icon_weapon_shard.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Splinter Bomb. Clear silhouette on a transparent background. |
 | ✅ | `icon_weapon_vortex.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Vortex Bomb. Clear silhouette on a transparent background. |
+| ✅ | `icon_armor_none.png` | 48×48 | 1 | 24, 24 | Unarmored equipment icon. Neutral clothing or armor silhouette on a transparent background. |
+| ✅ | `icon_armor_scout.png` | 48×48 | 1 | 24, 24 | Scout Armor equipment icon. Neutral clothing or armor silhouette on a transparent background. |
+| ✅ | `icon_armor_ballistic.png` | 48×48 | 1 | 24, 24 | Ballistic Armor equipment icon. Neutral clothing or armor silhouette on a transparent background. |
+| ✅ | `icon_armor_duelist.png` | 48×48 | 1 | 24, 24 | Duelist Armor equipment icon. Neutral clothing or armor silhouette on a transparent background. |
+| ✅ | `icon_armor_heavy.png` | 48×48 | 1 | 24, 24 | Heavy Armor equipment icon. Neutral clothing or armor silhouette on a transparent background. |
 | ✅ | `icon_class_striker.png` | 64×64 | 1 | 32, 32 | Striker class emblem for the lobby and scoreboard. |
 | ✅ | `icon_class_guardian.png` | 64×64 | 1 | 32, 32 | Guardian class emblem for the lobby and scoreboard. |
 | ✅ | `icon_class_recon.png` | 64×64 | 1 | 32, 32 | Recon class emblem for the lobby and scoreboard. |

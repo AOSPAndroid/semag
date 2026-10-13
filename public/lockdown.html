@@ -26,6 +26,7 @@
         <div class="ld-vitals">
           <span class="ld-class" id="ld-class">STRIKER</span>
           <div class="ld-hp"><em id="ld-hp-bar"></em><b id="ld-hp">100</b></div>
+          <div class="ld-armor-hud" aria-label="Equipped armor"><b id="ld-armor-name">Unarmored</b><span id="ld-armor-stats">Gun 0% · Sword 0% · Blast 0% · Speed 0%</span></div>
           <div class="ld-guard" id="ld-guard" data-state="ready" hidden><span>Shield</span><i><em id="ld-guard-bar"></em></i></div>
           <p class="ld-statuses" id="ld-statuses"></p>
           <div class="ld-abilities">
@@ -34,7 +35,7 @@
         </div>
         <div class="ld-weapons" id="ld-weapons"></div>
       </div>
-      <div class="ld-base-hint" id="ld-base-hint" hidden><b>IN BASE</b><span>Healing</span><span><kbd>B</kbd> weapons</span><span class="ld-base-classes"><button type="button" data-base-class="striker">Striker</button><button type="button" data-base-class="guardian">Guardian</button><button type="button" data-base-class="recon">Recon</button></span></div>
+      <div class="ld-base-hint" id="ld-base-hint" hidden><b>IN BASE</b><span>Healing</span><span><kbd>B</kbd> equipment</span><span class="ld-base-classes"><button type="button" data-base-class="striker">Striker</button><button type="button" data-base-class="guardian">Guardian</button><button type="button" data-base-class="recon">Recon</button></span></div>
       <div class="ld-banner" id="ld-banner" hidden></div>
       <section class="ld-board" id="ld-board" hidden aria-label="Scoreboard"></section>
     </section>
@@ -45,7 +46,7 @@
         <div><span class="ld-eyebrow" id="ld-mode">TEAM PVP · UP TO 4V4</span><h1 id="ld-menu-title">Lockdown</h1></div>
         <div class="ld-room" id="ld-room-box" hidden><span>ROOM</span><b id="ld-room-code">—</b><button type="button" id="ld-copy">Copy invite</button></div>
       </header>
-      <p class="ld-lede" id="ld-lede">Capture and hold the three control points. Every five seconds your team scores for the points it holds: first to 500 wins. Bots fill every empty seat. Your base heals you, and it is where you change class and weapons mid-match. Every knockout drops a heart.</p>
+      <p class="ld-lede" id="ld-lede">Capture and hold the three control points. Every five seconds your team scores for the points it holds: first to 500 wins. Bots fill every empty seat. Your base heals you, and it is where you change class and equipment mid-match. Every knockout drops a heart.</p>
       <section class="ld-results" id="ld-results" hidden></section>
       <p class="ld-base-note" id="ld-base-note" hidden></p>
       <div class="ld-grid">
@@ -56,9 +57,20 @@
           <div class="ld-field"><span>Class</span><div class="ld-classes" id="ld-classes"></div></div>
           <p class="ld-class-note" id="ld-class-note"></p>
         </section>
+        <section class="ld-panel ld-equipment-panel" aria-labelledby="ld-equipment-title">
+          <h2 id="ld-equipment-title">Equipment</h2>
+          <h3 id="ld-armor-title">Armor</h3>
+          <p class="ld-hint">Start in a T-shirt and shorts, or equip armor. Choose protection against guns, swords and blasts, with a movement tradeoff.</p>
+          <div class="ld-armors" id="ld-armors" role="group" aria-labelledby="ld-armor-title"></div>
+          <div class="ld-armor-summary-box" aria-live="polite">
+            <p id="ld-armor-summary"></p>
+            <p id="ld-armor-summary-stats"></p>
+          </div>
+          <p class="ld-armor-key">Gun, sword and blast percentages reduce incoming damage. Speed is a change from your class's normal movement speed.</p>
+        </section>
         <section class="ld-panel">
-          <h2>Loadout</h2>
-          <p class="ld-hint">Three different weapons: swords, guns and bombs. Each has a charge attack: hold the button, release when the ring is full. Your class ability is on right click: Striker Boost, Guardian Shield, Recon Cloak.</p>
+          <h2>Weapons</h2>
+          <p class="ld-hint">Three different weapons: swords, guns and bombs. Each has a charge attack: hold the button, release when the ring is full. Right click or Space uses your class ability: Striker Boost, Guardian Shield (hold to grow a healing dome), Recon Cloak.</p>
           <div class="ld-loadout" id="ld-loadout"></div>
           <p class="ld-weapon-note" id="ld-weapon-note"></p>
         </section>

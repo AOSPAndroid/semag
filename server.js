@@ -696,8 +696,8 @@ export function createServer(options = {}) {
         broadcast(room);
       } else if (data.type === 'lockdown-setup') {
         if (room.gameId !== 'lockdown') { error(ws, 'Class and weapon setup is only available in Lockdown.'); return; }
-        if (Object.keys(data).some(key => !['type', 'team', 'cls', 'weapons'].includes(key))) { error(ws, 'Choose only a team, class and three weapons.'); return; }
-        const choice = {}; for (const key of ['team', 'cls', 'weapons']) if (Object.hasOwn(data, key)) choice[key] = data[key];
+        if (Object.keys(data).some(key => !['type', 'team', 'cls', 'armor', 'weapons'].includes(key))) { error(ws, 'Choose only a team, class, armor and three weapons.'); return; }
+        const choice = {}; for (const key of ['team', 'cls', 'armor', 'weapons']) if (Object.hasOwn(data, key)) choice[key] = data[key];
         const result = Lockdown.setPlayerSetup(state, id, choice);
         if (!result.ok) { error(ws, result.error); return; }
         broadcast(room);

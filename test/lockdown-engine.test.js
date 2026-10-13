@@ -132,7 +132,7 @@ test('guns spend their clip, reload, and the charged blaster bolt pierces', () =
   assert.equal(me.clips.blaster, 0); assert.ok(me.reloadTicks.blaster > 0);
   run(state, WEAPONS.blaster.reload + 2);
   assert.equal(me.clips.blaster, WEAPONS.blaster.clip);
-  const behind = state.players[5]; Object.assign(behind, { alive: true, x: foe.x + 60, y: foe.y, hp: 100, maxHp: 100, shieldTicks: 0, respawnTicks: 0 });
+  const behind = state.players[5]; Object.assign(behind, { alive: true, armor: 'none', x: foe.x + 60, y: foe.y, hp: 100, maxHp: 100, shieldTicks: 0, respawnTicks: 0 });
   Object.assign(foe, { hp: 100, pushX: 0 });
   run(state, WEAPONS.blaster.chargeTicks + 4, () => ({ 0: { attack: true } }));
   run(state, 60);

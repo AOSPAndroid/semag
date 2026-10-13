@@ -26,7 +26,7 @@ if (missing.length) console.log(`Missing (placeholders used):\n  ${missing.join(
 
 function brief(ready, problems) {
   const groups = [...new Set(MANIFEST.map(entry => entry.group))];
-  const title = { tiles: 'Tiles', knights: 'Knights', weapons: 'Held weapons', projectiles: 'Projectiles', bombs: 'Bombs', effects: 'Effects', pickups: 'Pickups', points: 'Control points', icons: 'Icons' };
+  const title = { tiles: 'Tiles', characters: 'Characters', knights: 'Armored outfits', weapons: 'Held weapons', projectiles: 'Projectiles', bombs: 'Bombs', effects: 'Effects', pickups: 'Pickups', points: 'Control points', icons: 'Icons' };
   const rows = group => MANIFEST.filter(entry => entry.group === group).map(entry => `| ${ready.has(entry.file) ? '✅' : '⬜'} | \`${entry.file}\` | ${entry.size.join('×')} | ${entry.frames}${entry.rows ? ` × ${entry.rows} rows` : ''} | ${entry.anchor.join(', ')} | ${entry.description.replace(/\|/g, '/')} |`).join('\n');
   return `# Lockdown art brief
 
@@ -44,6 +44,8 @@ shapes; every PNG listed below replaces one placeholder as soon as it is added.
   Floors show their top; walls show a top face (raised 24 px) and a front face.
 - **Look:** chunky, readable "toy knight" fantasy: clean silhouettes, 2–3 px dark outlines,
   limited palette with a few bright accents. Avoid copying any existing game's characters, logos or UI.
+- **Equipment:** the unarmored base wears a T-shirt and shorts. Armor chooses the outfit independently
+  of class abilities: Scout uses Recon art, Duelist uses Striker art, Heavy uses Guardian art, and Ballistic adds a padded vest.
 - **Knights turn toward the mouse**, like Spiral Knights. Each sheet has 5 facing rows: down, down-right, right,
   up-right, up. The game mirrors the right-hand rows for the left-hand directions and never rotates a knight.
   Knights are drawn **empty-handed**: the game pins the weapon sprite to each row's hand point and rotates it to the aim

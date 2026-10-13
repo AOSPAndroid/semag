@@ -4,7 +4,7 @@
  * travel at chest height. Everything that stands up is depth-sorted, so knights pass
  * behind walls. Draws from the art manifest when a sprite exists and falls back to
  * readable placeholder shapes otherwise. Pure presentation: it never changes the state. */
-import { MAPS, TILE, RULES, ABILITIES, WEAPONS, CLASSES, GUARD, STATUS_IDS, inBase, chargeTicksFor } from './lockdown-engine.js';
+import { MAPS, TILE, RULES, ABILITIES, WEAPONS, CLASSES, ARMORS, GUARD, STATUS_IDS, inBase, chargeTicksFor } from './lockdown-engine.js';
 import { isWall } from './lockdown-maps.js';
 import { KNIGHT_FACINGS } from './lockdown-assets.js';
 
@@ -43,6 +43,8 @@ const THEMES = Object.freeze({
 const VIEW_WORLD_WIDTH = 1100; // world units across the screen at the default zoom
 const lerp = (a, b, t) => a + (b - a) * t;
 const hash = (a, b) => { let h = (a * 374761393 + b * 668265263) | 0; h = (h ^ (h >>> 13)) * 1274126177; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
+const OUTFITS = Object.freeze({ none: 'character_base', light: 'knight_recon', ballistic: 'character_ballistic', duelist: 'knight_striker', heavy: 'knight_guardian' });
+const outfitKey = player => `${OUTFITS[(ARMORS[player.armor] || ARMORS.none).spriteStyle] || OUTFITS.none}_team${player.team}`;
 
 export class LockdownRenderer {
   constructor(canvas, assets) {
@@ -377,8 +379,8 @@ export class LockdownRenderer {
     const hand = { x: fx + (facing.hand[0] - 32) * (flip ? -1 : 1), y: fy + facing.hand[1] - 58 };
     const drawWeapon = () => this.drawHeldWeapon(ctx, weapon, hand.x, hand.y, this.weaponAngle(player, weapon, now));
     if (facing.weaponBehind) drawWeapon();
-    const key = `knight_${player.cls}_team${player.team}`, flash = this.flashes.has(player.id);
-    if (!this.drawSprite(ctx, key, fx, fy, { row, frame, flipX: flip })) this.placeholderKnight(ctx, { ...player, y: player.y - leap }, team, { row, flip, frame, moving, now });
+    const key = outfitKey(player), flash = this.flashes.has(player.id);
+    if (!this.drawSprite(ctx, key, fx, fy, { row, frame, flipX: flip })) this.placeholderCharacter(ctx, { ...player, y: player.y - leap }, team, { row, flip, frame, moving, now });
     if (flash) this.drawFlash(ctx, key, fx, fy, { row, frame, flipX: flip });
     if (!facing.weaponBehind) drawWeapon();
     if (player.status?.freeze > 0) {
@@ -449,7 +451,29 @@ export class LockdownRenderer {
     ctx.font = '11px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.fillStyle = mine ? '#ffffff' : team.light;
     ctx.fillText(player.name, player.x, top - 8);
   }
-  /** A small chibi knight until the art lands: body, legs, big helmet, and a visor that shows the facing. */
+  /** Loading fallback follows equipment too, so an unarmored player never gets a helmet. */
+  placeholderCharacter(ctx, player, team, options) {
+    const style = (ARMORS[player.armor] || ARMORS.none).spriteStyle;
+    if (style !== 'none' && style !== 'ballistic') {
+      const cls = style === 'heavy' ? 'guardian' : style === 'light' ? 'recon' : 'striker';
+      this.placeholderKnight(ctx, { ...player, cls }, team, options); return;
+    }
+    const { row, flip, frame, moving, now } = options, step = moving ? (frame % 2 ? 2 : -2) : 0;
+    const bob = moving ? 0 : Math.sin(now / 300) * .8, hand = KNIGHT_FACINGS[row].hand;
+    ctx.save(); ctx.translate(player.x, player.y + FEET); if (flip) ctx.scale(-1, 1);
+    ctx.fillStyle = '#d8a47d'; ctx.fillRect(-8, -12 + step, 6, 10 - step); ctx.fillRect(2, -12 - step, 6, 10 + step);
+    ctx.fillStyle = '#3d4852'; ctx.fillRect(-9, -4, 8, 4); ctx.fillRect(1, -4, 8, 4);
+    ctx.fillStyle = '#29333c'; ctx.fillRect(-10, -17, 20, 8);
+    ctx.fillStyle = '#e4eaed'; ctx.fillRect(-11, -32 + bob, 22, 16);
+    ctx.fillStyle = team.main; ctx.fillRect(-6, -32 + bob, 12, 2);
+    if (style === 'ballistic') { ctx.fillStyle = '#4a555e'; ctx.fillRect(-9, -30, 18, 13); ctx.fillStyle = '#78838b'; ctx.fillRect(-7, -28, 14, 5); }
+    ctx.fillStyle = '#d8a47d'; ctx.beginPath(); ctx.arc(0, -42 + bob, 10, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#493429'; ctx.fillRect(-10, -52 + bob, 20, row >= 3 ? 17 : 7);
+    if (row < 3) { ctx.fillStyle = '#20272e'; const eyes = row === 0 ? [-5, 3] : row === 1 ? [0, 6] : [6]; for (const eye of eyes) ctx.fillRect(eye, -42 + bob, 2, 3); }
+    ctx.fillStyle = '#d8a47d'; ctx.fillRect(hand[0] - 35, hand[1] - 61, 6, 6);
+    ctx.restore();
+  }
+  /** A small chibi knight until the armor artwork loads. */
   placeholderKnight(ctx, player, team, { row, flip, frame, moving, now }) {
     const fx = player.x, fy = player.y + FEET, dir = flip ? -1 : 1, step = moving ? (frame % 2 ? 2 : -2) : 0, bob = moving ? 0 : Math.sin(now / 300) * .8;
     ctx.save();
