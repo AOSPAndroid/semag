@@ -7,13 +7,17 @@ import { gameKey } from './keyboard-layout.js';
 import { GameAudio } from './audio.js';
 import { getName, saveName } from './hub/shared.js';
 
-const { TICK_RATE, RULES, CLASSES, ARMORS, ARMOR_IDS, WEAPONS, WEAPON_IDS, DEFAULT_LOADOUTS, MAPS, MAP_IDS, ABILITIES, INPUT_KEYS, GUARD, STATUS, STATUS_IDS } = Engine;
+const { TICK_RATE, RULES, CLASSES, ARMORS, ARMOR_IDS, GEAR, GEAR_SLOTS, combineGear, WEAPONS, WEAPON_IDS, DEFAULT_LOADOUTS, MAPS, MAP_IDS, ABILITIES, INPUT_KEYS, GUARD, STATUS, STATUS_IDS } = Engine;
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 const roomId = params.get('room');
 const solo = !roomId;
 const FAMILY_GLYPH = { blade: '⚔', gun: '✦', bomb: '●' };
 const CLASS_GLYPH = { striker: '➶', guardian: '⛨', recon: '◐' };
+let gearTab = 'armor';
+const GEAR_LABELS = { helmet: 'Helmet', armor: 'Armor', pants: 'Pants', shoes: 'Shoes' };
+const GEAR_GLYPH = { helmet: '⛑', pants: '⫴', shoes: '👢' };
+const gearIcon = (slot, id) => iconMarkup(slot === 'armor' ? `icon_armor_${id}` : `icon_${slot}_${id}`, slot === 'armor' ? ARMOR_GLYPH[id] || '◆' : GEAR_GLYPH[slot]);
 const ARMOR_GLYPH = { none: '♙', scout: '➶', ballistic: '▣', duelist: '⚔', heavy: '⛨', gunslinger: '✦', fencer: '†', windrunner: '≋', juggernaut: '▦', bombardier: '●', berserker: '✷', mirrorweave: '◇', medic: '✚', clockwork: '⚙' };
 const ABILITY_ICON = { striker: 'dash', guardian: 'bubble', recon: 'cloak' };
 const STORAGE_KEY = 'semag-lockdown-setup';
@@ -29,12 +33,15 @@ const scene = renderer;
 function loadSetup() {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
-    if (saved && Object.hasOwn(CLASSES, saved.cls) && Array.isArray(saved.weapons) && saved.weapons.length === 3 && new Set(saved.weapons).size === 3 && saved.weapons.every(id => Object.hasOwn(WEAPONS, id))) return { cls: saved.cls, armor: Object.hasOwn(ARMORS, saved.armor) ? saved.armor : 'none', weapons: saved.weapons, team: saved.team === 1 ? 1 : 0 };
+    if (saved && Object.hasOwn(CLASSES, saved.cls) && Array.isArray(saved.weapons) && saved.weapons.length === 3 && new Set(saved.weapons).size === 3 && saved.weapons.every(id => Object.hasOwn(WEAPONS, id))) {
+      return { cls: saved.cls, ...Object.fromEntries(GEAR_SLOTS.map(slot => [slot, Object.hasOwn(GEAR[slot], saved[slot]) ? saved[slot] : 'none'])), weapons: saved.weapons, team: saved.team === 1 ? 1 : 0 };
+    }
   } catch {}
-  return { cls: 'striker', armor: 'none', weapons: [...DEFAULT_LOADOUTS.striker], team: 0 };
+  return { cls: 'striker', ...Object.fromEntries(GEAR_SLOTS.map(slot => [slot, 'none'])), weapons: [...DEFAULT_LOADOUTS.striker], team: 0 };
 }
 function storeSetup() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(setup)); } catch {} }
 const setup = loadSetup();
+const gearOf = source => Object.fromEntries(GEAR_SLOTS.map(slot => [slot, Object.hasOwn(GEAR[slot], source?.[slot]) ? source[slot] : 'none']));
 let soloMapId = MAP_IDS[0];
 
 // ---------- session state ----------
@@ -61,7 +68,7 @@ function soloCreate() {
 }
 function applySetupLocally() {
   if (!state || state.phase !== 'lobby' && state.phase !== 'matchEnd') return;
-  const result = Engine.setPlayerSetup(state, 0, { team: setup.team, cls: setup.cls, armor: setup.armor, weapons: setup.weapons, name: getName() });
+  const result = Engine.setPlayerSetup(state, 0, { team: setup.team, cls: setup.cls, ...gearOf(setup), weapons: setup.weapons, name: getName() });
   if (!result.ok) setStatus(result.error);
 }
 function soloStep(elapsedMs) {
@@ -99,14 +106,14 @@ function syncLocalSetupFromState() {
   const me = state && localId !== null ? state.players[localId] : null;
   if (!me) return;
   // Send the remembered setup the first time we sit in a lobby.
-  if (!setupSent && state.phase === 'lobby') { setupSent = true; send({ type: 'lockdown-setup', team: setup.team, cls: setup.cls, armor: setup.armor, weapons: setup.weapons }); return; }
+  if (!setupSent && state.phase === 'lobby') { setupSent = true; send({ type: 'lockdown-setup', team: setup.team, cls: setup.cls, ...gearOf(setup), weapons: setup.weapons }); return; }
   // The server is the source of truth (a full team, for example, keeps you where you were).
   rememberAuthoritativeSetup(me);
 }
 function rememberAuthoritativeSetup(me) {
-  const armor = Object.hasOwn(ARMORS, me.armor) ? me.armor : 'none';
-  if (setup.team === me.team && setup.cls === me.cls && setup.armor === armor && setup.weapons.join() === me.weapons.join()) return;
-  Object.assign(setup, { team: me.team, cls: me.cls, armor, weapons: [...me.weapons] });
+  const gear = gearOf(me);
+  if (setup.team === me.team && setup.cls === me.cls && GEAR_SLOTS.every(slot => setup[slot] === gear[slot]) && setup.weapons.join() === me.weapons.join()) return;
+  Object.assign(setup, { team: me.team, cls: me.cls, ...gear, weapons: [...me.weapons] });
   storeSetup();
 }
 
@@ -304,7 +311,7 @@ function armorPerkList(armor) {
   if (armor.knockback !== 1) add(armor.knockback < 1, `Knockback ${armor.knockback < 1 ? '−' : '+'}${Math.abs(percent(1 - armor.knockback))}%`);
   if (armor.statusDuration !== 1) add(armor.statusDuration < 1, `Status effects ${Math.abs(percent(1 - armor.statusDuration))}% ${armor.statusDuration < 1 ? 'shorter' : 'longer'}`);
   if (armor.healing !== 1) add(armor.healing > 1, `Healing ${signed(armor.healing - 1)}`);
-  if (armor.regen) add(true, `Regenerates ${armor.regen * armor.healing} HP/s out of combat`);
+  if (armor.regen) add(true, `Regenerates ${Math.round(armor.regen * armor.healing * 10) / 10} HP/s out of combat`);
   return list;
 }
 const armorPerks = armor => armorPerkList(armor).map(([text]) => text);
@@ -348,9 +355,9 @@ function updateHud(current) {
   const me = current.players[localId ?? -1];
   if (me) {
     $('ld-class').textContent = CLASSES[me.cls].name.toUpperCase();
-    const armor = ARMORS[me.armor] ?? ARMORS.none;
-    $('ld-armor-name').textContent = armor.name;
-    $('ld-armor-stats').textContent = armorStats(armor);
+    const gear = combineGear(me);
+    $('ld-armor-name').textContent = gear.name;
+    $('ld-armor-stats').textContent = armorStats(gear);
     $('ld-hp').textContent = Math.max(0, Math.ceil(me.alive ? me.hp : 0));
     $('ld-hp-bar').style.width = `${me.alive ? Math.max(0, me.hp / me.maxHp * 100) : 0}%`;
     // The class ability: Striker Boost and Recon Cloak have cooldowns; the Guardian's shield has health.
@@ -435,17 +442,15 @@ function buildMenu() {
     });
     classes.append(card);
   }
-  const armors = $('ld-armors');
-  for (const id of ARMOR_IDS) {
-    const armor = ARMORS[id], card = document.createElement('button');
-    card.type = 'button'; card.className = 'ld-armor-card'; card.dataset.armor = id;
-    card.innerHTML = '<span class="ld-armor-icon"></span><b class="ld-armor-title"></b><span class="ld-armor-tradeoffs"></span>';
-    card.querySelector('.ld-armor-title').textContent = armor.name;
-    card.querySelector('.ld-armor-tradeoffs').innerHTML = armorStatMarkup(armor);
-    card.setAttribute('aria-label', `${armor.name}. ${armor.description} ${armorStats(armor)}. Speed is relative to your class; percentages are damage reduction.`);
-    card.addEventListener('click', () => chooseSetup({ armor: id }));
-    armors.append(card);
-  }
+  // Equipment: one tab per slot (helmet, armour, pants, shoes); every piece is a card.
+  for (const tab of document.querySelectorAll('[data-gear-tab]')) tab.addEventListener('click', () => { gearTab = tab.dataset.gearTab; buildGearCards(); renderMenu(); });
+  $('ld-gear-random').addEventListener('click', () => {
+    if (!canChangeLoadout()) return;
+    const pick = slot => { const ids = Object.keys(GEAR[slot]); return ids[Math.floor(Math.random() * ids.length)]; };
+    chooseSetup(Object.fromEntries(GEAR_SLOTS.map(slot => [slot, pick(slot)])));
+  });
+  $('ld-gear-clear').addEventListener('click', () => { if (canChangeLoadout()) chooseSetup(Object.fromEntries(GEAR_SLOTS.map(slot => [slot, 'none']))); });
+  buildGearCards();
   const loadout = $('ld-loadout');
   for (let slot = 0; slot < 3; slot++) {
     const label = document.createElement('label'), select = document.createElement('select');
@@ -485,6 +490,21 @@ function buildMenu() {
   if (!solo) { $('ld-room-box').hidden = false; $('ld-room-code').textContent = roomId; $('ld-mode').textContent = 'ONLINE ROOM · UP TO 4V4'; }
   else $('ld-mode').textContent = 'PRACTICE · YOU + 7 BOTS';
 }
+function buildGearCards() {
+  const list = $('ld-armors'); list.textContent = ''; list.setAttribute('aria-label', GEAR_LABELS[gearTab]);
+  for (const [id, piece] of Object.entries(GEAR[gearTab])) {
+    const card = document.createElement('button');
+    card.type = 'button'; card.className = 'ld-armor-card'; card.dataset.armor = id; card.dataset.slot = gearTab;
+    card.innerHTML = '<span class="ld-armor-icon"></span><b class="ld-armor-title"></b><span class="ld-armor-tradeoffs"></span>';
+    card.querySelector('.ld-armor-icon').innerHTML = gearIcon(gearTab, id);
+    card.querySelector('.ld-armor-title').textContent = piece.name;
+    card.querySelector('.ld-armor-tradeoffs').innerHTML = armorStatMarkup(piece);
+    card.title = piece.description;
+    card.setAttribute('aria-label', `${piece.name}. ${piece.description} ${armorStats(piece)}.`);
+    card.addEventListener('click', () => chooseSetup({ [gearTab]: id }));
+    list.append(card);
+  }
+}
 function showWeaponNote(id) { const weapon = WEAPONS[id]; if (weapon) $('ld-weapon-note').textContent = `${weapon.name}: ${weapon.description}`; }
 function chooseSetup(change) {
   if (inMatch() && !canChangeLoadout()) { flashBaseHint(); setStatus('Return to your base to change class or equipment.'); return; }
@@ -509,7 +529,7 @@ function chooseSetup(change) {
 }
 function refreshIcons() {
   for (const card of document.querySelectorAll('.ld-class-card')) card.querySelector('.ld-class-icon').innerHTML = iconMarkup(`icon_class_${card.dataset.cls}`, CLASS_GLYPH[card.dataset.cls]);
-  for (const card of document.querySelectorAll('.ld-armor-card')) card.querySelector('.ld-armor-icon').innerHTML = iconMarkup(`icon_armor_${card.dataset.armor}`, ARMOR_GLYPH[card.dataset.armor]);
+  for (const card of document.querySelectorAll('.ld-armor-card')) card.querySelector('.ld-armor-icon').innerHTML = gearIcon(card.dataset.slot, card.dataset.armor);
   $('ld-weapons').dataset.key = '';
 }
 const inMatch = () => state?.phase === 'countdown' || state?.phase === 'fight';
@@ -523,14 +543,19 @@ function renderMenu() {
   const me = state?.players[localId ?? -1];
   const phase = state?.phase ?? 'lobby';
   app.dataset.phase = phase;
-  const team = me?.team ?? setup.team, cls = me?.cls ?? setup.cls, armorId = me?.armor ?? setup.armor, weapons = me?.weapons ?? setup.weapons;
+  const team = me?.team ?? setup.team, cls = me?.cls ?? setup.cls, gear = gearOf(me ?? setup), weapons = me?.weapons ?? setup.weapons;
   const lobby = phase === 'lobby' || phase === 'matchEnd', editable = canChangeLoadout();
   for (const button of document.querySelectorAll('.ld-team-button')) { button.setAttribute('aria-pressed', String(Number(button.dataset.team) === team)); button.disabled = !lobby; }
   for (const card of document.querySelectorAll('.ld-class-card')) { card.setAttribute('aria-pressed', String(card.dataset.cls === cls)); card.disabled = !editable; }
-  for (const card of document.querySelectorAll('.ld-armor-card')) { card.setAttribute('aria-pressed', String(card.dataset.armor === armorId)); card.disabled = !editable; }
-  const armor = ARMORS[armorId] ?? ARMORS.none;
-  $('ld-armor-summary').textContent = `${armor.name}: ${armor.description}`;
-  $('ld-armor-summary-stats').textContent = armorStats(armor);
+  for (const card of document.querySelectorAll('.ld-armor-card')) { card.setAttribute('aria-pressed', String(card.dataset.armor === gear[card.dataset.slot])); card.disabled = !editable; }
+  for (const tab of document.querySelectorAll('[data-gear-tab]')) {
+    tab.setAttribute('aria-selected', String(tab.dataset.gearTab === gearTab));
+    tab.querySelector('small').textContent = GEAR[tab.dataset.gearTab][gear[tab.dataset.gearTab]].name;
+  }
+  $('ld-gear-random').disabled = $('ld-gear-clear').disabled = !editable;
+  const total = combineGear(gear), piece = GEAR[gearTab][gear[gearTab]];
+  $('ld-armor-summary').textContent = `${piece.name}: ${piece.description}`;
+  $('ld-armor-summary-stats').innerHTML = `<b>Whole build</b> (${total.name}): ${armorStatMarkup(total)}`;
   [...$('ld-loadout').querySelectorAll('select')].forEach((select, slot) => { if (document.activeElement !== select) select.value = weapons[slot]; select.disabled = !editable; });
   const note = $('ld-base-note');
   note.hidden = lobby;

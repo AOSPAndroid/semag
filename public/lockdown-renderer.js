@@ -385,6 +385,12 @@ export class LockdownRenderer {
     if (facing.weaponBehind) drawWeapon();
     const key = outfitKey(player), flash = this.flashes.has(player.id);
     if (!this.drawSprite(ctx, key, fx, fy, { row, frame, flipX: flip })) this.placeholderCharacter(ctx, { ...player, y: player.y - leap }, team, { row, flip, frame, moving, now });
+    // Shoes, then pants, then helmet go over the body outfit; every slot is its own sheet.
+    for (const slot of ['shoes', 'pants', 'helmet']) {
+      const id = player[slot];
+      if (!id || id === 'none') continue;
+      if (!this.drawSprite(ctx, `gear_${slot}_${id}`, fx, fy, { row, frame, flipX: flip })) this.placeholderGear(ctx, slot, id, fx, fy, { row, flip, frame, moving, now, team });
+    }
     if (flash) this.drawFlash(ctx, key, fx, fy, { row, frame, flipX: flip });
     if (!facing.weaponBehind) drawWeapon();
     if (player.status?.freeze > 0) {
@@ -487,6 +493,50 @@ export class LockdownRenderer {
     if (style === 'fencer' && row < 3) { ctx.fillStyle = 'rgba(30,34,40,.75)'; ctx.fillRect(-9, -48 + bob, 18, 12); }
     if (row < 3) { ctx.fillStyle = '#20272e'; const eyes = row === 0 ? [-5, 3] : row === 1 ? [0, 6] : [6]; for (const eye of eyes) ctx.fillRect(eye, -42 + bob, 2, 3); }
     ctx.fillStyle = '#d8a47d'; ctx.fillRect(hand[0] - 35, hand[1] - 61, 6, 6);
+    ctx.restore();
+  }
+  /** Simple stand-ins for helmets, pants and shoes until their overlay sheets exist. Same feet point and
+   * proportions as placeholderCharacter: feet at 0, legs up to -12, hips -17, head centred at -42. */
+  placeholderGear(ctx, slot, id, fx, fy, { row, flip, frame, moving, now, team }) {
+    const step = moving ? (frame % 2 ? 2 : -2) : 0, bob = moving ? 0 : Math.sin(now / 300) * .8, back = row >= 3;
+    const rect = (color, x, y, w, h) => { ctx.fillStyle = color; ctx.fillRect(x, y, w, h); };
+    const legs = (color, top = -12, extra = 0) => { rect(color, -8 - extra, top + step, 6 + extra, -top - 2 - step); rect(color, 2, top - step, 6 + extra, -top - 2 + step); };
+    ctx.save(); ctx.translate(fx, fy); if (flip) ctx.scale(-1, 1);
+    if (slot === 'shoes') {
+      const look = { sneakers: ['#f4f6f8', team.main], sabatons: ['#8e98a3', '#5d666f'], dashboots: ['#3f7fd0', '#e8eef5'], spurs: ['#6a4428', '#e0b84a'], treads: ['#1d2024', '#4a4f57'], clogs: ['#c99a55', '#6b6f75'], sandals: ['#8a5a32', '#d8a47d'] }[id] || ['#444', '#888'];
+      const big = id === 'sabatons' || id === 'treads' ? 2 : 0;
+      rect(look[0], -9 - big, -4 - big, 8 + big, 4 + big); rect(look[0], 1, -4 - big, 8 + big, 4 + big);
+      if (id === 'clogs') { rect(look[1], -7, 0, 4, 2); rect(look[1], 3, 0, 4, 2); }
+      else if (id === 'dashboots') { rect(look[1], -12, -6, 3, 2); rect(look[1], 9, -6, 3, 2); }
+      else if (id === 'spurs') { rect(look[1], -11, -3, 2, 2); rect(look[1], 9, -3, 2, 2); }
+      else if (id === 'sandals') { rect(look[1], -8, -3, 6, 1); rect(look[1], 2, -3, 6, 1); }
+      else rect(look[1], -9 - big, -1, 8 + big, 1), rect(look[1], 1, -1, 8 + big, 1);
+    } else if (slot === 'pants') {
+      const color = { greaves: '#9aa4ae', leggings: '#273455', chausses: '#7d848c', breeches: '#e9e1cc', sapper: '#59603a', cargo: '#a99766', kilt: '#9b2b2b' }[id] || '#555';
+      if (id === 'kilt') {
+        rect(color, -11, -18, 22, 10); rect('#2f6b3a', -11, -15, 22, 2); rect('#2f6b3a', -4, -18, 2, 10); rect('#2f6b3a', 4, -18, 2, 10);
+        if (!back) rect('#7a5232', -3, -14, 6, 5);
+      } else {
+        rect(color, -10, -18, 20, 8); legs(color, -12);
+        if (id === 'greaves') { rect('#d5dbe1', -8, -9 + step, 6, 3); rect('#d5dbe1', 2, -9 - step, 6, 3); }
+        if (id === 'leggings') { rect('#cfd8ea', -8, -12 + step, 1, 10 - step); rect('#cfd8ea', 7, -12 - step, 1, 10 + step); }
+        if (id === 'chausses') { ctx.fillStyle = '#b6bcc3'; for (let y = -16; y < -2; y += 3) for (let x = -9; x < 9; x += 3) ctx.fillRect(x, y, 1, 1); }
+        if (id === 'breeches') { rect('#ffffff', -8, -6 + step, 6, 4); rect('#ffffff', 2, -6 - step, 6, 4); }
+        if (id === 'sapper') { rect('#3d4227', -8, -8 + step, 6, 3); rect('#c46a2a', 5, -16, 4, 5); }
+        if (id === 'cargo') { rect('#857548', -11, -13 + step, 3, 5); rect('#857548', 8, -13 - step, 3, 5); }
+      }
+    } else {
+      const hy = -42 + bob;
+      if (id === 'sallet') { ctx.fillStyle = '#a9b2bb'; ctx.beginPath(); ctx.arc(0, hy, 12, Math.PI, 0); ctx.fill(); rect('#a9b2bb', -12, hy, 24, back ? 10 : 5); rect('#8a939c', -14, hy + 4, 6, 4); if (!back) rect('#1b2026', -8, hy + 1, 16, 2); }
+      else if (id === 'visor') { if (!back) { rect('#1c2830', -10, hy - 3, 20, 6); rect('#59e2ff', -8, hy - 2, 14, 3); } else rect('#1c2830', -10, hy - 3, 20, 3); rect('#3b4650', 9, hy - 2, 3, 5); }
+      else if (id === 'horned') { ctx.fillStyle = '#6f757c'; ctx.beginPath(); ctx.arc(0, hy - 2, 11, Math.PI, 0); ctx.fill(); ctx.fillStyle = '#efe4c8'; for (const d of [-1, 1]) { ctx.beginPath(); ctx.moveTo(9 * d, hy - 6); ctx.quadraticCurveTo(20 * d, hy - 8, 17 * d, hy - 20); ctx.lineTo(11 * d, hy - 9); ctx.fill(); } }
+      else if (id === 'hood') { ctx.fillStyle = '#3b3348'; ctx.beginPath(); ctx.arc(0, hy, 13, Math.PI * .85, Math.PI * 2.15); ctx.fill(); rect('#3b3348', -13, hy, 26, 10); if (!back) { rect('#1a1622', -8, hy - 4, 16, 10); rect('#c9a7ff', -5, hy, 2, 2); rect('#c9a7ff', 3, hy, 2, 2); } }
+      else if (id === 'lampcap') { ctx.fillStyle = '#5a4630'; ctx.beginPath(); ctx.arc(0, hy - 2, 11, Math.PI, 0); ctx.fill(); rect('#5a4630', -13, hy - 3, 26, 3); if (!back) { rect('#c9a347', -3, hy - 10, 6, 6); ctx.globalAlpha *= .5; ctx.fillStyle = '#ffe58a'; ctx.beginPath(); ctx.arc(0, hy - 7, 7, 0, Math.PI * 2); ctx.fill(); } }
+      else if (id === 'feather') { ctx.fillStyle = '#3f7a3a'; ctx.beginPath(); ctx.arc(0, hy - 3, 11, Math.PI, 0); ctx.fill(); rect('#2f5e2c', -12, hy - 4, 24, 3); ctx.strokeStyle = '#e04040'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(4, hy - 8); ctx.quadraticCurveTo(-6, hy - 22, -18, hy - 16); ctx.stroke(); }
+      else if (id === 'bucket') { rect('#7b8590', -12, hy - 13, 24, 22); rect('#98a2ad', -13, hy - 13, 26, 3); rect('#5f6871', -12, hy + 6, 24, 2); if (!back) { rect('#15181c', -7, hy - 2, 4, 3); rect('#15181c', 3, hy - 2, 4, 3); } }
+      else if (id === 'circlet') { rect('#e6c45a', -11, hy - 6, 22, 2); if (!back) rect('#3fd07a', -2, hy - 7, 4, 4); }
+      else if (id === 'goggles') { rect('#6a4428', -11, hy - 7, 22, 3); for (const x of [-5, 5]) { ctx.fillStyle = '#c99a55'; ctx.beginPath(); ctx.arc(x, hy - 7, 4.5, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = back ? '#c99a55' : '#8fd8ff'; ctx.beginPath(); ctx.arc(x, hy - 7, 3, 0, Math.PI * 2); ctx.fill(); } }
+    }
     ctx.restore();
   }
   /** A small chibi knight until the armor artwork loads. */

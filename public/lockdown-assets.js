@@ -19,7 +19,7 @@
  *   world position and what it rotates around.
  * - Sheets are horizontal strips of `frames` equal frames.
  */
-import { WEAPONS, CLASSES, MAPS, ARMORS } from './lockdown-engine.js';
+import { WEAPONS, CLASSES, MAPS, ARMORS, HELMETS, PANTS, SHOES } from './lockdown-engine.js';
 
 export const ASSET_BASE = '/art/lockdown/';
 
@@ -83,6 +83,47 @@ const characters = Object.keys(OUTFIT_LOOKS).flatMap(outfit => [0, 1].map(team =
   { group: 'characters', frames: 6, rows: KNIGHT_FACINGS.length, facings: KNIGHT_FACINGS },
 )));
 
+// Helmets, pants and shoes are separate overlay sheets drawn on top of the body outfit, in the same
+// 6×5 grid with the same feet point, so any helmet + armor + pants + shoes combination lines up.
+const GEAR_LOOKS = Object.freeze({
+  helmet: {
+    sallet: 'a rounded steel sallet with a narrow eye slit and a short tail at the back',
+    visor: 'a slim dark tactical visor wrapping the eyes with a cyan glowing lens and a small earpiece',
+    horned: 'a dented iron cap with two big curved bone horns',
+    hood: 'a deep charcoal-violet cloth hood that shadows the face (eyes faintly glow)',
+    lampcap: 'a sooty leather miner cap with a brass lamp on the front throwing a small yellow glow',
+    feather: 'a jaunty green felt cap with a long red feather sweeping back',
+    bucket: 'a literal dented metal bucket worn as a helm, with eye holes punched in it',
+    circlet: 'a thin gold circlet with a small green gem on the forehead over loose hair',
+    goggles: 'brass aviator goggles pushed up on a leather strap over a bare head',
+  },
+  pants: {
+    greaves: 'steel knee greaves and shin plates over dark trousers',
+    leggings: 'tight dark-blue running leggings with a light stripe down the side',
+    chausses: 'grey chainmail chausses (ring texture) to the ankle',
+    breeches: 'cream fencing breeches buckled below the knee with long white socks',
+    sapper: 'olive canvas trousers with knee pads and a fuse-cord pouch on the thigh',
+    cargo: 'khaki cargo trousers with big side pockets and a holster strap on the thigh',
+    kilt: 'a red-and-green tartan kilt with a leather sporran',
+  },
+  shoes: {
+    sneakers: 'white running sneakers with a bright sole stripe',
+    sabatons: 'chunky segmented iron sabatons',
+    dashboots: 'sleek blue boots with small silver wings at the ankles',
+    spurs: 'brown riding boots with gold rowel spurs at the heel',
+    treads: 'heavy black rubber-soled work boots with thick treads',
+    clogs: 'springy wooden clogs on coiled steel springs',
+    sandals: 'simple leather sandals with straps and a little herb sprig tucked in',
+  },
+});
+const GEAR_PIECES = Object.freeze({ helmet: HELMETS, pants: PANTS, shoes: SHOES });
+const gear = Object.entries(GEAR_LOOKS).flatMap(([slot, looks]) => Object.entries(looks).flatMap(([id, look]) => [
+  asset(`gear_${slot}_${id}`, 384, 320, [32, 58],
+    `${GEAR_PIECES[slot][id].name} overlay: ONLY ${look}, nothing else (transparent everywhere else). It is drawn on top of every body outfit, so it must sit exactly where the ${slot === 'helmet' ? 'head' : slot === 'pants' ? 'hips and legs' : 'feet'} of character_base are in each frame: same 6 columns × 5 facing rows of 64x64 frames, same idle bob and walking leg poses, feet at 32, 58. Neutral colours (no team colour).`,
+    { group: 'gear', frames: 6, rows: KNIGHT_FACINGS.length, facings: KNIGHT_FACINGS }),
+  asset(`icon_${slot}_${id}`, 48, 48, [24, 24], `${GEAR_PIECES[slot][id].name} equipment icon: ${look}. Clear silhouette on a transparent background.`, { group: 'icons' }),
+]));
+
 const weapons = Object.values(WEAPONS).flatMap(weapon => [
   asset(`weapon_${weapon.id}`, 64, 32, [12, 16], `${weapon.name} (${weapon.family}) held in the hand, pointing right; the grip sits at the anchor. ${weapon.description}`, { group: 'weapons' }),
   asset(`icon_weapon_${weapon.id}`, 48, 48, [24, 24], `HUD/lobby icon for the ${weapon.name}. Clear silhouette on a transparent background.`, { group: 'icons' }),
@@ -134,7 +175,7 @@ const ui = [
   ...['dash', 'bubble', 'heal', 'cloak'].map(id => asset(`icon_ability_${id}`, 48, 48, [24, 24], `Ability icon: ${id}.`, { group: 'icons' })),
 ];
 
-export const MANIFEST = Object.freeze([...tiles, ...spawnPads, ...characters, ...knights, ...weapons, ...projectiles, ...bombs, ...effects, ...pickups, ...pointArt, ...ui]);
+export const MANIFEST = Object.freeze([...tiles, ...spawnPads, ...characters, ...gear, ...knights, ...weapons, ...projectiles, ...bombs, ...effects, ...pickups, ...pointArt, ...ui]);
 export const MANIFEST_BY_KEY = Object.freeze(Object.fromEntries(MANIFEST.map(entry => [entry.key, entry])));
 
 /** Loads the sprites listed in /art/lockdown/index.json (written by

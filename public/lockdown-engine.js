@@ -4,9 +4,9 @@
  * the points they hold; first to 500 (or the leader at the time limit) wins. */
 import { MAPS, MAP_IDS, TILE, isWall, isBlocked, wallAt } from './lockdown-maps.js';
 import { WEAPONS, WEAPON_IDS, DEFAULT_LOADOUTS, STATUS, STATUS_IDS, GUARD, BLADE } from './lockdown-weapons.js';
-import { ARMORS, ARMOR_IDS } from './lockdown-equipment.js';
+import { ARMORS, ARMOR_IDS, HELMETS, PANTS, SHOES, GEAR, GEAR_SLOTS, combineGear } from './lockdown-equipment.js';
 
-export { MAPS, MAP_IDS, TILE, WEAPONS, WEAPON_IDS, DEFAULT_LOADOUTS, STATUS, STATUS_IDS, GUARD, BLADE, ARMORS, ARMOR_IDS };
+export { MAPS, MAP_IDS, TILE, WEAPONS, WEAPON_IDS, DEFAULT_LOADOUTS, STATUS, STATUS_IDS, GUARD, BLADE, ARMORS, ARMOR_IDS, HELMETS, PANTS, SHOES, GEAR, GEAR_SLOTS, combineGear };
 export const TICK_RATE = 120;
 const DT = 1 / TICK_RATE;
 export const TEAM_SIZE = 4;
@@ -49,17 +49,18 @@ export const ABILITIES = Object.freeze({
 });
 /** Ticks a full charge takes for this knight: class and outfit perks speed up or slow down a weapon family. */
 export function chargeTicksFor(player, weapon) {
-  const cls = CLASSES[player.cls] || {}, outfit = ARMORS[player.armor] || ARMORS.none;
+  const cls = CLASSES[player.cls] || {}, outfit = combineGear(player);
   return Math.round(weapon.chargeTicks * (weapon.family === 'bomb' ? (cls.bombCharge || 1) * outfit.bombCharge : weapon.family === 'gun' ? (cls.gunCharge || 1) * outfit.gunCharge : 1));
 }
 /** Attack multipliers from class and outfit together. */
-const outfitOf = player => ARMORS[player?.armor] || ARMORS.none;
-/** Health = class health plus the outfit's bonus (or minus its cost). */
-export const maxHpFor = (cls, armor) => Math.max(40, CLASSES[cls].hp + (ARMORS[armor] || ARMORS.none).maxHp);
-export const gunPower = player => (CLASSES[player.cls]?.gunDamage || 1) * (ARMORS[player.armor] || ARMORS.none).gunDamage;
+/** Everything the knight wears (helmet, armour, pants, shoes) added up. */
+const outfitOf = player => combineGear(player || {});
+/** Health = class health plus what the gear adds (or costs). `gear` is a player, a gear object or a body armour id. */
+export const maxHpFor = (cls, gear) => Math.max(40, CLASSES[cls].hp + combineGear(typeof gear === 'string' ? { armor: gear } : gear || {}).maxHp);
+export const gunPower = player => (CLASSES[player.cls]?.gunDamage || 1) * outfitOf(player).gunDamage;
 const bombPower = player => player ? outfitOf(player).bombDamage : 1;
-export const bladePower = player => (CLASSES[player.cls]?.bladeDamage || 1) * (ARMORS[player.armor] || ARMORS.none).bladeDamage;
-const bladeSpeed = player => (CLASSES[player.cls]?.bladeSpeed || 1) * (ARMORS[player.armor] || ARMORS.none).bladeSpeed;
+export const bladePower = player => (CLASSES[player.cls]?.bladeDamage || 1) * outfitOf(player).bladeDamage;
+const bladeSpeed = player => (CLASSES[player.cls]?.bladeSpeed || 1) * outfitOf(player).bladeSpeed;
 const CLASS_IDS = Object.keys(CLASSES);
 
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
@@ -80,7 +81,7 @@ function emit(state, type, data = {}) {
 function newPlayer(id) {
   const team = id < TEAM_SIZE ? 0 : 1, cls = CLASS_IDS[id % CLASS_IDS.length];
   return {
-    id, team, name: `Bot ${id + 1}`, human: false, connected: false, bot: true, cls, armor: 'none', weapons: [...DEFAULT_LOADOUTS[cls]], slot: 0,
+    id, team, name: `Bot ${id + 1}`, human: false, connected: false, bot: true, cls, armor: 'none', helmet: 'none', pants: 'none', shoes: 'none', weapons: [...DEFAULT_LOADOUTS[cls]], slot: 0,
     x: 0, y: 0, vx: 0, vy: 0, aim: team === 0 ? 0 : Math.PI, hp: CLASSES[cls].hp, maxHp: CLASSES[cls].hp, alive: false, lastHurtTick: 0,
     respawnTicks: 0, shieldTicks: 0, stunTicks: 0, pushX: 0, pushY: 0,
     action: 'idle', actionTicks: 0, actionTotal: 0, comboStep: 0, comboWindow: 0, hitIds: [], chargeTicks: 0, charging: false,
@@ -114,14 +115,15 @@ export function inBase(state, player) {
 
 /** Lobby choices: team, class, armor and three distinct weapons. During a match,
  * equipment can change only while you are in base (or waiting to respawn). */
-export function setPlayerSetup(state, id, { team, cls, armor, weapons, name } = {}) {
+export function setPlayerSetup(state, id, { team, cls, armor, helmet, pants, shoes, weapons, name } = {}) {
+  const gear = { helmet, armor, pants, shoes }, gearChange = GEAR_SLOTS.some(slot => gear[slot] !== undefined);
   const player = state.players[id];
   if (!player) return { ok: false, error: 'Unknown player.' };
   const inMatch = state.phase === 'countdown' || state.phase === 'fight';
   if (inMatch && team !== undefined && team !== player.team) return { ok: false, error: 'Change teams in the lobby.' };
-  if (inMatch && (cls !== undefined || armor !== undefined || weapons !== undefined) && player.alive && !inBase(state, player)) return { ok: false, error: 'Return to your base to change class, armor or weapons.' };
+  if (inMatch && (cls !== undefined || gearChange || weapons !== undefined) && player.alive && !inBase(state, player)) return { ok: false, error: 'Return to your base to change class, armor or weapons.' };
   if (cls !== undefined && !Object.hasOwn(CLASSES, cls)) return { ok: false, error: 'Choose Striker, Guardian or Recon.' };
-  if (armor !== undefined && (typeof armor !== 'string' || !Object.hasOwn(ARMORS, armor))) return { ok: false, error: 'Choose an available armor.' };
+  for (const slot of GEAR_SLOTS) if (gear[slot] !== undefined && (typeof gear[slot] !== 'string' || !Object.hasOwn(GEAR[slot], gear[slot]))) return { ok: false, error: slot === 'armor' ? 'Choose an available armor.' : `Choose an available ${slot === 'helmet' ? 'helmet' : slot === 'pants' ? 'pair of pants' : 'pair of shoes'}.` };
   if (weapons !== undefined && (!Array.isArray(weapons) || weapons.length !== 3 || weapons.some(weapon => !Object.hasOwn(WEAPONS, weapon)) || new Set(weapons).size !== 3)) return { ok: false, error: 'Choose three different weapons.' };
   if (team !== undefined && ![0, 1].includes(team)) return { ok: false, error: 'Choose a team.' };
   if (team !== undefined && team !== player.team && state.players.filter(other => other.human && other.team === team).length >= TEAM_SIZE) return { ok: false, error: 'That team is full.' };
@@ -129,9 +131,12 @@ export function setPlayerSetup(state, id, { team, cls, armor, weapons, name } = 
   if (inMatch && player.alive) {
     // Swapping in base keeps your health fraction and drops any action in progress.
     const fraction = player.hp / player.maxHp;
-    if (armor !== undefined && armor !== player.armor) { player.armor = armor; player.maxHp = maxHpFor(player.cls, armor); player.hp = Math.max(1, fraction * player.maxHp); }
+    if (GEAR_SLOTS.some(slot => gear[slot] !== undefined && gear[slot] !== player[slot])) {
+      for (const slot of GEAR_SLOTS) if (gear[slot] !== undefined) player[slot] = gear[slot];
+      player.maxHp = maxHpFor(player.cls, player); player.hp = Math.max(1, fraction * player.maxHp);
+    }
     if (cls !== undefined && cls !== player.cls) {
-      player.cls = cls; player.maxHp = maxHpFor(cls, player.armor); player.hp = Math.max(1, fraction * player.maxHp);
+      player.cls = cls; player.maxHp = maxHpFor(cls, player); player.hp = Math.max(1, fraction * player.maxHp);
       player.dashTicks = player.cloakTicks = 0; player.markReady = false; player.guarding = false;
     }
     if (weapons !== undefined) {
@@ -140,11 +145,11 @@ export function setPlayerSetup(state, id, { team, cls, armor, weapons, name } = 
       player.reloadTicks = {}; player.sinceShot = {};
     }
     Object.assign(player, { slot: 0, action: 'idle', actionTicks: 0, charging: false, chargeTicks: 0, comboStep: 0, burst: null, bufferAttack: false });
-    emit(state, 'loadoutChange', { playerId: player.id, cls: player.cls, armor: player.armor, weapons: [...player.weapons] });
+    emit(state, 'loadoutChange', { playerId: player.id, cls: player.cls, armor: player.armor, helmet: player.helmet, pants: player.pants, shoes: player.shoes, weapons: [...player.weapons] });
   } else {
-    if (armor !== undefined) player.armor = armor;
+    for (const slot of GEAR_SLOTS) if (gear[slot] !== undefined) player[slot] = gear[slot];
     if (cls !== undefined) player.cls = cls;
-    if (cls !== undefined || armor !== undefined) player.maxHp = player.hp = maxHpFor(player.cls, player.armor);
+    if (cls !== undefined || gearChange) player.maxHp = player.hp = maxHpFor(player.cls, player);
     if (weapons !== undefined) player.weapons = [...weapons];
   }
   if (typeof name === 'string') player.name = name.slice(0, 24);
@@ -155,7 +160,7 @@ export function setConnected(state, id, connected, name) {
   const player = state.players[id]; if (!player) return;
   const joining = connected === true && !player.human;
   player.connected = connected === true; player.human = player.connected; player.bot = !player.human;
-  if (joining) player.armor = 'none';
+  if (joining) for (const slot of GEAR_SLOTS) player[slot] = 'none';
   if (player.human && typeof name === 'string') player.name = name.slice(0, 24);
   // A person never lands on a team that already has four people.
   if (joining && state.players.filter(other => other !== player && other.human && other.team === player.team).length >= TEAM_SIZE) player.team = 1 - player.team;
@@ -180,6 +185,7 @@ export function startMatch(state, participantIds = []) {
       player.cls = CLASS_IDS[Math.floor(random(state) * CLASS_IDS.length)]; player.weapons = [...DEFAULT_LOADOUTS[player.cls]];
       const picks = BOT_OUTFITS[player.cls];
       player.armor = picks[Math.floor(random(state) * picks.length)];
+      for (const slot of ['helmet', 'pants', 'shoes']) { const ids = Object.keys(GEAR[slot]); player[slot] = ids[Math.floor(random(state) * ids.length)]; }
     }
     Object.assign(player, { kills: 0, deaths: 0, captures: 0, damage: 0, score: 0 });
     spawn(state, player);
@@ -189,10 +195,10 @@ export function startMatch(state, participantIds = []) {
 }
 
 export function resetLobby(state) {
-  const keep = state.players.map(player => ({ team: player.team, cls: player.cls, armor: player.armor, weapons: player.weapons, name: player.name, human: player.human, connected: player.connected }));
+  const keep = state.players.map(player => ({ team: player.team, cls: player.cls, armor: player.armor, helmet: player.helmet, pants: player.pants, shoes: player.shoes, weapons: player.weapons, name: player.name, human: player.human, connected: player.connected }));
   const fresh = createState({ mapId: state.mapId, seed: state.seed });
   Object.assign(state, fresh, { tick: state.tick, eventId: state.eventId });
-  state.players.forEach((player, id) => Object.assign(player, keep[id], { bot: !keep[id].human, maxHp: maxHpFor(keep[id].cls, keep[id].armor), hp: maxHpFor(keep[id].cls, keep[id].armor) }));
+  state.players.forEach((player, id) => Object.assign(player, keep[id], { bot: !keep[id].human, maxHp: maxHpFor(keep[id].cls, keep[id]), hp: maxHpFor(keep[id].cls, keep[id]) }));
   return state;
 }
 
@@ -223,7 +229,7 @@ function spawn(state, player) {
   }
   const cls = CLASSES[player.cls];
   Object.assign(player, {
-    x: spot.x, y: spot.y, vx: 0, vy: 0, alive: true, hp: maxHpFor(player.cls, player.armor), maxHp: maxHpFor(player.cls, player.armor), respawnTicks: 0, lastHurtTick: state.tick, shieldTicks: RULES.spawnShieldTicks,
+    x: spot.x, y: spot.y, vx: 0, vy: 0, alive: true, hp: maxHpFor(player.cls, player), maxHp: maxHpFor(player.cls, player), respawnTicks: 0, lastHurtTick: state.tick, shieldTicks: RULES.spawnShieldTicks,
     stunTicks: 0, pushX: 0, pushY: 0, action: 'idle', actionTicks: 0, actionTotal: 0, comboStep: 0, comboWindow: 0, hitIds: [], chargeTicks: 0, charging: false,
     dashTicks: 0, cloakTicks: 0, markTicks: 0, markReady: false, slot: 0, fireCooldown: 0,
     aim: player.team === 0 ? 0 : Math.PI, burst: null, hitStop: 0, bufferAttack: false, dodgeTicks: 0, evadeTicks: 0, dashCooldown: 0, guarding: false, guardRaise: 0, guardBroken: false, guardDelay: 0,
@@ -317,7 +323,7 @@ function damage(state, attacker, target, amount, { push = 0, angle = 0, stun = 1
   let total = amount * (attacker?.status.poison > 0 ? STATUS.poison.damageScale : 1) * (target.markTicks > 0 ? 1 + ABILITIES.cloak.markBonus : 1);
   // Armor protects health, never the dome or raised shield. Weapon family follows
   // the source through waves, bursts and shards; status ticks have no family.
-  const armor = ARMORS[target.armor] || ARMORS.none;
+  const armor = outfitOf(target);
   const resistance = damageFamily === 'gun' ? armor.gunResistance : damageFamily === 'blade' ? armor.bladeResistance : damageFamily === 'bomb' ? armor.bombResistance : 0;
   total *= 1 - resistance;
   if (attacker && attacker.markReady && attacker.cls === 'recon') { target.markTicks = ABILITIES.cloak.markTicks; attacker.markReady = false; emit(state, 'mark', { playerId: attacker.id, targetId: target.id, x: target.x, y: target.y }); }
@@ -645,14 +651,14 @@ function tickPlayer(state, player, input) {
   if (player.dodgeTicks > 0) {
     player.dodgeTicks--;
     moveBody(map, player, player.dodgeX * player.dodgeStep, player.dodgeY * player.dodgeStep);
-    const exitSpeed = CLASSES[player.cls].speed * (ARMORS[player.armor] || ARMORS.none).speedMultiplier;
+    const exitSpeed = CLASSES[player.cls].speed * outfitOf(player).speedMultiplier;
     player.vx = player.dodgeX * exitSpeed; player.vy = player.dodgeY * exitSpeed;
   }
   // Movement: steering eases toward the wanted velocity; actions, shields and charging slow you.
   const cls = CLASSES[player.cls], weapon = currentWeapon(player);
   let mx = (input.right ? 1 : 0) - (input.left ? 1 : 0), my = (input.down ? 1 : 0) - (input.up ? 1 : 0);
   const length = Math.hypot(mx, my); if (length > 0) { mx /= length; my /= length; }
-  const speed = cls.speed * (ARMORS[player.armor] || ARMORS.none).speedMultiplier * moveScale(player, weapon) * (player.dashTicks > 0 ? ABILITIES.dash.speed : 1);
+  const speed = cls.speed * outfitOf(player).speedMultiplier * moveScale(player, weapon) * (player.dashTicks > 0 ? ABILITIES.dash.speed : 1);
   const blend = 1 - Math.exp(-18 * DT);
   player.vx += (mx * speed - player.vx) * blend; player.vy += (my * speed - player.vy) * blend;
   moveBody(map, player, (player.vx + player.pushX) * DT, (player.vy + player.pushY) * DT);

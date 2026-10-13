@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import * as L from '../public/lockdown-engine.js';
-import { ARMORS, ARMOR_IDS } from '../public/lockdown-equipment.js';
+import { ARMORS, ARMOR_IDS, HELMETS, PANTS, SHOES, GEAR, GEAR_SLOTS, GEAR_LIMITS, PERK_IDS, combineGear } from '../public/lockdown-equipment.js';
 
 function duel({ weapon = 'blaster', armor = 'none', gap = 140, cls = 'striker' } = {}) {
   const state = L.createState({ seed: 7 });
@@ -165,4 +165,48 @@ test('light and heavy armor multiply actual class movement with Boost, charging 
     assert.ok(Math.abs(speeds.scout / speeds.none - ARMORS.scout.speedMultiplier) < 1e-10, `${mode}: light armor is faster`);
     assert.ok(Math.abs(speeds.heavy / speeds.none - ARMORS.heavy.speedMultiplier) < 1e-10, `${mode}: heavy armor is slower`);
   }
+});
+
+test('helmet, armor, pants and shoes stack: resistances and health add, speed and perks multiply', () => {
+  assert.ok(Object.keys(HELMETS).length * ARMOR_IDS.length * Object.keys(PANTS).length * Object.keys(SHOES).length >= 5000, 'thousands of builds');
+  for (const slot of GEAR_SLOTS) for (const [id, piece] of Object.entries(GEAR[slot])) {
+    assert.equal(piece.id, id); assert.ok(piece.name && piece.description, `${slot} ${id} is described`);
+    const alone = combineGear({ [slot]: id });
+    for (const field of [...PERK_IDS, 'gunResistance', 'bladeResistance', 'bombResistance', 'speedMultiplier']) assert.ok(Math.abs(alone[field] - piece[field]) < 1e-6, `${slot} ${id} ${field} is not clipped on its own`);
+  }
+  const build = combineGear({ helmet: 'sallet', armor: 'heavy', pants: 'greaves', shoes: 'sabatons' });
+  assert.ok(Math.abs(build.gunResistance - (HELMETS.sallet.gunResistance + ARMORS.heavy.gunResistance + PANTS.greaves.gunResistance + SHOES.sabatons.gunResistance)) < 1e-9);
+  assert.ok(Math.abs(build.speedMultiplier - Math.max(GEAR_LIMITS.speed[0], HELMETS.sallet.speedMultiplier * ARMORS.heavy.speedMultiplier * PANTS.greaves.speedMultiplier * SHOES.sabatons.speedMultiplier)) < 1e-3);
+  assert.equal(build.name, `${HELMETS.sallet.name} + ${ARMORS.heavy.name} + ${PANTS.greaves.name} + ${SHOES.sabatons.name}`);
+  assert.equal(combineGear({}).name, 'Unarmored');
+  assert.equal(combineGear({ helmet: 'bucket', armor: 'juggernaut' }).maxHp, HELMETS.bucket.maxHp + ARMORS.juggernaut.maxHp);
+  // Every one of the thousands of builds stays inside the limits.
+  for (const helmet of Object.keys(HELMETS)) for (const armor of ARMOR_IDS) for (const pants of Object.keys(PANTS)) for (const shoes of Object.keys(SHOES)) {
+    const gear = combineGear({ helmet, armor, pants, shoes });
+    for (const field of ['gunResistance', 'bladeResistance', 'bombResistance']) assert.ok(gear[field] >= GEAR_LIMITS.resistance[0] && gear[field] <= GEAR_LIMITS.resistance[1]);
+    assert.ok(gear.speedMultiplier >= GEAR_LIMITS.speed[0] && gear.speedMultiplier <= GEAR_LIMITS.speed[1]);
+    for (const field of ['gunDamage', 'bladeDamage', 'bombDamage']) assert.ok(gear[field] >= GEAR_LIMITS.power[0] && gear[field] <= GEAR_LIMITS.power[1]);
+  }
+});
+
+test('gear slots are validated atomically, change health, and work in a real fight', () => {
+  const state = L.createState({ seed: 3 }); L.setConnected(state, 0, true);
+  assert.deepEqual(GEAR_SLOTS.map(slot => state.players[0][slot]), ['none', 'none', 'none', 'none']);
+  assert.equal(L.setPlayerSetup(state, 0, { armor: 'heavy', shoes: 'rollerskates' }).ok, false);
+  assert.equal(state.players[0].armor, 'none', 'a bad piece applies nothing');
+  assert.ok(L.setPlayerSetup(state, 0, { helmet: 'bucket', pants: 'kilt', shoes: 'sneakers' }).ok);
+  assert.equal(state.players[0].maxHp, L.CLASSES.striker.hp + HELMETS.bucket.maxHp + SHOES.sneakers.maxHp);
+  // A gun helmet on a bare body still makes the blaster hit harder.
+  const plain = duel(), visor = duel();
+  assert.equal(L.setPlayerSetup(visor.state, 0, { helmet: 'visor' }).ok, false, 'no swapping helmets on a control point');
+  visor.me.helmet = 'visor';
+  for (const { state: s } of [plain, visor]) run(s, 40, t => ({ 0: { attack: t === 0 } }));
+  const dealt = ({ foe }) => foe.maxHp - foe.hp;
+  assert.equal(dealt(visor), Math.round(L.WEAPONS.blaster.damage * HELMETS.visor.gunDamage));
+  assert.ok(dealt(visor) > dealt(plain));
+  // Pants and shoes change movement too.
+  const fast = L.createState({ seed: 3 }); L.setConnected(fast, 0, true); L.setPlayerSetup(fast, 0, { pants: 'leggings', shoes: 'sneakers' });
+  const slow = L.createState({ seed: 3 }); L.setConnected(slow, 0, true); L.setPlayerSetup(slow, 0, { pants: 'greaves', shoes: 'sabatons' });
+  const travel = s => { L.startMatch(s, [0]); s.phase = 'fight'; const p = s.players[0], x = p.x; for (let i = 0; i < 30; i++) L.step(s, { 0: { ...L.emptyInput(0), right: true } }); return Math.abs(p.x - x) + Math.abs(p.y - 0); };
+  assert.ok(travel(fast) > travel(slow));
 });

@@ -60,9 +60,15 @@
         </section>
         <section class="ld-panel ld-equipment-panel" aria-labelledby="ld-equipment-title">
           <h2 id="ld-equipment-title">Equipment</h2>
-          <h3 id="ld-armor-title">Armor</h3>
-          <p class="ld-hint">Start in a T-shirt and shorts, or equip armor. Choose protection against guns, swords and blasts, with a movement tradeoff.</p>
-          <div class="ld-armors" id="ld-armors" role="group" aria-labelledby="ld-armor-title"></div>
+          <p class="ld-hint">Start in a T-shirt and shorts, then mix a helmet, armor, pants and shoes. Every piece trades something: protection adds up (capped at 60%), speed and attack bonuses multiply.</p>
+          <div class="ld-gear-tabs" role="tablist" aria-label="Equipment slots">
+            <button type="button" role="tab" data-gear-tab="helmet">Helmet<small></small></button>
+            <button type="button" role="tab" data-gear-tab="armor">Armor<small></small></button>
+            <button type="button" role="tab" data-gear-tab="pants">Pants<small></small></button>
+            <button type="button" role="tab" data-gear-tab="shoes">Shoes<small></small></button>
+          </div>
+          <div class="ld-armors" id="ld-armors" role="group"></div>
+          <div class="ld-gear-actions"><button type="button" id="ld-gear-random">Random build</button><button type="button" id="ld-gear-clear">Take everything off</button></div>
           <div class="ld-armor-summary-box" aria-live="polite">
             <p id="ld-armor-summary"></p>
             <p id="ld-armor-summary-stats"></p>

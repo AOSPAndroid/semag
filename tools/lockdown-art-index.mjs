@@ -26,7 +26,7 @@ if (missing.length) console.log(`Missing (placeholders used):\n  ${missing.join(
 
 function brief(ready, problems) {
   const groups = [...new Set(MANIFEST.map(entry => entry.group))];
-  const title = { tiles: 'Tiles', characters: 'Characters', knights: 'Armored outfits', weapons: 'Held weapons', projectiles: 'Projectiles', bombs: 'Bombs', effects: 'Effects', pickups: 'Pickups', points: 'Control points', icons: 'Icons' };
+  const title = { tiles: 'Tiles', characters: 'Characters', gear: 'Helmets, pants and shoes (overlays)', knights: 'Armored outfits', weapons: 'Held weapons', projectiles: 'Projectiles', bombs: 'Bombs', effects: 'Effects', pickups: 'Pickups', points: 'Control points', icons: 'Icons' };
   const rows = group => MANIFEST.filter(entry => entry.group === group).map(entry => `| ${ready.has(entry.file) ? '✅' : '⬜'} | \`${entry.file}\` | ${entry.size.join('×')} | ${entry.frames}${entry.rows ? ` × ${entry.rows} rows` : ''} | ${entry.anchor.join(', ')} | ${entry.description.replace(/\|/g, '/')} |`).join('\n');
   return `# Lockdown art brief
 

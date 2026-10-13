@@ -35,3 +35,66 @@ export const ARMORS = Object.freeze({
   clockwork: armor('clockwork', 'Clockwork Harness', 'A ticking brass harness: your class ability and dash recharge much faster, but your guns and swords hit 5% softer.', .05, .05, .05, 1, 'clockwork', { abilityCooldown: .65, dashCooldown: .8, gunDamage: .95, bladeDamage: .95 }),
 });
 export const ARMOR_IDS = Object.freeze(Object.keys(ARMORS));
+
+/** Helmets, pants and shoes. Same fields as body armour; every piece may help or hurt. */
+const piece = (id, name, description, gun, blade, bomb, speed, perks = {}) => armor(id, name, description, gun, blade, bomb, speed, id, perks);
+export const HELMETS = Object.freeze({
+  none: piece('none', 'Bare head', 'Nothing on your head.', 0, 0, 0, 1),
+  sallet: piece('sallet', 'Sallet Helm', 'A plain steel sallet: solid all-round protection, a little heavy.', .08, .08, .05, .97),
+  visor: piece('visor', 'Marksman Visor', 'A tinted visor: guns hit 10% harder and charge 10% faster, but it leaves your head bare to blades.', 0, -.05, 0, 1, { gunDamage: 1.1, gunCharge: .9 }),
+  horned: piece('horned', 'Horned Helm', 'Swords hit 10% harder; the horns make you an easy target for guns.', -.05, .05, 0, 1, { bladeDamage: 1.1 }),
+  hood: piece('hood', 'Hexweave Hood', 'Status effects last 30% less and your class ability recharges 10% faster; no protection.', 0, 0, 0, 1, { statusDuration: .7, abilityCooldown: .9 }),
+  lampcap: piece('lampcap', 'Sapper Lamp Cap', 'Bombs charge 15% faster and hit 10% harder; blasts still rattle you.', 0, 0, .1, 1, { bombCharge: .85, bombDamage: 1.1 }),
+  feather: piece('feather', 'Feathered Cap', 'A dashing cap: 5% faster and the dash recharges 10% sooner, at the cost of 5 health.', 0, 0, 0, 1.05, { dashCooldown: .9, maxHp: -5 }),
+  bucket: piece('bucket', 'Bucket Helm', '+15 health and hard to shove, but you can barely see where you are going.', .05, .05, .05, .95, { maxHp: 15, knockback: .8 }),
+  circlet: piece('circlet', 'Mender Circlet', 'All healing you receive is 25% stronger.', 0, 0, 0, 1, { healing: 1.25 }),
+  goggles: piece('goggles', 'Clockwork Goggles', 'Your class ability recharges 15% faster; the lenses throw off your aim a little (guns −5%).', 0, 0, 0, 1, { abilityCooldown: .85, gunDamage: .95 }),
+});
+export const PANTS = Object.freeze({
+  none: piece('none', 'Shorts', 'Plain shorts.', 0, 0, 0, 1),
+  greaves: piece('greaves', 'Plate Greaves', 'Steel leg plates: good against swords, a little slower.', .05, .10, .05, .94),
+  leggings: piece('leggings', 'Runner Leggings', '6% faster with a 10% longer dash; no protection.', 0, 0, 0, 1.06, { dashDistance: 1.1 }),
+  chausses: piece('chausses', 'Chainmail Chausses', 'Blast protection and 20% less knockback, slightly slower.', .05, .05, .15, .97, { knockback: .8 }),
+  breeches: piece('breeches', 'Duelist Breeches', 'Swings 8% faster with light sword protection.', 0, .05, 0, 1, { bladeSpeed: 1.08 }),
+  sapper: piece('sapper', 'Sapper Trousers', 'Pockets full of fuses: bombs charge 15% faster.', 0, 0, .05, 1, { bombCharge: .85 }),
+  cargo: piece('cargo', 'Cargo Trousers', 'Spare magazines: gun charges 10% faster and guns hit 5% harder, slightly slower.', 0, 0, 0, .97, { gunCharge: .9, gunDamage: 1.05 }),
+  kilt: piece('kilt', 'Kilt of Fury', 'Swords hit 10% harder, but bullets find bare knees (guns hit you 10% harder).', -.10, 0, 0, 1.03, { bladeDamage: 1.1 }),
+});
+export const SHOES = Object.freeze({
+  none: piece('none', 'Plain shoes', 'Simple shoes.', 0, 0, 0, 1),
+  sneakers: piece('sneakers', 'Sprint Sneakers', '8% faster, at the cost of 5 health.', 0, 0, 0, 1.08, { maxHp: -5 }),
+  sabatons: piece('sabatons', 'Iron Sabatons', 'Rooted to the ground: 30% less knockback and some blast protection, but 8% slower.', 0, 0, .10, .92, { knockback: .7 }),
+  dashboots: piece('dashboots', 'Dash Boots', 'The dash recharges 25% faster and goes 15% further.', 0, 0, 0, 1, { dashCooldown: .75, dashDistance: 1.15 }),
+  spurs: piece('spurs', 'Spurred Boots', 'Swords hit 5% harder and you move 3% faster.', 0, 0, 0, 1.03, { bladeDamage: 1.05 }),
+  treads: piece('treads', 'Mud Treads', 'Status effects last 25% less; heavy soles slow you 3%.', 0, 0, 0, .97, { statusDuration: .75 }),
+  clogs: piece('clogs', 'Rocket Clogs', 'A huge 35% longer dash that takes 20% longer to recharge.', 0, 0, 0, 1, { dashDistance: 1.35, dashCooldown: 1.2 }),
+  sandals: piece('sandals', 'Healer Sandals', 'Mend 1 HP a second out of combat and heal 10% more.', 0, 0, 0, 1, { regen: 1, healing: 1.1 }),
+});
+
+/** The four equipment slots, head to toe, and the table each one picks from. */
+export const GEAR_SLOTS = Object.freeze(['helmet', 'armor', 'pants', 'shoes']);
+export const GEAR = Object.freeze({ helmet: HELMETS, armor: ARMORS, pants: PANTS, shoes: SHOES });
+// Stacking is allowed to get silly, but not unplayable: every combined stat lives in these bounds.
+export const GEAR_LIMITS = Object.freeze({ resistance: [-.5, .6], speed: [.6, 1.45], power: [.6, 1.4], tempo: [.45, 1.6], maxHp: [-40, 60], knockback: [.3, 1.6], statusDuration: [.3, 1.6], healing: [.6, 1.9] });
+const PERK_LIMIT = { gunDamage: 'power', bladeDamage: 'power', bombDamage: 'power', bladeSpeed: 'power', healing: 'healing',
+  gunCharge: 'tempo', bombCharge: 'tempo', dashCooldown: 'tempo', dashDistance: 'tempo', abilityCooldown: 'tempo', knockback: 'knockback', statusDuration: 'statusDuration', maxHp: 'maxHp' };
+
+const combined = new Map();
+/** Everything a knight wears, added up: resistances add (capped), speed and multipliers
+ * multiply, health and regeneration add. Accepts a player or { helmet, armor, pants, shoes }. */
+export function combineGear(gear = {}) {
+  const ids = GEAR_SLOTS.map(slot => Object.hasOwn(GEAR[slot], gear[slot]) ? gear[slot] : 'none'), key = ids.join('|');
+  if (combined.has(key)) return combined.get(key);
+  const pieces = ids.map((id, index) => GEAR[GEAR_SLOTS[index]][id]);
+  const clamp = (value, [low, high]) => Math.max(low, Math.min(high, value));
+  const sum = field => pieces.reduce((total, part) => total + part[field], 0), product = field => pieces.reduce((total, part) => total * part[field], 1);
+  const stats = { gunResistance: clamp(sum('gunResistance'), GEAR_LIMITS.resistance), bladeResistance: clamp(sum('bladeResistance'), GEAR_LIMITS.resistance), bombResistance: clamp(sum('bombResistance'), GEAR_LIMITS.resistance),
+    speedMultiplier: Math.round(clamp(product('speedMultiplier'), GEAR_LIMITS.speed) * 1e4) / 1e4 };
+  for (const perk of PERK_IDS) {
+    const value = perk === 'maxHp' || perk === 'regen' ? sum(perk) : product(perk);
+    stats[perk] = PERK_LIMIT[perk] ? Math.round(clamp(value, GEAR_LIMITS[PERK_LIMIT[perk]]) * 1e4) / 1e4 : value;
+  }
+  const result = Object.freeze({ ...stats, name: pieces.filter(part => part.id !== 'none').map(part => part.name).join(' + ') || 'Unarmored', pieces: Object.freeze(ids) });
+  combined.set(key, result);
+  return result;
+}

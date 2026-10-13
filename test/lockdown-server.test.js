@@ -53,8 +53,11 @@ test('Lockdown rooms seat up to eight, take setup and map choices, and start wit
   await expectError(first, { type: 'start', mapId: 'keep' }, /no player, map/i);
 
   first.send({ type: 'lockdown-map', mapId: 'keep' });
-  second.send({ type: 'lockdown-setup', team: 1, cls: 'guardian', armor: 'ballistic', weapons: ['cleaver', 'pulsar', 'vortex'] });
+  await expectError(first, { type: 'lockdown-setup', helmet: 'crown', armor: 'heavy' }, /helmet/);
+  assert.equal(room.state.players[0].armor, 'none', 'an invalid helmet does not partially apply the armor');
+  second.send({ type: 'lockdown-setup', team: 1, cls: 'guardian', armor: 'ballistic', helmet: 'bucket', pants: 'kilt', shoes: 'clogs', weapons: ['cleaver', 'pulsar', 'vortex'] });
   await flush(first); await flush(second);
+  assert.deepEqual(['helmet', 'pants', 'shoes'].map(slot => room.state.players[1][slot]), ['bucket', 'kilt', 'clogs']);
   assert.equal(room.state.mapId, 'keep'); assert.equal(room.mapId, 'keep');
   assert.deepEqual([room.state.players[1].team, room.state.players[1].cls], [1, 'guardian']);
   assert.equal(room.state.players[1].armor, 'ballistic');
