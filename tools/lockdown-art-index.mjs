@@ -54,9 +54,10 @@ shapes; every PNG listed below replaces one placeholder as soon as it is added.
 - **Terrain:** quiet painted floor textures, lighter wall tops and darker front faces.
   Tile materials join seamlessly; hazards sit below the walking surface and keep their edge shadows.
 - **Equipment:** all classes share the T-shirt-and-shorts body. Each armor is a separate transparent
-  garment layer with the same 384×320 grid, row, frame, anchor and mirroring. Leave exposed body parts transparent.
+  garment layer with the same 640×320 grid, row, frame, anchor and mirroring. Leave exposed body parts transparent.
   Armor contains no headgear, pants or shoes. Draw the body, armor, shoes, pants and helmet in that order;
-  every layer follows the same idle bob and walking pose. Helmets, pants and shoes use neutral materials.
+  every layer follows the same pose. All sheets have ten columns of 64×64 frames: columns 1–2 idle,
+  3–6 walk, and 7–10 run (contact, flight, opposite contact, opposite flight). Helmets, pants and shoes use neutral materials.
   Draw equipment as worn: heads hide the far side of open bands, and ankles enter shoe cuffs.
   Register shoe openings and soles to the actual leg pose; keep hidden rear surfaces transparent.
   Armor health bonuses add to class health; choosing equipment preserves class abilities.

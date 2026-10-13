@@ -74,20 +74,27 @@ export const KNIGHT_FACINGS = Object.freeze([
   Object.freeze({ id: 'up', label: 'back to the camera', hand: Object.freeze([44, 38]), weaponBehind: true }),
 ]);
 const facingList = KNIGHT_FACINGS.map((facing, row) => `row ${row + 1} ${facing.id} (${facing.label}, hand at ${facing.hand.join(', ')})`).join('; ');
+/** Shared columns for the body and every worn layer; run columns are ready for speed-based selection. */
+export const KNIGHT_ANIMATION = Object.freeze({
+  frameSize: Object.freeze([64, 64]), columns: 10,
+  idle: Object.freeze({ start: 0, frames: 2 }),
+  walk: Object.freeze({ start: 2, frames: 4 }),
+  run: Object.freeze({ start: 6, frames: 4 }),
+});
 // Every class wears this common body. Equipment is a separate registered layer.
 const characters = [0, 1].map(team => asset(
-  `character_base_team${team}`, 384, 320, [32, 58],
-  `Smoothly shaded, rounded casual character in a cream T-shirt, charcoal shorts and shoes, with uncovered hair and bare hands. Team ${team === 0 ? 'Amber' : 'Cyan'} on shirt trim only. Six columns by five rows of 64x64 frames: two idle and four walk poses. Feet at 32, 58; ${facingList}. Empty-handed. All classes use this same body beneath armor.`,
-  { group: 'characters', frames: 6, rows: KNIGHT_FACINGS.length, facings: KNIGHT_FACINGS },
+  `character_base_team${team}`, 640, 320, [32, 58],
+  `Smoothly shaded, rounded casual character in a cream T-shirt, charcoal shorts and shoes, with uncovered hair and bare hands. Team ${team === 0 ? 'Amber' : 'Cyan'} on shirt trim only. Ten columns by five rows of 64x64 frames: columns 1–2 idle, 3–6 walk, 7–10 run (alternating contact and flight poses). Feet at 32, 58; ${facingList}. Empty-handed. All classes use this same body beneath armor.`,
+  { group: 'characters', frames: KNIGHT_ANIMATION.columns, rows: KNIGHT_FACINGS.length, facings: KNIGHT_FACINGS },
 ));
 const armors = Object.values(ARMORS).filter(armor => armor.id !== 'none').flatMap(armor => [0, 1].map(team => asset(
-  `armor_${armor.id}_team${team}`, 384, 320, [32, 58],
-  `${armor.name} torso garment-only overlay: ${armor.description} Smooth rounded materials, softly painted shading. Team ${team === 0 ? 'Amber' : 'Cyan'} on narrow trim only. Match the common body's exact six-column, five-row grid, poses and anchor. Draw over the body with the same row, frame and mirroring. No headgear, pants, shoes or weapons; uncovered skin, hands, hair and clothing remain transparent. ${facingList}.`,
-  { group: 'armors', frames: 6, rows: KNIGHT_FACINGS.length, facings: KNIGHT_FACINGS },
+  `armor_${armor.id}_team${team}`, 640, 320, [32, 58],
+  `${armor.name} torso garment-only overlay: ${armor.description} Smooth rounded materials, softly painted shading. Team ${team === 0 ? 'Amber' : 'Cyan'} on narrow trim only. Match the common body's exact ten-column, five-row grid: 1–2 idle, 3–6 walk, 7–10 run. Draw over the body with the same row, frame and mirroring. No headgear, pants, shoes or weapons; uncovered skin, hands, hair and clothing remain transparent. ${facingList}.`,
+  { group: 'armors', frames: KNIGHT_ANIMATION.columns, rows: KNIGHT_FACINGS.length, facings: KNIGHT_FACINGS },
 )));
 
 // Helmets, pants and shoes are separate overlay sheets drawn on top of the body outfit, in the same
-// 6×5 grid with the same feet point, so any helmet + armor + pants + shoes combination lines up.
+// 10×5 grid with the same feet point, so any helmet + armor + pants + shoes combination lines up.
 const GEAR_LOOKS = Object.freeze({
   helmet: {
     sallet: 'a rounded steel sallet with a narrow eye slit and a short tail at the back',
@@ -125,9 +132,9 @@ const GEAR_LOOKS = Object.freeze({
 });
 const GEAR_PIECES = Object.freeze({ helmet: HELMETS, pants: PANTS, shoes: SHOES });
 const gear = Object.entries(GEAR_LOOKS).flatMap(([slot, looks]) => Object.entries(looks).flatMap(([id, look]) => [
-  asset(`gear_${slot}_${id}`, 384, 320, [32, 58],
-    `${GEAR_PIECES[slot][id].name} overlay: ONLY ${look}, nothing else (transparent everywhere else). It is drawn on top of every body outfit, so it must sit exactly where the ${slot === 'helmet' ? 'head' : slot === 'pants' ? 'hips and legs' : 'feet'} of character_base are in each frame: same 6 columns × 5 facing rows of 64x64 frames, same idle bob and walking leg poses, feet at 32, 58. Neutral colours (no team colour).`,
-    { group: 'gear', frames: 6, rows: KNIGHT_FACINGS.length, facings: KNIGHT_FACINGS }),
+  asset(`gear_${slot}_${id}`, 640, 320, [32, 58],
+    `${GEAR_PIECES[slot][id].name} overlay: ONLY ${look}, nothing else (transparent everywhere else). It is drawn on top of every body outfit, so it must sit exactly where the ${slot === 'helmet' ? 'head' : slot === 'pants' ? 'hips and legs' : 'feet'} of character_base are in each frame: same 10 columns × 5 facing rows of 64x64 frames; 1–2 idle, 3–6 walk, 7–10 run; feet at 32, 58. Neutral colours (no team colour).`,
+    { group: 'gear', frames: KNIGHT_ANIMATION.columns, rows: KNIGHT_FACINGS.length, facings: KNIGHT_FACINGS }),
   asset(`icon_${slot}_${id}`, 48, 48, [24, 24], `${GEAR_PIECES[slot][id].name} equipment icon: ${look}. Clear silhouette on a transparent background.`, { group: 'icons' }),
 ]));
 
@@ -176,7 +183,7 @@ const pickups = [
   asset('fx_regen', 16, 16, [8, 8], 'Small green plus that drifts up from a knight healing inside their base.', { group: 'pickups' }),
 ];
 const pointArt = [
-  asset('point_base', 160, 160, [80, 80], 'Control point floor plate seen from above, neutral grey, with a centre emblem area. The game draws the capture ring and letter on top.', { group: 'points' }),
+  asset('point_base', 160, 160, [80, 80], 'Round neutral stone control-point floor inlay drawn straight from above, with a transparent centre. May be supplied at exactly 2x (320x320). The game foreshortens it into an oval and draws the capture indicator, beacon and letter separately.', { group: 'points' }),
   asset('point_beacon', 48, 96, [24, 88], 'Beacon pylon at the centre of a control point; the game tints its light by owner.', { group: 'points' }),
 ];
 const ui = [
