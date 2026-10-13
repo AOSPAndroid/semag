@@ -7,7 +7,7 @@ import { gameKey } from './keyboard-layout.js';
 import { GameAudio } from './audio.js';
 import { getName, saveName } from './hub/shared.js';
 
-const { TICK_RATE, RULES, CLASSES, WEAPONS, WEAPON_IDS, DEFAULT_LOADOUTS, MAPS, MAP_IDS, ABILITIES, INPUT_KEYS } = Engine;
+const { TICK_RATE, RULES, CLASSES, WEAPONS, WEAPON_IDS, DEFAULT_LOADOUTS, MAPS, MAP_IDS, ABILITIES, INPUT_KEYS, GUARD, STATUS, STATUS_IDS } = Engine;
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 const roomId = params.get('room');
@@ -145,12 +145,12 @@ canvas.addEventListener('pointerdown', event => {
   canvas.focus();
   mouse.x = event.offsetX; mouse.y = event.offsetY;
   if (event.button === 0) { mouse.left = true; press('attack'); }
-  if (event.button === 2) { mouse.right = true; press('ability'); }
+  if (event.button === 2) { mouse.right = true; press('guard'); }
   canvas.setPointerCapture?.(event.pointerId);
 });
 canvas.addEventListener('pointerup', event => {
   if (event.button === 0) { mouse.left = false; release('attack'); }
-  if (event.button === 2) { mouse.right = false; release('ability'); }
+  if (event.button === 2) { mouse.right = false; release('guard'); }
 });
 canvas.addEventListener('wheel', event => { event.preventDefault(); if (Math.abs(event.deltaY) > 4) wheelSwap = true; }, { passive: false });
 
@@ -206,6 +206,17 @@ function playEvents(current) {
         case 'heal': audio.tone(520, .3, { end: 880, gain: .15 * near }); break;
         case 'dash': audio.noise(.18, { highpass: 2000, gain: .1 * near }); break;
         case 'cloak': audio.tone(700, .25, { end: 200, gain: .1 * near }); break;
+        case 'block': audio.tone(1200, .05, { end: 900, type: 'square', gain: .07 * near }); audio.noise(.05, { highpass: 2500, gain: .08 * near }); break;
+        case 'guardBreak': audio.noise(.25, { highpass: 1800, gain: .25 * near }); audio.tone(400, .3, { end: 120, type: 'sawtooth', gain: .15 * near }); break;
+        case 'status': audio.tone(event.status === 'freeze' ? 1400 : event.status === 'shock' ? 900 : event.status === 'burn' ? 300 : 500, .18, { end: event.status === 'freeze' ? 2000 : 200, type: 'triangle', gain: .1 * near }); break;
+        case 'ricochet': audio.tone(2200, .04, { end: 1500, type: 'square', gain: .04 * near }); break;
+        case 'detonate': audio.noise(.3, { highpass: 60, lowpass: 1800, gain: .35 * near }); break;
+        case 'slam': audio.noise(.35, { highpass: 40, lowpass: 900, gain: .45 * near }); audio.tone(70, .3, { end: 35, gain: .35 * near }); break;
+        case 'spinTurn': audio.noise(.1, { highpass: 1200, lowpass: 5000, gain: .12 * near }); break;
+        case 'vortex': audio.tone(200, .6, { end: 60, type: 'sawtooth', gain: .12 * near }); break;
+        case 'chargeRelease': if (event.playerId === localId) audio.tone(660, .08, { end: 990, type: 'triangle', gain: .12 }); break;
+        case 'dryFire': if (event.playerId === localId) audio.tone(180, .04, { type: 'square', gain: .08 }); break;
+        case 'reloaded': if (event.playerId === localId) audio.tone(1000, .04, { end: 1300, type: 'square', gain: .05 }); break;
         case 'fight': audio.fight?.(); break;
         case 'heartDrop': audio.tone(440, .12, { end: 660, type: 'triangle', gain: .06 * near }); break;
         case 'heartPickup': audio.tone(660, .18, { end: 990, type: 'sine', gain: (event.playerId === localId ? .22 : .08) * near }); break;
@@ -254,7 +265,7 @@ function buildWeaponCards(me) {
     const weapon = WEAPONS[id], card = document.createElement('div');
     card.className = 'ld-weapon';
     card.innerHTML = `<kbd>${slot + 1}</kbd>${iconMarkup(`icon_weapon_${id}`, FAMILY_GLYPH[weapon.family])}<b></b><small></small><div class="ld-pips"></div><div class="ld-charge"><em></em></div>`;
-    card.querySelector('b').textContent = weapon.name; card.querySelector('small').textContent = weapon.family;
+    card.querySelector('b').textContent = weapon.name; card.querySelector('small').textContent = weapon.type;
     $('ld-weapons').append(card);
     return { card, pips: card.querySelector('.ld-pips'), charge: card.querySelector('.ld-charge em'), id };
   });
@@ -303,6 +314,10 @@ function updateHud(current) {
     $('ld-ability1').dataset.active = String(ability[2]);
     $('ld-ability1').querySelector('em').style.transform = `scaleX(${me.abilityCooldown / ability[1]})`;
     $('ld-ability2').hidden = me.cls !== 'guardian';
+    const guardMax = me.cls === 'guardian' ? GUARD.guardianMax : GUARD.max;
+    $('ld-guard-bar').style.width = `${Math.max(0, (me.guardHp ?? guardMax) / guardMax * 100)}%`;
+    $('ld-guard').dataset.state = me.guardBroken ? 'broken' : me.guarding ? 'up' : 'ready';
+    $('ld-statuses').textContent = STATUS_IDS.filter(id => me.status?.[id] > 0).map(id => `${STATUS[id].name} ${Math.ceil(me.status[id] / TICK_RATE)}s`).join(' · ');
     $('ld-ability2').querySelector('em').style.transform = `scaleX(${me.ability2Cooldown / ABILITIES.heal.cooldown})`;
     buildWeaponCards(me);
     weaponCards.forEach((card, slot) => {

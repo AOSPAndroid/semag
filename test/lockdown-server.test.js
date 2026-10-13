@@ -48,7 +48,7 @@ test('Lockdown rooms seat up to eight, take setup and map choices, and start wit
   await expectError(first, { type: 'start', mapId: 'gate' }, /no player, map/i);
 
   first.send({ type: 'lockdown-map', mapId: 'gate' });
-  second.send({ type: 'lockdown-setup', team: 1, cls: 'guardian', weapons: ['cleaver', 'scatter', 'vortex'] });
+  second.send({ type: 'lockdown-setup', team: 1, cls: 'guardian', weapons: ['cleaver', 'pulsar', 'vortex'] });
   await flush(first); await flush(second);
   assert.equal(room.state.mapId, 'gate'); assert.equal(room.mapId, 'gate');
   assert.deepEqual([room.state.players[1].team, room.state.players[1].cls], [1, 'guardian']);

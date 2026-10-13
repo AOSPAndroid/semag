@@ -6,7 +6,7 @@ Lockdown is a top-down team brawl in the spirit of Spiral Knights' Lockdown: up 
 three control points, swords, guns and bombs. The game is fully playable with placeholder
 shapes; every PNG listed below replaces one placeholder as soon as it is added.
 
-**Progress: 57/67 sprites ready.**
+**Progress: 54/95 sprites ready.**
 
 Wrong size (ignored until fixed):
 - knight_striker_team0.png: expected 384x320, got 256x64
@@ -75,16 +75,23 @@ Wrong size (ignored until fixed):
 
 | | File | Size (px) | Frames | Anchor | Notes |
 |---|---|---|---|---|---|
-| ✅ | `weapon_brand.png` | 64×32 | 1 | 12, 16 | Knight Brand (blade) held in the hand, pointing right; the grip sits at the anchor. Balanced three-cut combo. Charge: a full spin slash. |
-| ✅ | `weapon_cleaver.png` | 64×32 | 1 | 12, 16 | Troll Cleaver (blade) held in the hand, pointing right; the grip sits at the anchor. Slow, brutal two-hit chain. Charge: a ground slam around you. |
-| ✅ | `weapon_rapier.png` | 64×32 | 1 | 12, 16 | Needle Rapier (blade) held in the hand, pointing right; the grip sits at the anchor. Fast, narrow thrusts. Charge: a long lunge through the target. |
-| ✅ | `weapon_blaster.png` | 64×32 | 1 | 12, 16 | Pulse Blaster (gun) held in the hand, pointing right; the grip sits at the anchor. Reliable three-shot sidearm. Charge: a piercing bolt. |
-| ✅ | `weapon_autogun.png` | 64×32 | 1 | 12, 16 | Rattle Autogun (gun) held in the hand, pointing right; the grip sits at the anchor. Fast six-round spray. Charge: an eight-shot burst. |
-| ✅ | `weapon_scatter.png` | 64×32 | 1 | 12, 16 | Scattergun (gun) held in the hand, pointing right; the grip sits at the anchor. Short-range pellet blast. Charge: a wide nine-pellet fan. |
-| ✅ | `weapon_magnus.png` | 64×32 | 1 | 12, 16 | Magnus Hand-cannon (gun) held in the hand, pointing right; the grip sits at the anchor. Heavy two-shot cannon with big knockback. Charge: an exploding round. |
-| ✅ | `weapon_blast.png` | 64×32 | 1 | 12, 16 | Blast Bomb (bomb) held in the hand, pointing right; the grip sits at the anchor. Charge, release, run. A big blast after a short fuse. |
-| ✅ | `weapon_vortex.png` | 64×32 | 1 | 12, 16 | Vortex Bomb (bomb) held in the hand, pointing right; the grip sits at the anchor. Drags every enemy in range toward its centre, then pops. |
-| ✅ | `weapon_shard.png` | 64×32 | 1 | 12, 16 | Shard Bomb (bomb) held in the hand, pointing right; the grip sits at the anchor. Bursts into eight flying shards that cut across the point. |
+| ✅ | `weapon_brand.png` | 64×32 | 1 | 12, 16 | Knight Brand (blade) held in the hand, pointing right; the grip sits at the anchor. Balanced three-cut combo. Charge: lunge forward and end in a burning burst. |
+| ✅ | `weapon_cleaver.png` | 64×32 | 1 | 12, 16 | Troll Cleaver (blade) held in the hand, pointing right; the grip sits at the anchor. Slow, brutal overhead chain that stuns. Charge: leap and slam the ground around you. |
+| ✅ | `weapon_rapier.png` | 64×32 | 1 | 12, 16 | Needle Rapier (blade) held in the hand, pointing right; the grip sits at the anchor. Quick narrow thrusts that step you forward. Charge: a long lunge straight through the target. |
+| ⬜ | `weapon_thorn.png` | 64×32 | 1 | 12, 16 | Briar Blade (blade) held in the hand, pointing right; the grip sits at the anchor. Balanced combo. Charge: spray a short, wide shower of poison thorns. |
+| ⬜ | `weapon_greatblade.png` | 64×32 | 1 | 12, 16 | Umbral Greatblade (blade) held in the hand, pointing right; the grip sits at the anchor. Heavy two-hit chain. Charge: a slow wave of shadow that carries knights along with it. |
+| ⬜ | `weapon_spur.png` | 64×32 | 1 | 12, 16 | Gyre Spur (blade) held in the hand, pointing right; the grip sits at the anchor. Fast light four-cut chain. Charge: spin three times, hitting everything around you each turn. |
+| ✅ | `weapon_blaster.png` | 64×32 | 1 | 12, 16 | Pulse Blaster (gun) held in the hand, pointing right; the grip sits at the anchor. Reliable three-shot gun. Charge: a big bolt that pierces every knight in its path. |
+| ⬜ | `weapon_pulsar.png` | 64×32 | 1 | 12, 16 | Ripple Caster (gun) held in the hand, pointing right; the grip sits at the anchor. Slow waves that widen as they travel and pass through knights. Charge: one huge wave. |
+| ⬜ | `weapon_alchemer.png` | 64×32 | 1 | 12, 16 | Ricochet Coil (gun) held in the hand, pointing right; the grip sits at the anchor. Bolts that bounce off walls. Charge: four shocking bolts that bounce twice. |
+| ✅ | `weapon_autogun.png` | 64×32 | 1 | 12, 16 | Rattle Autogun (gun) held in the hand, pointing right; the grip sits at the anchor. Six fast, light rounds. Charge: a focused ten-round stream. |
+| ⬜ | `weapon_catalyzer.png` | 64×32 | 1 | 12, 16 | Tether Catalyst (gun) held in the hand, pointing right; the grip sits at the anchor. Shots stick up to three charges on a knight. Charge: a detonator that blows them all at once. |
+| ✅ | `weapon_magnus.png` | 64×32 | 1 | 12, 16 | Thunder Hand-cannon (gun) held in the hand, pointing right; the grip sits at the anchor. Two heavy rounds with big knockback. Charge: a round that explodes on impact. |
+| ✅ | `weapon_blast.png` | 64×32 | 1 | 12, 16 | Blast Bomb (bomb) held in the hand, pointing right; the grip sits at the anchor. Charges fast. A big knockback blast after a short fuse. |
+| ⬜ | `weapon_haze.png` | 64×32 | 1 | 12, 16 | Ember Haze (bomb) held in the hand, pointing right; the grip sits at the anchor. Leaves a cloud that sets enemies on fire. |
+| ⬜ | `weapon_frost.png` | 64×32 | 1 | 12, 16 | Frost Haze (bomb) held in the hand, pointing right; the grip sits at the anchor. Leaves a cloud that freezes enemies solid. |
+| ✅ | `weapon_shard.png` | 64×32 | 1 | 12, 16 | Splinter Bomb (bomb) held in the hand, pointing right; the grip sits at the anchor. Bursts into eight shards that cut across the point. |
+| ✅ | `weapon_vortex.png` | 64×32 | 1 | 12, 16 | Vortex Bomb (bomb) held in the hand, pointing right; the grip sits at the anchor. Pulls every enemy in range to its centre and holds them, then blasts them apart. |
 
 ## Icons
 
@@ -93,13 +100,20 @@ Wrong size (ignored until fixed):
 | ✅ | `icon_weapon_brand.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Knight Brand. Clear silhouette on a transparent background. |
 | ✅ | `icon_weapon_cleaver.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Troll Cleaver. Clear silhouette on a transparent background. |
 | ✅ | `icon_weapon_rapier.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Needle Rapier. Clear silhouette on a transparent background. |
+| ⬜ | `icon_weapon_thorn.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Briar Blade. Clear silhouette on a transparent background. |
+| ⬜ | `icon_weapon_greatblade.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Umbral Greatblade. Clear silhouette on a transparent background. |
+| ⬜ | `icon_weapon_spur.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Gyre Spur. Clear silhouette on a transparent background. |
 | ✅ | `icon_weapon_blaster.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Pulse Blaster. Clear silhouette on a transparent background. |
+| ⬜ | `icon_weapon_pulsar.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Ripple Caster. Clear silhouette on a transparent background. |
+| ⬜ | `icon_weapon_alchemer.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Ricochet Coil. Clear silhouette on a transparent background. |
 | ✅ | `icon_weapon_autogun.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Rattle Autogun. Clear silhouette on a transparent background. |
-| ✅ | `icon_weapon_scatter.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Scattergun. Clear silhouette on a transparent background. |
-| ✅ | `icon_weapon_magnus.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Magnus Hand-cannon. Clear silhouette on a transparent background. |
+| ⬜ | `icon_weapon_catalyzer.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Tether Catalyst. Clear silhouette on a transparent background. |
+| ✅ | `icon_weapon_magnus.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Thunder Hand-cannon. Clear silhouette on a transparent background. |
 | ✅ | `icon_weapon_blast.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Blast Bomb. Clear silhouette on a transparent background. |
+| ⬜ | `icon_weapon_haze.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Ember Haze. Clear silhouette on a transparent background. |
+| ⬜ | `icon_weapon_frost.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Frost Haze. Clear silhouette on a transparent background. |
+| ✅ | `icon_weapon_shard.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Splinter Bomb. Clear silhouette on a transparent background. |
 | ✅ | `icon_weapon_vortex.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Vortex Bomb. Clear silhouette on a transparent background. |
-| ✅ | `icon_weapon_shard.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Shard Bomb. Clear silhouette on a transparent background. |
 | ✅ | `icon_class_striker.png` | 64×64 | 1 | 32, 32 | Striker class emblem for the lobby and scoreboard. |
 | ✅ | `icon_class_guardian.png` | 64×64 | 1 | 32, 32 | Guardian class emblem for the lobby and scoreboard. |
 | ✅ | `icon_class_recon.png` | 64×64 | 1 | 32, 32 | Recon class emblem for the lobby and scoreboard. |
@@ -112,19 +126,26 @@ Wrong size (ignored until fixed):
 
 | | File | Size (px) | Frames | Anchor | Notes |
 |---|---|---|---|---|---|
-| ✅ | `proj_bullet.png` | 16×8 | 1 | 8, 4 | Standard energy round, pointing right. |
-| ✅ | `proj_pierce.png` | 32×10 | 1 | 16, 5 | Charged piercing bolt, longer and brighter, pointing right. |
-| ✅ | `proj_explosive.png` | 18×18 | 1 | 9, 9 | Charged Magnus explosive shell. |
-| ✅ | `proj_shard.png` | 14×6 | 1 | 7, 3 | Shard Bomb fragment, pointing right. |
-| ✅ | `proj_pellet.png` | 8×8 | 1 | 4, 4 | Scattergun pellet. |
+| ✅ | `proj_bullet.png` | 16×8 | 1 | 8, 4 | Standard energy round, pointing right. Hitbox is a 5 px radius at the bright tip. |
+| ✅ | `proj_pierce.png` | 32×10 | 1 | 16, 5 | Charged piercing bolt, longer and brighter, pointing right (9 px hitbox radius). |
+| ✅ | `proj_explosive.png` | 18×18 | 1 | 9, 9 | Charged hand-cannon round that explodes on impact. |
+| ⬜ | `proj_ricochet.png` | 16×8 | 1 | 8, 4 | Ricochet Coil bolt: electric blue, pointing right; it bounces off walls. |
+| ⬜ | `proj_pulse.png` | 32×64 | 1 | 16, 32 | Ripple Caster wave seen from above: a curved band of light, convex side facing right. The game scales it as the wave widens. |
+| ⬜ | `proj_catalyst.png` | 14×14 | 1 | 7, 7 | Sticky golden catalyst orb that clings to a knight. |
+| ⬜ | `proj_detonator.png` | 18×18 | 1 | 9, 9 | Red-orange detonator orb that sets off stuck catalysts. |
+| ⬜ | `proj_thorn.png` | 14×6 | 1 | 7, 3 | Briar Blade thorn, green and sharp, pointing right. |
+| ⬜ | `proj_wave.png` | 48×64 | 1 | 24, 32 | Umbral Greatblade shadow wave: a dark violet crescent, convex side facing right. The game scales it to its size. |
+| ✅ | `proj_shard.png` | 14×6 | 1 | 7, 3 | Splinter Bomb fragment, pointing right. |
 
 ## Bombs
 
 | | File | Size (px) | Frames | Anchor | Notes |
 |---|---|---|---|---|---|
-| ✅ | `bomb_blast.png` | 32×32 | 1 | 16, 16 | Blast Bomb planted on the floor (the fuse ring is drawn by the game). |
-| ✅ | `bomb_vortex.png` | 32×32 | 1 | 16, 16 | Vortex Bomb planted on the floor (the fuse ring is drawn by the game). |
-| ✅ | `bomb_shard.png` | 32×32 | 1 | 16, 16 | Shard Bomb planted on the floor (the fuse ring is drawn by the game). |
+| ✅ | `bomb_blast.png` | 32×32 | 1 | 16, 24 | Blast Bomb planted on the floor, seen from the ¾ camera (the fuse ring is drawn by the game). |
+| ⬜ | `bomb_haze.png` | 32×32 | 1 | 16, 24 | Ember Haze planted on the floor, seen from the ¾ camera (the fuse ring is drawn by the game). |
+| ⬜ | `bomb_frost.png` | 32×32 | 1 | 16, 24 | Frost Haze planted on the floor, seen from the ¾ camera (the fuse ring is drawn by the game). |
+| ✅ | `bomb_shard.png` | 32×32 | 1 | 16, 24 | Splinter Bomb planted on the floor, seen from the ¾ camera (the fuse ring is drawn by the game). |
+| ✅ | `bomb_vortex.png` | 32×32 | 1 | 16, 24 | Vortex Bomb planted on the floor, seen from the ¾ camera (the fuse ring is drawn by the game). |
 
 ## Effects
 
@@ -142,6 +163,13 @@ Wrong size (ignored until fixed):
 | ✅ | `fx_cloak.png` | 64×64 | 1 | 32, 32 | Shimmer distortion overlay for a cloaked Recon. |
 | ✅ | `fx_mark.png` | 32×32 | 1 | 16, 16 | Target mark shown over a marked enemy. |
 | ✅ | `fx_dash.png` | 64×64 | 1 | 32, 32 | Speed streak behind a dashing Striker, pointing right. |
+| ⬜ | `fx_guard.png` | 64×80 | 1 | 32, 40 | The shield every knight raises with right click: a translucent, faintly hexagonal energy dome around a standing knight, neutral white-blue (the game tints the rim by team and shows its health). |
+| ⬜ | `fx_cloud_burn.png` | 192×192 | 1 | 96, 96 | Ember Haze cloud on the floor, seen from the ¾ camera: smouldering orange smoke with sparks. The game scales it to the cloud radius. |
+| ⬜ | `fx_cloud_freeze.png` | 192×192 | 1 | 96, 96 | Frost Haze cloud on the floor: pale blue freezing mist with ice glints. |
+| ⬜ | `fx_status_burn.png` | 12×12 | 1 | 6, 6 | Tiny status icon shown above a knight's head: flame. |
+| ⬜ | `fx_status_poison.png` | 12×12 | 1 | 6, 6 | Tiny status icon shown above a knight's head: green drop. |
+| ⬜ | `fx_status_shock.png` | 12×12 | 1 | 6, 6 | Tiny status icon shown above a knight's head: lightning bolt. |
+| ⬜ | `fx_status_freeze.png` | 12×12 | 1 | 6, 6 | Tiny status icon shown above a knight's head: snowflake. |
 
 ## Pickups
 

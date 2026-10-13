@@ -4,7 +4,7 @@
  * travel at chest height. Everything that stands up is depth-sorted, so knights pass
  * behind walls. Draws from the art manifest when a sprite exists and falls back to
  * readable placeholder shapes otherwise. Pure presentation: it never changes the state. */
-import { MAPS, TILE, RULES, ABILITIES, WEAPONS, CLASSES, inBase } from './lockdown-engine.js';
+import { MAPS, TILE, RULES, ABILITIES, WEAPONS, CLASSES, GUARD, STATUS_IDS, inBase } from './lockdown-engine.js';
 import { isWall } from './lockdown-maps.js';
 import { KNIGHT_FACINGS } from './lockdown-assets.js';
 
@@ -12,6 +12,9 @@ import { KNIGHT_FACINGS } from './lockdown-assets.js';
 export const WALL_HEIGHT = 24, BODY_LIFT = 22;
 const FEET = 8; // a knight's feet sit this far below the centre of its collision circle
 const WEAPON_SCALE = .75;
+const TICK_MS = 1000 / 120;
+const STATUS_COLORS = Object.freeze({ burn: '#ff8a3d', poison: '#7bd65a', shock: '#7fc8ff', freeze: '#bfeaff' });
+const SHOT_COLORS = Object.freeze({ thorn: '#9bd36a', wave: '#6b4fa8', pulse: '#9fe8ee', ricochet: '#8fd0ff', catalyst: '#ffd36b', detonator: '#ff7b5a', shard: '#d8e4ef' });
 /** Aim angle → which drawn row faces it, and whether to mirror it (eight directions). */
 export function knightFacing(aim) {
   const degrees = Math.atan2(Math.sin(aim), Math.cos(aim)) * 180 / Math.PI, side = Math.abs(degrees); // 0 = right, 90 = down
@@ -39,6 +42,7 @@ export class LockdownRenderer {
     this.canvas = canvas; this.ctx = canvas.getContext('2d'); this.assets = assets;
     this.mapCache = null; this.mapKey = ''; this.effects = []; this.seenEvents = new Set(); this.eventOrder = [];
     this.camera = { x: 0, y: 0, zoom: 1 };
+    this.flashes = new Map(); this.shake = 0; this.tint = null;
   }
   resize() {
     const ratio = Math.min(2, globalThis.devicePixelRatio || 1), rect = this.canvas.getBoundingClientRect();
@@ -119,10 +123,23 @@ export class LockdownRenderer {
       if (this.eventOrder.length > 600) this.seenEvents.delete(this.eventOrder.shift());
       if (state.tick - event.tick > 30) continue;
       const add = (type, life, extra) => this.effects.push({ type, born: now, life, ...extra });
-      if (event.type === 'swing') add(event.charged ? event.kind : 'slash', event.charged ? 380 : 200, { x: event.x, y: event.y, angle: event.angle, step: event.step || 0, playerId: event.playerId });
-      else if (event.type === 'shot') add('muzzle', 90, { x: event.x, y: event.y, angle: event.angle });
-      else if (event.type === 'explosion') add('explosion', 480, { x: event.x, y: event.y, radius: event.radius, weapon: event.weapon });
-      else if (event.type === 'damage') add('number', 700, { x: event.x, y: event.y, amount: event.amount, targetId: event.targetId });
+      // Swings carry their exact arc, reach and timing, so the drawn sweep is the hitbox.
+      if (event.type === 'swing') add('slash', (event.startup + event.active) * TICK_MS + 140, { playerId: event.playerId, angle: event.angle, dir: event.dir, arc: event.arc, reach: event.reach, delay: event.startup * TICK_MS, sweep: event.active * TICK_MS });
+      else if (event.type === 'spinTurn') add('spinTurn', 18 * TICK_MS + 60, { playerId: event.playerId, reach: event.reach });
+      else if (event.type === 'slam') { add('slam', 420, { x: event.x, y: event.y, radius: event.radius }); this.bump(event.x, event.y, 7); }
+      else if (event.type === 'shot') add('muzzle', 90, { x: event.x, y: event.y, angle: event.angle, playerId: event.playerId });
+      else if (event.type === 'explosion') { add('explosion', 480, { x: event.x, y: event.y, radius: event.radius, weapon: event.weapon }); this.bump(event.x, event.y, 6); }
+      else if (event.type === 'vortex') add('vortexOpen', 300, { x: event.x, y: event.y, radius: event.radius });
+      else if (event.type === 'damage') {
+        add('number', 700, { x: event.x, y: event.y, amount: event.amount, targetId: event.targetId, color: event.kind === 'burn' ? STATUS_COLORS.burn : event.kind === 'shock' ? STATUS_COLORS.shock : '#ffffff' });
+        this.flashes.set(event.targetId, now);
+        if (event.targetId === this.localId) this.shake = Math.max(this.shake, Math.min(8, 2 + event.amount / 5));
+      }
+      else if (event.type === 'block') add('block', 220, { x: event.x, y: event.y, playerId: event.playerId });
+      else if (event.type === 'guardBreak') { add('guardBreak', 420, { x: event.x, y: event.y, playerId: event.playerId }); if (event.playerId === this.localId) this.shake = Math.max(this.shake, 7); }
+      else if (event.type === 'detonate') { add('explosion', 360, { x: event.x, y: event.y, radius: 26 + event.count * 10, weapon: 'catalyzer' }); this.bump(event.x, event.y, 3 + event.count); }
+      else if (event.type === 'ricochet') add('spark', 160, { x: event.x, y: event.y });
+      else if (event.type === 'status') add('statusPop', 500, { x: event.x, y: event.y, status: event.status });
       else if (event.type === 'heal') add('heal', 600, { x: event.x, y: event.y, radius: event.radius });
       else if (event.type === 'capture') add('capture', 900, { x: event.x, y: event.y, team: event.team });
       else if (event.type === 'bubblePop') add('pop', 300, { x: event.x, y: event.y });
@@ -130,14 +147,22 @@ export class LockdownRenderer {
       else if (event.type === 'heartPickup') add('healNumber', 800, { x: event.x, y: event.y, amount: event.amount });
     }
     this.effects = this.effects.filter(effect => now - effect.born < effect.life);
+    for (const [id, at] of this.flashes) if (now - at > 120) this.flashes.delete(id);
+  }
+  /** Screen shake when something big happens near the viewer. */
+  bump(x, y, amount) {
+    const viewer = this.viewer; if (!viewer) return;
+    const near = 1 - Math.min(1, Math.hypot(viewer.x - x, viewer.y - y) / 420);
+    if (near > 0) this.shake = Math.max(this.shake, amount * near);
   }
 
   render(state, { localId = null, now = performance.now(), focus = null } = {}) {
     this.resize();
     const ctx = this.ctx, map = MAPS[state.mapId], canvas = this.canvas;
     if (!map) return;
-    this.consumeEvents(state, now);
     const local = localId !== null ? state.players[localId] : null;
+    this.localId = localId; this.viewer = local?.alive ? local : null;
+    this.consumeEvents(state, now);
     const zoom = canvas.width / VIEW_WORLD_WIDTH;
     const wanted = focus || (local ? { x: local.x, y: local.y - BODY_LIFT / 2 } : { x: map.width / 2, y: map.height / 2 });
     // Keep the arena filling the screen: clamp to the map edges (centre it when the view is larger).
@@ -148,7 +173,9 @@ export class LockdownRenderer {
     this.camera.x = lerp(this.camera.x || target.x, target.x, .25); this.camera.y = lerp(this.camera.y || target.y, target.y, .25);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = '#16181c'; ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.setTransform(zoom, 0, 0, zoom, canvas.width / 2 - this.camera.x * zoom, canvas.height / 2 - this.camera.y * zoom);
+    const shakeX = this.shake ? (Math.random() - .5) * this.shake * 2 : 0, shakeY = this.shake ? (Math.random() - .5) * this.shake * 2 : 0;
+    this.shake = this.shake > .2 ? this.shake * .86 : 0;
+    ctx.setTransform(zoom, 0, 0, zoom, canvas.width / 2 - (this.camera.x + shakeX) * zoom, canvas.height / 2 - (this.camera.y + shakeY) * zoom);
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(this.buildMap(map), 0, 0);
     // Floor layer: point plates and rings, domes, bomb radii, shadows and team rings.
@@ -156,6 +183,7 @@ export class LockdownRenderer {
     const players = state.players.filter(player => player.alive && !(player.cloakTicks > 0 && viewerTeam !== null && player.team !== viewerTeam
       && !(local?.alive && Math.hypot(local.x - player.x, local.y - player.y) < ABILITIES.cloak.revealRange)));
     for (const point of state.points) this.drawPoint(ctx, point, now);
+    for (const cloud of state.clouds || []) this.drawCloud(ctx, cloud, now);
     for (const bomb of state.bombs || []) this.drawBombRadius(ctx, bomb, now);
     for (const player of players) if (player.bubbleTicks > 0) this.drawBubble(ctx, player, now);
     for (const player of players) this.drawFootprint(ctx, player, player.id === localId);
@@ -168,10 +196,12 @@ export class LockdownRenderer {
     for (const player of players) items.push({ key: player.y + FEET, draw: () => this.drawKnight(ctx, player, state, now, { mine: player.id === localId, alpha: player.cloakTicks > 0 ? .4 : 1 }) });
     for (const shot of state.projectiles || []) items.push({ key: shot.y + FEET, draw: () => this.drawProjectile(ctx, shot) });
     items.sort((a, b) => a.key - b.key);
+    this.players = state.players;
     for (const item of items) item.draw();
     this.drawEffects(ctx, now);
     // Labels stay readable even when a knight is behind a wall.
     for (const player of players) {
+      if (player.guarding) this.drawGuard(ctx, player, now);
       this.drawKnightOverlay(ctx, player, now, player.id === localId);
       if (state.phase === 'fight' && player.hp < player.maxHp && inBase(state, player)) this.drawRegen(ctx, player, now);
     }
@@ -202,8 +232,28 @@ export class LockdownRenderer {
     ctx.fillStyle = glow; ctx.fillText(point.id, point.x, point.y - 84);
   }
 
+  drawCloud(ctx, cloud, now) {
+    const fade = Math.min(1, cloud.ticks / 60, (cloud.total - cloud.ticks) / 20 + .2), colour = STATUS_COLORS[cloud.status] || '#ffffff';
+    if (this.drawSprite(ctx, `fx_cloud_${cloud.status}`, cloud.x, cloud.y, { scale: cloud.radius * 2 / 192, alpha: .7 * fade })) return;
+    ctx.save(); ctx.globalAlpha = .28 * fade; ctx.fillStyle = colour;
+    for (let i = 0; i < 7; i++) {
+      const a = now / 1400 + i * .9 + cloud.id, r = cloud.radius * (.35 + .4 * ((i * 37) % 10) / 10);
+      ctx.beginPath(); ctx.ellipse(cloud.x + Math.cos(a) * r * .6, cloud.y + Math.sin(a) * r * .35, cloud.radius * .45, cloud.radius * .28, 0, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = .55 * fade; ctx.strokeStyle = colour; ctx.lineWidth = 2; ctx.setLineDash([8, 8]);
+    ctx.beginPath(); ctx.ellipse(cloud.x, cloud.y, cloud.radius, cloud.radius * .62, 0, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+    ctx.restore();
+  }
   drawBombRadius(ctx, bomb, now) {
     const weapon = WEAPONS[bomb.weapon];
+    if (bomb.phase === 'pull') {
+      const radius = weapon.pull.radius;
+      if (!this.drawSprite(ctx, 'fx_vortex', bomb.x, bomb.y, { frame: now / 70, scale: radius * 2 / 128, alpha: .75 })) {
+        ctx.strokeStyle = 'rgba(170,140,255,.6)'; ctx.lineWidth = 3;
+        for (let i = 0; i < 3; i++) { const k = 1 - ((now / 600 + i / 3) % 1); ctx.beginPath(); ctx.arc(bomb.x, bomb.y, radius * k, 0, Math.PI * 2); ctx.stroke(); }
+      }
+      return;
+    }
     if (weapon.pull) this.drawSprite(ctx, 'fx_vortex', bomb.x, bomb.y, { frame: now / 80, scale: weapon.radius * 2 / 128, alpha: .6 }) || (ctx.strokeStyle = 'rgba(170,140,255,.35)', ctx.lineWidth = 2, ctx.beginPath(), ctx.arc(bomb.x, bomb.y, weapon.radius * (.6 + .4 * ((now / 400) % 1)), 0, Math.PI * 2), ctx.stroke());
     ctx.strokeStyle = TEAM_COLORS[bomb.team].main + '88'; ctx.lineWidth = 2; ctx.setLineDash([6, 6]);
     ctx.beginPath(); ctx.arc(bomb.x, bomb.y, weapon.radius, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
@@ -263,18 +313,76 @@ export class LockdownRenderer {
   }
   drawKnight(ctx, player, state, now, { mine = false, alpha = 1 } = {}) {
     const team = TEAM_COLORS[player.team], weapon = WEAPONS[player.weapons[player.slot]], moving = Math.hypot(player.vx, player.vy) > 20;
-    const { row, flip } = knightFacing(player.aim), facing = KNIGHT_FACINGS[row], fx = player.x, fy = player.y + FEET;
+    // Committed attacks face their locked direction, so the body matches the hitbox.
+    const facingAim = player.action !== 'idle' && player.action !== 'cast' ? player.swingAim : player.aim;
+    const { row, flip } = knightFacing(facingAim), facing = KNIGHT_FACINGS[row], fx = player.x;
+    // The heavy slam leaps: the body rises and falls over the jump.
+    const leap = player.action === 'slam' && player.actionTotal - player.actionTicks < player.chargeMoveTicks ? Math.sin((player.actionTotal - player.actionTicks) / player.chargeMoveTicks * Math.PI) * 26 : 0;
+    const fy = player.y + FEET - leap;
+    if (player.action === 'lunge' || player.action === 'lungeBurst') {
+      // Afterimages along a lunge.
+      ctx.save(); ctx.fillStyle = team.light;
+      for (let i = 1; i <= 3; i++) { ctx.globalAlpha = .18 / i; ctx.beginPath(); ctx.ellipse(fx - Math.cos(player.swingAim) * 14 * i, fy - 22 - Math.sin(player.swingAim) * 14 * i, 12, 20, 0, 0, Math.PI * 2); ctx.fill(); }
+      ctx.restore();
+    }
     const frame = moving ? 2 + Math.floor(now / 110) % 4 : Math.floor(now / 500) % 2;
     ctx.save(); ctx.globalAlpha = alpha;
     if (player.dashTicks > 0) this.drawSprite(ctx, 'fx_dash', fx, fy - 20, { rotation: Math.atan2(player.vy, player.vx) + Math.PI }) || (ctx.fillStyle = team.light + '55', ctx.beginPath(), ctx.ellipse(fx - player.vx * .06, fy - 20 - player.vy * .06, 12, 18, 0, 0, Math.PI * 2), ctx.fill());
     // The weapon is pinned to this facing's hand and rotated to the aim; facing away it goes behind the body.
     const swingOffset = player.action === 'swing' ? Math.sin((1 - player.actionTicks / Math.max(1, player.actionTotal)) * Math.PI) * (player.comboStep % 2 ? -1 : 1) * .9 : player.action === 'charge' ? (now / 40) % (Math.PI * 2) : 0;
     const hand = { x: fx + (facing.hand[0] - 32) * (flip ? -1 : 1), y: fy + facing.hand[1] - 58 };
-    const drawWeapon = () => this.drawHeldWeapon(ctx, weapon, hand.x, hand.y, player.aim + swingOffset);
+    const drawWeapon = () => this.drawHeldWeapon(ctx, weapon, hand.x, hand.y, this.weaponAngle(player, weapon, now));
     if (facing.weaponBehind) drawWeapon();
-    if (!this.drawSprite(ctx, `knight_${player.cls}_team${player.team}`, fx, fy, { row, frame, flipX: flip })) this.placeholderKnight(ctx, player, team, { row, flip, frame, moving, now });
+    const key = `knight_${player.cls}_team${player.team}`, flash = this.flashes.has(player.id);
+    if (!this.drawSprite(ctx, key, fx, fy, { row, frame, flipX: flip })) this.placeholderKnight(ctx, { ...player, y: player.y - leap }, team, { row, flip, frame, moving, now });
+    if (flash) this.drawFlash(ctx, key, fx, fy, { row, frame, flipX: flip });
     if (!facing.weaponBehind) drawWeapon();
+    if (player.status?.freeze > 0) {
+      ctx.globalAlpha = .55; ctx.fillStyle = STATUS_COLORS.freeze; ctx.fillRect(fx - 18, fy - 54, 36, 54);
+      ctx.globalAlpha = .9; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5; ctx.strokeRect(fx - 18, fy - 54, 36, 54);
+    }
+    if (player.status?.burn > 0) for (let i = 0; i < 3; i++) { const p = (now / 400 + i / 3) % 1; ctx.globalAlpha = 1 - p; ctx.fillStyle = i % 2 ? '#ffd36b' : STATUS_COLORS.burn; ctx.beginPath(); ctx.arc(fx - 8 + i * 8, fy - 20 - p * 30, 4 * (1 - p) + 1, 0, Math.PI * 2); ctx.fill(); }
+    if (player.status?.shock > 0 && Math.floor(now / 70) % 3 === 0) { ctx.globalAlpha = .9; ctx.strokeStyle = STATUS_COLORS.shock; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(fx - 14, fy - 40); ctx.lineTo(fx - 4, fy - 30); ctx.lineTo(fx - 9, fy - 26); ctx.lineTo(fx + 6, fy - 12); ctx.stroke(); }
+    if (player.status?.poison > 0) { ctx.globalAlpha = .7; ctx.fillStyle = STATUS_COLORS.poison; for (let i = 0; i < 2; i++) { const p = (now / 700 + i / 2) % 1; ctx.beginPath(); ctx.arc(fx + (i ? 9 : -9), fy - 26 - p * 22, 3, 0, Math.PI * 2); ctx.fill(); } }
+    if (player.catalysts > 0) for (let i = 0; i < player.catalysts; i++) { const a = now / 260 + i * Math.PI * 2 / 3; ctx.globalAlpha = 1; ctx.fillStyle = SHOT_COLORS.catalyst; ctx.beginPath(); ctx.arc(fx + Math.cos(a) * 18, fy - 26 + Math.sin(a) * 8, 4, 0, Math.PI * 2); ctx.fill(); }
     ctx.restore();
+  }
+  /** Weapon angle: aim when idle; blades follow the swept arc exactly as the engine tests it. */
+  weaponAngle(player, weapon, now) {
+    if (weapon.family !== 'blade') return player.aim;
+    const elapsed = player.actionTotal - player.actionTicks;
+    if (player.action === 'swing') {
+      const move = weapon.combo[player.comboStep], start = player.swingAim - player.swingDir * move.arc / 2;
+      if (elapsed < move.startup) return start - player.swingDir * .35 * (elapsed / move.startup);
+      return start + player.swingDir * move.arc * Math.min(1, (elapsed - move.startup + 1) / move.active);
+    }
+    if (player.action === 'spin') return player.swingAim + (elapsed % weapon.charge.ticksPerTurn) / weapon.charge.ticksPerTurn * Math.PI * 2;
+    if (player.action !== 'idle') return player.swingAim;
+    if (player.charging) return player.aim - .9 + Math.sin(now / 90) * .05; // drawn back, ready to strike
+    return player.aim;
+  }
+  /** A white flash over the knight on the frame it is hit. */
+  drawFlash(ctx, key, x, y, options) {
+    const entry = this.assets?.entry(key), image = this.sprite(key);
+    if (!entry || !image) { ctx.globalAlpha = .7; ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.ellipse(x, y - 26, 15, 26, 0, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1; return; }
+    const tint = this.tint ||= Object.assign(document.createElement('canvas'), { width: 64, height: 64 }), tctx = tint.getContext('2d');
+    tctx.clearRect(0, 0, 64, 64); tctx.globalCompositeOperation = 'source-over'; tctx.imageSmoothingEnabled = false;
+    const fw = entry.size[0] / entry.frames, fh = entry.size[1] / (entry.rows || 1);
+    tctx.drawImage(image, (Math.floor(options.frame) % entry.frames) * fw, options.row * fh, fw, fh, 0, 0, 64, 64);
+    tctx.globalCompositeOperation = 'source-atop'; tctx.fillStyle = 'rgba(255,255,255,.85)'; tctx.fillRect(0, 0, 64, 64);
+    ctx.save(); ctx.translate(x, y); if (options.flipX) ctx.scale(-1, 1); ctx.drawImage(tint, -entry.anchor[0], -entry.anchor[1]); ctx.restore();
+  }
+  /** The shield: a team-tinted dome while raised, with its health along the rim; cracks as it weakens. */
+  drawGuard(ctx, player, now) {
+    const team = TEAM_COLORS[player.team], max = player.cls === 'guardian' ? GUARD.guardianMax : GUARD.max, health = Math.max(0, player.guardHp / max);
+    const raise = Math.min(1, (player.guardRaise || 0) / GUARD.raiseTicks), cx = player.x, cy = player.y + FEET - 24;
+    if (this.drawSprite(ctx, 'fx_guard', cx, cy, { scale: .6 + .4 * raise, alpha: .85 })) { /* sprite drawn */ }
+    else {
+      ctx.save(); ctx.globalAlpha = .22 + .18 * raise; ctx.fillStyle = team.light;
+      ctx.beginPath(); ctx.ellipse(cx, cy, 26 * (.6 + .4 * raise), 32 * (.6 + .4 * raise), 0, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = .8; ctx.strokeStyle = health < .3 ? '#ff6b5a' : team.light; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.ellipse(cx, cy, 26, 32, 0, -Math.PI / 2, -Math.PI / 2 + health * Math.PI * 2); ctx.stroke(); ctx.restore();
+    }
   }
   drawHeldWeapon(ctx, weapon, x, y, angle) {
     // Pointing left, the sprite is mirrored vertically so it is never upside down.
@@ -286,6 +394,11 @@ export class LockdownRenderer {
     const team = TEAM_COLORS[player.team], top = player.y + FEET - 58;
     if (player.markTicks > 0 && !this.drawSprite(ctx, 'fx_mark', player.x, top - 18)) { ctx.fillStyle = '#ff4d6d'; ctx.font = 'bold 16px system-ui'; ctx.textAlign = 'center'; ctx.fillText('◎', player.x, top - 18); }
     if (player.stunTicks > 0) { ctx.fillStyle = '#ffe680'; for (let i = 0; i < 3; i++) { const a = now / 150 + i * 2.1; ctx.beginPath(); ctx.arc(player.x + Math.cos(a) * 14, top + 4 + Math.sin(a) * 4, 2.5, 0, Math.PI * 2); ctx.fill(); } }
+    const statuses = STATUS_IDS.filter(id => player.status?.[id] > 0);
+    statuses.forEach((id, i) => {
+      const x = player.x - (statuses.length - 1) * 6 + i * 12, y = top - 28;
+      if (!this.drawSprite(ctx, `fx_status_${id}`, x, y)) { ctx.fillStyle = STATUS_COLORS[id]; ctx.beginPath(); ctx.arc(x, y, 4.5, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.lineWidth = 1; ctx.stroke(); }
+    });
     const w = 38, pct = Math.max(0, player.hp / player.maxHp);
     ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillRect(player.x - w / 2, top - 4, w, 5);
     ctx.fillStyle = pct > .5 ? team.light : pct > .25 ? '#ffd36b' : '#ff6b5a'; ctx.fillRect(player.x - w / 2, top - 4, w * pct, 5);
@@ -329,15 +442,29 @@ export class LockdownRenderer {
     } else { ctx.fillStyle = '#2a2d33'; ctx.beginPath(); ctx.arc(10, 0, 7, 0, Math.PI * 2); ctx.fill(); }
     ctx.restore();
   }
+  /** Shots are drawn at the size of their hitbox, at chest height, with a shadow on the floor. */
   drawProjectile(ctx, shot) {
-    const angle = Math.atan2(shot.vy, shot.vx), key = shot.kind === 'pierce' ? 'proj_pierce' : shot.kind === 'explosive' ? 'proj_explosive' : shot.kind === 'shard' ? 'proj_shard' : shot.weapon === 'scatter' ? 'proj_pellet' : 'proj_bullet';
-    const lift = shot.kind === 'shard' ? 8 : BODY_LIFT, y = shot.y - lift;
-    ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.beginPath(); ctx.ellipse(shot.x, shot.y + 2, 5, 2, 0, 0, Math.PI * 2); ctx.fill();
-    if (this.drawSprite(ctx, key, shot.x, y, { rotation: angle })) return;
-    const color = TEAM_COLORS[shot.team].light;
-    ctx.save(); ctx.translate(shot.x, y); ctx.rotate(angle); ctx.fillStyle = color;
-    if (shot.kind === 'explosive') { ctx.beginPath(); ctx.arc(0, 0, 6, 0, Math.PI * 2); ctx.fill(); }
-    else { const length = shot.kind === 'pierce' ? 22 : shot.kind === 'shard' ? 10 : 12; ctx.fillRect(-length, -2, length, 4); ctx.fillStyle = '#ffffff'; ctx.fillRect(-3, -1.5, 3, 3); }
+    const angle = Math.atan2(shot.vy, shot.vx), kind = shot.kind, lift = kind === 'shard' || kind === 'thorn' ? 10 : BODY_LIFT, y = shot.y - lift, size = shot.size || 5;
+    ctx.fillStyle = 'rgba(0,0,0,.22)'; ctx.beginPath(); ctx.ellipse(shot.x, shot.y + 2, size, size * .4, 0, 0, Math.PI * 2); ctx.fill();
+    const key = `proj_${kind}`, entry = this.assets?.entry(key);
+    if (entry && this.drawSprite(ctx, key, shot.x, y, { rotation: angle, scale: kind === 'pulse' || kind === 'wave' ? size * 2 / entry.size[1] : 1 })) return;
+    const color = SHOT_COLORS[kind] || TEAM_COLORS[shot.team].light;
+    ctx.save(); ctx.translate(shot.x, y); ctx.rotate(angle);
+    if (kind === 'wave') {
+      ctx.globalAlpha = .75; ctx.fillStyle = color; ctx.beginPath(); ctx.arc(-size * .4, 0, size, -1.1, 1.1); ctx.arc(-size * .9, 0, size * .8, 1.1, -1.1, true); ctx.fill();
+      ctx.globalAlpha = 1; ctx.strokeStyle = '#c9a8ff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(-size * .4, 0, size, -1.1, 1.1); ctx.stroke();
+    } else if (kind === 'pulse') {
+      ctx.strokeStyle = color; ctx.lineWidth = 4; ctx.globalAlpha = .85; ctx.beginPath(); ctx.arc(-size * .5, 0, size, -1, 1); ctx.stroke();
+      ctx.lineWidth = 2; ctx.globalAlpha = .5; ctx.beginPath(); ctx.arc(-size * .8, 0, size * .8, -.9, .9); ctx.stroke();
+    } else if (kind === 'explosive' || kind === 'catalyst' || kind === 'detonator') {
+      ctx.fillStyle = color; ctx.beginPath(); ctx.arc(0, 0, size, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,.7)'; ctx.beginPath(); ctx.arc(-size * .3, -size * .3, size * .35, 0, Math.PI * 2); ctx.fill();
+    } else if (kind === 'thorn' || kind === 'shard') {
+      ctx.fillStyle = color; ctx.beginPath(); ctx.moveTo(size * 1.6, 0); ctx.lineTo(-size, -size * .55); ctx.lineTo(-size, size * .55); ctx.closePath(); ctx.fill();
+    } else {
+      const length = kind === 'pierce' ? size * 3 : size * 2.4;
+      ctx.fillStyle = kind === 'ricochet' ? color : TEAM_COLORS[shot.team].light; ctx.fillRect(-length, -size * .45, length, size * .9);
+      ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(0, 0, size * .55, 0, Math.PI * 2); ctx.fill();
+    }
     ctx.restore();
   }
   drawEffects(ctx, now) {
@@ -345,14 +472,37 @@ export class LockdownRenderer {
       const t = (now - effect.born) / effect.life;
       ctx.save(); ctx.globalAlpha = Math.max(0, 1 - t);
       const chest = effect.y - BODY_LIFT;
-      if (effect.type === 'slash') {
-        if (!this.drawSprite(ctx, 'fx_slash', effect.x, chest, { rotation: effect.angle, frame: t * 4, scale: effect.step % 2 ? 1 : 1 })) {
-          ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 5; ctx.beginPath();
-          const dir = effect.step % 2 ? -1 : 1; ctx.arc(effect.x, chest, 52, effect.angle - .8 * dir, effect.angle - .8 * dir + 1.6 * dir * Math.min(1, t * 2.5), dir < 0); ctx.stroke();
+      if (effect.type === 'slash' || effect.type === 'spinTurn') {
+        // The trail follows the knight and covers exactly the arc and reach the engine tests.
+        const owner = this.players?.[effect.playerId]; if (!owner?.alive) { ctx.restore(); continue; }
+        const age = now - effect.born, ox = owner.x, oy = owner.y + FEET - BODY_LIFT;
+        let from, to, fade;
+        if (effect.type === 'spinTurn') { from = owner.swingAim; to = from + Math.PI * 2 * Math.min(1, age / (18 * TICK_MS)); fade = 1; }
+        else {
+          if (age < effect.delay) { ctx.restore(); continue; }
+          const sweep = Math.min(1, (age - effect.delay) / Math.max(1, effect.sweep)), start = effect.angle - effect.dir * effect.arc / 2;
+          from = start; to = start + effect.dir * effect.arc * sweep; fade = 1 - Math.max(0, (age - effect.delay - effect.sweep) / 140);
         }
-      } else if (effect.type === 'spin' || effect.type === 'slam' || effect.type === 'lunge') {
-        const key = effect.type === 'slam' ? 'fx_slam' : 'fx_spin';
-        if (!this.drawSprite(ctx, key, effect.x, effect.y, { frame: t * 4 })) { ctx.strokeStyle = effect.type === 'slam' ? '#ffcf8a' : '#ffffff'; ctx.lineWidth = 6; ctx.beginPath(); ctx.arc(effect.x, effect.y, 30 + t * 60, 0, Math.PI * 2); ctx.stroke(); }
+        const reach = effect.reach;
+        ctx.globalAlpha = Math.max(0, fade);
+        if (!this.drawSprite(ctx, 'fx_slash', ox, oy, { rotation: (from + to) / 2, frame: t * 4, scale: reach / 72, flipY: effect.dir < 0 })) {
+          ctx.lineCap = 'round';
+          ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 16; ctx.beginPath(); ctx.arc(ox, oy, reach - 10, Math.min(from, to), Math.max(from, to)); ctx.stroke();
+          ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(ox, oy, reach, Math.min(from, to), Math.max(from, to)); ctx.stroke();
+        }
+      } else if (effect.type === 'slam') {
+        if (!this.drawSprite(ctx, 'fx_slam', effect.x, effect.y, { frame: t * 5, scale: effect.radius * 2 / 128 })) { ctx.strokeStyle = '#ffcf8a'; ctx.lineWidth = 6; ctx.beginPath(); ctx.ellipse(effect.x, effect.y, effect.radius * (.3 + .7 * t), effect.radius * (.3 + .7 * t) * .62, 0, 0, Math.PI * 2); ctx.stroke(); }
+      } else if (effect.type === 'block') {
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3; for (let i = 0; i < 5; i++) { const a = i * 1.26; ctx.beginPath(); ctx.moveTo(effect.x + Math.cos(a) * 8, effect.y - 24 + Math.sin(a) * 8); ctx.lineTo(effect.x + Math.cos(a) * (10 + t * 16), effect.y - 24 + Math.sin(a) * (10 + t * 16)); ctx.stroke(); }
+      } else if (effect.type === 'guardBreak') {
+        ctx.fillStyle = '#d8f4ff'; for (let i = 0; i < 8; i++) { const a = i * .785; ctx.fillRect(effect.x + Math.cos(a) * (14 + t * 40) - 3, effect.y - 24 + Math.sin(a) * (14 + t * 40) - 3, 6, 6); }
+        ctx.font = 'bold 13px system-ui'; ctx.textAlign = 'center'; ctx.fillStyle = '#ffffff'; ctx.fillText('GUARD BREAK', effect.x, effect.y - 70 - t * 10);
+      } else if (effect.type === 'spark') {
+        ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(effect.x, effect.y - BODY_LIFT, 5 * (1 - t) + 1, 0, Math.PI * 2); ctx.fill();
+      } else if (effect.type === 'statusPop') {
+        ctx.font = 'bold 12px system-ui'; ctx.textAlign = 'center'; ctx.fillStyle = STATUS_COLORS[effect.status]; ctx.fillText(effect.status.toUpperCase(), effect.x, effect.y - 64 - t * 16);
+      } else if (effect.type === 'vortexOpen') {
+        ctx.strokeStyle = '#b49cff'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(effect.x, effect.y, effect.radius * (1 - t * .5), 0, Math.PI * 2); ctx.stroke();
       } else if (effect.type === 'muzzle') {
         if (!this.drawSprite(ctx, 'fx_muzzle', effect.x + Math.cos(effect.angle) * 30, chest + Math.sin(effect.angle) * 30, { rotation: effect.angle, frame: t * 3 })) { ctx.fillStyle = '#fff3c4'; ctx.beginPath(); ctx.arc(effect.x + Math.cos(effect.angle) * 32, chest + Math.sin(effect.angle) * 32, 6 * (1 - t), 0, Math.PI * 2); ctx.fill(); }
       } else if (effect.type === 'explosion') {
@@ -360,7 +510,7 @@ export class LockdownRenderer {
           ctx.fillStyle = effect.weapon === 'vortex' ? '#b49cff' : '#ffb35a'; ctx.beginPath(); ctx.arc(effect.x, effect.y, (effect.radius || 80) * (.4 + .6 * t), 0, Math.PI * 2); ctx.fill();
         }
       } else if (effect.type === 'number') {
-        ctx.fillStyle = '#ffffff'; ctx.font = 'bold 16px system-ui'; ctx.textAlign = 'center'; ctx.fillText(String(effect.amount), effect.x + 12, effect.y - 50 - t * 26);
+        ctx.fillStyle = effect.color || '#ffffff'; ctx.font = 'bold 16px system-ui'; ctx.textAlign = 'center'; ctx.fillText(String(effect.amount), effect.x + 12, effect.y - 50 - t * 26);
       } else if (effect.type === 'healNumber') {
         ctx.fillStyle = '#7cf0a0'; ctx.font = 'bold 16px system-ui'; ctx.textAlign = 'center'; ctx.fillText(`+${effect.amount}`, effect.x, effect.y - 50 - t * 26);
       } else if (effect.type === 'heal') {

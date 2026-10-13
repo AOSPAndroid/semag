@@ -9,7 +9,7 @@
 </head>
 <body>
   <main class="ld-app" id="ld-app" data-phase="lobby">
-    <canvas id="ld-arena" class="ld-arena" tabindex="0" aria-label="Lockdown arena. WASD moves, the mouse aims, left click attacks (hold to charge), right click or Space uses your class ability, E uses the Guardian heal, 1 to 3 or Q switch weapons, Escape opens the menu."></canvas>
+    <canvas id="ld-arena" class="ld-arena" tabindex="0" aria-label="Lockdown arena. WASD moves, the mouse aims, left click attacks (hold to charge), hold right click to raise your shield, Space uses your class ability, E uses the Guardian heal, 1 to 3 or Q switch weapons, Escape opens the menu."></canvas>
 
     <section class="ld-hud" id="ld-hud" aria-live="polite">
       <div class="ld-top">
@@ -26,8 +26,10 @@
         <div class="ld-vitals">
           <span class="ld-class" id="ld-class">STRIKER</span>
           <div class="ld-hp"><em id="ld-hp-bar"></em><b id="ld-hp">100</b></div>
+          <div class="ld-guard" id="ld-guard" data-state="ready"><kbd>RMB</kbd><span>Shield</span><i><em id="ld-guard-bar"></em></i></div>
+          <p class="ld-statuses" id="ld-statuses"></p>
           <div class="ld-abilities">
-            <div class="ld-ability" id="ld-ability1"><kbd>RMB</kbd><span id="ld-ability1-name">Dash</span><em></em></div>
+            <div class="ld-ability" id="ld-ability1"><kbd>Space</kbd><span id="ld-ability1-name">Dash</span><em></em></div>
             <div class="ld-ability" id="ld-ability2"><kbd>E</kbd><span id="ld-ability2-name">Heal</span><em></em></div>
           </div>
         </div>
@@ -57,7 +59,7 @@
         </section>
         <section class="ld-panel">
           <h2>Loadout</h2>
-          <p class="ld-hint">Three different weapons. Each has a charge attack: hold the button, release when the ring is full.</p>
+          <p class="ld-hint">Three different weapons: swords, guns and bombs. Each has a charge attack: hold the button, release when the ring is full. Everyone carries a shield (hold right click).</p>
           <div class="ld-loadout" id="ld-loadout"></div>
           <p class="ld-weapon-note" id="ld-weapon-note"></p>
         </section>
@@ -74,7 +76,7 @@
         </section>
       </div>
       <section class="ld-controls" aria-label="Controls">
-        <span><kbd>WASD</kbd> move</span><span><kbd>Mouse</kbd> aim</span><span><kbd>LMB</kbd> attack · hold to charge</span><span><kbd>RMB</kbd> / <kbd>Space</kbd> class ability</span><span><kbd>E</kbd> Guardian heal</span><span><kbd>1–3</kbd> / <kbd>Q</kbd> / wheel weapons</span><span><kbd>B</kbd> loadout (in base)</span><span><kbd>Tab</kbd> scoreboard</span><span><kbd>Esc</kbd> menu</span>
+        <span><kbd>WASD</kbd> move</span><span><kbd>Mouse</kbd> aim</span><span><kbd>LMB</kbd> attack · hold to charge</span><span><kbd>RMB</kbd> hold to shield</span><span><kbd>Space</kbd> class ability</span><span><kbd>E</kbd> Guardian heal</span><span><kbd>1–3</kbd> / <kbd>Q</kbd> / wheel weapons</span><span><kbd>B</kbd> loadout (in base)</span><span><kbd>Tab</kbd> scoreboard</span><span><kbd>Esc</kbd> menu</span>
       </section>
     </section>
   </main>

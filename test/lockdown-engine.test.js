@@ -3,7 +3,7 @@ import test from 'node:test';
 import * as L from '../public/lockdown-engine.js';
 import { MANIFEST, MANIFEST_BY_KEY } from '../public/lockdown-assets.js';
 
-const { TICK_RATE, RULES, ABILITIES, WEAPONS, CLASSES, MAPS, TILE } = L;
+const { TICK_RATE, RULES, ABILITIES, WEAPONS, CLASSES, MAPS, TILE, GUARD, STATUS } = L;
 
 /** Two-knight arena: seat 0 (Amber) against seat 4 (Cyan); every other seat is benched. */
 function duel({ mapId = 'gate', a = {}, b = {}, gap = 50 } = {}) {
@@ -61,7 +61,7 @@ test('lobby setup validates class, three distinct weapons and team size', () => 
   assert.equal(L.setPlayerSetup(state, 0, { weapons: ['brand', 'blast'] }).ok, false);
   assert.equal(L.setPlayerSetup(state, 0, { weapons: ['brand', 'laser', 'blast'] }).ok, false);
   assert.equal(L.setPlayerSetup(state, 0, { team: 2 }).ok, false);
-  assert.deepEqual(L.setPlayerSetup(state, 0, { cls: 'guardian', weapons: ['scatter', 'rapier', 'vortex'], team: 1 }), { ok: true });
+  assert.deepEqual(L.setPlayerSetup(state, 0, { cls: 'guardian', weapons: ['pulsar', 'rapier', 'vortex'], team: 1 }), { ok: true });
   assert.equal(state.players[0].hp, CLASSES.guardian.hp);
   for (const id of [1, 2, 3]) { L.setConnected(state, id, true, `P${id}`); L.setPlayerSetup(state, id, { team: 1 }); }
   assert.equal(state.players.filter(player => player.human && player.team === 1).length, 4);
@@ -86,22 +86,41 @@ test('starting balances the bots to four a side and counts down into the fight',
   assert.ok(events(state, 'fight').length === 1);
 });
 
-test('a blade combo cuts, pushes and stuns; a full charge spins all around', () => {
+const swingTicks = move => move.startup + move.active + move.recovery;
+
+test('a blade cut lands as the arc sweeps, with knockback, stun and hit-stop; a queued press chains the combo', () => {
   const { state, me, foe } = duel({ gap: 50 });
-  run(state, 2, t => ({ 0: { attack: t === 0 } }));
-  run(state, WEAPONS.brand.startup + 2);
-  assert.equal(foe.hp, foe.maxHp - WEAPONS.brand.combo[0]);
+  const first = WEAPONS.brand.combo[0];
+  run(state, first.startup, t => ({ 0: { attack: t === 0 } }));
+  assert.equal(foe.hp, foe.maxHp, 'nothing lands during the wind-up');
+  run(state, first.active);
+  assert.equal(foe.hp, foe.maxHp - first.damage);
   assert.ok(foe.stunTicks > 0 && foe.pushX > 0, 'pushed away from the cut');
-  // Hold for a full charge, then release behind you: the spin still lands.
-  const after = foe.hp; Object.assign(foe, { x: me.x - 40, y: me.y, pushX: 0, stunTicks: 0 });
-  run(state, 40);
-  // Holding starts with the normal cut (facing away, so it whiffs) and charges once it recovers.
-  const swing = WEAPONS.brand.startup + WEAPONS.brand.active + WEAPONS.brand.recovery;
+  assert.ok(events(state, 'damage').at(-1).kind === 'blade');
+  // Press again while the first cut recovers: the second cut follows on its own.
+  run(state, 2, t => ({ 0: { attack: t === 0 } }));
+  run(state, swingTicks(first) + 8);
+  assert.deepEqual(events(state, 'swing').map(event => event.step), [0, 1]);
+  assert.equal(events(state, 'swing')[1].dir, -1, 'alternate cuts sweep the other way');
+});
+
+test('blades only hit what the sweep covers', () => {
+  const { state, foe } = duel({ gap: 50 });
+  Object.assign(foe, { x: state.players[0].x - 50 }); // behind the swing
+  run(state, swingTicks(WEAPONS.brand.combo[0]) + 2, t => ({ 0: { attack: t === 0 } }));
+  assert.equal(foe.hp, foe.maxHp);
+});
+
+test('a full Knight Brand charge lunges into the target and ends in a burning burst', () => {
+  const { state, me, foe } = duel({ gap: 120 });
+  const swing = swingTicks(WEAPONS.brand.combo[0]);
   run(state, swing + WEAPONS.brand.chargeTicks + 3, () => ({ 0: { attack: true } }));
-  assert.equal(me.charging, true); assert.ok(me.chargeTicks >= WEAPONS.brand.chargeTicks);
-  run(state, 1);
-  assert.equal(after - foe.hp, WEAPONS.brand.charge.damage);
-  assert.ok(events(state, 'swing').some(event => event.charged && event.kind === 'spin'));
+  assert.ok(me.charging && me.chargeTicks >= WEAPONS.brand.chargeTicks);
+  const startX = me.x;
+  run(state, 60);
+  assert.ok(me.x > startX + 60, 'the lunge carries you forward');
+  assert.ok(events(state, 'damage').some(event => event.kind === 'lunge' && event.targetId === 4));
+  assert.ok(events(state, 'explosion').some(event => event.burst));
 });
 
 test('guns spend their clip, reload, and the charged blaster bolt pierces', () => {
@@ -176,12 +195,11 @@ test('Recon cloak hides you; the first hit out of it marks the target for extra 
   assert.ok(me.cloakTicks > 0);
   run(state, 2, t => ({ 0: { attack: t === 0 } }));
   assert.equal(me.cloakTicks, 0, 'attacking breaks the cloak');
-  run(state, WEAPONS.rapier.startup + 2);
+  run(state, swingTicks(WEAPONS.rapier.combo[0]) + 6);
   assert.ok(foe.markTicks > 0);
   const before = foe.hp;
-  run(state, 12); // let the first thrust recover, still inside the combo window
-  run(state, 20, t => ({ 0: { attack: t === 0 } }));
-  assert.equal(before - foe.hp, Math.round(WEAPONS.rapier.combo[1] * (1 + ABILITIES.cloak.markBonus)));
+  run(state, 24, t => ({ 0: { attack: t === 0 } }));
+  assert.equal(before - foe.hp, Math.round(WEAPONS.rapier.combo[1].damage * (1 + ABILITIES.cloak.markBonus)));
 });
 
 test('standing on a point captures it and scores every five seconds', () => {
@@ -203,7 +221,7 @@ test('standing on a point captures it and scores every five seconds', () => {
 
 test('a knocked-out knight respawns at base after the delay with a spawn shield', () => {
   const { state, foe } = duel();
-  foe.hp = 5; run(state, 1, () => ({ 0: { attack: true } })); run(state, WEAPONS.brand.startup + 2);
+  foe.hp = 5; run(state, 1, () => ({ 0: { attack: true } })); run(state, 30);
   assert.equal(foe.alive, false); assert.equal(state.players[0].kills, 1); assert.equal(foe.deaths, 1);
   assert.equal(foe.respawnTicks <= RULES.respawnBaseTicks, true);
   run(state, foe.respawnTicks + 1);
@@ -280,7 +298,7 @@ test('class and weapons change mid-match only in base or while respawning', () =
 
 test('a knockout drops a heart that heals whoever grabs it, and fades if nobody does', () => {
   const { state, me, foe } = duel();
-  foe.hp = 5; run(state, 1, () => ({ 0: { attack: true } })); run(state, WEAPONS.brand.startup + 2);
+  foe.hp = 5; run(state, 1, () => ({ 0: { attack: true } })); run(state, 30);
   assert.equal(foe.alive, false);
   assert.equal(state.pickups.length, 1); assert.ok(events(state, 'heartDrop').length === 1);
   const heart = state.pickups[0];
@@ -310,4 +328,93 @@ test('personal score comes from taking and neutralising zones, and leads the sco
   assert.ok(board.every(entry => ['score', 'kills', 'deaths', 'damage', 'captures'].every(key => Number.isInteger(entry[key]))));
   const team1 = board.filter(entry => entry.team === 1);
   assert.deepEqual(team1.map(entry => entry.score), [...team1.map(entry => entry.score)].sort((a, b) => b - a));
+});
+
+test('a raised shield blocks hits and statuses, then breaks into a stun', () => {
+  const { state, me, foe } = duel({ gap: 200, b: { weapons: ['blaster', 'brand', 'blast'] } });
+  run(state, GUARD.raiseTicks + 1, () => ({ 0: { guard: true } }));
+  assert.ok(me.guarding && me.guardRaise >= GUARD.raiseTicks);
+  run(state, 40, t => ({ 0: { guard: true }, 4: { attack: t === 0 } }));
+  assert.equal(me.hp, me.maxHp, 'the shield took the round');
+  assert.equal(me.guardHp, GUARD.max - WEAPONS.blaster.damage);
+  assert.ok(events(state, 'block').length === 1);
+  me.guardHp = 5;
+  run(state, 40, t => ({ 0: { guard: true }, 4: { attack: t === 0 } }));
+  assert.ok(events(state, 'guardBreak').length === 1);
+  assert.equal(me.guarding, false); assert.ok(me.stunTicks > 0 && me.guardBroken);
+  run(state, 2, () => ({ 0: { guard: true } })); assert.equal(me.guarding, false, 'a broken shield cannot be raised');
+  // It regenerates after a pause and comes back at half strength.
+  run(state, GUARD.regenDelay + Math.ceil(GUARD.max * GUARD.recover / GUARD.regenPerSecond * TICK_RATE) + GUARD.breakStun + 5);
+  assert.equal(me.guardBroken, false);
+  run(state, GUARD.raiseTicks + 1, () => ({ 0: { guard: true } })); assert.ok(me.guarding);
+});
+
+test('statuses: burn ticks damage, poison stops healing, freeze holds you until hit', () => {
+  const { state, me, foe } = duel();
+  L.step(state, []); // settle
+  // Burn: a few points every half second.
+  state.events = [];
+  const hazeBomb = { id: 77, ownerId: 0, team: 0, weapon: 'haze', x: foe.x, y: foe.y, fuse: 1, total: 1, phase: 'fuse', pullTicks: 0 };
+  state.bombs.push(hazeBomb); run(state, 2);
+  assert.equal(state.clouds.length, 1); assert.ok(foe.status.burn > 0);
+  run(state, STATUS.burn.every * 2 + 1);
+  assert.ok(events(state, 'damage').filter(event => event.kind === 'burn').length >= 2);
+  // Poison: no healing from hearts or base.
+  foe.status.poison = STATUS.poison.ticks; foe.hp = 40;
+  state.pickups.push({ id: 900, kind: 'heart', x: foe.x, y: foe.y, ttl: 500 }); run(state, 2);
+  assert.equal(state.pickups.some(pickup => pickup.id === 900), true, 'a poisoned knight cannot take a heart');
+  // Freeze: no movement until the ice breaks; a hit thaws it.
+  state.clouds = []; foe.status.burn = 0;
+  const start = foe.x; foe.status.freeze = STATUS.freeze.ticks;
+  run(state, 20, () => ({ 4: { right: true } }));
+  assert.equal(foe.x, start, 'frozen knights cannot move');
+  me.weapons = ['brand', 'blaster', 'blast']; Object.assign(me, { x: foe.x - 50, y: foe.y, aim: 0 });
+  run(state, 20, t => ({ 0: { attack: t === 0 } }));
+  assert.equal(foe.status.freeze, 0); assert.ok(foe.freezeImmune > 0, 'a thawed knight is briefly immune');
+});
+
+test('ricochet bolts bounce off walls; catalysts stick and the detonator sets them off', () => {
+  const { state, me, foe } = duel({ a: { weapons: ['alchemer', 'catalyzer', 'blast'] } });
+  // Fire straight into the nearest wall.
+  const map = MAPS.gate; let wallX = me.x; while (!L.MAPS.gate.grid[Math.floor(me.y / TILE)][Math.floor(wallX / TILE)].includes('#')) wallX += 4;
+  Object.assign(foe, { alive: false, respawnTicks: 1e9 });
+  run(state, 1, () => ({ 0: { attack: true } })); run(state, 1);
+  const shot = state.projectiles[0]; assert.equal(shot.kind, 'ricochet');
+  run(state, Math.ceil((wallX - me.x) / WEAPONS.alchemer.speed * TICK_RATE) + 6);
+  assert.ok(events(state, 'ricochet').length >= 1); assert.ok(state.projectiles[0]?.vx < 0, 'the bolt comes back');
+  // Catalyst: three stuck charges, then the detonator.
+  state.projectiles = []; Object.assign(foe, { alive: true, x: me.x + 140, y: me.y, hp: 300, maxHp: 300, shieldTicks: 0 });
+  run(state, 2, t => ({ 0: { slot2: t === 0 } }));
+  for (let i = 0; i < 3; i++) run(state, WEAPONS.catalyzer.interval + 2, t => ({ 0: { attack: t === 0 } }));
+  run(state, 20);
+  assert.equal(foe.catalysts, 3);
+  const before = foe.hp;
+  run(state, swingTicks({ startup: 0, active: 0, recovery: 0 }) + WEAPONS.catalyzer.chargeTicks + 3, () => ({ 0: { attack: true } }));
+  run(state, 30);
+  assert.ok(events(state, 'detonate').some(event => event.count === 3));
+  assert.ok(before - foe.hp >= WEAPONS.catalyzer.charge.damage + WEAPONS.catalyzer.charge.perCharge * 3);
+  assert.equal(foe.catalysts, 0);
+});
+
+test('the vortex drags enemies in, holds them, then blasts them apart', () => {
+  const { state, foe } = duel();
+  const centre = { x: foe.x - 100, y: foe.y };
+  state.bombs.push({ id: 88, ownerId: 0, team: 0, weapon: 'vortex', ...centre, fuse: 1, total: 1, phase: 'fuse', pullTicks: 0 });
+  run(state, 2); assert.equal(state.bombs[0].phase, 'pull');
+  run(state, 60, () => ({ 4: { right: true } }));
+  assert.ok(Math.hypot(foe.x - centre.x, foe.y - centre.y) < 30, 'pulled to the centre against its will');
+  run(state, WEAPONS.vortex.pull.ticks);
+  assert.equal(state.bombs.length, 0);
+  assert.equal(foe.hp, foe.maxHp - WEAPONS.vortex.damage);
+});
+
+test('every weapon fires its charge without errors', () => {
+  for (const id of L.WEAPON_IDS) {
+    const { state, me } = duel({ gap: 140, a: { weapons: [id, ...L.WEAPON_IDS.filter(other => other !== id && WEAPONS[other].family !== WEAPONS[id].family).slice(0, 2)] } });
+    me.clips = Object.fromEntries(me.weapons.filter(weaponId => WEAPONS[weaponId].family === 'gun').map(weaponId => [weaponId, WEAPONS[weaponId].clip]));
+    run(state, 60 + WEAPONS[id].chargeTicks + 3, () => ({ 0: { attack: true } }));
+    run(state, 400);
+    assert.ok(events(state, 'chargeRelease').some(event => event.weapon === id), `${id} released its charge`);
+    assert.ok(state.players.every(player => Number.isFinite(player.x) && Number.isFinite(player.hp)), `${id} stays finite`);
+  }
 });

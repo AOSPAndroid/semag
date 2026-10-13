@@ -45,6 +45,13 @@ kbd { display: inline-block; padding: 1px 6px; border: 1px solid var(--line); bo
 .ld-hp em { position: absolute; inset: 0 auto 0 0; width: 100%; background: linear-gradient(90deg, #5fd38a, #9ff0b8); }
 .ld-hp b { position: relative; display: block; text-align: center; font: 700 12px/18px ui-monospace, monospace; color: #0d1a12; }
 .ld-abilities { display: flex; gap: 8px; }
+.ld-guard { display: flex; align-items: center; gap: 6px; margin: -2px 0 8px; font-size: 11px; color: var(--muted); }
+.ld-guard i { flex: 1; height: 6px; border-radius: 3px; background: rgba(255,255,255,.1); overflow: hidden; }
+.ld-guard em { display: block; height: 100%; width: 100%; background: #9fd8ff; }
+.ld-guard[data-state="up"] em { background: #ffffff; } .ld-guard[data-state="broken"] em { background: var(--danger); }
+.ld-guard[data-state="broken"] span::after { content: ' broken'; color: var(--danger); }
+.ld-statuses { margin: -4px 0 6px; min-height: 0; font-size: 11px; color: #ffcf8a; }
+.ld-statuses:empty { display: none; }
 .ld-ability { position: relative; display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 6px; background: var(--panel-2); overflow: hidden; font-size: 12px; }
 .ld-ability em { position: absolute; inset: 0; background: rgba(0,0,0,.45); transform-origin: left; transform: scaleX(0); }
 .ld-ability kbd, .ld-ability span { position: relative; z-index: 1; }

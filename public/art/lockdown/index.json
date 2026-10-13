@@ -30,7 +30,6 @@
     "icon_weapon_cleaver.png",
     "icon_weapon_magnus.png",
     "icon_weapon_rapier.png",
-    "icon_weapon_scatter.png",
     "icon_weapon_shard.png",
     "icon_weapon_vortex.png",
     "pickup_heart.png",
@@ -38,7 +37,6 @@
     "point_beacon.png",
     "proj_bullet.png",
     "proj_explosive.png",
-    "proj_pellet.png",
     "proj_pierce.png",
     "proj_shard.png",
     "tile_floor_brass.png",
@@ -54,7 +52,6 @@
     "weapon_cleaver.png",
     "weapon_magnus.png",
     "weapon_rapier.png",
-    "weapon_scatter.png",
     "weapon_shard.png",
     "weapon_vortex.png"
   ]

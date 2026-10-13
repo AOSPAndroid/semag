@@ -56,13 +56,18 @@ const weapons = Object.values(WEAPONS).flatMap(weapon => [
 ]);
 
 const projectiles = [
-  asset('proj_bullet', 16, 8, [8, 4], 'Standard energy round, pointing right.', { group: 'projectiles' }),
-  asset('proj_pierce', 32, 10, [16, 5], 'Charged piercing bolt, longer and brighter, pointing right.', { group: 'projectiles' }),
-  asset('proj_explosive', 18, 18, [9, 9], 'Charged Magnus explosive shell.', { group: 'projectiles' }),
-  asset('proj_shard', 14, 6, [7, 3], 'Shard Bomb fragment, pointing right.', { group: 'projectiles' }),
-  asset('proj_pellet', 8, 8, [4, 4], 'Scattergun pellet.', { group: 'projectiles' }),
+  asset('proj_bullet', 16, 8, [8, 4], 'Standard energy round, pointing right. Hitbox is a 5 px radius at the bright tip.', { group: 'projectiles' }),
+  asset('proj_pierce', 32, 10, [16, 5], 'Charged piercing bolt, longer and brighter, pointing right (9 px hitbox radius).', { group: 'projectiles' }),
+  asset('proj_explosive', 18, 18, [9, 9], 'Charged hand-cannon round that explodes on impact.', { group: 'projectiles' }),
+  asset('proj_ricochet', 16, 8, [8, 4], 'Ricochet Coil bolt: electric blue, pointing right; it bounces off walls.', { group: 'projectiles' }),
+  asset('proj_pulse', 32, 64, [16, 32], 'Ripple Caster wave seen from above: a curved band of light, convex side facing right. The game scales it as the wave widens.', { group: 'projectiles' }),
+  asset('proj_catalyst', 14, 14, [7, 7], 'Sticky golden catalyst orb that clings to a knight.', { group: 'projectiles' }),
+  asset('proj_detonator', 18, 18, [9, 9], 'Red-orange detonator orb that sets off stuck catalysts.', { group: 'projectiles' }),
+  asset('proj_thorn', 14, 6, [7, 3], 'Briar Blade thorn, green and sharp, pointing right.', { group: 'projectiles' }),
+  asset('proj_wave', 48, 64, [24, 32], 'Umbral Greatblade shadow wave: a dark violet crescent, convex side facing right. The game scales it to its size.', { group: 'projectiles' }),
+  asset('proj_shard', 14, 6, [7, 3], 'Splinter Bomb fragment, pointing right.', { group: 'projectiles' }),
 ];
-const bombs = ['blast', 'vortex', 'shard'].map(id => asset(`bomb_${id}`, 32, 32, [16, 16], `${WEAPONS[id].name} planted on the floor (the fuse ring is drawn by the game).`, { group: 'bombs' }));
+const bombs = Object.values(WEAPONS).filter(weapon => weapon.family === 'bomb').map(weapon => asset(`bomb_${weapon.id}`, 32, 32, [16, 24], `${weapon.name} planted on the floor, seen from the ¾ camera (the fuse ring is drawn by the game).`, { group: 'bombs' }));
 
 const effects = [
   asset('fx_slash', 384, 96, [24, 48], 'Blade swipe arc, 4-frame strip (96x96 each), sweeping from top to bottom, pivot at the left middle (the wielder).', { group: 'effects', frames: 4 }),
@@ -77,6 +82,10 @@ const effects = [
   asset('fx_cloak', 64, 64, [32, 32], 'Shimmer distortion overlay for a cloaked Recon.', { group: 'effects' }),
   asset('fx_mark', 32, 32, [16, 16], 'Target mark shown over a marked enemy.', { group: 'effects' }),
   asset('fx_dash', 64, 64, [32, 32], 'Speed streak behind a dashing Striker, pointing right.', { group: 'effects' }),
+  asset('fx_guard', 64, 80, [32, 40], 'The shield every knight raises with right click: a translucent, faintly hexagonal energy dome around a standing knight, neutral white-blue (the game tints the rim by team and shows its health).', { group: 'effects' }),
+  asset('fx_cloud_burn', 192, 192, [96, 96], 'Ember Haze cloud on the floor, seen from the ¾ camera: smouldering orange smoke with sparks. The game scales it to the cloud radius.', { group: 'effects' }),
+  asset('fx_cloud_freeze', 192, 192, [96, 96], 'Frost Haze cloud on the floor: pale blue freezing mist with ice glints.', { group: 'effects' }),
+  ...['burn', 'poison', 'shock', 'freeze'].map(id => asset(`fx_status_${id}`, 12, 12, [6, 6], `Tiny status icon shown above a knight's head: ${id === 'burn' ? 'flame' : id === 'poison' ? 'green drop' : id === 'shock' ? 'lightning bolt' : 'snowflake'}.`, { group: 'effects' })),
 ];
 const pickups = [
   asset('pickup_heart', 32, 32, [16, 16], 'Heart dropped by a knocked-out knight; heals whoever grabs it. Bright red, chunky, readable at a glance. The game bobs it and adds the shadow.', { group: 'pickups' }),
