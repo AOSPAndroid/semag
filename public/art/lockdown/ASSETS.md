@@ -6,19 +6,30 @@ Lockdown is a top-down team brawl in the spirit of Spiral Knights' Lockdown: up 
 three control points, swords, guns and bombs. The game is fully playable with placeholder
 shapes; every PNG listed below replaces one placeholder as soon as it is added.
 
-**Progress: 65/65 sprites ready.**
+**Progress: 57/67 sprites ready.**
+
+Wrong size (ignored until fixed):
+- knight_striker_team0.png: expected 384x64, got 256x64
+- knight_striker_team1.png: expected 384x64, got 256x64
+- knight_guardian_team0.png: expected 384x64, got 256x64
+- knight_guardian_team1.png: expected 384x64, got 256x64
+- knight_recon_team0.png: expected 384x64, got 256x64
+- knight_recon_team1.png: expected 384x64, got 256x64
 
 ## Style guide
 
-- **Camera:** straight top-down, light from the top-left, soft shadow to the bottom-right.
+- **Camera:** ¾ view, tilted about 60° down (Spiral Knights, Enter the Gungeon, Nuclear Throne). Light from the top-left.
+  Floors show their top; walls show a top face (raised 24 px) and a front face.
 - **Look:** chunky, readable "toy knight" fantasy: clean silhouettes, 2–3 px dark outlines,
   limited palette with a few bright accents. Avoid copying any existing game's characters, logos or UI.
-- **Orientation:** anything that rotates (knights, held weapons, projectiles, slashes, muzzle flashes)
+- **Knights** are drawn from the ¾ front **facing right**; the game mirrors them to face left and never rotates
+  them. They are drawn **empty-handed**: the game draws the weapon sprite at the hand point and rotates it to the aim.
+- **Orientation:** everything else that rotates (held weapons, projectiles, slashes, muzzle flashes)
   is drawn **facing right (+x)**. The game rotates it to the aim direction.
 - **Anchor:** the pivot pixel (from the top-left) the game places on the world position and rotates around.
 - **Sheets:** animations are a single horizontal strip of equal frames, left to right.
-- **Scale:** draw at world scale (1 px = 1 world unit; the camera zooms the whole scene). A knight's body
-  is a 30 px circle, so keep it in the middle ~36 px of its 64 px frame; a floor tile is 48 px.
+- **Scale:** draw at world scale (1 px = 1 world unit; the camera zooms the whole scene). A floor tile is 48 px;
+  a knight is about 36 px wide and 50 px tall, with feet on the anchor point.
 - **Team colours:** Amber `#e39a3b` (team 0) and Cyan `#3bb8c4` (team 1). Only sprites whose name says
   `team0`/`team1` carry team colour; everything else stays neutral and the game adds a coloured ring.
 - **Format:** 32-bit PNG with transparency, exact pixel sizes below (wrong sizes are skipped).
@@ -38,10 +49,12 @@ shapes; every PNG listed below replaces one placeholder as soon as it is added.
 |---|---|---|---|---|---|
 | ✅ | `tile_floor_stone.png` | 48×48 | 1 | 0, 0 | Seamless stone arena floor tile. Must tile in all directions. |
 | ✅ | `tile_floor_stone_alt.png` | 48×48 | 1 | 0, 0 | Variant stone floor tile (cracks, rivets or a drain) mixed in at random for variety. |
-| ✅ | `tile_wall_stone.png` | 48×48 | 1 | 0, 0 | stone wall block seen from above: a raised top face with a darker lower edge to read as height. |
+| ⬜ | `tile_wall_top_stone.png` | 48×48 | 1 | 0, 0 | Top face of a stone wall block, seen from the ¾ camera. The game draws it raised 24 px above the floor, so it must read as the lit upper surface of a block (light from the top-left). Tiles side by side must join seamlessly. |
+| ⬜ | `tile_wall_front_stone.png` | 48×24 | 1 | 0, 0 | Front (south-facing) face of a stone wall block, drawn under the top face wherever floor lies below the wall. Darker than the top, with masonry/plating detail, a lit top edge and a shadowed bottom edge where it meets the floor. Must tile horizontally. |
 | ✅ | `tile_floor_brass.png` | 48×48 | 1 | 0, 0 | Seamless brass arena floor tile. Must tile in all directions. |
 | ✅ | `tile_floor_brass_alt.png` | 48×48 | 1 | 0, 0 | Variant brass floor tile (cracks, rivets or a drain) mixed in at random for variety. |
-| ✅ | `tile_wall_brass.png` | 48×48 | 1 | 0, 0 | brass wall block seen from above: a raised top face with a darker lower edge to read as height. |
+| ⬜ | `tile_wall_top_brass.png` | 48×48 | 1 | 0, 0 | Top face of a brass wall block, seen from the ¾ camera. The game draws it raised 24 px above the floor, so it must read as the lit upper surface of a block (light from the top-left). Tiles side by side must join seamlessly. |
+| ⬜ | `tile_wall_front_brass.png` | 48×24 | 1 | 0, 0 | Front (south-facing) face of a brass wall block, drawn under the top face wherever floor lies below the wall. Darker than the top, with masonry/plating detail, a lit top edge and a shadowed bottom edge where it meets the floor. Must tile horizontally. |
 | ✅ | `tile_spawn_team0.png` | 48×48 | 1 | 0, 0 | Spawn floor tile tinted for team Amber (warm orange). |
 | ✅ | `tile_spawn_team1.png` | 48×48 | 1 | 0, 0 | Spawn floor tile tinted for team Cyan (cool teal). |
 
@@ -49,12 +62,12 @@ shapes; every PNG listed below replaces one placeholder as soon as it is added.
 
 | | File | Size (px) | Frames | Anchor | Notes |
 |---|---|---|---|---|---|
-| ✅ | `knight_striker_team0.png` | 256×64 | 4 | 32, 32 | Striker knight, team Amber, seen from above, facing right. 4-frame walk cycle strip (64x64 each). Helmet and armour should make the class readable at a glance: light armour, swept-back crest. |
-| ✅ | `knight_striker_team1.png` | 256×64 | 4 | 32, 32 | Striker knight, team Cyan, seen from above, facing right. 4-frame walk cycle strip (64x64 each). Helmet and armour should make the class readable at a glance: light armour, swept-back crest. |
-| ✅ | `knight_guardian_team0.png` | 256×64 | 4 | 32, 32 | Guardian knight, team Amber, seen from above, facing right. 4-frame walk cycle strip (64x64 each). Helmet and armour should make the class readable at a glance: heavy rounded plate, broad shoulders. |
-| ✅ | `knight_guardian_team1.png` | 256×64 | 4 | 32, 32 | Guardian knight, team Cyan, seen from above, facing right. 4-frame walk cycle strip (64x64 each). Helmet and armour should make the class readable at a glance: heavy rounded plate, broad shoulders. |
-| ✅ | `knight_recon_team0.png` | 256×64 | 4 | 32, 32 | Recon knight, team Amber, seen from above, facing right. 4-frame walk cycle strip (64x64 each). Helmet and armour should make the class readable at a glance: hooded, slim, cloak edges. |
-| ✅ | `knight_recon_team1.png` | 256×64 | 4 | 32, 32 | Recon knight, team Cyan, seen from above, facing right. 4-frame walk cycle strip (64x64 each). Helmet and armour should make the class readable at a glance: hooded, slim, cloak edges. |
+| ⬜ | `knight_striker_team0.png` | 384×64 | 6 | 32, 58 | Striker knight, team Amber, ¾ front view FACING RIGHT (the game mirrors it), empty-handed: the weapon is drawn separately at the hand point (40, 42) of every frame. 6-frame strip of 64x64 frames: frames 1–2 idle (gentle breathing bob), frames 3–6 walk cycle. Feet rest on the anchor (32, 58); the knight is about 36 px wide and 50 px tall with a big chibi helmet. Class must read at a glance: light armour, swept-back crest plume, short cape. Team colour on the plume/cloak/trim. |
+| ⬜ | `knight_striker_team1.png` | 384×64 | 6 | 32, 58 | Striker knight, team Cyan, ¾ front view FACING RIGHT (the game mirrors it), empty-handed: the weapon is drawn separately at the hand point (40, 42) of every frame. 6-frame strip of 64x64 frames: frames 1–2 idle (gentle breathing bob), frames 3–6 walk cycle. Feet rest on the anchor (32, 58); the knight is about 36 px wide and 50 px tall with a big chibi helmet. Class must read at a glance: light armour, swept-back crest plume, short cape. Team colour on the plume/cloak/trim. |
+| ⬜ | `knight_guardian_team0.png` | 384×64 | 6 | 32, 58 | Guardian knight, team Amber, ¾ front view FACING RIGHT (the game mirrors it), empty-handed: the weapon is drawn separately at the hand point (40, 42) of every frame. 6-frame strip of 64x64 frames: frames 1–2 idle (gentle breathing bob), frames 3–6 walk cycle. Feet rest on the anchor (32, 58); the knight is about 36 px wide and 50 px tall with a big chibi helmet. Class must read at a glance: heavy rounded plate, broad pauldrons, flat-topped great helm. Team colour on the plume/cloak/trim. |
+| ⬜ | `knight_guardian_team1.png` | 384×64 | 6 | 32, 58 | Guardian knight, team Cyan, ¾ front view FACING RIGHT (the game mirrors it), empty-handed: the weapon is drawn separately at the hand point (40, 42) of every frame. 6-frame strip of 64x64 frames: frames 1–2 idle (gentle breathing bob), frames 3–6 walk cycle. Feet rest on the anchor (32, 58); the knight is about 36 px wide and 50 px tall with a big chibi helmet. Class must read at a glance: heavy rounded plate, broad pauldrons, flat-topped great helm. Team colour on the plume/cloak/trim. |
+| ⬜ | `knight_recon_team0.png` | 384×64 | 6 | 32, 58 | Recon knight, team Amber, ¾ front view FACING RIGHT (the game mirrors it), empty-handed: the weapon is drawn separately at the hand point (40, 42) of every frame. 6-frame strip of 64x64 frames: frames 1–2 idle (gentle breathing bob), frames 3–6 walk cycle. Feet rest on the anchor (32, 58); the knight is about 36 px wide and 50 px tall with a big chibi helmet. Class must read at a glance: slim, hooded cloak over a light helm, scarf. Team colour on the plume/cloak/trim. |
+| ⬜ | `knight_recon_team1.png` | 384×64 | 6 | 32, 58 | Recon knight, team Cyan, ¾ front view FACING RIGHT (the game mirrors it), empty-handed: the weapon is drawn separately at the hand point (40, 42) of every frame. 6-frame strip of 64x64 frames: frames 1–2 idle (gentle breathing bob), frames 3–6 walk cycle. Feet rest on the anchor (32, 58); the knight is about 36 px wide and 50 px tall with a big chibi helmet. Class must read at a glance: slim, hooded cloak over a light helm, scarf. Team colour on the plume/cloak/trim. |
 
 ## Held weapons
 

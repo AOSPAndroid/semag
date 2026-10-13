@@ -232,7 +232,7 @@ test('bot matches are deterministic, finite and reach a result', () => {
 test('the art manifest covers every class, team, weapon and theme with valid strips', () => {
   for (const cls of Object.keys(CLASSES)) for (const team of [0, 1]) assert.ok(MANIFEST_BY_KEY[`knight_${cls}_team${team}`]);
   for (const id of L.WEAPON_IDS) { assert.ok(MANIFEST_BY_KEY[`weapon_${id}`]); assert.ok(MANIFEST_BY_KEY[`icon_weapon_${id}`]); }
-  for (const map of Object.values(MAPS)) for (const key of [`tile_floor_${map.theme}`, `tile_floor_${map.theme}_alt`, `tile_wall_${map.theme}`]) assert.ok(MANIFEST_BY_KEY[key], key);
+  for (const map of Object.values(MAPS)) for (const key of [`tile_floor_${map.theme}`, `tile_floor_${map.theme}_alt`, `tile_wall_top_${map.theme}`, `tile_wall_front_${map.theme}`]) assert.ok(MANIFEST_BY_KEY[key], key);
   const keys = new Set();
   for (const entry of MANIFEST) {
     assert.ok(!keys.has(entry.key), `${entry.key} is unique`); keys.add(entry.key);

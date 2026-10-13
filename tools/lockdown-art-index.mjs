@@ -40,15 +40,18 @@ shapes; every PNG listed below replaces one placeholder as soon as it is added.
 
 ## Style guide
 
-- **Camera:** straight top-down, light from the top-left, soft shadow to the bottom-right.
+- **Camera:** ¾ view, tilted about 60° down (Spiral Knights, Enter the Gungeon, Nuclear Throne). Light from the top-left.
+  Floors show their top; walls show a top face (raised 24 px) and a front face.
 - **Look:** chunky, readable "toy knight" fantasy: clean silhouettes, 2–3 px dark outlines,
   limited palette with a few bright accents. Avoid copying any existing game's characters, logos or UI.
-- **Orientation:** anything that rotates (knights, held weapons, projectiles, slashes, muzzle flashes)
+- **Knights** are drawn from the ¾ front **facing right**; the game mirrors them to face left and never rotates
+  them. They are drawn **empty-handed**: the game draws the weapon sprite at the hand point and rotates it to the aim.
+- **Orientation:** everything else that rotates (held weapons, projectiles, slashes, muzzle flashes)
   is drawn **facing right (+x)**. The game rotates it to the aim direction.
 - **Anchor:** the pivot pixel (from the top-left) the game places on the world position and rotates around.
 - **Sheets:** animations are a single horizontal strip of equal frames, left to right.
-- **Scale:** draw at world scale (1 px = 1 world unit; the camera zooms the whole scene). A knight's body
-  is a 30 px circle, so keep it in the middle ~36 px of its 64 px frame; a floor tile is 48 px.
+- **Scale:** draw at world scale (1 px = 1 world unit; the camera zooms the whole scene). A floor tile is 48 px;
+  a knight is about 36 px wide and 50 px tall, with feet on the anchor point.
 - **Team colours:** Amber \`#e39a3b\` (team 0) and Cyan \`#3bb8c4\` (team 1). Only sprites whose name says
   \`team0\`/\`team1\` carry team colour; everything else stays neutral and the game adds a coloured ring.
 - **Format:** 32-bit PNG with transparency, exact pixel sizes below (wrong sizes are skipped).
