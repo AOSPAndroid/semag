@@ -2,6 +2,7 @@
  * `?solo=1` runs the simulation in the page with bots; `?room=ID` plays online. */
 import * as Engine from './lockdown-engine.js';
 import { LockdownRenderer, TEAM_COLORS } from './lockdown-renderer.js';
+import { LockdownVoxelView } from './lockdown-voxel-view.js';
 import { createAssetLibrary } from './lockdown-assets.js';
 import { gameKey } from './keyboard-layout.js';
 import { GameAudio } from './audio.js';
@@ -21,7 +22,22 @@ const SEND_INTERVAL_MS = 16, HEARTBEAT_MS = 100, MAX_EXTRAPOLATE_MS = 60;
 const app = $('ld-app'), canvas = $('ld-arena'), minimap = $('ld-minimap');
 const audio = new GameAudio();
 const assets = createAssetLibrary({ onChange: () => refreshIcons() });
-const renderer = new LockdownRenderer(canvas, assets);
+// `?view=voxel` previews the ¾ voxel camera; the flat view stays the default.
+const voxelRequested = params.get('view') === 'voxel';
+let voxelView = null;
+if (voxelRequested) {
+  const overlay = Object.assign(document.createElement('canvas'), { className: 'ld-overlay' });
+  overlay.setAttribute('aria-hidden', 'true'); canvas.after(overlay);
+  try { voxelView = new LockdownVoxelView(canvas, overlay); if (!voxelView.available) voxelView = null; } catch { voxelView = null; }
+}
+const renderer = new LockdownRenderer(voxelView ? document.createElement('canvas') : canvas, assets);
+const scene = voxelView || renderer;
+{
+  // The menu link flips between the flat view and the voxel preview, keeping the room or practice mode.
+  const link = $('ld-view-link'), next = new URLSearchParams(location.search);
+  if (voxelView) next.delete('view'); else next.set('view', 'voxel');
+  link.href = `?${next}`; link.textContent = voxelView ? 'Back to the flat 2D view' : voxelRequested ? '3D view unavailable on this device' : 'Try the 3D voxel view (preview)';
+}
 
 // ---------- local setup (remembered per browser) ----------
 function loadSetup() {
@@ -156,7 +172,7 @@ canvas.addEventListener('wheel', event => { event.preventDefault(); if (Math.abs
 function updateAim() {
   const me = viewState()?.players[localId ?? -1];
   if (!me || !mouse.inside) return;
-  const world = renderer.screenToWorld(mouse.x, mouse.y);
+  const world = scene.screenToWorld(mouse.x, mouse.y);
   aim = Math.atan2(world.y - me.y, world.x - me.x);
 }
 /** One input frame. Edge presses that were already released still count once. */
@@ -521,7 +537,7 @@ function frame(now) {
     // Show your own aim instantly instead of waiting for the server echo.
     const shown = me && !menuOpen && me.alive ? { ...view, players: view.players.map(player => player.id === localId ? { ...player, aim } : player) } : view;
     const focus = me && !me.alive ? overviewFocus(view, me) : null;
-    renderer.render(shown, { localId, now, focus });
+    scene.render(shown, { localId, now, focus });
     playEvents(view);
     if (view.phase !== 'lobby') updateHud(view);
     if (view.phase !== lastPhase) {
@@ -545,6 +561,6 @@ if (solo) soloCreate(); else connect();
 app.dataset.menu = 'open';
 renderMenu();
 requestAnimationFrame(frame);
-addEventListener('resize', () => renderer.resize());
+addEventListener('resize', () => scene.resize());
 // Exposed for automated smoke tests.
 globalThis.__lockdown = { get state() { return state; }, get localId() { return localId; }, get menuOpen() { return menuOpen; }, toggleMenu, chooseSetup, showBoard };
