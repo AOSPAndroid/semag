@@ -38,7 +38,7 @@ export const RULES = Object.freeze({
  * shield, and each class tilts one weapon family. Multipliers above 1 on a charge make it slower. */
 export const CLASSES = Object.freeze({
   striker: Object.freeze({ id: 'striker', name: 'Striker', hp: 100, speed: 210, bladeDamage: 1.25, bladeSpeed: 1.2, bombCharge: 1.5, ability: 'Boost',
-    perks: 'Swords +25% damage and +20% speed · slow bomb charge', description: 'The sword specialist. Boost dodges a short distance untouchable, then sprints for three seconds to close in or get out.' }),
+    perks: 'Swords +25% damage and +20% speed · slow bomb charge', description: 'The sword specialist. Hold Boost to sprint while its nitro meter lasts, to close in or get out; pressing it also cancels a cut and slips a hit.' }),
   guardian: Object.freeze({ id: 'guardian', name: 'Guardian', hp: 120, speed: 190, bombCharge: .7, ability: 'Shield',
     perks: 'Most health · bombs charge 30% faster', description: 'The only knight with a shield. Hold it up to block everything; after a moment it grows into a dome that also covers and heals teammates inside. It breaks under fire and recharges in about eight seconds.' }),
   recon: Object.freeze({ id: 'recon', name: 'Recon', hp: 95, speed: 200, gunDamage: 1.1, gunCharge: .8, ability: 'Cloak',
