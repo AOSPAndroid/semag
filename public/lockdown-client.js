@@ -1,7 +1,7 @@
 /** Lockdown page: lobby, input, HUD and networking around the shared engine.
  * `?solo=1` runs the simulation in the page with bots; `?room=ID` plays online. */
 import * as Engine from './lockdown-engine.js';
-import { LockdownRenderer, TEAM_COLORS } from './lockdown-renderer.js';
+import { LockdownRenderer, TEAM_COLORS, FLOOR_RISE } from './lockdown-renderer.js';
 import { createAssetLibrary } from './lockdown-assets.js';
 import { gameKey } from './keyboard-layout.js';
 import { GameAudio } from './audio.js';
@@ -174,7 +174,8 @@ function updateAim() {
   if (!me || !mouse.inside) return;
   const world = scene.screenToWorld(mouse.x, mouse.y);
   // Shots fly at chest height in the ¾ view, so aim from the chest to the pointer.
-  aim = Math.atan2(world.y + scene.aimLift - me.y, world.x - me.x);
+  // On the raised floor of a two-floor map everything you do is drawn a storey higher.
+  aim = Math.atan2(world.y + scene.aimLift + (me.z || 0) * FLOOR_RISE - me.y, world.x - me.x);
 }
 /** One input frame. Edge presses that were already released still count once. */
 function sampleInput(consume) {

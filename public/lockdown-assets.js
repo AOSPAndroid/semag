@@ -44,6 +44,20 @@ const tiles = [...new Set(Object.values(MAPS).map(map => map.theme))].flatMap(th
     asset(`tile_pit_${theme}`, 48, 48, [0, 0], `Pit tile ('~'): ${pit}. Knights cannot walk on it but shots fly over it. Must tile in all directions; the game adds the edge lip.`, { group: 'tiles' }),
   ];
 });
+// Two-floor maps: the cliff face under raised floor, and stairs between floors (each named for the
+// direction it climbs on screen). The raised floor itself reuses the theme's floor tiles, lifted 24 px.
+const floorThemes = [...new Set(Object.values(MAPS).filter(map => map.twoFloors).map(map => map.theme))];
+const twoFloorTiles = floorThemes.flatMap(theme => {
+  const style = THEME_LOOKS[theme]?.look || theme;
+  return [
+    asset(`tile_ledge_${theme}`, 48, 24, [0, 0], `Ledge face under the raised floor of a two-floor ${theme} map — ${style}: the 24 px drop from the upper floor to the lower one, seen from the front. Lit top edge, darker toward the bottom; must tile horizontally. Lighter and less blocky than a wall front, so it reads as a step down, not a wall.`, { group: 'tiles' }),
+    ...[['up', 'climbing away from the camera (north): steps rise up the screen, from the lower floor at the bottom edge to the upper floor 24 px higher at the top'],
+      ['down', 'climbing toward the camera (south): the lower floor is at the top edge and the treads rise toward the viewer, so only foreshortened treads show'],
+      ['left', 'climbing to the left (west): treads rise from right to left with the stepped side face visible below them'],
+      ['right', 'climbing to the right (east): treads rise from left to right with the stepped side face visible below them']].map(([dir, how]) =>
+      asset(`tile_stairs_${theme}_${dir}`, 48, 72, [0, 0], `Stone stairs between the two floors of a ${theme} map, ${how}. One tile wide (48 px); the extra 24 px at the top is the storey of height. Same materials as the ${theme} floor and ledge.`, { group: 'tiles' })),
+  ];
+});
 const spawnPads = [0, 1].map(team => asset(`tile_spawn_team${team}`, 48, 48, [0, 0], `Spawn floor tile tinted for team ${team === 0 ? 'Amber (warm orange)' : 'Cyan (cool teal)'}.`, { group: 'tiles' }));
 
 /** The five drawn facings of a knight sheet, top row first. Left-hand directions mirror the
@@ -182,7 +196,7 @@ const ui = [
   ...['dash', 'bubble', 'heal', 'cloak'].map(id => asset(`icon_ability_${id}`, 48, 48, [24, 24], `Ability icon: ${id}.`, { group: 'icons' })),
 ];
 
-export const MANIFEST = Object.freeze([...tiles, ...spawnPads, ...characters, ...gear, ...knights, ...weapons, ...projectiles, ...bombs, ...effects, ...pickups, ...pointArt, ...ui]);
+export const MANIFEST = Object.freeze([...tiles, ...twoFloorTiles, ...spawnPads, ...characters, ...gear, ...knights, ...weapons, ...projectiles, ...bombs, ...effects, ...pickups, ...pointArt, ...ui]);
 export const MANIFEST_BY_KEY = Object.freeze(Object.fromEntries(MANIFEST.map(entry => [entry.key, entry])));
 
 /** Loads the sprites listed in /art/lockdown/index.json (written by

@@ -2,7 +2,7 @@
  * Deterministic 120 Hz simulation shared by the server and offline practice.
  * Up to 4v4; empty seats are filled by bots. Teams score every five seconds by
  * the points they hold; first to 500 (or the leader at the time limit) wins. */
-import { MAPS, MAP_IDS, TILE, isWall, isBlocked, wallAt } from './lockdown-maps.js';
+import { MAPS, MAP_IDS, TILE, isWall, isBlocked, wallAt, levelAt, levelCell, levelOk, canStep, shotBlocked } from './lockdown-maps.js';
 import { WEAPONS, WEAPON_IDS, DEFAULT_LOADOUTS, STATUS, STATUS_IDS, GUARD, BLADE } from './lockdown-weapons.js';
 import { ARMORS, ARMOR_IDS, HELMETS, PANTS, SHOES, GEAR, GEAR_SLOTS, combineGear } from './lockdown-equipment.js';
 
@@ -82,7 +82,7 @@ function newPlayer(id) {
   const team = id < TEAM_SIZE ? 0 : 1, cls = CLASS_IDS[id % CLASS_IDS.length];
   return {
     id, team, name: `Bot ${id + 1}`, human: false, connected: false, bot: true, cls, armor: 'none', helmet: 'none', pants: 'none', shoes: 'none', weapons: [...DEFAULT_LOADOUTS[cls]], slot: 0,
-    x: 0, y: 0, vx: 0, vy: 0, aim: team === 0 ? 0 : Math.PI, hp: CLASSES[cls].hp, maxHp: CLASSES[cls].hp, alive: false, lastHurtTick: 0,
+    x: 0, y: 0, z: 0, vx: 0, vy: 0, aim: team === 0 ? 0 : Math.PI, hp: CLASSES[cls].hp, maxHp: CLASSES[cls].hp, alive: false, lastHurtTick: 0,
     respawnTicks: 0, shieldTicks: 0, stunTicks: 0, pushX: 0, pushY: 0,
     action: 'idle', actionTicks: 0, actionTotal: 0, comboStep: 0, comboWindow: 0, hitIds: [], chargeTicks: 0, charging: false,
     clips: {}, reloadTicks: {}, sinceShot: {}, fireCooldown: 0, burst: null, hitStop: 0, bufferAttack: false,
@@ -232,7 +232,7 @@ function spawn(state, player) {
   }
   const cls = CLASSES[player.cls];
   Object.assign(player, {
-    x: spot.x, y: spot.y, vx: 0, vy: 0, alive: true, hp: maxHpFor(player.cls, player), maxHp: maxHpFor(player.cls, player), respawnTicks: 0, lastHurtTick: state.tick, shieldTicks: RULES.spawnShieldTicks,
+    x: spot.x, y: spot.y, z: levelAt(map, spot.x, spot.y), vx: 0, vy: 0, alive: true, hp: maxHpFor(player.cls, player), maxHp: maxHpFor(player.cls, player), respawnTicks: 0, lastHurtTick: state.tick, shieldTicks: RULES.spawnShieldTicks,
     stunTicks: 0, pushX: 0, pushY: 0, action: 'idle', actionTicks: 0, actionTotal: 0, comboStep: 0, comboWindow: 0, hitIds: [], chargeTicks: 0, charging: false,
     dashTicks: 0, cloakTicks: 0, markTicks: 0, markReady: false, slot: 0, fireCooldown: 0,
     aim: player.team === 0 ? 0 : Math.PI, burst: null, hitStop: 0, bufferAttack: false, dodgeTicks: 0, evadeTicks: 0, dashCooldown: 0, guarding: false, guardRaise: 0, guardBroken: false, guardDelay: 0,
@@ -244,28 +244,46 @@ function spawn(state, player) {
 }
 
 // ---------- physics ----------
-function collides(map, x, y, radius, walk = null) {
+/** How close your centre may come to a cliff edge (the drop to, or face of, the other floor). */
+const CLIFF_RADIUS = 10;
+function collides(map, x, y, radius, walk = null, z = null, from = null) {
   const minCol = Math.floor((x - radius) / TILE), maxCol = Math.floor((x + radius) / TILE), minRow = Math.floor((y - radius) / TILE), maxRow = Math.floor((y + radius) / TILE);
   for (let row = minRow; row <= maxRow; row++) for (let col = minCol; col <= maxCol; col++) {
-    if (!isBlocked(map, col, row, walk)) continue;
+    let reach = radius;
+    if (!isBlocked(map, col, row, walk)) {
+      // On two-floor maps the other floor is a cliff: up only by stairs, never off a ledge.
+      if (z === null || levelOk(map, col, row, z)) continue;
+      reach = CLIFF_RADIUS;
+      // Stepping away from an edge is always allowed, so turning on a stair never pins you.
+      if (from) { const fx = clamp(from.x, col * TILE, (col + 1) * TILE), fy = clamp(from.y, row * TILE, (row + 1) * TILE), nx = clamp(x, col * TILE, (col + 1) * TILE), ny = clamp(y, row * TILE, (row + 1) * TILE);
+        if ((x - nx) ** 2 + (y - ny) ** 2 >= (from.x - fx) ** 2 + (from.y - fy) ** 2) continue; }
+    }
     const nx = clamp(x, col * TILE, (col + 1) * TILE), ny = clamp(y, row * TILE, (row + 1) * TILE);
-    if ((x - nx) ** 2 + (y - ny) ** 2 < radius * radius) return true;
+    if ((x - nx) ** 2 + (y - ny) ** 2 < reach * reach) return true;
   }
   return false;
 }
 function moveBody(map, body, dx, dy) {
   const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy) / 6)), walk = outfitOf(body).walk;
   for (let step = 0; step < steps; step++) {
-    if (!collides(map, body.x + dx / steps, body.y, RULES.radius, walk)) body.x += dx / steps; else body.vx = 0;
-    if (!collides(map, body.x, body.y + dy / steps, RULES.radius, walk)) body.y += dy / steps; else body.vy = 0;
+    if (!collides(map, body.x + dx / steps, body.y, RULES.radius, walk, levelAt(map, body.x, body.y), body)) body.x += dx / steps; else body.vx = 0;
+    if (!collides(map, body.x, body.y + dy / steps, RULES.radius, walk, levelAt(map, body.x, body.y), body)) body.y += dy / steps; else body.vy = 0;
   }
+  body.z = levelAt(map, body.x, body.y);
 }
-/** Tile ray: true when the straight line between two points crosses no wall. */
+/** Tile ray from a to b: walls block it, and so does a cliff face when a stands on low ground
+ * (except the last body-width, where a knight standing at the edge pokes out over it). */
 export function lineOfSight(map, a, b) {
-  const length = dist(a, b), steps = Math.ceil(length / (TILE / 3));
-  for (let step = 1; step < steps; step++) if (wallAt(map, a.x + (b.x - a.x) * step / steps, a.y + (b.y - a.y) * step / steps)) return false;
+  const length = dist(a, b), steps = Math.ceil(length / (TILE / 3)), low = (a.z ?? levelAt(map, a.x, a.y)) < .5;
+  for (let step = 1; step < steps; step++) {
+    const x = a.x + (b.x - a.x) * step / steps, y = a.y + (b.y - a.y) * step / steps;
+    if (wallAt(map, x, y)) return false;
+    if (low && length * (1 - step / steps) > RULES.radius && levelCell(map, Math.floor(x / TILE), Math.floor(y / TILE)) === '1') return false;
+  }
   return true;
 }
+/** Close enough in height to cross swords or share a cloud: the same floor, or on the stairs between. */
+const sameFloor = (map, a, b) => Math.abs(levelAt(map, a.x, a.y) - levelAt(map, b.x, b.y)) <= .5;
 
 // ---------- damage, shields and statuses ----------
 /** A Guardian whose shield has grown into a dome covering this knight (not the Guardian itself). */
@@ -428,7 +446,7 @@ function bladeContacts(state, player, reach, from, to, amount, options) {
     const d = dist(player, target); if (d > reach + RULES.radius) continue;
     const pad = Math.atan2(RULES.radius, Math.max(1, d)), bearing = player.swingAim + wrapAngle(Math.atan2(target.y - player.y, target.x - player.x) - player.swingAim);
     if (high - low < Math.PI * 2 - 1e-6 && (bearing < low - pad || bearing > high + pad)) continue;
-    if (!lineOfSight(map, player, target)) continue;
+    if (!sameFloor(map, player, target) || !lineOfSight(map, player, target)) continue;
     player.hitIds.push(target.id);
     damage(state, player, target, amount, { angle: Math.atan2(target.y - player.y, target.x - player.x), damageFamily: 'blade', ...options });
   }
@@ -445,7 +463,7 @@ function spawnShot(state, player, weapon, spec, angle) {
   const power = weapon.family === 'gun' ? gunPower(player) : 1;
   state.projectiles.push({
     id: state.nextId++, ownerId: player.id, team: player.team, weapon: weapon.id, damageFamily: weapon.family, kind: spec.kind || weapon.kind || 'bullet',
-    x: player.x + Math.cos(angle) * (RULES.radius + 4), y: player.y + Math.sin(angle) * (RULES.radius + 4),
+    x: player.x + Math.cos(angle) * (RULES.radius + 4), y: player.y + Math.sin(angle) * (RULES.radius + 4), z: levelAt(MAPS[state.mapId], player.x, player.y),
     vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, size, grow: (spec.grow || 0) / Math.max(1, Math.ceil(spec.range / speed * TICK_RATE)),
     damage: spec.damage * power, push: spec.push ?? 0, ttl: Math.ceil(spec.range / speed * TICK_RATE), pierce: !!spec.pierce, bounces: spec.bounces || 0,
     status: spec.status || null, chance: spec.chance ?? 1, radius: spec.radius || 0, carry: spec.kind === 'wave', hitIds: [],
@@ -708,13 +726,14 @@ function tickProjectiles(state) {
     shot.size += shot.grow;
     for (let step = 0; step < steps && alive; step++) {
       const nx = shot.x + shot.vx * DT / steps, ny = shot.y + shot.vy * DT / steps;
-      if (wallAt(map, nx, ny)) {
-        // Ricochets reflect off the face they struck; everything else stops at walls.
+      const blocked = (x, y) => shotBlocked(map, x, y, shot.z ?? 0);
+      if (blocked(nx, ny)) {
+        // Ricochets reflect off the face they struck (walls, or a cliff seen from below); everything else stops.
         if (shot.bounces > 0) {
           shot.bounces--; shot.hitIds = [];
-          if (wallAt(map, nx, shot.y)) shot.vx = -shot.vx;
-          if (wallAt(map, shot.x, ny)) shot.vy = -shot.vy;
-          if (!wallAt(map, nx, shot.y) && !wallAt(map, shot.x, ny)) { shot.vx = -shot.vx; shot.vy = -shot.vy; }
+          if (blocked(nx, shot.y)) shot.vx = -shot.vx;
+          if (blocked(shot.x, ny)) shot.vy = -shot.vy;
+          if (!blocked(nx, shot.y) && !blocked(shot.x, ny)) { shot.vx = -shot.vx; shot.vy = -shot.vy; }
           emit(state, 'ricochet', { x: shot.x, y: shot.y });
           continue;
         }
@@ -776,7 +795,7 @@ function tickBombs(state) {
 function tickClouds(state) {
   const remaining = [];
   for (const cloud of state.clouds) {
-    for (const target of state.players) if (target.alive && target.team !== cloud.team && dist(target, cloud) <= cloud.radius + RULES.radius && !(target.status[cloud.status] > 0)) applyStatus(state, target, cloud.status, cloud.ownerId);
+    for (const target of state.players) if (target.alive && target.team !== cloud.team && dist(target, cloud) <= cloud.radius + RULES.radius && sameFloor(MAPS[state.mapId], target, cloud) && !(target.status[cloud.status] > 0)) applyStatus(state, target, cloud.status, cloud.ownerId);
     if (--cloud.ticks > 0) remaining.push(cloud);
   }
   state.clouds = remaining;
@@ -786,7 +805,7 @@ function tickPickups(state) {
   const remaining = [];
   for (const heart of state.pickups) {
     // The nearest hurt knight in reach, of either team, takes it.
-    const taker = state.players.filter(player => player.alive && player.hp < player.maxHp && canHeal(player) && dist(player, heart) <= RULES.heart.radius + RULES.radius)
+    const taker = state.players.filter(player => player.alive && player.hp < player.maxHp && canHeal(player) && dist(player, heart) <= RULES.heart.radius + RULES.radius && sameFloor(MAPS[state.mapId], player, heart))
       .sort((a, b) => dist(a, heart) - dist(b, heart))[0];
     if (taker) {
       const amount = heal(taker, RULES.heart.heal);
@@ -865,22 +884,38 @@ function flowField(map, x, y) {
     const index = queue[head], col = index % map.cols, row = (index - col) / map.cols;
     for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
       const c = col + dc, r = row + dr, next = r * map.cols + c;
-      if (isBlocked(map, c, r) || field[next] >= 0) continue;
+      if (!canStep(map, col, row, c, r) || field[next] >= 0) continue;
       field[next] = field[index] + 1; queue.push(next);
     }
   }
   flowCache.set(key, field); return field;
 }
 function stepToward(map, player, goal) {
-  if (lineOfSight(map, player, goal) && dist(player, goal) < TILE * 3) return Math.atan2(goal.y - player.y, goal.x - player.x);
+  if (lineOfSight(map, player, goal) && dist(player, goal) < TILE * 3 && levelCell(map, Math.floor(player.x / TILE), Math.floor(player.y / TILE)) === levelCell(map, Math.floor(goal.x / TILE), Math.floor(goal.y / TILE))) return Math.atan2(goal.y - player.y, goal.x - player.x);
   const field = flowField(map, goal.x, goal.y), col = Math.floor(player.x / TILE), row = Math.floor(player.y / TILE);
   let best = null, bestValue = Infinity;
   for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
-    const c = col + dc, r = row + dr; if (isBlocked(map, c, r)) continue;
-    if (dc && dr && (isBlocked(map, col + dc, row) || isBlocked(map, col, row + dr))) continue;
+    const c = col + dc, r = row + dr; if (!canStep(map, col, row, c, r)) continue;
+    if (dc && dr && (!canStep(map, col, row, col + dc, row) || !canStep(map, col, row, col, row + dr))) continue;
     const value = field[r * map.cols + c]; if (value >= 0 && value < bestValue) { bestValue = value; best = { x: (c + .5) * TILE, y: (r + .5) * TILE }; }
   }
   return best ? Math.atan2(best.y - player.y, best.x - player.x) : Math.atan2(goal.y - player.y, goal.x - player.x);
+}
+/** Raised tiles that overlook a point from shooting range: where a gunner bot likes to stand. */
+const perchCache = new Map();
+function perchesFor(map, point) {
+  if (!map.twoFloors) return [];
+  const key = `${map.id}:${point.id}`;
+  if (!perchCache.has(key)) {
+    const perches = [];
+    for (let row = 0; row < map.rows; row++) for (let col = 0; col < map.cols; col++) {
+      if (levelCell(map, col, row) !== '1' || isBlocked(map, col, row)) continue;
+      const spot = { x: (col + .5) * TILE, y: (row + .5) * TILE, z: 1 }, d = dist(spot, point);
+      if (d > RULES.pointRadius + 40 && d < 420 && lineOfSight(map, spot, point)) perches.push(Object.freeze(spot));
+    }
+    perchCache.set(key, perches);
+  }
+  return perchCache.get(key);
 }
 /** The closest of your team's base tiles (bases can be split into several blocks). */
 function nearestBaseTile(map, bot) {
@@ -891,7 +926,7 @@ function botInput(state, bot) {
   if (!bot.alive || state.phase !== 'fight' && state.phase !== 'countdown') return input;
   const map = MAPS[state.mapId], brain = bot.brain ||= { goal: null, rethink: 0, strafe: 1, strafeTicks: 0, pulse: 0 };
   // Objective: take a point we don't hold (nearest by path), otherwise guard a contested one.
-  if (--brain.rethink <= 0) {
+  if (--brain.rethink <= 0 && !(brain.perchUntil > state.tick)) {
     brain.rethink = 90 + Math.floor(random(state) * 60);
     const ranked = state.points.map(point => {
       const field = flowField(map, point.x, point.y), steps = field[Math.floor(bot.y / TILE) * map.cols + Math.floor(bot.x / TILE)];
@@ -900,6 +935,9 @@ function botInput(state, bot) {
       return { point, score: (steps < 0 ? 999 : steps) * want - contested * 4 };
     }).sort((a, b) => a.score - b.score);
     brain.goal = ranked[Math.floor(random(state) * Math.min(2, ranked.length) * .6)].point;
+    // On two-floor maps gunners sometimes take the high ground over their point and shoot down.
+    const perches = perchesFor(map, brain.goal), weapon = currentWeapon(bot);
+    if (perches.length && (bot.cls === 'recon' || weapon.family === 'gun') && random(state) < .35) { brain.goal = perches[Math.floor(random(state) * perches.length)]; brain.perchUntil = state.tick + 12 * TICK_RATE; }
   }
   const enemies = state.players.filter(other => other.alive && other.team !== bot.team && (other.cloakTicks === 0 || dist(other, bot) < ABILITIES.cloak.revealRange) && dist(other, bot) < 460 && lineOfSight(map, bot, other));
   const target = enemies.sort((a, b) => dist(a, bot) - dist(b, bot))[0];

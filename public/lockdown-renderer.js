@@ -5,12 +5,16 @@
  * behind walls. Draws from the art manifest when a sprite exists and falls back to
  * readable placeholder shapes otherwise. Pure presentation: it never changes the state. */
 import { MAPS, TILE, RULES, ABILITIES, WEAPONS, CLASSES, ARMORS, GUARD, STATUS_IDS, inBase, chargeTicksFor } from './lockdown-engine.js';
-import { isWall, isPit } from './lockdown-maps.js';
+import { isWall, isPit, levelAt, levelCell, STAIRS } from './lockdown-maps.js';
 import { KNIGHT_FACINGS } from './lockdown-assets.js';
 
 /** How far a wall's top face is lifted, and the height that shots and swings travel at. */
 export const WALL_HEIGHT = 24, BODY_LIFT = 22;
 const FEET = 8; // a knight's feet sit this far below the centre of its collision circle
+/** On two-floor maps the raised floor is one storey up: this many pixels on screen. */
+export const FLOOR_RISE = 24;
+/** Things on the raised floor sort a little later, so the floor they stand on never covers their feet. */
+const RAISED_SORT = 16;
 const WEAPON_SCALE = .75;
 const TICK_MS = 1000 / 120;
 const STATUS_COLORS = Object.freeze({ burn: '#ff8a3d', poison: '#7bd65a', shock: '#7fc8ff', freeze: '#bfeaff', chill: '#6fb6ff', curse: '#b26bff', drain: '#ff4d6d' });
@@ -91,31 +95,71 @@ export class LockdownRenderer {
     const ctx = canvas.getContext('2d'), theme = THEMES[map.theme] || THEMES.stone;
     ctx.imageSmoothingEnabled = false;
     // One strip per row of wall blocks: the raised top face, then the front face where floor lies below.
+    // Walls standing on the raised floor of a two-floor map are lifted one storey higher.
     this.wallRows = [];
+    const high = (col, row) => levelCell(map, col, row) === '1';
     for (let row = 0; row < map.rows; row++) {
       if (!map.grid[row].includes('#')) continue;
-      const strip = makeCanvas(map.width, TILE + WALL_HEIGHT), sctx = strip.getContext('2d');
+      const strip = makeCanvas(map.width, TILE + WALL_HEIGHT + FLOOR_RISE), sctx = strip.getContext('2d');
       sctx.imageSmoothingEnabled = false;
       for (let col = 0; col < map.cols; col++) {
         if (map.grid[row][col] !== '#') continue;
-        const x = col * TILE;
-        if (row + 1 < map.rows && !isWall(map, col, row + 1) && !this.drawSprite(sctx, `tile_wall_front_${map.theme}`, x, TILE)) {
-          sctx.fillStyle = theme.wall; sctx.fillRect(x, TILE, TILE, WALL_HEIGHT);
-          sctx.fillStyle = theme.wallEdge; sctx.fillRect(x, TILE + WALL_HEIGHT - 4, TILE, 4);
-          sctx.fillStyle = 'rgba(0,0,0,.18)'; for (let course = 1; course < 3; course++) sctx.fillRect(x, TILE + course * 8, TILE, 1);
-          sctx.fillRect(x + (row % 2 ? 12 : 30), TILE, 1, 8); sctx.fillRect(x + (row % 2 ? 36 : 6), TILE + 8, 1, 8);
+        const x = col * TILE, top = high(col, row) ? 0 : FLOOR_RISE;
+        // The front face drops from this wall's top to whatever is in front: floor, or a lower wall.
+        const ownTop = WALL_HEIGHT + (high(col, row) ? FLOOR_RISE : 0), belowWall = isWall(map, col, row + 1);
+        const face = ownTop - (belowWall ? WALL_HEIGHT : 0) - (high(col, row + 1) ? FLOOR_RISE : 0);
+        if (row + 1 < map.rows && face > 0) {
+          if (!this.drawSprite(sctx, `tile_wall_front_${map.theme}`, x, top + TILE)) {
+            sctx.fillStyle = theme.wall; sctx.fillRect(x, top + TILE, TILE, face);
+            sctx.fillStyle = theme.wallEdge; sctx.fillRect(x, top + TILE + face - 4, TILE, 4);
+            sctx.fillStyle = 'rgba(0,0,0,.18)'; for (let course = 1; course < face / 8; course++) sctx.fillRect(x, top + TILE + course * 8, TILE, 1);
+            sctx.fillRect(x + (row % 2 ? 12 : 30), top + TILE, 1, 8); sctx.fillRect(x + (row % 2 ? 36 : 6), top + TILE + 8, 1, 8);
+          } else if (face > WALL_HEIGHT) this.drawSprite(sctx, `tile_wall_front_${map.theme}`, x, top + TILE + WALL_HEIGHT);
         }
-        if (!this.drawSprite(sctx, `tile_wall_top_${map.theme}`, x, 0)) {
-          sctx.fillStyle = theme.wallTop; sctx.fillRect(x, 0, TILE, TILE);
-          sctx.fillStyle = 'rgba(255,255,255,.12)'; sctx.fillRect(x, 0, TILE, 3);
-          sctx.fillStyle = 'rgba(0,0,0,.12)'; if (!isWall(map, col + 1, row)) sctx.fillRect(x + TILE - 3, 0, 3, TILE);
+        if (!this.drawSprite(sctx, `tile_wall_top_${map.theme}`, x, top)) {
+          sctx.fillStyle = theme.wallTop; sctx.fillRect(x, top, TILE, TILE);
+          sctx.fillStyle = 'rgba(255,255,255,.12)'; sctx.fillRect(x, top, TILE, 3);
+          sctx.fillStyle = 'rgba(0,0,0,.12)'; if (!isWall(map, col + 1, row)) sctx.fillRect(x + TILE - 3, top, 3, TILE);
         }
       }
       this.wallRows.push({ row, canvas: strip });
     }
+    // Raised floor and stairs: one strip per row, lifted a storey, with a ledge face over lower ground.
+    this.floorRows = [];
+    if (map.twoFloors) for (let row = 0; row < map.rows; row++) {
+      const cells = [...map.levels[row]].map((cell, col) => ({ cell, col })).filter(({ cell, col }) => cell !== '0' && map.grid[row][col] !== '#');
+      if (!cells.length) continue;
+      const strip = makeCanvas(map.width, TILE + FLOOR_RISE), sctx = strip.getContext('2d');
+      sctx.imageSmoothingEnabled = false;
+      for (const { cell, col } of cells) {
+        const x = col * TILE;
+        if (cell === '1') {
+          const tile = map.grid[row][col], spawnTeam = tile === '1' ? 0 : tile === '2' ? 1 : null, alt = hash(col, row) < .18;
+          if (!this.drawSprite(sctx, spawnTeam !== null ? `tile_spawn_team${spawnTeam}` : `tile_floor_${map.theme}${alt ? '_alt' : ''}`, x, 0)) {
+            sctx.fillStyle = alt ? theme.floorAlt : theme.floor; sctx.fillRect(x, 0, TILE, TILE);
+            sctx.strokeStyle = theme.grout; sctx.lineWidth = 1; sctx.strokeRect(x + .5, .5, TILE - 1, TILE - 1);
+            if (spawnTeam !== null) { sctx.fillStyle = TEAM_COLORS[spawnTeam].main + '33'; sctx.fillRect(x, 0, TILE, TILE); }
+          }
+          // Raised floor catches more light; its rim shows where the drop is.
+          sctx.fillStyle = 'rgba(255,240,210,.11)'; sctx.fillRect(x, 0, TILE, TILE);
+          sctx.fillStyle = 'rgba(255,255,255,.25)';
+          if (levelCell(map, col - 1, row) === '0') sctx.fillRect(x, 0, 2, TILE);
+          if (levelCell(map, col + 1, row) === '0') sctx.fillRect(x + TILE - 2, 0, 2, TILE);
+          if (levelCell(map, col, row - 1) === '0') sctx.fillRect(x, 0, TILE, 2);
+          if (isWall(map, col, row - 1)) { const shade = sctx.createLinearGradient(0, 0, 0, 14); shade.addColorStop(0, 'rgba(0,0,0,.35)'); shade.addColorStop(1, 'rgba(0,0,0,0)'); sctx.fillStyle = shade; sctx.fillRect(x, 0, TILE, 14); }
+          const below = levelCell(map, col, row + 1);
+          if (row + 1 < map.rows && below !== '1' && below !== '^' && !isWall(map, col, row + 1) && !this.drawSprite(sctx, `tile_ledge_${map.theme}`, x, TILE)) {
+            sctx.fillStyle = theme.wall; sctx.fillRect(x, TILE, TILE, FLOOR_RISE);
+            sctx.fillStyle = 'rgba(255,255,255,.18)'; sctx.fillRect(x, TILE, TILE, 2);
+            sctx.fillStyle = 'rgba(0,0,0,.25)'; sctx.fillRect(x, TILE + FLOOR_RISE - 5, TILE, 5); sctx.fillRect(x + (col % 2 ? 16 : 32), TILE + 2, 1, FLOOR_RISE - 7);
+          }
+        } else this.drawStairs(sctx, map, theme, cell, col, row);
+      }
+      this.floorRows.push({ row, canvas: strip });
+    }
     for (let row = 0; row < map.rows; row++) for (let col = 0; col < map.cols; col++) {
       const x = col * TILE, y = row * TILE, cell = map.grid[row][col];
-      if (cell === '#') continue;
+      if (cell === '#' || levelCell(map, col, row) !== '0') continue;
       if (cell === '~') { this.drawPit(ctx, map, theme, col, row); continue; }
       const spawnTeam = cell === '1' ? 0 : cell === '2' ? 1 : null;
       const alt = hash(col, row) < .18;
@@ -124,12 +168,48 @@ export class LockdownRenderer {
         ctx.strokeStyle = theme.grout; ctx.lineWidth = 1; ctx.strokeRect(x + .5, y + .5, TILE - 1, TILE - 1);
         if (spawnTeam !== null) { ctx.fillStyle = TEAM_COLORS[spawnTeam].main + '33'; ctx.fillRect(x, y, TILE, TILE); }
       }
+      // Raised floor casts a shadow on the low ground at its foot, and darkens the ground beside it.
+      if (map.twoFloors) {
+        if (levelCell(map, col, row - 1) === '1') { const shade = ctx.createLinearGradient(0, y, 0, y + 22); shade.addColorStop(0, 'rgba(0,0,0,.45)'); shade.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = shade; ctx.fillRect(x, y, TILE, 22); }
+        if (levelCell(map, col - 1, row) === '1') { const shade = ctx.createLinearGradient(x, 0, x + 14, 0); shade.addColorStop(0, 'rgba(0,0,0,.3)'); shade.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = shade; ctx.fillRect(x, y, 14, TILE); }
+        if (levelCell(map, col + 1, row) === '1') { const shade = ctx.createLinearGradient(x + TILE, 0, x + TILE - 14, 0); shade.addColorStop(0, 'rgba(0,0,0,.3)'); shade.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = shade; ctx.fillRect(x + TILE - 14, y, 14, TILE); }
+        ctx.fillStyle = 'rgba(0,0,0,.08)'; ctx.fillRect(x, y, TILE, TILE);
+      }
       // Walls cast a soft shadow onto the floor in front of them.
       if (isWall(map, col, row - 1)) { const shade = ctx.createLinearGradient(0, y, 0, y + 14); shade.addColorStop(0, 'rgba(0,0,0,.35)'); shade.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = shade; ctx.fillRect(x, y, TILE, 14); }
     }
     this.mapCache = canvas; this.mapKey = key; return canvas;
   }
 
+  /** A stair tile, drawn into its row's raised strip: the ramp climbs one storey toward the arrow. */
+  drawStairs(ctx, map, theme, cell, col, row) {
+    const x = col * TILE, R = FLOOR_RISE;
+    if (this.drawSprite(ctx, `tile_stairs_${map.theme}_${({ '^': 'up', v: 'down', '<': 'left', '>': 'right' })[cell]}`, x, 0)) return;
+    const tread = theme.floor, riser = theme.wall, edge = 'rgba(0,0,0,.28)', steps = 6;
+    ctx.save();
+    if (cell === '^') {
+      // Climbing away from the camera: treads and risers stack up the screen.
+      for (let i = 0; i < steps; i++) {
+        const y0 = TILE + R - (i + 1) * (TILE + R) / steps, h = (TILE + R) / steps;
+        ctx.fillStyle = riser; ctx.fillRect(x, y0 + h * .55, TILE, h * .45); ctx.fillStyle = tread; ctx.fillRect(x, y0, TILE, h * .55);
+        ctx.fillStyle = edge; ctx.fillRect(x, y0 + h * .55, TILE, 1);
+      }
+    } else if (cell === 'v') {
+      // Climbing toward the camera: only the treads show, foreshortened.
+      for (let i = 0; i < steps; i++) { const y0 = R + i * (TILE - R) / steps; ctx.fillStyle = i % 2 ? tread : theme.floorAlt; ctx.fillRect(x, y0, TILE, (TILE - R) / steps + 1); }
+      ctx.fillStyle = edge; ctx.fillRect(x, R, TILE, 1);
+    } else {
+      // Climbing sideways: a sloped top face over a stepped side face.
+      const up = cell === '>' ? 1 : -1;
+      for (let i = 0; i < steps; i++) {
+        const w = TILE / steps, sx = up > 0 ? x + i * w : x + TILE - (i + 1) * w, lift = (i + 1) * R / steps;
+        ctx.fillStyle = tread; ctx.fillRect(sx, R - lift, w + .5, TILE);
+        ctx.fillStyle = riser; ctx.fillRect(sx, R - lift + TILE, w + .5, lift);
+        ctx.fillStyle = edge; ctx.fillRect(up > 0 ? sx : sx + w - 1, R - lift, 1, TILE + lift);
+      }
+    }
+    ctx.restore();
+  }
   /** Chasm, water or lava: sunk below the floor, with a lip where it meets solid ground. */
   drawPit(ctx, map, theme, col, row) {
     const x = col * TILE, y = row * TILE;
@@ -226,28 +306,40 @@ export class LockdownRenderer {
     const players = state.players.filter(player => player.alive && !(player.cloakTicks > 0 && viewerTeam !== null && player.team !== viewerTeam
       && !(local?.alive && Math.hypot(local.x - player.x, local.y - player.y) < ABILITIES.cloak.revealRange)));
     for (const point of state.points) this.drawPoint(ctx, point, now);
-    for (const cloud of state.clouds || []) this.drawCloud(ctx, cloud, now);
-    for (const bomb of state.bombs || []) this.drawBombRadius(ctx, bomb, now);
-    for (const player of players) if (player.guarding && player.guardRaise >= GUARD.expandTicks) this.drawDome(ctx, player, now);
-    for (const player of players) this.drawFootprint(ctx, player, player.id === localId);
+    // Things on the raised floor are drawn lifted a storey, after it, instead of on the ground layer.
+    const lift = (x, y) => map.twoFloors ? levelAt(map, x, y) * FLOOR_RISE : 0;
+    const lifted = (amount, draw) => () => { if (!amount) return draw(); ctx.save(); ctx.translate(0, -amount); draw(); ctx.restore(); };
+    const raisedFloor = [];
+    const onFloor = (x, y, draw) => { const amount = lift(x, y); if (amount) raisedFloor.push(lifted(amount, draw)); else draw(); };
+    for (const cloud of state.clouds || []) onFloor(cloud.x, cloud.y, () => this.drawCloud(ctx, cloud, now));
+    for (const bomb of state.bombs || []) onFloor(bomb.x, bomb.y, () => this.drawBombRadius(ctx, bomb, now));
+    for (const player of players) if (player.guarding && player.guardRaise >= GUARD.expandTicks) onFloor(player.x, player.y, () => this.drawDome(ctx, player, now));
+    for (const player of players) if (!lift(player.x, player.y)) this.drawFootprint(ctx, player, player.id === localId);
     // Standing layer, back to front: wall rows, knights, beacons, bombs, hearts and shots.
     const items = [];
-    for (const wall of this.wallRows || []) items.push({ key: (wall.row + 1) * TILE, draw: () => ctx.drawImage(wall.canvas, 0, wall.row * TILE - WALL_HEIGHT) });
+    for (const wall of this.wallRows || []) items.push({ key: (wall.row + 1) * TILE, draw: () => ctx.drawImage(wall.canvas, 0, wall.row * TILE - WALL_HEIGHT - FLOOR_RISE) });
+    for (const floor of this.floorRows || []) items.push({ key: floor.row * TILE, draw: () => ctx.drawImage(floor.canvas, 0, floor.row * TILE - FLOOR_RISE) });
+    const sortKey = (y, amount) => y + amount / FLOOR_RISE * RAISED_SORT;
     for (const point of state.points) items.push({ key: point.y, draw: () => this.drawBeacon(ctx, point, now) });
-    for (const bomb of state.bombs || []) items.push({ key: bomb.y, draw: () => this.drawBomb(ctx, bomb, state, now) });
-    for (const pickup of state.pickups || []) items.push({ key: pickup.y, draw: () => this.drawHeart(ctx, pickup, now) });
-    for (const player of players) items.push({ key: player.y + FEET, draw: () => this.drawKnight(ctx, player, state, now, { mine: player.id === localId, alpha: player.cloakTicks > 0 ? .4 : 1 }) });
-    for (const shot of state.projectiles || []) items.push({ key: shot.y + FEET, draw: () => this.drawProjectile(ctx, shot) });
+    for (const bomb of state.bombs || []) { const amount = lift(bomb.x, bomb.y); items.push({ key: sortKey(bomb.y, amount), draw: lifted(amount, () => this.drawBomb(ctx, bomb, state, now)) }); }
+    for (const pickup of state.pickups || []) { const amount = lift(pickup.x, pickup.y); items.push({ key: sortKey(pickup.y, amount), draw: lifted(amount, () => this.drawHeart(ctx, pickup, now)) }); }
+    for (const player of players) {
+      const amount = lift(player.x, player.y);
+      items.push({ key: sortKey(player.y + FEET, amount), draw: lifted(amount, () => { if (amount) this.drawFootprint(ctx, player, player.id === localId); this.drawKnight(ctx, player, state, now, { mine: player.id === localId, alpha: player.cloakTicks > 0 ? .4 : 1 }); }) });
+    }
+    for (const shot of state.projectiles || []) { const amount = (shot.z || 0) * FLOOR_RISE; items.push({ key: sortKey(shot.y + FEET, amount), draw: lifted(amount, () => this.drawProjectile(ctx, shot)) }); }
+    // Clouds, bomb rings and domes on the raised floor go over it, after everything standing.
+    items.push({ key: Infinity, draw: () => raisedFloor.forEach(draw => draw()) });
     items.sort((a, b) => a.key - b.key);
     this.players = state.players;
     for (const item of items) item.draw();
-    this.drawEffects(ctx, now);
+    this.drawEffects(ctx, now, lift);
     // Labels stay readable even when a knight is behind a wall.
-    for (const player of players) {
+    for (const player of players) lifted(lift(player.x, player.y), () => {
       if (player.guarding) this.drawGuard(ctx, player, now);
       this.drawKnightOverlay(ctx, player, now, player.id === localId);
       if (state.phase === 'fight' && player.hp < player.maxHp && inBase(state, player)) this.drawRegen(ctx, player, now);
-    }
+    })();
   }
 
   drawPoint(ctx, point, now) {
@@ -630,10 +722,13 @@ export class LockdownRenderer {
     }
     ctx.restore();
   }
-  drawEffects(ctx, now) {
+  drawEffects(ctx, now, lift = () => 0) {
     for (const effect of this.effects) {
       const t = (now - effect.born) / effect.life;
       ctx.save(); ctx.globalAlpha = Math.max(0, 1 - t);
+      // Effects happen at the height of where they are: a slash at its knight, a blast on its floor.
+      const at = effect.playerId !== undefined && this.players?.[effect.playerId] ? this.players[effect.playerId] : effect.x !== undefined ? effect : effect.fromX !== undefined ? { x: effect.fromX, y: effect.fromY } : null;
+      if (at) ctx.translate(0, -lift(at.x, at.y));
       const chest = effect.y - BODY_LIFT;
       if (effect.type === 'slash' || effect.type === 'spinTurn') {
         // The trail follows the knight and covers exactly the arc and reach the engine tests.
@@ -709,6 +804,10 @@ export class LockdownRenderer {
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, target.width, target.height);
     ctx.setTransform(scale, 0, 0, scale, (target.width - map.width * scale) / 2, (target.height - map.height * scale) / 2);
     ctx.fillStyle = 'rgba(20,22,26,.85)'; ctx.fillRect(0, 0, map.width, map.height);
+    if (map.twoFloors) {
+      ctx.fillStyle = 'rgba(255,255,255,.12)';
+      for (let row = 0; row < map.rows; row++) for (let col = 0; col < map.cols; col++) if (levelCell(map, col, row) !== '0') ctx.fillRect(col * TILE, row * TILE, TILE, TILE);
+    }
     ctx.fillStyle = '#5b606b';
     for (let row = 0; row < map.rows; row++) for (let col = 0; col < map.cols; col++) if (map.grid[row][col] === '#') ctx.fillRect(col * TILE, row * TILE, TILE, TILE);
     ctx.fillStyle = (THEMES[map.theme] || THEMES.stone).pit;

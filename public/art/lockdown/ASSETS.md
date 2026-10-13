@@ -6,7 +6,7 @@ Lockdown is a top-down team brawl in the spirit of Spiral Knights' Lockdown: up 
 three control points, swords, guns and bombs. The game is fully playable with placeholder
 shapes; every PNG listed below replaces one placeholder as soon as it is added.
 
-**Progress: 65/241 sprites ready.**
+**Progress: 65/251 sprites ready.**
 
 ## Style guide
 
@@ -73,6 +73,16 @@ shapes; every PNG listed below replaces one placeholder as soon as it is added.
 | ⬜ | `tile_wall_top_skyway.png` | 48×48 | 1 | 0, 0 | Top face of a wall block — floating sky platforms: polished stone panels with gold trim, low balustrade walls. The game raises it 24 px above the floor; neighbouring tiles must join seamlessly. |
 | ⬜ | `tile_wall_front_skyway.png` | 48×24 | 1 | 0, 0 | Front (south-facing) face of a skyway wall block, drawn under the top face wherever floor lies below. Darker than the top, lit top edge, shadowed bottom edge. Must tile horizontally. |
 | ⬜ | `tile_pit_skyway.png` | 48×48 | 1 | 0, 0 | Pit tile ('~'): open sky far below, soft clouds. Knights cannot walk on it but shots fly over it. Must tile in all directions; the game adds the edge lip. |
+| ⬜ | `tile_ledge_castle.png` | 48×24 | 1 | 0, 0 | Ledge face under the raised floor of a two-floor castle map — old castle courtyard: worn flagstones, moss between the stones, grey ashlar walls with battlements: the 24 px drop from the upper floor to the lower one, seen from the front. Lit top edge, darker toward the bottom; must tile horizontally. Lighter and less blocky than a wall front, so it reads as a step down, not a wall. |
+| ⬜ | `tile_stairs_castle_up.png` | 48×72 | 1 | 0, 0 | Stone stairs between the two floors of a castle map, climbing away from the camera (north): steps rise up the screen, from the lower floor at the bottom edge to the upper floor 24 px higher at the top. One tile wide (48 px); the extra 24 px at the top is the storey of height. Same materials as the castle floor and ledge. |
+| ⬜ | `tile_stairs_castle_down.png` | 48×72 | 1 | 0, 0 | Stone stairs between the two floors of a castle map, climbing toward the camera (south): the lower floor is at the top edge and the treads rise toward the viewer, so only foreshortened treads show. One tile wide (48 px); the extra 24 px at the top is the storey of height. Same materials as the castle floor and ledge. |
+| ⬜ | `tile_stairs_castle_left.png` | 48×72 | 1 | 0, 0 | Stone stairs between the two floors of a castle map, climbing to the left (west): treads rise from right to left with the stepped side face visible below them. One tile wide (48 px); the extra 24 px at the top is the storey of height. Same materials as the castle floor and ledge. |
+| ⬜ | `tile_stairs_castle_right.png` | 48×72 | 1 | 0, 0 | Stone stairs between the two floors of a castle map, climbing to the right (east): treads rise from left to right with the stepped side face visible below them. One tile wide (48 px); the extra 24 px at the top is the storey of height. Same materials as the castle floor and ledge. |
+| ⬜ | `tile_ledge_ruins.png` | 48×24 | 1 | 0, 0 | Ledge face under the raised floor of a two-floor ruins map — sunken temple: pale sandstone with carved glyphs, weathered pillars and broken walls: the 24 px drop from the upper floor to the lower one, seen from the front. Lit top edge, darker toward the bottom; must tile horizontally. Lighter and less blocky than a wall front, so it reads as a step down, not a wall. |
+| ⬜ | `tile_stairs_ruins_up.png` | 48×72 | 1 | 0, 0 | Stone stairs between the two floors of a ruins map, climbing away from the camera (north): steps rise up the screen, from the lower floor at the bottom edge to the upper floor 24 px higher at the top. One tile wide (48 px); the extra 24 px at the top is the storey of height. Same materials as the ruins floor and ledge. |
+| ⬜ | `tile_stairs_ruins_down.png` | 48×72 | 1 | 0, 0 | Stone stairs between the two floors of a ruins map, climbing toward the camera (south): the lower floor is at the top edge and the treads rise toward the viewer, so only foreshortened treads show. One tile wide (48 px); the extra 24 px at the top is the storey of height. Same materials as the ruins floor and ledge. |
+| ⬜ | `tile_stairs_ruins_left.png` | 48×72 | 1 | 0, 0 | Stone stairs between the two floors of a ruins map, climbing to the left (west): treads rise from right to left with the stepped side face visible below them. One tile wide (48 px); the extra 24 px at the top is the storey of height. Same materials as the ruins floor and ledge. |
+| ⬜ | `tile_stairs_ruins_right.png` | 48×72 | 1 | 0, 0 | Stone stairs between the two floors of a ruins map, climbing to the right (east): treads rise from left to right with the stepped side face visible below them. One tile wide (48 px); the extra 24 px at the top is the storey of height. Same materials as the ruins floor and ledge. |
 | ✅ | `tile_spawn_team0.png` | 48×48 | 1 | 0, 0 | Spawn floor tile tinted for team Amber (warm orange). |
 | ✅ | `tile_spawn_team1.png` | 48×48 | 1 | 0, 0 | Spawn floor tile tinted for team Cyan (cool teal). |
 
