@@ -238,7 +238,8 @@ test('the art manifest covers every class, team, weapon and theme with valid str
     assert.ok(!keys.has(entry.key), `${entry.key} is unique`); keys.add(entry.key);
     assert.equal(entry.file, `${entry.key}.png`);
     assert.equal(entry.size[0] % entry.frames, 0, `${entry.key} splits into ${entry.frames} frames`);
-    assert.ok(entry.anchor[0] <= entry.size[0] / entry.frames && entry.anchor[1] <= entry.size[1], `${entry.key} anchor is inside a frame`);
+    assert.equal(entry.size[1] % (entry.rows || 1), 0, `${entry.key} splits into ${entry.rows} rows`);
+    assert.ok(entry.anchor[0] <= entry.size[0] / entry.frames && entry.anchor[1] <= entry.size[1] / (entry.rows || 1), `${entry.key} anchor is inside a frame`);
     assert.ok(entry.description.length > 10);
   }
 });

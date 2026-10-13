@@ -9,8 +9,9 @@
  * Conventions for every sprite:
  * - Transparent PNG, ¾ view (camera tilted about 60° down, like Spiral Knights or Enter the Gungeon),
  *   light from the top-left. Floors and walls show their top; walls also show a front face.
- * - Knights are drawn from the ¾ front, FACING RIGHT; the game mirrors them to face left. They never
- *   rotate. The weapon is a separate sprite the game rotates around the knight's hand.
+ * - Knights turn toward the mouse like Spiral Knights: each sheet has 5 facing rows (down, down-right,
+ *   right, up-right, up) and the game mirrors the right-hand rows for the left-hand directions. They never
+ *   rotate. The weapon is a separate sprite the game pins to the row's hand point and rotates to the aim.
  * - Anything else that rotates (weapons, projectiles, slashes) is drawn FACING RIGHT (+x).
  * - Team colours are NOT baked in unless the key says team0/team1: the renderer tints
  *   neutral sprites with an outline/ring, so one sprite serves both teams.
@@ -32,12 +33,21 @@ const tiles = ['stone', 'brass'].flatMap(theme => [
 ]);
 const spawnPads = [0, 1].map(team => asset(`tile_spawn_team${team}`, 48, 48, [0, 0], `Spawn floor tile tinted for team ${team === 0 ? 'Amber (warm orange)' : 'Cyan (cool teal)'}.`, { group: 'tiles' }));
 
-/** Where each knight frame holds its weapon: the game pins the weapon sprite's grip here. */
-export const KNIGHT_HAND = Object.freeze([40, 42]);
+/** The five drawn facings of a knight sheet, top row first. Left-hand directions mirror the
+ * right-hand rows. `hand` is where that row's weapon grip is pinned (pixels in the 64x64 frame);
+ * facing away from the camera the weapon is drawn behind the body. */
+export const KNIGHT_FACINGS = Object.freeze([
+  Object.freeze({ id: 'down', label: 'facing the camera', hand: Object.freeze([22, 44]), weaponBehind: false }),
+  Object.freeze({ id: 'down_right', label: 'three-quarter front, turned right', hand: Object.freeze([40, 44]), weaponBehind: false }),
+  Object.freeze({ id: 'right', label: 'side view facing right', hand: Object.freeze([42, 42]), weaponBehind: false }),
+  Object.freeze({ id: 'up_right', label: 'three-quarter back, turned right', hand: Object.freeze([42, 38]), weaponBehind: true }),
+  Object.freeze({ id: 'up', label: 'back to the camera', hand: Object.freeze([44, 38]), weaponBehind: true }),
+]);
+const facingList = KNIGHT_FACINGS.map((facing, row) => `row ${row + 1} ${facing.id} (${facing.label}, hand at ${facing.hand.join(', ')})`).join('; ');
 const knights = Object.values(CLASSES).flatMap(cls => [0, 1].map(team => asset(
-  `knight_${cls.id}_team${team}`, 384, 64, [32, 58],
-  `${cls.name} knight, team ${team === 0 ? 'Amber' : 'Cyan'}, ¾ front view FACING RIGHT (the game mirrors it), empty-handed: the weapon is drawn separately at the hand point (40, 42) of every frame. 6-frame strip of 64x64 frames: frames 1–2 idle (gentle breathing bob), frames 3–6 walk cycle. Feet rest on the anchor (32, 58); the knight is about 36 px wide and 50 px tall with a big chibi helmet. Class must read at a glance: ${cls.id === 'striker' ? 'light armour, swept-back crest plume, short cape' : cls.id === 'guardian' ? 'heavy rounded plate, broad pauldrons, flat-topped great helm' : 'slim, hooded cloak over a light helm, scarf'}. Team colour on the plume/cloak/trim.`,
-  { group: 'knights', frames: 6, hand: KNIGHT_HAND },
+  `knight_${cls.id}_team${team}`, 384, 320, [32, 58],
+  `${cls.name} knight, team ${team === 0 ? 'Amber' : 'Cyan'}, ¾ view, EMPTY-HANDED (the game draws the weapon at each row's hand point). Sheet of 64x64 frames: 6 columns × 5 facing rows. Columns 1–2 idle (gentle breathing bob), columns 3–6 walk cycle. Rows: ${facingList}. Left-facing directions are mirrored by the game. Feet rest on (32, 58) in every frame; the knight is about 36 px wide and 50 px tall with a big chibi helmet. Class must read at a glance from every side: ${cls.id === 'striker' ? 'light armour, swept-back crest plume, short cape' : cls.id === 'guardian' ? 'heavy rounded plate, broad pauldrons, flat-topped great helm' : 'slim, hooded cloak over a light helm, scarf'}. Team colour on the plume/cloak/trim.`,
+  { group: 'knights', frames: 6, rows: KNIGHT_FACINGS.length, facings: KNIGHT_FACINGS },
 )));
 
 const weapons = Object.values(WEAPONS).flatMap(weapon => [
