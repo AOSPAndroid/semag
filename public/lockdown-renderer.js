@@ -13,12 +13,18 @@ export const WALL_HEIGHT = 24, BODY_LIFT = 22;
 const FEET = 8; // a knight's feet sit this far below the centre of its collision circle
 /** On two-floor maps the raised floor is one storey up: this many pixels on screen. */
 export const FLOOR_RISE = 24;
+/** The ¾ camera: the floor is seen tilted, so ground depth is foreshortened to this fraction on screen
+ * (a 48x48 tile shows as 48x36). Upright things (knights, wall faces, ledges) keep their full height.
+ * The simulation stays flat and exact: every ring drawn on the floor is the real hit area. */
+export const GROUND = .75;
+const TK = TILE * GROUND; // on-screen depth of one tile
 /** Things on the raised floor sort a little later, so the floor they stand on never covers their feet. */
 const RAISED_SORT = 16;
 const WEAPON_SCALE = .75;
 const TICK_MS = 1000 / 120;
 const STATUS_COLORS = Object.freeze({ burn: '#ff8a3d', poison: '#7bd65a', shock: '#7fc8ff', freeze: '#bfeaff', chill: '#6fb6ff', curse: '#b26bff', drain: '#ff4d6d' });
 /** A weapon's element colour (glow on the blade or muzzle, tint on its shots). */
+const FLAT_EFFECTS = new Set(['slash', 'spinTurn', 'slam', 'dust', 'vortexOpen', 'explosion', 'heal', 'capture', 'pop', 'kill']);
 const elementColor = weapon => weapon?.element ? STATUS_COLORS[weapon.element] : null;
 const SHOT_COLORS = Object.freeze({ thorn: '#9bd36a', wave: '#6b4fa8', pulse: '#9fe8ee', ricochet: '#8fd0ff', catalyst: '#ffd36b', detonator: '#ff7b5a', shard: '#d8e4ef' });
 /** Aim angle → which drawn row faces it, and whether to mirror it (eight directions). */
@@ -63,11 +69,12 @@ export class LockdownRenderer {
     const width = Math.max(1, Math.round(rect.width * ratio)), height = Math.max(1, Math.round(rect.height * ratio));
     if (this.canvas.width !== width || this.canvas.height !== height) { this.canvas.width = width; this.canvas.height = height; }
   }
-  /** Screen → world, for mouse aiming. */
-  screenToWorld(px, py) {
+  /** Screen → world, for mouse aiming: undoes the floor tilt for a point `height` pixels above the floor
+   * (chest height for aiming, so shots drawn at chest height pass under the pointer). */
+  screenToWorld(px, py, height = 0) {
     const ratio = this.canvas.width / Math.max(1, this.canvas.getBoundingClientRect().width);
     const { x, y, zoom } = this.camera;
-    return { x: x + (px * ratio - this.canvas.width / 2) / zoom, y: y + (py * ratio - this.canvas.height / 2) / zoom };
+    return { x: x + (px * ratio - this.canvas.width / 2) / zoom, y: (y + (py * ratio - this.canvas.height / 2) / zoom + height) / GROUND };
   }
   sprite(key) { return this.assets?.get(key) || null; }
   drawSprite(ctx, key, x, y, { rotation = 0, frame = 0, row = 0, scale = 1, flipX = false, flipY = false, alpha = 1 } = {}) {
@@ -104,7 +111,8 @@ export class LockdownRenderer {
     const high = (col, row) => levelCell(map, col, row) === '1';
     for (let row = 0; row < map.rows; row++) {
       if (!map.grid[row].includes('#')) continue;
-      const strip = makeCanvas(map.width, TILE + WALL_HEIGHT + FLOOR_RISE), sctx = strip.getContext('2d');
+      // Strips are in screen space: the top face is foreshortened (TK deep), the front face is full height.
+      const strip = makeCanvas(map.width, TK + WALL_HEIGHT + FLOOR_RISE), sctx = strip.getContext('2d');
       sctx.imageSmoothingEnabled = true; sctx.imageSmoothingQuality = 'high';
       for (let col = 0; col < map.cols; col++) {
         if (map.grid[row][col] !== '#') continue;
@@ -113,18 +121,20 @@ export class LockdownRenderer {
         const ownTop = WALL_HEIGHT + (high(col, row) ? FLOOR_RISE : 0), belowWall = isWall(map, col, row + 1);
         const face = ownTop - (belowWall ? WALL_HEIGHT : 0) - (high(col, row + 1) ? FLOOR_RISE : 0);
         if (row + 1 < map.rows && face > 0) {
-          if (!this.drawSprite(sctx, `tile_wall_front_${map.theme}`, x, top + TILE)) {
-            sctx.fillStyle = theme.wall; sctx.fillRect(x, top + TILE, TILE, face);
-            sctx.fillStyle = theme.wallEdge; sctx.fillRect(x, top + TILE + face - 4, TILE, 4);
-            sctx.fillStyle = 'rgba(0,0,0,.18)'; for (let course = 1; course < face / 8; course++) sctx.fillRect(x, top + TILE + course * 8, TILE, 1);
-            sctx.fillRect(x + (row % 2 ? 12 : 30), top + TILE, 1, 8); sctx.fillRect(x + (row % 2 ? 36 : 6), top + TILE + 8, 1, 8);
-          } else if (face > WALL_HEIGHT) this.drawSprite(sctx, `tile_wall_front_${map.theme}`, x, top + TILE + WALL_HEIGHT);
+          if (!this.drawSprite(sctx, `tile_wall_front_${map.theme}`, x, top + TK)) {
+            sctx.fillStyle = theme.wall; sctx.fillRect(x, top + TK, TILE, face);
+            sctx.fillStyle = theme.wallEdge; sctx.fillRect(x, top + TK + face - 4, TILE, 4);
+            sctx.fillStyle = 'rgba(0,0,0,.18)'; for (let course = 1; course < face / 8; course++) sctx.fillRect(x, top + TK + course * 8, TILE, 1);
+            sctx.fillRect(x + (row % 2 ? 12 : 30), top + TK, 1, 8); sctx.fillRect(x + (row % 2 ? 36 : 6), top + TK + 8, 1, 8);
+          } else if (face > WALL_HEIGHT) this.drawSprite(sctx, `tile_wall_front_${map.theme}`, x, top + TK + WALL_HEIGHT);
         }
-        if (!this.drawSprite(sctx, `tile_wall_top_${map.theme}`, x, top)) {
-          sctx.fillStyle = theme.wallTop; sctx.fillRect(x, top, TILE, TILE);
-          sctx.fillStyle = 'rgba(255,255,255,.12)'; sctx.fillRect(x, top, TILE, 3);
-          sctx.fillStyle = 'rgba(0,0,0,.12)'; if (!isWall(map, col + 1, row)) sctx.fillRect(x + TILE - 3, top, 3, TILE);
+        sctx.save(); sctx.translate(0, top); sctx.scale(1, GROUND);
+        if (!this.drawSprite(sctx, `tile_wall_top_${map.theme}`, x, 0)) {
+          sctx.fillStyle = theme.wallTop; sctx.fillRect(x, 0, TILE, TILE);
+          sctx.fillStyle = 'rgba(255,255,255,.12)'; sctx.fillRect(x, 0, TILE, 3);
+          sctx.fillStyle = 'rgba(0,0,0,.12)'; if (!isWall(map, col + 1, row)) sctx.fillRect(x + TILE - 3, 0, 3, TILE);
         }
+        sctx.restore();
       }
       this.wallRows.push({ row, canvas: strip });
     }
@@ -133,11 +143,12 @@ export class LockdownRenderer {
     if (map.twoFloors) for (let row = 0; row < map.rows; row++) {
       const cells = [...map.levels[row]].map((cell, col) => ({ cell, col })).filter(({ cell, col }) => cell !== '0' && map.grid[row][col] !== '#');
       if (!cells.length) continue;
-      const strip = makeCanvas(map.width, TILE + FLOOR_RISE), sctx = strip.getContext('2d');
-      sctx.imageSmoothingEnabled = false;
+      const strip = makeCanvas(map.width, TK + FLOOR_RISE), sctx = strip.getContext('2d');
+      sctx.imageSmoothingEnabled = true; sctx.imageSmoothingQuality = 'high';
       for (const { cell, col } of cells) {
         const x = col * TILE;
         if (cell === '1') {
+          sctx.save(); sctx.scale(1, GROUND); // the raised floor's top, foreshortened like the ground
           const tile = map.grid[row][col], spawnTeam = tile === '1' ? 0 : tile === '2' ? 1 : null, alt = hash(col, row) < .18;
           if (!this.drawSprite(sctx, spawnTeam !== null ? `tile_spawn_team${spawnTeam}` : `tile_floor_${map.theme}${alt ? '_alt' : ''}`, x, 0)) {
             sctx.fillStyle = alt ? theme.floorAlt : theme.floor; sctx.fillRect(x, 0, TILE, TILE);
@@ -151,11 +162,12 @@ export class LockdownRenderer {
           if (levelCell(map, col + 1, row) === '0') sctx.fillRect(x + TILE - 2, 0, 2, TILE);
           if (levelCell(map, col, row - 1) === '0') sctx.fillRect(x, 0, TILE, 2);
           if (isWall(map, col, row - 1)) { const shade = sctx.createLinearGradient(0, 0, 0, 14); shade.addColorStop(0, 'rgba(0,0,0,.35)'); shade.addColorStop(1, 'rgba(0,0,0,0)'); sctx.fillStyle = shade; sctx.fillRect(x, 0, TILE, 14); }
+          sctx.restore();
           const below = levelCell(map, col, row + 1);
-          if (row + 1 < map.rows && below !== '1' && below !== '^' && !isWall(map, col, row + 1) && !this.drawSprite(sctx, `tile_ledge_${map.theme}`, x, TILE)) {
-            sctx.fillStyle = theme.wall; sctx.fillRect(x, TILE, TILE, FLOOR_RISE);
-            sctx.fillStyle = 'rgba(255,255,255,.18)'; sctx.fillRect(x, TILE, TILE, 2);
-            sctx.fillStyle = 'rgba(0,0,0,.25)'; sctx.fillRect(x, TILE + FLOOR_RISE - 5, TILE, 5); sctx.fillRect(x + (col % 2 ? 16 : 32), TILE + 2, 1, FLOOR_RISE - 7);
+          if (row + 1 < map.rows && below !== '1' && below !== '^' && !isWall(map, col, row + 1) && !this.drawSprite(sctx, `tile_ledge_${map.theme}`, x, TK)) {
+            sctx.fillStyle = theme.wall; sctx.fillRect(x, TK, TILE, FLOOR_RISE);
+            sctx.fillStyle = 'rgba(255,255,255,.18)'; sctx.fillRect(x, TK, TILE, 2);
+            sctx.fillStyle = 'rgba(0,0,0,.25)'; sctx.fillRect(x, TK + FLOOR_RISE - 5, TILE, 5); sctx.fillRect(x + (col % 2 ? 16 : 32), TK + 2, 1, FLOOR_RISE - 7);
           }
         } else this.drawStairs(sctx, map, theme, cell, col, row);
       }
@@ -189,27 +201,27 @@ export class LockdownRenderer {
   drawStairs(ctx, map, theme, cell, col, row) {
     const x = col * TILE, R = FLOOR_RISE;
     if (this.drawSprite(ctx, `tile_stairs_${map.theme}_${({ '^': 'up', v: 'down', '<': 'left', '>': 'right' })[cell]}`, x, 0)) return;
-    const tread = theme.floor, riser = theme.wall, edge = 'rgba(0,0,0,.28)', steps = 6;
+    const T = TK, tread = theme.floor, riser = theme.wall, edge = 'rgba(0,0,0,.28)', steps = 6;
     ctx.save();
     if (cell === '^') {
       // Climbing away from the camera: treads and risers stack up the screen.
       for (let i = 0; i < steps; i++) {
-        const y0 = TILE + R - (i + 1) * (TILE + R) / steps, h = (TILE + R) / steps;
+        const y0 = T + R - (i + 1) * (T + R) / steps, h = (T + R) / steps;
         ctx.fillStyle = riser; ctx.fillRect(x, y0 + h * .55, TILE, h * .45); ctx.fillStyle = tread; ctx.fillRect(x, y0, TILE, h * .55);
         ctx.fillStyle = edge; ctx.fillRect(x, y0 + h * .55, TILE, 1);
       }
     } else if (cell === 'v') {
       // Climbing toward the camera: only the treads show, foreshortened.
-      for (let i = 0; i < steps; i++) { const y0 = R + i * (TILE - R) / steps; ctx.fillStyle = i % 2 ? tread : theme.floorAlt; ctx.fillRect(x, y0, TILE, (TILE - R) / steps + 1); }
+      for (let i = 0; i < steps; i++) { const y0 = R + i * (T - R) / steps; ctx.fillStyle = i % 2 ? tread : theme.floorAlt; ctx.fillRect(x, y0, TILE, (T - R) / steps + 1); }
       ctx.fillStyle = edge; ctx.fillRect(x, R, TILE, 1);
     } else {
       // Climbing sideways: a sloped top face over a stepped side face.
       const up = cell === '>' ? 1 : -1;
       for (let i = 0; i < steps; i++) {
         const w = TILE / steps, sx = up > 0 ? x + i * w : x + TILE - (i + 1) * w, lift = (i + 1) * R / steps;
-        ctx.fillStyle = tread; ctx.fillRect(sx, R - lift, w + .5, TILE);
-        ctx.fillStyle = riser; ctx.fillRect(sx, R - lift + TILE, w + .5, lift);
-        ctx.fillStyle = edge; ctx.fillRect(up > 0 ? sx : sx + w - 1, R - lift, 1, TILE + lift);
+        ctx.fillStyle = tread; ctx.fillRect(sx, R - lift, w + .5, T);
+        ctx.fillStyle = riser; ctx.fillRect(sx, R - lift + T, w + .5, lift);
+        ctx.fillStyle = edge; ctx.fillRect(up > 0 ? sx : sx + w - 1, R - lift, 1, T + lift);
       }
     }
     ctx.restore();
@@ -295,11 +307,13 @@ export class LockdownRenderer {
     this.localId = localId; this.viewer = local?.alive ? local : null;
     this.consumeEvents(state, now);
     const zoom = canvas.width / VIEW_WORLD_WIDTH;
-    const wanted = focus || (local ? { x: local.x, y: local.y - BODY_LIFT / 2 } : { x: map.width / 2, y: map.height / 2 });
+    // The camera works in screen space: ground y is foreshortened by GROUND, heights are not.
+    const liftAt = (x, y) => map.twoFloors ? levelAt(map, x, y) * FLOOR_RISE : 0;
+    const wanted = focus ? { x: focus.x, y: focus.y * GROUND } : local ? { x: local.x, y: local.y * GROUND - BODY_LIFT / 2 - liftAt(local.x, local.y) } : { x: map.width / 2, y: map.height * GROUND / 2 };
     // Keep the arena filling the screen: clamp to the map edges (centre it when the view is larger).
     const halfW = canvas.width / zoom / 2, halfH = canvas.height / zoom / 2;
     const fit = (value, half, size) => size <= half * 2 ? size / 2 : Math.max(half, Math.min(size - half, value));
-    const target = { x: fit(wanted.x, halfW, map.width), y: fit(wanted.y, halfH, map.height) };
+    const target = { x: fit(wanted.x, halfW, map.width), y: fit(wanted.y, halfH, map.height * GROUND) };
     this.camera.zoom = zoom;
     this.camera.x = lerp(this.camera.x || target.x, target.x, .25); this.camera.y = lerp(this.camera.y || target.y, target.y, .25);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -308,34 +322,38 @@ export class LockdownRenderer {
     this.shake = this.shake > .2 ? this.shake * .86 : 0;
     ctx.setTransform(zoom, 0, 0, zoom, canvas.width / 2 - (this.camera.x + shakeX) * zoom, canvas.height / 2 - (this.camera.y + shakeY) * zoom);
     ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(this.buildMap(map), 0, 0, map.width, map.height);
+    ctx.drawImage(this.buildMap(map), 0, 0, map.width, map.height * GROUND);
+    // Two ways to draw: `flat` lies on the (foreshortened) floor at a height; `upright` stands at a
+    // world position, so its sprite keeps its proportions.
+    const flat = (amount, draw) => () => { ctx.save(); ctx.translate(0, -amount); ctx.scale(1, GROUND); draw(); ctx.restore(); };
+    const upright = (y, amount, draw) => () => { ctx.save(); ctx.translate(0, y * (GROUND - 1) - amount); draw(); ctx.restore(); };
+    this.flat = flat; this.upright = upright;
     // Floor layer: point plates and rings, domes, bomb radii, shadows and team rings.
     const viewerTeam = local?.team ?? null;
     const players = state.players.filter(player => player.alive && !(player.cloakTicks > 0 && viewerTeam !== null && player.team !== viewerTeam
       && !(local?.alive && Math.hypot(local.x - player.x, local.y - player.y) < ABILITIES.cloak.revealRange)));
-    for (const point of state.points) this.drawPoint(ctx, point, now);
+    for (const point of state.points) flat(0, () => this.drawPoint(ctx, point, now))();
     // Things on the raised floor are drawn lifted a storey, after it, instead of on the ground layer.
-    const lift = (x, y) => map.twoFloors ? levelAt(map, x, y) * FLOOR_RISE : 0;
-    const lifted = (amount, draw) => () => { if (!amount) return draw(); ctx.save(); ctx.translate(0, -amount); draw(); ctx.restore(); };
+    const lift = liftAt;
     const raisedFloor = [];
-    const onFloor = (x, y, draw) => { const amount = lift(x, y); if (amount) raisedFloor.push(lifted(amount, draw)); else draw(); };
+    const onFloor = (x, y, draw) => { const amount = lift(x, y); if (amount) raisedFloor.push(flat(amount, draw)); else flat(0, draw)(); };
     for (const cloud of state.clouds || []) onFloor(cloud.x, cloud.y, () => this.drawCloud(ctx, cloud, now));
     for (const bomb of state.bombs || []) onFloor(bomb.x, bomb.y, () => this.drawBombRadius(ctx, bomb, now));
     for (const player of players) if (player.guarding && player.guardRaise >= GUARD.expandTicks) onFloor(player.x, player.y, () => this.drawDome(ctx, player, now));
-    for (const player of players) if (!lift(player.x, player.y)) this.drawFootprint(ctx, player, player.id === localId);
+    for (const player of players) if (!lift(player.x, player.y)) upright(player.y, 0, () => this.drawFootprint(ctx, player, player.id === localId))();
     // Standing layer, back to front: wall rows, knights, beacons, bombs, hearts and shots.
     const items = [];
-    for (const wall of this.wallRows || []) items.push({ key: (wall.row + 1) * TILE, draw: () => ctx.drawImage(wall.canvas, 0, wall.row * TILE - WALL_HEIGHT - FLOOR_RISE, map.width, TILE + WALL_HEIGHT + FLOOR_RISE) });
-    for (const floor of this.floorRows || []) items.push({ key: floor.row * TILE, draw: () => ctx.drawImage(floor.canvas, 0, floor.row * TILE - FLOOR_RISE, map.width, TILE + FLOOR_RISE) });
+    for (const wall of this.wallRows || []) items.push({ key: (wall.row + 1) * TILE, draw: () => ctx.drawImage(wall.canvas, 0, wall.row * TK - WALL_HEIGHT - FLOOR_RISE, map.width, TK + WALL_HEIGHT + FLOOR_RISE) });
+    for (const floor of this.floorRows || []) items.push({ key: floor.row * TILE, draw: () => ctx.drawImage(floor.canvas, 0, floor.row * TK - FLOOR_RISE, map.width, TK + FLOOR_RISE) });
     const sortKey = (y, amount) => y + amount / FLOOR_RISE * RAISED_SORT;
-    for (const point of state.points) items.push({ key: point.y, draw: () => this.drawBeacon(ctx, point, now) });
-    for (const bomb of state.bombs || []) { const amount = lift(bomb.x, bomb.y); items.push({ key: sortKey(bomb.y, amount), draw: lifted(amount, () => this.drawBomb(ctx, bomb, state, now)) }); }
-    for (const pickup of state.pickups || []) { const amount = lift(pickup.x, pickup.y); items.push({ key: sortKey(pickup.y, amount), draw: lifted(amount, () => this.drawHeart(ctx, pickup, now)) }); }
+    for (const point of state.points) items.push({ key: point.y, draw: upright(point.y, 0, () => this.drawBeacon(ctx, point, now)) });
+    for (const bomb of state.bombs || []) { const amount = lift(bomb.x, bomb.y); items.push({ key: sortKey(bomb.y, amount), draw: upright(bomb.y, amount, () => this.drawBomb(ctx, bomb, state, now)) }); }
+    for (const pickup of state.pickups || []) { const amount = lift(pickup.x, pickup.y); items.push({ key: sortKey(pickup.y, amount), draw: upright(pickup.y, amount, () => this.drawHeart(ctx, pickup, now)) }); }
     for (const player of players) {
       const amount = lift(player.x, player.y);
-      items.push({ key: sortKey(player.y + FEET, amount), draw: lifted(amount, () => { if (amount) this.drawFootprint(ctx, player, player.id === localId); this.drawKnight(ctx, player, state, now, { mine: player.id === localId, alpha: player.cloakTicks > 0 ? .4 : 1 }); }) });
+      items.push({ key: sortKey(player.y + FEET, amount), draw: upright(player.y, amount, () => { if (amount) this.drawFootprint(ctx, player, player.id === localId); this.drawKnight(ctx, player, state, now, { mine: player.id === localId, alpha: player.cloakTicks > 0 ? .4 : 1 }); }) });
     }
-    for (const shot of state.projectiles || []) { const amount = (shot.z || 0) * FLOOR_RISE; items.push({ key: sortKey(shot.y + FEET, amount), draw: lifted(amount, () => this.drawProjectile(ctx, shot)) }); }
+    for (const shot of state.projectiles || []) { const amount = (shot.z || 0) * FLOOR_RISE; items.push({ key: sortKey(shot.y + FEET, amount), draw: upright(shot.y, amount, () => this.drawProjectile(ctx, shot)) }); }
     // Clouds, bomb rings and domes on the raised floor go over it, after everything standing.
     items.push({ key: Infinity, draw: () => raisedFloor.forEach(draw => draw()) });
     items.sort((a, b) => a.key - b.key);
@@ -343,7 +361,7 @@ export class LockdownRenderer {
     for (const item of items) item.draw();
     this.drawEffects(ctx, now, lift);
     // Labels stay readable even when a knight is behind a wall.
-    for (const player of players) lifted(lift(player.x, player.y), () => {
+    for (const player of players) upright(player.y, lift(player.x, player.y), () => {
       if (player.guarding) this.drawGuard(ctx, player, now);
       this.drawKnightOverlay(ctx, player, now, player.id === localId);
       if (state.phase === 'fight' && player.hp < player.maxHp && inBase(state, player)) this.drawRegen(ctx, player, now);
@@ -696,7 +714,7 @@ export class LockdownRenderer {
   }
   /** Shots are drawn at the size of their hitbox, at chest height, with a shadow on the floor. */
   drawProjectile(ctx, shot) {
-    const angle = Math.atan2(shot.vy, shot.vx), kind = shot.kind, lift = kind === 'shard' || kind === 'thorn' ? 10 : BODY_LIFT, y = shot.y - lift, size = shot.size || 5;
+    const angle = Math.atan2(shot.vy * GROUND, shot.vx), kind = shot.kind, lift = kind === 'shard' || kind === 'thorn' ? 10 : BODY_LIFT, y = shot.y - lift, size = shot.size || 5;
     ctx.fillStyle = 'rgba(0,0,0,.22)'; ctx.beginPath(); ctx.ellipse(shot.x, shot.y + 2, size, size * .4, 0, 0, Math.PI * 2); ctx.fill();
     const key = `proj_${kind}`, entry = this.assets?.entry(key);
     const element = elementColor(WEAPONS[shot.weapon]);
@@ -727,12 +745,16 @@ export class LockdownRenderer {
       ctx.save(); ctx.globalAlpha = Math.max(0, 1 - t);
       // Effects happen at the height of where they are: a slash at its knight, a blast on its floor.
       const at = effect.playerId !== undefined && this.players?.[effect.playerId] ? this.players[effect.playerId] : effect.x !== undefined ? effect : effect.fromX !== undefined ? { x: effect.fromX, y: effect.fromY } : null;
-      if (at) ctx.translate(0, -lift(at.x, at.y));
+      const height = at ? lift(at.x, at.y) : 0;
+      // Rings, blasts and sword arcs lie flat (foreshortened); text and sparks stand upright where they happen.
+      if (FLAT_EFFECTS.has(effect.type)) { ctx.translate(0, -height + (effect.type === 'slash' || effect.type === 'spinTurn' ? FEET - BODY_LIFT : 0)); ctx.scale(1, GROUND); }
+      else if (effect.type !== 'chain' && at) ctx.translate(0, at.y * (GROUND - 1) - height);
+      else ctx.translate(0, -height);
       const chest = effect.y - BODY_LIFT;
       if (effect.type === 'slash' || effect.type === 'spinTurn') {
         // The trail follows the knight and covers exactly the arc and reach the engine tests.
         const owner = this.players?.[effect.playerId]; if (!owner?.alive) { ctx.restore(); continue; }
-        const age = now - effect.born, ox = owner.x, oy = owner.y + FEET - BODY_LIFT;
+        const age = now - effect.born, ox = owner.x, oy = owner.y; // chest height is applied before the floor tilt
         let from, to, fade;
         if (effect.type === 'spinTurn') { from = owner.swingAim; to = from + Math.PI * 2 * Math.min(1, age / (18 * TICK_MS)); fade = 1; }
         else {
@@ -748,7 +770,7 @@ export class LockdownRenderer {
           ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(ox, oy, reach, Math.min(from, to), Math.max(from, to)); ctx.stroke();
         }
       } else if (effect.type === 'slam') {
-        if (!this.drawSprite(ctx, 'fx_slam', effect.x, effect.y, { frame: t * 5, scale: effect.radius * 2 / 128 })) { ctx.strokeStyle = '#ffcf8a'; ctx.lineWidth = 6; ctx.beginPath(); ctx.ellipse(effect.x, effect.y, effect.radius * (.3 + .7 * t), effect.radius * (.3 + .7 * t) * .62, 0, 0, Math.PI * 2); ctx.stroke(); }
+        if (!this.drawSprite(ctx, 'fx_slam', effect.x, effect.y, { frame: t * 5, scale: effect.radius * 2 / 128 })) { ctx.strokeStyle = '#ffcf8a'; ctx.lineWidth = 6; ctx.beginPath(); ctx.arc(effect.x, effect.y, effect.radius * (.3 + .7 * t), 0, Math.PI * 2); ctx.stroke(); }
       } else if (effect.type === 'block') {
         ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3; for (let i = 0; i < 5; i++) { const a = i * 1.26; ctx.beginPath(); ctx.moveTo(effect.x + Math.cos(a) * 8, effect.y - 24 + Math.sin(a) * 8); ctx.lineTo(effect.x + Math.cos(a) * (10 + t * 16), effect.y - 24 + Math.sin(a) * (10 + t * 16)); ctx.stroke(); }
       } else if (effect.type === 'guardBreak') {
@@ -778,9 +800,10 @@ export class LockdownRenderer {
       } else if (effect.type === 'chain') {
         // A jagged lightning arc between the two knights, at chest height.
         let seed = effect.seed * 1000; const rand = () => (seed = (seed * 9301 + 49297) % 233280) / 233280;
-        ctx.globalAlpha = 1 - t; ctx.strokeStyle = STATUS_COLORS.shock; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(effect.fromX, effect.fromY - BODY_LIFT);
-        for (let i = 1; i < 6; i++) { const k = i / 6; ctx.lineTo(effect.fromX + (effect.toX - effect.fromX) * k + (rand() - .5) * 18, effect.fromY + (effect.toY - effect.fromY) * k - BODY_LIFT + (rand() - .5) * 18); }
-        ctx.lineTo(effect.toX, effect.toY - BODY_LIFT); ctx.stroke(); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1; ctx.stroke(); ctx.globalAlpha = 1;
+        const fy = effect.fromY * GROUND - BODY_LIFT, ty = effect.toY * GROUND - BODY_LIFT;
+        ctx.globalAlpha = 1 - t; ctx.strokeStyle = STATUS_COLORS.shock; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(effect.fromX, fy);
+        for (let i = 1; i < 6; i++) { const k = i / 6; ctx.lineTo(effect.fromX + (effect.toX - effect.fromX) * k + (rand() - .5) * 18, fy + (ty - fy) * k + (rand() - .5) * 18); }
+        ctx.lineTo(effect.toX, ty); ctx.stroke(); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1; ctx.stroke(); ctx.globalAlpha = 1;
       } else if (effect.type === 'drain') {
         ctx.fillStyle = STATUS_COLORS.drain; ctx.font = 'bold 14px system-ui'; ctx.textAlign = 'center'; ctx.fillText(`+${effect.amount} ♥`, effect.x - 14, effect.y - 50 - t * 22);
       } else if (effect.type === 'healNumber') {

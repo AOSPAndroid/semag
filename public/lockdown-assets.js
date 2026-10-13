@@ -7,7 +7,10 @@
  * brief that goes with this list.
  *
  * Conventions for every sprite:
- * - Transparent PNG, ¾ view (camera tilted about 60° down, like Spiral Knights or Enter the Gungeon),
+ * - Transparent PNG, ¾ view (camera tilted like Spiral Knights). The game itself foreshortens the floor to 75%:
+ *   FLAT art (floor, wall-top and pit tiles, the point plate, floor rings, clouds, domes, slashes and blasts) is
+ *   drawn straight from above and the game squashes it; UPRIGHT art (knights, gear, weapons, beacons, bombs,
+ *   hearts, wall fronts, ledges) is drawn as seen and shown at full height.
  *   light from the top-left. Floors and walls show their top; walls also show a front face.
  * - Knights turn toward the mouse like Spiral Knights: each sheet has 5 facing rows (down, down-right,
  *   right, up-right, up) and the game mirrors the right-hand rows for the left-hand directions. They never
@@ -55,7 +58,7 @@ const twoFloorTiles = floorThemes.flatMap(theme => {
       ['down', 'climbing toward the camera (south): the lower floor is at the top edge and the treads rise toward the viewer, so only foreshortened treads show'],
       ['left', 'climbing to the left (west): treads rise from right to left with the stepped side face visible below them'],
       ['right', 'climbing to the right (east): treads rise from left to right with the stepped side face visible below them']].map(([dir, how]) =>
-      asset(`tile_stairs_${theme}_${dir}`, 48, 72, [0, 0], `Stone stairs between the two floors of a ${theme} map, ${how}. One tile wide (48 px); the extra 24 px at the top is the storey of height. Same materials as the ${theme} floor and ledge.`, { group: 'tiles' })),
+      asset(`tile_stairs_${theme}_${dir}`, 48, 60, [0, 0], `Stone stairs between the two floors of a ${theme} map, ${how}, drawn as seen by the tilted camera (not flat: the game does not squash it). 48 px wide; 60 px tall = 36 px of foreshortened tile depth plus 24 px of storey height. Same materials as the ${theme} floor and ledge.`, { group: 'tiles' })),
   ];
 });
 const spawnPads = [0, 1].map(team => asset(`tile_spawn_team${team}`, 48, 48, [0, 0], `Spawn floor tile tinted for team ${team === 0 ? 'Amber (warm orange)' : 'Cyan (cool teal)'}.`, { group: 'tiles' }));

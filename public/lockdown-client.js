@@ -177,10 +177,10 @@ canvas.addEventListener('wheel', event => { event.preventDefault(); if (Math.abs
 function updateAim() {
   const me = viewState()?.players[localId ?? -1];
   if (!me || !mouse.inside) return;
-  const world = scene.screenToWorld(mouse.x, mouse.y);
-  // Shots fly at chest height in the ¾ view, so aim from the chest to the pointer.
-  // On the raised floor of a two-floor map everything you do is drawn a storey higher.
-  aim = Math.atan2(world.y + scene.aimLift + (me.z || 0) * FLOOR_RISE - me.y, world.x - me.x);
+  // Shots fly at chest height in the ¾ view (a storey higher on raised floor), so the pointer is read
+  // on that plane, through the camera tilt.
+  const world = scene.screenToWorld(mouse.x, mouse.y, scene.aimLift + (me.z || 0) * FLOOR_RISE);
+  aim = Math.atan2(world.y - me.y, world.x - me.x);
 }
 /** One input frame. Edge presses that were already released still count once. */
 function sampleInput(consume) {
@@ -731,4 +731,4 @@ renderMenu();
 requestAnimationFrame(frame);
 addEventListener('resize', () => scene.resize());
 // Exposed for automated smoke tests.
-globalThis.__lockdown = { get state() { return state; }, get localId() { return localId; }, get menuOpen() { return menuOpen; }, get inventoryOpen() { return inventoryOpen; }, toggleMenu, toggleInventory, chooseSetup, showBoard };
+globalThis.__lockdown = { get state() { return state; }, get scene() { return scene; }, get localId() { return localId; }, get menuOpen() { return menuOpen; }, get inventoryOpen() { return inventoryOpen; }, toggleMenu, toggleInventory, chooseSetup, showBoard };

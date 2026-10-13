@@ -42,8 +42,12 @@ shapes; every PNG listed below replaces one placeholder as soon as it is added.
 
 ## Style guide
 
-- **Camera:** ¾ view, tilted about 60° down (Spiral Knights, Enter the Gungeon, Nuclear Throne). Light from the top-left.
-  Floors show their top; walls show a top face (raised 24 px) and a front face.
+- **Camera:** ¾ view like Spiral Knights, light from the top-left. The game tilts the floor itself: everything lying flat
+  is foreshortened to 75% of its depth (a 48×48 floor tile shows as 48×36, a round capture plate as an oval).
+  - **Flat art** (floor, wall-top and pit tiles, point plate, floor rings, clouds, domes, slashes, blasts): draw it
+    straight from above, undistorted. The game squashes it. Do not paint perspective into it.
+  - **Upright art** (knights, gear, weapons, beacons, bombs, hearts, wall fronts, ledges, stairs): draw it as seen
+    by the camera. The game shows it at full height.
 - **Look:** rounded, smoothly shaded fantasy inspired by Spiral Knights: broad painted highlights,
   soft bevels and antialiased silhouettes. Avoid voxel cubes, pixel grids, harsh outlines and noisy textures.
   Make original characters and objects; use the reference game's shapes and materials as inspiration.
