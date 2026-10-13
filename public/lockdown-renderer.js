@@ -4,13 +4,16 @@
  * travel at chest height. Everything that stands up is depth-sorted, so knights pass
  * behind walls. Draws from the art manifest when a sprite exists and falls back to
  * readable placeholder shapes otherwise. Pure presentation: it never changes the state. */
-import { MAPS, TILE, RULES, ABILITIES, WEAPONS, CLASSES, ARMORS, GUARD, STATUS_IDS, inBase, chargeTicksFor } from './lockdown-engine.js';
+import { MAPS, TILE, RULES, ABILITIES, WEAPONS, CLASSES, ARMORS, GUARD, STATUS_IDS, inBase, chargeTicksFor, combineGear } from './lockdown-engine.js';
 import { isWall, isPit, levelAt, levelCell, STAIRS } from './lockdown-maps.js';
-import { KNIGHT_FACINGS } from './lockdown-assets.js';
+import { KNIGHT_FACINGS, KNIGHT_ANIMATION } from './lockdown-assets.js';
 
 /** How far a wall's top face is lifted, and the height that shots and swings travel at. */
 export const WALL_HEIGHT = 24, BODY_LIFT = 22;
 const FEET = 8; // a knight's feet sit this far below the centre of its collision circle
+/** Gait: at 70% of a knight's full speed or more (Boost and dashes included) they run, slower they walk.
+ * Both cycles advance with distance covered, so feet never slide: one frame per this many world units. */
+const GAIT = Object.freeze({ moving: 20, run: .7, walkStride: 13, runStride: 19 });
 /** On two-floor maps the raised floor is one storey up: this many pixels on screen. */
 export const FLOOR_RISE = 24;
 /** The ¾ camera: the floor is seen tilted, so ground depth is foreshortened to this fraction on screen
@@ -477,8 +480,21 @@ export class LockdownRenderer {
       ctx.strokeStyle = full >= 1 ? '#ffffff' : '#ffd36b'; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(fx, fy, 26, 13, 0, -Math.PI / 2, -Math.PI / 2 + full * Math.PI * 2); ctx.stroke();
     }
   }
+  /** Which sheet column to show: idle breathing, walk or run, stepped by distance actually travelled. */
+  gaitFrame(player, now, moving) {
+    const strides = this.strides ||= new Map(), last = strides.get(player.id);
+    let distance = last?.distance || 0;
+    if (last) { const step = Math.hypot(player.x - last.x, player.y - last.y); if (step < 40) distance += step; } // a respawn or teleport is not a stride
+    strides.set(player.id, { x: player.x, y: player.y, distance });
+    const { idle, walk, run } = KNIGHT_ANIMATION;
+    if (!moving) return idle.start + Math.floor(now / 500) % idle.frames;
+    const full = CLASSES[player.cls].speed * combineGear(player).speedMultiplier, speed = Math.hypot(player.vx, player.vy);
+    const sheet = this.assets?.entry(`character_base_team${player.team}`);
+    const running = (speed >= full * GAIT.run || player.dodgeTicks > 0) && (!sheet || sheet.frames >= run.start + run.frames);
+    return running ? run.start + Math.floor(distance / GAIT.runStride) % run.frames : walk.start + Math.floor(distance / GAIT.walkStride) % walk.frames;
+  }
   drawKnight(ctx, player, state, now, { mine = false, alpha = 1 } = {}) {
-    const team = TEAM_COLORS[player.team], weapon = WEAPONS[player.weapons[player.slot]], moving = Math.hypot(player.vx, player.vy) > 20;
+    const team = TEAM_COLORS[player.team], weapon = WEAPONS[player.weapons[player.slot]], moving = Math.hypot(player.vx, player.vy) > GAIT.moving;
     // Committed attacks face their locked direction, so the body matches the hitbox.
     const facingAim = player.action !== 'idle' && player.action !== 'cast' ? player.swingAim : player.aim;
     const { row, flip } = knightFacing(facingAim), facing = KNIGHT_FACINGS[row], fx = player.x;
@@ -498,7 +514,7 @@ export class LockdownRenderer {
       for (let i = 1; i <= 3; i++) { ctx.globalAlpha = .18 / i; ctx.beginPath(); ctx.ellipse(fx - Math.cos(player.swingAim) * 14 * i, fy - 22 - Math.sin(player.swingAim) * 14 * i, 12, 20, 0, 0, Math.PI * 2); ctx.fill(); }
       ctx.restore();
     }
-    const frame = moving ? 2 + Math.floor(now / 110) % 4 : Math.floor(now / 500) % 2;
+    const frame = this.gaitFrame(player, now, moving);
     const map = MAPS[state.mapId];
     if (map && isPit(map, Math.floor(player.x / TILE), Math.floor(player.y / TILE))) {
       // Crossing a pit: ripples on water and bog, a glowing hover pad over lava or open sky.
