@@ -13,7 +13,7 @@ function arena(mapId, a = {}, b = {}) {
   for (const player of state.players) if (player.id !== 0 && player.id !== 4) Object.assign(player, { bot: false, alive: false, respawnTicks: 1e9 });
   const me = state.players[0], foe = state.players[4];
   Object.assign(me, { shieldTicks: 0, slot: 0 }, a); Object.assign(foe, { shieldTicks: 0, hp: 400, maxHp: 400 }, b);
-  for (const player of [me, foe]) player.clips = Object.fromEntries(player.weapons.filter(id => WEAPONS[id].family === 'gun').map(id => [id, WEAPONS[id].clip]));
+  for (const player of [me, foe]) player.clips = Object.fromEntries(player.weapons.filter(id => WEAPONS[id]?.family === 'gun').map(id => [id, WEAPONS[id].clip]));
   state.events = [];
   return { state, me, foe };
 }

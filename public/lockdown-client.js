@@ -7,7 +7,7 @@ import { gameKey } from './keyboard-layout.js';
 import { GameAudio } from './audio.js';
 import { getName, saveName } from './hub/shared.js';
 
-const { TICK_RATE, RULES, CLASSES, ARMORS, ARMOR_IDS, GEAR, GEAR_SLOTS, combineGear, WEAPONS, WEAPON_IDS, DEFAULT_LOADOUTS, MAPS, MAP_IDS, ABILITIES, INPUT_KEYS, GUARD, STATUS, STATUS_IDS } = Engine;
+const { TICK_RATE, RULES, CLASSES, ARMORS, ARMOR_IDS, GEAR, GEAR_SLOTS, combineGear, WEAPONS, WEAPON_IDS, DEFAULT_LOADOUTS, SLOT_COUNT, MAPS, MAP_IDS, ABILITIES, INPUT_KEYS, GUARD, STATUS, STATUS_IDS } = Engine;
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 const roomId = params.get('room');
@@ -34,8 +34,10 @@ const scene = renderer;
 function loadSetup() {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
-    if (saved && Object.hasOwn(CLASSES, saved.cls) && Array.isArray(saved.weapons) && saved.weapons.length === 3 && new Set(saved.weapons).size === 3 && saved.weapons.every(id => Object.hasOwn(WEAPONS, id))) {
-      return { cls: saved.cls, ...Object.fromEntries(GEAR_SLOTS.map(slot => [slot, Object.hasOwn(GEAR[slot], saved[slot]) ? saved[slot] : 'none'])), weapons: saved.weapons, team: saved.team === 1 ? 1 : 0 };
+    const weapons = Array.isArray(saved?.weapons) ? Array.from({ length: SLOT_COUNT }, (_, slot) => Object.hasOwn(WEAPONS, saved.weapons[slot]) ? saved.weapons[slot] : null) : [];
+    const chosen = weapons.filter(Boolean);
+    if (saved && Object.hasOwn(CLASSES, saved.cls) && chosen.length && new Set(chosen).size === chosen.length) {
+      return { cls: saved.cls, ...Object.fromEntries(GEAR_SLOTS.map(slot => [slot, Object.hasOwn(GEAR[slot], saved[slot]) ? saved[slot] : 'none'])), weapons, team: saved.team === 1 ? 1 : 0 };
     }
   } catch {}
   return { cls: 'striker', ...Object.fromEntries(GEAR_SLOTS.map(slot => [slot, 'none'])), weapons: [...DEFAULT_LOADOUTS.striker], team: 0 };
@@ -125,7 +127,7 @@ const mouse = { x: 0, y: 0, inside: false, left: false, right: false };
 let aim = 0, wheelSwap = false;
 const KEY_BINDINGS = {
   KeyW: 'up', ArrowUp: 'up', KeyS: 'down', ArrowDown: 'down', KeyA: 'left', ArrowLeft: 'left', KeyD: 'right', ArrowRight: 'right',
-  Space: 'dash', ShiftLeft: 'dash', Digit1: 'slot1', Digit2: 'slot2', Digit3: 'slot3', KeyQ: 'swap',
+  Space: 'dash', ShiftLeft: 'dash', Digit1: 'slot1', Digit2: 'slot2', Digit3: 'slot3', Digit4: 'slot4', KeyQ: 'swap',
 };
 function bindingFor(event) {
   if (KEY_BINDINGS[event.code] && event.code.startsWith('Arrow')) return KEY_BINDINGS[event.code];
@@ -137,8 +139,11 @@ function press(control) { held.add(control); pressed.add(control); }
 function release(control) { held.delete(control); }
 addEventListener('keydown', event => {
   if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return;
+  if (event.code === 'Escape' && inventoryOpen) { event.preventDefault(); toggleInventory(false); return; }
   if (event.code === 'Escape' || event.code === 'KeyP') { event.preventDefault(); toggleMenu(); return; }
   if (event.code === 'Tab') { event.preventDefault(); showBoard(true); return; }
+  if (gameKey(event) === 'i' && !event.repeat && !menuOpen) { event.preventDefault(); toggleInventory(); return; }
+  if (event.code === 'Escape' && inventoryOpen) { event.preventDefault(); toggleInventory(false); return; }
   if (event.code === 'KeyB' && !event.repeat && !menuOpen) {
     // The loadout opens in base (or while waiting to respawn); elsewhere B just says where to go.
     event.preventDefault();
@@ -182,6 +187,8 @@ function sampleInput(consume) {
   const input = Engine.emptyInput(aim);
   if (menuOpen) return input;
   for (const key of INPUT_KEYS) input[key] = held.has(key) || pressed.has(key);
+  // With the inventory open the mouse drags items, so clicks never attack.
+  if (inventoryOpen) input.attack = input.ability = false;
   if (wheelSwap) input.swap = true;
   if (consume) { pressed.clear(); wheelSwap = false; }
   return input;
@@ -273,17 +280,24 @@ function ensurePointChips(points) {
   }
 }
 let weaponCards = [];
+/** What sits in one inventory slot, for the HUD and the inventory screen. */
+function slotItem(me, slot) {
+  const id = me.weapons[slot], hearts = me.hearts?.[slot] || 0;
+  if (id) { const weapon = WEAPONS[id]; return { kind: 'weapon', id, name: weapon.name, type: weapon.type, icon: iconMarkup(`icon_weapon_${id}`, FAMILY_GLYPH[weapon.family]) }; }
+  if (hearts) return { kind: 'hearts', id: 'hearts', name: `Heart × ${hearts}`, type: `Click to heal ${RULES.heart.heal}`, icon: iconMarkup('pickup_heart', '♥'), hearts };
+  return { kind: 'empty', id: 'empty', name: 'Empty', type: 'Hearts go here', icon: '<span class="ld-glyph" aria-hidden="true">·</span>' };
+}
 function buildWeaponCards(me) {
-  const key = me.weapons.join(',');
+  const key = Array.from({ length: SLOT_COUNT }, (_, slot) => `${me.weapons[slot]}:${me.hearts?.[slot] || 0}`).join(',');
   if ($('ld-weapons').dataset.key === key) return;
   $('ld-weapons').dataset.key = key; $('ld-weapons').textContent = '';
-  weaponCards = me.weapons.map((id, slot) => {
-    const weapon = WEAPONS[id], card = document.createElement('div');
-    card.className = 'ld-weapon';
-    card.innerHTML = `<kbd>${slot + 1}</kbd>${iconMarkup(`icon_weapon_${id}`, FAMILY_GLYPH[weapon.family])}<b></b><small></small><div class="ld-pips"></div><div class="ld-charge"><em></em></div>`;
-    card.querySelector('b').textContent = weapon.name; card.querySelector('small').textContent = weapon.type;
+  weaponCards = Array.from({ length: SLOT_COUNT }, (_, slot) => {
+    const item = slotItem(me, slot), card = document.createElement('div');
+    card.className = 'ld-weapon'; card.dataset.kind = item.kind;
+    card.innerHTML = `<kbd>${slot + 1}</kbd>${item.icon}<b></b><small></small><div class="ld-pips"></div><div class="ld-charge"><em></em></div>`;
+    card.querySelector('b').textContent = item.name; card.querySelector('small').textContent = item.type;
     $('ld-weapons').append(card);
-    return { card, pips: card.querySelector('.ld-pips'), charge: card.querySelector('.ld-charge em'), id };
+    return { card, pips: card.querySelector('.ld-pips'), charge: card.querySelector('.ld-charge em'), id: item.kind === 'weapon' ? item.id : null };
   });
 }
 function iconMarkup(key, glyph) {
@@ -376,9 +390,11 @@ function updateHud(current) {
     $('ld-guard').dataset.state = me.guardBroken ? 'broken' : me.guarding ? 'up' : 'ready';
     $('ld-statuses').textContent = STATUS_IDS.filter(id => me.status?.[id] > 0).map(id => `${STATUS[id].name}${id === 'chill' ? ` ${me.chillStacks}/${STATUS.chill.freezeAt}` : ''} ${Math.ceil(me.status[id] / TICK_RATE)}s${id === 'curse' ? ' (no dash or ability)' : ''}`).join(' · ');
     buildWeaponCards(me);
+    renderInventory();
     weaponCards.forEach((card, slot) => {
       const weapon = WEAPONS[card.id];
       card.card.dataset.active = String(slot === me.slot);
+      if (!weapon) { card.pips.textContent = ''; card.charge.style.width = '0%'; return; }
       const pips = weapon.family === 'gun' ? weapon.clip : 0, have = me.clips?.[card.id] ?? 0;
       if (card.pips.childElementCount !== pips) { card.pips.textContent = ''; for (let i = 0; i < pips; i++) card.pips.append(document.createElement('i')); }
       [...card.pips.children].forEach((pip, index) => pip.classList.toggle('empty', index >= have || (me.reloadTicks?.[card.id] ?? 0) > 0));
@@ -455,22 +471,24 @@ function buildMenu() {
   $('ld-gear-clear').addEventListener('click', () => { if (canChangeLoadout()) chooseSetup(Object.fromEntries(GEAR_SLOTS.map(slot => [slot, 'none']))); });
   buildGearCards();
   const loadout = $('ld-loadout');
-  for (let slot = 0; slot < 3; slot++) {
+  for (let slot = 0; slot < SLOT_COUNT; slot++) {
     const label = document.createElement('label'), select = document.createElement('select');
     label.append(Object.assign(document.createElement('kbd'), { textContent: String(slot + 1) }), select);
+    select.append(new Option('Empty (room for hearts)', ''));
     for (const family of ['blade', 'gun', 'bomb']) {
       const group = document.createElement('optgroup'); group.label = `${family[0].toUpperCase()}${family.slice(1)}s`;
       for (const id of WEAPON_IDS.filter(weaponId => WEAPONS[weaponId].family === family)) group.append(new Option(`${WEAPONS[id].name}${ELEMENT_TAGS[WEAPONS[id].element] ? ` · ${ELEMENT_TAGS[WEAPONS[id].element]}` : ''}`, id));
       select.append(group);
     }
     select.addEventListener('change', () => {
-      const weapons = [...setup.weapons], other = weapons.indexOf(select.value);
+      const value = select.value || null, weapons = [...setup.weapons], other = value ? weapons.indexOf(value) : -1;
       if (other >= 0 && other !== slot) weapons[other] = weapons[slot]; // swap instead of duplicating
-      weapons[slot] = select.value;
+      weapons[slot] = value;
+      if (!weapons.some(Boolean)) { setStatus('Carry at least one weapon.'); renderMenu(); return; }
       chooseSetup({ weapons });
     });
-    select.addEventListener('focus', () => showWeaponNote(select.value));
-    select.addEventListener('input', () => showWeaponNote(select.value));
+    select.addEventListener('focus', () => { if (select.value) showWeaponNote(select.value); });
+    select.addEventListener('input', () => { if (select.value) showWeaponNote(select.value); });
     loadout.append(label);
   }
   const mapSelect = $('ld-map');
@@ -506,6 +524,44 @@ function buildGearCards() {
     card.setAttribute('aria-label', `${piece.name}. ${piece.description} ${armorStats(piece)}.`);
     card.addEventListener('click', () => chooseSetup({ [gearTab]: id }));
     list.append(card);
+  }
+}
+// ---------- inventory (I): drag and drop to reorder the four slots ----------
+let inventoryOpen = false, dragFrom = null;
+function toggleInventory(force) {
+  inventoryOpen = typeof force === 'boolean' ? force : !inventoryOpen;
+  $('ld-inventory').hidden = !inventoryOpen; dragFrom = null;
+  if (inventoryOpen) { held.delete('attack'); held.delete('ability'); renderInventory(); } else canvas.focus();
+}
+function reorder(from, to) {
+  if (from === to) return;
+  const order = [...Array(SLOT_COUNT).keys()]; order[from] = to; order[to] = from; // swap the two slots
+  if (solo) { const result = Engine.reorderInventory(state, localId ?? 0, order); if (!result.ok) setStatus(result.error); }
+  else send({ type: 'lockdown-inventory', order });
+}
+function renderInventory() {
+  if (!inventoryOpen) return;
+  const me = viewState()?.players[localId ?? -1], grid = $('ld-inventory-slots');
+  if (!me) return;
+  const key = Array.from({ length: SLOT_COUNT }, (_, slot) => `${me.weapons[slot]}:${me.hearts?.[slot] || 0}`).join(',') + `|${me.slot}`;
+  if (grid.dataset.key === key) return;
+  grid.dataset.key = key; grid.textContent = '';
+  for (let slot = 0; slot < SLOT_COUNT; slot++) {
+    const item = slotItem(me, slot), cell = document.createElement('div');
+    cell.className = 'ld-inv-slot'; cell.dataset.slot = slot; cell.dataset.kind = item.kind; cell.dataset.active = String(slot === me.slot);
+    cell.draggable = item.kind !== 'empty';
+    cell.innerHTML = `<kbd>${slot + 1}</kbd>${item.icon}<b></b><small></small>`;
+    cell.querySelector('b').textContent = item.name; cell.querySelector('small').textContent = item.type;
+    if (item.kind === 'hearts') cell.querySelector('b').insertAdjacentHTML('beforeend', ` <span class="ld-heart-pips">${'♥'.repeat(item.hearts)}${'♡'.repeat(RULES.heart.stack - item.hearts)}</span>`);
+    // Mouse drag and drop (HTML5), plus pointer fallback for touch screens.
+    cell.addEventListener('dragstart', event => { dragFrom = slot; cell.classList.add('dragging'); event.dataTransfer?.setData('text/plain', String(slot)); });
+    cell.addEventListener('dragend', () => { cell.classList.remove('dragging'); dragFrom = null; });
+    cell.addEventListener('dragover', event => { event.preventDefault(); cell.classList.add('over'); });
+    cell.addEventListener('dragleave', () => cell.classList.remove('over'));
+    cell.addEventListener('drop', event => { event.preventDefault(); cell.classList.remove('over'); const from = dragFrom ?? Number(event.dataTransfer?.getData('text/plain')); if (Number.isInteger(from)) reorder(from, slot); dragFrom = null; });
+    cell.addEventListener('pointerdown', event => { if (event.pointerType !== 'mouse') dragFrom = slot; });
+    cell.addEventListener('pointerup', event => { if (event.pointerType !== 'mouse' && dragFrom !== null) { reorder(dragFrom, slot); dragFrom = null; } });
+    grid.append(cell);
   }
 }
 function showWeaponNote(id) { const weapon = WEAPONS[id]; if (weapon) $('ld-weapon-note').textContent = `${weapon.name}: ${weapon.description}`; }
@@ -559,7 +615,7 @@ function renderMenu() {
   const total = combineGear(gear), piece = GEAR[gearTab][gear[gearTab]];
   $('ld-armor-summary').textContent = `${piece.name}: ${piece.description}`;
   $('ld-armor-summary-stats').innerHTML = `<b>Whole build</b> (${total.name}): ${armorStatMarkup(total)}`;
-  [...$('ld-loadout').querySelectorAll('select')].forEach((select, slot) => { if (document.activeElement !== select) select.value = weapons[slot]; select.disabled = !editable; });
+  [...$('ld-loadout').querySelectorAll('select')].forEach((select, slot) => { if (document.activeElement !== select) select.value = weapons[slot] || ''; select.disabled = !editable; });
   const note = $('ld-base-note');
   note.hidden = lobby;
   if (!lobby) {
@@ -671,4 +727,4 @@ renderMenu();
 requestAnimationFrame(frame);
 addEventListener('resize', () => scene.resize());
 // Exposed for automated smoke tests.
-globalThis.__lockdown = { get state() { return state; }, get localId() { return localId; }, get menuOpen() { return menuOpen; }, toggleMenu, chooseSetup, showBoard };
+globalThis.__lockdown = { get state() { return state; }, get localId() { return localId; }, get menuOpen() { return menuOpen; }, get inventoryOpen() { return inventoryOpen; }, toggleMenu, toggleInventory, chooseSetup, showBoard };

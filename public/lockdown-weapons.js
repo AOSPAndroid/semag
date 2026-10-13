@@ -157,4 +157,7 @@ export const GUARD = Object.freeze({ raiseTicks: 6, max: 140, regenPerSecond: 20
  * the recovery has passed (the last cut of a combo always recovers fully unless cancelled). */
 export const BLADE = Object.freeze({ comboCancel: .4, comboWindow: 36, hitStop: 4 });
 
-export const DEFAULT_LOADOUTS = Object.freeze({ striker: ['brand', 'blaster', 'blast'], guardian: ['cleaver', 'magnus', 'vortex'], recon: ['rapier', 'alchemer', 'shard'] });
+/** Four free inventory slots: any weapon in any slot (four swords is fine), or hearts, or nothing.
+ * Loadouts list a weapon id or null per slot; the empty fourth slot is where hearts go. */
+export const SLOT_COUNT = 4;
+export const DEFAULT_LOADOUTS = Object.freeze({ striker: ['brand', 'blaster', 'blast', null], guardian: ['cleaver', 'magnus', 'vortex', null], recon: ['rapier', 'alchemer', 'shard', null] });

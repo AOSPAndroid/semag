@@ -696,9 +696,15 @@ export function createServer(options = {}) {
         broadcast(room);
       } else if (data.type === 'lockdown-setup') {
         if (room.gameId !== 'lockdown') { error(ws, 'Class and weapon setup is only available in Lockdown.'); return; }
-        if (Object.keys(data).some(key => !['type', 'team', 'cls', 'armor', 'helmet', 'pants', 'shoes', 'weapons'].includes(key))) { error(ws, 'Choose only a team, class, gear and three weapons.'); return; }
+        if (Object.keys(data).some(key => !['type', 'team', 'cls', 'armor', 'helmet', 'pants', 'shoes', 'weapons'].includes(key))) { error(ws, 'Choose only a team, class, gear and up to four weapons.'); return; }
         const choice = {}; for (const key of ['team', 'cls', 'armor', 'helmet', 'pants', 'shoes', 'weapons']) if (Object.hasOwn(data, key)) choice[key] = data[key];
         const result = Lockdown.setPlayerSetup(state, id, choice);
+        if (!result.ok) { error(ws, result.error); return; }
+        broadcast(room);
+      } else if (data.type === 'lockdown-inventory') {
+        if (room.gameId !== 'lockdown') { error(ws, 'The inventory is only available in Lockdown.'); return; }
+        if (Object.keys(data).some(key => !['type', 'order'].includes(key))) { error(ws, 'Send only the new slot order.'); return; }
+        const result = Lockdown.reorderInventory(state, id, data.order);
         if (!result.ok) { error(ws, result.error); return; }
         broadcast(room);
       } else if (data.type === 'lockdown-map') {

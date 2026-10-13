@@ -18,7 +18,7 @@ function duel({ mapId = 'temple', a = {}, b = {}, gap = 50 } = {}) {
   const me = state.players[0], foe = state.players[4];
   Object.assign(me, { x: point.x - gap / 2, y: point.y, aim: 0, shieldTicks: 0 }, a);
   Object.assign(foe, { x: point.x + gap / 2, y: point.y, aim: Math.PI, shieldTicks: 0 }, b);
-  for (const player of [me, foe]) { player.clips = Object.fromEntries(player.weapons.filter(id => WEAPONS[id].family === 'gun').map(id => [id, WEAPONS[id].clip])); }
+  for (const player of [me, foe]) { player.clips = Object.fromEntries(player.weapons.filter(id => WEAPONS[id]?.family === 'gun').map(id => [id, WEAPONS[id].clip])); }
   state.events = [];
   return { state, me, foe };
 }
@@ -50,7 +50,7 @@ test('maps are mirrored with three points and four spawn tiles a side', () => {
   }
 });
 
-test('lobby setup validates class, three distinct weapons and team size', () => {
+test('lobby setup validates class, the four inventory slots and team size', () => {
   const state = L.createState();
   assert.equal(state.players.length, L.CAPACITY);
   assert.ok(state.players.every(player => player.bot && !player.human));
@@ -58,7 +58,8 @@ test('lobby setup validates class, three distinct weapons and team size', () => 
   assert.equal(state.players[0].human, true); assert.equal(state.players[0].name, 'Ada');
   assert.equal(L.setPlayerSetup(state, 0, { cls: 'wizard' }).ok, false);
   assert.equal(L.setPlayerSetup(state, 0, { weapons: ['brand', 'brand', 'blast'] }).ok, false);
-  assert.equal(L.setPlayerSetup(state, 0, { weapons: ['brand', 'blast'] }).ok, false);
+  assert.equal(L.setPlayerSetup(state, 0, { weapons: [null, null, null, null] }).ok, false, 'at least one weapon');
+  assert.equal(L.setPlayerSetup(state, 0, { weapons: ['brand', 'rapier', 'cleaver', 'spur', 'thorn'] }).ok, false, 'four slots at most');
   assert.equal(L.setPlayerSetup(state, 0, { weapons: ['brand', 'laser', 'blast'] }).ok, false);
   assert.equal(L.setPlayerSetup(state, 0, { team: 2 }).ok, false);
   assert.deepEqual(L.setPlayerSetup(state, 0, { cls: 'guardian', weapons: ['pulsar', 'rapier', 'vortex'], team: 1 }), { ok: true });
@@ -80,7 +81,7 @@ test('starting balances the bots to four a side and counts down into the fight',
   assert.deepEqual([0, 1].map(team => state.players.filter(player => player.team === team).length), [4, 4]);
   assert.ok([0, 1, 2].every(id => state.players[id].team === 1 && state.players[id].human));
   assert.ok(state.players.every(player => player.alive && Number.isFinite(player.x)));
-  for (const player of state.players) assert.equal(player.weapons.length, 3);
+  for (const player of state.players) assert.equal(player.weapons.length, L.SLOT_COUNT);
   for (let t = 0; t < RULES.countdownTicks; t++) L.step(state, []);
   assert.equal(state.phase, 'fight');
   assert.ok(events(state, 'fight').length === 1);
@@ -296,7 +297,7 @@ test('class and weapons change mid-match only in base or while respawning', () =
   assert.deepEqual(L.setPlayerSetup(state, 0, { cls: 'guardian', weapons: ['rapier', 'magnus', 'shard'] }), { ok: true });
   assert.equal(me.cls, 'guardian'); assert.equal(me.maxHp, CLASSES.guardian.hp);
   assert.equal(me.hp, 50 / CLASSES.striker.hp * CLASSES.guardian.hp, 'keeps the same health fraction');
-  assert.deepEqual(me.weapons, ['rapier', 'magnus', 'shard']); assert.equal(me.slot, 0);
+  assert.deepEqual(me.weapons, ['rapier', 'magnus', 'shard', null]); assert.equal(me.slot, 0);
   assert.equal(me.clips.magnus, WEAPONS.magnus.clip);
   assert.ok(events(state, 'loadoutChange').length === 1);
   assert.match(L.setPlayerSetup(state, 0, { team: 1 }).error, /lobby/, 'teams stay fixed');
@@ -307,18 +308,60 @@ test('class and weapons change mid-match only in base or while respawning', () =
   assert.equal(me.alive, true); assert.equal(me.cls, 'recon'); assert.equal(me.hp, CLASSES.recon.hp);
 });
 
-test('a knockout drops a heart that heals whoever grabs it, and fades if nobody does', () => {
+test('a knockout drops a heart: it goes into a free slot (two per slot) and heals when used', () => {
   const { state, me, foe } = duel();
   foe.hp = 5; run(state, 1, () => ({ 0: { attack: true } })); run(state, 30);
   assert.equal(foe.alive, false);
-  assert.equal(state.pickups.length, 1); assert.ok(events(state, 'heartDrop').length === 1);
+  assert.ok(events(state, 'heartDrop').length === 1);
+  assert.equal(state.pickups.length + me.hearts[3], 1, 'one heart, on the floor or already in the bag');
+  // Walking over it stores it in the empty fourth slot, even at full health.
   const heart = state.pickups[0];
-  run(state, 10); assert.equal(state.pickups.length, 1, 'a full-health knight leaves it for someone who needs it');
-  Object.assign(me, { hp: 50, x: heart.x, y: heart.y }); run(state, 1);
+  if (heart) { Object.assign(me, { x: heart.x, y: heart.y }); run(state, 1); }
+  assert.equal(state.pickups.length, 0); assert.deepEqual(me.hearts, [0, 0, 0, 1]);
+  // A second heart stacks in the same slot; a third has no room and a full-health knight leaves it.
+  state.pickups.push({ id: 990, kind: 'heart', x: me.x, y: me.y, ttl: 500 }); run(state, 1);
+  assert.deepEqual(me.hearts, [0, 0, 0, RULES.heart.stack]);
+  state.pickups.push({ id: 991, kind: 'heart', x: me.x, y: me.y, ttl: 500 }); run(state, 1);
+  assert.equal(state.pickups.length, 1, 'no room and nothing to heal');
+  // Hurt with a full inventory: the heart is eaten on the spot.
+  me.hp = 50; run(state, 1);
   assert.equal(me.hp, 50 + RULES.heart.heal); assert.equal(state.pickups.length, 0);
-  assert.equal(events(state, 'heartPickup').at(-1).playerId, 0);
-  state.pickups.push({ id: 999, kind: 'heart', x: 100, y: 100, ttl: 5 });
-  run(state, 6); assert.equal(state.pickups.length, 0);
+  // Select the heart slot (4) and click to eat one.
+  me.hp = 40; run(state, 2, t => ({ 0: { slot4: t === 0 } }));
+  assert.equal(me.slot, 3);
+  run(state, 2, t => ({ 0: { attack: t === 0 } }));
+  assert.equal(me.hp, 40 + RULES.heart.heal); assert.equal(me.hearts[3], 1);
+  assert.equal(events(state, 'heartUse').length, 1);
+  // A knocked-out knight drops the hearts it carried as well.
+  Object.assign(foe, { alive: true, hp: 400, maxHp: 400, x: me.x + 400, y: me.y, shieldTicks: 0 });
+  me.hp = 5; me.shieldTicks = 0; me.evadeTicks = 0; state.pickups = [];
+  L.reorderInventory(state, 0, [0, 1, 2, 3]);
+  const before = me.hearts.reduce((a, b) => a + b, 0);
+  foe.weapons = ['blaster', 'brand', 'blast', null]; foe.slot = 0; foe.clips = { blaster: 3 }; foe.aim = Math.PI; foe.x = me.x + 120;
+  run(state, 60, t => ({ 4: { attack: t % 20 === 0, aim: Math.PI } }));
+  assert.equal(me.alive, false);
+  assert.equal(state.pickups.length, before + 1, 'its own heart plus the ones it carried');
+  assert.deepEqual(me.hearts, [0, 0, 0, 0]);
+  state.pickups = [{ id: 999, kind: 'heart', x: 100, y: 100, ttl: 5 }];
+  run(state, 6); assert.equal(state.pickups.length, 0, 'unclaimed hearts fade');
+});
+
+test('inventory slots are free: any mix of weapons or hearts, reordered by drag and drop', () => {
+  const state = L.createState(); L.setConnected(state, 0, true, 'Ada');
+  assert.ok(L.setPlayerSetup(state, 0, { weapons: ['brand', 'rapier', 'cleaver', 'spur'] }).ok, 'four swords');
+  assert.ok(L.setPlayerSetup(state, 0, { weapons: ['blast', 'vortex', 'haze', 'frost'] }).ok, 'four bombs');
+  assert.ok(L.setPlayerSetup(state, 0, { weapons: [null, 'blaster', null, null] }).ok, 'one gun and three free slots');
+  const { state: s, me } = duel({ a: { weapons: ['brand', 'blaster', 'blast', null], hearts: [0, 0, 0, 2], slot: 1 } });
+  assert.match(L.reorderInventory(s, 0, [0, 0, 1, 2]).error, /four/);
+  assert.ok(L.reorderInventory(s, 0, [3, 1, 0, 2]).ok);
+  assert.deepEqual(me.weapons, [null, 'blaster', 'brand', 'blast']); assert.deepEqual(me.hearts, [2, 0, 0, 0]);
+  assert.equal(me.slot, 1, 'the item in your hands stays in your hands');
+  // Reordering works away from base; the swap key skips empty slots.
+  L.reorderInventory(s, 0, [1, 0, 2, 3]); assert.equal(me.slot, 0);
+  // Changing loadout in base keeps carried hearts in a free slot.
+  const home = MAPS.temple.spawns[0][0]; Object.assign(me, { x: home.x, y: home.y });
+  assert.ok(L.setPlayerSetup(s, 0, { weapons: ['rapier', null, 'magnus', 'shard'] }).ok);
+  assert.deepEqual(me.hearts, [0, 2, 0, 0]);
 });
 
 test('personal score comes from taking and neutralising zones, and leads the scoreboard', () => {
@@ -372,6 +415,7 @@ test('statuses: burn ticks damage, poison stops healing, freeze holds you until 
   assert.ok(events(state, 'damage').filter(event => event.kind === 'burn').length >= 2);
   // Poison: no healing from hearts or base.
   foe.status.poison = STATUS.poison.ticks; foe.hp = 40;
+  foe.hearts[3] = RULES.heart.stack; // no free slot, so the heart would be eaten on the spot
   state.pickups.push({ id: 900, kind: 'heart', x: foe.x, y: foe.y, ttl: 500 }); run(state, 2);
   assert.equal(state.pickups.some(pickup => pickup.id === 900), true, 'a poisoned knight cannot take a heart');
   // Freeze: no movement until the ice breaks; a hit thaws it.
@@ -424,7 +468,7 @@ test('the vortex drags enemies in, holds them, then blasts them apart', () => {
 test('every weapon fires its charge without errors', () => {
   for (const id of L.WEAPON_IDS) {
     const { state, me } = duel({ gap: 140, a: { weapons: [id, ...L.WEAPON_IDS.filter(other => other !== id && WEAPONS[other].family !== WEAPONS[id].family).slice(0, 2)] } });
-    me.clips = Object.fromEntries(me.weapons.filter(weaponId => WEAPONS[weaponId].family === 'gun').map(weaponId => [weaponId, WEAPONS[weaponId].clip]));
+    me.clips = Object.fromEntries(me.weapons.filter(weaponId => WEAPONS[weaponId]?.family === 'gun').map(weaponId => [weaponId, WEAPONS[weaponId].clip]));
     run(state, 60 + L.chargeTicksFor(me, WEAPONS[id]) + 3, () => ({ 0: { attack: true } }));
     run(state, 400);
     assert.ok(events(state, 'chargeRelease').some(event => event.weapon === id), `${id} released its charge`);
@@ -562,7 +606,7 @@ test('outfit perks and drawbacks: speed vs swords, plate, bombs, berserk, mirror
   // Medic: bigger hearts and slow mending out of combat.
   const medic = duel({ a: { armor: 'medic' } });
   Object.assign(medic.foe, { alive: false, respawnTicks: 1e9 });
-  medic.me.hp = 30; medic.state.pickups.push({ id: 901, kind: 'heart', x: medic.me.x, y: medic.me.y, ttl: 500 }); run(medic.state, 1);
+  medic.me.hp = 30; medic.me.hearts[3] = RULES.heart.stack; medic.state.pickups.push({ id: 901, kind: 'heart', x: medic.me.x, y: medic.me.y, ttl: 500 }); run(medic.state, 1);
   assert.equal(Math.round(medic.me.hp), 30 + RULES.heart.heal * A.medic.healing);
   medic.me.hp = 30; medic.me.lastHurtTick = medic.state.tick - 5 * TICK_RATE; run(medic.state, TICK_RATE);
   assert.ok(Math.abs(medic.me.hp - 30 - A.medic.regen * A.medic.healing) < .5, `mended ${medic.me.hp - 30}`); // regen counts as healing

@@ -3,17 +3,17 @@
  * Up to 4v4; empty seats are filled by bots. Teams score every five seconds by
  * the points they hold; first to 500 (or the leader at the time limit) wins. */
 import { MAPS, MAP_IDS, TILE, isWall, isBlocked, wallAt, levelAt, levelCell, levelOk, canStep, shotBlocked } from './lockdown-maps.js';
-import { WEAPONS, WEAPON_IDS, DEFAULT_LOADOUTS, STATUS, STATUS_IDS, GUARD, BLADE } from './lockdown-weapons.js';
+import { WEAPONS, WEAPON_IDS, DEFAULT_LOADOUTS, SLOT_COUNT, STATUS, STATUS_IDS, GUARD, BLADE } from './lockdown-weapons.js';
 import { ARMORS, ARMOR_IDS, HELMETS, PANTS, SHOES, GEAR, GEAR_SLOTS, combineGear } from './lockdown-equipment.js';
 
-export { MAPS, MAP_IDS, TILE, WEAPONS, WEAPON_IDS, DEFAULT_LOADOUTS, STATUS, STATUS_IDS, GUARD, BLADE, ARMORS, ARMOR_IDS, HELMETS, PANTS, SHOES, GEAR, GEAR_SLOTS, combineGear };
+export { MAPS, MAP_IDS, TILE, WEAPONS, WEAPON_IDS, DEFAULT_LOADOUTS, SLOT_COUNT, STATUS, STATUS_IDS, GUARD, BLADE, ARMORS, ARMOR_IDS, HELMETS, PANTS, SHOES, GEAR, GEAR_SLOTS, combineGear };
 export const TICK_RATE = 120;
 const DT = 1 / TICK_RATE;
 export const TEAM_SIZE = 4;
 export const CAPACITY = TEAM_SIZE * 2;
 /** `ability` is the class ability (right mouse): Striker Boost, Guardian shield (hold), Recon Cloak.
  * `dash` (Space) is the quick dash every knight has. */
-export const INPUT_KEYS = Object.freeze(['up', 'down', 'left', 'right', 'attack', 'ability', 'dash', 'slot1', 'slot2', 'slot3', 'swap']);
+export const INPUT_KEYS = Object.freeze(['up', 'down', 'left', 'right', 'attack', 'ability', 'dash', 'slot1', 'slot2', 'slot3', 'slot4', 'swap']);
 export const emptyInput = (aim = 0) => ({ ...Object.fromEntries(INPUT_KEYS.map(key => [key, false])), aim });
 
 export const RULES = Object.freeze({
@@ -25,7 +25,8 @@ export const RULES = Object.freeze({
   // Standing in your own base heals you, and is where you change your loadout mid-match.
   baseHealPerSecond: 25,
   // Every knockout drops a heart that heals whoever grabs it first.
-  heart: Object.freeze({ heal: 30, ttlTicks: 15 * TICK_RATE, radius: 24 }),
+  // Hearts go into your inventory (two per slot) and heal when used; with no room they heal on the spot.
+  heart: Object.freeze({ heal: 30, ttlTicks: 15 * TICK_RATE, radius: 24, stack: 2, useTicks: 30 }),
   // Personal score comes from the zones: taking a point, or knocking an enemy point back to neutral.
   captureScore: 30, neutralizeScore: 15,
   // Every knight can dash: a short burst the way you are moving, untouchable for a moment.
@@ -81,7 +82,7 @@ function emit(state, type, data = {}) {
 function newPlayer(id) {
   const team = id < TEAM_SIZE ? 0 : 1, cls = CLASS_IDS[id % CLASS_IDS.length];
   return {
-    id, team, name: `Bot ${id + 1}`, human: false, connected: false, bot: true, cls, armor: 'none', helmet: 'none', pants: 'none', shoes: 'none', weapons: [...DEFAULT_LOADOUTS[cls]], slot: 0,
+    id, team, name: `Bot ${id + 1}`, human: false, connected: false, bot: true, cls, armor: 'none', helmet: 'none', pants: 'none', shoes: 'none', weapons: [...DEFAULT_LOADOUTS[cls]], hearts: Array(SLOT_COUNT).fill(0), slot: 0,
     x: 0, y: 0, z: 0, vx: 0, vy: 0, aim: team === 0 ? 0 : Math.PI, hp: CLASSES[cls].hp, maxHp: CLASSES[cls].hp, alive: false, lastHurtTick: 0,
     respawnTicks: 0, shieldTicks: 0, stunTicks: 0, pushX: 0, pushY: 0,
     action: 'idle', actionTicks: 0, actionTotal: 0, comboStep: 0, comboWindow: 0, hitIds: [], chargeTicks: 0, charging: false,
@@ -113,7 +114,38 @@ export function inBase(state, player) {
   return map.grid[Math.floor(player.y / TILE)]?.[Math.floor(player.x / TILE)] === (player.team === 0 ? '1' : '2');
 }
 
-/** Lobby choices: team, class, armor and three distinct weapons. During a match,
+const isGun = id => WEAPONS[id]?.family === 'gun';
+/** A loadout is four slots of distinct weapons or empty (null); at least one weapon. A three-slot list
+ * (older clients) gets an empty fourth slot. */
+function normalLoadout(weapons) { return Array.from({ length: SLOT_COUNT }, (_, i) => weapons[i] ?? null); }
+function loadoutError(weapons) {
+  if (!Array.isArray(weapons) || weapons.length < 1 || weapons.length > SLOT_COUNT || weapons.some(id => id !== null && !Object.hasOwn(WEAPONS, id))) return `Choose up to ${SLOT_COUNT} weapons, one per slot.`;
+  const chosen = weapons.filter(id => id !== null);
+  if (!chosen.length) return 'Carry at least one weapon.';
+  if (new Set(chosen).size !== chosen.length) return 'Choose different weapons for each slot.';
+  return null;
+}
+/** New weapons in the slots; hearts in a slot that now holds a weapon move to a free slot (or are lost). */
+function setWeapons(player, weapons) {
+  const hearts = player.hearts || Array(SLOT_COUNT).fill(0), carried = [];
+  player.weapons = normalLoadout(weapons);
+  player.hearts = Array(SLOT_COUNT).fill(0);
+  hearts.forEach((count, slot) => { if (count > 0) { if (player.weapons[slot] === null) player.hearts[slot] = count; else carried.push(count); } });
+  for (const count of carried) { const free = player.weapons.findIndex((id, slot) => id === null && player.hearts[slot] === 0); if (free >= 0) player.hearts[free] = count; }
+}
+/** Drag-and-drop in the inventory: `order` lists the old slot for each new position. The item in your
+ * hands stays in your hands. Works anywhere, any time. */
+export function reorderInventory(state, id, order) {
+  const player = state.players[id];
+  if (!player) return { ok: false, error: 'Unknown player.' };
+  if (!Array.isArray(order) || order.length !== SLOT_COUNT || [...order].sort().join() !== [...Array(SLOT_COUNT).keys()].join()) return { ok: false, error: 'Reorder the four inventory slots.' };
+  player.weapons = order.map(slot => player.weapons[slot] ?? null);
+  player.hearts = order.map(slot => player.hearts?.[slot] || 0);
+  player.slot = order.indexOf(player.slot);
+  emit(state, 'inventory', { playerId: player.id, weapons: [...player.weapons], hearts: [...player.hearts] });
+  return { ok: true };
+}
+/** Lobby choices: team, class, armor and four inventory slots. During a match,
  * equipment can change only while you are in base (or waiting to respawn). */
 export function setPlayerSetup(state, id, { team, cls, armor, helmet, pants, shoes, weapons, name } = {}) {
   const gear = { helmet, armor, pants, shoes }, gearChange = GEAR_SLOTS.some(slot => gear[slot] !== undefined);
@@ -124,7 +156,10 @@ export function setPlayerSetup(state, id, { team, cls, armor, helmet, pants, sho
   if (inMatch && (cls !== undefined || gearChange || weapons !== undefined) && player.alive && !inBase(state, player)) return { ok: false, error: 'Return to your base to change class, armor or weapons.' };
   if (cls !== undefined && !Object.hasOwn(CLASSES, cls)) return { ok: false, error: 'Choose Striker, Guardian or Recon.' };
   for (const slot of GEAR_SLOTS) if (gear[slot] !== undefined && (typeof gear[slot] !== 'string' || !Object.hasOwn(GEAR[slot], gear[slot]))) return { ok: false, error: slot === 'armor' ? 'Choose an available armor.' : `Choose an available ${slot === 'helmet' ? 'helmet' : slot === 'pants' ? 'pair of pants' : 'pair of shoes'}.` };
-  if (weapons !== undefined && (!Array.isArray(weapons) || weapons.length !== 3 || weapons.some(weapon => !Object.hasOwn(WEAPONS, weapon)) || new Set(weapons).size !== 3)) return { ok: false, error: 'Choose three different weapons.' };
+  if (weapons !== undefined) {
+    const check = loadoutError(weapons); if (check) return { ok: false, error: check };
+    weapons = normalLoadout(weapons);
+  }
   if (team !== undefined && ![0, 1].includes(team)) return { ok: false, error: 'Choose a team.' };
   if (team !== undefined && team !== player.team && state.players.filter(other => other.human && other.team === team).length >= TEAM_SIZE) return { ok: false, error: 'That team is full.' };
   if (team !== undefined) player.team = team;
@@ -140,17 +175,17 @@ export function setPlayerSetup(state, id, { team, cls, armor, helmet, pants, sho
       player.dashTicks = player.cloakTicks = 0; player.markReady = false; player.guarding = false;
     }
     if (weapons !== undefined) {
-      player.weapons = [...weapons];
-      player.clips = Object.fromEntries(weapons.filter(weaponId => WEAPONS[weaponId].family === 'gun').map(weaponId => [weaponId, WEAPONS[weaponId].clip]));
+      setWeapons(player, weapons);
+      player.clips = Object.fromEntries(weapons.filter(isGun).map(weaponId => [weaponId, WEAPONS[weaponId].clip]));
       player.reloadTicks = {}; player.sinceShot = {};
     }
-    Object.assign(player, { slot: 0, action: 'idle', actionTicks: 0, charging: false, chargeTicks: 0, comboStep: 0, burst: null, bufferAttack: false });
+    Object.assign(player, { slot: Math.max(0, player.weapons.findIndex(Boolean)), action: 'idle', actionTicks: 0, charging: false, chargeTicks: 0, comboStep: 0, burst: null, bufferAttack: false });
     emit(state, 'loadoutChange', { playerId: player.id, cls: player.cls, armor: player.armor, helmet: player.helmet, pants: player.pants, shoes: player.shoes, weapons: [...player.weapons] });
   } else {
     for (const slot of GEAR_SLOTS) if (gear[slot] !== undefined) player[slot] = gear[slot];
     if (cls !== undefined) player.cls = cls;
     if (cls !== undefined || gearChange) player.maxHp = player.hp = maxHpFor(player.cls, player);
-    if (weapons !== undefined) player.weapons = [...weapons];
+    if (weapons !== undefined) setWeapons(player, weapons);
   }
   if (typeof name === 'string') player.name = name.slice(0, 24);
   return { ok: true };
@@ -184,7 +219,7 @@ export function startMatch(state, participantIds = []) {
     if (player.bot) {
       player.cls = CLASS_IDS[Math.floor(random(state) * CLASS_IDS.length)];
       // Bots carry one blade, one gun and one bomb from the whole armoury, elemental ones included.
-      player.weapons = ['blade', 'gun', 'bomb'].map(family => { const ids = WEAPON_IDS.filter(id => WEAPONS[id].family === family); return ids[Math.floor(random(state) * ids.length)]; });
+      player.weapons = [...['blade', 'gun', 'bomb'].map(family => { const ids = WEAPON_IDS.filter(id => WEAPONS[id].family === family); return ids[Math.floor(random(state) * ids.length)]; }), null];
       const picks = BOT_OUTFITS[player.cls];
       player.armor = picks[Math.floor(random(state) * picks.length)];
       // Bots path around pits, so they skip the shoes that cross them.
@@ -198,7 +233,7 @@ export function startMatch(state, participantIds = []) {
 }
 
 export function resetLobby(state) {
-  const keep = state.players.map(player => ({ team: player.team, cls: player.cls, armor: player.armor, helmet: player.helmet, pants: player.pants, shoes: player.shoes, weapons: player.weapons, name: player.name, human: player.human, connected: player.connected }));
+  const keep = state.players.map(player => ({ team: player.team, cls: player.cls, armor: player.armor, helmet: player.helmet, pants: player.pants, shoes: player.shoes, weapons: player.weapons, hearts: Array(SLOT_COUNT).fill(0), name: player.name, human: player.human, connected: player.connected }));
   const fresh = createState({ mapId: state.mapId, seed: state.seed });
   Object.assign(state, fresh, { tick: state.tick, eventId: state.eventId });
   state.players.forEach((player, id) => Object.assign(player, keep[id], { bot: !keep[id].human, maxHp: maxHpFor(keep[id].cls, keep[id]), hp: maxHpFor(keep[id].cls, keep[id]) }));
@@ -234,12 +269,13 @@ function spawn(state, player) {
   Object.assign(player, {
     x: spot.x, y: spot.y, z: levelAt(map, spot.x, spot.y), vx: 0, vy: 0, alive: true, hp: maxHpFor(player.cls, player), maxHp: maxHpFor(player.cls, player), respawnTicks: 0, lastHurtTick: state.tick, shieldTicks: RULES.spawnShieldTicks,
     stunTicks: 0, pushX: 0, pushY: 0, action: 'idle', actionTicks: 0, actionTotal: 0, comboStep: 0, comboWindow: 0, hitIds: [], chargeTicks: 0, charging: false,
-    dashTicks: 0, cloakTicks: 0, markTicks: 0, markReady: false, slot: 0, fireCooldown: 0,
+    dashTicks: 0, cloakTicks: 0, markTicks: 0, markReady: false, fireCooldown: 0,
     aim: player.team === 0 ? 0 : Math.PI, burst: null, hitStop: 0, bufferAttack: false, dodgeTicks: 0, evadeTicks: 0, dashCooldown: 0, guarding: false, guardRaise: 0, guardBroken: false, guardDelay: 0,
     guardHp: GUARD.max, freezeImmune: 0, chillStacks: 0, catalysts: 0, catalystTicks: 0,
     status: Object.fromEntries(STATUS_IDS.map(key => [key, 0])), statusOwner: {},
   });
-  player.clips = Object.fromEntries(player.weapons.filter(id => WEAPONS[id].family === 'gun').map(id => [id, WEAPONS[id].clip]));
+  player.clips = Object.fromEntries(player.weapons.filter(isGun).map(id => [id, WEAPONS[id].clip]));
+  player.slot = Math.max(0, player.weapons.findIndex(Boolean)); player.heartUse = 0;
   player.reloadTicks = {}; player.sinceShot = {};
 }
 
@@ -336,8 +372,15 @@ function knockOut(state, attacker, target) {
   target.cloakTicks = target.dashTicks = 0; target.guarding = false; target.catalysts = 0;
   for (const id of STATUS_IDS) target.status[id] = 0;
   target.chillStacks = 0;
-  state.pickups.push({ id: state.nextId++, kind: 'heart', x: target.x, y: target.y, ttl: RULES.heart.ttlTicks });
-  emit(state, 'heartDrop', { x: target.x, y: target.y });
+  // A knockout drops a heart, plus every heart the knight was carrying, scattered around them.
+  const carried = (target.hearts || []).reduce((sum, count) => sum + count, 0);
+  for (let i = 0; i <= carried; i++) {
+    const angle = i * 2.4, spread = i ? 26 : 0, map = MAPS[state.mapId], x = target.x + Math.cos(angle) * spread, y = target.y + Math.sin(angle) * spread;
+    const spot = collides(map, x, y, 6) ? target : { x, y };
+    state.pickups.push({ id: state.nextId++, kind: 'heart', x: spot.x, y: spot.y, ttl: RULES.heart.ttlTicks });
+  }
+  target.hearts = Array(SLOT_COUNT).fill(0);
+  emit(state, 'heartDrop', { x: target.x, y: target.y, count: carried + 1 });
   if (attacker && attacker.team !== target.team) attacker.kills++;
   emit(state, 'kill', { playerId: attacker?.id ?? null, targetId: target.id, x: target.x, y: target.y, respawnTicks: target.respawnTicks });
 }
@@ -436,7 +479,17 @@ function tickGuard(state, player, input) {
 }
 
 // ---------- weapons ----------
-function currentWeapon(player) { return WEAPONS[player.weapons[player.slot]]; }
+/** Empty and heart slots hold no weapon: open hands (a heart slot heals on click instead). */
+const HANDS = Object.freeze({ id: 'hands', family: 'none', name: 'Empty hands', chargeTicks: Infinity });
+function currentWeapon(player) { return WEAPONS[player.weapons[player.slot]] || HANDS; }
+/** Eat a heart from the selected slot: heals like a dropped heart, then a short pause. */
+function useHeart(state, player) {
+  if (!(player.hearts[player.slot] > 0) || player.heartUse > 0 || player.hp >= player.maxHp) return;
+  if (!canHeal(player)) { emit(state, 'heartBlocked', { playerId: player.id, x: player.x, y: player.y }); return; }
+  const amount = heal(player, RULES.heart.heal);
+  player.hearts[player.slot]--; player.heartUse = RULES.heart.useTicks;
+  emit(state, 'heartUse', { playerId: player.id, x: player.x, y: player.y, amount: Math.round(amount), left: player.hearts[player.slot] });
+}
 const targetsOf = (state, player) => state.players.filter(target => target.alive && target.team !== player.team);
 /** Blade contact: anyone in reach whose bearing lies inside [from, to] of the swept arc (plus their body width). */
 function bladeContacts(state, player, reach, from, to, amount, options) {
@@ -591,6 +644,8 @@ function tickWeapon(state, player, input, previous) {
     if (player.burst.timer-- <= 0) { fireVolley(state, player, gun, gun.charge, 1, gun.charge.spread, true); player.burst.timer = gun.charge.every; if (--player.burst.remaining <= 0) player.burst = null; }
   }
   if (player.comboWindow > 0 && --player.comboWindow === 0) player.comboStep = 0;
+  if (player.heartUse > 0) player.heartUse--;
+  if (weapon === HANDS) { if (pressed) useHeart(state, player); return; }
   if (player.actionTicks > 0) {
     // Pressing during a swing (once the blade is out) queues the next cut.
     if (pressed && player.action === 'swing' && player.actionTotal - player.actionTicks >= player.swingStartup) player.bufferAttack = true;
@@ -690,7 +745,11 @@ function tickPlayer(state, player, input) {
     player.hitStop--; player.previousInput = input; return;
   }
   // Weapon slots: 1-3 or cycle. Switching cancels a charge, never a committed swing.
-  const slot = input.slot1 && !previous.slot1 ? 0 : input.slot2 && !previous.slot2 ? 1 : input.slot3 && !previous.slot3 ? 2 : input.swap && !previous.swap ? (player.slot + 1) % 3 : player.slot;
+  // Weapon slots: 1-4 pick a slot; swap cycles to the next slot that holds something.
+  const filled = index => player.weapons[index] || player.hearts[index] > 0;
+  const nextFilled = () => { for (let step = 1; step <= SLOT_COUNT; step++) { const index = (player.slot + step) % SLOT_COUNT; if (filled(index)) return index; } return player.slot; };
+  const picked = [0, 1, 2, 3].find(index => input[`slot${index + 1}`] && !previous[`slot${index + 1}`]);
+  const slot = picked !== undefined ? picked : input.swap && !previous.swap ? nextFilled() : player.slot;
   if (slot !== player.slot && player.actionTicks === 0 && !player.burst) { player.slot = slot; player.charging = false; player.chargeTicks = 0; player.comboStep = 0; player.bufferAttack = false; emit(state, 'swapWeapon', { playerId: player.id, weapon: player.weapons[slot] }); }
   if (player.stunTicks > 0) { player.stunTicks--; player.guarding = false; tickGuard(state, player, emptyInput()); }
   else if (!frozen) { tickGuard(state, player, input); tickDash(state, player, input, previous); tickAbilities(state, player, input, previous); tickWeapon(state, player, input, previous); }
@@ -801,16 +860,27 @@ function tickClouds(state) {
   state.clouds = remaining;
 }
 
+/** Where a picked-up heart goes: a heart slot with room first, then an empty slot; -1 when full. */
+function heartRoom(player) {
+  const partial = player.hearts.findIndex((count, slot) => count > 0 && count < RULES.heart.stack && player.weapons[slot] === null);
+  return partial >= 0 ? partial : player.weapons.findIndex((id, slot) => id === null && !(player.hearts[slot] > 0));
+}
 function tickPickups(state) {
-  const remaining = [];
+  const remaining = [], map = MAPS[state.mapId];
   for (const heart of state.pickups) {
-    // The nearest hurt knight in reach, of either team, takes it.
-    const taker = state.players.filter(player => player.alive && player.hp < player.maxHp && canHeal(player) && dist(player, heart) <= RULES.heart.radius + RULES.radius && sameFloor(MAPS[state.mapId], player, heart))
-      .sort((a, b) => dist(a, heart) - dist(b, heart))[0];
-    if (taker) {
+    // The nearest knight in reach, of either team, takes it: into the inventory when there is room,
+    // otherwise eaten on the spot if hurt.
+    const taker = state.players.filter(player => player.alive && dist(player, heart) <= RULES.heart.radius + RULES.radius && sameFloor(map, player, heart)
+      && (heartRoom(player) >= 0 || player.hp < player.maxHp && canHeal(player))).sort((a, b) => dist(a, heart) - dist(b, heart))[0];
+    if (!taker) { if (--heart.ttl > 0) remaining.push(heart); continue; }
+    const slot = heartRoom(taker);
+    if (slot >= 0) {
+      taker.hearts[slot]++;
+      emit(state, 'heartStored', { playerId: taker.id, x: heart.x, y: heart.y, slot, count: taker.hearts[slot] });
+    } else {
       const amount = heal(taker, RULES.heart.heal);
       emit(state, 'heartPickup', { playerId: taker.id, x: heart.x, y: heart.y, amount: Math.round(amount) });
-    } else if (--heart.ttl > 0) remaining.push(heart);
+    }
   }
   state.pickups = remaining;
 }
@@ -952,13 +1022,18 @@ function botInput(state, bot) {
     bot.aim = Math.atan2(target.y - bot.y, target.x - bot.x) + (random(state) - .5) * .12;
     input.aim = bot.aim;
     // Choose a weapon for the range: blade close, gun mid, bomb when they crowd us or a point.
-    const families = bot.weapons.map(id => WEAPONS[id].family);
+    const families = bot.weapons.map(id => WEAPONS[id]?.family ?? 'none');
     const crowded = state.players.filter(other => other.alive && other.team !== bot.team && dist(other, bot) < 130).length >= 2 || state.points.some(point => dist(point, bot) <= RULES.pointRadius && dist(point, target) <= RULES.pointRadius);
     if (!brain.style || brain.life !== bot.deaths) { brain.life = bot.deaths; brain.style = bot.cls === 'striker' || random(state) < .4 ? 'melee' : 'ranged'; }
     const want = d < (brain.style === 'melee' ? 170 : 90) ? 'blade' : crowded && d < 140 ? 'bomb' : 'gun';
-    const slot = families.indexOf(want);
+    let slot = families.indexOf(want);
+    // Hurt bots eat a stored heart when they get a moment.
+    const heartSlot = bot.hearts.findIndex(count => count > 0);
+    if (heartSlot >= 0 && bot.hp < bot.maxHp * .45 && canHeal(bot)) slot = heartSlot;
     if (slot >= 0 && slot !== bot.slot && bot.actionTicks === 0 && !bot.charging) input[`slot${slot + 1}`] = !bot.previousInput[`slot${slot + 1}`];
     const weapon = currentWeapon(bot);
+    if (weapon === HANDS) { if (bot.slot === heartSlot) input.attack = !bot.previousInput.attack; }
+    else {
     // Bombs always charge; blades and guns mostly tap, sometimes commit to a full charge.
     if (!bot.charging && brain.mode !== 'charge' && weapon.family !== 'bomb' && random(state) < .006) brain.mode = 'charge';
     if (weapon.family === 'bomb' || brain.mode === 'charge') {
@@ -966,6 +1041,7 @@ function botInput(state, bot) {
       input.attack = !full;
       if (full) brain.mode = 'tap';
     } else { brain.pulse = (brain.pulse + 1) % (weapon.family === 'blade' ? 14 : weapon.interval + 2); input.attack = brain.pulse < 2; }
+    }
     // Keep a fighting distance and strafe.
     if (--brain.strafeTicks <= 0) { brain.strafeTicks = 40 + Math.floor(random(state) * 60); brain.strafe = random(state) < .5 ? -1 : 1; }
     // Melee-minded bots keep closing in, shooting on the way; ranged ones hold their distance.
@@ -984,13 +1060,19 @@ function botInput(state, bot) {
     else moveAngle = d > 20 ? brain.strafe : null;
     if (moveAngle !== null) { bot.aim = moveAngle; input.aim = moveAngle; }
     if (bot.cls === 'striker' && d > 400 && bot.abilityCooldown === 0) input.ability = !bot.previousInput.ability;
+    // Between fights, a hurt bot eats a stored heart.
+    const heartSlot = bot.hearts.findIndex(count => count > 0);
+    if (heartSlot >= 0 && bot.hp < bot.maxHp * .6 && canHeal(bot)) {
+      if (bot.slot !== heartSlot) input[`slot${heartSlot + 1}`] = !bot.previousInput[`slot${heartSlot + 1}`];
+      else input.attack = !bot.previousInput.attack;
+    }
   }
   // Shield up against shots on target, swings and full charges up close, and bombs about to blow.
   const threatened = state.projectiles.some(shot => {
     if (shot.team === bot.team) return false;
     const d = dist(shot, bot), speed = Math.hypot(shot.vx, shot.vy);
     return d < 150 && ((bot.x - shot.x) * shot.vx + (bot.y - shot.y) * shot.vy) / (speed * Math.max(1, d)) > .92;
-  }) || state.players.some(enemy => enemy.alive && enemy.team !== bot.team && dist(enemy, bot) < 100 && (enemy.action !== 'idle' || enemy.charging && enemy.chargeTicks > chargeTicksFor(enemy, WEAPONS[enemy.weapons[enemy.slot]]) * .8))
+  }) || state.players.some(enemy => enemy.alive && enemy.team !== bot.team && dist(enemy, bot) < 100 && (enemy.action !== 'idle' || enemy.charging && enemy.chargeTicks > chargeTicksFor(enemy, currentWeapon(enemy)) * .8))
     || state.bombs.some(bomb => bomb.team !== bot.team && bomb.fuse < 36 && dist(bomb, bot) < (WEAPONS[bomb.weapon].radius || 0) + 24);
   brain.guardTicks = Math.max(0, (brain.guardTicks || 0) - 1);
   if (threatened && bot.cls === 'guardian' && !bot.guardBroken && bot.guardHp > guardMax(bot) * .3 && !bot.charging && brain.guardTicks === 0 && random(state) < .05) brain.guardTicks = 30 + Math.floor(random(state) * 40);

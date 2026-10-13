@@ -16,7 +16,7 @@ function duel({ mapId = 'temple', a = {}, b = {}, gap = 60, third = null } = {})
   Object.assign(me, { x: point.x - gap / 2, y: point.y, aim: 0, shieldTicks: 0, slot: 0 }, a);
   Object.assign(foe, { x: point.x + gap / 2, y: point.y, aim: Math.PI, shieldTicks: 0, hp: 400, maxHp: 400 }, b);
   if (third) Object.assign(state.players[5], { alive: true, x: foe.x + 50, y: foe.y + 30, hp: 400, maxHp: 400, shieldTicks: 0, ...third });
-  for (const player of state.players) player.clips = Object.fromEntries(player.weapons.filter(id => WEAPONS[id].family === 'gun').map(id => [id, WEAPONS[id].clip]));
+  for (const player of state.players) player.clips = Object.fromEntries(player.weapons.filter(id => WEAPONS[id]?.family === 'gun').map(id => [id, WEAPONS[id].clip]));
   state.events = [];
   return { state, me, foe };
 }
@@ -115,8 +115,8 @@ test('bots carry a blade, a gun and a bomb from the whole armoury, and never pit
   for (let seed = 1; seed <= 12; seed++) {
     const state = L.createState({ seed }); L.startMatch(state, []);
     for (const bot of state.players) {
-      assert.deepEqual(bot.weapons.map(id => WEAPONS[id].family), ['blade', 'gun', 'bomb']);
-      bot.weapons.forEach(id => seen.add(id));
+      assert.deepEqual(bot.weapons.map(id => WEAPONS[id]?.family ?? null), ['blade', 'gun', 'bomb', null]);
+      bot.weapons.filter(Boolean).forEach(id => seen.add(id));
       assert.equal(L.combineGear(bot).walk.length, 0);
     }
   }

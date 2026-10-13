@@ -276,6 +276,8 @@ export class LockdownRenderer {
       else if (event.type === 'dome') add('heal', 500, { x: event.x, y: event.y, radius: event.radius });
       else if (event.type === 'kill') add('kill', 600, { x: event.x, y: event.y });
       else if (event.type === 'heartPickup') add('healNumber', 800, { x: event.x, y: event.y, amount: event.amount });
+      else if (event.type === 'heartUse') add('healNumber', 800, { x: event.x, y: event.y, amount: event.amount });
+      else if (event.type === 'heartStored') add('statusPop', 600, { x: event.x, y: event.y, status: 'drain', text: `+♥ ${event.count}/${RULES.heart.stack}` });
     }
     this.effects = this.effects.filter(effect => now - effect.born < effect.life);
     for (const [id, at] of this.flashes) if (now - at > 120) this.flashes.delete(id);
@@ -454,7 +456,7 @@ export class LockdownRenderer {
     ctx.fillStyle = 'rgba(0,0,0,.32)'; ctx.beginPath(); ctx.ellipse(fx, fy, 16, 7, 0, 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = mine ? '#ffffff' : team.main; ctx.lineWidth = mine ? 3 : 2; ctx.beginPath(); ctx.ellipse(fx, fy, 21, 10, 0, 0, Math.PI * 2); ctx.stroke();
     if (player.shieldTicks > 0) { ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(fx, fy, 26, 13, 0, 0, Math.PI * 2); ctx.stroke(); }
-    if (player.charging) {
+    if (player.charging && weapon) {
       const full = Math.min(1, player.chargeTicks / chargeTicksFor(player, weapon));
       ctx.strokeStyle = full >= 1 ? '#ffffff' : '#ffd36b'; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(fx, fy, 26, 13, 0, -Math.PI / 2, -Math.PI / 2 + full * Math.PI * 2); ctx.stroke();
     }
@@ -494,7 +496,11 @@ export class LockdownRenderer {
     // The weapon is pinned to this facing's hand and rotated to the aim; facing away it goes behind the body.
     const swingOffset = player.action === 'swing' ? Math.sin((1 - player.actionTicks / Math.max(1, player.actionTotal)) * Math.PI) * (player.comboStep % 2 ? -1 : 1) * .9 : player.action === 'charge' ? (now / 40) % (Math.PI * 2) : 0;
     const hand = { x: fx + (facing.hand[0] - 32) * (flip ? -1 : 1), y: fy + facing.hand[1] - 58 };
-    const drawWeapon = () => this.drawHeldWeapon(ctx, weapon, hand.x, hand.y, this.weaponAngle(player, weapon, now));
+    // Empty hands hold nothing; a heart slot shows a heart in the hand.
+    const drawWeapon = () => {
+      if (weapon) return this.drawHeldWeapon(ctx, weapon, hand.x, hand.y, this.weaponAngle(player, weapon, now));
+      if (player.hearts?.[player.slot] > 0 && !this.drawSprite(ctx, 'pickup_heart', hand.x, hand.y - 4, { scale: .5 })) { ctx.fillStyle = '#ff4d6d'; ctx.font = 'bold 14px system-ui'; ctx.textAlign = 'center'; ctx.fillText('♥', hand.x, hand.y); }
+    };
     if (facing.weaponBehind) drawWeapon();
     const key = outfitKey(player), flash = this.flashes.has(player.id);
     if (!this.drawSprite(ctx, key, fx, fy, { row, frame, flipX: flip })) this.placeholderCharacter(ctx, { ...player, y: player.y - leap }, team, { row, flip, frame, moving, now });
@@ -773,7 +779,7 @@ export class LockdownRenderer {
       } else if (effect.type === 'spark') {
         ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(effect.x, effect.y - BODY_LIFT, 5 * (1 - t) + 1, 0, Math.PI * 2); ctx.fill();
       } else if (effect.type === 'statusPop') {
-        ctx.font = 'bold 12px system-ui'; ctx.textAlign = 'center'; ctx.fillStyle = STATUS_COLORS[effect.status]; ctx.fillText(effect.status.toUpperCase(), effect.x, effect.y - 64 - t * 16);
+        ctx.font = 'bold 12px system-ui'; ctx.textAlign = 'center'; ctx.fillStyle = STATUS_COLORS[effect.status]; ctx.fillText(effect.text || effect.status.toUpperCase(), effect.x, effect.y - 64 - t * 16);
       } else if (effect.type === 'vortexOpen') {
         ctx.strokeStyle = '#b49cff'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(effect.x, effect.y, effect.radius * (1 - t * .5), 0, Math.PI * 2); ctx.stroke();
       } else if (effect.type === 'muzzle') {

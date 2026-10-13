@@ -58,6 +58,11 @@ test('Lockdown rooms seat up to eight, take setup and map choices, and start wit
   second.send({ type: 'lockdown-setup', team: 1, cls: 'guardian', armor: 'ballistic', helmet: 'bucket', pants: 'kilt', shoes: 'clogs', weapons: ['cleaver', 'pulsar', 'vortex'] });
   await flush(first); await flush(second);
   assert.deepEqual(['helmet', 'pants', 'shoes'].map(slot => room.state.players[1][slot]), ['bucket', 'kilt', 'clogs']);
+  // Inventory: any order of the four slots, sent as a permutation.
+  await expectError(second, { type: 'lockdown-inventory', order: [0, 0, 1, 2] }, /four/);
+  await expectError(second, { type: 'lockdown-inventory', order: [3, 2, 1, 0], weapons: ['brand'] }, /order/);
+  second.send({ type: 'lockdown-inventory', order: [3, 2, 1, 0] }); await flush(second);
+  assert.deepEqual(room.state.players[1].weapons, [null, 'vortex', 'pulsar', 'cleaver']);
   assert.equal(room.state.mapId, 'keep'); assert.equal(room.mapId, 'keep');
   assert.deepEqual([room.state.players[1].team, room.state.players[1].cls], [1, 'guardian']);
   assert.equal(room.state.players[1].armor, 'ballistic');
