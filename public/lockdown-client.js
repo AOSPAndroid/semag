@@ -378,10 +378,13 @@ function updateHud(current) {
     $('ld-hp').textContent = `${Math.max(0, Math.ceil(me.alive ? me.hp : 0))} / ${me.maxHp}`;
     $('ld-hp-bar').style.width = `${me.alive ? Math.max(0, me.hp / me.maxHp * 100) : 0}%`;
     // The class ability: Striker Boost and Recon Cloak have cooldowns; the Guardian's shield has health.
-    const ability = { striker: ['Boost', ABILITIES.dash.cooldown, me.dashTicks > 0 || me.evadeTicks > 0], guardian: ['Shield (hold)', 1, me.guarding], recon: ['Cloak', ABILITIES.cloak.cooldown, me.cloakTicks > 0] }[me.cls];
+    // Striker Boost shows its nitro meter (the dark part is what is used up); Cloak shows its cooldown.
+    const ability = { striker: [me.boostLocked ? 'Boost (recharging)' : 'Boost (hold)', ABILITIES.dash.meter, me.boosting], guardian: ['Shield (hold)', 1, me.guarding], recon: ['Cloak', ABILITIES.cloak.cooldown, me.cloakTicks > 0] }[me.cls];
     $('ld-ability1-name').textContent = ability[0];
     $('ld-ability1').dataset.active = String(ability[2]);
-    $('ld-ability1').querySelector('em').style.transform = `scaleX(${me.cls === 'guardian' ? 0 : me.abilityCooldown / ability[1]})`;
+    $('ld-ability1').dataset.locked = String(me.cls === 'striker' && !!me.boostLocked);
+    const used = me.cls === 'guardian' ? 0 : me.cls === 'striker' ? 1 - (me.boostMeter ?? ABILITIES.dash.meter) / ABILITIES.dash.meter : me.abilityCooldown / ability[1];
+    $('ld-ability1').querySelector('em').style.transform = `scaleX(${Math.max(0, Math.min(1, used))})`;
     $('ld-guard').hidden = me.cls !== 'guardian';
     $('ld-dash').querySelector('em').style.transform = `scaleX(${(me.dashCooldown || 0) / RULES.dash.cooldown})`;
     $('ld-dash').dataset.active = String(me.dodgeTicks > 0);

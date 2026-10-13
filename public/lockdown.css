@@ -198,3 +198,5 @@ kbd { display: inline-block; padding: 1px 6px; border: 1px solid var(--line); bo
 .ld-inv-slot small { display: block; color: var(--muted); font-size: 11px; }
 .ld-heart-pips { color: #ff6b7d; letter-spacing: 1px; }
 @media (max-width: 640px) { .ld-inv-slots { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+.ld-ability[data-locked="true"] span { color: #ffb4a8; }

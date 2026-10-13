@@ -45,7 +45,10 @@ export const CLASSES = Object.freeze({
     perks: 'Guns +10% damage · gun charges 20% faster · less health', description: 'The marksman. Cloak turns you invisible; the first hit out of it marks the target to take 30% more damage.' }),
 });
 export const ABILITIES = Object.freeze({
-  dash: { ticks: 3 * TICK_RATE, cooldown: 6 * TICK_RATE, speed: 1.5, dodgeTicks: 12, dodgeDistance: 150, evadeTicks: 26 },
+  // Striker Boost (nitro): hold the ability to run 50% faster while the meter lasts. Letting go stops it;
+  // the meter refills after a short pause. Run it dry and it locks until it is a quarter full again.
+  // Pressing it cancels a cut's recovery and gives a brief dodge.
+  dash: { meter: 3 * TICK_RATE, speed: 1.5, regenDelay: TICK_RATE, refill: 6 * TICK_RATE, relock: .25, evadeTicks: 14 },
   cloak: { ticks: 4 * TICK_RATE, cooldown: 12 * TICK_RATE, markTicks: 5 * TICK_RATE, markBonus: .3, revealRange: 64 },
 });
 /** Ticks a full charge takes for this knight: class and outfit perks speed up or slow down a weapon family. */
@@ -91,7 +94,7 @@ function newPlayer(id) {
     dodgeTicks: 0, dodgeX: 0, dodgeY: 0, dodgeStep: 0, evadeTicks: 0, dashCooldown: 0,
     guarding: false, guardRaise: 0, guardHp: GUARD.max, guardBroken: false, guardDelay: 0,
     status: Object.fromEntries(STATUS_IDS.map(key => [key, 0])), statusOwner: {}, freezeImmune: 0, chillStacks: 0, catalysts: 0, catalystTicks: 0,
-    dashTicks: 0, cloakTicks: 0, markTicks: 0, markReady: false, abilityCooldown: 0,
+    dashTicks: 0, cloakTicks: 0, markTicks: 0, markReady: false, abilityCooldown: 0, boostMeter: 3 * TICK_RATE, boostDelay: 0, boostLocked: false, boosting: false,
     kills: 0, deaths: 0, captures: 0, damage: 0, score: 0, previousInput: emptyInput(team === 0 ? 0 : Math.PI),
   };
 }
@@ -276,7 +279,7 @@ function spawn(state, player) {
   Object.assign(player, {
     x: spot.x, y: spot.y, z: levelAt(map, spot.x, spot.y), vx: 0, vy: 0, alive: true, hp: maxHpFor(player.cls, player), maxHp: maxHpFor(player.cls, player), respawnTicks: 0, lastHurtTick: state.tick, shieldTicks: RULES.spawnShieldTicks,
     stunTicks: 0, pushX: 0, pushY: 0, action: 'idle', actionTicks: 0, actionTotal: 0, comboStep: 0, comboWindow: 0, hitIds: [], chargeTicks: 0, charging: false,
-    dashTicks: 0, cloakTicks: 0, markTicks: 0, markReady: false, fireCooldown: 0,
+    dashTicks: 0, cloakTicks: 0, markTicks: 0, markReady: false, fireCooldown: 0, boostMeter: ABILITIES.dash.meter, boostDelay: 0, boostLocked: false, boosting: false,
     aim: player.team === 0 ? 0 : Math.PI, burst: null, hitStop: 0, bufferAttack: false, dodgeTicks: 0, evadeTicks: 0, dashCooldown: 0, guarding: false, guardRaise: 0, guardBroken: false, guardDelay: 0,
     guardHp: GUARD.max, freezeImmune: 0, chillStacks: 0, catalysts: 0, catalystTicks: 0,
     status: Object.fromEntries(STATUS_IDS.map(key => [key, 0])), statusOwner: {},
@@ -376,7 +379,7 @@ function applyStatus(state, target, id, ownerId, chance = 1) {
 }
 function knockOut(state, attacker, target) {
   target.alive = false; target.hp = 0; target.deaths++; target.respawnTicks = respawnDelay(state);
-  target.cloakTicks = target.dashTicks = 0; target.guarding = false; target.catalysts = 0;
+  target.cloakTicks = target.dashTicks = 0; target.boosting = false; target.guarding = false; target.catalysts = 0;
   for (const id of STATUS_IDS) target.status[id] = 0;
   target.chillStacks = 0;
   // A knockout drops a heart, plus every heart the knight was carrying, scattered around them.
@@ -697,24 +700,41 @@ function tickAbilities(state, player, input, previous) {
   player.abilityCooldown = Math.max(0, player.abilityCooldown - 1);
   player.dashTicks = Math.max(0, player.dashTicks - 1); player.markTicks = Math.max(0, player.markTicks - 1);
   if (player.cloakTicks > 0 && --player.cloakTicks === 0) { player.markReady = true; emit(state, 'uncloak', { playerId: player.id }); }
+  if (player.cls === 'striker') { tickBoost(state, player, input); return; }
   if (!(input.ability && !previous.ability) || player.abilityCooldown > 0 || player.cls === 'guardian') return;
   if (player.status.curse > 0) { emit(state, 'cursed', { playerId: player.id, x: player.x, y: player.y }); return; }
-  // Boost and Cloak may also cancel a cut's recovery, like the Guardian's shield.
+  // Cloak may also cancel a cut's recovery, like the Guardian's shield.
   if (player.actionTicks > 0 && !inRecovery(player)) return;
-  if (inRecovery(player)) cancelRecovery(state, player, player.cls === 'striker' ? 'dodge' : 'cloak');
-  if (player.cls === 'striker') {
-    // Boost: a short untouchable dodge the way you are moving (or aiming), then three seconds of speed.
-    let dx = (input.right ? 1 : 0) - (input.left ? 1 : 0), dy = (input.down ? 1 : 0) - (input.up ? 1 : 0);
-    if (!dx && !dy) { dx = Math.cos(player.aim); dy = Math.sin(player.aim); }
-    const length = Math.hypot(dx, dy);
-    Object.assign(player, { dodgeX: dx / length, dodgeY: dy / length, dodgeTicks: ABILITIES.dash.dodgeTicks, dodgeStep: ABILITIES.dash.dodgeDistance / ABILITIES.dash.dodgeTicks, evadeTicks: ABILITIES.dash.evadeTicks, dashTicks: ABILITIES.dash.ticks, abilityCooldown: Math.round(ABILITIES.dash.cooldown * outfitOf(player).abilityCooldown), charging: false, chargeTicks: 0 });
-    emit(state, 'dash', { playerId: player.id, x: player.x, y: player.y, angle: Math.atan2(player.dodgeY, player.dodgeX) });
-  } else if (player.cls === 'recon') {
+  if (inRecovery(player)) cancelRecovery(state, player, 'cloak');
+  if (player.cls === 'recon') {
     player.cloakTicks = ABILITIES.cloak.ticks; player.abilityCooldown = Math.round(ABILITIES.cloak.cooldown * outfitOf(player).abilityCooldown); player.markReady = false;
     emit(state, 'cloak', { playerId: player.id, x: player.x, y: player.y });
   }
 }
 
+/** Striker Boost: held, it burns the meter for speed; released (or empty, or cursed) it refills. */
+function tickBoost(state, player, input) {
+  const rule = ABILITIES.dash, held = !!input.ability;
+  if (held && player.status.curse > 0) { if (!player.boosting && !player.cursedPing) emit(state, 'cursed', { playerId: player.id, x: player.x, y: player.y }); player.cursedPing = true; }
+  else player.cursedPing = false;
+  const boosting = held && !(player.status.curse > 0) && !player.boostLocked && player.boostMeter > 0;
+  if (boosting && !player.boosting) {
+    // Pressing Boost cuts a sword's recovery short (keeping your place in the combo) and slips one hit.
+    if (inRecovery(player)) cancelRecovery(state, player, 'dodge');
+    player.evadeTicks = Math.max(player.evadeTicks, rule.evadeTicks);
+    emit(state, 'dash', { playerId: player.id, x: player.x, y: player.y, angle: Math.atan2(player.vy, player.vx) });
+  }
+  if (boosting) {
+    player.boostMeter = Math.max(0, player.boostMeter - 1); player.boostDelay = rule.regenDelay; player.dashTicks = 1;
+    if (player.boostMeter === 0) { player.boostLocked = true; emit(state, 'boostEmpty', { playerId: player.id }); }
+  } else if (player.boostDelay > 0) player.boostDelay--;
+  else {
+    player.boostMeter = Math.min(rule.meter, player.boostMeter + rule.meter / (rule.refill * outfitOf(player).abilityCooldown));
+    if (player.boostLocked && player.boostMeter >= rule.meter * rule.relock) player.boostLocked = false;
+  }
+  if (!boosting && player.boosting) emit(state, 'boostEnd', { playerId: player.id });
+  player.boosting = boosting;
+}
 /** How fast a knight may walk right now, as a fraction of their class speed. */
 function moveScale(player, weapon) {
   if (player.status.freeze > 0 || ['lunge', 'lungeBurst', 'slam'].includes(player.action)) return 0;
@@ -758,6 +778,7 @@ function tickPlayer(state, player, input) {
   const picked = [0, 1, 2, 3].find(index => input[`slot${index + 1}`] && !previous[`slot${index + 1}`]);
   const slot = picked !== undefined ? picked : input.swap && !previous.swap ? nextFilled() : player.slot;
   if (slot !== player.slot && player.actionTicks === 0 && !player.burst) { player.slot = slot; player.charging = false; player.chargeTicks = 0; player.comboStep = 0; player.bufferAttack = false; emit(state, 'swapWeapon', { playerId: player.id, weapon: player.weapons[slot] }); }
+  if (player.stunTicks > 0 || frozen) { player.dashTicks = 0; player.boosting = false; }
   if (player.stunTicks > 0) { player.stunTicks--; player.guarding = false; tickGuard(state, player, emptyInput()); }
   else if (!frozen) { tickGuard(state, player, input); tickDash(state, player, input, previous); tickAbilities(state, player, input, previous); tickWeapon(state, player, input, previous); }
   if (player.shieldTicks > 0 && (input.attack && !previous.attack)) player.shieldTicks = 0;
@@ -1056,7 +1077,8 @@ function botInput(state, bot) {
     const toward = Math.atan2(target.y - bot.y, target.x - bot.x);
     moveAngle = d > ideal + 30 ? stepToward(map, bot, target) : d < ideal - 30 ? toward + Math.PI : toward + brain.strafe * Math.PI / 2;
     // Abilities.
-    if (bot.cls === 'striker' && d > 140 && bot.abilityCooldown === 0) input.ability = !bot.previousInput.ability;
+    // Strikers hold Boost to close in, saving the last of the meter.
+    if (bot.cls === 'striker' && d > 140 && (bot.boosting || bot.boostMeter > ABILITIES.dash.meter * .5)) input.ability = true;
     if (bot.cls === 'recon' && d > 200 && bot.abilityCooldown === 0) input.ability = !bot.previousInput.ability;
     // Guardians raise the dome over hurt teammates nearby.
     if (bot.cls === 'guardian' && !bot.guardBroken && bot.guardHp > GUARD.max * .5 && state.players.filter(ally => ally.alive && ally.team === bot.team && dist(ally, bot) < GUARD.radius && ally.hp < ally.maxHp * .6).length >= 1 && brain.guardTicks === 0 && random(state) < .03) brain.guardTicks = GUARD.expandTicks + 120;
@@ -1066,7 +1088,7 @@ function botInput(state, bot) {
     else if (--brain.strafeTicks <= 0) { brain.strafeTicks = 50; brain.strafe = random(state) * Math.PI * 2; }
     else moveAngle = d > 20 ? brain.strafe : null;
     if (moveAngle !== null) { bot.aim = moveAngle; input.aim = moveAngle; }
-    if (bot.cls === 'striker' && d > 400 && bot.abilityCooldown === 0) input.ability = !bot.previousInput.ability;
+    if (bot.cls === 'striker' && d > 400 && (bot.boosting || bot.boostMeter > ABILITIES.dash.meter * .6)) input.ability = true;
     // Between fights, a hurt bot eats a stored heart.
     const heartSlot = bot.hearts.findIndex(count => count > 0);
     if (heartSlot >= 0 && bot.hp < bot.maxHp * .6 && canHeal(bot)) {
@@ -1087,7 +1109,7 @@ function botInput(state, bot) {
   if (threatened && bot.cls !== 'guardian' && bot.dashCooldown === 0 && random(state) < .03) input.dash = !bot.previousInput.dash;
   if (target && brain.style === 'melee' && dist(target, bot) > 110 && dist(target, bot) < 220 && bot.dashCooldown === 0 && random(state) < .02) input.dash = !bot.previousInput.dash;
   // Strikers dodge through the threat; Guardians block it.
-  if (threatened && bot.cls === 'striker' && bot.abilityCooldown === 0 && random(state) < .04) input.ability = !bot.previousInput.ability;
+  if (threatened && bot.cls === 'striker' && !bot.boostLocked && bot.boostMeter > ABILITIES.dash.meter * .25 && random(state) < .04) input.ability = true; // a tap of Boost slips the hit
   else if (bot.cls === 'guardian' && brain.guardTicks > 0) { input.ability = true; input.attack = false; }
   if (detour) { moveAngle = stepToward(map, bot, detour); if (!target) { bot.aim = moveAngle; input.aim = moveAngle; } }
   else if (brain.retreat && !pressed && inBase(state, bot)) moveAngle = null; // wait in base until healed

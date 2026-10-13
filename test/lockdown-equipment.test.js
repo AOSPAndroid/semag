@@ -195,9 +195,9 @@ test('light and heavy armor multiply actual class movement with Boost, charging 
     for (const armor of ['none', 'scout', 'heavy']) {
       const { state, me, foe } = duel({ cls: mode === 'guard' ? 'guardian' : 'striker' });
       me.armor = armor; foe.alive = false; foe.respawnTicks = 1e9;
-      if (mode === 'dash') me.dashTicks = L.ABILITIES.dash.ticks;
       if (mode === 'charge') { me.charging = true; me.previousInput = { ...L.emptyInput(0), attack: true }; }
-      run(state, 30, tick => ({ 0: { right: true, ability: mode === 'guard' || mode === 'boost' && tick === 0, attack: mode === 'charge' } }));
+      // Boost is held; 'dash' holds it the whole way, 'boost' checks the press fires it.
+      run(state, 30, () => ({ 0: { right: true, ability: mode === 'guard' || mode === 'boost' || mode === 'dash', attack: mode === 'charge' } }));
       if (mode === 'boost') assert.ok(state.events.some(event => event.type === 'dash'));
       speeds[armor] = me.vx;
     }

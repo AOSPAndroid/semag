@@ -166,15 +166,26 @@ test('switching weapons uses 1–3 and Q, and cancels a charge', () => {
   assert.equal(me.slot, 1); assert.ok(me.chargeTicks <= 1, 'the old charge is dropped; holding starts a fresh one');
 });
 
-test('Striker dash speeds you up, then waits for its cooldown', () => {
+test('Striker Boost: faster only while held, burns a meter, locks when empty and refills', () => {
   const { state, me } = duel({ gap: 400 });
+  const B = ABILITIES.dash;
   const start = me.x; run(state, 60, () => ({ 0: { right: true } }));
   const normal = me.x - start;
-  me.x = start; me.vx = 0; me.y = MAPS.temple.points[1].y; run(state, 60, t => ({ 0: { right: true, ability: t === 0 } }));
-  assert.ok(me.x - start > normal * 1.3, `dash covered ${me.x - start} vs ${normal}`);
-  assert.ok(me.abilityCooldown > 0);
-  run(state, 2, t => ({ 0: { ability: t === 1 } }));
-  assert.equal(events(state, 'dash').length, 1, 'no second dash on cooldown');
+  me.x = start; me.vx = 0; me.y = MAPS.temple.points[1].y; run(state, 60, () => ({ 0: { right: true, ability: true } }));
+  assert.ok(me.x - start > normal * 1.3, `boost covered ${me.x - start} vs ${normal}`);
+  assert.ok(me.boosting); assert.equal(me.boostMeter, B.meter - 60);
+  // Let go: back to normal speed straight away, and the meter waits, then refills.
+  run(state, 2, () => ({ 0: { right: true } }));
+  assert.equal(me.boosting, false); assert.equal(me.dashTicks, 0);
+  run(state, B.regenDelay, () => ({}));
+  const waited = me.boostMeter; run(state, 60, () => ({}));
+  assert.ok(me.boostMeter > waited, 'refills after the pause');
+  // Hold until empty: Boost locks and stays off while the key is still held, until a quarter is back.
+  me.x = start; run(state, B.meter + 10, () => ({ 0: { ability: true, left: true, right: false } }));
+  assert.equal(me.boostLocked, true); assert.equal(me.boosting, false);
+  assert.ok(events(state, 'boostEmpty').length >= 1);
+  run(state, B.regenDelay + Math.ceil(B.refill * B.relock) + 2, () => ({ 0: { ability: true } }));
+  assert.equal(me.boostLocked, false, 'unlocked at a quarter');
 });
 
 test('the Guardian shield blocks at once, then grows into a dome that shields and heals teammates', () => {
@@ -523,8 +534,8 @@ test('animation cancels: the shield or a dodge cuts recovery short, and a queued
   const startX = dodge.me.x;
   run(dodge.state, 1, () => ({ 0: { ability: true, left: true } }));
   assert.equal(dodge.me.action, 'idle'); assert.ok(dodge.me.evadeTicks > 0);
-  run(dodge.state, ABILITIES.dash.dodgeTicks);
-  assert.ok(startX - dodge.me.x > ABILITIES.dash.dodgeDistance * .8, 'the dodge carries you away');
+  run(dodge.state, 30, () => ({ 0: { ability: true, left: true } }));
+  assert.ok(startX - dodge.me.x > 30 * 210 / 120 * 1.2, 'holding Boost carries you away fast');
 });
 
 test('a dodging Striker is untouchable; swords wear shields down faster than guns', () => {
