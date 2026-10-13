@@ -6,7 +6,7 @@ Lockdown is a top-down team brawl in the spirit of Spiral Knights' Lockdown: up 
 three control points, swords, guns and bombs. The game is fully playable with placeholder
 shapes; every PNG listed below replaces one placeholder as soon as it is added.
 
-**Progress: 0/65 sprites ready.**
+**Progress: 65/65 sprites ready.**
 
 ## Style guide
 
@@ -36,108 +36,108 @@ shapes; every PNG listed below replaces one placeholder as soon as it is added.
 
 | | File | Size (px) | Frames | Anchor | Notes |
 |---|---|---|---|---|---|
-| ⬜ | `tile_floor_stone.png` | 48×48 | 1 | 0, 0 | Seamless stone arena floor tile. Must tile in all directions. |
-| ⬜ | `tile_floor_stone_alt.png` | 48×48 | 1 | 0, 0 | Variant stone floor tile (cracks, rivets or a drain) mixed in at random for variety. |
-| ⬜ | `tile_wall_stone.png` | 48×48 | 1 | 0, 0 | stone wall block seen from above: a raised top face with a darker lower edge to read as height. |
-| ⬜ | `tile_floor_brass.png` | 48×48 | 1 | 0, 0 | Seamless brass arena floor tile. Must tile in all directions. |
-| ⬜ | `tile_floor_brass_alt.png` | 48×48 | 1 | 0, 0 | Variant brass floor tile (cracks, rivets or a drain) mixed in at random for variety. |
-| ⬜ | `tile_wall_brass.png` | 48×48 | 1 | 0, 0 | brass wall block seen from above: a raised top face with a darker lower edge to read as height. |
-| ⬜ | `tile_spawn_team0.png` | 48×48 | 1 | 0, 0 | Spawn floor tile tinted for team Amber (warm orange). |
-| ⬜ | `tile_spawn_team1.png` | 48×48 | 1 | 0, 0 | Spawn floor tile tinted for team Cyan (cool teal). |
+| ✅ | `tile_floor_stone.png` | 48×48 | 1 | 0, 0 | Seamless stone arena floor tile. Must tile in all directions. |
+| ✅ | `tile_floor_stone_alt.png` | 48×48 | 1 | 0, 0 | Variant stone floor tile (cracks, rivets or a drain) mixed in at random for variety. |
+| ✅ | `tile_wall_stone.png` | 48×48 | 1 | 0, 0 | stone wall block seen from above: a raised top face with a darker lower edge to read as height. |
+| ✅ | `tile_floor_brass.png` | 48×48 | 1 | 0, 0 | Seamless brass arena floor tile. Must tile in all directions. |
+| ✅ | `tile_floor_brass_alt.png` | 48×48 | 1 | 0, 0 | Variant brass floor tile (cracks, rivets or a drain) mixed in at random for variety. |
+| ✅ | `tile_wall_brass.png` | 48×48 | 1 | 0, 0 | brass wall block seen from above: a raised top face with a darker lower edge to read as height. |
+| ✅ | `tile_spawn_team0.png` | 48×48 | 1 | 0, 0 | Spawn floor tile tinted for team Amber (warm orange). |
+| ✅ | `tile_spawn_team1.png` | 48×48 | 1 | 0, 0 | Spawn floor tile tinted for team Cyan (cool teal). |
 
 ## Knights
 
 | | File | Size (px) | Frames | Anchor | Notes |
 |---|---|---|---|---|---|
-| ⬜ | `knight_striker_team0.png` | 256×64 | 4 | 32, 32 | Striker knight, team Amber, seen from above, facing right. 4-frame walk cycle strip (64x64 each). Helmet and armour should make the class readable at a glance: light armour, swept-back crest. |
-| ⬜ | `knight_striker_team1.png` | 256×64 | 4 | 32, 32 | Striker knight, team Cyan, seen from above, facing right. 4-frame walk cycle strip (64x64 each). Helmet and armour should make the class readable at a glance: light armour, swept-back crest. |
-| ⬜ | `knight_guardian_team0.png` | 256×64 | 4 | 32, 32 | Guardian knight, team Amber, seen from above, facing right. 4-frame walk cycle strip (64x64 each). Helmet and armour should make the class readable at a glance: heavy rounded plate, broad shoulders. |
-| ⬜ | `knight_guardian_team1.png` | 256×64 | 4 | 32, 32 | Guardian knight, team Cyan, seen from above, facing right. 4-frame walk cycle strip (64x64 each). Helmet and armour should make the class readable at a glance: heavy rounded plate, broad shoulders. |
-| ⬜ | `knight_recon_team0.png` | 256×64 | 4 | 32, 32 | Recon knight, team Amber, seen from above, facing right. 4-frame walk cycle strip (64x64 each). Helmet and armour should make the class readable at a glance: hooded, slim, cloak edges. |
-| ⬜ | `knight_recon_team1.png` | 256×64 | 4 | 32, 32 | Recon knight, team Cyan, seen from above, facing right. 4-frame walk cycle strip (64x64 each). Helmet and armour should make the class readable at a glance: hooded, slim, cloak edges. |
+| ✅ | `knight_striker_team0.png` | 256×64 | 4 | 32, 32 | Striker knight, team Amber, seen from above, facing right. 4-frame walk cycle strip (64x64 each). Helmet and armour should make the class readable at a glance: light armour, swept-back crest. |
+| ✅ | `knight_striker_team1.png` | 256×64 | 4 | 32, 32 | Striker knight, team Cyan, seen from above, facing right. 4-frame walk cycle strip (64x64 each). Helmet and armour should make the class readable at a glance: light armour, swept-back crest. |
+| ✅ | `knight_guardian_team0.png` | 256×64 | 4 | 32, 32 | Guardian knight, team Amber, seen from above, facing right. 4-frame walk cycle strip (64x64 each). Helmet and armour should make the class readable at a glance: heavy rounded plate, broad shoulders. |
+| ✅ | `knight_guardian_team1.png` | 256×64 | 4 | 32, 32 | Guardian knight, team Cyan, seen from above, facing right. 4-frame walk cycle strip (64x64 each). Helmet and armour should make the class readable at a glance: heavy rounded plate, broad shoulders. |
+| ✅ | `knight_recon_team0.png` | 256×64 | 4 | 32, 32 | Recon knight, team Amber, seen from above, facing right. 4-frame walk cycle strip (64x64 each). Helmet and armour should make the class readable at a glance: hooded, slim, cloak edges. |
+| ✅ | `knight_recon_team1.png` | 256×64 | 4 | 32, 32 | Recon knight, team Cyan, seen from above, facing right. 4-frame walk cycle strip (64x64 each). Helmet and armour should make the class readable at a glance: hooded, slim, cloak edges. |
 
 ## Held weapons
 
 | | File | Size (px) | Frames | Anchor | Notes |
 |---|---|---|---|---|---|
-| ⬜ | `weapon_brand.png` | 64×32 | 1 | 12, 16 | Knight Brand (blade) held in the hand, pointing right; the grip sits at the anchor. Balanced three-cut combo. Charge: a full spin slash. |
-| ⬜ | `weapon_cleaver.png` | 64×32 | 1 | 12, 16 | Troll Cleaver (blade) held in the hand, pointing right; the grip sits at the anchor. Slow, brutal two-hit chain. Charge: a ground slam around you. |
-| ⬜ | `weapon_rapier.png` | 64×32 | 1 | 12, 16 | Needle Rapier (blade) held in the hand, pointing right; the grip sits at the anchor. Fast, narrow thrusts. Charge: a long lunge through the target. |
-| ⬜ | `weapon_blaster.png` | 64×32 | 1 | 12, 16 | Pulse Blaster (gun) held in the hand, pointing right; the grip sits at the anchor. Reliable three-shot sidearm. Charge: a piercing bolt. |
-| ⬜ | `weapon_autogun.png` | 64×32 | 1 | 12, 16 | Rattle Autogun (gun) held in the hand, pointing right; the grip sits at the anchor. Fast six-round spray. Charge: an eight-shot burst. |
-| ⬜ | `weapon_scatter.png` | 64×32 | 1 | 12, 16 | Scattergun (gun) held in the hand, pointing right; the grip sits at the anchor. Short-range pellet blast. Charge: a wide nine-pellet fan. |
-| ⬜ | `weapon_magnus.png` | 64×32 | 1 | 12, 16 | Magnus Hand-cannon (gun) held in the hand, pointing right; the grip sits at the anchor. Heavy two-shot cannon with big knockback. Charge: an exploding round. |
-| ⬜ | `weapon_blast.png` | 64×32 | 1 | 12, 16 | Blast Bomb (bomb) held in the hand, pointing right; the grip sits at the anchor. Charge, release, run. A big blast after a short fuse. |
-| ⬜ | `weapon_vortex.png` | 64×32 | 1 | 12, 16 | Vortex Bomb (bomb) held in the hand, pointing right; the grip sits at the anchor. Drags every enemy in range toward its centre, then pops. |
-| ⬜ | `weapon_shard.png` | 64×32 | 1 | 12, 16 | Shard Bomb (bomb) held in the hand, pointing right; the grip sits at the anchor. Bursts into eight flying shards that cut across the point. |
+| ✅ | `weapon_brand.png` | 64×32 | 1 | 12, 16 | Knight Brand (blade) held in the hand, pointing right; the grip sits at the anchor. Balanced three-cut combo. Charge: a full spin slash. |
+| ✅ | `weapon_cleaver.png` | 64×32 | 1 | 12, 16 | Troll Cleaver (blade) held in the hand, pointing right; the grip sits at the anchor. Slow, brutal two-hit chain. Charge: a ground slam around you. |
+| ✅ | `weapon_rapier.png` | 64×32 | 1 | 12, 16 | Needle Rapier (blade) held in the hand, pointing right; the grip sits at the anchor. Fast, narrow thrusts. Charge: a long lunge through the target. |
+| ✅ | `weapon_blaster.png` | 64×32 | 1 | 12, 16 | Pulse Blaster (gun) held in the hand, pointing right; the grip sits at the anchor. Reliable three-shot sidearm. Charge: a piercing bolt. |
+| ✅ | `weapon_autogun.png` | 64×32 | 1 | 12, 16 | Rattle Autogun (gun) held in the hand, pointing right; the grip sits at the anchor. Fast six-round spray. Charge: an eight-shot burst. |
+| ✅ | `weapon_scatter.png` | 64×32 | 1 | 12, 16 | Scattergun (gun) held in the hand, pointing right; the grip sits at the anchor. Short-range pellet blast. Charge: a wide nine-pellet fan. |
+| ✅ | `weapon_magnus.png` | 64×32 | 1 | 12, 16 | Magnus Hand-cannon (gun) held in the hand, pointing right; the grip sits at the anchor. Heavy two-shot cannon with big knockback. Charge: an exploding round. |
+| ✅ | `weapon_blast.png` | 64×32 | 1 | 12, 16 | Blast Bomb (bomb) held in the hand, pointing right; the grip sits at the anchor. Charge, release, run. A big blast after a short fuse. |
+| ✅ | `weapon_vortex.png` | 64×32 | 1 | 12, 16 | Vortex Bomb (bomb) held in the hand, pointing right; the grip sits at the anchor. Drags every enemy in range toward its centre, then pops. |
+| ✅ | `weapon_shard.png` | 64×32 | 1 | 12, 16 | Shard Bomb (bomb) held in the hand, pointing right; the grip sits at the anchor. Bursts into eight flying shards that cut across the point. |
 
 ## Icons
 
 | | File | Size (px) | Frames | Anchor | Notes |
 |---|---|---|---|---|---|
-| ⬜ | `icon_weapon_brand.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Knight Brand. Clear silhouette on a transparent background. |
-| ⬜ | `icon_weapon_cleaver.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Troll Cleaver. Clear silhouette on a transparent background. |
-| ⬜ | `icon_weapon_rapier.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Needle Rapier. Clear silhouette on a transparent background. |
-| ⬜ | `icon_weapon_blaster.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Pulse Blaster. Clear silhouette on a transparent background. |
-| ⬜ | `icon_weapon_autogun.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Rattle Autogun. Clear silhouette on a transparent background. |
-| ⬜ | `icon_weapon_scatter.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Scattergun. Clear silhouette on a transparent background. |
-| ⬜ | `icon_weapon_magnus.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Magnus Hand-cannon. Clear silhouette on a transparent background. |
-| ⬜ | `icon_weapon_blast.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Blast Bomb. Clear silhouette on a transparent background. |
-| ⬜ | `icon_weapon_vortex.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Vortex Bomb. Clear silhouette on a transparent background. |
-| ⬜ | `icon_weapon_shard.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Shard Bomb. Clear silhouette on a transparent background. |
-| ⬜ | `icon_class_striker.png` | 64×64 | 1 | 32, 32 | Striker class emblem for the lobby and scoreboard. |
-| ⬜ | `icon_class_guardian.png` | 64×64 | 1 | 32, 32 | Guardian class emblem for the lobby and scoreboard. |
-| ⬜ | `icon_class_recon.png` | 64×64 | 1 | 32, 32 | Recon class emblem for the lobby and scoreboard. |
-| ⬜ | `icon_ability_dash.png` | 48×48 | 1 | 24, 24 | Ability icon: dash. |
-| ⬜ | `icon_ability_bubble.png` | 48×48 | 1 | 24, 24 | Ability icon: bubble. |
-| ⬜ | `icon_ability_heal.png` | 48×48 | 1 | 24, 24 | Ability icon: heal. |
-| ⬜ | `icon_ability_cloak.png` | 48×48 | 1 | 24, 24 | Ability icon: cloak. |
+| ✅ | `icon_weapon_brand.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Knight Brand. Clear silhouette on a transparent background. |
+| ✅ | `icon_weapon_cleaver.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Troll Cleaver. Clear silhouette on a transparent background. |
+| ✅ | `icon_weapon_rapier.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Needle Rapier. Clear silhouette on a transparent background. |
+| ✅ | `icon_weapon_blaster.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Pulse Blaster. Clear silhouette on a transparent background. |
+| ✅ | `icon_weapon_autogun.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Rattle Autogun. Clear silhouette on a transparent background. |
+| ✅ | `icon_weapon_scatter.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Scattergun. Clear silhouette on a transparent background. |
+| ✅ | `icon_weapon_magnus.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Magnus Hand-cannon. Clear silhouette on a transparent background. |
+| ✅ | `icon_weapon_blast.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Blast Bomb. Clear silhouette on a transparent background. |
+| ✅ | `icon_weapon_vortex.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Vortex Bomb. Clear silhouette on a transparent background. |
+| ✅ | `icon_weapon_shard.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Shard Bomb. Clear silhouette on a transparent background. |
+| ✅ | `icon_class_striker.png` | 64×64 | 1 | 32, 32 | Striker class emblem for the lobby and scoreboard. |
+| ✅ | `icon_class_guardian.png` | 64×64 | 1 | 32, 32 | Guardian class emblem for the lobby and scoreboard. |
+| ✅ | `icon_class_recon.png` | 64×64 | 1 | 32, 32 | Recon class emblem for the lobby and scoreboard. |
+| ✅ | `icon_ability_dash.png` | 48×48 | 1 | 24, 24 | Ability icon: dash. |
+| ✅ | `icon_ability_bubble.png` | 48×48 | 1 | 24, 24 | Ability icon: bubble. |
+| ✅ | `icon_ability_heal.png` | 48×48 | 1 | 24, 24 | Ability icon: heal. |
+| ✅ | `icon_ability_cloak.png` | 48×48 | 1 | 24, 24 | Ability icon: cloak. |
 
 ## Projectiles
 
 | | File | Size (px) | Frames | Anchor | Notes |
 |---|---|---|---|---|---|
-| ⬜ | `proj_bullet.png` | 16×8 | 1 | 8, 4 | Standard energy round, pointing right. |
-| ⬜ | `proj_pierce.png` | 32×10 | 1 | 16, 5 | Charged piercing bolt, longer and brighter, pointing right. |
-| ⬜ | `proj_explosive.png` | 18×18 | 1 | 9, 9 | Charged Magnus explosive shell. |
-| ⬜ | `proj_shard.png` | 14×6 | 1 | 7, 3 | Shard Bomb fragment, pointing right. |
-| ⬜ | `proj_pellet.png` | 8×8 | 1 | 4, 4 | Scattergun pellet. |
+| ✅ | `proj_bullet.png` | 16×8 | 1 | 8, 4 | Standard energy round, pointing right. |
+| ✅ | `proj_pierce.png` | 32×10 | 1 | 16, 5 | Charged piercing bolt, longer and brighter, pointing right. |
+| ✅ | `proj_explosive.png` | 18×18 | 1 | 9, 9 | Charged Magnus explosive shell. |
+| ✅ | `proj_shard.png` | 14×6 | 1 | 7, 3 | Shard Bomb fragment, pointing right. |
+| ✅ | `proj_pellet.png` | 8×8 | 1 | 4, 4 | Scattergun pellet. |
 
 ## Bombs
 
 | | File | Size (px) | Frames | Anchor | Notes |
 |---|---|---|---|---|---|
-| ⬜ | `bomb_blast.png` | 32×32 | 1 | 16, 16 | Blast Bomb planted on the floor (the fuse ring is drawn by the game). |
-| ⬜ | `bomb_vortex.png` | 32×32 | 1 | 16, 16 | Vortex Bomb planted on the floor (the fuse ring is drawn by the game). |
-| ⬜ | `bomb_shard.png` | 32×32 | 1 | 16, 16 | Shard Bomb planted on the floor (the fuse ring is drawn by the game). |
+| ✅ | `bomb_blast.png` | 32×32 | 1 | 16, 16 | Blast Bomb planted on the floor (the fuse ring is drawn by the game). |
+| ✅ | `bomb_vortex.png` | 32×32 | 1 | 16, 16 | Vortex Bomb planted on the floor (the fuse ring is drawn by the game). |
+| ✅ | `bomb_shard.png` | 32×32 | 1 | 16, 16 | Shard Bomb planted on the floor (the fuse ring is drawn by the game). |
 
 ## Effects
 
 | | File | Size (px) | Frames | Anchor | Notes |
 |---|---|---|---|---|---|
-| ⬜ | `fx_slash.png` | 384×96 | 4 | 24, 48 | Blade swipe arc, 4-frame strip (96x96 each), sweeping from top to bottom, pivot at the left middle (the wielder). |
-| ⬜ | `fx_spin.png` | 512×128 | 4 | 64, 64 | Full 360° spin slash, 4-frame strip (128x128 each), centred. |
-| ⬜ | `fx_slam.png` | 640×128 | 5 | 64, 64 | Ground slam shockwave, 5-frame strip (128x128 each), centred. |
-| ⬜ | `fx_explosion.png` | 768×128 | 6 | 64, 64 | Bomb explosion, 6-frame strip (128x128 each), centred. |
-| ⬜ | `fx_vortex.png` | 512×128 | 4 | 64, 64 | Swirling vortex pull, 4-frame looping strip (128x128 each). |
-| ⬜ | `fx_muzzle.png` | 96×32 | 3 | 0, 16 | Muzzle flash, 3-frame strip (32x32 each), pointing right. |
-| ⬜ | `fx_hit.png` | 192×48 | 4 | 24, 24 | Impact spark, 4-frame strip (48x48 each). |
-| ⬜ | `fx_bubble.png` | 192×192 | 1 | 96, 96 | Guardian dome seen from above: translucent ring with a soft rim. The game tints and scales it. |
-| ⬜ | `fx_heal.png` | 256×256 | 1 | 128, 128 | Healing pulse ring, soft green-white, centred. |
-| ⬜ | `fx_cloak.png` | 64×64 | 1 | 32, 32 | Shimmer distortion overlay for a cloaked Recon. |
-| ⬜ | `fx_mark.png` | 32×32 | 1 | 16, 16 | Target mark shown over a marked enemy. |
-| ⬜ | `fx_dash.png` | 64×64 | 1 | 32, 32 | Speed streak behind a dashing Striker, pointing right. |
+| ✅ | `fx_slash.png` | 384×96 | 4 | 24, 48 | Blade swipe arc, 4-frame strip (96x96 each), sweeping from top to bottom, pivot at the left middle (the wielder). |
+| ✅ | `fx_spin.png` | 512×128 | 4 | 64, 64 | Full 360° spin slash, 4-frame strip (128x128 each), centred. |
+| ✅ | `fx_slam.png` | 640×128 | 5 | 64, 64 | Ground slam shockwave, 5-frame strip (128x128 each), centred. |
+| ✅ | `fx_explosion.png` | 768×128 | 6 | 64, 64 | Bomb explosion, 6-frame strip (128x128 each), centred. |
+| ✅ | `fx_vortex.png` | 512×128 | 4 | 64, 64 | Swirling vortex pull, 4-frame looping strip (128x128 each). |
+| ✅ | `fx_muzzle.png` | 96×32 | 3 | 0, 16 | Muzzle flash, 3-frame strip (32x32 each), pointing right. |
+| ✅ | `fx_hit.png` | 192×48 | 4 | 24, 24 | Impact spark, 4-frame strip (48x48 each). |
+| ✅ | `fx_bubble.png` | 192×192 | 1 | 96, 96 | Guardian dome seen from above: translucent ring with a soft rim. The game tints and scales it. |
+| ✅ | `fx_heal.png` | 256×256 | 1 | 128, 128 | Healing pulse ring, soft green-white, centred. |
+| ✅ | `fx_cloak.png` | 64×64 | 1 | 32, 32 | Shimmer distortion overlay for a cloaked Recon. |
+| ✅ | `fx_mark.png` | 32×32 | 1 | 16, 16 | Target mark shown over a marked enemy. |
+| ✅ | `fx_dash.png` | 64×64 | 1 | 32, 32 | Speed streak behind a dashing Striker, pointing right. |
 
 ## Pickups
 
 | | File | Size (px) | Frames | Anchor | Notes |
 |---|---|---|---|---|---|
-| ⬜ | `pickup_heart.png` | 32×32 | 1 | 16, 16 | Heart dropped by a knocked-out knight; heals whoever grabs it. Bright red, chunky, readable at a glance. The game bobs it and adds the shadow. |
-| ⬜ | `fx_regen.png` | 16×16 | 1 | 8, 8 | Small green plus that drifts up from a knight healing inside their base. |
+| ✅ | `pickup_heart.png` | 32×32 | 1 | 16, 16 | Heart dropped by a knocked-out knight; heals whoever grabs it. Bright red, chunky, readable at a glance. The game bobs it and adds the shadow. |
+| ✅ | `fx_regen.png` | 16×16 | 1 | 8, 8 | Small green plus that drifts up from a knight healing inside their base. |
 
 ## Control points
 
 | | File | Size (px) | Frames | Anchor | Notes |
 |---|---|---|---|---|---|
-| ⬜ | `point_base.png` | 160×160 | 1 | 80, 80 | Control point floor plate seen from above, neutral grey, with a centre emblem area. The game draws the capture ring and letter on top. |
-| ⬜ | `point_beacon.png` | 48×96 | 1 | 24, 88 | Beacon pylon at the centre of a control point; the game tints its light by owner. |
+| ✅ | `point_base.png` | 160×160 | 1 | 80, 80 | Control point floor plate seen from above, neutral grey, with a centre emblem area. The game draws the capture ring and letter on top. |
+| ✅ | `point_beacon.png` | 48×96 | 1 | 24, 88 | Beacon pylon at the centre of a control point; the game tints its light by owner. |
