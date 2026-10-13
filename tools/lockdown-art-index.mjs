@@ -26,7 +26,7 @@ if (missing.length) console.log(`Missing (placeholders used):\n  ${missing.join(
 
 function brief(ready, problems) {
   const groups = [...new Set(MANIFEST.map(entry => entry.group))];
-  const title = { tiles: 'Tiles', knights: 'Knights', weapons: 'Held weapons', projectiles: 'Projectiles', bombs: 'Bombs', effects: 'Effects', points: 'Control points', icons: 'Icons' };
+  const title = { tiles: 'Tiles', knights: 'Knights', weapons: 'Held weapons', projectiles: 'Projectiles', bombs: 'Bombs', effects: 'Effects', pickups: 'Pickups', points: 'Control points', icons: 'Icons' };
   const rows = group => MANIFEST.filter(entry => entry.group === group).map(entry => `| ${ready.has(entry.file) ? '✅' : '⬜'} | \`${entry.file}\` | ${entry.size.join('×')} | ${entry.frames} | ${entry.anchor.join(', ')} | ${entry.description.replace(/\|/g, '/')} |`).join('\n');
   return `# Lockdown art brief
 
@@ -52,6 +52,7 @@ shapes; every PNG listed below replaces one placeholder as soon as it is added.
 - **Team colours:** Amber \`#e39a3b\` (team 0) and Cyan \`#3bb8c4\` (team 1). Only sprites whose name says
   \`team0\`/\`team1\` carry team colour; everything else stays neutral and the game adds a coloured ring.
 - **Format:** 32-bit PNG with transparency, exact pixel sizes below (wrong sizes are skipped).
+- **Bases:** each team's spawn tiles (\`tile_spawn_team0/1\`) are its base, where knights heal and change loadout; make them read as a safe zone.
 - **Themes:** \`stone\` (Coliseum Gate, cool grey) and \`brass\` (Clockwork Yard, warm bronze and rivets).
 
 ## How to deliver

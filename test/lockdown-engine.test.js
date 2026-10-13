@@ -69,7 +69,7 @@ test('lobby setup validates class, three distinct weapons and team size', () => 
   assert.equal(state.players[6].team, 0, 'a seat on a full team moves to the other side');
   assert.match(L.setPlayerSetup(state, 6, { team: 1 }).error, /full/);
   state.phase = 'fight';
-  assert.match(L.setPlayerSetup(state, 0, { cls: 'recon' }).error, /lobby/);
+  assert.match(L.setPlayerSetup(state, 0, { team: 0 }).error, /lobby/);
 });
 
 test('starting balances the bots to four a side and counts down into the fight', () => {
@@ -241,4 +241,72 @@ test('the art manifest covers every class, team, weapon and theme with valid str
     assert.ok(entry.anchor[0] <= entry.size[0] / entry.frames && entry.anchor[1] <= entry.size[1], `${entry.key} anchor is inside a frame`);
     assert.ok(entry.description.length > 10);
   }
+});
+
+test('your own base heals you; the enemy base does not', () => {
+  const { state, me, foe } = duel();
+  const home = MAPS.gate.spawns[0][0], away = MAPS.gate.spawns[1][0];
+  Object.assign(me, { x: home.x, y: home.y, hp: 40 });
+  assert.equal(L.inBase(state, me), true);
+  run(state, TICK_RATE);
+  assert.ok(Math.abs(me.hp - (40 + RULES.baseHealPerSecond)) < .01, `healed to ${me.hp}`);
+  run(state, TICK_RATE * 10); assert.equal(me.hp, me.maxHp, 'never past full');
+  Object.assign(foe, { x: home.x + 48, y: home.y, hp: 40 });
+  assert.equal(L.inBase(state, foe), false, 'an enemy standing in your base is not in theirs');
+  run(state, TICK_RATE); assert.equal(foe.hp, 40);
+  Object.assign(me, { x: away.x, y: away.y, hp: 40 }); run(state, TICK_RATE); assert.equal(me.hp, 40);
+});
+
+test('class and weapons change mid-match only in base or while respawning', () => {
+  const { state, me } = duel({ a: { weapons: ['brand', 'blaster', 'blast'] } });
+  assert.match(L.setPlayerSetup(state, 0, { cls: 'recon' }).error, /base/);
+  assert.match(L.setPlayerSetup(state, 0, { weapons: ['rapier', 'magnus', 'shard'] }).error, /base/);
+  const home = MAPS.gate.spawns[0][0];
+  Object.assign(me, { x: home.x, y: home.y, hp: 50, slot: 1 });
+  assert.deepEqual(L.setPlayerSetup(state, 0, { cls: 'guardian', weapons: ['rapier', 'magnus', 'shard'] }), { ok: true });
+  assert.equal(me.cls, 'guardian'); assert.equal(me.maxHp, CLASSES.guardian.hp);
+  assert.equal(me.hp, 50 / CLASSES.striker.hp * CLASSES.guardian.hp, 'keeps the same health fraction');
+  assert.deepEqual(me.weapons, ['rapier', 'magnus', 'shard']); assert.equal(me.slot, 0);
+  assert.equal(me.clips.magnus, WEAPONS.magnus.clip);
+  assert.ok(events(state, 'loadoutChange').length === 1);
+  assert.match(L.setPlayerSetup(state, 0, { team: 1 }).error, /lobby/, 'teams stay fixed');
+  // Knocked out: the choice is stored and used on respawn.
+  Object.assign(me, { x: MAPS.gate.points[1].x, y: MAPS.gate.points[1].y, alive: false, respawnTicks: 3 });
+  assert.deepEqual(L.setPlayerSetup(state, 0, { cls: 'recon' }), { ok: true });
+  run(state, 4);
+  assert.equal(me.alive, true); assert.equal(me.cls, 'recon'); assert.equal(me.hp, CLASSES.recon.hp);
+});
+
+test('a knockout drops a heart that heals whoever grabs it, and fades if nobody does', () => {
+  const { state, me, foe } = duel();
+  foe.hp = 5; run(state, 1, () => ({ 0: { attack: true } })); run(state, WEAPONS.brand.startup + 2);
+  assert.equal(foe.alive, false);
+  assert.equal(state.pickups.length, 1); assert.ok(events(state, 'heartDrop').length === 1);
+  const heart = state.pickups[0];
+  run(state, 10); assert.equal(state.pickups.length, 1, 'a full-health knight leaves it for someone who needs it');
+  Object.assign(me, { hp: 50, x: heart.x, y: heart.y }); run(state, 1);
+  assert.equal(me.hp, 50 + RULES.heart.heal); assert.equal(state.pickups.length, 0);
+  assert.equal(events(state, 'heartPickup').at(-1).playerId, 0);
+  state.pickups.push({ id: 999, kind: 'heart', x: 100, y: 100, ttl: 5 });
+  run(state, 6); assert.equal(state.pickups.length, 0);
+});
+
+test('personal score comes from taking and neutralising zones, and leads the scoreboard', () => {
+  const { state, me, foe } = duel();
+  const point = state.points[0];
+  Object.assign(me, { x: point.x, y: point.y }); Object.assign(foe, { alive: false, respawnTicks: 1e9 });
+  run(state, RULES.captureTicks + 1);
+  assert.equal(me.score, RULES.captureScore);
+  Object.assign(me, { alive: false, respawnTicks: 1e9 }); Object.assign(foe, { alive: true, x: point.x, y: point.y, shieldTicks: 1e9 });
+  run(state, RULES.captureTicks + 1);
+  assert.equal(point.owner, null); assert.equal(foe.score, RULES.neutralizeScore);
+  run(state, RULES.captureTicks + 1);
+  assert.equal(point.owner, 1); assert.equal(foe.score, RULES.neutralizeScore + RULES.captureScore);
+  foe.damage = 12.6;
+  const board = L.getScoreboard(state);
+  const row = board.find(entry => entry.id === 4);
+  assert.deepEqual([row.score, row.captures, row.damage], [45, 1, 13]);
+  assert.ok(board.every(entry => ['score', 'kills', 'deaths', 'damage', 'captures'].every(key => Number.isInteger(entry[key]))));
+  const team1 = board.filter(entry => entry.team === 1);
+  assert.deepEqual(team1.map(entry => entry.score), [...team1.map(entry => entry.score)].sort((a, b) => b - a));
 });

@@ -122,14 +122,21 @@ function release(control) { held.delete(control); }
 addEventListener('keydown', event => {
   if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return;
   if (event.code === 'Escape' || event.code === 'KeyP') { event.preventDefault(); toggleMenu(); return; }
+  if (event.code === 'Tab') { event.preventDefault(); showBoard(true); return; }
+  if (event.code === 'KeyB' && !event.repeat && !menuOpen) {
+    // The loadout opens in base (or while waiting to respawn); elsewhere B just says where to go.
+    event.preventDefault();
+    if (canChangeLoadout()) toggleMenu(true); else flashBaseHint();
+    return;
+  }
   if (menuOpen) return;
   const control = bindingFor(event);
   if (!control) return;
   event.preventDefault();
   if (!event.repeat) press(control);
 });
-addEventListener('keyup', event => { const control = bindingFor(event); if (control) release(control); });
-addEventListener('blur', () => { held.clear(); mouse.left = mouse.right = false; });
+addEventListener('keyup', event => { if (event.code === 'Tab') showBoard(false); const control = bindingFor(event); if (control) release(control); });
+addEventListener('blur', () => { held.clear(); mouse.left = mouse.right = false; showBoard(false); });
 canvas.addEventListener('contextmenu', event => event.preventDefault());
 canvas.addEventListener('pointermove', event => { mouse.x = event.offsetX; mouse.y = event.offsetY; mouse.inside = true; });
 canvas.addEventListener('pointerdown', event => {
@@ -198,6 +205,9 @@ function playEvents(current) {
         case 'dash': audio.noise(.18, { highpass: 2000, gain: .1 * near }); break;
         case 'cloak': audio.tone(700, .25, { end: 200, gain: .1 * near }); break;
         case 'fight': audio.fight?.(); break;
+        case 'heartDrop': audio.tone(440, .12, { end: 660, type: 'triangle', gain: .06 * near }); break;
+        case 'heartPickup': audio.tone(660, .18, { end: 990, type: 'sine', gain: (event.playerId === localId ? .22 : .08) * near }); break;
+        case 'loadoutChange': if (event.playerId === localId) audio.tone(392, .15, { end: 523, type: 'triangle', gain: .15 }); break;
         case 'matchEnd': audio.tone(me && event.winner === me.team ? 523 : 262, .6, { end: me && event.winner === me.team ? 1046 : 131, type: 'triangle', gain: .25 }); break;
       }
     } catch {}
@@ -307,9 +317,17 @@ function updateHud(current) {
   const banner = $('ld-banner');
   let text = '', sub = '';
   if (current.phase === 'countdown') { text = String(Math.ceil(current.phaseTicks / TICK_RATE)); sub = `${current.mapName} — take the points!`; }
-  else if (current.phase === 'fight' && me && !me.alive) { text = `Respawn in ${Math.ceil(me.respawnTicks / TICK_RATE)}`; sub = 'Pick a different weapon with 1–3 while you wait.'; }
+  else if (current.phase === 'fight' && me && !me.alive) { text = `Respawn in ${Math.ceil(me.respawnTicks / TICK_RATE)}`; sub = 'Press B to change class or weapons before you return.'; }
   else if (current.phase === 'matchEnd') { text = current.winner === null ? 'Draw' : `${TEAM_COLORS[current.winner].name} wins`; sub = `${current.scores[0]} – ${current.scores[1]}`; }
   banner.hidden = !text;
+  const base = me && me.alive && current.phase === 'fight' && Engine.inBase(current, me);
+  $('ld-base-hint').hidden = !(base && !menuOpen) && performance.now() > baseHintFlash;
+  const hint = $('ld-base-hint'), [label, status, action] = hint.children;
+  hint.classList.toggle('away', !base);
+  label.textContent = base ? 'IN BASE' : 'LOADOUT';
+  status.textContent = base ? (me.hp < me.maxHp ? 'Healing' : 'Full health') : 'Go back to your base to change class or weapons';
+  action.hidden = !base;
+  if (boardOpen && performance.now() - boardDrawn > 250) { boardDrawn = performance.now(); $('ld-board').hidden = false; $('ld-board').replaceChildren(scoreTables(current)); }
   if (text && (banner.dataset.text !== text + sub)) { banner.dataset.text = text + sub; banner.textContent = text; const small = document.createElement('small'); small.textContent = sub; banner.append(small); }
   renderer.drawMinimap(minimap, current, { localId });
   pushFeed(current);
@@ -387,7 +405,12 @@ function showWeaponNote(id) { const weapon = WEAPONS[id]; if (weapon) $('ld-weap
 function chooseSetup(change) {
   const changedWeapon = change.weapons?.find((id, slot) => id !== setup.weapons[slot]);
   Object.assign(setup, change); storeSetup();
-  if (solo) applySetupLocally();
+  if (inMatch()) {
+    // Mid-match changes apply straight away, but only in base (the engine checks too).
+    const { team, ...loadout } = change;
+    if (solo) { const result = Engine.setPlayerSetup(state, 0, loadout); if (!result.ok) setStatus(result.error); }
+    else send({ type: 'lockdown-setup', ...loadout });
+  } else if (solo) applySetupLocally();
   else send({ type: 'lockdown-setup', ...change });
   if (changedWeapon) showWeaponNote(changedWeapon);
   if (change.cls) $('ld-class-note').textContent = CLASSES[setup.cls].description;
@@ -397,14 +420,28 @@ function refreshIcons() {
   for (const card of document.querySelectorAll('.ld-class-card')) card.querySelector('.ld-class-icon').innerHTML = iconMarkup(`icon_class_${card.dataset.cls}`, CLASS_GLYPH[card.dataset.cls]);
   $('ld-weapons').dataset.key = '';
 }
+const inMatch = () => state?.phase === 'countdown' || state?.phase === 'fight';
+function canChangeLoadout() {
+  const me = state?.players[localId ?? -1];
+  return !inMatch() || !!me && (!me.alive || Engine.inBase(state, me));
+}
+let baseHintFlash = 0;
+function flashBaseHint() { baseHintFlash = performance.now() + 1800; }
 function renderMenu() {
   const me = state?.players[localId ?? -1];
   const phase = state?.phase ?? 'lobby';
   app.dataset.phase = phase;
   const team = me?.team ?? setup.team, cls = me?.cls ?? setup.cls, weapons = me?.weapons ?? setup.weapons;
-  for (const button of document.querySelectorAll('.ld-team-button')) { button.setAttribute('aria-pressed', String(Number(button.dataset.team) === team)); button.disabled = phase !== 'lobby' && phase !== 'matchEnd'; }
-  for (const card of document.querySelectorAll('.ld-class-card')) { card.setAttribute('aria-pressed', String(card.dataset.cls === cls)); card.disabled = phase !== 'lobby' && phase !== 'matchEnd'; }
-  [...$('ld-loadout').querySelectorAll('select')].forEach((select, slot) => { select.value = weapons[slot]; select.disabled = phase !== 'lobby' && phase !== 'matchEnd'; });
+  const lobby = phase === 'lobby' || phase === 'matchEnd', editable = canChangeLoadout();
+  for (const button of document.querySelectorAll('.ld-team-button')) { button.setAttribute('aria-pressed', String(Number(button.dataset.team) === team)); button.disabled = !lobby; }
+  for (const card of document.querySelectorAll('.ld-class-card')) { card.setAttribute('aria-pressed', String(card.dataset.cls === cls)); card.disabled = !editable; }
+  [...$('ld-loadout').querySelectorAll('select')].forEach((select, slot) => { if (document.activeElement !== select) select.value = weapons[slot]; select.disabled = !editable; });
+  const note = $('ld-base-note');
+  note.hidden = lobby;
+  if (!lobby) {
+    note.classList.toggle('away', !editable);
+    note.textContent = !me?.alive ? 'Waiting to respawn: class and weapon changes apply when you return.' : editable ? 'You are in your base: class and weapon changes apply right away. Teams stay fixed until the next lobby.' : 'Return to your base to change class or weapons. Your base also heals you.';
+  }
   if (!$('ld-class-note').textContent) $('ld-class-note').textContent = CLASSES[cls].description;
   if (!$('ld-weapon-note').textContent) showWeaponNote(weapons[0]);
   const isHost = solo || hostId === localId;
@@ -427,22 +464,51 @@ function renderMenu() {
   }
   renderResults();
 }
+/** Two team tables: score (from capturing zones), kills, deaths and damage per knight. */
+const BOARD_COLUMNS = [['score', 'Score'], ['kills', 'Kills'], ['deaths', 'Deaths'], ['damage', 'Damage'], ['captures', 'Caps']];
+function scoreTables(current) {
+  const board = Engine.getScoreboard(current), wrap = document.createElement('div'); wrap.className = 'ld-teams-board';
+  const best = Object.fromEntries(BOARD_COLUMNS.filter(([key]) => key !== 'deaths').map(([key]) => [key, Math.max(1, ...board.map(row => row[key]))]));
+  for (const team of [0, 1]) {
+    const rows = board.filter(row => row.team === team), section = document.createElement('section');
+    section.className = `ld-team-table t${team}`;
+    const title = document.createElement('h3');
+    title.append(`${TEAM_COLORS[team].name} · ${current.scores[team]}`, Object.assign(document.createElement('small'), { textContent: current.winner === team ? 'WINNER' : current.phase === 'matchEnd' && current.winner === null ? 'DRAW' : '' }));
+    const table = document.createElement('table');
+    const head = document.createElement('tr'); head.append(Object.assign(document.createElement('th'), { textContent: 'Knight' }));
+    for (const [, label] of BOARD_COLUMNS) head.append(Object.assign(document.createElement('th'), { textContent: label }));
+    const thead = document.createElement('thead'); thead.append(head);
+    const body = document.createElement('tbody');
+    for (const row of rows) {
+      const tr = document.createElement('tr'); tr.className = `${row.id === localId ? 'me' : ''}${row.human ? '' : ' bot'}`;
+      tr.append(Object.assign(document.createElement('td'), { textContent: `${row.name}${row.id === localId ? ' (you)' : ''} · ${CLASSES[row.cls].name}` }));
+      for (const [key] of BOARD_COLUMNS) {
+        const cell = Object.assign(document.createElement('td'), { textContent: String(row[key]) });
+        if (best[key] !== undefined && row[key] === best[key]) cell.className = 'best';
+        tr.append(cell);
+      }
+      body.append(tr);
+    }
+    const total = document.createElement('tr'); total.append(Object.assign(document.createElement('td'), { textContent: 'Team' }));
+    for (const [key] of BOARD_COLUMNS) total.append(Object.assign(document.createElement('td'), { textContent: String(rows.reduce((sum, row) => sum + row[key], 0)) }));
+    const foot = document.createElement('tfoot'); foot.append(total);
+    table.append(thead, body, foot); section.append(title, table); wrap.append(section);
+  }
+  return wrap;
+}
 function renderResults() {
   const box = $('ld-results');
   if (!state || state.phase !== 'matchEnd') { box.hidden = true; return; }
-  box.hidden = false; box.textContent = '';
+  if (box.dataset.tick === String(state.tick) && !box.hidden) return;
+  box.dataset.tick = String(state.tick); box.hidden = false; box.textContent = '';
   const heading = document.createElement('h2');
   heading.textContent = state.winner === null ? `Draw · ${state.scores[0]} – ${state.scores[1]}` : `${TEAM_COLORS[state.winner].name} wins · ${state.scores[0]} – ${state.scores[1]}`;
-  const table = document.createElement('table');
-  table.innerHTML = '<thead><tr><th>Knight</th><th>Class</th><th>Captures</th><th>Kills</th><th>Deaths</th><th>Damage</th></tr></thead>';
-  const body = document.createElement('tbody');
-  for (const row of Engine.getScoreboard(state)) {
-    const tr = document.createElement('tr'); tr.className = `t${row.team}`;
-    for (const value of [`${row.human ? row.name : 'Bot'}${row.id === localId ? ' (you)' : ''}`, CLASSES[row.cls].name, row.captures, row.kills, row.deaths, Math.round(row.damage)]) tr.append(Object.assign(document.createElement('td'), { textContent: String(value) }));
-    body.append(tr);
-  }
-  table.append(body); box.append(heading, table);
+  const mvp = Engine.getScoreboard(state).sort((a, b) => b.score - a.score || b.kills - a.kills || b.damage - a.damage)[0];
+  const line = Object.assign(document.createElement('p'), { className: 'ld-mvp', textContent: mvp ? `Top knight: ${mvp.name} — ${mvp.score} pts from zones, ${mvp.kills} kills, ${mvp.damage} damage. Score comes from capturing (+${RULES.captureScore}) and neutralising (+${RULES.neutralizeScore}) zones.` : '' });
+  box.append(heading, line, scoreTables(state));
 }
+let boardOpen = false, boardDrawn = 0;
+function showBoard(open) { boardOpen = open; $('ld-board').hidden = !open || !state || state.phase === 'lobby'; boardDrawn = 0; }
 
 // ---------- main loop ----------
 function frame(now) {
@@ -481,4 +547,4 @@ renderMenu();
 requestAnimationFrame(frame);
 addEventListener('resize', () => renderer.resize());
 // Exposed for automated smoke tests.
-globalThis.__lockdown = { get state() { return state; }, get localId() { return localId; }, get menuOpen() { return menuOpen; }, toggleMenu, chooseSetup };
+globalThis.__lockdown = { get state() { return state; }, get localId() { return localId; }, get menuOpen() { return menuOpen; }, toggleMenu, chooseSetup, showBoard };

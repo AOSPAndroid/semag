@@ -6,7 +6,7 @@ Lockdown is a top-down team brawl in the spirit of Spiral Knights' Lockdown: up 
 three control points, swords, guns and bombs. The game is fully playable with placeholder
 shapes; every PNG listed below replaces one placeholder as soon as it is added.
 
-**Progress: 0/63 sprites ready.**
+**Progress: 0/65 sprites ready.**
 
 ## Style guide
 
@@ -22,6 +22,7 @@ shapes; every PNG listed below replaces one placeholder as soon as it is added.
 - **Team colours:** Amber `#e39a3b` (team 0) and Cyan `#3bb8c4` (team 1). Only sprites whose name says
   `team0`/`team1` carry team colour; everything else stays neutral and the game adds a coloured ring.
 - **Format:** 32-bit PNG with transparency, exact pixel sizes below (wrong sizes are skipped).
+- **Bases:** each team's spawn tiles (`tile_spawn_team0/1`) are its base, where knights heal and change loadout; make them read as a safe zone.
 - **Themes:** `stone` (Coliseum Gate, cool grey) and `brass` (Clockwork Yard, warm bronze and rivets).
 
 ## How to deliver
@@ -126,6 +127,13 @@ shapes; every PNG listed below replaces one placeholder as soon as it is added.
 | ⬜ | `fx_cloak.png` | 64×64 | 1 | 32, 32 | Shimmer distortion overlay for a cloaked Recon. |
 | ⬜ | `fx_mark.png` | 32×32 | 1 | 16, 16 | Target mark shown over a marked enemy. |
 | ⬜ | `fx_dash.png` | 64×64 | 1 | 32, 32 | Speed streak behind a dashing Striker, pointing right. |
+
+## Pickups
+
+| | File | Size (px) | Frames | Anchor | Notes |
+|---|---|---|---|---|---|
+| ⬜ | `pickup_heart.png` | 32×32 | 1 | 16, 16 | Heart dropped by a knocked-out knight; heals whoever grabs it. Bright red, chunky, readable at a glance. The game bobs it and adds the shadow. |
+| ⬜ | `fx_regen.png` | 16×16 | 1 | 8, 8 | Small green plus that drifts up from a knight healing inside their base. |
 
 ## Control points
 

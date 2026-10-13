@@ -18,6 +18,12 @@ export const RULES = Object.freeze({
   pointRadius: 72, captureTicks: 5 * TICK_RATE,
   respawnBaseTicks: 5 * TICK_RATE, respawnPerMinuteTicks: TICK_RATE, respawnMaxTicks: 12 * TICK_RATE,
   spawnShieldTicks: 2 * TICK_RATE, radius: 15, eventLimit: 160,
+  // Standing in your own base heals you, and is where you change class and weapons mid-match.
+  baseHealPerSecond: 25,
+  // Every knockout drops a heart that heals whoever grabs it first.
+  heart: Object.freeze({ heal: 30, ttlTicks: 15 * TICK_RATE, radius: 24 }),
+  // Personal score comes from the zones: taking a point, or knocking an enemy point back to neutral.
+  captureScore: 30, neutralizeScore: 15,
 });
 
 /** Classes swap Spiral Knights' shield for a signature ability. */
@@ -74,7 +80,7 @@ function newPlayer(id) {
     action: 'idle', actionTicks: 0, actionTotal: 0, comboStep: 0, comboWindow: 0, hitIds: [], chargeTicks: 0, charging: false, lungeTicks: 0,
     clips: {}, reloadTicks: {}, fireCooldown: 0,
     dashTicks: 0, bubbleTicks: 0, bubbleHp: 0, cloakTicks: 0, markTicks: 0, markReady: false, abilityCooldown: 0, ability2Cooldown: 0,
-    kills: 0, deaths: 0, captures: 0, damage: 0, previousInput: emptyInput(team === 0 ? 0 : Math.PI),
+    kills: 0, deaths: 0, captures: 0, damage: 0, score: 0, previousInput: emptyInput(team === 0 ? 0 : Math.PI),
   };
 }
 
@@ -86,22 +92,47 @@ export function createState({ mapId = 'gate', seed = 1 } = {}) {
     scores: [0, 0], winner: null, timeLeftTicks: RULES.timeLimitTicks, scoreTimer: RULES.scoreIntervalTicks,
     points: map.points.map(point => ({ id: point.id, x: point.x, y: point.y, progress: 0, owner: null })),
     players: Array.from({ length: CAPACITY }, (_, id) => newPlayer(id)),
-    projectiles: [], bombs: [], events: [], eventId: 0, nextId: 1,
+    projectiles: [], bombs: [], pickups: [], events: [], eventId: 0, nextId: 1,
   };
 }
 
-/** Lobby choices. Humans pick a team, class and three weapons (one per family is not required). */
+/** True while a knight stands on their own team's base (spawn) tiles. */
+export function inBase(state, player) {
+  const map = MAPS[state.mapId];
+  return map.grid[Math.floor(player.y / TILE)]?.[Math.floor(player.x / TILE)] === (player.team === 0 ? '1' : '2');
+}
+
+/** Lobby choices: team, class and three distinct weapons. During a match, class and
+ * weapons can change only while you are in your base (or waiting to respawn). */
 export function setPlayerSetup(state, id, { team, cls, weapons, name } = {}) {
   const player = state.players[id];
   if (!player) return { ok: false, error: 'Unknown player.' };
-  if (state.phase !== 'lobby' && state.phase !== 'matchEnd') return { ok: false, error: 'Change your setup in the lobby.' };
+  const inMatch = state.phase === 'countdown' || state.phase === 'fight';
+  if (inMatch && team !== undefined && team !== player.team) return { ok: false, error: 'Change teams in the lobby.' };
+  if (inMatch && (cls !== undefined || weapons !== undefined) && player.alive && !inBase(state, player)) return { ok: false, error: 'Return to your base to change class or weapons.' };
   if (cls !== undefined && !Object.hasOwn(CLASSES, cls)) return { ok: false, error: 'Choose Striker, Guardian or Recon.' };
   if (weapons !== undefined && (!Array.isArray(weapons) || weapons.length !== 3 || weapons.some(weapon => !Object.hasOwn(WEAPONS, weapon)) || new Set(weapons).size !== 3)) return { ok: false, error: 'Choose three different weapons.' };
   if (team !== undefined && ![0, 1].includes(team)) return { ok: false, error: 'Choose a team.' };
   if (team !== undefined && team !== player.team && state.players.filter(other => other.human && other.team === team).length >= TEAM_SIZE) return { ok: false, error: 'That team is full.' };
   if (team !== undefined) player.team = team;
-  if (cls !== undefined) { player.cls = cls; player.maxHp = player.hp = CLASSES[cls].hp; }
-  if (weapons !== undefined) player.weapons = [...weapons];
+  if (inMatch && player.alive) {
+    // Swapping in base keeps your health fraction and drops any action in progress.
+    const fraction = player.hp / player.maxHp;
+    if (cls !== undefined && cls !== player.cls) {
+      player.cls = cls; player.maxHp = CLASSES[cls].hp; player.hp = Math.max(1, fraction * player.maxHp);
+      player.dashTicks = player.bubbleTicks = player.cloakTicks = 0; player.markReady = false;
+    }
+    if (weapons !== undefined) {
+      player.weapons = [...weapons];
+      player.clips = Object.fromEntries(weapons.filter(weaponId => WEAPONS[weaponId].family === 'gun').map(weaponId => [weaponId, WEAPONS[weaponId].clip]));
+      player.reloadTicks = {};
+    }
+    Object.assign(player, { slot: 0, action: 'idle', actionTicks: 0, charging: false, chargeTicks: 0, comboStep: 0, lungeTicks: 0 });
+    emit(state, 'loadoutChange', { playerId: player.id, cls: player.cls, weapons: [...player.weapons] });
+  } else {
+    if (cls !== undefined) { player.cls = cls; player.maxHp = player.hp = CLASSES[cls].hp; }
+    if (weapons !== undefined) player.weapons = [...weapons];
+  }
   if (typeof name === 'string') player.name = name.slice(0, 24);
   return { ok: true };
 }
@@ -127,11 +158,11 @@ export function startMatch(state, participantIds = []) {
       if (bot.team === team) { bot.team = 1 - team; count--; }
     }
   }
-  Object.assign(state, { phase: 'countdown', phaseTicks: RULES.countdownTicks, scores: [0, 0], winner: null, timeLeftTicks: RULES.timeLimitTicks, scoreTimer: RULES.scoreIntervalTicks, projectiles: [], bombs: [] });
+  Object.assign(state, { phase: 'countdown', phaseTicks: RULES.countdownTicks, scores: [0, 0], winner: null, timeLeftTicks: RULES.timeLimitTicks, scoreTimer: RULES.scoreIntervalTicks, projectiles: [], bombs: [], pickups: [] });
   for (const point of state.points) { point.progress = 0; point.owner = null; }
   for (const player of state.players) {
     if (player.bot) { player.cls = CLASS_IDS[Math.floor(random(state) * CLASS_IDS.length)]; player.weapons = [...DEFAULT_LOADOUTS[player.cls]]; }
-    Object.assign(player, { kills: 0, deaths: 0, captures: 0, damage: 0 });
+    Object.assign(player, { kills: 0, deaths: 0, captures: 0, damage: 0, score: 0 });
     spawn(state, player);
   }
   emit(state, 'matchStart', { mapId: state.mapId });
@@ -225,6 +256,8 @@ function damage(state, attacker, target, amount, { push = 0, angle = 0, stun = 1
   emit(state, 'damage', { playerId: attacker?.id ?? null, targetId: target.id, amount: total, kind, x: target.x, y: target.y, hp: Math.max(0, target.hp) });
   if (target.hp <= 0) {
     target.alive = false; target.hp = 0; target.deaths++; target.respawnTicks = respawnDelay(state);
+    state.pickups.push({ id: state.nextId++, kind: 'heart', x: target.x, y: target.y, ttl: RULES.heart.ttlTicks });
+    emit(state, 'heartDrop', { x: target.x, y: target.y });
     target.bubbleTicks = target.cloakTicks = target.dashTicks = 0;
     if (attacker && attacker.team !== target.team) attacker.kills++;
     emit(state, 'kill', { playerId: attacker?.id ?? null, targetId: target.id, x: target.x, y: target.y, respawnTicks: target.respawnTicks });
@@ -362,6 +395,7 @@ function tickAbilities(state, player, input, previous) {
 }
 
 function tickPlayer(state, player, input) {
+  if (player.alive && state.phase === 'fight' && player.hp < player.maxHp && inBase(state, player)) player.hp = Math.min(player.maxHp, player.hp + RULES.baseHealPerSecond / TICK_RATE);
   const previous = player.previousInput || emptyInput(), map = MAPS[state.mapId];
   if (!player.alive) {
     if (state.phase === 'fight' && --player.respawnTicks <= 0) { spawn(state, player); emit(state, 'respawn', { playerId: player.id, x: player.x, y: player.y }); }
@@ -429,6 +463,20 @@ function tickBombs(state) {
   state.bombs = remaining;
 }
 
+function tickPickups(state) {
+  const remaining = [];
+  for (const heart of state.pickups) {
+    // The nearest hurt knight in reach, of either team, takes it.
+    const taker = state.players.filter(player => player.alive && player.hp < player.maxHp && dist(player, heart) <= RULES.heart.radius + RULES.radius)
+      .sort((a, b) => dist(a, heart) - dist(b, heart))[0];
+    if (taker) {
+      const amount = Math.min(RULES.heart.heal, taker.maxHp - taker.hp); taker.hp += amount;
+      emit(state, 'heartPickup', { playerId: taker.id, x: heart.x, y: heart.y, amount: Math.round(amount) });
+    } else if (--heart.ttl > 0) remaining.push(heart);
+  }
+  state.pickups = remaining;
+}
+
 function tickPoints(state) {
   for (const point of state.points) {
     const counts = [0, 0];
@@ -438,7 +486,12 @@ function tickPoints(state) {
     if (net === 0) continue;
     const before = point.progress, rate = 100 / RULES.captureTicks;
     point.progress = clamp(point.progress + net * rate, -100, 100);
-    if (point.owner === 0 && point.progress <= 0 || point.owner === 1 && point.progress >= 0) { point.owner = null; emit(state, 'pointNeutral', { pointId: point.id }); }
+    if (point.owner === 0 && point.progress <= 0 || point.owner === 1 && point.progress >= 0) {
+      const team = 1 - point.owner;
+      point.owner = null;
+      for (const player of state.players) if (player.alive && player.team === team && dist(player, point) <= RULES.pointRadius) player.score += RULES.neutralizeScore;
+      emit(state, 'pointNeutral', { pointId: point.id, team });
+    }
     if (point.owner !== 0 && point.progress >= 100 && before < 100) captured(state, point, 0);
     if (point.owner !== 1 && point.progress <= -100 && before > -100) captured(state, point, 1);
   }
@@ -450,7 +503,7 @@ function tickPoints(state) {
 }
 function captured(state, point, team) {
   point.owner = team;
-  for (const player of state.players) if (player.alive && player.team === team && dist(player, point) <= RULES.pointRadius) player.captures++;
+  for (const player of state.players) if (player.alive && player.team === team && dist(player, point) <= RULES.pointRadius) { player.captures++; player.score += RULES.captureScore; }
   emit(state, 'capture', { pointId: point.id, team, x: point.x, y: point.y });
 }
 
@@ -470,7 +523,7 @@ export function step(state, rawInputs = []) {
     return state;
   }
   for (const player of state.players) tickPlayer(state, player, inputs[player.id]);
-  tickProjectiles(state); tickBombs(state); tickPoints(state);
+  tickProjectiles(state); tickBombs(state); tickPickups(state); tickPoints(state);
   state.timeLeftTicks = Math.max(0, state.timeLeftTicks - 1);
   const won = state.scores.findIndex(score => score >= RULES.scoreToWin);
   if (won >= 0 || state.timeLeftTicks === 0) {
@@ -510,6 +563,10 @@ function stepToward(map, player, goal) {
   }
   return best ? Math.atan2(best.y - player.y, best.x - player.x) : Math.atan2(goal.y - player.y, goal.x - player.x);
 }
+/** The closest of your team's base tiles (bases can be split into several blocks). */
+function nearestBaseTile(map, bot) {
+  return map.spawns[bot.team].reduce((best, tile) => dist(tile, bot) < dist(best, bot) ? tile : best);
+}
 function botInput(state, bot) {
   const input = emptyInput(bot.aim);
   if (!bot.alive || state.phase !== 'fight' && state.phase !== 'countdown') return input;
@@ -527,6 +584,11 @@ function botInput(state, bot) {
   }
   const enemies = state.players.filter(other => other.alive && other.team !== bot.team && (other.cloakTicks === 0 || dist(other, bot) < ABILITIES.cloak.revealRange) && dist(other, bot) < 460 && lineOfSight(map, bot, other));
   const target = enemies.sort((a, b) => dist(a, bot) - dist(b, bot))[0];
+  // Badly hurt: fall back to base to heal, or grab a nearby heart, unless someone is right on top of us.
+  const health = bot.hp / bot.maxHp, pressed = target && dist(target, bot) < 160;
+  if (health < .35) brain.retreat = true; else if (health >= .95 || !bot.alive) brain.retreat = false;
+  const heart = health < .75 ? state.pickups.filter(pickup => dist(pickup, bot) < 260 && lineOfSight(map, bot, pickup)).sort((a, b) => dist(a, bot) - dist(b, bot))[0] : null;
+  const detour = pressed ? null : brain.retreat && !inBase(state, bot) ? nearestBaseTile(map, bot) : heart ? heart : null;
   let moveAngle = null;
   if (target) {
     const d = dist(target, bot);
@@ -562,14 +624,20 @@ function botInput(state, bot) {
     if (moveAngle !== null) { bot.aim = moveAngle; input.aim = moveAngle; }
     if (bot.cls === 'striker' && d > 400 && bot.abilityCooldown === 0) input.ability = !bot.previousInput.ability;
   }
+  if (detour) { moveAngle = stepToward(map, bot, detour); if (!target) { bot.aim = moveAngle; input.aim = moveAngle; } }
+  else if (brain.retreat && !pressed && inBase(state, bot)) moveAngle = null; // wait in base until healed
   if (moveAngle !== null) {
     const x = Math.cos(moveAngle), y = Math.sin(moveAngle);
     input.right = x > .38; input.left = x < -.38; input.down = y > .38; input.up = y < -.38;
+    // Slide off wall corners: if the axis we want is blocked, line up with the middle of our row or column.
+    const sx = input.right ? 1 : input.left ? -1 : 0, sy = input.down ? 1 : input.up ? -1 : 0;
+    if (sx && !sy && collides(map, bot.x + sx * 4, bot.y, RULES.radius)) { const centre = (Math.floor(bot.y / TILE) + .5) * TILE - bot.y; input.down = centre > 2; input.up = centre < -2; }
+    if (sy && !sx && collides(map, bot.x, bot.y + sy * 4, RULES.radius)) { const centre = (Math.floor(bot.x / TILE) + .5) * TILE - bot.x; input.right = centre > 2; input.left = centre < -2; }
   }
   return input;
 }
 
 export function getScoreboard(state) {
-  return state.players.map(player => ({ id: player.id, name: player.name, team: player.team, cls: player.cls, human: player.human, kills: player.kills, deaths: player.deaths, captures: player.captures, damage: player.damage }))
-    .sort((a, b) => a.team - b.team || b.captures - a.captures || b.kills - a.kills);
+  return state.players.map(player => ({ id: player.id, name: player.name, team: player.team, cls: player.cls, human: player.human, score: player.score, kills: player.kills, deaths: player.deaths, captures: player.captures, damage: Math.round(player.damage) }))
+    .sort((a, b) => a.team - b.team || b.score - a.score || b.kills - a.kills || b.damage - a.damage);
 }

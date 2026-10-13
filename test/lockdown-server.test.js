@@ -58,7 +58,10 @@ test('Lockdown rooms seat up to eight, take setup and map choices, and start wit
   await first.untilState(message => message.state.phase === 'countdown', { after: beforeStart });
   assert.deepEqual([0, 1].map(team => room.state.players.filter(player => player.team === team).length), [4, 4]);
   assert.equal(room.state.players.filter(player => player.human).length, 2);
-  await expectError(second, { type: 'lockdown-setup', cls: 'recon' }, /lobby/);
+  // Everyone starts in base, so loadouts can still change; teams cannot.
+  await expectError(second, { type: 'lockdown-setup', team: 0 }, /lobby/);
+  second.send({ type: 'lockdown-setup', cls: 'recon' }); await flush(second);
+  assert.equal(room.state.players[1].cls, 'recon');
   for (let t = 0; t <= RULES.countdownTicks; t++) game.app.tick();
   assert.equal(room.state.phase, 'fight');
 
@@ -73,6 +76,9 @@ test('Lockdown rooms seat up to eight, take setup and map choices, and start wit
   for (let t = 0; t < 4; t++) game.app.tick();
   const snapshot = await first.untilState(message => message.state.phase === 'fight', { after: mark });
   assert.ok(snapshot.state.events.every(event => snapshot.state.tick - event.tick <= 240));
+  // Out on the field, a loadout change waits for the base.
+  Object.assign(me, { x: room.state.points[1].x, y: room.state.points[1].y });
+  await expectError(first, { type: 'lockdown-setup', cls: 'guardian' }, /base/);
 
   // Leaving mid-match hands the seat to a bot and the match carries on for everyone else.
   const after = first.messages.length;

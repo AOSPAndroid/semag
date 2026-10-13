@@ -1,7 +1,7 @@
 /** Lockdown top-down canvas renderer.
  * Draws from the art manifest when a sprite exists and falls back to readable
  * placeholder shapes otherwise. Pure presentation: it never changes the state. */
-import { MAPS, TILE, RULES, ABILITIES, WEAPONS, CLASSES } from './lockdown-engine.js';
+import { MAPS, TILE, RULES, ABILITIES, WEAPONS, CLASSES, inBase } from './lockdown-engine.js';
 import { isWall } from './lockdown-maps.js';
 
 export const TEAM_COLORS = Object.freeze([
@@ -88,6 +88,7 @@ export class LockdownRenderer {
       else if (event.type === 'capture') add('capture', 900, { x: event.x, y: event.y, team: event.team });
       else if (event.type === 'bubblePop') add('pop', 300, { x: event.x, y: event.y });
       else if (event.type === 'kill') add('kill', 600, { x: event.x, y: event.y });
+      else if (event.type === 'heartPickup') add('healNumber', 800, { x: event.x, y: event.y, amount: event.amount });
     }
     this.effects = this.effects.filter(effect => now - effect.born < effect.life);
   }
@@ -112,6 +113,7 @@ export class LockdownRenderer {
     ctx.drawImage(this.buildMap(map), 0, 0);
     for (const point of state.points) this.drawPoint(ctx, point, now);
     for (const bomb of state.bombs || []) this.drawBomb(ctx, bomb, state, now);
+    for (const pickup of state.pickups || []) this.drawHeart(ctx, pickup, now);
     const viewerTeam = local?.team ?? null;
     const players = [...state.players].filter(player => player.alive).sort((a, b) => a.y - b.y);
     for (const player of players) if (player.bubbleTicks > 0) this.drawBubble(ctx, player, now);
@@ -120,6 +122,7 @@ export class LockdownRenderer {
       const hidden = player.cloakTicks > 0 && viewerTeam !== null && player.team !== viewerTeam && !(local?.alive && Math.hypot(local.x - player.x, local.y - player.y) < ABILITIES.cloak.revealRange);
       if (hidden) continue;
       this.drawKnight(ctx, player, state, now, { mine: player.id === localId, alpha: player.cloakTicks > 0 ? .4 : 1 });
+      if (state.phase === 'fight' && player.hp < player.maxHp && inBase(state, player)) this.drawRegen(ctx, player, now);
     }
     for (const shot of state.projectiles || []) this.drawProjectile(ctx, shot);
     this.drawEffects(ctx, now);
@@ -158,6 +161,27 @@ export class LockdownRenderer {
     }
     ctx.strokeStyle = left < .3 ? '#ff5a4a' : '#ffd36b'; ctx.lineWidth = 3;
     ctx.beginPath(); ctx.arc(bomb.x, bomb.y, 15, -Math.PI / 2, -Math.PI / 2 + left * Math.PI * 2); ctx.stroke();
+  }
+
+  drawHeart(ctx, heart, now) {
+    // Hearts bob, and blink through their last three seconds.
+    const y = heart.y + Math.sin(now / 220 + heart.id) * 3;
+    if (heart.ttl < 3 * 120 && Math.floor(now / 150) % 2) return;
+    ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(heart.x, heart.y + 10, 9, 4, 0, 0, Math.PI * 2); ctx.fill();
+    if (this.drawSprite(ctx, 'pickup_heart', heart.x, y)) return;
+    ctx.save(); ctx.translate(heart.x, y); ctx.scale(1.1, 1.1);
+    ctx.fillStyle = '#ff4d6d'; ctx.strokeStyle = '#5c0f1f'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(0, 8); ctx.bezierCurveTo(-12, -1, -9, -11, 0, -5); ctx.bezierCurveTo(9, -11, 12, -1, 0, 8); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,.6)'; ctx.beginPath(); ctx.arc(-4, -4, 2.2, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  drawRegen(ctx, player, now) {
+    // Small green pluses drift up while a knight heals in base.
+    for (let i = 0; i < 3; i++) {
+      const phase = ((now / 900) + i / 3) % 1, x = player.x + Math.sin(i * 2.3 + player.id) * 12, y = player.y - 6 - phase * 26;
+      if (this.drawSprite(ctx, 'fx_regen', x, y, { alpha: 1 - phase })) continue;
+      ctx.globalAlpha = 1 - phase; ctx.fillStyle = '#7cf0a0'; ctx.fillRect(x - 1.5, y - 5, 3, 10); ctx.fillRect(x - 5, y - 1.5, 10, 3); ctx.globalAlpha = 1;
+    }
   }
 
   drawBubble(ctx, player, now) {
@@ -255,6 +279,8 @@ export class LockdownRenderer {
         }
       } else if (effect.type === 'number') {
         ctx.fillStyle = '#ffffff'; ctx.font = 'bold 16px system-ui'; ctx.textAlign = 'center'; ctx.fillText(String(effect.amount), effect.x + 12, effect.y - 20 - t * 26);
+      } else if (effect.type === 'healNumber') {
+        ctx.fillStyle = '#7cf0a0'; ctx.font = 'bold 16px system-ui'; ctx.textAlign = 'center'; ctx.fillText(`+${effect.amount}`, effect.x, effect.y - 20 - t * 26);
       } else if (effect.type === 'heal') {
         if (!this.drawSprite(ctx, 'fx_heal', effect.x, effect.y, { scale: effect.radius * 2 / 256 * (.5 + t * .5) })) { ctx.strokeStyle = '#8dffb0'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(effect.x, effect.y, effect.radius * t, 0, Math.PI * 2); ctx.stroke(); }
       } else if (effect.type === 'capture') {
