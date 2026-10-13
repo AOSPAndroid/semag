@@ -19,18 +19,31 @@
  *   world position and what it rotates around.
  * - Sheets are horizontal strips of `frames` equal frames.
  */
-import { WEAPONS, CLASSES } from './lockdown-engine.js';
+import { WEAPONS, CLASSES, MAPS } from './lockdown-engine.js';
 
 export const ASSET_BASE = '/art/lockdown/';
 
 const asset = (key, w, h, anchor, description, extra = {}) => Object.freeze({ key, file: `${key}.png`, size: Object.freeze([w, h]), anchor: Object.freeze(anchor), frames: 1, description, ...extra });
 
-const tiles = ['stone', 'brass'].flatMap(theme => [
-  asset(`tile_floor_${theme}`, 48, 48, [0, 0], `Seamless ${theme} arena floor tile. Must tile in all directions.`, { group: 'tiles' }),
-  asset(`tile_floor_${theme}_alt`, 48, 48, [0, 0], `Variant ${theme} floor tile (cracks, rivets or a drain) mixed in at random for variety.`, { group: 'tiles' }),
-  asset(`tile_wall_top_${theme}`, 48, 48, [0, 0], `Top face of a ${theme} wall block, seen from the ¾ camera. The game draws it raised 24 px above the floor, so it must read as the lit upper surface of a block (light from the top-left). Tiles side by side must join seamlessly.`, { group: 'tiles' }),
-  asset(`tile_wall_front_${theme}`, 48, 24, [0, 0], `Front (south-facing) face of a ${theme} wall block, drawn under the top face wherever floor lies below the wall. Darker than the top, with masonry/plating detail, a lit top edge and a shadowed bottom edge where it meets the floor. Must tile horizontally.`, { group: 'tiles' }),
-]);
+/** One tile set per map theme: what each arena looks like and what its '~' pits are. */
+const THEME_LOOKS = Object.freeze({
+  castle: { look: 'old castle courtyard: worn flagstones, moss between the stones, grey ashlar walls with battlements', pit: 'moat water, dark blue with ripples' },
+  maze: { look: 'hedge labyrinth: packed earth and gravel paths, walls of trimmed green hedge with leaves on top', pit: 'overgrown sinkhole, dark green' },
+  foundry: { look: 'clockwork foundry: riveted iron floor plates, brass machinery walls with gears and pipes', pit: 'molten lava, glowing orange with a dark crust' },
+  ruins: { look: 'sunken temple: pale sandstone with carved glyphs, weathered pillars and broken walls', pit: 'clear flooded pool, teal water over sunken tiles' },
+  graveyard: { look: 'gloomy graveyard: dark soil and slate paths, mossy tombstones and crypt walls', pit: 'open crevice into darkness' },
+  skyway: { look: 'floating sky platforms: polished stone panels with gold trim, low balustrade walls', pit: 'open sky far below, soft clouds' },
+});
+const tiles = [...new Set(Object.values(MAPS).map(map => map.theme))].flatMap(theme => {
+  const style = THEME_LOOKS[theme]?.look || theme, pit = THEME_LOOKS[theme]?.pit || 'chasm';
+  return [
+    asset(`tile_floor_${theme}`, 48, 48, [0, 0], `Seamless floor tile — ${style}. Must tile in all directions.`, { group: 'tiles' }),
+    asset(`tile_floor_${theme}_alt`, 48, 48, [0, 0], `Variant floor tile for ${theme} (cracks, a drain, a plant or rubble) mixed in at random.`, { group: 'tiles' }),
+    asset(`tile_wall_top_${theme}`, 48, 48, [0, 0], `Top face of a wall block — ${style}. The game raises it 24 px above the floor; neighbouring tiles must join seamlessly.`, { group: 'tiles' }),
+    asset(`tile_wall_front_${theme}`, 48, 24, [0, 0], `Front (south-facing) face of a ${theme} wall block, drawn under the top face wherever floor lies below. Darker than the top, lit top edge, shadowed bottom edge. Must tile horizontally.`, { group: 'tiles' }),
+    asset(`tile_pit_${theme}`, 48, 48, [0, 0], `Pit tile ('~'): ${pit}. Knights cannot walk on it but shots fly over it. Must tile in all directions; the game adds the edge lip.`, { group: 'tiles' }),
+  ];
+});
 const spawnPads = [0, 1].map(team => asset(`tile_spawn_team${team}`, 48, 48, [0, 0], `Spawn floor tile tinted for team ${team === 0 ? 'Amber (warm orange)' : 'Cyan (cool teal)'}.`, { group: 'tiles' }));
 
 /** The five drawn facings of a knight sheet, top row first. Left-hand directions mirror the

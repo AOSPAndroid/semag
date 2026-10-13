@@ -4,7 +4,7 @@
  * travel at chest height. Everything that stands up is depth-sorted, so knights pass
  * behind walls. Draws from the art manifest when a sprite exists and falls back to
  * readable placeholder shapes otherwise. Pure presentation: it never changes the state. */
-import { MAPS, TILE, RULES, ABILITIES, WEAPONS, CLASSES, GUARD, STATUS_IDS, inBase } from './lockdown-engine.js';
+import { MAPS, TILE, RULES, ABILITIES, WEAPONS, CLASSES, GUARD, STATUS_IDS, inBase, chargeTicksFor } from './lockdown-engine.js';
 import { isWall } from './lockdown-maps.js';
 import { KNIGHT_FACINGS } from './lockdown-assets.js';
 
@@ -29,9 +29,16 @@ export const TEAM_COLORS = Object.freeze([
   Object.freeze({ main: '#e39a3b', light: '#ffd08a', dark: '#7a4a14', name: 'Amber' }),
   Object.freeze({ main: '#3bb8c4', light: '#9fe8ee', dark: '#14545c', name: 'Cyan' }),
 ]);
+/** Placeholder palettes per map theme (used until the tile art exists). `pit` is the chasm,
+ * water or lava that blocks feet but not shots. */
 const THEMES = Object.freeze({
-  stone: { floor: '#3c4048', floorAlt: '#383b43', grout: '#30333a', wall: '#6b6f78', wallTop: '#8a8f99', wallEdge: '#24262b' },
-  brass: { floor: '#433b31', floorAlt: '#3e362d', grout: '#352e26', wall: '#7d6a4c', wallTop: '#a08a62', wallEdge: '#2a231a' },
+  castle: { floor: '#5d5a52', floorAlt: '#56534c', grout: '#4a4842', wall: '#58616b', wallTop: '#8b949e', wallEdge: '#2b3036', pit: '#24425a', pitEdge: '#5c86a3', pitKind: 'water' },
+  maze: { floor: '#6f6550', floorAlt: '#6a604b', grout: '#5d5543', wall: '#2f5a32', wallTop: '#4f8a4a', wallEdge: '#1d3720', pit: '#1f3d2a', pitEdge: '#3d6b46', pitKind: 'chasm' },
+  foundry: { floor: '#433b31', floorAlt: '#3e362d', grout: '#352e26', wall: '#6d5a40', wallTop: '#a08a62', wallEdge: '#2a231a', pit: '#a8381a', pitEdge: '#ffb347', pitKind: 'lava' },
+  ruins: { floor: '#6f6a58', floorAlt: '#6a6553', grout: '#5c5848', wall: '#5f6b5a', wallTop: '#94a38c', wallEdge: '#2f362c', pit: '#2a6b74', pitEdge: '#8fd6d6', pitKind: 'water' },
+  graveyard: { floor: '#3b3f3a', floorAlt: '#373a35', grout: '#2f322d', wall: '#4d5157', wallTop: '#7a7f88', wallEdge: '#24262a', pit: '#121418', pitEdge: '#3a3f4a', pitKind: 'chasm' },
+  skyway: { floor: '#7a7f8c', floorAlt: '#737885', grout: '#646876', wall: '#5a6274', wallTop: '#9aa3b8', wallEdge: '#2e3340', pit: '#8fb6e8', pitEdge: '#ffffff', pitKind: 'void' },
+  stone: { floor: '#3c4048', floorAlt: '#383b43', grout: '#30333a', wall: '#6b6f78', wallTop: '#8a8f99', wallEdge: '#24262b', pit: '#20242c', pitEdge: '#4a505c', pitKind: 'chasm' },
 });
 const VIEW_WORLD_WIDTH = 1100; // world units across the screen at the default zoom
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -102,6 +109,7 @@ export class LockdownRenderer {
     for (let row = 0; row < map.rows; row++) for (let col = 0; col < map.cols; col++) {
       const x = col * TILE, y = row * TILE, cell = map.grid[row][col];
       if (cell === '#') continue;
+      if (cell === '~') { this.drawPit(ctx, map, theme, col, row); continue; }
       const spawnTeam = cell === '1' ? 0 : cell === '2' ? 1 : null;
       const alt = hash(col, row) < .18;
       if (!this.drawSprite(ctx, spawnTeam !== null ? `tile_spawn_team${spawnTeam}` : `tile_floor_${map.theme}${alt ? '_alt' : ''}`, x, y)) {
@@ -113,6 +121,28 @@ export class LockdownRenderer {
       if (isWall(map, col, row - 1)) { const shade = ctx.createLinearGradient(0, y, 0, y + 14); shade.addColorStop(0, 'rgba(0,0,0,.35)'); shade.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = shade; ctx.fillRect(x, y, TILE, 14); }
     }
     this.mapCache = canvas; this.mapKey = key; return canvas;
+  }
+
+  /** Chasm, water or lava: sunk below the floor, with a lip where it meets solid ground. */
+  drawPit(ctx, map, theme, col, row) {
+    const x = col * TILE, y = row * TILE;
+    if (this.drawSprite(ctx, `tile_pit_${map.theme}`, x, y)) return;
+    ctx.fillStyle = theme.pit; ctx.fillRect(x, y, TILE, TILE);
+    const solid = (c, r) => map.grid[r]?.[c] !== undefined && map.grid[r][c] !== '~';
+    if (theme.pitKind === 'void') {
+      ctx.fillStyle = 'rgba(255,255,255,.35)'; if (hash(col, row) < .3) { ctx.beginPath(); ctx.ellipse(x + 24, y + 26, 16, 6, 0, 0, Math.PI * 2); ctx.fill(); }
+    } else {
+      ctx.fillStyle = theme.pitEdge; ctx.globalAlpha = theme.pitKind === 'lava' ? .55 : .3;
+      for (let i = 0; i < 3; i++) ctx.fillRect(x + 6 + ((col * 7 + row * 13 + i * 17) % 30), y + 8 + i * 13, 10, 2);
+      ctx.globalAlpha = 1;
+    }
+    // The near lip of the floor above shows as a cut face, like a wall front sunk into the ground.
+    if (solid(col, row - 1)) { ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.fillRect(x, y, TILE, 12); ctx.fillStyle = theme.wallEdge; ctx.fillRect(x, y, TILE, 3); }
+    ctx.fillStyle = theme.pitEdge; ctx.globalAlpha = .7;
+    if (solid(col - 1, row)) ctx.fillRect(x, y, 2, TILE);
+    if (solid(col + 1, row)) ctx.fillRect(x + TILE - 2, y, 2, TILE);
+    if (solid(col, row + 1)) ctx.fillRect(x, y + TILE - 2, TILE, 2);
+    ctx.globalAlpha = 1;
   }
 
   // ---------- events → short-lived effects ----------
@@ -144,7 +174,7 @@ export class LockdownRenderer {
       else if (event.type === 'status') add('statusPop', 500, { x: event.x, y: event.y, status: event.status });
       else if (event.type === 'heal') add('heal', 600, { x: event.x, y: event.y, radius: event.radius });
       else if (event.type === 'capture') add('capture', 900, { x: event.x, y: event.y, team: event.team });
-      else if (event.type === 'bubblePop') add('pop', 300, { x: event.x, y: event.y });
+      else if (event.type === 'dome') add('heal', 500, { x: event.x, y: event.y, radius: event.radius });
       else if (event.type === 'kill') add('kill', 600, { x: event.x, y: event.y });
       else if (event.type === 'heartPickup') add('healNumber', 800, { x: event.x, y: event.y, amount: event.amount });
     }
@@ -187,7 +217,7 @@ export class LockdownRenderer {
     for (const point of state.points) this.drawPoint(ctx, point, now);
     for (const cloud of state.clouds || []) this.drawCloud(ctx, cloud, now);
     for (const bomb of state.bombs || []) this.drawBombRadius(ctx, bomb, now);
-    for (const player of players) if (player.bubbleTicks > 0) this.drawBubble(ctx, player, now);
+    for (const player of players) if (player.guarding && player.guardRaise >= GUARD.expandTicks) this.drawDome(ctx, player, now);
     for (const player of players) this.drawFootprint(ctx, player, player.id === localId);
     // Standing layer, back to front: wall rows, knights, beacons, bombs, hearts and shots.
     const items = [];
@@ -291,15 +321,20 @@ export class LockdownRenderer {
     }
   }
 
-  drawBubble(ctx, player, now) {
-    const radius = ABILITIES.bubble.radius, team = TEAM_COLORS[player.team], health = Math.max(0, player.bubbleHp / ABILITIES.bubble.hp);
+  /** A Guardian's grown shield: a dome on the floor that covers and heals teammates inside. */
+  drawDome(ctx, player, now) {
+    const radius = GUARD.radius, team = TEAM_COLORS[player.team], health = Math.max(0, player.guardHp / GUARD.max);
     if (!this.drawSprite(ctx, 'fx_bubble', player.x, player.y, { scale: radius * 2 / 192, alpha: .55 })) {
       const gradient = ctx.createRadialGradient(player.x, player.y, radius * .4, player.x, player.y, radius);
       gradient.addColorStop(0, team.main + '10'); gradient.addColorStop(1, team.light + '55');
-      ctx.fillStyle = gradient; ctx.beginPath(); ctx.arc(player.x, player.y, radius, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = gradient; ctx.beginPath(); ctx.ellipse(player.x, player.y, radius, radius * .7, 0, 0, Math.PI * 2); ctx.fill();
     }
     ctx.strokeStyle = team.light; ctx.globalAlpha = .35 + .5 * health; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.arc(player.x, player.y, radius + Math.sin(now / 120) * 1.5, 0, Math.PI * 2); ctx.stroke(); ctx.globalAlpha = 1;
+    ctx.beginPath(); ctx.ellipse(player.x, player.y, radius + Math.sin(now / 120) * 1.5, (radius + Math.sin(now / 120) * 1.5) * .7, 0, 0, Math.PI * 2); ctx.stroke();
+    // Healing pluses rise inside the dome.
+    ctx.fillStyle = '#7cf0a0';
+    for (let i = 0; i < 5; i++) { const p = (now / 1100 + i / 5) % 1, a = i * 1.3 + player.id; ctx.globalAlpha = (1 - p) * .8; const hx = player.x + Math.cos(a) * radius * .6, hy = player.y + Math.sin(a) * radius * .4 - p * 24; ctx.fillRect(hx - 1.5, hy - 5, 3, 10); ctx.fillRect(hx - 5, hy - 1.5, 10, 3); }
+    ctx.globalAlpha = 1;
   }
 
   /** Floor marks under a knight: shadow, team ring, spawn shield and charge ring. */
@@ -309,7 +344,7 @@ export class LockdownRenderer {
     ctx.strokeStyle = mine ? '#ffffff' : team.main; ctx.lineWidth = mine ? 3 : 2; ctx.beginPath(); ctx.ellipse(fx, fy, 21, 10, 0, 0, Math.PI * 2); ctx.stroke();
     if (player.shieldTicks > 0) { ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(fx, fy, 26, 13, 0, 0, Math.PI * 2); ctx.stroke(); }
     if (player.charging) {
-      const full = Math.min(1, player.chargeTicks / weapon.chargeTicks);
+      const full = Math.min(1, player.chargeTicks / chargeTicksFor(player, weapon));
       ctx.strokeStyle = full >= 1 ? '#ffffff' : '#ffd36b'; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(fx, fy, 26, 13, 0, -Math.PI / 2, -Math.PI / 2 + full * Math.PI * 2); ctx.stroke();
     }
   }
@@ -383,7 +418,7 @@ export class LockdownRenderer {
   }
   /** The shield: a team-tinted dome while raised, with its health along the rim; cracks as it weakens. */
   drawGuard(ctx, player, now) {
-    const team = TEAM_COLORS[player.team], max = player.cls === 'guardian' ? GUARD.guardianMax : GUARD.max, health = Math.max(0, player.guardHp / max);
+    const team = TEAM_COLORS[player.team], health = Math.max(0, player.guardHp / GUARD.max);
     const raise = Math.min(1, (player.guardRaise || 0) / GUARD.raiseTicks), cx = player.x, cy = player.y + FEET - 24;
     if (this.drawSprite(ctx, 'fx_guard', cx, cy, { scale: .6 + .4 * raise, alpha: .85 })) { /* sprite drawn */ }
     else {
@@ -547,6 +582,9 @@ export class LockdownRenderer {
     ctx.fillStyle = 'rgba(20,22,26,.85)'; ctx.fillRect(0, 0, map.width, map.height);
     ctx.fillStyle = '#5b606b';
     for (let row = 0; row < map.rows; row++) for (let col = 0; col < map.cols; col++) if (map.grid[row][col] === '#') ctx.fillRect(col * TILE, row * TILE, TILE, TILE);
+    ctx.fillStyle = (THEMES[map.theme] || THEMES.stone).pit;
+    for (let row = 0; row < map.rows; row++) for (let col = 0; col < map.cols; col++) if (map.grid[row][col] === '~') ctx.fillRect(col * TILE, row * TILE, TILE, TILE);
+    ctx.fillStyle = '#5b606b';
     for (const point of state.points) { ctx.fillStyle = point.owner === null ? '#cfd6e2' : TEAM_COLORS[point.owner].main; ctx.beginPath(); ctx.arc(point.x, point.y, RULES.pointRadius, 0, Math.PI * 2); ctx.fill(); }
     const viewer = localId !== null ? state.players[localId] : null;
     for (const player of state.players) {

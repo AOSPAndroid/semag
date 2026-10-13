@@ -110,7 +110,7 @@ const mouse = { x: 0, y: 0, inside: false, left: false, right: false };
 let aim = 0, wheelSwap = false;
 const KEY_BINDINGS = {
   KeyW: 'up', ArrowUp: 'up', KeyS: 'down', ArrowDown: 'down', KeyA: 'left', ArrowLeft: 'left', KeyD: 'right', ArrowRight: 'right',
-  Space: 'ability', KeyE: 'ability2', Digit1: 'slot1', Digit2: 'slot2', Digit3: 'slot3', KeyQ: 'swap',
+  Space: 'ability', Digit1: 'slot1', Digit2: 'slot2', Digit3: 'slot3', KeyQ: 'swap',
 };
 function bindingFor(event) {
   if (KEY_BINDINGS[event.code] && event.code.startsWith('Arrow')) return KEY_BINDINGS[event.code];
@@ -145,12 +145,12 @@ canvas.addEventListener('pointerdown', event => {
   canvas.focus();
   mouse.x = event.offsetX; mouse.y = event.offsetY;
   if (event.button === 0) { mouse.left = true; press('attack'); }
-  if (event.button === 2) { mouse.right = true; press('guard'); }
+  if (event.button === 2) { mouse.right = true; press('ability'); }
   canvas.setPointerCapture?.(event.pointerId);
 });
 canvas.addEventListener('pointerup', event => {
   if (event.button === 0) { mouse.left = false; release('attack'); }
-  if (event.button === 2) { mouse.right = false; release('guard'); }
+  if (event.button === 2) { mouse.right = false; release('ability'); }
 });
 canvas.addEventListener('wheel', event => { event.preventDefault(); if (Math.abs(event.deltaY) > 4) wheelSwap = true; }, { passive: false });
 
@@ -309,16 +309,16 @@ function updateHud(current) {
     $('ld-class').textContent = CLASSES[me.cls].name.toUpperCase();
     $('ld-hp').textContent = Math.max(0, Math.ceil(me.alive ? me.hp : 0));
     $('ld-hp-bar').style.width = `${me.alive ? Math.max(0, me.hp / me.maxHp * 100) : 0}%`;
-    const ability = { striker: ['Boost', ABILITIES.dash.cooldown, me.dashTicks > 0 || me.evadeTicks > 0], guardian: ['Bubble', ABILITIES.bubble.cooldown, me.bubbleTicks > 0], recon: ['Cloak', ABILITIES.cloak.cooldown, me.cloakTicks > 0] }[me.cls];
+    // The class ability: Striker Boost and Recon Cloak have cooldowns; the Guardian's shield has health.
+    const ability = { striker: ['Boost', ABILITIES.dash.cooldown, me.dashTicks > 0 || me.evadeTicks > 0], guardian: ['Shield (hold)', 1, me.guarding], recon: ['Cloak', ABILITIES.cloak.cooldown, me.cloakTicks > 0] }[me.cls];
     $('ld-ability1-name').textContent = ability[0];
     $('ld-ability1').dataset.active = String(ability[2]);
-    $('ld-ability1').querySelector('em').style.transform = `scaleX(${me.abilityCooldown / ability[1]})`;
-    $('ld-ability2').hidden = me.cls !== 'guardian';
-    const guardMax = me.cls === 'guardian' ? GUARD.guardianMax : GUARD.max;
+    $('ld-ability1').querySelector('em').style.transform = `scaleX(${me.cls === 'guardian' ? 0 : me.abilityCooldown / ability[1]})`;
+    $('ld-guard').hidden = me.cls !== 'guardian';
+    const guardMax = GUARD.max;
     $('ld-guard-bar').style.width = `${Math.max(0, (me.guardHp ?? guardMax) / guardMax * 100)}%`;
     $('ld-guard').dataset.state = me.guardBroken ? 'broken' : me.guarding ? 'up' : 'ready';
     $('ld-statuses').textContent = STATUS_IDS.filter(id => me.status?.[id] > 0).map(id => `${STATUS[id].name} ${Math.ceil(me.status[id] / TICK_RATE)}s`).join(' · ');
-    $('ld-ability2').querySelector('em').style.transform = `scaleX(${me.ability2Cooldown / ABILITIES.heal.cooldown})`;
     buildWeaponCards(me);
     weaponCards.forEach((card, slot) => {
       const weapon = WEAPONS[card.id];
@@ -326,8 +326,9 @@ function updateHud(current) {
       const pips = weapon.family === 'gun' ? weapon.clip : 0, have = me.clips?.[card.id] ?? 0;
       if (card.pips.childElementCount !== pips) { card.pips.textContent = ''; for (let i = 0; i < pips; i++) card.pips.append(document.createElement('i')); }
       [...card.pips.children].forEach((pip, index) => pip.classList.toggle('empty', index >= have || (me.reloadTicks?.[card.id] ?? 0) > 0));
-      card.charge.style.width = slot === me.slot && me.charging ? `${Math.min(100, me.chargeTicks / weapon.chargeTicks * 100)}%` : '0%';
-      card.charge.style.background = slot === me.slot && me.chargeTicks >= weapon.chargeTicks ? '#ffffff' : '';
+      const needed = Engine.chargeTicksFor(me, weapon);
+      card.charge.style.width = slot === me.slot && me.charging ? `${Math.min(100, me.chargeTicks / needed * 100)}%` : '0%';
+      card.charge.style.background = slot === me.slot && me.chargeTicks >= needed ? '#ffffff' : '';
     });
   }
   // Big centre banner: countdown, respawn, result.
@@ -340,6 +341,8 @@ function updateHud(current) {
   const base = me && me.alive && current.phase === 'fight' && Engine.inBase(current, me);
   $('ld-base-hint').hidden = !(base && !menuOpen) && performance.now() > baseHintFlash;
   const hint = $('ld-base-hint'), [label, status, action] = hint.children;
+  for (const button of hint.querySelectorAll('[data-base-class]')) button.setAttribute('aria-pressed', String(me && button.dataset.baseClass === me.cls));
+  hint.querySelector('.ld-base-classes').hidden = !base;
   hint.classList.toggle('away', !base);
   label.textContent = base ? 'IN BASE' : 'LOADOUT';
   status.textContent = base ? (me.hp < me.maxHp ? 'Healing' : 'Full health') : 'Go back to your base to change class or weapons';
@@ -360,6 +363,13 @@ function toggleMenu(force) {
   renderMenu();
 }
 function buildMenu() {
+  // Class stations in the base: one click switches class without opening the menu.
+  for (const button of document.querySelectorAll('[data-base-class]')) button.addEventListener('click', event => {
+    event.stopPropagation(); if (!canChangeLoadout()) return;
+    const id = button.dataset.baseClass, keepWeapons = !Object.values(DEFAULT_LOADOUTS).some(loadout => loadout.join() === setup.weapons.join());
+    chooseSetup(keepWeapons ? { cls: id } : { cls: id, weapons: [...DEFAULT_LOADOUTS[id]] });
+    canvas.focus();
+  });
   $('ld-name').value = getName();
   $('ld-name').addEventListener('change', () => {
     const name = saveName($('ld-name').value); $('ld-name').value = name;
@@ -371,7 +381,7 @@ function buildMenu() {
     const card = document.createElement('button'); card.type = 'button'; card.className = 'ld-class-card'; card.dataset.cls = cls.id;
     card.innerHTML = `<span class="ld-class-icon"></span><b></b><small></small>`;
     card.querySelector('b').textContent = cls.name;
-    card.querySelector('small').textContent = `${cls.hp} HP · ${cls.ability}${cls.ability2 ? ` + ${cls.ability2}` : ''}`;
+    card.querySelector('small').textContent = `${cls.hp} HP · ${cls.ability}`;
     card.addEventListener('click', () => {
       // Picking a class also offers its signature loadout unless you already customised one.
       const defaults = Object.values(DEFAULT_LOADOUTS).some(loadout => loadout.join() === setup.weapons.join());
@@ -430,7 +440,7 @@ function chooseSetup(change) {
   } else if (solo) applySetupLocally();
   else send({ type: 'lockdown-setup', ...change });
   if (changedWeapon) showWeaponNote(changedWeapon);
-  if (change.cls) $('ld-class-note').textContent = CLASSES[setup.cls].description;
+  if (change.cls) $('ld-class-note').textContent = `${CLASSES[setup.cls].perks}. ${CLASSES[setup.cls].description}`;
   renderMenu();
 }
 function refreshIcons() {
@@ -459,12 +469,12 @@ function renderMenu() {
     note.classList.toggle('away', !editable);
     note.textContent = !me?.alive ? 'Waiting to respawn: class and weapon changes apply when you return.' : editable ? 'You are in your base: class and weapon changes apply right away. Teams stay fixed until the next lobby.' : 'Return to your base to change class or weapons. Your base also heals you.';
   }
-  if (!$('ld-class-note').textContent) $('ld-class-note').textContent = CLASSES[cls].description;
+  if (!$('ld-class-note').textContent) $('ld-class-note').textContent = `${CLASSES[cls].perks}. ${CLASSES[cls].description}`;
   if (!$('ld-weapon-note').textContent) showWeaponNote(weapons[0]);
   const isHost = solo || hostId === localId;
   const mapId = state?.mapId ?? soloMapId;
   $('ld-map').value = mapId; $('ld-map').disabled = !isHost || phase !== 'lobby';
-  $('ld-map-note').textContent = isHost ? `${MAPS[mapId].name}: three points, mirrored for both teams.` : `${MAPS[mapId].name}. The host picks the map.`;
+  $('ld-map-note').textContent = `${MAPS[mapId].description}${isHost ? '' : ' The host picks the map.'}`;
   const start = $('ld-start');
   start.textContent = phase === 'matchEnd' ? (solo ? 'New match' : 'Back to the lobby') : 'Start match';
   start.hidden = !(phase === 'lobby' || phase === 'matchEnd');

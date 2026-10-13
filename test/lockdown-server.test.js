@@ -30,9 +30,9 @@ test('Lockdown rooms seat up to eight, take setup and map choices, and start wit
   const game = await host(t);
   assert.equal((await game.make({ teamSize: 3 })).response.status, 400, 'no unknown settings');
   assert.equal((await game.make({ mapId: 'nowhere' })).response.status, 400);
-  const { response, body } = await game.make({ mapId: 'yard' });
+  const { response, body } = await game.make({ mapId: 'foundry' });
   assert.equal(response.status, 201);
-  assert.equal(body.room.capacity, CAPACITY); assert.equal(body.room.mapId, 'yard');
+  assert.equal(body.room.capacity, CAPACITY); assert.equal(body.room.mapId, 'foundry');
   const room = game.app.rooms.get(body.room.id);
   const { peer: first, welcome } = await game.peer(body.room.id, 'Ada');
   const { peer: second } = await game.peer(body.room.id, 'Bo');
@@ -40,17 +40,17 @@ test('Lockdown rooms seat up to eight, take setup and map choices, and start wit
   assert.equal(room.state.players[0].name, 'Ada'); assert.equal(room.state.players[1].human, true);
 
   await expectError(second, { type: 'start' }, /host/i);
-  await expectError(second, { type: 'lockdown-map', mapId: 'gate' }, /host/i);
+  await expectError(second, { type: 'lockdown-map', mapId: 'keep' }, /host/i);
   await expectError(first, { type: 'lockdown-map', mapId: 'moon' }, /map/i);
   await expectError(first, { type: 'lockdown-setup', cls: 'wizard' }, /Striker/);
   await expectError(first, { type: 'lockdown-setup', weapons: ['brand', 'brand', 'blast'] }, /different/);
   await expectError(first, { type: 'lockdown-setup', cls: 'recon', hp: 999 }, /only/);
-  await expectError(first, { type: 'start', mapId: 'gate' }, /no player, map/i);
+  await expectError(first, { type: 'start', mapId: 'keep' }, /no player, map/i);
 
-  first.send({ type: 'lockdown-map', mapId: 'gate' });
+  first.send({ type: 'lockdown-map', mapId: 'keep' });
   second.send({ type: 'lockdown-setup', team: 1, cls: 'guardian', weapons: ['cleaver', 'pulsar', 'vortex'] });
   await flush(first); await flush(second);
-  assert.equal(room.state.mapId, 'gate'); assert.equal(room.mapId, 'gate');
+  assert.equal(room.state.mapId, 'keep'); assert.equal(room.mapId, 'keep');
   assert.deepEqual([room.state.players[1].team, room.state.players[1].cls], [1, 'guardian']);
 
   const beforeStart = first.messages.length;

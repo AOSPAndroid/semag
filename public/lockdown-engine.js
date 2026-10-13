@@ -2,7 +2,7 @@
  * Deterministic 120 Hz simulation shared by the server and offline practice.
  * Up to 4v4; empty seats are filled by bots. Teams score every five seconds by
  * the points they hold; first to 500 (or the leader at the time limit) wins. */
-import { MAPS, MAP_IDS, TILE, isWall, wallAt } from './lockdown-maps.js';
+import { MAPS, MAP_IDS, TILE, isWall, isBlocked, wallAt } from './lockdown-maps.js';
 import { WEAPONS, WEAPON_IDS, DEFAULT_LOADOUTS, STATUS, STATUS_IDS, GUARD, BLADE } from './lockdown-weapons.js';
 
 export { MAPS, MAP_IDS, TILE, WEAPONS, WEAPON_IDS, DEFAULT_LOADOUTS, STATUS, STATUS_IDS, GUARD, BLADE };
@@ -10,7 +10,8 @@ export const TICK_RATE = 120;
 const DT = 1 / TICK_RATE;
 export const TEAM_SIZE = 4;
 export const CAPACITY = TEAM_SIZE * 2;
-export const INPUT_KEYS = Object.freeze(['up', 'down', 'left', 'right', 'attack', 'guard', 'ability', 'ability2', 'slot1', 'slot2', 'slot3', 'swap']);
+/** `ability` is the class ability (right mouse or Space): Striker Boost, Guardian shield (hold), Recon Cloak. */
+export const INPUT_KEYS = Object.freeze(['up', 'down', 'left', 'right', 'attack', 'ability', 'slot1', 'slot2', 'slot3', 'swap']);
 export const emptyInput = (aim = 0) => ({ ...Object.fromEntries(INPUT_KEYS.map(key => [key, false])), aim });
 
 export const RULES = Object.freeze({
@@ -27,19 +28,25 @@ export const RULES = Object.freeze({
   captureScore: 30, neutralizeScore: 15,
 });
 
-/** Every knight carries a shield (see GUARD); each class adds a signature ability on top. */
+/** The three Lockdown classes, as in Spiral Knights: the class ability takes the place of the
+ * shield, and each class tilts one weapon family. Multipliers above 1 on a charge make it slower. */
 export const CLASSES = Object.freeze({
-  striker: Object.freeze({ id: 'striker', name: 'Striker', hp: 100, speed: 210, bladeDamage: 1.25, bladeSpeed: 1.2, ability: 'Boost', ability2: null, description: 'The sword specialist: swords hit 25% harder and swing 20% faster. Boost dodges a short distance untouchable, then runs fast for three seconds to close in.' }),
-  guardian: Object.freeze({ id: 'guardian', name: 'Guardian', hp: 130, speed: 180, ability: 'Bubble', ability2: 'Heal Pulse', description: 'Holds the line. Raises a dome that soaks damage for allies inside, and pulses healing to nearby teammates.' }),
-  recon: Object.freeze({ id: 'recon', name: 'Recon', hp: 90, speed: 195, ability: 'Cloak', ability2: null, description: 'Strikes from nowhere. Cloak turns you invisible; the first hit out of it marks the target to take extra damage.' }),
+  striker: Object.freeze({ id: 'striker', name: 'Striker', hp: 100, speed: 210, bladeDamage: 1.25, bladeSpeed: 1.2, bombCharge: 1.5, ability: 'Boost',
+    perks: 'Swords +25% damage and +20% speed · slow bomb charge', description: 'The sword specialist. Boost dodges a short distance untouchable, then sprints for three seconds to close in or get out.' }),
+  guardian: Object.freeze({ id: 'guardian', name: 'Guardian', hp: 120, speed: 190, bombCharge: .7, ability: 'Shield',
+    perks: 'Most health · bombs charge 30% faster', description: 'The only knight with a shield. Hold it up to block everything; after a moment it grows into a dome that also covers and heals teammates inside. It breaks under fire and recharges in about eight seconds.' }),
+  recon: Object.freeze({ id: 'recon', name: 'Recon', hp: 95, speed: 200, gunDamage: 1.1, gunCharge: .8, ability: 'Cloak',
+    perks: 'Guns +10% damage · gun charges 20% faster · less health', description: 'The marksman. Cloak turns you invisible; the first hit out of it marks the target to take 30% more damage.' }),
 });
 export const ABILITIES = Object.freeze({
-  dash: { ticks: 3 * TICK_RATE, cooldown: 8 * TICK_RATE, speed: 1.5, dodgeTicks: 12, dodgeDistance: 150, evadeTicks: 22 },
-  bubble: { ticks: 4 * TICK_RATE, cooldown: 14 * TICK_RATE, radius: 88, hp: 120 },
-  heal: { cooldown: 16 * TICK_RATE, radius: 150, amount: 30 },
+  dash: { ticks: 3 * TICK_RATE, cooldown: 6 * TICK_RATE, speed: 1.5, dodgeTicks: 12, dodgeDistance: 150, evadeTicks: 26 },
   cloak: { ticks: 4 * TICK_RATE, cooldown: 12 * TICK_RATE, markTicks: 5 * TICK_RATE, markBonus: .3, revealRange: 64 },
 });
-
+/** Ticks a full charge takes for this knight: class perks speed up or slow down a weapon family. */
+export function chargeTicksFor(player, weapon) {
+  const cls = CLASSES[player.cls] || {};
+  return Math.round(weapon.chargeTicks * (weapon.family === 'bomb' ? cls.bombCharge || 1 : weapon.family === 'gun' ? cls.gunCharge || 1 : 1));
+}
 const CLASS_IDS = Object.keys(CLASSES);
 
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
@@ -69,12 +76,12 @@ function newPlayer(id) {
     dodgeTicks: 0, dodgeX: 0, dodgeY: 0, evadeTicks: 0,
     guarding: false, guardRaise: 0, guardHp: GUARD.max, guardBroken: false, guardDelay: 0,
     status: Object.fromEntries(STATUS_IDS.map(key => [key, 0])), statusOwner: {}, freezeImmune: 0, catalysts: 0, catalystTicks: 0,
-    dashTicks: 0, bubbleTicks: 0, bubbleHp: 0, cloakTicks: 0, markTicks: 0, markReady: false, abilityCooldown: 0, ability2Cooldown: 0,
+    dashTicks: 0, cloakTicks: 0, markTicks: 0, markReady: false, abilityCooldown: 0,
     kills: 0, deaths: 0, captures: 0, damage: 0, score: 0, previousInput: emptyInput(team === 0 ? 0 : Math.PI),
   };
 }
 
-export function createState({ mapId = 'gate', seed = 1 } = {}) {
+export function createState({ mapId = MAP_IDS[0], seed = 1 } = {}) {
   if (!Object.hasOwn(MAPS, mapId)) throw new RangeError('Unknown Lockdown map.');
   const map = MAPS[mapId];
   return {
@@ -110,7 +117,7 @@ export function setPlayerSetup(state, id, { team, cls, weapons, name } = {}) {
     const fraction = player.hp / player.maxHp;
     if (cls !== undefined && cls !== player.cls) {
       player.cls = cls; player.maxHp = CLASSES[cls].hp; player.hp = Math.max(1, fraction * player.maxHp);
-      player.dashTicks = player.bubbleTicks = player.cloakTicks = 0; player.markReady = false;
+      player.dashTicks = player.cloakTicks = 0; player.markReady = false; player.guarding = false;
     }
     if (weapons !== undefined) {
       player.weapons = [...weapons];
@@ -190,9 +197,9 @@ function spawn(state, player) {
   Object.assign(player, {
     x: spot.x, y: spot.y, vx: 0, vy: 0, alive: true, hp: cls.hp, maxHp: cls.hp, respawnTicks: 0, shieldTicks: RULES.spawnShieldTicks,
     stunTicks: 0, pushX: 0, pushY: 0, action: 'idle', actionTicks: 0, actionTotal: 0, comboStep: 0, comboWindow: 0, hitIds: [], chargeTicks: 0, charging: false,
-    dashTicks: 0, bubbleTicks: 0, bubbleHp: 0, cloakTicks: 0, markTicks: 0, markReady: false, slot: 0, fireCooldown: 0,
+    dashTicks: 0, cloakTicks: 0, markTicks: 0, markReady: false, slot: 0, fireCooldown: 0,
     aim: player.team === 0 ? 0 : Math.PI, burst: null, hitStop: 0, bufferAttack: false, dodgeTicks: 0, evadeTicks: 0, guarding: false, guardRaise: 0, guardBroken: false, guardDelay: 0,
-    guardHp: player.cls === 'guardian' ? GUARD.guardianMax : GUARD.max, freezeImmune: 0, catalysts: 0, catalystTicks: 0,
+    guardHp: GUARD.max, freezeImmune: 0, catalysts: 0, catalystTicks: 0,
     status: Object.fromEntries(STATUS_IDS.map(key => [key, 0])), statusOwner: {},
   });
   player.clips = Object.fromEntries(player.weapons.filter(id => WEAPONS[id].family === 'gun').map(id => [id, WEAPONS[id].clip]));
@@ -203,7 +210,7 @@ function spawn(state, player) {
 function collides(map, x, y, radius) {
   const minCol = Math.floor((x - radius) / TILE), maxCol = Math.floor((x + radius) / TILE), minRow = Math.floor((y - radius) / TILE), maxRow = Math.floor((y + radius) / TILE);
   for (let row = minRow; row <= maxRow; row++) for (let col = minCol; col <= maxCol; col++) {
-    if (!isWall(map, col, row)) continue;
+    if (!isBlocked(map, col, row)) continue;
     const nx = clamp(x, col * TILE, (col + 1) * TILE), ny = clamp(y, row * TILE, (row + 1) * TILE);
     if ((x - nx) ** 2 + (y - ny) ** 2 < radius * radius) return true;
   }
@@ -224,10 +231,12 @@ export function lineOfSight(map, a, b) {
 }
 
 // ---------- damage, shields and statuses ----------
+/** A Guardian whose shield has grown into a dome covering this knight (not the Guardian itself). */
+const domeUp = guard => guard.alive && guard.guarding && guard.guardRaise >= GUARD.expandTicks;
 function inAlliedBubble(state, target) {
-  return state.players.find(guard => guard.alive && guard.team === target.team && guard.bubbleTicks > 0 && dist(guard, target) <= ABILITIES.bubble.radius) || null;
+  return state.players.find(guard => guard !== target && guard.team === target.team && domeUp(guard) && dist(guard, target) <= GUARD.radius) || null;
 }
-const guardMax = player => player.cls === 'guardian' ? GUARD.guardianMax : GUARD.max;
+const guardMax = player => GUARD.max;
 const BLADE_KINDS = new Set(['blade', 'lunge', 'spin', 'slam', 'burst']);
 /** Class sword bonuses (the Striker's): damage multiplier and swing speed. */
 const bladePower = player => CLASSES[player.cls].bladeDamage || 1;
@@ -253,7 +262,7 @@ function heal(player, amount) {
 }
 /** Apply a status unless the shield is up; freeze leaves a short immunity behind. */
 function applyStatus(state, target, id, ownerId, chance = 1) {
-  if (!id || !target.alive || guardUp(target) || random(state) >= chance) return false;
+  if (!id || !target.alive || guardUp(target) || inAlliedBubble(state, target) || random(state) >= chance) return false;
   if (id === 'freeze' && target.freezeImmune > 0) return false;
   target.status[id] = STATUS[id].ticks; target.statusOwner[id] = ownerId;
   if (id === 'freeze') { target.charging = false; target.chargeTicks = 0; target.guarding = false; target.action = 'idle'; target.actionTicks = 0; }
@@ -262,7 +271,7 @@ function applyStatus(state, target, id, ownerId, chance = 1) {
 }
 function knockOut(state, attacker, target) {
   target.alive = false; target.hp = 0; target.deaths++; target.respawnTicks = respawnDelay(state);
-  target.bubbleTicks = target.cloakTicks = target.dashTicks = 0; target.guarding = false; target.catalysts = 0;
+  target.cloakTicks = target.dashTicks = 0; target.guarding = false; target.catalysts = 0;
   for (const id of STATUS_IDS) target.status[id] = 0;
   state.pickups.push({ id: state.nextId++, kind: 'heart', x: target.x, y: target.y, ttl: RULES.heart.ttlTicks });
   emit(state, 'heartDrop', { x: target.x, y: target.y });
@@ -276,25 +285,9 @@ function damage(state, attacker, target, amount, { push = 0, angle = 0, stun = 1
   if (target.evadeTicks > 0) { emit(state, 'evade', { playerId: target.id, x: target.x, y: target.y }); return false; }
   // A Guardian dome soaks hits that come from outside it.
   const dome = inAlliedBubble(state, target), origin = source || attacker;
-  if (dome && origin && dist(dome, origin) > ABILITIES.bubble.radius) {
-    dome.bubbleHp -= amount;
-    emit(state, 'bubbleHit', { playerId: dome.id, x: target.x, y: target.y, hp: Math.max(0, dome.bubbleHp) });
-    if (dome.bubbleHp <= 0) { dome.bubbleTicks = 0; emit(state, 'bubblePop', { playerId: dome.id, x: dome.x, y: dome.y }); }
-    return false;
-  }
+  if (dome && origin && dist(dome, origin) > GUARD.radius) { hitGuard(state, dome, amount, kind, attacker, 0, angle, 0); return false; }
   // A raised shield takes the hit (bombs hit it harder) and only a little knockback gets through.
-  if (guardUp(target)) {
-    // Swords chew through shields; bombs hit them hardest.
-    target.guardHp -= amount * (kind === 'bomb' ? GUARD.bombScale : BLADE_KINDS.has(kind) ? GUARD.bladeScale : 1); target.guardDelay = GUARD.regenDelay;
-    target.pushX = Math.cos(angle) * push * GUARD.knockback; target.pushY = Math.sin(angle) * push * GUARD.knockback;
-    if (attacker && hitStop) attacker.hitStop = Math.max(attacker.hitStop, hitStop);
-    emit(state, 'block', { playerId: target.id, attackerId: attacker?.id ?? null, x: target.x, y: target.y, hp: Math.max(0, target.guardHp) });
-    if (target.guardHp <= 0) {
-      Object.assign(target, { guardHp: 0, guarding: false, guardRaise: 0, guardBroken: true, stunTicks: GUARD.breakStun });
-      emit(state, 'guardBreak', { playerId: target.id, x: target.x, y: target.y });
-    }
-    return false;
-  }
+  if (guardUp(target)) { hitGuard(state, target, amount, kind, attacker, push, angle, hitStop); return false; }
   let total = amount * (attacker?.status.poison > 0 ? STATUS.poison.damageScale : 1) * (target.markTicks > 0 ? 1 + ABILITIES.cloak.markBonus : 1);
   if (attacker && attacker.markReady && attacker.cls === 'recon') { target.markTicks = ABILITIES.cloak.markTicks; attacker.markReady = false; emit(state, 'mark', { playerId: attacker.id, targetId: target.id, x: target.x, y: target.y }); }
   total = Math.max(1, Math.round(total));
@@ -309,6 +302,17 @@ function damage(state, attacker, target, amount, { push = 0, angle = 0, stun = 1
   if (target.hp <= 0) { knockOut(state, attacker, target); return true; }
   if (status) applyStatus(state, target, status, attacker?.id ?? null, chance);
   return true;
+}
+/** Damage soaked by a Guardian's shield: swords chew through it, bombs hit it hardest; breaking it stuns. */
+function hitGuard(state, guard, amount, kind, attacker, push, angle, hitStop) {
+  guard.guardHp -= amount * (kind === 'bomb' ? GUARD.bombScale : BLADE_KINDS.has(kind) ? GUARD.bladeScale : 1); guard.guardDelay = GUARD.regenDelay;
+  guard.pushX = Math.cos(angle) * push * GUARD.knockback; guard.pushY = Math.sin(angle) * push * GUARD.knockback;
+  if (attacker && hitStop) attacker.hitStop = Math.max(attacker.hitStop, hitStop);
+  emit(state, 'block', { playerId: guard.id, attackerId: attacker?.id ?? null, x: guard.x, y: guard.y, hp: Math.max(0, guard.guardHp) });
+  if (guard.guardHp <= 0) {
+    Object.assign(guard, { guardHp: 0, guarding: false, guardRaise: 0, guardBroken: true, stunTicks: GUARD.breakStun });
+    emit(state, 'guardBreak', { playerId: guard.id, x: guard.x, y: guard.y });
+  }
 }
 function breakCloak(state, player) {
   if (player.cloakTicks > 0) { player.cloakTicks = 0; player.markReady = true; emit(state, 'uncloak', { playerId: player.id }); }
@@ -325,15 +329,22 @@ function tickStatus(state, player) {
     if (--status[id] === 0) { if (id === 'freeze') player.freezeImmune = STATUS.freeze.immuneTicks; emit(state, 'statusEnd', { playerId: player.id, status: id }); }
   }
 }
+/** The Guardian's shield (hold the class ability). It blocks everything at once; after
+ * GUARD.expandTicks it grows into a dome that also shields and heals teammates inside. */
 function tickGuard(state, player, input) {
-  const max = guardMax(player);
+  if (player.cls !== 'guardian') { player.guarding = false; return; }
+  const max = guardMax(player), held = input.ability;
   if (player.guardBroken && player.guardHp >= max * GUARD.recover) player.guardBroken = false;
   // Shield cancel: raising the shield cuts a sword's recovery short.
-  if (input.guard && !player.guarding && !player.guardBroken && inRecovery(player)) cancelRecovery(state, player, 'guard');
-  const wants = input.guard && !player.guardBroken && player.stunTicks === 0 && !(player.status.freeze > 0) && player.actionTicks === 0;
-  if (wants && !player.guarding) { player.guarding = true; player.guardRaise = 0; player.charging = false; player.chargeTicks = 0; player.bufferAttack = false; }
+  if (held && !player.guarding && !player.guardBroken && inRecovery(player)) cancelRecovery(state, player, 'guard');
+  const wants = held && !player.guardBroken && player.stunTicks === 0 && !(player.status.freeze > 0) && player.actionTicks === 0;
+  if (wants && !player.guarding) { player.guarding = true; player.guardRaise = 0; player.charging = false; player.chargeTicks = 0; player.bufferAttack = false; emit(state, 'guardUp', { playerId: player.id, x: player.x, y: player.y }); }
   if (!wants) player.guarding = false;
-  if (player.guarding) { player.guardRaise++; player.guardDelay = GUARD.regenDelay; }
+  if (player.guarding) {
+    if (++player.guardRaise === GUARD.expandTicks) emit(state, 'dome', { playerId: player.id, x: player.x, y: player.y, radius: GUARD.radius });
+    player.guardDelay = GUARD.regenDelay;
+    if (domeUp(player)) for (const ally of state.players) if (ally.alive && ally.team === player.team && dist(ally, player) <= GUARD.radius) heal(ally, GUARD.healPerSecond / TICK_RATE);
+  }
   else if (player.guardDelay > 0) player.guardDelay--;
   else player.guardHp = Math.min(max, player.guardHp + GUARD.regenPerSecond / TICK_RATE);
 }
@@ -367,7 +378,7 @@ function spawnShot(state, player, weapon, spec, angle) {
     id: state.nextId++, ownerId: player.id, team: player.team, weapon: weapon.id, kind: spec.kind || weapon.kind || 'bullet',
     x: player.x + Math.cos(angle) * (RULES.radius + 4), y: player.y + Math.sin(angle) * (RULES.radius + 4),
     vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, size, grow: (spec.grow || 0) / Math.max(1, Math.ceil(spec.range / speed * TICK_RATE)),
-    damage: spec.damage, push: spec.push ?? 0, ttl: Math.ceil(spec.range / speed * TICK_RATE), pierce: !!spec.pierce, bounces: spec.bounces || 0,
+    damage: spec.damage * (weapon.family === 'gun' ? CLASSES[player.cls].gunDamage || 1 : 1), push: spec.push ?? 0, ttl: Math.ceil(spec.range / speed * TICK_RATE), pierce: !!spec.pierce, bounces: spec.bounces || 0,
     status: spec.status || null, chance: spec.chance ?? 1, radius: spec.radius || 0, carry: spec.kind === 'wave', hitIds: [],
     perCharge: spec.perCharge || 0, pushPerCharge: spec.pushPerCharge || 0,
   });
@@ -504,7 +515,7 @@ function tickWeapon(state, player, input, previous) {
   if (input.attack && (player.charging || !pressed && weapon.family !== 'bomb')) { if (!player.charging) { player.charging = true; player.chargeTicks = 0; } player.chargeTicks++; }
   if (weapon.family === 'bomb' && pressed) { player.charging = true; player.chargeTicks = 0; }
   if (released && player.charging) {
-    const full = player.chargeTicks >= weapon.chargeTicks;
+    const full = player.chargeTicks >= chargeTicksFor(player, weapon);
     player.charging = false; player.chargeTicks = 0;
     if (full) startCharge(state, player, weapon);
     return;
@@ -519,28 +530,23 @@ function tickWeapon(state, player, input, previous) {
 }
 
 function tickAbilities(state, player, input, previous) {
-  player.abilityCooldown = Math.max(0, player.abilityCooldown - 1); player.ability2Cooldown = Math.max(0, player.ability2Cooldown - 1);
+  player.abilityCooldown = Math.max(0, player.abilityCooldown - 1);
   player.dashTicks = Math.max(0, player.dashTicks - 1); player.markTicks = Math.max(0, player.markTicks - 1);
-  if (player.bubbleTicks > 0 && --player.bubbleTicks === 0) emit(state, 'bubbleEnd', { playerId: player.id });
   if (player.cloakTicks > 0 && --player.cloakTicks === 0) { player.markReady = true; emit(state, 'uncloak', { playerId: player.id }); }
-  if (input.ability && !previous.ability && player.abilityCooldown === 0) {
-    if (player.cls === 'striker' && (player.actionTicks === 0 || inRecovery(player))) {
-      // Boost: a short untouchable dodge the way you are moving (or aiming), then three seconds of speed.
-      if (inRecovery(player)) cancelRecovery(state, player, 'dodge');
-      let dx = (input.right ? 1 : 0) - (input.left ? 1 : 0), dy = (input.down ? 1 : 0) - (input.up ? 1 : 0);
-      if (!dx && !dy) { dx = Math.cos(player.aim); dy = Math.sin(player.aim); }
-      const length = Math.hypot(dx, dy);
-      Object.assign(player, { dodgeX: dx / length, dodgeY: dy / length, dodgeTicks: ABILITIES.dash.dodgeTicks, evadeTicks: ABILITIES.dash.evadeTicks, dashTicks: ABILITIES.dash.ticks, abilityCooldown: ABILITIES.dash.cooldown, charging: false, chargeTicks: 0 });
-      emit(state, 'dash', { playerId: player.id, x: player.x, y: player.y, angle: Math.atan2(player.dodgeY, player.dodgeX) });
-    }
-    if (player.cls === 'guardian') { player.bubbleTicks = ABILITIES.bubble.ticks; player.bubbleHp = ABILITIES.bubble.hp; player.abilityCooldown = ABILITIES.bubble.cooldown; emit(state, 'bubble', { playerId: player.id, x: player.x, y: player.y, radius: ABILITIES.bubble.radius }); }
-    if (player.cls === 'recon') { player.cloakTicks = ABILITIES.cloak.ticks; player.abilityCooldown = ABILITIES.cloak.cooldown; player.markReady = false; emit(state, 'cloak', { playerId: player.id, x: player.x, y: player.y }); }
-  }
-  if (input.ability2 && !previous.ability2 && player.ability2Cooldown === 0 && player.cls === 'guardian') {
-    player.ability2Cooldown = ABILITIES.heal.cooldown;
-    const healed = [];
-    for (const ally of state.players) if (ally.alive && ally.team === player.team && dist(ally, player) <= ABILITIES.heal.radius && heal(ally, ABILITIES.heal.amount) > 0) healed.push(ally.id);
-    emit(state, 'heal', { playerId: player.id, x: player.x, y: player.y, radius: ABILITIES.heal.radius, healed });
+  if (!(input.ability && !previous.ability) || player.abilityCooldown > 0 || player.cls === 'guardian') return;
+  // Boost and Cloak may also cancel a cut's recovery, like the Guardian's shield.
+  if (player.actionTicks > 0 && !inRecovery(player)) return;
+  if (inRecovery(player)) cancelRecovery(state, player, player.cls === 'striker' ? 'dodge' : 'cloak');
+  if (player.cls === 'striker') {
+    // Boost: a short untouchable dodge the way you are moving (or aiming), then three seconds of speed.
+    let dx = (input.right ? 1 : 0) - (input.left ? 1 : 0), dy = (input.down ? 1 : 0) - (input.up ? 1 : 0);
+    if (!dx && !dy) { dx = Math.cos(player.aim); dy = Math.sin(player.aim); }
+    const length = Math.hypot(dx, dy);
+    Object.assign(player, { dodgeX: dx / length, dodgeY: dy / length, dodgeTicks: ABILITIES.dash.dodgeTicks, evadeTicks: ABILITIES.dash.evadeTicks, dashTicks: ABILITIES.dash.ticks, abilityCooldown: ABILITIES.dash.cooldown, charging: false, chargeTicks: 0 });
+    emit(state, 'dash', { playerId: player.id, x: player.x, y: player.y, angle: Math.atan2(player.dodgeY, player.dodgeX) });
+  } else if (player.cls === 'recon') {
+    player.cloakTicks = ABILITIES.cloak.ticks; player.abilityCooldown = ABILITIES.cloak.cooldown; player.markReady = false;
+    emit(state, 'cloak', { playerId: player.id, x: player.x, y: player.y });
   }
 }
 
@@ -629,8 +635,8 @@ function tickProjectiles(state) {
       }
       shot.x = nx; shot.y = ny;
       // Enemy domes stop rounds at their edge.
-      const dome = state.players.find(guard => guard.alive && guard.team !== shot.team && guard.bubbleTicks > 0 && dist(guard, shot) <= ABILITIES.bubble.radius && dist(guard, { x: shot.x - shot.vx * DT, y: shot.y - shot.vy * DT }) > ABILITIES.bubble.radius - 2);
-      if (dome) { dome.bubbleHp -= shot.damage; emit(state, 'bubbleHit', { playerId: dome.id, x: shot.x, y: shot.y, hp: Math.max(0, dome.bubbleHp) }); if (dome.bubbleHp <= 0) { dome.bubbleTicks = 0; emit(state, 'bubblePop', { playerId: dome.id, x: dome.x, y: dome.y }); } alive = false; break; }
+      const dome = state.players.find(guard => guard.team !== shot.team && domeUp(guard) && dist(guard, shot) <= GUARD.radius && dist(guard, { x: shot.x - shot.vx * DT, y: shot.y - shot.vy * DT }) > GUARD.radius - 2);
+      if (dome) { hitGuard(state, dome, shot.damage, shot.kind, state.players[shot.ownerId], 0, 0, 0); alive = false; break; }
       for (const target of state.players) {
         if (!target.alive || target.team === shot.team || dist(target, shot) > RULES.radius + shot.size) continue;
         // Shadow waves carry knights along with them.
@@ -770,7 +776,7 @@ function flowField(map, x, y) {
     const index = queue[head], col = index % map.cols, row = (index - col) / map.cols;
     for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
       const c = col + dc, r = row + dr, next = r * map.cols + c;
-      if (isWall(map, c, r) || field[next] >= 0) continue;
+      if (isBlocked(map, c, r) || field[next] >= 0) continue;
       field[next] = field[index] + 1; queue.push(next);
     }
   }
@@ -781,8 +787,8 @@ function stepToward(map, player, goal) {
   const field = flowField(map, goal.x, goal.y), col = Math.floor(player.x / TILE), row = Math.floor(player.y / TILE);
   let best = null, bestValue = Infinity;
   for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
-    const c = col + dc, r = row + dr; if (isWall(map, c, r)) continue;
-    if (dc && dr && (isWall(map, col + dc, row) || isWall(map, col, row + dr))) continue;
+    const c = col + dc, r = row + dr; if (isBlocked(map, c, r)) continue;
+    if (dc && dr && (isBlocked(map, col + dc, row) || isBlocked(map, col, row + dr))) continue;
     const value = field[r * map.cols + c]; if (value >= 0 && value < bestValue) { bestValue = value; best = { x: (c + .5) * TILE, y: (r + .5) * TILE }; }
   }
   return best ? Math.atan2(best.y - player.y, best.x - player.x) : Math.atan2(goal.y - player.y, goal.x - player.x);
@@ -829,7 +835,7 @@ function botInput(state, bot) {
     // Bombs always charge; blades and guns mostly tap, sometimes commit to a full charge.
     if (!bot.charging && brain.mode !== 'charge' && weapon.family !== 'bomb' && random(state) < .006) brain.mode = 'charge';
     if (weapon.family === 'bomb' || brain.mode === 'charge') {
-      const full = bot.charging && bot.chargeTicks >= weapon.chargeTicks;
+      const full = bot.charging && bot.chargeTicks >= chargeTicksFor(bot, weapon);
       input.attack = !full;
       if (full) brain.mode = 'tap';
     } else { brain.pulse = (brain.pulse + 1) % (weapon.family === 'blade' ? 14 : weapon.interval + 2); input.attack = brain.pulse < 2; }
@@ -842,11 +848,8 @@ function botInput(state, bot) {
     // Abilities.
     if (bot.cls === 'striker' && d > 140 && bot.abilityCooldown === 0) input.ability = !bot.previousInput.ability;
     if (bot.cls === 'recon' && d > 200 && bot.abilityCooldown === 0) input.ability = !bot.previousInput.ability;
-    if (bot.cls === 'guardian') {
-      const hurt = state.players.filter(ally => ally.alive && ally.team === bot.team && dist(ally, bot) < ABILITIES.heal.radius && ally.hp < ally.maxHp * .6).length;
-      if (hurt && bot.ability2Cooldown === 0) input.ability2 = !bot.previousInput.ability2;
-      if (bot.hp < bot.maxHp * .7 && bot.abilityCooldown === 0) input.ability = !bot.previousInput.ability;
-    }
+    // Guardians raise the dome over hurt teammates nearby.
+    if (bot.cls === 'guardian' && !bot.guardBroken && bot.guardHp > GUARD.max * .5 && state.players.filter(ally => ally.alive && ally.team === bot.team && dist(ally, bot) < GUARD.radius && ally.hp < ally.maxHp * .6).length >= 1 && brain.guardTicks === 0 && random(state) < .03) brain.guardTicks = GUARD.expandTicks + 120;
   } else if (brain.goal) {
     const d = dist(bot, brain.goal);
     if (d > RULES.pointRadius * .5) moveAngle = stepToward(map, bot, brain.goal);
@@ -860,13 +863,13 @@ function botInput(state, bot) {
     if (shot.team === bot.team) return false;
     const d = dist(shot, bot), speed = Math.hypot(shot.vx, shot.vy);
     return d < 150 && ((bot.x - shot.x) * shot.vx + (bot.y - shot.y) * shot.vy) / (speed * Math.max(1, d)) > .92;
-  }) || state.players.some(enemy => enemy.alive && enemy.team !== bot.team && dist(enemy, bot) < 100 && (enemy.action !== 'idle' || enemy.charging && enemy.chargeTicks > WEAPONS[enemy.weapons[enemy.slot]].chargeTicks * .8))
+  }) || state.players.some(enemy => enemy.alive && enemy.team !== bot.team && dist(enemy, bot) < 100 && (enemy.action !== 'idle' || enemy.charging && enemy.chargeTicks > chargeTicksFor(enemy, WEAPONS[enemy.weapons[enemy.slot]]) * .8))
     || state.bombs.some(bomb => bomb.team !== bot.team && bomb.fuse < 36 && dist(bomb, bot) < (WEAPONS[bomb.weapon].radius || 0) + 24);
   brain.guardTicks = Math.max(0, (brain.guardTicks || 0) - 1);
-  if (threatened && !bot.guardBroken && bot.guardHp > guardMax(bot) * .3 && !bot.charging && brain.guardTicks === 0 && random(state) < .05) brain.guardTicks = 30 + Math.floor(random(state) * 40);
-  // Strikers dodge through the threat instead of blocking it.
+  if (threatened && bot.cls === 'guardian' && !bot.guardBroken && bot.guardHp > guardMax(bot) * .3 && !bot.charging && brain.guardTicks === 0 && random(state) < .05) brain.guardTicks = 30 + Math.floor(random(state) * 40);
+  // Strikers dodge through the threat; Guardians block it.
   if (threatened && bot.cls === 'striker' && bot.abilityCooldown === 0 && random(state) < .04) input.ability = !bot.previousInput.ability;
-  else if (brain.guardTicks > 0) { input.guard = true; input.attack = false; }
+  else if (bot.cls === 'guardian' && brain.guardTicks > 0) { input.ability = true; input.attack = false; }
   if (detour) { moveAngle = stepToward(map, bot, detour); if (!target) { bot.aim = moveAngle; input.aim = moveAngle; } }
   else if (brain.retreat && !pressed && inBase(state, bot)) moveAngle = null; // wait in base until healed
   if (moveAngle !== null) {

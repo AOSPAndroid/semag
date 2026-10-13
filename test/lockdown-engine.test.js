@@ -6,7 +6,7 @@ import { MANIFEST, MANIFEST_BY_KEY } from '../public/lockdown-assets.js';
 const { TICK_RATE, RULES, ABILITIES, WEAPONS, CLASSES, MAPS, TILE, GUARD, STATUS, BLADE } = L;
 
 /** Two-knight arena: seat 0 (Amber) against seat 4 (Cyan); every other seat is benched. */
-function duel({ mapId = 'gate', a = {}, b = {}, gap = 50 } = {}) {
+function duel({ mapId = 'temple', a = {}, b = {}, gap = 50 } = {}) {
   const state = L.createState({ mapId, seed: 7 });
   L.setConnected(state, 0, true, 'Ada'); L.setConnected(state, 4, true, 'Bo');
   L.startMatch(state, [0, 4]);
@@ -146,7 +146,7 @@ test('bombs plant on a full charge and blast enemies in range after the fuse', (
   run(state, 10, () => ({ 0: { attack: true } }));
   run(state, 1);
   assert.equal(state.bombs.length, 0, 'a short tap plants nothing');
-  run(state, WEAPONS.blast.chargeTicks + 2, () => ({ 0: { attack: true } }));
+  run(state, L.chargeTicksFor(me, WEAPONS.blast) + 2, () => ({ 0: { attack: true } }));
   run(state, 1);
   assert.equal(state.bombs.length, 1);
   run(state, WEAPONS.blast.fuse + 1);
@@ -169,24 +169,35 @@ test('Striker dash speeds you up, then waits for its cooldown', () => {
   const { state, me } = duel({ gap: 400 });
   const start = me.x; run(state, 60, () => ({ 0: { right: true } }));
   const normal = me.x - start;
-  me.x = start; me.vx = 0; me.y = MAPS.gate.points[1].y; run(state, 60, t => ({ 0: { right: true, ability: t === 0 } }));
+  me.x = start; me.vx = 0; me.y = MAPS.temple.points[1].y; run(state, 60, t => ({ 0: { right: true, ability: t === 0 } }));
   assert.ok(me.x - start > normal * 1.3, `dash covered ${me.x - start} vs ${normal}`);
   assert.ok(me.abilityCooldown > 0);
   run(state, 2, t => ({ 0: { ability: t === 1 } }));
   assert.equal(events(state, 'dash').length, 1, 'no second dash on cooldown');
 });
 
-test('Guardian dome soaks shots from outside and heal pulse restores allies', () => {
-  const { state, me, foe } = duel({ gap: 260, a: { cls: 'guardian', weapons: ['cleaver', 'magnus', 'vortex'], hp: 130, maxHp: 130 }, b: { weapons: ['blaster', 'brand', 'blast'] } });
-  run(state, 2, t => ({ 0: { ability: t === 0 } }));
-  assert.ok(me.bubbleTicks > 0);
-  run(state, 40, t => ({ 4: { attack: t === 0 } }));
-  assert.equal(me.hp, 130, 'the dome took the round');
-  assert.equal(me.bubbleHp, ABILITIES.bubble.hp - WEAPONS.blaster.damage);
-  const ally = state.players[1]; Object.assign(ally, { alive: true, x: me.x, y: me.y + 40, hp: 40, maxHp: 100, shieldTicks: 0, respawnTicks: 0 });
-  run(state, 2, t => ({ 0: { ability2: t === 0 } }));
-  assert.equal(ally.hp, 40 + ABILITIES.heal.amount);
-  assert.ok(me.ability2Cooldown > 0);
+test('the Guardian shield blocks at once, then grows into a dome that shields and heals teammates', () => {
+  const { state, me, foe } = duel({ gap: 260, a: { cls: 'guardian', weapons: ['cleaver', 'magnus', 'vortex'], hp: 120, maxHp: 120 }, b: { weapons: ['blaster', 'brand', 'blast'] } });
+  const ally = state.players[1]; Object.assign(ally, { alive: true, x: me.x - 10, y: me.y + 40, hp: 40, maxHp: 100, shieldTicks: 0, respawnTicks: 0, bot: false });
+  run(state, GUARD.raiseTicks + 1, () => ({ 0: { ability: true } }));
+  assert.ok(me.guarding);
+  run(state, 40, t => ({ 0: { ability: true }, 4: { attack: t === 0 } }));
+  assert.equal(me.hp, me.maxHp, 'the shield took the round');
+  assert.equal(me.guardHp, GUARD.max - WEAPONS.blaster.damage);
+  assert.equal(ally.hp, 40, 'no dome yet, no healing');
+  run(state, GUARD.expandTicks, () => ({ 0: { ability: true } }));
+  assert.ok(events(state, 'dome').length === 1);
+  const healthBefore = ally.hp;
+  run(state, TICK_RATE, () => ({ 0: { ability: true } }));
+  assert.ok(Math.abs(ally.hp - healthBefore - GUARD.healPerSecond) < .5, `ally healed by ${ally.hp - healthBefore}`);
+  // Shots from outside the dome stop at its edge.
+  const before = me.guardHp; Object.assign(foe, { aim: Math.atan2(ally.y - foe.y, ally.x - foe.x) });
+  run(state, 40, t => ({ 0: { ability: true }, 4: { attack: t === 0, aim: foe.aim } }));
+  assert.ok(me.guardHp < before); assert.ok(ally.hp > 40);
+  // Only Guardians have a shield; for the others the ability is Boost or Cloak.
+  const { state: other, me: striker } = duel();
+  run(other, 3, () => ({ 0: { ability: true } }));
+  assert.equal(striker.guarding, false); assert.ok(striker.dodgeTicks > 0 || striker.dashTicks > 0);
 });
 
 test('Recon cloak hides you; the first hit out of it marks the target for extra damage', () => {
@@ -226,11 +237,11 @@ test('a knocked-out knight respawns at base after the delay with a spawn shield'
   assert.equal(foe.respawnTicks <= RULES.respawnBaseTicks, true);
   run(state, foe.respawnTicks + 1);
   assert.equal(foe.alive, true); assert.equal(foe.hp, foe.maxHp); assert.ok(foe.shieldTicks > 0);
-  assert.ok(MAPS.gate.spawns[1].some(spot => spot.x === foe.x && spot.y === foe.y));
+  assert.ok(MAPS.temple.spawns[1].some(spot => spot.x === foe.x && spot.y === foe.y));
 });
 
 test('bot matches are deterministic, finite and reach a result', () => {
-  const play = ticks => { const state = L.createState({ mapId: 'yard', seed: 99 }); L.startMatch(state, []); for (let t = 0; t < ticks; t++) L.step(state, []); return state; };
+  const play = ticks => { const state = L.createState({ mapId: 'foundry', seed: 99 }); L.startMatch(state, []); for (let t = 0; t < ticks; t++) L.step(state, []); return state; };
   const a = play(6000), b = play(6000);
   assert.deepEqual(a.scores, b.scores); assert.equal(a.eventId, b.eventId);
   assert.deepEqual(a.players.map(player => [player.x, player.y, player.hp]), b.players.map(player => [player.x, player.y, player.hp]));
@@ -264,7 +275,7 @@ test('the art manifest covers every class, team, weapon and theme with valid str
 
 test('your own base heals you; the enemy base does not', () => {
   const { state, me, foe } = duel();
-  const home = MAPS.gate.spawns[0][0], away = MAPS.gate.spawns[1][0];
+  const home = MAPS.temple.spawns[0][0], away = MAPS.temple.spawns[1][0];
   Object.assign(me, { x: home.x, y: home.y, hp: 40 });
   assert.equal(L.inBase(state, me), true);
   run(state, TICK_RATE);
@@ -280,7 +291,7 @@ test('class and weapons change mid-match only in base or while respawning', () =
   const { state, me } = duel({ a: { weapons: ['brand', 'blaster', 'blast'] } });
   assert.match(L.setPlayerSetup(state, 0, { cls: 'recon' }).error, /base/);
   assert.match(L.setPlayerSetup(state, 0, { weapons: ['rapier', 'magnus', 'shard'] }).error, /base/);
-  const home = MAPS.gate.spawns[0][0];
+  const home = MAPS.temple.spawns[0][0];
   Object.assign(me, { x: home.x, y: home.y, hp: 50, slot: 1 });
   assert.deepEqual(L.setPlayerSetup(state, 0, { cls: 'guardian', weapons: ['rapier', 'magnus', 'shard'] }), { ok: true });
   assert.equal(me.cls, 'guardian'); assert.equal(me.maxHp, CLASSES.guardian.hp);
@@ -290,7 +301,7 @@ test('class and weapons change mid-match only in base or while respawning', () =
   assert.ok(events(state, 'loadoutChange').length === 1);
   assert.match(L.setPlayerSetup(state, 0, { team: 1 }).error, /lobby/, 'teams stay fixed');
   // Knocked out: the choice is stored and used on respawn.
-  Object.assign(me, { x: MAPS.gate.points[1].x, y: MAPS.gate.points[1].y, alive: false, respawnTicks: 3 });
+  Object.assign(me, { x: MAPS.temple.points[1].x, y: MAPS.temple.points[1].y, alive: false, respawnTicks: 3 });
   assert.deepEqual(L.setPlayerSetup(state, 0, { cls: 'recon' }), { ok: true });
   run(state, 4);
   assert.equal(me.alive, true); assert.equal(me.cls, 'recon'); assert.equal(me.hp, CLASSES.recon.hp);
@@ -330,23 +341,23 @@ test('personal score comes from taking and neutralising zones, and leads the sco
   assert.deepEqual(team1.map(entry => entry.score), [...team1.map(entry => entry.score)].sort((a, b) => b - a));
 });
 
-test('a raised shield blocks hits and statuses, then breaks into a stun', () => {
-  const { state, me, foe } = duel({ gap: 200, b: { weapons: ['blaster', 'brand', 'blast'] } });
-  run(state, GUARD.raiseTicks + 1, () => ({ 0: { guard: true } }));
+test('a raised Guardian shield blocks hits, then breaks into a stun and recharges', () => {
+  const { state, me, foe } = duel({ gap: 200, a: { cls: 'guardian' }, b: { weapons: ['blaster', 'brand', 'blast'] } });
+  run(state, GUARD.raiseTicks + 1, () => ({ 0: { ability: true } }));
   assert.ok(me.guarding && me.guardRaise >= GUARD.raiseTicks);
-  run(state, 40, t => ({ 0: { guard: true }, 4: { attack: t === 0 } }));
+  run(state, 40, t => ({ 0: { ability: true }, 4: { attack: t === 0 } }));
   assert.equal(me.hp, me.maxHp, 'the shield took the round');
   assert.equal(me.guardHp, GUARD.max - WEAPONS.blaster.damage);
   assert.ok(events(state, 'block').length === 1);
   me.guardHp = 5;
-  run(state, 40, t => ({ 0: { guard: true }, 4: { attack: t === 0 } }));
+  run(state, 40, t => ({ 0: { ability: true }, 4: { attack: t === 0 } }));
   assert.ok(events(state, 'guardBreak').length === 1);
   assert.equal(me.guarding, false); assert.ok(me.stunTicks > 0 && me.guardBroken);
-  run(state, 2, () => ({ 0: { guard: true } })); assert.equal(me.guarding, false, 'a broken shield cannot be raised');
+  run(state, 2, () => ({ 0: { ability: true } })); assert.equal(me.guarding, false, 'a broken shield cannot be raised');
   // It regenerates after a pause and comes back at half strength.
   run(state, GUARD.regenDelay + Math.ceil(GUARD.max * GUARD.recover / GUARD.regenPerSecond * TICK_RATE) + GUARD.breakStun + 5);
   assert.equal(me.guardBroken, false);
-  run(state, GUARD.raiseTicks + 1, () => ({ 0: { guard: true } })); assert.ok(me.guarding);
+  run(state, GUARD.raiseTicks + 1, () => ({ 0: { ability: true } })); assert.ok(me.guarding);
 });
 
 test('statuses: burn ticks damage, poison stops healing, freeze holds you until hit', () => {
@@ -376,12 +387,14 @@ test('statuses: burn ticks damage, poison stops healing, freeze holds you until 
 test('ricochet bolts bounce off walls; catalysts stick and the detonator sets them off', () => {
   const { state, me, foe } = duel({ a: { weapons: ['alchemer', 'catalyzer', 'blast'] } });
   // Fire straight into the nearest wall.
-  const map = MAPS.gate; let wallX = me.x; while (!L.MAPS.gate.grid[Math.floor(me.y / TILE)][Math.floor(wallX / TILE)].includes('#')) wallX += 4;
-  Object.assign(foe, { alive: false, respawnTicks: 1e9 });
-  run(state, 1, () => ({ 0: { attack: true } })); run(state, 1);
+  // Fire north at the nearest wall.
+  let wallY = me.y; while (L.MAPS.temple.grid[Math.floor(wallY / TILE)][Math.floor(me.x / TILE)] !== '#') wallY -= 4;
+  Object.assign(foe, { alive: false, respawnTicks: 1e9 }); me.aim = -Math.PI / 2;
+  run(state, 1, () => ({ 0: { attack: true, aim: -Math.PI / 2 } })); run(state, 1, () => ({ 0: { aim: -Math.PI / 2 } }));
   const shot = state.projectiles[0]; assert.equal(shot.kind, 'ricochet');
-  run(state, Math.ceil((wallX - me.x) / WEAPONS.alchemer.speed * TICK_RATE) + 6);
-  assert.ok(events(state, 'ricochet').length >= 1); assert.ok(state.projectiles[0]?.vx < 0, 'the bolt comes back');
+  run(state, Math.ceil((me.y - wallY) / WEAPONS.alchemer.speed * TICK_RATE) + 6, () => ({ 0: { aim: -Math.PI / 2 } }));
+  assert.ok(events(state, 'ricochet').length >= 1); assert.ok(state.projectiles[0]?.vy > 0, 'the bolt comes back');
+  me.aim = 0;
   // Catalyst: three stuck charges, then the detonator.
   state.projectiles = []; Object.assign(foe, { alive: true, x: me.x + 140, y: me.y, hp: 300, maxHp: 300, shieldTicks: 0 });
   run(state, 2, t => ({ 0: { slot2: t === 0 } }));
@@ -389,7 +402,7 @@ test('ricochet bolts bounce off walls; catalysts stick and the detonator sets th
   run(state, 20);
   assert.equal(foe.catalysts, 3);
   const before = foe.hp;
-  run(state, swingTicks({ startup: 0, active: 0, recovery: 0 }) + WEAPONS.catalyzer.chargeTicks + 3, () => ({ 0: { attack: true } }));
+  run(state, L.chargeTicksFor(me, WEAPONS.catalyzer) + 3, () => ({ 0: { attack: true } }));
   run(state, 30);
   assert.ok(events(state, 'detonate').some(event => event.count === 3));
   assert.ok(before - foe.hp >= WEAPONS.catalyzer.charge.damage + WEAPONS.catalyzer.charge.perCharge * 3);
@@ -412,7 +425,7 @@ test('every weapon fires its charge without errors', () => {
   for (const id of L.WEAPON_IDS) {
     const { state, me } = duel({ gap: 140, a: { weapons: [id, ...L.WEAPON_IDS.filter(other => other !== id && WEAPONS[other].family !== WEAPONS[id].family).slice(0, 2)] } });
     me.clips = Object.fromEntries(me.weapons.filter(weaponId => WEAPONS[weaponId].family === 'gun').map(weaponId => [weaponId, WEAPONS[weaponId].clip]));
-    run(state, 60 + WEAPONS[id].chargeTicks + 3, () => ({ 0: { attack: true } }));
+    run(state, 60 + L.chargeTicksFor(me, WEAPONS[id]) + 3, () => ({ 0: { attack: true } }));
     run(state, 400);
     assert.ok(events(state, 'chargeRelease').some(event => event.weapon === id), `${id} released its charge`);
     assert.ok(state.players.every(player => Number.isFinite(player.x) && Number.isFinite(player.hp)), `${id} stays finite`);
@@ -432,16 +445,16 @@ test('Strikers hit 25% harder with swords and swing faster', () => {
 test('animation cancels: the shield or a dodge cuts recovery short, and a queued press cancels into the next cut', () => {
   const move = WEAPONS.brand.combo[0];
   // Shield cancel: raise the shield once the blade has passed.
-  const shield = duel({ gap: 300, a: { cls: 'recon' } });
+  const shield = duel({ gap: 300, a: { cls: 'guardian' } });
   run(shield.state, move.startup + move.active + 1, t => ({ 0: { attack: t === 0 } }));
   assert.equal(shield.me.action, 'swing');
-  run(shield.state, 1, () => ({ 0: { guard: true } }));
+  run(shield.state, 1, () => ({ 0: { ability: true } }));
   assert.equal(shield.me.action, 'idle'); assert.equal(shield.me.comboStep, 1, 'a cancelled cut still advances the combo');
   assert.ok(events(shield.state, 'cancel').some(event => event.by === 'guard'));
   // The shield cannot cancel the wind-up or the cut itself.
-  const early = duel({ gap: 300, a: { cls: 'recon' } });
+  const early = duel({ gap: 300, a: { cls: 'guardian' } });
   run(early.state, 2, t => ({ 0: { attack: t === 0 } }));
-  run(early.state, 1, () => ({ 0: { guard: true } }));
+  run(early.state, 1, () => ({ 0: { ability: true } }));
   assert.equal(early.me.action, 'swing');
   // Combo cancel: a queued press starts the next cut partway through the recovery.
   const combo = duel({ gap: 300, a: { cls: 'recon' } });
@@ -466,10 +479,10 @@ test('a dodging Striker is untouchable; swords wear shields down faster than gun
   run(state, 16, t => ({ 4: { attack: t === 0 } }));
   assert.equal(me.hp, me.maxHp);
   assert.ok(events(state, 'evade').length === 1);
-  const block = duel({ gap: 50, a: { cls: 'recon' }, b: { cls: 'recon' } });
-  run(block.state, GUARD.raiseTicks + 1, () => ({ 4: { guard: true } }));
+  const block = duel({ gap: 50, a: { cls: 'recon' }, b: { cls: 'guardian' } });
+  run(block.state, GUARD.raiseTicks + 1, () => ({ 4: { ability: true } }));
   const shieldBefore = block.foe.guardHp;
-  run(block.state, swingTicks(WEAPONS.brand.combo[0]) + 6, t => ({ 0: { attack: t === 0 }, 4: { guard: true } }));
+  run(block.state, swingTicks(WEAPONS.brand.combo[0]) + 6, t => ({ 0: { attack: t === 0 }, 4: { ability: true } }));
   assert.equal(block.foe.hp, block.foe.maxHp);
   assert.equal(Math.round(shieldBefore - block.foe.guardHp), Math.round(WEAPONS.brand.combo[0].damage * GUARD.bladeScale));
 });

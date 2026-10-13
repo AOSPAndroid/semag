@@ -41,15 +41,15 @@ export const WEAPONS = Object.freeze({
 
   // ---------- guns ----------
   blaster: Object.freeze({ id: 'blaster', family: 'gun', type: 'Blaster', name: 'Pulse Blaster', chargeTicks: 120,
-    clip: 3, interval: 16, reload: 54, reloadDelay: 60, damage: 10, speed: 760, range: 620, push: 80, spread: .02, size: 5, kind: 'bullet',
-    charge: Object.freeze({ kind: 'pierce', damage: 26, speed: 880, range: 700, push: 220, size: 9, pierce: true }),
+    clip: 3, interval: 16, reload: 54, reloadDelay: 60, damage: 9, speed: 760, range: 620, push: 80, spread: .02, size: 5, kind: 'bullet',
+    charge: Object.freeze({ kind: 'pierce', damage: 24, speed: 880, range: 700, push: 220, size: 9, pierce: true }),
     description: 'Reliable three-shot gun. Charge: a big bolt that pierces every knight in its path.' }),
   pulsar: Object.freeze({ id: 'pulsar', family: 'gun', type: 'Pulsar', name: 'Ripple Caster', chargeTicks: 120,
-    clip: 3, interval: 22, reload: 60, reloadDelay: 60, damage: 8, speed: 360, range: 340, push: 60, spread: 0, size: 8, grow: 14, kind: 'pulse', pierce: true,
+    clip: 3, interval: 22, reload: 60, reloadDelay: 60, damage: 7, speed: 360, range: 340, push: 60, spread: 0, size: 8, grow: 14, kind: 'pulse', pierce: true,
     charge: Object.freeze({ kind: 'bigPulse', damage: 22, speed: 260, range: 380, push: 140, size: 16, grow: 32, pierce: true }),
     description: 'Slow waves that widen as they travel and pass through knights. Charge: one huge wave.' }),
   alchemer: Object.freeze({ id: 'alchemer', family: 'gun', type: 'Ricochet', name: 'Ricochet Coil', chargeTicks: 120,
-    clip: 3, interval: 18, reload: 60, reloadDelay: 60, damage: 9, speed: 620, range: 760, push: 60, spread: .02, size: 5, kind: 'ricochet', bounces: 1,
+    clip: 3, interval: 18, reload: 60, reloadDelay: 60, damage: 8, speed: 620, range: 760, push: 60, spread: .02, size: 5, kind: 'ricochet', bounces: 1,
     charge: Object.freeze({ kind: 'split', count: 4, spread: .5, damage: 10, speed: 600, range: 820, push: 70, size: 5, bounces: 2, status: 'shock', chance: .35 }),
     description: 'Bolts that bounce off walls. Charge: four shocking bolts that bounce twice.' }),
   autogun: Object.freeze({ id: 'autogun', family: 'gun', type: 'Autogun', name: 'Rattle Autogun', chargeTicks: 120,
@@ -61,7 +61,7 @@ export const WEAPONS = Object.freeze({
     charge: Object.freeze({ kind: 'detonator', damage: 10, speed: 720, range: 620, push: 80, size: 7, perCharge: 14, pushPerCharge: 180 }),
     description: 'Shots stick up to three charges on a knight. Charge: a detonator that blows them all at once.' }),
   magnus: Object.freeze({ id: 'magnus', family: 'gun', type: 'Hand-cannon', name: 'Thunder Hand-cannon', chargeTicks: 132,
-    clip: 2, interval: 30, reload: 78, reloadDelay: 70, damage: 18, speed: 720, range: 640, push: 260, spread: .01, size: 6, kind: 'bullet',
+    clip: 2, interval: 30, reload: 78, reloadDelay: 70, damage: 16, speed: 720, range: 640, push: 260, spread: .01, size: 6, kind: 'bullet',
     charge: Object.freeze({ kind: 'explosive', damage: 26, speed: 640, range: 640, push: 300, size: 9, radius: 72 }),
     description: 'Two heavy rounds with big knockback. Charge: a round that explodes on impact.' }),
 
@@ -88,9 +88,12 @@ export const STATUS = Object.freeze({
 });
 export const STATUS_IDS = Object.freeze(Object.keys(STATUS));
 
-/** The shield every knight carries (right mouse). It blocks hits and statuses from any
- * direction while it has health; breaking it stuns you. */
-export const GUARD = Object.freeze({ raiseTicks: 6, max: 100, guardianMax: 140, regenPerSecond: 35, regenDelay: 60, breakStun: 72, recover: .5, speed: .5, knockback: .3, bombScale: 1.5, bladeScale: 1.3 });
+/** The Guardian's shield (its class ability; in Lockdown nobody else has one). Held, it
+ * blocks hits and statuses from every side while it has health. After `expandTicks` it
+ * grows into a dome of `radius` that shields teammates inside from outside fire and heals
+ * everyone in it. Breaking it stuns; it then recharges (about eight seconds from empty). */
+export const GUARD = Object.freeze({ raiseTicks: 6, max: 140, regenPerSecond: 20, regenDelay: 90, breakStun: 72, recover: .5, speed: .5, knockback: .3, bombScale: 1.5, bladeScale: 1.3,
+  expandTicks: 120, radius: 92, healPerSecond: 10 });
 
 /** Sword timing rules. Raising the shield or dodging cancels a cut's recovery (the
  * animation cancel), and a queued press may start the next cut once this fraction of

@@ -6,7 +6,7 @@ Lockdown is a top-down team brawl in the spirit of Spiral Knights' Lockdown: up 
 three control points, swords, guns and bombs. The game is fully playable with placeholder
 shapes; every PNG listed below replaces one placeholder as soon as it is added.
 
-**Progress: 64/95 sprites ready.**
+**Progress: 56/117 sprites ready.**
 
 ## Style guide
 
@@ -41,14 +41,36 @@ shapes; every PNG listed below replaces one placeholder as soon as it is added.
 
 | | File | Size (px) | Frames | Anchor | Notes |
 |---|---|---|---|---|---|
-| ✅ | `tile_floor_stone.png` | 48×48 | 1 | 0, 0 | Seamless stone arena floor tile. Must tile in all directions. |
-| ✅ | `tile_floor_stone_alt.png` | 48×48 | 1 | 0, 0 | Variant stone floor tile (cracks, rivets or a drain) mixed in at random for variety. |
-| ✅ | `tile_wall_top_stone.png` | 48×48 | 1 | 0, 0 | Top face of a stone wall block, seen from the ¾ camera. The game draws it raised 24 px above the floor, so it must read as the lit upper surface of a block (light from the top-left). Tiles side by side must join seamlessly. |
-| ✅ | `tile_wall_front_stone.png` | 48×24 | 1 | 0, 0 | Front (south-facing) face of a stone wall block, drawn under the top face wherever floor lies below the wall. Darker than the top, with masonry/plating detail, a lit top edge and a shadowed bottom edge where it meets the floor. Must tile horizontally. |
-| ✅ | `tile_floor_brass.png` | 48×48 | 1 | 0, 0 | Seamless brass arena floor tile. Must tile in all directions. |
-| ✅ | `tile_floor_brass_alt.png` | 48×48 | 1 | 0, 0 | Variant brass floor tile (cracks, rivets or a drain) mixed in at random for variety. |
-| ✅ | `tile_wall_top_brass.png` | 48×48 | 1 | 0, 0 | Top face of a brass wall block, seen from the ¾ camera. The game draws it raised 24 px above the floor, so it must read as the lit upper surface of a block (light from the top-left). Tiles side by side must join seamlessly. |
-| ✅ | `tile_wall_front_brass.png` | 48×24 | 1 | 0, 0 | Front (south-facing) face of a brass wall block, drawn under the top face wherever floor lies below the wall. Darker than the top, with masonry/plating detail, a lit top edge and a shadowed bottom edge where it meets the floor. Must tile horizontally. |
+| ⬜ | `tile_floor_castle.png` | 48×48 | 1 | 0, 0 | Seamless floor tile — old castle courtyard: worn flagstones, moss between the stones, grey ashlar walls with battlements. Must tile in all directions. |
+| ⬜ | `tile_floor_castle_alt.png` | 48×48 | 1 | 0, 0 | Variant floor tile for castle (cracks, a drain, a plant or rubble) mixed in at random. |
+| ⬜ | `tile_wall_top_castle.png` | 48×48 | 1 | 0, 0 | Top face of a wall block — old castle courtyard: worn flagstones, moss between the stones, grey ashlar walls with battlements. The game raises it 24 px above the floor; neighbouring tiles must join seamlessly. |
+| ⬜ | `tile_wall_front_castle.png` | 48×24 | 1 | 0, 0 | Front (south-facing) face of a castle wall block, drawn under the top face wherever floor lies below. Darker than the top, lit top edge, shadowed bottom edge. Must tile horizontally. |
+| ⬜ | `tile_pit_castle.png` | 48×48 | 1 | 0, 0 | Pit tile ('~'): moat water, dark blue with ripples. Knights cannot walk on it but shots fly over it. Must tile in all directions; the game adds the edge lip. |
+| ⬜ | `tile_floor_maze.png` | 48×48 | 1 | 0, 0 | Seamless floor tile — hedge labyrinth: packed earth and gravel paths, walls of trimmed green hedge with leaves on top. Must tile in all directions. |
+| ⬜ | `tile_floor_maze_alt.png` | 48×48 | 1 | 0, 0 | Variant floor tile for maze (cracks, a drain, a plant or rubble) mixed in at random. |
+| ⬜ | `tile_wall_top_maze.png` | 48×48 | 1 | 0, 0 | Top face of a wall block — hedge labyrinth: packed earth and gravel paths, walls of trimmed green hedge with leaves on top. The game raises it 24 px above the floor; neighbouring tiles must join seamlessly. |
+| ⬜ | `tile_wall_front_maze.png` | 48×24 | 1 | 0, 0 | Front (south-facing) face of a maze wall block, drawn under the top face wherever floor lies below. Darker than the top, lit top edge, shadowed bottom edge. Must tile horizontally. |
+| ⬜ | `tile_pit_maze.png` | 48×48 | 1 | 0, 0 | Pit tile ('~'): overgrown sinkhole, dark green. Knights cannot walk on it but shots fly over it. Must tile in all directions; the game adds the edge lip. |
+| ⬜ | `tile_floor_foundry.png` | 48×48 | 1 | 0, 0 | Seamless floor tile — clockwork foundry: riveted iron floor plates, brass machinery walls with gears and pipes. Must tile in all directions. |
+| ⬜ | `tile_floor_foundry_alt.png` | 48×48 | 1 | 0, 0 | Variant floor tile for foundry (cracks, a drain, a plant or rubble) mixed in at random. |
+| ⬜ | `tile_wall_top_foundry.png` | 48×48 | 1 | 0, 0 | Top face of a wall block — clockwork foundry: riveted iron floor plates, brass machinery walls with gears and pipes. The game raises it 24 px above the floor; neighbouring tiles must join seamlessly. |
+| ⬜ | `tile_wall_front_foundry.png` | 48×24 | 1 | 0, 0 | Front (south-facing) face of a foundry wall block, drawn under the top face wherever floor lies below. Darker than the top, lit top edge, shadowed bottom edge. Must tile horizontally. |
+| ⬜ | `tile_pit_foundry.png` | 48×48 | 1 | 0, 0 | Pit tile ('~'): molten lava, glowing orange with a dark crust. Knights cannot walk on it but shots fly over it. Must tile in all directions; the game adds the edge lip. |
+| ⬜ | `tile_floor_ruins.png` | 48×48 | 1 | 0, 0 | Seamless floor tile — sunken temple: pale sandstone with carved glyphs, weathered pillars and broken walls. Must tile in all directions. |
+| ⬜ | `tile_floor_ruins_alt.png` | 48×48 | 1 | 0, 0 | Variant floor tile for ruins (cracks, a drain, a plant or rubble) mixed in at random. |
+| ⬜ | `tile_wall_top_ruins.png` | 48×48 | 1 | 0, 0 | Top face of a wall block — sunken temple: pale sandstone with carved glyphs, weathered pillars and broken walls. The game raises it 24 px above the floor; neighbouring tiles must join seamlessly. |
+| ⬜ | `tile_wall_front_ruins.png` | 48×24 | 1 | 0, 0 | Front (south-facing) face of a ruins wall block, drawn under the top face wherever floor lies below. Darker than the top, lit top edge, shadowed bottom edge. Must tile horizontally. |
+| ⬜ | `tile_pit_ruins.png` | 48×48 | 1 | 0, 0 | Pit tile ('~'): clear flooded pool, teal water over sunken tiles. Knights cannot walk on it but shots fly over it. Must tile in all directions; the game adds the edge lip. |
+| ⬜ | `tile_floor_graveyard.png` | 48×48 | 1 | 0, 0 | Seamless floor tile — gloomy graveyard: dark soil and slate paths, mossy tombstones and crypt walls. Must tile in all directions. |
+| ⬜ | `tile_floor_graveyard_alt.png` | 48×48 | 1 | 0, 0 | Variant floor tile for graveyard (cracks, a drain, a plant or rubble) mixed in at random. |
+| ⬜ | `tile_wall_top_graveyard.png` | 48×48 | 1 | 0, 0 | Top face of a wall block — gloomy graveyard: dark soil and slate paths, mossy tombstones and crypt walls. The game raises it 24 px above the floor; neighbouring tiles must join seamlessly. |
+| ⬜ | `tile_wall_front_graveyard.png` | 48×24 | 1 | 0, 0 | Front (south-facing) face of a graveyard wall block, drawn under the top face wherever floor lies below. Darker than the top, lit top edge, shadowed bottom edge. Must tile horizontally. |
+| ⬜ | `tile_pit_graveyard.png` | 48×48 | 1 | 0, 0 | Pit tile ('~'): open crevice into darkness. Knights cannot walk on it but shots fly over it. Must tile in all directions; the game adds the edge lip. |
+| ⬜ | `tile_floor_skyway.png` | 48×48 | 1 | 0, 0 | Seamless floor tile — floating sky platforms: polished stone panels with gold trim, low balustrade walls. Must tile in all directions. |
+| ⬜ | `tile_floor_skyway_alt.png` | 48×48 | 1 | 0, 0 | Variant floor tile for skyway (cracks, a drain, a plant or rubble) mixed in at random. |
+| ⬜ | `tile_wall_top_skyway.png` | 48×48 | 1 | 0, 0 | Top face of a wall block — floating sky platforms: polished stone panels with gold trim, low balustrade walls. The game raises it 24 px above the floor; neighbouring tiles must join seamlessly. |
+| ⬜ | `tile_wall_front_skyway.png` | 48×24 | 1 | 0, 0 | Front (south-facing) face of a skyway wall block, drawn under the top face wherever floor lies below. Darker than the top, lit top edge, shadowed bottom edge. Must tile horizontally. |
+| ⬜ | `tile_pit_skyway.png` | 48×48 | 1 | 0, 0 | Pit tile ('~'): open sky far below, soft clouds. Knights cannot walk on it but shots fly over it. Must tile in all directions; the game adds the edge lip. |
 | ✅ | `tile_spawn_team0.png` | 48×48 | 1 | 0, 0 | Spawn floor tile tinted for team Amber (warm orange). |
 | ✅ | `tile_spawn_team1.png` | 48×48 | 1 | 0, 0 | Spawn floor tile tinted for team Cyan (cool teal). |
 
