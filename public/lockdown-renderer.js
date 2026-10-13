@@ -43,7 +43,10 @@ const THEMES = Object.freeze({
 const VIEW_WORLD_WIDTH = 1100; // world units across the screen at the default zoom
 const lerp = (a, b, t) => a + (b - a) * t;
 const hash = (a, b) => { let h = (a * 374761393 + b * 668265263) | 0; h = (h ^ (h >>> 13)) * 1274126177; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
-const OUTFITS = Object.freeze({ none: 'character_base', light: 'knight_recon', ballistic: 'character_ballistic', duelist: 'knight_striker', heavy: 'knight_guardian', gunslinger: 'character_gunslinger', fencer: 'character_fencer' });
+const OUTFITS = Object.freeze({ none: 'character_base', light: 'knight_recon', ballistic: 'character_ballistic', duelist: 'knight_striker', heavy: 'knight_guardian', gunslinger: 'character_gunslinger', fencer: 'character_fencer',
+  windrunner: 'character_windrunner', juggernaut: 'character_juggernaut', bombardier: 'character_bombardier', berserker: 'character_berserker', mirrorweave: 'character_mirrorweave', medic: 'character_medic', clockwork: 'character_clockwork' });
+/** Placeholder accents for outfits drawn over the casual body until their art exists: [torso colour, trim colour]. */
+const OUTFIT_COLORS = Object.freeze({ windrunner: ['#cfe8f2', '#7fb7d0'], juggernaut: ['#5c626b', '#2c3036'], bombardier: ['#7a5233', '#e0a347'], berserker: ['#8a6a4a', '#5a3b22'], mirrorweave: ['#b9c7e6', '#eef3ff'], medic: ['#f4f4f0', '#d94545'], clockwork: ['#9a7b45', '#d8b46a'] });
 const outfitKey = player => `${OUTFITS[(ARMORS[player.armor] || ARMORS.none).spriteStyle] || OUTFITS.none}_team${player.team}`;
 
 export class LockdownRenderer {
@@ -455,7 +458,7 @@ export class LockdownRenderer {
   /** Loading fallback follows equipment too, so an unarmored player never gets a helmet. */
   placeholderCharacter(ctx, player, team, options) {
     const style = (ARMORS[player.armor] || ARMORS.none).spriteStyle;
-    if (!['none', 'ballistic', 'gunslinger', 'fencer'].includes(style)) {
+    if (!['none', 'ballistic', 'gunslinger', 'fencer'].includes(style) && !OUTFIT_COLORS[style]) {
       const cls = style === 'heavy' ? 'guardian' : style === 'light' ? 'recon' : 'striker';
       this.placeholderKnight(ctx, { ...player, cls }, team, options); return;
     }
@@ -468,6 +471,14 @@ export class LockdownRenderer {
     ctx.fillStyle = '#e4eaed'; ctx.fillRect(-11, -32 + bob, 22, 16);
     ctx.fillStyle = team.main; ctx.fillRect(-6, -32 + bob, 12, 2);
     if (style === 'ballistic') { ctx.fillStyle = '#4a555e'; ctx.fillRect(-9, -30, 18, 13); ctx.fillStyle = '#78838b'; ctx.fillRect(-7, -28, 14, 5); }
+    if (OUTFIT_COLORS[style]) {
+      const [torso, trim] = OUTFIT_COLORS[style], bulk = style === 'juggernaut' ? 4 : 0;
+      ctx.fillStyle = torso; ctx.fillRect(-11 - bulk, -32 + bob - bulk / 2, 22 + bulk * 2, 18 + bulk);
+      ctx.fillStyle = trim; ctx.fillRect(-11 - bulk, -24 + bob, 22 + bulk * 2, 3);
+      if (style === 'medic') { ctx.fillRect(-2, -30 + bob, 4, 10); ctx.fillRect(-5, -27 + bob, 10, 4); }
+      if (style === 'windrunner') { ctx.fillRect(-14, -28 + bob, 4, 14); }
+      if (style === 'mirrorweave') { ctx.globalAlpha = .5; ctx.fillRect(-13, -34 + bob, 26, 30); ctx.globalAlpha = 1; }
+    }
     if (style === 'gunslinger') { ctx.fillStyle = '#6b4a2e'; ctx.fillRect(-12, -32 + bob, 24, 26); ctx.fillStyle = '#e4eaed'; ctx.fillRect(-4, -32 + bob, 8, 14); ctx.fillStyle = '#3b2a1c'; ctx.fillRect(-11, -16, 22, 3); }
     if (style === 'fencer') { ctx.fillStyle = '#f2f4f7'; ctx.fillRect(-11, -32 + bob, 22, 18); ctx.fillStyle = team.main; ctx.fillRect(-11, -24 + bob, 22, 2); ctx.fillStyle = '#c9ced8'; ctx.fillRect(-6, -30 + bob, 3, 14); }
     ctx.fillStyle = '#d8a47d'; ctx.beginPath(); ctx.arc(0, -42 + bob, 10, 0, Math.PI * 2); ctx.fill();

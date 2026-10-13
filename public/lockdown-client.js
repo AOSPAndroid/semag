@@ -14,7 +14,7 @@ const roomId = params.get('room');
 const solo = !roomId;
 const FAMILY_GLYPH = { blade: '⚔', gun: '✦', bomb: '●' };
 const CLASS_GLYPH = { striker: '➶', guardian: '⛨', recon: '◐' };
-const ARMOR_GLYPH = { none: '♙', scout: '➶', ballistic: '▣', duelist: '⚔', heavy: '⛨', gunslinger: '✦', fencer: '†' };
+const ARMOR_GLYPH = { none: '♙', scout: '➶', ballistic: '▣', duelist: '⚔', heavy: '⛨', gunslinger: '✦', fencer: '†', windrunner: '≋', juggernaut: '▦', bombardier: '●', berserker: '✷', mirrorweave: '◇', medic: '✚', clockwork: '⚙' };
 const ABILITY_ICON = { striker: 'dash', guardian: 'bubble', recon: 'cloak' };
 const STORAGE_KEY = 'semag-lockdown-setup';
 const SEND_INTERVAL_MS = 16, HEARTBEAT_MS = 100, MAX_EXTRAPOLATE_MS = 60;
@@ -282,25 +282,38 @@ function iconMarkup(key, glyph) {
   return image ? `<img alt="" src="${image.src}">` : `<span class="ld-glyph" aria-hidden="true">${glyph}</span>`;
 }
 const percent = value => Math.round(value * 100);
-const damageReduction = value => percent(value) ? `−${percent(value)}%` : '0%';
+const damageReduction = value => percent(value) > 0 ? `−${percent(value)}%` : percent(value) < 0 ? `+${-percent(value)}%` : '0%';
 function armorSpeed(armor) {
   const delta = Math.round((armor.speedMultiplier - 1) * 100);
   return delta > 0 ? `+${delta}%` : delta < 0 ? `−${Math.abs(delta)}%` : '0%';
 }
-/** Attack perks an outfit adds on top of the class (gunslinger guns, fencing swords). */
-function armorPerks(armor) {
-  const perks = [];
-  if (armor.gunDamage !== 1) perks.push(`Gun damage +${percent(armor.gunDamage - 1)}%`);
-  if (armor.gunCharge !== 1) perks.push(`Gun charge ${percent(1 - armor.gunCharge)}% faster`);
-  if (armor.bladeDamage !== 1) perks.push(`Sword damage +${percent(armor.bladeDamage - 1)}%`);
-  if (armor.bladeSpeed !== 1) perks.push(`Swing ${percent(armor.bladeSpeed - 1)}% faster`);
-  return perks;
+/** Perks and drawbacks an outfit adds on top of the class, as [text, good] pairs. */
+const signed = value => `${value > 0 ? '+' : '−'}${Math.abs(percent(value))}%`;
+function armorPerkList(armor) {
+  const list = [], add = (good, text) => list.push([text, good]);
+  if (armor.gunDamage !== 1) add(armor.gunDamage > 1, `Gun damage ${signed(armor.gunDamage - 1)}`);
+  if (armor.gunCharge !== 1) add(armor.gunCharge < 1, `Gun charge ${armor.gunCharge < 1 ? 'faster' : 'slower'} ${Math.abs(percent(1 - armor.gunCharge))}%`);
+  if (armor.bladeDamage !== 1) add(armor.bladeDamage > 1, `Sword damage ${signed(armor.bladeDamage - 1)}`);
+  if (armor.bladeSpeed !== 1) add(armor.bladeSpeed > 1, `Swings ${armor.bladeSpeed > 1 ? 'faster' : 'slower'} ${Math.abs(percent(armor.bladeSpeed - 1))}%`);
+  if (armor.bombDamage !== 1) add(armor.bombDamage > 1, `Bomb damage ${signed(armor.bombDamage - 1)}`);
+  if (armor.bombCharge !== 1) add(armor.bombCharge < 1, `Bomb charge ${armor.bombCharge < 1 ? 'faster' : 'slower'} ${Math.abs(percent(1 - armor.bombCharge))}%`);
+  if (armor.maxHp) add(armor.maxHp > 0, `Health ${armor.maxHp > 0 ? '+' : '−'}${Math.abs(armor.maxHp)}`);
+  if (armor.dashCooldown !== 1) add(armor.dashCooldown < 1, `Dash recharge ${armor.dashCooldown < 1 ? 'faster' : 'slower'} ${Math.abs(percent(1 - armor.dashCooldown))}%`);
+  if (armor.dashDistance !== 1) add(armor.dashDistance > 1, `Dash ${armor.dashDistance > 1 ? 'longer' : 'shorter'} ${Math.abs(percent(armor.dashDistance - 1))}%`);
+  if (armor.abilityCooldown !== 1) add(armor.abilityCooldown < 1, `Ability recharge ${armor.abilityCooldown < 1 ? 'faster' : 'slower'} ${Math.abs(percent(1 - armor.abilityCooldown))}%`);
+  if (armor.knockback !== 1) add(armor.knockback < 1, `Knockback ${armor.knockback < 1 ? '−' : '+'}${Math.abs(percent(1 - armor.knockback))}%`);
+  if (armor.statusDuration !== 1) add(armor.statusDuration < 1, `Status effects ${Math.abs(percent(1 - armor.statusDuration))}% ${armor.statusDuration < 1 ? 'shorter' : 'longer'}`);
+  if (armor.healing !== 1) add(armor.healing > 1, `Healing ${signed(armor.healing - 1)}`);
+  if (armor.regen) add(true, `Regenerates ${armor.regen * armor.healing} HP/s out of combat`);
+  return list;
 }
+const armorPerks = armor => armorPerkList(armor).map(([text]) => text);
 function armorStats(armor) {
   return [`Gun ${damageReduction(armor.gunResistance)} · Sword ${damageReduction(armor.bladeResistance)} · Blast ${damageReduction(armor.bombResistance)} · Speed ${armorSpeed(armor)}`, ...armorPerks(armor)].join(' · ');
 }
 function armorStatMarkup(armor) {
-  return `<span>Gun <b>${damageReduction(armor.gunResistance)}</b></span><span>Sword <b>${damageReduction(armor.bladeResistance)}</b></span><span>Blast <b>${damageReduction(armor.bombResistance)}</b></span><span class="${armor.speedMultiplier > 1 ? 'faster' : armor.speedMultiplier < 1 ? 'slower' : ''}">Speed <b>${armorSpeed(armor)}</b></span>${armorPerks(armor).map(perk => `<span class="faster">${perk}</span>`).join('')}`;
+  const weak = value => value < 0 ? ' class="slower" title="Takes more damage"' : '';
+  return `<span${weak(armor.gunResistance)}>Gun <b>${damageReduction(armor.gunResistance)}</b></span><span${weak(armor.bladeResistance)}>Sword <b>${damageReduction(armor.bladeResistance)}</b></span><span${weak(armor.bombResistance)}>Blast <b>${damageReduction(armor.bombResistance)}</b></span><span class="${armor.speedMultiplier > 1 ? 'faster' : armor.speedMultiplier < 1 ? 'slower' : ''}">Speed <b>${armorSpeed(armor)}</b></span>${armorPerkList(armor).map(([text, good]) => `<span class="perk ${good ? 'good' : 'bad'}">${good ? '▲' : '▼'} ${text}</span>`).join('')}`;
 }
 const feedSeen = new Set();
 function pushFeed(current) {

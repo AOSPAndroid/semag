@@ -118,6 +118,9 @@ kbd { display: inline-block; padding: 1px 6px; border: 1px solid var(--line); bo
 .ld-armor-tradeoffs b { color: var(--text); font-weight: 600; }
 .ld-armor-tradeoffs .faster b { color: #9ff0b8; }
 .ld-armor-tradeoffs .slower b { color: #ffcf8a; }
+.ld-armor-tradeoffs .perk { grid-column: 1 / -1; white-space: normal; font-weight: 600; }
+.ld-armor-tradeoffs .perk.good { color: #9ff0b8; }
+.ld-armor-tradeoffs .perk.bad { color: #ffb4a8; }
 .ld-armor-summary-box { margin-top: 10px; padding: 9px 10px; border-radius: 8px; background: rgba(255,255,255,.04); font-size: 11px; }
 .ld-armor-summary-box p { margin: 0; }
 .ld-armor-summary-box p + p { margin-top: 5px; color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }

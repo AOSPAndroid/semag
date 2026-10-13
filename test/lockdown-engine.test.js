@@ -525,3 +525,49 @@ test('outfits add attack perks on top of the class: gunslinger guns, fencing swo
   const cut = events(fencer.state, 'swing')[0], base = WEAPONS.brand.combo[0];
   assert.ok(cut.startup + cut.active < base.startup + base.active, 'fencing garb swings faster');
 });
+
+test('outfit perks and drawbacks: speed vs swords, plate, bombs, berserk, mirrorweave, medic, clockwork', () => {
+  const A = L.ARMORS;
+  // Windrunner: faster and longer dashes, softer swords.
+  const wind = duel({ gap: 50, a: { cls: 'recon', armor: 'windrunner' } });
+  run(wind.state, swingTicks(WEAPONS.brand.combo[0]) + 6, t => ({ 0: { attack: t === 0 } }));
+  assert.equal(wind.foe.maxHp - wind.foe.hp, Math.round(WEAPONS.brand.combo[0].damage * A.windrunner.bladeDamage * (1 - A[wind.foe.armor].bladeResistance)));
+  wind.me.dashCooldown = 0; run(wind.state, 1, () => ({ 0: { dash: true, left: true } }));
+  assert.equal(wind.me.dashCooldown, Math.round(RULES.dash.cooldown * A.windrunner.dashCooldown));
+  // Juggernaut: extra health, little knockback; Mirrorweave costs health.
+  const state = L.createState({ mapId: 'temple' }); L.setConnected(state, 0, true, 'A');
+  L.setPlayerSetup(state, 0, { cls: 'striker', armor: 'juggernaut' });
+  assert.equal(state.players[0].maxHp, CLASSES.striker.hp + 30);
+  L.setPlayerSetup(state, 0, { armor: 'mirrorweave' });
+  assert.equal(state.players[0].maxHp, CLASSES.striker.hp + L.ARMORS.mirrorweave.maxHp);
+  const plate = duel({ gap: 50, a: { cls: 'recon' }, b: { cls: 'recon', armor: 'juggernaut' } });
+  const bare = duel({ gap: 50, a: { cls: 'recon' }, b: { cls: 'recon' } });
+  for (const { state: s } of [plate, bare]) run(s, WEAPONS.brand.combo[0].startup + WEAPONS.brand.combo[0].active + 1, t => ({ 0: { attack: t === 0 } }));
+  assert.ok(Math.abs(plate.foe.pushX) < Math.abs(bare.foe.pushX) * .5, 'plate barely moves');
+  // Berserker takes more from guns.
+  const berserk = duel({ gap: 200, a: { cls: 'guardian', weapons: ['blaster', 'brand', 'blast'] }, b: { cls: 'recon', armor: 'berserker' } });
+  run(berserk.state, 40, t => ({ 0: { attack: t === 0 } }));
+  assert.equal(berserk.foe.maxHp - berserk.foe.hp, Math.round(WEAPONS.blaster.damage * (1 - A.berserker.gunResistance)));
+  assert.ok(berserk.foe.maxHp - berserk.foe.hp > WEAPONS.blaster.damage);
+  // Bombardier: faster charge, harder blast.
+  const bomber = duel({ gap: 60, a: { cls: 'recon', armor: 'bombardier', weapons: ['blast', 'brand', 'blaster'] } });
+  assert.ok(L.chargeTicksFor(bomber.me, WEAPONS.blast) < WEAPONS.blast.chargeTicks);
+  run(bomber.state, L.chargeTicksFor(bomber.me, WEAPONS.blast) + 2, () => ({ 0: { attack: true } })); run(bomber.state, WEAPONS.blast.fuse + 3);
+  assert.equal(bomber.foe.maxHp - bomber.foe.hp, Math.round(WEAPONS.blast.damage * A.bombardier.bombDamage * (1 - A[bomber.foe.armor].bombResistance)));
+  // Mirrorweave: statuses wear off sooner.
+  const mirror = duel({ b: { armor: 'mirrorweave' } });
+  mirror.state.bombs.push({ id: 7, ownerId: 0, team: 0, weapon: 'haze', x: mirror.foe.x, y: mirror.foe.y, fuse: 1, total: 1, phase: 'fuse', pullTicks: 0 });
+  run(mirror.state, 3);
+  assert.ok(mirror.foe.status.burn > 0 && mirror.foe.status.burn <= Math.round(STATUS.burn.ticks * A.mirrorweave.statusDuration));
+  // Medic: bigger hearts and slow mending out of combat.
+  const medic = duel({ a: { armor: 'medic' } });
+  Object.assign(medic.foe, { alive: false, respawnTicks: 1e9 });
+  medic.me.hp = 30; medic.state.pickups.push({ id: 901, kind: 'heart', x: medic.me.x, y: medic.me.y, ttl: 500 }); run(medic.state, 1);
+  assert.equal(Math.round(medic.me.hp), 30 + RULES.heart.heal * A.medic.healing);
+  medic.me.hp = 30; medic.me.lastHurtTick = medic.state.tick - 5 * TICK_RATE; run(medic.state, TICK_RATE);
+  assert.ok(Math.abs(medic.me.hp - 30 - A.medic.regen * A.medic.healing) < .5, `mended ${medic.me.hp - 30}`); // regen counts as healing
+  // Clockwork: the class ability comes back sooner.
+  const clock = duel({ a: { cls: 'recon', armor: 'clockwork' } });
+  run(clock.state, 1, () => ({ 0: { ability: true } }));
+  assert.equal(clock.me.abilityCooldown, Math.round(ABILITIES.cloak.cooldown * A.clockwork.abilityCooldown) - 0);
+});

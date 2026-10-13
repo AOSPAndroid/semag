@@ -50,10 +50,14 @@ export const ABILITIES = Object.freeze({
 /** Ticks a full charge takes for this knight: class and outfit perks speed up or slow down a weapon family. */
 export function chargeTicksFor(player, weapon) {
   const cls = CLASSES[player.cls] || {}, outfit = ARMORS[player.armor] || ARMORS.none;
-  return Math.round(weapon.chargeTicks * (weapon.family === 'bomb' ? cls.bombCharge || 1 : weapon.family === 'gun' ? (cls.gunCharge || 1) * outfit.gunCharge : 1));
+  return Math.round(weapon.chargeTicks * (weapon.family === 'bomb' ? (cls.bombCharge || 1) * outfit.bombCharge : weapon.family === 'gun' ? (cls.gunCharge || 1) * outfit.gunCharge : 1));
 }
 /** Attack multipliers from class and outfit together. */
+const outfitOf = player => ARMORS[player?.armor] || ARMORS.none;
+/** Health = class health plus the outfit's bonus (or minus its cost). */
+export const maxHpFor = (cls, armor) => Math.max(40, CLASSES[cls].hp + (ARMORS[armor] || ARMORS.none).maxHp);
 export const gunPower = player => (CLASSES[player.cls]?.gunDamage || 1) * (ARMORS[player.armor] || ARMORS.none).gunDamage;
+const bombPower = player => player ? outfitOf(player).bombDamage : 1;
 export const bladePower = player => (CLASSES[player.cls]?.bladeDamage || 1) * (ARMORS[player.armor] || ARMORS.none).bladeDamage;
 const bladeSpeed = player => (CLASSES[player.cls]?.bladeSpeed || 1) * (ARMORS[player.armor] || ARMORS.none).bladeSpeed;
 const CLASS_IDS = Object.keys(CLASSES);
@@ -77,7 +81,7 @@ function newPlayer(id) {
   const team = id < TEAM_SIZE ? 0 : 1, cls = CLASS_IDS[id % CLASS_IDS.length];
   return {
     id, team, name: `Bot ${id + 1}`, human: false, connected: false, bot: true, cls, armor: 'none', weapons: [...DEFAULT_LOADOUTS[cls]], slot: 0,
-    x: 0, y: 0, vx: 0, vy: 0, aim: team === 0 ? 0 : Math.PI, hp: CLASSES[cls].hp, maxHp: CLASSES[cls].hp, alive: false,
+    x: 0, y: 0, vx: 0, vy: 0, aim: team === 0 ? 0 : Math.PI, hp: CLASSES[cls].hp, maxHp: CLASSES[cls].hp, alive: false, lastHurtTick: 0,
     respawnTicks: 0, shieldTicks: 0, stunTicks: 0, pushX: 0, pushY: 0,
     action: 'idle', actionTicks: 0, actionTotal: 0, comboStep: 0, comboWindow: 0, hitIds: [], chargeTicks: 0, charging: false,
     clips: {}, reloadTicks: {}, sinceShot: {}, fireCooldown: 0, burst: null, hitStop: 0, bufferAttack: false,
@@ -122,12 +126,12 @@ export function setPlayerSetup(state, id, { team, cls, armor, weapons, name } = 
   if (team !== undefined && ![0, 1].includes(team)) return { ok: false, error: 'Choose a team.' };
   if (team !== undefined && team !== player.team && state.players.filter(other => other.human && other.team === team).length >= TEAM_SIZE) return { ok: false, error: 'That team is full.' };
   if (team !== undefined) player.team = team;
-  if (armor !== undefined) player.armor = armor;
   if (inMatch && player.alive) {
     // Swapping in base keeps your health fraction and drops any action in progress.
     const fraction = player.hp / player.maxHp;
+    if (armor !== undefined && armor !== player.armor) { player.armor = armor; player.maxHp = maxHpFor(player.cls, armor); player.hp = Math.max(1, fraction * player.maxHp); }
     if (cls !== undefined && cls !== player.cls) {
-      player.cls = cls; player.maxHp = CLASSES[cls].hp; player.hp = Math.max(1, fraction * player.maxHp);
+      player.cls = cls; player.maxHp = maxHpFor(cls, player.armor); player.hp = Math.max(1, fraction * player.maxHp);
       player.dashTicks = player.cloakTicks = 0; player.markReady = false; player.guarding = false;
     }
     if (weapons !== undefined) {
@@ -138,7 +142,9 @@ export function setPlayerSetup(state, id, { team, cls, armor, weapons, name } = 
     Object.assign(player, { slot: 0, action: 'idle', actionTicks: 0, charging: false, chargeTicks: 0, comboStep: 0, burst: null, bufferAttack: false });
     emit(state, 'loadoutChange', { playerId: player.id, cls: player.cls, armor: player.armor, weapons: [...player.weapons] });
   } else {
-    if (cls !== undefined) { player.cls = cls; player.maxHp = player.hp = CLASSES[cls].hp; }
+    if (armor !== undefined) player.armor = armor;
+    if (cls !== undefined) player.cls = cls;
+    if (cls !== undefined || armor !== undefined) player.maxHp = player.hp = maxHpFor(player.cls, player.armor);
     if (weapons !== undefined) player.weapons = [...weapons];
   }
   if (typeof name === 'string') player.name = name.slice(0, 24);
@@ -172,7 +178,8 @@ export function startMatch(state, participantIds = []) {
   for (const player of state.players) {
     if (player.bot) {
       player.cls = CLASS_IDS[Math.floor(random(state) * CLASS_IDS.length)]; player.weapons = [...DEFAULT_LOADOUTS[player.cls]];
-      player.armor = player.cls === 'guardian' ? 'heavy' : player.cls === 'recon' ? 'scout' : player.id % 2 ? 'ballistic' : 'duelist';
+      const picks = BOT_OUTFITS[player.cls];
+      player.armor = picks[Math.floor(random(state) * picks.length)];
     }
     Object.assign(player, { kills: 0, deaths: 0, captures: 0, damage: 0, score: 0 });
     spawn(state, player);
@@ -185,7 +192,7 @@ export function resetLobby(state) {
   const keep = state.players.map(player => ({ team: player.team, cls: player.cls, armor: player.armor, weapons: player.weapons, name: player.name, human: player.human, connected: player.connected }));
   const fresh = createState({ mapId: state.mapId, seed: state.seed });
   Object.assign(state, fresh, { tick: state.tick, eventId: state.eventId });
-  state.players.forEach((player, id) => Object.assign(player, keep[id], { bot: !keep[id].human, maxHp: CLASSES[keep[id].cls].hp, hp: CLASSES[keep[id].cls].hp }));
+  state.players.forEach((player, id) => Object.assign(player, keep[id], { bot: !keep[id].human, maxHp: maxHpFor(keep[id].cls, keep[id].armor), hp: maxHpFor(keep[id].cls, keep[id].armor) }));
   return state;
 }
 
@@ -197,6 +204,12 @@ export function selectMap(state, mapId) {
   return { ok: true };
 }
 
+/** Outfits bots wear, by class. */
+const BOT_OUTFITS = Object.freeze({
+  striker: ['duelist', 'fencer', 'berserker', 'windrunner', 'scout'],
+  guardian: ['heavy', 'juggernaut', 'bombardier', 'medic', 'clockwork'],
+  recon: ['scout', 'gunslinger', 'ballistic', 'mirrorweave', 'clockwork'],
+});
 function respawnDelay(state) {
   const minutes = Math.floor((RULES.timeLimitTicks - state.timeLeftTicks) / (60 * TICK_RATE));
   return Math.min(RULES.respawnMaxTicks, RULES.respawnBaseTicks + minutes * RULES.respawnPerMinuteTicks);
@@ -210,7 +223,7 @@ function spawn(state, player) {
   }
   const cls = CLASSES[player.cls];
   Object.assign(player, {
-    x: spot.x, y: spot.y, vx: 0, vy: 0, alive: true, hp: cls.hp, maxHp: cls.hp, respawnTicks: 0, shieldTicks: RULES.spawnShieldTicks,
+    x: spot.x, y: spot.y, vx: 0, vy: 0, alive: true, hp: maxHpFor(player.cls, player.armor), maxHp: maxHpFor(player.cls, player.armor), respawnTicks: 0, lastHurtTick: state.tick, shieldTicks: RULES.spawnShieldTicks,
     stunTicks: 0, pushX: 0, pushY: 0, action: 'idle', actionTicks: 0, actionTotal: 0, comboStep: 0, comboWindow: 0, hitIds: [], chargeTicks: 0, charging: false,
     dashTicks: 0, cloakTicks: 0, markTicks: 0, markReady: false, slot: 0, fireCooldown: 0,
     aim: player.team === 0 ? 0 : Math.PI, burst: null, hitStop: 0, bufferAttack: false, dodgeTicks: 0, evadeTicks: 0, dashCooldown: 0, guarding: false, guardRaise: 0, guardBroken: false, guardDelay: 0,
@@ -270,13 +283,14 @@ const guardUp = player => player.guarding && player.guardRaise >= GUARD.raiseTic
 const canHeal = player => !(player.status.poison > 0);
 function heal(player, amount) {
   if (!canHeal(player)) return 0;
+  amount *= outfitOf(player).healing;
   const gained = Math.min(amount, player.maxHp - player.hp); player.hp += gained; return gained;
 }
 /** Apply a status unless the shield is up; freeze leaves a short immunity behind. */
 function applyStatus(state, target, id, ownerId, chance = 1) {
   if (!id || !target.alive || guardUp(target) || inAlliedBubble(state, target) || random(state) >= chance) return false;
   if (id === 'freeze' && target.freezeImmune > 0) return false;
-  target.status[id] = STATUS[id].ticks; target.statusOwner[id] = ownerId;
+  target.status[id] = Math.max(1, Math.round(STATUS[id].ticks * outfitOf(target).statusDuration)); target.statusOwner[id] = ownerId;
   if (id === 'freeze') { target.charging = false; target.chargeTicks = 0; target.guarding = false; target.action = 'idle'; target.actionTicks = 0; }
   emit(state, 'status', { playerId: target.id, status: id, x: target.x, y: target.y });
   return true;
@@ -309,7 +323,8 @@ function damage(state, attacker, target, amount, { push = 0, angle = 0, stun = 1
   if (attacker && attacker.markReady && attacker.cls === 'recon') { target.markTicks = ABILITIES.cloak.markTicks; attacker.markReady = false; emit(state, 'mark', { playerId: attacker.id, targetId: target.id, x: target.x, y: target.y }); }
   total = Math.max(1, Math.round(total));
   target.hp -= total; target.stunTicks = Math.max(target.stunTicks, stun);
-  target.pushX = Math.cos(angle) * push; target.pushY = Math.sin(angle) * push;
+  const shove = push * outfitOf(target).knockback;
+  target.pushX = Math.cos(angle) * shove; target.pushY = Math.sin(angle) * shove; target.lastHurtTick = state.tick;
   if (target.status.freeze > 0) { target.status.freeze = 0; target.freezeImmune = STATUS.freeze.immuneTicks; emit(state, 'thaw', { playerId: target.id }); }
   if (target.cloakTicks > 0) { target.cloakTicks = 0; emit(state, 'uncloak', { playerId: target.id }); }
   if (target.charging) { target.charging = false; target.chargeTicks = 0; }
@@ -339,7 +354,7 @@ function tickStatus(state, player) {
   player.freezeImmune = Math.max(0, player.freezeImmune - 1);
   for (const id of STATUS_IDS) {
     if (!(status[id] > 0)) continue;
-    const owner = state.players[player.statusOwner[id]] || null, elapsed = STATUS[id].ticks - status[id];
+    const owner = state.players[player.statusOwner[id]] || null, elapsed = Math.round(STATUS[id].ticks * outfitOf(player).statusDuration) - status[id];
     if (id === 'burn' && elapsed > 0 && elapsed % STATUS.burn.every === 0) damage(state, owner, player, STATUS.burn.damage, { stun: 0, kind: 'burn' });
     if (id === 'shock' && elapsed > 0 && elapsed % STATUS.shock.every === 0) damage(state, owner, player, STATUS.shock.damage, { stun: STATUS.shock.stun, kind: 'shock' });
     if (!player.alive) return;
@@ -363,7 +378,7 @@ function tickGuard(state, player, input) {
     if (domeUp(player)) for (const ally of state.players) if (ally.alive && ally.team === player.team && dist(ally, player) <= GUARD.radius) heal(ally, GUARD.healPerSecond / TICK_RATE);
   }
   else if (player.guardDelay > 0) player.guardDelay--;
-  else player.guardHp = Math.min(max, player.guardHp + GUARD.regenPerSecond / TICK_RATE);
+  else player.guardHp = Math.min(max, player.guardHp + GUARD.regenPerSecond / outfitOf(player).abilityCooldown / TICK_RATE);
 }
 
 // ---------- weapons ----------
@@ -416,13 +431,13 @@ function explode(state, bomb) {
   const weapon = WEAPONS[bomb.weapon], owner = state.players[bomb.ownerId];
   emit(state, 'explosion', { playerId: bomb.ownerId, weapon: bomb.weapon, x: bomb.x, y: bomb.y, radius: weapon.cloud ? weapon.cloud.radius : weapon.radius });
   if (weapon.cloud) { state.clouds.push({ id: state.nextId++, ownerId: bomb.ownerId, team: bomb.team, weapon: weapon.id, x: bomb.x, y: bomb.y, radius: weapon.cloud.radius, ticks: weapon.cloud.ticks, total: weapon.cloud.ticks, status: weapon.cloud.status }); return; }
-  if (weapon.radius) radialHit(state, owner, bomb.team, bomb, weapon.radius, weapon.damage, { push: weapon.push, stun: weapon.stun ?? 20, kind: 'bomb', damageFamily: 'bomb' });
+  if (weapon.radius) radialHit(state, owner, bomb.team, bomb, weapon.radius, weapon.damage * bombPower(owner), { push: weapon.push, stun: weapon.stun ?? 20, kind: 'bomb', damageFamily: 'bomb' });
   if (weapon.shards) {
     const shards = weapon.shards;
     for (let i = 0; i < shards.count; i++) {
       const angle = i / shards.count * Math.PI * 2;
       state.projectiles.push({ id: state.nextId++, ownerId: bomb.ownerId, team: bomb.team, weapon: bomb.weapon, damageFamily: 'bomb', kind: 'shard', x: bomb.x, y: bomb.y, vx: Math.cos(angle) * shards.speed, vy: Math.sin(angle) * shards.speed,
-        size: shards.size, grow: 0, damage: shards.damage, push: shards.push, ttl: Math.ceil(shards.range / shards.speed * TICK_RATE), pierce: false, bounces: 0, status: null, chance: 1, radius: 0, carry: false, hitIds: [], perCharge: 0, pushPerCharge: 0 });
+        size: shards.size, grow: 0, damage: shards.damage * bombPower(owner), push: shards.push, ttl: Math.ceil(shards.range / shards.speed * TICK_RATE), pierce: false, bounces: 0, status: null, chance: 1, radius: 0, carry: false, hitIds: [], perCharge: 0, pushPerCharge: 0 });
     }
   }
 }
@@ -557,8 +572,8 @@ function tickDash(state, player, input, previous) {
   let dx = (input.right ? 1 : 0) - (input.left ? 1 : 0), dy = (input.down ? 1 : 0) - (input.up ? 1 : 0);
   if (!dx && !dy) { dx = Math.cos(player.aim); dy = Math.sin(player.aim); }
   // Armour weight shortens the dash: heavy plate covers less ground than a scout's leathers.
-  const length = Math.hypot(dx, dy), rule = RULES.dash, weight = (ARMORS[player.armor] || ARMORS.none).speedMultiplier;
-  Object.assign(player, { dodgeX: dx / length, dodgeY: dy / length, dodgeTicks: rule.ticks, dodgeStep: rule.distance * weight * weight / rule.ticks, evadeTicks: Math.max(player.evadeTicks, rule.evadeTicks), dashCooldown: rule.cooldown });
+  const length = Math.hypot(dx, dy), rule = RULES.dash, outfit = outfitOf(player), weight = outfit.speedMultiplier;
+  Object.assign(player, { dodgeX: dx / length, dodgeY: dy / length, dodgeTicks: rule.ticks, dodgeStep: rule.distance * weight * weight * outfit.dashDistance / rule.ticks, evadeTicks: Math.max(player.evadeTicks, rule.evadeTicks), dashCooldown: Math.round(rule.cooldown * outfit.dashCooldown) });
   emit(state, 'dodge', { playerId: player.id, x: player.x, y: player.y, angle: Math.atan2(player.dodgeY, player.dodgeX) });
 }
 function tickAbilities(state, player, input, previous) {
@@ -574,10 +589,10 @@ function tickAbilities(state, player, input, previous) {
     let dx = (input.right ? 1 : 0) - (input.left ? 1 : 0), dy = (input.down ? 1 : 0) - (input.up ? 1 : 0);
     if (!dx && !dy) { dx = Math.cos(player.aim); dy = Math.sin(player.aim); }
     const length = Math.hypot(dx, dy);
-    Object.assign(player, { dodgeX: dx / length, dodgeY: dy / length, dodgeTicks: ABILITIES.dash.dodgeTicks, dodgeStep: ABILITIES.dash.dodgeDistance / ABILITIES.dash.dodgeTicks, evadeTicks: ABILITIES.dash.evadeTicks, dashTicks: ABILITIES.dash.ticks, abilityCooldown: ABILITIES.dash.cooldown, charging: false, chargeTicks: 0 });
+    Object.assign(player, { dodgeX: dx / length, dodgeY: dy / length, dodgeTicks: ABILITIES.dash.dodgeTicks, dodgeStep: ABILITIES.dash.dodgeDistance / ABILITIES.dash.dodgeTicks, evadeTicks: ABILITIES.dash.evadeTicks, dashTicks: ABILITIES.dash.ticks, abilityCooldown: Math.round(ABILITIES.dash.cooldown * outfitOf(player).abilityCooldown), charging: false, chargeTicks: 0 });
     emit(state, 'dash', { playerId: player.id, x: player.x, y: player.y, angle: Math.atan2(player.dodgeY, player.dodgeX) });
   } else if (player.cls === 'recon') {
-    player.cloakTicks = ABILITIES.cloak.ticks; player.abilityCooldown = ABILITIES.cloak.cooldown; player.markReady = false;
+    player.cloakTicks = ABILITIES.cloak.ticks; player.abilityCooldown = Math.round(ABILITIES.cloak.cooldown * outfitOf(player).abilityCooldown); player.markReady = false;
     emit(state, 'cloak', { playerId: player.id, x: player.x, y: player.y });
   }
 }
@@ -597,7 +612,9 @@ function moveScale(player, weapon) {
 }
 
 function tickPlayer(state, player, input) {
-  if (player.alive && state.phase === 'fight' && player.hp < player.maxHp && inBase(state, player) && canHeal(player)) player.hp = Math.min(player.maxHp, player.hp + RULES.baseHealPerSecond / TICK_RATE);
+  if (player.alive && state.phase === 'fight' && player.hp < player.maxHp && inBase(state, player)) heal(player, RULES.baseHealPerSecond / TICK_RATE);
+  // Some outfits mend slowly after four seconds without taking damage.
+  if (player.alive && state.phase === 'fight' && outfitOf(player).regen > 0 && player.hp < player.maxHp && state.tick - player.lastHurtTick > 4 * TICK_RATE) heal(player, outfitOf(player).regen / TICK_RATE);
   const previous = player.previousInput || emptyInput(), map = MAPS[state.mapId];
   if (!player.alive) {
     if (state.phase === 'fight' && --player.respawnTicks <= 0) { spawn(state, player); emit(state, 'respawn', { playerId: player.id, x: player.x, y: player.y }); }
@@ -733,7 +750,7 @@ function tickPickups(state) {
     const taker = state.players.filter(player => player.alive && player.hp < player.maxHp && canHeal(player) && dist(player, heart) <= RULES.heart.radius + RULES.radius)
       .sort((a, b) => dist(a, heart) - dist(b, heart))[0];
     if (taker) {
-      const amount = Math.min(RULES.heart.heal, taker.maxHp - taker.hp); taker.hp += amount;
+      const amount = heal(taker, RULES.heart.heal);
       emit(state, 'heartPickup', { playerId: taker.id, x: heart.x, y: heart.y, amount: Math.round(amount) });
     } else if (--heart.ttl > 0) remaining.push(heart);
   }

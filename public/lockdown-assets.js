@@ -69,6 +69,13 @@ const OUTFIT_LOOKS = Object.freeze({
   ballistic: 'The same casual character wearing a neutral padded ballistic vest over the T-shirt',
   gunslinger: 'The same character in a long brown gunslinger duster coat, a wide-brimmed hat and a gun belt; the coat tails swing as they walk',
   fencer: 'The same character in a white padded fencing jacket with a high collar, fitted breeches and a dark mesh fencing mask (mask visible from the front rows, tied at the back)',
+  windrunner: 'The same character in flowing pale-blue silk wraps and a long scarf that streams behind them, light sandals, bare forearms: built for speed',
+  juggernaut: 'The same character encased in bulky riveted siege plate, a bucket helm with a narrow slit, huge pauldrons; visibly the widest silhouette (still feet at 32,58, may fill up to 44 px wide)',
+  bombardier: 'The same character in a scorched leather apron with fuse coils, bandoliers of small bombs across the chest and soot-stained goggles on the forehead',
+  berserker: 'The same character with bare tattooed arms, a wolf pelt over the shoulders (head on the hood) and a fur kilt',
+  mirrorweave: 'The same character in a shimmering iridescent hooded cloak with mirror-like scales that catch the light',
+  medic: 'The same character in a white field coat with a red cross armband and a satchel of salves at the hip',
+  clockwork: 'The same character in a brass harness of gears and springs on the back and shoulders, with a small ticking dial on the chest',
 });
 const characters = Object.keys(OUTFIT_LOOKS).flatMap(outfit => [0, 1].map(team => asset(
   `character_${outfit}_team${team}`, 384, 320, [32, 58],
