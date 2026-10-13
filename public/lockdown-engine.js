@@ -195,7 +195,14 @@ export function setConnected(state, id, connected, name) {
   const player = state.players[id]; if (!player) return;
   const joining = connected === true && !player.human;
   player.connected = connected === true; player.human = player.connected; player.bot = !player.human;
-  if (joining) for (const slot of GEAR_SLOTS) player[slot] = 'none';
+  if (joining) {
+    // A new person starts with no equipment, including when taking over a live bot.
+    // Remove all gear health bonuses without healing or reviving the knight.
+    const fraction = player.hp / player.maxHp;
+    for (const slot of GEAR_SLOTS) player[slot] = 'none';
+    player.maxHp = maxHpFor(player.cls, player);
+    player.hp = player.alive ? Math.max(1, fraction * player.maxHp) : fraction * player.maxHp;
+  }
   if (player.human && typeof name === 'string') player.name = name.slice(0, 24);
   // A person never lands on a team that already has four people.
   if (joining && state.players.filter(other => other !== player && other.human && other.team === player.team).length >= TEAM_SIZE) player.team = 1 - player.team;

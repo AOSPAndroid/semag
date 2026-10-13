@@ -119,7 +119,7 @@ kbd { display: inline-block; padding: 1px 6px; border: 1px solid var(--line); bo
 .ld-armor-card:focus-visible, .ld-class-card:focus-visible { outline: 2px solid var(--amber-light); outline-offset: 2px; }
 .ld-armor-card:disabled, .ld-class-card:disabled { opacity: .65; cursor: not-allowed; }
 .ld-armor-icon { grid-row: 1 / 3; }
-.ld-armor-icon img, .ld-armor-icon .ld-glyph { display: block; width: 36px; height: 36px; image-rendering: pixelated; }
+.ld-armor-icon img, .ld-armor-icon .ld-glyph { display: block; width: 36px; height: 36px; }
 .ld-armor-title { font-size: 12px; }
 .ld-armor-tradeoffs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px 10px; color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
 .ld-armor-tradeoffs span { white-space: nowrap; }

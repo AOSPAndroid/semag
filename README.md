@@ -298,7 +298,9 @@ A top-down team brawl in the spirit of Spiral Knights' Lockdown. Choose **Play s
 - **Capture zones** are wide circles (about five and a half tiles across), so six knights can fight on one point at once. Walls and pits never cut into a zone.
 - **Controls:** **WASD** or arrows move (ZQSD on AZERTY), the mouse aims and your knight turns to face it, **left click** attacks and charges, **right click** uses the class ability (hold it as a Guardian), **Space** dashes, **1–4**, **Q** or the wheel switch slots, **I** opens the inventory, **B** opens the loadout in base, **Tab** shows the scoreboard, **Esc** opens the menu (it pauses practice).
 
-The game runs fully on placeholder shapes. Sprites are listed in `public/lockdown-assets.js`; drop PNGs into `public/art/lockdown/` following `public/art/lockdown/ASSETS.md`, then run `node tools/lockdown-art-index.mjs`.
+The six arenas and characters use rounded, smoothly shaded original art inspired by Spiral Knights. All classes share a bareheaded T-shirt-and-shorts body; armor is a torso layer, followed by separate shoes, pants and helmets. Every layer shares the same two idle and four walking frames in five facings, with left-facing poses mirrored. Equipment health bonuses add to class health, and the menu and HUD show the resulting maximum HP.
+
+Sprites are listed in `public/lockdown-assets.js`; drop PNGs into `public/art/lockdown/` following `public/art/lockdown/ASSETS.md`, then run `node tools/lockdown-art-index.mjs`. Missing sprites use placeholder shapes.
 
 Voxel Last Stand:
 

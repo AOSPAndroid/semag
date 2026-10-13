@@ -8,6 +8,8 @@
  * Guns hold a clip and reload on their own after a short pause or when empty, even while
  * holstered. Bombs only plant from a full charge; you move slowly while charging. */
 export const TICKS = 120;
+// Equipment has one canonical table; armoury callers can import it here too.
+export { ARMORS, ARMOR_IDS, PERK_IDS } from './lockdown-equipment.js';
 
 const step = (damage, startup, active, recovery, reach, arc, push, stun, lunge) => Object.freeze({ damage, startup, active, recovery, reach, arc, push, stun, lunge });
 

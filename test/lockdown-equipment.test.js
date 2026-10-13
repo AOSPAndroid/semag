@@ -70,6 +70,46 @@ test('armor setup is independent, atomic, restricted to base/death, and persists
   assert.equal(state.players[1].armor, 'none', 'a new person does not inherit the bot armor');
 });
 
+test('Guardian class health and armor health stack through base changes, respawn and rematch', () => {
+  const state = L.createState({ seed: 7 });
+  L.setConnected(state, 0, true);
+  assert.deepEqual(L.setPlayerSetup(state, 0, { cls: 'guardian', armor: 'juggernaut' }), { ok: true });
+  assert.equal(L.CLASSES.guardian.hp, 120);
+  assert.equal(ARMORS.juggernaut.maxHp, 30);
+  assert.equal(state.players[0].maxHp, 150);
+  L.startMatch(state, [0]); state.phase = 'fight';
+  const me = state.players[0];
+  assert.deepEqual([me.hp, me.maxHp], [150, 150]);
+  Object.assign(me, L.MAPS[state.mapId].spawns[0][0], { hp: 75 });
+  assert.deepEqual(L.setPlayerSetup(state, 0, { armor: 'heavy' }), { ok: true });
+  assert.deepEqual([me.hp, me.maxHp], [60, 120], 'removing bonus health preserves half health');
+  assert.deepEqual(L.setPlayerSetup(state, 0, { armor: 'juggernaut' }), { ok: true });
+  assert.deepEqual([me.hp, me.maxHp], [75, 150], 'adding bonus health preserves half health');
+  Object.assign(me, { alive: false, hp: 0, respawnTicks: 1 });
+  run(state, 1);
+  assert.deepEqual([me.alive, me.hp, me.maxHp], [true, 150, 150]);
+  L.resetLobby(state);
+  assert.deepEqual([state.players[0].cls, state.players[0].armor, state.players[0].hp, state.players[0].maxHp], ['guardian', 'juggernaut', 150, 150]);
+  L.startMatch(state, [0]);
+  assert.deepEqual([state.players[0].hp, state.players[0].maxHp], [150, 150]);
+});
+
+test('taking over an equipped bot removes all gear and bonus health while preserving health fraction and life state', () => {
+  for (const cls of Object.keys(L.CLASSES)) for (const alive of [true, false]) {
+    const state = L.createState();
+    L.setPlayerSetup(state, 0, { cls, helmet: 'bucket', armor: 'juggernaut', pants: 'greaves', shoes: 'sneakers' });
+    const player = state.players[0];
+    assert.equal(player.maxHp, L.CLASSES[cls].hp + 40, 'helmet, body armor and shoes contribute health');
+    state.phase = 'fight';
+    Object.assign(player, { alive, hp: alive ? player.maxHp * .4 : 0 });
+    L.setConnected(state, 0, true);
+    assert.deepEqual(GEAR_SLOTS.map(slot => player[slot]), ['none', 'none', 'none', 'none']);
+    assert.equal(player.maxHp, L.CLASSES[cls].hp);
+    assert.equal(player.hp, alive ? L.CLASSES[cls].hp * .4 : 0);
+    assert.equal(player.alive, alive, `${cls}: joining does not revive a dead knight`);
+  }
+});
+
 test('specialized armor reduces real gun and sword health damage according to the attacking weapon family', () => {
   for (const armor of ['none', 'ballistic', 'duelist', 'heavy']) {
     const gun = duel({ armor });

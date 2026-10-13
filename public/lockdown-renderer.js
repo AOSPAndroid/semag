@@ -49,11 +49,7 @@ const THEMES = Object.freeze({
 const VIEW_WORLD_WIDTH = 1100; // world units across the screen at the default zoom
 const lerp = (a, b, t) => a + (b - a) * t;
 const hash = (a, b) => { let h = (a * 374761393 + b * 668265263) | 0; h = (h ^ (h >>> 13)) * 1274126177; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
-const OUTFITS = Object.freeze({ none: 'character_base', light: 'knight_recon', ballistic: 'character_ballistic', duelist: 'knight_striker', heavy: 'knight_guardian', gunslinger: 'character_gunslinger', fencer: 'character_fencer',
-  windrunner: 'character_windrunner', juggernaut: 'character_juggernaut', bombardier: 'character_bombardier', berserker: 'character_berserker', mirrorweave: 'character_mirrorweave', medic: 'character_medic', clockwork: 'character_clockwork' });
-/** Placeholder accents for outfits drawn over the casual body until their art exists: [torso colour, trim colour]. */
-const OUTFIT_COLORS = Object.freeze({ windrunner: ['#cfe8f2', '#7fb7d0'], juggernaut: ['#5c626b', '#2c3036'], bombardier: ['#7a5233', '#e0a347'], berserker: ['#8a6a4a', '#5a3b22'], mirrorweave: ['#b9c7e6', '#eef3ff'], medic: ['#f4f4f0', '#d94545'], clockwork: ['#9a7b45', '#d8b46a'] });
-const outfitKey = player => `${OUTFITS[(ARMORS[player.armor] || ARMORS.none).spriteStyle] || OUTFITS.none}_team${player.team}`;
+const armorKey = player => player.armor && player.armor !== 'none' ? `armor_${player.armor}_team${player.team}` : null;
 
 export class LockdownRenderer {
   constructor(canvas, assets) {
@@ -81,7 +77,7 @@ export class LockdownRenderer {
     // HD art: a PNG may be drawn at 2x (or more) the listed size; it shows at the listed size with the extra detail.
     const density = Math.max(1, Math.round(image.naturalWidth / entry.size[0])) || 1;
     ctx.save(); ctx.globalAlpha *= alpha; ctx.translate(x, y); ctx.rotate(rotation); ctx.scale(scale * (flipX ? -1 : 1), scale * (flipY ? -1 : 1));
-    ctx.imageSmoothingEnabled = density > 1; if (density > 1) ctx.imageSmoothingQuality = 'high';
+    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(image, (Math.floor(frame) % frames) * fw * density, (Math.floor(row) % rows) * fh * density, fw * density, fh * density, -entry.anchor[0], -entry.anchor[1], fw, fh);
     ctx.restore(); return true;
   }
@@ -101,7 +97,7 @@ export class LockdownRenderer {
     };
     const canvas = makeCanvas(map.width, map.height);
     const ctx = canvas.getContext('2d'), theme = THEMES[map.theme] || THEMES.stone;
-    ctx.imageSmoothingEnabled = false;
+    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
     // One strip per row of wall blocks: the raised top face, then the front face where floor lies below.
     // Walls standing on the raised floor of a two-floor map are lifted one storey higher.
     this.wallRows = [];
@@ -109,7 +105,7 @@ export class LockdownRenderer {
     for (let row = 0; row < map.rows; row++) {
       if (!map.grid[row].includes('#')) continue;
       const strip = makeCanvas(map.width, TILE + WALL_HEIGHT + FLOOR_RISE), sctx = strip.getContext('2d');
-      sctx.imageSmoothingEnabled = false;
+      sctx.imageSmoothingEnabled = true; sctx.imageSmoothingQuality = 'high';
       for (let col = 0; col < map.cols; col++) {
         if (map.grid[row][col] !== '#') continue;
         const x = col * TILE, top = high(col, row) ? 0 : FLOOR_RISE;
@@ -221,15 +217,17 @@ export class LockdownRenderer {
   /** Chasm, water or lava: sunk below the floor, with a lip where it meets solid ground. */
   drawPit(ctx, map, theme, col, row) {
     const x = col * TILE, y = row * TILE;
-    if (this.drawSprite(ctx, `tile_pit_${map.theme}`, x, y)) return;
-    ctx.fillStyle = theme.pit; ctx.fillRect(x, y, TILE, TILE);
+    const textured = this.drawSprite(ctx, `tile_pit_${map.theme}`, x, y);
     const solid = (c, r) => map.grid[r]?.[c] !== undefined && map.grid[r][c] !== '~';
-    if (theme.pitKind === 'void') {
-      ctx.fillStyle = 'rgba(255,255,255,.35)'; if (hash(col, row) < .3) { ctx.beginPath(); ctx.ellipse(x + 24, y + 26, 16, 6, 0, 0, Math.PI * 2); ctx.fill(); }
-    } else {
-      ctx.fillStyle = theme.pitEdge; ctx.globalAlpha = theme.pitKind === 'lava' ? .55 : .3;
-      for (let i = 0; i < 3; i++) ctx.fillRect(x + 6 + ((col * 7 + row * 13 + i * 17) % 30), y + 8 + i * 13, 10, 2);
-      ctx.globalAlpha = 1;
+    if (!textured) {
+      ctx.fillStyle = theme.pit; ctx.fillRect(x, y, TILE, TILE);
+      if (theme.pitKind === 'void') {
+        ctx.fillStyle = 'rgba(255,255,255,.35)'; if (hash(col, row) < .3) { ctx.beginPath(); ctx.ellipse(x + 24, y + 26, 16, 6, 0, 0, Math.PI * 2); ctx.fill(); }
+      } else {
+        ctx.fillStyle = theme.pitEdge; ctx.globalAlpha = theme.pitKind === 'lava' ? .55 : .3;
+        for (let i = 0; i < 3; i++) ctx.fillRect(x + 6 + ((col * 7 + row * 13 + i * 17) % 30), y + 8 + i * 13, 10, 2);
+        ctx.globalAlpha = 1;
+      }
     }
     // The near lip of the floor above shows as a cut face, like a wall front sunk into the ground.
     if (solid(col, row - 1)) { ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.fillRect(x, y, TILE, 12); ctx.fillStyle = theme.wallEdge; ctx.fillRect(x, y, TILE, 3); }
@@ -309,7 +307,7 @@ export class LockdownRenderer {
     const shakeX = this.shake ? (Math.random() - .5) * this.shake * 2 : 0, shakeY = this.shake ? (Math.random() - .5) * this.shake * 2 : 0;
     this.shake = this.shake > .2 ? this.shake * .86 : 0;
     ctx.setTransform(zoom, 0, 0, zoom, canvas.width / 2 - (this.camera.x + shakeX) * zoom, canvas.height / 2 - (this.camera.y + shakeY) * zoom);
-    ctx.imageSmoothingEnabled = false;
+    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(this.buildMap(map), 0, 0, map.width, map.height);
     // Floor layer: point plates and rings, domes, bomb radii, shadows and team rings.
     const viewerTeam = local?.team ?? null;
@@ -502,15 +500,20 @@ export class LockdownRenderer {
       if (player.hearts?.[player.slot] > 0 && !this.drawSprite(ctx, 'pickup_heart', hand.x, hand.y - 4, { scale: .5 })) { ctx.fillStyle = '#ff4d6d'; ctx.font = 'bold 14px system-ui'; ctx.textAlign = 'center'; ctx.fillText('♥', hand.x, hand.y); }
     };
     if (facing.weaponBehind) drawWeapon();
-    const key = outfitKey(player), flash = this.flashes.has(player.id);
-    if (!this.drawSprite(ctx, key, fx, fy, { row, frame, flipX: flip })) this.placeholderCharacter(ctx, { ...player, y: player.y - leap }, team, { row, flip, frame, moving, now });
-    // Shoes, then pants, then helmet go over the body outfit; every slot is its own sheet.
+    const key = `character_base_team${player.team}`, layer = armorKey(player), flash = this.flashes.has(player.id);
+    const pose = { row, frame, flipX: flip };
+    if (!this.drawSprite(ctx, key, fx, fy, pose)) this.placeholderCharacter(ctx, { ...player, armor: 'none', y: player.y - leap }, team, { row, flip, frame, moving, now });
+    if (layer) this.drawSprite(ctx, layer, fx, fy, pose);
+    const layers = [key, layer];
+    // Shoes, pants and helmet cover the body and armor with the exact same pose.
     for (const slot of ['shoes', 'pants', 'helmet']) {
       const id = player[slot];
       if (!id || id === 'none') continue;
-      if (!this.drawSprite(ctx, `gear_${slot}_${id}`, fx, fy, { row, frame, flipX: flip })) this.placeholderGear(ctx, slot, id, fx, fy, { row, flip, frame, moving, now, team });
+      const gearKey = `gear_${slot}_${id}`;
+      if (!this.drawSprite(ctx, gearKey, fx, fy, pose)) this.placeholderGear(ctx, slot, id, fx, fy, { row, flip, frame, moving, now, team });
+      layers.push(gearKey);
     }
-    if (flash) this.drawFlash(ctx, key, fx, fy, { row, frame, flipX: flip });
+    if (flash) for (const name of layers) if (name) this.drawFlash(ctx, name, fx, fy, pose);
     if (!facing.weaponBehind) drawWeapon();
     if (player.status?.freeze > 0) {
       ctx.globalAlpha = .55; ctx.fillStyle = STATUS_COLORS.freeze; ctx.fillRect(fx - 18, fy - 54, 36, 54);
@@ -552,7 +555,7 @@ export class LockdownRenderer {
     const entry = this.assets?.entry(key), image = this.sprite(key);
     if (!entry || !image) { ctx.globalAlpha = .7; ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.ellipse(x, y - 26, 15, 26, 0, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1; return; }
     const tint = this.tint ||= Object.assign(document.createElement('canvas'), { width: 64, height: 64 }), tctx = tint.getContext('2d');
-    tctx.clearRect(0, 0, 64, 64); tctx.globalCompositeOperation = 'source-over'; tctx.imageSmoothingEnabled = false;
+    tctx.clearRect(0, 0, 64, 64); tctx.globalCompositeOperation = 'source-over'; tctx.imageSmoothingEnabled = true;
     const fw = entry.size[0] / entry.frames, fh = entry.size[1] / (entry.rows || 1);
     tctx.drawImage(image, (Math.floor(options.frame) % entry.frames) * fw, options.row * fh, fw, fh, 0, 0, 64, 64);
     tctx.globalCompositeOperation = 'source-atop'; tctx.fillStyle = 'rgba(255,255,255,.85)'; tctx.fillRect(0, 0, 64, 64);
@@ -594,36 +597,18 @@ export class LockdownRenderer {
   }
   /** Loading fallback follows equipment too, so an unarmored player never gets a helmet. */
   placeholderCharacter(ctx, player, team, options) {
-    const style = (ARMORS[player.armor] || ARMORS.none).spriteStyle;
-    if (!['none', 'ballistic', 'gunslinger', 'fencer'].includes(style) && !OUTFIT_COLORS[style]) {
-      const cls = style === 'heavy' ? 'guardian' : style === 'light' ? 'recon' : 'striker';
-      this.placeholderKnight(ctx, { ...player, cls }, team, options); return;
-    }
     const { row, flip, frame, moving, now } = options, step = moving ? (frame % 2 ? 2 : -2) : 0;
     const bob = moving ? 0 : Math.sin(now / 300) * .8, hand = KNIGHT_FACINGS[row].hand;
     ctx.save(); ctx.translate(player.x, player.y + FEET); if (flip) ctx.scale(-1, 1);
-    ctx.fillStyle = '#d8a47d'; ctx.fillRect(-8, -12 + step, 6, 10 - step); ctx.fillRect(2, -12 - step, 6, 10 + step);
-    ctx.fillStyle = '#3d4852'; ctx.fillRect(-9, -4, 8, 4); ctx.fillRect(1, -4, 8, 4);
-    ctx.fillStyle = '#29333c'; ctx.fillRect(-10, -17, 20, 8);
-    ctx.fillStyle = '#e4eaed'; ctx.fillRect(-11, -32 + bob, 22, 16);
-    ctx.fillStyle = team.main; ctx.fillRect(-6, -32 + bob, 12, 2);
-    if (style === 'ballistic') { ctx.fillStyle = '#4a555e'; ctx.fillRect(-9, -30, 18, 13); ctx.fillStyle = '#78838b'; ctx.fillRect(-7, -28, 14, 5); }
-    if (OUTFIT_COLORS[style]) {
-      const [torso, trim] = OUTFIT_COLORS[style], bulk = style === 'juggernaut' ? 4 : 0;
-      ctx.fillStyle = torso; ctx.fillRect(-11 - bulk, -32 + bob - bulk / 2, 22 + bulk * 2, 18 + bulk);
-      ctx.fillStyle = trim; ctx.fillRect(-11 - bulk, -24 + bob, 22 + bulk * 2, 3);
-      if (style === 'medic') { ctx.fillRect(-2, -30 + bob, 4, 10); ctx.fillRect(-5, -27 + bob, 10, 4); }
-      if (style === 'windrunner') { ctx.fillRect(-14, -28 + bob, 4, 14); }
-      if (style === 'mirrorweave') { ctx.globalAlpha = .5; ctx.fillRect(-13, -34 + bob, 26, 30); ctx.globalAlpha = 1; }
-    }
-    if (style === 'gunslinger') { ctx.fillStyle = '#6b4a2e'; ctx.fillRect(-12, -32 + bob, 24, 26); ctx.fillStyle = '#e4eaed'; ctx.fillRect(-4, -32 + bob, 8, 14); ctx.fillStyle = '#3b2a1c'; ctx.fillRect(-11, -16, 22, 3); }
-    if (style === 'fencer') { ctx.fillStyle = '#f2f4f7'; ctx.fillRect(-11, -32 + bob, 22, 18); ctx.fillStyle = team.main; ctx.fillRect(-11, -24 + bob, 22, 2); ctx.fillStyle = '#c9ced8'; ctx.fillRect(-6, -30 + bob, 3, 14); }
+    const capsule = (x, y, w, h, colour, radius = 3) => { ctx.fillStyle = colour; ctx.beginPath(); ctx.roundRect(x, y, w, h, radius); ctx.fill(); };
+    capsule(-8, -12 + step, 6, 10 - step, '#d8a47d'); capsule(2, -12 - step, 6, 10 + step, '#d8a47d');
+    capsule(-9, -4, 8, 4, '#3d4852', 2); capsule(1, -4, 8, 4, '#3d4852', 2);
+    capsule(-10, -17, 20, 8, '#29333c'); capsule(-11, -32 + bob, 22, 17, '#e4eaed', 6);
+    capsule(-6, -32 + bob, 12, 2, team.main, 1);
     ctx.fillStyle = '#d8a47d'; ctx.beginPath(); ctx.arc(0, -42 + bob, 10, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#493429'; ctx.fillRect(-10, -52 + bob, 20, row >= 3 ? 17 : 7);
-    if (style === 'gunslinger') { ctx.fillStyle = '#5a3d24'; ctx.fillRect(-15, -54 + bob, 30, 4); ctx.fillRect(-8, -60 + bob, 16, 7); }
-    if (style === 'fencer' && row < 3) { ctx.fillStyle = 'rgba(30,34,40,.75)'; ctx.fillRect(-9, -48 + bob, 18, 12); }
+    ctx.fillStyle = '#493429'; ctx.beginPath(); ctx.ellipse(0, -47 + bob, 11, row >= 3 ? 11 : 6, 0, 0, Math.PI * 2); ctx.fill();
     if (row < 3) { ctx.fillStyle = '#20272e'; const eyes = row === 0 ? [-5, 3] : row === 1 ? [0, 6] : [6]; for (const eye of eyes) ctx.fillRect(eye, -42 + bob, 2, 3); }
-    ctx.fillStyle = '#d8a47d'; ctx.fillRect(hand[0] - 35, hand[1] - 61, 6, 6);
+    ctx.fillStyle = '#d8a47d'; ctx.beginPath(); ctx.arc(hand[0] - 32, hand[1] - 58, 3, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
   }
   /** Simple stand-ins for helmets, pants and shoes until their overlay sheets exist. Same feet point and

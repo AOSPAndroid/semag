@@ -28,7 +28,7 @@ if (missing.length) console.log(`Missing (placeholders used):\n  ${missing.join(
 
 function brief(ready, problems) {
   const groups = [...new Set(MANIFEST.map(entry => entry.group))];
-  const title = { tiles: 'Tiles', characters: 'Characters', gear: 'Helmets, pants and shoes (overlays)', knights: 'Armored outfits', weapons: 'Held weapons', projectiles: 'Projectiles', bombs: 'Bombs', effects: 'Effects', pickups: 'Pickups', points: 'Control points', icons: 'Icons' };
+  const title = { tiles: 'Tiles', characters: 'Bare character body', armors: 'Armor overlays', gear: 'Helmets, pants and shoes (overlays)', weapons: 'Held weapons', projectiles: 'Projectiles', bombs: 'Bombs', effects: 'Effects', pickups: 'Pickups', points: 'Control points', icons: 'Icons' };
   const rows = group => MANIFEST.filter(entry => entry.group === group).map(entry => `| ${ready.has(entry.file) ? '✅' : '⬜'} | \`${entry.file}\` | ${entry.size.join('×')} | ${entry.frames}${entry.rows ? ` × ${entry.rows} rows` : ''} | ${entry.anchor.join(', ')} | ${entry.description.replace(/\|/g, '/')} |`).join('\n');
   return `# Lockdown art brief
 
@@ -44,10 +44,18 @@ shapes; every PNG listed below replaces one placeholder as soon as it is added.
 
 - **Camera:** ¾ view, tilted about 60° down (Spiral Knights, Enter the Gungeon, Nuclear Throne). Light from the top-left.
   Floors show their top; walls show a top face (raised 24 px) and a front face.
-- **Look:** chunky, readable "toy knight" fantasy: clean silhouettes, 2–3 px dark outlines,
-  limited palette with a few bright accents. Avoid copying any existing game's characters, logos or UI.
-- **Equipment:** the unarmored base wears a T-shirt and shorts. Armor chooses the outfit independently
-  of class abilities: Scout uses Recon art, Duelist uses Striker art, Heavy uses Guardian art, and Ballistic adds a padded vest.
+- **Look:** rounded, smoothly shaded fantasy inspired by Spiral Knights: broad painted highlights,
+  soft bevels and antialiased silhouettes. Avoid voxel cubes, pixel grids, harsh outlines and noisy textures.
+  Make original characters and objects; use the reference game's shapes and materials as inspiration.
+- **Terrain:** quiet painted floor textures, lighter wall tops and darker front faces.
+  Tile materials join seamlessly; hazards sit below the walking surface and keep their edge shadows.
+- **Equipment:** all classes share the T-shirt-and-shorts body. Each armor is a separate transparent
+  garment layer with the same 384×320 grid, row, frame, anchor and mirroring. Leave exposed body parts transparent.
+  Armor contains no headgear, pants or shoes. Draw the body, armor, shoes, pants and helmet in that order;
+  every layer follows the same idle bob and walking pose. Helmets, pants and shoes use neutral materials.
+  Draw equipment as worn: heads hide the far side of open bands, and ankles enter shoe cuffs.
+  Register shoe openings and soles to the actual leg pose; keep hidden rear surfaces transparent.
+  Armor health bonuses add to class health; choosing equipment preserves class abilities.
 - **Knights turn toward the mouse**, like Spiral Knights. Each sheet has 5 facing rows: down, down-right, right,
   up-right, up. The game mirrors the right-hand rows for the left-hand directions and never rotates a knight.
   Knights are drawn **empty-handed**: the game pins the weapon sprite to each row's hand point and rotates it to the aim
@@ -62,7 +70,9 @@ shapes; every PNG listed below replaces one placeholder as soon as it is added.
   \`team0\`/\`team1\` carry team colour; everything else stays neutral and the game adds a coloured ring.
 - **Format:** 32-bit PNG with transparency, at exactly **2x** the pixel sizes below (HD, preferred: the game shows it at the listed size with twice the detail) or exactly 1x. Any other size is skipped.
 - **Bases:** each team's spawn tiles (\`tile_spawn_team0/1\`) are its base, where knights heal and change loadout; make them read as a safe zone.
-- **Themes:** \`stone\` (Coliseum Gate, cool grey) and \`brass\` (Clockwork Yard, warm bronze and rivets).
+- **Themes:** \`castle\` (Old Keep, flagstones and moat), \`maze\` (Hedge Labyrinth, earth and hedges),
+  \`foundry\` (Clockwork Foundry, iron and lava), \`ruins\` (Sunken Temple, sandstone and pools),
+  \`graveyard\` (Gloom Graveyard, slate and crypts), and \`skyway\` (Sky Bridges, pale stone above clouds).
 
 ## How to deliver
 

@@ -375,7 +375,7 @@ function updateHud(current) {
     const gear = combineGear(me);
     $('ld-armor-name').textContent = gear.name;
     $('ld-armor-stats').textContent = armorStats(gear);
-    $('ld-hp').textContent = Math.max(0, Math.ceil(me.alive ? me.hp : 0));
+    $('ld-hp').textContent = `${Math.max(0, Math.ceil(me.alive ? me.hp : 0))} / ${me.maxHp}`;
     $('ld-hp-bar').style.width = `${me.alive ? Math.max(0, me.hp / me.maxHp * 100) : 0}%`;
     // The class ability: Striker Boost and Recon Cloak have cooldowns; the Guardian's shield has health.
     const ability = { striker: ['Boost', ABILITIES.dash.cooldown, me.dashTicks > 0 || me.evadeTicks > 0], guardian: ['Shield (hold)', 1, me.guarding], recon: ['Cloak', ABILITIES.cloak.cooldown, me.cloakTicks > 0] }[me.cls];
@@ -605,7 +605,11 @@ function renderMenu() {
   const team = me?.team ?? setup.team, cls = me?.cls ?? setup.cls, gear = gearOf(me ?? setup), weapons = me?.weapons ?? setup.weapons;
   const lobby = phase === 'lobby' || phase === 'matchEnd', editable = canChangeLoadout();
   for (const button of document.querySelectorAll('.ld-team-button')) { button.setAttribute('aria-pressed', String(Number(button.dataset.team) === team)); button.disabled = !lobby; }
-  for (const card of document.querySelectorAll('.ld-class-card')) { card.setAttribute('aria-pressed', String(card.dataset.cls === cls)); card.disabled = !editable; }
+  for (const card of document.querySelectorAll('.ld-class-card')) {
+    const choice = CLASSES[card.dataset.cls];
+    card.setAttribute('aria-pressed', String(choice.id === cls)); card.disabled = !editable;
+    card.querySelector('small').textContent = `${Engine.maxHpFor(choice.id, gear)} HP · ${choice.ability}`;
+  }
   for (const card of document.querySelectorAll('.ld-armor-card')) { card.setAttribute('aria-pressed', String(card.dataset.armor === gear[card.dataset.slot])); card.disabled = !editable; }
   for (const tab of document.querySelectorAll('[data-gear-tab]')) {
     tab.setAttribute('aria-selected', String(tab.dataset.gearTab === gearTab));
@@ -614,7 +618,7 @@ function renderMenu() {
   $('ld-gear-random').disabled = $('ld-gear-clear').disabled = !editable;
   const total = combineGear(gear), piece = GEAR[gearTab][gear[gearTab]];
   $('ld-armor-summary').textContent = `${piece.name}: ${piece.description}`;
-  $('ld-armor-summary-stats').innerHTML = `<b>Whole build</b> (${total.name}): ${armorStatMarkup(total)}`;
+  $('ld-armor-summary-stats').innerHTML = `<b>Whole build</b> (${total.name}): ${Engine.maxHpFor(cls, gear)} max HP (${CLASSES[cls].hp} class ${total.maxHp >= 0 ? '+' : '−'} ${Math.abs(total.maxHp)} equipment) · ${armorStatMarkup(total)}`;
   [...$('ld-loadout').querySelectorAll('select')].forEach((select, slot) => { if (document.activeElement !== select) select.value = weapons[slot] || ''; select.disabled = !editable; });
   const note = $('ld-base-note');
   note.hidden = lobby;

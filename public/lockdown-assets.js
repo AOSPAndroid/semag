@@ -71,30 +71,16 @@ export const KNIGHT_FACINGS = Object.freeze([
   Object.freeze({ id: 'up', label: 'back to the camera', hand: Object.freeze([44, 38]), weaponBehind: true }),
 ]);
 const facingList = KNIGHT_FACINGS.map((facing, row) => `row ${row + 1} ${facing.id} (${facing.label}, hand at ${facing.hand.join(', ')})`).join('; ');
-const knights = Object.values(CLASSES).flatMap(cls => [0, 1].map(team => asset(
-  `knight_${cls.id}_team${team}`, 384, 320, [32, 58],
-  `${cls.name} knight, team ${team === 0 ? 'Amber' : 'Cyan'}, ¾ view, EMPTY-HANDED (the game draws the weapon at each row's hand point). Sheet of 64x64 frames: 6 columns × 5 facing rows. Columns 1–2 idle (gentle breathing bob), columns 3–6 walk cycle. Rows: ${facingList}. Left-facing directions are mirrored by the game. Feet rest on (32, 58) in every frame; the knight is about 36 px wide and 50 px tall with a big chibi helmet. Class must read at a glance from every side: ${cls.id === 'striker' ? 'light armour, swept-back crest plume, short cape' : cls.id === 'guardian' ? 'heavy rounded plate, broad pauldrons, flat-topped great helm' : 'slim, hooded cloak over a light helm, scarf'}. Team colour on the plume/cloak/trim.`,
-  { group: 'knights', frames: 6, rows: KNIGHT_FACINGS.length, facings: KNIGHT_FACINGS },
-)));
-
-// Armor chooses the outfit; class abilities do not change the character's clothes.
-const OUTFIT_LOOKS = Object.freeze({
-  base: 'Unarmored character in a white T-shirt, charcoal shorts and simple shoes, with an uncovered head and bare hands',
-  ballistic: 'The same casual character wearing a neutral padded ballistic vest over the T-shirt',
-  gunslinger: 'The same character in a long brown gunslinger duster coat, a wide-brimmed hat and a gun belt; the coat tails swing as they walk',
-  fencer: 'The same character in a white padded fencing jacket with a high collar, fitted breeches and a dark mesh fencing mask (mask visible from the front rows, tied at the back)',
-  windrunner: 'The same character in flowing pale-blue silk wraps and a long scarf that streams behind them, light sandals, bare forearms: built for speed',
-  juggernaut: 'The same character encased in bulky riveted siege plate, a bucket helm with a narrow slit, huge pauldrons; visibly the widest silhouette (still feet at 32,58, may fill up to 44 px wide)',
-  bombardier: 'The same character in a scorched leather apron with fuse coils, bandoliers of small bombs across the chest and soot-stained goggles on the forehead',
-  berserker: 'The same character with bare tattooed arms, a wolf pelt over the shoulders (head on the hood) and a fur kilt',
-  mirrorweave: 'The same character in a shimmering iridescent hooded cloak with mirror-like scales that catch the light',
-  medic: 'The same character in a white field coat with a red cross armband and a satchel of salves at the hip',
-  clockwork: 'The same character in a brass harness of gears and springs on the back and shoulders, with a small ticking dial on the chest',
-});
-const characters = Object.keys(OUTFIT_LOOKS).flatMap(outfit => [0, 1].map(team => asset(
-  `character_${outfit}_team${team}`, 384, 320, [32, 58],
-  `${OUTFIT_LOOKS[outfit]}. Team ${team === 0 ? 'Amber' : 'Cyan'} color on narrow clothing trim only. 6 columns by 5 facing rows of 64x64 frames; two idle and four walking poses. Feet at 32, 58; hands follow the same facing points as the armored outfits. Empty-handed.`,
+// Every class wears this common body. Equipment is a separate registered layer.
+const characters = [0, 1].map(team => asset(
+  `character_base_team${team}`, 384, 320, [32, 58],
+  `Smoothly shaded, rounded casual character in a cream T-shirt, charcoal shorts and shoes, with uncovered hair and bare hands. Team ${team === 0 ? 'Amber' : 'Cyan'} on shirt trim only. Six columns by five rows of 64x64 frames: two idle and four walk poses. Feet at 32, 58; ${facingList}. Empty-handed. All classes use this same body beneath armor.`,
   { group: 'characters', frames: 6, rows: KNIGHT_FACINGS.length, facings: KNIGHT_FACINGS },
+));
+const armors = Object.values(ARMORS).filter(armor => armor.id !== 'none').flatMap(armor => [0, 1].map(team => asset(
+  `armor_${armor.id}_team${team}`, 384, 320, [32, 58],
+  `${armor.name} torso garment-only overlay: ${armor.description} Smooth rounded materials, softly painted shading. Team ${team === 0 ? 'Amber' : 'Cyan'} on narrow trim only. Match the common body's exact six-column, five-row grid, poses and anchor. Draw over the body with the same row, frame and mirroring. No headgear, pants, shoes or weapons; uncovered skin, hands, hair and clothing remain transparent. ${facingList}.`,
+  { group: 'armors', frames: 6, rows: KNIGHT_FACINGS.length, facings: KNIGHT_FACINGS },
 )));
 
 // Helmets, pants and shoes are separate overlay sheets drawn on top of the body outfit, in the same
@@ -196,7 +182,7 @@ const ui = [
   ...['dash', 'bubble', 'heal', 'cloak'].map(id => asset(`icon_ability_${id}`, 48, 48, [24, 24], `Ability icon: ${id}.`, { group: 'icons' })),
 ];
 
-export const MANIFEST = Object.freeze([...tiles, ...twoFloorTiles, ...spawnPads, ...characters, ...gear, ...knights, ...weapons, ...projectiles, ...bombs, ...effects, ...pickups, ...pointArt, ...ui]);
+export const MANIFEST = Object.freeze([...tiles, ...twoFloorTiles, ...spawnPads, ...characters, ...armors, ...gear, ...weapons, ...projectiles, ...bombs, ...effects, ...pickups, ...pointArt, ...ui]);
 export const MANIFEST_BY_KEY = Object.freeze(Object.fromEntries(MANIFEST.map(entry => [entry.key, entry])));
 
 /** Loads the sprites listed in /art/lockdown/index.json (written by
