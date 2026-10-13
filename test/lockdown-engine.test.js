@@ -486,3 +486,42 @@ test('a dodging Striker is untouchable; swords wear shields down faster than gun
   assert.equal(block.foe.hp, block.foe.maxHp);
   assert.equal(Math.round(shieldBefore - block.foe.guardHp), Math.round(WEAPONS.brand.combo[0].damage * GUARD.bladeScale));
 });
+
+test('every class can dash: a short untouchable burst on a cooldown that also cancels recovery', () => {
+  for (const cls of Object.keys(CLASSES)) {
+    const { state, me } = duel({ gap: 300, a: { cls } });
+    const startX = me.x;
+    run(state, 1, () => ({ 0: { dash: true, left: true } }));
+    assert.ok(me.evadeTicks > 0, `${cls} is untouchable while dashing`);
+    run(state, RULES.dash.ticks + 2);
+    assert.ok(startX - me.x > RULES.dash.distance * .8, `${cls} dashed ${startX - me.x}`);
+    const afterFirst = me.x;
+    run(state, 2, t => ({ 0: { dash: t === 1, left: true } }));
+    assert.ok(Math.abs(me.x - afterFirst) < 20, 'a second dash waits for the cooldown');
+    assert.ok(events(state, 'dodge').length === 1);
+  }
+  // Dash-cancel a cut's recovery, and keep a charge going through a dash.
+  const cancel = duel({ gap: 300, a: { cls: 'recon' } }), move = WEAPONS.brand.combo[0];
+  run(cancel.state, move.startup + move.active + 1, t => ({ 0: { attack: t === 0 } }));
+  run(cancel.state, 1, () => ({ 0: { dash: true } }));
+  assert.equal(cancel.me.action, 'idle'); assert.ok(events(cancel.state, 'cancel').some(event => event.by === 'dash'));
+  const charge = duel({ gap: 300, a: { cls: 'recon', weapons: ['blaster', 'brand', 'blast'] } });
+  run(charge.state, 40, () => ({ 0: { attack: true } }));
+  run(charge.state, 1, () => ({ 0: { attack: true, dash: true } }));
+  assert.ok(charge.me.charging, 'the charge survives a dash');
+});
+
+test('outfits add attack perks on top of the class: gunslinger guns, fencing swords', () => {
+  const plain = duel({ gap: 200, a: { cls: 'guardian', weapons: ['blaster', 'brand', 'blast'] } });
+  const slinger = duel({ gap: 200, a: { cls: 'guardian', armor: 'gunslinger', weapons: ['blaster', 'brand', 'blast'] } });
+  for (const { state } of [plain, slinger]) run(state, 40, t => ({ 0: { attack: t === 0 } }));
+  assert.equal(slinger.foe.maxHp - slinger.foe.hp, Math.round(WEAPONS.blaster.damage * L.ARMORS.gunslinger.gunDamage * (1 - L.ARMORS[slinger.foe.armor].gunResistance)));
+  assert.ok(L.chargeTicksFor(slinger.me, WEAPONS.blaster) < L.chargeTicksFor(plain.me, WEAPONS.blaster));
+  // Fencing garb stacks with the Striker's sword perks.
+  const fencer = duel({ gap: 50, a: { cls: 'striker', armor: 'fencer' } });
+  run(fencer.state, swingTicks(WEAPONS.brand.combo[0]) + 6, t => ({ 0: { attack: t === 0 } }));
+  const expected = Math.round(WEAPONS.brand.combo[0].damage * CLASSES.striker.bladeDamage * L.ARMORS.fencer.bladeDamage * (1 - L.ARMORS[fencer.foe.armor].bladeResistance));
+  assert.equal(fencer.foe.maxHp - fencer.foe.hp, expected);
+  const cut = events(fencer.state, 'swing')[0], base = WEAPONS.brand.combo[0];
+  assert.ok(cut.startup + cut.active < base.startup + base.active, 'fencing garb swings faster');
+});

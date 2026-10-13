@@ -43,7 +43,7 @@ const THEMES = Object.freeze({
 const VIEW_WORLD_WIDTH = 1100; // world units across the screen at the default zoom
 const lerp = (a, b, t) => a + (b - a) * t;
 const hash = (a, b) => { let h = (a * 374761393 + b * 668265263) | 0; h = (h ^ (h >>> 13)) * 1274126177; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
-const OUTFITS = Object.freeze({ none: 'character_base', light: 'knight_recon', ballistic: 'character_ballistic', duelist: 'knight_striker', heavy: 'knight_guardian' });
+const OUTFITS = Object.freeze({ none: 'character_base', light: 'knight_recon', ballistic: 'character_ballistic', duelist: 'knight_striker', heavy: 'knight_guardian', gunslinger: 'character_gunslinger', fencer: 'character_fencer' });
 const outfitKey = player => `${OUTFITS[(ARMORS[player.armor] || ARMORS.none).spriteStyle] || OUTFITS.none}_team${player.team}`;
 
 export class LockdownRenderer {
@@ -169,6 +169,7 @@ export class LockdownRenderer {
       }
       else if (event.type === 'block') add('block', 220, { x: event.x, y: event.y, playerId: event.playerId });
       else if (event.type === 'evade') add('evade', 500, { x: event.x, y: event.y });
+      else if (event.type === 'dodge') add('dust', 260, { x: event.x, y: event.y + FEET, angle: event.angle });
       else if (event.type === 'cancel') add('cancel', 160, { playerId: event.playerId });
       else if (event.type === 'guardBreak') { add('guardBreak', 420, { x: event.x, y: event.y, playerId: event.playerId }); if (event.playerId === this.localId) this.shake = Math.max(this.shake, 7); }
       else if (event.type === 'detonate') { add('explosion', 360, { x: event.x, y: event.y, radius: 26 + event.count * 10, weapon: 'catalyzer' }); this.bump(event.x, event.y, 3 + event.count); }
@@ -454,7 +455,7 @@ export class LockdownRenderer {
   /** Loading fallback follows equipment too, so an unarmored player never gets a helmet. */
   placeholderCharacter(ctx, player, team, options) {
     const style = (ARMORS[player.armor] || ARMORS.none).spriteStyle;
-    if (style !== 'none' && style !== 'ballistic') {
+    if (!['none', 'ballistic', 'gunslinger', 'fencer'].includes(style)) {
       const cls = style === 'heavy' ? 'guardian' : style === 'light' ? 'recon' : 'striker';
       this.placeholderKnight(ctx, { ...player, cls }, team, options); return;
     }
@@ -467,8 +468,12 @@ export class LockdownRenderer {
     ctx.fillStyle = '#e4eaed'; ctx.fillRect(-11, -32 + bob, 22, 16);
     ctx.fillStyle = team.main; ctx.fillRect(-6, -32 + bob, 12, 2);
     if (style === 'ballistic') { ctx.fillStyle = '#4a555e'; ctx.fillRect(-9, -30, 18, 13); ctx.fillStyle = '#78838b'; ctx.fillRect(-7, -28, 14, 5); }
+    if (style === 'gunslinger') { ctx.fillStyle = '#6b4a2e'; ctx.fillRect(-12, -32 + bob, 24, 26); ctx.fillStyle = '#e4eaed'; ctx.fillRect(-4, -32 + bob, 8, 14); ctx.fillStyle = '#3b2a1c'; ctx.fillRect(-11, -16, 22, 3); }
+    if (style === 'fencer') { ctx.fillStyle = '#f2f4f7'; ctx.fillRect(-11, -32 + bob, 22, 18); ctx.fillStyle = team.main; ctx.fillRect(-11, -24 + bob, 22, 2); ctx.fillStyle = '#c9ced8'; ctx.fillRect(-6, -30 + bob, 3, 14); }
     ctx.fillStyle = '#d8a47d'; ctx.beginPath(); ctx.arc(0, -42 + bob, 10, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#493429'; ctx.fillRect(-10, -52 + bob, 20, row >= 3 ? 17 : 7);
+    if (style === 'gunslinger') { ctx.fillStyle = '#5a3d24'; ctx.fillRect(-15, -54 + bob, 30, 4); ctx.fillRect(-8, -60 + bob, 16, 7); }
+    if (style === 'fencer' && row < 3) { ctx.fillStyle = 'rgba(30,34,40,.75)'; ctx.fillRect(-9, -48 + bob, 18, 12); }
     if (row < 3) { ctx.fillStyle = '#20272e'; const eyes = row === 0 ? [-5, 3] : row === 1 ? [0, 6] : [6]; for (const eye of eyes) ctx.fillRect(eye, -42 + bob, 2, 3); }
     ctx.fillStyle = '#d8a47d'; ctx.fillRect(hand[0] - 35, hand[1] - 61, 6, 6);
     ctx.restore();
@@ -565,6 +570,8 @@ export class LockdownRenderer {
       } else if (effect.type === 'guardBreak') {
         ctx.fillStyle = '#d8f4ff'; for (let i = 0; i < 8; i++) { const a = i * .785; ctx.fillRect(effect.x + Math.cos(a) * (14 + t * 40) - 3, effect.y - 24 + Math.sin(a) * (14 + t * 40) - 3, 6, 6); }
         ctx.font = 'bold 13px system-ui'; ctx.textAlign = 'center'; ctx.fillStyle = '#ffffff'; ctx.fillText('GUARD BREAK', effect.x, effect.y - 70 - t * 10);
+      } else if (effect.type === 'dust') {
+        ctx.fillStyle = 'rgba(220,220,210,.6)'; for (let i = 0; i < 4; i++) { const a = effect.angle + Math.PI + (i - 1.5) * .45; ctx.beginPath(); ctx.arc(effect.x + Math.cos(a) * (6 + t * 22), effect.y + Math.sin(a) * (3 + t * 10), 4 * (1 - t) + 1, 0, Math.PI * 2); ctx.fill(); }
       } else if (effect.type === 'evade') {
         ctx.font = 'bold 13px system-ui'; ctx.textAlign = 'center'; ctx.fillStyle = '#ffffff'; ctx.fillText('DODGE', effect.x, effect.y - 66 - t * 14);
       } else if (effect.type === 'cancel') {

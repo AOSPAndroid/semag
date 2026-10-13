@@ -6,7 +6,7 @@ Lockdown is a top-down team brawl in the spirit of Spiral Knights' Lockdown: up 
 three control points, swords, guns and bombs. The game is fully playable with placeholder
 shapes; every PNG listed below replaces one placeholder as soon as it is added.
 
-**Progress: 65/126 sprites ready.**
+**Progress: 65/132 sprites ready.**
 
 ## Style guide
 
@@ -84,6 +84,10 @@ shapes; every PNG listed below replaces one placeholder as soon as it is added.
 | ✅ | `character_base_team1.png` | 384×320 | 6 × 5 rows | 32, 58 | Unarmored character in a white T-shirt, charcoal shorts and simple shoes, with an uncovered head and bare hands. Team Cyan color on narrow clothing trim only. 6 columns by 5 facing rows of 64x64 frames; two idle and four walking poses. Feet at 32, 58; hands follow the same facing points as the armored outfits. Empty-handed. |
 | ✅ | `character_ballistic_team0.png` | 384×320 | 6 × 5 rows | 32, 58 | The same casual character wearing a neutral padded ballistic vest over the T-shirt. Team Amber color on narrow clothing trim only. 6 columns by 5 facing rows of 64x64 frames; two idle and four walking poses. Feet at 32, 58; hands follow the same facing points as the armored outfits. Empty-handed. |
 | ✅ | `character_ballistic_team1.png` | 384×320 | 6 × 5 rows | 32, 58 | The same casual character wearing a neutral padded ballistic vest over the T-shirt. Team Cyan color on narrow clothing trim only. 6 columns by 5 facing rows of 64x64 frames; two idle and four walking poses. Feet at 32, 58; hands follow the same facing points as the armored outfits. Empty-handed. |
+| ⬜ | `character_gunslinger_team0.png` | 384×320 | 6 × 5 rows | 32, 58 | The same character in a long brown gunslinger duster coat, a wide-brimmed hat and a gun belt; the coat tails swing as they walk. Team Amber color on narrow clothing trim only. 6 columns by 5 facing rows of 64x64 frames; two idle and four walking poses. Feet at 32, 58; hands follow the same facing points as the armored outfits. Empty-handed. |
+| ⬜ | `character_gunslinger_team1.png` | 384×320 | 6 × 5 rows | 32, 58 | The same character in a long brown gunslinger duster coat, a wide-brimmed hat and a gun belt; the coat tails swing as they walk. Team Cyan color on narrow clothing trim only. 6 columns by 5 facing rows of 64x64 frames; two idle and four walking poses. Feet at 32, 58; hands follow the same facing points as the armored outfits. Empty-handed. |
+| ⬜ | `character_fencer_team0.png` | 384×320 | 6 × 5 rows | 32, 58 | The same character in a white padded fencing jacket with a high collar, fitted breeches and a dark mesh fencing mask (mask visible from the front rows, tied at the back). Team Amber color on narrow clothing trim only. 6 columns by 5 facing rows of 64x64 frames; two idle and four walking poses. Feet at 32, 58; hands follow the same facing points as the armored outfits. Empty-handed. |
+| ⬜ | `character_fencer_team1.png` | 384×320 | 6 × 5 rows | 32, 58 | The same character in a white padded fencing jacket with a high collar, fitted breeches and a dark mesh fencing mask (mask visible from the front rows, tied at the back). Team Cyan color on narrow clothing trim only. 6 columns by 5 facing rows of 64x64 frames; two idle and four walking poses. Feet at 32, 58; hands follow the same facing points as the armored outfits. Empty-handed. |
 
 ## Armored outfits
 
@@ -144,6 +148,8 @@ shapes; every PNG listed below replaces one placeholder as soon as it is added.
 | ✅ | `icon_armor_ballistic.png` | 48×48 | 1 | 24, 24 | Ballistic Armor equipment icon. Neutral clothing or armor silhouette on a transparent background. |
 | ✅ | `icon_armor_duelist.png` | 48×48 | 1 | 24, 24 | Duelist Armor equipment icon. Neutral clothing or armor silhouette on a transparent background. |
 | ✅ | `icon_armor_heavy.png` | 48×48 | 1 | 24, 24 | Heavy Armor equipment icon. Neutral clothing or armor silhouette on a transparent background. |
+| ⬜ | `icon_armor_gunslinger.png` | 48×48 | 1 | 24, 24 | Gunslinger Duster equipment icon. Neutral clothing or armor silhouette on a transparent background. |
+| ⬜ | `icon_armor_fencer.png` | 48×48 | 1 | 24, 24 | Fencing Garb equipment icon. Neutral clothing or armor silhouette on a transparent background. |
 | ✅ | `icon_class_striker.png` | 64×64 | 1 | 32, 32 | Striker class emblem for the lobby and scoreboard. |
 | ✅ | `icon_class_guardian.png` | 64×64 | 1 | 32, 32 | Guardian class emblem for the lobby and scoreboard. |
 | ✅ | `icon_class_recon.png` | 64×64 | 1 | 32, 32 | Recon class emblem for the lobby and scoreboard. |

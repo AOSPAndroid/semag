@@ -14,7 +14,7 @@ const roomId = params.get('room');
 const solo = !roomId;
 const FAMILY_GLYPH = { blade: '⚔', gun: '✦', bomb: '●' };
 const CLASS_GLYPH = { striker: '➶', guardian: '⛨', recon: '◐' };
-const ARMOR_GLYPH = { none: '♙', scout: '➶', ballistic: '▣', duelist: '⚔', heavy: '⛨' };
+const ARMOR_GLYPH = { none: '♙', scout: '➶', ballistic: '▣', duelist: '⚔', heavy: '⛨', gunslinger: '✦', fencer: '†' };
 const ABILITY_ICON = { striker: 'dash', guardian: 'bubble', recon: 'cloak' };
 const STORAGE_KEY = 'semag-lockdown-setup';
 const SEND_INTERVAL_MS = 16, HEARTBEAT_MS = 100, MAX_EXTRAPOLATE_MS = 60;
@@ -117,7 +117,7 @@ const mouse = { x: 0, y: 0, inside: false, left: false, right: false };
 let aim = 0, wheelSwap = false;
 const KEY_BINDINGS = {
   KeyW: 'up', ArrowUp: 'up', KeyS: 'down', ArrowDown: 'down', KeyA: 'left', ArrowLeft: 'left', KeyD: 'right', ArrowRight: 'right',
-  Space: 'ability', Digit1: 'slot1', Digit2: 'slot2', Digit3: 'slot3', KeyQ: 'swap',
+  Space: 'dash', ShiftLeft: 'dash', Digit1: 'slot1', Digit2: 'slot2', Digit3: 'slot3', KeyQ: 'swap',
 };
 function bindingFor(event) {
   if (KEY_BINDINGS[event.code] && event.code.startsWith('Arrow')) return KEY_BINDINGS[event.code];
@@ -287,11 +287,20 @@ function armorSpeed(armor) {
   const delta = Math.round((armor.speedMultiplier - 1) * 100);
   return delta > 0 ? `+${delta}%` : delta < 0 ? `−${Math.abs(delta)}%` : '0%';
 }
+/** Attack perks an outfit adds on top of the class (gunslinger guns, fencing swords). */
+function armorPerks(armor) {
+  const perks = [];
+  if (armor.gunDamage !== 1) perks.push(`Gun damage +${percent(armor.gunDamage - 1)}%`);
+  if (armor.gunCharge !== 1) perks.push(`Gun charge ${percent(1 - armor.gunCharge)}% faster`);
+  if (armor.bladeDamage !== 1) perks.push(`Sword damage +${percent(armor.bladeDamage - 1)}%`);
+  if (armor.bladeSpeed !== 1) perks.push(`Swing ${percent(armor.bladeSpeed - 1)}% faster`);
+  return perks;
+}
 function armorStats(armor) {
-  return `Gun ${damageReduction(armor.gunResistance)} · Sword ${damageReduction(armor.bladeResistance)} · Blast ${damageReduction(armor.bombResistance)} · Speed ${armorSpeed(armor)}`;
+  return [`Gun ${damageReduction(armor.gunResistance)} · Sword ${damageReduction(armor.bladeResistance)} · Blast ${damageReduction(armor.bombResistance)} · Speed ${armorSpeed(armor)}`, ...armorPerks(armor)].join(' · ');
 }
 function armorStatMarkup(armor) {
-  return `<span>Gun <b>${damageReduction(armor.gunResistance)}</b></span><span>Sword <b>${damageReduction(armor.bladeResistance)}</b></span><span>Blast <b>${damageReduction(armor.bombResistance)}</b></span><span class="${armor.speedMultiplier > 1 ? 'faster' : armor.speedMultiplier < 1 ? 'slower' : ''}">Speed <b>${armorSpeed(armor)}</b></span>`;
+  return `<span>Gun <b>${damageReduction(armor.gunResistance)}</b></span><span>Sword <b>${damageReduction(armor.bladeResistance)}</b></span><span>Blast <b>${damageReduction(armor.bombResistance)}</b></span><span class="${armor.speedMultiplier > 1 ? 'faster' : armor.speedMultiplier < 1 ? 'slower' : ''}">Speed <b>${armorSpeed(armor)}</b></span>${armorPerks(armor).map(perk => `<span class="faster">${perk}</span>`).join('')}`;
 }
 const feedSeen = new Set();
 function pushFeed(current) {
@@ -337,6 +346,8 @@ function updateHud(current) {
     $('ld-ability1').dataset.active = String(ability[2]);
     $('ld-ability1').querySelector('em').style.transform = `scaleX(${me.cls === 'guardian' ? 0 : me.abilityCooldown / ability[1]})`;
     $('ld-guard').hidden = me.cls !== 'guardian';
+    $('ld-dash').querySelector('em').style.transform = `scaleX(${(me.dashCooldown || 0) / RULES.dash.cooldown})`;
+    $('ld-dash').dataset.active = String(me.dodgeTicks > 0);
     const guardMax = GUARD.max;
     $('ld-guard-bar').style.width = `${Math.max(0, (me.guardHp ?? guardMax) / guardMax * 100)}%`;
     $('ld-guard').dataset.state = me.guardBroken ? 'broken' : me.guarding ? 'up' : 'ready';

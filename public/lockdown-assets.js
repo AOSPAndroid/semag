@@ -64,9 +64,15 @@ const knights = Object.values(CLASSES).flatMap(cls => [0, 1].map(team => asset(
 )));
 
 // Armor chooses the outfit; class abilities do not change the character's clothes.
-const characters = ['base', 'ballistic'].flatMap(outfit => [0, 1].map(team => asset(
+const OUTFIT_LOOKS = Object.freeze({
+  base: 'Unarmored character in a white T-shirt, charcoal shorts and simple shoes, with an uncovered head and bare hands',
+  ballistic: 'The same casual character wearing a neutral padded ballistic vest over the T-shirt',
+  gunslinger: 'The same character in a long brown gunslinger duster coat, a wide-brimmed hat and a gun belt; the coat tails swing as they walk',
+  fencer: 'The same character in a white padded fencing jacket with a high collar, fitted breeches and a dark mesh fencing mask (mask visible from the front rows, tied at the back)',
+});
+const characters = Object.keys(OUTFIT_LOOKS).flatMap(outfit => [0, 1].map(team => asset(
   `character_${outfit}_team${team}`, 384, 320, [32, 58],
-  `${outfit === 'base' ? 'Unarmored character in a white T-shirt, charcoal shorts and simple shoes, with an uncovered head and bare hands' : 'The same casual character wearing a neutral padded ballistic vest over the T-shirt'}. Team ${team === 0 ? 'Amber' : 'Cyan'} color on narrow clothing trim only. 6 columns by 5 facing rows of 64x64 frames; two idle and four walking poses. Feet at 32, 58; hands follow the same facing points as the armored outfits. Empty-handed.`,
+  `${OUTFIT_LOOKS[outfit]}. Team ${team === 0 ? 'Amber' : 'Cyan'} color on narrow clothing trim only. 6 columns by 5 facing rows of 64x64 frames; two idle and four walking poses. Feet at 32, 58; hands follow the same facing points as the armored outfits. Empty-handed.`,
   { group: 'characters', frames: 6, rows: KNIGHT_FACINGS.length, facings: KNIGHT_FACINGS },
 )));
 

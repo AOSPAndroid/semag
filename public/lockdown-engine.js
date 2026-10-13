@@ -11,8 +11,9 @@ export const TICK_RATE = 120;
 const DT = 1 / TICK_RATE;
 export const TEAM_SIZE = 4;
 export const CAPACITY = TEAM_SIZE * 2;
-/** `ability` is the class ability (right mouse or Space): Striker Boost, Guardian shield (hold), Recon Cloak. */
-export const INPUT_KEYS = Object.freeze(['up', 'down', 'left', 'right', 'attack', 'ability', 'slot1', 'slot2', 'slot3', 'swap']);
+/** `ability` is the class ability (right mouse): Striker Boost, Guardian shield (hold), Recon Cloak.
+ * `dash` (Space) is the quick dash every knight has. */
+export const INPUT_KEYS = Object.freeze(['up', 'down', 'left', 'right', 'attack', 'ability', 'dash', 'slot1', 'slot2', 'slot3', 'swap']);
 export const emptyInput = (aim = 0) => ({ ...Object.fromEntries(INPUT_KEYS.map(key => [key, false])), aim });
 
 export const RULES = Object.freeze({
@@ -27,6 +28,9 @@ export const RULES = Object.freeze({
   heart: Object.freeze({ heal: 30, ttlTicks: 15 * TICK_RATE, radius: 24 }),
   // Personal score comes from the zones: taking a point, or knocking an enemy point back to neutral.
   captureScore: 30, neutralizeScore: 15,
+  // Every knight can dash: a short burst the way you are moving, untouchable for a moment.
+  // It also cancels a sword's recovery. The Striker's Boost is the long version.
+  dash: Object.freeze({ ticks: 10, distance: 110, evadeTicks: 10, cooldown: Math.round(1.25 * TICK_RATE) }),
 });
 
 /** The three Lockdown classes, as in Spiral Knights: the class ability takes the place of the
@@ -43,11 +47,15 @@ export const ABILITIES = Object.freeze({
   dash: { ticks: 3 * TICK_RATE, cooldown: 6 * TICK_RATE, speed: 1.5, dodgeTicks: 12, dodgeDistance: 150, evadeTicks: 26 },
   cloak: { ticks: 4 * TICK_RATE, cooldown: 12 * TICK_RATE, markTicks: 5 * TICK_RATE, markBonus: .3, revealRange: 64 },
 });
-/** Ticks a full charge takes for this knight: class perks speed up or slow down a weapon family. */
+/** Ticks a full charge takes for this knight: class and outfit perks speed up or slow down a weapon family. */
 export function chargeTicksFor(player, weapon) {
-  const cls = CLASSES[player.cls] || {};
-  return Math.round(weapon.chargeTicks * (weapon.family === 'bomb' ? cls.bombCharge || 1 : weapon.family === 'gun' ? cls.gunCharge || 1 : 1));
+  const cls = CLASSES[player.cls] || {}, outfit = ARMORS[player.armor] || ARMORS.none;
+  return Math.round(weapon.chargeTicks * (weapon.family === 'bomb' ? cls.bombCharge || 1 : weapon.family === 'gun' ? (cls.gunCharge || 1) * outfit.gunCharge : 1));
 }
+/** Attack multipliers from class and outfit together. */
+export const gunPower = player => (CLASSES[player.cls]?.gunDamage || 1) * (ARMORS[player.armor] || ARMORS.none).gunDamage;
+export const bladePower = player => (CLASSES[player.cls]?.bladeDamage || 1) * (ARMORS[player.armor] || ARMORS.none).bladeDamage;
+const bladeSpeed = player => (CLASSES[player.cls]?.bladeSpeed || 1) * (ARMORS[player.armor] || ARMORS.none).bladeSpeed;
 const CLASS_IDS = Object.keys(CLASSES);
 
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
@@ -74,7 +82,7 @@ function newPlayer(id) {
     action: 'idle', actionTicks: 0, actionTotal: 0, comboStep: 0, comboWindow: 0, hitIds: [], chargeTicks: 0, charging: false,
     clips: {}, reloadTicks: {}, sinceShot: {}, fireCooldown: 0, burst: null, hitStop: 0, bufferAttack: false,
     swingAim: 0, swingDir: 1, swingReach: 0, swingArc: 0, swingStartup: 0, swingActive: 0, swingRecovery: 0, swingDamage: 0, chargeMoveTicks: 0,
-    dodgeTicks: 0, dodgeX: 0, dodgeY: 0, evadeTicks: 0,
+    dodgeTicks: 0, dodgeX: 0, dodgeY: 0, dodgeStep: 0, evadeTicks: 0, dashCooldown: 0,
     guarding: false, guardRaise: 0, guardHp: GUARD.max, guardBroken: false, guardDelay: 0,
     status: Object.fromEntries(STATUS_IDS.map(key => [key, 0])), statusOwner: {}, freezeImmune: 0, catalysts: 0, catalystTicks: 0,
     dashTicks: 0, cloakTicks: 0, markTicks: 0, markReady: false, abilityCooldown: 0,
@@ -205,7 +213,7 @@ function spawn(state, player) {
     x: spot.x, y: spot.y, vx: 0, vy: 0, alive: true, hp: cls.hp, maxHp: cls.hp, respawnTicks: 0, shieldTicks: RULES.spawnShieldTicks,
     stunTicks: 0, pushX: 0, pushY: 0, action: 'idle', actionTicks: 0, actionTotal: 0, comboStep: 0, comboWindow: 0, hitIds: [], chargeTicks: 0, charging: false,
     dashTicks: 0, cloakTicks: 0, markTicks: 0, markReady: false, slot: 0, fireCooldown: 0,
-    aim: player.team === 0 ? 0 : Math.PI, burst: null, hitStop: 0, bufferAttack: false, dodgeTicks: 0, evadeTicks: 0, guarding: false, guardRaise: 0, guardBroken: false, guardDelay: 0,
+    aim: player.team === 0 ? 0 : Math.PI, burst: null, hitStop: 0, bufferAttack: false, dodgeTicks: 0, evadeTicks: 0, dashCooldown: 0, guarding: false, guardRaise: 0, guardBroken: false, guardDelay: 0,
     guardHp: GUARD.max, freezeImmune: 0, catalysts: 0, catalystTicks: 0,
     status: Object.fromEntries(STATUS_IDS.map(key => [key, 0])), statusOwner: {},
   });
@@ -245,9 +253,6 @@ function inAlliedBubble(state, target) {
 }
 const guardMax = player => GUARD.max;
 const BLADE_KINDS = new Set(['blade', 'lunge', 'spin', 'slam', 'burst']);
-/** Class sword bonuses (the Striker's): damage multiplier and swing speed. */
-const bladePower = player => CLASSES[player.cls].bladeDamage || 1;
-const bladeSpeed = player => CLASSES[player.cls].bladeSpeed || 1;
 /** True while a committed action is only recovering, which a shield or a dodge may cancel. */
 function inRecovery(player) {
   if (player.actionTicks === 0) return false;
@@ -386,7 +391,7 @@ function radialHit(state, owner, team, center, radius, amount, options = {}) {
 }
 function spawnShot(state, player, weapon, spec, angle) {
   const speed = spec.speed, size = spec.size || 5;
-  const power = weapon.family === 'gun' ? CLASSES[player.cls].gunDamage || 1 : 1;
+  const power = weapon.family === 'gun' ? gunPower(player) : 1;
   state.projectiles.push({
     id: state.nextId++, ownerId: player.id, team: player.team, weapon: weapon.id, damageFamily: weapon.family, kind: spec.kind || weapon.kind || 'bullet',
     x: player.x + Math.cos(angle) * (RULES.radius + 4), y: player.y + Math.sin(angle) * (RULES.radius + 4),
@@ -542,6 +547,20 @@ function tickWeapon(state, player, input, previous) {
   fireVolley(state, player, weapon, weapon);
 }
 
+/** The quick dash every knight has (Space). Keeps a charge going; cancels a cut's recovery. */
+function tickDash(state, player, input, previous) {
+  player.dashCooldown = Math.max(0, player.dashCooldown - 1);
+  if (!(input.dash && !previous.dash) || player.dashCooldown > 0 || player.dodgeTicks > 0) return;
+  if (player.actionTicks > 0 && !inRecovery(player)) return;
+  if (inRecovery(player)) cancelRecovery(state, player, 'dash');
+  player.guarding = false;
+  let dx = (input.right ? 1 : 0) - (input.left ? 1 : 0), dy = (input.down ? 1 : 0) - (input.up ? 1 : 0);
+  if (!dx && !dy) { dx = Math.cos(player.aim); dy = Math.sin(player.aim); }
+  // Armour weight shortens the dash: heavy plate covers less ground than a scout's leathers.
+  const length = Math.hypot(dx, dy), rule = RULES.dash, weight = (ARMORS[player.armor] || ARMORS.none).speedMultiplier;
+  Object.assign(player, { dodgeX: dx / length, dodgeY: dy / length, dodgeTicks: rule.ticks, dodgeStep: rule.distance * weight * weight / rule.ticks, evadeTicks: Math.max(player.evadeTicks, rule.evadeTicks), dashCooldown: rule.cooldown });
+  emit(state, 'dodge', { playerId: player.id, x: player.x, y: player.y, angle: Math.atan2(player.dodgeY, player.dodgeX) });
+}
 function tickAbilities(state, player, input, previous) {
   player.abilityCooldown = Math.max(0, player.abilityCooldown - 1);
   player.dashTicks = Math.max(0, player.dashTicks - 1); player.markTicks = Math.max(0, player.markTicks - 1);
@@ -555,7 +574,7 @@ function tickAbilities(state, player, input, previous) {
     let dx = (input.right ? 1 : 0) - (input.left ? 1 : 0), dy = (input.down ? 1 : 0) - (input.up ? 1 : 0);
     if (!dx && !dy) { dx = Math.cos(player.aim); dy = Math.sin(player.aim); }
     const length = Math.hypot(dx, dy);
-    Object.assign(player, { dodgeX: dx / length, dodgeY: dy / length, dodgeTicks: ABILITIES.dash.dodgeTicks, evadeTicks: ABILITIES.dash.evadeTicks, dashTicks: ABILITIES.dash.ticks, abilityCooldown: ABILITIES.dash.cooldown, charging: false, chargeTicks: 0 });
+    Object.assign(player, { dodgeX: dx / length, dodgeY: dy / length, dodgeTicks: ABILITIES.dash.dodgeTicks, dodgeStep: ABILITIES.dash.dodgeDistance / ABILITIES.dash.dodgeTicks, evadeTicks: ABILITIES.dash.evadeTicks, dashTicks: ABILITIES.dash.ticks, abilityCooldown: ABILITIES.dash.cooldown, charging: false, chargeTicks: 0 });
     emit(state, 'dash', { playerId: player.id, x: player.x, y: player.y, angle: Math.atan2(player.dodgeY, player.dodgeX) });
   } else if (player.cls === 'recon') {
     player.cloakTicks = ABILITIES.cloak.ticks; player.abilityCooldown = ABILITIES.cloak.cooldown; player.markReady = false;
@@ -601,15 +620,14 @@ function tickPlayer(state, player, input) {
   const slot = input.slot1 && !previous.slot1 ? 0 : input.slot2 && !previous.slot2 ? 1 : input.slot3 && !previous.slot3 ? 2 : input.swap && !previous.swap ? (player.slot + 1) % 3 : player.slot;
   if (slot !== player.slot && player.actionTicks === 0 && !player.burst) { player.slot = slot; player.charging = false; player.chargeTicks = 0; player.comboStep = 0; player.bufferAttack = false; emit(state, 'swapWeapon', { playerId: player.id, weapon: player.weapons[slot] }); }
   if (player.stunTicks > 0) { player.stunTicks--; player.guarding = false; tickGuard(state, player, emptyInput()); }
-  else if (!frozen) { tickGuard(state, player, input); tickAbilities(state, player, input, previous); tickWeapon(state, player, input, previous); }
+  else if (!frozen) { tickGuard(state, player, input); tickDash(state, player, input, previous); tickAbilities(state, player, input, previous); tickWeapon(state, player, input, previous); }
   if (player.shieldTicks > 0 && (input.attack && !previous.attack)) player.shieldTicks = 0;
   if (player.catalystTicks > 0 && --player.catalystTicks === 0) player.catalysts = 0;
   if (player.held > 0) player.held--;
   if (player.evadeTicks > 0) player.evadeTicks--;
   if (player.dodgeTicks > 0) {
     player.dodgeTicks--;
-    const speed = ABILITIES.dash.dodgeDistance / ABILITIES.dash.dodgeTicks;
-    moveBody(map, player, player.dodgeX * speed, player.dodgeY * speed);
+    moveBody(map, player, player.dodgeX * player.dodgeStep, player.dodgeY * player.dodgeStep);
     const exitSpeed = CLASSES[player.cls].speed * (ARMORS[player.armor] || ARMORS.none).speedMultiplier;
     player.vx = player.dodgeX * exitSpeed; player.vy = player.dodgeY * exitSpeed;
   }
@@ -882,6 +900,9 @@ function botInput(state, bot) {
     || state.bombs.some(bomb => bomb.team !== bot.team && bomb.fuse < 36 && dist(bomb, bot) < (WEAPONS[bomb.weapon].radius || 0) + 24);
   brain.guardTicks = Math.max(0, (brain.guardTicks || 0) - 1);
   if (threatened && bot.cls === 'guardian' && !bot.guardBroken && bot.guardHp > guardMax(bot) * .3 && !bot.charging && brain.guardTicks === 0 && random(state) < .05) brain.guardTicks = 30 + Math.floor(random(state) * 40);
+  // Anyone may dash out of a threat; melee bots dash in to close the gap.
+  if (threatened && bot.cls !== 'guardian' && bot.dashCooldown === 0 && random(state) < .03) input.dash = !bot.previousInput.dash;
+  if (target && brain.style === 'melee' && dist(target, bot) > 110 && dist(target, bot) < 220 && bot.dashCooldown === 0 && random(state) < .02) input.dash = !bot.previousInput.dash;
   // Strikers dodge through the threat; Guardians block it.
   if (threatened && bot.cls === 'striker' && bot.abilityCooldown === 0 && random(state) < .04) input.ability = !bot.previousInput.ability;
   else if (bot.cls === 'guardian' && brain.guardTicks > 0) { input.ability = true; input.attack = false; }
