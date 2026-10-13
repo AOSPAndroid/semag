@@ -309,7 +309,7 @@ function updateHud(current) {
     $('ld-class').textContent = CLASSES[me.cls].name.toUpperCase();
     $('ld-hp').textContent = Math.max(0, Math.ceil(me.alive ? me.hp : 0));
     $('ld-hp-bar').style.width = `${me.alive ? Math.max(0, me.hp / me.maxHp * 100) : 0}%`;
-    const ability = { striker: ['Dash', ABILITIES.dash.cooldown, me.dashTicks > 0], guardian: ['Bubble', ABILITIES.bubble.cooldown, me.bubbleTicks > 0], recon: ['Cloak', ABILITIES.cloak.cooldown, me.cloakTicks > 0] }[me.cls];
+    const ability = { striker: ['Boost', ABILITIES.dash.cooldown, me.dashTicks > 0 || me.evadeTicks > 0], guardian: ['Bubble', ABILITIES.bubble.cooldown, me.bubbleTicks > 0], recon: ['Cloak', ABILITIES.cloak.cooldown, me.cloakTicks > 0] }[me.cls];
     $('ld-ability1-name').textContent = ability[0];
     $('ld-ability1').dataset.active = String(ability[2]);
     $('ld-ability1').querySelector('em').style.transform = `scaleX(${me.abilityCooldown / ability[1]})`;

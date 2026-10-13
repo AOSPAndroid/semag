@@ -136,6 +136,8 @@ export class LockdownRenderer {
         if (event.targetId === this.localId) this.shake = Math.max(this.shake, Math.min(8, 2 + event.amount / 5));
       }
       else if (event.type === 'block') add('block', 220, { x: event.x, y: event.y, playerId: event.playerId });
+      else if (event.type === 'evade') add('evade', 500, { x: event.x, y: event.y });
+      else if (event.type === 'cancel') add('cancel', 160, { playerId: event.playerId });
       else if (event.type === 'guardBreak') { add('guardBreak', 420, { x: event.x, y: event.y, playerId: event.playerId }); if (event.playerId === this.localId) this.shake = Math.max(this.shake, 7); }
       else if (event.type === 'detonate') { add('explosion', 360, { x: event.x, y: event.y, radius: 26 + event.count * 10, weapon: 'catalyzer' }); this.bump(event.x, event.y, 3 + event.count); }
       else if (event.type === 'ricochet') add('spark', 160, { x: event.x, y: event.y });
@@ -319,6 +321,13 @@ export class LockdownRenderer {
     // The heavy slam leaps: the body rises and falls over the jump.
     const leap = player.action === 'slam' && player.actionTotal - player.actionTicks < player.chargeMoveTicks ? Math.sin((player.actionTotal - player.actionTicks) / player.chargeMoveTicks * Math.PI) * 26 : 0;
     const fy = player.y + FEET - leap;
+    if (player.dodgeTicks > 0 || player.evadeTicks > 0) {
+      // A dodging Striker leaves a streak of afterimages and flickers while untouchable.
+      ctx.save(); ctx.fillStyle = team.light;
+      for (let i = 1; i <= 4; i++) { ctx.globalAlpha = .22 / i; ctx.beginPath(); ctx.ellipse(fx - player.dodgeX * 16 * i, fy - 22 - player.dodgeY * 16 * i, 12, 20, 0, 0, Math.PI * 2); ctx.fill(); }
+      ctx.restore();
+      if (player.evadeTicks > 0) alpha *= .55 + .3 * Math.sin(now / 30);
+    }
     if (player.action === 'lunge' || player.action === 'lungeBurst') {
       // Afterimages along a lunge.
       ctx.save(); ctx.fillStyle = team.light;
@@ -352,9 +361,9 @@ export class LockdownRenderer {
     if (weapon.family !== 'blade') return player.aim;
     const elapsed = player.actionTotal - player.actionTicks;
     if (player.action === 'swing') {
-      const move = weapon.combo[player.comboStep], start = player.swingAim - player.swingDir * move.arc / 2;
-      if (elapsed < move.startup) return start - player.swingDir * .35 * (elapsed / move.startup);
-      return start + player.swingDir * move.arc * Math.min(1, (elapsed - move.startup + 1) / move.active);
+      const move = weapon.combo[player.comboStep], start = player.swingAim - player.swingDir * move.arc / 2, startup = player.swingStartup || move.startup, active = player.swingActive || move.active;
+      if (elapsed < startup) return start - player.swingDir * .35 * (elapsed / startup);
+      return start + player.swingDir * move.arc * Math.min(1, (elapsed - startup + 1) / active);
     }
     if (player.action === 'spin') return player.swingAim + (elapsed % weapon.charge.ticksPerTurn) / weapon.charge.ticksPerTurn * Math.PI * 2;
     if (player.action !== 'idle') return player.swingAim;
@@ -497,6 +506,11 @@ export class LockdownRenderer {
       } else if (effect.type === 'guardBreak') {
         ctx.fillStyle = '#d8f4ff'; for (let i = 0; i < 8; i++) { const a = i * .785; ctx.fillRect(effect.x + Math.cos(a) * (14 + t * 40) - 3, effect.y - 24 + Math.sin(a) * (14 + t * 40) - 3, 6, 6); }
         ctx.font = 'bold 13px system-ui'; ctx.textAlign = 'center'; ctx.fillStyle = '#ffffff'; ctx.fillText('GUARD BREAK', effect.x, effect.y - 70 - t * 10);
+      } else if (effect.type === 'evade') {
+        ctx.font = 'bold 13px system-ui'; ctx.textAlign = 'center'; ctx.fillStyle = '#ffffff'; ctx.fillText('DODGE', effect.x, effect.y - 66 - t * 14);
+      } else if (effect.type === 'cancel') {
+        const owner = this.players?.[effect.playerId];
+        if (owner?.alive) { ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(owner.x, owner.y + FEET - 24, 18 + t * 10, 26 + t * 10, 0, 0, Math.PI * 2); ctx.stroke(); }
       } else if (effect.type === 'spark') {
         ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(effect.x, effect.y - BODY_LIFT, 5 * (1 - t) + 1, 0, Math.PI * 2); ctx.fill();
       } else if (effect.type === 'statusPop') {

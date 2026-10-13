@@ -3,7 +3,7 @@ import test from 'node:test';
 import * as L from '../public/lockdown-engine.js';
 import { MANIFEST, MANIFEST_BY_KEY } from '../public/lockdown-assets.js';
 
-const { TICK_RATE, RULES, ABILITIES, WEAPONS, CLASSES, MAPS, TILE, GUARD, STATUS } = L;
+const { TICK_RATE, RULES, ABILITIES, WEAPONS, CLASSES, MAPS, TILE, GUARD, STATUS, BLADE } = L;
 
 /** Two-knight arena: seat 0 (Amber) against seat 4 (Cyan); every other seat is benched. */
 function duel({ mapId = 'gate', a = {}, b = {}, gap = 50 } = {}) {
@@ -89,7 +89,7 @@ test('starting balances the bots to four a side and counts down into the fight',
 const swingTicks = move => move.startup + move.active + move.recovery;
 
 test('a blade cut lands as the arc sweeps, with knockback, stun and hit-stop; a queued press chains the combo', () => {
-  const { state, me, foe } = duel({ gap: 50 });
+  const { state, me, foe } = duel({ gap: 50, a: { cls: 'recon' } }); // no class sword bonus
   const first = WEAPONS.brand.combo[0];
   run(state, first.startup, t => ({ 0: { attack: t === 0 } }));
   assert.equal(foe.hp, foe.maxHp, 'nothing lands during the wind-up');
@@ -417,4 +417,59 @@ test('every weapon fires its charge without errors', () => {
     assert.ok(events(state, 'chargeRelease').some(event => event.weapon === id), `${id} released its charge`);
     assert.ok(state.players.every(player => Number.isFinite(player.x) && Number.isFinite(player.hp)), `${id} stays finite`);
   }
+});
+
+test('Strikers hit 25% harder with swords and swing faster', () => {
+  const plain = duel({ gap: 50, a: { cls: 'recon' } }), striker = duel({ gap: 50, a: { cls: 'striker' } });
+  const move = WEAPONS.brand.combo[0];
+  for (const { state } of [plain, striker]) run(state, swingTicks(move) + 6, t => ({ 0: { attack: t === 0 } }));
+  assert.equal(plain.foe.maxHp - plain.foe.hp, move.damage);
+  assert.equal(striker.foe.maxHp - striker.foe.hp, Math.round(move.damage * CLASSES.striker.bladeDamage));
+  const swings = [plain, striker].map(({ state }) => events(state, 'swing')[0]);
+  assert.ok(swings[1].startup + swings[1].active < swings[0].startup + swings[0].active, 'faster cut');
+});
+
+test('animation cancels: the shield or a dodge cuts recovery short, and a queued press cancels into the next cut', () => {
+  const move = WEAPONS.brand.combo[0];
+  // Shield cancel: raise the shield once the blade has passed.
+  const shield = duel({ gap: 300, a: { cls: 'recon' } });
+  run(shield.state, move.startup + move.active + 1, t => ({ 0: { attack: t === 0 } }));
+  assert.equal(shield.me.action, 'swing');
+  run(shield.state, 1, () => ({ 0: { guard: true } }));
+  assert.equal(shield.me.action, 'idle'); assert.equal(shield.me.comboStep, 1, 'a cancelled cut still advances the combo');
+  assert.ok(events(shield.state, 'cancel').some(event => event.by === 'guard'));
+  // The shield cannot cancel the wind-up or the cut itself.
+  const early = duel({ gap: 300, a: { cls: 'recon' } });
+  run(early.state, 2, t => ({ 0: { attack: t === 0 } }));
+  run(early.state, 1, () => ({ 0: { guard: true } }));
+  assert.equal(early.me.action, 'swing');
+  // Combo cancel: a queued press starts the next cut partway through the recovery.
+  const combo = duel({ gap: 300, a: { cls: 'recon' } });
+  run(combo.state, move.startup + 1, t => ({ 0: { attack: t === 0 } }));
+  run(combo.state, 1, () => ({ 0: { attack: true } }));
+  run(combo.state, move.active + Math.ceil(move.recovery * BLADE.comboCancel) + 1);
+  assert.deepEqual(events(combo.state, 'swing').map(event => event.step), [0, 1]);
+  assert.ok(events(combo.state, 'swing')[1].tick - events(combo.state, 'swing')[0].tick < swingTicks(move), 'the next cut came early');
+  // Dodge cancel: a Striker's boost cuts recovery and slips away untouchable.
+  const dodge = duel({ gap: 300, a: { cls: 'striker' } });
+  run(dodge.state, 20, t => ({ 0: { attack: t === 0 } }));
+  const startX = dodge.me.x;
+  run(dodge.state, 1, () => ({ 0: { ability: true, left: true } }));
+  assert.equal(dodge.me.action, 'idle'); assert.ok(dodge.me.evadeTicks > 0);
+  run(dodge.state, ABILITIES.dash.dodgeTicks);
+  assert.ok(startX - dodge.me.x > ABILITIES.dash.dodgeDistance * .8, 'the dodge carries you away');
+});
+
+test('a dodging Striker is untouchable; swords wear shields down faster than guns', () => {
+  const { state, me } = duel({ gap: 100, b: { weapons: ['blaster', 'brand', 'blast'] } });
+  me.evadeTicks = ABILITIES.dash.evadeTicks; // mid-dodge
+  run(state, 16, t => ({ 4: { attack: t === 0 } }));
+  assert.equal(me.hp, me.maxHp);
+  assert.ok(events(state, 'evade').length === 1);
+  const block = duel({ gap: 50, a: { cls: 'recon' }, b: { cls: 'recon' } });
+  run(block.state, GUARD.raiseTicks + 1, () => ({ 4: { guard: true } }));
+  const shieldBefore = block.foe.guardHp;
+  run(block.state, swingTicks(WEAPONS.brand.combo[0]) + 6, t => ({ 0: { attack: t === 0 }, 4: { guard: true } }));
+  assert.equal(block.foe.hp, block.foe.maxHp);
+  assert.equal(Math.round(shieldBefore - block.foe.guardHp), Math.round(WEAPONS.brand.combo[0].damage * GUARD.bladeScale));
 });
