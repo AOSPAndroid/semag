@@ -9,7 +9,7 @@ import { isWall, isPit, levelAt, levelCell, STAIRS } from './lockdown-maps.js';
 import { KNIGHT_FACINGS, KNIGHT_ANIMATION } from './lockdown-assets.js';
 
 /** How far a wall's top face is lifted, and the height that shots and swings travel at. */
-export const WALL_HEIGHT = 24, BODY_LIFT = 22;
+export const WALL_HEIGHT = 72, BODY_LIFT = 22;
 const FEET = 8; // a knight's feet sit this far below the centre of its collision circle
 /** Gait: at 70% of a knight's full speed or more (Boost and dashes included) they run, slower they walk.
  * Both cycles advance with distance covered, so feet never slide: one frame per this many world units. */
@@ -94,33 +94,90 @@ export class LockdownRenderer {
   /** Aim from the knight's chest to the cursor, so shots drawn at chest height pass under the pointer. */
   get aimLift() { return BODY_LIFT; }
 
-  /** Decorative art only: base landmarks and sparse terrain borders use existing map tiles. */
+  /** Architectural dressing follows the existing collision map and its height layer. */
   mapDecorations(map) {
     if (this.decorationsKey === map.id) return this.decorations;
     const marks = [];
+    const alcoves = [];
     for (const team of [0, 1]) {
       const base = map.spawns[team], top = Math.min(...base.map(spot => spot.y));
       const edge = base.filter(spot => spot.y === top).sort((a, b) => a.x - b.x);
-      for (const spot of edge.slice(0, 3)) marks.push({ key: 'base_heal_station', x: spot.x, y: spot.y - 10, scale: .52 });
+      const x = edge.reduce((sum, spot) => sum + spot.x, 0) / edge.length, y = top - TILE / 2;
+      marks.push({ key: 'base_alcove', x, y, scale: 1, lift: 0, occluder: true });
+      alcoves.push({ x, y });
+      for (const spot of edge.slice(0, 3)) marks.push({ key: 'base_heal_station', x: spot.x, y: spot.y - 10, scale: .8 });
+      const frontCol = team ? Math.floor(Math.min(...base.map(spot => spot.x)) / TILE) - 2 : Math.floor(Math.max(...base.map(spot => spot.x)) / TILE) + 2;
+      const firstRow = Math.floor(top / TILE), lastRow = Math.floor(Math.max(...base.map(spot => spot.y)) / TILE);
+      for (const row of [firstRow + 1, lastRow - 1]) if (isWall(map, frontCol, row)) marks.push({ key: `base_banner_team${team}`, x: (frontCol + .5) * TILE, y: (row + 1) * TILE, scale: .92, lift: levelCell(map, frontCol, row) === '1' ? FLOOR_RISE : 0, occluder: true });
     }
-    for (let row = 1; row < map.rows - 1; row++) for (let col = 1; col < map.cols - 1; col++) {
-      const tile = map.grid[row][col], x = (col + .5) * TILE, y = (row + .5) * TILE;
-      if (tile !== '.' || map.points.some(point => Math.hypot(point.x - x, point.y - y) < RULES.pointRadius + 48)) continue;
-      if (isWall(map, col, row - 1) && hash(col, row) < .28) marks.push({ key: 'prop_border_' + map.theme, x, y: row * TILE + 12, scale: .4 });
+    for (let row = 0; row < map.rows - 1; row++) for (let col = 0; col < map.cols; col++) {
+      if (!isWall(map, col, row) || isWall(map, col, row + 1)) continue;
+      const x = (col + .5) * TILE, y = (row + 1) * TILE, amount = levelCell(map, col, row) === '1' ? FLOOR_RISE : 0;
+      if (alcoves.some(a => Math.abs(a.x - x) < 100 && Math.abs(a.y - y) < 36)) continue;
+      const leftEnd = !isWall(map, col - 1, row), rightEnd = !isWall(map, col + 1, row);
+      const column = leftEnd || rightEnd && isWall(map, col - 2, row) || !rightEnd && col % 7 === 3;
+      if (column && (map.theme !== 'maze' || hash(col, row) > .5)) marks.push({ key: 'prop_column_' + map.theme, x, y, scale: map.theme === 'maze' ? .82 : 1, lift: amount, occluder: true });
+      if (col % 3 === 1 && hash(col, row) < .7) marks.push({ key: 'prop_vines_' + map.theme, x, y, offsetY: -WALL_HEIGHT - 4, scale: .86, lift: amount, occluder: true });
+      const clear = map.grid[row + 1][col] === '.' && !map.points.some(point => Math.hypot(point.x - x, point.y - (y + 10)) < RULES.pointRadius + 86);
+      if (clear && col % 3 === 0 && hash(col, row) < .8) marks.push({ key: 'prop_border_' + map.theme, x, y: y + 10, scale: .86, lift: levelCell(map, col, row + 1) === '1' ? FLOOR_RISE : 0, occluder: true });
     }
     this.decorationsKey = map.id; this.decorations = marks;
     return marks;
   }
 
   // ---------- static map ----------
-  /** One painted ground swatch spans four grid cells, giving broad pavers and quiet water.
-   * Sample the same swatch across cell boundaries; the collision grid and camera stay unchanged. */
+  /** A continuous court painting supplies world-aligned UVs across four cells.
+   * Smaller floor tiles remain the fallback while art loads. */
   drawGroundTile(ctx, key, col, row, x, y) {
-    const image = this.sprite(key);
+    const team = key.match(/^tile_spawn_team([01])$/)?.[1], court = team !== undefined && this.sprite(`base_court_team${team}`), base = this.baseCourts?.[team];
+    if (court && base) {
+      const sw = court.naturalWidth / base.cols, sh = court.naturalHeight / base.rows;
+      ctx.drawImage(court, (col - base.col) * sw, (row - base.row) * sh, sw, sh, x, y, TILE, TILE);
+      return true;
+    }
+    const theme = key.match(/^tile_floor_(\w+?)(?:_alt)?$/)?.[1], pit = key.match(/^tile_pit_(\w+)$/)?.[1];
+    const largeKey = theme ? `terrain_ground_${theme}` : pit ? `terrain_pit_${pit}` : null, large = largeKey && this.sprite(largeKey);
+    const image = large || this.sprite(key);
     if (!image) return false;
-    const sw = image.naturalWidth / 2, sh = image.naturalHeight / 2;
-    ctx.drawImage(image, (col % 2) * sw, (row % 2) * sh, sw, sh, x, y, TILE, TILE);
+    const span = large ? this.assets.entry(largeKey).size[0] / TILE : 2, sw = image.naturalWidth / span, sh = image.naturalHeight / span;
+    ctx.drawImage(image, (col % span) * sw, (row % span) * sh, sw, sh, x, y, TILE, TILE);
     return true;
+  }
+
+  /** Sample a broad facade without repeating a separate brick panel in every cell. */
+  drawWallFace(ctx, theme, col, x, y, height) {
+    if (height <= 0) return true;
+    if (height < WALL_HEIGHT) {
+      const ledge = this.sprite(`tile_ledge_${theme}`);
+      if (!ledge) return false;
+      ctx.drawImage(ledge, x, y, TILE, height); return true;
+    }
+    const image = this.sprite(`tile_wall_front_${theme}`);
+    if (!image) return false;
+    const sw = image.naturalWidth / 3;
+    ctx.drawImage(image, (col % 3) * sw, 0, sw, image.naturalHeight, x, y, TILE, WALL_HEIGHT);
+    if (height > WALL_HEIGHT) this.drawSprite(ctx, `tile_ledge_${theme}`, x, y + WALL_HEIGHT);
+    return true;
+  }
+
+  /** Foreground architecture becomes translucent where it would hide a nearby knight. */
+  drawWallRow(ctx, wall, map, players) {
+    const top = wall.row * TK - WALL_HEIGHT - FLOOR_RISE, height = TK + WALL_HEIGHT + FLOOR_RISE;
+    const density = this.mapDensity || 1;
+    for (const span of wall.spans) {
+      const hidden = players.some(p => {
+        if (p.x <= span.start * TILE - 16 || p.x >= span.end * TILE + 16) return false;
+        const col = Math.max(span.start, Math.min(span.end - 1, Math.floor(p.x / TILE)));
+        const feet = p.y * GROUND + FEET - (map.twoFloors ? levelAt(map, p.x, p.y) * FLOOR_RISE : 0);
+        const capTop = wall.row * TK - WALL_HEIGHT - (levelCell(map, col, wall.row) === '1' ? FLOOR_RISE : 0);
+        const foot = (wall.row + 1) * TK - (levelCell(map, col, wall.row + 1) === '1' ? FLOOR_RISE : 0);
+        return feet <= foot && feet > capTop;
+      });
+      ctx.save(); if (hidden) ctx.globalAlpha *= .34;
+      const x = span.start * TILE, width = (span.end - span.start) * TILE;
+      ctx.drawImage(wall.canvas, x * density, 0, width * density, height * density, x, top, width, height);
+      ctx.restore();
+    }
   }
 
   buildMap(map) {
@@ -136,6 +193,10 @@ export class LockdownRenderer {
     const canvas = makeCanvas(map.width, map.height);
     const ctx = canvas.getContext('2d'), theme = THEMES[map.theme] || THEMES.stone;
     ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+    this.baseCourts = map.spawns.map(spots => {
+      const col = Math.floor(Math.min(...spots.map(p => p.x)) / TILE), row = Math.floor(Math.min(...spots.map(p => p.y)) / TILE);
+      return { col, row, cols: Math.floor(Math.max(...spots.map(p => p.x)) / TILE) - col + 1, rows: Math.floor(Math.max(...spots.map(p => p.y)) / TILE) - row + 1 };
+    });
     // One strip per row of wall blocks: the raised top face, then the front face where floor lies below.
     // Walls standing on the raised floor of a two-floor map are lifted one storey higher.
     this.wallRows = [];
@@ -152,12 +213,12 @@ export class LockdownRenderer {
         const ownTop = WALL_HEIGHT + (high(col, row) ? FLOOR_RISE : 0), belowWall = isWall(map, col, row + 1);
         const face = ownTop - (belowWall ? WALL_HEIGHT : 0) - (high(col, row + 1) ? FLOOR_RISE : 0);
         if (row + 1 < map.rows && face > 0) {
-          if (!this.drawSprite(sctx, `tile_wall_front_${map.theme}`, x, top + TK)) {
+          if (!this.drawWallFace(sctx, map.theme, col, x, top + TK, face)) {
             sctx.fillStyle = theme.wall; sctx.fillRect(x, top + TK, TILE, face);
             sctx.fillStyle = theme.wallEdge; sctx.fillRect(x, top + TK + face - 4, TILE, 4);
             sctx.fillStyle = 'rgba(0,0,0,.18)'; for (let course = 1; course < face / 8; course++) sctx.fillRect(x, top + TK + course * 8, TILE, 1);
             sctx.fillRect(x + (row % 2 ? 12 : 30), top + TK, 1, 8); sctx.fillRect(x + (row % 2 ? 36 : 6), top + TK + 8, 1, 8);
-          } else if (face > WALL_HEIGHT) this.drawSprite(sctx, `tile_wall_front_${map.theme}`, x, top + TK + WALL_HEIGHT);
+          }
         }
         sctx.save(); sctx.translate(0, top); sctx.scale(1, GROUND);
         if (!this.drawSprite(sctx, `tile_wall_top_${map.theme}`, x, 0)) {
@@ -165,9 +226,25 @@ export class LockdownRenderer {
           sctx.fillStyle = 'rgba(255,255,255,.12)'; sctx.fillRect(x, 0, TILE, 3);
           sctx.fillStyle = 'rgba(0,0,0,.12)'; if (!isWall(map, col + 1, row)) sctx.fillRect(x + TILE - 3, 0, 3, TILE);
         }
+        // Soft bevels follow the architecture's outer edge, rather than every grid cell.
+        const rim = (a, b, c, d, rect, color) => {
+          const gradient = sctx.createLinearGradient(a, b, c, d);
+          gradient.addColorStop(0, color); gradient.addColorStop(1, 'rgba(0,0,0,0)');
+          sctx.fillStyle = gradient; sctx.fillRect(...rect);
+        };
+        if (!isWall(map, col, row - 1)) rim(0, 0, 0, 4, [x, 0, TILE, 4], 'rgba(255,250,224,.35)');
+        if (!isWall(map, col - 1, row)) rim(x, 0, x + 4, 0, [x, 0, 4, TILE], 'rgba(255,250,224,.25)');
+        if (!isWall(map, col, row + 1)) rim(0, TILE, 0, TILE - 4, [x, TILE - 4, TILE, 4], 'rgba(65,56,42,.2)');
+        if (!isWall(map, col + 1, row)) rim(x + TILE, 0, x + TILE - 4, 0, [x + TILE - 4, 0, 4, TILE], 'rgba(65,56,42,.18)');
         sctx.restore();
       }
-      this.wallRows.push({ row, canvas: strip });
+      const spans = [];
+      for (let col = 0; col < map.cols;) {
+        if (!isWall(map, col, row)) { col++; continue; }
+        const start = col; while (col < map.cols && isWall(map, col, row)) col++;
+        spans.push({ start, end: col });
+      }
+      this.wallRows.push({ row, canvas: strip, spans });
     }
     // Raised floor and stairs: one strip per row, lifted a storey, with a ledge face over lower ground.
     this.floorRows = [];
@@ -206,7 +283,8 @@ export class LockdownRenderer {
     }
     for (let row = 0; row < map.rows; row++) for (let col = 0; col < map.cols; col++) {
       const x = col * TILE, y = row * TILE, cell = map.grid[row][col];
-      if (cell === '#' || levelCell(map, col, row) !== '0') continue;
+      // A low floor under the transparent sides of a stair prevents dark triangular holes.
+      if (cell === '#' || levelCell(map, col, row) === '1') continue;
       if (cell === '~') { this.drawPit(ctx, map, theme, col, row); continue; }
       const spawnTeam = cell === '1' ? 0 : cell === '2' ? 1 : null;
       const alt = hash(Math.floor(col / 2), Math.floor(row / 2)) < .18;
@@ -223,7 +301,7 @@ export class LockdownRenderer {
         ctx.fillStyle = 'rgba(0,0,0,.08)'; ctx.fillRect(x, y, TILE, TILE);
       }
       // Walls cast a soft shadow onto the floor in front of them.
-      if (isWall(map, col, row - 1)) { const shade = ctx.createLinearGradient(0, y, 0, y + 14); shade.addColorStop(0, 'rgba(0,0,0,.35)'); shade.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = shade; ctx.fillRect(x, y, TILE, 14); }
+      if (isWall(map, col, row - 1)) { const shade = ctx.createLinearGradient(0, y, 0, y + 34); shade.addColorStop(0, 'rgba(26,35,28,.3)'); shade.addColorStop(1, 'rgba(26,35,28,0)'); ctx.fillStyle = shade; ctx.fillRect(x, y, TILE, 34); }
     }
     this.mapCache = canvas; this.mapKey = key; return canvas;
   }
@@ -273,11 +351,21 @@ export class LockdownRenderer {
       }
     }
     // The near lip of the floor above shows as a cut face, like a wall front sunk into the ground.
-    if (solid(col, row - 1)) { ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.fillRect(x, y, TILE, 12); ctx.fillStyle = theme.wallEdge; ctx.fillRect(x, y, TILE, 3); }
-    ctx.fillStyle = theme.pitEdge; ctx.globalAlpha = .7;
-    if (solid(col - 1, row)) ctx.fillRect(x, y, 2, TILE);
-    if (solid(col + 1, row)) ctx.fillRect(x + TILE - 2, y, 2, TILE);
-    if (solid(col, row + 1)) ctx.fillRect(x, y + TILE - 2, TILE, 2);
+    if (solid(col, row - 1)) {
+      let depth = 1; while (map.grid[row + depth]?.[col] === '~') depth++;
+      const drop = Math.min(35, depth * TK * .4), bank = this.sprite(`tile_bank_front_${map.theme}`);
+      if (bank) {
+        const sw = bank.naturalWidth / 2;
+        ctx.drawImage(bank, (col % 2) * sw, 0, sw, bank.naturalHeight, x, y, TILE, drop / GROUND);
+      } else { ctx.fillStyle = theme.wall; ctx.fillRect(x, y, TILE, drop / GROUND); }
+      const shade = ctx.createLinearGradient(0, y + drop / GROUND, 0, y + Math.min(TILE, drop / GROUND + 12));
+      shade.addColorStop(0, 'rgba(8,23,23,.38)'); shade.addColorStop(1, 'rgba(8,23,23,0)');
+      ctx.fillStyle = shade; ctx.fillRect(x, y + drop / GROUND, TILE, Math.min(12, TILE - drop / GROUND));
+    }
+    ctx.fillStyle = theme.wallTop; ctx.globalAlpha = .55;
+    if (solid(col - 1, row)) ctx.fillRect(x, y, 1.5, TILE);
+    if (solid(col + 1, row)) ctx.fillRect(x + TILE - 1.5, y, 1.5, TILE);
+    if (solid(col, row + 1)) ctx.fillRect(x, y + TILE - 1.5, TILE, 1.5);
     ctx.globalAlpha = 1;
   }
 
@@ -368,18 +456,32 @@ export class LockdownRenderer {
     const lift = liftAt;
     const raisedFloor = [];
     const onFloor = (x, y, draw) => { const amount = lift(x, y); if (amount) raisedFloor.push(flat(amount, draw)); else flat(0, draw)(); };
+    for (const mark of this.mapDecorations(map)) {
+      if (/vines|alcove/.test(mark.key)) continue;
+      const width = (this.assets?.entry(mark.key)?.size[0] || 48) * mark.scale, amount = mark.lift ?? lift(mark.x, mark.y);
+      const shadow = flat(amount, () => {
+        ctx.save(); ctx.translate(mark.x + 4, mark.y + 3); ctx.scale(width * .32, width * .14);
+        const shade = ctx.createRadialGradient(0, 0, 0, 0, 0, 1); shade.addColorStop(0, 'rgba(22,34,25,.24)'); shade.addColorStop(1, 'rgba(22,34,25,0)');
+        ctx.fillStyle = shade; ctx.beginPath(); ctx.arc(0, 0, 1, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+      });
+      if (amount) raisedFloor.push(shadow); else shadow();
+    }
     for (const cloud of state.clouds || []) onFloor(cloud.x, cloud.y, () => this.drawCloud(ctx, cloud, now));
     for (const bomb of state.bombs || []) onFloor(bomb.x, bomb.y, () => this.drawBombRadius(ctx, bomb, now));
     for (const player of players) if (player.guarding && player.guardRaise >= GUARD.expandTicks && !player.domeBroken && player.domeHp > 0) onFloor(player.x, player.y, () => this.drawDome(ctx, player, now));
     for (const player of players) if (!lift(player.x, player.y)) upright(player.y, 0, () => this.drawFootprint(ctx, player, player.id === localId))();
     // Standing layer, back to front: wall rows, knights, beacons, bombs, hearts and shots.
     const items = [];
-    for (const wall of this.wallRows || []) items.push({ key: (wall.row + 1) * TILE, draw: () => ctx.drawImage(wall.canvas, 0, wall.row * TK - WALL_HEIGHT - FLOOR_RISE, map.width, TK + WALL_HEIGHT + FLOOR_RISE) });
+    const occlusionPlayers = local?.alive ? [local] : [];
+    for (const wall of this.wallRows || []) items.push({ key: (wall.row + 1) * TILE, draw: () => this.drawWallRow(ctx, wall, map, occlusionPlayers) });
     for (const floor of this.floorRows || []) items.push({ key: floor.row * TILE, draw: () => ctx.drawImage(floor.canvas, 0, floor.row * TK - FLOOR_RISE, map.width, TK + FLOOR_RISE) });
     const sortKey = (y, amount) => y + amount / FLOOR_RISE * RAISED_SORT;
     for (const mark of this.mapDecorations(map)) {
-      const amount = lift(mark.x, mark.y);
-      items.push({ key: sortKey(mark.y, amount), draw: upright(mark.y, amount, () => this.drawSprite(ctx, mark.key, mark.x, mark.y, { scale: mark.scale })) });
+      const amount = mark.lift ?? lift(mark.x, mark.y);
+      const entry = this.assets?.entry(mark.key), width = (entry?.size[0] || 64) * mark.scale;
+      const top = mark.y * GROUND - amount + (mark.offsetY || 0) - (entry?.anchor[1] || 80) * mark.scale;
+      const obscures = mark.occluder && occlusionPlayers.some(p => sortKey(p.y + FEET, lift(p.x, p.y)) <= sortKey(mark.y, amount) && p.y * GROUND + FEET - lift(p.x, p.y) > top && Math.abs(p.x - mark.x) < width / 2 + 12);
+      items.push({ key: sortKey(mark.y, amount), draw: upright(mark.y, amount, () => this.drawSprite(ctx, mark.key, mark.x, mark.y + (mark.offsetY || 0), { scale: mark.scale, alpha: obscures ? .34 : 1 })) });
     }
     for (const point of state.points) items.push({ key: point.y, draw: upright(point.y, 0, () => this.drawBeacon(ctx, point, now)) });
     for (const bomb of state.bombs || []) { const amount = lift(bomb.x, bomb.y); items.push({ key: sortKey(bomb.y, amount), draw: upright(bomb.y, amount, () => this.drawBomb(ctx, bomb, state, now)) }); }
@@ -446,7 +548,7 @@ export class LockdownRenderer {
 
   drawPoint(ctx, point, now) {
     const radius = RULES.pointRadius, owner = point.owner, progress = point.progress / 100;
-    if (!this.drawSprite(ctx, 'point_base', point.x, point.y, { scale: radius * 2.2 / 160 })) {
+    if (!this.drawSprite(ctx, 'point_base', point.x, point.y, { scale: radius * 1.8 / 160 })) {
       ctx.fillStyle = 'rgba(255,255,255,.05)'; ctx.beginPath(); ctx.arc(point.x, point.y, radius, 0, Math.PI * 2); ctx.fill();
     }
     ctx.lineWidth = 4; ctx.strokeStyle = owner === null ? 'rgba(220,225,235,.45)' : TEAM_COLORS[owner].main;

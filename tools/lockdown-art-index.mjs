@@ -53,8 +53,11 @@ shapes; every PNG listed below replaces one placeholder as soon as it is added.
   Make original characters and objects; use the reference game's shapes and materials as inspiration.
 - **Terrain:** quiet painted floor textures, lighter wall tops and darker front faces.
   Tile materials join seamlessly; hazards sit below the walking surface and keep their edge shadows.
-  The renderer spans each floor or pit swatch across a 2×2 group of map cells for broader, quieter detail.
-  Three heart healing stations mark each base; sparse plants and rubble sit beside walls, clear of capture points.
+  Continuous ground paintings span 4×4 map cells and pit paintings span 3×3, keeping the paving broad and quiet.
+  Architectural wall fronts span three cells and stand 72 px high; capped pillars, climbing vines and generous
+  rounded border clumps match the approved concept. Visible cut banks sit below the walking surface.
+  Each base has one continuous ivory court, an arched masonry recess, team banner posts and three heart stations.
+  Foreground architecture fades where it would hide a nearby knight; collision and movement use the existing map.
 - **Equipment:** all classes share the T-shirt-and-shorts body. Each armor is a separate transparent
   garment layer with the same 640×320 grid, row, frame, anchor and mirroring. Leave exposed body parts transparent.
   Armor contains no headgear, pants or shoes. Draw the body, armor, shoes, pants and helmet in that order;

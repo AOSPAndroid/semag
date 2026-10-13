@@ -42,8 +42,8 @@ const tiles = [...new Set(Object.values(MAPS).map(map => map.theme))].flatMap(th
   return [
     asset(`tile_floor_${theme}`, 48, 48, [0, 0], `Seamless floor tile — ${style}. Must tile in all directions.`, { group: 'tiles' }),
     asset(`tile_floor_${theme}_alt`, 48, 48, [0, 0], `Variant floor tile for ${theme} (cracks, a drain, a plant or rubble) mixed in at random.`, { group: 'tiles' }),
-    asset(`tile_wall_top_${theme}`, 48, 48, [0, 0], `Top face of a wall block — ${style}. The game raises it 24 px above the floor; neighbouring tiles must join seamlessly.`, { group: 'tiles' }),
-    asset(`tile_wall_front_${theme}`, 48, 24, [0, 0], `Front (south-facing) face of a ${theme} wall block, drawn under the top face wherever floor lies below. Darker than the top, lit top edge, shadowed bottom edge. Must tile horizontally.`, { group: 'tiles' }),
+    asset(`tile_wall_top_${theme}`, 48, 48, [0, 0], `Overhead cap material for substantial ${theme} architecture — ${style}. The renderer raises the cap 72 px; neighbouring surfaces join seamlessly.`, { group: 'tiles' }),
+    asset(`tile_wall_front_${theme}`, 144, 72, [0, 0], `South-facing ${theme} architectural facade, three cells wide. Broad masonry or machinery, pale upper trim, warm dark sides, no end caps; the renderer samples consecutive thirds across the wall. Must tile horizontally.`, { group: 'tiles' }),
     asset(`tile_pit_${theme}`, 48, 48, [0, 0], `Pit tile ('~'): ${pit}. Knights cannot walk on it but shots fly over it. Must tile in all directions; the game adds the edge lip.`, { group: 'tiles' }),
   ];
 });
@@ -65,7 +65,17 @@ const spawnPads = [0, 1].map(team => asset(`tile_spawn_team${team}`, 48, 48, [0,
 // Approved painted-fantasy landmarks: visual dressing derived from the existing map.
 const environmentArt = [
   asset('base_heal_station', 48, 64, [24, 56], 'A rounded red heart hovering above an ivory-and-bronze healing socket, with a gentle green underglow. Upright art; three stations mark each existing healing base.', { group: 'environment' }),
-  ...Object.keys(THEME_LOOKS).map(theme => asset(`prop_border_${theme}`, 64, 80, [32, 76], `A small painted border clump for ${theme}: foliage, moss, rocks or clockwork pipes. Upright, neutral materials, transparent background; placed sparsely beside existing walls.`, { group: 'environment' })),
+  ...Object.keys(THEME_LOOKS).flatMap(theme => [
+    asset(`terrain_ground_${theme}`, 192, 192, [0, 0], `Continuous quiet overhead ${theme} ground painting over a four-by-four-cell court. Broad pavers or grass match approved concept A; no camera perspective or standing objects. Seamless at the outer edges.`, { group: 'environment' }),
+    asset(`terrain_pit_${theme}`, 144, 144, [0, 0], `Continuous overhead ${theme} pit painting across three cells, with broad water, lava, cloud or crevice forms. No shore or camera perspective baked in. Seamless at the outer edges.`, { group: 'environment' }),
+    asset(`tile_bank_front_${theme}`, 96, 40, [0, 0], `Upright cut bank below the ${theme} walking surface, two cells wide: a lit upper lip, darker descending stone, earth or metal, and restrained hanging roots. Tiles horizontally; the renderer fits the drop to the pit width.`, { group: 'environment' }),
+    asset(`prop_border_${theme}`, 128, 96, [64, 88], `Generous rounded ${theme} border clump: foliage, moss, rocks or clockwork pipes. Upright, neutral materials, transparent background. Large readable masses dress the wall foot while leaving the fighting court clear.`, { group: 'environment' }),
+    asset(`prop_column_${theme}`, 64, 128, [32, 120], `Stout ${theme} architectural pillar, softly bevelled, with a rounded neutral bronze or stone cap and a small warm-neutral lantern. Upright, feet at the bottom anchor; no floor or cast shadow.`, { group: 'environment' }),
+    asset(`prop_vines_${theme}`, 96, 96, [48, 8], `Asymmetric ${theme} wall dressing: a broad upper spray and descending ivy, roots or restrained pipe fittings. Transparent around the silhouette. The anchor hangs over the wall cap.`, { group: 'environment' }),
+  ]),
+  asset('base_alcove', 192, 144, [96, 136], 'The approved concept healing-base facade: a substantial warm ivory arch, two bronze-capped pillars, a dark closed masonry recess and two neutral lanterns. No floor or hearts baked in; mounted against the existing base wall.', { group: 'environment' }),
+  ...[0, 1].map(team => asset(`base_court_team${team}`, 144, 336, [0, 0], `Overhead ivory-stone court for the existing three-by-seven-cell healing base. A restrained bronze perimeter carries a narrow ${team ? 'Cyan #3bb8c4' : 'Amber #e39a3b'} inlay; large paving, opaque interior, no standing objects or perspective.`, { group: 'environment' })),
+  ...[0, 1].map(team => asset(`base_banner_team${team}`, 48, 128, [24, 120], `Ivory-and-bronze banner post with a softly folded ${team ? 'Cyan #3bb8c4' : 'Amber #e39a3b'} pennant and an ivory geometric rune. Upright, feet at the anchor, transparent surroundings.`, { group: 'environment' })),
 ];
 
 /** The five drawn facings of a knight sheet, top row first. Left-hand directions mirror the
