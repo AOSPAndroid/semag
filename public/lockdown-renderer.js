@@ -78,9 +78,11 @@ export class LockdownRenderer {
     const image = this.sprite(key), entry = this.assets?.entry(key);
     if (!image || !entry) return false;
     const frames = entry.frames || 1, rows = entry.rows || 1, fw = entry.size[0] / frames, fh = entry.size[1] / rows;
+    // HD art: a PNG may be drawn at 2x (or more) the listed size; it shows at the listed size with the extra detail.
+    const density = Math.max(1, Math.round(image.naturalWidth / entry.size[0])) || 1;
     ctx.save(); ctx.globalAlpha *= alpha; ctx.translate(x, y); ctx.rotate(rotation); ctx.scale(scale * (flipX ? -1 : 1), scale * (flipY ? -1 : 1));
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(image, (Math.floor(frame) % frames) * fw, (Math.floor(row) % rows) * fh, fw, fh, -entry.anchor[0], -entry.anchor[1], fw, fh);
+    ctx.imageSmoothingEnabled = density > 1; if (density > 1) ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(image, (Math.floor(frame) % frames) * fw * density, (Math.floor(row) % rows) * fh * density, fw * density, fh * density, -entry.anchor[0], -entry.anchor[1], fw, fh);
     ctx.restore(); return true;
   }
   /** Aim from the knight's chest to the cursor, so shots drawn at chest height pass under the pointer. */
@@ -90,7 +92,13 @@ export class LockdownRenderer {
   buildMap(map) {
     const key = `${map.id}:${this.assets?.version || 0}`;
     if (this.mapKey === key) return this.mapCache;
-    const makeCanvas = (width, height) => typeof OffscreenCanvas === 'function' ? new OffscreenCanvas(width, height) : Object.assign(document.createElement('canvas'), { width, height });
+    // The static map is cached at the density of its tile art, so HD tiles keep their detail on screen.
+    const floorArt = this.sprite(`tile_floor_${map.theme}`), floorEntry = this.assets?.entry(`tile_floor_${map.theme}`);
+    const density = this.mapDensity = floorArt && floorEntry ? Math.min(2, Math.max(1, Math.round(floorArt.naturalWidth / floorEntry.size[0]))) : 1;
+    const makeCanvas = (width, height) => {
+      const made = typeof OffscreenCanvas === 'function' ? new OffscreenCanvas(width * density, height * density) : Object.assign(document.createElement('canvas'), { width: width * density, height: height * density });
+      made.getContext('2d').scale(density, density); return made;
+    };
     const canvas = makeCanvas(map.width, map.height);
     const ctx = canvas.getContext('2d'), theme = THEMES[map.theme] || THEMES.stone;
     ctx.imageSmoothingEnabled = false;
@@ -300,7 +308,7 @@ export class LockdownRenderer {
     this.shake = this.shake > .2 ? this.shake * .86 : 0;
     ctx.setTransform(zoom, 0, 0, zoom, canvas.width / 2 - (this.camera.x + shakeX) * zoom, canvas.height / 2 - (this.camera.y + shakeY) * zoom);
     ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(this.buildMap(map), 0, 0);
+    ctx.drawImage(this.buildMap(map), 0, 0, map.width, map.height);
     // Floor layer: point plates and rings, domes, bomb radii, shadows and team rings.
     const viewerTeam = local?.team ?? null;
     const players = state.players.filter(player => player.alive && !(player.cloakTicks > 0 && viewerTeam !== null && player.team !== viewerTeam
@@ -317,8 +325,8 @@ export class LockdownRenderer {
     for (const player of players) if (!lift(player.x, player.y)) this.drawFootprint(ctx, player, player.id === localId);
     // Standing layer, back to front: wall rows, knights, beacons, bombs, hearts and shots.
     const items = [];
-    for (const wall of this.wallRows || []) items.push({ key: (wall.row + 1) * TILE, draw: () => ctx.drawImage(wall.canvas, 0, wall.row * TILE - WALL_HEIGHT - FLOOR_RISE) });
-    for (const floor of this.floorRows || []) items.push({ key: floor.row * TILE, draw: () => ctx.drawImage(floor.canvas, 0, floor.row * TILE - FLOOR_RISE) });
+    for (const wall of this.wallRows || []) items.push({ key: (wall.row + 1) * TILE, draw: () => ctx.drawImage(wall.canvas, 0, wall.row * TILE - WALL_HEIGHT - FLOOR_RISE, map.width, TILE + WALL_HEIGHT + FLOOR_RISE) });
+    for (const floor of this.floorRows || []) items.push({ key: floor.row * TILE, draw: () => ctx.drawImage(floor.canvas, 0, floor.row * TILE - FLOOR_RISE, map.width, TILE + FLOOR_RISE) });
     const sortKey = (y, amount) => y + amount / FLOOR_RISE * RAISED_SORT;
     for (const point of state.points) items.push({ key: point.y, draw: () => this.drawBeacon(ctx, point, now) });
     for (const bomb of state.bombs || []) { const amount = lift(bomb.x, bomb.y); items.push({ key: sortKey(bomb.y, amount), draw: lifted(amount, () => this.drawBomb(ctx, bomb, state, now)) }); }

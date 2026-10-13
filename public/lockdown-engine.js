@@ -911,7 +911,7 @@ function perchesFor(map, point) {
     for (let row = 0; row < map.rows; row++) for (let col = 0; col < map.cols; col++) {
       if (levelCell(map, col, row) !== '1' || isBlocked(map, col, row)) continue;
       const spot = { x: (col + .5) * TILE, y: (row + .5) * TILE, z: 1 }, d = dist(spot, point);
-      if (d > RULES.pointRadius + 40 && d < 420 && lineOfSight(map, spot, point)) perches.push(Object.freeze(spot));
+      if (d > RULES.pointRadius + 40 && d < 540 && lineOfSight(map, spot, point)) perches.push(Object.freeze(spot));
     }
     perchCache.set(key, perches);
   }

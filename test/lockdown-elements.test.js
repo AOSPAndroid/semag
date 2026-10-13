@@ -128,7 +128,7 @@ test('shoes cross the pits they are made for: water, lava, or everything', () =>
     const state = L.createState({ mapId, seed: 1 }); L.setConnected(state, 0, true); L.setPlayerSetup(state, 0, { shoes }); L.startMatch(state, [0]); state.phase = 'fight';
     for (const player of state.players) if (player.id) Object.assign(player, { alive: false, bot: false, respawnTicks: 1e9 });
     const map = MAPS[mapId]; let pit = null;
-    for (let row = 0; row < map.rows && !pit; row++) for (let col = 2; col < map.cols; col++) if (map.grid[row][col] === '~' && map.grid[row][col - 1] === '.' && map.grid[row][col - 2] === '.') { pit = [col, row]; break; }
+    for (let row = 0; row < map.rows && !pit; row++) for (let col = 2; col < map.cols; col++) if (map.grid[row][col] === '~' && map.grid[row][col - 1] === '.' && map.grid[row][col - 2] === '.' && map.levels[row][col - 1] === '0' && map.levels[row][col - 2] === '0') { pit = [col, row]; break; }
     const player = state.players[0]; Object.assign(player, { x: (pit[0] - 1.5) * TILE, y: (pit[1] + .5) * TILE });
     for (let t = 0; t < 60; t++) L.step(state, { 0: { ...L.emptyInput(0), right: true } });
     return player.x > pit[0] * TILE;

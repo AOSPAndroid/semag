@@ -14,7 +14,9 @@ const present = [], problems = [];
 for (const entry of MANIFEST) {
   if (!files.includes(entry.file)) continue;
   const size = pngSize(await readFile(dir + entry.file));
-  if (!size || size[0] !== entry.size[0] || size[1] !== entry.size[1]) problems.push(`${entry.file}: expected ${entry.size.join('x')}, got ${size ? size.join('x') : 'not a PNG'}`);
+  // Art may be drawn at the listed size or at exactly 2x (HD, preferred): the game shows both at the listed size.
+  const fits = size && [1, 2].some(k => size[0] === entry.size[0] * k && size[1] === entry.size[1] * k);
+  if (!fits) problems.push(`${entry.file}: expected ${entry.size.join('x')} (or 2x: ${entry.size.map(n => n * 2).join('x')}), got ${size ? size.join('x') : 'not a PNG'}`);
   else present.push(entry.file);
 }
 await writeFile(dir + 'index.json', JSON.stringify({ files: present.sort() }, null, 2) + '\n');
@@ -58,7 +60,7 @@ shapes; every PNG listed below replaces one placeholder as soon as it is added.
   a knight is about 36 px wide and 50 px tall, with feet on the anchor point.
 - **Team colours:** Amber \`#e39a3b\` (team 0) and Cyan \`#3bb8c4\` (team 1). Only sprites whose name says
   \`team0\`/\`team1\` carry team colour; everything else stays neutral and the game adds a coloured ring.
-- **Format:** 32-bit PNG with transparency, exact pixel sizes below (wrong sizes are skipped).
+- **Format:** 32-bit PNG with transparency, at exactly **2x** the pixel sizes below (HD, preferred: the game shows it at the listed size with twice the detail) or exactly 1x. Any other size is skipped.
 - **Bases:** each team's spawn tiles (\`tile_spawn_team0/1\`) are its base, where knights heal and change loadout; make them read as a safe zone.
 - **Themes:** \`stone\` (Coliseum Gate, cool grey) and \`brass\` (Clockwork Yard, warm bronze and rivets).
 
