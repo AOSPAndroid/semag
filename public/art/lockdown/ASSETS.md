@@ -6,7 +6,7 @@ Lockdown is a top-down team brawl in the spirit of Spiral Knights' Lockdown: up 
 three control points, swords, guns and bombs. The game is fully playable with placeholder
 shapes; every PNG listed below replaces one placeholder as soon as it is added.
 
-**Progress: 65/199 sprites ready.**
+**Progress: 65/241 sprites ready.**
 
 ## Style guide
 
@@ -130,6 +130,10 @@ shapes; every PNG listed below replaces one placeholder as soon as it is added.
 | ⬜ | `gear_shoes_treads.png` | 384×320 | 6 × 5 rows | 32, 58 | Mud Treads overlay: ONLY heavy black rubber-soled work boots with thick treads, nothing else (transparent everywhere else). It is drawn on top of every body outfit, so it must sit exactly where the feet of character_base are in each frame: same 6 columns × 5 facing rows of 64x64 frames, same idle bob and walking leg poses, feet at 32, 58. Neutral colours (no team colour). |
 | ⬜ | `gear_shoes_clogs.png` | 384×320 | 6 × 5 rows | 32, 58 | Rocket Clogs overlay: ONLY springy wooden clogs on coiled steel springs, nothing else (transparent everywhere else). It is drawn on top of every body outfit, so it must sit exactly where the feet of character_base are in each frame: same 6 columns × 5 facing rows of 64x64 frames, same idle bob and walking leg poses, feet at 32, 58. Neutral colours (no team colour). |
 | ⬜ | `gear_shoes_sandals.png` | 384×320 | 6 × 5 rows | 32, 58 | Healer Sandals overlay: ONLY simple leather sandals with straps and a little herb sprig tucked in, nothing else (transparent everywhere else). It is drawn on top of every body outfit, so it must sit exactly where the feet of character_base are in each frame: same 6 columns × 5 facing rows of 64x64 frames, same idle bob and walking leg poses, feet at 32, 58. Neutral colours (no team colour). |
+| ⬜ | `gear_shoes_striders.png` | 384×320 | 6 × 5 rows | 32, 58 | Water Striders overlay: ONLY light reed-and-cork sandals with wide flat paddles under the soles, beaded with water drops, nothing else (transparent everywhere else). It is drawn on top of every body outfit, so it must sit exactly where the feet of character_base are in each frame: same 6 columns × 5 facing rows of 64x64 frames, same idle bob and walking leg poses, feet at 32, 58. Neutral colours (no team colour). |
+| ⬜ | `gear_shoes_magma.png` | 384×320 | 6 × 5 rows | 32, 58 | Magma Walkers overlay: ONLY thick black obsidian-soled boots with glowing orange cracks, nothing else (transparent everywhere else). It is drawn on top of every body outfit, so it must sit exactly where the feet of character_base are in each frame: same 6 columns × 5 facing rows of 64x64 frames, same idle bob and walking leg poses, feet at 32, 58. Neutral colours (no team colour). |
+| ⬜ | `gear_shoes_hover.png` | 384×320 | 6 × 5 rows | 32, 58 | Hover Boots overlay: ONLY chunky silver boots with small glowing cyan thrusters under the soles (a soft glow below the feet), nothing else (transparent everywhere else). It is drawn on top of every body outfit, so it must sit exactly where the feet of character_base are in each frame: same 6 columns × 5 facing rows of 64x64 frames, same idle bob and walking leg poses, feet at 32, 58. Neutral colours (no team colour). |
+| ⬜ | `gear_shoes_quicksilver.png` | 384×320 | 6 × 5 rows | 32, 58 | Quicksilver Slippers overlay: ONLY thin liquid-silver slippers with a mirror sheen and little speed streaks, nothing else (transparent everywhere else). It is drawn on top of every body outfit, so it must sit exactly where the feet of character_base are in each frame: same 6 columns × 5 facing rows of 64x64 frames, same idle bob and walking leg poses, feet at 32, 58. Neutral colours (no team colour). |
 
 ## Icons
 
@@ -158,21 +162,38 @@ shapes; every PNG listed below replaces one placeholder as soon as it is added.
 | ⬜ | `icon_shoes_treads.png` | 48×48 | 1 | 24, 24 | Mud Treads equipment icon: heavy black rubber-soled work boots with thick treads. Clear silhouette on a transparent background. |
 | ⬜ | `icon_shoes_clogs.png` | 48×48 | 1 | 24, 24 | Rocket Clogs equipment icon: springy wooden clogs on coiled steel springs. Clear silhouette on a transparent background. |
 | ⬜ | `icon_shoes_sandals.png` | 48×48 | 1 | 24, 24 | Healer Sandals equipment icon: simple leather sandals with straps and a little herb sprig tucked in. Clear silhouette on a transparent background. |
+| ⬜ | `icon_shoes_striders.png` | 48×48 | 1 | 24, 24 | Water Striders equipment icon: light reed-and-cork sandals with wide flat paddles under the soles, beaded with water drops. Clear silhouette on a transparent background. |
+| ⬜ | `icon_shoes_magma.png` | 48×48 | 1 | 24, 24 | Magma Walkers equipment icon: thick black obsidian-soled boots with glowing orange cracks. Clear silhouette on a transparent background. |
+| ⬜ | `icon_shoes_hover.png` | 48×48 | 1 | 24, 24 | Hover Boots equipment icon: chunky silver boots with small glowing cyan thrusters under the soles (a soft glow below the feet). Clear silhouette on a transparent background. |
+| ⬜ | `icon_shoes_quicksilver.png` | 48×48 | 1 | 24, 24 | Quicksilver Slippers equipment icon: thin liquid-silver slippers with a mirror sheen and little speed streaks. Clear silhouette on a transparent background. |
 | ✅ | `icon_weapon_brand.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Knight Brand. Clear silhouette on a transparent background. |
 | ✅ | `icon_weapon_cleaver.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Troll Cleaver. Clear silhouette on a transparent background. |
 | ✅ | `icon_weapon_rapier.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Needle Rapier. Clear silhouette on a transparent background. |
 | ⬜ | `icon_weapon_thorn.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Briar Blade. Clear silhouette on a transparent background. |
 | ⬜ | `icon_weapon_greatblade.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Umbral Greatblade. Clear silhouette on a transparent background. |
 | ⬜ | `icon_weapon_spur.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Gyre Spur. Clear silhouette on a transparent background. |
+| ⬜ | `icon_weapon_frostbite.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Frostbite Edge. Clear silhouette on a transparent background. |
+| ⬜ | `icon_weapon_blazebrand.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Blazebrand. Clear silhouette on a transparent background. |
+| ⬜ | `icon_weapon_voltedge.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Voltedge. Clear silhouette on a transparent background. |
+| ⬜ | `icon_weapon_sickle.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Sanguine Sickle. Clear silhouette on a transparent background. |
+| ⬜ | `icon_weapon_hexblade.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Hexblade. Clear silhouette on a transparent background. |
 | ✅ | `icon_weapon_blaster.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Pulse Blaster. Clear silhouette on a transparent background. |
 | ⬜ | `icon_weapon_pulsar.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Ripple Caster. Clear silhouette on a transparent background. |
 | ⬜ | `icon_weapon_alchemer.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Ricochet Coil. Clear silhouette on a transparent background. |
 | ✅ | `icon_weapon_autogun.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Rattle Autogun. Clear silhouette on a transparent background. |
 | ⬜ | `icon_weapon_catalyzer.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Tether Catalyst. Clear silhouette on a transparent background. |
 | ✅ | `icon_weapon_magnus.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Thunder Hand-cannon. Clear silhouette on a transparent background. |
+| ⬜ | `icon_weapon_frostgun.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Winter Repeater. Clear silhouette on a transparent background. |
+| ⬜ | `icon_weapon_embercaster.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Ember Caster. Clear silhouette on a transparent background. |
+| ⬜ | `icon_weapon_voltneedle.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Volt Needle. Clear silhouette on a transparent background. |
+| ⬜ | `icon_weapon_viper.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Viper Spitter. Clear silhouette on a transparent background. |
+| ⬜ | `icon_weapon_grimcannon.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Grim Hand-cannon. Clear silhouette on a transparent background. |
 | ✅ | `icon_weapon_blast.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Blast Bomb. Clear silhouette on a transparent background. |
 | ⬜ | `icon_weapon_haze.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Ember Haze. Clear silhouette on a transparent background. |
 | ⬜ | `icon_weapon_frost.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Frost Haze. Clear silhouette on a transparent background. |
+| ⬜ | `icon_weapon_venom.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Venom Veil. Clear silhouette on a transparent background. |
+| ⬜ | `icon_weapon_storm.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Storm Haze. Clear silhouette on a transparent background. |
+| ⬜ | `icon_weapon_hex.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Hex Haze. Clear silhouette on a transparent background. |
 | ✅ | `icon_weapon_shard.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Splinter Bomb. Clear silhouette on a transparent background. |
 | ✅ | `icon_weapon_vortex.png` | 48×48 | 1 | 24, 24 | HUD/lobby icon for the Vortex Bomb. Clear silhouette on a transparent background. |
 | ✅ | `icon_armor_none.png` | 48×48 | 1 | 24, 24 | Unarmored equipment icon. Neutral clothing or armor silhouette on a transparent background. |
@@ -218,15 +239,28 @@ shapes; every PNG listed below replaces one placeholder as soon as it is added.
 | ⬜ | `weapon_thorn.png` | 64×32 | 1 | 12, 16 | Briar Blade (blade) held in the hand, pointing right; the grip sits at the anchor. Balanced combo. Charge: spray a short, wide shower of poison thorns. |
 | ⬜ | `weapon_greatblade.png` | 64×32 | 1 | 12, 16 | Umbral Greatblade (blade) held in the hand, pointing right; the grip sits at the anchor. Heavy two-hit chain. Charge: a slow wave of shadow that carries knights along with it. |
 | ⬜ | `weapon_spur.png` | 64×32 | 1 | 12, 16 | Gyre Spur (blade) held in the hand, pointing right; the grip sits at the anchor. Fast light four-cut chain. Charge: spin three times, hitting everything around you each turn. |
+| ⬜ | `weapon_frostbite.png` | 64×32 | 1 | 12, 16 | Frostbite Edge (blade) held in the hand, pointing right; the grip sits at the anchor. Every cut chills: three chills freeze a knight solid. Charge: lunge into a freezing burst. |
+| ⬜ | `weapon_blazebrand.png` | 64×32 | 1 | 12, 16 | Blazebrand (blade) held in the hand, pointing right; the grip sits at the anchor. Cuts may set knights on fire (30%). Charge: a rolling wall of flame that always burns. |
+| ⬜ | `weapon_voltedge.png` | 64×32 | 1 | 12, 16 | Voltedge (blade) held in the hand, pointing right; the grip sits at the anchor. Fast cuts that may shock (15%); a hit can arc lightning to two more enemies nearby. Charge: an electric spin. |
+| ⬜ | `weapon_sickle.png` | 64×32 | 1 | 12, 16 | Sanguine Sickle (blade) held in the hand, pointing right; the grip sits at the anchor. Heals you for 30% of the damage it deals. Charge: a long draining lunge. |
+| ⬜ | `weapon_hexblade.png` | 64×32 | 1 | 12, 16 | Hexblade (blade) held in the hand, pointing right; the grip sits at the anchor. Heavy cuts that may curse (35%): no dash and no class ability for a while. Charge: a cursing slam. |
 | ✅ | `weapon_blaster.png` | 64×32 | 1 | 12, 16 | Pulse Blaster (gun) held in the hand, pointing right; the grip sits at the anchor. Reliable three-shot gun. Charge: a big bolt that pierces every knight in its path. |
 | ⬜ | `weapon_pulsar.png` | 64×32 | 1 | 12, 16 | Ripple Caster (gun) held in the hand, pointing right; the grip sits at the anchor. Slow waves that widen as they travel and pass through knights. Charge: one huge wave. |
 | ⬜ | `weapon_alchemer.png` | 64×32 | 1 | 12, 16 | Ricochet Coil (gun) held in the hand, pointing right; the grip sits at the anchor. Bolts that bounce off walls. Charge: four shocking bolts that bounce twice. |
 | ✅ | `weapon_autogun.png` | 64×32 | 1 | 12, 16 | Rattle Autogun (gun) held in the hand, pointing right; the grip sits at the anchor. Six fast, light rounds. Charge: a focused ten-round stream. |
 | ⬜ | `weapon_catalyzer.png` | 64×32 | 1 | 12, 16 | Tether Catalyst (gun) held in the hand, pointing right; the grip sits at the anchor. Shots stick up to three charges on a knight. Charge: a detonator that blows them all at once. |
 | ✅ | `weapon_magnus.png` | 64×32 | 1 | 12, 16 | Thunder Hand-cannon (gun) held in the hand, pointing right; the grip sits at the anchor. Two heavy rounds with big knockback. Charge: a round that explodes on impact. |
+| ⬜ | `weapon_frostgun.png` | 64×32 | 1 | 12, 16 | Winter Repeater (gun) held in the hand, pointing right; the grip sits at the anchor. Every round chills; three chills freeze. Charge: a piercing bolt that freezes on the spot. |
+| ⬜ | `weapon_embercaster.png` | 64×32 | 1 | 12, 16 | Ember Caster (gun) held in the hand, pointing right; the grip sits at the anchor. Fire waves that may ignite (25%) every knight they pass. Charge: a huge wave that sets all of them alight. |
+| ⬜ | `weapon_voltneedle.png` | 64×32 | 1 | 12, 16 | Volt Needle (gun) held in the hand, pointing right; the grip sits at the anchor. Six fast needles that may shock (8%) and arc to a nearby enemy. Charge: a shocking ten-needle stream. |
+| ⬜ | `weapon_viper.png` | 64×32 | 1 | 12, 16 | Viper Spitter (gun) held in the hand, pointing right; the grip sits at the anchor. Rounds that may poison (30%): poisoned knights hit softer and cannot heal. Charge: a fan of five venom bolts. |
+| ⬜ | `weapon_grimcannon.png` | 64×32 | 1 | 12, 16 | Grim Hand-cannon (gun) held in the hand, pointing right; the grip sits at the anchor. Heavy rounds that may curse (30%). Charge: a blast that curses everyone it catches. |
 | ✅ | `weapon_blast.png` | 64×32 | 1 | 12, 16 | Blast Bomb (bomb) held in the hand, pointing right; the grip sits at the anchor. Charges fast. A big knockback blast after a short fuse. |
 | ⬜ | `weapon_haze.png` | 64×32 | 1 | 12, 16 | Ember Haze (bomb) held in the hand, pointing right; the grip sits at the anchor. Leaves a cloud that sets enemies on fire. |
 | ⬜ | `weapon_frost.png` | 64×32 | 1 | 12, 16 | Frost Haze (bomb) held in the hand, pointing right; the grip sits at the anchor. Leaves a cloud that freezes enemies solid. |
+| ⬜ | `weapon_venom.png` | 64×32 | 1 | 12, 16 | Venom Veil (bomb) held in the hand, pointing right; the grip sits at the anchor. Leaves a cloud that poisons enemies: they hit softer and cannot heal. |
+| ⬜ | `weapon_storm.png` | 64×32 | 1 | 12, 16 | Storm Haze (bomb) held in the hand, pointing right; the grip sits at the anchor. Leaves a crackling cloud that shocks enemies over and over. |
+| ⬜ | `weapon_hex.png` | 64×32 | 1 | 12, 16 | Hex Haze (bomb) held in the hand, pointing right; the grip sits at the anchor. Leaves a cloud that curses enemies: no dash and no class ability. |
 | ✅ | `weapon_shard.png` | 64×32 | 1 | 12, 16 | Splinter Bomb (bomb) held in the hand, pointing right; the grip sits at the anchor. Bursts into eight shards that cut across the point. |
 | ✅ | `weapon_vortex.png` | 64×32 | 1 | 12, 16 | Vortex Bomb (bomb) held in the hand, pointing right; the grip sits at the anchor. Pulls every enemy in range to its centre and holds them, then blasts them apart. |
 
@@ -252,6 +286,9 @@ shapes; every PNG listed below replaces one placeholder as soon as it is added.
 | ✅ | `bomb_blast.png` | 32×32 | 1 | 16, 24 | Blast Bomb planted on the floor, seen from the ¾ camera (the fuse ring is drawn by the game). |
 | ⬜ | `bomb_haze.png` | 32×32 | 1 | 16, 24 | Ember Haze planted on the floor, seen from the ¾ camera (the fuse ring is drawn by the game). |
 | ⬜ | `bomb_frost.png` | 32×32 | 1 | 16, 24 | Frost Haze planted on the floor, seen from the ¾ camera (the fuse ring is drawn by the game). |
+| ⬜ | `bomb_venom.png` | 32×32 | 1 | 16, 24 | Venom Veil planted on the floor, seen from the ¾ camera (the fuse ring is drawn by the game). |
+| ⬜ | `bomb_storm.png` | 32×32 | 1 | 16, 24 | Storm Haze planted on the floor, seen from the ¾ camera (the fuse ring is drawn by the game). |
+| ⬜ | `bomb_hex.png` | 32×32 | 1 | 16, 24 | Hex Haze planted on the floor, seen from the ¾ camera (the fuse ring is drawn by the game). |
 | ✅ | `bomb_shard.png` | 32×32 | 1 | 16, 24 | Splinter Bomb planted on the floor, seen from the ¾ camera (the fuse ring is drawn by the game). |
 | ✅ | `bomb_vortex.png` | 32×32 | 1 | 16, 24 | Vortex Bomb planted on the floor, seen from the ¾ camera (the fuse ring is drawn by the game). |
 
@@ -278,6 +315,11 @@ shapes; every PNG listed below replaces one placeholder as soon as it is added.
 | ⬜ | `fx_status_poison.png` | 12×12 | 1 | 6, 6 | Tiny status icon shown above a knight's head: green drop. |
 | ⬜ | `fx_status_shock.png` | 12×12 | 1 | 6, 6 | Tiny status icon shown above a knight's head: lightning bolt. |
 | ⬜ | `fx_status_freeze.png` | 12×12 | 1 | 6, 6 | Tiny status icon shown above a knight's head: snowflake. |
+| ⬜ | `fx_status_chill.png` | 12×12 | 1 | 6, 6 | Tiny status icon shown above a knight's head: small light-blue frost crystal. |
+| ⬜ | `fx_status_curse.png` | 12×12 | 1 | 6, 6 | Tiny status icon shown above a knight's head: purple broken-chain skull. |
+| ⬜ | `fx_cloud_poison.png` | 192×192 | 1 | 96, 96 | Venom Veil cloud on the floor: sickly green toxic fog with bubbles. |
+| ⬜ | `fx_cloud_shock.png` | 192×192 | 1 | 96, 96 | Storm Haze cloud on the floor: dark blue-grey storm fog with little lightning crackles. |
+| ⬜ | `fx_cloud_curse.png` | 192×192 | 1 | 96, 96 | Hex Haze cloud on the floor: swirling violet smoke with faint runes. |
 
 ## Pickups
 

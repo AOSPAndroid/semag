@@ -5,7 +5,7 @@
  * behind walls. Draws from the art manifest when a sprite exists and falls back to
  * readable placeholder shapes otherwise. Pure presentation: it never changes the state. */
 import { MAPS, TILE, RULES, ABILITIES, WEAPONS, CLASSES, ARMORS, GUARD, STATUS_IDS, inBase, chargeTicksFor } from './lockdown-engine.js';
-import { isWall } from './lockdown-maps.js';
+import { isWall, isPit } from './lockdown-maps.js';
 import { KNIGHT_FACINGS } from './lockdown-assets.js';
 
 /** How far a wall's top face is lifted, and the height that shots and swings travel at. */
@@ -13,7 +13,9 @@ export const WALL_HEIGHT = 24, BODY_LIFT = 22;
 const FEET = 8; // a knight's feet sit this far below the centre of its collision circle
 const WEAPON_SCALE = .75;
 const TICK_MS = 1000 / 120;
-const STATUS_COLORS = Object.freeze({ burn: '#ff8a3d', poison: '#7bd65a', shock: '#7fc8ff', freeze: '#bfeaff' });
+const STATUS_COLORS = Object.freeze({ burn: '#ff8a3d', poison: '#7bd65a', shock: '#7fc8ff', freeze: '#bfeaff', chill: '#6fb6ff', curse: '#b26bff', drain: '#ff4d6d' });
+/** A weapon's element colour (glow on the blade or muzzle, tint on its shots). */
+const elementColor = weapon => weapon?.element ? STATUS_COLORS[weapon.element] : null;
 const SHOT_COLORS = Object.freeze({ thorn: '#9bd36a', wave: '#6b4fa8', pulse: '#9fe8ee', ricochet: '#8fd0ff', catalyst: '#ffd36b', detonator: '#ff7b5a', shard: '#d8e4ef' });
 /** Aim angle → which drawn row faces it, and whether to mirror it (eight directions). */
 export function knightFacing(aim) {
@@ -166,7 +168,7 @@ export class LockdownRenderer {
       else if (event.type === 'explosion') { add('explosion', 480, { x: event.x, y: event.y, radius: event.radius, weapon: event.weapon }); this.bump(event.x, event.y, 6); }
       else if (event.type === 'vortex') add('vortexOpen', 300, { x: event.x, y: event.y, radius: event.radius });
       else if (event.type === 'damage') {
-        add('number', 700, { x: event.x, y: event.y, amount: event.amount, targetId: event.targetId, color: event.kind === 'burn' ? STATUS_COLORS.burn : event.kind === 'shock' ? STATUS_COLORS.shock : '#ffffff' });
+        add('number', 700, { x: event.x, y: event.y, amount: event.amount, targetId: event.targetId, color: event.kind === 'burn' ? STATUS_COLORS.burn : event.kind === 'shock' || event.kind === 'chain' ? STATUS_COLORS.shock : '#ffffff' });
         this.flashes.set(event.targetId, now);
         if (event.targetId === this.localId) this.shake = Math.max(this.shake, Math.min(8, 2 + event.amount / 5));
       }
@@ -177,6 +179,9 @@ export class LockdownRenderer {
       else if (event.type === 'guardBreak') { add('guardBreak', 420, { x: event.x, y: event.y, playerId: event.playerId }); if (event.playerId === this.localId) this.shake = Math.max(this.shake, 7); }
       else if (event.type === 'detonate') { add('explosion', 360, { x: event.x, y: event.y, radius: 26 + event.count * 10, weapon: 'catalyzer' }); this.bump(event.x, event.y, 3 + event.count); }
       else if (event.type === 'ricochet') add('spark', 160, { x: event.x, y: event.y });
+      else if (event.type === 'chain') add('chain', 220, { fromX: event.fromX, fromY: event.fromY, toX: event.toX, toY: event.toY, seed: Math.random() });
+      else if (event.type === 'drain') add('drain', 600, { x: event.x, y: event.y, amount: Math.round(event.amount) });
+      else if (event.type === 'cursed') add('statusPop', 400, { x: event.x, y: event.y, status: 'curse' });
       else if (event.type === 'status') add('statusPop', 500, { x: event.x, y: event.y, status: event.status });
       else if (event.type === 'heal') add('heal', 600, { x: event.x, y: event.y, radius: event.radius });
       else if (event.type === 'capture') add('capture', 900, { x: event.x, y: event.y, team: event.team });
@@ -376,6 +381,14 @@ export class LockdownRenderer {
       ctx.restore();
     }
     const frame = moving ? 2 + Math.floor(now / 110) % 4 : Math.floor(now / 500) % 2;
+    const map = MAPS[state.mapId];
+    if (map && isPit(map, Math.floor(player.x / TILE), Math.floor(player.y / TILE))) {
+      // Crossing a pit: ripples on water and bog, a glowing hover pad over lava or open sky.
+      ctx.save(); ctx.globalAlpha = alpha * .8;
+      if (map.pit === 'water' || map.pit === 'bog') { ctx.strokeStyle = map.pit === 'water' ? '#d9f3ff' : '#b7d68a'; ctx.lineWidth = 2; for (let i = 0; i < 2; i++) { const k = (now / 700 + i / 2) % 1; ctx.globalAlpha = alpha * (1 - k) * .8; ctx.beginPath(); ctx.ellipse(fx, fy, 10 + k * 18, 4 + k * 6, 0, 0, Math.PI * 2); ctx.stroke(); } }
+      else { ctx.fillStyle = map.pit === 'lava' ? '#ffb35a' : '#9fe8ff'; ctx.globalAlpha = alpha * (.35 + .15 * Math.sin(now / 90)); ctx.beginPath(); ctx.ellipse(fx, fy + 2, 16, 6, 0, 0, Math.PI * 2); ctx.fill(); }
+      ctx.restore();
+    }
     ctx.save(); ctx.globalAlpha = alpha;
     if (player.dashTicks > 0) this.drawSprite(ctx, 'fx_dash', fx, fy - 20, { rotation: Math.atan2(player.vy, player.vx) + Math.PI }) || (ctx.fillStyle = team.light + '55', ctx.beginPath(), ctx.ellipse(fx - player.vx * .06, fy - 20 - player.vy * .06, 12, 18, 0, 0, Math.PI * 2), ctx.fill());
     // The weapon is pinned to this facing's hand and rotated to the aim; facing away it goes behind the body.
@@ -399,6 +412,17 @@ export class LockdownRenderer {
     }
     if (player.status?.burn > 0) for (let i = 0; i < 3; i++) { const p = (now / 400 + i / 3) % 1; ctx.globalAlpha = 1 - p; ctx.fillStyle = i % 2 ? '#ffd36b' : STATUS_COLORS.burn; ctx.beginPath(); ctx.arc(fx - 8 + i * 8, fy - 20 - p * 30, 4 * (1 - p) + 1, 0, Math.PI * 2); ctx.fill(); }
     if (player.status?.shock > 0 && Math.floor(now / 70) % 3 === 0) { ctx.globalAlpha = .9; ctx.strokeStyle = STATUS_COLORS.shock; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(fx - 14, fy - 40); ctx.lineTo(fx - 4, fy - 30); ctx.lineTo(fx - 9, fy - 26); ctx.lineTo(fx + 6, fy - 12); ctx.stroke(); }
+    if (player.status?.chill > 0) {
+      // Frost creeps up the legs, one band per chill stack.
+      ctx.globalAlpha = .45; ctx.fillStyle = STATUS_COLORS.chill;
+      for (let i = 0; i < Math.max(1, player.chillStacks || 0); i++) ctx.fillRect(fx - 14, fy - 8 - i * 9, 28, 6);
+      ctx.globalAlpha = .9; ctx.fillStyle = '#ffffff'; for (let i = 0; i < 3; i++) { const a = now / 500 + i * 2.1; ctx.fillRect(fx + Math.cos(a) * 16 - 1, fy - 20 + Math.sin(a) * 6 - 1, 2, 2); }
+    }
+    if (player.status?.curse > 0) {
+      ctx.globalAlpha = .55 + .25 * Math.sin(now / 120); ctx.strokeStyle = STATUS_COLORS.curse; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.ellipse(fx, fy - 2, 18, 6, 0, 0, Math.PI * 2); ctx.stroke();
+      for (let i = 0; i < 4; i++) { const a = -now / 400 + i * Math.PI / 2; ctx.fillStyle = STATUS_COLORS.curse; ctx.fillRect(fx + Math.cos(a) * 18 - 2, fy - 2 + Math.sin(a) * 6 - 6, 4, 6); }
+    }
     if (player.status?.poison > 0) { ctx.globalAlpha = .7; ctx.fillStyle = STATUS_COLORS.poison; for (let i = 0; i < 2; i++) { const p = (now / 700 + i / 2) % 1; ctx.beginPath(); ctx.arc(fx + (i ? 9 : -9), fy - 26 - p * 22, 3, 0, Math.PI * 2); ctx.fill(); } }
     if (player.catalysts > 0) for (let i = 0; i < player.catalysts; i++) { const a = now / 260 + i * Math.PI * 2 / 3; ctx.globalAlpha = 1; ctx.fillStyle = SHOT_COLORS.catalyst; ctx.beginPath(); ctx.arc(fx + Math.cos(a) * 18, fy - 26 + Math.sin(a) * 8, 4, 0, Math.PI * 2); ctx.fill(); }
     ctx.restore();
@@ -451,6 +475,7 @@ export class LockdownRenderer {
     if (player.markTicks > 0 && !this.drawSprite(ctx, 'fx_mark', player.x, top - 18)) { ctx.fillStyle = '#ff4d6d'; ctx.font = 'bold 16px system-ui'; ctx.textAlign = 'center'; ctx.fillText('◎', player.x, top - 18); }
     if (player.stunTicks > 0) { ctx.fillStyle = '#ffe680'; for (let i = 0; i < 3; i++) { const a = now / 150 + i * 2.1; ctx.beginPath(); ctx.arc(player.x + Math.cos(a) * 14, top + 4 + Math.sin(a) * 4, 2.5, 0, Math.PI * 2); ctx.fill(); } }
     const statuses = STATUS_IDS.filter(id => player.status?.[id] > 0);
+    if (player.status?.chill > 0) for (let i = 0; i < 3; i++) { ctx.fillStyle = i < (player.chillStacks || 0) ? STATUS_COLORS.chill : 'rgba(255,255,255,.25)'; ctx.fillRect(player.x - 10 + i * 7, top - 12, 5, 3); }
     statuses.forEach((id, i) => {
       const x = player.x - (statuses.length - 1) * 6 + i * 12, y = top - 28;
       if (!this.drawSprite(ctx, `fx_status_${id}`, x, y)) { ctx.fillStyle = STATUS_COLORS[id]; ctx.beginPath(); ctx.arc(x, y, 4.5, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.lineWidth = 1; ctx.stroke(); }
@@ -569,11 +594,13 @@ export class LockdownRenderer {
       ctx.fillStyle = '#6b4a2b'; ctx.fillRect(-4, -2, 8, 4);
       ctx.fillStyle = '#c9b27a'; ctx.fillRect(3, -6, 3, 12);
       ctx.fillStyle = '#dfe6ee'; ctx.fillRect(6, -width / 2, length, width);
+      if (elementColor(weapon)) { ctx.globalAlpha *= .7; ctx.fillStyle = elementColor(weapon); ctx.fillRect(6, -width / 2 - 1.5, length, 2); ctx.fillRect(length + 2, -width / 2, 4, width); ctx.globalAlpha /= .7; }
     } else if (weapon.family === 'gun') {
       const length = weapon.id === 'magnus' ? 26 : weapon.id === 'scatter' ? 22 : 20;
       ctx.fillStyle = '#2e3138'; ctx.fillRect(0, -4, length, 8);
-      ctx.fillStyle = weapon.id === 'autogun' ? '#9fd8ff' : weapon.id === 'magnus' ? '#ffb36b' : '#ffe08a'; ctx.fillRect(length - 4, -3, 4, 6);
-    } else { ctx.fillStyle = '#2a2d33'; ctx.beginPath(); ctx.arc(10, 0, 7, 0, Math.PI * 2); ctx.fill(); }
+      ctx.fillStyle = elementColor(weapon) || (weapon.id === 'autogun' ? '#9fd8ff' : weapon.id === 'magnus' ? '#ffb36b' : '#ffe08a'); ctx.fillRect(length - 4, -3, 4, 6);
+      if (elementColor(weapon)) ctx.fillRect(4, -5, 8, 2);
+    } else { ctx.fillStyle = '#2a2d33'; ctx.beginPath(); ctx.arc(10, 0, 7, 0, Math.PI * 2); ctx.fill(); if (elementColor(weapon)) { ctx.fillStyle = elementColor(weapon); ctx.beginPath(); ctx.arc(10, 0, 3, 0, Math.PI * 2); ctx.fill(); } }
     ctx.restore();
   }
   /** Shots are drawn at the size of their hitbox, at chest height, with a shadow on the floor. */
@@ -581,8 +608,10 @@ export class LockdownRenderer {
     const angle = Math.atan2(shot.vy, shot.vx), kind = shot.kind, lift = kind === 'shard' || kind === 'thorn' ? 10 : BODY_LIFT, y = shot.y - lift, size = shot.size || 5;
     ctx.fillStyle = 'rgba(0,0,0,.22)'; ctx.beginPath(); ctx.ellipse(shot.x, shot.y + 2, size, size * .4, 0, 0, Math.PI * 2); ctx.fill();
     const key = `proj_${kind}`, entry = this.assets?.entry(key);
+    const element = elementColor(WEAPONS[shot.weapon]);
+    if (element) { ctx.save(); ctx.globalAlpha = .35; ctx.fillStyle = element; ctx.beginPath(); ctx.arc(shot.x, y, size * 1.9, 0, Math.PI * 2); ctx.fill(); ctx.restore(); }
     if (entry && this.drawSprite(ctx, key, shot.x, y, { rotation: angle, scale: kind === 'pulse' || kind === 'wave' ? size * 2 / entry.size[1] : 1 })) return;
-    const color = SHOT_COLORS[kind] || TEAM_COLORS[shot.team].light;
+    const color = element || SHOT_COLORS[kind] || TEAM_COLORS[shot.team].light;
     ctx.save(); ctx.translate(shot.x, y); ctx.rotate(angle);
     if (kind === 'wave') {
       ctx.globalAlpha = .75; ctx.fillStyle = color; ctx.beginPath(); ctx.arc(-size * .4, 0, size, -1.1, 1.1); ctx.arc(-size * .9, 0, size * .8, 1.1, -1.1, true); ctx.fill();
@@ -596,7 +625,7 @@ export class LockdownRenderer {
       ctx.fillStyle = color; ctx.beginPath(); ctx.moveTo(size * 1.6, 0); ctx.lineTo(-size, -size * .55); ctx.lineTo(-size, size * .55); ctx.closePath(); ctx.fill();
     } else {
       const length = kind === 'pierce' ? size * 3 : size * 2.4;
-      ctx.fillStyle = kind === 'ricochet' ? color : TEAM_COLORS[shot.team].light; ctx.fillRect(-length, -size * .45, length, size * .9);
+      ctx.fillStyle = kind === 'ricochet' || element ? color : TEAM_COLORS[shot.team].light; ctx.fillRect(-length, -size * .45, length, size * .9);
       ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(0, 0, size * .55, 0, Math.PI * 2); ctx.fill();
     }
     ctx.restore();
@@ -652,6 +681,14 @@ export class LockdownRenderer {
         }
       } else if (effect.type === 'number') {
         ctx.fillStyle = effect.color || '#ffffff'; ctx.font = 'bold 16px system-ui'; ctx.textAlign = 'center'; ctx.fillText(String(effect.amount), effect.x + 12, effect.y - 50 - t * 26);
+      } else if (effect.type === 'chain') {
+        // A jagged lightning arc between the two knights, at chest height.
+        let seed = effect.seed * 1000; const rand = () => (seed = (seed * 9301 + 49297) % 233280) / 233280;
+        ctx.globalAlpha = 1 - t; ctx.strokeStyle = STATUS_COLORS.shock; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(effect.fromX, effect.fromY - BODY_LIFT);
+        for (let i = 1; i < 6; i++) { const k = i / 6; ctx.lineTo(effect.fromX + (effect.toX - effect.fromX) * k + (rand() - .5) * 18, effect.fromY + (effect.toY - effect.fromY) * k - BODY_LIFT + (rand() - .5) * 18); }
+        ctx.lineTo(effect.toX, effect.toY - BODY_LIFT); ctx.stroke(); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1; ctx.stroke(); ctx.globalAlpha = 1;
+      } else if (effect.type === 'drain') {
+        ctx.fillStyle = STATUS_COLORS.drain; ctx.font = 'bold 14px system-ui'; ctx.textAlign = 'center'; ctx.fillText(`+${effect.amount} ♥`, effect.x - 14, effect.y - 50 - t * 22);
       } else if (effect.type === 'healNumber') {
         ctx.fillStyle = '#7cf0a0'; ctx.font = 'bold 16px system-ui'; ctx.textAlign = 'center'; ctx.fillText(`+${effect.amount}`, effect.x, effect.y - 50 - t * 26);
       } else if (effect.type === 'heal') {

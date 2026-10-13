@@ -39,6 +39,30 @@ export const WEAPONS = Object.freeze({
     charge: Object.freeze({ kind: 'spin', turns: 3, ticksPerTurn: 18, reach: 70, damage: 11, push: 120, stun: 8, speed: .6, recovery: 12 }),
     description: 'Fast light four-cut chain. Charge: spin three times, hitting everything around you each turn.' }),
 
+  // Elemental and special swords: every cut can carry a status or a trick of its own.
+  frostbite: Object.freeze({ id: 'frostbite', family: 'blade', type: 'Frost sword', name: 'Frostbite Edge', chargeTicks: 108, element: 'chill',
+    combo: [step(14, 6, 6, 12, 70, 1.9, 120, 12, 14), step(14, 6, 6, 12, 70, 1.9, 120, 12, 14), step(19, 8, 7, 18, 74, 2.2, 200, 16, 20)], onHit: Object.freeze({ status: 'chill', chance: 1 }),
+    charge: Object.freeze({ kind: 'lungeBurst', distance: 110, ticks: 14, damage: 18, reach: 50, arc: 1.6, push: 120, stun: 16, recovery: 16, status: 'chill', chance: 1,
+      burst: Object.freeze({ radius: 84, damage: 14, push: 140, status: 'freeze', chance: 1 }) }),
+    description: 'Every cut chills: three chills freeze a knight solid. Charge: lunge into a freezing burst.' }),
+  blazebrand: Object.freeze({ id: 'blazebrand', family: 'blade', type: 'Fire sword', name: 'Blazebrand', chargeTicks: 120, element: 'burn',
+    combo: [step(15, 6, 6, 12, 72, 1.9, 140, 14, 14), step(15, 6, 6, 12, 72, 1.9, 140, 14, 14), step(21, 8, 7, 18, 76, 2.3, 220, 18, 20)], onHit: Object.freeze({ status: 'burn', chance: .3 }),
+    charge: Object.freeze({ kind: 'wave', damage: 22, speed: 320, range: 360, size: 24, push: 140, status: 'burn', chance: 1, recovery: 24 }),
+    description: 'Cuts may set knights on fire (30%). Charge: a rolling wall of flame that always burns.' }),
+  voltedge: Object.freeze({ id: 'voltedge', family: 'blade', type: 'Shock sword', name: 'Voltedge', chargeTicks: 108, element: 'shock',
+    combo: [step(8, 4, 5, 6, 66, 1.7, 60, 6, 10), step(8, 4, 5, 6, 66, 1.7, 60, 6, 10), step(8, 4, 5, 6, 66, 1.7, 60, 6, 10), step(11, 5, 6, 10, 68, 2.2, 120, 10, 14)],
+    onHit: Object.freeze({ status: 'shock', chance: .15 }), chain: Object.freeze({ chance: .3, count: 2, radius: 140, damage: 6, status: 'shock', chance2: .5 }),
+    charge: Object.freeze({ kind: 'spin', turns: 3, ticksPerTurn: 18, reach: 72, damage: 9, push: 100, stun: 8, speed: .6, recovery: 12, status: 'shock', chance: .5 }),
+    description: 'Fast cuts that may shock (15%); a hit can arc lightning to two more enemies nearby. Charge: an electric spin.' }),
+  sickle: Object.freeze({ id: 'sickle', family: 'blade', type: 'Vampire sword', name: 'Sanguine Sickle', chargeTicks: 108, element: 'drain',
+    combo: [step(13, 6, 6, 12, 70, 2.0, 110, 12, 14), step(13, 6, 6, 12, 70, 2.0, 110, 12, 14), step(19, 8, 7, 18, 74, 2.4, 190, 16, 20)], lifesteal: .3,
+    charge: Object.freeze({ kind: 'lunge', distance: 170, ticks: 18, damage: 24, reach: 40, arc: 1.4, push: 180, stun: 16, recovery: 14 }),
+    description: 'Heals you for 30% of the damage it deals. Charge: a long draining lunge.' }),
+  hexblade: Object.freeze({ id: 'hexblade', family: 'blade', type: 'Curse sword', name: 'Hexblade', chargeTicks: 132, element: 'curse',
+    combo: [step(26, 13, 8, 22, 78, 2.0, 260, 22, 10), step(31, 15, 9, 26, 82, 2.3, 320, 26, 14)], onHit: Object.freeze({ status: 'curse', chance: .35 }),
+    charge: Object.freeze({ kind: 'slam', distance: 60, ticks: 30, radius: 100, offset: 34, damage: 34, push: 320, stun: 36, recovery: 24, status: 'curse', chance: 1 }),
+    description: 'Heavy cuts that may curse (35%): no dash and no class ability for a while. Charge: a cursing slam.' }),
+
   // ---------- guns ----------
   blaster: Object.freeze({ id: 'blaster', family: 'gun', type: 'Blaster', name: 'Pulse Blaster', chargeTicks: 120,
     clip: 3, interval: 16, reload: 54, reloadDelay: 60, damage: 9, speed: 760, range: 620, push: 80, spread: .02, size: 5, kind: 'bullet',
@@ -65,13 +89,42 @@ export const WEAPONS = Object.freeze({
     charge: Object.freeze({ kind: 'explosive', damage: 26, speed: 640, range: 640, push: 300, size: 9, radius: 72 }),
     description: 'Two heavy rounds with big knockback. Charge: a round that explodes on impact.' }),
 
+  // Elemental guns.
+  frostgun: Object.freeze({ id: 'frostgun', family: 'gun', type: 'Frost blaster', name: 'Winter Repeater', chargeTicks: 120, element: 'chill',
+    clip: 3, interval: 16, reload: 54, reloadDelay: 60, damage: 7, speed: 720, range: 580, push: 50, spread: .02, size: 5, kind: 'bullet', status: 'chill', chance: 1,
+    charge: Object.freeze({ kind: 'pierce', damage: 16, speed: 820, range: 660, push: 120, size: 9, pierce: true, status: 'freeze', chance: 1 }),
+    description: 'Every round chills; three chills freeze. Charge: a piercing bolt that freezes on the spot.' }),
+  embercaster: Object.freeze({ id: 'embercaster', family: 'gun', type: 'Fire pulsar', name: 'Ember Caster', chargeTicks: 120, element: 'burn',
+    clip: 3, interval: 22, reload: 60, reloadDelay: 60, damage: 6, speed: 340, range: 320, push: 50, spread: 0, size: 8, grow: 14, kind: 'pulse', pierce: true, status: 'burn', chance: .25,
+    charge: Object.freeze({ kind: 'bigPulse', damage: 18, speed: 250, range: 360, push: 120, size: 16, grow: 30, pierce: true, status: 'burn', chance: 1 }),
+    description: 'Fire waves that may ignite (25%) every knight they pass. Charge: a huge wave that sets all of them alight.' }),
+  voltneedle: Object.freeze({ id: 'voltneedle', family: 'gun', type: 'Shock autogun', name: 'Volt Needle', chargeTicks: 120, element: 'shock',
+    clip: 6, interval: 8, reload: 66, reloadDelay: 60, damage: 4, speed: 800, range: 540, push: 20, spread: .08, size: 4, kind: 'bullet', status: 'shock', chance: .08,
+    chain: Object.freeze({ chance: .1, count: 1, radius: 120, damage: 4, status: 'shock', chance2: .3 }),
+    charge: Object.freeze({ kind: 'stream', count: 10, every: 4, damage: 4, speed: 820, range: 580, push: 25, size: 4, spread: .03, status: 'shock', chance: .3 }),
+    description: 'Six fast needles that may shock (8%) and arc to a nearby enemy. Charge: a shocking ten-needle stream.' }),
+  viper: Object.freeze({ id: 'viper', family: 'gun', type: 'Toxic blaster', name: 'Viper Spitter', chargeTicks: 120, element: 'poison',
+    clip: 3, interval: 18, reload: 60, reloadDelay: 60, damage: 7, speed: 660, range: 560, push: 50, spread: .02, size: 5, kind: 'bullet', status: 'poison', chance: .3,
+    charge: Object.freeze({ kind: 'split', count: 5, spread: .6, damage: 7, speed: 600, range: 480, push: 50, size: 5, bounces: 0, status: 'poison', chance: .8 }),
+    description: 'Rounds that may poison (30%): poisoned knights hit softer and cannot heal. Charge: a fan of five venom bolts.' }),
+  grimcannon: Object.freeze({ id: 'grimcannon', family: 'gun', type: 'Curse hand-cannon', name: 'Grim Hand-cannon', chargeTicks: 132, element: 'curse',
+    clip: 2, interval: 30, reload: 78, reloadDelay: 70, damage: 14, speed: 700, range: 620, push: 220, spread: .01, size: 6, kind: 'bullet', status: 'curse', chance: .3,
+    charge: Object.freeze({ kind: 'explosive', damage: 22, speed: 620, range: 620, push: 260, size: 9, radius: 76, status: 'curse', chance: 1 }),
+    description: 'Heavy rounds that may curse (30%). Charge: a blast that curses everyone it catches.' }),
+
   // ---------- bombs ----------
   blast: Object.freeze({ id: 'blast', family: 'bomb', type: 'Blast bomb', name: 'Blast Bomb', chargeTicks: 60, fuse: 72, radius: 100, damage: 30, push: 340, stun: 20,
     description: 'Charges fast. A big knockback blast after a short fuse.' }),
-  haze: Object.freeze({ id: 'haze', family: 'bomb', type: 'Haze bomb', name: 'Ember Haze', chargeTicks: 120, fuse: 24, radius: 0, damage: 0, push: 0,
+  haze: Object.freeze({ id: 'haze', family: 'bomb', type: 'Haze bomb', name: 'Ember Haze', chargeTicks: 120, element: 'burn', fuse: 24, radius: 0, damage: 0, push: 0,
     cloud: Object.freeze({ radius: 92, ticks: 480, status: 'burn' }), description: 'Leaves a cloud that sets enemies on fire.' }),
-  frost: Object.freeze({ id: 'frost', family: 'bomb', type: 'Haze bomb', name: 'Frost Haze', chargeTicks: 120, fuse: 24, radius: 0, damage: 0, push: 0,
+  frost: Object.freeze({ id: 'frost', family: 'bomb', type: 'Haze bomb', name: 'Frost Haze', chargeTicks: 120, element: 'freeze', fuse: 24, radius: 0, damage: 0, push: 0,
     cloud: Object.freeze({ radius: 92, ticks: 480, status: 'freeze' }), description: 'Leaves a cloud that freezes enemies solid.' }),
+  venom: Object.freeze({ id: 'venom', family: 'bomb', type: 'Haze bomb', name: 'Venom Veil', chargeTicks: 120, fuse: 24, radius: 0, damage: 0, push: 0, element: 'poison',
+    cloud: Object.freeze({ radius: 92, ticks: 480, status: 'poison' }), description: 'Leaves a cloud that poisons enemies: they hit softer and cannot heal.' }),
+  storm: Object.freeze({ id: 'storm', family: 'bomb', type: 'Haze bomb', name: 'Storm Haze', chargeTicks: 120, fuse: 24, radius: 0, damage: 0, push: 0, element: 'shock',
+    cloud: Object.freeze({ radius: 92, ticks: 480, status: 'shock' }), description: 'Leaves a crackling cloud that shocks enemies over and over.' }),
+  hex: Object.freeze({ id: 'hex', family: 'bomb', type: 'Haze bomb', name: 'Hex Haze', chargeTicks: 120, fuse: 24, radius: 0, damage: 0, push: 0, element: 'curse',
+    cloud: Object.freeze({ radius: 92, ticks: 480, status: 'curse' }), description: 'Leaves a cloud that curses enemies: no dash and no class ability.' }),
   shard: Object.freeze({ id: 'shard', family: 'bomb', type: 'Shard bomb', name: 'Splinter Bomb', chargeTicks: 120, fuse: 84, radius: 40, damage: 10, push: 120, stun: 10,
     shards: Object.freeze({ count: 8, damage: 12, speed: 520, range: 230, size: 5, push: 120 }), description: 'Bursts into eight shards that cut across the point.' }),
   vortex: Object.freeze({ id: 'vortex', family: 'bomb', type: 'Vortex bomb', name: 'Vortex Bomb', chargeTicks: 150, fuse: 60, radius: 110, damage: 22, push: 320, stun: 20,
@@ -79,12 +132,16 @@ export const WEAPONS = Object.freeze({
 });
 export const WEAPON_IDS = Object.freeze(Object.keys(WEAPONS));
 
-/** Status effects. Shields block them; a hit breaks freeze early. */
+/** Status effects. Shields block them; a hit breaks freeze early. Chill stacks: each chilling
+ * hit adds one (slowing you a little more) and the third freezes you. Curse locks dash and
+ * class ability (including the Guardian shield). */
 export const STATUS = Object.freeze({
   burn: Object.freeze({ id: 'burn', name: 'Burning', ticks: 3 * TICKS, every: 30, damage: 4 }),
   poison: Object.freeze({ id: 'poison', name: 'Poisoned', ticks: 5 * TICKS, damageScale: .7, noHeal: true }),
   shock: Object.freeze({ id: 'shock', name: 'Shocked', ticks: 3 * TICKS, every: 48, stun: 14, damage: 2 }),
   freeze: Object.freeze({ id: 'freeze', name: 'Frozen', ticks: 72, immuneTicks: 2 * TICKS }),
+  chill: Object.freeze({ id: 'chill', name: 'Chilled', ticks: Math.round(2.5 * TICKS), slowPerStack: .14, freezeAt: 3 }),
+  curse: Object.freeze({ id: 'curse', name: 'Cursed', ticks: Math.round(2.5 * TICKS) }),
 });
 export const STATUS_IDS = Object.freeze(Object.keys(STATUS));
 

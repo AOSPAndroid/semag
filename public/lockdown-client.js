@@ -14,6 +14,7 @@ const roomId = params.get('room');
 const solo = !roomId;
 const FAMILY_GLYPH = { blade: '⚔', gun: '✦', bomb: '●' };
 const CLASS_GLYPH = { striker: '➶', guardian: '⛨', recon: '◐' };
+const ELEMENT_TAGS = { chill: 'Frost', freeze: 'Frost', burn: 'Fire', shock: 'Shock', poison: 'Poison', curse: 'Curse', drain: 'Drain' };
 let gearTab = 'armor';
 const GEAR_LABELS = { helmet: 'Helmet', armor: 'Armor', pants: 'Pants', shoes: 'Shoes' };
 const GEAR_GLYPH = { helmet: '⛑', pants: '⫴', shoes: '👢' };
@@ -311,6 +312,7 @@ function armorPerkList(armor) {
   if (armor.knockback !== 1) add(armor.knockback < 1, `Knockback ${armor.knockback < 1 ? '−' : '+'}${Math.abs(percent(1 - armor.knockback))}%`);
   if (armor.statusDuration !== 1) add(armor.statusDuration < 1, `Status effects ${Math.abs(percent(1 - armor.statusDuration))}% ${armor.statusDuration < 1 ? 'shorter' : 'longer'}`);
   if (armor.healing !== 1) add(armor.healing > 1, `Healing ${signed(armor.healing - 1)}`);
+  if (armor.walk?.length) add(true, `Walks over ${armor.walk.join(', ').replace('chasm', 'open sky and chasms')}`);
   if (armor.regen) add(true, `Regenerates ${Math.round(armor.regen * armor.healing * 10) / 10} HP/s out of combat`);
   return list;
 }
@@ -371,7 +373,7 @@ function updateHud(current) {
     const guardMax = GUARD.max;
     $('ld-guard-bar').style.width = `${Math.max(0, (me.guardHp ?? guardMax) / guardMax * 100)}%`;
     $('ld-guard').dataset.state = me.guardBroken ? 'broken' : me.guarding ? 'up' : 'ready';
-    $('ld-statuses').textContent = STATUS_IDS.filter(id => me.status?.[id] > 0).map(id => `${STATUS[id].name} ${Math.ceil(me.status[id] / TICK_RATE)}s`).join(' · ');
+    $('ld-statuses').textContent = STATUS_IDS.filter(id => me.status?.[id] > 0).map(id => `${STATUS[id].name}${id === 'chill' ? ` ${me.chillStacks}/${STATUS.chill.freezeAt}` : ''} ${Math.ceil(me.status[id] / TICK_RATE)}s${id === 'curse' ? ' (no dash or ability)' : ''}`).join(' · ');
     buildWeaponCards(me);
     weaponCards.forEach((card, slot) => {
       const weapon = WEAPONS[card.id];
@@ -457,7 +459,7 @@ function buildMenu() {
     label.append(Object.assign(document.createElement('kbd'), { textContent: String(slot + 1) }), select);
     for (const family of ['blade', 'gun', 'bomb']) {
       const group = document.createElement('optgroup'); group.label = `${family[0].toUpperCase()}${family.slice(1)}s`;
-      for (const id of WEAPON_IDS.filter(weaponId => WEAPONS[weaponId].family === family)) group.append(new Option(WEAPONS[id].name, id));
+      for (const id of WEAPON_IDS.filter(weaponId => WEAPONS[weaponId].family === family)) group.append(new Option(`${WEAPONS[id].name}${ELEMENT_TAGS[WEAPONS[id].element] ? ` · ${ELEMENT_TAGS[WEAPONS[id].element]}` : ''}`, id));
       select.append(group);
     }
     select.addEventListener('change', () => {

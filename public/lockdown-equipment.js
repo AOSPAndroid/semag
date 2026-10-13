@@ -16,6 +16,7 @@ export const PERK_IDS = Object.freeze(Object.keys(PERKS));
 const armor = (id, name, description, gunResistance, bladeResistance, bombResistance, speedMultiplier, spriteStyle, perks = {}) => Object.freeze({
   id, name, description, gunResistance, bladeResistance, bombResistance, speedMultiplier, spriteStyle,
   ...Object.fromEntries(Object.entries(PERKS).map(([key, base]) => [key, perks[key] ?? base])),
+  walk: Object.freeze([...(perks.walk || [])]),
 });
 
 export const ARMORS = Object.freeze({
@@ -69,6 +70,10 @@ export const SHOES = Object.freeze({
   treads: piece('treads', 'Mud Treads', 'Status effects last 25% less; heavy soles slow you 3%.', 0, 0, 0, .97, { statusDuration: .75 }),
   clogs: piece('clogs', 'Rocket Clogs', 'A huge 35% longer dash that takes 20% longer to recharge.', 0, 0, 0, 1, { dashDistance: 1.35, dashCooldown: 1.2 }),
   sandals: piece('sandals', 'Healer Sandals', 'Mend 1 HP a second out of combat and heal 10% more.', 0, 0, 0, 1, { regen: 1, healing: 1.1 }),
+  striders: piece('striders', 'Water Striders', 'Walk across water and bog, cutting corners nobody else can, but the light soles leave you 5% weaker to swords.', 0, -.05, 0, 1, { walk: ['water', 'bog'] }),
+  magma: piece('magma', 'Magma Walkers', 'Stride over molten lava; thick soles add 10% blast protection, but slow you 4%.', 0, 0, .10, .96, { walk: ['lava'] }),
+  hover: piece('hover', 'Hover Boots', 'Float over every pit: water, bog, lava and open sky. Hovering is slower (8%) and dashes are 15% shorter.', 0, 0, 0, .92, { walk: ['water', 'bog', 'lava', 'chasm'], dashDistance: .85 }),
+  quicksilver: piece('quicksilver', 'Quicksilver Slippers', '15% faster than anything else on your feet, but paper-thin: 8% weaker to everything.', -.08, -.08, -.08, 1.15),
 });
 
 /** The four equipment slots, head to toe, and the table each one picks from. */
@@ -94,7 +99,8 @@ export function combineGear(gear = {}) {
     const value = perk === 'maxHp' || perk === 'regen' ? sum(perk) : product(perk);
     stats[perk] = PERK_LIMIT[perk] ? Math.round(clamp(value, GEAR_LIMITS[PERK_LIMIT[perk]]) * 1e4) / 1e4 : value;
   }
-  const result = Object.freeze({ ...stats, name: pieces.filter(part => part.id !== 'none').map(part => part.name).join(' + ') || 'Unarmored', pieces: Object.freeze(ids) });
+  const walk = Object.freeze([...new Set(pieces.flatMap(part => part.walk))].sort());
+  const result = Object.freeze({ ...stats, walk, name: pieces.filter(part => part.id !== 'none').map(part => part.name).join(' + ') || 'Unarmored', pieces: Object.freeze(ids) });
   combined.set(key, result);
   return result;
 }

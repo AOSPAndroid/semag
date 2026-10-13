@@ -4,6 +4,9 @@
  * positions. One tile is TILE world units; the renderer draws one tile per asset. */
 export const TILE = 48;
 
+/** What the '~' tiles are in each theme, which decides which shoes can cross them. */
+export const PIT_KINDS = Object.freeze({ castle: 'water', ruins: 'water', maze: 'bog', foundry: 'lava', graveyard: 'chasm', skyway: 'chasm' });
+
 const mirrorRow = row => row + [...row].reverse().map(cell => cell === '1' ? '2' : cell).join('');
 
 /** Six arenas in the Spiral Knights Lockdown mould. Each team's base is a spawn room
@@ -58,13 +61,13 @@ const MAP_DEFS = {
       '#...#...#####.#.#.#..',
       '###.#.#.......#.#....',
       '######.........#.....',
-      '#111.#.#.#####.#.####',
-      '#111.#.#.......#..#..',
-      '#111...#..........#..',
+      '#111.#.#.......#.....',
+      '#111.#.#.......#.....',
       '#111.................',
-      '#111...#..........#..',
-      '#111.#.#.......#..#..',
-      '#111.#.#.#####.#.####',
+      '#111.................',
+      '#111.................',
+      '#111.#.#.......#.....',
+      '#111.#.#.......#.....',
       '######.........#.....',
       '###.#.#.......#.#....',
       '#...#...#####.#.#.#..',
@@ -83,9 +86,9 @@ const MAP_DEFS = {
     description: 'Molten channels split the floor; only three bridges cross each one. B sits on the gantry at the top.',
     left: [
       '#####################',
-      '#........~........#..',
-      '#........~........#..',
-      '#..............##.#..',
+      '#........~...........',
+      '#........~...........',
+      '#..............##....',
       '#........~.....##....',
       '#........~.....##....',
       '#........~...........',
@@ -123,15 +126,15 @@ const MAP_DEFS = {
       '#....................',
       '#....................',
       '#.......#.......#....',
-      '######...............',
-      '#111.#............~~~',
-      '#111.#....~~......~~~',
+      '######.............~~',
+      '#111.#...............',
+      '#111.#...............',
       '#111..........#......',
       '#111.................',
       '#111..........#......',
-      '#111.#....~~......~~~',
-      '#111.#............~~~',
-      '######...............',
+      '#111.#...............',
+      '#111.#...............',
+      '######.............~~',
       '#.......#.......#....',
       '#....................',
       '#....................',
@@ -157,13 +160,13 @@ const MAP_DEFS = {
       '#......#..#..#..#..#.',
       '#....................',
       '######...............',
-      '#111.#......~~..#####',
-      '#111.#...#......#....',
+      '#111.#......~~..###..',
+      '#111.#..........#....',
       '#111.................',
       '#111.................',
       '#111.................',
-      '#111.#...#......#....',
-      '#111.#......~~..#####',
+      '#111.#..........#....',
+      '#111.#......~~..###..',
       '######...............',
       '#....................',
       '#......#..#..#..#..#.',
@@ -192,9 +195,9 @@ const MAP_DEFS = {
       '######.~~~~.~~~~~~~~~',
       '#111.#.~~.....~~.....',
       '#111.#~~~.....~~.....',
-      '#111..........~~.....',
+      '#111...........~.....',
       '#111.................',
-      '#111..........~~.....',
+      '#111...........~.....',
       '#111.#~~~.....~~.....',
       '#111.#.~~.....~~.....',
       '######.~~~~.~~~~~~~~~',
@@ -220,7 +223,7 @@ function build(id, def) {
     if (cell === '1' || cell === '2') spawns[cell === '1' ? 0 : 1].push({ x: (col + .5) * TILE, y: (row + .5) * TILE });
   }
   return Object.freeze({
-    id, name: def.name, theme: def.theme, description: def.description,
+    id, name: def.name, theme: def.theme, pit: PIT_KINDS[def.theme] || 'chasm', description: def.description,
     grid: Object.freeze(grid), cols, rows, width: cols * TILE, height: rows * TILE,
     spawns: Object.freeze(spawns.map(list => Object.freeze(list))),
     points: Object.freeze(def.points.map(point => Object.freeze({ id: point.id, x: point.col * TILE, y: point.row * TILE }))),
@@ -232,6 +235,7 @@ export const MAP_IDS = Object.freeze(Object.keys(MAPS));
 
 export const isWall = (map, col, row) => row < 0 || col < 0 || row >= map.rows || col >= map.cols || map.grid[row][col] === '#';
 export const wallAt = (map, x, y) => isWall(map, Math.floor(x / TILE), Math.floor(y / TILE));
-/** Chasms and pools stop feet but let shots and sight lines pass. */
+/** Chasms and pools stop feet but let shots and sight lines pass. Some shoes cross them:
+ * `walk` lists the pit kinds a knight can stand on (see PIT_KINDS). */
 export const isPit = (map, col, row) => map.grid[row]?.[col] === '~';
-export const isBlocked = (map, col, row) => isWall(map, col, row) || isPit(map, col, row);
+export const isBlocked = (map, col, row, walk = null) => isWall(map, col, row) || isPit(map, col, row) && !(walk && walk.includes(map.pit));

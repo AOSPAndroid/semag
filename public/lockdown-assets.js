@@ -114,6 +114,10 @@ const GEAR_LOOKS = Object.freeze({
     treads: 'heavy black rubber-soled work boots with thick treads',
     clogs: 'springy wooden clogs on coiled steel springs',
     sandals: 'simple leather sandals with straps and a little herb sprig tucked in',
+    striders: 'light reed-and-cork sandals with wide flat paddles under the soles, beaded with water drops',
+    magma: 'thick black obsidian-soled boots with glowing orange cracks',
+    hover: 'chunky silver boots with small glowing cyan thrusters under the soles (a soft glow below the feet)',
+    quicksilver: 'thin liquid-silver slippers with a mirror sheen and little speed streaks',
   },
 });
 const GEAR_PIECES = Object.freeze({ helmet: HELMETS, pants: PANTS, shoes: SHOES });
@@ -159,7 +163,10 @@ const effects = [
   asset('fx_guard', 64, 80, [32, 40], 'The shield every knight raises with right click: a translucent, faintly hexagonal energy dome around a standing knight, neutral white-blue (the game tints the rim by team and shows its health).', { group: 'effects' }),
   asset('fx_cloud_burn', 192, 192, [96, 96], 'Ember Haze cloud on the floor, seen from the ¾ camera: smouldering orange smoke with sparks. The game scales it to the cloud radius.', { group: 'effects' }),
   asset('fx_cloud_freeze', 192, 192, [96, 96], 'Frost Haze cloud on the floor: pale blue freezing mist with ice glints.', { group: 'effects' }),
-  ...['burn', 'poison', 'shock', 'freeze'].map(id => asset(`fx_status_${id}`, 12, 12, [6, 6], `Tiny status icon shown above a knight's head: ${id === 'burn' ? 'flame' : id === 'poison' ? 'green drop' : id === 'shock' ? 'lightning bolt' : 'snowflake'}.`, { group: 'effects' })),
+  ...['burn', 'poison', 'shock', 'freeze', 'chill', 'curse'].map(id => asset(`fx_status_${id}`, 12, 12, [6, 6], `Tiny status icon shown above a knight's head: ${({ burn: 'flame', poison: 'green drop', shock: 'lightning bolt', freeze: 'snowflake', chill: 'small light-blue frost crystal', curse: 'purple broken-chain skull' })[id]}.`, { group: 'effects' })),
+  asset('fx_cloud_poison', 192, 192, [96, 96], 'Venom Veil cloud on the floor: sickly green toxic fog with bubbles.', { group: 'effects' }),
+  asset('fx_cloud_shock', 192, 192, [96, 96], 'Storm Haze cloud on the floor: dark blue-grey storm fog with little lightning crackles.', { group: 'effects' }),
+  asset('fx_cloud_curse', 192, 192, [96, 96], 'Hex Haze cloud on the floor: swirling violet smoke with faint runes.', { group: 'effects' }),
 ];
 const pickups = [
   asset('pickup_heart', 32, 32, [16, 16], 'Heart dropped by a knocked-out knight; heals whoever grabs it. Bright red, chunky, readable at a glance. The game bobs it and adds the shadow.', { group: 'pickups' }),
