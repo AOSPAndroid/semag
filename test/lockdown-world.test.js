@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as E from '../public/lockdown-engine.js';
-import { levelAt, STAIRS, TILE } from '../public/lockdown-maps.js';
+import { levelAt, levelCell, STAIRS, TILE } from '../public/lockdown-maps.js';
 import { buildLockdownWorld, STOREY, VERTICAL } from '../public/lockdown-world-mesh.js';
 import { onMapSurface, surfaceSupportsBody } from '../public/lockdown-map-surfaces.js';
 import { groundToView, viewToGround, LOCKDOWN_YAW } from '../public/lockdown-camera.js';
@@ -81,4 +81,59 @@ test('rounded island edges stop bodies, bridge seams remain traversable and pit 
   assert.ok(cross.players[0].x > 1008, 'crossed from rounded A onto the bridge and B');
   const climb = arena(552, 360); walk(climb, { up: true }, 75);
   assert.equal(climb.players[0].z, 1, 'actual movement climbs the connected terrace stairs');
+});
+
+test('every stair flight has three lanes and knights can climb and descend off centre', () => {
+  for (const map of Object.values(E.MAPS)) {
+    const state = E.createState({ mapId: map.id, seed: 9 });
+    E.setConnected(state, 0, true, 'Ada'); E.startMatch(state, [0]); state.phase = 'fight';
+    for (const p of state.players) Object.assign(p, { alive: p.id === 0, bot: false, respawnTicks: 1e9 });
+    const p = state.players[0];
+    for (let r = 1; r < map.rows - 1; r++) for (let c = 1; c < map.cols - 1; c++) {
+      const arrow = levelCell(map, c, r); if (!STAIRS[arrow]) continue;
+      const [dx, dy] = STAIRS[arrow], px = dy ? 1 : 0, py = dx ? 1 : 0;
+      let width = 1;
+      for (const sign of [-1, 1]) for (let i = 1; levelCell(map, c + px * i * sign, r + py * i * sign) === arrow; i++) width++;
+      assert.ok(width >= 3, `${map.id} stair ${c},${r} has ${width} lanes`);
+      for (const direction of [1, -1]) for (const offset of [-7, 7]) {
+        const x = (c + .5) * TILE + px * offset, y = (r + .5) * TILE + py * offset;
+        const from = direction === 1 ? -2 : 1, to = direction === 1 ? 1 : -2;
+        Object.assign(p, { x: x + dx * from * TILE, y: y + dy * from * TILE, vx: 0, vy: 0, shieldTicks: 0 });
+        p.z = levelAt(map, p.x, p.y);
+        const targetX = x + dx * to * TILE, targetY = y + dy * to * TILE;
+        const input = { right: true, moveYaw: Math.atan2(dy * direction, dx * direction) };
+        let ticks = 0;
+        while ((targetX - p.x) * dx * direction + (targetY - p.y) * dy * direction > 0 && ticks++ < 140) walk(state, input, 1);
+        const label = `${map.id} stair ${c},${r} direction ${direction} offset ${offset}`;
+        assert.ok(ticks < 140, `${label}: blocked at ${p.x},${p.y}`);
+        assert.equal(p.z, direction === 1 ? 1 : 0, label);
+      }
+    }
+  }
+});
+
+test('Sky Bridges routes have room for two knights passing on separate lanes', () => {
+  const routes = [
+    [336, 120, 432, 120], [720, 120, 1296, 120], [336, 1080, 432, 1080],
+    [720, 1080, 1296, 1080], [552, 360, 552, 480], [1464, 720, 1464, 840],
+    [720, 600, 840, 600], [1176, 600, 1296, 600],
+  ];
+  for (const [ax, ay, bx, by] of routes) {
+    const state = arena(ax, ay), [a, b] = state.players;
+    const distance = Math.hypot(bx - ax, by - ay), dx = (bx - ax) / distance, dy = (by - ay) / distance;
+    Object.assign(a, { x: ax - dy * 34, y: ay + dx * 34 });
+    Object.assign(b, { alive: true, bot: false, x: bx + dy * 34, y: by - dx * 34, z: 0, vx: 0, vy: 0, shieldTicks: 0 });
+    let ticks = 0;
+    while ((a.x - ax) * dx + (a.y - ay) * dy < distance && ticks++ < 500) {
+      E.step(state, [
+        { ...E.emptyInput(), right: true, moveYaw: Math.atan2(dy, dx) },
+        { ...E.emptyInput(), right: true, moveYaw: Math.atan2(-dy, -dx) },
+      ]);
+      assert.ok(surfaceSupportsBody(E.MAPS.skyway, a.x, a.y, E.RULES.radius));
+      assert.ok(surfaceSupportsBody(E.MAPS.skyway, b.x, b.y, E.RULES.radius));
+      assert.ok(Math.hypot(a.x - b.x, a.y - b.y) >= E.RULES.radius * 2, 'passing lanes never overlap');
+    }
+    assert.ok(ticks < 500, `wide route ${ax},${ay} to ${bx},${by} is traversable`);
+    assert.ok((b.x - bx) * -dx + (b.y - by) * -dy > distance * .8, 'both knights cross');
+  }
 });

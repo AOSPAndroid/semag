@@ -4,6 +4,8 @@ Lockdown renders all eight arenas as real WebGL geometry with an oblique overhea
 
 Sky Bridges uses authored rounded islands and bridge polygons in `public/lockdown-map-surfaces.js`. The same polygon union defines visible ground and body collision. Internal joins have no curb across the route. The coarse grid remains for bot navigation, heights and spawn-room cover. Both teams retain mirrored routes to all three capture points, and specialized shoes retain their ability to cross pits.
 
+Stair flights are at least three tiles wide (144 world units), with a full-width upper landing and two tiles of clear approach below. Sky Bridges' main crossing, outer loops and island links are also 144 units wide. The labyrinth has spaced hedge islands and broad paths; the keep's moat entrances, foundry bridges and base approaches are wider. These changes use the same map data for rendering, collision and bot navigation; the knight's collision radius is unchanged.
+
 `public/lockdown-world-mesh.js` constructs the static world. `lockdown-world-view.js` uploads it once per map, with a three-map GPU cache and a bounded sprite atlas. `lockdown-voxel-renderer.js` presents animated knight/equipment sprites with depth testing, compact 3D capture monuments and the combat overlays. A faint local silhouette preserves visibility behind tall cover. The original layered character, weapon and equipment artwork is retained.
 
 `lockdown-camera.js` defines the common projection for the WebGL scene, labels, effects and mouse picking. Movement and dashes rotate through the inverse camera basis; the server validates the movement angle. The capture ring still represents the actual 132-unit radius, while the solid monument is 80 units across. The render target follows Semag's 2.2-million-pixel budget. Hardware context loss switches to the existing Canvas renderer and context restoration rebuilds the GPU resources.
@@ -29,7 +31,7 @@ node tools/lockdown-browser-smoke.mjs
 
 The scripts use an installed Chrome browser. The deterministic fixture renders all eight arenas, checks WebGL errors and tests context loss/restoration. The live smoke test starts matches through the actual lobby, uses keyboard/mouse movement and combat, and checks HUD bounds at 1280 x 820, 393 x 852 and 320 x 720. These are browser viewport checks, not tests on physical iPhones.
 
-The regression suite checks GPU/HUD/picking agreement at different elevations, screen-relative movement, bounded finite mesh geometry, all stair landings, rounded-edge collision, bridge traversal, pit shoes, bot connectivity, multiplayer input, sprite dimensions and alpha. Voxel and Shinobi renderer tests guard the shared mesh export.
+The regression suite checks GPU/HUD/picking agreement at different elevations, screen-relative movement, bounded finite mesh geometry, all stair landings, actual off-centre climbing and descending through every stair lane, two knights passing on Sky Bridges routes, rounded-edge collision, bridge traversal, pit shoes, bot connectivity, multiplayer input, sprite dimensions and alpha. Voxel and Shinobi renderer tests guard the shared mesh export.
 
 ![Rounded Sky Bridges islands, continuous bridges and connected terrace stairs](screenshots/lockdown/skyway-phone.png)
 

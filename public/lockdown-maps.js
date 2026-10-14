@@ -35,6 +35,38 @@ function heights(left, { raised = [], stairs = [], flip = true }) {
 
 const mirrorRow = row => row + [...row].reverse().map(cell => cell === '1' ? '2' : cell).join('');
 
+/** Keep stairs and their approaches wide enough for combat, including off-centre
+ * approaches from the oblique camera. Expand the authored centre into a 3-cell
+ * flight, a full-width upper landing and two cells of clear lower approach.
+ * Shift boundary flights inward instead of cutting their width at the outer wall. */
+function widenStairs(grid, levels) {
+  const rows = grid.length, cols = grid[0].length, flights = [];
+  for (let r = 1; r < rows - 1; r++) for (let c = 1; c < cols - 1; c++) {
+    const arrow = levels[r][c]; if (!Object.hasOwn(STAIRS, arrow)) continue;
+    const [dc, dr] = STAIRS[arrow], start = Math.max(1, Math.min((dc ? r : c) - 1, (dc ? rows : cols) - 4));
+    for (let i = 0; i < 3; i++) flights.push({ c: dc ? c : start + i, r: dc ? start + i : r, arrow, dc, dr });
+  }
+  const clear = (c, r, height) => {
+    if (c <= 0 || c >= cols - 1 || r <= 0 || r >= rows - 1) return;
+    if (!['1', '2'].includes(grid[r][c])) grid[r][c] = '.';
+    levels[r][c] = height;
+  };
+  for (const { c, r, dc, dr } of flights) {
+    clear(c + dc, r + dr, '1');
+    clear(c - dc, r - dr, '0');
+    clear(c - dc * 2, r - dr * 2, '0');
+  }
+  // Apply the actual flights last so adjacent approaches cannot erase a stair.
+  for (const { c, r, arrow } of flights) clear(c, r, arrow);
+}
+
+/** Deliberate openings in the original cover layout, mirrored for both teams.
+ * These are route widths, not a change to the knight's collision radius. */
+const ROUTE_OPENINGS = {
+  keep: [[15, 10, 17, 14]],
+  foundry: [[9, 2, 9, 4], [9, 20, 9, 22]],
+};
+
 /** Six arenas in the Spiral Knights Lockdown mould. Each team's base is a spawn room
  * against the far left or far right wall; A sits on the left half, B in the middle and
  * C mirrors A on the right. Authored as the left half and mirrored, so neither side
@@ -103,61 +135,61 @@ const MAP_DEFS = {
   maze: {
     name: 'Hedge Labyrinth',
     theme: 'maze',
-    description: 'Twisting hedge corridors with three clearings. Swords rule the corners; guns rarely get a long line. Raised watch rooms sit in the corners and a gallery runs over the north and south hedges.',
+    description: 'Broad winding paths around hedge islands connect three clearings. Spaced cover breaks up long firing lines without pinching the routes. Wide stairs lead to raised watch rooms and the north and south galleries.',
     left: [
       '#####################',
-      '#.....#.......#......',
-      '#.....#.###.#.#.####.',
-      '#.###.#.#...#........',
-      '#.#.....#.#####.###.#',
-      '#.#.###.#.....#...#..',
-      '#...#...#####.#.#.#..',
-      '###.#.#.......#.#....',
+      '#....................',
+      '#....................',
+      '#....................',
+      '#....................',
+      '#.......###..........',
+      '#..###..###...###....',
+      '#..###........###....',
       '######.........#.....',
-      '#111.#.#.......#.....',
-      '#111.#.#.......#.....',
+      '#111.#.........#.....',
+      '#111.#...............',
       '#111.................',
       '#111.................',
       '#111.................',
-      '#111.#.#.......#.....',
-      '#111.#.#.......#.....',
+      '#111.#...............',
+      '#111.#.........#.....',
       '######.........#.....',
-      '###.#.#.......#.#....',
-      '#...#...#####.#.#.#..',
-      '#.#.###.#.....#...#..',
-      '#.#.....#.#####.###.#',
-      '#.###.#.#...#........',
-      '#.....#.###.#.#.####.',
-      '#.....#.......#......',
+      '#..###........###....',
+      '#..###..###...###....',
+      '#.......###..........',
+      '#....................',
+      '#....................',
+      '#....................',
+      '#....................',
       '#####################',
     ],
     levels: heights([
       '#####################',
-      '#.....#.......#......',
-      '#.....#.###.#.#.####.',
-      '#.###.#.#...#........',
-      '#.#.....#.#####.###.#',
-      '#.#.###.#.....#...#..',
-      '#...#...#####.#.#.#..',
-      '###.#.#.......#.#....',
+      '#....................',
+      '#....................',
+      '#....................',
+      '#....................',
+      '#.......###..........',
+      '#..###..###...###....',
+      '#..###........###....',
       '######.........#.....',
-      '#111.#.#.......#.....',
-      '#111.#.#.......#.....',
+      '#111.#.........#.....',
+      '#111.#...............',
       '#111.................',
       '#111.................',
       '#111.................',
-      '#111.#.#.......#.....',
-      '#111.#.#.......#.....',
+      '#111.#...............',
+      '#111.#.........#.....',
       '######.........#.....',
-      '###.#.#.......#.#....',
-      '#...#...#####.#.#.#..',
-      '#.#.###.#.....#...#..',
-      '#.#.....#.#####.###.#',
-      '#.###.#.#...#........',
-      '#.....#.###.#.#.####.',
-      '#.....#.......#......',
+      '#..###........###....',
+      '#..###..###...###....',
+      '#.......###..........',
+      '#....................',
+      '#....................',
+      '#....................',
+      '#....................',
       '#####################',
-    ], { raised: [[1, 1, 5, 2], [15, 1, 20, 1]], stairs: [[1, 3, '^'], [5, 3, '^'], [15, 2, '^'], [20, 2, '^']] }),
+    ], { raised: [[1, 1, 6, 2], [14, 1, 20, 2]], stairs: [[3, 3, '^'], [17, 3, '^'], [20, 3, '^']] }),
     points: [{ id: 'A', col: 10.5, row: 12.5 }, { id: 'B', col: 21, row: 12.5 }, { id: 'C', col: 31.5, row: 12.5 }],
   },
   foundry: {
@@ -533,7 +565,18 @@ function build(id, def) {
     // becomes open sky around the new rounded perimeter.
     return cell === '#' && row > 0 && row < rows - 1 && col > 0 && col < cols - 1 ? '#' : cell === '1' || cell === '2' ? cell : '.';
   }).join(''));
-  if (surfaces) for (let r = 0; r < rows; r++) levels[r] = [...levels[r]].map((cell, c) => grid[r][c] === '~' ? '0' : cell).join('');
+  const cells = grid.map(row => [...row]), floors = levels.map(row => [...row]);
+  for (const [c0, r0, c1, r1] of ROUTE_OPENINGS[id] || []) for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
+    for (const cc of [c, cols - 1 - c]) { cells[r][cc] = '.'; floors[r][cc] = '0'; }
+  }
+  // The isolated posts outside the base doors left a one-cell squeeze against
+  // the spawn-room wall. Retain the room but open its external approach.
+  for (const r of [9, 10, rows - 11, rows - 10]) for (const c of [7, cols - 8]) {
+    if (cells[r][c] === '#') cells[r][c] = '.';
+  }
+  widenStairs(cells, floors);
+  grid = cells.map(row => row.join(''));
+  for (let r = 0; r < rows; r++) levels[r] = floors[r].map((cell, c) => grid[r][c] === '~' ? '0' : cell).join('');
   const spawns = [[], []];
   for (let row = 0; row < rows; row++) for (let col = 0; col < cols; col++) {
     const cell = grid[row][col];
