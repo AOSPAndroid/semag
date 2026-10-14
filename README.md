@@ -602,6 +602,8 @@ WebAssembly is supported by modern browsers, but this release keeps the simulati
 npm test
 ```
 
+Lockdown art kit: `tools/lockdown-art-kit/` holds everything needed to make the art in a separate repository (an `AGENTS.md` with the process and quality bar, the brief, the manifest, a checker for defects such as smeared rows, baked backgrounds, stray fragments, tile grids and slab stairs, and a review-sheet generator). Regenerate its manifest and brief with `node tools/lockdown-art-kit.mjs` after the art manifest changes.
+
 Lockdown art: `node tools/lockdown-art-index.mjs` checks every PNG in `public/art/lockdown/` against the manifest, writes the `index.json` the game loads from and refreshes the checklist in `ASSETS.md`.
 
 Run `python test/compact-play-browser-smoke.py http://127.0.0.1:3000` for native checks of the compact layouts, controls panels, readiness, pause, fullscreen and responsive play areas.

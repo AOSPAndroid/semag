@@ -1,0 +1,7427 @@
+[
+ {
+  "key": "tile_floor_castle",
+  "file": "tile_floor_castle.png",
+  "group": "tiles",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Seamless floor tile — old castle courtyard: worn flagstones, moss between the stones, grey ashlar walls with battlements. Must tile in all directions."
+ },
+ {
+  "key": "tile_floor_castle_alt",
+  "file": "tile_floor_castle_alt.png",
+  "group": "tiles",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Variant floor tile for castle (cracks, a drain, a plant or rubble) mixed in at random."
+ },
+ {
+  "key": "tile_wall_top_castle",
+  "file": "tile_wall_top_castle.png",
+  "group": "tiles",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Overhead cap material for substantial castle architecture — old castle courtyard: worn flagstones, moss between the stones, grey ashlar walls with battlements. The renderer raises the cap 72 px; neighbouring surfaces join seamlessly."
+ },
+ {
+  "key": "tile_wall_front_castle",
+  "file": "tile_wall_front_castle.png",
+  "group": "tiles",
+  "size": [
+   144,
+   72
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "South-facing castle architectural facade, three cells wide. Broad masonry or machinery, pale upper trim, warm dark sides, no end caps; the renderer samples consecutive thirds across the wall. Must tile horizontally."
+ },
+ {
+  "key": "tile_pit_castle",
+  "file": "tile_pit_castle.png",
+  "group": "tiles",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Pit tile ('~'): moat water, dark blue with ripples. Knights cannot walk on it but shots fly over it. Must tile in all directions; the game adds the edge lip."
+ },
+ {
+  "key": "tile_floor_maze",
+  "file": "tile_floor_maze.png",
+  "group": "tiles",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Seamless floor tile — hedge labyrinth: packed earth and gravel paths, walls of trimmed green hedge with leaves on top. Must tile in all directions."
+ },
+ {
+  "key": "tile_floor_maze_alt",
+  "file": "tile_floor_maze_alt.png",
+  "group": "tiles",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Variant floor tile for maze (cracks, a drain, a plant or rubble) mixed in at random."
+ },
+ {
+  "key": "tile_wall_top_maze",
+  "file": "tile_wall_top_maze.png",
+  "group": "tiles",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Overhead cap material for substantial maze architecture — hedge labyrinth: packed earth and gravel paths, walls of trimmed green hedge with leaves on top. The renderer raises the cap 72 px; neighbouring surfaces join seamlessly."
+ },
+ {
+  "key": "tile_wall_front_maze",
+  "file": "tile_wall_front_maze.png",
+  "group": "tiles",
+  "size": [
+   144,
+   72
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "South-facing maze architectural facade, three cells wide. Broad masonry or machinery, pale upper trim, warm dark sides, no end caps; the renderer samples consecutive thirds across the wall. Must tile horizontally."
+ },
+ {
+  "key": "tile_pit_maze",
+  "file": "tile_pit_maze.png",
+  "group": "tiles",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Pit tile ('~'): overgrown sinkhole, dark green. Knights cannot walk on it but shots fly over it. Must tile in all directions; the game adds the edge lip."
+ },
+ {
+  "key": "tile_floor_foundry",
+  "file": "tile_floor_foundry.png",
+  "group": "tiles",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Seamless floor tile — clockwork foundry: riveted iron floor plates, brass machinery walls with gears and pipes. Must tile in all directions."
+ },
+ {
+  "key": "tile_floor_foundry_alt",
+  "file": "tile_floor_foundry_alt.png",
+  "group": "tiles",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Variant floor tile for foundry (cracks, a drain, a plant or rubble) mixed in at random."
+ },
+ {
+  "key": "tile_wall_top_foundry",
+  "file": "tile_wall_top_foundry.png",
+  "group": "tiles",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Overhead cap material for substantial foundry architecture — clockwork foundry: riveted iron floor plates, brass machinery walls with gears and pipes. The renderer raises the cap 72 px; neighbouring surfaces join seamlessly."
+ },
+ {
+  "key": "tile_wall_front_foundry",
+  "file": "tile_wall_front_foundry.png",
+  "group": "tiles",
+  "size": [
+   144,
+   72
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "South-facing foundry architectural facade, three cells wide. Broad masonry or machinery, pale upper trim, warm dark sides, no end caps; the renderer samples consecutive thirds across the wall. Must tile horizontally."
+ },
+ {
+  "key": "tile_pit_foundry",
+  "file": "tile_pit_foundry.png",
+  "group": "tiles",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Pit tile ('~'): molten lava, glowing orange with a dark crust. Knights cannot walk on it but shots fly over it. Must tile in all directions; the game adds the edge lip."
+ },
+ {
+  "key": "tile_floor_ruins",
+  "file": "tile_floor_ruins.png",
+  "group": "tiles",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Seamless floor tile — sunken temple: pale sandstone with carved glyphs, weathered pillars and broken walls. Must tile in all directions."
+ },
+ {
+  "key": "tile_floor_ruins_alt",
+  "file": "tile_floor_ruins_alt.png",
+  "group": "tiles",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Variant floor tile for ruins (cracks, a drain, a plant or rubble) mixed in at random."
+ },
+ {
+  "key": "tile_wall_top_ruins",
+  "file": "tile_wall_top_ruins.png",
+  "group": "tiles",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Overhead cap material for substantial ruins architecture — sunken temple: pale sandstone with carved glyphs, weathered pillars and broken walls. The renderer raises the cap 72 px; neighbouring surfaces join seamlessly."
+ },
+ {
+  "key": "tile_wall_front_ruins",
+  "file": "tile_wall_front_ruins.png",
+  "group": "tiles",
+  "size": [
+   144,
+   72
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "South-facing ruins architectural facade, three cells wide. Broad masonry or machinery, pale upper trim, warm dark sides, no end caps; the renderer samples consecutive thirds across the wall. Must tile horizontally."
+ },
+ {
+  "key": "tile_pit_ruins",
+  "file": "tile_pit_ruins.png",
+  "group": "tiles",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Pit tile ('~'): clear flooded pool, teal water over sunken tiles. Knights cannot walk on it but shots fly over it. Must tile in all directions; the game adds the edge lip."
+ },
+ {
+  "key": "tile_floor_graveyard",
+  "file": "tile_floor_graveyard.png",
+  "group": "tiles",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Seamless floor tile — gloomy graveyard: dark soil and slate paths, mossy tombstones and crypt walls. Must tile in all directions."
+ },
+ {
+  "key": "tile_floor_graveyard_alt",
+  "file": "tile_floor_graveyard_alt.png",
+  "group": "tiles",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Variant floor tile for graveyard (cracks, a drain, a plant or rubble) mixed in at random."
+ },
+ {
+  "key": "tile_wall_top_graveyard",
+  "file": "tile_wall_top_graveyard.png",
+  "group": "tiles",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Overhead cap material for substantial graveyard architecture — gloomy graveyard: dark soil and slate paths, mossy tombstones and crypt walls. The renderer raises the cap 72 px; neighbouring surfaces join seamlessly."
+ },
+ {
+  "key": "tile_wall_front_graveyard",
+  "file": "tile_wall_front_graveyard.png",
+  "group": "tiles",
+  "size": [
+   144,
+   72
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "South-facing graveyard architectural facade, three cells wide. Broad masonry or machinery, pale upper trim, warm dark sides, no end caps; the renderer samples consecutive thirds across the wall. Must tile horizontally."
+ },
+ {
+  "key": "tile_pit_graveyard",
+  "file": "tile_pit_graveyard.png",
+  "group": "tiles",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Pit tile ('~'): open crevice into darkness. Knights cannot walk on it but shots fly over it. Must tile in all directions; the game adds the edge lip."
+ },
+ {
+  "key": "tile_floor_skyway",
+  "file": "tile_floor_skyway.png",
+  "group": "tiles",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Seamless floor tile — floating sky platforms: polished stone panels with gold trim, low balustrade walls. Must tile in all directions."
+ },
+ {
+  "key": "tile_floor_skyway_alt",
+  "file": "tile_floor_skyway_alt.png",
+  "group": "tiles",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Variant floor tile for skyway (cracks, a drain, a plant or rubble) mixed in at random."
+ },
+ {
+  "key": "tile_wall_top_skyway",
+  "file": "tile_wall_top_skyway.png",
+  "group": "tiles",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Overhead cap material for substantial skyway architecture — floating sky platforms: polished stone panels with gold trim, low balustrade walls. The renderer raises the cap 72 px; neighbouring surfaces join seamlessly."
+ },
+ {
+  "key": "tile_wall_front_skyway",
+  "file": "tile_wall_front_skyway.png",
+  "group": "tiles",
+  "size": [
+   144,
+   72
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "South-facing skyway architectural facade, three cells wide. Broad masonry or machinery, pale upper trim, warm dark sides, no end caps; the renderer samples consecutive thirds across the wall. Must tile horizontally."
+ },
+ {
+  "key": "tile_pit_skyway",
+  "file": "tile_pit_skyway.png",
+  "group": "tiles",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Pit tile ('~'): open sky far below, soft clouds. Knights cannot walk on it but shots fly over it. Must tile in all directions; the game adds the edge lip."
+ },
+ {
+  "key": "tile_ledge_castle",
+  "file": "tile_ledge_castle.png",
+  "group": "tiles",
+  "size": [
+   48,
+   24
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Ledge face under the raised floor of a two-floor castle map — old castle courtyard: worn flagstones, moss between the stones, grey ashlar walls with battlements: the 24 px drop from the upper floor to the lower one, seen from the front. Lit top edge, darker toward the bottom; must tile horizontally. Lighter and less blocky than a wall front, so it reads as a step down, not a wall."
+ },
+ {
+  "key": "tile_stairs_castle_up",
+  "file": "tile_stairs_castle_up.png",
+  "group": "tiles",
+  "size": [
+   48,
+   60
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Stone stairs between the two floors of a castle map, climbing away from the camera (north): steps rise up the screen, from the lower floor at the bottom edge to the upper floor 24 px higher at the top, drawn as seen by the tilted camera (not flat: the game does not squash it). 48 px wide; 60 px tall = 36 px of foreshortened tile depth plus 24 px of storey height. Same materials as the castle floor and ledge."
+ },
+ {
+  "key": "tile_stairs_castle_down",
+  "file": "tile_stairs_castle_down.png",
+  "group": "tiles",
+  "size": [
+   48,
+   60
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Stone stairs between the two floors of a castle map, climbing toward the camera (south): the lower floor is at the top edge and the treads rise toward the viewer, so only foreshortened treads show, drawn as seen by the tilted camera (not flat: the game does not squash it). 48 px wide; 60 px tall = 36 px of foreshortened tile depth plus 24 px of storey height. Same materials as the castle floor and ledge."
+ },
+ {
+  "key": "tile_stairs_castle_left",
+  "file": "tile_stairs_castle_left.png",
+  "group": "tiles",
+  "size": [
+   48,
+   60
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Stone stairs between the two floors of a castle map, climbing to the left (west): treads rise from right to left with the stepped side face visible below them, drawn as seen by the tilted camera (not flat: the game does not squash it). 48 px wide; 60 px tall = 36 px of foreshortened tile depth plus 24 px of storey height. Same materials as the castle floor and ledge."
+ },
+ {
+  "key": "tile_stairs_castle_right",
+  "file": "tile_stairs_castle_right.png",
+  "group": "tiles",
+  "size": [
+   48,
+   60
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Stone stairs between the two floors of a castle map, climbing to the right (east): treads rise from left to right with the stepped side face visible below them, drawn as seen by the tilted camera (not flat: the game does not squash it). 48 px wide; 60 px tall = 36 px of foreshortened tile depth plus 24 px of storey height. Same materials as the castle floor and ledge."
+ },
+ {
+  "key": "tile_ledge_maze",
+  "file": "tile_ledge_maze.png",
+  "group": "tiles",
+  "size": [
+   48,
+   24
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Ledge face under the raised floor of a two-floor maze map — hedge labyrinth: packed earth and gravel paths, walls of trimmed green hedge with leaves on top: the 24 px drop from the upper floor to the lower one, seen from the front. Lit top edge, darker toward the bottom; must tile horizontally. Lighter and less blocky than a wall front, so it reads as a step down, not a wall."
+ },
+ {
+  "key": "tile_stairs_maze_up",
+  "file": "tile_stairs_maze_up.png",
+  "group": "tiles",
+  "size": [
+   48,
+   60
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Stone stairs between the two floors of a maze map, climbing away from the camera (north): steps rise up the screen, from the lower floor at the bottom edge to the upper floor 24 px higher at the top, drawn as seen by the tilted camera (not flat: the game does not squash it). 48 px wide; 60 px tall = 36 px of foreshortened tile depth plus 24 px of storey height. Same materials as the maze floor and ledge."
+ },
+ {
+  "key": "tile_stairs_maze_down",
+  "file": "tile_stairs_maze_down.png",
+  "group": "tiles",
+  "size": [
+   48,
+   60
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Stone stairs between the two floors of a maze map, climbing toward the camera (south): the lower floor is at the top edge and the treads rise toward the viewer, so only foreshortened treads show, drawn as seen by the tilted camera (not flat: the game does not squash it). 48 px wide; 60 px tall = 36 px of foreshortened tile depth plus 24 px of storey height. Same materials as the maze floor and ledge."
+ },
+ {
+  "key": "tile_stairs_maze_left",
+  "file": "tile_stairs_maze_left.png",
+  "group": "tiles",
+  "size": [
+   48,
+   60
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Stone stairs between the two floors of a maze map, climbing to the left (west): treads rise from right to left with the stepped side face visible below them, drawn as seen by the tilted camera (not flat: the game does not squash it). 48 px wide; 60 px tall = 36 px of foreshortened tile depth plus 24 px of storey height. Same materials as the maze floor and ledge."
+ },
+ {
+  "key": "tile_stairs_maze_right",
+  "file": "tile_stairs_maze_right.png",
+  "group": "tiles",
+  "size": [
+   48,
+   60
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Stone stairs between the two floors of a maze map, climbing to the right (east): treads rise from left to right with the stepped side face visible below them, drawn as seen by the tilted camera (not flat: the game does not squash it). 48 px wide; 60 px tall = 36 px of foreshortened tile depth plus 24 px of storey height. Same materials as the maze floor and ledge."
+ },
+ {
+  "key": "tile_ledge_foundry",
+  "file": "tile_ledge_foundry.png",
+  "group": "tiles",
+  "size": [
+   48,
+   24
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Ledge face under the raised floor of a two-floor foundry map — clockwork foundry: riveted iron floor plates, brass machinery walls with gears and pipes: the 24 px drop from the upper floor to the lower one, seen from the front. Lit top edge, darker toward the bottom; must tile horizontally. Lighter and less blocky than a wall front, so it reads as a step down, not a wall."
+ },
+ {
+  "key": "tile_stairs_foundry_up",
+  "file": "tile_stairs_foundry_up.png",
+  "group": "tiles",
+  "size": [
+   48,
+   60
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Stone stairs between the two floors of a foundry map, climbing away from the camera (north): steps rise up the screen, from the lower floor at the bottom edge to the upper floor 24 px higher at the top, drawn as seen by the tilted camera (not flat: the game does not squash it). 48 px wide; 60 px tall = 36 px of foreshortened tile depth plus 24 px of storey height. Same materials as the foundry floor and ledge."
+ },
+ {
+  "key": "tile_stairs_foundry_down",
+  "file": "tile_stairs_foundry_down.png",
+  "group": "tiles",
+  "size": [
+   48,
+   60
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Stone stairs between the two floors of a foundry map, climbing toward the camera (south): the lower floor is at the top edge and the treads rise toward the viewer, so only foreshortened treads show, drawn as seen by the tilted camera (not flat: the game does not squash it). 48 px wide; 60 px tall = 36 px of foreshortened tile depth plus 24 px of storey height. Same materials as the foundry floor and ledge."
+ },
+ {
+  "key": "tile_stairs_foundry_left",
+  "file": "tile_stairs_foundry_left.png",
+  "group": "tiles",
+  "size": [
+   48,
+   60
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Stone stairs between the two floors of a foundry map, climbing to the left (west): treads rise from right to left with the stepped side face visible below them, drawn as seen by the tilted camera (not flat: the game does not squash it). 48 px wide; 60 px tall = 36 px of foreshortened tile depth plus 24 px of storey height. Same materials as the foundry floor and ledge."
+ },
+ {
+  "key": "tile_stairs_foundry_right",
+  "file": "tile_stairs_foundry_right.png",
+  "group": "tiles",
+  "size": [
+   48,
+   60
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Stone stairs between the two floors of a foundry map, climbing to the right (east): treads rise from left to right with the stepped side face visible below them, drawn as seen by the tilted camera (not flat: the game does not squash it). 48 px wide; 60 px tall = 36 px of foreshortened tile depth plus 24 px of storey height. Same materials as the foundry floor and ledge."
+ },
+ {
+  "key": "tile_ledge_ruins",
+  "file": "tile_ledge_ruins.png",
+  "group": "tiles",
+  "size": [
+   48,
+   24
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Ledge face under the raised floor of a two-floor ruins map — sunken temple: pale sandstone with carved glyphs, weathered pillars and broken walls: the 24 px drop from the upper floor to the lower one, seen from the front. Lit top edge, darker toward the bottom; must tile horizontally. Lighter and less blocky than a wall front, so it reads as a step down, not a wall."
+ },
+ {
+  "key": "tile_stairs_ruins_up",
+  "file": "tile_stairs_ruins_up.png",
+  "group": "tiles",
+  "size": [
+   48,
+   60
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Stone stairs between the two floors of a ruins map, climbing away from the camera (north): steps rise up the screen, from the lower floor at the bottom edge to the upper floor 24 px higher at the top, drawn as seen by the tilted camera (not flat: the game does not squash it). 48 px wide; 60 px tall = 36 px of foreshortened tile depth plus 24 px of storey height. Same materials as the ruins floor and ledge."
+ },
+ {
+  "key": "tile_stairs_ruins_down",
+  "file": "tile_stairs_ruins_down.png",
+  "group": "tiles",
+  "size": [
+   48,
+   60
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Stone stairs between the two floors of a ruins map, climbing toward the camera (south): the lower floor is at the top edge and the treads rise toward the viewer, so only foreshortened treads show, drawn as seen by the tilted camera (not flat: the game does not squash it). 48 px wide; 60 px tall = 36 px of foreshortened tile depth plus 24 px of storey height. Same materials as the ruins floor and ledge."
+ },
+ {
+  "key": "tile_stairs_ruins_left",
+  "file": "tile_stairs_ruins_left.png",
+  "group": "tiles",
+  "size": [
+   48,
+   60
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Stone stairs between the two floors of a ruins map, climbing to the left (west): treads rise from right to left with the stepped side face visible below them, drawn as seen by the tilted camera (not flat: the game does not squash it). 48 px wide; 60 px tall = 36 px of foreshortened tile depth plus 24 px of storey height. Same materials as the ruins floor and ledge."
+ },
+ {
+  "key": "tile_stairs_ruins_right",
+  "file": "tile_stairs_ruins_right.png",
+  "group": "tiles",
+  "size": [
+   48,
+   60
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Stone stairs between the two floors of a ruins map, climbing to the right (east): treads rise from left to right with the stepped side face visible below them, drawn as seen by the tilted camera (not flat: the game does not squash it). 48 px wide; 60 px tall = 36 px of foreshortened tile depth plus 24 px of storey height. Same materials as the ruins floor and ledge."
+ },
+ {
+  "key": "tile_ledge_graveyard",
+  "file": "tile_ledge_graveyard.png",
+  "group": "tiles",
+  "size": [
+   48,
+   24
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Ledge face under the raised floor of a two-floor graveyard map — gloomy graveyard: dark soil and slate paths, mossy tombstones and crypt walls: the 24 px drop from the upper floor to the lower one, seen from the front. Lit top edge, darker toward the bottom; must tile horizontally. Lighter and less blocky than a wall front, so it reads as a step down, not a wall."
+ },
+ {
+  "key": "tile_stairs_graveyard_up",
+  "file": "tile_stairs_graveyard_up.png",
+  "group": "tiles",
+  "size": [
+   48,
+   60
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Stone stairs between the two floors of a graveyard map, climbing away from the camera (north): steps rise up the screen, from the lower floor at the bottom edge to the upper floor 24 px higher at the top, drawn as seen by the tilted camera (not flat: the game does not squash it). 48 px wide; 60 px tall = 36 px of foreshortened tile depth plus 24 px of storey height. Same materials as the graveyard floor and ledge."
+ },
+ {
+  "key": "tile_stairs_graveyard_down",
+  "file": "tile_stairs_graveyard_down.png",
+  "group": "tiles",
+  "size": [
+   48,
+   60
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Stone stairs between the two floors of a graveyard map, climbing toward the camera (south): the lower floor is at the top edge and the treads rise toward the viewer, so only foreshortened treads show, drawn as seen by the tilted camera (not flat: the game does not squash it). 48 px wide; 60 px tall = 36 px of foreshortened tile depth plus 24 px of storey height. Same materials as the graveyard floor and ledge."
+ },
+ {
+  "key": "tile_stairs_graveyard_left",
+  "file": "tile_stairs_graveyard_left.png",
+  "group": "tiles",
+  "size": [
+   48,
+   60
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Stone stairs between the two floors of a graveyard map, climbing to the left (west): treads rise from right to left with the stepped side face visible below them, drawn as seen by the tilted camera (not flat: the game does not squash it). 48 px wide; 60 px tall = 36 px of foreshortened tile depth plus 24 px of storey height. Same materials as the graveyard floor and ledge."
+ },
+ {
+  "key": "tile_stairs_graveyard_right",
+  "file": "tile_stairs_graveyard_right.png",
+  "group": "tiles",
+  "size": [
+   48,
+   60
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Stone stairs between the two floors of a graveyard map, climbing to the right (east): treads rise from left to right with the stepped side face visible below them, drawn as seen by the tilted camera (not flat: the game does not squash it). 48 px wide; 60 px tall = 36 px of foreshortened tile depth plus 24 px of storey height. Same materials as the graveyard floor and ledge."
+ },
+ {
+  "key": "tile_ledge_skyway",
+  "file": "tile_ledge_skyway.png",
+  "group": "tiles",
+  "size": [
+   48,
+   24
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Ledge face under the raised floor of a two-floor skyway map — floating sky platforms: polished stone panels with gold trim, low balustrade walls: the 24 px drop from the upper floor to the lower one, seen from the front. Lit top edge, darker toward the bottom; must tile horizontally. Lighter and less blocky than a wall front, so it reads as a step down, not a wall."
+ },
+ {
+  "key": "tile_stairs_skyway_up",
+  "file": "tile_stairs_skyway_up.png",
+  "group": "tiles",
+  "size": [
+   48,
+   60
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Stone stairs between the two floors of a skyway map, climbing away from the camera (north): steps rise up the screen, from the lower floor at the bottom edge to the upper floor 24 px higher at the top, drawn as seen by the tilted camera (not flat: the game does not squash it). 48 px wide; 60 px tall = 36 px of foreshortened tile depth plus 24 px of storey height. Same materials as the skyway floor and ledge."
+ },
+ {
+  "key": "tile_stairs_skyway_down",
+  "file": "tile_stairs_skyway_down.png",
+  "group": "tiles",
+  "size": [
+   48,
+   60
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Stone stairs between the two floors of a skyway map, climbing toward the camera (south): the lower floor is at the top edge and the treads rise toward the viewer, so only foreshortened treads show, drawn as seen by the tilted camera (not flat: the game does not squash it). 48 px wide; 60 px tall = 36 px of foreshortened tile depth plus 24 px of storey height. Same materials as the skyway floor and ledge."
+ },
+ {
+  "key": "tile_stairs_skyway_left",
+  "file": "tile_stairs_skyway_left.png",
+  "group": "tiles",
+  "size": [
+   48,
+   60
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Stone stairs between the two floors of a skyway map, climbing to the left (west): treads rise from right to left with the stepped side face visible below them, drawn as seen by the tilted camera (not flat: the game does not squash it). 48 px wide; 60 px tall = 36 px of foreshortened tile depth plus 24 px of storey height. Same materials as the skyway floor and ledge."
+ },
+ {
+  "key": "tile_stairs_skyway_right",
+  "file": "tile_stairs_skyway_right.png",
+  "group": "tiles",
+  "size": [
+   48,
+   60
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Stone stairs between the two floors of a skyway map, climbing to the right (east): treads rise from left to right with the stepped side face visible below them, drawn as seen by the tilted camera (not flat: the game does not squash it). 48 px wide; 60 px tall = 36 px of foreshortened tile depth plus 24 px of storey height. Same materials as the skyway floor and ledge."
+ },
+ {
+  "key": "tile_spawn_team0",
+  "file": "tile_spawn_team0.png",
+  "group": "tiles",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Spawn floor tile tinted for team Amber (warm orange)."
+ },
+ {
+  "key": "tile_spawn_team1",
+  "file": "tile_spawn_team1.png",
+  "group": "tiles",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Spawn floor tile tinted for team Cyan (cool teal)."
+ },
+ {
+  "key": "base_heal_station",
+  "file": "base_heal_station.png",
+  "group": "environment",
+  "size": [
+   48,
+   64
+  ],
+  "anchor": [
+   24,
+   56
+  ],
+  "frames": 1,
+  "description": "A rounded red heart hovering above an ivory-and-bronze healing socket, with a gentle green underglow. Upright art; three stations mark each existing healing base."
+ },
+ {
+  "key": "terrain_ground_castle",
+  "file": "terrain_ground_castle.png",
+  "group": "environment",
+  "size": [
+   192,
+   192
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Continuous quiet overhead castle ground painting over a four-by-four-cell court. Broad pavers or grass match approved concept A; no camera perspective or standing objects. Seamless at the outer edges."
+ },
+ {
+  "key": "terrain_pit_castle",
+  "file": "terrain_pit_castle.png",
+  "group": "environment",
+  "size": [
+   144,
+   144
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Continuous overhead castle pit painting across three cells, with broad water, lava, cloud or crevice forms. No shore or camera perspective baked in. Seamless at the outer edges."
+ },
+ {
+  "key": "tile_bank_front_castle",
+  "file": "tile_bank_front_castle.png",
+  "group": "environment",
+  "size": [
+   96,
+   40
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Upright cut bank below the castle walking surface, two cells wide: a lit upper lip, darker descending stone, earth or metal, and restrained hanging roots. Tiles horizontally; the renderer fits the drop to the pit width."
+ },
+ {
+  "key": "prop_border_castle",
+  "file": "prop_border_castle.png",
+  "group": "environment",
+  "size": [
+   128,
+   96
+  ],
+  "anchor": [
+   64,
+   88
+  ],
+  "frames": 1,
+  "description": "Generous rounded castle border clump: foliage, moss, rocks or clockwork pipes. Upright, neutral materials, transparent background. Large readable masses dress the wall foot while leaving the fighting court clear."
+ },
+ {
+  "key": "prop_column_castle",
+  "file": "prop_column_castle.png",
+  "group": "environment",
+  "size": [
+   64,
+   128
+  ],
+  "anchor": [
+   32,
+   120
+  ],
+  "frames": 1,
+  "description": "Stout castle architectural pillar, softly bevelled, with a rounded neutral bronze or stone cap and a small warm-neutral lantern. Upright, feet at the bottom anchor; no floor or cast shadow."
+ },
+ {
+  "key": "prop_vines_castle",
+  "file": "prop_vines_castle.png",
+  "group": "environment",
+  "size": [
+   96,
+   96
+  ],
+  "anchor": [
+   48,
+   8
+  ],
+  "frames": 1,
+  "description": "Asymmetric castle wall dressing: a broad upper spray and descending ivy, roots or restrained pipe fittings. Transparent around the silhouette. The anchor hangs over the wall cap."
+ },
+ {
+  "key": "terrain_ground_maze",
+  "file": "terrain_ground_maze.png",
+  "group": "environment",
+  "size": [
+   192,
+   192
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Continuous quiet overhead maze ground painting over a four-by-four-cell court. Broad pavers or grass match approved concept A; no camera perspective or standing objects. Seamless at the outer edges."
+ },
+ {
+  "key": "terrain_pit_maze",
+  "file": "terrain_pit_maze.png",
+  "group": "environment",
+  "size": [
+   144,
+   144
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Continuous overhead maze pit painting across three cells, with broad water, lava, cloud or crevice forms. No shore or camera perspective baked in. Seamless at the outer edges."
+ },
+ {
+  "key": "tile_bank_front_maze",
+  "file": "tile_bank_front_maze.png",
+  "group": "environment",
+  "size": [
+   96,
+   40
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Upright cut bank below the maze walking surface, two cells wide: a lit upper lip, darker descending stone, earth or metal, and restrained hanging roots. Tiles horizontally; the renderer fits the drop to the pit width."
+ },
+ {
+  "key": "prop_border_maze",
+  "file": "prop_border_maze.png",
+  "group": "environment",
+  "size": [
+   128,
+   96
+  ],
+  "anchor": [
+   64,
+   88
+  ],
+  "frames": 1,
+  "description": "Generous rounded maze border clump: foliage, moss, rocks or clockwork pipes. Upright, neutral materials, transparent background. Large readable masses dress the wall foot while leaving the fighting court clear."
+ },
+ {
+  "key": "prop_column_maze",
+  "file": "prop_column_maze.png",
+  "group": "environment",
+  "size": [
+   64,
+   128
+  ],
+  "anchor": [
+   32,
+   120
+  ],
+  "frames": 1,
+  "description": "Stout maze architectural pillar, softly bevelled, with a rounded neutral bronze or stone cap and a small warm-neutral lantern. Upright, feet at the bottom anchor; no floor or cast shadow."
+ },
+ {
+  "key": "prop_vines_maze",
+  "file": "prop_vines_maze.png",
+  "group": "environment",
+  "size": [
+   96,
+   96
+  ],
+  "anchor": [
+   48,
+   8
+  ],
+  "frames": 1,
+  "description": "Asymmetric maze wall dressing: a broad upper spray and descending ivy, roots or restrained pipe fittings. Transparent around the silhouette. The anchor hangs over the wall cap."
+ },
+ {
+  "key": "terrain_ground_foundry",
+  "file": "terrain_ground_foundry.png",
+  "group": "environment",
+  "size": [
+   192,
+   192
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Continuous quiet overhead foundry ground painting over a four-by-four-cell court. Broad pavers or grass match approved concept A; no camera perspective or standing objects. Seamless at the outer edges."
+ },
+ {
+  "key": "terrain_pit_foundry",
+  "file": "terrain_pit_foundry.png",
+  "group": "environment",
+  "size": [
+   144,
+   144
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Continuous overhead foundry pit painting across three cells, with broad water, lava, cloud or crevice forms. No shore or camera perspective baked in. Seamless at the outer edges."
+ },
+ {
+  "key": "tile_bank_front_foundry",
+  "file": "tile_bank_front_foundry.png",
+  "group": "environment",
+  "size": [
+   96,
+   40
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Upright cut bank below the foundry walking surface, two cells wide: a lit upper lip, darker descending stone, earth or metal, and restrained hanging roots. Tiles horizontally; the renderer fits the drop to the pit width."
+ },
+ {
+  "key": "prop_border_foundry",
+  "file": "prop_border_foundry.png",
+  "group": "environment",
+  "size": [
+   128,
+   96
+  ],
+  "anchor": [
+   64,
+   88
+  ],
+  "frames": 1,
+  "description": "Generous rounded foundry border clump: foliage, moss, rocks or clockwork pipes. Upright, neutral materials, transparent background. Large readable masses dress the wall foot while leaving the fighting court clear."
+ },
+ {
+  "key": "prop_column_foundry",
+  "file": "prop_column_foundry.png",
+  "group": "environment",
+  "size": [
+   64,
+   128
+  ],
+  "anchor": [
+   32,
+   120
+  ],
+  "frames": 1,
+  "description": "Stout foundry architectural pillar, softly bevelled, with a rounded neutral bronze or stone cap and a small warm-neutral lantern. Upright, feet at the bottom anchor; no floor or cast shadow."
+ },
+ {
+  "key": "prop_vines_foundry",
+  "file": "prop_vines_foundry.png",
+  "group": "environment",
+  "size": [
+   96,
+   96
+  ],
+  "anchor": [
+   48,
+   8
+  ],
+  "frames": 1,
+  "description": "Asymmetric foundry wall dressing: a broad upper spray and descending ivy, roots or restrained pipe fittings. Transparent around the silhouette. The anchor hangs over the wall cap."
+ },
+ {
+  "key": "terrain_ground_ruins",
+  "file": "terrain_ground_ruins.png",
+  "group": "environment",
+  "size": [
+   192,
+   192
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Continuous quiet overhead ruins ground painting over a four-by-four-cell court. Broad pavers or grass match approved concept A; no camera perspective or standing objects. Seamless at the outer edges."
+ },
+ {
+  "key": "terrain_pit_ruins",
+  "file": "terrain_pit_ruins.png",
+  "group": "environment",
+  "size": [
+   144,
+   144
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Continuous overhead ruins pit painting across three cells, with broad water, lava, cloud or crevice forms. No shore or camera perspective baked in. Seamless at the outer edges."
+ },
+ {
+  "key": "tile_bank_front_ruins",
+  "file": "tile_bank_front_ruins.png",
+  "group": "environment",
+  "size": [
+   96,
+   40
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Upright cut bank below the ruins walking surface, two cells wide: a lit upper lip, darker descending stone, earth or metal, and restrained hanging roots. Tiles horizontally; the renderer fits the drop to the pit width."
+ },
+ {
+  "key": "prop_border_ruins",
+  "file": "prop_border_ruins.png",
+  "group": "environment",
+  "size": [
+   128,
+   96
+  ],
+  "anchor": [
+   64,
+   88
+  ],
+  "frames": 1,
+  "description": "Generous rounded ruins border clump: foliage, moss, rocks or clockwork pipes. Upright, neutral materials, transparent background. Large readable masses dress the wall foot while leaving the fighting court clear."
+ },
+ {
+  "key": "prop_column_ruins",
+  "file": "prop_column_ruins.png",
+  "group": "environment",
+  "size": [
+   64,
+   128
+  ],
+  "anchor": [
+   32,
+   120
+  ],
+  "frames": 1,
+  "description": "Stout ruins architectural pillar, softly bevelled, with a rounded neutral bronze or stone cap and a small warm-neutral lantern. Upright, feet at the bottom anchor; no floor or cast shadow."
+ },
+ {
+  "key": "prop_vines_ruins",
+  "file": "prop_vines_ruins.png",
+  "group": "environment",
+  "size": [
+   96,
+   96
+  ],
+  "anchor": [
+   48,
+   8
+  ],
+  "frames": 1,
+  "description": "Asymmetric ruins wall dressing: a broad upper spray and descending ivy, roots or restrained pipe fittings. Transparent around the silhouette. The anchor hangs over the wall cap."
+ },
+ {
+  "key": "terrain_ground_graveyard",
+  "file": "terrain_ground_graveyard.png",
+  "group": "environment",
+  "size": [
+   192,
+   192
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Continuous quiet overhead graveyard ground painting over a four-by-four-cell court. Broad pavers or grass match approved concept A; no camera perspective or standing objects. Seamless at the outer edges."
+ },
+ {
+  "key": "terrain_pit_graveyard",
+  "file": "terrain_pit_graveyard.png",
+  "group": "environment",
+  "size": [
+   144,
+   144
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Continuous overhead graveyard pit painting across three cells, with broad water, lava, cloud or crevice forms. No shore or camera perspective baked in. Seamless at the outer edges."
+ },
+ {
+  "key": "tile_bank_front_graveyard",
+  "file": "tile_bank_front_graveyard.png",
+  "group": "environment",
+  "size": [
+   96,
+   40
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Upright cut bank below the graveyard walking surface, two cells wide: a lit upper lip, darker descending stone, earth or metal, and restrained hanging roots. Tiles horizontally; the renderer fits the drop to the pit width."
+ },
+ {
+  "key": "prop_border_graveyard",
+  "file": "prop_border_graveyard.png",
+  "group": "environment",
+  "size": [
+   128,
+   96
+  ],
+  "anchor": [
+   64,
+   88
+  ],
+  "frames": 1,
+  "description": "Generous rounded graveyard border clump: foliage, moss, rocks or clockwork pipes. Upright, neutral materials, transparent background. Large readable masses dress the wall foot while leaving the fighting court clear."
+ },
+ {
+  "key": "prop_column_graveyard",
+  "file": "prop_column_graveyard.png",
+  "group": "environment",
+  "size": [
+   64,
+   128
+  ],
+  "anchor": [
+   32,
+   120
+  ],
+  "frames": 1,
+  "description": "Stout graveyard architectural pillar, softly bevelled, with a rounded neutral bronze or stone cap and a small warm-neutral lantern. Upright, feet at the bottom anchor; no floor or cast shadow."
+ },
+ {
+  "key": "prop_vines_graveyard",
+  "file": "prop_vines_graveyard.png",
+  "group": "environment",
+  "size": [
+   96,
+   96
+  ],
+  "anchor": [
+   48,
+   8
+  ],
+  "frames": 1,
+  "description": "Asymmetric graveyard wall dressing: a broad upper spray and descending ivy, roots or restrained pipe fittings. Transparent around the silhouette. The anchor hangs over the wall cap."
+ },
+ {
+  "key": "terrain_ground_skyway",
+  "file": "terrain_ground_skyway.png",
+  "group": "environment",
+  "size": [
+   192,
+   192
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Continuous quiet overhead skyway ground painting over a four-by-four-cell court. Broad pavers or grass match approved concept A; no camera perspective or standing objects. Seamless at the outer edges."
+ },
+ {
+  "key": "terrain_pit_skyway",
+  "file": "terrain_pit_skyway.png",
+  "group": "environment",
+  "size": [
+   144,
+   144
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Continuous overhead skyway pit painting across three cells, with broad water, lava, cloud or crevice forms. No shore or camera perspective baked in. Seamless at the outer edges."
+ },
+ {
+  "key": "tile_bank_front_skyway",
+  "file": "tile_bank_front_skyway.png",
+  "group": "environment",
+  "size": [
+   96,
+   40
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Upright cut bank below the skyway walking surface, two cells wide: a lit upper lip, darker descending stone, earth or metal, and restrained hanging roots. Tiles horizontally; the renderer fits the drop to the pit width."
+ },
+ {
+  "key": "prop_border_skyway",
+  "file": "prop_border_skyway.png",
+  "group": "environment",
+  "size": [
+   128,
+   96
+  ],
+  "anchor": [
+   64,
+   88
+  ],
+  "frames": 1,
+  "description": "Generous rounded skyway border clump: foliage, moss, rocks or clockwork pipes. Upright, neutral materials, transparent background. Large readable masses dress the wall foot while leaving the fighting court clear."
+ },
+ {
+  "key": "prop_column_skyway",
+  "file": "prop_column_skyway.png",
+  "group": "environment",
+  "size": [
+   64,
+   128
+  ],
+  "anchor": [
+   32,
+   120
+  ],
+  "frames": 1,
+  "description": "Stout skyway architectural pillar, softly bevelled, with a rounded neutral bronze or stone cap and a small warm-neutral lantern. Upright, feet at the bottom anchor; no floor or cast shadow."
+ },
+ {
+  "key": "prop_vines_skyway",
+  "file": "prop_vines_skyway.png",
+  "group": "environment",
+  "size": [
+   96,
+   96
+  ],
+  "anchor": [
+   48,
+   8
+  ],
+  "frames": 1,
+  "description": "Asymmetric skyway wall dressing: a broad upper spray and descending ivy, roots or restrained pipe fittings. Transparent around the silhouette. The anchor hangs over the wall cap."
+ },
+ {
+  "key": "base_alcove",
+  "file": "base_alcove.png",
+  "group": "environment",
+  "size": [
+   192,
+   144
+  ],
+  "anchor": [
+   96,
+   136
+  ],
+  "frames": 1,
+  "description": "The approved concept healing-base facade: a substantial warm ivory arch, two bronze-capped pillars, a dark closed masonry recess and two neutral lanterns. No floor or hearts baked in; mounted against the existing base wall."
+ },
+ {
+  "key": "base_court_team0",
+  "file": "base_court_team0.png",
+  "group": "environment",
+  "size": [
+   144,
+   336
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Overhead ivory-stone court for the existing three-by-seven-cell healing base. A restrained bronze perimeter carries a narrow Amber #e39a3b inlay; large paving, opaque interior, no standing objects or perspective."
+ },
+ {
+  "key": "base_court_team1",
+  "file": "base_court_team1.png",
+  "group": "environment",
+  "size": [
+   144,
+   336
+  ],
+  "anchor": [
+   0,
+   0
+  ],
+  "frames": 1,
+  "description": "Overhead ivory-stone court for the existing three-by-seven-cell healing base. A restrained bronze perimeter carries a narrow Cyan #3bb8c4 inlay; large paving, opaque interior, no standing objects or perspective."
+ },
+ {
+  "key": "base_banner_team0",
+  "file": "base_banner_team0.png",
+  "group": "environment",
+  "size": [
+   48,
+   128
+  ],
+  "anchor": [
+   24,
+   120
+  ],
+  "frames": 1,
+  "description": "Ivory-and-bronze banner post with a softly folded Amber #e39a3b pennant and an ivory geometric rune. Upright, feet at the anchor, transparent surroundings."
+ },
+ {
+  "key": "base_banner_team1",
+  "file": "base_banner_team1.png",
+  "group": "environment",
+  "size": [
+   48,
+   128
+  ],
+  "anchor": [
+   24,
+   120
+  ],
+  "frames": 1,
+  "description": "Ivory-and-bronze banner post with a softly folded Cyan #3bb8c4 pennant and an ivory geometric rune. Upright, feet at the anchor, transparent surroundings."
+ },
+ {
+  "key": "character_base_team0",
+  "file": "character_base_team0.png",
+  "group": "characters",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Smoothly shaded, rounded casual character in a cream T-shirt, charcoal shorts and shoes, with uncovered hair and bare hands. Team Amber on shirt trim only. Ten columns by five rows of 64x64 frames: columns 1–2 idle, 3–6 walk, 7–10 run (alternating contact and flight poses). Feet at 32, 58; row 1 down (facing the camera, hand at 22, 44); row 2 down_right (three-quarter front, turned right, hand at 40, 44); row 3 right (side view facing right, hand at 42, 42); row 4 up_right (three-quarter back, turned right, hand at 42, 38); row 5 up (back to the camera, hand at 44, 38). Empty-handed. All classes use this same body beneath armor."
+ },
+ {
+  "key": "character_base_team1",
+  "file": "character_base_team1.png",
+  "group": "characters",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Smoothly shaded, rounded casual character in a cream T-shirt, charcoal shorts and shoes, with uncovered hair and bare hands. Team Cyan on shirt trim only. Ten columns by five rows of 64x64 frames: columns 1–2 idle, 3–6 walk, 7–10 run (alternating contact and flight poses). Feet at 32, 58; row 1 down (facing the camera, hand at 22, 44); row 2 down_right (three-quarter front, turned right, hand at 40, 44); row 3 right (side view facing right, hand at 42, 42); row 4 up_right (three-quarter back, turned right, hand at 42, 38); row 5 up (back to the camera, hand at 44, 38). Empty-handed. All classes use this same body beneath armor."
+ },
+ {
+  "key": "armor_scout_team0",
+  "file": "armor_scout_team0.png",
+  "group": "armors",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Scout Armor torso garment-only overlay: Light armor for faster movement and longer dashes, with modest protection. Smooth rounded materials, softly painted shading. Team Amber on narrow trim only. Match the common body's exact ten-column, five-row grid: 1–2 idle, 3–6 walk, 7–10 run. Draw over the body with the same row, frame and mirroring. No headgear, pants, shoes or weapons; uncovered skin, hands, hair and clothing remain transparent. row 1 down (facing the camera, hand at 22, 44); row 2 down_right (three-quarter front, turned right, hand at 40, 44); row 3 right (side view facing right, hand at 42, 42); row 4 up_right (three-quarter back, turned right, hand at 42, 38); row 5 up (back to the camera, hand at 44, 38)."
+ },
+ {
+  "key": "armor_scout_team1",
+  "file": "armor_scout_team1.png",
+  "group": "armors",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Scout Armor torso garment-only overlay: Light armor for faster movement and longer dashes, with modest protection. Smooth rounded materials, softly painted shading. Team Cyan on narrow trim only. Match the common body's exact ten-column, five-row grid: 1–2 idle, 3–6 walk, 7–10 run. Draw over the body with the same row, frame and mirroring. No headgear, pants, shoes or weapons; uncovered skin, hands, hair and clothing remain transparent. row 1 down (facing the camera, hand at 22, 44); row 2 down_right (three-quarter front, turned right, hand at 40, 44); row 3 right (side view facing right, hand at 42, 42); row 4 up_right (three-quarter back, turned right, hand at 42, 38); row 5 up (back to the camera, hand at 44, 38)."
+ },
+ {
+  "key": "armor_ballistic_team0",
+  "file": "armor_ballistic_team0.png",
+  "group": "armors",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Ballistic Armor torso garment-only overlay: Specialized protection against guns, with a small speed cost. Smooth rounded materials, softly painted shading. Team Amber on narrow trim only. Match the common body's exact ten-column, five-row grid: 1–2 idle, 3–6 walk, 7–10 run. Draw over the body with the same row, frame and mirroring. No headgear, pants, shoes or weapons; uncovered skin, hands, hair and clothing remain transparent. row 1 down (facing the camera, hand at 22, 44); row 2 down_right (three-quarter front, turned right, hand at 40, 44); row 3 right (side view facing right, hand at 42, 42); row 4 up_right (three-quarter back, turned right, hand at 42, 38); row 5 up (back to the camera, hand at 44, 38)."
+ },
+ {
+  "key": "armor_ballistic_team1",
+  "file": "armor_ballistic_team1.png",
+  "group": "armors",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Ballistic Armor torso garment-only overlay: Specialized protection against guns, with a small speed cost. Smooth rounded materials, softly painted shading. Team Cyan on narrow trim only. Match the common body's exact ten-column, five-row grid: 1–2 idle, 3–6 walk, 7–10 run. Draw over the body with the same row, frame and mirroring. No headgear, pants, shoes or weapons; uncovered skin, hands, hair and clothing remain transparent. row 1 down (facing the camera, hand at 22, 44); row 2 down_right (three-quarter front, turned right, hand at 40, 44); row 3 right (side view facing right, hand at 42, 42); row 4 up_right (three-quarter back, turned right, hand at 42, 38); row 5 up (back to the camera, hand at 44, 38)."
+ },
+ {
+  "key": "armor_duelist_team0",
+  "file": "armor_duelist_team0.png",
+  "group": "armors",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Duelist Armor torso garment-only overlay: Specialized protection against swords, with a small speed cost. Smooth rounded materials, softly painted shading. Team Amber on narrow trim only. Match the common body's exact ten-column, five-row grid: 1–2 idle, 3–6 walk, 7–10 run. Draw over the body with the same row, frame and mirroring. No headgear, pants, shoes or weapons; uncovered skin, hands, hair and clothing remain transparent. row 1 down (facing the camera, hand at 22, 44); row 2 down_right (three-quarter front, turned right, hand at 40, 44); row 3 right (side view facing right, hand at 42, 42); row 4 up_right (three-quarter back, turned right, hand at 42, 38); row 5 up (back to the camera, hand at 44, 38)."
+ },
+ {
+  "key": "armor_duelist_team1",
+  "file": "armor_duelist_team1.png",
+  "group": "armors",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Duelist Armor torso garment-only overlay: Specialized protection against swords, with a small speed cost. Smooth rounded materials, softly painted shading. Team Cyan on narrow trim only. Match the common body's exact ten-column, five-row grid: 1–2 idle, 3–6 walk, 7–10 run. Draw over the body with the same row, frame and mirroring. No headgear, pants, shoes or weapons; uncovered skin, hands, hair and clothing remain transparent. row 1 down (facing the camera, hand at 22, 44); row 2 down_right (three-quarter front, turned right, hand at 40, 44); row 3 right (side view facing right, hand at 42, 42); row 4 up_right (three-quarter back, turned right, hand at 42, 38); row 5 up (back to the camera, hand at 44, 38)."
+ },
+ {
+  "key": "armor_heavy_team0",
+  "file": "armor_heavy_team0.png",
+  "group": "armors",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Heavy Armor torso garment-only overlay: Strong protection against direct attacks, with slower movement and shorter dashes. Smooth rounded materials, softly painted shading. Team Amber on narrow trim only. Match the common body's exact ten-column, five-row grid: 1–2 idle, 3–6 walk, 7–10 run. Draw over the body with the same row, frame and mirroring. No headgear, pants, shoes or weapons; uncovered skin, hands, hair and clothing remain transparent. row 1 down (facing the camera, hand at 22, 44); row 2 down_right (three-quarter front, turned right, hand at 40, 44); row 3 right (side view facing right, hand at 42, 42); row 4 up_right (three-quarter back, turned right, hand at 42, 38); row 5 up (back to the camera, hand at 44, 38)."
+ },
+ {
+  "key": "armor_heavy_team1",
+  "file": "armor_heavy_team1.png",
+  "group": "armors",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Heavy Armor torso garment-only overlay: Strong protection against direct attacks, with slower movement and shorter dashes. Smooth rounded materials, softly painted shading. Team Cyan on narrow trim only. Match the common body's exact ten-column, five-row grid: 1–2 idle, 3–6 walk, 7–10 run. Draw over the body with the same row, frame and mirroring. No headgear, pants, shoes or weapons; uncovered skin, hands, hair and clothing remain transparent. row 1 down (facing the camera, hand at 22, 44); row 2 down_right (three-quarter front, turned right, hand at 40, 44); row 3 right (side view facing right, hand at 42, 42); row 4 up_right (three-quarter back, turned right, hand at 42, 38); row 5 up (back to the camera, hand at 44, 38)."
+ },
+ {
+  "key": "armor_gunslinger_team0",
+  "file": "armor_gunslinger_team0.png",
+  "group": "armors",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Gunslinger Duster torso garment-only overlay: A long riding coat for marksmen: guns hit 15% harder and charge 15% faster, with little protection. Smooth rounded materials, softly painted shading. Team Amber on narrow trim only. Match the common body's exact ten-column, five-row grid: 1–2 idle, 3–6 walk, 7–10 run. Draw over the body with the same row, frame and mirroring. No headgear, pants, shoes or weapons; uncovered skin, hands, hair and clothing remain transparent. row 1 down (facing the camera, hand at 22, 44); row 2 down_right (three-quarter front, turned right, hand at 40, 44); row 3 right (side view facing right, hand at 42, 42); row 4 up_right (three-quarter back, turned right, hand at 42, 38); row 5 up (back to the camera, hand at 44, 38)."
+ },
+ {
+  "key": "armor_gunslinger_team1",
+  "file": "armor_gunslinger_team1.png",
+  "group": "armors",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Gunslinger Duster torso garment-only overlay: A long riding coat for marksmen: guns hit 15% harder and charge 15% faster, with little protection. Smooth rounded materials, softly painted shading. Team Cyan on narrow trim only. Match the common body's exact ten-column, five-row grid: 1–2 idle, 3–6 walk, 7–10 run. Draw over the body with the same row, frame and mirroring. No headgear, pants, shoes or weapons; uncovered skin, hands, hair and clothing remain transparent. row 1 down (facing the camera, hand at 22, 44); row 2 down_right (three-quarter front, turned right, hand at 40, 44); row 3 right (side view facing right, hand at 42, 42); row 4 up_right (three-quarter back, turned right, hand at 42, 38); row 5 up (back to the camera, hand at 44, 38)."
+ },
+ {
+  "key": "armor_fencer_team0",
+  "file": "armor_fencer_team0.png",
+  "group": "armors",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Fencing Garb torso garment-only overlay: A light padded fencing jacket: swords hit 15% harder and swing 10% faster, with little protection. Smooth rounded materials, softly painted shading. Team Amber on narrow trim only. Match the common body's exact ten-column, five-row grid: 1–2 idle, 3–6 walk, 7–10 run. Draw over the body with the same row, frame and mirroring. No headgear, pants, shoes or weapons; uncovered skin, hands, hair and clothing remain transparent. row 1 down (facing the camera, hand at 22, 44); row 2 down_right (three-quarter front, turned right, hand at 40, 44); row 3 right (side view facing right, hand at 42, 42); row 4 up_right (three-quarter back, turned right, hand at 42, 38); row 5 up (back to the camera, hand at 44, 38)."
+ },
+ {
+  "key": "armor_fencer_team1",
+  "file": "armor_fencer_team1.png",
+  "group": "armors",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Fencing Garb torso garment-only overlay: A light padded fencing jacket: swords hit 15% harder and swing 10% faster, with little protection. Smooth rounded materials, softly painted shading. Team Cyan on narrow trim only. Match the common body's exact ten-column, five-row grid: 1–2 idle, 3–6 walk, 7–10 run. Draw over the body with the same row, frame and mirroring. No headgear, pants, shoes or weapons; uncovered skin, hands, hair and clothing remain transparent. row 1 down (facing the camera, hand at 22, 44); row 2 down_right (three-quarter front, turned right, hand at 40, 44); row 3 right (side view facing right, hand at 42, 42); row 4 up_right (three-quarter back, turned right, hand at 42, 38); row 5 up (back to the camera, hand at 44, 38)."
+ },
+ {
+  "key": "armor_windrunner_team0",
+  "file": "armor_windrunner_team0.png",
+  "group": "armors",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Windrunner Wraps torso garment-only overlay: Flowing silk wraps for runners: much faster, with quicker, longer dashes, but swords hit 8% softer and they barely protect you. Smooth rounded materials, softly painted shading. Team Amber on narrow trim only. Match the common body's exact ten-column, five-row grid: 1–2 idle, 3–6 walk, 7–10 run. Draw over the body with the same row, frame and mirroring. No headgear, pants, shoes or weapons; uncovered skin, hands, hair and clothing remain transparent. row 1 down (facing the camera, hand at 22, 44); row 2 down_right (three-quarter front, turned right, hand at 40, 44); row 3 right (side view facing right, hand at 42, 42); row 4 up_right (three-quarter back, turned right, hand at 42, 38); row 5 up (back to the camera, hand at 44, 38)."
+ },
+ {
+  "key": "armor_windrunner_team1",
+  "file": "armor_windrunner_team1.png",
+  "group": "armors",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Windrunner Wraps torso garment-only overlay: Flowing silk wraps for runners: much faster, with quicker, longer dashes, but swords hit 8% softer and they barely protect you. Smooth rounded materials, softly painted shading. Team Cyan on narrow trim only. Match the common body's exact ten-column, five-row grid: 1–2 idle, 3–6 walk, 7–10 run. Draw over the body with the same row, frame and mirroring. No headgear, pants, shoes or weapons; uncovered skin, hands, hair and clothing remain transparent. row 1 down (facing the camera, hand at 22, 44); row 2 down_right (three-quarter front, turned right, hand at 40, 44); row 3 right (side view facing right, hand at 42, 42); row 4 up_right (three-quarter back, turned right, hand at 42, 38); row 5 up (back to the camera, hand at 44, 38)."
+ },
+ {
+  "key": "armor_juggernaut_team0",
+  "file": "armor_juggernaut_team0.png",
+  "group": "armors",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Juggernaut Plate torso garment-only overlay: Riveted siege plate: +30 health and hard to knock back, but very slow, with short dashes and heavier swings. Smooth rounded materials, softly painted shading. Team Amber on narrow trim only. Match the common body's exact ten-column, five-row grid: 1–2 idle, 3–6 walk, 7–10 run. Draw over the body with the same row, frame and mirroring. No headgear, pants, shoes or weapons; uncovered skin, hands, hair and clothing remain transparent. row 1 down (facing the camera, hand at 22, 44); row 2 down_right (three-quarter front, turned right, hand at 40, 44); row 3 right (side view facing right, hand at 42, 42); row 4 up_right (three-quarter back, turned right, hand at 42, 38); row 5 up (back to the camera, hand at 44, 38)."
+ },
+ {
+  "key": "armor_juggernaut_team1",
+  "file": "armor_juggernaut_team1.png",
+  "group": "armors",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Juggernaut Plate torso garment-only overlay: Riveted siege plate: +30 health and hard to knock back, but very slow, with short dashes and heavier swings. Smooth rounded materials, softly painted shading. Team Cyan on narrow trim only. Match the common body's exact ten-column, five-row grid: 1–2 idle, 3–6 walk, 7–10 run. Draw over the body with the same row, frame and mirroring. No headgear, pants, shoes or weapons; uncovered skin, hands, hair and clothing remain transparent. row 1 down (facing the camera, hand at 22, 44); row 2 down_right (three-quarter front, turned right, hand at 40, 44); row 3 right (side view facing right, hand at 42, 42); row 4 up_right (three-quarter back, turned right, hand at 42, 38); row 5 up (back to the camera, hand at 44, 38)."
+ },
+ {
+  "key": "armor_bombardier_team0",
+  "file": "armor_bombardier_team0.png",
+  "group": "armors",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Bombardier Apron torso garment-only overlay: A scorched leather apron full of fuses: bombs charge 35% faster and hit 20% harder, and blasts barely scratch you, but guns lose their edge. Smooth rounded materials, softly painted shading. Team Amber on narrow trim only. Match the common body's exact ten-column, five-row grid: 1–2 idle, 3–6 walk, 7–10 run. Draw over the body with the same row, frame and mirroring. No headgear, pants, shoes or weapons; uncovered skin, hands, hair and clothing remain transparent. row 1 down (facing the camera, hand at 22, 44); row 2 down_right (three-quarter front, turned right, hand at 40, 44); row 3 right (side view facing right, hand at 42, 42); row 4 up_right (three-quarter back, turned right, hand at 42, 38); row 5 up (back to the camera, hand at 44, 38)."
+ },
+ {
+  "key": "armor_bombardier_team1",
+  "file": "armor_bombardier_team1.png",
+  "group": "armors",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Bombardier Apron torso garment-only overlay: A scorched leather apron full of fuses: bombs charge 35% faster and hit 20% harder, and blasts barely scratch you, but guns lose their edge. Smooth rounded materials, softly painted shading. Team Cyan on narrow trim only. Match the common body's exact ten-column, five-row grid: 1–2 idle, 3–6 walk, 7–10 run. Draw over the body with the same row, frame and mirroring. No headgear, pants, shoes or weapons; uncovered skin, hands, hair and clothing remain transparent. row 1 down (facing the camera, hand at 22, 44); row 2 down_right (three-quarter front, turned right, hand at 40, 44); row 3 right (side view facing right, hand at 42, 42); row 4 up_right (three-quarter back, turned right, hand at 42, 38); row 5 up (back to the camera, hand at 44, 38)."
+ },
+ {
+  "key": "armor_berserker_team0",
+  "file": "armor_berserker_team0.png",
+  "group": "armors",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Berserker Hide torso garment-only overlay: Bare arms and a wolf pelt: swords hit 25% harder and swing 10% faster, but bullets bite deeper. Smooth rounded materials, softly painted shading. Team Amber on narrow trim only. Match the common body's exact ten-column, five-row grid: 1–2 idle, 3–6 walk, 7–10 run. Draw over the body with the same row, frame and mirroring. No headgear, pants, shoes or weapons; uncovered skin, hands, hair and clothing remain transparent. row 1 down (facing the camera, hand at 22, 44); row 2 down_right (three-quarter front, turned right, hand at 40, 44); row 3 right (side view facing right, hand at 42, 42); row 4 up_right (three-quarter back, turned right, hand at 42, 38); row 5 up (back to the camera, hand at 44, 38)."
+ },
+ {
+  "key": "armor_berserker_team1",
+  "file": "armor_berserker_team1.png",
+  "group": "armors",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Berserker Hide torso garment-only overlay: Bare arms and a wolf pelt: swords hit 25% harder and swing 10% faster, but bullets bite deeper. Smooth rounded materials, softly painted shading. Team Cyan on narrow trim only. Match the common body's exact ten-column, five-row grid: 1–2 idle, 3–6 walk, 7–10 run. Draw over the body with the same row, frame and mirroring. No headgear, pants, shoes or weapons; uncovered skin, hands, hair and clothing remain transparent. row 1 down (facing the camera, hand at 22, 44); row 2 down_right (three-quarter front, turned right, hand at 40, 44); row 3 right (side view facing right, hand at 42, 42); row 4 up_right (three-quarter back, turned right, hand at 42, 38); row 5 up (back to the camera, hand at 44, 38)."
+ },
+ {
+  "key": "armor_mirrorweave_team0",
+  "file": "armor_mirrorweave_team0.png",
+  "group": "armors",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Mirrorweave Cloak torso garment-only overlay: A shimmering cloak that sheds fire, poison, shock and frost (60% shorter) and turns some bullets, at the cost of 10 health. Smooth rounded materials, softly painted shading. Team Amber on narrow trim only. Match the common body's exact ten-column, five-row grid: 1–2 idle, 3–6 walk, 7–10 run. Draw over the body with the same row, frame and mirroring. No headgear, pants, shoes or weapons; uncovered skin, hands, hair and clothing remain transparent. row 1 down (facing the camera, hand at 22, 44); row 2 down_right (three-quarter front, turned right, hand at 40, 44); row 3 right (side view facing right, hand at 42, 42); row 4 up_right (three-quarter back, turned right, hand at 42, 38); row 5 up (back to the camera, hand at 44, 38)."
+ },
+ {
+  "key": "armor_mirrorweave_team1",
+  "file": "armor_mirrorweave_team1.png",
+  "group": "armors",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Mirrorweave Cloak torso garment-only overlay: A shimmering cloak that sheds fire, poison, shock and frost (60% shorter) and turns some bullets, at the cost of 10 health. Smooth rounded materials, softly painted shading. Team Cyan on narrow trim only. Match the common body's exact ten-column, five-row grid: 1–2 idle, 3–6 walk, 7–10 run. Draw over the body with the same row, frame and mirroring. No headgear, pants, shoes or weapons; uncovered skin, hands, hair and clothing remain transparent. row 1 down (facing the camera, hand at 22, 44); row 2 down_right (three-quarter front, turned right, hand at 40, 44); row 3 right (side view facing right, hand at 42, 42); row 4 up_right (three-quarter back, turned right, hand at 42, 38); row 5 up (back to the camera, hand at 44, 38)."
+ },
+ {
+  "key": "armor_medic_team0",
+  "file": "armor_medic_team0.png",
+  "group": "armors",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Field Medic Coat torso garment-only overlay: A white coat with a satchel of salves: hearts, base and dome heal you 50% more and you mend 3 HP a second out of combat, but every weapon hits 5% softer. Smooth rounded materials, softly painted shading. Team Amber on narrow trim only. Match the common body's exact ten-column, five-row grid: 1–2 idle, 3–6 walk, 7–10 run. Draw over the body with the same row, frame and mirroring. No headgear, pants, shoes or weapons; uncovered skin, hands, hair and clothing remain transparent. row 1 down (facing the camera, hand at 22, 44); row 2 down_right (three-quarter front, turned right, hand at 40, 44); row 3 right (side view facing right, hand at 42, 42); row 4 up_right (three-quarter back, turned right, hand at 42, 38); row 5 up (back to the camera, hand at 44, 38)."
+ },
+ {
+  "key": "armor_medic_team1",
+  "file": "armor_medic_team1.png",
+  "group": "armors",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Field Medic Coat torso garment-only overlay: A white coat with a satchel of salves: hearts, base and dome heal you 50% more and you mend 3 HP a second out of combat, but every weapon hits 5% softer. Smooth rounded materials, softly painted shading. Team Cyan on narrow trim only. Match the common body's exact ten-column, five-row grid: 1–2 idle, 3–6 walk, 7–10 run. Draw over the body with the same row, frame and mirroring. No headgear, pants, shoes or weapons; uncovered skin, hands, hair and clothing remain transparent. row 1 down (facing the camera, hand at 22, 44); row 2 down_right (three-quarter front, turned right, hand at 40, 44); row 3 right (side view facing right, hand at 42, 42); row 4 up_right (three-quarter back, turned right, hand at 42, 38); row 5 up (back to the camera, hand at 44, 38)."
+ },
+ {
+  "key": "armor_clockwork_team0",
+  "file": "armor_clockwork_team0.png",
+  "group": "armors",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Clockwork Harness torso garment-only overlay: A ticking brass harness: your class ability and dash recharge much faster, but your guns and swords hit 5% softer. Smooth rounded materials, softly painted shading. Team Amber on narrow trim only. Match the common body's exact ten-column, five-row grid: 1–2 idle, 3–6 walk, 7–10 run. Draw over the body with the same row, frame and mirroring. No headgear, pants, shoes or weapons; uncovered skin, hands, hair and clothing remain transparent. row 1 down (facing the camera, hand at 22, 44); row 2 down_right (three-quarter front, turned right, hand at 40, 44); row 3 right (side view facing right, hand at 42, 42); row 4 up_right (three-quarter back, turned right, hand at 42, 38); row 5 up (back to the camera, hand at 44, 38)."
+ },
+ {
+  "key": "armor_clockwork_team1",
+  "file": "armor_clockwork_team1.png",
+  "group": "armors",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Clockwork Harness torso garment-only overlay: A ticking brass harness: your class ability and dash recharge much faster, but your guns and swords hit 5% softer. Smooth rounded materials, softly painted shading. Team Cyan on narrow trim only. Match the common body's exact ten-column, five-row grid: 1–2 idle, 3–6 walk, 7–10 run. Draw over the body with the same row, frame and mirroring. No headgear, pants, shoes or weapons; uncovered skin, hands, hair and clothing remain transparent. row 1 down (facing the camera, hand at 22, 44); row 2 down_right (three-quarter front, turned right, hand at 40, 44); row 3 right (side view facing right, hand at 42, 42); row 4 up_right (three-quarter back, turned right, hand at 42, 38); row 5 up (back to the camera, hand at 44, 38)."
+ },
+ {
+  "key": "gear_helmet_sallet",
+  "file": "gear_helmet_sallet.png",
+  "group": "gear",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Sallet Helm overlay: ONLY a rounded steel sallet with a narrow eye slit and a short tail at the back, nothing else (transparent everywhere else). It is drawn on top of every body outfit, so it must sit exactly where the head of character_base are in each frame: same 10 columns × 5 facing rows of 64x64 frames; 1–2 idle, 3–6 walk, 7–10 run; feet at 32, 58. Neutral colours (no team colour)."
+ },
+ {
+  "key": "icon_helmet_sallet",
+  "file": "icon_helmet_sallet.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "Sallet Helm equipment icon: a rounded steel sallet with a narrow eye slit and a short tail at the back. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "gear_helmet_visor",
+  "file": "gear_helmet_visor.png",
+  "group": "gear",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Marksman Visor overlay: ONLY a slim dark tactical visor wrapping the eyes with a cyan glowing lens and a small earpiece, nothing else (transparent everywhere else). It is drawn on top of every body outfit, so it must sit exactly where the head of character_base are in each frame: same 10 columns × 5 facing rows of 64x64 frames; 1–2 idle, 3–6 walk, 7–10 run; feet at 32, 58. Neutral colours (no team colour)."
+ },
+ {
+  "key": "icon_helmet_visor",
+  "file": "icon_helmet_visor.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "Marksman Visor equipment icon: a slim dark tactical visor wrapping the eyes with a cyan glowing lens and a small earpiece. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "gear_helmet_horned",
+  "file": "gear_helmet_horned.png",
+  "group": "gear",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Horned Helm overlay: ONLY a dented iron cap with two big curved bone horns, nothing else (transparent everywhere else). It is drawn on top of every body outfit, so it must sit exactly where the head of character_base are in each frame: same 10 columns × 5 facing rows of 64x64 frames; 1–2 idle, 3–6 walk, 7–10 run; feet at 32, 58. Neutral colours (no team colour)."
+ },
+ {
+  "key": "icon_helmet_horned",
+  "file": "icon_helmet_horned.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "Horned Helm equipment icon: a dented iron cap with two big curved bone horns. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "gear_helmet_hood",
+  "file": "gear_helmet_hood.png",
+  "group": "gear",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Hexweave Hood overlay: ONLY a deep charcoal-violet cloth hood that shadows the face (eyes faintly glow), nothing else (transparent everywhere else). It is drawn on top of every body outfit, so it must sit exactly where the head of character_base are in each frame: same 10 columns × 5 facing rows of 64x64 frames; 1–2 idle, 3–6 walk, 7–10 run; feet at 32, 58. Neutral colours (no team colour)."
+ },
+ {
+  "key": "icon_helmet_hood",
+  "file": "icon_helmet_hood.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "Hexweave Hood equipment icon: a deep charcoal-violet cloth hood that shadows the face (eyes faintly glow). Clear silhouette on a transparent background."
+ },
+ {
+  "key": "gear_helmet_lampcap",
+  "file": "gear_helmet_lampcap.png",
+  "group": "gear",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Sapper Lamp Cap overlay: ONLY a sooty leather miner cap with a brass lamp on the front throwing a small yellow glow, nothing else (transparent everywhere else). It is drawn on top of every body outfit, so it must sit exactly where the head of character_base are in each frame: same 10 columns × 5 facing rows of 64x64 frames; 1–2 idle, 3–6 walk, 7–10 run; feet at 32, 58. Neutral colours (no team colour)."
+ },
+ {
+  "key": "icon_helmet_lampcap",
+  "file": "icon_helmet_lampcap.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "Sapper Lamp Cap equipment icon: a sooty leather miner cap with a brass lamp on the front throwing a small yellow glow. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "gear_helmet_feather",
+  "file": "gear_helmet_feather.png",
+  "group": "gear",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Feathered Cap overlay: ONLY a jaunty green felt cap with a long red feather sweeping back, nothing else (transparent everywhere else). It is drawn on top of every body outfit, so it must sit exactly where the head of character_base are in each frame: same 10 columns × 5 facing rows of 64x64 frames; 1–2 idle, 3–6 walk, 7–10 run; feet at 32, 58. Neutral colours (no team colour)."
+ },
+ {
+  "key": "icon_helmet_feather",
+  "file": "icon_helmet_feather.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "Feathered Cap equipment icon: a jaunty green felt cap with a long red feather sweeping back. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "gear_helmet_bucket",
+  "file": "gear_helmet_bucket.png",
+  "group": "gear",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Bucket Helm overlay: ONLY a literal dented metal bucket worn as a helm, with eye holes punched in it, nothing else (transparent everywhere else). It is drawn on top of every body outfit, so it must sit exactly where the head of character_base are in each frame: same 10 columns × 5 facing rows of 64x64 frames; 1–2 idle, 3–6 walk, 7–10 run; feet at 32, 58. Neutral colours (no team colour)."
+ },
+ {
+  "key": "icon_helmet_bucket",
+  "file": "icon_helmet_bucket.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "Bucket Helm equipment icon: a literal dented metal bucket worn as a helm, with eye holes punched in it. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "gear_helmet_circlet",
+  "file": "gear_helmet_circlet.png",
+  "group": "gear",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Mender Circlet overlay: ONLY a thin gold circlet with a small green gem on the forehead over loose hair, nothing else (transparent everywhere else). It is drawn on top of every body outfit, so it must sit exactly where the head of character_base are in each frame: same 10 columns × 5 facing rows of 64x64 frames; 1–2 idle, 3–6 walk, 7–10 run; feet at 32, 58. Neutral colours (no team colour)."
+ },
+ {
+  "key": "icon_helmet_circlet",
+  "file": "icon_helmet_circlet.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "Mender Circlet equipment icon: a thin gold circlet with a small green gem on the forehead over loose hair. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "gear_helmet_goggles",
+  "file": "gear_helmet_goggles.png",
+  "group": "gear",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Clockwork Goggles overlay: ONLY brass aviator goggles pushed up on a leather strap over a bare head, nothing else (transparent everywhere else). It is drawn on top of every body outfit, so it must sit exactly where the head of character_base are in each frame: same 10 columns × 5 facing rows of 64x64 frames; 1–2 idle, 3–6 walk, 7–10 run; feet at 32, 58. Neutral colours (no team colour)."
+ },
+ {
+  "key": "icon_helmet_goggles",
+  "file": "icon_helmet_goggles.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "Clockwork Goggles equipment icon: brass aviator goggles pushed up on a leather strap over a bare head. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "gear_pants_greaves",
+  "file": "gear_pants_greaves.png",
+  "group": "gear",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Plate Greaves overlay: ONLY steel knee greaves and shin plates over dark trousers, nothing else (transparent everywhere else). It is drawn on top of every body outfit, so it must sit exactly where the hips and legs of character_base are in each frame: same 10 columns × 5 facing rows of 64x64 frames; 1–2 idle, 3–6 walk, 7–10 run; feet at 32, 58. Neutral colours (no team colour)."
+ },
+ {
+  "key": "icon_pants_greaves",
+  "file": "icon_pants_greaves.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "Plate Greaves equipment icon: steel knee greaves and shin plates over dark trousers. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "gear_pants_leggings",
+  "file": "gear_pants_leggings.png",
+  "group": "gear",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Runner Leggings overlay: ONLY tight dark-blue running leggings with a light stripe down the side, nothing else (transparent everywhere else). It is drawn on top of every body outfit, so it must sit exactly where the hips and legs of character_base are in each frame: same 10 columns × 5 facing rows of 64x64 frames; 1–2 idle, 3–6 walk, 7–10 run; feet at 32, 58. Neutral colours (no team colour)."
+ },
+ {
+  "key": "icon_pants_leggings",
+  "file": "icon_pants_leggings.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "Runner Leggings equipment icon: tight dark-blue running leggings with a light stripe down the side. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "gear_pants_chausses",
+  "file": "gear_pants_chausses.png",
+  "group": "gear",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Chainmail Chausses overlay: ONLY grey chainmail chausses (ring texture) to the ankle, nothing else (transparent everywhere else). It is drawn on top of every body outfit, so it must sit exactly where the hips and legs of character_base are in each frame: same 10 columns × 5 facing rows of 64x64 frames; 1–2 idle, 3–6 walk, 7–10 run; feet at 32, 58. Neutral colours (no team colour)."
+ },
+ {
+  "key": "icon_pants_chausses",
+  "file": "icon_pants_chausses.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "Chainmail Chausses equipment icon: grey chainmail chausses (ring texture) to the ankle. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "gear_pants_breeches",
+  "file": "gear_pants_breeches.png",
+  "group": "gear",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Duelist Breeches overlay: ONLY cream fencing breeches buckled below the knee with long white socks, nothing else (transparent everywhere else). It is drawn on top of every body outfit, so it must sit exactly where the hips and legs of character_base are in each frame: same 10 columns × 5 facing rows of 64x64 frames; 1–2 idle, 3–6 walk, 7–10 run; feet at 32, 58. Neutral colours (no team colour)."
+ },
+ {
+  "key": "icon_pants_breeches",
+  "file": "icon_pants_breeches.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "Duelist Breeches equipment icon: cream fencing breeches buckled below the knee with long white socks. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "gear_pants_sapper",
+  "file": "gear_pants_sapper.png",
+  "group": "gear",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Sapper Trousers overlay: ONLY olive canvas trousers with knee pads and a fuse-cord pouch on the thigh, nothing else (transparent everywhere else). It is drawn on top of every body outfit, so it must sit exactly where the hips and legs of character_base are in each frame: same 10 columns × 5 facing rows of 64x64 frames; 1–2 idle, 3–6 walk, 7–10 run; feet at 32, 58. Neutral colours (no team colour)."
+ },
+ {
+  "key": "icon_pants_sapper",
+  "file": "icon_pants_sapper.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "Sapper Trousers equipment icon: olive canvas trousers with knee pads and a fuse-cord pouch on the thigh. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "gear_pants_cargo",
+  "file": "gear_pants_cargo.png",
+  "group": "gear",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Cargo Trousers overlay: ONLY khaki cargo trousers with big side pockets and a holster strap on the thigh, nothing else (transparent everywhere else). It is drawn on top of every body outfit, so it must sit exactly where the hips and legs of character_base are in each frame: same 10 columns × 5 facing rows of 64x64 frames; 1–2 idle, 3–6 walk, 7–10 run; feet at 32, 58. Neutral colours (no team colour)."
+ },
+ {
+  "key": "icon_pants_cargo",
+  "file": "icon_pants_cargo.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "Cargo Trousers equipment icon: khaki cargo trousers with big side pockets and a holster strap on the thigh. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "gear_pants_kilt",
+  "file": "gear_pants_kilt.png",
+  "group": "gear",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Kilt of Fury overlay: ONLY a red-and-green tartan kilt with a leather sporran, nothing else (transparent everywhere else). It is drawn on top of every body outfit, so it must sit exactly where the hips and legs of character_base are in each frame: same 10 columns × 5 facing rows of 64x64 frames; 1–2 idle, 3–6 walk, 7–10 run; feet at 32, 58. Neutral colours (no team colour)."
+ },
+ {
+  "key": "icon_pants_kilt",
+  "file": "icon_pants_kilt.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "Kilt of Fury equipment icon: a red-and-green tartan kilt with a leather sporran. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "gear_shoes_sneakers",
+  "file": "gear_shoes_sneakers.png",
+  "group": "gear",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Sprint Sneakers overlay: ONLY white running sneakers with a bright sole stripe, nothing else (transparent everywhere else). It is drawn on top of every body outfit, so it must sit exactly where the feet of character_base are in each frame: same 10 columns × 5 facing rows of 64x64 frames; 1–2 idle, 3–6 walk, 7–10 run; feet at 32, 58. Neutral colours (no team colour)."
+ },
+ {
+  "key": "icon_shoes_sneakers",
+  "file": "icon_shoes_sneakers.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "Sprint Sneakers equipment icon: white running sneakers with a bright sole stripe. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "gear_shoes_sabatons",
+  "file": "gear_shoes_sabatons.png",
+  "group": "gear",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Iron Sabatons overlay: ONLY chunky segmented iron sabatons, nothing else (transparent everywhere else). It is drawn on top of every body outfit, so it must sit exactly where the feet of character_base are in each frame: same 10 columns × 5 facing rows of 64x64 frames; 1–2 idle, 3–6 walk, 7–10 run; feet at 32, 58. Neutral colours (no team colour)."
+ },
+ {
+  "key": "icon_shoes_sabatons",
+  "file": "icon_shoes_sabatons.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "Iron Sabatons equipment icon: chunky segmented iron sabatons. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "gear_shoes_dashboots",
+  "file": "gear_shoes_dashboots.png",
+  "group": "gear",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Dash Boots overlay: ONLY sleek blue boots with small silver wings at the ankles, nothing else (transparent everywhere else). It is drawn on top of every body outfit, so it must sit exactly where the feet of character_base are in each frame: same 10 columns × 5 facing rows of 64x64 frames; 1–2 idle, 3–6 walk, 7–10 run; feet at 32, 58. Neutral colours (no team colour)."
+ },
+ {
+  "key": "icon_shoes_dashboots",
+  "file": "icon_shoes_dashboots.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "Dash Boots equipment icon: sleek blue boots with small silver wings at the ankles. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "gear_shoes_spurs",
+  "file": "gear_shoes_spurs.png",
+  "group": "gear",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Spurred Boots overlay: ONLY brown riding boots with gold rowel spurs at the heel, nothing else (transparent everywhere else). It is drawn on top of every body outfit, so it must sit exactly where the feet of character_base are in each frame: same 10 columns × 5 facing rows of 64x64 frames; 1–2 idle, 3–6 walk, 7–10 run; feet at 32, 58. Neutral colours (no team colour)."
+ },
+ {
+  "key": "icon_shoes_spurs",
+  "file": "icon_shoes_spurs.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "Spurred Boots equipment icon: brown riding boots with gold rowel spurs at the heel. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "gear_shoes_treads",
+  "file": "gear_shoes_treads.png",
+  "group": "gear",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Mud Treads overlay: ONLY heavy black rubber-soled work boots with thick treads, nothing else (transparent everywhere else). It is drawn on top of every body outfit, so it must sit exactly where the feet of character_base are in each frame: same 10 columns × 5 facing rows of 64x64 frames; 1–2 idle, 3–6 walk, 7–10 run; feet at 32, 58. Neutral colours (no team colour)."
+ },
+ {
+  "key": "icon_shoes_treads",
+  "file": "icon_shoes_treads.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "Mud Treads equipment icon: heavy black rubber-soled work boots with thick treads. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "gear_shoes_clogs",
+  "file": "gear_shoes_clogs.png",
+  "group": "gear",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Rocket Clogs overlay: ONLY springy wooden clogs on coiled steel springs, nothing else (transparent everywhere else). It is drawn on top of every body outfit, so it must sit exactly where the feet of character_base are in each frame: same 10 columns × 5 facing rows of 64x64 frames; 1–2 idle, 3–6 walk, 7–10 run; feet at 32, 58. Neutral colours (no team colour)."
+ },
+ {
+  "key": "icon_shoes_clogs",
+  "file": "icon_shoes_clogs.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "Rocket Clogs equipment icon: springy wooden clogs on coiled steel springs. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "gear_shoes_sandals",
+  "file": "gear_shoes_sandals.png",
+  "group": "gear",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Healer Sandals overlay: ONLY simple leather sandals with straps and a little herb sprig tucked in, nothing else (transparent everywhere else). It is drawn on top of every body outfit, so it must sit exactly where the feet of character_base are in each frame: same 10 columns × 5 facing rows of 64x64 frames; 1–2 idle, 3–6 walk, 7–10 run; feet at 32, 58. Neutral colours (no team colour)."
+ },
+ {
+  "key": "icon_shoes_sandals",
+  "file": "icon_shoes_sandals.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "Healer Sandals equipment icon: simple leather sandals with straps and a little herb sprig tucked in. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "gear_shoes_striders",
+  "file": "gear_shoes_striders.png",
+  "group": "gear",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Water Striders overlay: ONLY light reed-and-cork sandals with wide flat paddles under the soles, beaded with water drops, nothing else (transparent everywhere else). It is drawn on top of every body outfit, so it must sit exactly where the feet of character_base are in each frame: same 10 columns × 5 facing rows of 64x64 frames; 1–2 idle, 3–6 walk, 7–10 run; feet at 32, 58. Neutral colours (no team colour)."
+ },
+ {
+  "key": "icon_shoes_striders",
+  "file": "icon_shoes_striders.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "Water Striders equipment icon: light reed-and-cork sandals with wide flat paddles under the soles, beaded with water drops. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "gear_shoes_magma",
+  "file": "gear_shoes_magma.png",
+  "group": "gear",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Magma Walkers overlay: ONLY thick black obsidian-soled boots with glowing orange cracks, nothing else (transparent everywhere else). It is drawn on top of every body outfit, so it must sit exactly where the feet of character_base are in each frame: same 10 columns × 5 facing rows of 64x64 frames; 1–2 idle, 3–6 walk, 7–10 run; feet at 32, 58. Neutral colours (no team colour)."
+ },
+ {
+  "key": "icon_shoes_magma",
+  "file": "icon_shoes_magma.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "Magma Walkers equipment icon: thick black obsidian-soled boots with glowing orange cracks. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "gear_shoes_hover",
+  "file": "gear_shoes_hover.png",
+  "group": "gear",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Hover Boots overlay: ONLY chunky silver boots with small glowing cyan thrusters under the soles (a soft glow below the feet), nothing else (transparent everywhere else). It is drawn on top of every body outfit, so it must sit exactly where the feet of character_base are in each frame: same 10 columns × 5 facing rows of 64x64 frames; 1–2 idle, 3–6 walk, 7–10 run; feet at 32, 58. Neutral colours (no team colour)."
+ },
+ {
+  "key": "icon_shoes_hover",
+  "file": "icon_shoes_hover.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "Hover Boots equipment icon: chunky silver boots with small glowing cyan thrusters under the soles (a soft glow below the feet). Clear silhouette on a transparent background."
+ },
+ {
+  "key": "gear_shoes_quicksilver",
+  "file": "gear_shoes_quicksilver.png",
+  "group": "gear",
+  "size": [
+   640,
+   320
+  ],
+  "anchor": [
+   32,
+   58
+  ],
+  "frames": 10,
+  "rows": 5,
+  "facings": [
+   {
+    "id": "down",
+    "label": "facing the camera",
+    "hand": [
+     22,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "down_right",
+    "label": "three-quarter front, turned right",
+    "hand": [
+     40,
+     44
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "right",
+    "label": "side view facing right",
+    "hand": [
+     42,
+     42
+    ],
+    "weaponBehind": false
+   },
+   {
+    "id": "up_right",
+    "label": "three-quarter back, turned right",
+    "hand": [
+     42,
+     38
+    ],
+    "weaponBehind": true
+   },
+   {
+    "id": "up",
+    "label": "back to the camera",
+    "hand": [
+     44,
+     38
+    ],
+    "weaponBehind": true
+   }
+  ],
+  "description": "Quicksilver Slippers overlay: ONLY thin liquid-silver slippers with a mirror sheen and little speed streaks, nothing else (transparent everywhere else). It is drawn on top of every body outfit, so it must sit exactly where the feet of character_base are in each frame: same 10 columns × 5 facing rows of 64x64 frames; 1–2 idle, 3–6 walk, 7–10 run; feet at 32, 58. Neutral colours (no team colour)."
+ },
+ {
+  "key": "icon_shoes_quicksilver",
+  "file": "icon_shoes_quicksilver.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "Quicksilver Slippers equipment icon: thin liquid-silver slippers with a mirror sheen and little speed streaks. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "weapon_brand",
+  "file": "weapon_brand.png",
+  "group": "weapons",
+  "size": [
+   64,
+   32
+  ],
+  "anchor": [
+   12,
+   16
+  ],
+  "frames": 1,
+  "description": "Knight Brand (blade) held in the hand, pointing right; the grip sits at the anchor. Balanced three-cut combo. Charge: lunge forward and end in a burning burst."
+ },
+ {
+  "key": "icon_weapon_brand",
+  "file": "icon_weapon_brand.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "HUD/lobby icon for the Knight Brand. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "weapon_cleaver",
+  "file": "weapon_cleaver.png",
+  "group": "weapons",
+  "size": [
+   64,
+   32
+  ],
+  "anchor": [
+   12,
+   16
+  ],
+  "frames": 1,
+  "description": "Troll Cleaver (blade) held in the hand, pointing right; the grip sits at the anchor. Slow, brutal overhead chain that stuns. Charge: leap and slam the ground around you."
+ },
+ {
+  "key": "icon_weapon_cleaver",
+  "file": "icon_weapon_cleaver.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "HUD/lobby icon for the Troll Cleaver. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "weapon_rapier",
+  "file": "weapon_rapier.png",
+  "group": "weapons",
+  "size": [
+   64,
+   32
+  ],
+  "anchor": [
+   12,
+   16
+  ],
+  "frames": 1,
+  "description": "Needle Rapier (blade) held in the hand, pointing right; the grip sits at the anchor. Quick narrow thrusts that step you forward. Charge: a long lunge straight through the target."
+ },
+ {
+  "key": "icon_weapon_rapier",
+  "file": "icon_weapon_rapier.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "HUD/lobby icon for the Needle Rapier. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "weapon_thorn",
+  "file": "weapon_thorn.png",
+  "group": "weapons",
+  "size": [
+   64,
+   32
+  ],
+  "anchor": [
+   12,
+   16
+  ],
+  "frames": 1,
+  "description": "Briar Blade (blade) held in the hand, pointing right; the grip sits at the anchor. Balanced combo. Charge: spray a short, wide shower of poison thorns."
+ },
+ {
+  "key": "icon_weapon_thorn",
+  "file": "icon_weapon_thorn.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "HUD/lobby icon for the Briar Blade. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "weapon_greatblade",
+  "file": "weapon_greatblade.png",
+  "group": "weapons",
+  "size": [
+   64,
+   32
+  ],
+  "anchor": [
+   12,
+   16
+  ],
+  "frames": 1,
+  "description": "Umbral Greatblade (blade) held in the hand, pointing right; the grip sits at the anchor. Heavy two-hit chain. Charge: a slow wave of shadow that carries knights along with it."
+ },
+ {
+  "key": "icon_weapon_greatblade",
+  "file": "icon_weapon_greatblade.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "HUD/lobby icon for the Umbral Greatblade. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "weapon_spur",
+  "file": "weapon_spur.png",
+  "group": "weapons",
+  "size": [
+   64,
+   32
+  ],
+  "anchor": [
+   12,
+   16
+  ],
+  "frames": 1,
+  "description": "Gyre Spur (blade) held in the hand, pointing right; the grip sits at the anchor. Fast light four-cut chain. Charge: spin three times, hitting everything around you each turn."
+ },
+ {
+  "key": "icon_weapon_spur",
+  "file": "icon_weapon_spur.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "HUD/lobby icon for the Gyre Spur. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "weapon_frostbite",
+  "file": "weapon_frostbite.png",
+  "group": "weapons",
+  "size": [
+   64,
+   32
+  ],
+  "anchor": [
+   12,
+   16
+  ],
+  "frames": 1,
+  "description": "Frostbite Edge (blade) held in the hand, pointing right; the grip sits at the anchor. Every cut chills: three chills freeze a knight solid. Charge: lunge into a freezing burst."
+ },
+ {
+  "key": "icon_weapon_frostbite",
+  "file": "icon_weapon_frostbite.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "HUD/lobby icon for the Frostbite Edge. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "weapon_blazebrand",
+  "file": "weapon_blazebrand.png",
+  "group": "weapons",
+  "size": [
+   64,
+   32
+  ],
+  "anchor": [
+   12,
+   16
+  ],
+  "frames": 1,
+  "description": "Blazebrand (blade) held in the hand, pointing right; the grip sits at the anchor. Cuts may set knights on fire (30%). Charge: a rolling wall of flame that always burns."
+ },
+ {
+  "key": "icon_weapon_blazebrand",
+  "file": "icon_weapon_blazebrand.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "HUD/lobby icon for the Blazebrand. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "weapon_voltedge",
+  "file": "weapon_voltedge.png",
+  "group": "weapons",
+  "size": [
+   64,
+   32
+  ],
+  "anchor": [
+   12,
+   16
+  ],
+  "frames": 1,
+  "description": "Voltedge (blade) held in the hand, pointing right; the grip sits at the anchor. Fast cuts that may shock (15%); a hit can arc lightning to two more enemies nearby. Charge: an electric spin."
+ },
+ {
+  "key": "icon_weapon_voltedge",
+  "file": "icon_weapon_voltedge.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "HUD/lobby icon for the Voltedge. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "weapon_sickle",
+  "file": "weapon_sickle.png",
+  "group": "weapons",
+  "size": [
+   64,
+   32
+  ],
+  "anchor": [
+   12,
+   16
+  ],
+  "frames": 1,
+  "description": "Sanguine Sickle (blade) held in the hand, pointing right; the grip sits at the anchor. Heals you for 30% of the damage it deals. Charge: a long draining lunge."
+ },
+ {
+  "key": "icon_weapon_sickle",
+  "file": "icon_weapon_sickle.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "HUD/lobby icon for the Sanguine Sickle. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "weapon_hexblade",
+  "file": "weapon_hexblade.png",
+  "group": "weapons",
+  "size": [
+   64,
+   32
+  ],
+  "anchor": [
+   12,
+   16
+  ],
+  "frames": 1,
+  "description": "Hexblade (blade) held in the hand, pointing right; the grip sits at the anchor. Heavy cuts that may curse (35%): no dash and no class ability for a while. Charge: a cursing slam."
+ },
+ {
+  "key": "icon_weapon_hexblade",
+  "file": "icon_weapon_hexblade.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "HUD/lobby icon for the Hexblade. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "weapon_maul",
+  "file": "weapon_maul.png",
+  "group": "weapons",
+  "size": [
+   64,
+   32
+  ],
+  "anchor": [
+   12,
+   16
+  ],
+  "frames": 1,
+  "description": "Earthbreaker Maul (blade) held in the hand, pointing right; the grip sits at the anchor. The heaviest weapon: two huge, slow blows that are not interrupted when you are hit; the second shakes the ground around it. Charge: a crater-making slam."
+ },
+ {
+  "key": "icon_weapon_maul",
+  "file": "icon_weapon_maul.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "HUD/lobby icon for the Earthbreaker Maul. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "weapon_blaster",
+  "file": "weapon_blaster.png",
+  "group": "weapons",
+  "size": [
+   64,
+   32
+  ],
+  "anchor": [
+   12,
+   16
+  ],
+  "frames": 1,
+  "description": "Pulse Blaster (gun) held in the hand, pointing right; the grip sits at the anchor. Reliable three-shot gun. Charge: a big bolt that pierces every knight in its path."
+ },
+ {
+  "key": "icon_weapon_blaster",
+  "file": "icon_weapon_blaster.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "HUD/lobby icon for the Pulse Blaster. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "weapon_pulsar",
+  "file": "weapon_pulsar.png",
+  "group": "weapons",
+  "size": [
+   64,
+   32
+  ],
+  "anchor": [
+   12,
+   16
+  ],
+  "frames": 1,
+  "description": "Ripple Caster (gun) held in the hand, pointing right; the grip sits at the anchor. Slow waves that widen as they travel and pass through knights. Charge: one huge wave."
+ },
+ {
+  "key": "icon_weapon_pulsar",
+  "file": "icon_weapon_pulsar.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "HUD/lobby icon for the Ripple Caster. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "weapon_alchemer",
+  "file": "weapon_alchemer.png",
+  "group": "weapons",
+  "size": [
+   64,
+   32
+  ],
+  "anchor": [
+   12,
+   16
+  ],
+  "frames": 1,
+  "description": "Ricochet Coil (gun) held in the hand, pointing right; the grip sits at the anchor. Bolts that bounce off walls. Charge: four shocking bolts that bounce twice."
+ },
+ {
+  "key": "icon_weapon_alchemer",
+  "file": "icon_weapon_alchemer.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "HUD/lobby icon for the Ricochet Coil. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "weapon_autogun",
+  "file": "weapon_autogun.png",
+  "group": "weapons",
+  "size": [
+   64,
+   32
+  ],
+  "anchor": [
+   12,
+   16
+  ],
+  "frames": 1,
+  "description": "Rattle Autogun (gun) held in the hand, pointing right; the grip sits at the anchor. Six fast, light rounds. Charge: a focused ten-round stream."
+ },
+ {
+  "key": "icon_weapon_autogun",
+  "file": "icon_weapon_autogun.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "HUD/lobby icon for the Rattle Autogun. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "weapon_catalyzer",
+  "file": "weapon_catalyzer.png",
+  "group": "weapons",
+  "size": [
+   64,
+   32
+  ],
+  "anchor": [
+   12,
+   16
+  ],
+  "frames": 1,
+  "description": "Tether Catalyst (gun) held in the hand, pointing right; the grip sits at the anchor. Shots stick up to three charges on a knight. Charge: a detonator that blows them all at once."
+ },
+ {
+  "key": "icon_weapon_catalyzer",
+  "file": "icon_weapon_catalyzer.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "HUD/lobby icon for the Tether Catalyst. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "weapon_magnus",
+  "file": "weapon_magnus.png",
+  "group": "weapons",
+  "size": [
+   64,
+   32
+  ],
+  "anchor": [
+   12,
+   16
+  ],
+  "frames": 1,
+  "description": "Thunder Hand-cannon (gun) held in the hand, pointing right; the grip sits at the anchor. Two heavy rounds with big knockback. Charge: a round that explodes on impact."
+ },
+ {
+  "key": "icon_weapon_magnus",
+  "file": "icon_weapon_magnus.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "HUD/lobby icon for the Thunder Hand-cannon. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "weapon_rifle",
+  "file": "weapon_rifle.png",
+  "group": "weapons",
+  "size": [
+   64,
+   32
+  ],
+  "anchor": [
+   12,
+   16
+  ],
+  "frames": 1,
+  "description": "Longshot Rifle (gun) held in the hand, pointing right; the grip sits at the anchor. A single tiny, very fast round with a long reload: up to 80% more damage at long range. Hard to land, punishing when it does. Charge: a piercing rail shot."
+ },
+ {
+  "key": "icon_weapon_rifle",
+  "file": "icon_weapon_rifle.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "HUD/lobby icon for the Longshot Rifle. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "weapon_frostgun",
+  "file": "weapon_frostgun.png",
+  "group": "weapons",
+  "size": [
+   64,
+   32
+  ],
+  "anchor": [
+   12,
+   16
+  ],
+  "frames": 1,
+  "description": "Winter Repeater (gun) held in the hand, pointing right; the grip sits at the anchor. Every round chills; three chills freeze. Charge: a piercing bolt that freezes on the spot."
+ },
+ {
+  "key": "icon_weapon_frostgun",
+  "file": "icon_weapon_frostgun.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "HUD/lobby icon for the Winter Repeater. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "weapon_embercaster",
+  "file": "weapon_embercaster.png",
+  "group": "weapons",
+  "size": [
+   64,
+   32
+  ],
+  "anchor": [
+   12,
+   16
+  ],
+  "frames": 1,
+  "description": "Ember Caster (gun) held in the hand, pointing right; the grip sits at the anchor. Fire waves that may ignite (25%) every knight they pass. Charge: a huge wave that sets all of them alight."
+ },
+ {
+  "key": "icon_weapon_embercaster",
+  "file": "icon_weapon_embercaster.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "HUD/lobby icon for the Ember Caster. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "weapon_voltneedle",
+  "file": "weapon_voltneedle.png",
+  "group": "weapons",
+  "size": [
+   64,
+   32
+  ],
+  "anchor": [
+   12,
+   16
+  ],
+  "frames": 1,
+  "description": "Volt Needle (gun) held in the hand, pointing right; the grip sits at the anchor. Six fast needles that may shock (8%) and arc to a nearby enemy. Charge: a shocking ten-needle stream."
+ },
+ {
+  "key": "icon_weapon_voltneedle",
+  "file": "icon_weapon_voltneedle.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "HUD/lobby icon for the Volt Needle. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "weapon_viper",
+  "file": "weapon_viper.png",
+  "group": "weapons",
+  "size": [
+   64,
+   32
+  ],
+  "anchor": [
+   12,
+   16
+  ],
+  "frames": 1,
+  "description": "Viper Spitter (gun) held in the hand, pointing right; the grip sits at the anchor. Rounds that may poison (30%): poisoned knights hit softer and cannot heal. Charge: a fan of five venom bolts."
+ },
+ {
+  "key": "icon_weapon_viper",
+  "file": "icon_weapon_viper.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "HUD/lobby icon for the Viper Spitter. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "weapon_grimcannon",
+  "file": "weapon_grimcannon.png",
+  "group": "weapons",
+  "size": [
+   64,
+   32
+  ],
+  "anchor": [
+   12,
+   16
+  ],
+  "frames": 1,
+  "description": "Grim Hand-cannon (gun) held in the hand, pointing right; the grip sits at the anchor. Heavy rounds that may curse (30%). Charge: a blast that curses everyone it catches."
+ },
+ {
+  "key": "icon_weapon_grimcannon",
+  "file": "icon_weapon_grimcannon.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "HUD/lobby icon for the Grim Hand-cannon. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "weapon_blast",
+  "file": "weapon_blast.png",
+  "group": "weapons",
+  "size": [
+   64,
+   32
+  ],
+  "anchor": [
+   12,
+   16
+  ],
+  "frames": 1,
+  "description": "Blast Bomb (bomb) held in the hand, pointing right; the grip sits at the anchor. Charges fast. A big knockback blast after a short fuse."
+ },
+ {
+  "key": "icon_weapon_blast",
+  "file": "icon_weapon_blast.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "HUD/lobby icon for the Blast Bomb. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "weapon_haze",
+  "file": "weapon_haze.png",
+  "group": "weapons",
+  "size": [
+   64,
+   32
+  ],
+  "anchor": [
+   12,
+   16
+  ],
+  "frames": 1,
+  "description": "Ember Haze (bomb) held in the hand, pointing right; the grip sits at the anchor. Leaves a cloud that sets enemies on fire."
+ },
+ {
+  "key": "icon_weapon_haze",
+  "file": "icon_weapon_haze.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "HUD/lobby icon for the Ember Haze. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "weapon_frost",
+  "file": "weapon_frost.png",
+  "group": "weapons",
+  "size": [
+   64,
+   32
+  ],
+  "anchor": [
+   12,
+   16
+  ],
+  "frames": 1,
+  "description": "Frost Haze (bomb) held in the hand, pointing right; the grip sits at the anchor. Leaves a cloud that freezes enemies solid."
+ },
+ {
+  "key": "icon_weapon_frost",
+  "file": "icon_weapon_frost.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "HUD/lobby icon for the Frost Haze. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "weapon_venom",
+  "file": "weapon_venom.png",
+  "group": "weapons",
+  "size": [
+   64,
+   32
+  ],
+  "anchor": [
+   12,
+   16
+  ],
+  "frames": 1,
+  "description": "Venom Veil (bomb) held in the hand, pointing right; the grip sits at the anchor. Leaves a cloud that poisons enemies: they hit softer and cannot heal."
+ },
+ {
+  "key": "icon_weapon_venom",
+  "file": "icon_weapon_venom.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "HUD/lobby icon for the Venom Veil. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "weapon_storm",
+  "file": "weapon_storm.png",
+  "group": "weapons",
+  "size": [
+   64,
+   32
+  ],
+  "anchor": [
+   12,
+   16
+  ],
+  "frames": 1,
+  "description": "Storm Haze (bomb) held in the hand, pointing right; the grip sits at the anchor. Leaves a crackling cloud that shocks enemies over and over."
+ },
+ {
+  "key": "icon_weapon_storm",
+  "file": "icon_weapon_storm.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "HUD/lobby icon for the Storm Haze. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "weapon_hex",
+  "file": "weapon_hex.png",
+  "group": "weapons",
+  "size": [
+   64,
+   32
+  ],
+  "anchor": [
+   12,
+   16
+  ],
+  "frames": 1,
+  "description": "Hex Haze (bomb) held in the hand, pointing right; the grip sits at the anchor. Leaves a cloud that curses enemies: no dash and no class ability."
+ },
+ {
+  "key": "icon_weapon_hex",
+  "file": "icon_weapon_hex.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "HUD/lobby icon for the Hex Haze. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "weapon_shard",
+  "file": "weapon_shard.png",
+  "group": "weapons",
+  "size": [
+   64,
+   32
+  ],
+  "anchor": [
+   12,
+   16
+  ],
+  "frames": 1,
+  "description": "Splinter Bomb (bomb) held in the hand, pointing right; the grip sits at the anchor. Bursts into eight shards that cut across the point."
+ },
+ {
+  "key": "icon_weapon_shard",
+  "file": "icon_weapon_shard.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "HUD/lobby icon for the Splinter Bomb. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "weapon_vortex",
+  "file": "weapon_vortex.png",
+  "group": "weapons",
+  "size": [
+   64,
+   32
+  ],
+  "anchor": [
+   12,
+   16
+  ],
+  "frames": 1,
+  "description": "Vortex Bomb (bomb) held in the hand, pointing right; the grip sits at the anchor. Pulls every enemy in range to its centre and holds them, then blasts them apart."
+ },
+ {
+  "key": "icon_weapon_vortex",
+  "file": "icon_weapon_vortex.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "HUD/lobby icon for the Vortex Bomb. Clear silhouette on a transparent background."
+ },
+ {
+  "key": "proj_bullet",
+  "file": "proj_bullet.png",
+  "group": "projectiles",
+  "size": [
+   16,
+   8
+  ],
+  "anchor": [
+   8,
+   4
+  ],
+  "frames": 1,
+  "description": "Standard energy round, pointing right. Hitbox is a 5 px radius at the bright tip."
+ },
+ {
+  "key": "proj_pierce",
+  "file": "proj_pierce.png",
+  "group": "projectiles",
+  "size": [
+   32,
+   10
+  ],
+  "anchor": [
+   16,
+   5
+  ],
+  "frames": 1,
+  "description": "Charged piercing bolt, longer and brighter, pointing right (9 px hitbox radius)."
+ },
+ {
+  "key": "proj_explosive",
+  "file": "proj_explosive.png",
+  "group": "projectiles",
+  "size": [
+   18,
+   18
+  ],
+  "anchor": [
+   9,
+   9
+  ],
+  "frames": 1,
+  "description": "Charged hand-cannon round that explodes on impact."
+ },
+ {
+  "key": "proj_ricochet",
+  "file": "proj_ricochet.png",
+  "group": "projectiles",
+  "size": [
+   16,
+   8
+  ],
+  "anchor": [
+   8,
+   4
+  ],
+  "frames": 1,
+  "description": "Ricochet Coil bolt: electric blue, pointing right; it bounces off walls."
+ },
+ {
+  "key": "proj_pulse",
+  "file": "proj_pulse.png",
+  "group": "projectiles",
+  "size": [
+   32,
+   64
+  ],
+  "anchor": [
+   16,
+   32
+  ],
+  "frames": 1,
+  "description": "Ripple Caster wave seen from above: a curved band of light, convex side facing right. The game scales it as the wave widens."
+ },
+ {
+  "key": "proj_catalyst",
+  "file": "proj_catalyst.png",
+  "group": "projectiles",
+  "size": [
+   14,
+   14
+  ],
+  "anchor": [
+   7,
+   7
+  ],
+  "frames": 1,
+  "description": "Sticky golden catalyst orb that clings to a knight."
+ },
+ {
+  "key": "proj_detonator",
+  "file": "proj_detonator.png",
+  "group": "projectiles",
+  "size": [
+   18,
+   18
+  ],
+  "anchor": [
+   9,
+   9
+  ],
+  "frames": 1,
+  "description": "Red-orange detonator orb that sets off stuck catalysts."
+ },
+ {
+  "key": "proj_thorn",
+  "file": "proj_thorn.png",
+  "group": "projectiles",
+  "size": [
+   14,
+   6
+  ],
+  "anchor": [
+   7,
+   3
+  ],
+  "frames": 1,
+  "description": "Briar Blade thorn, green and sharp, pointing right."
+ },
+ {
+  "key": "proj_wave",
+  "file": "proj_wave.png",
+  "group": "projectiles",
+  "size": [
+   48,
+   64
+  ],
+  "anchor": [
+   24,
+   32
+  ],
+  "frames": 1,
+  "description": "Umbral Greatblade shadow wave: a dark violet crescent, convex side facing right. The game scales it to its size."
+ },
+ {
+  "key": "proj_shard",
+  "file": "proj_shard.png",
+  "group": "projectiles",
+  "size": [
+   14,
+   6
+  ],
+  "anchor": [
+   7,
+   3
+  ],
+  "frames": 1,
+  "description": "Splinter Bomb fragment, pointing right."
+ },
+ {
+  "key": "bomb_blast",
+  "file": "bomb_blast.png",
+  "group": "bombs",
+  "size": [
+   32,
+   32
+  ],
+  "anchor": [
+   16,
+   24
+  ],
+  "frames": 1,
+  "description": "Blast Bomb planted on the floor, seen from the ¾ camera (the fuse ring is drawn by the game)."
+ },
+ {
+  "key": "bomb_haze",
+  "file": "bomb_haze.png",
+  "group": "bombs",
+  "size": [
+   32,
+   32
+  ],
+  "anchor": [
+   16,
+   24
+  ],
+  "frames": 1,
+  "description": "Ember Haze planted on the floor, seen from the ¾ camera (the fuse ring is drawn by the game)."
+ },
+ {
+  "key": "bomb_frost",
+  "file": "bomb_frost.png",
+  "group": "bombs",
+  "size": [
+   32,
+   32
+  ],
+  "anchor": [
+   16,
+   24
+  ],
+  "frames": 1,
+  "description": "Frost Haze planted on the floor, seen from the ¾ camera (the fuse ring is drawn by the game)."
+ },
+ {
+  "key": "bomb_venom",
+  "file": "bomb_venom.png",
+  "group": "bombs",
+  "size": [
+   32,
+   32
+  ],
+  "anchor": [
+   16,
+   24
+  ],
+  "frames": 1,
+  "description": "Venom Veil planted on the floor, seen from the ¾ camera (the fuse ring is drawn by the game)."
+ },
+ {
+  "key": "bomb_storm",
+  "file": "bomb_storm.png",
+  "group": "bombs",
+  "size": [
+   32,
+   32
+  ],
+  "anchor": [
+   16,
+   24
+  ],
+  "frames": 1,
+  "description": "Storm Haze planted on the floor, seen from the ¾ camera (the fuse ring is drawn by the game)."
+ },
+ {
+  "key": "bomb_hex",
+  "file": "bomb_hex.png",
+  "group": "bombs",
+  "size": [
+   32,
+   32
+  ],
+  "anchor": [
+   16,
+   24
+  ],
+  "frames": 1,
+  "description": "Hex Haze planted on the floor, seen from the ¾ camera (the fuse ring is drawn by the game)."
+ },
+ {
+  "key": "bomb_shard",
+  "file": "bomb_shard.png",
+  "group": "bombs",
+  "size": [
+   32,
+   32
+  ],
+  "anchor": [
+   16,
+   24
+  ],
+  "frames": 1,
+  "description": "Splinter Bomb planted on the floor, seen from the ¾ camera (the fuse ring is drawn by the game)."
+ },
+ {
+  "key": "bomb_vortex",
+  "file": "bomb_vortex.png",
+  "group": "bombs",
+  "size": [
+   32,
+   32
+  ],
+  "anchor": [
+   16,
+   24
+  ],
+  "frames": 1,
+  "description": "Vortex Bomb planted on the floor, seen from the ¾ camera (the fuse ring is drawn by the game)."
+ },
+ {
+  "key": "fx_slash",
+  "file": "fx_slash.png",
+  "group": "effects",
+  "size": [
+   384,
+   96
+  ],
+  "anchor": [
+   24,
+   48
+  ],
+  "frames": 4,
+  "description": "Blade swipe arc, 4-frame strip (96x96 each), sweeping from top to bottom, pivot at the left middle (the wielder)."
+ },
+ {
+  "key": "fx_spin",
+  "file": "fx_spin.png",
+  "group": "effects",
+  "size": [
+   512,
+   128
+  ],
+  "anchor": [
+   64,
+   64
+  ],
+  "frames": 4,
+  "description": "Full 360° spin slash, 4-frame strip (128x128 each), centred."
+ },
+ {
+  "key": "fx_slam",
+  "file": "fx_slam.png",
+  "group": "effects",
+  "size": [
+   640,
+   128
+  ],
+  "anchor": [
+   64,
+   64
+  ],
+  "frames": 5,
+  "description": "Ground slam shockwave, 5-frame strip (128x128 each), centred."
+ },
+ {
+  "key": "fx_explosion",
+  "file": "fx_explosion.png",
+  "group": "effects",
+  "size": [
+   768,
+   128
+  ],
+  "anchor": [
+   64,
+   64
+  ],
+  "frames": 6,
+  "description": "Bomb explosion, 6-frame strip (128x128 each), centred."
+ },
+ {
+  "key": "fx_vortex",
+  "file": "fx_vortex.png",
+  "group": "effects",
+  "size": [
+   512,
+   128
+  ],
+  "anchor": [
+   64,
+   64
+  ],
+  "frames": 4,
+  "description": "Swirling vortex pull, 4-frame looping strip (128x128 each)."
+ },
+ {
+  "key": "fx_muzzle",
+  "file": "fx_muzzle.png",
+  "group": "effects",
+  "size": [
+   96,
+   32
+  ],
+  "anchor": [
+   0,
+   16
+  ],
+  "frames": 3,
+  "description": "Muzzle flash, 3-frame strip (32x32 each), pointing right."
+ },
+ {
+  "key": "fx_hit",
+  "file": "fx_hit.png",
+  "group": "effects",
+  "size": [
+   192,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 4,
+  "description": "Impact spark, 4-frame strip (48x48 each)."
+ },
+ {
+  "key": "fx_bubble",
+  "file": "fx_bubble.png",
+  "group": "effects",
+  "size": [
+   192,
+   192
+  ],
+  "anchor": [
+   96,
+   96
+  ],
+  "frames": 1,
+  "description": "Guardian dome seen from above: translucent ring with a soft rim. The game tints and scales it."
+ },
+ {
+  "key": "fx_heal",
+  "file": "fx_heal.png",
+  "group": "effects",
+  "size": [
+   256,
+   256
+  ],
+  "anchor": [
+   128,
+   128
+  ],
+  "frames": 1,
+  "description": "Healing pulse ring, soft green-white, centred."
+ },
+ {
+  "key": "fx_cloak",
+  "file": "fx_cloak.png",
+  "group": "effects",
+  "size": [
+   64,
+   64
+  ],
+  "anchor": [
+   32,
+   32
+  ],
+  "frames": 1,
+  "description": "Shimmer distortion overlay for a cloaked Recon."
+ },
+ {
+  "key": "fx_mark",
+  "file": "fx_mark.png",
+  "group": "effects",
+  "size": [
+   32,
+   32
+  ],
+  "anchor": [
+   16,
+   16
+  ],
+  "frames": 1,
+  "description": "Target mark shown over a marked enemy."
+ },
+ {
+  "key": "fx_dash",
+  "file": "fx_dash.png",
+  "group": "effects",
+  "size": [
+   64,
+   64
+  ],
+  "anchor": [
+   32,
+   32
+  ],
+  "frames": 1,
+  "description": "Speed streak behind a dashing Striker, pointing right."
+ },
+ {
+  "key": "fx_guard",
+  "file": "fx_guard.png",
+  "group": "effects",
+  "size": [
+   64,
+   80
+  ],
+  "anchor": [
+   32,
+   40
+  ],
+  "frames": 1,
+  "description": "The shield every knight raises with right click: a translucent, faintly hexagonal energy dome around a standing knight, neutral white-blue (the game tints the rim by team and shows its health)."
+ },
+ {
+  "key": "fx_cloud_burn",
+  "file": "fx_cloud_burn.png",
+  "group": "effects",
+  "size": [
+   192,
+   192
+  ],
+  "anchor": [
+   96,
+   96
+  ],
+  "frames": 1,
+  "description": "Ember Haze cloud on the floor, seen from the ¾ camera: smouldering orange smoke with sparks. The game scales it to the cloud radius."
+ },
+ {
+  "key": "fx_cloud_freeze",
+  "file": "fx_cloud_freeze.png",
+  "group": "effects",
+  "size": [
+   192,
+   192
+  ],
+  "anchor": [
+   96,
+   96
+  ],
+  "frames": 1,
+  "description": "Frost Haze cloud on the floor: pale blue freezing mist with ice glints."
+ },
+ {
+  "key": "fx_status_burn",
+  "file": "fx_status_burn.png",
+  "group": "effects",
+  "size": [
+   12,
+   12
+  ],
+  "anchor": [
+   6,
+   6
+  ],
+  "frames": 1,
+  "description": "Tiny status icon shown above a knight's head: flame."
+ },
+ {
+  "key": "fx_status_poison",
+  "file": "fx_status_poison.png",
+  "group": "effects",
+  "size": [
+   12,
+   12
+  ],
+  "anchor": [
+   6,
+   6
+  ],
+  "frames": 1,
+  "description": "Tiny status icon shown above a knight's head: green drop."
+ },
+ {
+  "key": "fx_status_shock",
+  "file": "fx_status_shock.png",
+  "group": "effects",
+  "size": [
+   12,
+   12
+  ],
+  "anchor": [
+   6,
+   6
+  ],
+  "frames": 1,
+  "description": "Tiny status icon shown above a knight's head: lightning bolt."
+ },
+ {
+  "key": "fx_status_freeze",
+  "file": "fx_status_freeze.png",
+  "group": "effects",
+  "size": [
+   12,
+   12
+  ],
+  "anchor": [
+   6,
+   6
+  ],
+  "frames": 1,
+  "description": "Tiny status icon shown above a knight's head: snowflake."
+ },
+ {
+  "key": "fx_status_chill",
+  "file": "fx_status_chill.png",
+  "group": "effects",
+  "size": [
+   12,
+   12
+  ],
+  "anchor": [
+   6,
+   6
+  ],
+  "frames": 1,
+  "description": "Tiny status icon shown above a knight's head: small light-blue frost crystal."
+ },
+ {
+  "key": "fx_status_curse",
+  "file": "fx_status_curse.png",
+  "group": "effects",
+  "size": [
+   12,
+   12
+  ],
+  "anchor": [
+   6,
+   6
+  ],
+  "frames": 1,
+  "description": "Tiny status icon shown above a knight's head: purple broken-chain skull."
+ },
+ {
+  "key": "fx_cloud_poison",
+  "file": "fx_cloud_poison.png",
+  "group": "effects",
+  "size": [
+   192,
+   192
+  ],
+  "anchor": [
+   96,
+   96
+  ],
+  "frames": 1,
+  "description": "Venom Veil cloud on the floor: sickly green toxic fog with bubbles."
+ },
+ {
+  "key": "fx_cloud_shock",
+  "file": "fx_cloud_shock.png",
+  "group": "effects",
+  "size": [
+   192,
+   192
+  ],
+  "anchor": [
+   96,
+   96
+  ],
+  "frames": 1,
+  "description": "Storm Haze cloud on the floor: dark blue-grey storm fog with little lightning crackles."
+ },
+ {
+  "key": "fx_cloud_curse",
+  "file": "fx_cloud_curse.png",
+  "group": "effects",
+  "size": [
+   192,
+   192
+  ],
+  "anchor": [
+   96,
+   96
+  ],
+  "frames": 1,
+  "description": "Hex Haze cloud on the floor: swirling violet smoke with faint runes."
+ },
+ {
+  "key": "pickup_heart",
+  "file": "pickup_heart.png",
+  "group": "pickups",
+  "size": [
+   32,
+   32
+  ],
+  "anchor": [
+   16,
+   16
+  ],
+  "frames": 1,
+  "description": "Heart dropped by a knocked-out knight; heals whoever grabs it. Bright red, chunky, readable at a glance. The game bobs it and adds the shadow."
+ },
+ {
+  "key": "fx_regen",
+  "file": "fx_regen.png",
+  "group": "pickups",
+  "size": [
+   16,
+   16
+  ],
+  "anchor": [
+   8,
+   8
+  ],
+  "frames": 1,
+  "description": "Small green plus that drifts up from a knight healing inside their base."
+ },
+ {
+  "key": "point_base",
+  "file": "point_base.png",
+  "group": "points",
+  "size": [
+   160,
+   160
+  ],
+  "anchor": [
+   80,
+   80
+  ],
+  "frames": 1,
+  "description": "Round neutral bronze-and-ivory control-point machine drawn straight from above, with a solid dark metal hub and inset white lamps. Transparent outside the disc. May be supplied at exactly 2x (320x320). The game foreshortens it into an oval and draws the capture indicator, beacon and letter separately."
+ },
+ {
+  "key": "point_beacon",
+  "file": "point_beacon.png",
+  "group": "points",
+  "size": [
+   48,
+   96
+  ],
+  "anchor": [
+   24,
+   88
+  ],
+  "frames": 1,
+  "description": "Low broad neutral crystal core at the centre of a control point, upright in the ¾ view; the game colours its light by owner."
+ },
+ {
+  "key": "icon_armor_none",
+  "file": "icon_armor_none.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "Unarmored equipment icon. Neutral clothing or armor silhouette on a transparent background."
+ },
+ {
+  "key": "icon_armor_scout",
+  "file": "icon_armor_scout.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "Scout Armor equipment icon. Neutral clothing or armor silhouette on a transparent background."
+ },
+ {
+  "key": "icon_armor_ballistic",
+  "file": "icon_armor_ballistic.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "Ballistic Armor equipment icon. Neutral clothing or armor silhouette on a transparent background."
+ },
+ {
+  "key": "icon_armor_duelist",
+  "file": "icon_armor_duelist.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "Duelist Armor equipment icon. Neutral clothing or armor silhouette on a transparent background."
+ },
+ {
+  "key": "icon_armor_heavy",
+  "file": "icon_armor_heavy.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "Heavy Armor equipment icon. Neutral clothing or armor silhouette on a transparent background."
+ },
+ {
+  "key": "icon_armor_gunslinger",
+  "file": "icon_armor_gunslinger.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "Gunslinger Duster equipment icon. Neutral clothing or armor silhouette on a transparent background."
+ },
+ {
+  "key": "icon_armor_fencer",
+  "file": "icon_armor_fencer.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "Fencing Garb equipment icon. Neutral clothing or armor silhouette on a transparent background."
+ },
+ {
+  "key": "icon_armor_windrunner",
+  "file": "icon_armor_windrunner.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "Windrunner Wraps equipment icon. Neutral clothing or armor silhouette on a transparent background."
+ },
+ {
+  "key": "icon_armor_juggernaut",
+  "file": "icon_armor_juggernaut.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "Juggernaut Plate equipment icon. Neutral clothing or armor silhouette on a transparent background."
+ },
+ {
+  "key": "icon_armor_bombardier",
+  "file": "icon_armor_bombardier.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "Bombardier Apron equipment icon. Neutral clothing or armor silhouette on a transparent background."
+ },
+ {
+  "key": "icon_armor_berserker",
+  "file": "icon_armor_berserker.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "Berserker Hide equipment icon. Neutral clothing or armor silhouette on a transparent background."
+ },
+ {
+  "key": "icon_armor_mirrorweave",
+  "file": "icon_armor_mirrorweave.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "Mirrorweave Cloak equipment icon. Neutral clothing or armor silhouette on a transparent background."
+ },
+ {
+  "key": "icon_armor_medic",
+  "file": "icon_armor_medic.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "Field Medic Coat equipment icon. Neutral clothing or armor silhouette on a transparent background."
+ },
+ {
+  "key": "icon_armor_clockwork",
+  "file": "icon_armor_clockwork.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "Clockwork Harness equipment icon. Neutral clothing or armor silhouette on a transparent background."
+ },
+ {
+  "key": "icon_class_striker",
+  "file": "icon_class_striker.png",
+  "group": "icons",
+  "size": [
+   64,
+   64
+  ],
+  "anchor": [
+   32,
+   32
+  ],
+  "frames": 1,
+  "description": "Striker class emblem for the lobby and scoreboard."
+ },
+ {
+  "key": "icon_class_guardian",
+  "file": "icon_class_guardian.png",
+  "group": "icons",
+  "size": [
+   64,
+   64
+  ],
+  "anchor": [
+   32,
+   32
+  ],
+  "frames": 1,
+  "description": "Guardian class emblem for the lobby and scoreboard."
+ },
+ {
+  "key": "icon_class_recon",
+  "file": "icon_class_recon.png",
+  "group": "icons",
+  "size": [
+   64,
+   64
+  ],
+  "anchor": [
+   32,
+   32
+  ],
+  "frames": 1,
+  "description": "Recon class emblem for the lobby and scoreboard."
+ },
+ {
+  "key": "ui_crosshair",
+  "file": "ui_crosshair.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "Aiming reticle drawn at the mouse: bold white ring with a dark outline, four short ticks and a centre dot, readable on every floor. The game draws the charge arc around it."
+ },
+ {
+  "key": "ui_boost_bar",
+  "file": "ui_boost_bar.png",
+  "group": "icons",
+  "size": [
+   48,
+   12
+  ],
+  "anchor": [
+   24,
+   6
+  ],
+  "frames": 1,
+  "description": "Frame for the Striker nitro bar shown under the knight: a slim dark capsule with a metallic rim, empty inside (the game fills it 40 px wide, 5 px tall, centred)."
+ },
+ {
+  "key": "icon_ability_dash",
+  "file": "icon_ability_dash.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "Ability icon: dash."
+ },
+ {
+  "key": "icon_ability_bubble",
+  "file": "icon_ability_bubble.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "Ability icon: bubble."
+ },
+ {
+  "key": "icon_ability_heal",
+  "file": "icon_ability_heal.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "Ability icon: heal."
+ },
+ {
+  "key": "icon_ability_cloak",
+  "file": "icon_ability_cloak.png",
+  "group": "icons",
+  "size": [
+   48,
+   48
+  ],
+  "anchor": [
+   24,
+   24
+  ],
+  "frames": 1,
+  "description": "Ability icon: cloak."
+ }
+]
