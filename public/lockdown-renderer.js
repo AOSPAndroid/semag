@@ -504,8 +504,10 @@ export class LockdownRenderer {
     // Labels stay readable even when a knight is behind a wall.
     for (const player of players) upright(player.y, lift(player.x, player.y), () => {
       if (player.guarding) this.drawGuard(ctx, player, now);
-      this.drawKnightOverlay(ctx, player, now, player.id === localId);
-      if (state.phase === 'fight' && player.hp < player.maxHp && inBase(state, player)) this.drawRegen(ctx, player, now);
+      // Health is only shown for your own team (and, later, monsters); enemies keep theirs hidden.
+      const showHealth = viewerTeam === null || player.team === undefined || player.team === viewerTeam;
+      this.drawKnightOverlay(ctx, player, now, player.id === localId, showHealth);
+      if (showHealth && state.phase === 'fight' && player.hp < player.maxHp && inBase(state, player)) this.drawRegen(ctx, player, now);
     })();
     if (pointer) this.drawCrosshair(ctx, pointer, local, now);
   }
@@ -816,8 +818,8 @@ export class LockdownRenderer {
     const flipY = Math.cos(angle) < 0;
     if (!this.drawSprite(ctx, `weapon_${weapon.id}`, x, y, { rotation: angle, scale: WEAPON_SCALE, flipY })) this.placeholderWeapon(ctx, weapon, x, y, angle);
   }
-  /** Name, health bar, mark and stun stars above the head. */
-  drawKnightOverlay(ctx, player, now, mine) {
+  /** Name, health bar (allies only), mark and stun stars above the head. */
+  drawKnightOverlay(ctx, player, now, mine, showHealth = true) {
     const team = TEAM_COLORS[player.team], top = player.y + FEET - 58;
     if (player.cls === 'striker' && player.boostMeter !== undefined) this.drawBoostBar(ctx, player, now);
     if (player.markTicks > 0 && !this.drawSprite(ctx, 'fx_mark', player.x, top - 18)) { ctx.fillStyle = '#ff4d6d'; ctx.font = 'bold 16px system-ui'; ctx.textAlign = 'center'; ctx.fillText('◎', player.x, top - 18); }
@@ -828,9 +830,11 @@ export class LockdownRenderer {
       const x = player.x - (statuses.length - 1) * 6 + i * 12, y = top - 28;
       if (!this.drawSprite(ctx, `fx_status_${id}`, x, y)) { ctx.fillStyle = STATUS_COLORS[id]; ctx.beginPath(); ctx.arc(x, y, 4.5, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.lineWidth = 1; ctx.stroke(); }
     });
-    const w = 38, pct = Math.max(0, player.hp / player.maxHp);
-    ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillRect(player.x - w / 2, top - 4, w, 5);
-    ctx.fillStyle = pct > .5 ? team.light : pct > .25 ? '#ffd36b' : '#ff6b5a'; ctx.fillRect(player.x - w / 2, top - 4, w * pct, 5);
+    if (showHealth) {
+      const w = 38, pct = Math.max(0, player.hp / player.maxHp);
+      ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillRect(player.x - w / 2, top - 4, w, 5);
+      ctx.fillStyle = pct > .5 ? team.light : pct > .25 ? '#ffd36b' : '#ff6b5a'; ctx.fillRect(player.x - w / 2, top - 4, w * pct, 5);
+    }
     ctx.font = '11px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.fillStyle = mine ? '#ffffff' : team.light;
     ctx.fillText(player.name, player.x, top - 8);
   }

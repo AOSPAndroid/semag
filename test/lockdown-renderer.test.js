@@ -49,3 +49,15 @@ test('every arena has two healing alcoves, six hearts and clear capture courts w
   }
   assert.equal(JSON.stringify(MAPS), before);
 });
+
+test('health bars are drawn for allies but never for enemies', () => {
+  const rects = [], noop = () => {};
+  const ctx = { fillRect: (x, y, w) => rects.push(w), fillText: noop, beginPath: noop, arc: noop, fill: noop, stroke: noop };
+  const scene = new LockdownRenderer({ getContext: () => ctx }, null);
+  const knight = { x: 100, y: 100, team: 1, hp: 50, maxHp: 100, name: 'Bot', status: {} };
+  scene.drawKnightOverlay(ctx, knight, 0, false, true);
+  assert.ok(rects.includes(38), 'an ally shows a health bar');
+  rects.length = 0;
+  scene.drawKnightOverlay(ctx, knight, 0, false, false);
+  assert.deepEqual(rects, [], 'an enemy shows no health bar');
+});
