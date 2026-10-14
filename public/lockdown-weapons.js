@@ -16,7 +16,7 @@ const step = (damage, startup, active, recovery, reach, arc, push, stun, lunge) 
 export const WEAPONS = Object.freeze({
   // ---------- blades ----------
   brand: Object.freeze({ id: 'brand', family: 'blade', type: 'Normal sword', name: 'Knight Brand', chargeTicks: 108,
-    combo: [step(17, 6, 6, 12, 72, 1.9, 150, 14, 16), step(17, 6, 6, 12, 72, 1.9, 150, 14, 16), step(24, 8, 7, 18, 76, 2.3, 240, 18, 22)],
+    combo: [step(14, 5, 5, 11, 70, 1.8, 120, 12, 10), step(19, 7, 6, 14, 74, 2.0, 170, 15, 20), step(27, 9, 7, 20, 78, 2.3, 260, 20, 30)],
     charge: Object.freeze({ kind: 'lungeBurst', distance: 120, ticks: 14, damage: 22, reach: 50, arc: 1.6, push: 180, stun: 16, recovery: 16,
       burst: Object.freeze({ radius: 76, damage: 20, push: 260, status: 'burn', chance: 1 }) }),
     description: 'Balanced three-cut combo. Charge: lunge forward and end in a burning burst.' }),
@@ -25,11 +25,11 @@ export const WEAPONS = Object.freeze({
     charge: Object.freeze({ kind: 'slam', distance: 70, ticks: 30, radius: 104, offset: 34, damage: 42, push: 380, stun: 40, recovery: 24 }),
     description: 'Slow, brutal overhead chain that stuns. Charge: leap and slam the ground around you.' }),
   rapier: Object.freeze({ id: 'rapier', family: 'blade', type: 'Fast sword', name: 'Needle Rapier', chargeTicks: 96, sweetSpot: Object.freeze({ from: .72, bonus: 1.4 }),
-    combo: [step(10, 4, 4, 7, 82, .62, 80, 8, 14), step(10, 4, 4, 7, 82, .62, 80, 8, 14), step(10, 4, 4, 7, 82, .62, 80, 8, 14), step(13, 5, 4, 10, 86, .62, 130, 10, 22)],
+    combo: [step(9, 4, 4, 7, 82, .62, 70, 8, 10), step(10, 4, 4, 8, 82, .62, 80, 8, 14), step(11, 5, 4, 9, 84, .62, 90, 9, 18), step(15, 6, 5, 12, 88, .62, 140, 11, 26)],
     charge: Object.freeze({ kind: 'lunge', distance: 190, ticks: 18, damage: 28, reach: 36, arc: 1.2, push: 200, stun: 16, recovery: 14 }),
     description: 'Quick narrow thrusts that step you forward. Charge: a long lunge straight through the target.' }),
   thorn: Object.freeze({ id: 'thorn', family: 'blade', type: 'Thorn sword', name: 'Briar Blade', chargeTicks: 108,
-    combo: [step(16, 6, 6, 12, 70, 1.9, 140, 14, 14), step(16, 6, 6, 12, 70, 1.9, 140, 14, 14), step(22, 8, 7, 18, 74, 2.2, 220, 18, 20)],
+    combo: [step(13, 5, 5, 11, 68, 1.8, 110, 12, 10), step(18, 7, 6, 14, 72, 2.0, 160, 15, 18), step(25, 9, 7, 20, 76, 2.2, 230, 18, 28)],
     charge: Object.freeze({ kind: 'thorns', count: 9, spread: 1.1, damage: 7, speed: 520, range: 220, size: 5, status: 'poison', chance: .5, recovery: 20 }),
     description: 'Balanced combo. Charge: spray a short, wide shower of poison thorns.' }),
   greatblade: Object.freeze({ id: 'greatblade', family: 'blade', type: 'Dark sword', name: 'Umbral Greatblade', chargeTicks: 132, heavy: true,
@@ -37,27 +37,27 @@ export const WEAPONS = Object.freeze({
     charge: Object.freeze({ kind: 'wave', damage: 30, speed: 300, range: 420, size: 26, push: 160, status: 'shock', chance: .5, recovery: 26 }),
     description: 'Heavy two-hit chain. Charge: a slow wave of shadow that carries knights along with it.' }),
   spur: Object.freeze({ id: 'spur', family: 'blade', type: 'Spin sword', name: 'Gyre Spur', chargeTicks: 108,
-    combo: [step(8, 4, 5, 6, 66, 1.7, 70, 6, 10), step(8, 4, 5, 6, 66, 1.7, 70, 6, 10), step(8, 4, 5, 6, 66, 1.7, 70, 6, 10), step(12, 5, 6, 10, 68, 2.2, 140, 10, 14)],
+    combo: [step(7, 4, 5, 6, 66, 1.7, 60, 6, 8), step(8, 4, 5, 7, 66, 1.7, 70, 6, 10), step(9, 5, 5, 8, 66, 1.8, 80, 7, 12), step(13, 6, 6, 11, 68, 2.2, 150, 10, 18)],
     charge: Object.freeze({ kind: 'spin', turns: 3, ticksPerTurn: 18, reach: 70, damage: 11, push: 120, stun: 8, speed: .6, recovery: 12 }),
     description: 'Fast light four-cut chain. Charge: spin three times, hitting everything around you each turn.' }),
 
   // Elemental and special swords: every cut can carry a status or a trick of its own.
   frostbite: Object.freeze({ id: 'frostbite', family: 'blade', type: 'Frost sword', name: 'Frostbite Edge', chargeTicks: 108, element: 'chill',
-    combo: [step(14, 6, 6, 12, 70, 1.9, 120, 12, 14), step(14, 6, 6, 12, 70, 1.9, 120, 12, 14), step(19, 8, 7, 18, 74, 2.2, 200, 16, 20)], onHit: Object.freeze({ status: 'chill', chance: 1 }),
+    combo: [step(12, 5, 5, 11, 68, 1.8, 100, 10, 10), step(15, 7, 6, 14, 72, 2.0, 140, 13, 18), step(21, 9, 7, 20, 76, 2.2, 210, 16, 28)], onHit: Object.freeze({ status: 'chill', chance: 1 }),
     charge: Object.freeze({ kind: 'lungeBurst', distance: 110, ticks: 14, damage: 18, reach: 50, arc: 1.6, push: 120, stun: 16, recovery: 16, status: 'chill', chance: 1,
       burst: Object.freeze({ radius: 84, damage: 14, push: 140, status: 'freeze', chance: 1 }) }),
     description: 'Every cut chills: three chills freeze a knight solid. Charge: lunge into a freezing burst.' }),
   blazebrand: Object.freeze({ id: 'blazebrand', family: 'blade', type: 'Fire sword', name: 'Blazebrand', chargeTicks: 120, element: 'burn',
-    combo: [step(15, 6, 6, 12, 72, 1.9, 140, 14, 14), step(15, 6, 6, 12, 72, 1.9, 140, 14, 14), step(21, 8, 7, 18, 76, 2.3, 220, 18, 20)], onHit: Object.freeze({ status: 'burn', chance: .3 }),
+    combo: [step(13, 5, 5, 11, 70, 1.8, 110, 12, 10), step(17, 7, 6, 14, 74, 2.0, 150, 15, 18), step(24, 9, 7, 20, 78, 2.3, 230, 18, 28)], onHit: Object.freeze({ status: 'burn', chance: .3 }),
     charge: Object.freeze({ kind: 'wave', damage: 22, speed: 320, range: 360, size: 24, push: 140, status: 'burn', chance: 1, recovery: 24 }),
     description: 'Cuts may set knights on fire (30%). Charge: a rolling wall of flame that always burns.' }),
   voltedge: Object.freeze({ id: 'voltedge', family: 'blade', type: 'Shock sword', name: 'Voltedge', chargeTicks: 108, element: 'shock',
-    combo: [step(8, 4, 5, 6, 66, 1.7, 60, 6, 10), step(8, 4, 5, 6, 66, 1.7, 60, 6, 10), step(8, 4, 5, 6, 66, 1.7, 60, 6, 10), step(11, 5, 6, 10, 68, 2.2, 120, 10, 14)],
+    combo: [step(7, 4, 5, 6, 66, 1.7, 50, 6, 8), step(8, 4, 5, 7, 66, 1.7, 60, 6, 10), step(8, 5, 5, 8, 66, 1.8, 70, 7, 12), step(12, 6, 6, 11, 68, 2.2, 130, 10, 18)],
     onHit: Object.freeze({ status: 'shock', chance: .15 }), chain: Object.freeze({ chance: .3, count: 2, radius: 140, damage: 6, status: 'shock', chance2: .5 }),
     charge: Object.freeze({ kind: 'spin', turns: 3, ticksPerTurn: 18, reach: 72, damage: 9, push: 100, stun: 8, speed: .6, recovery: 12, status: 'shock', chance: .5 }),
     description: 'Fast cuts that may shock (15%); a hit can arc lightning to two more enemies nearby. Charge: an electric spin.' }),
   sickle: Object.freeze({ id: 'sickle', family: 'blade', type: 'Vampire sword', name: 'Sanguine Sickle', chargeTicks: 108, element: 'drain',
-    combo: [step(13, 6, 6, 12, 70, 2.0, 110, 12, 14), step(13, 6, 6, 12, 70, 2.0, 110, 12, 14), step(19, 8, 7, 18, 74, 2.4, 190, 16, 20)], lifesteal: .3,
+    combo: [step(11, 5, 5, 11, 68, 1.9, 100, 10, 10), step(14, 7, 6, 14, 72, 2.1, 140, 13, 18), step(20, 9, 7, 20, 76, 2.4, 200, 16, 28)], lifesteal: .3,
     charge: Object.freeze({ kind: 'lunge', distance: 170, ticks: 18, damage: 24, reach: 40, arc: 1.4, push: 180, stun: 16, recovery: 14 }),
     description: 'Heals you for 30% of the damage it deals. Charge: a long draining lunge.' }),
   hexblade: Object.freeze({ id: 'hexblade', family: 'blade', type: 'Curse sword', name: 'Hexblade', chargeTicks: 132, element: 'curse', heavy: true,
@@ -210,7 +210,11 @@ export const GUARD = Object.freeze({ raiseTicks: 6, max: 60, regenPerSecond: 15,
 export const BLADE = Object.freeze({ comboCancel: .4, comboWindow: 36, hitStop: 4,
   // Commitment: a cut that hits nothing (a whiff) recovers this much longer, cannot chain into the next
   // cut and drops the combo, and you barely move meanwhile, so spamming swings at air leaves you open.
-  whiffRecovery: 1, whiffMove: .2 });
+  whiffRecovery: 1, whiffMove: .2,
+  // Spiral Knights cancel: a shield, dash, Boost or cloak press after a cut lands drops its recovery and sends
+  // the combo back to the quick first cut, after a short lag. Later cuts hit harder but are slower, lunge
+  // further and commit you to their direction (you steer less).
+  cancelLag: 8, moveFirst: .5, moveLater: .3 });
 /** Guns bloom: every shot widens the spread, which settles back while you hold fire. Measured shots stay
  * accurate; holding the trigger sprays. Precise guns bloom harder. */
 /** Fighting rules that reward reading the opponent over mashing.

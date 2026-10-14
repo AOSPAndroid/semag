@@ -48,7 +48,7 @@ export const ABILITIES = Object.freeze({
   // Striker Boost (nitro): hold the ability to run 50% faster while the meter lasts. Letting go stops it;
   // the meter refills after a short pause. Run it dry and it locks until it is a quarter full again.
   // Pressing it cancels a cut's recovery and gives a brief dodge.
-  dash: { meter: 3 * TICK_RATE, speed: 1.5, regenDelay: TICK_RATE, refill: 6 * TICK_RATE, relock: .25, evadeTicks: 14 },
+  dash: { meter: 3 * TICK_RATE, speed: 1.5, regenDelay: TICK_RATE, refill: 6 * TICK_RATE, relock: .25, evadeTicks: 14, pressCost: 30 },
   // Recon Cloak: the first hit within `ambushTicks` of leaving it deals `ambush` times damage and marks the target.
   cloak: { ticks: 4 * TICK_RATE, cooldown: 12 * TICK_RATE, markTicks: 5 * TICK_RATE, markBonus: .3, revealRange: 64, ambush: 2, ambushTicks: Math.round(2.5 * TICK_RATE) },
 });
@@ -92,7 +92,7 @@ function newPlayer(id) {
     action: 'idle', actionTicks: 0, actionTotal: 0, comboStep: 0, comboWindow: 0, hitIds: [], chargeTicks: 0, charging: false,
     clips: {}, reloadTicks: {}, sinceShot: {}, fireCooldown: 0, burst: null, hitStop: 0, bufferAttack: false,
     swingAim: 0, swingDir: 1, swingReach: 0, swingArc: 0, swingStartup: 0, swingActive: 0, swingRecovery: 0, swingDamage: 0, chargeMoveTicks: 0,
-    dodgeTicks: 0, dodgeX: 0, dodgeY: 0, dodgeStep: 0, evadeTicks: 0, dashCooldown: 0, perfectUsed: false, riposteTicks: 0, stagger: 0, steadyTicks: 0,
+    dodgeTicks: 0, dodgeX: 0, dodgeY: 0, dodgeStep: 0, evadeTicks: 0, dashCooldown: 0, perfectUsed: false, riposteTicks: 0, stagger: 0, steadyTicks: 0, cancelLag: 0,
     guarding: false, guardRaise: 0, guardHp: GUARD.max, guardBroken: false, guardDelay: 0, domeHp: GUARD.domeMax, domeBroken: false,
     status: Object.fromEntries(STATUS_IDS.map(key => [key, 0])), statusOwner: {}, freezeImmune: 0, chillStacks: 0, catalysts: 0, catalystTicks: 0,
     dashTicks: 0, cloakTicks: 0, markTicks: 0, markReady: 0, abilityCooldown: 0, boostMeter: 3 * TICK_RATE, boostDelay: 0, boostLocked: false, boosting: false,
@@ -281,7 +281,7 @@ function spawn(state, player) {
     x: spot.x, y: spot.y, z: levelAt(map, spot.x, spot.y), vx: 0, vy: 0, alive: true, hp: maxHpFor(player.cls, player), maxHp: maxHpFor(player.cls, player), respawnTicks: 0, lastHurtTick: state.tick, shieldTicks: RULES.spawnShieldTicks,
     stunTicks: 0, pushX: 0, pushY: 0, action: 'idle', actionTicks: 0, actionTotal: 0, comboStep: 0, comboWindow: 0, hitIds: [], chargeTicks: 0, charging: false,
     dashTicks: 0, cloakTicks: 0, markTicks: 0, markReady: 0, fireCooldown: 0, boostMeter: ABILITIES.dash.meter, boostDelay: 0, boostLocked: false, boosting: false,
-    aim: player.team === 0 ? 0 : Math.PI, burst: null, hitStop: 0, bufferAttack: false, dodgeTicks: 0, evadeTicks: 0, dashCooldown: 0, perfectUsed: false, riposteTicks: 0, stagger: 0, steadyTicks: 0, guarding: false, guardRaise: 0, guardBroken: false, guardDelay: 0,
+    aim: player.team === 0 ? 0 : Math.PI, burst: null, hitStop: 0, bufferAttack: false, dodgeTicks: 0, evadeTicks: 0, dashCooldown: 0, perfectUsed: false, riposteTicks: 0, stagger: 0, steadyTicks: 0, cancelLag: 0, guarding: false, guardRaise: 0, guardBroken: false, guardDelay: 0,
     guardHp: GUARD.max, domeHp: GUARD.domeMax, domeBroken: false, freezeImmune: 0, chillStacks: 0, catalysts: 0, catalystTicks: 0,
     status: Object.fromEntries(STATUS_IDS.map(key => [key, 0])), statusOwner: {},
   });
@@ -347,13 +347,10 @@ function inRecovery(player) {
   if (player.action === 'swing') return elapsed >= player.swingStartup + player.swingActive;
   return elapsed >= (player.chargeMoveTicks || 0);
 }
-/** The animation cancel: drop the rest of the recovery. A cancelled cut still advances the combo. */
+/** The animation cancel: drop the rest of the recovery. As in Spiral Knights, the combo starts over at the
+ * quick first cut, and a short lag passes before the next attack. */
 function cancelRecovery(state, player, by) {
-  if (player.action === 'swing') {
-    const weapon = currentWeapon(player);
-    // A cut that hit nothing breaks the combo even when cancelled.
-    if (player.whiffed || !player.hitIds.length) { player.comboStep = 0; player.comboWindow = 0; } else { player.comboStep = (player.comboStep + 1) % weapon.combo.length; player.comboWindow = BLADE.comboWindow; }
-  }
+  player.comboStep = 0; player.comboWindow = 0; player.cancelLag = BLADE.cancelLag;
   player.action = 'idle'; player.actionTicks = 0; player.bufferAttack = false; player.whiffed = false;
   emit(state, 'cancel', { playerId: player.id, by });
 }
@@ -779,6 +776,13 @@ function tickWeapon(state, player, input, previous) {
     tickAction(state, player, weapon);
     return;
   }
+  // Just after a cancel the next attack waits a moment; a press meanwhile is kept for when it ends.
+  if (player.cancelLag > 0) {
+    if (pressed) player.bufferAttack = true;
+    if (--player.cancelLag > 0) return;
+    if (player.bufferAttack && !player.guarding && weapon.family === 'blade') { startSwing(state, player, weapon); return; }
+    player.bufferAttack = false;
+  }
   if (player.guarding || player.burst) return;
   // Holding the button charges; a full charge releases the special on let-go.
   if (input.attack && (player.charging || !pressed && weapon.family !== 'bomb')) { if (!player.charging) { player.charging = true; player.chargeTicks = 0; } player.chargeTicks++; }
@@ -839,8 +843,9 @@ function tickBoost(state, player, input) {
   else player.cursedPing = false;
   const boosting = held && !(player.status.curse > 0) && !player.boostLocked && player.boostMeter > 0;
   if (boosting && !player.boosting) {
-    // Pressing Boost cuts a sword's recovery short (keeping your place in the combo) and slips one hit.
+    // Pressing Boost cuts a sword's recovery short and slips one hit; each press costs a slice of the meter.
     if (inRecovery(player)) cancelRecovery(state, player, 'dodge');
+    player.boostMeter = Math.max(0, player.boostMeter - rule.pressCost);
     player.evadeTicks = Math.max(player.evadeTicks, rule.evadeTicks); player.perfectUsed = false;
     emit(state, 'dash', { playerId: player.id, x: player.x, y: player.y, angle: Math.atan2(player.vy, player.vx) });
   }
@@ -860,7 +865,7 @@ function moveScale(player, weapon) {
   if (player.status.freeze > 0 || ['lunge', 'lungeBurst', 'slam'].includes(player.action)) return 0;
   if (player.stunTicks > 0) return .25;
   if (player.held > 0) return .15;
-  if (player.action === 'swing') return player.whiffed ? BLADE.whiffMove : .5;
+  if (player.action === 'swing') return player.whiffed ? BLADE.whiffMove : player.comboStep > 0 ? BLADE.moveLater : BLADE.moveFirst;
   if (player.action === 'cast') return .3;
   if (player.action === 'spin') return weapon.charge.speed;
   if (player.guarding) return GUARD.speed;
@@ -1235,6 +1240,11 @@ function botInput(state, bot) {
     return d < 150 && ((bot.x - shot.x) * shot.vx + (bot.y - shot.y) * shot.vy) / (speed * Math.max(1, d)) > .92;
   }) || state.players.some(enemy => enemy.alive && enemy.team !== bot.team && dist(enemy, bot) < 100 && (enemy.action !== 'idle' || enemy.charging && enemy.chargeTicks > chargeTicksFor(enemy, currentWeapon(enemy)) * .8))
     || state.bombs.some(bomb => bomb.team !== bot.team && bomb.fuse < 36 && dist(bomb, bot) < (WEAPONS[bomb.weapon].radius || 0) + 24);
+  // The Spiral Knights habit: land the quick first cut, cancel its recovery, cut again.
+  if (target && bot.action === 'swing' && bot.comboStep === 0 && inRecovery(bot) && bot.hitIds.length && dist(target, bot) < 120 && random(state) < (brain.skill || .5) * .12) {
+    if (bot.cls === 'recon') { if (bot.dashCooldown === 0) input.dash = !bot.previousInput.dash; }
+    else if (!bot.previousInput.ability && !(bot.cls === 'striker' && bot.boostLocked)) input.ability = true;
+  }
   // Reading a wind-up: a cut about to come our way can be slipped with a well-timed dodge (or blocked).
   const windup = state.players.find(enemy => enemy.alive && enemy.team !== bot.team && enemy.action === 'swing' && enemy.actionTotal - enemy.actionTicks < enemy.swingStartup
     && dist(enemy, bot) <= enemy.swingReach + RULES.radius + 10 && Math.abs(wrapAngle(Math.atan2(bot.y - enemy.y, bot.x - enemy.x) - enemy.swingAim)) <= enemy.swingArc / 2 + .3);

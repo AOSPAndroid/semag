@@ -173,7 +173,7 @@ test('Striker Boost: faster only while held, burns a meter, locks when empty and
   const normal = me.x - start;
   me.x = start; me.vx = 0; me.y = MAPS.temple.points[1].y; run(state, 60, () => ({ 0: { right: true, ability: true } }));
   assert.ok(me.x - start > normal * 1.3, `boost covered ${me.x - start} vs ${normal}`);
-  assert.ok(me.boosting); assert.equal(me.boostMeter, B.meter - 60);
+  assert.ok(me.boosting); assert.equal(me.boostMeter, B.meter - B.pressCost - 60, 'each press costs a slice, then holding burns the meter');
   // Let go: back to normal speed straight away, and the meter waits, then refills.
   run(state, 2, () => ({ 0: { right: true } }));
   assert.equal(me.boosting, false); assert.equal(me.dashTicks, 0);
@@ -184,8 +184,9 @@ test('Striker Boost: faster only while held, burns a meter, locks when empty and
   me.x = start; run(state, B.meter + 10, () => ({ 0: { ability: true, left: true, right: false } }));
   assert.equal(me.boostLocked, true); assert.equal(me.boosting, false);
   assert.ok(events(state, 'boostEmpty').length >= 1);
-  run(state, B.regenDelay + Math.ceil(B.refill * B.relock) + 2, () => ({ 0: { ability: true } }));
-  assert.equal(me.boostLocked, false, 'unlocked at a quarter');
+  let unlocked = false;
+  for (let t = 0; t < B.regenDelay + Math.ceil(B.refill * B.relock) + 2 && !unlocked; t++) { run(state, 1, () => ({ 0: { ability: true } })); unlocked = !me.boostLocked; }
+  assert.ok(unlocked, 'unlocked at a quarter');
 });
 
 test('the Guardian shield opens straight into a dome that shields and slowly heals teammates and the Guardian', () => {
@@ -708,4 +709,31 @@ test('fighting: piled-up stun turns a knight steady, so nobody can be stun-locke
   run(state, 30, t => ({ 0: { attack: t === 2 } }));
   assert.ok(events(state, 'damage').length >= 2, 'the next cut still hurts');
   assert.equal(foe.stunTicks, 0, 'but does not stun a steady knight');
+});
+
+test('Spiral Knights cancel: a cancel sends the combo back to the quick first cut, after a short lag', () => {
+  const first = WEAPONS.brand.combo[0];
+  const { state, me, foe } = duel({ gap: 50, a: { cls: 'guardian', weapons: ['brand', null, null, null] }, b: { weapons: [null, null, null, null] } });
+  run(state, first.startup + first.active + BLADE.hitStop + 2, t => ({ 0: { attack: t === 0 } }));
+  assert.ok(me.hitIds.includes(foe.id), 'the first cut landed');
+  run(state, 1, () => ({ 0: { ability: true } }));
+  assert.equal(me.action, 'idle'); assert.equal(me.comboStep, 0, 'cancelled: back to the first cut');
+  // A press during the lag is kept and fires as soon as the lag ends.
+  run(state, 1, () => ({ 0: { attack: true } }));
+  assert.equal(me.action, 'idle', 'still in the cancel lag');
+  run(state, BLADE.cancelLag);
+  const swings = events(state, 'swing');
+  assert.deepEqual(swings.map(event => event.step), [0, 0], 'first cut, cancel, first cut again');
+  assert.ok(swings[1].tick - swings[0].tick >= first.startup + first.active + BLADE.cancelLag, 'the lag is paid');
+});
+
+test('later cuts in a combo hit harder but wind up slower, lunge further and steer less', () => {
+  for (const id of ['brand', 'thorn', 'frostbite', 'blazebrand', 'sickle', 'rapier', 'spur', 'voltedge']) {
+    const combo = WEAPONS[id].combo;
+    for (let i = 1; i < combo.length; i++) {
+      assert.ok(combo[i].damage >= combo[i - 1].damage && combo[i].startup >= combo[i - 1].startup && combo[i].lunge > combo[i - 1].lunge, `${id} cut ${i + 1}`);
+    }
+    assert.ok(combo.at(-1).damage > combo[0].damage, `${id} finisher hits harder than the opener`);
+  }
+  assert.ok(BLADE.moveLater < BLADE.moveFirst);
 });
