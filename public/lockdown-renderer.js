@@ -6,6 +6,7 @@
  * readable placeholder shapes otherwise. Pure presentation: it never changes the state. */
 import { MAPS, TILE, RULES, ABILITIES, WEAPONS, CLASSES, ARMORS, GUARD, STATUS_IDS, inBase, chargeTicksFor, combineGear } from './lockdown-engine.js';
 import { isWall, isPit, levelAt, levelCell, STAIRS } from './lockdown-maps.js';
+import { onMapSurface } from './lockdown-map-surfaces.js';
 import { KNIGHT_FACINGS, KNIGHT_ANIMATION } from './lockdown-assets.js';
 import { FLOOR_RISE, GROUND, PIT_DROP, POINT_PLATE_DIAMETER, stairSurfaces, exposedFloorEdges, materialCell, sceneZoom } from './lockdown-scene-geometry.js';
 export { FLOOR_RISE, GROUND } from './lockdown-scene-geometry.js';
@@ -331,6 +332,21 @@ export class LockdownRenderer {
       }
       // Walls cast a soft shadow onto the floor in front of them.
       if (isWall(map, col, row - 1)) { const shade = ctx.createLinearGradient(0, y, 0, y + 34); shade.addColorStop(0, 'rgba(26,35,28,.3)'); shade.addColorStop(1, 'rgba(26,35,28,0)'); ctx.fillStyle = shade; ctx.fillRect(x, y, TILE, 34); }
+    }
+    if (map.surfaces) {
+      // Hardware fallback uses the same rounded footprint as the WebGL scene.
+      // Repaint low ground through the union rather than approximating it with
+      // the centre-sampled navigation cells used by bots.
+      ctx.fillStyle = theme.pit; ctx.fillRect(0, 0, map.width, map.height);
+      if (backdrop) ctx.drawImage(backdrop, 0, 0, map.width, map.height);
+      ctx.save(); ctx.beginPath();
+      for (const surface of map.surfaces) { surface.points.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.closePath(); }
+      ctx.clip(); ctx.fillStyle = theme.floor; ctx.fillRect(0, 0, map.width, map.height);
+      for (let row = 0; row < map.rows; row++) for (let col = 0; col < map.cols; col++) {
+        const tile = map.grid[row][col], key = tile === '1' || tile === '2' ? `tile_spawn_team${Number(tile) - 1}` : `tile_floor_${map.theme}`;
+        this.drawGroundTile(ctx, key, col, row, col * TILE, row * TILE);
+      }
+      ctx.restore();
     }
     this.mapCache = canvas; this.mapKey = key; return canvas;
   }
@@ -694,7 +710,7 @@ export class LockdownRenderer {
     }
     const frame = this.gaitFrame(player, now, moving);
     const map = MAPS[state.mapId];
-    if (map && isPit(map, Math.floor(player.x / TILE), Math.floor(player.y / TILE))) {
+    if (map && (map.surfaces ? !onMapSurface(map, player.x, player.y) : isPit(map, Math.floor(player.x / TILE), Math.floor(player.y / TILE)))) {
       // Crossing a pit: ripples on water and bog, a glowing hover pad over lava or open sky.
       ctx.save(); ctx.globalAlpha = alpha * .8;
       if (map.pit === 'water' || map.pit === 'bog') { ctx.strokeStyle = map.pit === 'water' ? '#d9f3ff' : '#b7d68a'; ctx.lineWidth = 2; for (let i = 0; i < 2; i++) { const k = (now / 700 + i / 2) % 1; ctx.globalAlpha = alpha * (1 - k) * .8; ctx.beginPath(); ctx.ellipse(fx, fy, 10 + k * 18, 4 + k * 6, 0, 0, Math.PI * 2); ctx.stroke(); } }
@@ -968,7 +984,8 @@ export class LockdownRenderer {
       const at = effect.playerId !== undefined && this.players?.[effect.playerId] ? this.players[effect.playerId] : effect.x !== undefined ? effect : effect.fromX !== undefined ? { x: effect.fromX, y: effect.fromY } : null;
       const height = at ? lift(at.x, at.y) : 0;
       // Rings, blasts and sword arcs lie flat (foreshortened); text and sparks stand upright where they happen.
-      if (FLAT_EFFECTS.has(effect.type)) { ctx.translate(0, -height + (effect.type === 'slash' || effect.type === 'spinTurn' ? FEET - BODY_LIFT : 0)); ctx.scale(1, GROUND); }
+      if (this.projectEffect) this.projectEffect(ctx, effect, at, height, FLAT_EFFECTS.has(effect.type));
+      else if (FLAT_EFFECTS.has(effect.type)) { ctx.translate(0, -height + (effect.type === 'slash' || effect.type === 'spinTurn' ? FEET - BODY_LIFT : 0)); ctx.scale(1, GROUND); }
       else if (effect.type !== 'chain' && at) ctx.translate(0, at.y * (GROUND - 1) - height);
       else ctx.translate(0, -height);
       const chest = effect.y - BODY_LIFT;
@@ -1047,6 +1064,11 @@ export class LockdownRenderer {
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, target.width, target.height);
     ctx.setTransform(scale, 0, 0, scale, (target.width - map.width * scale) / 2, (target.height - map.height * scale) / 2);
     ctx.fillStyle = 'rgba(20,22,26,.85)'; ctx.fillRect(0, 0, map.width, map.height);
+    if (map.surfaces) {
+      ctx.fillStyle = (THEMES[map.theme] || THEMES.stone).pit; ctx.fillRect(0, 0, map.width, map.height);
+      ctx.fillStyle = '#333d45';
+      for (const surface of map.surfaces) { ctx.beginPath(); surface.points.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.closePath(); ctx.fill(); }
+    }
     if (map.twoFloors) {
       ctx.fillStyle = 'rgba(255,255,255,.12)';
       for (let row = 0; row < map.rows; row++) for (let col = 0; col < map.cols; col++) if (levelCell(map, col, row) !== '0') ctx.fillRect(col * TILE, row * TILE, TILE, TILE);
@@ -1054,7 +1076,7 @@ export class LockdownRenderer {
     ctx.fillStyle = '#5b606b';
     for (let row = 0; row < map.rows; row++) for (let col = 0; col < map.cols; col++) if (map.grid[row][col] === '#') ctx.fillRect(col * TILE, row * TILE, TILE, TILE);
     ctx.fillStyle = (THEMES[map.theme] || THEMES.stone).pit;
-    for (let row = 0; row < map.rows; row++) for (let col = 0; col < map.cols; col++) if (map.grid[row][col] === '~') ctx.fillRect(col * TILE, row * TILE, TILE, TILE);
+    if (!map.surfaces) for (let row = 0; row < map.rows; row++) for (let col = 0; col < map.cols; col++) if (map.grid[row][col] === '~') ctx.fillRect(col * TILE, row * TILE, TILE, TILE);
     ctx.fillStyle = '#5b606b';
     for (const point of state.points) { ctx.fillStyle = point.owner === null ? '#cfd6e2' : TEAM_COLORS[point.owner].main; ctx.beginPath(); ctx.arc(point.x, point.y, RULES.pointRadius, 0, Math.PI * 2); ctx.fill(); }
     const viewer = localId !== null ? state.players[localId] : null;

@@ -1,7 +1,9 @@
 /** Lockdown arenas: tile grids mirrored left/right so neither team has an edge.
  * '#' wall (blocks movement and shots), '~' chasm, water or lava (blocks movement but
  * not shots), '.' floor, '1'/'2' team base floor. Control points sit at fixed world
- * positions. One tile is TILE world units; the renderer draws one tile per asset. */
+ * positions. One tile is TILE world units; 3D geometry merges neighbouring cells.
+ * Authored surface outlines can replace the grid's coarse pit boundary. */
+import { SKY_SURFACES, onMapSurface } from './lockdown-map-surfaces.js';
 export const TILE = 48;
 
 /** What the '~' tiles are in each theme, which decides which shoes can cross them. */
@@ -341,7 +343,7 @@ const MAP_DEFS = {
   skyway: {
     name: 'Sky Bridges',
     theme: 'skyway',
-    description: 'Platforms floating over the void, joined by narrow bridges. Knockback near an edge is deadly to your plans, not your knight. Two raised altars float above the bridges; the central bridge climbs straight onto them.',
+    description: 'Rounded islands above the clouds, joined by continuous bridges. Outer loops flank three circular capture courts. Four raised terraces connect to the loops and courts by real stair flights; the curved island edges stop your feet.',
     left: [
       '#####################',
       '#.....~~~~~~~~~~~~~~~',
@@ -521,9 +523,17 @@ const MAP_DEFS = {
 };
 
 function build(id, def) {
-  const grid = def.left.map(mirrorRow);
+  let grid = def.left.map(mirrorRow);
   const rows = grid.length, cols = grid[0].length;
   const levels = def.levels ? def.levels.map(mirrorLevels) : grid.map(row => '0'.repeat(row.length));
+  const surfaces = id === 'skyway' ? SKY_SURFACES : null;
+  if (surfaces) grid = grid.map((line, row) => [...line].map((cell, col) => {
+    if (!onMapSurface({ surfaces }, (col + .5) * TILE, (row + .5) * TILE)) return '~';
+    // Retain the physical spawn-room cover. The old outer rectangular cage
+    // becomes open sky around the new rounded perimeter.
+    return cell === '#' && row > 0 && row < rows - 1 && col > 0 && col < cols - 1 ? '#' : cell === '1' || cell === '2' ? cell : '.';
+  }).join(''));
+  if (surfaces) for (let r = 0; r < rows; r++) levels[r] = [...levels[r]].map((cell, c) => grid[r][c] === '~' ? '0' : cell).join('');
   const spawns = [[], []];
   for (let row = 0; row < rows; row++) for (let col = 0; col < cols; col++) {
     const cell = grid[row][col];
@@ -531,7 +541,7 @@ function build(id, def) {
   }
   return Object.freeze({
     id, name: def.name, theme: def.theme, pit: PIT_KINDS[def.theme] || 'chasm', description: def.description,
-    grid: Object.freeze(grid), levels: Object.freeze(levels), twoFloors: !!def.levels, cols, rows, width: cols * TILE, height: rows * TILE,
+    grid: Object.freeze(grid), levels: Object.freeze(levels), surfaces, twoFloors: !!def.levels, cols, rows, width: cols * TILE, height: rows * TILE,
     spawns: Object.freeze(spawns.map(list => Object.freeze(list))),
     points: Object.freeze(def.points.map(point => Object.freeze({ id: point.id, x: point.col * TILE, y: point.row * TILE }))),
   });

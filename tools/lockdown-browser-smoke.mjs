@@ -15,6 +15,7 @@ try {
     await page.locator('#ld-map').selectOption('skyway');
     await page.locator('#ld-start').click();
     await page.waitForFunction(() => document.querySelector('#ld-app').dataset.phase === 'fight');
+    assert.equal(await page.locator('#ld-arena').getAttribute('data-renderer'), 'webgl', `${name}: 3D renderer is active`);
     await page.locator('#ld-arena').focus();
     await page.keyboard.down('KeyD'); await page.waitForTimeout(2400); await page.keyboard.up('KeyD');
     await page.mouse.move(width * .7, height * .45);
@@ -33,7 +34,7 @@ try {
     await page.keyboard.press('Escape');
     await page.locator('#ld-resume').click();
     assert.deepEqual(errors, []); assert.deepEqual(failures, []);
-    console.log(`${name}: movement, blade, gun, dash, menu, 4 slots and HUD bounds passed`);
+    console.log(`${name}: WebGL, movement, blade, gun, dash, menu, 4 slots and HUD bounds passed`);
     await page.close();
   }
 } finally { await browser.close(); }

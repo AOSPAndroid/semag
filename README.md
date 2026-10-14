@@ -306,7 +306,7 @@ The eight arenas use a true ¾ camera: the ground is drawn at 75% depth while ch
 
 Sprites are listed in `public/lockdown-assets.js`; drop PNGs into `public/art/lockdown/` following `public/art/lockdown/ASSETS.md`, then run `node tools/lockdown-art-index.mjs`. Missing sprites use placeholder shapes.
 
-Lockdown's [connected scenery kit](docs/lockdown-scene-art.md) regenerates the six arena themes from coordinated source paintings. Stairs share their landings' materials and projection, exposed platform edges have continuous rims, and smaller point medallions leave the capture area visible. The phone HUD keeps both scores and all four equipment slots on screen. Run `npm run art:lockdown` to rebuild the 107 environment and landmark sprites.
+Lockdown's [3D arenas](docs/lockdown-scene-art.md) use Semag's voxel mesh primitives for continuous walls, round towers, arches, foliage, industrial tanks and solid stair flights. Sky Bridges has rounded islands whose outlines also define collision, joined by continuous bridges and raised terraces. The fixed oblique overhead camera keeps movement and aiming aligned with the screen; equipped knights use depth-tested animated sprites. Compact capture monuments and the phone HUD keep the fight readable. A Canvas fallback preserves play if WebGL is unavailable. Run `npm run preview:lockdown` to render all eight maps; `npm run art:lockdown` rebuilds the 107 fallback environment and landmark sprites.
 
 Voxel Last Stand:
 

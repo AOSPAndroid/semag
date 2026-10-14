@@ -3,6 +3,7 @@
  * Up to 4v4; empty seats are filled by bots. Teams score every five seconds by
  * the points they hold; first to 500 (or the leader at the time limit) wins. */
 import { MAPS, MAP_IDS, TILE, isWall, isBlocked, wallAt, levelAt, levelCell, levelOk, canStep, shotBlocked } from './lockdown-maps.js';
+import { surfaceSupportsBody } from './lockdown-map-surfaces.js';
 import { WEAPONS, WEAPON_IDS, WEAPON_NOTES, DEFAULT_LOADOUTS, SLOT_COUNT, STATUS, STATUS_IDS, GUARD, BLADE, BLOOM } from './lockdown-weapons.js';
 import { ARMORS, ARMOR_IDS, HELMETS, PANTS, SHOES, GEAR, GEAR_SLOTS, combineGear } from './lockdown-equipment.js';
 
@@ -15,6 +16,12 @@ export const CAPACITY = TEAM_SIZE * 2;
  * `dash` (Space) is the quick dash every knight has. */
 export const INPUT_KEYS = Object.freeze(['up', 'down', 'left', 'right', 'attack', 'ability', 'dash', 'slot1', 'slot2', 'slot3', 'slot4', 'swap']);
 export const emptyInput = (aim = 0) => ({ ...Object.fromEntries(INPUT_KEYS.map(key => [key, false])), aim });
+/** Camera-relative steering has the same unit-speed limit as keyboard steering. */
+export function movementVector(input) {
+  const x = Number(!!input.right) - Number(!!input.left), y = Number(!!input.down) - Number(!!input.up);
+  const angle = Number.isFinite(input.moveYaw) ? input.moveYaw : 0, c = Math.cos(angle), s = Math.sin(angle);
+  return { x: c * x - s * y, y: s * x + c * y };
+}
 
 export const RULES = Object.freeze({
   countdownTicks: 3 * TICK_RATE, timeLimitTicks: 10 * 60 * TICK_RATE, scoreToWin: 500,
@@ -294,10 +301,11 @@ function spawn(state, player) {
 /** How close your centre may come to a cliff edge (the drop to, or face of, the other floor). */
 const CLIFF_RADIUS = 10;
 function collides(map, x, y, radius, walk = null, z = null, from = null) {
+  if (map.surfaces && !walk?.includes(map.pit) && !surfaceSupportsBody(map, x, y, radius)) return true;
   const minCol = Math.floor((x - radius) / TILE), maxCol = Math.floor((x + radius) / TILE), minRow = Math.floor((y - radius) / TILE), maxRow = Math.floor((y + radius) / TILE);
   for (let row = minRow; row <= maxRow; row++) for (let col = minCol; col <= maxCol; col++) {
     let reach = radius;
-    if (!isBlocked(map, col, row, walk)) {
+    if (!(map.surfaces ? isWall(map, col, row) : isBlocked(map, col, row, walk))) {
       // On two-floor maps the other floor is a cliff: up only by stairs, never off a ledge.
       if (z === null || levelOk(map, col, row, z)) continue;
       reach = CLIFF_RADIUS;
@@ -737,7 +745,7 @@ function tickDash(state, player, input, previous) {
   if (player.actionTicks > 0 && !inRecovery(player)) return;
   if (inRecovery(player)) cancelRecovery(state, player, 'dash');
   player.guarding = false;
-  let dx = (input.right ? 1 : 0) - (input.left ? 1 : 0), dy = (input.down ? 1 : 0) - (input.up ? 1 : 0);
+  let { x: dx, y: dy } = movementVector(input);
   if (!dx && !dy) { dx = Math.cos(player.aim); dy = Math.sin(player.aim); }
   // Armour weight shortens the dash: heavy plate covers less ground than a scout's leathers.
   const length = Math.hypot(dx, dy), rule = RULES.dash, outfit = outfitOf(player), weight = outfit.speedMultiplier;
@@ -842,7 +850,7 @@ function tickPlayer(state, player, input) {
   }
   // Movement: steering eases toward the wanted velocity; actions, shields and charging slow you.
   const cls = CLASSES[player.cls], weapon = currentWeapon(player);
-  let mx = (input.right ? 1 : 0) - (input.left ? 1 : 0), my = (input.down ? 1 : 0) - (input.up ? 1 : 0);
+  let { x: mx, y: my } = movementVector(input);
   const length = Math.hypot(mx, my); if (length > 0) { mx /= length; my /= length; }
   const chill = player.status.chill > 0 ? 1 - STATUS.chill.slowPerStack * Math.max(1, player.chillStacks) : 1;
   const speed = cls.speed * outfitOf(player).speedMultiplier * moveScale(player, weapon) * chill * (player.dashTicks > 0 ? ABILITIES.dash.speed : 1);
@@ -1002,6 +1010,7 @@ export function step(state, rawInputs = []) {
     const input = emptyInput(player.aim);
     for (const key of INPUT_KEYS) input[key] = raw?.[key] === true;
     input.aim = finite(raw?.aim, player.aim);
+    input.moveYaw = wrapAngle(finite(raw?.moveYaw, 0));
     return input;
   });
   if (state.phase === 'lobby' || state.phase === 'matchEnd') return state;
