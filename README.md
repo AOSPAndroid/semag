@@ -305,6 +305,8 @@ A top-down team brawl in the spirit of Spiral Knights' Lockdown. Choose **Play s
 
 The eight arenas use a true ¾ camera: the ground is drawn at 75% depth while characters and wall fronts keep their full height. Flat source art is drawn straight from above, so the game projects round capture plates and floor effects into ovals. All classes share a bareheaded T-shirt-and-shorts body; armor is a torso layer, followed by separate shoes, pants and helmets. All 55 body and equipment sheets use a 640×320 grid: ten columns of 64×64 frames in five facings, with left-facing poses mirrored. Columns 1–2 are idle, 3–6 walk, and 7–10 contain the registered run cycle, ready for speed-based animation selection. Equipment health bonuses add to class health, and the menu and HUD show the resulting maximum HP.
 
+**3D view (preview):** open `/lockdown.html?view=3d` (add `&solo=1` for practice) to play in real 3D: a ¾ perspective camera over chunky bevelled blocks floating above a dark void, framed floor plates, glowing lamps, a mechanical capture platform with a hazard-striped court, heart pads in each base and chunky knights with team rings, helmet bands and class crests. The geometry is built in code from each map (`public/lockdown-renderer3d.js`, using the vendored three.js in `public/vendor/three/`); the 2D view stays the default and still draws the minimap and the reticle.
+
 Sprites are listed in `public/lockdown-assets.js`; drop PNGs into `public/art/lockdown/` following `public/art/lockdown/ASSETS.md`, then run `node tools/lockdown-art-index.mjs`. Missing sprites use placeholder shapes.
 
 Voxel Last Stand:

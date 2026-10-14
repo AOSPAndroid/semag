@@ -28,7 +28,12 @@ const app = $('ld-app'), canvas = $('ld-arena'), minimap = $('ld-minimap');
 const audio = new GameAudio();
 const assets = createAssetLibrary({ onChange: () => refreshIcons() });
 const renderer = new LockdownRenderer(canvas, assets);
-const scene = renderer;
+// ?view=3d draws the arena in real 3D; the 2D renderer still draws the minimap and the reticle.
+const scene = new URLSearchParams(location.search).get('view') === '3d' ? await create3dScene() : renderer;
+async function create3dScene() {
+  try { const { Lockdown3DRenderer } = await import('./lockdown-renderer3d.js'); return new Lockdown3DRenderer(canvas, assets, renderer); }
+  catch (problem) { console.warn('3D view unavailable, using 2D', problem); return renderer; }
+}
 
 // ---------- local setup (remembered per browser) ----------
 function loadSetup() {
@@ -180,7 +185,7 @@ function updateAim() {
   if (!me || !mouse.inside) return;
   // Shots fly at chest height in the ¾ view (a storey higher on raised floor), so the pointer is read
   // on that plane, through the camera tilt.
-  const world = scene.screenToWorld(mouse.x, mouse.y, scene.aimLift + (me.z || 0) * FLOOR_RISE);
+  const world = scene.screenToWorld(mouse.x, mouse.y, scene.aimHeight(me));
   aim = Math.atan2(world.y - me.y, world.x - me.x);
 }
 /** One input frame. Edge presses that were already released still count once. */

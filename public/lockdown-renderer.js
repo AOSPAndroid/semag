@@ -99,6 +99,8 @@ export class LockdownRenderer {
   }
   /** Aim from the knight's chest to the cursor, so shots drawn at chest height pass under the pointer. */
   get aimLift() { return BODY_LIFT; }
+  /** The height (in screen pixels above the floor) of the plane the pointer aims on. */
+  aimHeight(player) { return BODY_LIFT + (player.z || 0) * FLOOR_RISE; }
 
   /** Architectural dressing follows the existing collision map and its height layer. */
   mapDecorations(map) {
