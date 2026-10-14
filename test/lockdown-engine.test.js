@@ -651,3 +651,61 @@ test('outfit perks and drawbacks: speed vs swords, plate, bombs, berserk, mirror
   run(clock.state, 1, () => ({ 0: { ability: true } }));
   assert.equal(clock.me.abilityCooldown, Math.round(ABILITIES.cloak.cooldown * A.clockwork.abilityCooldown) - 0);
 });
+
+test('fighting: a hit interrupts a cut, and catching a knight committed is a counter', () => {
+  const move = WEAPONS.brand.combo[0];
+  const hitOn = whiffing => {
+    const { state, me, foe } = duel({ gap: 300, a: { cls: 'guardian', weapons: ['brand', null, null, null] }, b: { cls: 'guardian', weapons: ['brand', null, null, null] } });
+    if (whiffing) run(state, move.startup + move.active + 2, t => ({ 4: { attack: t === 0 } }));
+    assert.equal(foe.action, whiffing ? 'swing' : 'idle'); if (whiffing) assert.ok(foe.whiffed);
+    Object.assign(me, { x: foe.x - 50, y: foe.y });
+    run(state, move.startup + move.active, t => ({ 0: { attack: t === 0 } }));
+    return { state, foe, dealt: events(state, 'damage').find(event => event.targetId === foe.id).amount };
+  };
+  const plain = hitOn(false), punished = hitOn(true);
+  assert.equal(events(plain.state, 'counter').length, 0);
+  assert.equal(events(punished.state, 'counter').length, 1, 'hitting a whiffing knight is a counter');
+  assert.ok(Math.abs(punished.dealt / plain.dealt - L.FIGHT.counter.damage) < .08, 'a counter lands harder');
+  assert.equal(punished.foe.action, 'idle', 'the hit knocked them out of their cut');
+  assert.equal(punished.foe.comboStep, 0);
+  assert.ok(events(punished.state, 'interrupt').some(event => event.playerId === punished.foe.id));
+});
+
+test('fighting: two cuts that meet clash; a heavy cut knocks a light one aside', () => {
+  const even = duel({ gap: 50, a: { cls: 'recon', weapons: ['brand', null, null, null] }, b: { cls: 'recon', weapons: ['brand', null, null, null] } });
+  run(even.state, 30, t => ({ 0: { attack: t === 0 }, 4: { attack: t === 0 } }));
+  assert.equal(events(even.state, 'clash').length, 1, 'the blades meet');
+  assert.equal(events(even.state, 'damage').length, 0, 'neither knight is cut');
+  assert.equal(events(even.state, 'clash')[0].winner, null);
+  const heavy = duel({ gap: 50, a: { cls: 'recon', weapons: ['cleaver', null, null, null] }, b: { cls: 'recon', weapons: ['brand', null, null, null] } });
+  run(heavy.state, 60, t => ({ 0: { attack: t === 0 }, 4: { attack: t === 8 } }));
+  const clash = events(heavy.state, 'clash')[0];
+  assert.ok(clash, 'the cuts meet'); assert.equal(clash.winner, heavy.me.id, 'the heavy cut wins');
+  assert.equal(heavy.me.hp, heavy.me.maxHp, 'the light cut never landed');
+  assert.ok(heavy.foe.hp < heavy.foe.maxHp, 'the heavy cut carried on through');
+});
+
+test('fighting: a perfect dodge refunds the dash and readies a riposte', () => {
+  const { state, me, foe } = duel({ gap: 50, a: { cls: 'recon', weapons: ['brand', null, null, null] }, b: { weapons: ['brand', null, null, null] } });
+  Object.assign(me, { evadeTicks: 30, dashCooldown: 100, perfectUsed: false });
+  run(state, WEAPONS.brand.combo[0].startup + WEAPONS.brand.combo[0].active + 1, t => ({ 4: { attack: t === 0 } }));
+  assert.equal(me.hp, me.maxHp);
+  assert.equal(events(state, 'perfectDodge').length, 1);
+  assert.ok(me.dashCooldown < 100 * (1 - L.FIGHT.perfect.dashRefund) + 1, 'most of the dash cooldown comes back');
+  assert.ok(me.riposteTicks > 0);
+  run(state, 40, t => ({ 0: { attack: t === 0 } }));
+  assert.equal(events(state, 'riposte').length, 1, 'the next hit is a riposte');
+  assert.ok(foe.hp < foe.maxHp);
+});
+
+test('fighting: piled-up stun turns a knight steady, so nobody can be stun-locked forever', () => {
+  const { state, me, foe } = duel({ gap: 50, a: { weapons: ['brand', null, null, null] }, b: { weapons: [null, null, null, null] } });
+  foe.stagger = L.FIGHT.stagger.limit - 1;
+  run(state, 20, t => ({ 0: { attack: t === 0 } }));
+  assert.equal(events(state, 'steady').length, 1);
+  assert.ok(foe.steadyTicks > 0);
+  foe.stunTicks = 0;
+  run(state, 30, t => ({ 0: { attack: t === 2 } }));
+  assert.ok(events(state, 'damage').length >= 2, 'the next cut still hurts');
+  assert.equal(foe.stunTicks, 0, 'but does not stun a steady knight');
+});

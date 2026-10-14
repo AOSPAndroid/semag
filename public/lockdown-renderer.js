@@ -26,6 +26,12 @@ const RAISED_SORT = 16;
 const WEAPON_SCALE = .75;
 const TICK_MS = 1000 / 120;
 const STATUS_COLORS = Object.freeze({ burn: '#ff8a3d', poison: '#7bd65a', shock: '#7fc8ff', freeze: '#bfeaff', chill: '#6fb6ff', curse: '#b26bff', drain: '#ff4d6d' });
+/** Short text pops for fight events: [text, colour, whose head it floats over]. */
+const CALLOUTS = Object.freeze({
+  counter: ['COUNTER', '#ffb347', 'target'], riposte: ['RIPOSTE', '#ffe680', 'target'], perfectDodge: ['PERFECT', '#9ff0ff', 'player'],
+  clash: ['CLASH', '#ffffff', 'player'], steady: ['STEADY', '#c9d6ff', 'player'], interrupt: ['INTERRUPTED', '#ff8a7a', 'player'],
+  whiff: ['MISS', '#b8b8b8', 'player'], sweetSpot: ['TIP', '#ffe680', 'target'], ambush: ['AMBUSH', '#d29bff', 'target'],
+});
 /** A weapon's element colour (glow on the blade or muzzle, tint on its shots). */
 const FLAT_EFFECTS = new Set(['slash', 'spinTurn', 'slam', 'dust', 'vortexOpen', 'explosion', 'heal', 'capture', 'pop', 'kill']);
 const elementColor = weapon => weapon?.element ? STATUS_COLORS[weapon.element] : null;
@@ -395,6 +401,14 @@ export class LockdownRenderer {
       }
       else if (event.type === 'block') add('block', 220, { x: event.x, y: event.y, playerId: event.playerId });
       else if (event.type === 'evade') add('evade', 500, { x: event.x, y: event.y });
+      else if (CALLOUTS[event.type]) {
+        // Fight callouts only for fights the viewer is part of, so a crowded point stays readable.
+        const [text, color, on] = CALLOUTS[event.type], who = on === 'target' ? event.targetId : event.playerId;
+        const row = this.effects.filter(effect => effect.type === 'callout' && effect.playerId === who && now - effect.born < effect.life).length;
+        const shown = (event.playerId === this.localId || event.targetId === this.localId) && !(event.type === 'interrupt' && event.by === 'clash');
+        if (shown) add('callout', 650, { x: event.x, y: event.y, text, color, playerId: who, row });
+        if (event.type === 'clash') { add('block', 260, { x: event.x, y: event.y }); this.bump(event.x, event.y, 4); }
+      }
       else if (event.type === 'dodge') add('dust', 260, { x: event.x, y: event.y + FEET, angle: event.angle });
       else if (event.type === 'cancel') add('cancel', 160, { playerId: event.playerId });
       else if (event.type === 'guardBreak') { add('guardBreak', 420, { x: event.x, y: event.y, playerId: event.playerId }); if (event.playerId === this.localId) this.shake = Math.max(this.shake, 7); }
@@ -1003,6 +1017,10 @@ export class LockdownRenderer {
         ctx.font = 'bold 13px system-ui'; ctx.textAlign = 'center'; ctx.fillStyle = '#ffffff'; ctx.fillText('GUARD BREAK', effect.x, effect.y - 70 - t * 10);
       } else if (effect.type === 'dust') {
         ctx.fillStyle = 'rgba(220,220,210,.6)'; for (let i = 0; i < 4; i++) { const a = effect.angle + Math.PI + (i - 1.5) * .45; ctx.beginPath(); ctx.arc(effect.x + Math.cos(a) * (6 + t * 22), effect.y + Math.sin(a) * (3 + t * 10), 4 * (1 - t) + 1, 0, Math.PI * 2); ctx.fill(); }
+      } else if (effect.type === 'callout') {
+        const owner = this.players?.[effect.playerId], x = owner?.alive ? owner.x : effect.x, y = owner?.alive ? owner.y : effect.y;
+        ctx.font = 'bold 13px system-ui'; ctx.textAlign = 'center'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,.65)'; ctx.fillStyle = effect.color;
+        ctx.globalAlpha = Math.min(1, (1 - t) * 3); const ty = y - 78 - (effect.row || 0) * 15 - t * 14; ctx.strokeText(effect.text, x, ty); ctx.fillText(effect.text, x, ty); ctx.globalAlpha = 1;
       } else if (effect.type === 'evade') {
         ctx.font = 'bold 13px system-ui'; ctx.textAlign = 'center'; ctx.fillStyle = '#ffffff'; ctx.fillText('DODGE', effect.x, effect.y - 66 - t * 14);
       } else if (effect.type === 'cancel') {
