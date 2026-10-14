@@ -306,6 +306,8 @@ The eight arenas use a true ¾ camera: the ground is drawn at 75% depth while ch
 
 Sprites are listed in `public/lockdown-assets.js`; drop PNGs into `public/art/lockdown/` following `public/art/lockdown/ASSETS.md`, then run `node tools/lockdown-art-index.mjs`. Missing sprites use placeholder shapes.
 
+Lockdown's [connected scenery kit](docs/lockdown-scene-art.md) regenerates the six arena themes from coordinated source paintings. Stairs share their landings' materials and projection, exposed platform edges have continuous rims, and smaller point medallions leave the capture area visible. The phone HUD keeps both scores and all four equipment slots on screen. Run `npm run art:lockdown` to rebuild the 107 environment and landmark sprites.
+
 Voxel Last Stand:
 
 Choose **Play solo** or **Host co-op** from the shelf. Both open a setup preview with thirteen arenas: Sunset Courtyard, Freight Depot, Canal Exchange, Roofline District, Iron Foundry, Signal Bastion, Paris Rooftops, Frostline Research, Undercity Sewers, Barclays Trading Floor, Neon Market, Foundry Lockdown and Crownfall Keep. Pick any of the 36 Breach guns and **Veteran** or **Nightmare** difficulty. Last Stand starts with a knife in slot 1 and your chosen gun in slot 2; slots 3 and 4 are empty. Find better blades and supplies during the run. Solo waits for **Start survival** and runs locally. Co-op supports one to three connected players; each presses **Ready**, then the host presses **Start squad survival**. Unused seats do not delay the start, and active runs are closed to new arrivals.
