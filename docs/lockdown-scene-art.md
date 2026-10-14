@@ -44,4 +44,6 @@ The regression suite checks GPU/HUD/picking agreement at different elevations, s
 
 ![Implemented garden, ruins and foundry scenes](screenshots/lockdown/painted-scenes.png)
 
+![Live garden, ruins and foundry matches with the phone HUD](screenshots/lockdown/live-painted-scenes.png)
+
 ![All eight 3D arenas](screenshots/lockdown/overview.png)
