@@ -7,6 +7,15 @@ import { onMapSurface, surfaceSupportsBody } from '../public/lockdown-map-surfac
 import { groundToView, viewToGround, LOCKDOWN_YAW } from '../public/lockdown-camera.js';
 import { worldProjection } from '../public/lockdown-world-view.js';
 import { FLOOR_RISE } from '../public/lockdown-scene-geometry.js';
+import { MATERIAL } from '../public/lockdown-painted-mesh.js';
+
+test('north-up camera keeps map axes aligned while retaining visible elevation', () => {
+  assert.equal(LOCKDOWN_YAW, 0);
+  const origin = groundToView(200, 300), north = groundToView(200, 200), east = groundToView(300, 300), raised = groundToView(200, 300, FLOOR_RISE);
+  assert.equal(north.x, origin.x); assert.ok(north.y < origin.y);
+  assert.equal(east.y, origin.y); assert.ok(east.x > origin.x);
+  assert.equal(raised.x, origin.x); assert.equal(origin.y - raised.y, FLOOR_RISE);
+});
 
 test('GPU projection, HUD projection and aiming agree at both floors and on stairs', () => {
   for (const [width, height] of [[320, 720], [393, 852], [1280, 820]]) {
@@ -39,6 +48,19 @@ test('all eight 3D maps have finite bounded geometry, continuous wall footprints
     assert.ok(scene.opaque.length > 1000 && scene.opaque.length / 10 < 400000, `${map.id} geometry budget`);
     assert.ok(scene.opaque.every(Number.isFinite), map.id);
     assert.equal(scene.opaque.length % 30, 0);
+    const materials = new Set();
+    for (let i = 9; i < scene.opaque.length; i += 10) if (scene.opaque[i] > 1.5) {
+      const id = scene.opaque[i] - 2;
+      assert.ok(Number.isInteger(id) && Object.values(MATERIAL).includes(id), `${map.id}: valid painted material`);
+      materials.add(id);
+    }
+    assert.ok(materials.size >= 3, `${map.id}: painted ground, sides and trim`);
+    assert.ok(scene.foliage.every(Number.isFinite)); assert.equal(scene.foliage.length % 30, 0);
+    assert.ok(scene.foliage.length / 30 < 2000, `${map.id}: scenery sprite budget`);
+    for (let i = 3; i < scene.foliage.length; i += 5) {
+      assert.ok(scene.foliage[i] >= 0 && scene.foliage[i] <= 1);
+      assert.ok(scene.foliage[i + 1] >= 0 && scene.foliage[i + 1] <= 1);
+    }
     let occupied = 0;
     for (const wall of scene.walls) {
       for (let r = wall.row; r < wall.row + wall.rows; r++) for (let c = wall.col; c < wall.col + wall.cols; c++) {

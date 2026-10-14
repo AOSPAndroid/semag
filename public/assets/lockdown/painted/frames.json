@@ -1,0 +1,66 @@
+[
+  {
+    "id": "hedge",
+    "x": 10,
+    "y": 88,
+    "width": 492,
+    "height": 412,
+    "anchorY": 500
+  },
+  {
+    "id": "fern",
+    "x": 522,
+    "y": 54,
+    "width": 492,
+    "height": 446,
+    "anchorY": 500
+  },
+  {
+    "id": "flowers",
+    "x": 1034,
+    "y": 108,
+    "width": 492,
+    "height": 392,
+    "anchorY": 500
+  },
+  {
+    "id": "grass",
+    "x": 1546,
+    "y": 159,
+    "width": 492,
+    "height": 341,
+    "anchorY": 500
+  },
+  {
+    "id": "torch",
+    "x": 133,
+    "y": 524,
+    "width": 247,
+    "height": 488,
+    "anchorY": 500
+  },
+  {
+    "id": "shrine",
+    "x": 522,
+    "y": 552,
+    "width": 492,
+    "height": 460,
+    "anchorY": 500
+  },
+  {
+    "id": "power-unit",
+    "x": 1060,
+    "y": 524,
+    "width": 440,
+    "height": 488,
+    "anchorY": 500
+  },
+  {
+    "id": "lamp-post",
+    "x": 1682,
+    "y": 524,
+    "width": 221,
+    "height": 488,
+    "anchorY": 500
+  }
+]

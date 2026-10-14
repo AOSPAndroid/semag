@@ -2,7 +2,8 @@
  * The navigation grid is an authoring aid, not a visible cube for every cell.
  * Adjacent cells merge into walls/decks; only the external contour gets a face.
  * Ornament stays on blocked footprints or beyond the playable perimeter. */
-import { VoxelMesh } from './voxel-renderer.js';
+import { PaintedMesh, MATERIAL as M } from './lockdown-painted-mesh.js';
+import { FoliageBatch, dressPlants, wallProp } from './lockdown-world-dressing.js';
 import { TILE, levelCell, STAIRS } from './lockdown-maps.js';
 import { FLOOR_RISE, GROUND } from './lockdown-scene-geometry.js';
 import { onMapSurface, insideSurface } from './lockdown-map-surfaces.js';
@@ -13,12 +14,12 @@ const TAU = Math.PI * 2;
 const color = hex => [...[1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255), 1];
 const tint = (hex, amount) => color(hex).map((v, i) => i === 3 ? v : Math.min(1, v * amount));
 export const WORLD_STYLES = Object.freeze({
-  castle: { floor: '#b4ad92', wall: '#989888', trim: '#d7c7a0', roof: '#425e67', plant: '#687f50', pit: '#467c89', sky: '#b4cbd0', kind: 'keep' },
-  maze: { floor: '#879574', wall: '#516c45', trim: '#9db778', roof: '#456640', plant: '#678b48', pit: '#486657', sky: '#b8cbb7', kind: 'garden' },
-  foundry: { floor: '#71797a', wall: '#45565b', trim: '#ba8654', roof: '#344953', plant: '#ca8356', pit: '#d06137', sky: '#667e89', kind: 'industrial' },
-  ruins: { floor: '#c2b28e', wall: '#aaa68b', trim: '#e5d1a0', roof: '#54877e', plant: '#74844c', pit: '#4f999a', sky: '#bcd5ca', kind: 'temple' },
-  graveyard: { floor: '#8c9190', wall: '#737f86', trim: '#b0bebd', roof: '#424e66', plant: '#677778', pit: '#3c5262', sky: '#8dabbc', kind: 'crypt' },
-  skyway: { floor: '#c8c2a4', wall: '#859c9a', trim: '#e5cc8f', roof: '#407e85', plant: '#75946a', pit: '#8cbbca', sky: '#bbd5dc', kind: 'sky' },
+  castle: { floor: '#bac2a4', wall: '#9ea98f', trim: '#c7cba9', roof: '#416d69', plant: '#659e42', pit: '#275d60', sky: '#78a29a', kind: 'keep', ground: M.paving, stone: M.masonry },
+  maze: { floor: '#5b9744', wall: '#4e6941', trim: '#85b95b', roof: '#426c3b', plant: '#74b83f', pit: '#236569', sky: '#5a8c7c', kind: 'garden', ground: M.grass, stone: M.rock },
+  foundry: { floor: '#344657', wall: '#932f35', trim: '#ad673b', roof: '#343247', plant: '#ca8356', pit: '#151e29', sky: '#202b3a', kind: 'industrial', ground: M.metal, stone: M.iron },
+  ruins: { floor: '#acb798', wall: '#a4b095', trim: '#c8d0ad', roof: '#4d8b7b', plant: '#6aab48', pit: '#397e80', sky: '#81b6a6', kind: 'temple', ground: M.paving, stone: M.masonry },
+  graveyard: { floor: '#758987', wall: '#6d817f', trim: '#b0bfb1', roof: '#414f66', plant: '#63916a', pit: '#293b49', sky: '#708d91', kind: 'crypt', ground: M.temple, stone: M.masonry },
+  skyway: { floor: '#bac6a1', wall: '#849a74', trim: '#d2c995', roof: '#378b84', plant: '#6eaa40', pit: '#598b93', sky: '#83ada9', kind: 'sky', ground: M.paving, stone: M.masonry },
 });
 
 /** Greedy rectangles preserve the exact occupied footprint without tile seams. */
@@ -103,9 +104,24 @@ function tower(mesh, rect, base, style) {
 function dressWall(mesh, rect, style) {
   const { x, z, w, d, key } = rect, base = Number(key) * STOREY;
   const garden = style.kind === 'garden', small = Math.min(w, d) <= TILE * 1.1;
-  const height = garden ? 46 : 62;
+  const height = garden ? 22 : 72;
+  if (style.kind === 'industrial') {
+    mesh.paint(M.iron, () => mesh.box(x, base, z, w, height, d, style.wall));
+    mesh.paint(M.metal, () => mesh.box(x + 4, base + height, z + 4, w - 8, 2, d - 8, style.roof));
+    mesh.box(x, base + height - 3, z, w, 7, 4, '#9f3435');
+    mesh.box(x, base + height - 3, z + d - 4, w, 7, 4, '#9f3435');
+    mesh.box(x, base + height - 3, z, 4, 7, d, '#9f3435');
+    mesh.box(x + w - 4, base + height - 3, z, 4, 7, d, '#9f3435');
+    mesh.paint(M.hazard, () => mesh.box(x, base + 2, z, w, 8, d, style.trim));
+    for (let px = x + 5; px < x + w; px += 64) {
+      mesh.box(px, base, z + d - 7, 9, height + 5, 7, '#b74940');
+      cylinder(mesh, px + 4, base + height + 5, z + d - 4, 4, 2, '#ebaf64', 10);
+      mesh.box(px + 1, base + 26, z + d + .3, 6, 15, 1, '#b7eee2');
+    }
+    return;
+  }
   if (w === TILE && d === TILE && (style.kind === 'temple' || style.kind === 'crypt')) {
-    mesh.box(x, base, z, w, 9, d, style.wall);
+    mesh.paint(style.stone, () => mesh.box(x, base, z, w, 9, d, style.wall));
     if (style.kind === 'temple') {
       cylinder(mesh, x + w / 2, base + 9, z + d / 2, 22, 8, style.trim, 16);
       cylinder(mesh, x + w / 2, base + 17, z + d / 2, 16, 57, style.wall, 16, 14);
@@ -118,29 +134,18 @@ function dressWall(mesh, rect, style) {
     }
     return;
   }
-  mesh.box(x, base, z, w, height, d, style.wall);
+  mesh.paint(style.stone, () => mesh.box(x, base, z, w, height, d, style.wall));
   if (garden) {
-    for (let px = x + 18; px < x + w; px += 29) for (let pz = z + 18; pz < z + d; pz += 29) crown(mesh, px, base + 29, pz, 23, style.plant);
+    mesh.paint(M.leaves, () => mesh.floor(x, z, w, d, style.plant, base + height + .1));
     return;
   }
   // Continuous cornices and masonry courses, not a separate cap per grid tile.
-  mesh.box(x, base + height - 8, z, w, 8, d, style.trim);
+  mesh.paint(M.masonry, () => mesh.box(x, base + height - 8, z, w, 8, d, style.trim));
   for (let y = 16; y < height - 8; y += 18) {
     mesh.box(x, base + y, z - .2, w, 1.2, d + .4, tint(style.wall, .8));
     for (let px = x + (y === 16 ? 25 : 49); px < x + w; px += 55) mesh.box(px, base + y - 14, z + d, 1, 14, .3, tint(style.wall, .8));
   }
-  if (!small && w <= TILE * 4 && d <= TILE * 4 && style.kind !== 'industrial') { tower(mesh, rect, base, style); return; }
-  if (style.kind === 'industrial') {
-    if (!small) {
-      cylinder(mesh, x + w / 2, base + height, z + d / 2, Math.min(w, d) * .43, 40, style.roof, 24);
-      cylinder(mesh, x + w / 2, base + height + 33.2, z + d / 2, Math.min(w, d) * .45, 7, style.trim, 24);
-    }
-    for (let px = x + 16; px < x + w; px += 76) {
-      mesh.box(px, base, z + d - 5, 8, height + 5, 5, style.trim);
-      cylinder(mesh, px + 4, base + height, z + d / 2, 8, 22, style.roof, 10);
-    }
-    return;
-  }
+  if (!small && w <= TILE * 4 && d <= TILE * 4) { tower(mesh, rect, base, style); return; }
   for (let px = x + 10; px < x + w - 8; px += 58) {
     mesh.box(px, base + height, z + 5, 22, 10, Math.max(12, d - 10), style.wall);
     if (w > 95) {
@@ -157,7 +162,7 @@ function dressWall(mesh, rect, style) {
 
 /** Return actual GPU geometry plus structural data for traversal/render checks. */
 export function buildLockdownWorld(map) {
-  const mesh = new VoxelMesh(), style = WORLD_STYLES[map.theme] || WORLD_STYLES.castle;
+  const mesh = new PaintedMesh(), foliage = new FoliageBatch(), style = WORLD_STYLES[map.theme] || WORLD_STYLES.castle;
   const floors = mergeCells(map, (c, r) => map.grid[r][c] !== '~' && !STAIRS[levelCell(map, c, r)] ? levelCell(map, c, r) : null);
   const walls = mergeCells(map, (c, r) => map.grid[r][c] === '#' ? levelCell(map, c, r) : null);
   const staircases = [];
@@ -176,8 +181,8 @@ export function buildLockdownWorld(map) {
     else mesh.floor(x, z, 60 + i % 4 * 50, 2 + i % 3, tint(style.pit, 1.08), pitY + .5);
   }
   if (map.surfaces) for (const surface of map.surfaces) {
-    const points = surface.points, bottom = surface.kind === 'bridge' ? -14 : -42;
-    mesh.floorPolygon(points, style.floor, 0);
+    const points = surface.points, bottom = surface.kind === 'bridge' ? -35 : -88;
+    mesh.paint(surface.kind === 'island' ? M.grass : style.ground, () => mesh.floorPolygon(points, style.floor, 0));
     for (let i = 0; i < points.length; i++) {
       const start = points[i], end = points[(i + 1) % points.length], dx = end[0] - start[0], dz = end[1] - start[1], length = Math.hypot(dx, dz);
       if (length < .001) continue;
@@ -188,19 +193,20 @@ export function buildLockdownWorld(map) {
         const a = [start[0] + dx * part / divisions, start[1] + dz * part / divisions], b = [start[0] + dx * (part + 1) / divisions, start[1] + dz * (part + 1) / divisions];
         const outside = [(a[0] + b[0]) / 2 + dz / length * .15, (a[1] + b[1]) / 2 - dx / length * .15];
         if (map.surfaces.some(other => other !== surface && insideSurface(other, ...outside))) continue;
-        mesh.quad([a[0], 0, a[1]], [b[0], 0, b[1]], [b[0], bottom, b[1]], [a[0], bottom, a[1]], [dz / length, 0, -dx / length], color(style.wall));
+        mesh.paint(M.rock, () => mesh.quad([a[0], 0, a[1]], [b[0], 0, b[1]], [b[0], bottom, b[1]], [a[0], bottom, a[1]], [dz / length, 0, -dx / length], color(style.wall)));
         // A lip is inset into the walkable top; the collision contour is the
         // outer edge of the same polygon consumed by movement and navigation.
-        const nx = -dz / length * 2, nz = dx / length * 2;
-        mesh.quad([a[0], .1, a[1]], [a[0] + nx, .1, a[1] + nz], [b[0] + nx, .1, b[1] + nz], [b[0], .1, b[1]], [0, 1, 0], color(style.trim));
+        const nx = -dz / length * 12, nz = dx / length * 12;
+        mesh.paint(M.grass, () => mesh.quad([a[0], .12, a[1]], [a[0] + nx, .12, a[1] + nz], [b[0] + nx, .12, b[1] + nz], [b[0], .12, b[1]], [0, 1, 0], color(style.trim)));
+        if (part % 2 === 0) foliage.add(3, (a[0] + b[0]) / 2 + nx * .35, .1, (a[1] + b[1]) / 2 + nz * .35, 16 + part % 4 * 2);
       }
     }
     if (surface.kind === 'island') {
       const b = surface.bounds, x = (b.minX + b.maxX) / 2, z = (b.minY + b.maxY) / 2, radius = Math.min(b.maxX - b.minX, b.maxY - b.minY) * .42;
-      cylinder(mesh, x, -138, z, radius * .36, 96, tint(style.wall, .81), 10, radius);
+      mesh.paint(M.rock, () => cylinder(mesh, x, -180, z, radius * .36, 92, tint(style.wall, .81), 10, radius), .78);
     }
   }
-  for (const f of floors) if (!map.surfaces || f.key === '1') mesh.floor(f.x, f.z, f.w, f.d, style.floor, Number(f.key) * STOREY);
+  for (const f of floors) if (!map.surfaces || f.key === '1') mesh.paint(style.ground, () => mesh.floor(f.x, f.z, f.w, f.d, style.floor, Number(f.key) * STOREY));
   for (let r = 0; r < map.rows; r++) for (let c = 0; c < map.cols; c++) {
     const tile = map.grid[r][c], lv = levelCell(map, c, r), x = c * TILE, z = r * TILE;
     if (tile === '~') continue;
@@ -208,15 +214,17 @@ export function buildLockdownWorld(map) {
     if (STAIRS[lv]) {
       const steps = stairSolids(c, r, lv); staircases.push({ col: c, row: r, direction: lv, steps });
       for (const step of steps) {
-        mesh.box(step.x, -1, step.z, step.w, step.h + 1, step.d, style.wall);
-        mesh.floor(step.x, step.z, step.w, step.d, style.trim, step.h + .02);
+        mesh.paint(style.stone, () => mesh.box(step.x, -1, step.z, step.w, step.h + 1, step.d, style.wall));
+        mesh.paint(map.theme === 'foundry' ? M.metal : M.paving, () => mesh.floor(step.x, step.z, step.w, step.d, style.trim, step.h + .02), 1.08);
+        // A narrow worn nose makes each connected tread readable at phone scale.
+        if (STAIRS[lv][1]) mesh.floor(step.x, step.z + (STAIRS[lv][1] > 0 ? 0 : step.d - 1), step.w, 1, style.trim, step.h + .05);
+        else mesh.floor(step.x + (STAIRS[lv][0] > 0 ? 0 : step.w - 1), step.z, 1, step.d, style.trim, step.h + .05);
       }
     } else if (tile !== '#' && (!map.surfaces || [[x, z], [x + TILE, z], [x, z + TILE], [x + TILE, z + TILE]].every(([px, pz]) => onMapSurface(map, px, pz)))) {
-      // Large staggered paving stones are surface markings only; shared edges
-      // stay coplanar and the navigation cell outline is never highlighted.
-      mesh.floor(x + 1, z + 1, TILE - 2, TILE / 2 - 1, tint(style.floor, .96 + (c * 7 + r * 3) % 5 * .016), y + .04);
-      mesh.floor(x + 1, z + TILE / 2 + 1, TILE - 2, TILE / 2 - 2, tint(style.floor, .98 + (c + r) % 3 * .016), y + .04);
-      if (tile === '1' || tile === '2') mesh.floor(x + 3, z + 3, TILE - 6, TILE - 6, tile === '1' ? '#a68e60' : '#699999', y + .1);
+      // Painted materials run across cells. Broad garden paths meet the stairs,
+      // while the grass shoulders remain fully walkable.
+      if ((map.surfaces || map.theme === 'maze') && r >= 11 && r <= 13) mesh.paint(M.paving, () => mesh.floor(x, z, TILE, TILE, style.floor, y + .04));
+      if (map.theme === 'foundry' && r === 12 && c % 2 === 0) mesh.floor(x + 11, z + 20, 25, 5, '#b8b093', y + .1);
     }
     // Only external/height boundaries receive a connected vertical face.
     for (const [dc, dr] of [[0, -1], [1, 0], [0, 1], [-1, 0]]) {
@@ -228,16 +236,29 @@ export function buildLockdownWorld(map) {
       const face = [[x, y, z], [x + TILE, y, z], [x + TILE, y, z + TILE], [x, y, z + TILE]];
       const edge = dc === 1 ? [2, 1] : dc === -1 ? [0, 3] : dr === -1 ? [1, 0] : [3, 2];
       const a = face[edge[0]], b = face[edge[1]];
-      mesh.quad(a, b, [b[0], bottom, b[2]], [a[0], bottom, a[2]], [dc, 0, dr], color(style.wall));
-      if (dc) mesh.box(x + (dc > 0 ? TILE - 3 : 0), y, z, 3, 2, TILE, style.trim);
-      else mesh.box(x, y, z + (dr > 0 ? TILE - 3 : 0), TILE, 2, 3, style.trim);
+      mesh.paint(map.theme === 'foundry' ? M.iron : M.rock, () => mesh.quad(a, b, [b[0], bottom, b[2]], [a[0], bottom, a[2]], [dc, 0, dr], color(style.wall)));
+      mesh.paint(map.theme === 'foundry' ? M.hazard : M.grass, () => {
+        if (dc) mesh.box(x + (dc > 0 ? TILE - 8 : 0), y, z, 8, .3, TILE, style.trim);
+        else mesh.box(x, y, z + (dr > 0 ? TILE - 8 : 0), TILE, .3, 8, style.trim);
+      });
+      if (map.theme !== 'foundry' && tile !== '#') for (let i = 0; i < 3; i++) {
+        const px = dc ? x + (dc > 0 ? TILE - 4 : 4) : x + 8 + i * 16;
+        const pz = dr ? z + (dr > 0 ? TILE - 4 : 4) : z + 8 + i * 16;
+        foliage.add((c + r + i) % 11 === 0 ? 2 : 3, px, y + .2, pz, 18);
+      }
       if ((c + r) % 3 === 0 && neighbor === '~') {
         // Buttresses are rooted in the bank, below the route surface.
         cylinder(mesh, x + TILE / 2, bottom, z + TILE / 2, 13, y - bottom - 3, tint(style.wall, .86), 7, 19);
       }
     }
   }
-  for (const w of walls) dressWall(mesh, w, style);
+  for (const w of walls) {
+    const prop = wallProp(map, w), base = Number(w.key) * STOREY;
+    if (prop) {
+      mesh.paint(style.stone, () => mesh.box(w.x, base, w.z, w.w, 6, w.d, style.wall));
+      foliage.add(prop.kind, w.x + w.w / 2, base + 6, w.z + w.d - 2, prop.size);
+    } else dressWall(mesh, w, style);
+  }
   for (const w of walls) {
     const y = Number(w.key) * STOREY + .16, dx = 27, dz = 20;
     // Limit shadows to supported floor cells so they do not bridge a chasm.
@@ -247,7 +268,7 @@ export function buildLockdownWorld(map) {
       // Clip the shadow to supported receiver cells.
       if (map.surfaces && ![[x, z], [x + TILE, z], [x, z + TILE], [x + TILE, z + TILE]].every(([px, pz]) => onMapSurface(map, px, pz))) continue;
       const loX = Math.max(x, w.x + dx), hiX = Math.min(x + TILE, w.x + w.w + dx), loZ = Math.max(z, w.z + dz), hiZ = Math.min(z + TILE, w.z + w.d + dz);
-      if (hiX > loX && hiZ > loZ) mesh.floor(loX, loZ, hiX - loX, hiZ - loZ, tint(style.floor, .79), y);
+      if (hiX > loX && hiZ > loZ) mesh.paint(style.ground, () => mesh.floor(loX, loZ, hiX - loX, hiZ - loZ, style.floor, y), .72);
     }
   }
   // Each spawn is an authored healing pavilion with round columns and an arch.
@@ -272,5 +293,6 @@ export function buildLockdownWorld(map) {
       tower(mesh, { x: x - 38, z: z - 38, w: 76, d: 76 }, -20, style);
     }
   }
-  return { opaque: mesh.array, floors, walls, staircases, style };
+  dressPlants(map, foliage, STOREY);
+  return { opaque: mesh.array, foliage: foliage.array, floors, walls, staircases, style };
 }

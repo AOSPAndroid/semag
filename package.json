@@ -9,6 +9,7 @@
     "test": "node --test test/*.test.js",
     "test:lockdown": "node --test test/lockdown*.test.js",
     "art:lockdown": "node tools/lockdown-build-scene-art.mjs && node tools/lockdown-art-index.mjs",
+    "art:lockdown:painted": "node tools/lockdown-build-painted-art.mjs",
     "preview:lockdown": "node tools/lockdown-scene-preview.mjs"
   },
   "engines": {

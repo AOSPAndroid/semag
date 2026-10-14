@@ -54,7 +54,7 @@ export function materialCell(col, row, span) {
 
 /** Portrait still shows the approaches around a point, while keeping a knight readable. */
 export function sceneWorldWidth(width, height) {
-  return Math.min(1100, Math.max(600, 820 * width / Math.max(1, height)));
+  return Math.min(1100, Math.max(480, 820 * width / Math.max(1, height)));
 }
 
 export function sceneZoom(width, height, mapHeight) {

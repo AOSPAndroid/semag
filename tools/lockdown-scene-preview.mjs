@@ -8,6 +8,12 @@ const dir = process.argv[2] || 'test-results/lockdown';
 await mkdir(dir, { recursive: true });
 const browser = await chromium.launch({ headless: true, channel: 'chrome' });
 const page = await browser.newPage({ viewport: { width: 1280, height: 820 }, deviceScaleFactor: 1 });
+if (process.env.LOCKDOWN_NO_GRADIENTS === '1') await page.addInitScript(() => {
+  const get = WebGLRenderingContext.prototype.getExtension;
+  WebGLRenderingContext.prototype.getExtension = function(name) {
+    return ['EXT_shader_texture_lod', 'OES_standard_derivatives'].includes(name) ? null : get.call(this, name);
+  };
+});
 const errors = []; page.on('pageerror', e => errors.push(e.message));
 await page.route('**/lockdown-client.js', route => route.fulfill({ contentType: 'text/javascript', body: '' }));
 await page.goto(`${base}/lockdown.html?solo=1`);
@@ -26,6 +32,7 @@ await page.evaluate(async () => {
     }, 50);
   });
   const renderer = new LockdownRenderer(canvas, assets); window.previewRenderer = renderer;
+  if (!await renderer.world.materialsReady) throw new Error(renderer.world.assetError);
   window.preview = (mapId, close = false) => {
     const state = E.createState({ mapId, seed: 5 });
     E.setConnected(state, 0, true, 'Challenger'); E.startMatch(state, [0]); state.phase = 'fight';
@@ -46,6 +53,11 @@ for (const map of maps) {
 await page.setViewportSize({ width: 393, height: 852 });
 await page.evaluate(() => window.preview('skyway', true));
 await page.screenshot({ path: `${dir}/skyway-phone.png` });
+for (const map of ['maze', 'temple', 'foundry']) {
+  const result = await page.evaluate(id => window.preview(id, true), map);
+  assert.equal(result.mode, 'webgl'); assert.equal(result.error, 0); assert.equal(result.stats.paintedMaterials, true);
+  await page.screenshot({ path: `${dir}/${map}-phone.png` });
+}
 const overview = [];
 for (const [i, map] of maps.entries()) overview.push({ input: await sharp(`${dir}/${map}.png`).resize(480, 308).png().toBuffer(), left: i % 2 * 480, top: Math.floor(i / 2) * 308 });
 await sharp({ create: { width: 960, height: 1232, channels: 3, background: '#111317' } }).composite(overview).png().toFile(`${dir}/overview.png`);

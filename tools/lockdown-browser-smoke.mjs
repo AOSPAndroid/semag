@@ -6,13 +6,13 @@ const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const base = process.env.LOCKDOWN_URL || 'http://127.0.0.1:3128';
 const out = 'test-results/lockdown-live'; await mkdir(out, { recursive: true });
 try {
-  for (const [name, width, height] of [['desktop', 1280, 820], ['phone', 393, 852], ['small-phone', 320, 720]]) {
+  for (const [name, width, height, map = 'skyway'] of [['desktop', 1280, 820], ['phone', 393, 852], ['small-phone', 320, 720], ['garden-phone', 393, 852, 'maze'], ['ruins-phone', 393, 852, 'temple'], ['foundry-phone', 393, 852, 'foundry']]) {
     const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1 });
     const errors = [], failures = [];
     page.on('pageerror', e => errors.push(e.message));
     page.on('response', r => { if (r.status() >= 400) failures.push(`${r.status()} ${r.url()}`); });
     await page.goto(`${base}/lockdown.html?solo=1`);
-    await page.locator('#ld-map').selectOption('skyway');
+    await page.locator('#ld-map').selectOption(map);
     await page.locator('#ld-start').click();
     await page.waitForFunction(() => document.querySelector('#ld-app').dataset.phase === 'fight');
     assert.equal(await page.locator('#ld-arena').getAttribute('data-renderer'), 'webgl', `${name}: 3D renderer is active`);

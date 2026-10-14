@@ -4,7 +4,7 @@ import { LockdownRenderer, TEAM_COLORS, BODY_LIFT } from './lockdown-renderer.js
 import { MAPS, ABILITIES, RULES, GUARD, inBase } from './lockdown-engine.js';
 import { levelAt } from './lockdown-maps.js';
 import { GROUND, FLOOR_RISE, sceneWorldWidth } from './lockdown-scene-geometry.js';
-import { VoxelMesh } from './voxel-renderer.js';
+import { PaintedMesh, MATERIAL } from './lockdown-painted-mesh.js';
 import { buildLockdownWorld, STOREY, cylinder } from './lockdown-world-mesh.js';
 import { LockdownWorldView } from './lockdown-world-view.js';
 import { LOCKDOWN_YAW, CAMERA_COS, CAMERA_SIN, groundToView, viewToGround } from './lockdown-camera.js';
@@ -12,7 +12,7 @@ export { TEAM_COLORS, FLOOR_RISE };
 
 export class LockdownVoxelRenderer extends LockdownRenderer {
   constructor(canvas, assets) {
-    super(canvas, assets); this.worlds = new WeakMap(); this.dynamic = new VoxelMesh();
+    super(canvas, assets); this.worlds = new WeakMap(); this.dynamic = new PaintedMesh();
     try { this.world = new LockdownWorldView(); }
     catch (error) { this.graphicsError = error.message; this.world = null; }
     canvas.dataset.renderer = this.world ? 'webgl' : 'canvas-fallback';
@@ -45,7 +45,7 @@ export class LockdownVoxelRenderer extends LockdownRenderer {
       return super.render(state, { localId, now, focus, pointer });
     }
     const map = MAPS[state.mapId]; if (!map) return;
-    this.resize(); this.consumeEvents(state, now); this.localId = localId; this.players = state.players;
+    this.localId = localId; this.players = state.players; this.resize(); this.consumeEvents(state, now);
     const canvas = this.canvas, ctx = this.ctx, local = localId !== null ? state.players[localId] : null;
     this.viewer = local?.alive ? local : null;
     const lift = (x, y) => levelAt(map, x, y) * FLOOR_RISE;
@@ -67,8 +67,15 @@ export class LockdownVoxelRenderer extends LockdownRenderer {
     for (const point of state.points) {
       const y = levelAt(map, point.x, point.y) * STOREY, paint = point.owner == null ? '#a9c3c4' : TEAM_COLORS[point.owner].main;
       mesh.floorRing(point.x, point.y, RULES.pointRadius - 1.5, RULES.pointRadius + 1.5, paint, y + .3, 72);
-      cylinder(mesh, point.x, y + .1, point.y, 40, 4, scene.style.trim, 32);
-      cylinder(mesh, point.x, y + 4, point.y, 34, 3, scene.style.roof, 32);
+      mesh.paint(map.theme === 'foundry' ? MATERIAL.metal : MATERIAL.masonry, () => cylinder(mesh, point.x, y + .1, point.y, 44, 6, scene.style.trim, 32));
+      cylinder(mesh, point.x, y + 6, point.y, 37, 2, '#a08653', 32);
+      mesh.paint(MATERIAL.metal, () => cylinder(mesh, point.x, y + 8, point.y, 32, 2, scene.style.roof, 32));
+      for (let i = 0; i < 8; i++) {
+        const a = i * Math.PI / 4, x = point.x + Math.cos(a) * 34, z = point.y + Math.sin(a) * 34;
+        cylinder(mesh, x, y + 8, z, 5, 3, '#d2b577', 10);
+        cylinder(mesh, x, y + 11, z, 3.4, .8, '#b3fcf7', 12);
+      }
+      mesh.floorRing(point.x, point.y, 17, 21, '#8ce8e1', y + 10.2, 32);
       cylinder(mesh, point.x, y + 7, point.y, 12, 7, scene.style.trim, 12);
       cylinder(mesh, point.x, y + 14, point.y, 0, 13, paint, 8, 8);
       cylinder(mesh, point.x, y + 27, point.y, 8, 13, paint, 8, 0);
