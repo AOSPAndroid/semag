@@ -76,7 +76,7 @@ const GAMES = {
   },
   lockdown: {
     title: 'Lockdown', engine: Lockdown, makeState: settings => Lockdown.createState(settings), inputKeys: Lockdown.INPUT_KEYS,
-    numericControls: { aim: { min: -Math.PI, max: Math.PI, default: 0 } }, snapshotInterval: 3,
+    numericControls: { aim: { min: -Math.PI, max: Math.PI, default: 0 }, moveYaw: { min: -Math.PI, max: Math.PI, default: 0 } }, snapshotInterval: 3,
     snapshotState: state => ({ ...state, events: recentSnapshotEvents(state) }),
   },
   'voxel-horde': {

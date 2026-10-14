@@ -87,6 +87,11 @@ test('Lockdown rooms seat up to eight, take setup and map choices, and start wit
   for (let t = 0; t < 40; t++) game.app.tick();
   assert.ok(me.x > startX + 20, `moved from ${startX} to ${me.x}`);
   await expectError(first, { type: 'input', seq: 41, buttons: { ...emptyInput(0), aim: 9 } }, /./);
+  await expectError(first, { type: 'input', seq: 42, buttons: { ...emptyInput(0), moveYaw: 9 } }, /./);
+  const directionStart = { x: me.x, y: me.y };
+  first.send({ type: 'input', seq: 43, buttons: { ...emptyInput(0), right: true, moveYaw: -Math.PI / 8 } }); await flush(first);
+  for (let t = 0; t < 20; t++) game.app.tick();
+  assert.ok(me.x > directionStart.x && me.y < directionStart.y, 'server preserves the camera-relative movement angle');
   const mark = first.messages.length;
   for (let t = 0; t < 4; t++) game.app.tick();
   const snapshot = await first.untilState(message => message.state.phase === 'fight', { after: mark });

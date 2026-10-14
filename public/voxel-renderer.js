@@ -290,7 +290,7 @@ function boxColors(color) {
   }
   return colors;
 }
-class Mesh {
+export class VoxelMesh {
   constructor() { this.storage = new Float32Array(2048); this.length = 0; }
   reset() { this.length = 0; return this; }
   ensure(addition) {
@@ -387,6 +387,9 @@ class Mesh {
   }
   get array() { return this.storage.subarray(0, this.length); }
 }
+// Kept as an internal alias for the FPS/third-person renderers. Lockdown shares
+// this mesh format and its geometry primitives for its own scene pass.
+const Mesh = VoxelMesh;
 
 const VERTEX_SHADER = `
 attribute vec3 aPosition;

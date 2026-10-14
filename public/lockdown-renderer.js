@@ -6,7 +6,10 @@
  * readable placeholder shapes otherwise. Pure presentation: it never changes the state. */
 import { MAPS, TILE, RULES, ABILITIES, WEAPONS, CLASSES, ARMORS, GUARD, STATUS_IDS, inBase, chargeTicksFor, combineGear } from './lockdown-engine.js';
 import { isWall, isPit, levelAt, levelCell, STAIRS } from './lockdown-maps.js';
+import { onMapSurface } from './lockdown-map-surfaces.js';
 import { KNIGHT_FACINGS, KNIGHT_ANIMATION } from './lockdown-assets.js';
+import { FLOOR_RISE, GROUND, PIT_DROP, POINT_PLATE_DIAMETER, stairSurfaces, exposedFloorEdges, materialCell, sceneZoom } from './lockdown-scene-geometry.js';
+export { FLOOR_RISE, GROUND } from './lockdown-scene-geometry.js';
 
 /** How far a wall's top face is lifted, and the height that shots and swings travel at. */
 export const WALL_HEIGHT = 72, BODY_LIFT = 22;
@@ -14,12 +17,9 @@ const FEET = 8; // a knight's feet sit this far below the centre of its collisio
 /** Gait: at 70% of a knight's full speed or more (Boost and dashes included) they run, slower they walk.
  * Both cycles advance with distance covered, so feet never slide: one frame per this many world units. */
 const GAIT = Object.freeze({ moving: 20, run: .7, walkStride: 13, runStride: 19 });
-/** On two-floor maps the raised floor is one storey up: this many pixels on screen. */
-export const FLOOR_RISE = 24;
 /** The ¾ camera: the floor is seen tilted, so ground depth is foreshortened to this fraction on screen
  * (a 48x48 tile shows as 48x36). Upright things (knights, wall faces, ledges) keep their full height.
  * The simulation stays flat and exact: every ring drawn on the floor is the real hit area. */
-export const GROUND = .75;
 const TK = TILE * GROUND; // on-screen depth of one tile
 /** Things on the raised floor sort a little later, so the floor they stand on never covers their feet. */
 const RAISED_SORT = 16;
@@ -61,7 +61,6 @@ const THEMES = Object.freeze({
   skyway: { floor: '#7a7f8c', floorAlt: '#737885', grout: '#646876', wall: '#5a6274', wallTop: '#9aa3b8', wallEdge: '#2e3340', pit: '#8fb6e8', pitEdge: '#ffffff', pitKind: 'void' },
   stone: { floor: '#3c4048', floorAlt: '#383b43', grout: '#30333a', wall: '#6b6f78', wallTop: '#8a8f99', wallEdge: '#24262b', pit: '#20242c', pitEdge: '#4a505c', pitKind: 'chasm' },
 });
-const VIEW_WORLD_WIDTH = 1100; // world units across the screen at the default zoom
 const lerp = (a, b, t) => a + (b - a) * t;
 const hash = (a, b) => { let h = (a * 374761393 + b * 668265263) | 0; h = (h ^ (h >>> 13)) * 1274126177; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
 const armorKey = player => player.armor && player.armor !== 'none' ? `armor_${player.armor}_team${player.team}` : null;
@@ -91,10 +90,10 @@ export class LockdownRenderer {
     if (!image || !entry) return false;
     const frames = entry.frames || 1, rows = entry.rows || 1, fw = entry.size[0] / frames, fh = entry.size[1] / rows;
     // HD art: a PNG may be drawn at 2x (or more) the listed size; it shows at the listed size with the extra detail.
-    const density = Math.max(1, Math.round(image.naturalWidth / entry.size[0])) || 1;
+    const sourceWidth = image.naturalWidth / frames, sourceHeight = image.naturalHeight / rows;
     ctx.save(); ctx.globalAlpha *= alpha; ctx.translate(x, y); ctx.rotate(rotation); ctx.scale(scale * (flipX ? -1 : 1), scale * (flipY ? -1 : 1));
     ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(image, (Math.floor(frame) % frames) * fw * density, (Math.floor(row) % rows) * fh * density, fw * density, fh * density, -entry.anchor[0], -entry.anchor[1], fw, fh);
+    ctx.drawImage(image, (Math.floor(frame) % frames) * sourceWidth, (Math.floor(row) % rows) * sourceHeight, sourceWidth, sourceHeight, -entry.anchor[0], -entry.anchor[1], fw, fh);
     ctx.restore(); return true;
   }
   /** Aim from the knight's chest to the cursor, so shots drawn at chest height pass under the pointer. */
@@ -145,25 +144,41 @@ export class LockdownRenderer {
     const largeKey = theme ? `terrain_ground_${theme}` : pit ? `terrain_pit_${pit}` : null, large = largeKey && this.sprite(largeKey);
     const image = large || this.sprite(key);
     if (!image) return false;
-    const span = large ? this.assets.entry(largeKey).size[0] / TILE : 2, sw = image.naturalWidth / span, sh = image.naturalHeight / span;
-    ctx.drawImage(image, (col % span) * sw, (row % span) * sh, sw, sh, x, y, TILE, TILE);
+    const span = large ? this.assets.entry(largeKey).size[0] / TILE : 1, sw = image.naturalWidth / span, sh = image.naturalHeight / span;
+    const uv = materialCell(col, row, span);
+    ctx.save(); ctx.translate(x + (uv.x.flip ? TILE : 0), y + (uv.y.flip ? TILE : 0));
+    ctx.scale(uv.x.flip ? -1 : 1, uv.y.flip ? -1 : 1);
+    ctx.drawImage(image, uv.x.part * sw, uv.y.part * sh, sw, sh, 0, 0, TILE, TILE);
+    ctx.restore();
     return true;
   }
 
-  /** Sample a broad facade without repeating a separate brick panel in every cell. */
+  drawFloorRim(ctx, map, col, row, x, y) {
+    const edges = exposedFloorEdges(map, col, row);
+    for (const edge of edges) {
+      const horizontal = edge === 'north' || edge === 'south';
+      const left = x + (edge === 'east' ? TILE - 3 : 0), top = y + (edge === 'south' ? TILE - 3 : 0);
+      ctx.fillStyle = '#84755a'; ctx.fillRect(left, top, horizontal ? TILE : 3, horizontal ? 3 : TILE);
+      ctx.fillStyle = 'rgba(255,241,203,.65)';
+      ctx.fillRect(left, top, horizontal ? TILE : 1, horizontal ? 1 : TILE);
+    }
+  }
+
+  /** All structural faces sample the same masonry; height changes never squash a cliff image. */
   drawWallFace(ctx, theme, col, x, y, height) {
     if (height <= 0) return true;
-    if (height < WALL_HEIGHT) {
-      const ledge = this.sprite(`tile_ledge_${theme}`);
-      if (!ledge) return false;
-      ctx.drawImage(ledge, x, y, TILE, height); return true;
-    }
     const image = this.sprite(`tile_wall_front_${theme}`);
     if (!image) return false;
-    const sw = image.naturalWidth / 3;
-    ctx.drawImage(image, (col % 3) * sw, 0, sw, image.naturalHeight, x, y, TILE, WALL_HEIGHT);
-    if (height > WALL_HEIGHT) this.drawSprite(ctx, `tile_ledge_${theme}`, x, y + WALL_HEIGHT);
-    return true;
+    const uv = materialCell(col, 0, 3), sw = image.naturalWidth / 3;
+    ctx.save(); ctx.translate(x + (uv.x.flip ? TILE : 0), y); ctx.scale(uv.x.flip ? -1 : 1, 1);
+    for (let offset = 0; offset < height; offset += WALL_HEIGHT) {
+      const part = Math.min(WALL_HEIGHT, height - offset);
+      ctx.drawImage(image, uv.x.part * sw, 0, sw, image.naturalHeight * part / WALL_HEIGHT, 0, offset, TILE, part);
+    }
+    const shade = ctx.createLinearGradient(0, 0, 0, height);
+    shade.addColorStop(0, 'rgba(22,28,32,.10)'); shade.addColorStop(1, 'rgba(22,28,32,.42)');
+    ctx.fillStyle = shade; ctx.fillRect(0, 0, TILE, height);
+    ctx.restore(); return true;
   }
 
   /** Foreground architecture becomes translucent where it would hide a nearby knight. */
@@ -203,6 +218,12 @@ export class LockdownRenderer {
       const col = Math.floor(Math.min(...spots.map(p => p.x)) / TILE), row = Math.floor(Math.min(...spots.map(p => p.y)) / TILE);
       return { col, row, cols: Math.floor(Math.max(...spots.map(p => p.x)) / TILE) - col + 1, rows: Math.floor(Math.max(...spots.map(p => p.y)) / TILE) - row + 1 };
     });
+    // A single world-space backdrop also fills the area uncovered by lifted surfaces.
+    // Sky clouds must never restart at each 3 × 3 tile patch.
+    const backdrop = this.sprite(`terrain_pit_${map.theme}`);
+    ctx.fillStyle = theme.pit; ctx.fillRect(0, 0, map.width, map.height);
+    if (backdrop && map.theme === 'skyway') ctx.drawImage(backdrop, 0, 0, map.width, map.height);
+    else for (let r = 0; r < map.rows; r++) for (let c = 0; c < map.cols; c++) this.drawGroundTile(ctx, `tile_pit_${map.theme}`, c, r, c * TILE, r * TILE);
     // One strip per row of wall blocks: the raised top face, then the front face where floor lies below.
     // Walls standing on the raised floor of a two-floor map are lifted one storey higher.
     this.wallRows = [];
@@ -227,7 +248,7 @@ export class LockdownRenderer {
           }
         }
         sctx.save(); sctx.translate(0, top); sctx.scale(1, GROUND);
-        if (!this.drawSprite(sctx, `tile_wall_top_${map.theme}`, x, 0)) {
+        if (!this.drawGroundTile(sctx, `tile_floor_${map.theme}`, col, row, x, 0)) {
           sctx.fillStyle = theme.wallTop; sctx.fillRect(x, 0, TILE, TILE);
           sctx.fillStyle = 'rgba(255,255,255,.12)'; sctx.fillRect(x, 0, TILE, 3);
           sctx.fillStyle = 'rgba(0,0,0,.12)'; if (!isWall(map, col + 1, row)) sctx.fillRect(x + TILE - 3, 0, 3, TILE);
@@ -257,7 +278,7 @@ export class LockdownRenderer {
     if (map.twoFloors) for (let row = 0; row < map.rows; row++) {
       const cells = [...map.levels[row]].map((cell, col) => ({ cell, col })).filter(({ cell, col }) => cell !== '0' && map.grid[row][col] !== '#');
       if (!cells.length) continue;
-      const strip = makeCanvas(map.width, TK + FLOOR_RISE), sctx = strip.getContext('2d');
+      const strip = makeCanvas(map.width, TK + FLOOR_RISE + PIT_DROP), sctx = strip.getContext('2d');
       sctx.imageSmoothingEnabled = true; sctx.imageSmoothingQuality = 'high';
       for (const { cell, col } of cells) {
         const x = col * TILE;
@@ -274,15 +295,13 @@ export class LockdownRenderer {
           }
           // Raised floor catches more light; its rim shows where the drop is.
           sctx.fillStyle = 'rgba(255,240,210,.11)'; sctx.fillRect(x, 0, TILE, TILE);
-          sctx.fillStyle = 'rgba(255,255,255,.25)';
-          if (levelCell(map, col - 1, row) === '0') sctx.fillRect(x, 0, 2, TILE);
-          if (levelCell(map, col + 1, row) === '0') sctx.fillRect(x + TILE - 2, 0, 2, TILE);
-          if (levelCell(map, col, row - 1) === '0') sctx.fillRect(x, 0, TILE, 2);
+          this.drawFloorRim(sctx, map, col, row, x, 0);
           if (isWall(map, col, row - 1)) { const shade = sctx.createLinearGradient(0, 0, 0, 14); shade.addColorStop(0, 'rgba(0,0,0,.35)'); shade.addColorStop(1, 'rgba(0,0,0,0)'); sctx.fillStyle = shade; sctx.fillRect(x, 0, TILE, 14); }
           sctx.restore();
           const below = levelCell(map, col, row + 1);
           // The face also runs behind a stair climbing up to this cell: the stair stands against it.
-          if (row + 1 < map.rows && below !== '1' && !isWall(map, col, row + 1) && !this.drawSprite(sctx, `tile_ledge_${map.theme}`, x, TK)) {
+          const drop = isPit(map, col, row + 1) ? FLOOR_RISE + PIT_DROP : FLOOR_RISE;
+          if (row + 1 < map.rows && below !== '1' && !isWall(map, col, row + 1) && !this.drawWallFace(sctx, map.theme, col, x, TK, drop)) {
             sctx.fillStyle = theme.wall; sctx.fillRect(x, TK, TILE, FLOOR_RISE);
             sctx.fillStyle = 'rgba(255,255,255,.18)'; sctx.fillRect(x, TK, TILE, 2);
             sctx.fillStyle = 'rgba(0,0,0,.25)'; sctx.fillRect(x, TK + FLOOR_RISE - 5, TILE, 5); sctx.fillRect(x + (col % 2 ? 16 : 32), TK + 2, 1, FLOOR_RISE - 7);
@@ -293,15 +312,22 @@ export class LockdownRenderer {
     }
     for (let row = 0; row < map.rows; row++) for (let col = 0; col < map.cols; col++) {
       const x = col * TILE, y = row * TILE, cell = map.grid[row][col];
-      // A low floor under the transparent sides of a stair prevents dark triangular holes.
-      if (cell === '#' || levelCell(map, col, row) === '1') continue;
-      if (cell === '~') { this.drawPit(ctx, map, theme, col, row); continue; }
+      // Fill every solid footprint before raised surfaces; no transparent holes at landings.
+      if (cell === '~') continue;
       const spawnTeam = cell === '1' ? 0 : cell === '2' ? 1 : null;
       const alt = hash(Math.floor(col / 2), Math.floor(row / 2)) < .18;
       if (!this.drawGroundTile(ctx, spawnTeam !== null ? `tile_spawn_team${spawnTeam}` : `tile_floor_${map.theme}${alt ? '_alt' : ''}`, col, row, x, y)) {
         ctx.fillStyle = alt ? theme.floorAlt : theme.floor; ctx.fillRect(x, y, TILE, TILE);
         ctx.strokeStyle = theme.grout; ctx.lineWidth = 1; ctx.strokeRect(x + .5, y + .5, TILE - 1, TILE - 1);
         if (spawnTeam !== null) { ctx.fillStyle = TEAM_COLORS[spawnTeam].main + '33'; ctx.fillRect(x, y, TILE, TILE); }
+      }
+      if (cell !== '#' && levelCell(map, col, row) === '0') {
+        this.drawFloorRim(ctx, map, col, row, x, y);
+        if (isPit(map, col, row + 1)) {
+          ctx.save(); ctx.translate(x, y + TILE); ctx.scale(1, 1 / GROUND);
+          this.drawWallFace(ctx, map.theme, col, 0, 0, PIT_DROP);
+          ctx.restore();
+        }
       }
       // Raised floor casts a shadow on the low ground at its foot, and darkens the ground beside it.
       if (map.twoFloors) {
@@ -313,70 +339,46 @@ export class LockdownRenderer {
       // Walls cast a soft shadow onto the floor in front of them.
       if (isWall(map, col, row - 1)) { const shade = ctx.createLinearGradient(0, y, 0, y + 34); shade.addColorStop(0, 'rgba(26,35,28,.3)'); shade.addColorStop(1, 'rgba(26,35,28,0)'); ctx.fillStyle = shade; ctx.fillRect(x, y, TILE, 34); }
     }
+    if (map.surfaces) {
+      // Hardware fallback uses the same rounded footprint as the WebGL scene.
+      // Repaint low ground through the union rather than approximating it with
+      // the centre-sampled navigation cells used by bots.
+      ctx.fillStyle = theme.pit; ctx.fillRect(0, 0, map.width, map.height);
+      if (backdrop) ctx.drawImage(backdrop, 0, 0, map.width, map.height);
+      ctx.save(); ctx.beginPath();
+      for (const surface of map.surfaces) { surface.points.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.closePath(); }
+      ctx.clip(); ctx.fillStyle = theme.floor; ctx.fillRect(0, 0, map.width, map.height);
+      for (let row = 0; row < map.rows; row++) for (let col = 0; col < map.cols; col++) {
+        const tile = map.grid[row][col], key = tile === '1' || tile === '2' ? `tile_spawn_team${Number(tile) - 1}` : `tile_floor_${map.theme}`;
+        this.drawGroundTile(ctx, key, col, row, col * TILE, row * TILE);
+      }
+      ctx.restore();
+    }
     this.mapCache = canvas; this.mapKey = key; return canvas;
   }
 
-  /** A stair tile, drawn into its row's raised strip: the ramp climbs one storey toward the arrow. */
+  /** Stairs are constructed from the actual floor material, at exact map endpoints. */
   drawStairs(ctx, map, theme, cell, col, row) {
-    const x = col * TILE, R = FLOOR_RISE;
-    if (this.drawSprite(ctx, `tile_stairs_${map.theme}_${({ '^': 'up', v: 'down', '<': 'left', '>': 'right' })[cell]}`, x, 0)) return;
-    const T = TK, tread = theme.floor, riser = theme.wall, edge = 'rgba(0,0,0,.28)', steps = 6;
-    ctx.save();
-    if (cell === '^') {
-      // Climbing away from the camera: treads and risers stack up the screen.
-      for (let i = 0; i < steps; i++) {
-        const y0 = T + R - (i + 1) * (T + R) / steps, h = (T + R) / steps;
-        ctx.fillStyle = riser; ctx.fillRect(x, y0 + h * .55, TILE, h * .45); ctx.fillStyle = tread; ctx.fillRect(x, y0, TILE, h * .55);
-        ctx.fillStyle = edge; ctx.fillRect(x, y0 + h * .55, TILE, 1);
+    const x = col * TILE;
+    for (const step of stairSurfaces(cell)) {
+      if (step.face) {
+        const [sx, sy, width, height] = step.face;
+        ctx.save(); ctx.translate(x + sx, sy); ctx.scale(width / TILE, 1);
+        if (!this.drawWallFace(ctx, map.theme, col, 0, 0, height)) {
+          ctx.fillStyle = theme.wall; ctx.fillRect(0, 0, TILE, height);
+        }
+        ctx.restore();
       }
-    } else if (cell === 'v') {
-      // Climbing toward the camera: only the treads show, foreshortened.
-      for (let i = 0; i < steps; i++) { const y0 = R + i * (T - R) / steps; ctx.fillStyle = i % 2 ? tread : theme.floorAlt; ctx.fillRect(x, y0, TILE, (T - R) / steps + 1); }
-      ctx.fillStyle = edge; ctx.fillRect(x, R, TILE, 1);
-    } else {
-      // Climbing sideways: a sloped top face over a stepped side face.
-      const up = cell === '>' ? 1 : -1;
-      for (let i = 0; i < steps; i++) {
-        const w = TILE / steps, sx = up > 0 ? x + i * w : x + TILE - (i + 1) * w, lift = (i + 1) * R / steps;
-        ctx.fillStyle = tread; ctx.fillRect(sx, R - lift, w + .5, T);
-        ctx.fillStyle = riser; ctx.fillRect(sx, R - lift + T, w + .5, lift);
-        ctx.fillStyle = edge; ctx.fillRect(up > 0 ? sx : sx + w - 1, R - lift, 1, T + lift);
+      ctx.save(); ctx.translate(x + step.x, step.y);
+      ctx.beginPath(); ctx.rect(0, 0, step.width, step.height); ctx.clip();
+      ctx.scale(step.width / step.uw, step.height / step.vh);
+      if (!this.drawGroundTile(ctx, `tile_floor_${map.theme}`, col, row, -step.u, -step.v)) {
+        ctx.fillStyle = theme.floor; ctx.fillRect(0, 0, step.uw, step.vh);
       }
+      ctx.restore();
+      ctx.fillStyle = 'rgba(255,245,215,.45)';
+      ctx.fillRect(x + step.x, step.y, step.width, .8);
     }
-    ctx.restore();
-  }
-  /** Chasm, water or lava: sunk below the floor, with a lip where it meets solid ground. */
-  drawPit(ctx, map, theme, col, row) {
-    const x = col * TILE, y = row * TILE;
-    const textured = this.drawGroundTile(ctx, `tile_pit_${map.theme}`, col, row, x, y);
-    const solid = (c, r) => map.grid[r]?.[c] !== undefined && map.grid[r][c] !== '~';
-    if (!textured) {
-      ctx.fillStyle = theme.pit; ctx.fillRect(x, y, TILE, TILE);
-      if (theme.pitKind === 'void') {
-        ctx.fillStyle = 'rgba(255,255,255,.35)'; if (hash(col, row) < .3) { ctx.beginPath(); ctx.ellipse(x + 24, y + 26, 16, 6, 0, 0, Math.PI * 2); ctx.fill(); }
-      } else {
-        ctx.fillStyle = theme.pitEdge; ctx.globalAlpha = theme.pitKind === 'lava' ? .55 : .3;
-        for (let i = 0; i < 3; i++) ctx.fillRect(x + 6 + ((col * 7 + row * 13 + i * 17) % 30), y + 8 + i * 13, 10, 2);
-        ctx.globalAlpha = 1;
-      }
-    }
-    // The near lip of the floor above shows as a cut face, like a wall front sunk into the ground.
-    if (solid(col, row - 1)) {
-      let depth = 1; while (map.grid[row + depth]?.[col] === '~') depth++;
-      const drop = Math.min(35, depth * TK * .4), bank = this.sprite(`tile_bank_front_${map.theme}`);
-      if (bank) {
-        const sw = bank.naturalWidth / 2;
-        ctx.drawImage(bank, (col % 2) * sw, 0, sw, bank.naturalHeight, x, y, TILE, drop / GROUND);
-      } else { ctx.fillStyle = theme.wall; ctx.fillRect(x, y, TILE, drop / GROUND); }
-      const shade = ctx.createLinearGradient(0, y + drop / GROUND, 0, y + Math.min(TILE, drop / GROUND + 12));
-      shade.addColorStop(0, 'rgba(8,23,23,.38)'); shade.addColorStop(1, 'rgba(8,23,23,0)');
-      ctx.fillStyle = shade; ctx.fillRect(x, y + drop / GROUND, TILE, Math.min(12, TILE - drop / GROUND));
-    }
-    ctx.fillStyle = theme.wallTop; ctx.globalAlpha = .55;
-    if (solid(col - 1, row)) ctx.fillRect(x, y, 1.5, TILE);
-    if (solid(col + 1, row)) ctx.fillRect(x + TILE - 1.5, y, 1.5, TILE);
-    if (solid(col, row + 1)) ctx.fillRect(x, y + TILE - 1.5, TILE, 1.5);
-    ctx.globalAlpha = 1;
   }
 
   // ---------- events → short-lived effects ----------
@@ -443,7 +445,7 @@ export class LockdownRenderer {
     const local = localId !== null ? state.players[localId] : null;
     this.localId = localId; this.viewer = local?.alive ? local : null;
     this.consumeEvents(state, now);
-    const zoom = canvas.width / VIEW_WORLD_WIDTH;
+    const zoom = sceneZoom(canvas.width, canvas.height, map.height);
     // The camera works in screen space: ground y is foreshortened by GROUND, heights are not.
     const liftAt = (x, y) => map.twoFloors ? levelAt(map, x, y) * FLOOR_RISE : 0;
     const wanted = focus ? { x: focus.x, y: focus.y * GROUND } : local ? { x: local.x, y: local.y * GROUND - BODY_LIFT / 2 - liftAt(local.x, local.y) } : { x: map.width / 2, y: map.height * GROUND / 2 };
@@ -459,6 +461,16 @@ export class LockdownRenderer {
     this.shake = this.shake > .2 ? this.shake * .86 : 0;
     ctx.setTransform(zoom, 0, 0, zoom, canvas.width / 2 - (this.camera.x + shakeX) * zoom, canvas.height / 2 - (this.camera.y + shakeY) * zoom);
     ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+    const backdrop = this.sprite(`terrain_pit_${map.theme}`);
+    if (backdrop) {
+      // Clamp the same world-space background at the arena border; portrait views
+      // must not reveal a second, differently scaled sky below the map.
+      const w = backdrop.naturalWidth, h = backdrop.naturalHeight, H = map.height * GROUND;
+      ctx.drawImage(backdrop, 0, 0, w, 1, 0, -H, map.width, H);
+      ctx.drawImage(backdrop, 0, h - 1, w, 1, 0, H, map.width, H);
+      ctx.drawImage(backdrop, 0, 0, 1, h, -map.width, 0, map.width, H);
+      ctx.drawImage(backdrop, w - 1, 0, 1, h, map.width, 0, map.width, H);
+    }
     ctx.drawImage(this.buildMap(map), 0, 0, map.width, map.height * GROUND);
     // Two ways to draw: `flat` lies on the (foreshortened) floor at a height; `upright` stands at a
     // world position, so its sprite keeps its proportions.
@@ -492,7 +504,7 @@ export class LockdownRenderer {
     const items = [];
     const occlusionPlayers = local?.alive ? [local] : [];
     for (const wall of this.wallRows || []) items.push({ key: (wall.row + 1) * TILE, draw: () => this.drawWallRow(ctx, wall, map, occlusionPlayers) });
-    for (const floor of this.floorRows || []) items.push({ key: floor.row * TILE, draw: () => ctx.drawImage(floor.canvas, 0, floor.row * TK - FLOOR_RISE, map.width, TK + FLOOR_RISE) });
+    for (const floor of this.floorRows || []) items.push({ key: floor.row * TILE, draw: () => ctx.drawImage(floor.canvas, 0, floor.row * TK - FLOOR_RISE, map.width, TK + FLOOR_RISE + PIT_DROP) });
     const sortKey = (y, amount) => y + amount / FLOOR_RISE * RAISED_SORT;
     for (const mark of this.mapDecorations(map)) {
       const amount = mark.lift ?? lift(mark.x, mark.y);
@@ -568,10 +580,10 @@ export class LockdownRenderer {
 
   drawPoint(ctx, point, now) {
     const radius = RULES.pointRadius, owner = point.owner, progress = point.progress / 100;
-    if (!this.drawSprite(ctx, 'point_base', point.x, point.y, { scale: radius * 1.8 / 160 })) {
+    if (!this.drawSprite(ctx, 'point_base', point.x, point.y, { scale: POINT_PLATE_DIAMETER / 160 })) {
       ctx.fillStyle = 'rgba(255,255,255,.05)'; ctx.beginPath(); ctx.arc(point.x, point.y, radius, 0, Math.PI * 2); ctx.fill();
     }
-    ctx.lineWidth = 4; ctx.strokeStyle = owner === null ? 'rgba(220,225,235,.45)' : TEAM_COLORS[owner].main;
+    ctx.lineWidth = 2; ctx.strokeStyle = owner === null ? 'rgba(220,225,235,.55)' : TEAM_COLORS[owner].main;
     ctx.setLineDash(owner === null ? [10, 8] : []); ctx.beginPath(); ctx.arc(point.x, point.y, radius, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
     if (Math.abs(progress) > .001) {
       const team = progress > 0 ? 0 : 1;
@@ -581,7 +593,7 @@ export class LockdownRenderer {
   }
   drawBeacon(ctx, point, now) {
     const glow = point.owner === null ? '#cfd6e2' : TEAM_COLORS[point.owner].light;
-    const drawn = this.drawSprite(ctx, 'point_beacon', point.x, point.y + 6, { scale: 1.65 });
+    const drawn = this.drawSprite(ctx, 'point_beacon', point.x, point.y + 6, { scale: .65 });
     if (!drawn) {
       ctx.fillStyle = '#20232a'; ctx.fillRect(point.x - 9, point.y - 52, 18, 58);
       ctx.fillStyle = '#353942'; ctx.fillRect(point.x - 9, point.y - 52, 18, 8);
@@ -712,7 +724,7 @@ export class LockdownRenderer {
     }
     const frame = this.gaitFrame(player, now, moving);
     const map = MAPS[state.mapId];
-    if (map && isPit(map, Math.floor(player.x / TILE), Math.floor(player.y / TILE))) {
+    if (map && (map.surfaces ? !onMapSurface(map, player.x, player.y) : isPit(map, Math.floor(player.x / TILE), Math.floor(player.y / TILE)))) {
       // Crossing a pit: ripples on water and bog, a glowing hover pad over lava or open sky.
       ctx.save(); ctx.globalAlpha = alpha * .8;
       if (map.pit === 'water' || map.pit === 'bog') { ctx.strokeStyle = map.pit === 'water' ? '#d9f3ff' : '#b7d68a'; ctx.lineWidth = 2; for (let i = 0; i < 2; i++) { const k = (now / 700 + i / 2) % 1; ctx.globalAlpha = alpha * (1 - k) * .8; ctx.beginPath(); ctx.ellipse(fx, fy, 10 + k * 18, 4 + k * 6, 0, 0, Math.PI * 2); ctx.stroke(); } }
@@ -810,7 +822,7 @@ export class LockdownRenderer {
     if (!entry || !image) { ctx.globalAlpha = .7; ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.ellipse(x, y - 26, 15, 26, 0, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1; return; }
     const tint = this.tint ||= Object.assign(document.createElement('canvas'), { width: 64, height: 64 }), tctx = tint.getContext('2d');
     tctx.clearRect(0, 0, 64, 64); tctx.globalCompositeOperation = 'source-over'; tctx.imageSmoothingEnabled = true;
-    const fw = entry.size[0] / entry.frames, fh = entry.size[1] / (entry.rows || 1);
+    const fw = image.naturalWidth / entry.frames, fh = image.naturalHeight / (entry.rows || 1);
     tctx.drawImage(image, (Math.floor(options.frame) % entry.frames) * fw, options.row * fh, fw, fh, 0, 0, 64, 64);
     tctx.globalCompositeOperation = 'source-atop'; tctx.fillStyle = 'rgba(255,255,255,.85)'; tctx.fillRect(0, 0, 64, 64);
     ctx.save(); ctx.translate(x, y); if (options.flipX) ctx.scale(-1, 1); ctx.drawImage(tint, -entry.anchor[0], -entry.anchor[1]); ctx.restore();
@@ -986,7 +998,8 @@ export class LockdownRenderer {
       const at = effect.playerId !== undefined && this.players?.[effect.playerId] ? this.players[effect.playerId] : effect.x !== undefined ? effect : effect.fromX !== undefined ? { x: effect.fromX, y: effect.fromY } : null;
       const height = at ? lift(at.x, at.y) : 0;
       // Rings, blasts and sword arcs lie flat (foreshortened); text and sparks stand upright where they happen.
-      if (FLAT_EFFECTS.has(effect.type)) { ctx.translate(0, -height + (effect.type === 'slash' || effect.type === 'spinTurn' ? FEET - BODY_LIFT : 0)); ctx.scale(1, GROUND); }
+      if (this.projectEffect) this.projectEffect(ctx, effect, at, height, FLAT_EFFECTS.has(effect.type));
+      else if (FLAT_EFFECTS.has(effect.type)) { ctx.translate(0, -height + (effect.type === 'slash' || effect.type === 'spinTurn' ? FEET - BODY_LIFT : 0)); ctx.scale(1, GROUND); }
       else if (effect.type !== 'chain' && at) ctx.translate(0, at.y * (GROUND - 1) - height);
       else ctx.translate(0, -height);
       const chest = effect.y - BODY_LIFT;
@@ -1069,6 +1082,11 @@ export class LockdownRenderer {
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, target.width, target.height);
     ctx.setTransform(scale, 0, 0, scale, (target.width - map.width * scale) / 2, (target.height - map.height * scale) / 2);
     ctx.fillStyle = 'rgba(20,22,26,.85)'; ctx.fillRect(0, 0, map.width, map.height);
+    if (map.surfaces) {
+      ctx.fillStyle = (THEMES[map.theme] || THEMES.stone).pit; ctx.fillRect(0, 0, map.width, map.height);
+      ctx.fillStyle = '#333d45';
+      for (const surface of map.surfaces) { ctx.beginPath(); surface.points.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.closePath(); ctx.fill(); }
+    }
     if (map.twoFloors) {
       ctx.fillStyle = 'rgba(255,255,255,.12)';
       for (let row = 0; row < map.rows; row++) for (let col = 0; col < map.cols; col++) if (levelCell(map, col, row) !== '0') ctx.fillRect(col * TILE, row * TILE, TILE, TILE);
@@ -1076,7 +1094,7 @@ export class LockdownRenderer {
     ctx.fillStyle = '#5b606b';
     for (let row = 0; row < map.rows; row++) for (let col = 0; col < map.cols; col++) if (map.grid[row][col] === '#') ctx.fillRect(col * TILE, row * TILE, TILE, TILE);
     ctx.fillStyle = (THEMES[map.theme] || THEMES.stone).pit;
-    for (let row = 0; row < map.rows; row++) for (let col = 0; col < map.cols; col++) if (map.grid[row][col] === '~') ctx.fillRect(col * TILE, row * TILE, TILE, TILE);
+    if (!map.surfaces) for (let row = 0; row < map.rows; row++) for (let col = 0; col < map.cols; col++) if (map.grid[row][col] === '~') ctx.fillRect(col * TILE, row * TILE, TILE, TILE);
     ctx.fillStyle = '#5b606b';
     for (const point of state.points) { ctx.fillStyle = point.owner === null ? '#cfd6e2' : TEAM_COLORS[point.owner].main; ctx.beginPath(); ctx.arc(point.x, point.y, RULES.pointRadius, 0, Math.PI * 2); ctx.fill(); }
     const viewer = localId !== null ? state.players[localId] : null;

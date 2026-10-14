@@ -1,7 +1,7 @@
 /** Lockdown page: lobby, input, HUD and networking around the shared engine.
  * `?solo=1` runs the simulation in the page with bots; `?room=ID` plays online. */
 import * as Engine from './lockdown-engine.js';
-import { LockdownRenderer, TEAM_COLORS, FLOOR_RISE } from './lockdown-renderer.js';
+import { LockdownVoxelRenderer as LockdownRenderer, TEAM_COLORS, FLOOR_RISE } from './lockdown-voxel-renderer.js';
 import { createAssetLibrary } from './lockdown-assets.js';
 import { gameKey } from './keyboard-layout.js';
 import { GameAudio } from './audio.js';
@@ -186,6 +186,7 @@ function updateAim() {
 /** One input frame. Edge presses that were already released still count once. */
 function sampleInput(consume) {
   const input = Engine.emptyInput(aim);
+  input.moveYaw = scene.movementYaw;
   if (menuOpen) return input;
   for (const key of INPUT_KEYS) input[key] = held.has(key) || pressed.has(key);
   // With the inventory open the mouse drags items, so clicks never attack.

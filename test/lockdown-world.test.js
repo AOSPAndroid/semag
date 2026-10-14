@@ -1,0 +1,161 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import * as E from '../public/lockdown-engine.js';
+import { levelAt, levelCell, STAIRS, TILE } from '../public/lockdown-maps.js';
+import { buildLockdownWorld, STOREY, VERTICAL } from '../public/lockdown-world-mesh.js';
+import { onMapSurface, surfaceSupportsBody } from '../public/lockdown-map-surfaces.js';
+import { groundToView, viewToGround, LOCKDOWN_YAW } from '../public/lockdown-camera.js';
+import { worldProjection } from '../public/lockdown-world-view.js';
+import { FLOOR_RISE } from '../public/lockdown-scene-geometry.js';
+import { MATERIAL } from '../public/lockdown-painted-mesh.js';
+
+test('north-up camera keeps map axes aligned while retaining visible elevation', () => {
+  assert.equal(LOCKDOWN_YAW, 0);
+  const origin = groundToView(200, 300), north = groundToView(200, 200), east = groundToView(300, 300), raised = groundToView(200, 300, FLOOR_RISE);
+  assert.equal(north.x, origin.x); assert.ok(north.y < origin.y);
+  assert.equal(east.y, origin.y); assert.ok(east.x > origin.x);
+  assert.equal(raised.x, origin.x); assert.equal(origin.y - raised.y, FLOOR_RISE);
+});
+
+test('GPU projection, HUD projection and aiming agree at both floors and on stairs', () => {
+  for (const [width, height] of [[320, 720], [393, 852], [1280, 820]]) {
+    const camera = { x: 560, y: 420, zoom: width / 700 }, matrix = worldProjection(camera, width, height);
+    for (const [x, y, floor] of [[152, 492, 0], [576, 260, 1], [600, 168, .5], [1008, 600, 0]]) for (const chest of [0, 22]) {
+      const lift = floor * FLOOR_RISE + chest, p = groundToView(x, y, lift), picked = viewToGround(p.x, p.y, lift);
+      assert.ok(Math.hypot(picked.x - x, picked.y - y) < 1e-9);
+      const world = [x, lift / VERTICAL, y, 1], q = [0, 1, 2, 3].map(row => world.reduce((sum, v, col) => sum + matrix[col * 4 + row] * v, 0));
+      const sx = (q[0] / q[3] + 1) * width / 2, sy = (1 - q[1] / q[3]) * height / 2;
+      assert.ok(Math.abs(sx - (width / 2 + (p.x - camera.x) * camera.zoom)) < .002);
+      assert.ok(Math.abs(sy - (height / 2 + (p.y - camera.y) * camera.zoom)) < .002);
+    }
+  }
+});
+
+test('camera-relative movement and dash directions keep screen cardinal directions and speed', () => {
+  for (const key of ['right', 'left', 'up', 'down']) {
+    const v = E.movementVector({ [key]: true, moveYaw: -LOCKDOWN_YAW }), projected = groundToView(v.x, v.y);
+    assert.ok(Math.abs(Math.hypot(v.x, v.y) - 1) < 1e-10);
+    assert.ok(Math.abs(['right', 'left'].includes(key) ? projected.y : projected.x) < 1e-10);
+    assert.equal(Math.sign(['right', 'left'].includes(key) ? projected.x : projected.y), ['right', 'down'].includes(key) ? 1 : -1);
+  }
+  assert.deepEqual(E.movementVector({ right: true, moveYaw: NaN }), { x: 1, y: 0 });
+});
+
+test('all eight 3D maps have finite bounded geometry, continuous wall footprints and supported stair landings', () => {
+  const before = JSON.stringify(E.MAPS);
+  for (const map of Object.values(E.MAPS)) {
+    const scene = buildLockdownWorld(map);
+    assert.ok(scene.opaque.length > 1000 && scene.opaque.length / 10 < 400000, `${map.id} geometry budget`);
+    assert.ok(scene.opaque.every(Number.isFinite), map.id);
+    assert.equal(scene.opaque.length % 30, 0);
+    const materials = new Set();
+    for (let i = 9; i < scene.opaque.length; i += 10) if (scene.opaque[i] > 1.5) {
+      const id = scene.opaque[i] - 2;
+      assert.ok(Number.isInteger(id) && Object.values(MATERIAL).includes(id), `${map.id}: valid painted material`);
+      materials.add(id);
+    }
+    assert.ok(materials.size >= 3, `${map.id}: painted ground, sides and trim`);
+    assert.ok(scene.foliage.every(Number.isFinite)); assert.equal(scene.foliage.length % 30, 0);
+    assert.ok(scene.foliage.length / 30 < 2000, `${map.id}: scenery sprite budget`);
+    for (let i = 3; i < scene.foliage.length; i += 5) {
+      assert.ok(scene.foliage[i] >= 0 && scene.foliage[i] <= 1);
+      assert.ok(scene.foliage[i + 1] >= 0 && scene.foliage[i + 1] <= 1);
+    }
+    let occupied = 0;
+    for (const wall of scene.walls) {
+      for (let r = wall.row; r < wall.row + wall.rows; r++) for (let c = wall.col; c < wall.col + wall.cols; c++) {
+        assert.equal(map.grid[r][c], '#'); occupied++;
+      }
+    }
+    assert.equal(occupied, map.grid.join('').split('#').length - 1);
+    for (const stair of scene.staircases) {
+      const [dx, dy] = STAIRS[stair.direction], x = (stair.col + .5) * TILE, y = (stair.row + .5) * TILE;
+      assert.equal(levelAt(map, x + dx * TILE, y + dy * TILE), 1);
+      assert.equal(levelAt(map, x - dx * TILE, y - dy * TILE), 0);
+      assert.equal(stair.steps.at(-1).h, STOREY);
+      assert.ok(surfaceSupportsBody(map, x + dx * TILE, y + dy * TILE, E.RULES.radius), `${map.id} upper landing`);
+      assert.ok(surfaceSupportsBody(map, x - dx * TILE, y - dy * TILE, E.RULES.radius), `${map.id} lower landing`);
+    }
+  }
+  assert.equal(JSON.stringify(E.MAPS), before, 'rendering never changes navigation data');
+});
+
+function arena(x, y) {
+  const state = E.createState({ mapId: 'skyway', seed: 9 }); E.setConnected(state, 0, true, 'Ada'); E.startMatch(state, [0]); state.phase = 'fight';
+  for (const p of state.players) Object.assign(p, { alive: p.id === 0, bot: false, respawnTicks: 1e9 });
+  Object.assign(state.players[0], { x, y, z: levelAt(E.MAPS.skyway, x, y), vx: 0, vy: 0, shieldTicks: 0 });
+  return state;
+}
+function walk(state, input, ticks) { for (let i = 0; i < ticks; i++) E.step(state, [{ ...E.emptyInput(), ...input }]); }
+
+test('rounded island edges stop bodies, bridge seams remain traversable and pit shoes still cross', () => {
+  const map = E.MAPS.skyway, state = arena(650, 490);
+  walk(state, { right: true }, 100);
+  const p = state.players[0];
+  assert.ok(p.x < 698 && p.x > 663, `stopped at curved edge: ${p.x}`);
+  assert.ok(surfaceSupportsBody(map, p.x, p.y, E.RULES.radius));
+  assert.equal(onMapSurface(map, 712, 490), false);
+  // Use the catalogue's actual chasm-walking shoes instead of a visual-only perk.
+  p.shoes = Object.keys(E.GEAR.shoes).find(id => E.GEAR.shoes[id].walk?.includes('chasm'));
+  assert.ok(p.shoes, 'chasm shoes are available');
+  walk(state, { right: true }, 70); assert.ok(p.x > 712);
+  const cross = arena(552, 600); walk(cross, { right: true }, 300);
+  assert.ok(cross.players[0].x > 1008, 'crossed from rounded A onto the bridge and B');
+  const climb = arena(552, 360); walk(climb, { up: true }, 75);
+  assert.equal(climb.players[0].z, 1, 'actual movement climbs the connected terrace stairs');
+});
+
+test('every stair flight has three lanes and knights can climb and descend off centre', () => {
+  for (const map of Object.values(E.MAPS)) {
+    const state = E.createState({ mapId: map.id, seed: 9 });
+    E.setConnected(state, 0, true, 'Ada'); E.startMatch(state, [0]); state.phase = 'fight';
+    for (const p of state.players) Object.assign(p, { alive: p.id === 0, bot: false, respawnTicks: 1e9 });
+    const p = state.players[0];
+    for (let r = 1; r < map.rows - 1; r++) for (let c = 1; c < map.cols - 1; c++) {
+      const arrow = levelCell(map, c, r); if (!STAIRS[arrow]) continue;
+      const [dx, dy] = STAIRS[arrow], px = dy ? 1 : 0, py = dx ? 1 : 0;
+      let width = 1;
+      for (const sign of [-1, 1]) for (let i = 1; levelCell(map, c + px * i * sign, r + py * i * sign) === arrow; i++) width++;
+      assert.ok(width >= 3, `${map.id} stair ${c},${r} has ${width} lanes`);
+      for (const direction of [1, -1]) for (const offset of [-7, 7]) {
+        const x = (c + .5) * TILE + px * offset, y = (r + .5) * TILE + py * offset;
+        const from = direction === 1 ? -2 : 1, to = direction === 1 ? 1 : -2;
+        Object.assign(p, { x: x + dx * from * TILE, y: y + dy * from * TILE, vx: 0, vy: 0, shieldTicks: 0 });
+        p.z = levelAt(map, p.x, p.y);
+        const targetX = x + dx * to * TILE, targetY = y + dy * to * TILE;
+        const input = { right: true, moveYaw: Math.atan2(dy * direction, dx * direction) };
+        let ticks = 0;
+        while ((targetX - p.x) * dx * direction + (targetY - p.y) * dy * direction > 0 && ticks++ < 140) walk(state, input, 1);
+        const label = `${map.id} stair ${c},${r} direction ${direction} offset ${offset}`;
+        assert.ok(ticks < 140, `${label}: blocked at ${p.x},${p.y}`);
+        assert.equal(p.z, direction === 1 ? 1 : 0, label);
+      }
+    }
+  }
+});
+
+test('Sky Bridges routes have room for two knights passing on separate lanes', () => {
+  const routes = [
+    [336, 120, 432, 120], [720, 120, 1296, 120], [336, 1080, 432, 1080],
+    [720, 1080, 1296, 1080], [552, 360, 552, 480], [1464, 720, 1464, 840],
+    [720, 600, 840, 600], [1176, 600, 1296, 600],
+  ];
+  for (const [ax, ay, bx, by] of routes) {
+    const state = arena(ax, ay), [a, b] = state.players;
+    const distance = Math.hypot(bx - ax, by - ay), dx = (bx - ax) / distance, dy = (by - ay) / distance;
+    Object.assign(a, { x: ax - dy * 34, y: ay + dx * 34 });
+    Object.assign(b, { alive: true, bot: false, x: bx + dy * 34, y: by - dx * 34, z: 0, vx: 0, vy: 0, shieldTicks: 0 });
+    let ticks = 0;
+    while ((a.x - ax) * dx + (a.y - ay) * dy < distance && ticks++ < 500) {
+      E.step(state, [
+        { ...E.emptyInput(), right: true, moveYaw: Math.atan2(dy, dx) },
+        { ...E.emptyInput(), right: true, moveYaw: Math.atan2(-dy, -dx) },
+      ]);
+      assert.ok(surfaceSupportsBody(E.MAPS.skyway, a.x, a.y, E.RULES.radius));
+      assert.ok(surfaceSupportsBody(E.MAPS.skyway, b.x, b.y, E.RULES.radius));
+      assert.ok(Math.hypot(a.x - b.x, a.y - b.y) >= E.RULES.radius * 2, 'passing lanes never overlap');
+    }
+    assert.ok(ticks < 500, `wide route ${ax},${ay} to ${bx},${by} is traversable`);
+    assert.ok((b.x - bx) * -dx + (b.y - by) * -dy > distance * .8, 'both knights cross');
+  }
+});

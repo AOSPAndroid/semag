@@ -199,7 +199,7 @@ const pickups = [
 ];
 const pointArt = [
   asset('point_base', 160, 160, [80, 80], 'Round neutral bronze-and-ivory control-point machine drawn straight from above, with a solid dark metal hub and inset white lamps. Transparent outside the disc. May be supplied at exactly 2x (320x320). The game foreshortens it into an oval and draws the capture indicator, beacon and letter separately.', { group: 'points' }),
-  asset('point_beacon', 48, 96, [24, 88], 'Low broad neutral crystal core at the centre of a control point, upright in the ¾ view; the game colours its light by owner.', { group: 'points' }),
+  asset('point_beacon', 48, 48, [24, 44], 'Compact ivory-and-brass crystal socket at the centre of a control point. Upright, registered to its foot; the game colours its light by owner.', { group: 'points' }),
 ];
 const ui = [
   ...Object.values(ARMORS).map(armor => asset(`icon_armor_${armor.id}`, 48, 48, [24, 24], `${armor.name} equipment icon. Neutral clothing or armor silhouette on a transparent background.`, { group: 'icons' })),

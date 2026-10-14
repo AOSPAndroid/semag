@@ -6,12 +6,20 @@
   "description": "A self-hosted game hub with co-op monster wave survival, voxel survival, battle royale, tactical FPS, ninja games, roguelikes, driving, and classics.",
   "scripts": {
     "start": "node server.js",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "test:lockdown": "node --test test/lockdown*.test.js",
+    "art:lockdown": "node tools/lockdown-build-scene-art.mjs && node tools/lockdown-art-index.mjs",
+    "art:lockdown:painted": "node tools/lockdown-build-painted-art.mjs",
+    "preview:lockdown": "node tools/lockdown-scene-preview.mjs"
   },
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
     "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "playwright": "^1.64.0",
+    "sharp": "^0.35.5"
   }
 }
