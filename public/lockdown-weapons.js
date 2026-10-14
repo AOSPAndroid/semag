@@ -213,6 +213,21 @@ export const BLADE = Object.freeze({ comboCancel: .4, comboWindow: 36, hitStop: 
   whiffRecovery: 1, whiffMove: .2 });
 /** Guns bloom: every shot widens the spread, which settles back while you hold fire. Measured shots stay
  * accurate; holding the trigger sprays. Precise guns bloom harder. */
+/** Fighting rules that reward reading the opponent over mashing.
+ * - interrupt: a hit that stuns cancels the target's sword cut or cast (heavy cuts and charge moves are unflinching).
+ * - counter: hitting a knight while they wind up, recover from a whiff, recover from a charge move or hold a
+ *   half-full charge lands harder and stuns longer.
+ * - perfect: dodging an attack at the right moment (dash or Boost press) refunds part of the dash cooldown and
+ *   makes your next hit within the window a riposte that lands harder.
+ * - stagger: stun builds a stagger load that drains over time; past the limit the knight turns steady for a
+ *   moment and cannot be stunned, so two attackers or a fast gun cannot lock someone forever.
+ * - clash: two cuts that meet mid-swing bounce off each other; a heavy cut beats a light one. */
+export const FIGHT = Object.freeze({
+  counter: Object.freeze({ damage: 1.25, stun: 1.5 }),
+  perfect: Object.freeze({ window: 90, damage: 1.3, dashRefund: .6 }),
+  stagger: Object.freeze({ limit: 54, drainPerTick: .4, steadyTicks: 72 }),
+  clash: Object.freeze({ push: 240, stun: 12, hitStop: 6 }),
+});
 export const BLOOM = Object.freeze({ perShot: .07, max: .32, settlePerSecond: .3 });
 
 /** Four free inventory slots: any weapon in any slot (four swords is fine), or hearts, or nothing.
