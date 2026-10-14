@@ -258,7 +258,10 @@ export class LockdownRenderer {
         if (cell === '1') {
           sctx.save(); sctx.scale(1, GROUND); // the raised floor's top, foreshortened like the ground
           const tile = map.grid[row][col], spawnTeam = tile === '1' ? 0 : tile === '2' ? 1 : null, alt = hash(Math.floor(col / 2), Math.floor(row / 2)) < .18;
-          if (!this.drawGroundTile(sctx, spawnTeam !== null ? `tile_spawn_team${spawnTeam}` : `tile_floor_${map.theme}${alt ? '_alt' : ''}`, col, row, x, 0)) {
+          const groundKey = spawnTeam !== null ? `tile_spawn_team${spawnTeam}` : `tile_floor_${map.theme}${alt ? '_alt' : ''}`;
+          // Run the floor a few pixels under the next raised row, so the two antialiased edges never let the void show between them.
+          if (levelCell(map, col, row + 1) === '1') this.drawGroundTile(sctx, groundKey, col, row, x, 4);
+          if (!this.drawGroundTile(sctx, groundKey, col, row, x, 0)) {
             sctx.fillStyle = alt ? theme.floorAlt : theme.floor; sctx.fillRect(x, 0, TILE, TILE);
             sctx.strokeStyle = theme.grout; sctx.lineWidth = 1; sctx.strokeRect(x + .5, .5, TILE - 1, TILE - 1);
             if (spawnTeam !== null) { sctx.fillStyle = TEAM_COLORS[spawnTeam].main + '33'; sctx.fillRect(x, 0, TILE, TILE); }
@@ -272,7 +275,8 @@ export class LockdownRenderer {
           if (isWall(map, col, row - 1)) { const shade = sctx.createLinearGradient(0, 0, 0, 14); shade.addColorStop(0, 'rgba(0,0,0,.35)'); shade.addColorStop(1, 'rgba(0,0,0,0)'); sctx.fillStyle = shade; sctx.fillRect(x, 0, TILE, 14); }
           sctx.restore();
           const below = levelCell(map, col, row + 1);
-          if (row + 1 < map.rows && below !== '1' && below !== '^' && !isWall(map, col, row + 1) && !this.drawSprite(sctx, `tile_ledge_${map.theme}`, x, TK)) {
+          // The face also runs behind a stair climbing up to this cell: the stair stands against it.
+          if (row + 1 < map.rows && below !== '1' && !isWall(map, col, row + 1) && !this.drawSprite(sctx, `tile_ledge_${map.theme}`, x, TK)) {
             sctx.fillStyle = theme.wall; sctx.fillRect(x, TK, TILE, FLOOR_RISE);
             sctx.fillStyle = 'rgba(255,255,255,.18)'; sctx.fillRect(x, TK, TILE, 2);
             sctx.fillStyle = 'rgba(0,0,0,.25)'; sctx.fillRect(x, TK + FLOOR_RISE - 5, TILE, 5); sctx.fillRect(x + (col % 2 ? 16 : 32), TK + 2, 1, FLOOR_RISE - 7);
